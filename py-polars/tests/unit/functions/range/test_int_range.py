@@ -275,6 +275,7 @@ def test_int_ranges_non_int_dtype() -> None:
 
 # https://github.com/pola-rs/polars/issues/22640
 def test_int_ranges_non_numeric_input_should_error() -> None:
+    # Test with non-numeric strings
     df = pl.DataFrame(
         {
             "start": ["a", "b"],
@@ -285,7 +286,20 @@ def test_int_ranges_non_numeric_input_should_error() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError) as excinfo:
         _ = df.select(pl.int_ranges("start", "end"))
 
-    assert "conversion from `str` to `i64` failed" in str(excinfo.value)
+    assert "`start` must be numeric for `int_ranges`, got str" in str(excinfo.value)
+
+    # Test with numeric-looking strings (issue #22640)
+    df = pl.DataFrame(
+        {
+            "start": ["1", "2"],
+            "end": ["3", "4"],
+        }
+    )
+
+    with pytest.raises(pl.exceptions.InvalidOperationError) as excinfo:
+        _ = df.select(pl.int_ranges("start", "end"))
+
+    assert "`start` must be numeric for `int_ranges`, got str" in str(excinfo.value)
 
 
 def test_int_range_len_count() -> None:

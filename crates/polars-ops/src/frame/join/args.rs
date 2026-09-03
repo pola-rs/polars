@@ -19,6 +19,23 @@ pub type ChunkJoinIds = Vec<IdxSize>;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
+/// Parameters for which side to use as the build side in a join. Currently only
+/// respected by the streaming engine.
+#[derive(Clone, PartialEq, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum JoinBuildSide {
+    /// Unless there's a very good reason to believe that the right side is
+    /// smaller, use the left side.
+    PreferLeft,
+    /// Regardless of other heuristics, use the left side as build side.
+    ForceLeft,
+
+    // Similar to above.
+    PreferRight,
+    ForceRight,
+}
+
 #[derive(Clone, PartialEq, Debug, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -30,6 +47,7 @@ pub struct JoinArgs {
     pub nulls_equal: bool,
     pub coalesce: JoinCoalesce,
     pub maintain_order: MaintainOrderJoin,
+    pub build_side: Option<JoinBuildSide>,
 }
 
 impl JoinArgs {
@@ -55,13 +73,18 @@ pub enum JoinType {
     #[cfg(feature = "semi_anti_join")]
     Anti,
     #[cfg(feature = "iejoin")]
+    /// Inequality join with two arbitrary predicates
     // Options are set by optimizer/planner in Options
     IEJoin,
+    #[cfg(feature = "iejoin")]
+    /// Inequality join with col ∈ [lo, hi] predicate
+    // Options are set by optimizer/planner in Options
+    Range,
     // Options are set by optimizer/planner in Options
     Cross,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum JoinCoalesce {
@@ -85,7 +108,7 @@ impl JoinCoalesce {
             #[cfg(feature = "asof_join")]
             AsOf(_) => matches!(self, JoinSpecific | CoalesceColumns),
             #[cfg(feature = "iejoin")]
-            IEJoin => false,
+            IEJoin | Range => false,
             Cross => false,
             #[cfg(feature = "semi_anti_join")]
             Semi | Anti => false,
@@ -128,6 +151,7 @@ impl JoinArgs {
             nulls_equal: false,
             coalesce: Default::default(),
             maintain_order: Default::default(),
+            build_side: None,
         }
     }
 
@@ -136,8 +160,18 @@ impl JoinArgs {
         self
     }
 
+    pub fn with_maintain_order(mut self, maintain_order: MaintainOrderJoin) -> Self {
+        self.maintain_order = maintain_order;
+        self
+    }
+
     pub fn with_suffix(mut self, suffix: Option<PlSmallStr>) -> Self {
         self.suffix = suffix;
+        self
+    }
+
+    pub fn with_build_side(mut self, build_side: Option<JoinBuildSide>) -> Self {
+        self.build_side = build_side;
         self
     }
 
@@ -154,14 +188,20 @@ impl From<JoinType> for JoinArgs {
 }
 
 pub trait CrossJoinFilter: Send + Sync {
-    fn apply(&self, df: DataFrame) -> PolarsResult<DataFrame>;
+    /// Evaluates the filter predicate on `df`, returning a boolean mask.
+    fn evaluate(&self, df: &DataFrame) -> PolarsResult<BooleanChunked>;
+
+    fn apply(&self, df: DataFrame) -> PolarsResult<DataFrame> {
+        let mask = self.evaluate(&df)?;
+        df.filter_seq(&mask)
+    }
 }
 
 impl<T> CrossJoinFilter for T
 where
-    T: Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
+    T: Fn(&DataFrame) -> PolarsResult<BooleanChunked> + Send + Sync,
 {
-    fn apply(&self, df: DataFrame) -> PolarsResult<DataFrame> {
+    fn evaluate(&self, df: &DataFrame) -> PolarsResult<BooleanChunked> {
         self(df)
     }
 }
@@ -205,6 +245,16 @@ pub enum JoinTypeOptions {
     Cross(CrossJoinOptions),
 }
 
+impl JoinTypeOptions {
+    pub fn is_iejoin(&self) -> bool {
+        match self {
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin(_) => true,
+            _ => false,
+        }
+    }
+}
+
 impl Display for JoinType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use JoinType::*;
@@ -217,6 +267,8 @@ impl Display for JoinType {
             AsOf(_) => "ASOF",
             #[cfg(feature = "iejoin")]
             IEJoin => "IEJOIN",
+            #[cfg(feature = "iejoin")]
+            Range => "RANGE",
             Cross => "CROSS",
             #[cfg(feature = "semi_anti_join")]
             Semi => "SEMI",
@@ -285,6 +337,10 @@ impl JoinType {
         }
     }
 
+    pub fn is_inner(&self) -> bool {
+        matches!(self, JoinType::Inner)
+    }
+
     pub fn is_cross(&self) -> bool {
         matches!(self, JoinType::Cross)
     }
@@ -299,9 +355,55 @@ impl JoinType {
             false
         }
     }
+
+    pub fn is_range(&self) -> bool {
+        #[cfg(feature = "iejoin")]
+        {
+            matches!(self, JoinType::Range)
+        }
+        #[cfg(not(feature = "iejoin"))]
+        {
+            false
+        }
+    }
+
+    /// Unmatched rows of the left input appear in the output.
+    pub fn emits_unmatched_left(&self) -> bool {
+        #[cfg(feature = "semi_anti_join")]
+        {
+            matches!(self, JoinType::Left | JoinType::Full | JoinType::Anti)
+        }
+        #[cfg(not(feature = "semi_anti_join"))]
+        {
+            matches!(self, JoinType::Left | JoinType::Full)
+        }
+    }
+
+    /// Unmatched rows of the right input appear in the output.
+    pub fn emits_unmatched_right(&self) -> bool {
+        matches!(self, JoinType::Right | JoinType::Full)
+    }
+
+    /// Joins supported in join where with non-equi conditions
+    pub fn supports_non_equi(&self) -> bool {
+        matches!(self, JoinType::Inner | JoinType::Left | JoinType::Right)
+    }
+
+    /// Whether the physical join implementations can execute this `how` with the given
+    /// (already-resolved) match-condition algorithm without silently dropping it.
+    pub fn supports_non_equi_options(&self, options: &Option<JoinTypeOptions>) -> bool {
+        options.is_none()
+            || matches!(self, JoinType::Inner | JoinType::Cross)
+            || self.is_ie()
+            || self.is_range()
+            || (matches!(self, JoinType::Left | JoinType::Right)
+                && options.as_ref().map(|o| o.is_iejoin()).unwrap_or(false))
+            || (matches!(self, JoinType::Left)
+                && matches!(options, Some(JoinTypeOptions::Cross(_))))
+    }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Default, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum JoinValidation {

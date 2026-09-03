@@ -10,12 +10,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "C"=> &[10, 11, 12],
             "D"=> &[2, 4, 6],
     )?;
-    println!("{}", &df);
+    println!("{}", df);
     // --8<-- [end:df]
 
     // --8<-- [start:unpivot]
-    let out = df.unpivot(["A", "B"], ["C", "D"])?;
-    println!("{}", &out);
+    let out = df.unpivot(Some(["A", "B"]), ["C", "D"])?;
+    println!("{}", out);
     // --8<-- [end:unpivot]
     Ok(())
 }

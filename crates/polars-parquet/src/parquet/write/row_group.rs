@@ -72,6 +72,7 @@ pub fn write_row_group<
     E, // external error any of the iterators may emit
 >(
     writer: &mut W,
+    num_rows: u64,
     mut offset: u64,
     descriptors: &[ColumnDescriptor],
     columns: DynIter<'a, std::result::Result<DynStreamingIterator<'a, CompressedPage, E>, E>>,
@@ -95,7 +96,17 @@ where
         .collect::<ParquetResult<Vec<_>>>()?;
     let bytes_written = offset - initial;
 
-    let num_rows = compute_num_rows(&columns)?;
+    let num_rows = if num_rows != u64::MAX
+        && let Ok(v) = i64::try_from(num_rows)
+    {
+        if cfg!(debug_assertions) {
+            let inferred = compute_num_rows(&columns)?;
+            assert!(v == inferred || (columns.is_empty() && inferred == 0));
+        }
+        v
+    } else {
+        compute_num_rows(&columns)?
+    };
 
     // compute row group stats
     let file_offset = columns

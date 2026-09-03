@@ -238,7 +238,10 @@ where
                     return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                 }
 
-                let other = other.explode(true)?;
+                let other = other.explode(ExplodeOptions {
+                    empty_as_null: false,
+                    keep_nulls: true,
+                })?;
                 let other = other.as_ref().as_ref();
                 is_in_helper_ca(ca_in, other, nulls_equal)
             } else {
@@ -253,7 +256,10 @@ where
                     return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                 }
 
-                let other = other.explode(true)?;
+                let other = other.explode(ExplodeOptions {
+                    empty_as_null: false,
+                    keep_nulls: true,
+                })?;
                 let other = other.as_ref().as_ref();
                 is_in_helper_ca(ca_in, other, nulls_equal)
             } else {
@@ -312,7 +318,10 @@ fn is_in_binary(
                     return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                 }
 
-                let other = other.explode(true)?;
+                let other = other.explode(ExplodeOptions {
+                    empty_as_null: false,
+                    keep_nulls: true,
+                })?;
                 let other = other.binary()?;
                 is_in_helper_ca(ca_in, other, nulls_equal)
             } else {
@@ -327,7 +336,10 @@ fn is_in_binary(
                     return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                 }
 
-                let other = other.explode(true)?;
+                let other = other.explode(ExplodeOptions {
+                    empty_as_null: false,
+                    keep_nulls: true,
+                })?;
                 let other = other.binary()?;
                 is_in_helper_ca(ca_in, other, nulls_equal)
             } else {
@@ -380,7 +392,10 @@ fn is_in_boolean(
                     return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                 }
 
-                let other = other.explode(true)?;
+                let other = other.explode(ExplodeOptions {
+                    empty_as_null: false,
+                    keep_nulls: true,
+                })?;
                 let other = other.bool()?;
                 is_in_boolean_broadcast(ca_in, other, nulls_equal)
             } else {
@@ -395,7 +410,10 @@ fn is_in_boolean(
                     return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                 }
 
-                let other = other.explode(true)?;
+                let other = other.explode(ExplodeOptions {
+                    empty_as_null: false,
+                    keep_nulls: true,
+                })?;
                 let other = other.bool()?;
                 is_in_boolean_broadcast(ca_in, other, nulls_equal)
             } else {
@@ -464,7 +482,10 @@ fn is_in_null(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Boo
                         return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                     }
 
-                    let other = other.explode(true)?;
+                    let other = other.explode(ExplodeOptions {
+                        empty_as_null: false,
+                        keep_nulls: true,
+                    })?;
                     BooleanChunked::from_iter_values(
                         ca_in.name().clone(),
                         std::iter::repeat_n(other.has_nulls(), ca_in.len()),
@@ -483,7 +504,10 @@ fn is_in_null(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Boo
                         return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                     }
 
-                    let other = other.explode(true)?;
+                    let other = other.explode(ExplodeOptions {
+                        empty_as_null: false,
+                        keep_nulls: true,
+                    })?;
                     BooleanChunked::from_iter_values(
                         ca_in.name().clone(),
                         std::iter::repeat_n(other.has_nulls(), ca_in.len()),
@@ -567,7 +591,10 @@ fn is_in_row_encoded(
                     return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                 }
 
-                let other = other.explode(true)?;
+                let other = other.explode(ExplodeOptions {
+                    empty_as_null: false,
+                    keep_nulls: true,
+                })?;
                 let other = other.binary_offset()?;
                 is_in_helper_ca(&ca_in, other, nulls_equal)
             } else {
@@ -588,7 +615,10 @@ fn is_in_row_encoded(
                     return Ok(BooleanChunked::full_null(ca_in.name().clone(), ca_in.len()));
                 }
 
-                let other = other.explode(true)?;
+                let other = other.explode(ExplodeOptions {
+                    empty_as_null: false,
+                    keep_nulls: true,
+                })?;
                 let other = other.binary_offset()?;
                 is_in_helper_ca(&ca_in, other, nulls_equal)
             } else {
@@ -613,51 +643,60 @@ fn is_in_row_encoded(
     Ok(mask)
 }
 
-pub fn is_in(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<BooleanChunked> {
+pub fn is_in(
+    needle: &Series,
+    haystack: &Series,
+    nulls_equal: bool,
+) -> PolarsResult<BooleanChunked> {
     polars_ensure!(
-        s.len() == other.len() || s.len() == 1 || other.len() == 1,
+        needle.len() == haystack.len() || needle.len() == 1 || haystack.len() == 1,
         length_mismatch = "is_in",
-        s.len(),
-        other.len()
+        needle.len(),
+        haystack.len()
     );
 
     #[allow(unused_mut)]
-    let mut other_is_valid_type = matches!(other.dtype(), DataType::List(_));
+    let mut other_is_valid_type = matches!(haystack.dtype(), DataType::List(_));
     #[cfg(feature = "dtype-array")]
     {
-        other_is_valid_type |= matches!(other.dtype(), DataType::Array(..))
+        other_is_valid_type |= matches!(haystack.dtype(), DataType::Array(..))
     }
-    polars_ensure!(other_is_valid_type, opq = is_in, s.dtype(), other.dtype());
+    polars_ensure!(
+        other_is_valid_type,
+        opq = is_in,
+        needle.dtype(),
+        haystack.dtype()
+    );
 
-    match s.dtype() {
+    match needle.dtype() {
         #[cfg(feature = "dtype-categorical")]
         dt @ DataType::Categorical(_, _) | dt @ DataType::Enum(_, _) => {
             with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
-                is_in_cat_and_enum(s.cat::<$C>().unwrap(), other, nulls_equal)
+                is_in_cat_and_enum(needle.cat::<$C>().unwrap(), haystack, nulls_equal)
             })
         },
         DataType::String => {
-            let ca = s.str().unwrap();
-            is_in_string(ca, other, nulls_equal)
+            let ca = needle.str().unwrap();
+            is_in_string(ca, haystack, nulls_equal)
         },
         DataType::Binary => {
-            let ca = s.binary().unwrap();
-            is_in_binary(ca, other, nulls_equal)
+            let ca = needle.binary().unwrap();
+            is_in_binary(ca, haystack, nulls_equal)
         },
         DataType::Boolean => {
-            let ca = s.bool().unwrap();
-            is_in_boolean(ca, other, nulls_equal)
+            let ca = needle.bool().unwrap();
+            is_in_boolean(ca, haystack, nulls_equal)
         },
-        DataType::Null => is_in_null(s, other, nulls_equal),
+        DataType::Null => is_in_null(needle, haystack, nulls_equal),
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, _) => {
-            let ca_in = s.decimal()?;
-            is_in_decimal(ca_in, other, nulls_equal)
+            let ca_in = needle.decimal()?;
+            is_in_decimal(ca_in, haystack, nulls_equal)
         },
-        dt if dt.is_nested() => is_in_row_encoded(s, other, nulls_equal),
+        dt if dt.is_nested() => is_in_row_encoded(needle, haystack, nulls_equal),
         dt if dt.to_physical().is_primitive_numeric() => {
-            let s = s.to_physical_repr();
-            let other = other.to_physical_repr();
+            let s = needle.to_physical_repr();
+            let other = haystack.to_physical_repr();
             let other = other.as_ref();
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();

@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 
 from polars._dependencies import _PYARROW_AVAILABLE, import_optional
 from polars._utils.various import parse_version
-from polars.convert import from_arrow
 from polars.exceptions import ModuleUpgradeRequiredError
 
 if TYPE_CHECKING:
@@ -20,10 +19,17 @@ def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
     """Run asynchronous code as if it was synchronous."""
     import asyncio
 
-    import polars._utils.nest_asyncio
+    try:
+        running_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # no running loop; can use asyncio "as-is"
+        return asyncio.run(co)
+    else:
+        # inside running loop; use vendored `nest_asyncio` (for now)
+        import polars._utils.nest_asyncio
 
-    polars._utils.nest_asyncio.apply()  # type: ignore[attr-defined]
-    return asyncio.run(co)
+        polars._utils.nest_asyncio.apply()  # type: ignore[attr-defined]
+        return running_loop.run_until_complete(co)
 
 
 def _read_sql_connectorx(
@@ -36,6 +42,8 @@ def _read_sql_connectorx(
     schema_overrides: SchemaDict | None = None,
     pre_execution_query: str | list[str] | None = None,
 ) -> DataFrame:
+    from polars import DataFrame
+
     cx = import_optional("connectorx")
 
     if parse_version(cx.__version__) < (0, 4, 2):
@@ -64,7 +72,7 @@ def _read_sql_connectorx(
         errmsg = re.sub("://[^:]+:[^:]+@", "://***:***@", str(err))
         raise type(err)(errmsg) from err
 
-    return from_arrow(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
+    return DataFrame(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
 
 
 def _read_sql_adbc(
@@ -107,10 +115,12 @@ def _read_sql_adbc(
         "fetch_arrow" if adbc_version >= (1, 6, 0) else "fetch_arrow_table"
     )
 
+    from polars import DataFrame
+
     with _open_adbc_connection(connection_uri) as conn, conn.cursor() as cursor:
         cursor.execute(query, **(execute_options or {}))
         tbl = getattr(cursor, fetch_method_name)()
-        return from_arrow(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
+        return DataFrame(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
 
 
 def _get_adbc_driver_name_from_uri(connection_uri: str) -> str:
@@ -139,7 +149,9 @@ def _import_optional_adbc_driver(
         err_suffix="driver not detected",
         install_message=(
             "If ADBC supports this database, please run: pip install "
-            f"{module_name.replace('_', '-')}"
+            # DuckDB distributes adbc_driver_duckdb as a module in the duckdb package
+            f"{'duckdb' if module_name == 'adbc_driver_duckdb' else module_name.replace('_', '-')} "
+            "or install the driver with the `dbc` command line tool (https://docs.columnar.tech/dbc/)"
         ),
     )
     if not dbapi_submodule:

@@ -1,6 +1,7 @@
-use polars_core::POOL;
 use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
@@ -49,7 +50,7 @@ static ERR_MSG: &str = "expressions in 'sort_by' must have matching group length
 fn check_groups(a: &GroupsType, b: &GroupsType) -> PolarsResult<()> {
     polars_ensure!(a.iter().zip(b.iter()).all(|(a, b)| {
         a.len() == b.len()
-    }), ComputeError: ERR_MSG);
+    }), ShapeMismatch: ERR_MSG);
     Ok(())
 }
 
@@ -60,7 +61,7 @@ pub(super) fn update_groups_sort_by(
 ) -> PolarsResult<GroupsType> {
     // Will trigger a gather for every group, so rechunk before.
     let sort_by_s = sort_by_s.rechunk();
-    let groups = POOL.install(|| {
+    let groups = RAYON.install(|| {
         groups
             .par_iter()
             .map(|indicator| sort_by_groups_single_by(indicator, &sort_by_s, options))
@@ -96,17 +97,15 @@ fn sort_by_groups_single_by(
             map_sorted_indices_to_group_slice(&sorted_idx, first)
         },
     };
-    let first = new_idx
-        .first()
-        .ok_or_else(|| polars_err!(ComputeError: "{}", ERR_MSG))?;
 
+    let first = new_idx.first().unwrap_or(&0);
     Ok((*first, new_idx))
 }
 
 fn sort_by_groups_no_match_single<'a>(
     mut ac_in: AggregationContext<'a>,
     mut ac_by: AggregationContext<'a>,
-    descending: bool,
+    options: SortOptions,
     expr: &Expr,
 ) -> PolarsResult<AggregationContext<'a>> {
     let s_in = ac_in.aggregated();
@@ -115,17 +114,16 @@ fn sort_by_groups_no_match_single<'a>(
     let mut s_by = s_by.list().unwrap().clone();
 
     let dtype = s_in.dtype().clone();
-    let ca: PolarsResult<ListChunked> = POOL.install(|| {
+    let ca: PolarsResult<ListChunked> = RAYON.install(|| {
         s_in.par_iter_indexed()
             .zip(s_by.par_iter_indexed())
             .map(|(opt_s, s_sort_by)| match (opt_s, s_sort_by) {
                 (Some(s), Some(s_sort_by)) => {
                     polars_ensure!(s.len() == s_sort_by.len(), ComputeError: "series lengths don't match in 'sort_by' expression");
                     let idx = s_sort_by.arg_sort(SortOptions {
-                        descending,
                         // We are already in par iter.
                         multithreaded: false,
-                        ..Default::default()
+                        ..options
                     });
                     Ok(Some(unsafe { s.take_unchecked(&idx) }))
                 },
@@ -192,7 +190,7 @@ fn sort_by_groups_multiple_by(
     };
     let first = new_idx
         .first()
-        .ok_or_else(|| polars_err!(ComputeError: "{}", ERR_MSG))?;
+        .ok_or_else(|| polars_err!(ComputeError: "{ERR_MSG}"))?;
 
     Ok((*first, new_idx))
 }
@@ -202,7 +200,7 @@ impl PhysicalExpr for SortByExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series_f = || self.input.evaluate(df, state);
         if self.by.is_empty() {
             // Sorting by 0 columns returns input unchanged.
@@ -213,55 +211,33 @@ impl PhysicalExpr for SortByExpr {
                 let s_sort_by = self.by[0].evaluate(df, state)?;
                 Ok(s_sort_by.arg_sort(SortOptions::from(&self.sort_options)))
             };
-            POOL.install(|| rayon::join(series_f, sorted_idx_f))
+            RAYON.install(|| rayon::join(series_f, sorted_idx_f))
         } else {
             let descending = prepare_bool_vec(&self.sort_options.descending, self.by.len());
             let nulls_last = prepare_bool_vec(&self.sort_options.nulls_last, self.by.len());
 
             let sorted_idx_f = || {
-                let mut needs_broadcast = false;
-                let mut broadcast_length = 1;
-
                 let mut s_sort_by = self
                     .by
                     .iter()
-                    .enumerate()
-                    .map(|(i, e)| {
-                        let column = e.evaluate(df, state).map(|c| match c.dtype() {
+                    .map(|e| {
+                        e.evaluate(df, state).map(|c| match c.dtype() {
                             #[cfg(feature = "dtype-categorical")]
                             DataType::Categorical(_, _) | DataType::Enum(_, _) => c,
                             _ => c.to_physical_repr(),
-                        })?;
-
-                        if column.len() == 1 && broadcast_length != 1 {
-                            polars_ensure!(
-                                e.is_scalar(),
-                                ShapeMismatch: "non-scalar expression produces broadcasting column",
-                            );
-
-                            return Ok(column.new_from_index(0, broadcast_length));
-                        }
-
-                        if broadcast_length != column.len() {
-                            polars_ensure!(
-                                broadcast_length == 1, ShapeMismatch:
-                                "`sort_by` produced different length ({}) than earlier Series' length in `by` ({})",
-                                broadcast_length, column.len()
-                            );
-
-                            needs_broadcast |= i > 0;
-                            broadcast_length = column.len();
-                        }
-
-                        Ok(column)
+                        })
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                if needs_broadcast {
-                    for c in s_sort_by.iter_mut() {
-                        if c.len() != broadcast_length {
-                            *c = c.new_from_index(0, broadcast_length);
-                        }
+                let broadcast_length = broadcast_len(s_sort_by.iter())
+                    .context("`sort_by` produced Series of differing lengths in `by`")?;
+                for (e, c) in self.by.iter().zip(s_sort_by.iter_mut()) {
+                    if c.len() != broadcast_length {
+                        polars_ensure!(
+                            e.is_scalar(),
+                            ShapeMismatch: "non-scalar expression produces broadcasting column",
+                        );
+                        c.broadcast_in_place_to(broadcast_length)?;
                     }
                 }
 
@@ -275,7 +251,7 @@ impl PhysicalExpr for SortByExpr {
                     .as_materialized_series()
                     .arg_sort_multiple(&s_sort_by[1..], &options)
             };
-            POOL.install(|| rayon::join(series_f, sorted_idx_f))
+            RAYON.install(|| rayon::join(series_f, sorted_idx_f))
         };
         let (sorted_idx, series) = (sorted_idx?, series?);
         polars_ensure!(
@@ -290,7 +266,7 @@ impl PhysicalExpr for SortByExpr {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
@@ -311,6 +287,12 @@ impl PhysicalExpr for SortByExpr {
                 .iter()
                 .all(|ac_sort_by| ac_sort_by.groups.len() == ac_in.groups.len())
         );
+
+        // Enable reliable length checks downstream
+        ac_in.set_groups_for_undefined_agg_states();
+        ac_sort_by
+            .iter_mut()
+            .for_each(|ac| ac.set_groups_for_undefined_agg_states());
 
         // If every input is a LiteralScalar, we return a LiteralScalar.
         // Otherwise, we convert any LiteralScalar to AggregatedList.
@@ -362,7 +344,7 @@ impl PhysicalExpr for SortByExpr {
                 return sort_by_groups_no_match_single(
                     ac_in,
                     ac_sort_by,
-                    self.sort_options.descending[0],
+                    SortOptions::from(&self.sort_options),
                     &self.expr,
                 );
             };
@@ -370,7 +352,7 @@ impl PhysicalExpr for SortByExpr {
             let sort_by_s = sort_by_s.pop().unwrap();
             let groups = ac_sort_by.groups();
 
-            let (check, groups) = POOL.join(
+            let (check, groups) = RAYON.join(
                 || check_groups(groups, ac_in.groups()),
                 || {
                     update_groups_sort_by(
@@ -388,9 +370,14 @@ impl PhysicalExpr for SortByExpr {
 
             groups?
         } else {
+            let groups_in = ac_in.groups();
+            for ac in ac_sort_by.iter() {
+                check_groups(groups_in.as_ref().as_ref(), ac.groups.as_ref().as_ref())?;
+            }
+
             let groups = ac_sort_by[0].groups();
 
-            let groups = POOL.install(|| {
+            let groups = RAYON.install(|| {
                 groups
                     .par_iter()
                     .map(|indicator| {
@@ -412,7 +399,15 @@ impl PhysicalExpr for SortByExpr {
         // group_by operation - we must ensure that we are as well.
         if ordered_by_group_operation {
             let s = ac_in.aggregated();
-            ac_in.with_values(s.explode(false).unwrap(), false, None)?;
+            ac_in.with_values(
+                s.explode(ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                })
+                .unwrap(),
+                false,
+                None,
+            )?;
         }
 
         ac_in.with_groups(groups.into_sliceable());
@@ -424,6 +419,6 @@ impl PhysicalExpr for SortByExpr {
     }
 
     fn is_scalar(&self) -> bool {
-        false
+        self.input.is_scalar()
     }
 }

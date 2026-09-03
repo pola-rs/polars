@@ -3,18 +3,16 @@ mod scalar;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
 
-use std::ops::{BitAnd, Not};
+use std::ops::{BitAnd, BitOr, Not};
 
 use arrow::array::BooleanArray;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::compute;
 use num_traits::{NumCast, ToPrimitive};
 use polars_compute::comparisons::{TotalEqKernel, TotalOrdKernel};
 
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::series::implementations::null::NullChunked;
-use crate::utils::align_chunks_binary;
 
 impl<T> ChunkCompareEq<&ChunkedArray<T>> for ChunkedArray<T>
 where
@@ -796,72 +794,49 @@ where
     let len_a = a.len();
     let len_b = b.len();
     let broadcasts = len_a == 1 || len_b == 1;
-    if (a.len() != b.len() && !broadcasts) || a.struct_fields().len() != b.struct_fields().len() {
-        BooleanChunked::full(PlSmallStr::EMPTY, op_is_ne, a.len())
-    } else {
-        let (a, b) = align_chunks_binary(a, b);
+    assert!(a.struct_fields().len() == b.struct_fields().len());
+    assert!(a.len() == b.len() || broadcasts);
 
-        let mut out = a
-            .fields_as_series()
-            .iter()
-            .zip(b.fields_as_series().iter())
-            .map(|(l, r)| op(l, r))
-            .reduce(&reduce)
-            .unwrap_or_else(|| BooleanChunked::full(PlSmallStr::EMPTY, !op_is_ne, a.len()));
+    let mut out = a
+        .fields_as_series()
+        .iter()
+        .zip(b.fields_as_series().iter())
+        .map(|(l, r)| op(l, r))
+        .reduce(&reduce)
+        .unwrap_or_else(|| BooleanChunked::full(PlSmallStr::EMPTY, !op_is_ne, a.len()));
 
-        if is_missing && (a.has_nulls() || b.has_nulls()) {
-            // Do some allocations so that we can use the Series dispatch, it otherwise
-            // gets complicated dealing with combinations of ==, != and broadcasting.
-            let default = || {
-                BooleanChunked::with_chunk(PlSmallStr::EMPTY, BooleanArray::from_slice([true]))
-                    .into_series()
-            };
-            let validity_to_series = |x| unsafe {
-                BooleanChunked::with_chunk(
-                    PlSmallStr::EMPTY,
-                    BooleanArray::from_inner_unchecked(ArrowDataType::Boolean, x, None),
-                )
-                .into_series()
-            };
-
-            out = reduce(
-                out,
-                op(
-                    &a.rechunk_validity()
-                        .map_or_else(default, validity_to_series),
-                    &b.rechunk_validity()
-                        .map_or_else(default, validity_to_series),
-                ),
+    if is_missing && (a.has_nulls() || b.has_nulls()) {
+        // Do some allocations so that we can use the Series dispatch, it otherwise
+        // gets complicated dealing with combinations of ==, != and broadcasting.
+        let default =
+            || BooleanChunked::with_chunk(PlSmallStr::EMPTY, BooleanArray::from_slice([true]));
+        let validity_to_ca = |x| unsafe {
+            BooleanChunked::with_chunk(
+                PlSmallStr::EMPTY,
+                BooleanArray::from_inner_unchecked(ArrowDataType::Boolean, x, None),
             )
-        }
+        };
 
-        if !is_missing && (a.null_count() > 0 || b.null_count() > 0) {
-            let mut a = a;
-            let mut b = b;
+        let a_s = a.rechunk_validity().map_or_else(default, validity_to_ca);
+        let b_s = b.rechunk_validity().map_or_else(default, validity_to_ca);
 
-            if broadcasts {
-                if a.len() == 1 {
-                    a = std::borrow::Cow::Owned(a.new_from_index(0, b.len()));
-                }
-                if b.len() == 1 {
-                    b = std::borrow::Cow::Owned(b.new_from_index(0, a.len()));
-                }
-            }
-
-            let mut a = a.into_owned();
-            a.zip_outer_validity(&b);
-            unsafe {
-                let mut new_null_count = 0;
-                for (arr, a) in out.downcast_iter_mut().zip(a.downcast_iter()) {
-                    arr.set_validity(a.validity().cloned());
-                    new_null_count += arr.null_count();
-                }
-                out.set_null_count(new_null_count);
-            }
-        }
-
-        out
+        let shared_validity = (&a_s).bitand(&b_s);
+        let valid_nested = if op_is_ne {
+            (shared_validity).bitand(out)
+        } else {
+            (!shared_validity).bitor(out)
+        };
+        out = reduce(op(&a_s.into_series(), &b_s.into_series()), valid_nested);
     }
+
+    if !is_missing && (a.has_nulls() || b.has_nulls()) {
+        use arrow::compute::utils::combine_validities_and;
+        let av = a.rechunk_validity();
+        let bv = b.rechunk_validity();
+        out.set_validity(combine_validities_and(av.as_ref(), bv.as_ref()));
+    }
+
+    out
 }
 
 #[cfg(feature = "dtype-struct")]
@@ -894,7 +869,7 @@ impl ChunkCompareEq<&StructChunked> for StructChunked {
             self,
             rhs,
             |l, r| l.not_equal_missing(r).unwrap(),
-            |a, b| a | b,
+            |a, b| a.bitor(b),
             true,
             false,
         )
@@ -905,7 +880,7 @@ impl ChunkCompareEq<&StructChunked> for StructChunked {
             self,
             rhs,
             |l, r| l.not_equal_missing(r).unwrap(),
-            |a, b| a | b,
+            |a, b| a.bitor(b),
             true,
             true,
         )
@@ -1042,7 +1017,7 @@ impl Not for &BooleanChunked {
     type Output = BooleanChunked;
 
     fn not(self) -> Self::Output {
-        let chunks = self.downcast_iter().map(compute::boolean::not);
+        let chunks = self.downcast_iter().map(polars_compute::boolean::not);
         ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }
 }
@@ -1060,14 +1035,16 @@ impl BooleanChunked {
     ///
     /// Null values are ignored.
     pub fn any(&self) -> bool {
-        self.downcast_iter().any(compute::boolean::any)
+        self.downcast_iter()
+            .any(|a| polars_compute::boolean::any(a).unwrap_or(false))
     }
 
     /// Returns whether all values in the array are `true`.
     ///
     /// Null values are ignored.
     pub fn all(&self) -> bool {
-        self.downcast_iter().all(compute::boolean::all)
+        self.downcast_iter()
+            .all(|a| polars_compute::boolean::all(a).unwrap_or(true))
     }
 
     /// Returns whether any of the values in the column are `true`.
@@ -1075,15 +1052,12 @@ impl BooleanChunked {
     /// The output is unknown (`None`) if the array contains any null values and
     /// no `true` values.
     pub fn any_kleene(&self) -> Option<bool> {
-        let mut result = Some(false);
         for arr in self.downcast_iter() {
-            match compute::boolean_kleene::any(arr) {
-                Some(true) => return Some(true),
-                None => result = None,
-                _ => (),
-            };
+            if let Some(true) = polars_compute::boolean::any(arr) {
+                return Some(true);
+            }
         }
-        result
+        if self.has_nulls() { None } else { Some(false) }
     }
 
     /// Returns whether all values in the column are `true`.
@@ -1091,84 +1065,14 @@ impl BooleanChunked {
     /// The output is unknown (`None`) if the array contains any null values and
     /// no `false` values.
     pub fn all_kleene(&self) -> Option<bool> {
-        let mut result = Some(true);
         for arr in self.downcast_iter() {
-            match compute::boolean_kleene::all(arr) {
-                Some(false) => return Some(false),
-                None => result = None,
-                _ => (),
-            };
+            if let Some(false) = polars_compute::boolean::all(arr) {
+                return Some(false);
+            }
         }
-        result
+        if self.has_nulls() { None } else { Some(true) }
     }
 }
-
-// private
-pub(crate) trait ChunkEqualElement {
-    /// Only meant for physical types.
-    /// Check if element in self is equal to element in other, assumes same dtypes
-    ///
-    /// # Safety
-    ///
-    /// No type checks.
-    unsafe fn equal_element(&self, _idx_self: usize, _idx_other: usize, _other: &Series) -> bool {
-        unimplemented!()
-    }
-}
-
-impl<T> ChunkEqualElement for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        let ca_other = other.as_ref().as_ref();
-        debug_assert!(self.dtype() == other.dtype());
-        let ca_other = &*(ca_other as *const ChunkedArray<T>);
-        // Should be get and not get_unchecked, because there could be nulls
-        self.get_unchecked(idx_self)
-            .tot_eq(&ca_other.get_unchecked(idx_other))
-    }
-}
-
-impl ChunkEqualElement for BooleanChunked {
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        let ca_other = other.as_ref().as_ref();
-        debug_assert!(self.dtype() == other.dtype());
-        let ca_other = &*(ca_other as *const BooleanChunked);
-        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
-    }
-}
-
-impl ChunkEqualElement for StringChunked {
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        let ca_other = other.as_ref().as_ref();
-        debug_assert!(self.dtype() == other.dtype());
-        let ca_other = &*(ca_other as *const StringChunked);
-        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
-    }
-}
-
-impl ChunkEqualElement for BinaryChunked {
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        let ca_other = other.as_ref().as_ref();
-        debug_assert!(self.dtype() == other.dtype());
-        let ca_other = &*(ca_other as *const BinaryChunked);
-        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
-    }
-}
-
-impl ChunkEqualElement for BinaryOffsetChunked {
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        let ca_other = other.as_ref().as_ref();
-        debug_assert!(self.dtype() == other.dtype());
-        let ca_other = &*(ca_other as *const BinaryOffsetChunked);
-        self.get_unchecked(idx_self) == ca_other.get_unchecked(idx_other)
-    }
-}
-
-impl ChunkEqualElement for ListChunked {}
-#[cfg(feature = "dtype-array")]
-impl ChunkEqualElement for ArrayChunked {}
 
 #[cfg(test)]
 #[cfg_attr(feature = "nightly", allow(clippy::manual_repeat_n))] // remove once stable
@@ -1203,51 +1107,51 @@ mod test {
         let (a1, a2) = create_two_chunked();
 
         assert_eq!(
-            a1.equal(&a2).into_iter().collect::<Vec<_>>(),
+            a1.equal(&a2).iter().collect::<Vec<_>>(),
             repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.equal(&a1).into_iter().collect::<Vec<_>>(),
+            a2.equal(&a1).iter().collect::<Vec<_>>(),
             repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.not_equal(&a2).into_iter().collect::<Vec<_>>(),
+            a1.not_equal(&a2).iter().collect::<Vec<_>>(),
             repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.not_equal(&a1).into_iter().collect::<Vec<_>>(),
+            a2.not_equal(&a1).iter().collect::<Vec<_>>(),
             repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.gt(&a2).into_iter().collect::<Vec<_>>(),
+            a1.gt(&a2).iter().collect::<Vec<_>>(),
             repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.gt(&a1).into_iter().collect::<Vec<_>>(),
+            a2.gt(&a1).iter().collect::<Vec<_>>(),
             repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.gt_eq(&a2).into_iter().collect::<Vec<_>>(),
+            a1.gt_eq(&a2).iter().collect::<Vec<_>>(),
             repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.gt_eq(&a1).into_iter().collect::<Vec<_>>(),
+            a2.gt_eq(&a1).iter().collect::<Vec<_>>(),
             repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.lt_eq(&a2).into_iter().collect::<Vec<_>>(),
+            a1.lt_eq(&a2).iter().collect::<Vec<_>>(),
             repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.lt_eq(&a1).into_iter().collect::<Vec<_>>(),
+            a2.lt_eq(&a1).iter().collect::<Vec<_>>(),
             repeat_n(Some(true), 6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.lt(&a2).into_iter().collect::<Vec<_>>(),
+            a1.lt(&a2).iter().collect::<Vec<_>>(),
             repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.lt(&a1).into_iter().collect::<Vec<_>>(),
+            a2.lt(&a1).iter().collect::<Vec<_>>(),
             repeat_n(Some(false), 6).collect::<Vec<_>>()
         );
     }
@@ -1258,51 +1162,51 @@ mod test {
         let a2 = get_chunked_array();
 
         assert_eq!(
-            a1.equal(&a2).into_iter().collect::<Vec<_>>(),
+            a1.equal(&a2).iter().collect::<Vec<_>>(),
             repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.equal(&a1).into_iter().collect::<Vec<_>>(),
+            a2.equal(&a1).iter().collect::<Vec<_>>(),
             repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.not_equal(&a2).into_iter().collect::<Vec<_>>(),
+            a1.not_equal(&a2).iter().collect::<Vec<_>>(),
             repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.not_equal(&a1).into_iter().collect::<Vec<_>>(),
+            a2.not_equal(&a1).iter().collect::<Vec<_>>(),
             repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.gt(&a2).into_iter().collect::<Vec<_>>(),
+            a1.gt(&a2).iter().collect::<Vec<_>>(),
             repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.gt(&a1).into_iter().collect::<Vec<_>>(),
+            a2.gt(&a1).iter().collect::<Vec<_>>(),
             repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.gt_eq(&a2).into_iter().collect::<Vec<_>>(),
+            a1.gt_eq(&a2).iter().collect::<Vec<_>>(),
             repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.gt_eq(&a1).into_iter().collect::<Vec<_>>(),
+            a2.gt_eq(&a1).iter().collect::<Vec<_>>(),
             repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.lt_eq(&a2).into_iter().collect::<Vec<_>>(),
+            a1.lt_eq(&a2).iter().collect::<Vec<_>>(),
             repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.lt_eq(&a1).into_iter().collect::<Vec<_>>(),
+            a2.lt_eq(&a1).iter().collect::<Vec<_>>(),
             repeat_n(Some(true), 3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.lt(&a2).into_iter().collect::<Vec<_>>(),
+            a1.lt(&a2).iter().collect::<Vec<_>>(),
             repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.lt(&a1).into_iter().collect::<Vec<_>>(),
+            a2.lt(&a1).iter().collect::<Vec<_>>(),
             repeat_n(Some(false), 3).collect::<Vec<_>>()
         );
     }
@@ -1323,53 +1227,53 @@ mod test {
             .unwrap();
 
         assert_eq!(
-            a1.equal(&a2).into_iter().collect::<Vec<_>>(),
-            a1.equal(&a2_2chunks).into_iter().collect::<Vec<_>>()
+            a1.equal(&a2).iter().collect::<Vec<_>>(),
+            a1.equal(&a2_2chunks).iter().collect::<Vec<_>>()
         );
 
         assert_eq!(
-            a1.not_equal(&a2).into_iter().collect::<Vec<_>>(),
-            a1.not_equal(&a2_2chunks).into_iter().collect::<Vec<_>>()
+            a1.not_equal(&a2).iter().collect::<Vec<_>>(),
+            a1.not_equal(&a2_2chunks).iter().collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.not_equal(&a2).into_iter().collect::<Vec<_>>(),
-            a2_2chunks.not_equal(&a1).into_iter().collect::<Vec<_>>()
-        );
-
-        assert_eq!(
-            a1.gt(&a2).into_iter().collect::<Vec<_>>(),
-            a1.gt(&a2_2chunks).into_iter().collect::<Vec<_>>()
-        );
-        assert_eq!(
-            a1.gt(&a2).into_iter().collect::<Vec<_>>(),
-            a2_2chunks.gt(&a1).into_iter().collect::<Vec<_>>()
+            a1.not_equal(&a2).iter().collect::<Vec<_>>(),
+            a2_2chunks.not_equal(&a1).iter().collect::<Vec<_>>()
         );
 
         assert_eq!(
-            a1.gt_eq(&a2).into_iter().collect::<Vec<_>>(),
-            a1.gt_eq(&a2_2chunks).into_iter().collect::<Vec<_>>()
+            a1.gt(&a2).iter().collect::<Vec<_>>(),
+            a1.gt(&a2_2chunks).iter().collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.gt_eq(&a2).into_iter().collect::<Vec<_>>(),
-            a2_2chunks.gt_eq(&a1).into_iter().collect::<Vec<_>>()
-        );
-
-        assert_eq!(
-            a1.lt_eq(&a2).into_iter().collect::<Vec<_>>(),
-            a1.lt_eq(&a2_2chunks).into_iter().collect::<Vec<_>>()
-        );
-        assert_eq!(
-            a1.lt_eq(&a2).into_iter().collect::<Vec<_>>(),
-            a2_2chunks.lt_eq(&a1).into_iter().collect::<Vec<_>>()
+            a1.gt(&a2).iter().collect::<Vec<_>>(),
+            a2_2chunks.gt(&a1).iter().collect::<Vec<_>>()
         );
 
         assert_eq!(
-            a1.lt(&a2).into_iter().collect::<Vec<_>>(),
-            a1.lt(&a2_2chunks).into_iter().collect::<Vec<_>>()
+            a1.gt_eq(&a2).iter().collect::<Vec<_>>(),
+            a1.gt_eq(&a2_2chunks).iter().collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.lt(&a2).into_iter().collect::<Vec<_>>(),
-            a2_2chunks.lt(&a1).into_iter().collect::<Vec<_>>()
+            a1.gt_eq(&a2).iter().collect::<Vec<_>>(),
+            a2_2chunks.gt_eq(&a1).iter().collect::<Vec<_>>()
+        );
+
+        assert_eq!(
+            a1.lt_eq(&a2).iter().collect::<Vec<_>>(),
+            a1.lt_eq(&a2_2chunks).iter().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            a1.lt_eq(&a2).iter().collect::<Vec<_>>(),
+            a2_2chunks.lt_eq(&a1).iter().collect::<Vec<_>>()
+        );
+
+        assert_eq!(
+            a1.lt(&a2).iter().collect::<Vec<_>>(),
+            a1.lt(&a2_2chunks).iter().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            a1.lt(&a2).iter().collect::<Vec<_>>(),
+            a2_2chunks.lt(&a1).iter().collect::<Vec<_>>()
         );
     }
 

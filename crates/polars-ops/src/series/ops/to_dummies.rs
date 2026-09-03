@@ -30,13 +30,24 @@ impl ToDummies for Series {
     ) -> PolarsResult<DataFrame> {
         let sep = separator.unwrap_or("_");
         let col_name = self.name();
-        let groups = self.group_tuples(true, drop_first)?;
 
-        // SAFETY: groups are in bounds
+        // We only need to maintain order if we need to drop the first non-null item.
+        let maintain_order = drop_first;
+        let groups = self.group_tuples(true, maintain_order)?;
+
+        // SAFETY: groups are in bounds.
         let columns = unsafe { self.agg_first(&groups) };
-        let columns = columns.iter().zip(groups.iter()).skip(drop_first as usize);
+        let columns = columns.iter().zip(groups.iter());
+        let mut seen_first = false;
         let columns = columns
             .filter_map(|(av, group)| {
+                if av.is_null() && drop_nulls {
+                    return None;
+                } else if !seen_first && !av.is_null() && drop_first {
+                    // The position of the first non-null item could be either 0 or 1.
+                    seen_first = true;
+                    return None;
+                }
                 // strings are formatted with extra \" \" in polars, so we
                 // extract the string
                 let name = if let Some(s) = av.get_str() {
@@ -45,10 +56,6 @@ impl ToDummies for Series {
                     // other types don't have this formatting issue
                     format_pl_smallstr!("{col_name}{sep}{av}")
                 };
-
-                if av.is_null() && drop_nulls {
-                    return None;
-                }
 
                 let ca = match group {
                     GroupsIndicator::Idx((_, group)) => dummies_helper_idx(group, self.len(), name),
@@ -60,7 +67,7 @@ impl ToDummies for Series {
             })
             .collect::<Vec<_>>();
 
-        DataFrame::new(sort_columns(columns))
+        DataFrame::new_infer_height(sort_columns(columns))
     }
 }
 

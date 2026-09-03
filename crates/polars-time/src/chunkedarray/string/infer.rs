@@ -6,7 +6,6 @@ use polars_core::prelude::*;
 use super::patterns::{self, Pattern};
 #[cfg(feature = "dtype-date")]
 use crate::chunkedarray::date::naive_date_to_date;
-use crate::chunkedarray::string::strptime;
 use crate::prelude::string::strptime::StrpTimeState;
 
 polars_utils::regex_cache::cached_regex! {
@@ -39,9 +38,9 @@ polars_utils::regex_cache::cached_regex! {
             ^
             ['"]?                      # optional quotes
             (?:\d{4,})                 # year
-            [-/\.]                     # separator
+            [-/\.]?                    # separator
             (?P<month>[01]?\d{1})      # month
-            [-/\.]                     # separator
+            [-/\.]?                    # separator
             (?:\d{1,2})                # day
             (?:
                 [T\ ]                  # separator
@@ -64,9 +63,9 @@ polars_utils::regex_cache::cached_regex! {
             ^
             ['"]?                  # optional quotes
             (?:\d{4,})             # year
-            [-/\.]                 # separator
+            [-/\.]?                # separator
             (?P<month>[01]?\d{1})  # month
-            [-/\.]                 # separator
+            [-/\.]?                # separator
             (?:\d{1,2})            # year
             [T\ ]                  # separator
             (?:\d{2})              # hour
@@ -141,70 +140,54 @@ pub trait StrpTimeParser<T> {
 #[cfg(feature = "dtype-datetime")]
 impl StrpTimeParser<i64> for DatetimeInfer<Int64Type> {
     fn parse_bytes(&mut self, val: &[u8], time_unit: Option<TimeUnit>) -> Option<i64> {
-        if self.fmt_len == 0 {
-            self.fmt_len = strptime::fmt_len(self.latest_fmt.as_bytes())?;
-        }
         let transform = match time_unit {
             Some(TimeUnit::Nanoseconds) => datetime_to_timestamp_ns,
             Some(TimeUnit::Microseconds) => datetime_to_timestamp_us,
             Some(TimeUnit::Milliseconds) => datetime_to_timestamp_ms,
             _ => unreachable!(), // time_unit has to be provided for datetime
         };
-        unsafe {
-            self.transform_bytes
-                .parse(val, self.latest_fmt.as_bytes(), self.fmt_len)
-                .map(transform)
-                .or_else(|| {
-                    // TODO! this will try all patterns.
-                    // somehow we must early escape if value is invalid
-                    for fmt in self.patterns {
-                        if self.fmt_len == 0 {
-                            self.fmt_len = strptime::fmt_len(fmt.as_bytes())?;
-                        }
-                        if let Some(parsed) = self
-                            .transform_bytes
-                            .parse(val, fmt.as_bytes(), self.fmt_len)
-                            .map(datetime_to_timestamp_us)
-                        {
-                            self.latest_fmt = fmt;
-                            return Some(parsed);
-                        }
+        self.transform_bytes
+            .parse(val, self.latest_fmt.as_bytes())
+            .map(transform)
+            .or_else(|| {
+                // TODO! this will try all patterns.
+                // Somehow we must early escape if value is invalid.
+                for fmt in self.patterns {
+                    if let Some(parsed) = self
+                        .transform_bytes
+                        .parse(val, fmt.as_bytes())
+                        .map(transform)
+                    {
+                        self.latest_fmt = fmt;
+                        return Some(parsed);
                     }
-                    None
-                })
-        }
+                }
+                None
+            })
     }
 }
 
 #[cfg(feature = "dtype-date")]
 impl StrpTimeParser<i32> for DatetimeInfer<Int32Type> {
     fn parse_bytes(&mut self, val: &[u8], _time_unit: Option<TimeUnit>) -> Option<i32> {
-        if self.fmt_len == 0 {
-            self.fmt_len = strptime::fmt_len(self.latest_fmt.as_bytes())?;
-        }
-        unsafe {
-            self.transform_bytes
-                .parse(val, self.latest_fmt.as_bytes(), self.fmt_len)
-                .map(|ndt| naive_date_to_date(ndt.date()))
-                .or_else(|| {
-                    // TODO! this will try all patterns.
-                    // somehow we must early escape if value is invalid
-                    for fmt in self.patterns {
-                        if self.fmt_len == 0 {
-                            self.fmt_len = strptime::fmt_len(fmt.as_bytes())?;
-                        }
-                        if let Some(parsed) = self
-                            .transform_bytes
-                            .parse(val, fmt.as_bytes(), self.fmt_len)
-                            .map(|ndt| naive_date_to_date(ndt.date()))
-                        {
-                            self.latest_fmt = fmt;
-                            return Some(parsed);
-                        }
+        self.transform_bytes
+            .parse(val, self.latest_fmt.as_bytes())
+            .map(|ndt| naive_date_to_date(ndt.date()))
+            .or_else(|| {
+                // TODO! this will try all patterns.
+                // somehow we must early escape if value is invalid
+                for fmt in self.patterns {
+                    if let Some(parsed) = self
+                        .transform_bytes
+                        .parse(val, fmt.as_bytes())
+                        .map(|ndt| naive_date_to_date(ndt.date()))
+                    {
+                        self.latest_fmt = fmt;
+                        return Some(parsed);
                     }
-                    None
-                })
-        }
+                }
+                None
+            })
     }
 }
 
@@ -215,13 +198,12 @@ pub struct DatetimeInfer<T: PolarsNumericType> {
     latest_fmt: &'static str,
     transform: fn(&str, &str) -> Option<T::Native>,
     transform_bytes: StrpTimeState,
-    fmt_len: u16,
     pub logical_type: DataType,
 }
 
 pub trait TryFromWithUnit<T>: Sized {
     type Error;
-    fn try_from_with_unit(pattern: T, unit: Option<TimeUnit>) -> PolarsResult<Self>;
+    fn try_from_with_unit(pattern: T, time_unit: Option<TimeUnit>) -> PolarsResult<Self>;
 }
 
 #[cfg(feature = "dtype-datetime")]
@@ -256,7 +238,6 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int64Type> {
             latest_fmt: patterns[0],
             transform,
             transform_bytes: StrpTimeState::default(),
-            fmt_len: 0,
             logical_type: DataType::Datetime(time_unit, None),
         })
     }
@@ -274,7 +255,6 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int32Type> {
                 latest_fmt: patterns::DATE_D_M_Y[0],
                 transform: transform_date,
                 transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
                 logical_type: DataType::Date,
             }),
             Pattern::DateYMD => Ok(DatetimeInfer {
@@ -283,7 +263,6 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int32Type> {
                 latest_fmt: patterns::DATE_Y_M_D[0],
                 transform: transform_date,
                 transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
                 logical_type: DataType::Date,
             }),
             _ => polars_bail!(ComputeError: "could not convert pattern"),
@@ -301,7 +280,6 @@ impl<T: PolarsNumericType> DatetimeInfer<T> {
                     return None;
                 }
                 for fmt in self.patterns {
-                    self.fmt_len = 0;
                     if let Some(parsed) = (self.transform)(val, fmt) {
                         self.latest_fmt = fmt;
                         return Some(parsed);
@@ -314,7 +292,7 @@ impl<T: PolarsNumericType> DatetimeInfer<T> {
 }
 
 impl<T: PolarsNumericType> DatetimeInfer<T> {
-    fn coerce_string(&mut self, ca: &StringChunked) -> Series {
+    pub fn coerce_string(&mut self, ca: &StringChunked) -> Series {
         let chunks = ca.downcast_iter().map(|array| {
             let iter = array
                 .into_iter()
@@ -336,17 +314,43 @@ fn transform_date(val: &str, fmt: &str) -> Option<i32> {
         .map(naive_date_to_date)
 }
 
+pub(crate) fn parse_datetime(val: &str, fmt: &str) -> Option<NaiveDateTime> {
+    NaiveDateTime::parse_from_str(val, fmt)
+        .or_else(|parse_error| match parse_error.kind() {
+            ParseErrorKind::NotEnough => {
+                NaiveDate::parse_from_str(val, fmt).map(|nd| nd.and_hms_opt(0, 0, 0).unwrap())
+            },
+            _ => Err(parse_error),
+        })
+        .ok()
+}
+
+pub(crate) fn parse_datetime_and_remainder<'a>(
+    val: &'a str,
+    fmt: &str,
+) -> Option<(NaiveDateTime, &'a str)> {
+    NaiveDateTime::parse_and_remainder(val, fmt)
+        .or_else(|parse_error| match parse_error.kind() {
+            ParseErrorKind::NotEnough => NaiveDate::parse_and_remainder(val, fmt)
+                .map(|(nd, r)| (nd.and_hms_opt(0, 0, 0).unwrap(), r)),
+            _ => Err(parse_error),
+        })
+        .ok()
+}
+
 #[cfg(feature = "dtype-datetime")]
 pub(crate) fn transform_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
-    match NaiveDateTime::parse_from_str(val, fmt) {
-        Ok(ndt) => Some(datetime_to_timestamp_ns(ndt)),
-        Err(parse_error) => match parse_error.kind() {
-            ParseErrorKind::NotEnough => NaiveDate::parse_from_str(val, fmt)
-                .ok()
-                .map(|nd| datetime_to_timestamp_ns(nd.and_hms_opt(0, 0, 0).unwrap())),
-            _ => None,
-        },
-    }
+    parse_datetime(val, fmt).map(datetime_to_timestamp_ns)
+}
+
+#[cfg(feature = "dtype-datetime")]
+pub(crate) fn transform_datetime_us(val: &str, fmt: &str) -> Option<i64> {
+    parse_datetime(val, fmt).map(datetime_to_timestamp_us)
+}
+
+#[cfg(feature = "dtype-datetime")]
+pub(crate) fn transform_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
+    parse_datetime(val, fmt).map(datetime_to_timestamp_ms)
 }
 
 fn transform_tzaware_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
@@ -354,35 +358,9 @@ fn transform_tzaware_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
     dt.ok().map(|dt| datetime_to_timestamp_ns(dt.naive_utc()))
 }
 
-#[cfg(feature = "dtype-datetime")]
-pub(crate) fn transform_datetime_us(val: &str, fmt: &str) -> Option<i64> {
-    match NaiveDateTime::parse_from_str(val, fmt) {
-        Ok(ndt) => Some(datetime_to_timestamp_us(ndt)),
-        Err(parse_error) => match parse_error.kind() {
-            ParseErrorKind::NotEnough => NaiveDate::parse_from_str(val, fmt)
-                .ok()
-                .map(|nd| datetime_to_timestamp_us(nd.and_hms_opt(0, 0, 0).unwrap())),
-            _ => None,
-        },
-    }
-}
-
 fn transform_tzaware_datetime_us(val: &str, fmt: &str) -> Option<i64> {
     let dt = DateTime::parse_from_str(val, fmt);
     dt.ok().map(|dt| datetime_to_timestamp_us(dt.naive_utc()))
-}
-
-#[cfg(feature = "dtype-datetime")]
-pub(crate) fn transform_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
-    match NaiveDateTime::parse_from_str(val, fmt) {
-        Ok(ndt) => Some(datetime_to_timestamp_ms(ndt)),
-        Err(parse_error) => match parse_error.kind() {
-            ParseErrorKind::NotEnough => NaiveDate::parse_from_str(val, fmt)
-                .ok()
-                .map(|nd| datetime_to_timestamp_ms(nd.and_hms_opt(0, 0, 0).unwrap())),
-            _ => None,
-        },
-    }
 }
 
 fn transform_tzaware_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
@@ -397,7 +375,7 @@ pub fn infer_pattern_single(val: &str) -> Option<Pattern> {
         .or_else(|| infer_pattern_datetime_single(val))
 }
 
-fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
+pub fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
     if patterns::DATETIME_D_M_Y.iter().any(|fmt| {
         NaiveDateTime::parse_from_str(val, fmt).is_ok()
             || NaiveDate::parse_from_str(val, fmt).is_ok()
@@ -418,7 +396,7 @@ fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
     }
 }
 
-fn infer_pattern_date_single(val: &str) -> Option<Pattern> {
+pub fn infer_pattern_date_single(val: &str) -> Option<Pattern> {
     if patterns::DATE_D_M_Y
         .iter()
         .any(|fmt| NaiveDate::parse_from_str(val, fmt).is_ok())
@@ -434,11 +412,21 @@ fn infer_pattern_date_single(val: &str) -> Option<Pattern> {
     }
 }
 
-fn infer_pattern_time_single(val: &str) -> Option<Pattern> {
+pub fn infer_pattern_time_single(val: &str) -> Option<Pattern> {
+    sniff_time_fmt(val).is_some().then_some(Pattern::Time)
+}
+
+/// Return the first format string from `TIME_H_M_S` that parses `val`, or `None`.
+pub fn sniff_time_fmt(val: &str) -> Option<&'static str> {
     patterns::TIME_H_M_S
         .iter()
-        .any(|fmt| NaiveTime::parse_from_str(val, fmt).is_ok())
-        .then_some(Pattern::Time)
+        .copied()
+        .find(|fmt| NaiveTime::parse_from_str(val, fmt).is_ok())
+}
+
+/// Scan the non-null values for the first that `infer` accepts.
+pub fn infer_from_values<T>(ca: &StringChunked, infer: impl FnMut(&str) -> Option<T>) -> Option<T> {
+    ca.iter().flatten().find_map(infer)
 }
 
 #[cfg(feature = "dtype-datetime")]
@@ -472,64 +460,82 @@ pub fn to_datetime(
     ca: &StringChunked,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    _ambiguous: &StringChunked,
+    ambiguous: &StringChunked,
     // Ensure that the inferred time_zone matches the given time_zone.
     ensure_matching_time_zone: bool,
 ) -> PolarsResult<DatetimeChunked> {
-    match ca.first_non_null() {
-        None => {
-            Ok(Int64Chunked::full_null(ca.name().clone(), ca.len()).into_datetime(tu, tz.cloned()))
-        },
-        Some(idx) => {
-            let subset = ca.slice(idx as i64, ca.len());
-            let pattern = subset
-                .into_iter()
-                .find_map(|opt_val| opt_val.and_then(infer_pattern_datetime_single))
-                .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
-            let mut infer = DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(tu))?;
-            match pattern {
-                #[cfg(feature = "timezones")]
-                Pattern::DatetimeYMDZ => infer.coerce_string(ca).datetime().map(|ca| {
-                    polars_ensure!(
-                        !ensure_matching_time_zone || tz.is_some(),
-                        to_datetime_tz_mismatch
-                    );
+    if ca.null_count() == ca.len() {
+        return Ok(
+            Int64Chunked::full_null(ca.name().clone(), ca.len()).into_datetime(tu, tz.cloned())
+        );
+    }
 
-                    let mut ca = ca.clone();
-                    // `tz` has already been validated.
-                    ca.set_time_unit_and_time_zone(tu, tz.cloned().unwrap_or(TimeZone::UTC))?;
-                    Ok(ca)
-                })?,
-                _ => infer.coerce_string(ca).datetime().map(|ca| {
-                    let mut ca = ca.clone();
-                    ca.set_time_unit(tu);
-                    match tz {
-                        #[cfg(feature = "timezones")]
-                        Some(tz) => polars_ops::prelude::replace_time_zone(
-                            &ca,
-                            Some(tz),
-                            _ambiguous,
-                            NonExistent::Raise,
-                        ),
-                        _ => Ok(ca),
-                    }
-                })?,
+    let pattern = infer_from_values(ca, infer_pattern_datetime_single)
+        .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
+    let mut infer = DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(tu))?;
+    #[cfg(feature = "timezones")]
+    if matches!(pattern, Pattern::DatetimeYMDZ) {
+        polars_ensure!(
+            !ensure_matching_time_zone || tz.is_some(),
+            to_datetime_tz_mismatch
+        );
+    }
+    coerce_string_to_datetime(&mut infer, ca, tz, ambiguous)
+}
+/// Apply a pre-built `DatetimeInfer<Int32Type>` to a `StringChunked`, returning a `DateChunked`.
+#[cfg(feature = "dtype-date")]
+pub fn coerce_string_to_date(
+    infer: &mut DatetimeInfer<Int32Type>,
+    ca: &StringChunked,
+) -> PolarsResult<DateChunked> {
+    infer.coerce_string(ca).date().cloned()
+}
+
+/// Apply a pre-built `DatetimeInfer<Int64Type>` to a `StringChunked`, applying tz handling,
+/// returning a `DatetimeChunked`. Mirrors the post-`coerce_string` logic in `to_datetime`.
+#[cfg(feature = "dtype-datetime")]
+pub fn coerce_string_to_datetime(
+    infer: &mut DatetimeInfer<Int64Type>,
+    ca: &StringChunked,
+    tz: Option<&TimeZone>,
+    ambiguous: &StringChunked,
+) -> PolarsResult<DatetimeChunked> {
+    let DataType::Datetime(tu, _) = &infer.logical_type else {
+        unreachable!()
+    };
+    let tu = *tu;
+    match infer.pattern {
+        #[cfg(feature = "timezones")]
+        Pattern::DatetimeYMDZ => infer.coerce_string(ca).datetime().map(|ca| {
+            let mut ca = ca.clone();
+            ca.set_time_unit_and_time_zone(tu, tz.cloned().unwrap_or(TimeZone::UTC))?;
+            Ok(ca)
+        })?,
+        _ => infer.coerce_string(ca).datetime().map(|ca| {
+            let mut ca = ca.clone();
+            ca.set_time_unit(tu);
+            match tz {
+                #[cfg(feature = "timezones")]
+                Some(tz) => polars_ops::prelude::replace_time_zone(
+                    &ca,
+                    Some(tz),
+                    ambiguous,
+                    NonExistent::Raise,
+                ),
+                _ => Ok(ca),
             }
-        },
+        })?,
     }
 }
+
 #[cfg(feature = "dtype-date")]
 pub(crate) fn to_date(ca: &StringChunked) -> PolarsResult<DateChunked> {
-    match ca.first_non_null() {
-        None => Ok(Int32Chunked::full_null(ca.name().clone(), ca.len()).into_date()),
-        Some(idx) => {
-            let subset = ca.slice(idx as i64, ca.len());
-            let pattern = subset
-                .into_iter()
-                .find_map(|opt_val| opt_val.and_then(infer_pattern_date_single))
-                .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
-            let mut infer = DatetimeInfer::<Int32Type>::try_from_with_unit(pattern, None).unwrap();
-            infer.coerce_string(ca).date().cloned()
-        },
+    if ca.null_count() == ca.len() {
+        return Ok(Int32Chunked::full_null(ca.name().clone(), ca.len()).into_date());
     }
+
+    let pattern = infer_from_values(ca, infer_pattern_date_single)
+        .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
+    let mut infer = DatetimeInfer::<Int32Type>::try_from_with_unit(pattern, None).unwrap();
+    coerce_string_to_date(&mut infer, ca)
 }

@@ -10,6 +10,7 @@ if TYPE_CHECKING:
         DefaultFieldValues,
         DeletionFiles,
         SchemaDict,
+        StorageOptionsDict,
     )
     from polars.dataframe.frame import DataFrame
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
@@ -18,8 +19,7 @@ if TYPE_CHECKING:
 from dataclasses import dataclass
 
 
-# TODO: Add `kw_only=True` after 3.9 support dropped
-@dataclass
+@dataclass(kw_only=True)
 class ScanOptions:
     """
     Holds scan options that are generic over scan type.
@@ -49,9 +49,8 @@ class ScanOptions:
     cache: bool = True
 
     # Cloud
-    storage_options: list[tuple[str, str]] | None = None
+    storage_options: StorageOptionsDict | None = None
     credential_provider: CredentialProviderBuilder | None = None
-    retries: int = 2
 
     column_mapping: ColumnMapping | None = None
     default_values: DefaultFieldValues | None = None

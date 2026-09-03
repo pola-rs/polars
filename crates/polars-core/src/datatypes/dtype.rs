@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use arrow::datatypes::{
@@ -14,6 +15,8 @@ pub use temporal::time_zone::TimeZone;
 use super::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_physical_type;
+#[cfg(feature = "dtype-extension")]
+pub use crate::datatypes::extension::ExtensionTypeInstance;
 use crate::utils::materialize_dyn_int;
 
 pub trait MetaDataExt: IntoMetadata {
@@ -83,7 +86,7 @@ impl UnknownKind {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, strum_macros::IntoStaticStr)]
 pub enum DataType {
     Boolean,
     UInt8,
@@ -96,6 +99,7 @@ pub enum DataType {
     Int32,
     Int64,
     Int128,
+    Float16,
     Float32,
     Float64,
     /// Fixed point decimal type optional precision and non-negative scale.
@@ -134,14 +138,10 @@ pub enum DataType {
     Enum(Arc<FrozenCategories>, Arc<CategoricalMapping>),
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
+    #[cfg(feature = "dtype-extension")]
+    Extension(ExtensionTypeInstance, Box<DataType>),
     // some logical types we cannot know statically, e.g. Datetime
     Unknown(UnknownKind),
-}
-
-impl Default for DataType {
-    fn default() -> Self {
-        DataType::Unknown(UnknownKind::Any)
-    }
 }
 
 pub trait AsRefDataType {
@@ -179,6 +179,10 @@ impl PartialEq for DataType {
                 (Array(left_inner, left_width), Array(right_inner, right_width)) => {
                     left_width == right_width && left_inner == right_inner
                 },
+                #[cfg(feature = "dtype-extension")]
+                (Extension(ext_l, storage_l), Extension(ext_r, storage_r)) => {
+                    ext_l == ext_r && storage_l == storage_r
+                },
                 (Unknown(l), Unknown(r)) => match (l, r) {
                     (UnknownKind::Int(_), UnknownKind::Int(_)) => true,
                     _ => l == r,
@@ -202,6 +206,32 @@ impl DataType {
             DataType::UInt64
         }
     };
+
+    pub fn pretty_format(&self) -> String {
+        match self {
+            #[cfg(feature = "dtype-struct")]
+            Self::Struct(fields) => {
+                let formatted_fields = fields
+                    .iter()
+                    .map(|field| format!("{}: {}", field.name, field.dtype.pretty_format()))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                format!("struct {{{}}}", formatted_fields)
+            },
+            Self::List(inner_dtype) => {
+                let formatted_dtype = inner_dtype.pretty_format();
+                format!("list[{}]", formatted_dtype)
+            },
+            #[cfg(feature = "dtype-array")]
+            Self::Array(inner_dtype, size) => {
+                let formatted_dtype = inner_dtype.pretty_format();
+                format!("array[{}, {}]", formatted_dtype, size)
+            },
+            _ => {
+                format!("{}", self)
+            },
+        }
+    }
 
     pub fn value_within_range(&self, other: AnyValue) -> bool {
         use DataType::*;
@@ -373,6 +403,28 @@ impl DataType {
         }
     }
 
+    /// Map all leaf types of nested dtypes (list, array, struct) using the
+    /// supplied function.
+    pub fn map_leaves<F: FnMut(DataType) -> DataType>(self, f: &mut F) -> DataType {
+        use DataType::*;
+        match self {
+            List(inner) => List(Box::new(inner.map_leaves(f))),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, size) => Array(Box::new(inner.map_leaves(f)), size),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => {
+                let new_fields = fields
+                    .into_iter()
+                    .map(|fld| Field::new(fld.name, fld.dtype.map_leaves(f)))
+                    .collect();
+                Struct(new_fields)
+            },
+            #[cfg(feature = "dtype-extension")]
+            Extension(ext, storage) => Extension(ext, Box::new(storage.map_leaves(f))),
+            _ => f(self),
+        }
+    }
+
     /// Return whether the cast to `to` makes sense.
     ///
     /// If it `None`, we are not sure.
@@ -393,6 +445,10 @@ impl DataType {
             #[cfg(feature = "dtype-categorical")]
             (D::Categorical(_, _) | D::Enum(_, _), D::Binary)
             | (D::Binary, D::Categorical(_, _) | D::Enum(_, _)) => false, // TODO @ cat-rework: why can we not cast to Binary?
+
+            #[cfg(feature = "dtype-categorical")]
+            (D::Categorical(_, _) | D::Enum(_, _), D::String)
+            | (D::String, D::Categorical(_, _) | D::Enum(_, _)) => true,
 
             #[cfg(feature = "object")]
             (D::Object(_), D::Object(_)) => true,
@@ -466,6 +522,50 @@ impl DataType {
                     .collect();
                 Struct(new_fields)
             },
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.to_physical(),
+            _ => self.clone(),
+        }
+    }
+
+    /// Bytes one value of this type takes, or `None` when that depends on the
+    /// value.
+    #[must_use]
+    pub fn byte_width(&self) -> Option<f64> {
+        use DataType::*;
+        Some(match self {
+            Null => 0.0,
+            Boolean => 1.0 / 8.0,
+            Int8 | UInt8 => 1.0,
+            Int16 | UInt16 | Float16 => 2.0,
+            Int32 | UInt32 | Float32 | Date => 4.0,
+            Int64 | UInt64 | Float64 | Datetime(_, _) | Duration(_) | Time => 8.0,
+            Int128 | UInt128 => 16.0,
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => 16.0,
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(cats, _) => cats.physical().dtype().byte_width()?,
+            #[cfg(feature = "dtype-categorical")]
+            Enum(fcats, _) => fcats.physical().dtype().byte_width()?,
+            #[cfg(feature = "dtype-array")]
+            Array(inner, width) => inner.byte_width()? * (*width as f64),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields
+                .iter()
+                .map(|f| f.dtype().byte_width())
+                .sum::<Option<f64>>()?,
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.byte_width()?,
+            _ => return None,
+        })
+    }
+
+    #[must_use]
+    pub fn to_storage(&self) -> DataType {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.to_storage(),
             _ => self.clone(),
         }
     }
@@ -523,7 +623,16 @@ impl DataType {
     }
 
     pub fn is_nested(&self) -> bool {
-        self.is_list() || self.is_struct() || self.is_array()
+        match self {
+            DataType::List(_) => true,
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, _) => true,
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => true,
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(_, storage) => storage.is_nested(),
+            _ => false,
+        }
     }
 
     /// Check if this [`DataType`] is a struct
@@ -585,7 +694,7 @@ impl DataType {
         use DataType::*;
         match self {
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, _) | Enum(_, _) => true,
+            Categorical(_, _) => true,
             List(inner) => inner.contains_categoricals(),
             #[cfg(feature = "dtype-array")]
             Array(inner, _) => inner.contains_categoricals(),
@@ -593,6 +702,20 @@ impl DataType {
             Struct(fields) => fields
                 .iter()
                 .any(|field| field.dtype.contains_categoricals()),
+            _ => false,
+        }
+    }
+
+    pub fn contains_enums(&self) -> bool {
+        use DataType::*;
+        match self {
+            #[cfg(feature = "dtype-categorical")]
+            Enum(_, _) => true,
+            List(inner) => inner.contains_enums(),
+            #[cfg(feature = "dtype-array")]
+            Array(inner, _) => inner.contains_enums(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields.iter().any(|field| field.dtype.contains_enums()),
             _ => false,
         }
     }
@@ -638,6 +761,23 @@ impl DataType {
         }
     }
 
+    pub fn contains_dtype_recursive(&self, dtype: &DataType) -> bool {
+        if self == dtype {
+            return true;
+        }
+        use DataType as D;
+        match self {
+            D::List(inner) => inner.contains_dtype_recursive(dtype),
+            #[cfg(feature = "dtype-array")]
+            D::Array(inner, _) => inner.contains_dtype_recursive(dtype),
+            #[cfg(feature = "dtype-struct")]
+            D::Struct(fields) => fields
+                .iter()
+                .any(|field| field.dtype.contains_dtype_recursive(dtype)),
+            _ => false,
+        }
+    }
+
     /// Check if type is sortable
     pub fn is_ord(&self) -> bool {
         let phys = self.to_physical();
@@ -663,7 +803,10 @@ impl DataType {
     pub fn is_float(&self) -> bool {
         matches!(
             self,
-            DataType::Float32 | DataType::Float64 | DataType::Unknown(UnknownKind::Float)
+            DataType::Float16
+                | DataType::Float32
+                | DataType::Float64
+                | DataType::Unknown(UnknownKind::Float)
         )
     }
 
@@ -730,9 +873,30 @@ impl DataType {
         }
     }
 
+    pub fn is_extension(&self) -> bool {
+        #[cfg(feature = "dtype-extension")]
+        {
+            matches!(self, DataType::Extension(_, _))
+        }
+        #[cfg(not(feature = "dtype-extension"))]
+        {
+            false
+        }
+    }
+
     /// Convert to an Arrow Field.
     pub fn to_arrow_field(&self, name: PlSmallStr, compat_level: CompatLevel) -> ArrowField {
-        let metadata = match self {
+        let field = ArrowField::new(name, self.to_arrow(compat_level), true);
+
+        if let Some(metadata) = self.to_arrow_field_metadata() {
+            field.with_metadata(metadata)
+        } else {
+            field
+        }
+    }
+
+    pub fn to_arrow_field_metadata(&self) -> Option<Metadata> {
+        match self {
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(fcats, _map) => {
                 let cats = fcats.categories();
@@ -772,15 +936,9 @@ impl DataType {
                 PlSmallStr::from_static(PL_KEY),
                 PlSmallStr::from_static(MAINTAIN_PL_TYPE),
             )])),
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(_ext, storage) => storage.to_arrow_field_metadata(),
             _ => None,
-        };
-
-        let field = ArrowField::new(name, self.to_arrow(compat_level), true);
-
-        if let Some(metadata) = metadata {
-            field.with_metadata(metadata)
-        } else {
-            field
         }
     }
 
@@ -798,11 +956,12 @@ impl DataType {
             UInt32 => Scalar::from(u32::MAX),
             UInt64 => Scalar::from(u64::MAX),
             UInt128 => Scalar::from(u128::MAX),
+            Float16 => Scalar::from(pf16::INFINITY),
             Float32 => Scalar::from(f32::INFINITY),
             Float64 => Scalar::from(f64::INFINITY),
             #[cfg(feature = "dtype-time")]
             Time => Scalar::new(Time, AnyValue::Time(NS_IN_DAY - 1)),
-            dt => polars_bail!(ComputeError: "cannot determine upper bound for dtype `{}`", dt),
+            dt => polars_bail!(ComputeError: "cannot determine upper bound for dtype `{dt}`"),
         };
         Ok(v)
     }
@@ -821,6 +980,7 @@ impl DataType {
             UInt32 => Scalar::from(u32::MIN),
             UInt64 => Scalar::from(u64::MIN),
             UInt128 => Scalar::from(u128::MIN),
+            Float16 => Scalar::from(pf16::NEG_INFINITY),
             Float32 => Scalar::from(f32::NEG_INFINITY),
             Float64 => Scalar::from(f64::NEG_INFINITY),
             #[cfg(feature = "dtype-time")]
@@ -851,6 +1011,7 @@ impl DataType {
             Int32 => Ok(ArrowDataType::Int32),
             Int64 => Ok(ArrowDataType::Int64),
             Int128 => Ok(ArrowDataType::Int128),
+            Float16 => Ok(ArrowDataType::Float16),
             Float32 => Ok(ArrowDataType::Float32),
             Float64 => Ok(ArrowDataType::Float64),
             #[cfg(feature = "dtype-decimal")]
@@ -882,9 +1043,10 @@ impl DataType {
             Duration(unit) => Ok(ArrowDataType::Duration(unit.to_arrow())),
             Time => Ok(ArrowDataType::Time64(ArrowTimeUnit::Nanosecond)),
             #[cfg(feature = "dtype-array")]
-            Array(dt, size) => Ok(dt
-                .try_to_arrow(compat_level)?
-                .to_fixed_size_list(*size, true)),
+            Array(dt, width) => Ok(ArrowDataType::FixedSizeList(
+                Box::new(dt.to_arrow_field(LIST_VALUES_NAME, compat_level)),
+                *width,
+            )),
             List(dt) => Ok(ArrowDataType::LargeList(Box::new(
                 dt.to_arrow_field(LIST_VALUES_NAME, compat_level),
             ))),
@@ -908,7 +1070,7 @@ impl DataType {
                 Ok(ArrowDataType::Dictionary(
                     arrow_phys,
                     Box::new(values),
-                    false,
+                    matches!(self, Enum(_, _)),
                 ))
             },
             #[cfg(feature = "dtype-struct")]
@@ -920,6 +1082,14 @@ impl DataType {
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
+            #[cfg(feature = "dtype-extension")]
+            Extension(typ, inner) => Ok(ArrowDataType::Extension(Box::new(
+                arrow::datatypes::ExtensionType {
+                    name: typ.name().into(),
+                    inner: inner.try_to_arrow(compat_level)?,
+                    metadata: typ.serialize_metadata().map(|m| m.into()),
+                },
+            ))),
             Unknown(kind) => {
                 let dt = match kind {
                     UnknownKind::Any => ArrowDataType::Unknown,
@@ -1048,6 +1218,19 @@ impl DataType {
     pub fn is_numeric(&self) -> bool {
         self.is_integer() || self.is_float() || self.is_decimal()
     }
+
+    pub fn numeric_to_unsigned_bit_repr(&self) -> Option<DataType> {
+        use DataType::*;
+
+        Some(match self {
+            Int8 | UInt8 => UInt8,
+            Int16 | UInt16 | Float16 => UInt16,
+            Int32 | UInt32 | Float32 => UInt32,
+            Int64 | UInt64 | Float64 => UInt64,
+            Int128 | UInt128 => UInt128,
+            _ => return None,
+        })
+    }
 }
 
 impl Display for DataType {
@@ -1065,12 +1248,14 @@ impl Display for DataType {
             DataType::Int32 => "i32",
             DataType::Int64 => "i64",
             DataType::Int128 => "i128",
+            DataType::Float16 => "f16",
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(p, s) => return write!(f, "decimal[{p},{s}]"),
             DataType::String => "str",
             DataType::Binary => "binary",
+            DataType::BinaryOffset => "binary[offset]",
             DataType::Date => "date",
             DataType::Datetime(tu, None) => return write!(f, "datetime[{tu}]"),
             DataType::Datetime(tu, Some(tz)) => return write!(f, "datetime[{tu}, {tz}]"),
@@ -1097,13 +1282,14 @@ impl Display for DataType {
             DataType::Enum(_, _) => "enum",
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(typ, _) => return write!(f, "ext[{}]", typ.0.dyn_display()),
             DataType::Unknown(kind) => match kind {
                 UnknownKind::Any => "unknown",
                 UnknownKind::Int(_) => "dyn int",
                 UnknownKind::Float => "dyn float",
                 UnknownKind::Str => "dyn str",
             },
-            DataType::BinaryOffset => "binary[offset]",
         };
         f.write_str(s)
     }
@@ -1124,6 +1310,7 @@ impl std::fmt::Debug for DataType {
             Int32 => write!(f, "Int32"),
             Int64 => write!(f, "Int64"),
             Int128 => write!(f, "Int128"),
+            Float16 => write!(f, "Float16"),
             Float32 => write!(f, "Float32"),
             Float64 => write!(f, "Float64"),
             String => write!(f, "String"),
@@ -1179,6 +1366,8 @@ impl std::fmt::Debug for DataType {
             #[cfg(feature = "object")]
             Object(_) => write!(f, "Object"),
             Null => write!(f, "Null"),
+            #[cfg(feature = "dtype-extension")]
+            Extension(typ, inner) => write!(f, "Extension({}, {inner:?})", typ.0.dyn_debug()),
             Unknown(kind) => write!(f, "Unknown({kind:?})"),
         }
     }
@@ -1289,6 +1478,164 @@ impl CompatLevel {
     #[doc(hidden)]
     pub fn get_level(&self) -> u16 {
         self.0
+    }
+
+    /// Whether this compat level uses Utf8View/BinaryView types.
+    pub fn uses_binview_types(&self) -> bool {
+        *self != CompatLevel::oldest()
+    }
+}
+
+impl DataType {
+    pub fn visit_with(&self, mut visitor_fn: impl FnMut(&DataType)) {
+        self.try_visit_with(|dtype| {
+            visitor_fn(dtype);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    pub fn try_visit_with(
+        &self,
+        mut visitor_fn: impl FnMut(&DataType) -> PolarsResult<()>,
+    ) -> PolarsResult<()> {
+        DataType::try_mutate_with(Cow::Borrowed(self), |dtype| {
+            visitor_fn(dtype.as_ref()).map(|_| dtype)
+        })
+        .map(|_| ())
+    }
+
+    pub fn try_mutate_with<'d>(
+        dtype: Cow<'d, DataType>,
+        mut visitor_fn: impl FnMut(Cow<'d, DataType>) -> PolarsResult<Cow<'d, DataType>>,
+    ) -> PolarsResult<Cow<'d, DataType>> {
+        DtypeVisitor {
+            visitor_fn: &mut visitor_fn,
+        }
+        .visit_rec(dtype)
+    }
+}
+
+struct DtypeVisitor<'d, 'f> {
+    visitor_fn: &'f mut dyn FnMut(Cow<'d, DataType>) -> PolarsResult<Cow<'d, DataType>>,
+}
+
+impl<'d, 'f> DtypeVisitor<'d, 'f> {
+    fn visit_rec(&mut self, dtype: Cow<'d, DataType>) -> PolarsResult<Cow<'d, DataType>> {
+        let dtype = match dtype.as_ref() {
+            DataType::List(_) => match dtype {
+                Cow::Owned(DataType::List(mut inner)) => {
+                    self.visit_ref_mut(inner.as_mut())?;
+                    Cow::Owned(DataType::List(inner))
+                },
+                Cow::Borrowed(DataType::List(inner)) => {
+                    let ret = self.visit_rec(Cow::Borrowed(inner.as_ref()))?;
+
+                    if std::ptr::eq(ret.as_ref(), inner.as_ref()) {
+                        dtype
+                    } else {
+                        Cow::Owned(DataType::List(Box::new(ret.into_owned())))
+                    }
+                },
+                _ => unreachable!(),
+            },
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(..) => match dtype {
+                Cow::Owned(DataType::Array(mut inner, width)) => {
+                    self.visit_ref_mut(inner.as_mut())?;
+                    Cow::Owned(DataType::Array(inner, width))
+                },
+                Cow::Borrowed(DataType::Array(inner, width)) => {
+                    let ret = self.visit_rec(Cow::Borrowed(inner.as_ref()))?;
+
+                    if std::ptr::eq(ret.as_ref(), inner.as_ref()) {
+                        dtype
+                    } else {
+                        Cow::Owned(DataType::Array(Box::new(ret.into_owned()), *width))
+                    }
+                },
+                _ => unreachable!(),
+            },
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => match dtype {
+                Cow::Owned(DataType::Struct(mut fields)) => {
+                    for f in &mut fields {
+                        self.visit_ref_mut(&mut f.dtype)?;
+                    }
+
+                    Cow::Owned(DataType::Struct(fields))
+                },
+                Cow::Borrowed(DataType::Struct(fields)) => {
+                    let mut new_fields = vec![];
+
+                    for (i, f) in fields.iter().enumerate() {
+                        let ret = self.visit_rec(Cow::Borrowed(f.dtype()))?;
+
+                        if std::ptr::eq(ret.as_ref(), f.dtype()) && new_fields.is_empty() {
+                            continue;
+                        }
+
+                        if new_fields.is_empty() {
+                            new_fields.reserve_exact(fields.len());
+                            new_fields.extend(fields.iter().take(i).cloned());
+                        }
+
+                        new_fields.push(Field::new(f.name().clone(), ret.into_owned()));
+                    }
+
+                    if new_fields.is_empty() {
+                        dtype
+                    } else {
+                        assert_eq!(new_fields.len(), fields.len());
+                        Cow::Owned(DataType::Struct(new_fields))
+                    }
+                },
+                _ => unreachable!(),
+            },
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(..) => match dtype {
+                Cow::Owned(DataType::Extension(ext, mut storage)) => {
+                    self.visit_ref_mut(storage.as_mut())?;
+                    Cow::Owned(DataType::Extension(ext, storage))
+                },
+                Cow::Borrowed(DataType::Extension(ext, storage)) => {
+                    let ret = self.visit_rec(Cow::Borrowed(storage.as_ref()))?;
+
+                    if std::ptr::eq(ret.as_ref(), storage.as_ref()) {
+                        dtype
+                    } else {
+                        Cow::Owned(DataType::Extension(ext.clone(), Box::new(ret.into_owned())))
+                    }
+                },
+                _ => unreachable!(),
+            },
+            _ => {
+                debug_assert!(!dtype.is_nested());
+                dtype
+            },
+        };
+
+        (self.visitor_fn)(dtype)
+    }
+
+    /// `dtype` will be set to an unspecified value if this returns an error.
+    fn visit_ref_mut(&mut self, dtype: &mut DataType) -> PolarsResult<()> {
+        *dtype = self
+            .visit_rec(Cow::Owned(std::mem::replace(dtype, DataType::Null)))?
+            .into_owned();
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "dtype-categorical")]
+impl From<CategoricalPhysical> for DataType {
+    fn from(phys: CategoricalPhysical) -> DataType {
+        match phys {
+            CategoricalPhysical::U8 => DataType::UInt8,
+            CategoricalPhysical::U16 => DataType::UInt16,
+            CategoricalPhysical::U32 => DataType::UInt32,
+        }
     }
 }
 

@@ -2,10 +2,10 @@ use ndarray::IntoDimension;
 use num_traits::{Float, NumCast};
 use numpy::npyffi::flags;
 use numpy::{Element, PyArray1};
-use polars_core::prelude::*;
+use polars::prelude::*;
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::{IntoPyObjectExt, intern};
 
 use super::to_numpy_df::df_to_numpy;
 use super::utils::{
@@ -14,6 +14,7 @@ use super::utils::{
 };
 use crate::conversion::ObjectValue;
 use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
+use crate::interned;
 use crate::series::PySeries;
 
 #[pymethods]
@@ -57,7 +58,7 @@ pub(super) fn series_to_numpy(
                     "copy not allowed: cannot create a writable array without copying data",
                 ));
             }
-            arr = arr.call_method0(py, intern!(py, "copy"))?;
+            arr = arr.call_method0(py, interned::COPY.get(py))?;
         }
         return Ok(arr);
     }
@@ -203,6 +204,7 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> Py<P
             let s = s.cast(&DataType::Float64).unwrap();
             series_to_numpy(py, &s, writable, true).unwrap()
         },
+        Float16 => numeric_series_to_numpy::<Float16Type, pf16>(py, s),
         Float32 => numeric_series_to_numpy::<Float32Type, f32>(py, s),
         Float64 => numeric_series_to_numpy::<Float64Type, f64>(py, s),
         Boolean => boolean_series_to_numpy(py, s),
@@ -285,6 +287,7 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> Py<P
             let values = std::iter::repeat_n(f32::NAN, n);
             PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
+        Extension(_, _) => series_to_numpy_with_copy(py, s.ext().unwrap().storage(), writable),
         Unknown(_) | BinaryOffset => unreachable!(),
     }
 }
@@ -316,7 +319,7 @@ where
 fn boolean_series_to_numpy(py: Python<'_>, s: &Series) -> Py<PyAny> {
     let ca = s.bool().unwrap();
     if s.null_count() == 0 {
-        let values = ca.into_no_null_iter();
+        let values = ca.no_null_iter();
         PyArray1::<bool>::from_iter(py, values)
             .into_py_any(py)
             .unwrap()

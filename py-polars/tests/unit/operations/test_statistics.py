@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from datetime import timedelta
-from typing import cast
+import math
+from datetime import date, timedelta
 
 import pytest
+from hypothesis import given
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import series
 
 
 def test_corr() -> None:
@@ -21,9 +23,10 @@ def test_corr() -> None:
             "b": [-1, 23, 8],
         }
     )
-    result = df.corr()
+    result = df.corr(label="")
     expected = pl.DataFrame(
         {
+            "": ["a", "b"],
             "a": [1.0, 0.18898223650461357],
             "b": [0.1889822365046136, 1.0],
         }
@@ -67,7 +70,10 @@ def test_cov_corr_f32_type() -> None:
 def test_cov(fruits_cars: pl.DataFrame) -> None:
     ldf = fruits_cars.lazy()
     for cov_ab in (pl.cov(pl.col("A"), pl.col("B")), pl.cov("A", "B")):
-        assert cast(float, ldf.select(cov_ab).collect().item()) == -2.5
+        assert_series_equal(
+            ldf.select(cov_ab).collect().to_series(),
+            pl.Series("A", [-2.5], pl.Float64()),
+        )
 
 
 def test_std(fruits_cars: pl.DataFrame) -> None:
@@ -112,6 +118,61 @@ def test_quantile(fruits_cars: pl.DataFrame) -> None:
     assert fruits_cars.select(pl.col("A").quantile(0.24, "linear"))["A"][0] == 1.96
 
 
+def test_quantile_list_schema_29030() -> None:
+    lf = pl.LazyFrame({"a": [1.0, 2.0, 3.0]})
+
+    # list of quantiles -> List(Float64), schema must match the materialized result
+    q_list = lf.select(pl.col("a").quantile([0.1, 0.5, 0.9]))
+    assert q_list.collect_schema() == q_list.collect().schema
+    assert q_list.collect_schema()["a"] == pl.List(pl.Float64)
+
+    # single quantile -> plain Float64, must not regress
+    q_scalar = lf.select(pl.col("a").quantile(0.5))
+    assert q_scalar.collect_schema() == q_scalar.collect().schema
+    assert q_scalar.collect_schema()["a"] == pl.Float64
+
+    # a single-element list is still list-shaped output, not scalar
+    q_single_elem_list = lf.select(pl.col("a").quantile([0.5]))
+    assert q_single_elem_list.collect_schema() == q_single_elem_list.collect().schema
+    assert q_single_elem_list.collect_schema()["a"] == pl.List(pl.Float64)
+
+    # empty list of quantiles -> List(Float64) with an empty list per row
+    q_empty_list = lf.select(pl.col("a").quantile([]))
+    assert q_empty_list.collect_schema() == q_empty_list.collect().schema
+    assert q_empty_list.collect_schema()["a"] == pl.List(pl.Float64)
+
+
+@pytest.mark.parametrize(
+    ("values", "quantile_input", "expected_dtype"),
+    [
+        ([1, 2, 3], [0.25, 0.75], pl.List(pl.Float64)),
+        ([1, 2, 3], 0.5, pl.Float64),
+        (
+            [date(2020, 1, 1), date(2020, 6, 1), date(2021, 1, 1)],
+            [0.25, 0.75],
+            pl.List(pl.Datetime("us")),
+        ),
+        (
+            [timedelta(days=1), timedelta(days=2), timedelta(days=3)],
+            [0.25, 0.75],
+            pl.List(pl.Duration("us")),
+        ),
+    ],
+)
+def test_quantile_schema_dtypes_29030(
+    values: list[object],
+    quantile_input: float | list[float],
+    expected_dtype: pl.DataType,
+) -> None:
+    # moment_dtype()'s per-dtype mapping (numeric -> Float64, Date -> Datetime,
+    # Duration preserved, ...) must still apply correctly when the result is
+    # wrapped in List for a list of quantiles.
+    lf = pl.LazyFrame({"a": values})
+    q = lf.select(pl.col("a").quantile(quantile_input))
+    assert q.collect_schema() == q.collect().schema
+    assert q.collect_schema()["a"] == expected_dtype
+
+
 def test_count() -> None:
     lf = pl.LazyFrame(
         {
@@ -148,3 +209,57 @@ def test_kurtosis_same_vals() -> None:
 def test_correction_shape_mismatch_22080() -> None:
     with pytest.raises(pl.exceptions.ShapeError):
         pl.select(pl.corr(pl.Series([1, 2]), pl.Series([2, 3, 5])))
+
+
+def test_corr_cov_lit_produces_zero_nan_26633() -> None:
+    df = pl.DataFrame({"a": [1, 3, 2]})
+    result_corr = df.select(pl.corr(pl.lit(1), "a"))
+    assert math.isnan(result_corr.item())
+    result_cov = df.select(pl.cov(pl.lit(1), "a"))
+    assert math.isclose(result_cov.item(), 0.0)
+
+
+_NUMERIC_DTYPES = [
+    pl.Int8,
+    pl.Int16,
+    pl.Int32,
+    pl.UInt8,
+    pl.UInt16,
+    pl.UInt32,
+    pl.Float32,
+    pl.Float64,
+    pl.Decimal,
+]
+
+
+@given(
+    s=series(allowed_dtypes=_NUMERIC_DTYPES, min_size=1),
+)
+@pytest.mark.parametrize("bias", [False, True])
+def test_skew_streaming_matches_in_memory(s: pl.Series, bias: bool) -> None:
+    df = s.to_frame("a")
+    in_memory = df.lazy().select(pl.col("a").skew(bias=bias)).collect()
+    streaming = (
+        df.lazy().select(pl.col("a").skew(bias=bias)).collect(engine="streaming")
+    )
+    assert_frame_equal(in_memory, streaming, rel_tol=1e-5)
+
+
+@given(
+    s=series(allowed_dtypes=_NUMERIC_DTYPES, min_size=1),
+)
+@pytest.mark.parametrize("fisher", [False, True])
+@pytest.mark.parametrize("bias", [False, True])
+def test_kurtosis_streaming_matches_in_memory(
+    s: pl.Series, fisher: bool, bias: bool
+) -> None:
+    df = s.to_frame("a")
+    in_memory = (
+        df.lazy().select(pl.col("a").kurtosis(fisher=fisher, bias=bias)).collect()
+    )
+    streaming = (
+        df.lazy()
+        .select(pl.col("a").kurtosis(fisher=fisher, bias=bias))
+        .collect(engine="streaming")
+    )
+    assert_frame_equal(in_memory, streaming, rel_tol=1e-5)

@@ -11,6 +11,43 @@ fn config() -> bincode::config::Configuration {
         .with_variable_int_encoding()
 }
 
+/// One type for both branches, so the serde machinery is monomorphized once.
+enum MaybeCompressedWriter<W: std::io::Write> {
+    Plain(W),
+    Zlib(flate2::write::ZlibEncoder<W>),
+}
+
+impl<W: std::io::Write> std::io::Write for MaybeCompressedWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Plain(w) => w.write(buf),
+            Self::Zlib(w) => w.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Plain(w) => w.flush(),
+            Self::Zlib(w) => w.flush(),
+        }
+    }
+}
+
+/// See [`MaybeCompressedWriter`].
+enum MaybeCompressedReader<R: std::io::Read> {
+    Plain(R),
+    Zlib(flate2::read::ZlibDecoder<R>),
+}
+
+impl<R: std::io::Read> std::io::Read for MaybeCompressedReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Plain(r) => r.read(buf),
+            Self::Zlib(r) => r.read(buf),
+        }
+    }
+}
+
 fn serialize_impl<W, T, const FC: bool>(mut writer: W, value: &T) -> PolarsResult<()>
 where
     W: std::io::Write,
@@ -60,12 +97,15 @@ impl SerializeOptions {
         W: std::io::Write,
         T: serde::ser::Serialize,
     {
-        if self.compression {
-            let writer = flate2::write::ZlibEncoder::new(writer, flate2::Compression::fast());
-            serialize_impl::<_, _, FC>(writer, value)
+        let writer = if self.compression {
+            MaybeCompressedWriter::Zlib(flate2::write::ZlibEncoder::new(
+                writer,
+                flate2::Compression::fast(),
+            ))
         } else {
-            serialize_impl::<_, _, FC>(writer, value)
-        }
+            MaybeCompressedWriter::Plain(writer)
+        };
+        serialize_impl::<_, _, FC>(writer, value)
     }
 
     pub fn deserialize_from_reader<T, R, const FC: bool>(&self, reader: R) -> PolarsResult<T>
@@ -73,11 +113,12 @@ impl SerializeOptions {
         T: serde::de::DeserializeOwned,
         R: std::io::Read,
     {
-        if self.compression {
-            deserialize_impl::<_, _, FC>(flate2::read::ZlibDecoder::new(reader))
+        let reader = if self.compression {
+            MaybeCompressedReader::Zlib(flate2::read::ZlibDecoder::new(reader))
         } else {
-            deserialize_impl::<_, _, FC>(reader)
-        }
+            MaybeCompressedReader::Plain(reader)
+        };
+        deserialize_impl::<_, _, FC>(reader)
     }
 
     pub fn serialize_to_bytes<T, const FC: bool>(&self, value: &T) -> PolarsResult<Vec<u8>>
@@ -104,7 +145,7 @@ where
     W: std::io::Write,
     T: serde::ser::Serialize,
 {
-    serialize_impl::<_, _, FC>(writer, value)
+    serialize_impl::<_, _, FC>(MaybeCompressedWriter::Plain(writer), value)
 }
 
 pub fn deserialize_from_reader<T, R, const FC: bool>(reader: R) -> PolarsResult<T>
@@ -112,7 +153,7 @@ where
     T: serde::de::DeserializeOwned,
     R: std::io::Read,
 {
-    deserialize_impl::<_, _, FC>(reader)
+    deserialize_impl::<_, _, FC>(MaybeCompressedReader::Plain(reader))
 }
 
 pub fn serialize_to_bytes<T, const FC: bool>(value: &T) -> PolarsResult<Vec<u8>>
@@ -237,6 +278,7 @@ pub fn python_object_serialize(
             }
         }
         .extract::<PyBackedBytes>()
+        .map_err(pyo3::PyErr::from)
     })?;
 
     // Write pickle metadata

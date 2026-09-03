@@ -34,7 +34,7 @@ impl TreeWalker for Expr {
         f: &mut F,
         _arena: &mut Self::Arena,
     ) -> PolarsResult<Self> {
-        use polars_utils::functions::try_arc_map as am;
+        use polars_utils::arc::try_arc_map as am;
         let mut f = |expr| f(expr, &mut ());
         use AggExpr::*;
         use Expr::*;
@@ -51,7 +51,12 @@ impl TreeWalker for Expr {
             },
             Cast { expr, dtype, options: strict } => Cast { expr: am(expr, f)?, dtype, options: strict },
             Sort { expr, options } => Sort { expr: am(expr, f)?, options },
-            Gather { expr, idx, returns_scalar } => Gather { expr: am(expr, &mut f)?, idx: am(idx, f)?, returns_scalar },
+            Gather { expr, idx, returns_scalar, null_on_oob } => Gather {
+                expr: am(expr, &mut f)?,
+                idx: am(idx, f)?,
+                returns_scalar,
+                null_on_oob,
+            },
             SortBy { expr, by, sort_options } => SortBy { expr: am(expr, &mut f)?, by: by.into_iter().map(f).collect::<Result<_, _>>()?, sort_options },
             Agg(agg_expr) => Agg(match agg_expr {
                 Min { input, propagate_nans } => Min { input: am(input, f)?, propagate_nans },
@@ -59,33 +64,48 @@ impl TreeWalker for Expr {
                 Median(x) => Median(am(x, f)?),
                 NUnique(x) => NUnique(am(x, f)?),
                 First(x) => First(am(x, f)?),
+                FirstNonNull(x) => FirstNonNull(am(x, f)?),
                 Last(x) => Last(am(x, f)?),
+                LastNonNull(x) => LastNonNull(am(x, f)?),
+                Item { input, allow_empty } => Item { input: am(input, f)?, allow_empty },
                 Mean(x) => Mean(am(x, f)?),
-                Implode(x) => Implode(am(x, f)?),
+                Implode { input, maintain_order } => Implode { input: am(input, f)?, maintain_order },
                 Count { input, include_nulls } => Count { input: am(input, f)?, include_nulls },
-                Quantile { expr, quantile, method: interpol } => Quantile { expr: am(expr, &mut f)?, quantile: am(quantile, f)?, method: interpol },
                 Sum(x) => Sum(am(x, f)?),
-                AggGroups(x) => AggGroups(am(x, f)?),
                 Std(x, ddf) => Std(am(x, f)?, ddf),
                 Var(x, ddf) => Var(am(x, f)?, ddf),
+
             }),
             Ternary { predicate, truthy, falsy } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)? },
             Function { input, function } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function },
-            Explode { input, skip_empty } => Explode { input: am(input, f)?, skip_empty },
+            Explode { input, options } => Explode { input: am(input, f)?, options },
             Filter { input, by } => Filter { input: am(input, &mut f)?, by: am(by, f)? },
-            Window { function, partition_by, order_by, options } => {
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling { function, index_column, period, offset, closed_window  } => Rolling { function: am(function, &mut f)?, index_column: am(index_column, &mut f)?, period, offset, closed_window  },
+            Over { function, partition_by, order_by, mapping } => {
                 let partition_by = partition_by.into_iter().map(&mut f).collect::<Result<_, _>>()?;
-                Window { function: am(function, f)?, partition_by, order_by, options }
+                let order_by = match order_by {
+                    Some((by, options)) => Some((am(by, &mut f)?, options)),
+                    None => None,
+                };
+                Over { function: am(function, f)?, partition_by, order_by, mapping }
             },
             Slice { input, offset, length } => Slice { input: am(input, &mut f)?, offset: am(offset, &mut f)?, length: am(length, f)? },
             KeepName(expr) => KeepName(am(expr, f)?),
             Element => Element,
             Len => Len,
             RenameAlias { function, expr } => RenameAlias { function, expr: am(expr, f)? },
+            Display { inputs,  fmt_str } => {
+                Display { inputs: inputs.into_iter().map(f).collect::<Result<_, _>>()?, fmt_str }
+            },
             AnonymousFunction { input, function, options, fmt_str } => {
                 AnonymousFunction { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options, fmt_str }
             },
             Eval { expr: input, evaluation, variant } => Eval { expr: am(input, &mut f)?, evaluation: am(evaluation, f)?, variant },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr: input, evaluation } => {
+                StructEval { expr: am(input, &mut f)?, evaluation: evaluation.into_iter().map(f).collect::<Result<_, _>>()?  }
+            },
             SubPlan(_, _) => self,
             Selector(_) => self,
         };
@@ -149,80 +169,6 @@ impl Debug for AExprArena<'_> {
     }
 }
 
-impl AExpr {
-    fn is_equal_node(&self, other: &Self) -> bool {
-        use AExpr::*;
-        match (self, other) {
-            (Column(l), Column(r)) => l == r,
-            (Literal(l), Literal(r)) => l == r,
-            (Window { options: l, .. }, Window { options: r, .. }) => l == r,
-            (
-                Cast {
-                    options: strict_l,
-                    dtype: dtl,
-                    ..
-                },
-                Cast {
-                    options: strict_r,
-                    dtype: dtr,
-                    ..
-                },
-            ) => strict_l == strict_r && dtl == dtr,
-            (Sort { options: l, .. }, Sort { options: r, .. }) => l == r,
-            (Gather { .. }, Gather { .. })
-            | (Filter { .. }, Filter { .. })
-            | (Ternary { .. }, Ternary { .. })
-            | (Len, Len)
-            | (Slice { .. }, Slice { .. }) => true,
-            (
-                Explode {
-                    expr: _,
-                    skip_empty: l_skip_empty,
-                },
-                Explode {
-                    expr: _,
-                    skip_empty: r_skip_empty,
-                },
-            ) => l_skip_empty == r_skip_empty,
-            (
-                SortBy {
-                    sort_options: l_sort_options,
-                    ..
-                },
-                SortBy {
-                    sort_options: r_sort_options,
-                    ..
-                },
-            ) => l_sort_options == r_sort_options,
-            (Agg(l), Agg(r)) => l.equal_nodes(r),
-            (
-                Function {
-                    input: il,
-                    function: fl,
-                    options: ol,
-                },
-                Function {
-                    input: ir,
-                    function: fr,
-                    options: or,
-                },
-            ) => {
-                fl == fr && ol == or && {
-                    let mut all_same_name = true;
-                    for (l, r) in il.iter().zip(ir) {
-                        all_same_name &= l.output_name() == r.output_name()
-                    }
-
-                    all_same_name
-                }
-            },
-            (AnonymousFunction { .. }, AnonymousFunction { .. }) => false,
-            (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
-            _ => false,
-        }
-    }
-}
-
 impl<'a> AExprArena<'a> {
     pub fn new(node: Node, arena: &'a Arena<AExpr>) -> Self {
         Self { node, arena }
@@ -230,40 +176,12 @@ impl<'a> AExprArena<'a> {
     pub fn to_aexpr(&self) -> &'a AExpr {
         self.arena.get(self.node)
     }
-
-    // Check single node on equality
-    pub fn is_equal_single(&self, other: &Self) -> bool {
-        let self_ae = self.to_aexpr();
-        let other_ae = other.to_aexpr();
-        self_ae.is_equal_node(other_ae)
-    }
 }
 
 impl PartialEq for AExprArena<'_> {
     fn eq(&self, other: &Self) -> bool {
-        let mut scratch1 = unitvec![];
-        let mut scratch2 = unitvec![];
-
-        scratch1.push(self.node);
-        scratch2.push(other.node);
-
-        loop {
-            match (scratch1.pop(), scratch2.pop()) {
-                (Some(l), Some(r)) => {
-                    let l = Self::new(l, self.arena);
-                    let r = Self::new(r, other.arena);
-
-                    if !l.is_equal_single(&r) {
-                        return false;
-                    }
-
-                    l.to_aexpr().inputs_rev(&mut scratch1);
-                    r.to_aexpr().inputs_rev(&mut scratch2);
-                },
-                (None, None) => return true,
-                _ => return false,
-            }
-        }
+        self.to_aexpr()
+            .is_expr_equal_to(other.to_aexpr(), self.arena)
     }
 }
 

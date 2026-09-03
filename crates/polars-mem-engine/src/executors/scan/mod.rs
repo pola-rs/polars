@@ -8,8 +8,8 @@ use polars_utils::slice_enum::Slice;
 #[cfg(feature = "python")]
 pub(crate) use self::python_scan::*;
 use super::*;
-use crate::ScanPredicate;
 use crate::prelude::*;
+use crate::scan_predicate::ScanPredicate;
 
 /// Producer of an in memory DataFrame
 pub struct DataFrameExec {
@@ -59,30 +59,24 @@ impl Executor for AnonymousScanExec {
         }
 
         match (self.function.allows_predicate_pushdown(), &self.predicate) {
-            (true, Some(predicate)) => state.record(
-                || {
-                    args.predicate = predicate.predicate.as_expression().cloned();
-                    self.function.scan(args)
-                },
-                "anonymous_scan".into(),
-            ),
-            (false, Some(predicate)) => state.record(
-                || {
-                    let mut df = self.function.scan(args)?;
-                    let s = predicate.predicate.evaluate(&df, state)?;
-                    if self.predicate_has_windows {
-                        state.clear_window_expr_cache()
-                    }
-                    let mask = s.bool().map_err(
-                        |_| polars_err!(ComputeError: "filter predicate was not of type boolean"),
-                    )?;
-                    df = df.filter(mask)?;
+            (true, Some(predicate)) => {
+                args.predicate = predicate.predicate.as_expression().cloned();
+                self.function.scan(args)
+            },
+            (false, Some(predicate)) => {
+                let mut df = self.function.scan(args)?;
+                let s = predicate.predicate.evaluate(&df, state)?;
+                if self.predicate_has_windows {
+                    state.clear_window_expr_cache()
+                }
+                let mask = s.bool().map_err(
+                    |_| polars_err!(ComputeError: "filter predicate was not of type boolean"),
+                )?;
+                df = df.filter(mask)?;
 
-                    Ok(df)
-                },
-                "anonymous_scan".into(),
-            ),
-            _ => state.record(|| self.function.scan(args), "anonymous_scan".into()),
+                Ok(df)
+            },
+            _ => self.function.scan(args),
         }
     }
 }

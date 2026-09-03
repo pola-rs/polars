@@ -91,7 +91,7 @@ def datetime_(
     ...         pl.col("hour"),
     ...         pl.col("minute"),
     ...         time_zone="Australia/Sydney",
-    ...     )
+    ...     ).alias("datetime")
     ... )
     shape: (3, 5)
     ┌───────┬─────┬──────┬────────┬────────────────────────────────┐
@@ -500,6 +500,58 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
     return wrap_expr(plr.concat_list(exprs))
 
 
+def list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
+    """
+    Collect columns into a list column, treating each expression's value as one element.
+
+    Unlike :func:`concat_list`, list-typed inputs are not extended — each input's value
+    becomes a single element of the output list. This means ``List(T)`` inputs produce
+    ``List(List(T))`` output.
+
+    Parameters
+    ----------
+    exprs
+        Columns to collect into a list. Accepts expression input. Strings are parsed
+        as column names, other non-expression inputs are parsed as literals.
+    *more_exprs
+        Additional columns, specified as positional arguments.
+
+    Examples
+    --------
+    Wrap scalar columns into a list (same as ``concat_list`` for scalars):
+
+    >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    >>> df.with_columns(a_b=pl.list("a", "b"))
+    shape: (3, 3)
+    ┌─────┬─────┬───────────┐
+    │ a   ┆ b   ┆ a_b      │
+    │ --- ┆ --- ┆ ---       │
+    │ i64 ┆ i64 ┆ list[i64] │
+    ╞═════╪═════╪═══════════╡
+    │ 1   ┆ 4   ┆ [1, 4]    │
+    │ 2   ┆ 5   ┆ [2, 5]    │
+    │ 3   ┆ 6   ┆ [3, 6]    │
+    └─────┴─────┴───────────┘
+
+    Collect list columns into a list-of-lists (unlike ``concat_list``, which extends):
+
+    >>> df = pl.DataFrame({"a": [[1, 2], [3], [4, 5]], "b": [[6], [7, 8], [9]]})
+    >>> df.with_columns(a_b=pl.list("a", "b"))
+    shape: (3, 3)
+    ┌───────────┬───────────┬─────────────────┐
+    │ a         ┆ b         ┆ a_b             │
+    │ ---       ┆ ---       ┆ ---             │
+    │ list[i64] ┆ list[i64] ┆ list[list[i64]] │
+    ╞═══════════╪═══════════╪═════════════════╡
+    │ [1, 2]    ┆ [6]       ┆ [[1, 2], [6]]   │
+    │ [3]       ┆ [7, 8]    ┆ [[3], [7, 8]]   │
+    │ [4, 5]    ┆ [9]       ┆ [[4, 5], [9]]   │
+    └───────────┴───────────┴─────────────────┘
+    """
+    exprs = parse_into_list_of_expressions(exprs, *more_exprs)
+    return wrap_expr(plr.list(exprs))
+
+
 def concat_arr(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     """
     Horizontally concatenate columns into a single array column.
@@ -718,7 +770,7 @@ def struct(
         if not exprs and not named_exprs:
             # no columns or expressions provided; create one from schema keys
             expr = wrap_expr(
-                plr.as_struct(parse_into_list_of_expressions(list(schema.keys())))
+                plr.as_struct(parse_into_list_of_expressions([*schema.keys()]))
             )
         else:
             expr = wrap_expr(plr.as_struct(pyexprs))
@@ -794,17 +846,29 @@ def concat_str(
     return wrap_expr(plr.concat_str(exprs, separator, ignore_nulls))
 
 
-def format(f_string: str, *args: Expr | str) -> Expr:
+def format(f_string: str, *args: IntoExpr) -> Expr:
     """
     Format expressions as a string.
 
     Parameters
     ----------
     f_string
-        A string that with placeholders.
-        For example: "hello_{}" or "{}_world
+        A string with placeholders of the form `{}`, `{index}` or `{name}`.
+
+        A placeholder can be empty, in which case it consumes the next argument
+        to pl.format. It can also be an index in which case it addresses the
+        nth argument to pl.format. Finally a placeholder can also be an ASCII
+        identifier, in which case it directly refers to a column name.
+
+        If you wish to use the characters `{}` literally you must escape them
+        by doubling, e.g. `'{{"json": 42}}'`.
     args
         Expression(s) that fill the placeholders
+
+    Notes
+    -----
+    If any input expression evaluates to null for a row, the output of
+    ``pl.format`` is null for that row.
 
     Examples
     --------
@@ -829,6 +893,18 @@ def format(f_string: str, *args: Expr | str) -> Expr:
     │ foo_b_bar_2 │
     │ foo_c_bar_3 │
     └─────────────┘
+    >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [4, None, 6]})
+    >>> df.select(pl.format("{}_{}", "a", "b").alias("fmt"))
+    shape: (3, 1)
+    ┌──────┐
+    │ fmt  │
+    │ ---  │
+    │ str  │
+    ╞══════╡
+    │ 1_4  │
+    │ null │
+    │ 3_6  │
+    └──────┘
     """
     exprs = [parse_into_expression(arg) for arg in args]
     return wrap_expr(plr.PyExpr.str_format(f_string, exprs))

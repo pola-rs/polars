@@ -1,7 +1,8 @@
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 #[cfg(feature = "round_series")]
 use polars_ops::prelude::floor_div_series;
+use recursive::recursive;
 
 use super::*;
 use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
@@ -69,10 +70,12 @@ pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResu
         Operator::Plus => left + right,
         Operator::Minus => left - right,
         Operator::Multiply => left * right,
-        Operator::Divide => left / right,
+        Operator::RustDivide => left / right,
         Operator::TrueDivide => match left.dtype() {
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => left / right,
+            #[cfg(feature = "dtype-f16")]
+            Float16 => left / right,
             Duration(_) | Date | Datetime(_, _) | Float32 | Float64 => left / right,
             #[cfg(feature = "dtype-array")]
             Array(..) => left / right,
@@ -137,7 +140,7 @@ impl BinaryExpr {
         }
 
         match (ac_l.agg_state(), ac_r.agg_state()) {
-            (_, AggState::AggregatedList(s)) | (AggState::AggregatedList(s), _) => {
+            (AggState::AggregatedList(s), _) | (_, AggState::AggregatedList(s)) => {
                 let ca = s.list().unwrap();
                 let [col_l, col_r] = [&ac_l, &ac_r].map(|ac| ac.flat_naive().into_owned());
 
@@ -227,7 +230,8 @@ impl PhysicalExpr for BinaryExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    #[recursive]
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         // Window functions may set a global state that determine their output
         // state, so we don't let them run in parallel as they race
         // they also saturate the thread pool by themselves, so that's fine.
@@ -244,7 +248,7 @@ impl PhysicalExpr for BinaryExpr {
             lhs = self.left.evaluate(df, state)?;
             rhs = self.right.evaluate(df, state)?;
         } else {
-            let (opt_lhs, opt_rhs) = POOL.install(|| {
+            let (opt_lhs, opt_rhs) = RAYON.install(|| {
                 rayon::join(
                     || self.left.evaluate(df, state),
                     || self.right.evaluate(df, state),
@@ -262,13 +266,14 @@ impl PhysicalExpr for BinaryExpr {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    #[recursive]
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let (result_a, result_b) = POOL.install(|| {
+        let (result_a, result_b) = RAYON.install(|| {
             rayon::join(
                 || self.left.evaluate_on_groups(df, groups, state),
                 || self.right.evaluate_on_groups(df, groups, state),
@@ -296,8 +301,7 @@ impl PhysicalExpr for BinaryExpr {
                 AggState::NotAggregated(_) => {
                     has_not_agg = true;
                     if let Some(p) = previous {
-                        not_agg_groups_may_diverge |=
-                            !std::ptr::eq(p.groups.as_ref(), ac.groups.as_ref());
+                        not_agg_groups_may_diverge |= !p.groups.is_same(&ac.groups)
                     }
                     previous = Some(ac);
                     if ac.groups.is_overlapping() {
@@ -317,6 +321,20 @@ impl PhysicalExpr for BinaryExpr {
         let has_decimal_dtype =
             ac_l.get_values().dtype().is_decimal() || ac_r.get_values().dtype().is_decimal();
         let is_fallible = has_decimal_dtype && self.op.is_arithmetic();
+
+        // Broadcast in NotAgg or AggList requires group_aware
+        let check_broadcast = [&ac_l, &ac_r].iter().all(|ac| {
+            matches!(
+                ac.agg_state(),
+                AggState::NotAggregated(_) | AggState::AggregatedList(_)
+            )
+        });
+        let has_broadcast = check_broadcast
+            && ac_l
+                .groups()
+                .iter()
+                .zip(ac_r.groups().iter())
+                .any(|(l, r)| l.len() != r.len() && (l.len() == 1 || r.len() == 1));
 
         // Dispatch
         // See ApplyExpr for reference logic, except that we do any required
@@ -344,7 +362,11 @@ impl PhysicalExpr for BinaryExpr {
                 }
                 aggregated = true;
             }
-            self.apply_elementwise(ac_l, ac_r, aggregated)
+            if has_broadcast {
+                self.apply_group_aware(ac_l, ac_r)
+            } else {
+                self.apply_elementwise(ac_l, ac_r, aggregated)
+            }
         }
     }
 

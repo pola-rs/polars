@@ -35,6 +35,10 @@ pub enum Projection {
 }
 
 impl Projection {
+    pub fn is_empty(&self) -> bool {
+        self.projected_schema().is_empty()
+    }
+
     /// Returns the full projected schema, keyed by the output name.
     pub fn projected_schema(&self) -> &SchemaRef {
         match self {

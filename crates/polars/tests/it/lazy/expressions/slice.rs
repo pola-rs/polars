@@ -17,7 +17,10 @@ fn test_slice_args() -> PolarsResult<()> {
     .agg([col("vals").slice(lit(0i64), (len() * lit(0.2)).cast(DataType::Int32))])
     .collect()?;
 
-    let out = df.column("vals")?.explode(false)?;
+    let out = df.column("vals")?.explode(ExplodeOptions {
+        empty_as_null: true,
+        keep_nulls: true,
+    })?;
     let out = out.i32().unwrap();
     assert_eq!(
         out.into_no_null_iter().collect::<Vec<_>>(),

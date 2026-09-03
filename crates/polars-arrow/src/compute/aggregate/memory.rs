@@ -1,6 +1,7 @@
 use crate::array::*;
 use crate::bitmap::Bitmap;
 use crate::datatypes::PhysicalType;
+use crate::types::Index;
 pub use crate::types::PrimitiveType;
 use crate::{match_integer_type, with_match_primitive_type_full};
 fn validity_size(validity: Option<&Bitmap>) -> usize {
@@ -73,8 +74,15 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
         LargeUtf8 => dyn_binary!(array, Utf8Array<i64>, i64),
         List => {
             let array = array.as_any().downcast_ref::<ListArray<i32>>().unwrap();
-            estimated_bytes_size(array.values().as_ref())
-                + array.offsets().len_proxy() * size_of::<i32>()
+            estimated_bytes_size(
+                array
+                    .values()
+                    .sliced(
+                        array.offsets().first().to_usize(),
+                        array.offsets().range().to_usize(),
+                    )
+                    .as_ref(),
+            ) + array.offsets().len_proxy() * size_of::<i32>()
                 + validity_size(array.validity())
         },
         FixedSizeList => {
@@ -83,8 +91,15 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
         },
         LargeList => {
             let array = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
-            estimated_bytes_size(array.values().as_ref())
-                + array.offsets().len_proxy() * size_of::<i64>()
+            estimated_bytes_size(
+                array
+                    .values()
+                    .sliced(
+                        array.offsets().first().to_usize(),
+                        array.offsets().range().to_usize(),
+                    )
+                    .as_ref(),
+            ) + array.offsets().len_proxy() * size_of::<i64>()
                 + validity_size(array.validity())
         },
         Struct => {

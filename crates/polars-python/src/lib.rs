@@ -10,8 +10,6 @@
 )] // Maybe be caused by some feature
 // combinations
 
-#[cfg(feature = "csv")]
-pub mod batched_csv;
 #[cfg(feature = "catalog")]
 pub mod catalog;
 #[cfg(feature = "polars_cloud_client")]
@@ -22,10 +20,12 @@ pub mod conversion;
 pub mod dataframe;
 pub mod dataset;
 pub mod datatypes;
+pub mod delta;
 pub mod error;
 pub mod exceptions;
 pub mod export;
 pub mod expr;
+pub mod extension;
 pub mod file;
 #[cfg(feature = "pymethods")]
 pub mod functions;
@@ -34,6 +34,8 @@ pub mod io;
 pub mod lazyframe;
 pub mod lazygroupby;
 pub mod map;
+#[cfg(feature = "pymethods")]
+pub mod polars_cloud_observer;
 
 #[cfg(feature = "object")]
 pub mod object;
@@ -60,3 +62,4 @@ pub use crate::expr::PyExpr;
 pub use crate::lazyframe::PyLazyFrame;
 pub use crate::lazygroupby::PyLazyGroupBy;
 pub use crate::series::PySeries;
+pub mod interned;

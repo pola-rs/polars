@@ -2,11 +2,13 @@ use std::borrow::Cow;
 
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowSchemaRef;
+use polars_buffer::Buffer;
 use polars_core::chunked_array::builder::NullChunkedBuilder;
+use polars_core::config;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
 use polars_core::utils::accumulate_dataframes_vertical;
-use polars_core::{POOL, config};
 use polars_parquet::read::{self, ColumnChunkMetadata, FileMetadata, Filter, RowGroupMetadata};
 use rayon::prelude::*;
 
@@ -142,7 +144,7 @@ fn rg_to_dfs(
             let placeholder =
                 NullChunkedBuilder::new(PlSmallStr::from_static("__PL_TMP"), pre_slice.1).finish();
             return Ok(vec![
-                DataFrame::new(vec![placeholder.into_series().into_column()])?
+                DataFrame::new_infer_height(vec![placeholder.into_series().into_column()])?
                     .with_row_index(
                         row_index.name.clone(),
                         Some(row_index.offset + IdxSize::try_from(pre_slice.0).unwrap()),
@@ -205,9 +207,7 @@ fn rg_to_dfs_optionally_par_over_columns(
         .sum();
     let slice_end = slice.0 + slice.1;
 
-    for rg_idx in row_group_start..row_group_end {
-        let md = &file_metadata.row_groups[rg_idx];
-
+    for md in &file_metadata.row_groups[row_group_start..row_group_end] {
         let rg_slice =
             split_slice_at_file(&mut n_rows_processed, md.num_rows(), slice.0, slice_end);
         let current_row_count = md.num_rows() as IdxSize;
@@ -240,7 +240,7 @@ fn rg_to_dfs_optionally_par_over_columns(
         };
 
         let columns = if let ParallelStrategy::Columns = parallel {
-            POOL.install(|| {
+            RAYON.install(|| {
                 projection
                     .par_iter()
                     .map(f)
@@ -250,7 +250,7 @@ fn rg_to_dfs_optionally_par_over_columns(
             projection.iter().map(f).collect::<PolarsResult<Vec<_>>>()?
         };
 
-        let mut df = unsafe { DataFrame::new_no_checks(rg_slice.1, columns) };
+        let mut df = unsafe { DataFrame::new_unchecked(rg_slice.1, columns) };
         if let Some(rc) = &row_index {
             unsafe {
                 df.with_row_index_mut(
@@ -319,9 +319,8 @@ fn rg_to_dfs_par_over_rg(
         rows_scanned = 0;
     }
 
-    for i in row_group_start..row_group_end {
+    for rg_md in &file_metadata.row_groups[row_group_start..row_group_end] {
         let row_count_start = rows_scanned;
-        let rg_md = &file_metadata.row_groups[i];
         let n_rows_this_file = rg_md.num_rows();
         let rg_slice =
             split_slice_at_file(&mut n_rows_processed, n_rows_this_file, slice.0, slice_end);
@@ -338,7 +337,7 @@ fn rg_to_dfs_par_over_rg(
         row_groups.push((rg_md, rg_slice, row_count_start));
     }
 
-    let dfs = POOL.install(|| {
+    let dfs = RAYON.install(|| {
         // Set partitioned fields to prevent quadratic behavior.
         // Ensure all row groups are partitioned.
         row_groups
@@ -383,7 +382,7 @@ fn rg_to_dfs_par_over_rg(
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let mut df = unsafe { DataFrame::new_no_checks(slice.1, columns) };
+                let mut df = unsafe { DataFrame::new_unchecked(slice.1, columns) };
 
                 if let Some(rc) = &row_index {
                     unsafe {
@@ -434,7 +433,8 @@ pub fn read_parquet<R: MmapBytesReader>(
         .unwrap_or_else(|| Cow::Owned((0usize..reader_schema.len()).collect::<Vec<_>>()));
 
     if ParallelStrategy::Auto == parallel {
-        if n_row_groups > materialized_projection.len() || n_row_groups > POOL.current_num_threads()
+        if n_row_groups > materialized_projection.len()
+            || n_row_groups > RAYON.current_num_threads()
         {
             parallel = ParallelStrategy::RowGroups;
         } else {
@@ -447,34 +447,33 @@ pub fn read_parquet<R: MmapBytesReader>(
     }
 
     let reader = ReaderBytes::from(&mut reader);
-    let store = mmap::ColumnStore::Local(unsafe {
-        std::mem::transmute::<ReaderBytes<'_>, ReaderBytes<'static>>(reader).to_memslice()
-    });
-
-    let dfs = rg_to_dfs(
-        &store,
-        &mut 0,
-        0,
-        n_row_groups,
-        pre_slice,
-        &file_metadata,
-        reader_schema,
-        row_index.clone(),
-        parallel,
-        &materialized_projection,
-        hive_partition_columns,
-    )?;
-
-    if dfs.is_empty() {
-        Ok(materialize_empty_df(
-            projection,
+    Buffer::with_slice(&reader, |buf| {
+        let store = mmap::ColumnStore::Local(buf);
+        let dfs = rg_to_dfs(
+            &store,
+            &mut 0,
+            0,
+            n_row_groups,
+            pre_slice,
+            &file_metadata,
             reader_schema,
+            row_index.clone(),
+            parallel,
+            &materialized_projection,
             hive_partition_columns,
-            row_index.as_ref(),
-        ))
-    } else {
-        accumulate_dataframes_vertical(dfs)
-    }
+        )?;
+
+        if dfs.is_empty() {
+            Ok(materialize_empty_df(
+                projection,
+                reader_schema,
+                hive_partition_columns,
+                row_index.as_ref(),
+            ))
+        } else {
+            accumulate_dataframes_vertical(dfs)
+        }
+    })
 }
 
 pub fn calc_prefilter_cost(mask: &arrow::bitmap::Bitmap) -> f64 {

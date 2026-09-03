@@ -1,22 +1,32 @@
+#[cfg(feature = "cse")]
+mod canonical;
 mod dot;
+mod equality;
 mod format;
+#[cfg(feature = "cse")]
+mod hash;
 pub mod inputs;
 mod schema;
 pub(crate) mod tree_format;
-#[cfg(feature = "ir_visualization")]
-pub mod visualization;
+mod unoptimized;
 
 use std::borrow::Cow;
 use std::fmt;
 
+#[cfg(feature = "cse")]
+pub(crate) use canonical::{CanonicalIRId, CanonicalIRMap};
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
+pub use equality::ExpressionComparator;
 pub use format::{ExprIRDisplay, IRDisplay, write_group_by, write_ir_non_recursive};
+#[cfg(feature = "cse")]
+pub use hash::ExpressionHasher;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unique_id::UniqueId;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
+pub use unoptimized::{FunctionArgMap, UnoptimizedOperation};
 
 use self::hive::HivePartitionsDf;
 use crate::prelude::*;
@@ -59,6 +69,9 @@ pub enum IR {
         file_info: FileInfo,
         hive_parts: Option<HivePartitionsDf>,
         predicate: Option<ExprIR>,
+        /// * None: No skipping
+        /// * Some(v): Files were skipped (filtered out)
+        predicate_file_skip_applied: Option<PredicateFileSkip>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,
         scan_type: Box<FileScanIR>,
@@ -88,7 +101,7 @@ pub enum IR {
     Sort {
         input: Node,
         by_column: Vec<ExprIR>,
-        slice: Option<(i64, usize)>,
+        slice: Option<(i64, usize, Option<DynamicPred>)>,
         sort_options: SortMultipleOptions,
     },
     Cache {
@@ -109,9 +122,13 @@ pub enum IR {
         input_left: Node,
         input_right: Node,
         schema: SchemaRef,
-        left_on: Vec<ExprIR>,
-        right_on: Vec<ExprIR>,
+        /// Holds the match condition, including the join keys.
         options: Arc<JoinOptionsIR>,
+    },
+    Gather {
+        input: Node,
+        idxs: Node,
+        null_on_oob: bool,
     },
     HStack {
         input: Node,
@@ -138,11 +155,6 @@ pub enum IR {
         schema: SchemaRef,
         options: HConcatOptions,
     },
-    ExtContext {
-        input: Node,
-        contexts: Vec<Node>,
-        schema: SchemaRef,
-    },
     Sink {
         input: Node,
         payload: SinkTypeIR,
@@ -156,7 +168,13 @@ pub enum IR {
     MergeSorted {
         input_left: Node,
         input_right: Node,
-        key: PlSmallStr,
+        key: Arc<[PlSmallStr]>,
+        maintain_order: bool,
+    },
+    UnoptimizedDispatch {
+        inputs: Vec<Node>,
+        arg_map: FunctionArgMap,
+        operation: UnoptimizedOperation,
     },
     #[default]
     Invalid,
@@ -168,6 +186,19 @@ impl IRPlan {
             lp_top: top,
             lp_arena: ir_arena,
             expr_arena,
+        }
+    }
+
+    /// If `lp_top` is not a `Sink`, it will be set to an in-memory sink.
+    pub fn ensure_root_node_is_sink(&mut self) {
+        match self.root() {
+            IR::Sink { .. } | IR::SinkMultiple { .. } => {},
+            _ => {
+                self.lp_top = self.lp_arena.add(IR::Sink {
+                    input: self.lp_top,
+                    payload: SinkTypeIR::Memory,
+                })
+            },
         }
     }
 

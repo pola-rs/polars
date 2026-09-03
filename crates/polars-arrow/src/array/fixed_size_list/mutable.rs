@@ -136,7 +136,7 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
 
     /// Reserves `additional` slots.
     pub fn reserve(&mut self, additional: usize) {
-        self.values.reserve(additional);
+        self.values.reserve(additional * self.size);
         if let Some(x) = self.validity.as_mut() {
             x.reserve(additional)
         }
@@ -148,6 +148,15 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
         if let Some(validity) = &mut self.validity {
             validity.shrink_to_fit()
         }
+    }
+
+    pub fn freeze(mut self) -> FixedSizeListArray {
+        FixedSizeListArray::new(
+            self.dtype,
+            self.length,
+            self.values.as_box(),
+            self.validity.map(|b| b.freeze()),
+        )
     }
 }
 

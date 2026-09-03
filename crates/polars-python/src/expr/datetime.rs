@@ -10,13 +10,13 @@ impl PyExpr {
         &self,
         n: PyExpr,
         week_mask: [bool; 7],
-        holidays: Vec<i32>,
+        holidays: PyExpr,
         roll: Wrap<Roll>,
     ) -> Self {
         self.inner
             .clone()
             .dt()
-            .add_business_days(n.inner, week_mask, holidays, roll.0)
+            .add_business_days(n.inner, week_mask, holidays.inner, roll.0)
             .into()
     }
 
@@ -26,10 +26,6 @@ impl PyExpr {
 
     fn dt_offset_by(&self, by: PyExpr) -> Self {
         self.inner.clone().dt().offset_by(by.inner).into()
-    }
-
-    fn dt_with_time_unit(&self, time_unit: Wrap<TimeUnit>) -> Self {
-        self.inner.clone().dt().with_time_unit(time_unit.0).into()
     }
 
     #[cfg(feature = "timezones")]
@@ -142,11 +138,11 @@ impl PyExpr {
     fn dt_year(&self) -> Self {
         self.inner.clone().dt().year().into()
     }
-    fn dt_is_business_day(&self, week_mask: [bool; 7], holidays: Vec<i32>) -> Self {
+    fn dt_is_business_day(&self, week_mask: [bool; 7], holidays: PyExpr) -> Self {
         self.inner
             .clone()
             .dt()
-            .is_business_day(week_mask, holidays)
+            .is_business_day(week_mask, holidays.inner)
             .into()
     }
     fn dt_is_leap_year(&self) -> Self {
@@ -181,9 +177,6 @@ impl PyExpr {
     }
     fn dt_date(&self) -> Self {
         self.inner.clone().dt().date().into()
-    }
-    fn dt_datetime(&self) -> Self {
-        self.inner.clone().dt().datetime().into()
     }
     fn dt_hour(&self) -> Self {
         self.inner.clone().dt().hour().into()

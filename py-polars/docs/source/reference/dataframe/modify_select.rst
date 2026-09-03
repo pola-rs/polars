@@ -21,6 +21,7 @@ Manipulation/selection
     DataFrame.fill_nan
     DataFrame.fill_null
     DataFrame.filter
+    DataFrame.gather
     DataFrame.gather_every
     DataFrame.get_column
     DataFrame.get_column_index
@@ -40,7 +41,6 @@ Manipulation/selection
     DataFrame.join_where
     DataFrame.limit
     DataFrame.match_to_schema
-    DataFrame.melt
     DataFrame.merge_sorted
     DataFrame.partition_by
     DataFrame.pipe
@@ -77,5 +77,4 @@ Manipulation/selection
     DataFrame.vstack
     DataFrame.with_columns
     DataFrame.with_columns_seq
-    DataFrame.with_row_count
     DataFrame.with_row_index

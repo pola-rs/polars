@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Iterator
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable, Iterator
+from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars._utils.unstable import unstable
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
-    from typing import Callable
+    from collections.abc import Callable, Iterator
 
     from polars import DataFrame, Expr, LazyFrame
     from polars._typing import SchemaDict
@@ -25,6 +24,8 @@ def register_io_source(
     schema: Callable[[], SchemaDict] | SchemaDict,
     validate_schema: bool = False,
     is_pure: bool = False,
+    explain_name: str | None = None,
+    explain_detail: str | None = None,
 ) -> LazyFrame:
     """
     Register your IO plugin and initialize a LazyFrame.
@@ -67,6 +68,13 @@ def register_io_source(
         Whether the IO source is pure. Repeated occurrences of same IO source in
         a LazyFrame plan can be de-duplicated during optimization if they are
         pure.
+    explain_name
+        Custom label for the scan node in the query plan produced by ``explain``,
+        shown as
+        ``PYTHON[<name>] SCAN ...``.
+    explain_detail
+        Short, single-line detail appended under the scan header in the query plan
+        produced by ``explain`` (for example, a summary of source configuration).
 
     Returns
     -------
@@ -102,6 +110,8 @@ def register_io_source(
         pyarrow=False,
         validate_schema=validate_schema,
         is_pure=is_pure,
+        explain_name=explain_name,
+        explain_detail=explain_detail,
     )
 
 
@@ -171,7 +181,7 @@ def _defer(
         with_columns: list[str] | None,
         predicate: Expr | None,
         n_rows: int | None,
-        batch_size: int | None,
+        batch_size: int | None,  # noqa: ARG001
     ) -> Iterator[DataFrame]:
         lf = function().lazy()
         if with_columns is not None:
@@ -180,7 +190,7 @@ def _defer(
             lf = lf.filter(predicate)
         if n_rows is not None:
             lf = lf.limit(n_rows)
-        yield lf.collect()
+        yield lf._collect_eager()
 
     return register_io_source(
         io_source=source, schema=schema, validate_schema=validate_schema

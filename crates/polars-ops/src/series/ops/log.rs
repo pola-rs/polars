@@ -1,3 +1,5 @@
+#[cfg(feature = "dtype-f16")]
+use num_traits::real::Real;
 use polars_core::prelude::arity::broadcast_binary_elementwise_values;
 use polars_core::prelude::*;
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_integer_polars_type};
@@ -37,8 +39,9 @@ pub trait LogSeries: SeriesSealed {
     }
 
     /// Compute the natural logarithm of all elements plus one in the input array
-    fn log1p(&self) -> Series {
+    fn log1p(&self) -> PolarsResult<Series> {
         let s = self.as_series();
+        polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'log1p'");
         if s.dtype().is_decimal() {
             return s.cast(&DataType::Float64).unwrap().log1p();
         }
@@ -51,18 +54,21 @@ pub trait LogSeries: SeriesSealed {
             dt if dt.is_integer() => {
                 with_match_physical_integer_polars_type!(s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                    log1p(ca).into_series()
+                    Ok(log1p(ca).into_series())
                 })
             },
-            Float32 => s.f32().unwrap().apply_values(|v| v.ln_1p()).into_series(),
-            Float64 => s.f64().unwrap().apply_values(|v| v.ln_1p()).into_series(),
+            #[cfg(feature = "dtype-f16")]
+            Float16 => Ok(s.f16().unwrap().apply_values(|v| v.ln_1p()).into_series()),
+            Float32 => Ok(s.f32().unwrap().apply_values(|v| v.ln_1p()).into_series()),
+            Float64 => Ok(s.f64().unwrap().apply_values(|v| v.ln_1p()).into_series()),
             _ => s.cast(&DataType::Float64).unwrap().log1p(),
         }
     }
 
     /// Calculate the exponential of all elements in the input array.
-    fn exp(&self) -> Series {
+    fn exp(&self) -> PolarsResult<Series> {
         let s = self.as_series();
+        polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'exp'");
         if s.dtype().is_decimal() {
             return s.cast(&DataType::Float64).unwrap().exp();
         }
@@ -75,11 +81,13 @@ pub trait LogSeries: SeriesSealed {
             dt if dt.is_integer() => {
                 with_match_physical_integer_polars_type!(s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                    exp(ca).into_series()
+                    Ok(exp(ca).into_series())
                 })
             },
-            Float32 => s.f32().unwrap().apply_values(|v| v.exp()).into_series(),
-            Float64 => s.f64().unwrap().apply_values(|v| v.exp()).into_series(),
+            #[cfg(feature = "dtype-f16")]
+            Float16 => Ok(s.f16().unwrap().apply_values(|v| v.exp()).into_series()),
+            Float32 => Ok(s.f32().unwrap().apply_values(|v| v.exp()).into_series()),
+            Float64 => Ok(s.f64().unwrap().apply_values(|v| v.exp()).into_series()),
             _ => s.cast(&DataType::Float64).unwrap().exp(),
         }
     }
@@ -95,7 +103,7 @@ pub trait LogSeries: SeriesSealed {
             return Ok(0.0);
         }
         match s.dtype() {
-            DataType::Float32 | DataType::Float64 => {
+            DataType::Float16 | DataType::Float32 | DataType::Float64 => {
                 let pk = s.as_ref();
 
                 let pk = if normalize {

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 import polars.functions as F
-from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.unstable import unstable
-from polars._utils.various import no_default
+from polars._utils.various import NO_DEFAULT, _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
 from polars.datatypes import Int64
 from polars.datatypes.classes import Datetime
@@ -14,7 +14,6 @@ from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Mapping
 
     from polars import Expr, Series
@@ -32,14 +31,9 @@ if TYPE_CHECKING:
     )
     from polars._utils.various import NoDefault
 
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
-
 
 @expr_dispatch
-class StringNameSpace:
+class StringNameSpace(_NamespaceSuggestMixin):
     """Series.str namespace."""
 
     _accessor = "str"
@@ -347,11 +341,10 @@ class StringNameSpace:
                 .to_series()
             )
 
-    @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
     def to_decimal(
         self,
-        inference_length: int = 100,
         *,
+        inference_length: int = 100,
         scale: int | None = None,
     ) -> Series:
         """
@@ -359,9 +352,6 @@ class StringNameSpace:
 
         This method infers the needed parameters `precision` and `scale` if not
         given.
-
-        .. versionchanged:: 1.20.0
-            Parameter `inference_length` should now be passed as a keyword argument.
 
         Parameters
         ----------
@@ -1679,7 +1669,7 @@ class StringNameSpace:
         Notes
         -----
         This is a form of case transform where the first letter of each word is
-        capitalized, with the rest of the word in lowercase. Non-alphanumeric
+        capitalized, with the rest of the word in lowercase. Non-alphabetical
         characters define the word boundaries.
 
         Examples
@@ -1893,43 +1883,6 @@ class StringNameSpace:
         ]
         """
 
-    @deprecated(
-        '`Series.str.explode` is deprecated; use `Series.str.split("").explode()` instead. '
-        "Note that empty strings will result in null instead of being preserved. To get "
-        "the exact same behavior, split first and then use a `pl.when...then...otherwise` "
-        "expression to handle the empty list before exploding. "
-    )
-    def explode(self) -> Series:
-        """
-        Returns a column with a separate row for every string character.
-
-        .. deprecated:: 0.20.31
-            Use the `.str.split("").explode()` method instead. Note that empty strings
-            will result in null instead of being preserved. To get the exact same
-            behavior, split first and then use a `pl.when...then...otherwise`
-            expression to handle the empty list before exploding.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`String`.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", ["foo", "bar"])
-        >>> s.str.explode()  # doctest: +SKIP
-        shape: (6,)
-        Series: 'a' [str]
-        [
-                "f"
-                "o"
-                "o"
-                "b"
-                "a"
-                "r"
-        ]
-        """
-
     def to_integer(
         self,
         *,
@@ -2029,9 +1982,10 @@ class StringNameSpace:
     def replace_many(
         self,
         patterns: Series | list[str] | Mapping[str, str],
-        replace_with: Series | list[str] | str | NoDefault = no_default,
+        replace_with: Series | list[str] | str | NoDefault = NO_DEFAULT,
         *,
         ascii_case_insensitive: bool = False,
+        leftmost: bool = False,
     ) -> Series:
         """
         Use the Aho-Corasick algorithm to replace many matches.
@@ -2050,6 +2004,10 @@ class StringNameSpace:
             Enable ASCII-aware case-insensitive matching.
             When this option is enabled, searching will be performed without respect
             to case for ASCII letters (a-z and A-Z) only.
+        leftmost
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used.
 
         Notes
         -----
@@ -2121,6 +2079,43 @@ class StringNameSpace:
             "Tell you what me need, what me really really need"
             "Can me feel the love tonight"
         ]
+
+        Using `leftmost` and changing order of tokens in `patterns`, you can get fine
+        control over replacement logic, while default behavior does not provide
+        guarantees in case of overlapping patterns:
+
+        >>> s = pl.Series("haystack", ["abcd"])
+        >>> patterns = {"b": "x", "abc": "y", "abcd": "z"}
+        >>> s.str.replace_many(patterns)
+        shape: (1,)
+        Series: 'haystack' [str]
+        [
+            "axcd"
+        ]
+
+        Note that here `replaced` can be any of `axcd`, `yd` or `z`.
+
+        Adding `leftmost=True` matches pattern with leftmost start index first:
+
+        >>> s = pl.Series("haystack", ["abcd"])
+        >>> patterns = {"b": "x", "abc": "y", "abcd": "z"}
+        >>> s.str.replace_many(patterns, leftmost=True)
+        shape: (1,)
+        Series: 'haystack' [str]
+        [
+            "yd"
+        ]
+
+        Changing order inside patterns to match 'abcd' first:
+
+        >>> s = pl.Series("haystack", ["abcd"])
+        >>> patterns = {"abcd": "z", "abc": "y", "b": "x"}
+        >>> s.str.replace_many(patterns, leftmost=True)
+        shape: (1,)
+        Series: 'haystack' [str]
+        [
+            "z"
+        ]
         """
 
     @unstable()
@@ -2130,6 +2125,7 @@ class StringNameSpace:
         *,
         ascii_case_insensitive: bool = False,
         overlapping: bool = False,
+        leftmost: bool = False,
     ) -> Series:
         """
         Use the Aho-Corasick algorithm to extract many matches.
@@ -2144,6 +2140,11 @@ class StringNameSpace:
             to case for ASCII letters (a-z and A-Z) only.
         overlapping
             Whether matches may overlap.
+        leftmost
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used. May not be used
+            together with overlapping = True.
 
         Notes
         -----
@@ -2170,6 +2171,7 @@ class StringNameSpace:
         *,
         ascii_case_insensitive: bool = False,
         overlapping: bool = False,
+        leftmost: bool = False,
     ) -> Series:
         """
         Use the Aho-Corasick algorithm to find all matches.
@@ -2187,6 +2189,11 @@ class StringNameSpace:
             to case for ASCII letters (a-z and A-Z) only.
         overlapping
             Whether matches may overlap.
+        leftmost
+            Guarantees in case there are overlapping matches that the leftmost match
+            is used. In case there are multiple candidates for the leftmost match
+            the pattern which comes first in patterns is used. May not be used
+            together with overlapping = True.
 
         Notes
         -----
@@ -2270,50 +2277,6 @@ class StringNameSpace:
         ]
         """
 
-    @deprecated(
-        "`Series.str.concat` is deprecated; use `Series.str.join` instead. Note also "
-        "that the default `delimiter` for `str.join` is an empty string, not a hyphen."
-    )
-    def concat(
-        self, delimiter: str | None = None, *, ignore_nulls: bool = True
-    ) -> Series:
-        """
-        Vertically concatenate the string values in the column to a single string value.
-
-        .. deprecated:: 1.0.0
-            Use :meth:`join` instead. Note that the default `delimiter` for :meth:`join`
-            is an empty string instead of a hyphen.
-
-        Parameters
-        ----------
-        delimiter
-            The delimiter to insert between consecutive string values.
-        ignore_nulls
-            Ignore null values (default).
-            If set to `False`, null values will be propagated. This means that
-            if the column contains any null values, the output is null.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`String`.
-
-        Examples
-        --------
-        >>> pl.Series([1, None, 2]).str.concat("-")  # doctest: +SKIP
-        shape: (1,)
-        Series: '' [str]
-        [
-            "1-2"
-        ]
-        >>> pl.Series([1, None, 2]).str.concat(ignore_nulls=False)  # doctest: +SKIP
-        shape: (1,)
-        Series: '' [str]
-        [
-            null
-        ]
-        """
-
     def escape_regex(self) -> Series:
         r"""
         Returns string values with all regular expression meta characters escaped.
@@ -2365,3 +2328,17 @@ class StringNameSpace:
                 "KADOKAWA"
         ]
         """  # noqa: RUF002
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "concat": "use `Series.str.join` instead. Note also that the default "
+                    "`delimiter` for `str.join` is an empty string, not a hyphen.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)

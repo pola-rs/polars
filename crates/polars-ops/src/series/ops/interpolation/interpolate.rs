@@ -8,9 +8,9 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use super::{linear_itp, nearest_itp};
+use super::linear_itp;
 
-fn near_interp<T>(low: T, high: T, steps: IdxSize, steps_n: T, out: &mut Vec<T>)
+fn near_interp<T>(low: T, high: T, steps: IdxSize, _steps_n: T, out: &mut Vec<T>)
 where
     T: Sub<Output = T>
         + Mul<Output = T>
@@ -20,12 +20,9 @@ where
         + Copy
         + PartialOrd,
 {
-    let diff = high - low;
-    for step_i in 1..steps {
-        let step_i: T = NumCast::from(step_i).unwrap();
-        let v = nearest_itp(low, step_i, diff, steps_n);
-        out.push(v)
-    }
+    let mid = steps.div_ceil(2);
+    out.extend((1..mid).map(|_| low));
+    out.extend((mid..steps).map(|_| high));
 }
 
 #[inline]
@@ -168,6 +165,8 @@ fn interpolate_linear(s: &Series) -> Series {
                 }
             } else {
                 match s.dtype() {
+                    #[cfg(feature = "dtype-f16")]
+                    DataType::Float16 => linear_interp_signed(s.f16().unwrap()),
                     DataType::Float32 => linear_interp_signed(s.f32().unwrap()),
                     DataType::Float64 => linear_interp_signed(s.f64().unwrap()),
                     DataType::Int8
@@ -200,7 +199,7 @@ fn linear_interp_signed<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Series {
     interpolate_impl(ca, signed_interp::<T::Native>).into_series()
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, strum_macros::IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum InterpolationMethod {

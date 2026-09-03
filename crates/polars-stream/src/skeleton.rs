@@ -3,18 +3,24 @@ use std::cmp::Reverse;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::query_result::QueryResult;
+use polars_core::runtime::RAYON;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
-use polars_plan::plans::{Context, IR, IRPlan};
-use polars_plan::prelude::AExpr;
+use polars_observer::{PlannedQuery, QueryObserver};
+use polars_plan::plans::{IR, IRPlan, IRPlanSorted};
 use polars_plan::prelude::expr_ir::ExprIR;
+use polars_plan::prelude::{AExpr, ir_plan_to_description};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::relaxed_cell::RelaxedCell;
 use slotmap::{SecondaryMap, SlotMap};
 
 use crate::graph::{Graph, GraphNodeKey};
-use crate::physical_plan::{PhysNode, PhysNodeKey, PhysNodeKind, StreamingLowerIRContext};
+use crate::metrics::GraphMetrics;
+use crate::observer_metrics::StreamingQueryMetricsSnapshotter;
+use crate::physical_plan::{
+    PhysNode, PhysNodeKey, PhysNodeKind, StreamingLowerIRContext, physical_plan_to_description,
+};
 
 /// Executes the IR with the streaming engine.
 ///
@@ -31,8 +37,44 @@ pub fn run_query(
     node: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    observer: Option<Box<dyn QueryObserver>>,
 ) -> PolarsResult<QueryResult> {
-    StreamingQuery::build(node, ir_arena, expr_arena)?.execute()
+    let query = StreamingQuery::build(node, ir_arena, expr_arena, observer.is_some()).inspect_err(
+        |err| {
+            if let Some(o) = observer.as_ref() {
+                o.on_query_failed(err)
+            }
+        },
+    )?;
+
+    /// if the query fails, [`observer::on_query_failed`] needs to be called before [`_guard`] is dropped
+    let _guard = observer
+        .as_ref()
+        .map(|o| o.on_query_planned(query.to_planned_query(node, ir_arena, expr_arena)));
+
+    query.execute().inspect_err(|err| {
+        if let Some(o) = observer.as_ref() {
+            o.on_query_failed(err)
+        }
+    })
+}
+
+impl StreamingQuery {
+    pub fn to_planned_query(
+        &self,
+        ir_node: Node,
+        ir_arena: &Arena<IR>,
+        expr_arena: &Arena<AExpr>,
+    ) -> PlannedQuery {
+        let ir = ir_plan_to_description(&[ir_node], ir_arena, expr_arena);
+        let physical =
+            physical_plan_to_description(&[self.root_phys_node], &self.phys_sm, expr_arena);
+        let mut query = PlannedQuery::new(ir).with_physical(physical);
+        if let Some(snapshotter) = StreamingQueryMetricsSnapshotter::from_query(self) {
+            query = query.with_metrics_snapshotter(snapshotter);
+        }
+        query
+    }
 }
 
 /// Visualizes the physical plan as a dot graph.
@@ -42,9 +84,11 @@ pub fn visualize_physical_plan(
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<String> {
     let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
+    let sortedness = IRPlanSorted::resolve(node, ir_arena, expr_arena);
 
     let ctx = StreamingLowerIRContext {
         prepare_visualization: true,
+        sortedness: &sortedness,
     };
     let root_phys_node =
         crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, &mut phys_sm, ctx)?;
@@ -56,10 +100,11 @@ pub fn visualize_physical_plan(
 
 pub struct StreamingQuery {
     top_ir: IR,
-    graph: Graph,
-    root_phys_node: PhysNodeKey,
-    phys_sm: SlotMap<PhysNodeKey, PhysNode>,
-    phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
+    pub graph: Graph,
+    pub root_phys_node: PhysNodeKey,
+    pub phys_sm: SlotMap<PhysNodeKey, PhysNode>,
+    pub phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
+    pub metrics: Option<Arc<Mutex<GraphMetrics>>>,
 }
 
 /// Configures if IR lowering creates the `format_str` for `InMemoryMap`.
@@ -85,6 +130,7 @@ impl StreamingQuery {
         node: Node,
         ir_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
+        observe: bool,
     ) -> PolarsResult<Self> {
         if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_IR") {
             let plan = IRPlan {
@@ -96,8 +142,10 @@ impl StreamingQuery {
             std::fs::write(visual_path, visualization).unwrap();
         }
         let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
+        let sortedness = IRPlanSorted::resolve(node, ir_arena, expr_arena);
         let ctx = StreamingLowerIRContext {
             prepare_visualization: cfg_prepare_visualization_data(),
+            sortedness: &sortedness,
         };
         let root_phys_node = crate::physical_plan::build_physical_plan(
             node,
@@ -117,12 +165,23 @@ impl StreamingQuery {
 
         let top_ir = ir_arena.get(node).clone();
 
+        let metrics = if std::env::var("POLARS_TRACK_METRICS").as_deref() == Ok("1")
+            || std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
+            || observe
+        {
+            polars_async::executor::track_task_metrics(true);
+            Some(Arc::default())
+        } else {
+            None
+        };
+
         let out = StreamingQuery {
             top_ir,
             graph,
             root_phys_node,
             phys_sm,
             phys_to_graph,
+            metrics,
         };
 
         Ok(out)
@@ -135,24 +194,22 @@ impl StreamingQuery {
             root_phys_node,
             phys_sm,
             phys_to_graph,
+            metrics,
         } = self;
-
-        let metrics = if std::env::var("POLARS_TRACK_METRICS").as_deref() == Ok("1") {
-            crate::async_executor::track_task_metrics(true);
-            Some(Arc::default())
-        } else {
-            None
-        };
 
         let query_start = Instant::now();
         let mut results = crate::execute::execute_graph(&mut graph, metrics.clone())?;
         let query_elapsed = query_start.elapsed();
 
         // Print metrics.
-        if let Some(lock) = metrics {
+        if let Some(lock) = metrics
+            && std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
+        {
+            let mut m = lock.lock().clone();
+            m.flush(&graph.pipes);
+
             let mut total_query_ns = 0;
             let mut lines = Vec::new();
-            let m = lock.lock();
             for phys_node_key in phys_sm.keys() {
                 let Some(graph_node_key) = phys_to_graph.get(phys_node_key) else {
                     continue;
@@ -181,13 +238,23 @@ impl StreamingQuery {
                 let morsels_sent = node_metrics.morsels_sent;
                 let max_sent = node_metrics.largest_morsel_sent;
 
+                let io_total_active_time = Duration::from_nanos(node_metrics.io_total_active_ns);
+                let io_total_bytes_requested = node_metrics.io_total_bytes_requested;
+                let io_total_bytes_received = node_metrics.io_total_bytes_received;
+                let io_total_bytes_sent = node_metrics.io_total_bytes_sent;
+
                 lines.push(
                     (total_time, format!(
                         "{name}: tot({total_time:.2?}), \
                                  poll({poll_time:.2?}, n={total_polls}, max={max_poll_time:.2?}, stolen={perc_stolen:.1}%), \
                                  update({update_time:.2?}, n={total_updates}, max={max_update_time:.2?}), \
                                  recv(row={rows_received}, morsel={morsels_received}, max={max_received}), \
-                                 sent(row={rows_sent}, morsel={morsels_sent}, max={max_sent})"))
+                                 sent(row={rows_sent}, morsel={morsels_sent}, max={max_sent}), \
+                                 io(\
+                                    total_active_time={io_total_active_time:.2?}, \
+                                    total_bytes_requested={io_total_bytes_requested}, \
+                                    total_bytes_received={io_total_bytes_received}, \
+                                    total_bytes_sent={io_total_bytes_sent})"))
                 );
 
                 total_query_ns += total_ns;
@@ -227,30 +294,6 @@ impl StreamingQuery {
                     .remove(phys_to_graph[root_phys_node])
                     .unwrap_or_else(DataFrame::empty),
             )),
-        }
-    }
-}
-
-pub enum QueryResult {
-    Single(DataFrame),
-    /// Collected to multiple in-memory sinks
-    Multiple(Vec<DataFrame>),
-}
-
-impl QueryResult {
-    pub fn unwrap_single(self) -> DataFrame {
-        use QueryResult::*;
-        match self {
-            Single(df) => df,
-            Multiple(_) => panic!(),
-        }
-    }
-
-    pub fn unwrap_multiple(self) -> Vec<DataFrame> {
-        use QueryResult::*;
-        match self {
-            Single(_) => panic!(),
-            Multiple(dfs) => dfs,
         }
     }
 }

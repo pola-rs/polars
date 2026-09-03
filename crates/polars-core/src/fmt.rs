@@ -2,7 +2,7 @@
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter, Write};
-use std::str::FromStr;
+use std::num::IntErrorKind;
 use std::sync::RwLock;
 use std::{fmt, str};
 
@@ -94,20 +94,23 @@ pub fn set_trim_decimal_zeros(trim: Option<bool>) {
     arrow::compute::decimal::set_trim_decimal_zeros(trim)
 }
 
-/// Parses an environment variable value.
-fn parse_env_var<T: FromStr>(name: &str) -> Option<T> {
-    std::env::var(name).ok().and_then(|v| v.parse().ok())
-}
 /// Parses an environment variable value as a limit or set a default.
 ///
 /// Negative values (e.g. -1) are parsed as 'no limit' or [`usize::MAX`].
 fn parse_env_var_limit(name: &str, default: usize) -> usize {
-    parse_env_var(name).map_or(
-        default,
-        |n: i64| {
-            if n < 0 { usize::MAX } else { n as usize }
+    let Ok(v) = std::env::var(name) else {
+        return default;
+    };
+
+    let n = match v.parse::<i64>() {
+        Ok(n) => n,
+        Err(e) => match e.kind() {
+            IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => -1,
+            _ => return default,
         },
-    )
+    };
+
+    if n < 0 { usize::MAX } else { n as usize }
 }
 
 fn get_row_limit() -> usize {
@@ -160,7 +163,7 @@ macro_rules! format_array {
         )?;
 
         let ellipsis = get_ellipsis();
-        let truncate = match $a.dtype() {
+        let truncate = match $a.dtype().to_storage() {
             DataType::String => true,
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) | DataType::Enum(_, _) => true,
@@ -371,6 +374,10 @@ impl Debug for Series {
                     format_array!(f, self.i128().unwrap(), "i128", self.name(), "Series")
                 )
             },
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                format_array!(f, self.f16().unwrap(), "f16", self.name(), "Series")
+            },
             DataType::Float32 => {
                 format_array!(f, self.f32().unwrap(), "f32", self.name(), "Series")
             },
@@ -442,6 +449,11 @@ impl Debug for Series {
                     self.name(),
                     "Series"
                 )
+            },
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(_, _) => {
+                let dt = format!("{}", self.dtype());
+                format_array!(f, self.ext().unwrap(), &dt, self.name(), "Series")
             },
             dt => panic!("{dt:?} not impl"),
         }
@@ -581,7 +593,7 @@ impl Display for DataFrame {
         {
             let height = self.height();
             assert!(
-                self.columns.iter().all(|s| s.len() == height),
+                self.columns().iter().all(|s| s.len() == height),
                 "The column lengths in the DataFrame are not equal."
             );
 
@@ -657,7 +669,7 @@ impl Display for DataFrame {
 
                     for i in 0..(half + rest) {
                         let row = self
-                            .get_columns()
+                            .columns()
                             .iter()
                             .map(|c| c.str_value(i).unwrap())
                             .collect();
@@ -678,7 +690,7 @@ impl Display for DataFrame {
 
                     for i in (height - half)..height {
                         let row = self
-                            .get_columns()
+                            .columns()
                             .iter()
                             .map(|c| c.str_value(i).unwrap())
                             .collect();
@@ -719,7 +731,7 @@ impl Display for DataFrame {
                     }
                 }
             } else if height > 0 {
-                let dots: Vec<String> = vec![ellipsis; self.columns.len()];
+                let dots: Vec<String> = vec![ellipsis; self.width()];
                 table.add_row(dots);
             }
             let tbl_fallback_width = 100;
@@ -1166,6 +1178,7 @@ impl Display for AnyValue<'_> {
             AnyValue::Int32(v) => fmt_integer(f, width, *v),
             AnyValue::Int64(v) => fmt_integer(f, width, *v),
             AnyValue::Int128(v) => feature_gated!("dtype-i128", fmt_integer(f, width, *v)),
+            AnyValue::Float16(v) => feature_gated!("dtype-f16", fmt_float(f, width, *v)),
             AnyValue::Float32(v) => fmt_float(f, width, *v),
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),
@@ -1290,7 +1303,7 @@ impl Series {
                 result.push(']');
             },
             _ => {
-                let s = self.slice(0, max_items).rechunk();
+                let s = self.slice(0, max_items);
                 for (i, item) in s.iter().enumerate() {
                     if i == max_items.saturating_sub(1) {
                         write!(result, "{ellipsis} {}", self.get(self.len() - 1).unwrap()).unwrap();

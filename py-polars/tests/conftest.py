@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import io
-from pathlib import PosixPath
-from typing import Any, Callable, TypeVar, cast
+import os
+import sys
+import tempfile
+from pathlib import Path, PosixPath
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import pytest
 
 import polars as pl
-from polars._typing import PartitioningScheme
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Generator
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -19,9 +24,126 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
+_xdist_crash_config: pytest.Config | None = None
+_xdist_crash_log_dir: tempfile.TemporaryDirectory[str] | None = None
+
+# How much of a crashed worker's captured output we echo, in bytes.
+_XDIST_CRASH_OUTPUT_LIMIT = 64 * 1024
+
+
+def _crash_log_path(log_dir: str | Path, worker_id: str, stream: str) -> Path:
+    return Path(log_dir) / f"{worker_id}.{stream}"
+
+
+def _capture_to_file(capman: Any, stream: str, path: Path) -> None:
+    """Redirect pytest's fd-level capture of `stream` to a persistent file."""
+    capture = getattr(capman._global_capturing, stream, None)
+    tmpfile = getattr(capture, "tmpfile", None)
+    targetfd = getattr(capture, "targetfd", None)
+    if tmpfile is None or targetfd is None:
+        return  # Not capturing this stream at fd level (`-s`, `--capture=sys`).
+
+    # This is rather hacky but the tempfile pytest creates is passed to multiple
+    # places before now, so it would be too late to replace that file object
+    # with something we control. So we instead change the underlying file
+    # descriptors to point out our path of choice.
+    with path.open("wb+", buffering=0) as f:
+        os.dup2(f.fileno(), tmpfile.fileno())
+        os.dup2(f.fileno(), targetfd)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    # Stash the config so `pytest_handlecrashitem` (whose hookspec only receives
+    # crashitem/report/sched) can reach the capture manager to bypass capturing.
+    global _xdist_crash_config
+    _xdist_crash_config = config
+
+    workerinput = getattr(config, "workerinput", None)
+    if workerinput is None:
+        return  # Controller (or no xdist).
+
+    log_dir = workerinput.get("polars_crash_log_dir")
+    worker_id = workerinput.get("workerid")
+    capman = config.pluginmanager.getplugin("capturemanager")
+    if log_dir is None or worker_id is None or capman is None:
+        return
+
+    try:
+        for stream in ("out", "err"):
+            _capture_to_file(
+                capman, stream, _crash_log_path(log_dir, worker_id, stream)
+            )
+    except Exception as exc:
+        # Never let this break an otherwise fine test run.
+        print(f"failed to redirect fd capture: {exc!r}", file=sys.stderr)
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_configure_node(node: Any) -> None:
+    """Tell each xdist worker where to persist its captured output."""
+    global _xdist_crash_log_dir
+    if _xdist_crash_log_dir is None:
+        _xdist_crash_log_dir = tempfile.TemporaryDirectory(
+            prefix="polars-xdist-crash-", ignore_cleanup_errors=True
+        )
+    node.workerinput["polars_crash_log_dir"] = _xdist_crash_log_dir.name
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    global _xdist_crash_log_dir
+    if _xdist_crash_log_dir is not None:
+        _xdist_crash_log_dir.cleanup()
+        _xdist_crash_log_dir = None
+
+
+def _read_crash_output(worker_id: str, stream: str) -> str:
+    if _xdist_crash_log_dir is None:
+        return ""
+    path = _crash_log_path(_xdist_crash_log_dir.name, worker_id, stream)
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return ""
+    if len(data) > _XDIST_CRASH_OUTPUT_LIMIT:
+        data = b"<truncated>\n" + data[-_XDIST_CRASH_OUTPUT_LIMIT:]
+    return data.decode("utf-8", errors="replace").strip()
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_handlecrashitem(
+    crashitem: str, report: pytest.TestReport, sched: object
+) -> None:
+    """Log which test an xdist worker was running when it crashed."""
+    try:
+        worker = getattr(report, "node", None)
+        worker_id = getattr(getattr(worker, "gateway", None), "id", "?")
+        lines = [f"ERROR: xdist worker {worker_id} crashed while running {crashitem}"]
+        for stream, name in (("out", "stdout"), ("err", "stderr")):
+            output = _read_crash_output(worker_id, stream)
+            if output:
+                lines.append(f"--- {worker_id} {name} ---\n{output}")
+
+        def emit() -> None:
+            print("\n".join(lines), file=sys.stderr, flush=True)
+
+        # Suspend pytest's output capturing so the message reaches the real
+        # streams instead of being buffered (and possibly lost) on crash.
+        capman: Any = None
+        if _xdist_crash_config is not None:
+            capman = _xdist_crash_config.pluginmanager.getplugin("capturemanager")
+        if capman is not None:
+            with capman.global_and_fixture_disabled():
+                emit()
+        else:
+            emit()
+    except Exception as exc:
+        # Never let logging failures mask the underlying crash.
+        print(f"pytest_handlecrashitem logging failed: {exc!r}", file=sys.stderr)
+
+
 @pytest.fixture(autouse=True)
 def _patched_cloud(
-    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+    request: pytest.FixtureRequest, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     if request.config.getoption("--cloud-distributed"):
         import signal
@@ -44,7 +166,7 @@ def _patched_cloud(
 
             return f()
 
-        ctx = ClusterContext("localhost", insecure=True)
+        ctx = ClusterContext(uri="http://localhost")
         set_compute_context(ctx)
 
         prev_collect = pl.LazyFrame.collect
@@ -58,16 +180,16 @@ def _patched_cloud(
 
             return prev_collect(
                 with_timeout(
-                    lambda: lf.remote(plan_type="plain")
-                    .distributed()
-                    .execute()
-                    .await_result()
+                    lambda: lf.remote(plan_type="plain").distributed().execute()
                 ).lazy()
             )
 
         class LazyExe:
             def __init__(
-                self, query: DirectQuery, prev_tgt: io.BytesIO | None, path: Path
+                self,
+                query: DirectQuery,
+                prev_tgt: io.BytesIO | io.StringIO | io.TextIOBase | None,
+                path: str | Path,
             ) -> None:
                 self.query = query
 
@@ -81,13 +203,11 @@ def _patched_cloud(
                 # 2. If our target was different, write the result into our target
                 #    transparently.
                 if self.prev_tgt is not None:
-                    is_string = isinstance(self.prev_tgt, (io.StringIO, io.TextIOBase))
-
-                    if is_string:
-                        with Path.open(self.path, "r") as f:
-                            self.prev_tgt.write(f.read())  # type: ignore[arg-type]
+                    if isinstance(self.prev_tgt, (io.StringIO, io.TextIOBase)):
+                        with Path(self.path).open("r") as f:
+                            self.prev_tgt.write(f.read())
                     else:
-                        with Path.open(self.path, "rb") as f:
+                        with Path(self.path).open("rb") as f:
                             self.prev_tgt.write(f.read())
 
                     # delete the temporary file
@@ -133,7 +253,7 @@ def _patched_cloud(
                 source: io.BytesIO | io.StringIO | str | Path, *args: Any, **kwargs: Any
             ) -> pl.LazyFrame:
                 source = prepare_scan_sources(source)  # type: ignore[assignment]
-                return prev_scan(source, *args, **kwargs)  # type: ignore[no-any-return]
+                return prev_scan(source, *args, **kwargs)
 
             return _
 
@@ -145,10 +265,10 @@ def _patched_cloud(
                 source: io.BytesIO | str | Path, *args: Any, **kwargs: Any
             ) -> pl.DataFrame:
                 if ext == "parquet" and kwargs.get("use_pyarrow", False):
-                    return prev_read(source, *args, **kwargs)  # type: ignore[no-any-return]
+                    return prev_read(source, *args, **kwargs)
 
                 src = prepare_scan_sources(source)
-                return prev_read(src, *args, **kwargs)  # type: ignore[no-any-return]
+                return prev_read(src, *args, **kwargs)
 
             return _
 
@@ -160,12 +280,10 @@ def _patched_cloud(
 
             def _(lf: pl.LazyFrame, *args: Any, **kwargs: Any) -> pl.LazyFrame | None:
                 # The cloud client sinks to a "placeholder-path".
-                if args[0] == "placeholder-path" or isinstance(
-                    args[0], PartitioningScheme
-                ):
+                if args[0] == "placeholder-path" or isinstance(args[0], pl.PartitionBy):
                     prev_lazy = kwargs.get("lazy", False)
                     kwargs["lazy"] = True
-                    lf = prev_sink(lf, *args, **kwargs)
+                    lf = prev_sink(lf, *args, **kwargs)  # type: ignore[assignment]
 
                     class SimpleLazyExe:
                         def __init__(self, query: pl.LazyFrame) -> None:
@@ -224,12 +342,41 @@ def _patched_cloud(
         # fix: these need to become supported somehow
         BASE_UNSUPPORTED = ["engine", "optimizations", "mkdir", "retries"]
         for ext in ["parquet", "csv", "ipc", "ndjson"]:
-            monkeypatch.setattr(f"polars.scan_{ext}", create_cloud_scan(ext))
-            monkeypatch.setattr(f"polars.read_{ext}", create_read(ext))
-            monkeypatch.setattr(
+            plmonkeypatch.setattr(f"polars.scan_{ext}", create_cloud_scan(ext))
+            plmonkeypatch.setattr(f"polars.read_{ext}", create_read(ext))
+            plmonkeypatch.setattr(
                 f"polars.LazyFrame.sink_{ext}",
                 create_cloud_sink(ext, BASE_UNSUPPORTED),
             )
 
-        monkeypatch.setattr("polars.LazyFrame.collect", cloud_collect)
-        monkeypatch.setenv("POLARS_SKIP_CLIENT_CHECK", "1")
+        plmonkeypatch.setattr("polars.LazyFrame.collect", cloud_collect)
+        plmonkeypatch.setenv("POLARS_SKIP_CLIENT_CHECK", "1")
+
+
+class PlMonkeyPatch(pytest.MonkeyPatch):  # type: ignore[misc]
+    """A wrapper of pytest.MonkeyPatch that updates Polars when an env var changes."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+
+    def setenv(self, name: str, value: str, prepend: str | None = None) -> None:
+        super().setenv(name, value, prepend)
+        if name.startswith("POLARS_"):
+            pl.Config.reload_env_vars()
+
+    def delenv(self, name: str, raising: bool = True) -> None:
+        super().delenv(name, raising)
+        if name.startswith("POLARS_"):
+            pl.Config.reload_env_vars()
+
+    def undo(self) -> None:
+        super().undo()
+        pl.Config.reload_env_vars()
+
+
+@pytest.fixture
+def plmonkeypatch() -> Generator[PlMonkeyPatch, None, None]:
+    """A wrapper of pytest.plmonkeypatch that updates Polars when an env var changes."""
+    mpatch = PlMonkeyPatch()
+    yield mpatch
+    mpatch.undo()

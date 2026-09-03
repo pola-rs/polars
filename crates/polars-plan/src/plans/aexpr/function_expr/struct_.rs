@@ -7,11 +7,11 @@ use super::*;
 pub enum IRStructFunction {
     FieldByName(PlSmallStr),
     RenameFields(Arc<[PlSmallStr]>),
+    DropFields(Arc<[PlSmallStr]>, bool),
     PrefixFields(PlSmallStr),
     SuffixFields(PlSmallStr),
     #[cfg(feature = "json")]
     JsonEncode,
-    WithFields,
     MapFieldNames(PlanCallback<PlSmallStr, PlSmallStr>),
 }
 
@@ -25,30 +25,46 @@ impl IRStructFunction {
                     let fld = fields
                         .iter()
                         .find(|fld| fld.name() == name)
-                        .ok_or_else(|| polars_err!(StructFieldNotFound: "{}", name))?;
+                        .ok_or_else(|| polars_err!(StructFieldNotFound: "{name}"))?;
                     Ok(fld.clone())
                 } else {
-                    polars_bail!(StructFieldNotFound: "{}", name);
+                    polars_bail!(StructFieldNotFound: "{name}");
                 }
             }),
-            RenameFields(names) => mapper.map_dtype(|dt| match dt {
+            RenameFields(names) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Struct(fields) => {
+                    if names.len() != fields.len() {
+                        let hint_addition = if fields.len() > names.len() {
+                            "\n\nHint: use struct.drop() to drop fields from the struct first."
+                        } else {
+                            ""
+                        };
+                        polars_bail!(SchemaMismatch: "struct.rename_fields() argument has a different number of fields \
+                        than the struct it operates on ({} vs {}).{hint_addition}", names.len(), fields.len());
+                    }
                     let fields = fields
                         .iter()
                         .zip(names.as_ref())
                         .map(|(fld, name)| Field::new(name.clone(), fld.dtype().clone()))
                         .collect();
-                    DataType::Struct(fields)
+                    Ok(DataType::Struct(fields))
                 },
-                // The types will be incorrect, but its better than nothing
-                // we can get an incorrect type with python lambdas, because we only know return type when running
-                // the query
-                dt => DataType::Struct(
-                    names
-                        .iter()
-                        .map(|name| Field::new(name.clone(), dt.clone()))
-                        .collect(),
-                ),
+                _ => polars_bail!(op = "rename_fields", got = dt, expected = "Struct"),
+            }),
+            DropFields(names, strict) => mapper.try_map_dtype(|dt| match dt{
+                DataType::Struct(fields)=> {
+                    // Use PlIndexSets to prevent quadratic behavior
+                    if *strict {
+                        let fields_set = PlIndexSet::from_iter(fields.iter().map(|fld| fld.name()));
+                        for name in names.iter() {
+                            polars_ensure!(fields_set.contains(name), StructFieldNotFound: "{name}");
+                        }
+                    }
+                    let names_set = PlIndexSet::from_iter(names.iter());
+                    let fields = fields.iter().filter(|fld| !names_set.contains(fld.name())).cloned().collect();
+                    Ok(DataType::Struct(fields))
+                },
+                _ => polars_bail!(op = "struct.drop", got = dt, expected = "Struct"),
             }),
             PrefixFields(prefix) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Struct(fields) => {
@@ -78,33 +94,6 @@ impl IRStructFunction {
             }),
             #[cfg(feature = "json")]
             JsonEncode => mapper.with_dtype(DataType::String),
-            WithFields => {
-                let args = mapper.args();
-                let struct_ = &args[0];
-
-                if let DataType::Struct(fields) = struct_.dtype() {
-                    let mut name_2_dtype = PlIndexMap::with_capacity(fields.len() * 2);
-
-                    for field in fields {
-                        name_2_dtype.insert(field.name(), field.dtype());
-                    }
-                    for arg in &args[1..] {
-                        name_2_dtype.insert(arg.name(), arg.dtype());
-                    }
-                    let dtype = DataType::Struct(
-                        name_2_dtype
-                            .iter()
-                            .map(|(&name, &dtype)| Field::new(name.clone(), dtype.clone()))
-                            .collect(),
-                    );
-                    let mut out = struct_.clone();
-                    out.coerce(dtype);
-                    Ok(out)
-                } else {
-                    let dt = struct_.dtype();
-                    polars_bail!(op = "with_fields", got = dt, expected = "Struct")
-                }
-            },
             MapFieldNames(function) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Struct(fields) => {
                     let fields = fields
@@ -128,14 +117,11 @@ impl IRStructFunction {
             S::FieldByName(_) => {
                 FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
-            S::RenameFields(_) | S::PrefixFields(_) | S::SuffixFields(_) => {
+            S::RenameFields(_) | S::DropFields(..) | S::PrefixFields(_) | S::SuffixFields(_) => {
                 FunctionOptions::elementwise()
             },
             #[cfg(feature = "json")]
             S::JsonEncode => FunctionOptions::elementwise(),
-            S::WithFields => FunctionOptions::elementwise().with_flags(|f| {
-                f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::PASS_NAME_TO_APPLY
-            }),
             S::MapFieldNames(_) => FunctionOptions::elementwise(),
         }
     }
@@ -147,11 +133,12 @@ impl Display for IRStructFunction {
         match self {
             FieldByName(name) => write!(f, "struct.field_by_name({name})"),
             RenameFields(names) => write!(f, "struct.rename_fields({names:?})"),
+            DropFields(names, false) => write!(f, "struct.drop({names:?}, strict=False)"),
+            DropFields(names, true) => write!(f, "struct.drop({names:?})"),
             PrefixFields(_) => write!(f, "name.prefix_fields"),
             SuffixFields(_) => write!(f, "name.suffixFields"),
             #[cfg(feature = "json")]
             JsonEncode => write!(f, "struct.to_json"),
-            WithFields => write!(f, "with_fields"),
             MapFieldNames(_) => write!(f, "map_field_names"),
         }
     }

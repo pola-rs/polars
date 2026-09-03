@@ -60,6 +60,7 @@ fn make_mutable(
                     .collect::<PolarsResult<Vec<_>>>()?;
                 Box::new(DynMutableStructArray::new(values, dtype.clone())) as Box<dyn MutableArray>
             },
+            ArrowDataType::Extension(ext) => make_mutable(&ext.inner, avro_field, capacity)?,
             other => {
                 polars_bail!(nyi = "Deserializing type {other:#?} is still not implemented")
             },

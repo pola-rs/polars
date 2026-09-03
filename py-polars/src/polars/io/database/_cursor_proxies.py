@@ -7,7 +7,7 @@ from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Coroutine, Iterable
+    from collections.abc import Coroutine, Iterable, Iterator
 
     import pyarrow as pa
 
@@ -35,12 +35,16 @@ class ODBCCursorProxy:
         self.query = query
 
     def fetch_arrow_table(
-        self, batch_size: int = 10_000, *, fetch_all: bool = False
+        self,
+        batch_size: int = 10_000,
+        *,
+        fetch_all: bool = False,  # noqa: ARG002
     ) -> pa.Table:
         """Fetch all results as a pyarrow Table."""
         from pyarrow import Table
 
         return Table.from_batches(
+            # TODO: is this fetch_all not supposed to be from the argument?
             self.fetch_record_batches(batch_size=batch_size, fetch_all=True)
         )
 
@@ -145,3 +149,32 @@ class SurrealDBCursorProxy:
         result = self._cached_result[:size]
         del self._cached_result[:size]
         return result
+
+
+class OracleCursorProxy:
+    """Cursor proxy for `python-oracledb` connections."""
+
+    def __init__(self, connection: Any) -> None:
+        self.connection = connection
+        self.execute_options: dict[str, Any] = {}
+        self.query: str | None = None
+
+    def close(self) -> None:
+        """Close the cursor."""
+        # no-op; never close a user's connection
+
+    def execute(self, query: str, **execute_options: Any) -> Self:
+        """Execute a query (n/a: store query for the fetch* methods)."""
+        self.execute_options = execute_options
+        self.query = query
+        return self
+
+    def fetch_df_all(self) -> Any:
+        """Fetch all rows as a single Arrow-capable dataframe object."""
+        return self.connection.fetch_df_all(self.query, **self.execute_options)
+
+    def fetch_df_batches(self, size: int) -> Iterator[Any]:
+        """Fetch rows in batches, yielding Arrow-capable dataframe objects."""
+        return self.connection.fetch_df_batches(
+            self.query, size=size, **self.execute_options
+        )

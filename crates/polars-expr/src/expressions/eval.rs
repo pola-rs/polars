@@ -1,20 +1,20 @@
 use std::borrow::Cow;
 use std::cell::LazyCell;
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::builder::AnonymousOwnedListBuilder;
-use polars_core::error::{PolarsResult, feature_gated};
+use polars_core::error::{PolarsResult, feature_gated, polars_ensure};
 use polars_core::frame::DataFrame;
 #[cfg(feature = "dtype-array")]
 use polars_core::prelude::ArrayChunked;
 use polars_core::prelude::{
-    ChunkCast, ChunkExplode, Column, Field, GroupPositions, GroupsType, IdxCa, IntoColumn,
-    ListBuilderTrait, ListChunked,
+    _set_check_length, ChunkCast, ChunkExplode, ChunkNestingUtils, Column, Field, GroupPositions,
+    GroupsType, IdxCa, IntoColumn, ListBuilderTrait, ListChunked,
 };
 use polars_core::schema::Schema;
 use polars_core::series::Series;
-use polars_plan::constants::PL_ELEMENT_NAME;
 use polars_plan::dsl::{EvalVariant, Expr};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -67,28 +67,80 @@ impl EvalExpr {
         state: &ExecutionState,
         is_agg: bool,
     ) -> PolarsResult<Column> {
-        let df = ca
-            .get_inner()
-            .with_name(PL_ELEMENT_NAME.clone())
-            .into_frame();
-
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
             let name = self.output_field.name.clone();
             return Ok(Column::full_null(name, ca.len(), self.output_field.dtype()));
         }
+        let ca = ca
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(ca), Cow::Owned);
+
+        // SAFETY:
+        // We may temporarily create lengths that exceed IDXSIZE
+        // If that happens we slice and process in batches.
+        unsafe { _set_check_length(false) };
+        let flattened = ca.get_inner().into_column();
+        unsafe { _set_check_length(true) };
+        let flattened_len = flattened.len();
+        let validity = ca.rechunk_validity();
+
+        // Batch when the total number of inner elements exceeds IdxSize::MAX to avoid
+        // truncating offset/length casts below. Each batch covers a contiguous row-range
+        // whose accumulated inner element count stays within IdxSize::MAX.
+        const LIMIT: usize = (IdxSize::MAX - 1) as usize;
+        if flattened_len > LIMIT {
+            let offsets = ca.offsets()?;
+            // offsets_slice[i] / offsets_slice[i+1] are the start/end of row i.
+            let offsets_slice = offsets.as_slice();
+            let mut batch_results: VecDeque<Column> = VecDeque::new();
+            let mut batch_row_start = 0usize;
+            let mut batch_inner_start: i64 = 0;
+
+            loop {
+                if batch_row_start >= ca.len() {
+                    break;
+                }
+                let threshold = batch_inner_start + LIMIT as i64;
+                // Binary search for the first row whose end offset exceeds the threshold.
+                // offsets_slice[batch_row_start+1..] holds end offsets for rows
+                // batch_row_start, batch_row_start+1, …; partition_point returns how many fit.
+                let rel = offsets_slice[batch_row_start + 1..].partition_point(|&v| v <= threshold);
+                if batch_row_start + rel >= ca.len() {
+                    // All remaining rows fit in one batch.
+                    break;
+                }
+                let flush_len = rel;
+                polars_ensure!(flush_len > 0, ComputeError: "list elements larger than IdxSize::MAX are not supported");
+                let batch = ca.slice(batch_row_start as i64, flush_len);
+                batch_results.push_back(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
+                batch_row_start += flush_len;
+                batch_inner_start = offsets_slice[batch_row_start];
+            }
+            // Flush the final batch.
+            let batch = ca.slice(batch_row_start as i64, ca.len() - batch_row_start);
+            batch_results.push_back(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
+
+            let mut out = batch_results.pop_front().unwrap();
+            for other in batch_results.into_iter() {
+                out.append_owned(other)?;
+            }
+            return Ok(out);
+        }
+
+        let df = DataFrame::empty_with_height(ca.len());
 
         let has_masked_out_values = LazyCell::new(|| ca.has_masked_out_values());
         let may_fail_on_masked_out_elements = self.evaluation_is_fallible && *has_masked_out_values;
 
         // Fast path: fully elementwise expression without masked out values.
         if self.evaluation_is_elementwise && !may_fail_on_masked_out_elements {
-            let mut column = self.evaluation.evaluate(&df, state)?;
+            let mut state = state.clone();
+            state.element = Arc::new(Some((flattened, validity.clone())));
+            let mut column = self.evaluation.evaluate(&df, &state)?;
 
             // Since `lit` is marked as elementwise, this may lead to problems.
-            if column.len() == 1 && df.height() != 1 {
-                column = column.new_from_index(0, df.height());
-            }
+            column.broadcast_in_place_to(flattened_len)?;
 
             if !is_agg || !self.evaluation_is_scalar {
                 column = ca
@@ -99,8 +151,9 @@ impl EvalExpr {
             return Ok(column);
         }
 
-        let validity = ca.rechunk_validity();
         let offsets = ca.offsets()?;
+        // Detect accidental inclusion of sliced-out elements from chunks after the 1st (if present).
+        assert_eq!(i64::try_from(flattened_len).unwrap(), *offsets.last());
 
         // Create groups for all valid array elements.
         let groups = if ca.has_nulls() {
@@ -118,20 +171,25 @@ impl EvalExpr {
                 .map(|(offset, length)| [offset as IdxSize, length as IdxSize])
                 .collect()
         };
-        let groups = GroupsType::Slice {
-            groups,
-            overlapping: false,
-        };
+        let groups = GroupsType::new_slice(groups, false, true);
         let groups = Cow::Owned(groups.into_sliceable());
 
-        let mut ac = self.evaluation.evaluate_on_groups(&df, &groups, state)?;
+        let mut state = state.clone();
+        state.element = Arc::new(Some((flattened, validity.clone())));
 
-        ac.groups(); // Update the groups.
+        let mut ac = self.evaluation.evaluate_on_groups(&df, &groups, &state)?;
+
+        // Update the groups.
+        if self.evaluation_is_scalar || is_agg {
+            ac.set_groups_for_undefined_agg_states();
+        } else {
+            ac.groups();
+        }
 
         let flat_naive = ac.flat_naive();
 
         // Fast path. Groups are pointing to the same offsets in the data buffer.
-        if flat_naive.len() == df.height()
+        if flat_naive.len() == flattened_len
             && let Some(output_groups) = ac.groups.as_ref().as_unrolled_slice()
             && !(is_agg && self.evaluation_is_scalar)
         {
@@ -150,8 +208,8 @@ impl EvalExpr {
                 output_groups
                     .iter()
                     .zip(offsets.offset_and_length_iter())
-                    .all(|([start, len], (original_start, original_len))| {
-                        (*start == original_start as IdxSize) & (*len == original_len as IdxSize)
+                    .all(|([start, len], (original_start, original_groups))| {
+                        (*start == original_start as IdxSize) & (*len == original_groups as IdxSize)
                     })
             };
 
@@ -191,28 +249,71 @@ impl EvalExpr {
         as_list: bool,
         is_agg: bool,
     ) -> PolarsResult<Column> {
-        let df = ca
-            .get_inner()
-            .with_name(PL_ELEMENT_NAME.clone())
-            .into_frame();
-
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
             let name = self.output_field.name.clone();
             return Ok(Column::full_null(name, ca.len(), self.output_field.dtype()));
         }
 
+        let df = DataFrame::empty_with_height(ca.len());
+        let ca = ca
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(ca), Cow::Owned);
+
+        // SAFETY:
+        // We may temporarily create lengths that exceed IDXSIZE
+        // If that happens we slice and process in batches.
+        unsafe { _set_check_length(false) };
+        let flattened = ca.get_inner().into_column();
+        unsafe { _set_check_length(true) };
+        let flattened_len = flattened.len();
         let validity = ca.rechunk_validity();
+        let width = ca.width();
+
+        let limit = if cfg!(debug_assertions) {
+            std::env::var("POLARS_ARRAY_EVAL_IDX_SIZE_LIMIT")
+                .map(|v| v.parse::<usize>().unwrap())
+                .unwrap_or(IdxSize::MAX as usize - 1)
+        } else {
+            (IdxSize::MAX - 1) as usize
+        };
+
+        if flattened_len > limit && width > 0 {
+            if state.verbose() {
+                eprintln!("IdxSize limit hit; chunking branch hit");
+            }
+
+            let rows_per_batch = limit / width;
+            polars_ensure!(rows_per_batch > 0, ComputeError: "array elements larger than IdxSize::MAX are not supported");
+            let mut batch_results: VecDeque<Column> = VecDeque::new();
+            let mut batch_row_start = 0usize;
+
+            while batch_row_start < ca.len() {
+                let batch_len = (ca.len() - batch_row_start).min(rows_per_batch);
+                let batch = ca.slice(batch_row_start as i64, batch_len);
+                batch_results
+                    .push_back(self.evaluate_on_array_chunked(&batch, state, as_list, is_agg)?);
+                batch_row_start += batch_len;
+            }
+
+            let mut out = batch_results.pop_front().unwrap();
+            for other in batch_results {
+                out.append_owned(other)?;
+            }
+            return Ok(out);
+        }
+
         let may_fail_on_masked_out_elements = self.evaluation_is_fallible && ca.has_nulls();
 
         // Fast path: fully elementwise expression without masked out values.
         if self.evaluation_is_elementwise && !may_fail_on_masked_out_elements {
             assert!(!self.evaluation_is_scalar);
 
-            let mut column = self.evaluation.evaluate(&df, state)?;
-            if column.len() == 1 && df.height() != 1 {
-                column = column.new_from_index(0, df.height());
-            }
+            let mut state = state.clone();
+            state.element = Arc::new(Some((flattened, None)));
+
+            let mut column = self.evaluation.evaluate(&df, &state)?;
+            column.broadcast_in_place_to(flattened_len)?;
             assert_eq!(column.len(), ca.len() * ca.width());
 
             let dtype = column.dtype().clone();
@@ -224,16 +325,15 @@ impl EvalExpr {
                 ca.len(),
             );
 
-            if let Some(validity) = validity {
-                out.set_validity(&validity);
-            }
-
+            out.set_validity(validity);
             return Ok(if as_list {
                 out.to_list().into_column()
             } else {
                 out.clone().into_column()
             });
         }
+
+        assert_eq!(flattened_len, ca.width() * ca.len());
 
         // Create groups for all valid array elements.
         let groups = if ca.has_nulls() {
@@ -247,13 +347,13 @@ impl EvalExpr {
                 .map(|i| [(i * ca.width()) as IdxSize, ca.width() as IdxSize])
                 .collect()
         };
-        let groups = GroupsType::Slice {
-            groups,
-            overlapping: false,
-        };
+        let groups = GroupsType::new_slice(groups, false, true);
         let groups = Cow::Owned(groups.into_sliceable());
 
-        let mut ac = self.evaluation.evaluate_on_groups(&df, &groups, state)?;
+        let mut state = state.clone();
+        state.element = Arc::new(Some((flattened, validity.clone())));
+
+        let mut ac = self.evaluation.evaluate_on_groups(&df, &groups, &state)?;
 
         ac.groups(); // Update the groups.
 
@@ -293,10 +393,7 @@ impl EvalExpr {
                     ca.len(),
                 );
 
-                if let Some(validity) = validity {
-                    out.set_validity(&validity);
-                }
-
+                out.set_validity(validity);
                 return Ok(if as_list {
                     out.to_list().into_column()
                 } else {
@@ -344,12 +441,16 @@ impl EvalExpr {
             ));
         }
 
+        let flattened = input.clone().into_column();
+        let validity = input.rechunk_validity();
+
         let mut deposit: Option<Bitmap> = None;
+
         let groups = if min_samples == 0 {
             (1..input.len() as IdxSize).map(|i| [0, i]).collect()
         } else {
-            let validity = input
-                .rechunk_validity()
+            let validity = validity
+                .clone()
                 .unwrap_or_else(|| Bitmap::new_with_value(true, input.len()));
             let mut count = 0;
             let mut deposit_builder = BitmapBuilder::with_capacity(input.len());
@@ -366,18 +467,16 @@ impl EvalExpr {
             out
         };
 
-        let groups = GroupsType::Slice {
-            groups,
-            overlapping: true,
-        };
+        let groups = GroupsType::new_slice(groups, true, true);
 
         let groups = groups.into_sliceable();
 
-        let df = input
-            .clone()
-            .with_name(PL_ELEMENT_NAME.clone())
-            .into_frame();
-        let agg = self.evaluation.evaluate_on_groups(&df, &groups, state)?;
+        let df = DataFrame::empty_with_height(input.len());
+
+        let mut state = state.clone();
+        state.element = Arc::new(Some((flattened, validity)));
+
+        let agg = self.evaluation.evaluate_on_groups(&df, &groups, &state)?;
         let (mut out, _) = agg.get_final_aggregation();
 
         // Since we only evaluated the expressions on the items that satisfied the min samples, we
@@ -406,9 +505,9 @@ impl PhysicalExpr for EvalExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
-        match self.variant {
+        let out = match self.variant {
             EvalVariant::List => {
                 let lst = input.list()?;
                 self.evaluate_on_list_chunked(lst, state, false)
@@ -418,47 +517,50 @@ impl PhysicalExpr for EvalExpr {
                 self.evaluate_on_list_chunked(lst, state, true)
             },
             EvalVariant::Array { as_list } => feature_gated!("dtype-array", {
-                self.evaluate_on_array_chunked(input.array()?, state, as_list, false)
+                let arr = input.array()?;
+                self.evaluate_on_array_chunked(arr, state, as_list, false)
             }),
             EvalVariant::ArrayAgg => feature_gated!("dtype-array", {
-                self.evaluate_on_array_chunked(input.array()?, state, true, true)
+                let arr = input.array()?;
+                self.evaluate_on_array_chunked(arr, state, true, true)
             }),
             EvalVariant::Cumulative { min_samples } => {
                 self.evaluate_cumulative_eval(input.as_materialized_series(), min_samples, state)
             },
-        }
+        }?;
+        Ok(out.with_name(self.output_field.name().clone()))
     }
 
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut input = self.input.evaluate_on_groups(df, groups, state)?;
+        input.groups();
+
         match self.variant {
             EvalVariant::List => {
-                let out =
-                    self.evaluate_on_list_chunked(input.get_values().list()?, state, false)?;
+                let input_col = input.flat_naive();
+                let out = self.evaluate_on_list_chunked(input_col.list()?, state, false)?;
                 input.with_values(out, false, Some(&self.expr))?;
             },
             EvalVariant::ListAgg => {
-                let out = self.evaluate_on_list_chunked(input.get_values().list()?, state, true)?;
+                let input_col = input.flat_naive();
+                let out = self.evaluate_on_list_chunked(input_col.list()?, state, true)?;
                 input.with_values(out, false, Some(&self.expr))?;
             },
             EvalVariant::Array { as_list } => feature_gated!("dtype-array", {
-                let out = self.evaluate_on_array_chunked(
-                    input.aggregated().array()?,
-                    state,
-                    as_list,
-                    false,
-                )?;
-                input.with_values(out, true, Some(&self.expr))?;
+                let arr_col = input.flat_naive();
+                let out =
+                    self.evaluate_on_array_chunked(arr_col.array()?, state, as_list, false)?;
+                input.with_values(out, false, Some(&self.expr))?;
             }),
             EvalVariant::ArrayAgg => feature_gated!("dtype-array", {
-                let out =
-                    self.evaluate_on_array_chunked(input.aggregated().array()?, state, true, true)?;
-                input.with_values(out, true, Some(&self.expr))?;
+                let arr_col = input.flat_naive();
+                let out = self.evaluate_on_array_chunked(arr_col.array()?, state, true, true)?;
+                input.with_values(out, false, Some(&self.expr))?;
             }),
             EvalVariant::Cumulative { min_samples } => {
                 let mut builder = AnonymousOwnedListBuilder::new(
@@ -480,6 +582,8 @@ impl PhysicalExpr for EvalExpr {
                 input.with_values(builder.finish().into_column(), true, Some(&self.expr))?;
             },
         }
+
+        input.rename(self.output_field.name().clone());
         Ok(input)
     }
 

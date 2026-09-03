@@ -53,6 +53,7 @@ impl PlCredentialProvider {
         )))
     }
 
+    #[allow(unused)]
     pub(super) fn func_addr(&self) -> usize {
         match self {
             Self::Function(CredentialProviderFunction(v)) => Arc::as_ptr(v) as *const () as usize,
@@ -75,6 +76,17 @@ impl PlCredentialProvider {
             Self::Python(v) => Ok(v
                 .try_into_initialized(clear_cached_credentials)?
                 .map(Self::Python)),
+        }
+    }
+
+    pub fn stable_cache_key(&self) -> PolarsResult<Vec<u8>> {
+        match self {
+            Self::Function(CredentialProviderFunction(v)) => Ok((Arc::as_ptr(v) as *const ()
+                as usize)
+                .to_ne_bytes()
+                .to_vec()),
+            #[cfg(feature = "python")]
+            Self::Python(v) => v.stable_cache_key(),
         }
     }
 }
@@ -385,15 +397,15 @@ impl serde::Serialize for PlCredentialProvider {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for PlCredentialProvider {
-    fn schema_name() -> String {
-        "PlCredentialProvider".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PlCredentialProvider".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "PlCredentialProvider"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         Vec::<u8>::json_schema(generator)
     }
 }
@@ -498,7 +510,7 @@ mod python_impl {
     use std::hash::Hash;
     use std::sync::Arc;
 
-    use polars_error::{PolarsError, PolarsResult};
+    use polars_error::{PolarsError, PolarsResult, polars_err};
     use polars_utils::pl_str::PlSmallStr;
     use polars_utils::python_function::PythonObject;
     use pyo3::exceptions::PyValueError;
@@ -585,6 +597,21 @@ mod python_impl {
                 Self::Provider(v) => Arc::as_ptr(v),
             }) as *const () as usize
         }
+
+        pub fn stable_cache_key(&self) -> PolarsResult<Vec<u8>> {
+            let obj = match self {
+                Self::Builder(obj) | Self::Provider(obj) => obj,
+            };
+            let err = |e| {
+                polars_err!(ComputeError:
+                "failed to extract stable_cache_key: {e}")
+            };
+            Python::attach(|py| {
+                obj.call_method0(py, "stable_cache_key")
+                    .and_then(|r| r.extract::<Vec<u8>>(py))
+            })
+            .map_err(err)
+        }
     }
 
     impl IntoCredentialProvider for PythonCredentialProvider {
@@ -666,6 +693,8 @@ mod python_impl {
         #[cfg(feature = "azure")]
         fn into_azure_provider(self) -> object_store::azure::AzureCredentialProvider {
             use object_store::azure::AzureAccessKey;
+            use percent_encoding::percent_decode_str;
+            use polars_core::config::verbose_print_sensitive;
             use polars_error::PolarsResult;
 
             use crate::cloud::credential_provider::{
@@ -674,13 +703,13 @@ mod python_impl {
 
             let func = self.unwrap_as_provider();
 
-            CredentialProviderFunction(Arc::new(move || {
+            return CredentialProviderFunction(Arc::new(move || {
                 let func = func.clone();
                 Box::pin(async move {
                     let mut credentials = None;
 
                     static VALID_KEYS_MSG: &str =
-                        "valid configuration keys are: account_key, bearer_token";
+                        "valid configuration keys are: ('account_key', 'bearer_token', 'sas_token')";
 
                     let expiry = Python::attach(|py| {
                         let v = func.0.call0(py)?.into_bound(py);
@@ -703,6 +732,21 @@ mod python_impl {
                                 "bearer_token" => {
                                     credentials =
                                         Some(object_store::azure::AzureCredential::BearerToken(v))
+                                },
+                                "sas_token" => {
+                                    credentials =
+                                        Some(object_store::azure::AzureCredential::SASToken(
+                                            split_sas(&v).map_err(|err_msg| {
+                                                verbose_print_sensitive(|| {
+                                                    format!("error decoding SAS token: {err_msg} (token: {v})")
+                                                });
+
+                                                PyValueError::new_err(format!(
+                                                    "error decoding SAS token: {err_msg}. \
+                                                    Set POLARS_VERBOSE_SENSITIVE=1 to print the value"
+                                                ))
+                                            })?,
+                                        ))
                                 },
                                 v => {
                                     return pyo3::PyResult::Err(PyValueError::new_err(format!(
@@ -727,7 +771,33 @@ mod python_impl {
                     PolarsResult::Ok((ObjectStoreCredential::Azure(Arc::new(credentials)), expiry))
                 })
             }))
-            .into_azure_provider()
+            .into_azure_provider();
+
+            /// Copied and adjusted from object-store.
+            ///
+            /// https://github.com/apache/arrow-rs-object-store/blob/7a0504b4924fcecee17d768fd7190b8f71b0877f/src/azure/builder.rs#L1072-L1089
+            fn split_sas(sas: &str) -> Result<Vec<(String, String)>, &'static str> {
+                let sas = percent_decode_str(sas)
+                    .decode_utf8()
+                    .map_err(|_| "UTF-8 decode error")?;
+
+                let kv_str_pairs = sas
+                    .trim_start_matches('?')
+                    .split('&')
+                    .filter(|s| !s.chars().all(char::is_whitespace));
+
+                let mut pairs = Vec::new();
+
+                for kv_pair_str in kv_str_pairs {
+                    let (k, v) = kv_pair_str
+                        .trim()
+                        .split_once('=')
+                        .ok_or("missing SAS component")?;
+                    pairs.push((k.into(), v.into()))
+                }
+
+                Ok(pairs)
+            }
         }
 
         #[cfg(feature = "gcp")]
@@ -792,7 +862,10 @@ mod python_impl {
                 py_object
                     .getattr(py, "_storage_update_options")
                     .map_or(Ok(vec![]), |f| {
-                        let v = f.call0(py)?.extract::<pyo3::Bound<'_, PyDict>>(py)?;
+                        let v = f
+                            .call0(py)?
+                            .extract::<pyo3::Bound<'_, PyDict>>(py)
+                            .map_err(pyo3::PyErr::from)?;
 
                         let mut out = Vec::with_capacity(v.len());
 

@@ -3,38 +3,37 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypedDict, get_args
+from typing import TYPE_CHECKING, Any, Final, Literal, TypedDict, get_args
 
 from polars._dependencies import json
 from polars._typing import EngineType
-from polars._utils.deprecation import deprecated
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
+from polars._utils.monitoring import MONITORING_ENV_VAR, activate_monitoring
 from polars._utils.unstable import unstable
 from polars._utils.various import normalize_filepath
-from polars.lazyframe.engine_config import GPUEngine
+from polars.lazyframe.engine import Engine
+from polars.lazyframe.engine_config import (
+    SUPPORTED_ENGINE_NAMES,
+    get_engine_affinity_override,
+    set_engine_affinity_override,
+)
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Callable
     from types import TracebackType
+    from typing import TypeAlias
 
-    from polars._typing import FloatFmt
+    from polars._typing import Alignment, EngineType, FloatFmt
     from polars.io.cloud.credential_provider._providers import (
         CredentialProviderFunction,
     )
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
 
     if sys.version_info >= (3, 11):
         from typing import Self, Unpack
     else:
         from typing_extensions import Self, Unpack
 
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 __all__ = ["Config"]
 
@@ -58,7 +57,7 @@ TableFormatNames: TypeAlias = Literal[
 # note: register all Config-specific environment variable names here; need to constrain
 # which 'POLARS_' environment variables are recognized, as there are other lower-level
 # and/or unstable settings that should not be saved or reset with the Config vars.
-_POLARS_CFG_ENV_VARS = {
+_POLARS_CFG_ENV_VARS: Final[set[str]] = {
     "POLARS_WARN_UNSTABLE",
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
@@ -82,6 +81,7 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_VERBOSE",
     "POLARS_MAX_EXPR_DEPTH",
     "POLARS_ENGINE_AFFINITY",
+    "POLARS_QUERY_MONITORING",
 }
 
 # vars that set the rust env directly should declare themselves here as the Config
@@ -99,11 +99,51 @@ with contextlib.suppress(ImportError, NameError):
     }
 
 
+def _get_default_credential_provider() -> Any:
+    import polars.io.cloud.credential_provider._builder as builder
+
+    return builder.DEFAULT_CREDENTIAL_PROVIDER
+
+
+def _set_default_credential_provider(provider: Any) -> None:
+    import polars.io.cloud.credential_provider._builder as builder
+
+    builder.DEFAULT_CREDENTIAL_PROVIDER = provider
+
+
+# Python-object options cannot be stored in environment variables or `Config.save`.
+# Register them here so contexts and resets handle them like other options.
+_POLARS_CFG_RUNTIME_VARS: Final[
+    dict[str, tuple[Callable[[], Any], Callable[[Any], None], Any]]
+] = {
+    "set_engine_affinity": (
+        get_engine_affinity_override,
+        set_engine_affinity_override,
+        None,
+    ),
+    "set_default_credential_provider": (
+        _get_default_credential_provider,
+        _set_default_credential_provider,
+        "auto",
+    ),
+}
+
+
+def _snapshot_runtime_vars() -> dict[str, Any]:
+    """Capture the current value of every runtime-only option, by reference."""
+    return {name: get() for name, (get, _, _) in _POLARS_CFG_RUNTIME_VARS.items()}
+
+
+def _restore_runtime_vars(snapshot: dict[str, Any]) -> None:
+    """Restore runtime-only options from a `_snapshot_runtime_vars` result."""
+    for name, (_, set_, default) in _POLARS_CFG_RUNTIME_VARS.items():
+        set_(snapshot.get(name, default))
+
+
 class ConfigParameters(TypedDict, total=False):
     """Parameters supported by the polars Config."""
 
     ascii_tables: bool | None
-    auto_structify: bool | None
     decimal_separator: str | None
     thousands_separator: str | bool | None
     float_precision: int | None
@@ -111,8 +151,8 @@ class ConfigParameters(TypedDict, total=False):
     fmt_str_lengths: int | None
     fmt_table_cell_list_len: int | None
     streaming_chunk_size: int | None
-    tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
-    tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
+    tbl_cell_alignment: Alignment | None
+    tbl_cell_numeric_alignment: Alignment | None
     tbl_cols: int | None
     tbl_column_data_type_inline: bool | None
     tbl_dataframe_shape_below: bool | None
@@ -126,9 +166,11 @@ class ConfigParameters(TypedDict, total=False):
     trim_decimal_zeros: bool | None
     verbose: bool | None
     expr_depth_warning: int
+    engine_affinity: EngineType | None
+    default_credential_provider: CredentialProviderFunction | Literal["auto"] | None
+    enable_monitoring: bool | None
 
     set_ascii_tables: bool | None
-    set_auto_structify: bool | None
     set_decimal_separator: str | None
     set_thousands_separator: str | bool | None
     set_float_precision: int | None
@@ -136,8 +178,8 @@ class ConfigParameters(TypedDict, total=False):
     set_fmt_str_lengths: int | None
     set_fmt_table_cell_list_len: int | None
     set_streaming_chunk_size: int | None
-    set_tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
-    set_tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None
+    set_tbl_cell_alignment: Alignment | None
+    set_tbl_cell_numeric_alignment: Alignment | None
     set_tbl_cols: int | None
     set_tbl_column_data_type_inline: bool | None
     set_tbl_dataframe_shape_below: bool | None
@@ -154,7 +196,20 @@ class ConfigParameters(TypedDict, total=False):
     set_engine_affinity: EngineType | None
 
 
-class Config(contextlib.ContextDecorator):
+class _Meta(type):
+    if not TYPE_CHECKING:
+
+        def __getattr__(cls, name: str) -> Any:
+            raise_for_removed_attributes(
+                cls,
+                name,
+                {"set_auto_structify": None},
+                version="2.0",
+            )
+            return getattr_fallback(cls, super(), name, meta=True)
+
+
+class Config(contextlib.ContextDecorator, metaclass=_Meta):
     """
     Configure polars; offers options for table formatting and more.
 
@@ -178,13 +233,16 @@ class Config(contextlib.ContextDecorator):
     Alternatively, you can use as a decorator in order to scope the duration of the
     selected options to a specific function:
 
-    >>> @pl.Config(verbose=True)
+    >>> @pl.Config(verbose=True, apply_on_context_enter=True)
     ... def test():
     ...     pass
     """
 
     _context_options: ConfigParameters | None = None
     _original_state: str = ""
+    # `save()` cannot represent runtime-only options, so they are snapshotted
+    # separately.
+    _original_runtime_state: dict[str, Any] | None = None
 
     def __init__(
         self,
@@ -212,6 +270,13 @@ class Config(contextlib.ContextDecorator):
         **options
             keyword args that will set the option; equivalent to calling the
             named "set_<option>" method with the given value.
+
+        Notes
+        -----
+        The `apply_on_context_enter` parameter should almost *always* be set True
+        when using `Config` as a decorator to ensure that the options are applied
+        only within the scope of the decorated function (and not globally at
+        module import time).
 
         Examples
         --------
@@ -261,6 +326,7 @@ class Config(contextlib.ContextDecorator):
         """
         # save original state _before_ any changes are made
         self._original_state = self.save()
+        self._original_runtime_state = _snapshot_runtime_vars()
         if restore_defaults:
             self.restore_defaults()
 
@@ -275,6 +341,8 @@ class Config(contextlib.ContextDecorator):
     def __enter__(self) -> Self:
         """Support setting Config options that are reset on scope exit."""
         self._original_state = self._original_state or self.save()
+        if self._original_runtime_state is None:
+            self._original_runtime_state = _snapshot_runtime_vars()
         if self._context_options:
             self._set_config_params(**self._context_options)
         return self
@@ -287,7 +355,10 @@ class Config(contextlib.ContextDecorator):
     ) -> None:
         """Reset any Config options that were set within the scope."""
         self.restore_defaults().load(self._original_state)
+        if self._original_runtime_state is not None:
+            _restore_runtime_vars(self._original_runtime_state)
         self._original_state = ""
+        self._original_runtime_state = None
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Config):
@@ -331,6 +402,9 @@ class Config(contextlib.ContextDecorator):
 
         cfg_load = Config()
         opts = options.get("environment", {})
+        if "POLARS_ENGINE_AFFINITY" in opts:
+            # A saved affinity value replaces any object affinity.
+            set_engine_affinity_override(None)
         for key, opt in opts.items():
             if opt is None:
                 os.environ.pop(key, None)
@@ -340,6 +414,8 @@ class Config(contextlib.ContextDecorator):
         for cfg_methodname, value in options.get("direct", {}).items():
             if hasattr(cfg_load, cfg_methodname):
                 getattr(cfg_load, cfg_methodname)(value)
+
+        plr.config_reload_env_vars()
         return cfg_load
 
     @classmethod
@@ -387,6 +463,11 @@ class Config(contextlib.ContextDecorator):
         for method in _POLARS_CFG_DIRECT_VARS:
             getattr(cls, method)(None)
 
+        # not representable as environment variables, so reset separately
+        for _, set_, default in _POLARS_CFG_RUNTIME_VARS.values():
+            set_(default)
+
+        plr.config_reload_env_vars()
         return cls
 
     @classmethod
@@ -519,38 +600,7 @@ class Config(contextlib.ContextDecorator):
         else:
             fmt = "ASCII_FULL_CONDENSED" if active else "UTF8_FULL_CONDENSED"
             os.environ["POLARS_FMT_TABLE_FORMATTING"] = fmt
-        return cls
-
-    @classmethod
-    @deprecated("deprecated since version 1.32.0")
-    def set_auto_structify(cls, active: bool | None = False) -> type[Config]:
-        """
-        Allow multi-output expressions to be automatically turned into Structs.
-
-        .. note::
-            Deprecated since 1.32.0.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})
-        >>> with pl.Config(set_auto_structify=True):  # doctest: +SKIP
-        ...     out = df.select(pl.all())
-        >>> out  # doctest: +SKIP
-        shape: (3, 1)
-        ┌───────────┐
-        │ v         │
-        │ ---       │
-        │ struct[2] │
-        ╞═══════════╡
-        │ {1,4}     │
-        │ {2,5}     │
-        │ {3,6}     │
-        └───────────┘
-        """
-        if active is None:
-            os.environ.pop("POLARS_AUTO_STRUCTIFY", None)
-        else:
-            os.environ["POLARS_AUTO_STRUCTIFY"] = str(int(active))
+        plr.config_reload_env_var("POLARS_FMT_TABLE_FORMATTING")
         return cls
 
     @classmethod
@@ -681,8 +731,9 @@ class Config(contextlib.ContextDecorator):
         the limitations of floating point representations, and of the precision of the
         data that you are looking at.
 
-        This setting only applies to Float32 and Float64 dtypes; it does not cover
-        Decimal dtype values (which are displayed at their native level of precision).
+        This setting only applies to :class:`.Float16`, :class:`.Float32`, and
+        :class:`.Float64` dtypes; it does not cover :class:`.Decimal` dtype values
+        (which are displayed at their native level of precision).
 
         Examples
         --------
@@ -825,6 +876,7 @@ class Config(contextlib.ContextDecorator):
                 raise ValueError(msg)
 
             os.environ["POLARS_FMT_STR_LEN"] = str(n)
+        plr.config_reload_env_var("POLARS_FMT_STR_LEN")
         return cls
 
     @classmethod
@@ -874,6 +926,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_TABLE_CELL_LIST_LEN", None)
         else:
             os.environ["POLARS_FMT_TABLE_CELL_LIST_LEN"] = str(n)
+        plr.config_reload_env_var("POLARS_FMT_TABLE_CELL_LIST_LEN")
         return cls
 
     @classmethod
@@ -900,12 +953,11 @@ class Config(contextlib.ContextDecorator):
                 raise ValueError(msg)
 
             os.environ["POLARS_STREAMING_CHUNK_SIZE"] = str(size)
+        plr.config_reload_env_var("POLARS_STREAMING_CHUNK_SIZE")
         return cls
 
     @classmethod
-    def set_tbl_cell_alignment(
-        cls, format: Literal["LEFT", "CENTER", "RIGHT"] | None
-    ) -> type[Config]:
+    def set_tbl_cell_alignment(cls, format: Alignment | None) -> type[Config]:
         """
         Set table cell alignment.
 
@@ -940,17 +992,16 @@ class Config(contextlib.ContextDecorator):
         """
         if format is None:
             os.environ.pop("POLARS_FMT_TABLE_CELL_ALIGNMENT", None)
-        elif format not in {"LEFT", "CENTER", "RIGHT"}:
+        elif (format := format.upper()) not in {"LEFT", "CENTER", "RIGHT"}:  # type: ignore[assignment]
             msg = f"invalid alignment: {format!r}"
             raise ValueError(msg)
         else:
             os.environ["POLARS_FMT_TABLE_CELL_ALIGNMENT"] = format
+        plr.config_reload_env_var("POLARS_FMT_TABLE_CELL_ALIGNMENT")
         return cls
 
     @classmethod
-    def set_tbl_cell_numeric_alignment(
-        cls, format: Literal["LEFT", "CENTER", "RIGHT"] | None
-    ) -> type[Config]:
+    def set_tbl_cell_numeric_alignment(cls, format: Alignment | None) -> type[Config]:
         """
         Set table cell alignment for numeric columns.
 
@@ -990,11 +1041,12 @@ class Config(contextlib.ContextDecorator):
         """
         if format is None:
             os.environ.pop("POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT", None)
-        elif format not in {"LEFT", "CENTER", "RIGHT"}:
+        elif (format := format.upper()) not in {"LEFT", "CENTER", "RIGHT"}:  # type: ignore[assignment]
             msg = f"invalid alignment: {format!r}"
             raise ValueError(msg)
         else:
             os.environ["POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT"] = format
+        plr.config_reload_env_var("POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT")
         return cls
 
     @classmethod
@@ -1040,6 +1092,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_MAX_COLS", None)
         else:
             os.environ["POLARS_FMT_MAX_COLS"] = str(n)
+        plr.config_reload_env_var("POLARS_FMT_MAX_COLS")
         return cls
 
     @classmethod
@@ -1069,6 +1122,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE", None)
         else:
             os.environ["POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE"] = str(int(active))
+        plr.config_reload_env_var("POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE")
         return cls
 
     @classmethod
@@ -1096,6 +1150,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW", None)
         else:
             os.environ["POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW"] = str(int(active))
+        plr.config_reload_env_var("POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW")
         return cls
 
     @classmethod
@@ -1160,15 +1215,17 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_TABLE_FORMATTING", None)
         else:
             valid_format_names = get_args(TableFormatNames)
-            if format not in valid_format_names:
+            if (format_upper := format.upper()) not in valid_format_names:
                 msg = f"invalid table format name: {format!r}\nExpected one of: {', '.join(valid_format_names)}"
                 raise ValueError(msg)
-            os.environ["POLARS_FMT_TABLE_FORMATTING"] = format
+            os.environ["POLARS_FMT_TABLE_FORMATTING"] = format_upper
+        plr.config_reload_env_var("POLARS_FMT_TABLE_FORMATTING")
 
         if rounded_corners is None:
             os.environ.pop("POLARS_FMT_TABLE_ROUNDED_CORNERS", None)
         else:
             os.environ["POLARS_FMT_TABLE_ROUNDED_CORNERS"] = str(int(rounded_corners))
+        plr.config_reload_env_var("POLARS_FMT_TABLE_ROUNDED_CORNERS")
 
         return cls
 
@@ -1197,6 +1254,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES", None)
         else:
             os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES"] = str(int(active))
+        plr.config_reload_env_var("POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES")
         return cls
 
     @classmethod
@@ -1224,6 +1282,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_TABLE_HIDE_COLUMN_NAMES", None)
         else:
             os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_NAMES"] = str(int(active))
+        plr.config_reload_env_var("POLARS_FMT_TABLE_HIDE_COLUMN_NAMES")
         return cls
 
     @classmethod
@@ -1255,6 +1314,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR", None)
         else:
             os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR"] = str(int(active))
+        plr.config_reload_env_var("POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR")
         return cls
 
     @classmethod
@@ -1284,6 +1344,7 @@ class Config(contextlib.ContextDecorator):
             os.environ["POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION"] = str(
                 int(active)
             )
+        plr.config_reload_env_var("POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION")
         return cls
 
     @classmethod
@@ -1319,6 +1380,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_FMT_MAX_ROWS", None)
         else:
             os.environ["POLARS_FMT_MAX_ROWS"] = str(n)
+        plr.config_reload_env_var("POLARS_FMT_MAX_ROWS")
         return cls
 
     @classmethod
@@ -1371,6 +1433,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_TABLE_WIDTH", None)
         else:
             os.environ["POLARS_TABLE_WIDTH"] = str(width)
+        plr.config_reload_env_var("POLARS_TABLE_WIDTH")
         return cls
 
     @classmethod
@@ -1431,6 +1494,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_VERBOSE", None)
         else:
             os.environ["POLARS_VERBOSE"] = str(int(active))
+        plr.config_reload_env_var("POLARS_VERBOSE")
         return cls
 
     @classmethod
@@ -1451,6 +1515,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_WARN_UNSTABLE", None)
         else:
             os.environ["POLARS_WARN_UNSTABLE"] = str(int(active))
+        plr.config_reload_env_var("POLARS_WARN_UNSTABLE")
         return cls
 
     @classmethod
@@ -1465,6 +1530,7 @@ class Config(contextlib.ContextDecorator):
             raise ValueError(msg)
 
         os.environ["POLARS_MAX_EXPR_DEPTH"] = str(limit)
+        plr.config_reload_env_var("POLARS_MAX_EXPR_DEPTH")
         return cls
 
     @classmethod
@@ -1478,6 +1544,10 @@ class Config(contextlib.ContextDecorator):
             The default execution engine Polars will attempt to use
             when calling `.collect()`. However, the query is not
             guaranteed to execute with the specified engine.
+
+            An :class:`Engine` object may also be used to configure the default. Engine
+            objects are process-local and omitted from :meth:`Config.save`; loading
+            a state containing `POLARS_ENGINE_AFFINITY` replaces the object affinity.
 
         Examples
         --------
@@ -1507,22 +1577,79 @@ class Config(contextlib.ContextDecorator):
         │ 3   ┆ 6   │
         └─────┴─────┘
 
+        Set a configured engine as the default:
+
+        >>> pl.Config.set_engine_affinity(
+        ...     pl.GPUEngine(device=1, raise_on_fail=True)
+        ... )  # doctest: +SKIP
+
         Raises
         ------
         ValueError: if engine is not recognised.
-        NotImplementedError: if engine is a GPUEngine object
         """
-        if isinstance(engine, GPUEngine):
-            msg = "GPU engine with non-defaults not yet supported"
-            raise NotImplementedError(msg)
-        supported_engines = get_args(get_args(EngineType)[0])
-        if engine not in {*supported_engines, None}:
+        if isinstance(engine, Engine):
+            # Object affinities are Python-only; clear the named affinity.
+            os.environ.pop("POLARS_ENGINE_AFFINITY", None)
+            set_engine_affinity_override(engine)
+            plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
+            return cls
+
+        if engine not in {*SUPPORTED_ENGINE_NAMES, None}:
             msg = "invalid engine"
             raise ValueError(msg)
         if engine is None:
             os.environ.pop("POLARS_ENGINE_AFFINITY", None)
         else:
             os.environ["POLARS_ENGINE_AFFINITY"] = engine
+        set_engine_affinity_override(None)
+        plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
+
+        return cls
+
+    @classmethod
+    def enable_monitoring(cls, active: bool | None = True) -> type[Config]:
+        """
+        Enable runtime monitoring of query execution.
+
+        Query metrics are collected and sent to Polars Cloud, letting you inspect
+        the performance of your queries from the dashboard. This requires:
+
+        - A Polars Cloud account. Sign up at https://cloud.pola.rs/ (calling this
+          method triggers a browser-based login if you are not already
+          authenticated).
+        - The ``polars-cloud`` package installed in this environment
+          (``pip install polars-cloud``).
+
+        Monitoring is supported by the in-memory and streaming engines, but only
+        the streaming engine collects per-node metrics. Enabling monitoring therefore
+        also sets the engine affinity to ``"streaming"``. Disabling it does not
+        restore the previous engine affinity.
+
+        .. engine-support:: streaming
+
+        Parameters
+        ----------
+        active
+            Enable monitoring when True (the default), disable it when False.
+
+        Examples
+        --------
+        >>> pl.Config.enable_monitoring()  # doctest: +SKIP
+
+        Enable monitoring temporarily with ``Config``; the previous monitoring state
+        and engine affinity are restored on exit:
+
+        >>> with pl.Config(enable_monitoring=True):  # doctest: +SKIP
+        ...     lf.collect()
+        """
+        if active:
+            activate_monitoring()
+
+            os.environ[MONITORING_ENV_VAR] = "1"
+            cls.set_engine_affinity("streaming")
+        else:
+            os.environ.pop(MONITORING_ENV_VAR, None)
+
         return cls
 
     @classmethod
@@ -1559,13 +1686,20 @@ class Config(contextlib.ContextDecorator):
         ... )
         <class 'polars.config.Config'>
         """
-        import polars.io.cloud.credential_provider._builder
-
         if isinstance(credential_provider, str) and credential_provider != "auto":
             raise ValueError(credential_provider)
 
-        polars.io.cloud.credential_provider._builder.DEFAULT_CREDENTIAL_PROVIDER = (
-            credential_provider
-        )
+        _set_default_credential_provider(credential_provider)
 
         return cls
+
+    @classmethod
+    def reload_env_vars(cls) -> None:
+        """
+        Update the Polars config from the set environment variables.
+
+        Normally you need not call this, it is only necessary when updating
+        undocumented (environment-variable-only) config flags from Python after
+        importing Polars.
+        """
+        plr.config_reload_env_vars()

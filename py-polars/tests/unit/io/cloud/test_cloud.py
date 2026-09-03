@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 import contextlib
+import os
+import re
+import subprocess
+import sys
 from functools import partial
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
+from polars.exceptions import ArgumentRemovedError
 from polars.io.cloud._utils import _is_aws_cloud
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.mark.slow
@@ -27,7 +36,7 @@ def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
         # NDJSON does not have a `retries` parameter yet - so use the default
         result = scan_function(path_str)
     else:
-        result = scan_function(path_str, retries=0)
+        result = scan_function(path_str, storage_options={"max_retries": 0})
     assert isinstance(result, pl.LazyFrame)
 
     # Upon collection, it should fail
@@ -84,3 +93,146 @@ def test_is_aws_cloud() -> None:
         scheme="https",
         first_scan_path="https://bucket.s3.eu-west-1.amazonaws.com/key?",
     )
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
+@pytest.mark.slow
+def test_storage_options_retry_config(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    capture = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
+import contextlib
+import os
+
+import polars as pl
+
+os.environ["POLARS_VERBOSE"] = "1"
+os.environ["POLARS_CLOUD_MAX_RETRIES"] = "1"
+os.environ["POLARS_CLOUD_RETRY_TIMEOUT_MS"] = "1"
+os.environ["POLARS_CLOUD_RETRY_INIT_BACKOFF_MS"] = "2"
+os.environ["POLARS_CLOUD_RETRY_MAX_BACKOFF_MS"] = "10373"
+os.environ["POLARS_CLOUD_RETRY_BASE_MULTIPLIER"] = "6.28"
+
+q = pl.scan_parquet(
+    "s3://.../...",
+    storage_options={"aws_endpoint_url": "https://localhost:333"},
+    credential_provider=None,
+)
+
+with contextlib.suppress(OSError):
+    q.collect()
+
+""",
+        ],
+        stderr=subprocess.STDOUT,
+    ).decode()
+
+    assert (
+        """\
+init_backoff: 2ms, \
+max_backoff: 10.373s, \
+base: 6.28 }, \
+max_retries: 1, \
+retry_timeout: 1ms"""
+        in capture
+    )
+
+    q = pl.scan_parquet(
+        "s3://.../...",
+        storage_options={
+            "file_cache_ttl": 7,
+            "max_retries": 0,
+            "retry_timeout_ms": 23,
+            "retry_init_backoff_ms": 24,
+            "retry_max_backoff_ms": 9875,
+            "retry_base_multiplier": 3.14159,
+            "aws_endpoint_url": "https://localhost:333",
+        },
+        credential_provider=None,
+    )
+
+    capfd.readouterr()
+
+    with pytest.raises(OSError):
+        q.collect()
+
+    capture = capfd.readouterr().err
+
+    assert "file_cache_ttl: 7" in capture
+
+    assert (
+        """\
+init_backoff: 24ms, \
+max_backoff: 9.875s, \
+base: 3.14159 }, \
+max_retries: 0, \
+retry_timeout: 23ms"""
+        in capture
+    )
+
+
+def test_huggingface_token_env_var() -> None:
+    try:
+        subprocess.check_output(
+            [
+                sys.executable,
+                "-c",
+                """\
+import polars as pl
+
+pl.scan_csv("hf://...").collect()
+""",
+            ],
+            env={
+                **os.environ,
+                "POLARS_VERBOSE_SENSITIVE": "1",
+                "HF_TOKEN": "of news",
+            },
+            stderr=subprocess.STDOUT,
+        )
+    except subprocess.CalledProcessError as err:
+        capture = err.stdout
+    else:
+        raise AssertionError
+
+    assert b"Bearer of news" in capture
+
+
+@pytest.mark.parametrize(
+    "func",
+    [
+        pl.read_parquet,
+        pl.read_parquet_metadata,
+        pl.scan_parquet,
+        pl.scan_ipc,
+        pl.read_ndjson,
+        pl.scan_ndjson,
+    ],
+)
+def test_retries_removed(func: Any) -> None:
+    msg = 'Pass {"max_retries": n} via `storage_options` instead.'
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        func("s3://.../...", retries=3)
+
+
+@pytest.mark.parametrize(
+    "func",
+    [pl.scan_ipc, pl.read_ndjson, pl.scan_ndjson],
+)
+def test_file_cache_ttl_removed(func: Any) -> None:
+    msg = "The file cache is no longer supported."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        func("s3://.../...", file_cache_ttl=7)
+
+
+def test_scan_ipc_cache_removed() -> None:
+    msg = "The file cache is no longer supported."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.scan_ipc("s3://.../...", cache=True)  # type: ignore[call-arg]

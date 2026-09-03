@@ -107,6 +107,11 @@ pub enum IRStringFunction {
     // DataType can only be Date/Datetime/Time
     Strptime(DataType, StrptimeOptions),
     Split(bool),
+    #[cfg(feature = "regex")]
+    SplitRegex {
+        inclusive: bool,
+        strict: bool,
+    },
     #[cfg(feature = "dtype-decimal")]
     ToDecimal {
         scale: usize,
@@ -123,16 +128,19 @@ pub enum IRStringFunction {
     #[cfg(feature = "find_many")]
     ReplaceMany {
         ascii_case_insensitive: bool,
+        leftmost: bool,
     },
     #[cfg(feature = "find_many")]
     ExtractMany {
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     },
     #[cfg(feature = "find_many")]
     FindMany {
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     },
     #[cfg(feature = "regex")]
     EscapeRegex,
@@ -187,7 +195,9 @@ impl IRStringFunction {
                 },
                 _ => mapper.with_dtype(dtype.clone()),
             },
-            Split(_) => mapper.with_dtype(DataType::List(Box::new(DataType::String))),
+            Split(_) => mapper.with_dtype(DataType::List(DataType::String.into())),
+            #[cfg(feature = "regex")]
+            SplitRegex { .. } => mapper.with_dtype(DataType::List(DataType::String.into())),
             #[cfg(feature = "nightly")]
             Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
@@ -294,6 +304,8 @@ impl IRStringFunction {
             S::SplitExact { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-struct")]
             S::SplitN(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "regex")]
+            S::SplitRegex { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "find_many")]
             S::ContainsAny { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "find_many")]
@@ -336,7 +348,7 @@ impl Display for IRStringFunction {
             #[cfg(feature = "extract_jsonpath")]
             JsonPathMatch => "json_path_match",
             LenBytes => "len_bytes",
-            Lowercase => "lowercase",
+            Lowercase => "to_lowercase",
             LenChars => "len_chars",
             #[cfg(feature = "string_pad")]
             PadEnd { .. } => "pad_end",
@@ -382,11 +394,19 @@ impl Display for IRStringFunction {
                     "split"
                 }
             },
+            #[cfg(feature = "regex")]
+            SplitRegex { inclusive, .. } => {
+                if *inclusive {
+                    "split_regex_inclusive"
+                } else {
+                    "split_regex"
+                }
+            },
             #[cfg(feature = "nightly")]
-            Titlecase => "titlecase",
+            Titlecase => "to_titlecase",
             #[cfg(feature = "dtype-decimal")]
             ToDecimal { .. } => "to_decimal",
-            Uppercase => "uppercase",
+            Uppercase => "to_uppercase",
             #[cfg(feature = "string_pad")]
             ZFill => "zfill",
             #[cfg(feature = "find_many")]

@@ -1,6 +1,7 @@
 use std::sync::OnceLock;
 
 use polars_error::PolarsResult;
+use polars_utils::broadcast::BroadcastLength;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{AnyValue, Column, DataType, IntoColumn, Scalar, Series};
@@ -70,6 +71,10 @@ impl ScalarColumn {
 
     pub fn is_empty(&self) -> bool {
         self.length == 0
+    }
+
+    pub fn is_full_null(&self) -> bool {
+        self.scalar.is_null()
     }
 
     fn _to_series(name: PlSmallStr, value: Scalar, length: usize) -> Series {
@@ -301,6 +306,13 @@ impl ScalarColumn {
         self
     }
 
+    /// Packs every element into a single-element list.
+    pub fn to_unit_list(&self) -> Self {
+        let mut slf = self.clone();
+        slf.map_scalar(|s| Scalar::new_list(s.into_series(PlSmallStr::EMPTY)));
+        slf
+    }
+
     pub fn map_scalar(&mut self, map_scalar: impl Fn(Scalar) -> Scalar) {
         self.scalar = map_scalar(std::mem::take(&mut self.scalar));
         self.materialized.take();
@@ -326,17 +338,27 @@ impl From<ScalarColumn> for Column {
     }
 }
 
+impl BroadcastLength for ScalarColumn {
+    fn _broadcast_len(&self) -> usize {
+        self.len()
+    }
+
+    fn _column_name(&self) -> Option<&str> {
+        Some(self.name())
+    }
+}
+
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for ScalarColumn {
-    fn schema_name() -> String {
-        "ScalarColumn".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ScalarColumn".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "ScalarColumn"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         serde_impl::SerializeWrap::json_schema(generator)
     }
 }

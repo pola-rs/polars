@@ -74,4 +74,12 @@ impl CardinalitySketch {
             ((corr_est + 0.5) as usize).max(1)
         }
     }
+
+    pub fn into_state(self) -> [u8; 256] {
+        self.buckets
+    }
+
+    pub fn from_state(buckets: [u8; 256]) -> Self {
+        Self { buckets }
+    }
 }

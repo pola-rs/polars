@@ -25,17 +25,9 @@ CSV
    :toctree: api/
 
    read_csv
-   read_csv_batched
    scan_csv
    DataFrame.write_csv
    LazyFrame.sink_csv
-
-.. currentmodule:: polars.io.csv.batched_reader
-
-.. autosummary::
-   :toctree: api/
-
-    BatchedCsvReader.next_batches
 
 .. currentmodule:: polars
 
@@ -56,6 +48,7 @@ Delta Lake
    read_delta
    scan_delta
    DataFrame.write_delta
+   LazyFrame.sink_delta
 
 Excel / ODS
 ~~~~~~~~~~~
@@ -86,6 +79,7 @@ Iceberg
 
    scan_iceberg
    DataFrame.write_iceberg
+   LazyFrame.sink_iceberg
 
 JSON
 ~~~~
@@ -99,6 +93,14 @@ JSON
    DataFrame.write_ndjson
    LazyFrame.sink_ndjson
 
+Lines
+~~~~~
+.. autosummary::
+   :toctree: api/
+
+   read_lines
+   scan_lines
+
 
 Partition
 ~~~~~~~~~
@@ -107,18 +109,14 @@ Sink to disk with differing partitioning strategies.
 .. autosummary::
    :toctree: api/
 
-   PartitionByKey
-   PartitionMaxSize
-   PartitionParted
+   PartitionBy
 
 .. currentmodule:: polars.io.partition
 
 .. autosummary::
    :toctree: api/
 
-   KeyedPartition
-   BasePartitionContext
-   KeyedPartitionContext
+   FileProviderArgs
 
 .. currentmodule:: polars
 
@@ -134,22 +132,14 @@ Parquet
    DataFrame.write_parquet
    LazyFrame.sink_parquet
 
-.. currentmodule:: polars.io.parquet
-
-.. autosummary::
-   :toctree: api/
-
-   ParquetFieldOverwrites
-
-.. currentmodule:: polars
-
-PyArrow Datasets
+Arrow Datasets
 ~~~~~~~~~~~~~~~~
 Connect to pyarrow datasets.
 
 .. autosummary::
    :toctree: api/
 
+   scan_arrow_c_stream
    scan_pyarrow_dataset
 
 Cloud Credentials

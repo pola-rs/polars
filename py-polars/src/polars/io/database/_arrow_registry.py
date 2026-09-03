@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Final, TypedDict
 
 
 class ArrowDriverProperties(TypedDict):
@@ -18,7 +18,7 @@ class ArrowDriverProperties(TypedDict):
 
 
 # arrow driver properties should be specified from highest `minimum_version` to lowest
-ARROW_DRIVER_REGISTRY: dict[str, list[ArrowDriverProperties]] = {
+ARROW_DRIVER_REGISTRY: Final[dict[str, list[ArrowDriverProperties]]] = {
     # In version 1.6.0, ADBC released `Cursor.fetch_arrow`, returning an object
     # implementing the Arrow PyCapsule interface (not requiring PyArrow). This should be
     # used if the version permits.
@@ -65,13 +65,13 @@ ARROW_DRIVER_REGISTRY: dict[str, list[ArrowDriverProperties]] = {
             "minimum_version": None,
         }
     ],
-    "kuzu": [
+    "oracledb": [
         {
-            "fetch_all": "get_as_pl",
-            "fetch_batches": None,
-            "exact_batch_size": None,
+            "fetch_all": "fetch_df_all",
+            "fetch_batches": "fetch_df_batches",
+            "exact_batch_size": True,
             "repeat_batch_calls": False,
-            "minimum_version": "0.3.2",
+            "minimum_version": "3.0.0",
         }
     ],
     "snowflake": [

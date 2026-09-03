@@ -85,30 +85,19 @@ def test_extend_column_name_mismatch() -> None:
         df1.extend(df2)
 
 
-def test_initialize_df_18736() -> None:
-    # Completely empty initialization
-    df = pl.DataFrame()
-    s_0 = pl.Series([])
-    s_1 = pl.Series([None])
-    s_2 = pl.Series([None, None])
-    assert df.with_columns(s_0).shape == (0, 1)
-    assert df.with_columns(s_1).shape == (1, 1)
-    assert df.with_columns(s_2).shape == (2, 1)
-
-
 def test_extend_bad_input_type() -> None:
     a = pl.DataFrame({"x": [1, 2, 3]})
     b = pl.DataFrame({"x": [4, 5, 6]})
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'Series'",
     ):
         a.extend(pl.Series(b))  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
     ):
         a.extend(b.lazy())  # type: ignore[arg-type]
 
@@ -118,3 +107,11 @@ def test_extend_bad_input_type() -> None:
     b = DummyDataFrameSubclass({"x": [4, 5, 6]})
 
     a.extend(b)
+
+
+def test_extend_nested_mismatch() -> None:
+    s = pl.Series([1.0])
+    assert s.extend_constant(1, 2).to_list() == [1.0, 1.0, 1.0]
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        s.extend_constant([True], 2)

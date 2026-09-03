@@ -1,0 +1,106 @@
+use std::num::NonZeroUsize;
+use std::sync::Arc;
+
+use polars_core::runtime::ASYNC;
+use polars_error::{PolarsResult, polars_ensure};
+use polars_io::cloud::CloudOptions;
+use polars_io::metrics::IOMetrics;
+use polars_plan::dsl::file_provider::{FileProviderReturn, FileProviderType};
+use polars_plan::prelude::file_provider::FileProviderArgs;
+use polars_utils::pl_path::PlRefPath;
+
+use crate::nodes::io_sinks::components::sinked_path_info_list::{
+    SinkedPathInfoEntry, requested_sinked_paths_callback_with_non_path_error,
+};
+
+pub struct FileProvider {
+    pub base_path: PlRefPath,
+    pub cloud_options: Option<Arc<CloudOptions>>,
+    pub provider_type: FileProviderType,
+    pub upload_chunk_size: Option<NonZeroUsize>,
+    pub upload_max_concurrency: NonZeroUsize,
+    pub io_metrics: Option<Arc<IOMetrics>>,
+}
+
+impl FileProvider {
+    pub async fn open_file(
+        &self,
+        args: FileProviderArgs,
+        path_info_entry: Option<SinkedPathInfoEntry>,
+    ) -> PolarsResult<crate::nodes::io_sinks::components::writable::WriteTarget> {
+        let provided_path: String = 'provided_path: {
+            let provided_writable = match &self.provider_type {
+                FileProviderType::Hive(p) => break 'provided_path p.get_path(args)?,
+                FileProviderType::Iceberg(p) => break 'provided_path p.get_path(args)?,
+                FileProviderType::Function(f) => {
+                    let f = f.clone();
+
+                    let out = ASYNC
+                        .spawn_blocking(move || f.get_path_or_file(args))
+                        .await
+                        .unwrap()?;
+
+                    match out {
+                        FileProviderReturn::Path(p) => break 'provided_path p,
+                        FileProviderReturn::Writable(v) => v,
+                    }
+                },
+            };
+
+            if path_info_entry.is_some() {
+                return Err(requested_sinked_paths_callback_with_non_path_error());
+            }
+
+            return Ok(
+                crate::nodes::io_sinks::components::writable::WriteTarget::new(
+                    provided_writable,
+                    None,
+                ),
+            );
+        };
+
+        let path = self.base_path.join(&provided_path);
+
+        polars_ensure!(
+            path.as_str().starts_with(self.base_path.as_str()),
+            ComputeError:
+            "provided path '{provided_path}' is absolute but does not start with base path '{}'",
+            self.base_path,
+        );
+
+        let has_parent_dir_component = provided_path
+            .as_bytes()
+            .split(|c| *c == b'/' || *c == b'\\')
+            .any(|bytes| bytes == b"..");
+
+        polars_ensure!(
+            !has_parent_dir_component,
+            ComputeError:
+            "provided path '{provided_path}' contained parent dir component '..'"
+        );
+
+        if !path.has_scheme()
+            && let Some(path) = path.parent()
+        {
+            // Ignore errors from directory creation - the `Writable::try_new()` below will raise
+            // appropriate errors.
+            let _ = tokio::fs::DirBuilder::new()
+                .recursive(true)
+                .create(path)
+                .await;
+        }
+
+        if let Some(path_info_entry) = &path_info_entry {
+            path_info_entry.set_path(path.clone());
+        }
+
+        polars_io::utils::file::Writable::try_new(
+            path,
+            self.cloud_options.as_deref(),
+            self.upload_chunk_size,
+            self.upload_max_concurrency.get(),
+            self.io_metrics.clone(),
+        )
+        .map(|x| crate::nodes::io_sinks::components::writable::WriteTarget::new(x, path_info_entry))
+    }
+}

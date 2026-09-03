@@ -1,44 +1,39 @@
 from __future__ import annotations
 
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import (
     IO,
     TYPE_CHECKING,
     Any,
-    Callable,
     Literal,
     Protocol,
-    TypedDict,
     TypeVar,
     Union,
 )
 
 if TYPE_CHECKING:
-    import contextlib
-    import sys
     from datetime import date, datetime, time, timedelta
     from decimal import Decimal
+    from typing import TypeAlias
 
-    from sqlalchemy.engine import Connection, Engine
+    from sqlalchemy.engine import Connection
+    from sqlalchemy.engine import Engine as AlchemyEngine
+    from sqlalchemy.ext.asyncio import (
+        AsyncConnection,
+        AsyncEngine,
+        AsyncSession,
+        async_sessionmaker,
+    )
     from sqlalchemy.orm import Session
+    from xlsxwriter.format import Format
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._dependencies import numpy as np
-    from polars._dependencies import pandas as pd
-    from polars._dependencies import pyarrow as pa
-    from polars._dependencies import torch
+    from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
-    from polars.lazyframe.engine_config import GPUEngine
+    from polars.lazyframe.engine import Engine
     from polars.selectors import Selector
-
-    with contextlib.suppress(ImportError):  # Module not available when building docs
-        from polars._plr import PyPartitioning
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
 
 
 class ArrowArrayExportable(Protocol):
@@ -61,49 +56,143 @@ class ArrowSchemaExportable(Protocol):
     def __arrow_c_schema__(self) -> object: ...
 
 
+class NumpyArray(Protocol):
+    """Protocol to match NumPy Arrays without needing NumPy installed."""
+
+    def byteswap(self, *args: Any, **kwargs: Any) -> Any: ...
+    def conjugate(self, *args: Any, **kwargs: Any) -> Any: ...
+    def ravel(self, *args: Any, **kwargs: Any) -> Any: ...
+    def searchsorted(self, *args: Any, **kwargs: Any) -> Any: ...
+    def swapaxes(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PyArrowArray(Protocol):
+    """
+    Protocol to match PyArrow arrays without needing PyArrow installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def buffers(self, *args: Any, **kwargs: Any) -> Any: ...
+    def tolist(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PyArrowChunkedArray(Protocol):
+    """
+    Protocol to match PyArrow chunked arrays without needing PyArrow installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def iterchunks(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PyArrowTable(Protocol):
+    """
+    Protocol to match PyArrow tables without needing PyArrow installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def filter(self, *args: Any, **kwargs: Any) -> Any: ...
+    def group_by(self, *args: Any, **kwargs: Any) -> Any: ...
+    def add_column(self, *args: Any, **kwargs: Any) -> Any: ...
+    def remove_column(self, *args: Any, **kwargs: Any) -> Any: ...
+    def take(self, *args: Any, **kwargs: Any) -> Any: ...
+    def to_pandas(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PandasDataFrame(Protocol):
+    """
+    Protocol to match pandas dataframes without needing pandas-stubs installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def where(self, *args: Any, **kwargs: Any) -> Any: ...
+    def groupby(self, *args: Any, **kwargs: Any) -> Any: ...
+    def unstack(self, *args: Any, **kwargs: Any) -> Any: ...
+    def pivot_table(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PandasSeries(Protocol):
+    """
+    Protocol to match pandas series without needing pandas-stubs installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def to_frame(self, *args: Any, **kwargs: Any) -> Any: ...
+    def isna(self, *args: Any, **kwargs: Any) -> Any: ...
+    def rename_axis(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PandasIndex(Protocol):
+    """
+    Protocol to match pandas indexes without needing pandas-stubs installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def to_series(self, *args: Any, **kwargs: Any) -> Any: ...
+    def isna(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class TorchTensor(Protocol):
+    """
+    Protocol to match PyTorch tensors without needing PyTorch installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def cuda(self, *args: Any, **kwargs: Any) -> Any: ...
+    def backward(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
 # Data types
 PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
 PolarsTemporalType: TypeAlias = Union[type["TemporalType"], "TemporalType"]
 PolarsIntegerType: TypeAlias = Union[type["IntegerType"], "IntegerType"]
-OneOrMoreDataTypes: TypeAlias = Union[PolarsDataType, Iterable[PolarsDataType]]
-PythonDataType: TypeAlias = Union[
-    type[int],
-    type[float],
-    type[bool],
-    type[str],
-    type["date"],
-    type["time"],
-    type["datetime"],
-    type["timedelta"],
-    type[list[Any]],
-    type[tuple[Any, ...]],
-    type[bytes],
-    type[object],
-    type["Decimal"],
-    type[None],
-]
+OneOrMoreDataTypes: TypeAlias = PolarsDataType | Iterable[PolarsDataType]
+PythonDataType: TypeAlias = (
+    type[int]
+    | type[float]
+    | type[bool]
+    | type[str]
+    | type["date"]
+    | type["time"]
+    | type["datetime"]
+    | type["timedelta"]
+    | type[list[Any]]
+    | type[tuple[Any, ...]]
+    | type[bytes]
+    | type[object]
+    | type["Decimal"]
+    | type[None]
+)
 
-SchemaDefinition: TypeAlias = Union[
-    Mapping[str, Union[PolarsDataType, PythonDataType, None]],
-    Sequence[Union[str, tuple[str, Union[PolarsDataType, PythonDataType, None]]]],
-]
+SchemaDefinition: TypeAlias = (
+    Mapping[str, PolarsDataType | PythonDataType | None]
+    | Sequence[str | tuple[str, PolarsDataType | PythonDataType | None]]
+)
 SchemaDict: TypeAlias = Mapping[str, PolarsDataType]
 
 NumericLiteral: TypeAlias = Union[int, float, "Decimal"]
 TemporalLiteral: TypeAlias = Union["date", "time", "datetime", "timedelta"]
-NonNestedLiteral: TypeAlias = Union[NumericLiteral, TemporalLiteral, str, bool, bytes]
+NonNestedLiteral: TypeAlias = NumericLiteral | TemporalLiteral | str | bool | bytes
 # Python literal types (can convert into a `lit` expression)
 PythonLiteral: TypeAlias = Union[NonNestedLiteral, "np.ndarray[Any, Any]", list[Any]]
 # Inputs that can convert into a `col` expression
 IntoExprColumn: TypeAlias = Union["Expr", "Series", str]
 # Inputs that can convert into an expression
-IntoExpr: TypeAlias = Union[PythonLiteral, IntoExprColumn, None]
+IntoExpr: TypeAlias = PythonLiteral | IntoExprColumn | None
 
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
+Alignment: TypeAlias = Literal["left", "center", "right", "LEFT", "CENTER", "RIGHT"]
 
 # selector type, and related collection/sequence
 SelectorType: TypeAlias = "Selector"
-ColumnNameOrSelector: TypeAlias = Union[str, SelectorType]
+ColumnNameOrSelector: TypeAlias = Union["str", SelectorType]
 
 # User-facing string literal types
 # The following all have an equivalent Rust enum with the same name
@@ -111,14 +200,21 @@ Ambiguous: TypeAlias = Literal["earliest", "latest", "raise", "null"]
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
+CsvCompression: TypeAlias = Literal["uncompressed", "gzip", "zstd"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
-ColumnMapping: TypeAlias = tuple[Literal["iceberg-column-mapping"], "pa.Schema"]
+ColumnMapping: TypeAlias = tuple[
+    Literal["iceberg-column-mapping"],
+    # This is "pa.Schema". Not typed as that causes pyright strict type checking
+    # failures for users who don't have pyarrow-stubs installed.
+    Any,
+]
 DefaultFieldValues: TypeAlias = tuple[
-    Literal["iceberg"], dict[int, Union["Series", str]]
+    Literal["iceberg"], tuple[dict[int, Union["Series", str]], dict[int, "Series"]]
 ]
-DeletionFiles: TypeAlias = tuple[
-    Literal["iceberg-position-delete"], dict[int, list[str]]
-]
+DeletionFiles: TypeAlias = (
+    tuple[Literal["iceberg"], tuple[dict[int, list[str]], dict[int, str]]]
+    | tuple[Literal["delta-deletion-vector"], Callable[["DataFrame"], "DataFrame"]]
+)
 FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
 ]
@@ -130,23 +226,27 @@ Label: TypeAlias = Literal["left", "right", "datapoint"]
 MaintainOrderJoin: TypeAlias = Literal[
     "none", "left", "right", "left_right", "right_left"
 ]
+JoinBuildSide: TypeAlias = Literal[
+    "auto", "prefer_left", "prefer_right", "force_left", "force_right"
+]
+NdjsonCompression: TypeAlias = Literal["uncompressed", "gzip", "zstd"]
 NonExistent: TypeAlias = Literal["raise", "null"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
 ParallelStrategy: TypeAlias = Literal[
     "auto", "columns", "row_groups", "prefiltered", "none"
 ]
 ParquetCompression: TypeAlias = Literal[
-    "lz4", "uncompressed", "snappy", "gzip", "lzo", "brotli", "zstd"
+    "lz4", "uncompressed", "snappy", "gzip", "brotli", "zstd"
 ]
 PivotAgg: TypeAlias = Literal[
-    "min", "max", "first", "last", "sum", "mean", "median", "len"
+    "min", "max", "first", "last", "sum", "mean", "median", "len", "item"
 ]
 QuantileMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear", "equiprobable"
 ]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 Roll: TypeAlias = Literal["raise", "forward", "backward"]
-RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero"]
+RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero", "to_zero"]
 SerializationFormat: TypeAlias = Literal["binary", "json"]
 Endianness: TypeAlias = Literal["little", "big"]
 SizeUnit: TypeAlias = Literal[
@@ -184,8 +284,9 @@ AsofJoinStrategy: TypeAlias = Literal["backward", "forward", "nearest"]  # AsofS
 ClosedInterval: TypeAlias = Literal["left", "right", "both", "none"]  # ClosedWindow
 InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
-    "inner", "left", "right", "full", "semi", "anti", "cross", "outer"
+    "inner", "left", "right", "full", "semi", "anti", "cross"
 ]  # JoinType
+JoinWhereStrategy: TypeAlias = Literal["inner", "left", "right"]  # JoinType
 ListToStructWidthStrategy: TypeAlias = Literal["first_non_null", "max_width"]
 
 # The following have no equivalent on the Rust side
@@ -195,6 +296,7 @@ ConcatMethod = Literal[
     "diagonal",
     "diagonal_relaxed",
     "horizontal",
+    "horizontal_extend",
     "align",
     "align_full",
     "align_inner",
@@ -214,44 +316,55 @@ TransferEncoding: TypeAlias = Literal["hex", "base64"]
 WindowMappingStrategy: TypeAlias = Literal["group_to_rows", "join", "explode"]
 ExplainFormat: TypeAlias = Literal["plain", "tree"]
 
-# type signature for allowed frame init
-FrameInitTypes: TypeAlias = Union[
-    Mapping[str, Union[Sequence[object], Mapping[str, Sequence[object]], "Series"]],
-    Sequence[Any],
-    "np.ndarray[Any, Any]",
-    "pa.Table",
-    "pd.DataFrame",
+# type signature for allowed series init
+ArrayLike: TypeAlias = Union[
+    Iterable[Any],
+    "Series",
+    "PyArrowArray",
+    "PyArrowChunkedArray",
+    "NumpyArray",
+    "PandasSeries",
+    "PandasIndex",
     "ArrowArrayExportable",
     "ArrowStreamExportable",
-    "torch.Tensor",
+]
+
+
+# type signature for allowed frame init
+FrameInitTypes: TypeAlias = Union[
+    Mapping[str, ArrayLike | NonNestedLiteral | None],
+    Iterable[Any],
+    NumpyArray,
+    PyArrowTable,
+    PandasDataFrame,
+    "ArrowArrayExportable",
+    "ArrowStreamExportable",
+    TorchTensor,
+    "DataFrame",
 ]
 
 # Excel IO
 ColumnFormatDict: TypeAlias = Mapping[
     # dict of colname(s) or selector(s) to format string or dict
-    Union[ColumnNameOrSelector, tuple[ColumnNameOrSelector, ...]],
-    Union[str, Mapping[str, str]],
+    ColumnNameOrSelector | tuple[ColumnNameOrSelector, ...],
+    Union[str, Mapping[str, str], "Format"],
 ]
 ConditionalFormatDict: TypeAlias = Mapping[
     # dict of colname(s) to str, dict, or sequence of str/dict
-    Union[ColumnNameOrSelector, Collection[str]],
-    Union[str, Union[Mapping[str, Any], Sequence[Union[str, Mapping[str, Any]]]]],
+    ColumnNameOrSelector | Collection[str],
+    str | Mapping[str, Any] | Sequence[str | Mapping[str, Any]],
 ]
-ColumnTotalsDefinition: TypeAlias = Union[
-    # dict of colname(s) to str, a collection of str, or a boolean
-    Mapping[Union[ColumnNameOrSelector, tuple[ColumnNameOrSelector]], str],
-    Sequence[str],
-    bool,
-]
-ColumnWidthsDefinition: TypeAlias = Union[
-    Mapping[ColumnNameOrSelector, Union[tuple[str, ...], int]], int
-]
-RowTotalsDefinition: TypeAlias = Union[
-    # dict of colname to str(s), a collection of str, or a boolean
-    Mapping[str, Union[str, Collection[str]]],
-    Collection[str],
-    bool,
-]
+ColumnTotalsDefinition: TypeAlias = (
+    Mapping[ColumnNameOrSelector | tuple[ColumnNameOrSelector], str]
+    | Sequence[str]
+    | bool
+)
+ColumnWidthsDefinition: TypeAlias = (
+    Mapping[ColumnNameOrSelector, tuple[str, ...] | int] | int
+)
+RowTotalsDefinition: TypeAlias = (
+    Mapping[str, str | Collection[str]] | Collection[str] | bool
+)
 
 # standard/named hypothesis profiles used for parametric testing
 ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
@@ -259,18 +372,9 @@ ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
 # typevars for core polars types
 PolarsType = TypeVar("PolarsType", "DataFrame", "LazyFrame", "Series", "Expr")
 FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
-BufferInfo: TypeAlias = tuple[int, int, int]
 
 # type alias for supported spreadsheet engines
 ExcelSpreadsheetEngine: TypeAlias = Literal["calamine", "openpyxl", "xlsx2csv"]
-
-
-class SeriesBuffers(TypedDict):
-    """Underlying buffers of a Series."""
-
-    values: Series
-    validity: Series | None
-    offsets: Series | None
 
 
 # minimal protocol definitions that can reasonably represent
@@ -293,10 +397,13 @@ class Cursor(BasicCursor):
         """Fetch results in batches."""
 
 
-AlchemyConnection: TypeAlias = Union["Connection", "Engine", "Session"]
-ConnectionOrCursor: TypeAlias = Union[
-    BasicConnection, BasicCursor, Cursor, AlchemyConnection
+AlchemyConnection: TypeAlias = Union["Connection", "AlchemyEngine", "Session"]
+AlchemyAsyncConnection: TypeAlias = Union[
+    "AsyncConnection", "AsyncEngine", "AsyncSession", "async_sessionmaker[AsyncSession]"
 ]
+ConnectionOrCursor: TypeAlias = (
+    BasicConnection | BasicCursor | Cursor | AlchemyConnection | AlchemyAsyncConnection
+)
 
 # Annotations for `__getitem__` methods
 SingleIndexSelector: TypeAlias = int
@@ -319,58 +426,59 @@ BooleanMask: TypeAlias = Union[
     "Series",
     "np.ndarray[Any, Any]",
 ]
-SingleColSelector: TypeAlias = Union[SingleIndexSelector, SingleNameSelector]
-MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, BooleanMask]
+SingleColSelector: TypeAlias = SingleIndexSelector | SingleNameSelector
+MultiColSelector: TypeAlias = MultiIndexSelector | MultiNameSelector | BooleanMask
 
 # LazyFrame engine selection
-EngineType: TypeAlias = Union[
-    Literal["auto", "in-memory", "streaming", "gpu"], "GPUEngine"
-]
+EngineTypeName: TypeAlias = Literal["auto", "in-memory", "streaming", "gpu"]
+EngineType: TypeAlias = Union[EngineTypeName, "Engine"]
 
 PlanStage: TypeAlias = Literal["ir", "physical"]
 
-FileSource: TypeAlias = Union[
-    str,
-    Path,
-    IO[bytes],
-    bytes,
-    list[str],
-    list[Path],
-    list[IO[bytes]],
-    list[bytes],
+# Post-optimization callback receiving a Rust `NodeTraverser` and optional duration
+# in nanoseconds.
+PostOptCallback: TypeAlias = Callable[[Any, int | None], None]
+
+
+# Result of an async collect, resolved either through asyncio or gevent.
+AsyncResultT = TypeVar("AsyncResultT")
+AsyncResult: TypeAlias = Union[
+    "_GeventDataFrameResult[AsyncResultT]", "_AioDataFrameResult[AsyncResultT]"
 ]
 
-JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]
+# Remote execution on Polars Cloud; mirrors `polars_cloud._typing`
+ScalingMode: TypeAlias = Literal["auto", "single-node", "distributed"]
+PlanTypePreference: TypeAlias = Literal["dot", "plain"]
+
+FileSource: TypeAlias = (
+    str
+    | Path
+    | IO[bytes]
+    | bytes
+    | list[str]
+    | list[Path]
+    | list[IO[bytes]]
+    | list[bytes]
+)
+
+JSONEncoder = Callable[[Any], bytes] | Callable[[Any], str]
 
 DeprecationType: TypeAlias = Literal[
     "function",
     "renamed_parameter",
-    "streaming_parameter",
     "nonkeyword_arguments",
     "parameter_as_multi_positional",
 ]
 
 
-class PartitioningScheme:
-    def __init__(
-        self,
-        py_partitioning: PyPartitioning,
-    ) -> None:
-        self._py_partitioning = py_partitioning
-
-    @property
-    def _base_path(self) -> str | None:
-        return self._py_partitioning.base_path
-
-
 __all__ = [
+    "Alignment",
     "Ambiguous",
     "ArrowArrayExportable",
     "ArrowStreamExportable",
     "AsofJoinStrategy",
     "AvroCompression",
     "BooleanMask",
-    "BufferInfo",
     "CategoricalOrdering",
     "ClosedInterval",
     "ColumnFormatDict",
@@ -391,6 +499,7 @@ __all__ = [
     "DeprecationType",
     "Endianness",
     "EngineType",
+    "EngineTypeName",
     "EpochTimeUnit",
     "ExcelSpreadsheetEngine",
     "ExplainFormat",
@@ -408,13 +517,14 @@ __all__ = [
     "JaxExportType",
     "JoinStrategy",
     "JoinValidation",
+    "JoinWhereStrategy",
     "Label",
-    "ListToStructWidthStrategy",
     "MaintainOrderJoin",
     "MapElementsStrategy",
     "MultiColSelector",
     "MultiIndexSelector",
     "MultiNameSelector",
+    "NdjsonCompression",
     "NonExistent",
     "NonNestedLiteral",
     "NullBehavior",
@@ -424,8 +534,8 @@ __all__ = [
     "ParallelStrategy",
     "ParametricProfileNames",
     "ParquetCompression",
-    "PartitioningScheme",
     "PivotAgg",
+    "PlanTypePreference",
     "PolarsDataType",
     "PolarsIntegerType",
     "PolarsTemporalType",
@@ -436,12 +546,12 @@ __all__ = [
     "RankMethod",
     "Roll",
     "RowTotalsDefinition",
+    "ScalingMode",
     "SchemaDefinition",
     "SchemaDict",
     "SearchSortedSide",
     "SelectorType",
     "SerializationFormat",
-    "SeriesBuffers",
     "SingleColSelector",
     "SingleIndexSelector",
     "SingleNameSelector",
@@ -475,4 +585,6 @@ class ParquetMetadataContext:
 
 
 ParquetMetadataFn: TypeAlias = Callable[[ParquetMetadataContext], dict[str, str]]
-ParquetMetadata: TypeAlias = Union[dict[str, str], ParquetMetadataFn]
+ParquetMetadata: TypeAlias = dict[str, str] | ParquetMetadataFn
+
+StorageOptionsDict: TypeAlias = dict[str, Any]

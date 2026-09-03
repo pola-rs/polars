@@ -106,15 +106,6 @@ impl TreeWalker for IRNode {
 }
 
 #[cfg(feature = "cse")]
-pub(crate) fn with_ir_arena<F: FnOnce(&mut IRNodeArena) -> T, T>(
-    lp_arena: &mut Arena<IR>,
-    expr_arena: &mut Arena<AExpr>,
-    func: F,
-) -> T {
-    try_with_ir_arena(lp_arena, expr_arena, |a| Ok(func(a))).unwrap()
-}
-
-#[cfg(feature = "cse")]
 pub(crate) fn try_with_ir_arena<F: FnOnce(&mut IRNodeArena) -> PolarsResult<T>, T>(
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,

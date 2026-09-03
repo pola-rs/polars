@@ -7,3 +7,4 @@ pub mod ipc;
 pub mod avro;
 
 pub mod iterator;
+pub mod write_owned;

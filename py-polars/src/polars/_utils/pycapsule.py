@@ -15,8 +15,11 @@ if TYPE_CHECKING:
 
 
 def is_pycapsule(obj: Any) -> bool:
-    """Check if object supports the PyCapsule interface."""
-    return hasattr(obj, "__arrow_c_stream__") or hasattr(obj, "__arrow_c_array__")
+    """Check if object looks like it supports the PyCapsule interface."""
+    return any(
+        callable(getattr(obj, attr, None))
+        for attr in ("__arrow_c_stream__", "__arrow_c_array__")
+    )
 
 
 def pycapsule_to_frame(

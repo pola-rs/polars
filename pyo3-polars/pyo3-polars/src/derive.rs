@@ -47,8 +47,7 @@ static INIT: AtomicBool = AtomicBool::new(false);
 fn start_up_init() {
     // Set a custom panic hook that only shows output if verbose.
     std::panic::set_hook(Box::new(|info| {
-        let show_message = std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("") == "1";
-        if show_message {
+        if polars_config::config().verbose() {
             eprintln!("{info}")
         }
     }));
@@ -59,7 +58,7 @@ fn start_up_init() {
 /// FFI function, so unsafe
 pub unsafe extern "C" fn _polars_plugin_get_version() -> u32 {
     if !INIT.swap(true, Ordering::Relaxed) {
-        // Plugin version is is always called at least once.
+        // Plugin version is always called at least once.
         start_up_init();
     }
     let (major, minor) = polars_ffi::get_version();

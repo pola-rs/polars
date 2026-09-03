@@ -61,6 +61,20 @@ result = df.with_columns(
 print(result)
 # --8<-- [end:replace]
 
+# --8<-- [start:concat]
+df = pl.DataFrame(
+    {
+        "first_name": ["Ada", "Grace", "Edsger"],
+        "last_name": ["Lovelace", "Hopper", "Dijkstra"],
+    }
+)
+
+result = df.with_columns(
+    full_name=pl.col("first_name") + pl.lit(" ") + pl.col("last_name"),
+)
+print(result)
+# --8<-- [end:concat]
+
 # --8<-- [start:casing]
 addresses = pl.DataFrame(
     {

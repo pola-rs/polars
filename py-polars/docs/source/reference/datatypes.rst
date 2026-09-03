@@ -18,6 +18,7 @@ Numeric
     :nosignatures:
 
     Decimal
+    Float16
     Float32
     Float64
     Int8
@@ -59,6 +60,7 @@ String
 
     String
     Categorical
+    Categories
     Enum
     Utf8
 
@@ -68,8 +70,10 @@ Other
     :toctree: api/
     :nosignatures:
 
+    BaseExtension
     Binary
     Boolean
+    Extension
     Null
     Object
     Unknown

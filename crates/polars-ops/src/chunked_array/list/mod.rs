@@ -1,12 +1,8 @@
 use polars_core::prelude::*;
 
-#[cfg(feature = "list_any_all")]
-mod any_all;
 mod count;
 mod dispersion;
 mod get;
-#[cfg(feature = "hash")]
-pub(crate) mod hash;
 mod min_max;
 mod namespace;
 #[cfg(feature = "list_sets")]

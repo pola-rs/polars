@@ -6,6 +6,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from tests.unit.sql.asserts import assert_sql_matches
 
 
 @pytest.fixture
@@ -256,3 +257,183 @@ def test_order_by_errors() -> None:
         match="negative ordinal values are invalid for ORDER BY; found -1",
     ):
         df.sql("SELECT * FROM self ORDER BY -1")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # basic aliasing: ORDER BY original column name after aliasing
+        "SELECT a b FROM self GROUP BY a ORDER BY a",
+        "SELECT a AS b FROM self GROUP BY a ORDER BY a",
+        # table-qualified aliasing
+        "SELECT self.a b FROM self GROUP BY self.a ORDER BY self.a",
+        "SELECT self.a AS b FROM self GROUP BY self.a ORDER BY self.a",
+        # mixed qualified/unqualified
+        "SELECT a b FROM self GROUP BY a ORDER BY self.a",
+        "SELECT self.a b FROM self GROUP BY a ORDER BY a",
+        # ORDER BY alias name (should still work)
+        "SELECT a b FROM self GROUP BY a ORDER BY b",
+        "SELECT a AS b FROM self GROUP BY a ORDER BY b",
+    ],
+)
+def test_order_by_aliased_group_key(query: str) -> None:
+    """Test ORDER BY with original column name when aliased in SELECT."""
+    df = pl.DataFrame({"a": [3, 1, 2], "b": [30, 10, 20]})
+    assert_sql_matches(df, query=query, compare_with="sqlite")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # cross-aliasing: columns swap names
+        "SELECT a AS b, b AS a FROM self GROUP BY a, b ORDER BY self.a",
+        "SELECT a AS b, b AS a FROM self GROUP BY a, b ORDER BY self.b",
+        # cross-aliasing with expressions
+        "SELECT a AS b, -b AS a FROM self GROUP BY a, b ORDER BY self.a",
+        "SELECT a AS b, -b AS a FROM self GROUP BY a, b ORDER BY self.b",
+        # cross-aliasing with aggregate
+        "SELECT a AS b, SUM(b) AS a FROM self GROUP BY a ORDER BY self.a",
+        "SELECT a AS b, SUM(b) AS a FROM self GROUP BY a ORDER BY self.b",
+    ],
+)
+def test_order_by_cross_aliased_columns(query: str) -> None:
+    """Test ORDER BY with cross-aliasing where columns swap names."""
+    df = pl.DataFrame({"a": [3, 1, 2], "b": [30, 10, 20]})
+    assert_sql_matches(df, query=query, compare_with="sqlite")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # multiple columns with various aliasing patterns
+        "SELECT a x, b y, a + b z FROM self GROUP BY a, b ORDER BY a",
+        "SELECT a x, b y, a + b z FROM self GROUP BY a, b ORDER BY self.a",
+        "SELECT a x, b y, a + b z FROM self GROUP BY a, b ORDER BY b DESC",
+        "SELECT a x, b y, a + b z FROM self GROUP BY a, b ORDER BY self.b DESC",
+        # ORDER BY referencing original columns
+        "SELECT a x, b y FROM self GROUP BY a, b ORDER BY a + b",
+        "SELECT a x, b y FROM self GROUP BY a, b ORDER BY self.a + self.b",
+        # ORDER BY with ordinal
+        "SELECT a x, b y FROM self GROUP BY a, b ORDER BY 1",
+        "SELECT a x, b y FROM self GROUP BY a, b ORDER BY 2 DESC",
+    ],
+)
+def test_order_by_multi_column_aliasing(query: str) -> None:
+    """Test ORDER BY with multiple aliased columns and expressions."""
+    df = pl.DataFrame({"a": [3, 1, 2, 4], "b": [30, 10, 20, 15]})
+    assert_sql_matches(df, query=query, compare_with="sqlite")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # aggregate with aliased group key
+        "SELECT a grp, SUM(b) total FROM self GROUP BY a ORDER BY a",
+        "SELECT a grp, SUM(b) total FROM self GROUP BY a ORDER BY self.a",
+        "SELECT a grp, SUM(b) total FROM self GROUP BY a ORDER BY grp",
+        "SELECT a grp, SUM(b) total FROM self GROUP BY a ORDER BY total DESC",
+        # multiple aggregates
+        "SELECT a grp, SUM(b) s, AVG(b) avg FROM self GROUP BY a ORDER BY a",
+        "SELECT a grp, SUM(b) s, AVG(b) avg FROM self GROUP BY a ORDER BY self.a DESC",
+    ],
+)
+def test_order_by_aggregate_with_aliased_key(query: str) -> None:
+    """Test ORDER BY with aggregates and aliased group keys."""
+    df = pl.DataFrame({"a": [1, 1, 2, 2, 3], "b": [10, 20, 30, 40, 50]})
+    assert_sql_matches(df, query=query, compare_with="sqlite")
+
+
+def test_order_by_scalar_subquery() -> None:
+    # Ordering by a constant is a no-op, so the trailing key decides the order; the
+    # point is that the subquery resolves at all and leaves no placeholder column.
+    frames = {
+        "t1": pl.DataFrame({"k": [1, 2, 3]}),
+        "t2": pl.DataFrame({"k": [1, 1, 2], "w": [5, 7, 9]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="SELECT k FROM t1 ORDER BY (SELECT MIN(k) FROM t2), k DESC",
+        compare_with="duckdb",
+        expected={"k": [3, 2, 1]},
+    )
+
+
+def test_order_by_correlated_subquery() -> None:
+    # Per-row sort keys are 12, 9 and NULL, so DESC NULLS LAST gives k = 1, 2, 3.
+    # An unlowered correlated subquery would sort by a single constant instead.
+    frames = {
+        "t1": pl.DataFrame({"k": [1, 2, 3]}),
+        "t2": pl.DataFrame({"k": [1, 1, 2], "w": [5, 7, 9]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            "SELECT k FROM t1 "
+            "ORDER BY (SELECT SUM(w) FROM t2 WHERE t2.k = t1.k) DESC NULLS LAST"
+        ),
+        compare_with="duckdb",
+        expected={"k": [1, 2, 3]},
+    )
+
+
+def test_order_by_subquery_over_set_operation() -> None:
+    # Not compared against a reference engine: standard SQL only lets an ORDER BY
+    # after a set operation name output columns, and DuckDB rejects the query
+    # ("add the expression to every SELECT, or move the UNION into a FROM clause").
+    # Polars is more permissive here; rewriting the query to satisfy DuckDB would
+    # move the ORDER BY onto an outer SELECT and stop exercising the set-op path.
+    frames = {
+        "t1": pl.DataFrame({"k": [1, 2, 3]}),
+        "t2": pl.DataFrame({"k": [1, 1, 2]}),
+    }
+    res = pl.SQLContext(frames=frames, eager=True).execute(
+        "SELECT k FROM t1 UNION ALL SELECT k FROM t2 ORDER BY (SELECT MIN(k) FROM t2), k"
+    )
+    assert res.columns == ["k"]
+    assert res["k"].to_list() == [1, 1, 1, 2, 2, 3]
+
+
+def test_order_by_restated_aggregate() -> None:
+    frames = {"t": pl.DataFrame({"g": ["a", "a", "b", "c"], "x": [1, 2, 9, 5]})}
+    assert_sql_matches(
+        frames=frames,
+        query="SELECT g, SUM(x) AS sx FROM t GROUP BY g ORDER BY SUM(x) DESC",
+        compare_with="duckdb",
+        expected={"g": ["b", "c", "a"], "sx": [9, 5, 3]},
+    )
+
+
+def test_order_by_aggregate_not_selected() -> None:
+    frames = {
+        "t": pl.DataFrame(
+            {"g": ["a", "a", "b", "c"], "x": [1, 2, 9, 5], "y": [4, 4, 1, 7]}
+        )
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="SELECT g, SUM(x) AS sx FROM t GROUP BY g ORDER BY SUM(y) DESC, g",
+        compare_with="duckdb",
+        expected={"g": ["a", "c", "b"], "sx": [3, 5, 9]},
+    )
+
+
+def test_order_by_count_star() -> None:
+    frames = {"t": pl.DataFrame({"g": ["a", "a", "b", "c", "c", "c"]})}
+    assert_sql_matches(
+        frames=frames,
+        query="SELECT g FROM t GROUP BY g ORDER BY COUNT(*) DESC, g",
+        compare_with="duckdb",
+        expected={"g": ["c", "a", "b"]},
+    )
+
+
+def test_order_by_aggregate_expression() -> None:
+    frames = {"t": pl.DataFrame({"g": ["a", "a", "b", "c"], "x": [1, 2, 9, 5]})}
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            "SELECT g, MAX(x) AS mx FROM t GROUP BY g ORDER BY MIN(x) * -1, AVG(x) DESC"
+        ),
+        compare_with="duckdb",
+        expected={"g": ["b", "c", "a"], "mx": [9, 5, 2]},
+    )

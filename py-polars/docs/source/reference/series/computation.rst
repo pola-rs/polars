@@ -35,11 +35,14 @@ Computation
     Series.cum_prod
     Series.cum_sum
     Series.cumulative_eval
+    Series.degrees
     Series.diff
     Series.dot
     Series.entropy
     Series.ewm_mean
     Series.ewm_mean_by
+    Series.ewm_sum
+    Series.ewm_sum_by
     Series.ewm_std
     Series.ewm_var
     Series.exp
@@ -57,6 +60,7 @@ Computation
     Series.pct_change
     Series.peak_max
     Series.peak_min
+    Series.radians
     Series.rank
     Series.replace
     Series.replace_strict

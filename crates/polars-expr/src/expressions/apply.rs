@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 
-use polars_core::POOL;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::chunked_array::from_iterator_par::{
     ChunkedCollectParIterExt, try_list_from_par_iter,
 };
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use rayon::prelude::*;
 
 use super::*;
@@ -73,7 +73,7 @@ impl ApplyExpr {
     ) -> PolarsResult<Vec<AggregationContext<'a>>> {
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate_on_groups(df, groups, state);
         if self.allow_threading {
-            POOL.install(|| self.inputs.par_iter().map(f).collect())
+            RAYON.install(|| self.inputs.par_iter().map(f).collect())
         } else {
             self.inputs.iter().map(f).collect()
         }
@@ -85,7 +85,12 @@ impl ApplyExpr {
         ca: ListChunked,
     ) -> PolarsResult<AggregationContext<'a>> {
         let c = if self.is_scalar() {
-            let out = ca.explode(false).unwrap();
+            let out = ca
+                .explode(ExplodeOptions {
+                    empty_as_null: true,
+                    keep_nulls: true,
+                })
+                .unwrap();
             // if the explode doesn't return the same len, it wasn't scalar.
             polars_ensure!(out.len() == ca.len(), InvalidOperation: "expected scalar for expr: {}, got {}", self.expr, &out);
             ac.update_groups = UpdateGroups::No;
@@ -108,6 +113,7 @@ impl ApplyExpr {
     fn eval_and_flatten(&self, inputs: &mut [Column]) -> PolarsResult<Column> {
         self.function.call_udf(inputs)
     }
+
     fn apply_single_group_aware<'a>(
         &self,
         mut ac: AggregationContext<'a>,
@@ -115,24 +121,7 @@ impl ApplyExpr {
         // Fix up groups for AggregatedScalar, so that we can pretend they are just normal groups.
         ac.set_groups_for_undefined_agg_states();
 
-        let agg = match ac.agg_state() {
-            AggState::AggregatedScalar(s) => s.as_list().into_column(),
-            _ => ac.aggregated(),
-        };
-        let name = agg.name().clone();
-
-        // Collection of empty list leads to a null dtype. See: #3687.
-        if agg.is_empty() {
-            // Create input for the function to determine the output dtype, see #3946.
-            let agg = agg.list().unwrap();
-            let input_dtype = agg.inner_dtype();
-            let input = Column::full_null(name.clone(), 0, input_dtype);
-
-            let output = self.eval_and_flatten(&mut [input])?;
-            let ca = ListChunked::full(name, output.as_materialized_series(), 0);
-            return self.finish_apply_groups(ac, ca);
-        }
-
+        let name = ac.get_values().name().clone();
         let f = |opt_s: Option<Series>| match opt_s {
             None => Ok(None),
             Some(mut s) => {
@@ -147,23 +136,55 @@ impl ApplyExpr {
             },
         };
 
+        // In case of overlapping (rolling) groups, we build groups in a lazy manner to avoid
+        // memory explosion.
+        // TODO: support Idx GroupsType.
+        if matches!(ac.agg_state(), AggState::NotAggregated(_)) && ac.groups.is_overlapping() {
+            let ca: ChunkedArray<_> = if self.allow_threading {
+                ac.par_iter_groups_lazy()
+                    .map(f)
+                    .collect::<PolarsResult<_>>()?
+            } else {
+                ac.iter_groups_lazy().map(f).collect::<PolarsResult<_>>()?
+            };
+            return self.finish_apply_groups(ac, ca.with_name(name));
+        }
+
+        // At this point, calling aggregated() will not lead to memory explosion.
+        let agg = match ac.agg_state() {
+            AggState::AggregatedScalar(s) => s.to_unit_list(),
+            _ => ac.aggregated(),
+        };
+
+        // Collection of empty list leads to a null dtype. See: #3687.
+        if agg.is_empty() {
+            // Create input for the function to determine the output dtype, see #3946.
+            let agg = agg.list().unwrap();
+            let input_dtype = agg.inner_dtype();
+            let input = Column::full_null(name.clone(), 0, input_dtype);
+
+            let output = self.eval_and_flatten(&mut [input])?;
+            let ca = ListChunked::full(name, output.as_materialized_series(), 0);
+            return self.finish_apply_groups(ac, ca);
+        }
+
         let ca: ListChunked = if self.allow_threading {
             let lst = agg.list().unwrap();
             let iter = lst.par_iter().map(f);
 
-            if self.output_field.dtype.is_known() && !self.output_field.dtype.is_null() {
+            if self.output_field.dtype.is_known() {
                 let dtype = self.output_field.dtype.clone();
                 let dtype = dtype.implode();
-                POOL.install(|| {
+                RAYON.install(|| {
                     iter.collect_ca_with_dtype::<PolarsResult<_>>(PlSmallStr::EMPTY, dtype)
                 })?
             } else {
-                POOL.install(|| try_list_from_par_iter(iter, PlSmallStr::EMPTY))?
+                RAYON.install(|| try_list_from_par_iter(iter, PlSmallStr::EMPTY))?
             }
         } else {
             agg.list()
                 .unwrap()
-                .into_iter()
+                .series_iter()
                 .map(f)
                 .collect::<PolarsResult<_>>()?
         };
@@ -338,7 +359,7 @@ impl ApplyExpr {
         // Length of the items to iterate over.
         let len = iters[0].size_hint().0;
 
-        let ca = if len == 0 {
+        let ca = if field.dtype().is_known() {
             let mut builder = get_list_builder(&field.dtype, len * 5, len, field.name);
             for _ in 0..len {
                 container.clear();
@@ -408,10 +429,10 @@ impl PhysicalExpr for ApplyExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate(df, state);
         let mut inputs = if self.allow_threading && self.inputs.len() > 1 {
-            POOL.install(|| {
+            RAYON.install(|| {
                 self.inputs
                     .par_iter()
                     .map(f)
@@ -421,16 +442,39 @@ impl PhysicalExpr for ApplyExpr {
             self.inputs.iter().map(f).collect::<PolarsResult<Vec<_>>>()
         }?;
 
-        if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
-            self.eval_and_flatten(&mut inputs)
+        // If the function is elementwise and all columns are scalar
+        // we can only evaluate once and then broadcast.
+        let constant_len = if self.flags.is_elementwise() {
+            constant_broadcast_len(&inputs)
+        } else {
+            None
+        };
+        if constant_len.is_some() {
+            for c in inputs.iter_mut() {
+                if c.len() > 1 {
+                    *c = c.new_from_index(0, 1);
+                }
+            }
+        }
+
+        let out = if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
+            self.eval_and_flatten(&mut inputs)?
         } else {
             let in_name = inputs[0].name().clone();
-            Ok(self.eval_and_flatten(&mut inputs)?.with_name(in_name))
-        }
+            self.eval_and_flatten(&mut inputs)?.with_name(in_name)
+        };
+
+        Ok(match constant_len {
+            Some(len) => {
+                debug_assert_eq!(out.len(), 1);
+                out.new_from_index(0, len)
+            },
+            None => out,
+        })
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
@@ -481,15 +525,16 @@ impl PhysicalExpr for ApplyExpr {
                     // - el + agg = elementwise, but must aggregate() NotAgg
                     // - ga = group_aware
                     // - alit = all_literal
+                    // - * = broadcast falls back to group_aware
                     // - ~ = same a smirror pair (symmetric)
                     //
-                    //              | AggList | NotAgg  | AggScalar | LitScalar
+                    //              | AggList | NotAgg   | AggScalar | LitScalar
                     //   --------------------------------------------------------
-                    //    AggList   |    el   | depends |    ga     |     el
-                    //    NotAgg    |    ~    | depends |    ga     |     el
-                    //    AggScalar |    ~    |    ~    |    el     |     el
-                    //    LitScalar |    ~    |    ~    |     ~     |    alit
-
+                    //    AggList   |   el*   | depends* |    ga     |     el
+                    //    NotAgg    |    ~    | depends* |    ga     |     el
+                    //    AggScalar |    ~    |    ~     |    el     |     el
+                    //    LitScalar |    ~    |    ~     |     ~     |    alit
+                    //
                     // In case it depends, extending to any combination of multiple aggstates
                     // (a) Multiple NotAggs, w/o AggList
                     //
@@ -504,6 +549,8 @@ impl PhysicalExpr for ApplyExpr {
                     //   -------------------------------------------------
                     //    groups match   |    el+agg    |     ga
                     //    groups diverge |    el+agg    |     ga
+                    //
+                    //  * Finally, when broadcast is required in non-scalar we switch to group_aware
 
                     // Collect statistics on input aggstates
                     let mut has_agg_list = false;
@@ -553,7 +600,31 @@ impl PhysicalExpr for ApplyExpr {
                         // Fallible expression and there are elements that are masked out.
                         self.apply_multiple_group_aware(acs, df)
                     } else {
-                        self.apply_multiple_elementwise(acs, elementwise_must_aggregate)
+                        // Broadcast in NotAgg or AggList requires group_aware
+                        acs.iter_mut().filter(|ac| !ac.is_literal()).for_each(|ac| {
+                            ac.groups();
+                        });
+                        let has_broadcast =
+                            if let Some(base_ac_idx) = acs.iter().position(|ac| !ac.is_literal()) {
+                                acs.iter()
+                                    .enumerate()
+                                    .filter(|(i, ac)| *i != base_ac_idx && !ac.is_literal())
+                                    .any(|(_, ac)| {
+                                        acs[base_ac_idx].groups.iter().zip(ac.groups.iter()).any(
+                                            |(l, r)| {
+                                                l.len() != r.len() && (l.len() == 1 || r.len() == 1)
+                                            },
+                                        )
+                                    })
+                            } else {
+                                false
+                            };
+                        if has_broadcast {
+                            //  Broadcast fall-back.
+                            self.apply_multiple_group_aware(acs, df)
+                        } else {
+                            self.apply_multiple_elementwise(acs, elementwise_must_aggregate)
+                        }
                     }
                 },
             }
@@ -567,4 +638,16 @@ impl PhysicalExpr for ApplyExpr {
         self.flags.returns_scalar()
             || (self.function_operates_on_scalar && self.flags.is_length_preserving())
     }
+}
+
+fn constant_broadcast_len(inputs: &[Column]) -> Option<usize> {
+    let len = inputs.iter().map(|c| c.len()).max()?;
+    if len <= 1 {
+        return None;
+    }
+    // Only a single row, or a scalar already at the full length, can be repeated.
+    inputs
+        .iter()
+        .all(|c| c.len() == 1 || (c.len() == len && matches!(c, Column::Scalar(_))))
+        .then_some(len)
 }

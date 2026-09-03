@@ -2,8 +2,9 @@ use std::hash::Hash;
 
 use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
+use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::*;
-use polars_core::with_match_physical_integer_polars_type;
+use polars_core::series::BitRepr;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 // If invert is true then this is an `is_duplicated`.
@@ -39,6 +40,12 @@ where
     BooleanChunked::with_chunk(ca.name().clone(), arr)
 }
 
+fn is_unique_nested(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
+    let encoded = encode_rows_unordered(&[s.clone().into_column()])?.into_series();
+    let ca = encoded.binary_offset().unwrap();
+    Ok(is_unique_ca(ca, invert).with_name(s.name().clone()))
+}
+
 fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
     let s = s.to_physical_repr();
     use DataType::*;
@@ -56,6 +63,11 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
             let ca = s.binary().unwrap();
             is_unique_ca(ca, invert)
         },
+        #[cfg(feature = "dtype-f16")]
+        Float16 => {
+            let ca = s.f16().unwrap();
+            is_unique_ca(ca, invert)
+        },
         Float32 => {
             let ca = s.f32().unwrap();
             is_unique_ca(ca, invert)
@@ -64,6 +76,9 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
             let ca = s.f64().unwrap();
             is_unique_ca(ca, invert)
         },
+        List(_) => return is_unique_nested(&s, invert),
+        #[cfg(feature = "dtype-array")]
+        Array(_, _) => return is_unique_nested(&s, invert),
         #[cfg(feature = "dtype-struct")]
         Struct(_) => {
             let ca = s.struct_().unwrap().clone();
@@ -80,10 +95,15 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
             len => BooleanChunked::full(s.name().clone(), invert, len),
         },
         dt if dt.is_primitive_numeric() => {
-            with_match_physical_integer_polars_type!(s.dtype(), |$T| {
-                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                is_unique_ca(ca, invert)
-            })
+            use BitRepr as B;
+            match s.bit_repr().unwrap() {
+                B::U8(ca) => is_unique_ca(&ca, invert),
+                B::U16(ca) => is_unique_ca(&ca, invert),
+                B::U32(ca) => is_unique_ca(&ca, invert),
+                B::U64(ca) => is_unique_ca(&ca, invert),
+                #[cfg(feature = "dtype-u128")]
+                B::U128(ca) => is_unique_ca(&ca, invert),
+            }
         },
         dt => polars_bail!(opq = is_unique, dt),
     };

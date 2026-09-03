@@ -86,15 +86,11 @@ of Graphics to Python users with an interface similar to its R counterpart. It s
 --8<-- "python/user-guide/misc/visualization.py:plotnine_make_plot"
 ```
 
-## Seaborn and Plotly
+## Seaborn
 
-[Seaborn](https://seaborn.pydata.org/) and [Plotly](https://plotly.com/) can accept a Polars
-`DataFrame` by leveraging the
-[dataframe interchange protocol](https://data-apis.org/dataframe-api/), which offers zero-copy
-conversion where possible. Note that the protocol does not support all Polars data types (e.g.
-`List`) so your mileage may vary here.
-
-### Seaborn
+[Seaborn](https://seaborn.pydata.org/) accepts Pandas `DataFrame`s. Use `DataFrame.to_pandas()` to
+convert Polars dataframes to Pandas dataframes. Note however, that Pandas dataframes may not support
+all Polars data types.
 
 {{code_block('user-guide/misc/visualization','seaborn_show_plot',[])}}
 
@@ -102,7 +98,12 @@ conversion where possible. Note that the protocol does not support all Polars da
 --8<-- "python/user-guide/misc/visualization.py:seaborn_make_plot"
 ```
 
-### Plotly
+## Plotly
+
+[Plotly](https://plotly.com/) can accept a Polars `DataFrame` by leveraging:
+
+- [Narwhals](https://narwhals-dev.github.io/narwhals/), since plotly v6.0.0, and therefore running
+  execution natively without any conversion overhead.
 
 {{code_block('user-guide/misc/visualization','plotly_show_plot',[])}}
 

@@ -4,7 +4,7 @@ pub fn _agg_helper_idx_bin<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &'a IdxVec)) -> Option<&'a [u8]> + Send + Sync,
 {
-    let ca: BinaryChunked = POOL.install(|| groups.into_par_iter().map(f).collect());
+    let ca: BinaryChunked = RAYON.install(|| groups.into_par_iter().map(f).collect());
     ca.into_series()
 }
 
@@ -12,7 +12,7 @@ pub fn _agg_helper_slice_bin<'a, F>(groups: &'a [[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<&'a [u8]> + Send + Sync,
 {
-    let ca: BinaryChunked = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    let ca: BinaryChunked = RAYON.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
 }
 
@@ -20,14 +20,16 @@ impl BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
     pub(crate) unsafe fn agg_min<'a>(&'a self, groups: &GroupsType) -> Series {
         // faster paths
-        match (&self.is_sorted_flag(), &self.null_count()) {
-            (IsSorted::Ascending, 0) => {
-                return self.clone().into_series().agg_first(groups);
-            },
-            (IsSorted::Descending, 0) => {
-                return self.clone().into_series().agg_last(groups);
-            },
-            _ => {},
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+            match self.is_sorted_flag() {
+                IsSorted::Ascending => {
+                    return self.clone().into_series().agg_first_non_null(groups);
+                },
+                IsSorted::Descending => {
+                    return self.clone().into_series().agg_last_non_null(groups);
+                },
+                _ => {},
+            }
         }
 
         match groups {
@@ -82,14 +84,14 @@ impl BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
     pub(crate) unsafe fn agg_max<'a>(&'a self, groups: &GroupsType) -> Series {
         // faster paths
-        match (self.is_sorted_flag(), self.null_count()) {
-            (IsSorted::Ascending, 0) => {
-                return self.clone().into_series().agg_last(groups);
-            },
-            (IsSorted::Descending, 0) => {
-                return self.clone().into_series().agg_first(groups);
-            },
-            _ => {},
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+            match self.is_sorted_flag() {
+                IsSorted::Ascending => return self.clone().into_series().agg_last_non_null(groups),
+                IsSorted::Descending => {
+                    return self.clone().into_series().agg_first_non_null(groups);
+                },
+                _ => {},
+            }
         }
 
         match groups {
@@ -140,6 +142,117 @@ impl BinaryChunked {
             }),
         }
     }
+
+    pub(crate) unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        // fast paths, consistent with other impls
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+            match self.is_sorted_flag() {
+                IsSorted::Ascending => {
+                    return self.clone().into_series().agg_arg_first_non_null(groups);
+                },
+                IsSorted::Descending => {
+                    return self.clone().into_series().agg_arg_last_non_null(groups);
+                },
+                _ => {},
+            }
+        }
+
+        let ca_self = self.rechunk();
+        let arr = ca_self.downcast_as_array();
+        let no_nulls = arr.null_count() == 0;
+        match groups {
+            GroupsType::Idx(groups) => _agg_helper_idx_idx(groups, |(first, idx)| {
+                debug_assert!(idx.len() <= ca_self.len());
+
+                if idx.is_empty() {
+                    None
+                } else if idx.len() == 1 {
+                    arr.is_valid(first as usize).then_some(0)
+                } else if no_nulls {
+                    take_agg_bin_iter_unchecked_no_null_arg(
+                        arr,
+                        indexes_to_usizes(idx),
+                        |acc, cur| if cur.1 < acc.1 { cur } else { acc },
+                    )
+                } else {
+                    take_agg_bin_iter_unchecked_arg(arr, indexes_to_usizes(idx), |acc, cur| {
+                        if cur.1 < acc.1 { cur } else { acc }
+                    })
+                }
+            }),
+
+            GroupsType::Slice {
+                groups: groups_slice,
+                ..
+            } => _agg_helper_slice_idx(groups_slice, |[first, len]| {
+                debug_assert!(len <= self.len() as IdxSize);
+                match len {
+                    0 => None,
+                    1 => arr.is_valid(first as usize).then_some(0),
+                    _ => {
+                        let arr_group = _slice_from_offsets(&ca_self, first, len);
+                        arr_group.arg_min_binary().map(|i| i as IdxSize)
+                    },
+                }
+            }),
+        }
+    }
+
+    pub(crate) unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        // fast paths
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+            match self.is_sorted_flag() {
+                IsSorted::Ascending => {
+                    return self.clone().into_series().agg_arg_last_non_null(groups);
+                },
+                IsSorted::Descending => {
+                    return self.clone().into_series().agg_arg_first_non_null(groups);
+                },
+                _ => {},
+            }
+        }
+
+        let ca_self = self.rechunk();
+        let arr = ca_self.downcast_as_array();
+        let no_nulls = arr.null_count() == 0;
+
+        match groups {
+            GroupsType::Idx(groups) => _agg_helper_idx_idx(groups, |(first, idx)| {
+                debug_assert!(idx.len() <= ca_self.len());
+
+                if idx.is_empty() {
+                    None
+                } else if idx.len() == 1 {
+                    arr.is_valid(first as usize).then_some(0)
+                } else if no_nulls {
+                    take_agg_bin_iter_unchecked_no_null_arg(
+                        arr,
+                        indexes_to_usizes(idx),
+                        |acc, cur| if cur.1 > acc.1 { cur } else { acc },
+                    )
+                } else {
+                    take_agg_bin_iter_unchecked_arg(arr, indexes_to_usizes(idx), |acc, cur| {
+                        if cur.1 > acc.1 { cur } else { acc }
+                    })
+                }
+            }),
+
+            GroupsType::Slice {
+                groups: groups_slice,
+                ..
+            } => _agg_helper_slice_idx(groups_slice, |[first, len]| {
+                debug_assert!(len <= self.len() as IdxSize);
+                match len {
+                    0 => None,
+                    1 => arr.is_valid(first as usize).then_some(0),
+                    _ => {
+                        let arr_group = _slice_from_offsets(&ca_self, first, len);
+                        arr_group.arg_max_binary().map(|i| i as IdxSize)
+                    },
+                }
+            }),
+        }
+    }
 }
 
 impl StringChunked {
@@ -153,5 +266,15 @@ impl StringChunked {
     pub(crate) unsafe fn agg_max<'a>(&'a self, groups: &GroupsType) -> Series {
         let out = self.as_binary().agg_max(groups);
         out.binary().unwrap().to_string_unchecked().into_series()
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    pub(crate) unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        self.as_binary().agg_arg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    pub(crate) unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        self.as_binary().agg_arg_max(groups)
     }
 }

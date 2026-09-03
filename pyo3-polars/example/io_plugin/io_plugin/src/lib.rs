@@ -90,7 +90,7 @@ impl RandomSource {
                 })
                 .collect::<Vec<_>>();
 
-            let mut df = DataFrame::new(columns).map_err(PyPolarsErr::from)?;
+            let mut df = DataFrame::new_infer_height(columns).map_err(PyPolarsErr::from)?;
             self.n_rows = self.n_rows.saturating_sub(self.size_hint);
 
             // Apply predicate pushdown.

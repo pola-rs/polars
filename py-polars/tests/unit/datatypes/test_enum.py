@@ -8,17 +8,22 @@ import re
 import sys
 from datetime import date
 from textwrap import dedent
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import (
+    AttributeRemovedError,
+    ComputeError,
     InvalidOperationError,
     SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 if sys.version_info >= (3, 11):
     from enum import StrEnum
@@ -152,13 +157,6 @@ def test_nested_enum_creation() -> None:
     assert s.dtype == dtype
 
 
-def test_enum_union() -> None:
-    e1 = pl.Enum(["a", "b"])
-    e2 = pl.Enum(["b", "c"])
-    assert e1 | e2 == pl.Enum(["a", "b", "c"])
-    assert e1.union(e2) == pl.Enum(["a", "b", "c"])
-
-
 def test_nested_enum_concat() -> None:
     dtype = pl.List(pl.Enum(["a", "b", "c", "d"]))
     s1 = pl.Series([[None, "a"], ["b", "c"]], dtype=dtype)
@@ -240,21 +238,28 @@ def test_casting_to_an_enum_from_enum_nonstrict() -> None:
     assert_series_equal(s2, expected)
 
 
-def test_casting_to_an_enum_from_integer() -> None:
+@pytest.mark.parametrize("num_dtype", INTEGER_DTYPES)
+def test_convert_to_an_enum_from_numeric(num_dtype: pl.DataType) -> None:
     dtype = pl.Enum(["a", "b", "c"])
     expected = pl.Series([None, "b", "a", "c"], dtype=dtype)
-    s = pl.Series([None, 1, 0, 2], dtype=pl.UInt32)
-    s_enum = s.cast(dtype)
+    s = pl.Series([None, 1, 0, 2], dtype=num_dtype)
+    with pytest.raises(ComputeError, match=r"casting from .* to enum is not supported"):
+        s.cast(dtype)
+
+    s_enum = s.cat.to(dtype)
     assert s_enum.dtype == dtype
     assert s_enum.null_count() == 1
     assert_series_equal(s_enum, expected)
 
 
-def test_casting_to_an_enum_oob_from_integer() -> None:
+def test_convert_to_an_enum_oob_from_integer() -> None:
     dtype = pl.Enum(["a", "b", "c"])
     s = pl.Series([None, 1, 0, 5], dtype=pl.UInt32)
-    with pytest.raises(InvalidOperationError, match=("values: \\[5\\]")):
-        s.cast(dtype)
+    with pytest.raises(
+        ComputeError,
+        match=(r"found invalid category value when converting from physical to enum"),
+    ):
+        s.cat.to(dtype)
 
 
 def test_casting_to_an_enum_from_categorical_nonexistent() -> None:
@@ -508,27 +513,13 @@ def test_enum_categories_series_zero_copy() -> None:
     assert result_dtype == dtype
 
 
-@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
-def test_enum_cast_from_other_integer_dtype(dtype: pl.DataType) -> None:
-    enum_dtype = pl.Enum(["a", "b", "c", "d"])
-    series = pl.Series([1, 2, 3, 3, 2, 1], dtype=dtype)
-    series.cast(enum_dtype)
-
-
-def test_enum_cast_from_other_integer_dtype_oob() -> None:
+def test_enum_from_other_integer_dtype_oob() -> None:
     enum_dtype = pl.Enum(["a", "b", "c", "d"])
     series = pl.Series([-1, 2, 3, 3, 2, 1], dtype=pl.Int8)
-    with pytest.raises(
-        InvalidOperationError, match="conversion from `i8` to `enum` failed in column"
-    ):
-        series.cast(enum_dtype)
+    series.cat.to(enum_dtype)
 
     series = pl.Series([2**34, 2, 3, 3, 2, 1], dtype=pl.UInt64)
-    with pytest.raises(
-        InvalidOperationError,
-        match="conversion from `u64` to `enum` failed in column",
-    ):
-        series.cast(enum_dtype)
+    series.cat.to(enum_dtype)
 
 
 def test_enum_cse_eq() -> None:
@@ -571,14 +562,6 @@ def test_category_comparison_subset() -> None:
     assert out["dt1"].dtype == pl.Enum(["a"])
     assert out["dt2"].dtype == pl.Enum(["a", "b"])
     assert out["dt1"].dtype != out["dt2"].dtype
-
-
-@pytest.mark.parametrize("dt", INTEGER_DTYPES)
-def test_integer_cast_to_enum_15738(dt: pl.DataType) -> None:
-    s = pl.Series([0, 1, 2], dtype=dt).cast(pl.Enum(["a", "b", "c"]))
-    assert s.to_list() == ["a", "b", "c"]
-    expected_s = pl.Series(["a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
-    assert_series_equal(s, expected_s)
 
 
 def test_enum_19269() -> None:
@@ -687,3 +670,19 @@ def test_read_enum_from_csv() -> None:
     read = pl.read_csv(f, schema=schema)
     assert read.schema == schema
     assert_frame_equal(df.cast(schema), read)  # type: ignore[arg-type]
+
+
+def test_enum_struct_slice_25821() -> None:
+    df = pl.select(
+        x=pl.concat_list(
+            pl.struct(y=pl.lit("a", pl.Enum(["a", "b", "c"]))),
+        ),
+    )
+    res = df.select(pl.col.x.list.head(1))
+    assert res.to_dict(as_series=False) == {"x": [[{"y": "a"}]]}
+
+
+def test_removed_union() -> None:
+    msg = "construct the combined `Enum` explicitly"
+    with pytest.raises(AttributeRemovedError, match=re.escape(msg)):
+        pl.Enum(["a"]).union  # type: ignore[attr-defined]

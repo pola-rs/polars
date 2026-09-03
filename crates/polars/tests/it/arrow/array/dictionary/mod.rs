@@ -85,8 +85,9 @@ fn try_new_incorrect_values_dt() {
 fn try_new_out_of_bounds() {
     let values = Utf8Array::<i32>::from_slice(["a", "aa"]);
 
-    let r = DictionaryArray::try_from_keys(PrimitiveArray::from_vec(vec![2, 0]), values.boxed())
-        .is_err();
+    let r =
+        DictionaryArray::try_from_keys(PrimitiveArray::from_vec(vec![2, 0]), values.boxed(), false)
+            .is_err();
 
     assert!(r);
 }
@@ -95,8 +96,12 @@ fn try_new_out_of_bounds() {
 fn try_new_out_of_bounds_neg() {
     let values = Utf8Array::<i32>::from_slice(["a", "aa"]);
 
-    let r = DictionaryArray::try_from_keys(PrimitiveArray::from_vec(vec![-1, 0]), values.boxed())
-        .is_err();
+    let r = DictionaryArray::try_from_keys(
+        PrimitiveArray::from_vec(vec![-1, 0]),
+        values.boxed(),
+        false,
+    )
+    .is_err();
 
     assert!(r);
 }
@@ -121,7 +126,7 @@ fn new_empty() {
 fn with_validity() {
     let values = Utf8Array::<i32>::from_slice(["a", "aa"]);
     let array =
-        DictionaryArray::try_from_keys(PrimitiveArray::from_vec(vec![1, 0]), values.boxed())
+        DictionaryArray::try_from_keys(PrimitiveArray::from_vec(vec![1, 0]), values.boxed(), false)
             .unwrap();
 
     let array = array.with_validity(Some([true, false].into()));
@@ -133,7 +138,7 @@ fn with_validity() {
 fn rev_iter() {
     let values = Utf8Array::<i32>::from_slice(["a", "aa"]);
     let array =
-        DictionaryArray::try_from_keys(PrimitiveArray::from_vec(vec![1, 0]), values.boxed())
+        DictionaryArray::try_from_keys(PrimitiveArray::from_vec(vec![1, 0]), values.boxed(), false)
             .unwrap();
 
     let mut iter = array.into_iter();
@@ -145,7 +150,7 @@ fn rev_iter() {
 fn iter_values() {
     let values = Utf8Array::<i32>::from_slice(["a", "aa"]);
     let array =
-        DictionaryArray::try_from_keys(PrimitiveArray::from_vec(vec![1, 0]), values.boxed())
+        DictionaryArray::try_from_keys(PrimitiveArray::from_vec(vec![1, 0]), values.boxed(), false)
             .unwrap();
 
     let mut iter = array.values_iter();
@@ -157,7 +162,7 @@ fn iter_values() {
 fn keys_values_iter() {
     let values = Utf8Array::<i32>::from_slice(["a", "aa"]);
     let array =
-        DictionaryArray::try_from_keys(PrimitiveArray::from_vec(vec![1, 0]), values.boxed())
+        DictionaryArray::try_from_keys(PrimitiveArray::from_vec(vec![1, 0]), values.boxed(), false)
             .unwrap();
 
     assert_eq!(array.keys_values_iter().collect::<Vec<_>>(), vec![1, 0]);
@@ -166,9 +171,12 @@ fn keys_values_iter() {
 #[test]
 fn iter_values_typed() {
     let values = Utf8Array::<i32>::from_slice(["a", "aa"]);
-    let array =
-        DictionaryArray::try_from_keys(PrimitiveArray::from_vec(vec![1, 0, 0]), values.boxed())
-            .unwrap();
+    let array = DictionaryArray::try_from_keys(
+        PrimitiveArray::from_vec(vec![1, 0, 0]),
+        values.boxed(),
+        false,
+    )
+    .unwrap();
 
     let iter = array.values_iter_typed::<Utf8Array<i32>>().unwrap();
     assert_eq!(iter.size_hint(), (3, Some(3)));
@@ -186,9 +194,12 @@ fn iter_values_typed() {
 #[should_panic]
 fn iter_values_typed_panic() {
     let values = Utf8Array::<i32>::from_iter([Some("a"), Some("aa"), None]);
-    let array =
-        DictionaryArray::try_from_keys(PrimitiveArray::from_vec(vec![1, 0, 0]), values.boxed())
-            .unwrap();
+    let array = DictionaryArray::try_from_keys(
+        PrimitiveArray::from_vec(vec![1, 0, 0]),
+        values.boxed(),
+        false,
+    )
+    .unwrap();
 
     // should not be iterating values
     let iter = array.values_iter_typed::<Utf8Array<i32>>().unwrap();
@@ -199,9 +210,12 @@ fn iter_values_typed_panic() {
 #[should_panic]
 fn iter_values_typed_panic_2() {
     let values = Utf8Array::<i32>::from_iter([Some("a"), Some("aa"), None]);
-    let array =
-        DictionaryArray::try_from_keys(PrimitiveArray::from_vec(vec![1, 0, 0]), values.boxed())
-            .unwrap();
+    let array = DictionaryArray::try_from_keys(
+        PrimitiveArray::from_vec(vec![1, 0, 0]),
+        values.boxed(),
+        false,
+    )
+    .unwrap();
 
     // should not be iterating values
     let iter = array.iter_typed::<Utf8Array<i32>>().unwrap();

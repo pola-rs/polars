@@ -3,11 +3,19 @@ from __future__ import annotations
 import enum
 import functools
 import re
-import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
-from inspect import isclass
-from typing import TYPE_CHECKING, Any, ForwardRef, NoReturn, Union, get_args
+from types import NoneType, UnionType
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Final,
+    ForwardRef,
+    NoReturn,
+    Union,
+    get_args,
+    get_origin,
+)
 
 import polars._reexport as pl
 from polars.datatypes.classes import (
@@ -33,15 +41,6 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType, PythonDataType, SchemaDict
 
 
-UnionTypeOld = type(Union[int, str])
-if sys.version_info >= (3, 10):
-    from types import NoneType, UnionType
-else:  # pragma: no cover
-    # Define equivalent for older Python versions
-    NoneType = type(None)
-    UnionType = UnionTypeOld
-
-
 def parse_into_datatype_expr(input: Any) -> pl.DataTypeExpr:
     """Parse an input into a DataTypeExpr."""
     if isinstance(input, pl.DataTypeExpr):
@@ -63,7 +62,7 @@ def parse_into_dtype(input: Any) -> PolarsDataType:
         return input
     elif isinstance(input, ForwardRef):
         return _parse_forward_ref_into_dtype(input)
-    elif isinstance(input, (UnionType, UnionTypeOld)):
+    elif isinstance(input, UnionType) or get_origin(input) is Union:
         return _parse_union_type_into_dtype(input)
     else:
         return parse_py_type_into_dtype(input)
@@ -88,11 +87,13 @@ def parse_py_type_into_dtype(input: PythonDataType | type[object]) -> PolarsData
         return String()
     elif input is bool:
         return Boolean()
-    elif isinstance(input, type) and issubclass(input, datetime):  # type: ignore[redundant-expr]
+
+    is_class = isinstance(input, type)
+    if is_class and issubclass(input, datetime):  # type: ignore[redundant-expr]
         return Datetime("us")
-    elif isinstance(input, type) and issubclass(input, date):  # type: ignore[redundant-expr]
+    elif is_class and issubclass(input, date):  # type: ignore[redundant-expr]
         return Date()
-    elif input is timedelta:
+    elif is_class and issubclass(input, timedelta):  # type: ignore[redundant-expr]
         return Duration
     elif input is time:
         return Time()
@@ -106,10 +107,11 @@ def parse_py_type_into_dtype(input: PythonDataType | type[object]) -> PolarsData
         return Null()
     elif input is list or input is tuple:
         return List
-    elif isclass(input) and issubclass(input, enum.Enum):
+    elif is_class and issubclass(input, enum.Enum):  # type: ignore[redundant-expr]
         return Enum(input)
-    # this is required as pass through. Don't remove
-    elif input == Unknown:
+
+    # this is required for passthrough; don't remove
+    if input == Unknown:
         return Unknown
     elif hasattr(input, "__origin__") and hasattr(input, "__args__"):
         return _parse_generic_into_dtype(input)
@@ -135,7 +137,7 @@ def _parse_generic_into_dtype(input: Any) -> PolarsDataType:
     return List(inner_dtype)
 
 
-PY_TYPE_STR_TO_DTYPE: SchemaDict = {
+PY_TYPE_STR_TO_DTYPE: Final[SchemaDict] = {
     "Decimal": Decimal,
     "NoneType": Null(),
     "bool": Boolean(),

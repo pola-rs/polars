@@ -1,6 +1,6 @@
 use arrow::array::*;
-use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
+use polars_buffer::Buffer;
 
 mod mutable;
 

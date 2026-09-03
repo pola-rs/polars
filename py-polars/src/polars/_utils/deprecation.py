@@ -7,9 +7,14 @@ from collections import defaultdict
 from collections.abc import Sequence
 from functools import wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, TypeVar, get_args
+from typing import TYPE_CHECKING, Any, TypeVar, get_args
 
 from polars._typing import DeprecationType
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from polars._utils.various import IdentityFunction
 
 if sys.version_info >= (3, 13):
     from warnings import deprecated
@@ -18,21 +23,16 @@ else:
         from typing_extensions import deprecated
     except ImportError:
 
-        def deprecated(  # type: ignore[no-redef]
-            message: str,
-        ) -> Callable[[Callable[P, T]], Callable[P, T]]:
+        def deprecated(message: str) -> IdentityFunction:  # type: ignore[no-redef]
             return _deprecate_function(message)
 
 
-from polars._utils.various import issue_warning
+from polars._warnings import issue_warning
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from typing import ParamSpec
 
-    if sys.version_info >= (3, 10):
-        from typing import ParamSpec
-    else:
-        from typing_extensions import ParamSpec
     from polars._typing import Ambiguous
 
     P = ParamSpec("P")
@@ -61,7 +61,7 @@ def issue_deprecation_warning(message: str, *, version: str = "") -> None:
     issue_warning(message, DeprecationWarning)
 
 
-def _deprecate_function(message: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
+def _deprecate_function(message: str) -> IdentityFunction:
     """Decorator to mark a function as deprecated."""
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
@@ -77,34 +77,12 @@ def _deprecate_function(message: str) -> Callable[[Callable[P, T]], Callable[P, 
     return decorate
 
 
-def deprecate_streaming_parameter() -> Callable[[Callable[P, T]], Callable[P, T]]:
-    """Decorator to mark `streaming` argument as deprecated due to being renamed."""
-
-    def decorate(function: Callable[P, T]) -> Callable[P, T]:
-        @wraps(function)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            if "streaming" in kwargs:
-                issue_deprecation_warning(
-                    "the `streaming` parameter was deprecated in 1.25.0; use `engine` instead."
-                )
-                if kwargs["streaming"]:
-                    kwargs["engine"] = "streaming"
-                elif "engine" not in kwargs:
-                    kwargs["engine"] = "in-memory"
-
-                del kwargs["streaming"]
-
-            return function(*args, **kwargs)
-
-        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
-        return wrapper
-
-    return decorate
-
-
 def deprecate_renamed_parameter(
-    old_name: str, new_name: str, *, version: str
-) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    old_name: str,
+    new_name: str,
+    *,
+    version: str,
+) -> IdentityFunction:
     """
     Decorator to mark a function parameter as deprecated due to being renamed.
 
@@ -162,7 +140,7 @@ def _rename_keyword_argument(
 
 def deprecate_nonkeyword_arguments(
     allowed_args: list[str] | None = None, message: str | None = None, *, version: str
-) -> Callable[[Callable[P, T]], Callable[P, T]]:
+) -> IdentityFunction:
     """
     Decorator for deprecating the use of non-keyword arguments in a function.
 
@@ -251,9 +229,7 @@ def _format_argument_list(allowed_args: list[str]) -> str:
         return f" except for {args} and {last!r}"
 
 
-def deprecate_parameter_as_multi_positional(
-    old_name: str,
-) -> Callable[[Callable[P, T]], Callable[P, T]]:
+def deprecate_parameter_as_multi_positional(old_name: str) -> IdentityFunction:
     """
     Decorator to mark a function argument as deprecated due to being made multi-positional.
 
@@ -344,22 +320,14 @@ def identify_deprecations(*types: DeprecationType) -> dict[str, list[str]]:
         If empty, all types are returned; recognised values are:
             - "function"
             - "renamed_parameter"
-            - "streaming_parameter"
             - "nonkeyword_arguments"
             - "parameter_as_multi_positional"
 
     Examples
     --------
     >>> from polars._utils.deprecation import identify_deprecations
-    >>> identify_deprecations("streaming_parameter")  # doctest: +IGNORE_RESULT
-    {'streaming_parameter': [
-        'functions.lazy.collect_all',
-        'functions.lazy.collect_all_async',
-        'lazyframe.frame.LazyFrame.collect',
-        'lazyframe.frame.LazyFrame.collect_async',
-        'lazyframe.frame.LazyFrame.explain',
-        'lazyframe.frame.LazyFrame.show_graph',
-    ]}
+    >>> identify_deprecations("nonkeyword_arguments")  # doctest: +IGNORE_RESULT
+    {'nonkeyword_arguments': ['functions.business.business_day_count']}
     """
     valid_types = set(get_args(DeprecationType))
     for tp in types:
@@ -400,7 +368,6 @@ __all__ = [
     "deprecate_nonkeyword_arguments",
     "deprecate_parameter_as_multi_positional",
     "deprecate_renamed_parameter",
-    "deprecate_streaming_parameter",
     "deprecated",
     "identify_deprecations",
 ]

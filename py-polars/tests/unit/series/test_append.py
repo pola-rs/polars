@@ -35,13 +35,13 @@ def test_append_bad_input() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'Series'.* not 'DataFrame'",
+        match=r"expected `other` .*to be a 'Series'.* not 'DataFrame'",
     ):
         a.append(b)  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'Series'.* not 'LazyFrame'",
+        match=r"expected `other` .*to be a 'Series'.* not 'LazyFrame'",
     ):
         a.append(b.lazy())  # type: ignore[arg-type]
 
@@ -120,6 +120,8 @@ def test_append_enum_22764() -> None:
     f = io.BytesIO()
     g = io.BytesIO()
     pl.DataFrame({"someletter": ["A", "B"]}).write_csv(f)
+
+    f.seek(0)
 
     schema = pl.Schema(
         {

@@ -1,6 +1,6 @@
 #[cfg(feature = "abs")]
 mod abs;
-mod arg_min_max;
+pub mod arg_min_max;
 mod bitwise;
 #[cfg(feature = "business")]
 mod business;
@@ -49,8 +49,6 @@ mod negate;
 mod pct_change;
 #[cfg(feature = "rank")]
 mod rank;
-#[cfg(feature = "reinterpret")]
-mod reinterpret;
 #[cfg(feature = "replace")]
 mod replace;
 #[cfg(feature = "rle")]
@@ -66,7 +64,7 @@ mod strings;
 mod to_dummies;
 #[cfg(feature = "unique_counts")]
 mod unique;
-mod various;
+pub(crate) mod various;
 
 #[cfg(feature = "abs")]
 pub use abs::*;
@@ -125,8 +123,6 @@ pub use polars_core::chunked_array::ops::search_sorted::SearchSortedSide;
 use polars_core::prelude::*;
 #[cfg(feature = "rank")]
 pub use rank::*;
-#[cfg(feature = "reinterpret")]
-pub use reinterpret::*;
 #[cfg(feature = "replace")]
 pub use replace::*;
 #[cfg(feature = "rle")]

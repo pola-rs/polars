@@ -2,6 +2,7 @@ use std::fmt;
 
 use arrow::array::Array;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
+use arrow::datatypes::ArrowDataType;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr};
@@ -18,20 +19,19 @@ pub trait PhysicalIoExpr: Send + Sync {
 #[derive(Debug, Clone)]
 pub enum SpecializedColumnPredicate {
     Equal(Scalar),
-
+    /// A closed (inclusive) range.
     Between(Scalar, Scalar),
-
     EqualOneOf(Box<[Scalar]>),
-
     StartsWith(Box<[u8]>),
     EndsWith(Box<[u8]>),
-    StartEndsWith(Box<[u8]>, Box<[u8]>),
+    RegexMatch(regex::bytes::Regex),
 }
 
 #[derive(Clone)]
 pub struct ColumnPredicateExpr {
     column_name: PlSmallStr,
     dtype: DataType,
+    source_arrow_dtype: ArrowDataType,
     #[cfg(feature = "parquet")]
     specialized: Option<SpecializedParquetColumnExpr>,
     expr: Arc<dyn PhysicalIoExpr>,
@@ -41,6 +41,7 @@ impl ColumnPredicateExpr {
     pub fn new(
         column_name: PlSmallStr,
         dtype: DataType,
+        source_arrow_dtype: ArrowDataType,
         expr: Arc<dyn PhysicalIoExpr>,
         specialized: Option<SpecializedColumnPredicate>,
     ) -> Self {
@@ -63,13 +64,14 @@ impl ColumnPredicateExpr {
                 ),
                 S::StartsWith(s) => P::StartsWith(s),
                 S::EndsWith(s) => P::EndsWith(s),
-                S::StartEndsWith(start, end) => P::StartEndsWith(start, end),
+                S::RegexMatch(s) => P::RegexMatch(s),
             })
         });
 
         Self {
             column_name,
             dtype,
+            source_arrow_dtype,
             #[cfg(feature = "parquet")]
             specialized,
             expr,
@@ -84,11 +86,15 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
         assert!(values.validity().is_none_or(|v| v.set_bits() == 0));
 
         // @TODO: Probably these unwraps should be removed.
-        let series =
-            Series::from_chunk_and_dtype(self.column_name.clone(), values.to_boxed(), &self.dtype)
-                .unwrap();
+        let series = predicate_values_to_series(
+            self.column_name.clone(),
+            values,
+            &self.dtype,
+            &self.source_arrow_dtype,
+        )
+        .unwrap();
         let column = series.into_column();
-        let df = unsafe { DataFrame::new_no_checks(values.len(), vec![column]) };
+        let df = unsafe { DataFrame::new_unchecked(values.len(), vec![column]) };
 
         // @TODO: Probably these unwraps should be removed.
         let true_mask = self.expr.evaluate_io(&df).unwrap();
@@ -104,7 +110,7 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
     }
     fn evaluate_null(&self) -> bool {
         let column = Column::full_null(self.column_name.clone(), 1, &self.dtype);
-        let df = unsafe { DataFrame::new_no_checks(1, vec![column]) };
+        let df = unsafe { DataFrame::new_unchecked(1, vec![column]) };
 
         // @TODO: Probably these unwraps should be removed.
         let true_mask = self.expr.evaluate_io(&df).unwrap();
@@ -119,8 +125,38 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
 }
 
 #[cfg(feature = "parquet")]
+fn predicate_values_to_series(
+    name: PlSmallStr,
+    values: &dyn Array,
+    dtype: &DataType,
+    source_arrow_dtype: &ArrowDataType,
+) -> PolarsResult<Series> {
+    // For example, Arrow seconds will be stored as Polars milliseconds, so we can not just
+    // zero-copy construct the predicate series
+    let timestamp_units_differ = matches!(
+        (source_arrow_dtype, dtype),
+        (
+            ArrowDataType::Timestamp(source_unit, _),
+            DataType::Datetime(target_unit, _),
+        ) if source_unit != &target_unit.to_arrow()
+    );
+
+    if timestamp_units_differ {
+        let values = polars_compute::cast::cast(
+            values,
+            source_arrow_dtype,
+            polars_compute::cast::CastOptionsImpl::default(),
+        )?;
+        Series::try_from((name, values))
+    } else {
+        Series::from_chunk_and_dtype(name, values.to_boxed(), dtype)
+    }
+}
+
+#[cfg(feature = "parquet")]
 fn cast_to_parquet_scalar(scalar: Scalar) -> Option<ParquetScalar> {
-    use {AnyValue as A, ParquetScalar as P};
+    use AnyValue as A;
+    use ParquetScalar as P;
 
     Some(match scalar.into_value() {
         A::Null => P::Null,
@@ -136,7 +172,7 @@ fn cast_to_parquet_scalar(scalar: Scalar) -> Option<ParquetScalar> {
         A::Int32(v) => P::Int32(v),
         A::Int64(v) => P::Int64(v),
 
-        #[cfg(feature = "dtype-time")]
+        #[cfg(feature = "dtype-date")]
         A::Date(v) => P::Int32(v),
         #[cfg(feature = "dtype-datetime")]
         A::Datetime(v, _, _) | A::DatetimeOwned(v, _, _) => P::Int64(v),
@@ -168,14 +204,14 @@ pub fn apply_predicate(
     predicate: Option<&dyn PhysicalIoExpr>,
     parallel: bool,
 ) -> PolarsResult<()> {
-    if let (Some(predicate), false) = (&predicate, df.get_columns().is_empty()) {
+    if let (Some(predicate), false) = (&predicate, df.columns().is_empty()) {
         let s = predicate.evaluate_io(df)?;
         let mask = s.bool().expect("filter predicates was not of type boolean");
 
         if parallel {
             *df = df.filter(mask)?;
         } else {
-            *df = df._filter_seq(mask)?;
+            *df = df.filter_seq(mask)?;
         }
     }
     Ok(())
@@ -394,7 +430,7 @@ pub trait SkipBatchPredicate: Send + Sync {
         // SAFETY:
         // * Each column is length = 1
         // * We have an IndexSet, so each column name is unique
-        let df = unsafe { DataFrame::new_no_checks(1, columns) };
+        let df = unsafe { DataFrame::new_unchecked(1, columns) };
         Ok(self.evaluate_with_stat_df(&df)?.get_bit(0))
     }
     fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap>;

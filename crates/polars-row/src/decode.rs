@@ -1,9 +1,9 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
+use polars_buffer::Buffer;
 use polars_dtype::categorical::CatNative;
 
 use self::encode::fixed_size;
@@ -137,12 +137,19 @@ fn dtype_and_data_to_encoded_item_len(
             let mut data = &data[1..];
             let mut item_len = 1; // validity byte
 
-            for struct_field in struct_fields {
+            let field_dict_at = |idx: usize| -> Option<&RowEncodingContext> {
+                match dict {
+                    None => None,
+                    Some(RowEncodingContext::Struct(dicts)) => dicts[idx].as_ref(),
+                    Some(_) => unreachable!(),
+                }
+            };
+            for (idx, struct_field) in struct_fields.iter().enumerate() {
                 let len = dtype_and_data_to_encoded_item_len(
                     struct_field.dtype(),
                     data,
                     opt.into_nested(),
-                    dict,
+                    field_dict_at(idx),
                 );
                 data = &data[len..];
                 item_len += len;

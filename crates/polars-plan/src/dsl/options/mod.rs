@@ -1,24 +1,21 @@
 use std::hash::Hash;
 #[cfg(feature = "json")]
 use std::num::NonZeroUsize;
-use std::str::FromStr;
 use std::sync::Arc;
 
-mod sink;
-
-use polars_core::error::PolarsResult;
+pub mod file_provider;
+pub mod iceberg_sink_state;
+pub mod sink;
+pub use polars_config::Engine;
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
 use polars_io::csv::write::CsvWriterOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcWriterOptions;
 #[cfg(feature = "json")]
-use polars_io::json::JsonWriterOptions;
+use polars_io::ndjson::NDJsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
-#[cfg(feature = "iejoin")]
-use polars_ops::frame::IEJoinOptions;
-use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinTypeOptions};
 use polars_ops::prelude::{JoinArgs, JoinType};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::DynamicGroupOptions;
@@ -28,10 +25,14 @@ use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-pub use sink::*;
+pub use sink::{
+    CallbackSinkType, FileSinkOptions, PartitionStrategy, PartitionStrategyIR,
+    PartitionedSinkOptions, PartitionedSinkOptionsIR, SinkDestination, SinkTarget, SinkType,
+    SinkTypeIR, UnifiedSinkArgs,
+};
 use strum_macros::IntoStaticStr;
 
-use super::ExprIR;
+use super::Expr;
 use crate::dsl::Selector;
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
@@ -40,7 +41,7 @@ use crate::dsl::Selector;
 pub struct RollingCovOptions {
     pub window_size: IdxSize,
     pub min_periods: IdxSize,
-    pub ddof: u8,
+    pub ddof: Option<u8>,
 }
 
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -69,75 +70,6 @@ impl Default for StrptimeOptions {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, IntoStaticStr, Debug)]
-#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
-#[strum(serialize_all = "snake_case")]
-pub enum JoinTypeOptionsIR {
-    #[cfg(feature = "iejoin")]
-    IEJoin(IEJoinOptions),
-    // Fused cross join and filter (only used in the in-memory engine)
-    CrossAndFilter {
-        predicate: ExprIR, // Must be elementwise.
-    },
-}
-
-impl Hash for JoinTypeOptionsIR {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        use JoinTypeOptionsIR::*;
-        match self {
-            #[cfg(feature = "iejoin")]
-            IEJoin(opt) => opt.hash(state),
-            CrossAndFilter { predicate } => {
-                predicate.node().hash(state);
-            },
-        }
-    }
-}
-
-impl JoinTypeOptionsIR {
-    pub fn compile<C: FnOnce(&ExprIR) -> PolarsResult<Arc<dyn CrossJoinFilter>>>(
-        self,
-        plan: C,
-    ) -> PolarsResult<JoinTypeOptions> {
-        use JoinTypeOptionsIR::*;
-        match self {
-            CrossAndFilter { predicate } => {
-                let predicate = plan(&predicate)?;
-
-                Ok(JoinTypeOptions::Cross(CrossJoinOptions { predicate }))
-            },
-            #[cfg(feature = "iejoin")]
-            IEJoin(opt) => Ok(JoinTypeOptions::IEJoin(opt)),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Hash)]
-#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
-pub struct JoinOptionsIR {
-    pub allow_parallel: bool,
-    pub force_parallel: bool,
-    pub args: JoinArgs,
-    pub options: Option<JoinTypeOptionsIR>,
-    /// Proxy of the number of rows in both sides of the joins
-    /// Holds `(Option<known_size>, estimated_size)`
-    pub rows_left: (Option<usize>, usize),
-    pub rows_right: (Option<usize>, usize),
-}
-
-impl From<JoinOptions> for JoinOptionsIR {
-    fn from(opts: JoinOptions) -> Self {
-        Self {
-            allow_parallel: opts.allow_parallel,
-            force_parallel: opts.force_parallel,
-            args: opts.args,
-            options: Default::default(),
-            rows_left: (None, usize::MAX),
-            rows_right: (None, usize::MAX),
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -149,45 +81,12 @@ pub struct JoinOptions {
 
 impl Default for JoinOptions {
     fn default() -> Self {
-        JoinOptions {
+        Self {
             allow_parallel: true,
             force_parallel: false,
             // Todo!: make default
             args: JoinArgs::new(JoinType::Left),
         }
-    }
-}
-
-impl From<JoinOptionsIR> for JoinOptions {
-    fn from(opts: JoinOptionsIR) -> Self {
-        Self {
-            allow_parallel: opts.allow_parallel,
-            force_parallel: opts.force_parallel,
-            args: opts.args,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub enum WindowType {
-    /// Explode the aggregated list and just do a hstack instead of a join
-    /// this requires the groups to be sorted to make any sense
-    Over(WindowMapping),
-    #[cfg(feature = "dynamic_group_by")]
-    Rolling(RollingGroupOptions),
-}
-
-impl From<WindowMapping> for WindowType {
-    fn from(value: WindowMapping) -> Self {
-        Self::Over(value)
-    }
-}
-
-impl Default for WindowType {
-    fn default() -> Self {
-        Self::Over(WindowMapping::default())
     }
 }
 
@@ -209,58 +108,12 @@ pub enum WindowMapping {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum NestedType {
-    #[cfg(feature = "dtype-array")]
-    Array,
-    // List,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct UnpivotArgsDSL {
-    pub on: Selector,
+    pub on: Option<Selector>,
     pub index: Selector,
     pub variable_name: Option<PlSmallStr>,
     pub value_name: Option<PlSmallStr>,
-}
-
-#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum Engine {
-    Auto,
-    Streaming,
-    InMemory,
-    Gpu,
-}
-
-impl FromStr for Engine {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            // "cpu" for backwards compatibility
-            "auto" => Ok(Engine::Auto),
-            "cpu" | "in-memory" => Ok(Engine::InMemory),
-            "streaming" => Ok(Engine::Streaming),
-            "gpu" => Ok(Engine::Gpu),
-            "old-streaming" => Err("the 'old-streaming' engine has been removed".to_owned()),
-            v => Err(format!(
-                "`engine` must be one of {{'auto', 'in-memory', 'streaming', 'gpu'}}, got {v}",
-            )),
-        }
-    }
-}
-
-impl Engine {
-    pub fn into_static_str(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Streaming => "streaming",
-            Self::InMemory => "in-memory",
-            Self::Gpu => "gpu",
-        }
-    }
 }
 
 #[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
@@ -290,11 +143,25 @@ impl Default for UnionOptions {
     }
 }
 
-#[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct HConcatOptions {
     pub parallel: bool,
+    pub strict: bool,
+    // Treat unit values as scalar.
+    // E.g. broadcast them instead of fill nulls.
+    pub broadcast_unit_length: bool,
+}
+
+impl Default for HConcatOptions {
+    fn default() -> Self {
+        Self {
+            parallel: true,
+            strict: false,
+            broadcast_unit_length: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
@@ -310,7 +177,7 @@ pub struct GroupbyOptions {
 }
 
 impl GroupbyOptions {
-    pub(crate) fn is_rolling(&self) -> bool {
+    pub fn is_rolling(&self) -> bool {
         #[cfg(feature = "dynamic_group_by")]
         {
             self.rolling.is_some()
@@ -321,7 +188,7 @@ impl GroupbyOptions {
         }
     }
 
-    pub(crate) fn is_dynamic(&self) -> bool {
+    pub fn is_dynamic(&self) -> bool {
         #[cfg(feature = "dynamic_group_by")]
         {
             self.dynamic.is_some()
@@ -337,8 +204,8 @@ impl GroupbyOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct DistinctOptionsDSL {
-    /// Subset of columns that will be taken into account.
-    pub subset: Option<Selector>,
+    /// Subset of columns/expressions that will be taken into account.
+    pub subset: Option<Vec<Expr>>,
     /// This will maintain the order of the input.
     /// Note that this is more expensive.
     /// `maintain_order` is not supported in the streaming
@@ -365,21 +232,25 @@ pub struct AnonymousScanOptions {
     pub fmt_str: &'static str,
 }
 
+const _: () = {
+    assert!(std::mem::size_of::<FileWriteFormat>() <= 50);
+};
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, strum_macros::IntoStaticStr)]
-pub enum FileType {
+pub enum FileWriteFormat {
     #[cfg(feature = "parquet")]
-    Parquet(ParquetWriteOptions),
+    Parquet(Arc<ParquetWriteOptions>),
     #[cfg(feature = "ipc")]
     Ipc(IpcWriterOptions),
     #[cfg(feature = "csv")]
     Csv(CsvWriterOptions),
     #[cfg(feature = "json")]
-    Json(JsonWriterOptions),
+    NDJson(NDJsonWriterOptions),
 }
 
-impl FileType {
+impl FileWriteFormat {
     pub fn extension(&self) -> &'static str {
         match self {
             #[cfg(feature = "parquet")]
@@ -389,7 +260,7 @@ impl FileType {
             #[cfg(feature = "csv")]
             Self::Csv(_) => "csv",
             #[cfg(feature = "json")]
-            Self::Json(_) => "jsonl",
+            Self::NDJson(_) => "jsonl",
 
             #[allow(unreachable_patterns)]
             _ => unreachable!("enable file type features"),
@@ -407,6 +278,7 @@ pub struct UnionArgs {
     pub rechunk: bool,
     pub to_supertypes: bool,
     pub diagonal: bool,
+    pub strict: bool,
     // If it is a union from a scan over multiple files.
     pub from_partitioned_ds: bool,
     pub maintain_order: bool,
@@ -419,6 +291,8 @@ impl Default for UnionArgs {
             rechunk: false,
             to_supertypes: false,
             diagonal: false,
+            // By default, strict should be true in v2.0.0
+            strict: false,
             from_partitioned_ds: false,
             maintain_order: true,
         }

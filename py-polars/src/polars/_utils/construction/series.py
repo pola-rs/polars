@@ -8,7 +8,6 @@ from itertools import islice
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
 )
 
 import polars._reexport as pl
@@ -35,6 +34,7 @@ from polars._utils.various import (
 from polars._utils.wrap import wrap_s
 from polars.datatypes import (
     Array,
+    BaseExtension,
     Boolean,
     Categorical,
     Date,
@@ -66,7 +66,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PySeries
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
 
     from polars import DataFrame, Series
     from polars._dependencies import pandas as pd
@@ -83,6 +83,13 @@ def sequence_to_pyseries(
 ) -> PySeries:
     """Construct a PySeries from a sequence."""
     python_dtype: type | None = None
+
+    if isinstance(dtype, BaseExtension):
+        storage = dtype.ext_storage()
+        pys = sequence_to_pyseries(
+            name, values, storage, strict=strict, nan_to_null=nan_to_null
+        )
+        return pys.ext_to(dtype)
 
     if isinstance(values, range):
         return range_to_series(name, values, dtype=dtype)._s
@@ -496,13 +503,20 @@ def numpy_to_pyseries(
     nan_to_null: bool = False,
 ) -> PySeries:
     """Construct a PySeries from a numpy array."""
-    values = np.ascontiguousarray(values)
+    if not values.dtype.isnative:
+        # Only native byte order is supported, so swap to a native-order copy.
+        values = values.astype(values.dtype.newbyteorder("="))
+    # Require aligned, C-contiguous, >=1d; an unaligned view would otherwise panic.
+    values = np.atleast_1d(values)
+    values = np.require(values, requirements=["A", "C"])
 
     if values.ndim == 1:
         values, dtype = numpy_values_and_dtype(values)
         constructor = numpy_type_to_constructor(values, dtype)
         return constructor(
-            name, values, nan_to_null if dtype in (np.float32, np.float64) else strict
+            name,
+            values,
+            nan_to_null if dtype in (np.float16, np.float32, np.float64) else strict,
         )
     else:
         original_shape = values.shape

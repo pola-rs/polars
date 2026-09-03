@@ -6,7 +6,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:example]
     let ts = ["2021-03-27 03:00", "2021-03-28 03:00"];
     let tz_naive = Column::new("tz_naive".into(), &ts);
-    let time_zones_df = DataFrame::new(vec![tz_naive])?
+    let time_zones_df = DataFrame::new_infer_height(vec![tz_naive])?
         .lazy()
         .select([col("tz_naive").str().to_datetime(
             Some(TimeUnit::Milliseconds),
@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .alias("tz_aware")])
         .collect()?;
 
-    println!("{}", &time_zones_df);
+    println!("{}", time_zones_df);
     // --8<-- [end:example]
 
     // --8<-- [start:example2]
@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .alias("unset time zone"),
         ])
         .collect()?;
-    println!("{}", &time_zones_operations);
+    println!("{}", time_zones_operations);
     // --8<-- [end:example2]
 
     Ok(())

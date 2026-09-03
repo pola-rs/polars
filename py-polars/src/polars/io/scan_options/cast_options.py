@@ -1,34 +1,49 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from collections.abc import Collection
+from typing import TYPE_CHECKING, Literal, TypeVar
 
 from polars._utils.unstable import issue_unstable_warning
 
 if TYPE_CHECKING:
-    from collections.abc import Collection
-
-    from typing_extensions import TypeAlias
+    from typing import TypeAlias
 
 
-FloatCastOption: TypeAlias = Literal["upcast", "downcast"]
-DatetimeCastOption: TypeAlias = Literal["nanosecond-downcast", "convert-timezone"]
+FloatCastOption: TypeAlias = Literal["upcast", "downcast", "forbid"]
+IntegerCastOption: TypeAlias = Literal["upcast", "allow-float", "forbid"]
+DatetimeCastOption: TypeAlias = Literal[
+    "convert-timezone",
+    "nanosecond-downcast",
+    "microsecond-downcast",
+    "microsecond-upcast",
+    "millisecond-upcast",
+    "downcast",
+    "upcast",
+    "forbid",
+]
+
+_OptionT = TypeVar("_OptionT", bound=str)
+_CastConfig: TypeAlias = _OptionT | Collection[_OptionT]
 
 _DEFAULT_CAST_OPTIONS_ICEBERG: ScanCastOptions | None = None
 
 
 class ScanCastOptions:
-    """Options for scanning files."""
+    """Cast options applied when scanning files."""
+
+    integer_cast: _CastConfig[IntegerCastOption]
+    float_cast: _CastConfig[FloatCastOption]
+    datetime_cast: _CastConfig[DatetimeCastOption]
+    missing_struct_fields: Literal["insert", "raise"]
+    extra_struct_fields: Literal["ignore", "raise"]
+    categorical_to_string: Literal["allow", "forbid"]
 
     def __init__(
         self,
         *,
-        integer_cast: Literal["upcast", "forbid"] = "forbid",
-        float_cast: Literal["forbid"]
-        | FloatCastOption
-        | Collection[FloatCastOption] = "forbid",
-        datetime_cast: Literal["forbid"]
-        | DatetimeCastOption
-        | Collection[DatetimeCastOption] = "forbid",
+        integer_cast: _CastConfig[IntegerCastOption] = "forbid",
+        float_cast: _CastConfig[FloatCastOption] = "forbid",
+        datetime_cast: _CastConfig[DatetimeCastOption] = "forbid",
         missing_struct_fields: Literal["insert", "raise"] = "raise",
         extra_struct_fields: Literal["ignore", "raise"] = "raise",
         categorical_to_string: Literal["allow", "forbid"] = "forbid",
@@ -38,8 +53,8 @@ class ScanCastOptions:
         Common configuration for scanning files.
 
         .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -47,6 +62,7 @@ class ScanCastOptions:
             Configuration for casting from integer types:
 
             * `upcast`: Allow lossless casting to wider integer types.
+            * `allow-float`: Allow casting integers to float types.
             * `forbid`: Raises an error if dtypes do not match.
 
         float_cast
@@ -59,9 +75,19 @@ class ScanCastOptions:
         datetime_cast
             Configuration for casting from datetime types:
 
-            * `nanosecond-downcast`: Allow nanosecond precision datetime to be \
-            downcasted to any lower precision. This has a similar effect to \
-            PyArrow's `coerce_int96_timestamp_unit`.
+            * `nanosecond-downcast`: Allow nanosecond precision datetime to be
+              downcasted to any lower precision. This has a similar effect to
+              PyArrow's `coerce_int96_timestamp_unit`.
+            * `microsecond-downcast`: Allow microsecond precision datetime to be
+              downcasted to millisecond precision.
+            * `microsecond-upcast`: Allow microsecond precision datetime to be
+              upcasted to nanosecond precision.
+            * `millisecond-upcast`: Allow millisecond precision datetime to be
+              upcasted to microsecond or nanosecond precision.
+            * `downcast`: Allow downcasting to any lower precision (convenience
+              aggregate of `nanosecond-downcast` and `microsecond-downcast`).
+            * `upcast`: Allow upcasting to any higher precision (convenience
+              aggregate of `millisecond-upcast` and `microsecond-upcast`).
             * `convert-timezone`: Allow casting to a different timezone.
             * `forbid`: Raises an error if dtypes do not match.
 
@@ -116,7 +142,7 @@ class ScanCastOptions:
             _DEFAULT_CAST_OPTIONS_ICEBERG = ScanCastOptions(
                 integer_cast="upcast",
                 float_cast=["upcast", "downcast"],
-                datetime_cast=["nanosecond-downcast", "convert-timezone"],
+                datetime_cast=("nanosecond-downcast", "convert-timezone"),
                 missing_struct_fields="insert",
                 extra_struct_fields="ignore",
                 categorical_to_string="allow",

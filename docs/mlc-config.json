@@ -9,5 +9,6 @@
     {
       "pattern": "^https://marketplace.visualstudio.com/"
     }
-  ]
+  ],
+  "retryOn429": true
 }

@@ -4,26 +4,26 @@ use components::bridge::BridgeRecvPort;
 use components::row_deletions::{ExternalFilterMask, RowDeletionsInit};
 use futures::StreamExt;
 use futures::stream::BoxStream;
+use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
+use polars_async::primitives::oneshot_channel;
+use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::config::verbose_print_sensitive;
 use polars_core::prelude::{AnyValue, DataType};
 use polars_core::scalar::Scalar;
 use polars_core::schema::iceberg::IcebergSchema;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_ensure};
+use polars_mem_engine::scan_predicate::skip_files_mask::SkipFilesMask;
 use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
+use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
-use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
-use crate::async_primitives::connector;
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::nodes::io_sources::multi_scan::components;
 use crate::nodes::io_sources::multi_scan::components::apply_extra_ops::ApplyExtraOps;
 use crate::nodes::io_sources::multi_scan::components::errors::missing_column_err;
 use crate::nodes::io_sources::multi_scan::components::physical_slice::PhysicalSlice;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::components::reader_operation_pushdown::ReaderOperationPushdown;
-use crate::nodes::io_sources::multi_scan::components::row_counter::RowCounter;
-use crate::nodes::io_sources::multi_scan::components::skip_files::SkipFilesMask;
 use crate::nodes::io_sources::multi_scan::pipeline::models::{
     ExtraOperations, StartReaderArgsConstant, StartReaderArgsPerFile, StartedReaderState,
 };
@@ -207,6 +207,17 @@ impl ReaderStarter {
                 debug_assert!(extra_ops.has_row_index_or_slice())
             }
 
+            if cfg!(debug_assertions)
+                && let Some(n_rows_in_file) = n_rows_in_file
+                && let Some(mask_len) = external_filter_mask.as_ref().map(|fm| fm.len())
+            {
+                // @NOTE: the deletion files / vectors may be truncated
+                polars_ensure!(mask_len <= n_rows_in_file.num_physical_rows(),
+                    ComputeError: "deletion row count: {}, exceeds number of physical rows: {}",
+                    mask_len, n_rows_in_file.num_physical_rows()
+                )
+            }
+
             // `fast_n_rows_in_file()` or negative slice, we know the exact row count here already.
             // After this point, if n_rows_in_file is `Some`, it should contain the exact physical
             // and deleted row counts.
@@ -287,10 +298,12 @@ impl ReaderStarter {
                         PolarsResult::Ok(file_row_count)
                     };
 
-                    if n_rows_in_file.is_none() {
+                    if let Some(n_rows_in_file) = n_rows_in_file
+                        && cfg!(debug_assertions)
+                    {
+                        assert_eq!(n_rows_in_file, get_row_count.await?)
+                    } else {
                         n_rows_in_file = Some(get_row_count.await?)
-                    } else if cfg!(debug_assertions) {
-                        assert_eq!(n_rows_in_file.unwrap(), get_row_count.await?)
                     }
 
                     *current_row_position = current_row_position.add(n_rows_in_file.unwrap());
@@ -301,7 +314,7 @@ impl ReaderStarter {
 
             let (row_position_on_end_tx, row_position_on_end_rx) =
                 if should_update_row_position && n_rows_in_file.is_none() {
-                    let (tx, rx) = connector::connector();
+                    let (tx, rx) = oneshot_channel::channel();
                     (Some(tx), Some(rx))
                 } else {
                     (None, None)
@@ -311,6 +324,8 @@ impl ReaderStarter {
                 row_position_on_end_tx,
                 ..Default::default()
             };
+
+            reader.prepare_read()?;
 
             let start_args_this_file = StartReaderArgsPerFile {
                 scan_source,
@@ -322,7 +337,7 @@ impl ReaderStarter {
                 external_filter_mask: external_filter_mask.clone(),
             };
 
-            let reader_start_task_handle = AbortOnDropHandle::new(async_executor::spawn(
+            let reader_start_task_handle = AbortOnDropHandle::new(executor::spawn(
                 TaskPriority::Low,
                 start_reader_impl(constant_args.clone(), start_args_this_file),
             ));
@@ -349,20 +364,19 @@ impl ReaderStarter {
             if let Some(current_row_position) = current_row_position.as_mut() {
                 let mut row_position_this_file = RowCounter::default();
 
-                #[expect(clippy::never_loop)]
-                loop {
+                'set_row_position_this_file: {
                     if let Some(v) = n_rows_in_file {
                         row_position_this_file = v;
-                        break;
+                        break 'set_row_position_this_file;
                     };
 
                     // Note, can be None on the last scan source.
-                    let Some(mut rx) = row_position_on_end_rx else {
-                        break;
+                    let Some(rx) = row_position_on_end_rx else {
+                        break 'set_row_position_this_file;
                     };
 
                     let Ok(num_physical_rows) = rx.recv().await else {
-                        break;
+                        break 'set_row_position_this_file;
                     };
 
                     let num_deleted_rows = external_filter_mask.map_or(0, |external_filter_mask| {
@@ -372,7 +386,6 @@ impl ReaderStarter {
                     });
 
                     row_position_this_file = RowCounter::new(num_physical_rows, num_deleted_rows);
-                    break;
                 }
 
                 *current_row_position = current_row_position.add(row_position_this_file);
@@ -402,9 +415,13 @@ async fn start_reader_impl(
         reader_capabilities,
         file_projection_builder,
         cast_columns_policy,
+        extra_columns_policy,
         missing_columns_policy,
         forbid_extra_columns,
         num_pipelines,
+        max_concurrent_scans,
+        disable_morsel_split,
+        last_morsel_pipelines,
         verbose,
     } = constant_args;
 
@@ -478,7 +495,7 @@ async fn start_reader_impl(
             file_iceberg_schema: {:?}",
             pre_slice,
             ExternalFilterMask::log_display(external_filter_mask.as_ref()),
-            &file_iceberg_schema,
+            file_iceberg_schema,
         )
     }
 
@@ -493,7 +510,7 @@ async fn start_reader_impl(
     let file_schema_rx = if forbid_extra_columns.is_some() {
         // Upstream should not have any reason to attach this.
         assert!(callbacks.file_schema_tx.is_none());
-        let (tx, rx) = connector::connector();
+        let (tx, rx) = oneshot_channel::channel();
         callbacks.file_schema_tx = Some(tx);
         Some(rx)
     } else {
@@ -541,7 +558,7 @@ async fn start_reader_impl(
         if let Some(hp) = &hive_parts {
             external_predicate_cols.extend(
                 hp.df()
-                    .get_columns()
+                    .columns()
                     .iter()
                     .filter(|c| predicate.live_columns.contains(c.name()))
                     .map(|c| {
@@ -600,7 +617,11 @@ async fn start_reader_impl(
         pre_slice,
         predicate,
         cast_columns_policy: cast_columns_policy.clone(),
+        missing_columns_policy,
+        extra_columns_policy,
         num_pipelines,
+        disable_morsel_split,
+        last_morsel_pipelines,
         callbacks,
     };
 
@@ -646,7 +667,7 @@ async fn start_reader_impl(
             hive_parts,
             external_filter_mask,
         }
-        .initialize(first_morsel.df().schema())?
+        .initialize(first_morsel.df().await.schema())?
     } else {
         ApplyExtraOps::Noop
     };
@@ -674,6 +695,7 @@ async fn start_reader_impl(
                 first_morsel,
                 first_morsel_position,
                 num_pipelines,
+                max_concurrent_scans,
             }
             .run();
 

@@ -5,7 +5,7 @@ use std::hash::Hash;
 
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::utils::{BitmapIter, ZipValidity};
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_utils::total_ord::TotalHash;
 
 use crate::prelude::*;
@@ -24,6 +24,7 @@ pub struct ObjectArray<T>
 where
     T: PolarsObject,
 {
+    dtype: ArrowDataType,
     values: Buffer<T>,
     validity: Option<Bitmap>,
 }
@@ -165,7 +166,11 @@ where
     }
 
     fn dtype(&self) -> &ArrowDataType {
-        &ArrowDataType::FixedSizeBinary(size_of::<T>())
+        &self.dtype
+    }
+
+    fn dtype_mut(&mut self) -> &mut ArrowDataType {
+        &mut self.dtype
     }
 
     fn slice(&mut self, offset: usize, length: usize) {
@@ -182,7 +187,8 @@ where
             .take()
             .map(|bitmap| bitmap.sliced_unchecked(offset, length))
             .filter(|bitmap| bitmap.unset_bits() > 0);
-        self.values.slice_unchecked(offset, length);
+        self.values
+            .slice_in_place_unchecked(offset..offset + length);
     }
 
     fn split_at_boxed(&self, offset: usize) -> (Box<dyn Array>, Box<dyn Array>) {
@@ -233,10 +239,12 @@ impl<T: PolarsObject> Splitable for ObjectArray<T> {
         let (left_validity, right_validity) = unsafe { self.validity.split_at_unchecked(offset) };
         (
             Self {
+                dtype: self.dtype.clone(),
                 values: left_values,
                 validity: left_validity,
             },
             Self {
+                dtype: self.dtype.clone(),
                 values: right_values,
                 validity: right_validity,
             },
@@ -266,8 +274,9 @@ impl<T: PolarsObject> StaticArray for ObjectArray<T> {
         self.with_validity(validity)
     }
 
-    fn full_null(length: usize, _dtype: ArrowDataType) -> Self {
+    fn full_null(length: usize, dtype: ArrowDataType) -> Self {
         ObjectArray {
+            dtype,
             values: vec![T::default(); length].into(),
             validity: Some(Bitmap::new_with_value(false, length)),
         }
@@ -321,6 +330,7 @@ where
 impl<T: PolarsObject> From<Vec<T>> for ObjectArray<T> {
     fn from(values: Vec<T>) -> Self {
         Self {
+            dtype: ArrowDataType::FixedSizeBinary(size_of::<T>()),
             values: values.into(),
             validity: None,
         }

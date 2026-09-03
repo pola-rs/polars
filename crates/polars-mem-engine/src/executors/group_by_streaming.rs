@@ -1,11 +1,10 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::prelude::DataType;
 use polars_core::prelude::{Column, GroupsType};
-use polars_core::schema::Schema;
+use polars_core::schema::{Schema, SchemaRef};
 use polars_core::series::IsSorted;
 use polars_error::PolarsResult;
 use polars_expr::prelude::PhysicalExpr;
@@ -25,6 +24,7 @@ pub struct GroupByStreamingExec {
     phys_keys: Vec<Arc<dyn PhysicalExpr>>,
     phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
     maintain_order: bool,
+    output_schema: SchemaRef,
     slice: Option<(i64, usize)>,
     from_partitioned_ds: bool,
 }
@@ -41,6 +41,7 @@ impl GroupByStreamingExec {
         phys_keys: Vec<Arc<dyn PhysicalExpr>>,
         phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
         maintain_order: bool,
+        output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
         from_partitioned_ds: bool,
     ) -> Self {
@@ -88,6 +89,7 @@ impl GroupByStreamingExec {
             phys_keys,
             phys_aggs,
             maintain_order,
+            output_schema,
             slice,
             from_partitioned_ds,
         }
@@ -108,7 +110,7 @@ fn compute_keys(
         .map(|s| s.evaluate(df, state))
         .collect::<PolarsResult<_>>()?;
     let df = check_expand_literals(df, keys, evaluated, false, Default::default())?;
-    Ok(df.take_columns())
+    Ok(df.into_columns())
 }
 
 fn estimate_unique_count(keys: &[Column], mut sample_size: usize) -> PolarsResult<usize> {
@@ -136,15 +138,25 @@ fn estimate_unique_count(keys: &[Column], mut sample_size: usize) -> PolarsResul
     };
 
     if keys.len() == 1 {
+        #[cfg(feature = "dtype-struct")]
+        if let polars_core::prelude::DataType::Struct(fields) = keys[0].dtype()
+            && fields.is_empty()
+        {
+            let nc = keys[0].null_count();
+            let len = keys[0].len();
+
+            return Ok((len > nc) as usize + (nc != 0) as usize);
+        }
+
         // we sample as that will work also with sorted data.
         // not that sampling without replacement is *very* expensive. don't do that.
-        let s = keys[0].sample_n(sample_size, true, false, None).unwrap();
+        let s = keys[0].sample_n(sample_size, true, None, None).unwrap();
         // fast multi-threaded way to get unique.
         let groups = s.as_materialized_series().group_tuples(true, false)?;
         Ok(finish(&groups))
     } else {
         let offset = (keys[0].len() / 2) as i64;
-        let df = unsafe { DataFrame::new_no_checks_height_from_first(keys.to_vec()) };
+        let df = unsafe { DataFrame::new_unchecked_infer_height(keys.to_vec()) };
         let df = df.slice(offset, sample_size);
         let names = df.get_column_names().into_iter().cloned();
         let gb = df.group_by(names).unwrap();
@@ -245,21 +257,14 @@ fn can_run_partitioned(
 
 impl Executor for GroupByStreamingExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        let name = "streaming_group_by";
         state.should_stop()?;
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                eprintln!("run {name}")
+                eprintln!("run streaming_group_by")
             }
         }
         let input_df = self.input_exec.execute(state)?;
-
-        let profile_name = if state.has_node_timer() {
-            Cow::Owned(format!(".{name}()"))
-        } else {
-            Cow::Borrowed("")
-        };
 
         let keys = self.keys(&input_df, state)?;
 
@@ -271,6 +276,7 @@ impl Executor for GroupByStreamingExec {
                 None,
                 state,
                 self.maintain_order,
+                &self.output_schema,
                 self.slice,
             );
         }
@@ -291,8 +297,6 @@ impl Executor for GroupByStreamingExec {
             &mut self.plan.expr_arena,
         )?;
 
-        state
-            .clone()
-            .record(|| streaming_exec.execute(state), profile_name)
+        streaming_exec.execute(state)
     }
 }

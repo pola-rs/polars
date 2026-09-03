@@ -16,7 +16,7 @@ from polars.testing.asserts.frame import assert_frame_equal
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn
 
-    from polars._typing import TimeUnit
+    from polars._typing import EngineType, TimeUnit
 
 
 DATE_FORMATS = ["%Y{}%m{}%d", "%d{}%m{}%Y"]
@@ -185,6 +185,20 @@ def test_to_datetime_aware_values_aware_dtype() -> None:
 
 
 @pytest.mark.parametrize(
+    ("time_zone", "suggestion"),
+    [
+        ("Europe/Parts", "Europe/Paris"),
+        ("Europ/londn", "Europe/London"),
+        ("Africa/Kathmandu", "Asia/Kathmandu"),
+    ],
+)
+def test_to_datetime_tz_suggestion(time_zone: str, suggestion: str) -> None:
+    msg = f"Hint: did you mean '{suggestion}' instead?"
+    with pytest.raises(ComputeError, match=msg):
+        _ = pl.Series(["2020-01-01T00:00:00+00"]).str.to_datetime(time_zone=time_zone)
+
+
+@pytest.mark.parametrize(
     ("inputs", "format", "expected"),
     [
         ("01-01-69", "%d-%m-%y", date(2069, 1, 1)),  # Polars' parser
@@ -315,3 +329,49 @@ def test_to_datetime_inexact_unicode_multibyte() -> None:
     assert_frame_equal(
         out, pl.DataFrame({"a": [datetime(2020, 2, 3, 12, 53, 11), None]})
     )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("method", "dtype"),
+    [
+        ("to_date", pl.Date),
+        ("to_datetime", pl.Datetime("us")),
+        ("to_time", pl.Time),
+    ],
+)
+def test_strptime_uninferrable_format(
+    engine: EngineType, method: str, dtype: pl.DataType
+) -> None:
+    lf = pl.LazyFrame({"s": ["not a temporal value"]})
+
+    non_strict = getattr(pl.col("s").str, method)(strict=False)
+    assert_frame_equal(
+        lf.select(non_strict).collect(engine=engine),
+        pl.DataFrame({"s": [None]}, schema={"s": dtype}),
+    )
+
+    strict = getattr(pl.col("s").str, method)(strict=True)
+    with pytest.raises(ComputeError, match="could not find an appropriate format"):
+        lf.select(strict).collect(engine=engine)
+
+
+STRPTIME_INFERENCE_CASES = [
+    ("to_date", pl.Date, "2020-01-01"),
+    ("to_datetime", pl.Datetime("us"), "2020-01-01 10:00:00"),
+    ("to_time", pl.Time, "10:00:00"),
+]
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(("method", "dtype", "good"), STRPTIME_INFERENCE_CASES)
+def test_strptime_strict_reports_original_column_name(
+    engine: EngineType, method: str, dtype: pl.DataType, good: str
+) -> None:
+    n = 200_000
+    values = ["not a temporal value"] + [good] * n
+
+    strict = getattr(pl.col("s").str, method)(strict=True)
+    with pytest.raises(InvalidOperationError, match="in column 's'"):
+        pl.LazyFrame({"s": values}).select(strict).collect(engine=engine)

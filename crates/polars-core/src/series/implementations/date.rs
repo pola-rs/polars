@@ -8,8 +8,6 @@
 //! (depending on the result) cast back to the original type
 //!
 use super::*;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::*;
 
 unsafe impl IntoSeries for DateChunked {
@@ -82,6 +80,16 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         self.0.physical().agg_max(groups).into_date().into_series()
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_max(groups)
     }
 
     #[cfg(feature = "algorithm_group_by")]
@@ -284,6 +292,15 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
             .into_series()
     }
 
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+        self.0
+            .physical()
+            .clone()
+            .with_validity(validity)
+            .into_date()
+            .into_series()
+    }
+
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         self.0
             .physical()
@@ -356,6 +373,11 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         self.0.physical().arg_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(self.0.physical())
+    }
+
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }
@@ -378,33 +400,62 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
 
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().max_reduce();
-        let av = sc.value().cast(self.dtype()).into_static();
+        let av = sc.value().as_date();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().min_reduce();
-        let av = sc.value().cast(self.dtype()).into_static();
+        let av = sc.value().as_date();
         Ok(Scalar::new(self.dtype().clone(), av))
     }
 
+    #[cfg(feature = "dtype-datetime")]
     fn mean_reduce(&self) -> PolarsResult<Scalar> {
         let mean = self.mean().map(|v| (v * US_IN_DAY as f64) as i64);
-        Ok(Scalar::new(
-            DataType::Datetime(TimeUnit::Microseconds, None),
-            mean.into(),
-        ))
+        let dtype = DataType::Datetime(TimeUnit::Microseconds, None);
+        let av = AnyValue::from(mean).as_datetime(TimeUnit::Microseconds, None);
+        Ok(Scalar::new(dtype, av))
     }
 
+    #[cfg(feature = "dtype-datetime")]
     fn median_reduce(&self) -> PolarsResult<Scalar> {
-        let av: AnyValue = self
-            .median()
-            .map(|v| (v * (US_IN_DAY as f64)) as i64)
-            .into();
+        let median = self.median().map(|v| (v * (US_IN_DAY as f64)) as i64);
+        let dtype = DataType::Datetime(TimeUnit::Microseconds, None);
+        let av = AnyValue::from(median).as_datetime(TimeUnit::Microseconds, None);
+        Ok(Scalar::new(dtype, av))
+    }
+
+    #[cfg(feature = "dtype-datetime")]
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        let quantile = self.0.physical().quantile_reduce(quantile, method)?;
+        let v = quantile.value().extract::<f64>().unwrap();
+        let datetime_us_value = (v * (US_IN_DAY as f64)) as i64;
+        let av = AnyValue::Datetime(datetime_us_value, TimeUnit::Microseconds, None);
         Ok(Scalar::new(
             DataType::Datetime(TimeUnit::Microseconds, None),
             av,
         ))
+    }
+
+    #[cfg(feature = "dtype-datetime")]
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let result = self.0.physical().quantiles_reduce(quantiles, method)?;
+        if let AnyValue::List(float_s) = result.value() {
+            let float_ca = float_s.f64().unwrap();
+            let int_s = float_ca
+                .iter()
+                .map(|v: Option<f64>| v.map(|f| (f * (US_IN_DAY as f64)) as i64))
+                .collect::<Int64Chunked>()
+                .into_datetime(TimeUnit::Microseconds, None)
+                .into_series();
+            Ok(Scalar::new(
+                DataType::List(Box::new(DataType::Datetime(TimeUnit::Microseconds, None))),
+                AnyValue::List(int_s),
+            ))
+        } else {
+            polars_bail!(ComputeError: "expected list scalar from quantiles_reduce")
+        }
     }
 
     #[cfg(feature = "approx_unique")]

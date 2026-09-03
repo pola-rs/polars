@@ -1,4 +1,5 @@
 use arrow::array::builder::ShareStrategy;
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
     AnyValue, DataType, Field, IDX_DTYPE, IntoColumn, NamedFrom, StructChunked,
@@ -12,7 +13,6 @@ use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::ComputeNode;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
@@ -110,9 +110,13 @@ impl ComputeNode for RleNode {
                         )
                         .into_column(self.name.clone());
 
-                        let df = DataFrame::new(vec![column]).unwrap();
+                        let df = unsafe { DataFrame::new_unchecked(column.len(), vec![column]) };
                         _ = send
-                            .send(Morsel::new(df, self.seq.successor(), SourceToken::new()))
+                            .send(Morsel::new_unregistered(
+                                df,
+                                self.seq.successor(),
+                                SourceToken::new(),
+                            ))
                             .await;
 
                         self.last_length = 0;
@@ -128,12 +132,13 @@ impl ComputeNode for RleNode {
                     let mut lengths = Vec::new();
                     while let Ok(mut m) = recv.recv().await {
                         self.seq = m.seq();
-                        if m.df().height() == 0 {
+                        if m.height() == 0 {
                             continue;
                         }
 
-                        assert_eq!(m.df().width(), 1);
-                        let column = &m.df()[0];
+                        let df_pin = m.df().await;
+                        assert_eq!(df_pin.width(), 1);
+                        let column = &df_pin[0];
 
                         lengths.clear();
                         polars_ops::series::rle_lengths(column, &mut lengths)?;
@@ -202,6 +207,7 @@ impl ComputeNode for RleNode {
                                 ShareStrategy::Always,
                             )
                         };
+                        drop(df_pin);
 
                         let lengths = Series::new(
                             PlSmallStr::from_static(RLE_LENGTH_COLUMN_NAME),
@@ -215,7 +221,12 @@ impl ComputeNode for RleNode {
                             [&lengths, &series].into_iter(),
                         )
                         .unwrap();
-                        *m.df_mut() = DataFrame::new(vec![rle_struct.into_column()]).unwrap();
+                        m.set_df(unsafe {
+                            DataFrame::new_unchecked(
+                                rle_struct.len(),
+                                vec![rle_struct.into_column()],
+                            )
+                        });
 
                         if send.send(m).await.is_err() {
                             break;

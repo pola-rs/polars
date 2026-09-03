@@ -1,3 +1,4 @@
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{AnyValue, Column, DataType};
 use polars_core::scalar::Scalar;
@@ -5,7 +6,6 @@ use polars_error::PolarsResult;
 use polars_utils::IdxSize;
 
 use super::ComputeNode;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::pipe::{RecvPort, SendPort};
@@ -60,10 +60,10 @@ impl ComputeNode for RleIdNode {
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let mut lengths = Vec::new();
             while let Ok(mut m) = recv.recv().await {
-                let df = m.df_mut();
-                if df.height() == 0 {
+                if m.height() == 0 {
                     continue;
                 }
+                let mut df = m.df_mut().await;
 
                 assert_eq!(df.width(), 1);
                 let column = &df[0];
@@ -97,8 +97,9 @@ impl ComputeNode for RleIdNode {
                     column
                 };
 
-                *df = unsafe { DataFrame::new_no_checks(column.len(), vec![column]) };
+                *df = unsafe { DataFrame::new_unchecked(column.len(), vec![column]) };
 
+                drop(df);
                 if send.send(m).await.is_err() {
                     break;
                 }

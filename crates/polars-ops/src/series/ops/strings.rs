@@ -5,7 +5,8 @@ use arrow::array::{Array, Utf8ViewArrayBuilder};
 use arrow::datatypes::ArrowDataType;
 use polars_core::prelude::{Column, DataType, IntoColumn, StringChunked};
 use polars_core::scalar::Scalar;
-use polars_error::{PolarsResult, polars_ensure};
+use polars_error::{PolarsContext, PolarsResult};
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 
 #[inline(always)]
@@ -18,21 +19,27 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
     assert!(!cs.is_empty()); // Checked at IR construction
 
     let output_name = cs[0].name().clone();
-    let mut output_length = 1;
-    for c in cs.iter() {
-        if c.len() != 1 {
-            polars_ensure!(
-                output_length == 1 || output_length == c.len(),
-                length_mismatch = "format",
-                output_length,
-                c.len()
-            );
-            output_length = c.len();
-        }
-    }
+    let output_length = broadcast_len(cs.iter()).context("str.format")?;
 
+    let mut validity = None;
     let mut num_scalar_inputs = 0;
     for c in cs.iter_mut() {
+        if let Some(c_validity) = c.rechunk_validity() {
+            // Column with only nulls means output is only nulls.
+            if c.null_count() == c.len() {
+                return Ok(Column::full_null(
+                    output_name,
+                    output_length,
+                    &DataType::String,
+                ));
+            }
+
+            match &mut validity {
+                v @ None => *v = Some(c_validity),
+                Some(v) => *v = arrow::bitmap::and(v, &c_validity),
+            }
+        }
+
         *c = c.cast(&DataType::String)?;
         num_scalar_inputs += usize::from(c.len() == 1);
     }
@@ -98,6 +105,23 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
     // Amortize the format string allocation.
     let mut s = String::new();
     for i in 0..output_length {
+        if validity
+            .as_ref()
+            .is_some_and(|v| !unsafe { v.get_bit_unchecked(i) })
+        {
+            unsafe { builder.push_inline_view_ignore_validity(Default::default()) };
+
+            for (iter, arr, elem_idx) in arrays.iter_mut() {
+                *elem_idx += 1;
+                if i + 1 != output_length && *elem_idx == arr.len() {
+                    *arr = iter.next().unwrap();
+                    *elem_idx = 0;
+                }
+            }
+
+            continue;
+        }
+
         s.clear();
         s.push_str(&format[..insertions[0]]);
 
@@ -110,12 +134,13 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
             *elem_idx += 1;
             if i + 1 != output_length && *elem_idx == arr.len() {
                 *arr = iter.next().unwrap();
+                *elem_idx = 0;
             }
         }
 
         builder.push_value_ignore_validity(&s);
     }
 
-    let array = builder.freeze().to_boxed();
+    let array = builder.freeze().with_validity(validity).to_boxed();
     Ok(unsafe { StringChunked::from_chunks(output_name, vec![array]) }.into_column())
 }

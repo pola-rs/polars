@@ -310,4 +310,4 @@ def test_arrow_float16_read_empty_20946() -> None:
 
     df = pl.from_arrow(table)
     assert df.shape == (0, 1)
-    assert df.schema == pl.Schema([("float_column", pl.Float32)])  # type: ignore[union-attr]
+    assert df.schema == pl.Schema([("float_column", pl.Float16)])  # type: ignore[union-attr]

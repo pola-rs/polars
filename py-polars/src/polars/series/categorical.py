@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.unstable import unstable
-from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars import Series
     from polars._plr import PySeries
+    from polars._typing import (
+        PolarsDataType,
+    )
 
 
 @expr_dispatch
@@ -19,52 +22,6 @@ class CatNameSpace:
 
     def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
-
-    def get_categories(self) -> Series:
-        """
-        Get the categories stored in this data type.
-
-        Examples
-        --------
-        >>> s = pl.Series(["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical)
-        >>> s.cat.get_categories()  # doctest: +SKIP
-        shape: (3,)
-        Series: '' [str]
-        [
-            "foo"
-            "bar"
-            "ham"
-        ]
-        """
-
-    def is_local(self) -> bool:
-        """
-        Return whether or not the column is a local categorical.
-
-        Always returns false.
-        """
-        return self._s.cat_is_local()
-
-    def to_local(self) -> Series:
-        """Simply returns the column as-is, local representations are deprecated."""
-        return wrap_s(self._s.cat_to_local())
-
-    @unstable()
-    def uses_lexical_ordering(self) -> bool:
-        """
-        Indicate whether the Series uses lexical ordering.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
-
-        Examples
-        --------
-        >>> s = pl.Series(["b", "a", "b"]).cast(pl.Categorical)
-        >>> s.cat.uses_lexical_ordering()
-        True
-        """
-        return self._s.cat_uses_lexical_ordering()
 
     def len_bytes(self) -> Series:
         """
@@ -244,3 +201,47 @@ class CatNameSpace:
             "onf"
         ]
         """
+
+    @unstable()
+    def to(self, dtype: PolarsDataType, *, strict: bool = True) -> Series:
+        """
+        Create a Series with a categorical or enum `dtype`.
+
+        The input series must be the physical type of the categorical or enum dtype.
+
+        Parameters
+        ----------
+        dtype
+            The target categorical or enum dtype.
+        strict
+            Whether to panic when encountering an illegal category.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+        """
+
+    @unstable()
+    def physical(self) -> Series:
+        """
+        Get the physical values of a Series with a categorical or enum data type.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+        """
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "is_local": "Categoricals no longer have a local scope.",
+                    "to_local": "Categoricals no longer have a local scope.",
+                    "uses_lexical_ordering": "Categoricals are now always ordered lexically.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)

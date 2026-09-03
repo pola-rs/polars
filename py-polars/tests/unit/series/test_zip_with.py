@@ -67,13 +67,13 @@ def test_zip_with_bad_input_type() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'Series'.* not 'DataFrame'",
+        match=r"expected `other` .*to be a 'Series'.* not 'DataFrame'",
     ):
         s1.zip_with(mask, pl.DataFrame(s2))  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'Series'.* not 'LazyFrame'",
+        match=r"expected `other` .*to be a 'Series'.* not 'LazyFrame'",
     ):
         s1.zip_with(mask, pl.DataFrame(s2).lazy())  # type: ignore[arg-type]
 

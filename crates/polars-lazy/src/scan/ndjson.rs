@@ -1,6 +1,6 @@
 use std::num::NonZeroUsize;
 
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::{HiveOptions, RowIndex};
@@ -8,7 +8,7 @@ use polars_plan::dsl::{
     CastColumnsPolicy, DslPlan, ExtraColumnsPolicy, FileScanDsl, MissingColumnsPolicy, ScanSources,
 };
 use polars_plan::prelude::{NDJsonReadOptions, UnifiedScanArgs};
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::slice_enum::Slice;
 
 use crate::prelude::LazyFrame;
@@ -31,7 +31,7 @@ pub struct LazyJsonLineReader {
 }
 
 impl LazyJsonLineReader {
-    pub fn new_paths(paths: Buffer<PlPath>) -> Self {
+    pub fn new_paths(paths: Buffer<PlRefPath>) -> Self {
         Self::new_with_sources(ScanSources::Paths(paths))
     }
 
@@ -52,7 +52,7 @@ impl LazyJsonLineReader {
         }
     }
 
-    pub fn new(path: PlPath) -> Self {
+    pub fn new(path: PlRefPath) -> Self {
         Self::new_with_sources(ScanSources::Paths(Buffer::from_iter([path])))
     }
 

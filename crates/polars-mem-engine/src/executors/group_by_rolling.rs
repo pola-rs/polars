@@ -9,7 +9,7 @@ pub(crate) struct GroupByRollingExec {
     pub(crate) aggs: Vec<Arc<dyn PhysicalExpr>>,
     #[cfg(feature = "dynamic_group_by")]
     pub(crate) options: RollingGroupOptions,
-    pub(crate) input_schema: SchemaRef,
+    pub(crate) output_schema: SchemaRef,
     pub(crate) slice: Option<(i64, usize)>,
     pub(crate) apply: Option<PlanCallback<DataFrame, DataFrame>>,
 }
@@ -27,12 +27,12 @@ pub(super) fn sort_and_groups(
     });
 
     let encoded = unsafe {
-        df.with_column_unchecked(encoded.into_series().into());
+        df.push_column_unchecked(encoded.into_series().into());
 
         // If not sorted on keys, sort.
         let idx_s = idx.clone().into_series();
         if !idx_s.is_sorted(Default::default()).unwrap() {
-            let (df_ordered, keys_ordered) = POOL.join(
+            let (df_ordered, keys_ordered) = RAYON.join(
                 || df.take_unchecked(&idx),
                 || {
                     keys.iter()
@@ -44,7 +44,7 @@ pub(super) fn sort_and_groups(
             *keys = keys_ordered;
         }
 
-        df.get_columns_mut().pop().unwrap()
+        df.columns_mut().pop().unwrap()
     };
     let encoded = encoded.as_materialized_series();
     let encoded = encoded.binary_offset().unwrap();
@@ -65,7 +65,7 @@ impl GroupByRollingExec {
         state: &ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        df.as_single_chunk_par();
+        df.rechunk_mut_par();
 
         let mut keys = self
             .keys
@@ -83,12 +83,7 @@ impl GroupByRollingExec {
 
         if let Some(f) = &self.apply {
             let gb = GroupBy::new(&df, vec![], groups, None);
-            let out = gb.apply(move |df| f.call(df))?;
-            return Ok(if let Some((offset, len)) = self.slice {
-                out.slice(offset, len)
-            } else {
-                out
-            });
+            return gb.apply_sliced(self.slice, move |df| f.call(df), Some(&self.output_schema));
         }
 
         let mut groups = &groups;
@@ -113,7 +108,7 @@ impl GroupByRollingExec {
         columns.push(time_key);
         columns.extend(agg_columns);
 
-        DataFrame::new(columns)
+        DataFrame::new_infer_height(columns)
     }
 }
 
@@ -133,23 +128,6 @@ impl Executor for GroupByRollingExec {
             }
         }
         let df = self.input.execute(state)?;
-        let profile_name = if state.has_node_timer() {
-            let by = self
-                .keys
-                .iter()
-                .map(|s| Ok(s.to_field(&self.input_schema)?.name))
-                .collect::<PolarsResult<Vec<_>>>()?;
-            let name = comma_delimited("group_by_rolling".to_string(), &by);
-            Cow::Owned(name)
-        } else {
-            Cow::Borrowed("")
-        };
-
-        if state.has_node_timer() {
-            let new_state = state.clone();
-            new_state.record(|| self.execute_impl(state, df), profile_name)
-        } else {
-            self.execute_impl(state, df)
-        }
+        self.execute_impl(state, df)
     }
 }

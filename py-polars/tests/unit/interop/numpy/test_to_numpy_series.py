@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as D
 from pathlib import Path
@@ -11,6 +12,7 @@ from hypothesis import given, settings
 from numpy.testing import assert_array_equal
 
 import polars as pl
+from polars.exceptions import ArgumentRemovedError
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
 
@@ -18,12 +20,14 @@ if TYPE_CHECKING:
     import numpy.typing as npt
 
     from polars._typing import PolarsDataType
+    from tests.conftest import PlMonkeyPatch
 
 
 def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
+    """Assert that `arr` points at the values buffer of `s`."""
     if s.len() == 0:
         return
-    s_ptr = s._get_buffers()["values"]._get_buffer_info()[0]
+    s_ptr = s.to_arrow().buffers()[1].address
     arr_ptr = arr.__array_interface__["data"][0]
     assert s_ptr == arr_ptr
 
@@ -297,7 +301,7 @@ def test_series_to_numpy_list(chunked: bool) -> None:
     result = s.to_numpy()
 
     expected = np.array([np.array(v, dtype=np.int64) for v in values], dtype=np.object_)
-    for res, exp in zip(result, expected):
+    for res, exp in zip(result, expected, strict=True):
         assert_array_equal(res, exp)
     assert result.dtype == expected.dtype
     assert_allow_copy_false_raises(s)
@@ -371,12 +375,11 @@ def test_to_numpy_chunked_temporal_nested() -> None:
     assert_allow_copy_false_raises(s)
 
 
-def test_zero_copy_only_deprecated() -> None:
-    values = [1, 2]
+def test_zero_copy_only_removed() -> None:
     s = pl.Series([1, 2])
-    with pytest.deprecated_call():
-        result: npt.NDArray[np.generic] = s.to_numpy(zero_copy_only=True)
-    assert result.tolist() == values
+    msg = "Use the `allow_copy` parameter instead"
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.to_numpy(zero_copy_only=True)  # type: ignore[call-arg]
 
 
 def test_series_to_numpy_temporal() -> None:
@@ -410,6 +413,7 @@ def test_series_to_numpy_temporal() -> None:
         min_size=1,
         max_size=10,
         excluded_dtypes=[
+            pl.Float16,
             pl.Int128,
             pl.UInt128,
             pl.Categorical,
@@ -432,7 +436,7 @@ def test_series_to_numpy(s: pl.Series) -> None:
     result = s.to_numpy()
 
     values = s.to_list()
-    dtype_map = {
+    dtype_map: dict[PolarsDataType, str] = {
         pl.Datetime("ns"): "datetime64[ns]",
         pl.Datetime("us"): "datetime64[us]",
         pl.Duration("ns"): "timedelta64[ns]",
@@ -448,9 +452,9 @@ def test_series_to_numpy(s: pl.Series) -> None:
 @pytest.mark.parametrize("writable", [False, True])
 @pytest.mark.parametrize("pyarrow_available", [False, True])
 def test_to_numpy2(
-    writable: bool, pyarrow_available: bool, monkeypatch: pytest.MonkeyPatch
+    writable: bool, pyarrow_available: bool, plmonkeypatch: PlMonkeyPatch
 ) -> None:
-    monkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", pyarrow_available)
+    plmonkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", pyarrow_available)
 
     np_array = pl.Series("a", [1, 2, 3], pl.UInt8).to_numpy(writable=writable)
 

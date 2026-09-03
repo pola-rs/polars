@@ -7,7 +7,6 @@ Manipulation/selection
    :toctree: api/
 
     LazyFrame.__getitem__
-    LazyFrame.approx_n_unique
     LazyFrame.bottom_k
     LazyFrame.cast
     LazyFrame.clear
@@ -20,6 +19,7 @@ Manipulation/selection
     LazyFrame.fill_null
     LazyFrame.filter
     LazyFrame.first
+    LazyFrame.gather
     LazyFrame.gather_every
     LazyFrame.group_by
     LazyFrame.group_by_dynamic
@@ -32,8 +32,8 @@ Manipulation/selection
     LazyFrame.last
     LazyFrame.limit
     LazyFrame.match_to_schema
-    LazyFrame.melt
     LazyFrame.merge_sorted
+    LazyFrame.pivot
     LazyFrame.remove
     LazyFrame.rename
     LazyFrame.reverse
@@ -53,6 +53,4 @@ Manipulation/selection
     LazyFrame.update
     LazyFrame.with_columns
     LazyFrame.with_columns_seq
-    LazyFrame.with_context
-    LazyFrame.with_row_count
     LazyFrame.with_row_index

@@ -10,30 +10,42 @@ use crate::prelude::*;
 use crate::random::get_global_random_u64;
 use crate::utils::NoNull;
 
-fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
+fn create_rand_index_with_replacement(
+    n: usize,
+    len: usize,
+    seed: Option<u64>,
+    shuffle: Option<bool>,
+) -> IdxCa {
     if len == 0 {
         return IdxCa::new_vec(PlSmallStr::EMPTY, vec![]);
     }
     let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
     let dist = Uniform::new(0, len as IdxSize).unwrap();
-    (0..n as IdxSize)
+    let idxs = (0..n as IdxSize)
         .map(move |_| dist.sample(&mut rng))
         .collect_trusted::<NoNull<IdxCa>>()
-        .into_inner()
+        .into_inner();
+    if shuffle == Some(false) {
+        idxs.sort(false)
+    } else {
+        idxs
+    }
 }
 
 fn create_rand_index_no_replacement(
     n: usize,
     len: usize,
     seed: Option<u64>,
-    shuffle: bool,
+    shuffle: Option<bool>,
 ) -> IdxCa {
     let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
     let mut buf: Vec<IdxSize>;
     if n == len {
         buf = (0..len as IdxSize).collect();
-        if shuffle {
-            buf.shuffle(&mut rng)
+        // None and Some(false) coincide here because the natural output is already ordered and
+        // forcing a shuffle would violate the fastest algorithm contract for None
+        if let Some(true) = shuffle {
+            buf.shuffle(&mut rng);
         }
     } else {
         // TODO: avoid extra potential copy by vendoring rand::seq::index::sample,
@@ -45,6 +57,11 @@ fn create_rand_index_no_replacement(
             #[cfg(target_pointer_width = "64")]
             IndexVec::U64(v) => v.into_iter().map(|x| x as IdxSize).collect(),
         };
+        // None and Some(true) coincide here because the rand::seq::index::sample
+        // already returns indices in an unspecified order so neither needs additional work
+        if let Some(false) = shuffle {
+            buf.sort_unstable();
+        }
     }
     IdxCa::new_vec(PlSmallStr::EMPTY, buf)
 }
@@ -82,7 +99,7 @@ impl Series {
         &self,
         n: usize,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         ensure_shape(n, self.len(), with_replacement)?;
@@ -93,7 +110,7 @@ impl Series {
 
         match with_replacement {
             true => {
-                let idx = create_rand_index_with_replacement(n, len, seed);
+                let idx = create_rand_index_with_replacement(n, len, seed, shuffle);
                 debug_assert_eq!(len, self.len());
                 // SAFETY: we know that we never go out of bounds.
                 unsafe { Ok(self.take_unchecked(&idx)) }
@@ -112,7 +129,7 @@ impl Series {
         &self,
         frac: f64,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         let n = (self.len() as f64 * frac) as usize;
@@ -122,7 +139,7 @@ impl Series {
     pub fn shuffle(&self, seed: Option<u64>) -> Self {
         let len = self.len();
         let n = len;
-        let idx = create_rand_index_no_replacement(n, len, seed, true);
+        let idx = create_rand_index_no_replacement(n, len, seed, Some(true));
         debug_assert_eq!(len, self.len());
         // SAFETY: we know that we never go out of bounds.
         unsafe { self.take_unchecked(&idx) }
@@ -139,7 +156,7 @@ where
         &self,
         n: usize,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         ensure_shape(n, self.len(), with_replacement)?;
@@ -147,7 +164,7 @@ where
 
         match with_replacement {
             true => {
-                let idx = create_rand_index_with_replacement(n, len, seed);
+                let idx = create_rand_index_with_replacement(n, len, seed, shuffle);
                 debug_assert_eq!(len, self.len());
                 // SAFETY: we know that we never go out of bounds.
                 unsafe { Ok(self.take_unchecked(&idx)) }
@@ -166,7 +183,7 @@ where
         &self,
         frac: f64,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         let n = (self.len() as f64 * frac) as usize;
@@ -180,7 +197,7 @@ impl DataFrame {
         &self,
         n: &Series,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         polars_ensure!(
@@ -188,7 +205,7 @@ impl DataFrame {
         ComputeError: "Sample size must be a single value."
         );
 
-        let n = n.cast(&IDX_DTYPE)?;
+        let n = n.strict_cast(&IDX_DTYPE)?;
         let n = n.idx()?;
 
         match n.get(0) {
@@ -201,13 +218,13 @@ impl DataFrame {
         &self,
         n: usize,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         ensure_shape(n, self.height(), with_replacement)?;
         // All columns should used the same indices. So we first create the indices.
         let idx = match with_replacement {
-            true => create_rand_index_with_replacement(n, self.height(), seed),
+            true => create_rand_index_with_replacement(n, self.height(), seed, shuffle),
             false => create_rand_index_no_replacement(n, self.height(), seed, shuffle),
         };
         // SAFETY: the indices are within bounds.
@@ -219,7 +236,7 @@ impl DataFrame {
         &self,
         frac: &Series,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         polars_ensure!(
@@ -319,7 +336,7 @@ mod test {
             df.sample_n(
                 &Series::new(PlSmallStr::from_static("s"), &[3]),
                 false,
-                false,
+                None,
                 None
             )
             .is_ok()
@@ -328,7 +345,7 @@ mod test {
             df.sample_frac(
                 &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
                 false,
-                false,
+                None,
                 None
             )
             .is_ok()
@@ -338,7 +355,7 @@ mod test {
             df.sample_n(
                 &Series::new(PlSmallStr::from_static("s"), &[3]),
                 false,
-                false,
+                None,
                 Some(0)
             )
             .is_ok()
@@ -347,7 +364,7 @@ mod test {
             df.sample_frac(
                 &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
                 false,
-                false,
+                None,
                 Some(0)
             )
             .is_ok()
@@ -357,7 +374,7 @@ mod test {
             df.sample_frac(
                 &Series::new(PlSmallStr::from_static("frac"), &[2.0]),
                 false,
-                false,
+                None,
                 Some(0)
             )
             .is_err()
@@ -366,7 +383,7 @@ mod test {
             df.sample_n(
                 &Series::new(PlSmallStr::from_static("s"), &[3]),
                 true,
-                false,
+                None,
                 Some(0)
             )
             .is_ok()
@@ -375,7 +392,7 @@ mod test {
             df.sample_frac(
                 &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
                 true,
-                false,
+                None,
                 Some(0)
             )
             .is_ok()
@@ -385,7 +402,7 @@ mod test {
             df.sample_frac(
                 &Series::new(PlSmallStr::from_static("frac"), &[2.0]),
                 true,
-                false,
+                None,
                 Some(0)
             )
             .is_ok()

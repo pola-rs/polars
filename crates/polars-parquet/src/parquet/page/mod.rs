@@ -266,13 +266,6 @@ impl Page {
             Self::Dict(page) => page.buffer.to_mut(),
         }
     }
-
-    pub(crate) fn unwrap_data(self) -> DataPage {
-        match self {
-            Self::Data(page) => page,
-            _ => panic!(),
-        }
-    }
 }
 
 /// A [`CompressedPage`] is a compressed, encoded representation of a Parquet page. It holds actual data
@@ -454,4 +447,15 @@ pub fn split_buffer(page: &DataPage) -> ParquetResult<EncodedSplitBuffer<'_>> {
             )
         },
     }
+}
+
+pub fn split_plain_buffer_values<T>(page: &DataPage) -> ParquetResult<&[u8]> {
+    let num_values = page.num_values();
+    let mut bytes: &[u8] = split_buffer(page)?.values;
+
+    if bytes.len().div_ceil(std::mem::size_of::<T>()) > num_values {
+        bytes = &bytes[..num_values * std::mem::size_of::<T>()];
+    }
+
+    Ok(bytes)
 }

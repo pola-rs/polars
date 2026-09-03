@@ -20,13 +20,13 @@ fn parallel_jaccard(pydf: PyDataFrame, col_a: &str, col_b: &str) -> PyResult<PyD
 #[pyfunction]
 fn debug(pydf: PyDataFrame) -> PyResult<PyDataFrame> {
     let df: DataFrame = pydf.into();
-    eprintln!("{}", &df);
+    eprintln!("{}", df);
     Ok(PyDataFrame(df))
 }
 
 #[pyfunction]
 fn empty_df() -> PyResult<PyDataFrame> {
-    Ok(PyDataFrame(DataFrame::new(vec![]).unwrap()))
+    Ok(PyDataFrame(DataFrame::empty()))
 }
 
 #[pyfunction]

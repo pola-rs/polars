@@ -1,19 +1,16 @@
+use std::cmp::Reverse;
 use std::future::Future;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
+use polars_async::primitives::linearizer::{Inserter, Linearizer};
+use polars_async::primitives::wait_group::WaitToken;
 use polars_core::frame::DataFrame;
+use polars_ooc::{PinnedFrameMut, PinnedRef, SpillFrame};
+use polars_utils::priority::Priority;
 use polars_utils::relaxed_cell::RelaxedCell;
 
-use crate::async_primitives::wait_group::WaitToken;
-
-static IDEAL_MORSEL_SIZE: OnceLock<usize> = OnceLock::new();
-
 pub fn get_ideal_morsel_size() -> usize {
-    *IDEAL_MORSEL_SIZE.get_or_init(|| {
-        std::env::var("POLARS_IDEAL_MORSEL_SIZE")
-            .map(|m| m.parse().unwrap())
-            .unwrap_or(100_000)
-    })
+    polars_config::config().ideal_morsel_size() as usize
 }
 
 /// A token indicating the order of morsels in a stream.
@@ -82,10 +79,10 @@ impl SourceToken {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Morsel {
     /// The data contained in this morsel.
-    df: DataFrame,
+    sf: SpillFrame,
 
     /// The sequence number of this morsel. May only stay equal or increase
     /// within a pipeline.
@@ -99,30 +96,71 @@ pub struct Morsel {
 }
 
 impl Morsel {
-    pub fn new(df: DataFrame, seq: MorselSeq, source_token: SourceToken) -> Self {
+    pub fn new(sf: SpillFrame, seq: MorselSeq, source_token: SourceToken) -> Self {
         Self {
-            df,
+            sf,
             seq,
             source_token,
             consume_token: None,
         }
     }
 
-    #[allow(unused)]
-    pub fn into_inner(self) -> (DataFrame, MorselSeq, SourceToken, Option<WaitToken>) {
-        (self.df, self.seq, self.source_token, self.consume_token)
+    pub fn new_unregistered(df: DataFrame, seq: MorselSeq, source_token: SourceToken) -> Self {
+        Self {
+            sf: SpillFrame::new_unregistered(df),
+            seq,
+            source_token,
+            consume_token: None,
+        }
     }
 
-    pub fn into_df(self) -> DataFrame {
-        self.df
+    pub fn into_inner(self) -> (SpillFrame, MorselSeq, SourceToken, Option<WaitToken>) {
+        (self.sf, self.seq, self.source_token, self.consume_token)
     }
 
-    pub fn df(&self) -> &DataFrame {
-        &self.df
+    #[inline(always)]
+    pub fn height(&self) -> usize {
+        self.sf.height()
     }
 
-    pub fn df_mut(&mut self) -> &mut DataFrame {
-        &mut self.df
+    #[inline(always)]
+    pub fn sf(&self) -> &SpillFrame {
+        &self.sf
+    }
+
+    #[inline(always)]
+    pub fn into_sf(self) -> SpillFrame {
+        self.sf
+    }
+
+    #[inline(always)]
+    pub async fn into_df(self) -> DataFrame {
+        self.sf.into_df().await
+    }
+
+    #[inline(always)]
+    pub fn into_df_blocking(self) -> DataFrame {
+        self.sf.into_df_blocking()
+    }
+
+    #[inline(always)]
+    pub async fn df(&self) -> PinnedRef<'_, DataFrame> {
+        self.sf.get().await
+    }
+
+    #[inline(always)]
+    pub fn df_blocking(&self) -> PinnedRef<'_, DataFrame> {
+        self.sf.get_blocking()
+    }
+
+    #[inline(always)]
+    pub async fn df_mut(&mut self) -> PinnedFrameMut<'_> {
+        self.sf.get_mut().await
+    }
+
+    #[inline(always)]
+    pub fn df_mut_blocking(&mut self) -> PinnedFrameMut<'_> {
+        self.sf.get_mut_blocking()
     }
 
     pub fn seq(&self) -> MorselSeq {
@@ -133,27 +171,83 @@ impl Morsel {
         self.seq = seq;
     }
 
-    #[allow(unused)]
-    pub fn map<F: FnOnce(DataFrame) -> DataFrame>(mut self, f: F) -> Self {
-        self.df = f(self.df);
-        self
+    pub fn set_df(&mut self, df: DataFrame) {
+        let old_registry = self.sf.unregister();
+        let sf = SpillFrame::new_unregistered(df);
+        self.sf = sf;
+        if let Some((ctx, param)) = old_registry {
+            ctx.register_no_spill_check(&self.sf, param);
+        }
     }
 
-    pub fn try_map<E, F: FnOnce(DataFrame) -> Result<DataFrame, E>>(
-        mut self,
+    pub async fn map<F: FnOnce(DataFrame) -> DataFrame>(self, f: F) -> Self {
+        let Self {
+            mut sf,
+            seq,
+            source_token,
+            consume_token,
+        } = self;
+        let old_registry = sf.unregister();
+        let df = f(sf.into_df().await);
+        let sf = SpillFrame::new_unregistered(df);
+        if let Some((ctx, param)) = old_registry {
+            ctx.register_no_spill_check(&sf, param);
+        }
+        Self {
+            sf,
+            seq,
+            source_token,
+            consume_token,
+        }
+    }
+
+    pub async fn try_map<E, F: FnOnce(DataFrame) -> Result<DataFrame, E>>(
+        self,
         f: F,
     ) -> Result<Self, E> {
-        self.df = f(self.df)?;
-        Ok(self)
+        let Self {
+            mut sf,
+            seq,
+            source_token,
+            consume_token,
+        } = self;
+        let old_registry = sf.unregister();
+        let df = f(sf.into_df().await)?;
+        let sf = SpillFrame::new_unregistered(df);
+        if let Some((ctx, param)) = old_registry {
+            ctx.register_no_spill_check(&sf, param);
+        }
+        Ok(Self {
+            sf,
+            seq,
+            source_token,
+            consume_token,
+        })
     }
 
-    pub async fn async_try_map<E, M, F>(mut self, f: M) -> Result<Self, E>
+    pub async fn async_try_map<E, M, F>(self, f: M) -> Result<Self, E>
     where
         M: FnOnce(DataFrame) -> F,
         F: Future<Output = Result<DataFrame, E>>,
     {
-        self.df = f(self.df).await?;
-        Ok(self)
+        let Self {
+            mut sf,
+            seq,
+            source_token,
+            consume_token,
+        } = self;
+        let old_registry = sf.unregister();
+        let df = f(sf.into_df().await).await?;
+        let sf = SpillFrame::new_unregistered(df);
+        if let Some((ctx, param)) = old_registry {
+            ctx.register_no_spill_check(&sf, param);
+        }
+        Ok(Self {
+            sf,
+            seq,
+            source_token,
+            consume_token,
+        })
     }
 
     pub fn set_consume_token(&mut self, token: WaitToken) {
@@ -170,5 +264,32 @@ impl Morsel {
 
     pub fn replace_source_token(&mut self, new_token: SourceToken) -> SourceToken {
         core::mem::replace(&mut self.source_token, new_token)
+    }
+}
+
+pub struct MorselLinearizer(Linearizer<Priority<Reverse<MorselSeq>, Morsel>>);
+pub struct MorselInserter(Inserter<Priority<Reverse<MorselSeq>, Morsel>>);
+
+impl MorselLinearizer {
+    pub fn new(num_inserters: usize, buffer_size: usize) -> (Self, Vec<MorselInserter>) {
+        let (lin, inserters) = Linearizer::new(num_inserters, buffer_size);
+
+        (
+            MorselLinearizer(lin),
+            inserters.into_iter().map(MorselInserter).collect(),
+        )
+    }
+
+    pub async fn get(&mut self) -> Option<Morsel> {
+        self.0.get().await.map(|x| x.1)
+    }
+}
+
+impl MorselInserter {
+    pub async fn insert(&mut self, morsel: Morsel) -> Result<(), Morsel> {
+        self.0
+            .insert(Priority(Reverse(morsel.seq()), morsel))
+            .await
+            .map_err(|Priority(_, v)| v)
     }
 }

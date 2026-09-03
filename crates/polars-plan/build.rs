@@ -1,5 +1,4 @@
 use std::env;
-use std::io::Write;
 use std::path::Path;
 
 use sha2::Digest;
@@ -19,13 +18,14 @@ fn main() {
 /// Used in `SchemaHash` (crates/polars-plan/src/dsl/plan.rs) for DSL compatibility check.
 fn generate_schema_hash() {
     let hash_hexstr = {
-        let mut digest = sha2::Sha256::new();
-        digest
-            .write_all(include_bytes!("dsl-schema-hashes.json"))
-            .expect("failed to hash the schema hashes file");
-        let hash = digest.finalize();
-
-        format!("{hash:064x}")
+        let mut hasher = sha2::Sha256::new();
+        // Read as UTF-8 text and normalize CRLF to LF to make hashing
+        // invariant to Git EOL conversion on Windows.
+        let content = include_str!("dsl-schema-hashes.json");
+        let normalized = content.replace("\r\n", "\n");
+        hasher.update(normalized.as_bytes());
+        let hash = hasher.finalize();
+        hex::encode(hash)
     };
 
     let out_dir = env::var_os("OUT_DIR").unwrap();

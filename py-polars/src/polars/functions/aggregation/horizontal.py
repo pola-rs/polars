@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     """
-    Compute the bitwise AND horizontally across columns.
+    Compute the logical AND horizontally across columns.
 
     Parameters
     ----------
@@ -64,7 +64,7 @@ def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
 
 def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     """
-    Compute the bitwise OR horizontally across columns.
+    Compute the logical OR horizontally across columns.
 
     Parameters
     ----------

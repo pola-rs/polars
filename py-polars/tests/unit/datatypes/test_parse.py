@@ -7,10 +7,9 @@ from typing import (
     Any,
     ForwardRef,
     NamedTuple,
-    Optional,
-    Union,
 )
 
+import pandas as pd
 import pytest
 
 import polars as pl
@@ -21,6 +20,7 @@ from polars.datatypes._parse import (
     parse_into_dtype,
     parse_py_type_into_dtype,
 )
+from polars.datatypes.classes import Duration
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -121,9 +121,9 @@ def test_parse_forward_ref_into_dtype(input: Any, expected: PolarsDataType) -> N
 @pytest.mark.parametrize(
     ("input", "expected"),
     [
-        (Optional[int], pl.Int64()),
-        (Optional[pl.String], pl.String),
-        (Union[float, None], pl.Float64()),
+        (int | None, pl.Int64()),
+        (pl.String | None, pl.String),
+        (float | None, pl.Float64()),
     ],
 )
 def test_parse_union_type_into_dtype(input: Any, expected: PolarsDataType) -> None:
@@ -134,8 +134,8 @@ def test_parse_union_type_into_dtype(input: Any, expected: PolarsDataType) -> No
 @pytest.mark.parametrize(
     "input",
     [
-        Union[int, float],
-        Optional[Union[int, str]],
+        int | float,
+        int | str | None,
     ],
 )
 def test_parse_union_type_into_dtype_invalid(input: Any) -> None:
@@ -155,3 +155,7 @@ def test_parse_dtype_namedtuple_fields() -> None:
 
     expected = pl.Schema({"a": pl.String(), "b": pl.Int64(), "c": pl.String()})
     assert schema == expected
+
+
+def test_parse_py_type_into_dtype_timedelta_subclass_26620() -> None:
+    assert parse_py_type_into_dtype(pd.Timedelta) == Duration

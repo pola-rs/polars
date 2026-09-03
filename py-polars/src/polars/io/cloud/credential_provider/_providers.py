@@ -7,13 +7,12 @@ import os
 import subprocess
 import sys
 import zoneinfo
+from collections.abc import Callable
 from datetime import datetime
 from functools import partial
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Optional,
     TypedDict,
     Union,
 )
@@ -23,18 +22,15 @@ from polars._utils.logging import eprint, verbose
 from polars.io.cloud._utils import NoPickleOption
 
 if TYPE_CHECKING:
-    from polars._dependencies import boto3
+    from typing import TypeAlias
 
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
+    from polars._dependencies import boto3
 
 from polars._utils.unstable import issue_unstable_warning
 
 # These typedefs are here to avoid circular import issues, as
 # `CredentialProviderFunction` specifies "CredentialProvider"
-CredentialProviderFunctionReturn: TypeAlias = tuple[dict[str, str], Optional[int]]
+CredentialProviderFunctionReturn: TypeAlias = tuple[dict[str, str], int | None]
 
 CredentialProviderFunction: TypeAlias = Union[
     Callable[[], CredentialProviderFunctionReturn], "CredentialProvider"
@@ -159,6 +155,10 @@ class CredentialProviderAWS(CachingCredentialProvider):
         at any point without it being considered a breaking change.
     """
 
+    profile_name: str | None
+    region_name: str | None
+    assume_role: AWSAssumeRoleKWArgs | None
+
     def __init__(  # noqa: D417 (TODO)
         self,
         *,
@@ -207,19 +207,26 @@ class CredentialProviderAWS(CachingCredentialProvider):
             msg = "did not receive any credentials from boto3.Session.get_credentials()"
             raise self.EmptyCredentialError(msg)
 
+        # Important: Do this before fetching expiry, `creds.*` property access
+        # might be needed for the expiry to be generated
+        # (e.g. DeferredRefreshableCredentials).
+        creds_dict = {
+            "aws_access_key_id": creds.access_key,
+            "aws_secret_access_key": creds.secret_key,
+            **({"aws_session_token": creds.token} if creds.token is not None else {}),
+        }
+
         expiry = (
             int(expiry.timestamp())
             if isinstance(expiry := getattr(creds, "_expiry_time", None), datetime)
             else None
         )
 
-        return {
-            "aws_access_key_id": creds.access_key,
-            "aws_secret_access_key": creds.secret_key,
-            **({"aws_session_token": creds.token} if creds.token is not None else {}),
-        }, expiry
+        return creds_dict, expiry
 
     def _finish_assume_role(self, session: Any) -> CredentialProviderFunctionReturn:
+        assert self.assume_role is not None
+
         client = session.client("sts")
 
         sts_response = client.assume_role(**self.assume_role)
@@ -321,6 +328,11 @@ class CredentialProviderAzure(CachingCredentialProvider):
         This functionality is considered **unstable**. It may be changed
         at any point without it being considered a breaking change.
     """
+
+    account_name: str | None
+    scopes: list[str]
+    tenant_id: str | None
+    credential: Any | None
 
     def __init__(
         self,
@@ -557,7 +569,7 @@ class CredentialProviderGCP(CachingCredentialProvider):
         creds, _project_id = self._init_creds()
         creds.refresh(google.auth.transport.requests.Request())  # type: ignore[no-untyped-call, unused-ignore]
 
-        return {"bearer_token": creds.token}, (
+        return {"bearer_token": creds.token}, (  # type: ignore[dict-item]
             int(
                 (
                     expiry.replace(tzinfo=zoneinfo.ZoneInfo("UTC"))

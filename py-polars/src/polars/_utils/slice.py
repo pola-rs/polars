@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 
 if TYPE_CHECKING:
+    from typing import TypeAlias
+
     from polars import DataFrame, LazyFrame, Series
 
-    FrameOrSeries = Union["DataFrame", "Series"]
+    FrameOrSeries: TypeAlias = DataFrame | Series
 
 
 class PolarsSlice:
@@ -30,7 +32,7 @@ class PolarsSlice:
     @staticmethod
     def _as_original(lazy: LazyFrame, original: FrameOrSeries) -> FrameOrSeries:
         """Return lazy variant back to its original type."""
-        frame = lazy.collect()
+        frame = lazy._collect_eager()
         return frame if isinstance(original, pl.DataFrame) else frame.to_series()
 
     @staticmethod

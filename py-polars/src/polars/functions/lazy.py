@@ -1,19 +1,17 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any, Callable, overload
+from typing import TYPE_CHECKING, Any, overload
 
 import polars._reexport as pl
 import polars.functions as F
 import polars.selectors as cs
 from polars._dependencies import _check_for_numpy
 from polars._dependencies import numpy as np
-from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
-from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
-    deprecate_streaming_parameter,
-    deprecated,
-    issue_deprecation_warning,
+from polars._utils.expired import (
+    RemovedParameter,
+    RenamedParameter,
+    removed_parameters,
 )
 from polars._utils.parse import (
     parse_into_expression,
@@ -21,12 +19,13 @@ from polars._utils.parse import (
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import extend_bool, qualified_type_name
-from polars._utils.wrap import wrap_df, wrap_expr, wrap_s
+from polars._utils.wrap import wrap_expr, wrap_s
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
 from polars.datatypes._parse import parse_into_datatype_expr
+from polars.lazyframe.engine_config import _eager_engine, _select_engine
 from polars.lazyframe.opt_flags import (
     DEFAULT_QUERY_OPT_FLAGS,
-    forward_old_opt_flags,
+    REMOVED_OLD_OPT_FLAGS,
 )
 from polars.meta.index_type import get_index_type
 
@@ -34,12 +33,12 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars._plr as plr
 
 if TYPE_CHECKING:
-    import sys
-    from collections.abc import Awaitable, Collection, Iterable, Sequence
+    from collections.abc import Awaitable, Callable, Collection, Iterable, Sequence
     from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._typing import (
+        AsyncResult,
         CorrelationMethod,
         EngineType,
         EpochTimeUnit,
@@ -47,14 +46,10 @@ if TYPE_CHECKING:
         PolarsDataType,
         QuantileMethod,
     )
+    from polars._utils.async_ import _GeventDataFrameResult
     from polars.lazyframe.opt_flags import (
         QueryOptFlags,
     )
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 
 def field(name: str | list[str]) -> Expr:
@@ -153,7 +148,7 @@ def element() -> Expr:
     │ 3   ┆ 2   ┆ [2]       │
     └─────┴─────┴───────────┘
     """
-    return F.col("")
+    return wrap_expr(plr.element())
 
 
 def count(*columns: str) -> Expr:
@@ -225,11 +220,8 @@ def count(*columns: str) -> Expr:
     └───────┘
     """
     if not columns:
-        issue_deprecation_warning(
-            "`pl.count()` is deprecated. Please use `pl.len()` instead.",
-            version="0.20.5",
-        )
-        return F.len().alias("count")
+        msg = "`pl.count()` takes at least one argument. If you want to count the number of rows, please use `pl.len()` instead."
+        raise TypeError(msg)
     return F.col(*columns).count()
 
 
@@ -267,7 +259,7 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
     return F.col(*columns).cum_count(reverse=reverse)
 
 
-def implode(*columns: str) -> Expr:
+def implode(*columns: str, maintain_order: bool = True) -> Expr:
     """
     Aggregate all column values into a list.
 
@@ -277,6 +269,10 @@ def implode(*columns: str) -> Expr:
     ----------
     *columns
         One or more column names.
+
+    maintain_order
+        Whether to preserve the order of elements in the list. Setting this
+        to `False` can improve performance, especially within `group_by`.
 
     Examples
     --------
@@ -307,7 +303,7 @@ def implode(*columns: str) -> Expr:
     └───────────┴───────────────────────┘
 
     """
-    return F.col(*columns).implode()
+    return F.col(*columns).implode(maintain_order=maintain_order)
 
 
 def std(column: str, ddof: int = 1) -> Expr:
@@ -484,6 +480,8 @@ def n_unique(*columns: str) -> Expr:
 
     This function is syntactic sugar for `pl.col(columns).n_unique()`.
 
+    `null` is considered to be a unique value for the purposes of this operation.
+
     Parameters
     ----------
     columns
@@ -493,7 +491,7 @@ def n_unique(*columns: str) -> Expr:
     --------
     >>> df = pl.DataFrame(
     ...     {
-    ...         "a": [1, 8, 1],
+    ...         "a": [1, 1, None],
     ...         "b": [4, 5, 2],
     ...         "c": ["foo", "bar", "foo"],
     ...     }
@@ -842,7 +840,6 @@ def corr(
     b: IntoExpr,
     *,
     method: CorrelationMethod = ...,
-    ddof: int | None = ...,
     propagate_nans: bool = ...,
     eager: Literal[False] = ...,
 ) -> Expr: ...
@@ -854,7 +851,6 @@ def corr(
     b: IntoExpr,
     *,
     method: CorrelationMethod = ...,
-    ddof: int | None = ...,
     propagate_nans: bool = ...,
     eager: Literal[True],
 ) -> Series: ...
@@ -865,7 +861,6 @@ def corr(
     b: IntoExpr,
     *,
     method: CorrelationMethod = "pearson",
-    ddof: int | None = None,
     propagate_nans: bool = False,
     eager: bool = False,
 ) -> Expr | Series:
@@ -878,11 +873,6 @@ def corr(
         Column name or Expression.
     b
         Column name or Expression.
-    ddof
-        Has no effect, do not use.
-
-        .. deprecated:: 1.17.0
-
     method : {'pearson', 'spearman'}
         Correlation method.
     propagate_nans
@@ -944,12 +934,6 @@ def corr(
         0.5
     ]
     """
-    if ddof is not None:
-        issue_deprecation_warning(
-            "the `ddof` parameter has no effect. Do not use it.",
-            version="1.17.0",
-        )
-
     if eager:
         if not (isinstance(a, pl.Series) or isinstance(b, pl.Series)):
             msg = "expected at least one Series in 'corr' inputs if 'eager=True'"
@@ -1276,9 +1260,9 @@ def map_groups(
     ...     df.group_by("group").agg(
     ...         pl.map_groups(
     ...             exprs=["a", "b"],
-    ...             function=lambda list_of_series: list_of_series[0]
-    ...             / list_of_series[0].sum()
-    ...             + list_of_series[1],
+    ...             function=lambda list_of_series: (
+    ...                 list_of_series[0] / list_of_series[0].sum() + list_of_series[1]
+    ...             ),
     ...             return_dtype=pl.Float64,
     ...         ).alias("my_custom_aggregation")
     ...     )
@@ -1333,7 +1317,7 @@ def _row_encode(
     return wrap_expr(result)
 
 
-def _wrap_acc_lamba(
+def _wrap_acc_lambda(
     function: Callable[[Series, Series], Series],
 ) -> Callable[[tuple[plr.PySeries, plr.PySeries]], plr.PySeries]:
     def wrapper(t: tuple[plr.PySeries, plr.PySeries]) -> plr.PySeries:
@@ -1465,7 +1449,7 @@ def fold(
     return wrap_expr(
         plr.fold(
             pyacc,
-            _wrap_acc_lamba(function),
+            _wrap_acc_lambda(function),
             pyexprs,
             returns_scalar=returns_scalar,
             return_dtype=rt,
@@ -1548,7 +1532,7 @@ def reduce(
     pyexprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
         plr.reduce(
-            _wrap_acc_lamba(function),
+            _wrap_acc_lambda(function),
             pyexprs,
             returns_scalar=returns_scalar,
             return_dtype=rt,
@@ -1630,7 +1614,7 @@ def cum_fold(
     return wrap_expr(
         plr.cum_fold(
             pyacc,
-            _wrap_acc_lamba(function),
+            _wrap_acc_lambda(function),
             pyexprs,
             returns_scalar=returns_scalar,
             return_dtype=rt,
@@ -1698,7 +1682,7 @@ def cum_reduce(
     pyexprs = parse_into_list_of_expressions(exprs)
     return wrap_expr(
         plr.cum_reduce(
-            _wrap_acc_lamba(function),
+            _wrap_acc_lambda(function),
             pyexprs,
             returns_scalar=returns_scalar,
             return_dtype=rt,
@@ -1754,52 +1738,6 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
         raise TypeError(msg)
 
     return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
-
-
-@deprecated("`arctan2d` is deprecated; use `arctan2` followed by `.degrees()` instead.")
-def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
-    """
-    Compute two argument arctan in degrees.
-
-    .. deprecated:: 1.0.0
-        Use `arctan2` followed by :meth:`Expr.degrees` instead.
-
-    Returns the angle (in degrees) in the plane between the positive x-axis
-    and the ray from the origin to (x,y).
-
-    Parameters
-    ----------
-    y
-        Column name or Expression.
-    x
-        Column name or Expression.
-
-    Examples
-    --------
-    >>> c = (2**0.5) / 2
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "y": [c, -c, c, -c],
-    ...         "x": [c, c, -c, -c],
-    ...     }
-    ... )
-    >>> df.select(  # doctest: +SKIP
-    ...     pl.arctan2d("y", "x").alias("atan2d"),
-    ...     pl.arctan2("y", "x").alias("atan2"),
-    ... )
-    shape: (4, 2)
-    ┌────────┬───────────┐
-    │ atan2d ┆ atan2     │
-    │ ---    ┆ ---       │
-    │ f64    ┆ f64       │
-    ╞════════╪═══════════╡
-    │ 45.0   ┆ 0.785398  │
-    │ -45.0  ┆ -0.785398 │
-    │ 135.0  ┆ 2.356194  │
-    │ -135.0 ┆ -2.356194 │
-    └────────┴───────────┘
-    """
-    return arctan2(y, x).degrees()
 
 
 def exclude(
@@ -1873,11 +1811,6 @@ def exclude(
 
     """
     return F.col("*").exclude(columns, *more_columns)
-
-
-def groups(column: str) -> Expr:
-    """Syntactic sugar for `pl.col("foo").agg_groups()`."""
-    return F.col(column).agg_groups()
 
 
 def quantile(
@@ -1996,24 +1929,51 @@ def arg_sort_by(
     )
 
 
-@deprecate_streaming_parameter()
-@forward_old_opt_flags()
+def _collect_all_eager(
+    lazy_frames: Iterable[LazyFrame],
+    *,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+) -> list[DataFrame]:
+    """Collect internal eager operations locally."""
+    return _eager_engine().collect_all(lazy_frames, optimizations=optimizations)
+
+
+@overload
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
-    type_coercion: bool = True,
-    predicate_pushdown: bool = True,
-    projection_pushdown: bool = True,
-    simplify_expression: bool = True,
-    no_optimization: bool = False,
-    slice_pushdown: bool = True,
-    comm_subplan_elim: bool = True,
-    comm_subexpr_elim: bool = True,
-    cluster_with_columns: bool = True,
-    collapse_joins: bool = True,
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     engine: EngineType = "auto",
-) -> list[DataFrame]:
+    lazy: Literal[False] = False,
+) -> list[DataFrame]: ...
+
+
+@overload
+def collect_all(
+    lazy_frames: Iterable[LazyFrame],
+    *,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    engine: EngineType = "auto",
+    lazy: Literal[True],
+) -> LazyFrame: ...
+
+
+@removed_parameters(
+    RemovedParameter(
+        name="streaming",
+        deprecated_in="1.25.0",
+        removed_in="2.0",
+        hint='Use `engine="streaming"` instead.',
+    ),
+    *REMOVED_OLD_OPT_FLAGS,
+)
+def collect_all(
+    lazy_frames: Iterable[LazyFrame],
+    *,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    engine: EngineType = "auto",
+    lazy: bool = False,
+) -> list[DataFrame] | LazyFrame:
     """
     Collect multiple LazyFrames at the same time.
 
@@ -2026,56 +1986,6 @@ def collect_all(
     ----------
     lazy_frames
         A list of LazyFrames to collect.
-    type_coercion
-        Do type coercion optimization.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    predicate_pushdown
-        Do predicate pushdown optimization.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    projection_pushdown
-        Do projection pushdown optimization.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    simplify_expression
-        Run simplify expressions optimization.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    no_optimization
-        Turn off optimizations.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    slice_pushdown
-        Slice pushdown optimization.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    comm_subplan_elim
-        Will try to cache branching subplans that occur on self-joins or unions.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    comm_subexpr_elim
-        Common subexpressions will be cached and reused.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    cluster_with_columns
-        Combine sequential independent calls to with_columns
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    collapse_joins
-        Collapse a join and filters into a faster join
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
     optimizations
         The optimization passes done during query optimization.
 
@@ -2083,17 +1993,37 @@ def collect_all(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
     engine
-        Select the engine used to process the query, optional.
-        At the moment, if set to `"auto"` (default), the query
-        is run using the polars in-memory engine. Polars will also
-        attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
-        environment variable. If it cannot run the query using the
-        selected engine, the query is run using the polars in-memory
-        engine.
+        Select the engine used to process the query (default ``"auto"``).
+        A :class:`~.Engine` instance may also be passed. Supported engine names are:
+
+        * ``"auto"``: use the engine set by
+          :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
+          or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
+          back to ``"in-memory"`` if unset (this default may change in
+          a future release).
+        * ``"in-memory"``: use the in-memory engine, this is the default engine.
+        * ``"streaming"``: use the streaming engine, which processes
+          queries in batches, reducing memory pressure and often
+          outperforming the in-memory engine. This will soon become
+          the default engine of Polars.
+        * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
+          ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
+          fine-grained control (e.g. device selection on multi-GPU
+          systems).
+
+        If the selected engine cannot run the query, Polars falls back to
+        the in-memory engine.
 
         .. note::
            The GPU engine does not support async, or running in the
            background. If either are enabled, then GPU execution is switched off.
+    lazy:
+        Return as LazyFrame that can be collected later.
+        This is only correct if all inputs sink to disk.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Returns
     -------
@@ -2101,16 +2031,18 @@ def collect_all(
         The collected DataFrames, returned in the same order as the input LazyFrames.
 
     """
-    if engine == "streaming":
-        issue_unstable_warning("streaming mode is considered unstable.")
+    if lazy:
+        msg = "the `lazy` parameter of `collect_all` is considered unstable."
+        issue_unstable_warning(msg)
 
-    lfs = [lf._ldf for lf in lazy_frames]
-    out = plr.collect_all(lfs, engine, optimizations._pyoptflags)
+        from polars.lazyframe import LazyFrame
 
-    # wrap the pydataframes into dataframe
-    result = [wrap_df(pydf) for pydf in out]
+        lfs = [lf._ldf for lf in lazy_frames]
+        ldf = plr.collect_all_lazy(lfs, optimizations._pyoptflags)
+        lf = LazyFrame._from_pyldf(ldf)
+        return lf
 
-    return result
+    return _select_engine(engine).collect_all(lazy_frames, optimizations=optimizations)
 
 
 @overload
@@ -2134,7 +2066,14 @@ def collect_all_async(
 
 
 @unstable()
-@deprecate_streaming_parameter()
+@removed_parameters(
+    RemovedParameter(
+        name="streaming",
+        deprecated_in="1.25.0",
+        removed_in="2.0",
+        hint='Use `engine="streaming"` instead.',
+    )
+)
 def collect_all_async(
     lazy_frames: Iterable[LazyFrame],
     *,
@@ -2169,13 +2108,26 @@ def collect_all_async(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
     engine
-        Select the engine used to process the query, optional.
-        At the moment, if set to `"auto"` (default), the query
-        is run using the polars in-memory engine. Polars will also
-        attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
-        environment variable. If it cannot run the query using the
-        selected engine, the query is run using the polars in-memory
-        engine.
+        Select the engine used to process the query (default ``"auto"``).
+        A :class:`~.Engine` instance may also be passed. Supported engine names are:
+
+        * ``"auto"``: use the engine set by
+          :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
+          or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
+          back to ``"in-memory"`` if unset (this default may change in
+          a future release).
+        * ``"in-memory"``: use the in-memory engine, this is the default engine.
+        * ``"streaming"``: use the streaming engine, which processes
+          queries in batches, reducing memory pressure and often
+          outperforming the in-memory engine. This will soon become
+          the default engine of Polars.
+        * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
+          ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
+          fine-grained control (e.g. device selection on multi-GPU
+          systems).
+
+        If the selected engine cannot run the query, Polars falls back to
+        the in-memory engine.
 
         .. note::
            The GPU engine does not support async, or running in the
@@ -2198,15 +2150,8 @@ def collect_all_async(
     If `gevent=True` then returns wrapper that has
     `.get(block=True, timeout=None)` method.
     """
-    if engine == "streaming":
-        issue_unstable_warning("streaming mode is considered unstable.")
-
-    result: (
-        _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
-    ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
-    lfs = [lf._ldf for lf in lazy_frames]
-    plr.collect_all_with_callback(
-        lfs, engine, optimizations._pyoptflags, result._callback_all
+    result: AsyncResult[list[DataFrame]] = _select_engine(engine).collect_all_async(
+        lazy_frames, optimizations=optimizations, gevent=gevent
     )
     return result
 
@@ -2483,12 +2428,12 @@ def from_epoch(column: str | Expr, time_unit: EpochTimeUnit = ...) -> Expr: ...
 
 @overload
 def from_epoch(
-    column: Series | Sequence[int], time_unit: EpochTimeUnit = ...
+    column: Series | Sequence[int | float], time_unit: EpochTimeUnit = ...
 ) -> Series: ...
 
 
 def from_epoch(
-    column: str | Expr | Series | Sequence[int], time_unit: EpochTimeUnit = "s"
+    column: str | Expr | Series | Sequence[int | float], time_unit: EpochTimeUnit = "s"
 ) -> Expr | Series:
     """
     Utility function that parses an epoch timestamp (or Unix time) to Polars Date(time).
@@ -2496,25 +2441,25 @@ def from_epoch(
     Depending on the `time_unit` provided, this function will return a different dtype:
 
     - time_unit="d" returns pl.Date
-    - time_unit="s" returns pl.Datetime["us"] (pl.Datetime's default)
-    - time_unit="ms" returns pl.Datetime["ms"]
-    - time_unit="us" returns pl.Datetime["us"]
     - time_unit="ns" returns pl.Datetime["ns"]
+    - otherwise returns pl.Datetime["us"] (Polars' default time unit)
 
     Parameters
     ----------
     column
-        Series or expression to parse integers to pl.Datetime.
+        Series or Expression to parse to Datetime.
     time_unit
         The unit of time of the timesteps since epoch time.
 
     Examples
     --------
-    >>> df = pl.DataFrame({"timestamp": [1666683077, 1666683099]}).lazy()
-    >>> df.select(pl.from_epoch(pl.col("timestamp"), time_unit="s")).collect()
+    Convert from integer seconds:
+
+    >>> df = pl.LazyFrame({"ts": [1666683077, 1666683099]})
+    >>> df.select(pl.from_epoch(pl.col("ts"), time_unit="s")).collect()
     shape: (2, 1)
     ┌─────────────────────┐
-    │ timestamp           │
+    │ ts                  │
     │ ---                 │
     │ datetime[μs]        │
     ╞═════════════════════╡
@@ -2522,7 +2467,23 @@ def from_epoch(
     │ 2022-10-25 07:31:39 │
     └─────────────────────┘
 
-    The function can also be used in an eager context by passing a Series.
+    Convert from fractional seconds:
+
+    >>> df = pl.LazyFrame({"ts": [-609066.723456, 1066445333.8888, 3405071999.987654]})
+    >>> df.select(pl.from_epoch(pl.col("ts"), time_unit="s")).collect()
+    shape: (3, 1)
+    ┌────────────────────────────┐
+    │ ts                         │
+    │ ---                        │
+    │ datetime[μs]               │
+    ╞════════════════════════════╡
+    │ 1969-12-24 22:48:53.276544 │
+    │ 2003-10-18 02:48:53.888800 │
+    │ 2077-11-25 13:19:59.987654 │
+    └────────────────────────────┘
+
+    The function can also be used in an eager context by passing a Series
+    or sequence of int/float values.
 
     >>> s = pl.Series([12345, 12346])
     >>> pl.from_epoch(s, time_unit="d")
@@ -2536,20 +2497,33 @@ def from_epoch(
     if isinstance(column, str):
         column = F.col(column)
     elif not isinstance(column, (pl.Series, pl.Expr)):
-        column = pl.Series(column)  # Sequence input handled by Series constructor
+        column = pl.Series(column)
 
     if time_unit == "d":
         return column.cast(Date)
-    elif time_unit == "s":
-        return (column.cast(Int64) * 1_000_000).cast(Datetime("us"))
-    elif time_unit in DTYPE_TEMPORAL_UNITS:
-        return column.cast(Datetime(time_unit))
-    else:
-        msg = f"`time_unit` must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
-        raise ValueError(msg)
+    if time_unit in (scale := {"s": 1_000_000, "ms": 1_000}):
+        if isinstance(column, pl.Expr):
+            column = column * F.lit(scale[time_unit], dtype=Int64)
+            return column.cast(Datetime("us"))
+        if column.dtype.is_integer():
+            column = column.cast(Int64)
+        return (column * scale[time_unit]).cast(Datetime("us"))
+    if time_unit in DTYPE_TEMPORAL_UNITS:
+        return column.cast(Datetime(time_unit))  # type: ignore[arg-type]
+
+    valid_units = "'ns', 'us', 'ms', 's', 'd'"
+    msg = f"`time_unit` must be one of {valid_units}, got {time_unit!r}"
+    raise ValueError(msg)
 
 
-@deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+@removed_parameters(
+    RenamedParameter(
+        name="min_periods",
+        new_name="min_samples",
+        deprecated_in="1.21.0",
+        removed_in="2.0",
+    ),
+)
 def rolling_cov(
     a: str | Expr,
     b: str | Expr,
@@ -2563,9 +2537,6 @@ def rolling_cov(
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
-
-    .. versionchanged:: 1.21.0
-        The `min_periods` parameter was renamed `min_samples`.
 
     Parameters
     ----------
@@ -2593,23 +2564,26 @@ def rolling_cov(
     )
 
 
-@deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+@removed_parameters(
+    RenamedParameter(
+        name="min_periods",
+        new_name="min_samples",
+        deprecated_in="1.21.0",
+        removed_in="2.0",
+    ),
+)
 def rolling_corr(
     a: str | Expr,
     b: str | Expr,
     *,
     window_size: int,
     min_samples: int | None = None,
-    ddof: int = 1,
 ) -> Expr:
     """
     Compute the rolling correlation between two columns/ expressions.
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
-
-    .. versionchanged:: 1.21.0
-        The `min_periods` parameter was renamed `min_samples`.
 
     Parameters
     ----------
@@ -2622,9 +2596,6 @@ def rolling_corr(
     min_samples
         The number of values in the window that should be non-null before computing
         a result. If None, it will be set equal to window size.
-    ddof
-        Delta degrees of freedom. The divisor used in calculations
-        is `N - ddof`, where `N` represents the number of elements.
     """
     if min_samples is None:
         min_samples = window_size
@@ -2632,9 +2603,7 @@ def rolling_corr(
         a = F.col(a)
     if isinstance(b, str):
         b = F.col(b)
-    return wrap_expr(
-        plr.rolling_corr(a._pyexpr, b._pyexpr, window_size, min_samples, ddof)
-    )
+    return wrap_expr(plr.rolling_corr(a._pyexpr, b._pyexpr, window_size, min_samples))
 
 
 @overload

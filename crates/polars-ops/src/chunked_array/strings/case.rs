@@ -75,10 +75,6 @@ fn to_lowercase_helper(s: &str, buf: &mut Vec<u8>) {
     }
 
     fn case_ignorable_then_cased<I: Iterator<Item = char>>(iter: I) -> bool {
-        #[cfg(feature = "nightly")]
-        use core::unicode::{Case_Ignorable, Cased};
-
-        #[cfg(not(feature = "nightly"))]
         use super::unicode_internals::{Case_Ignorable, Cased};
         #[allow(clippy::skip_while_next)]
         match iter.skip_while(|&c| Case_Ignorable(c)).next() {
@@ -154,7 +150,7 @@ pub(super) fn to_titlecase<'a>(ca: &'a StringChunked) -> StringChunked {
             } else {
                 s.push(c);
             }
-            next_is_upper = !c.is_alphanumeric();
+            next_is_upper = !c.is_alphabetic();
         }
 
         // Put buf back for next iteration.

@@ -1,8 +1,7 @@
-use std::borrow::Cow;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, RwLock};
-use std::time::Duration;
 
+use arrow::bitmap::Bitmap;
 use bitflags::bitflags;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
@@ -10,7 +9,7 @@ use polars_ops::prelude::ChunkJoinOptIds;
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::unique_id::UniqueId;
 
-use super::NodeTimer;
+use crate::prelude::AggregationContext;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
 
@@ -121,8 +120,11 @@ pub struct ExecutionState {
     // every join/union split gets an increment to distinguish between schema state
     pub branch_idx: usize,
     pub flags: RelaxedCell<u8>,
-    pub ext_contexts: Arc<Vec<DataFrame>>,
-    node_timer: Option<NodeTimer>,
+    #[cfg(feature = "dtype-struct")]
+    pub with_fields: Option<Arc<StructChunked>>,
+    #[cfg(feature = "dtype-struct")]
+    pub with_fields_ac: Option<Arc<AggregationContext<'static>>>,
+    pub element: Arc<Option<(Column, Option<Bitmap>)>>,
     stop: Arc<RelaxedCell<bool>>,
 }
 
@@ -138,59 +140,24 @@ impl ExecutionState {
             window_cache: Default::default(),
             branch_idx: 0,
             flags: RelaxedCell::from(StateFlags::init().as_u8()),
-            ext_contexts: Default::default(),
-            node_timer: None,
+            #[cfg(feature = "dtype-struct")]
+            with_fields: Default::default(),
+            #[cfg(feature = "dtype-struct")]
+            with_fields_ac: Default::default(),
+            element: Default::default(),
             stop: Arc::new(RelaxedCell::from(false)),
-        }
-    }
-
-    /// Toggle this to measure execution times.
-    pub fn time_nodes(&mut self, start: std::time::Instant) {
-        self.node_timer = Some(NodeTimer::new(start))
-    }
-    pub fn has_node_timer(&self) -> bool {
-        self.node_timer.is_some()
-    }
-
-    pub fn finish_timer(self) -> PolarsResult<DataFrame> {
-        self.node_timer.unwrap().finish()
-    }
-
-    // Timings should be a list of (start, end, name) where the start
-    // and end are raw durations since the query start as nanoseconds.
-    pub fn record_raw_timings(&self, timings: &[(u64, u64, String)]) {
-        for &(start, end, ref name) in timings {
-            self.node_timer.as_ref().unwrap().store_duration(
-                Duration::from_nanos(start),
-                Duration::from_nanos(end),
-                name.to_string(),
-            );
         }
     }
 
     // This is wrong when the U64 overflows which will never happen.
     pub fn should_stop(&self) -> PolarsResult<()> {
-        try_raise_keyboard_interrupt();
+        try_raise_polars_abort();
         polars_ensure!(!self.stop.load(), ComputeError: "query interrupted");
         Ok(())
     }
 
     pub fn cancel_token(&self) -> Arc<RelaxedCell<bool>> {
         self.stop.clone()
-    }
-
-    pub fn record<T, F: FnOnce() -> T>(&self, func: F, name: Cow<'static, str>) -> T {
-        match &self.node_timer {
-            None => func(),
-            Some(timer) => {
-                let start = std::time::Instant::now();
-                let out = func();
-                let end = std::time::Instant::now();
-
-                timer.store(start, end, name.as_ref().to_string());
-                out
-            },
-        }
     }
 
     /// Partially clones and partially clears state
@@ -202,8 +169,12 @@ impl ExecutionState {
             window_cache: Default::default(),
             branch_idx: self.branch_idx,
             flags: self.flags.clone(),
-            ext_contexts: self.ext_contexts.clone(),
-            node_timer: self.node_timer.clone(),
+            // Retain input values for `pl.element` in Eval context
+            element: self.element.clone(),
+            #[cfg(feature = "dtype-struct")]
+            with_fields: self.with_fields.clone(),
+            #[cfg(feature = "dtype-struct")]
+            with_fields_ac: self.with_fields_ac.clone(),
             stop: self.stop.clone(),
         }
     }

@@ -1,5 +1,5 @@
-mod async_executor;
-mod async_primitives;
+#![recursion_limit = "256"]
+mod dispatch;
 mod skeleton;
 
 use std::sync::LazyLock;
@@ -7,15 +7,25 @@ use std::sync::LazyLock;
 pub use skeleton::{run_query, visualize_physical_plan};
 
 mod execute;
+pub use dispatch::build_streaming_query_executor;
 pub(crate) mod expression;
 mod graph;
-pub use skeleton::{QueryResult, StreamingQuery};
+pub use graph::{GraphNodeKey, LogicalPipe, LogicalPipeKey};
+pub use skeleton::StreamingQuery;
 mod metrics;
+pub use metrics::{GraphMetrics, NodeMetrics};
+mod observer_metrics;
+pub use observer_metrics::StreamingQueryMetricsSnapshotter;
+pub use polars_observer::{
+    QueryMetricsSnapshotter, QueryObserver, QueryObserverFactory, new_query_observer,
+    register_query_observer_factory,
+};
 mod morsel;
 mod nodes;
 mod physical_plan;
-#[cfg(feature = "physical_plan_visualization")]
-pub use physical_plan::visualization as physical_plan_visualization;
+pub use physical_plan::{
+    NodeStyle, PhysNode, PhysNodeKey, PhysNodeKind, ZipBehavior, physical_plan_to_description,
+};
 mod pipe;
 mod utils;
 

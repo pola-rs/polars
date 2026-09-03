@@ -37,7 +37,6 @@ pub fn new_var_std_reduction(
                 _phantom: PhantomData,
             },
         )),
-        Duration(..) => todo!(),
         Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
             DataType::Null,
         ))),
@@ -102,17 +101,44 @@ impl<T: PolarsNumericType> Reducer for VarStdReducer<T> {
         &self,
         v: Vec<Self::Value>,
         m: Option<Bitmap>,
-        _dtype: &DataType,
+        dtype: &DataType,
     ) -> PolarsResult<Series> {
         assert!(m.is_none());
-        let ca: Float64Chunked = v
-            .into_iter()
-            .map(|s| {
-                let var = s.finalize(self.ddof);
-                if self.is_std { var.map(f64::sqrt) } else { var }
-            })
-            .collect_ca(PlSmallStr::EMPTY);
-        Ok(ca.into_series())
+        match dtype {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                let ca: Float16Chunked = v
+                    .into_iter()
+                    .map(|s| {
+                        let var = s.finalize(self.ddof);
+                        let out = if self.is_std { var.map(f64::sqrt) } else { var };
+                        out.map(|v| v.as_())
+                    })
+                    .collect_ca(PlSmallStr::EMPTY);
+                Ok(ca.into_series())
+            },
+            DataType::Float32 => {
+                let ca: Float32Chunked = v
+                    .into_iter()
+                    .map(|s| {
+                        let var = s.finalize(self.ddof);
+                        let out = if self.is_std { var.map(f64::sqrt) } else { var };
+                        out.map(|v| v as f32)
+                    })
+                    .collect_ca(PlSmallStr::EMPTY);
+                Ok(ca.into_series())
+            },
+            _ => {
+                let ca: Float64Chunked = v
+                    .into_iter()
+                    .map(|s| {
+                        let var = s.finalize(self.ddof);
+                        if self.is_std { var.map(f64::sqrt) } else { var }
+                    })
+                    .collect_ca(PlSmallStr::EMPTY);
+                Ok(ca.into_series())
+            },
+        }
     }
 }
 

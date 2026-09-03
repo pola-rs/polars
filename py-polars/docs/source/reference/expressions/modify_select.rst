@@ -23,7 +23,6 @@ Manipulation/selection
     Expr.fill_nan
     Expr.fill_null
     Expr.filter
-    Expr.flatten
     Expr.floor
     Expr.forward_fill
     Expr.gather
@@ -33,11 +32,11 @@ Manipulation/selection
     Expr.inspect
     Expr.interpolate
     Expr.interpolate_by
+    Expr.item
     Expr.limit
     Expr.lower_bound
     Expr.pipe
     Expr.qcut
-    Expr.rechunk
     Expr.reinterpret
     Expr.repeat_by
     Expr.replace
@@ -50,7 +49,6 @@ Manipulation/selection
     Expr.round_sig_figs
     Expr.sample
     Expr.shift
-    Expr.shrink_dtype
     Expr.shuffle
     Expr.slice
     Expr.sort
@@ -59,5 +57,5 @@ Manipulation/selection
     Expr.to_physical
     Expr.top_k
     Expr.top_k_by
+    Expr.truncate
     Expr.upper_bound
-    Expr.where

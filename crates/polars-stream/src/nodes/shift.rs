@@ -1,11 +1,12 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
+use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
 
 use super::compute_node_prelude::*;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::in_memory_sink::InMemorySinkNode;
 use crate::pipe::PortReceiver;
@@ -25,9 +26,10 @@ struct ShiftState {
     offset: i64,
     rows_received: usize,
     rows_sent: usize,
-    buffer: VecDeque<DataFrame>,
+    frames: VecDeque<SpillFrame>,
     fill: DataFrame,
     seq: MorselSeq,
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl ShiftState {
@@ -45,11 +47,12 @@ impl ShiftState {
                 if let Some(r) = &mut recv {
                     let Ok(morsel) = r.recv().await else { break };
                     source_token = morsel.source_token().clone();
-                    if morsel.df().is_empty() {
+                    if morsel.height() == 0 {
                         continue;
                     }
-                    self.rows_received += morsel.df().height();
-                    self.buffer.push_back(morsel.into_df());
+                    self.rows_received += morsel.height();
+                    self.spill_ctx.register(morsel.sf()).await;
+                    self.frames.push_back(morsel.into_sf());
                 }
             }
 
@@ -59,25 +62,26 @@ impl ShiftState {
                 let len = self.rows_received.min(self.offset as usize) - self.rows_sent;
                 df = self.fill.new_from_index(0, len);
             } else {
-                let src = self.buffer.front_mut().unwrap();
+                let src = self.frames.front_mut().unwrap();
                 let len = self.rows_received - self.rows_sent;
-                (df, *src) = src.split_at(len as i64);
-                if src.is_empty() {
-                    self.buffer.pop_front();
+                let mut src_df = src.get_mut().await;
+                let (head, tail) = src_df.split_at(len as i64);
+                *src_df = tail;
+                df = head;
+                drop(src_df);
+                if src.height() == 0 {
+                    self.frames.pop_front();
                 }
             };
             self.rows_sent += df.height();
 
-            let mut morsel = Morsel::new(df, self.seq, source_token.clone());
+            let mut morsel = Morsel::new_unregistered(df, self.seq, source_token.clone());
             self.seq = self.seq.successor();
             morsel.set_consume_token(wait_group.token());
             if send.send(morsel).await.is_err() {
                 break;
             }
             wait_group.wait().await;
-            if source_token.stop_requested() {
-                break;
-            }
         }
 
         Ok(())
@@ -92,18 +96,19 @@ impl ShiftState {
 
         while let Ok(mut morsel) = recv.recv().await {
             let shift_needed = shift.saturating_sub(self.rows_received);
-            self.rows_received += morsel.df().height();
+            self.rows_received += morsel.height();
             if shift_needed > 0 {
-                morsel =
-                    morsel.map(|df| df.slice(shift_needed.min(df.height()) as i64, df.height()));
+                morsel = morsel
+                    .map(|df| df.slice(shift_needed.min(df.height()) as i64, df.height()))
+                    .await;
             }
-            if morsel.df().is_empty() {
+            if morsel.height() == 0 {
                 continue;
             }
 
             morsel.set_seq(self.seq);
             self.seq = self.seq.successor();
-            self.rows_sent += morsel.df().height();
+            self.rows_sent += morsel.height();
             if send.send(morsel).await.is_err() {
                 break;
             }
@@ -130,16 +135,13 @@ impl ShiftState {
             let df = self.fill.new_from_index(0, len);
             self.rows_sent += len;
 
-            let mut morsel = Morsel::new(df, self.seq, source_token.clone());
+            let mut morsel = Morsel::new_unregistered(df, self.seq, source_token.clone());
             self.seq = self.seq.successor();
             morsel.set_consume_token(wait_group.token());
             if send.send(morsel).await.is_err() {
                 break;
             }
             wait_group.wait().await;
-            if source_token.stop_requested() {
-                break;
-            }
         }
 
         Ok(())
@@ -171,7 +173,9 @@ impl ComputeNode for ShiftNode {
         assert!(recv.len() <= 3 && send.len() == 1);
 
         // Are we done?
-        if recv[0] == PortState::Done {
+        if send[0] == PortState::Done {
+            *self = Self::Done;
+        } else if recv[0] == PortState::Done {
             if let Self::Shifting(shift_state) = self {
                 if shift_state.rows_sent == shift_state.rows_received {
                     *self = Self::Done;
@@ -189,20 +193,15 @@ impl ComputeNode for ShiftNode {
             {
                 let offset_frame = offset.get_output()?.unwrap();
                 polars_ensure!(offset_frame.height() == 1, ComputeError: "got more than one value for 'n' in shift");
-                let offset_item = offset_frame.get_columns()[0].get(0)?;
-                let offset = if offset_item.is_null() {
-                    polars_warn!(
-                        Deprecation, // @2.0
-                        "shift value 'n' is null, which currently returns a column of null values. This will become an error in the future.",
-                    );
-                    // @2.0: Currently we still require the entire output to become null
-                    // if the shift is null, simulate this with an infinite negative shift.
-                    *fill = None;
-                    i64::MIN
-                } else {
-                    offset_item.extract::<i64>().ok_or_else(
-                        || polars_err!(ComputeError: "invalid value of 'n' in shift: {:?}", offset_item),
-                    )?
+                let offset_item = offset_frame.columns()[0].get(0)?;
+                if offset_item.is_null() {
+                    polars_bail!(ComputeError: "shift value 'n' must not be null.");
+                }
+                let offset = match offset_item.extract::<i64>() {
+                    Some(offset) => offset,
+                    None => {
+                        polars_bail!(ComputeError: "invalid value of 'n' in shift: {:?}", offset_item)
+                    },
                 };
 
                 let fill_frame = if let Some(fill) = fill {
@@ -215,9 +214,10 @@ impl ComputeNode for ShiftNode {
                     offset,
                     rows_received: 0,
                     rows_sent: 0,
-                    buffer: VecDeque::new(),
+                    frames: VecDeque::new(),
                     fill: fill_frame,
                     seq: MorselSeq::default(),
+                    spill_ctx: MostRecentSpillContext::new("shift".into()),
                 })
             }
         }

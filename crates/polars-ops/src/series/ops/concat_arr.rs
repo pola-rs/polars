@@ -3,7 +3,8 @@ use arrow::compute::utils::combine_validities_and;
 use polars_compute::horizontal_flatten::horizontal_flatten_unchecked;
 use polars_core::prelude::{ArrayChunked, Column, CompatLevel, DataType, IntoColumn};
 use polars_core::series::Series;
-use polars_error::{PolarsResult, polars_bail};
+use polars_error::{PolarsContext, PolarsResult};
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 
 /// Note: The caller must ensure all columns in `args` have the same type.
@@ -20,9 +21,8 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
     let inner_dtype = inner_dtype.as_ref();
     let width = *width;
 
-    let mut output_height = args[0].len();
+    let output_height = broadcast_len(args.iter()).context("concat_arr")?;
     let mut calculated_width = 0;
-    let mut mismatch_height = (&PlSmallStr::EMPTY, output_height);
     // If there is a `Array` column with a single NULL, the output will be entirely NULL.
     let mut return_all_null = false;
     // Indicates whether all `arrays` have unit length (excluding zero-width arrays)
@@ -33,16 +33,6 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
         .iter()
         .map(|c| {
             let len = c.len();
-
-            // Handle broadcasting
-            if output_height == 1 {
-                output_height = len;
-                mismatch_height.1 = len;
-            }
-
-            if len != output_height && len != 1 && mismatch_height.1 == output_height {
-                mismatch_height = (c.name(), len);
-            }
 
             // Don't expand scalars to height, this is handled by the `horizontal_flatten` kernel.
             let s = c.as_materialized_series_maintain_scalar();
@@ -82,15 +72,6 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
 
     assert_eq!(calculated_width, width);
 
-    if mismatch_height.1 != output_height {
-        polars_bail!(
-            ShapeMismatch:
-            "concat_arr: length of column '{}' (len={}) did not match length of \
-            first column '{}' (len={})",
-            mismatch_height.0, mismatch_height.1, args[0].name(), output_height,
-        )
-    }
-
     if return_all_null || output_height == 0 {
         let arr =
             FixedSizeListArray::new_null(dtype.to_arrow(CompatLevel::newest()), output_height);
@@ -109,15 +90,16 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
         let inner_arr = unsafe { horizontal_flatten_unchecked(&arrays, &widths, 1) };
 
         let arr = FixedSizeListArray::new(
-            dtype.to_arrow(CompatLevel::newest()),
+            FixedSizeListArray::default_datatype(inner_arr.dtype().clone(), width),
             1,
             inner_arr,
             outer_validity,
         );
 
-        return Ok(ArrayChunked::with_chunk(args[0].name().clone(), arr)
-            .into_column()
-            .new_from_index(0, output_height));
+        let mut out = ArrayChunked::with_chunk(args[0].name().clone(), arr);
+        unsafe { out.to_logical(inner_dtype.clone()) };
+
+        return Ok(out.into_column().new_from_index(0, output_height));
     } else {
         let inner_arr = if width == 0 {
             Series::new_empty(PlSmallStr::EMPTY, inner_dtype)
@@ -130,12 +112,16 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
         };
 
         let arr = FixedSizeListArray::new(
-            dtype.to_arrow(CompatLevel::newest()),
+            FixedSizeListArray::default_datatype(inner_arr.dtype().clone(), width),
             output_height,
             inner_arr,
             outer_validity,
         );
-        ArrayChunked::with_chunk(args[0].name().clone(), arr).into_column()
+
+        let mut out = ArrayChunked::with_chunk(args[0].name().clone(), arr);
+        unsafe { out.to_logical(inner_dtype.clone()) };
+
+        out.into_column()
     };
 
     Ok(out)

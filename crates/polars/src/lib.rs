@@ -131,7 +131,7 @@
 //! ```no_run
 //! # use polars::prelude::*;
 //! # fn example() -> PolarsResult<()> {
-//! # let df = DataFrame::default();
+//! # let df = DataFrame::empty();
 //!   df.lazy()
 //!    .select([
 //!        col("foo").sort(Default::default()).head(None),
@@ -410,13 +410,15 @@
 //! ## User guide
 //!
 //! If you want to read more, check the [user guide](https://docs.pola.rs/).
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(ambiguous_glob_reexports)]
 pub mod docs;
 pub mod prelude;
 #[cfg(feature = "sql")]
 pub mod sql;
 
+#[doc(hidden)]
+pub use polars_compute;
 pub use polars_core::{
     apply_method_all_arrow_series, chunked_array, datatypes, df, error, frame, functions, series,
     testing,

@@ -23,25 +23,33 @@ pub use sum::*;
 
 use super::*;
 
-pub trait RollingAggWindowNoNulls<'a, T: NativeType, Out: NativeType = T> {
+pub trait RollingAggWindowNoNulls<T: NativeType, Out: NativeType = T> {
+    type This<'a>: RollingAggWindowNoNulls<T, Out>;
+
     fn new(
-        slice: &'a [T],
+        slice: &[T],
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
-    ) -> Self;
+    ) -> Self::This<'_>;
 
     /// Update and recompute the window
     ///
     /// # Safety
     /// `start` and `end` must be within the windows bounds
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<Out>;
+    unsafe fn update(&mut self, new_start: usize, new_end: usize);
+
+    /// Get the aggregate of the current window relative to the value at `idx`.
+    fn get_agg(&self, idx: usize) -> Option<Out>;
+
+    /// Returns the length of the underlying input.
+    fn slice_len(&self) -> usize;
 }
 
 // Use an aggregation window that maintains the state
-pub(super) fn rolling_apply_agg_window<'a, Agg, T, O, Fo>(
-    values: &'a [T],
+pub(super) fn rolling_apply_agg_window<Agg, T, O, Fo>(
+    values: &[T],
     window_size: usize,
     min_periods: usize,
     det_offsets_fn: Fo,
@@ -49,7 +57,7 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, O, Fo>(
 ) -> PolarsResult<ArrayRef>
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    Agg: RollingAggWindowNoNulls<'a, T, O>,
+    Agg: RollingAggWindowNoNulls<T, O>,
     T: Debug + NativeType + Num,
     O: Debug + NativeType + Num,
 {
@@ -64,6 +72,7 @@ where
             // SAFETY:
             // we are in bounds
             unsafe { agg_window.update(start, end) }
+            agg_window.get_agg(idx)
         }
     });
     let arr = PrimitiveArray::from_trusted_len_iter(out);

@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import contextlib
-import re
 from typing import (
     TYPE_CHECKING,
-    Callable,
     Generic,
-    Union,
     overload,
 )
 
@@ -14,12 +11,12 @@ from polars._dependencies import _check_for_pandas, _check_for_pyarrow
 from polars._dependencies import pandas as pd
 from polars._dependencies import pyarrow as pa
 from polars._typing import FrameType
-from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.expired import RenamedParameter, removed_parameters
 from polars._utils.pycapsule import is_pycapsule
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import _get_stack_locals, qualified_type_name
 from polars._utils.wrap import wrap_ldf
-from polars.convert import from_arrow, from_pandas
+from polars.convert import from_pandas
 from polars.dataframe import DataFrame
 from polars.lazyframe import LazyFrame
 from polars.series import Series
@@ -29,29 +26,24 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Collection, Mapping
+    from collections.abc import Callable, Collection, Mapping
     from types import TracebackType
-    from typing import Any, Final, Literal
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
+    from typing import Any, Final, Literal, TypeAlias
 
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
         from typing_extensions import Self
 
-    CompatibleFrameType: TypeAlias = Union[
-        DataFrame,
-        LazyFrame,
-        Series,
-        pd.DataFrame,
-        pd.Series[Any],
-        pa.Table,
-        pa.RecordBatch,
-    ]
+    CompatibleFrameType: TypeAlias = (
+        DataFrame
+        | LazyFrame
+        | Series
+        | pd.DataFrame
+        | pd.Series[Any]
+        | pa.Table
+        | pa.RecordBatch
+    )
 
 __all__ = ["SQLContext"]
 
@@ -79,7 +71,7 @@ def _ensure_lazyframe(obj: Any) -> LazyFrame:
     elif is_pycapsule(obj) or (
         _check_for_pyarrow(obj) and isinstance(obj, (pa.Table, pa.RecordBatch))
     ):
-        return from_arrow(obj).lazy()  # type: ignore[union-attr]
+        return DataFrame(obj).lazy()  # type: ignore[union-attr]
     else:
         msg = f"unrecognised frame type: {qualified_type_name(obj)}"
         raise ValueError(msg)
@@ -122,7 +114,6 @@ class SQLContext(Generic[FrameType]):
         frames: Mapping[str, CompatibleFrameType | None] | None = ...,
         *,
         register_globals: bool | int = ...,
-        all_compatible: bool = ...,
         eager: Literal[False] = False,
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
@@ -133,7 +124,6 @@ class SQLContext(Generic[FrameType]):
         frames: Mapping[str, CompatibleFrameType | None] | None = ...,
         *,
         register_globals: bool | int = ...,
-        all_compatible: bool = ...,
         eager: Literal[True],
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
@@ -144,12 +134,18 @@ class SQLContext(Generic[FrameType]):
         frames: Mapping[str, CompatibleFrameType | None] | None = ...,
         *,
         register_globals: bool | int = ...,
-        all_compatible: bool = ...,
         eager: bool,
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
 
-    @deprecate_renamed_parameter("eager_execution", "eager", version="0.20.31")
+    @removed_parameters(
+        RenamedParameter(
+            name="eager_execution",
+            new_name="eager",
+            deprecated_in="0.20.31",
+            removed_in="2.0",
+        ),
+    )
     def __init__(
         self,
         frames: Mapping[str, CompatibleFrameType | None] | None = None,
@@ -160,9 +156,6 @@ class SQLContext(Generic[FrameType]):
     ) -> None:
         """
         Initialize a new `SQLContext`.
-
-        .. versionchanged:: 0.20.31
-            The `eager_execution` parameter was renamed `eager`.
 
         Parameters
         ----------
@@ -265,7 +258,9 @@ class SQLContext(Generic[FrameType]):
         Join a polars LazyFrame with a pandas DataFrame (note use of the preferred
         `pl.sql` method, which is equivalent to `SQLContext.execute_global`):
 
-        >>> pl.sql("SELECT df.*, c FROM df JOIN df_pandas USING(a)").collect()
+        >>> pl.sql(
+        ...     "SELECT df.*, c FROM df JOIN df_pandas USING(a) ORDER BY ALL"
+        ... ).collect()
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -276,21 +271,17 @@ class SQLContext(Generic[FrameType]):
         │ 3   ┆ 6   ┆ 8   │
         └─────┴─────┴─────┘
         """
-        # basic extraction of possible table names from the query, so we don't register
-        # unnecessary objects from the globals (ideally we shuoold look to make the
-        # underlying `sqlparser-rs` lib parse the query to identify table names)
-        q = re.split(r"\bFROM\b", query, maxsplit=1, flags=re.I)
-        possible_names = (
-            {
-                nm.strip('"')
-                for nm in re.split(r"\b", q[1])
-                if re.match(r'^("[^"]+")$', nm) or nm.isidentifier()
-            }
-            if len(q) > 1
-            else set()
+        # extract table names from the query, checking against them so that
+        # we don't register unnecessary objects found in the globals
+        table_names = set(
+            PySQLContext.table_identifiers(
+                query,
+                include_schema=False,
+                unique=True,
+            )
         )
-        # get compatible frame objects from the globals, constraining by possible names
-        named_frames = _get_frame_locals(all_compatible=True, named=possible_names)
+        # get compatible objects from the globals, constraining by possible names
+        named_frames = _get_frame_locals(all_compatible=True, named=table_names)
         with cls(frames=named_frames, register_globals=False) as ctx:
             return ctx.execute(query=query, eager=eager)
 
@@ -370,7 +361,8 @@ class SQLContext(Generic[FrameType]):
         query
             A valid string SQL query.
         eager
-            Apply the query eagerly, returning `DataFrame` instead of `LazyFrame`.
+            Execute the query immediately, returning a `DataFrame` instead of
+            `LazyFrame`.
             If unset, the value of the init-time "eager" parameter will be used.
             Note that the query itself is always executed in lazy-mode; this
             parameter only impacts the type of the returned frame.
@@ -420,11 +412,11 @@ class SQLContext(Generic[FrameType]):
         >>> ctx.execute(
         ...     '''
         ...     SELECT
-        ...         MAX(release_year / 10) * 10 AS decade,
+        ...         MAX(release_year // 10) * 10 AS decade,
         ...         SUM(gross) AS total_gross,
         ...         COUNT(title) AS n_films,
         ...     FROM films
-        ...     GROUP BY (release_year / 10) -- decade
+        ...     GROUP BY (release_year // 10) -- decade
         ...     ORDER BY total_gross DESC
         ...     ''',
         ...     eager=True,
@@ -433,7 +425,7 @@ class SQLContext(Generic[FrameType]):
         ┌────────┬─────────────┬─────────┐
         │ decade ┆ total_gross ┆ n_films │
         │ ---    ┆ ---         ┆ ---     │
-        │ i64    ┆ i64         ┆ u32     │
+        │ i64    ┆ i64         ┆ i64     │
         ╞════════╪═════════════╪═════════╡
         │ 2000   ┆ 533316061   ┆ 1       │
         │ 1990   ┆ 232338648   ┆ 3       │
@@ -441,7 +433,7 @@ class SQLContext(Generic[FrameType]):
         └────────┴─────────────┴─────────┘
         """
         res = wrap_ldf(self._ctxt.execute(query))
-        return res.collect() if (eager or self._eager_execution) else res
+        return res.collect() if eager or self._eager_execution else res
 
     def register(self, name: str, frame: CompatibleFrameType | None) -> Self:
         """

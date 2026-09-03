@@ -104,6 +104,13 @@ def test_array_large_u64() -> None:
     assert s.to_list() == values
 
 
+def test_array_creation_idx_size() -> None:
+    s = pl.Series([None])
+    width = 2**31
+    s = s.new_from_index(0, width)
+    assert pl.Series("a", [s, s, s, s], dtype=pl.Array(pl.Null, width)).shape == (4,)
+
+
 def test_series_init_ambiguous_datetime() -> None:
     value = datetime(2001, 10, 28, 2)
     dtype = pl.Datetime(time_zone="Europe/Belgrade")
@@ -135,7 +142,7 @@ def test_series_init_nonexistent_datetime() -> None:
 # https://github.com/pola-rs/polars/issues/15518
 def test_series_init_np_temporal_with_nat_15518() -> None:
     arr = np.array(["2020-01-01", "2020-01-02", "2020-01-03"], "datetime64[D]")
-    arr[1] = np.datetime64("NaT")
+    arr[1] = np.datetime64("NaT", "D")
 
     result = pl.Series(arr)
 
@@ -198,3 +205,12 @@ def test_temporal_dtype_string_values(
         s = pl.Series(name="srs", values=data, dtype=tp)
         assert s.to_list() == expected_values
         assert s.dtype == dtype
+
+
+def test_invalid() -> None:
+    with pytest.raises(TypeError, match="constructor"):
+        # Note: the `type: ignore` is correct here, as `0` is
+        # an invalid type. If you make a PR which removes this
+        # `type: ignore`, you may have inadvertently introduced
+        # an `Any` type in the `Series.__init__` signature.
+        pl.Series(1)  # type: ignore[arg-type]

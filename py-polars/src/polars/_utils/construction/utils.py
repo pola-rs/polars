@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Callable, get_type_hints
+from typing import TYPE_CHECKING, Any, Final, get_type_hints
 
+import polars as pl
 from polars._dependencies import _check_for_pydantic, pydantic
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import pandas as pd
 
-PANDAS_SIMPLE_NUMPY_DTYPES = {
+PANDAS_SIMPLE_NUMPY_DTYPES: Final[set[str]] = {
     "int64",
     "int32",
     "int16",
@@ -67,14 +70,17 @@ def is_sqlalchemy_row(value: Any) -> bool:
     )
 
 
-def get_first_non_none(values: Sequence[Any | None]) -> Any:
+def get_first_non_none(values: Sequence[Any | None] | pl.Series) -> Any:
     """
     Return the first value from a sequence that isn't None.
 
     If sequence doesn't contain non-None values, return None.
     """
-    if values is not None:
-        return next((v for v in values if v is not None), None)
+    if isinstance(values, pl.Series):
+        if values.dtype == pl.Null or values.null_count() == len(values):
+            return None
+
+    return next((v for v in values if v is not None), None)
 
 
 def nt_unpack(obj: Any) -> Any:

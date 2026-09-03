@@ -23,7 +23,10 @@ use super::*;
 use crate::dsl::default_values::DefaultFieldValues;
 pub mod default_values;
 pub mod deletion;
-
+#[cfg(feature = "python")]
+pub mod python_delta_dv_provider;
+#[cfg(feature = "python")]
+pub use python_delta_dv_provider::{DELTA_DV_PROVIDER_VTABLE, DeltaDeletionVectorProviderVTable};
 #[cfg(feature = "python")]
 pub mod python_dataset;
 #[cfg(feature = "python")]
@@ -36,26 +39,47 @@ bitflags::bitflags! {
     }
 }
 
+const _: () = {
+    assert!(std::mem::size_of::<FileScanDsl>() <= 100);
+};
+
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-// TODO: Arc<> some of the options and the cloud options.
+/// Note: This is cheaply cloneable.
 pub enum FileScanDsl {
     #[cfg(feature = "csv")]
-    Csv { options: CsvReadOptions },
+    Csv {
+        options: Arc<CsvReadOptions>,
+    },
 
     #[cfg(feature = "json")]
-    NDJson { options: NDJsonReadOptions },
+    NDJson {
+        options: NDJsonReadOptions,
+    },
 
     #[cfg(feature = "parquet")]
-    Parquet { options: ParquetOptions },
+    Parquet {
+        options: ParquetOptions,
+    },
 
     #[cfg(feature = "ipc")]
-    Ipc { options: IpcScanOptions },
+    Ipc {
+        options: IpcScanOptions,
+    },
 
     #[cfg(feature = "python")]
     PythonDataset {
         dataset_object: Arc<python_dataset::PythonDatasetProvider>,
+    },
+
+    #[cfg(feature = "scan_lines")]
+    Lines {
+        name: PlSmallStr,
+    },
+
+    ExpandedPaths {
+        name: PlSmallStr,
     },
 
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
@@ -66,22 +90,225 @@ pub enum FileScanDsl {
     },
 }
 
+const _: () = {
+    assert!(std::mem::size_of::<FileScanIR>() <= 80);
+};
+
+/// Footer metadata retained per scan source.
+///
+/// Source indices refer to the scan's source list; a source not covered by
+/// the variant is unknown.
+/// Canonical format: Partial is used iff the subset is neither empty nor full.
+#[cfg(feature = "parquet")]
+#[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum MetadataPerSource {
+    /// No per-source metadata retained.
+    #[default]
+    Unresolved,
+    /// Footers of a strict subset of the sources.
+    Partial(Arc<PartialMetadata>),
+    /// Every source's footer: entry `i` is the footer of source `i`.
+    Full(Arc<[FileMetadataRef]>),
+}
+
+/// The resolved subset held by [`MetadataPerSource::Partial`].
+#[cfg(feature = "parquet")]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct PartialMetadata {
+    /// Source indices of the resolved footers, ascending.
+    /// Invariant: the first index points to source 0 in the ScanSources list.
+    /// TODO: Refactor `first_metadata` semantics and the invariant to enable
+    /// best-effort retention when filtering.
+    indices: Vec<usize>,
+    /// Dense footers: `metadata[j]` is the footer of source `indices[j]`.
+    metadata: Vec<FileMetadataRef>,
+}
+
+#[cfg(feature = "parquet")]
+impl PartialMetadata {
+    fn new(indices: Vec<usize>, metadata: Vec<FileMetadataRef>) -> Self {
+        assert!(!indices.is_empty());
+        assert_eq!(indices.len(), metadata.len());
+        assert_eq!(indices.first().unwrap(), &0, "Partial must retain source 0");
+
+        Self { indices, metadata }
+    }
+}
+
+#[cfg(feature = "parquet")]
+impl MetadataPerSource {
+    /// Build from `(source index, footer)` entries; coverage picks the
+    /// variant. Enforces canonical format.
+    pub(crate) fn new(
+        entries: impl IntoIterator<Item = (usize, FileMetadataRef)>,
+        n_sources: usize,
+    ) -> Self {
+        let mut entries: Vec<_> = entries.into_iter().collect();
+
+        // Sorted storage; strictness also rules out duplicate indices.
+        entries.sort_unstable_by_key(|&(i, _)| i);
+
+        debug_assert!(entries.windows(2).all(|w| w[0].0 < w[1].0));
+        debug_assert!(entries.last().is_none_or(|(i, _)| *i < n_sources));
+
+        if entries.is_empty() {
+            Self::Unresolved
+        } else if entries.len() == n_sources {
+            Self::Full(entries.into_iter().map(|(_, m)| m).collect())
+        } else {
+            let (indices, metadata): (Vec<_>, Vec<_>) = entries.into_iter().unzip();
+            match indices[0] {
+                0 => Self::Partial(Arc::new(PartialMetadata::new(indices, metadata))),
+                // Silently degrade when the invariant is not met.
+                _ => Self::Unresolved,
+            }
+        }
+    }
+
+    /// Footer of the scan's current source 0, when resolved.
+    ///
+    /// Every resolve that reads source 0's footer retains it, so this is
+    /// `Some` for any non-`Unresolved` value produced by resolve.
+    pub fn first_metadata(&self) -> Option<&FileMetadataRef> {
+        match self {
+            Self::Unresolved => None,
+            Self::Partial(p) => (p.indices.first() == Some(&0)).then(|| &p.metadata[0]),
+            Self::Full(s) => s.first(),
+        }
+    }
+
+    /// Whether every source's footer is resolved.
+    pub fn is_full(&self) -> bool {
+        matches!(self, Self::Full(_))
+    }
+
+    /// The resolved footers, ascending by source index.
+    pub fn resolved_metadata(&self) -> &[FileMetadataRef] {
+        match self {
+            Self::Unresolved => &[],
+            Self::Partial(p) => &p.metadata,
+            Self::Full(s) => s,
+        }
+    }
+
+    /// Re-index to the sources surviving a filter.
+    ///
+    /// The `surviving` yields ascending pre-filter source indices.
+    fn gather_reindex(&self, surviving: impl Iterator<Item = usize>) -> Self {
+        match self {
+            Self::Unresolved => Self::Unresolved,
+            Self::Partial(partial) => {
+                // Intersect with the filter, then renumber to post-filter positions.
+                let mut resolved = partial
+                    .indices
+                    .iter()
+                    .copied()
+                    .zip(partial.metadata.iter())
+                    .peekable();
+                let mut kept = Vec::new();
+                let mut n_surviving = 0usize;
+                for old_idx in surviving {
+                    while resolved.peek().is_some_and(|&(i, _)| i < old_idx) {
+                        resolved.next();
+                    }
+                    if let Some(&(i, m)) = resolved.peek() {
+                        if i == old_idx {
+                            kept.push((n_surviving, m.clone()));
+                            resolved.next();
+                        }
+                    }
+                    n_surviving += 1;
+                }
+                // Note: may degrade to Unresolved if the invariant (first source index == 0)
+                // cannot be uphold.
+                Self::new(kept, n_surviving)
+            },
+            Self::Full(s) => {
+                let gathered: Vec<FileMetadataRef> = surviving.map(|i| s[i].clone()).collect();
+                if gathered.is_empty() {
+                    Self::Unresolved
+                } else {
+                    Self::Full(gathered.into())
+                }
+            },
+        }
+    }
+
+    /// Gather the first entry in the set.
+    pub fn gather_first(&self) -> Self {
+        match self {
+            Self::Unresolved => Self::Unresolved,
+            Self::Partial(p) => match (p.indices.first(), p.metadata.first()) {
+                (Some(&0), Some(md)) => {
+                    Self::Partial(Arc::new(PartialMetadata::new(vec![0], vec![md.clone()])))
+                },
+                (Some(_), Some(_)) => {
+                    debug_assert!(false, "Partial must retain source 0");
+                    Self::Unresolved // Unreachable.
+                },
+                _ => Self::Unresolved,
+            },
+            Self::Full(md) => match md.len() {
+                0 => Self::Unresolved, // Unreachable.
+                1 => self.clone(),
+                n => MetadataPerSource::new(std::iter::once((0, md[0].clone())), n),
+            },
+        }
+    }
+
+    /// Apply `f` to every retained footer, keeping the variant and indices.
+    pub(crate) fn map_footers(
+        &self,
+        mut f: impl FnMut(&FileMetadataRef) -> FileMetadataRef,
+    ) -> Self {
+        match self {
+            Self::Unresolved => Self::Unresolved,
+            Self::Partial(p) => Self::Partial(Arc::new(PartialMetadata::new(
+                p.indices.clone(),
+                p.metadata.iter().map(&mut f).collect(),
+            ))),
+            Self::Full(s) => Self::Full(s.iter().map(f).collect()),
+        }
+    }
+
+    /// Allocation identity, for pointer-based eq/hash.
+    pub(crate) fn as_arc_ptr(&self) -> Option<usize> {
+        match self {
+            Self::Unresolved => None,
+            Self::Partial(p) => Some(Arc::as_ptr(p) as *const () as usize),
+            Self::Full(f) => Some(Arc::as_ptr(f) as *const () as usize),
+        }
+    }
+}
+
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-// TODO: Arc<> some of the options and the cloud options.
+/// Note: This is cheaply cloneable.
 pub enum FileScanIR {
     #[cfg(feature = "csv")]
-    Csv { options: CsvReadOptions },
+    Csv {
+        options: Arc<CsvReadOptions>,
+    },
 
     #[cfg(feature = "json")]
-    NDJson { options: NDJsonReadOptions },
+    NDJson {
+        options: NDJsonReadOptions,
+    },
 
     #[cfg(feature = "parquet")]
     Parquet {
         options: ParquetOptions,
-        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
-        metadata: Option<FileMetadataRef>,
+        /// Per-source footer metadata.
+        #[cfg_attr(feature = "dsl-schema", serde(skip))]
+        metadata_per_source: MetadataPerSource,
+        /// Byte size per scan source, retained from path expansion. One slot
+        /// per source in `sources` order; `Some` only when every source has
+        /// a known size.
+        #[cfg_attr(feature = "dsl-schema", serde(skip))]
+        bytes_per_source: Option<Arc<[u64]>>,
     },
 
     #[cfg(feature = "ipc")]
@@ -95,6 +322,15 @@ pub enum FileScanIR {
     PythonDataset {
         dataset_object: Arc<python_dataset::PythonDatasetProvider>,
         cached_ir: Arc<Mutex<Option<ExpandedDataset>>>,
+    },
+
+    #[cfg(feature = "scan_lines")]
+    Lines {
+        name: PlSmallStr,
+    },
+
+    ExpandedPaths {
+        name: PlSmallStr,
     },
 
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
@@ -120,19 +356,6 @@ impl FileScanIR {
         }
     }
 
-    pub(crate) fn sort_projection(&self, _has_row_index: bool) -> bool {
-        match self {
-            #[cfg(feature = "csv")]
-            Self::Csv { .. } => true,
-            #[cfg(feature = "ipc")]
-            Self::Ipc { .. } => _has_row_index,
-            #[cfg(feature = "parquet")]
-            Self::Parquet { .. } => false,
-            #[allow(unreachable_patterns)]
-            _ => false,
-        }
-    }
-
     pub fn streamable(&self) -> bool {
         match self {
             #[cfg(feature = "csv")]
@@ -145,6 +368,64 @@ impl FileScanIR {
             Self::NDJson { .. } => false,
             #[allow(unreachable_patterns)]
             _ => false,
+        }
+    }
+
+    /// Re-index pre-decoded per-source state after a source-list filter.
+    ///
+    /// `surviving_indices` yields ascending indices into the pre-filter list.
+    pub fn gather_after_filter<I>(
+        &mut self,
+        #[allow(unused)] first_file_dropped: bool,
+        surviving_indices: I,
+    ) where
+        I: Iterator<Item = usize> + Clone,
+    {
+        // Parquet: gather per-source state by surviving indices so entry `i`
+        // still matches sources[i].
+        // Ipc / PythonDataset: file-0-keyed state cleared when file 0 dropped.
+        match self {
+            #[cfg(feature = "parquet")]
+            Self::Parquet {
+                options: _,
+                metadata_per_source,
+                bytes_per_source,
+            } => {
+                *metadata_per_source =
+                    metadata_per_source.gather_reindex(surviving_indices.clone());
+                if let Some(slice) = bytes_per_source {
+                    *slice = surviving_indices.map(|i| slice[i]).collect();
+                }
+            },
+            #[cfg(feature = "ipc")]
+            Self::Ipc {
+                options: _,
+                metadata,
+            } => {
+                if first_file_dropped {
+                    *metadata = None;
+                }
+            },
+            #[cfg(feature = "csv")]
+            Self::Csv { options: _ } => {},
+            #[cfg(feature = "json")]
+            Self::NDJson { options: _ } => {},
+            #[cfg(feature = "python")]
+            Self::PythonDataset {
+                dataset_object: _,
+                cached_ir,
+            } => {
+                if first_file_dropped {
+                    *cached_ir.lock().unwrap() = None;
+                }
+            },
+            #[cfg(feature = "scan_lines")]
+            Self::Lines { name: _ } => {},
+            Self::ExpandedPaths { name: _ } => {},
+            Self::Anonymous {
+                options: _,
+                function: _,
+            } => {},
         }
     }
 }
@@ -167,16 +448,29 @@ pub struct CastColumnsPolicy {
     /// Allow casting when target dtype is lossless supertype
     pub integer_upcast: bool,
 
-    /// Allow Float32 -> Float64
+    /// Allow casting integers to floats.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub integer_to_float_cast: bool,
+
+    /// Allow upcasting from small floats to bigger floats
     pub float_upcast: bool,
-    /// Allow Float64 -> Float32
+    /// Allow downcasting from big floats to smaller floats
     pub float_downcast: bool,
 
-    /// Allow datetime[ns] to be casted to any lower precision. Important for
-    /// being able to read datasets written by spark.
+    /// Allow datetime[ns] to be cast to any lower precision.
+    /// (Important for being able to read datasets written by Spark).
     pub datetime_nanoseconds_downcast: bool,
-    /// Allow datetime[us] to datetime[ms]
+
+    /// Allow datetime[us] to be cast to datetime[ms]
     pub datetime_microseconds_downcast: bool,
+
+    /// Allow datetime[ms] to be cast to datetime[us] or datetime[ns].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub datetime_milliseconds_upcast: bool,
+
+    /// Allow datetime[us] to be cast to datetime[ns].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub datetime_microseconds_upcast: bool,
 
     /// Allow casting to change time units.
     pub datetime_convert_timezone: bool,
@@ -195,10 +489,13 @@ impl CastColumnsPolicy {
     /// Configuration variant that defaults to raising on mismatch.
     pub const ERROR_ON_MISMATCH: Self = Self {
         integer_upcast: false,
+        integer_to_float_cast: false,
         float_upcast: false,
         float_downcast: false,
         datetime_nanoseconds_downcast: false,
         datetime_microseconds_downcast: false,
+        datetime_milliseconds_upcast: false,
+        datetime_microseconds_upcast: false,
         datetime_convert_timezone: false,
         null_upcast: true,
         categorical_to_string: false,
@@ -291,7 +588,19 @@ pub struct UnifiedScanArgs {
     pub table_statistics: Option<TableStatistics>,
     /// Stores (physical, deleted) row counts of the table if known upfront (e.g. for Iceberg).
     /// This allows for row-count queries to succeed without scanning all files.
-    pub row_count: Option<(IdxSize, IdxSize)>,
+    ///
+    /// Note, intentionally store u64 instead of IdxSize to avoid erroring if it's unused.
+    pub row_count: Option<(u64, u64)>,
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct PredicateFileSkip {
+    /// If `true` the predicate can be skipped at runtime.
+    pub no_residual_predicate: bool,
+    /// Number of files before skipping
+    pub original_len: usize,
 }
 
 impl UnifiedScanArgs {
@@ -333,6 +642,8 @@ mod _file_scan_eq_hash {
     use std::hash::{Hash, Hasher};
     use std::sync::Arc;
 
+    use polars_utils::pl_str::PlSmallStr;
+
     use super::FileScanIR;
 
     impl Eq for FileScanIR {}
@@ -367,7 +678,8 @@ mod _file_scan_eq_hash {
         #[cfg(feature = "parquet")]
         Parquet {
             options: &'a polars_io::prelude::ParquetOptions,
-            metadata: Option<usize>,
+            metadata_per_source: Option<usize>,
+            bytes_per_source: Option<usize>,
         },
 
         #[cfg(feature = "ipc")]
@@ -380,6 +692,15 @@ mod _file_scan_eq_hash {
         PythonDataset {
             dataset_object: usize,
             cached_ir: usize,
+        },
+
+        #[cfg(feature = "scan_lines")]
+        Lines {
+            name: &'a PlSmallStr,
+        },
+
+        ExpandedPaths {
+            name: &'a PlSmallStr,
         },
 
         Anonymous {
@@ -402,9 +723,14 @@ mod _file_scan_eq_hash {
                 FileScanIR::NDJson { options } => FileScanEqHashWrap::NDJson { options },
 
                 #[cfg(feature = "parquet")]
-                FileScanIR::Parquet { options, metadata } => FileScanEqHashWrap::Parquet {
+                FileScanIR::Parquet {
                     options,
-                    metadata: metadata.as_ref().map(arc_as_ptr),
+                    metadata_per_source,
+                    bytes_per_source,
+                } => FileScanEqHashWrap::Parquet {
+                    options,
+                    metadata_per_source: metadata_per_source.as_arc_ptr(),
+                    bytes_per_source: bytes_per_source.as_ref().map(arc_as_ptr),
                 },
 
                 #[cfg(feature = "ipc")]
@@ -421,6 +747,11 @@ mod _file_scan_eq_hash {
                     dataset_object: arc_as_ptr(dataset_object),
                     cached_ir: arc_as_ptr(cached_ir),
                 },
+
+                #[cfg(feature = "scan_lines")]
+                FileScanIR::Lines { name } => FileScanEqHashWrap::Lines { name },
+
+                FileScanIR::ExpandedPaths { name } => FileScanEqHashWrap::ExpandedPaths { name },
 
                 FileScanIR::Anonymous { options, function } => FileScanEqHashWrap::Anonymous {
                     options,
@@ -479,7 +810,7 @@ impl CastColumnsPolicy {
                 return mismatch_err("");
             };
 
-            let incoming_fields_schema = PlHashMap::from_iter(
+            let incoming_fields_schema = PlIndexMap::from_iter(
                 incoming_fields
                     .iter()
                     .enumerate()
@@ -545,7 +876,7 @@ impl CastColumnsPolicy {
                                 "encountered extra struct field: {}, \
                                 hint: specify this field in the schema, or pass \
                                 cast_options=pl.ScanCastOptions(extra_struct_fields='ignore')",
-                                &fld.name,
+                                fld.name,
                             ));
                         },
                     }
@@ -625,7 +956,9 @@ impl CastColumnsPolicy {
 
         if target_dtype.is_float() && incoming_dtype.is_float() {
             return match (target_dtype, incoming_dtype) {
-                (DataType::Float64, DataType::Float32) => {
+                (DataType::Float64, DataType::Float32)
+                | (DataType::Float64, DataType::Float16)
+                | (DataType::Float32, DataType::Float16) => {
                     if self.float_upcast {
                         Ok(true)
                     } else {
@@ -634,8 +967,9 @@ impl CastColumnsPolicy {
                         )
                     }
                 },
-
-                (DataType::Float32, DataType::Float64) => {
+                (DataType::Float16, DataType::Float32)
+                | (DataType::Float16, DataType::Float64)
+                | (DataType::Float32, DataType::Float64) => {
                     if self.float_downcast {
                         Ok(true)
                     } else {
@@ -646,6 +980,16 @@ impl CastColumnsPolicy {
                 },
 
                 _ => unreachable!(),
+            };
+        }
+
+        if target_dtype.is_float() && incoming_dtype.is_integer() {
+            return if !self.integer_to_float_cast {
+                mismatch_err(
+                    "hint: pass cast_options=pl.ScanCastOptions(integer_cast='allow-float')",
+                )
+            } else {
+                Ok(true)
             };
         }
 
@@ -675,19 +1019,35 @@ impl CastColumnsPolicy {
                             )
                         }
                     },
-
                     (TimeUnit::Microseconds, TimeUnit::Milliseconds) => {
                         if self.datetime_microseconds_downcast {
                             Ok(true)
                         } else {
-                            // TODO
                             mismatch_err(
-                                "unimplemented: 'microsecond-downcast' in scan cast options",
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='microsecond-downcast')",
                             )
                         }
                     },
-
-                    _ => mismatch_err(""),
+                    (TimeUnit::Microseconds, TimeUnit::Nanoseconds) => {
+                        if self.datetime_microseconds_upcast {
+                            Ok(true)
+                        } else {
+                            mismatch_err(
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='microsecond-upcast')",
+                            )
+                        }
+                    },
+                    (TimeUnit::Milliseconds, TimeUnit::Microseconds | TimeUnit::Nanoseconds) => {
+                        if self.datetime_milliseconds_upcast {
+                            Ok(true)
+                        } else {
+                            mismatch_err(
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='millisecond-upcast')",
+                            )
+                        }
+                    },
+                    // All distinct-unit pairs are covered above.
+                    _ => unreachable!(),
                 };
             }
 

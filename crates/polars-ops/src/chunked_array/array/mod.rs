@@ -1,7 +1,6 @@
-#[cfg(feature = "array_any_all")]
-mod any_all;
 mod count;
 mod dispersion;
+mod dot;
 mod get;
 mod join;
 mod min_max;
@@ -10,6 +9,7 @@ mod sum_mean;
 #[cfg(feature = "array_to_struct")]
 mod to_struct;
 
+pub use dot::is_supported_array_dot_dtype;
 pub use namespace::ArrayNameSpace;
 use polars_core::prelude::*;
 #[cfg(feature = "array_to_struct")]

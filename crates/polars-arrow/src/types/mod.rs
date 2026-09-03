@@ -72,6 +72,9 @@ pub enum PrimitiveType {
 }
 
 mod private {
+    use polars_utils::float16::pf16;
+
+    use super::*;
     use crate::array::View;
 
     pub trait Sealed {}
@@ -86,8 +89,8 @@ mod private {
     impl Sealed for i64 {}
     impl Sealed for i128 {}
     impl Sealed for u128 {}
-    impl Sealed for super::i256 {}
-    impl Sealed for super::f16 {}
+    impl Sealed for i256 {}
+    impl Sealed for pf16 {}
     impl Sealed for f32 {}
     impl Sealed for f64 {}
     impl Sealed for super::days_ms {}

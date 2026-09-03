@@ -1,9 +1,9 @@
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
-use std::sync::Arc;
 
 use hashbrown::hash_map::Entry;
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
@@ -12,9 +12,8 @@ use crate::array::binview::view::validate_views_utf8_only;
 use crate::array::binview::{
     BinaryViewArrayGeneric, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE, ViewType,
 };
-use crate::array::{Array, MutableArray, TryExtend, TryPush, View};
+use crate::array::{Array, BINVIEW_ARROW_BUFFER_LEN_LIMIT, MutableArray, TryExtend, TryPush, View};
 use crate::bitmap::MutableBitmap;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::trusted_len::TrustedLenPush;
 use crate::trusted_len::TrustedLen;
@@ -73,9 +72,9 @@ impl<T: ViewType + ?Sized> From<MutableBinaryViewArray<T>> for BinaryViewArrayGe
             Self::new_unchecked(
                 T::DATA_TYPE,
                 value.views.into(),
-                Arc::from(value.completed_buffers),
+                Buffer::from(value.completed_buffers),
                 value.validity.map(|b| b.into()),
-                value.total_bytes_len,
+                Some(value.total_bytes_len),
                 value.total_buffer_len,
             )
         }
@@ -179,12 +178,11 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     /// - The array must not have validity.
     pub(crate) unsafe fn push_view_unchecked(&mut self, v: View, buffers: &[Buffer<u8>]) {
         let len = v.length;
-        self.total_bytes_len += len as usize;
-        if len <= 12 {
+        if len <= View::MAX_INLINE_SIZE {
             debug_assert!(self.views.capacity() > self.views.len());
-            self.views.push_unchecked(v)
+            self.views.push_unchecked(v);
+            self.total_bytes_len += len as usize;
         } else {
-            self.total_buffer_len += len as usize;
             let data = buffers.get_unchecked(v.buffer_idx as usize);
             let offset = v.offset as usize;
             let bytes = data.get_unchecked(offset..offset + len as usize);
@@ -201,7 +199,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     pub unsafe fn push_view_unchecked_dedupe(&mut self, mut v: View, buffers: &[Buffer<u8>]) {
         let len = v.length;
         self.total_bytes_len += len as usize;
-        if len <= 12 {
+        if len <= View::MAX_INLINE_SIZE {
             self.views.push_unchecked(v);
         } else {
             let buffer = buffers.get_unchecked(v.buffer_idx as usize);
@@ -223,7 +221,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     pub fn push_view(&mut self, mut v: View, buffers: &[Buffer<u8>]) {
         let len = v.length;
         self.total_bytes_len += len as usize;
-        if len <= 12 {
+        if len <= View::MAX_INLINE_SIZE {
             self.views.push(v);
         } else {
             // Do no mix use of push_view and push_value_ignore_validity -
@@ -310,17 +308,23 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             // We want to make sure that we never have to memcopy between buffers. So if the
             // current buffer is not large enough, create a new buffer that is large enough and try
             // to anticipate the larger size.
-            let required_capacity = self.in_progress_buffer.len() + bytes.len();
-            let does_not_fit_in_buffer = self.in_progress_buffer.capacity() < required_capacity;
+            if self.in_progress_buffer.len().saturating_add(bytes.len())
+                > usize::min(
+                    BINVIEW_ARROW_BUFFER_LEN_LIMIT,
+                    self.in_progress_buffer.capacity(),
+                )
+            {
+                const {
+                    assert!(MAX_EXP_BLOCK_SIZE < BINVIEW_ARROW_BUFFER_LEN_LIMIT);
+                }
 
-            // We can only save offsets that are below u32::MAX
-            let offset_will_not_fit = self.in_progress_buffer.len() > u32::MAX as usize;
+                // Allocate a new buffer and flush the old buffer.
+                let new_capacity = usize::max(
+                    bytes.len(),
+                    (self.in_progress_buffer.capacity() * 2)
+                        .clamp(DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE),
+                );
 
-            if does_not_fit_in_buffer || offset_will_not_fit {
-                // Allocate a new buffer and flush the old buffer
-                let new_capacity = (self.in_progress_buffer.capacity() * 2)
-                    .clamp(DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE)
-                    .max(bytes.len());
                 let in_progress = Vec::with_capacity(new_capacity);
                 let flushed = std::mem::replace(&mut self.in_progress_buffer, in_progress);
                 if !flushed.is_empty() {
@@ -360,14 +364,11 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         // Push and pop to get the properly encoded value.
         // For long string this leads to a dictionary encoding,
         // as we push the string only once in the buffers
-        let view_value = value
-            .map(|v| {
-                self.push_value_ignore_validity(v);
-                self.views.pop().unwrap()
-            })
-            .unwrap_or_default();
-        self.views
-            .extend(std::iter::repeat_n(view_value, additional));
+        if let Some(bytes) = value {
+            let view = self.push_value_into_buffer(bytes.as_ref().to_bytes());
+            self.views.extend(std::iter::repeat_n(view, additional));
+            self.total_bytes_len += view.length as usize * additional;
+        }
     }
 
     impl_mutable_array_mut_validity!();
@@ -565,7 +566,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         // length: 4 bytes
         // data: 12 bytes
         let len = view.length;
-        let bytes = if len <= 12 {
+        let bytes = if len <= View::MAX_INLINE_SIZE {
             let ptr = view as *const View as *const u8;
             std::slice::from_raw_parts(ptr.add(4), len as usize)
         } else {
@@ -648,135 +649,6 @@ impl MutableBinaryViewArray<[u8]> {
         }
         Ok(())
     }
-
-    /// Extend from a `buffer` and `length` of items given some statistics about the lengths.
-    ///
-    /// This will attempt to dispatch to several optimized implementations.
-    ///
-    /// # Safety
-    ///
-    /// This is safe if the statistics are correct.
-    pub unsafe fn extend_from_lengths_with_stats(
-        &mut self,
-        buffer: &[u8],
-        lengths_iterator: impl Clone + ExactSizeIterator<Item = usize>,
-        min_length: usize,
-        max_length: usize,
-        sum_length: usize,
-    ) {
-        let num_items = lengths_iterator.len();
-
-        if num_items == 0 {
-            return;
-        }
-
-        #[cfg(debug_assertions)]
-        {
-            let (min, max, sum) = lengths_iterator.clone().map(|v| (v, v, v)).fold(
-                (usize::MAX, usize::MIN, 0usize),
-                |(cmin, cmax, csum), (emin, emax, esum)| {
-                    (cmin.min(emin), cmax.max(emax), csum + esum)
-                },
-            );
-
-            assert_eq!(min, min_length);
-            assert_eq!(max, max_length);
-            assert_eq!(sum, sum_length);
-        }
-
-        assert!(sum_length <= buffer.len());
-
-        let mut buffer_offset = 0;
-        if min_length > View::MAX_INLINE_SIZE as usize
-            && (num_items == 1 || sum_length + self.in_progress_buffer.len() <= u32::MAX as usize)
-        {
-            let buffer_idx = self.completed_buffers().len() as u32;
-            let in_progress_buffer_offset = self.in_progress_buffer.len();
-
-            self.total_bytes_len += sum_length;
-            self.total_buffer_len += sum_length;
-
-            self.in_progress_buffer
-                .extend_from_slice(&buffer[..sum_length]);
-            self.views.extend(lengths_iterator.map(|length| {
-                // SAFETY: We asserted before that the sum of all lengths is smaller or equal to
-                // the buffer length.
-                let view_buffer =
-                    unsafe { buffer.get_unchecked(buffer_offset..buffer_offset + length) };
-
-                // SAFETY: We know that the minimum length > View::MAX_INLINE_SIZE. Therefore, this
-                // length is > View::MAX_INLINE_SIZE.
-                let view = unsafe {
-                    View::new_noninline_unchecked(
-                        view_buffer,
-                        buffer_idx,
-                        (buffer_offset + in_progress_buffer_offset) as u32,
-                    )
-                };
-                buffer_offset += length;
-                view
-            }));
-        } else if max_length <= View::MAX_INLINE_SIZE as usize {
-            self.total_bytes_len += sum_length;
-
-            // If the min and max are the same, we can dispatch to the optimized SIMD
-            // implementation.
-            if min_length == max_length {
-                let length = min_length;
-                if length == 0 {
-                    self.views
-                        .resize(self.views.len() + num_items, View::new_inline(&[]));
-                } else {
-                    View::extend_with_inlinable_strided(
-                        &mut self.views,
-                        &buffer[..length * num_items],
-                        length as u8,
-                    );
-                }
-            } else {
-                self.views.extend(lengths_iterator.map(|length| {
-                    // SAFETY: We asserted before that the sum of all lengths is smaller or equal
-                    // to the buffer length.
-                    let view_buffer =
-                        unsafe { buffer.get_unchecked(buffer_offset..buffer_offset + length) };
-
-                    // SAFETY: We know that each view has a length <= View::MAX_INLINE_SIZE because
-                    // the maximum length is <= View::MAX_INLINE_SIZE
-                    let view = unsafe { View::new_inline_unchecked(view_buffer) };
-
-                    buffer_offset += length;
-
-                    view
-                }));
-            }
-        } else {
-            // If all fails, just fall back to a base implementation.
-            self.reserve(num_items);
-            for length in lengths_iterator {
-                let value = &buffer[buffer_offset..buffer_offset + length];
-                buffer_offset += length;
-                self.push_value(value);
-            }
-        }
-    }
-
-    /// Extend from a `buffer` and `length` of items.
-    ///
-    /// This will attempt to dispatch to several optimized implementations.
-    #[inline]
-    pub fn extend_from_lengths(
-        &mut self,
-        buffer: &[u8],
-        lengths_iterator: impl Clone + ExactSizeIterator<Item = usize>,
-    ) {
-        let (min, max, sum) = lengths_iterator.clone().map(|v| (v, v, v)).fold(
-            (usize::MAX, usize::MIN, 0usize),
-            |(cmin, cmax, csum), (emin, emax, esum)| (cmin.min(emin), cmax.max(emax), csum + esum),
-        );
-
-        // SAFETY: We just collected the right stats.
-        unsafe { self.extend_from_lengths_with_stats(buffer, lengths_iterator, min, max, sum) }
-    }
 }
 
 impl<T: ViewType + ?Sized, P: AsRef<T>> Extend<Option<P>> for MutableBinaryViewArray<T> {
@@ -848,56 +720,5 @@ impl<T: ViewType + ?Sized, P: AsRef<T>> TryPush<Option<P>> for MutableBinaryView
     fn try_push(&mut self, item: Option<P>) -> PolarsResult<()> {
         self.push(item.as_ref().map(|p| p.as_ref()));
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn roundtrip(values: &[&[u8]]) -> bool {
-        let buffer = values
-            .iter()
-            .flat_map(|v| v.iter().copied())
-            .collect::<Vec<u8>>();
-        let lengths = values.iter().map(|v| v.len()).collect::<Vec<usize>>();
-        let mut bv = MutableBinaryViewArray::<[u8]>::with_capacity(values.len());
-
-        bv.extend_from_lengths(&buffer[..], lengths.into_iter());
-
-        &bv.values_iter().collect::<Vec<&[u8]>>()[..] == values
-    }
-
-    #[test]
-    fn extend_with_lengths_basic() {
-        assert!(roundtrip(&[]));
-        assert!(roundtrip(&[b"abc"]));
-        assert!(roundtrip(&[
-            b"a_very_very_long_string_that_is_not_inlinable"
-        ]));
-        assert!(roundtrip(&[
-            b"abc",
-            b"a_very_very_long_string_that_is_not_inlinable"
-        ]));
-    }
-
-    #[test]
-    fn extend_with_inlinable_fastpath() {
-        assert!(roundtrip(&[b"abc", b"defg", b"hix"]));
-        assert!(roundtrip(&[b"abc", b"defg", b"hix", b"xyza1234abcd"]));
-    }
-
-    #[test]
-    fn extend_with_inlinable_eq_len_fastpath() {
-        assert!(roundtrip(&[b"abc", b"def", b"hix"]));
-        assert!(roundtrip(&[b"abc", b"def", b"hix", b"xyz"]));
-    }
-
-    #[test]
-    fn extend_with_not_inlinable_fastpath() {
-        assert!(roundtrip(&[
-            b"a_very_long_string123",
-            b"a_longer_string_than_the_previous"
-        ]));
     }
 }

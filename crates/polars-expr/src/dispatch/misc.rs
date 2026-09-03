@@ -2,9 +2,9 @@ use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use polars_core::prelude::*;
 use polars_core::scalar::Scalar;
+use polars_core::series::Series;
 use polars_core::series::ops::NullBehavior;
-use polars_core::series::{IsSorted, Series};
-use polars_core::utils::try_get_supertype;
+use polars_ops::prelude::ListNameSpaceImpl;
 #[cfg(feature = "interpolate")]
 use polars_ops::series::InterpolationMethod;
 #[cfg(feature = "rank")]
@@ -16,7 +16,7 @@ use polars_plan::dsl::ReshapeDimension;
 use polars_plan::plans::FusedOperator;
 #[cfg(feature = "cov")]
 use polars_plan::plans::IRCorrelationMethod;
-use polars_plan::plans::RowEncodingVariant;
+use polars_plan::plans::{AExprSorted, DynamicPredWeakRef, RowEncodingVariant};
 use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -76,9 +76,9 @@ pub(super) fn to_physical(s: &Column) -> PolarsResult<Column> {
     Ok(s.to_physical_repr())
 }
 
-pub(super) fn set_sorted_flag(s: &Column, sorted: IsSorted) -> PolarsResult<Column> {
+pub(super) fn set_sorted_flag(s: &Column, sorted: AExprSorted) -> PolarsResult<Column> {
     let mut s = s.clone();
-    s.set_sorted_flag(sorted);
+    s.set_sorted_flag(sorted.into());
     Ok(s)
 }
 
@@ -123,7 +123,7 @@ pub(super) fn reshape(c: &Column, dimensions: &[ReshapeDimension]) -> PolarsResu
 pub(super) fn repeat_by(s: &[Column]) -> PolarsResult<Column> {
     let by = &s[1];
     let s = &s[0];
-    let by = by.cast(&IDX_DTYPE)?;
+    let by = by.strict_cast(&IDX_DTYPE)?;
     polars_ops::chunked_array::repeat_by(s.as_materialized_series(), by.idx()?)
         .map(|ok| ok.into_column())
 }
@@ -158,31 +158,45 @@ pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
     Ok(s.drop_nulls())
 }
 
-pub fn rechunk(s: &Column) -> PolarsResult<Column> {
-    Ok(s.rechunk())
-}
+pub fn quantile(s: &[Column], method: QuantileMethod) -> PolarsResult<Column> {
+    assert!(s.len() == 2);
+    let input = &s[0];
+    let quantile = s[1].as_materialized_series();
+    polars_ensure!(quantile.len() <= 1, ComputeError:
+        "polars does not support varying quantiles yet, \
+        make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
+    );
 
-pub fn append(s: &[Column], upcast: bool) -> PolarsResult<Column> {
-    assert_eq!(s.len(), 2);
+    match quantile.dtype() {
+        DataType::List(_) => {
+            let list = quantile.list()?;
+            let inner_s = list.get_as_series(0).unwrap();
+            if inner_s.has_nulls() {
+                polars_bail!(ComputeError: "quantile expression contains null values");
+            }
 
-    let a = &s[0];
-    let b = &s[1];
+            let v: Vec<f64> = inner_s
+                .cast(&DataType::Float64)?
+                .f64()?
+                .into_no_null_iter()
+                .collect();
 
-    if upcast {
-        let dtype = try_get_supertype(a.dtype(), b.dtype())?;
-        let mut a = a.cast(&dtype)?;
-        a.append_owned(b.cast(&dtype)?)?;
-        Ok(a)
-    } else {
-        let mut a = a.clone();
-        a.append(b)?;
-        Ok(a)
+            input
+                .quantiles_reduce(&v, method)
+                .map(|sc| sc.into_column(input.name().clone()))
+        },
+        _ => {
+            let q: f64 = quantile.get(0).unwrap().try_extract()?;
+            input
+                .quantile_reduce(q, method)
+                .map(|sc| sc.into_column(input.name().clone()))
+        },
     }
 }
 
 #[cfg(feature = "mode")]
-pub(super) fn mode(s: &Column) -> PolarsResult<Column> {
-    polars_ops::prelude::mode::mode(s.as_materialized_series()).map(Column::from)
+pub(super) fn mode(s: &Column, maintain_order: bool) -> PolarsResult<Column> {
+    polars_ops::prelude::mode::mode(s.as_materialized_series(), maintain_order).map(Column::from)
 }
 
 #[cfg(feature = "moment")]
@@ -243,6 +257,32 @@ pub(super) fn arg_sort(s: &Column, descending: bool, nulls_last: bool) -> Polars
             limit: None,
         })
         .into_column())
+}
+
+pub(super) fn min_by(s: &[Column]) -> PolarsResult<Column> {
+    assert!(s.len() == 2);
+    let input = &s[0];
+    let by = &s[1];
+    if input.len() != by.len() {
+        polars_bail!(ShapeMismatch: "'by' column in `min_by` operation has incorrect length (got {}, expected {})", by.len(), input.len());
+    }
+    match by.as_materialized_series().arg_min() {
+        Some(idx) => Ok(input.new_from_index(idx, 1)),
+        None => Ok(Series::new_null(input.name().clone(), 1).into_column()),
+    }
+}
+
+pub(super) fn max_by(s: &[Column]) -> PolarsResult<Column> {
+    assert!(s.len() == 2);
+    let input = &s[0];
+    let by = &s[1];
+    if input.len() != by.len() {
+        polars_bail!(ShapeMismatch: "'by' column in `max_by` operation has incorrect length (got {}, expected {})", by.len(), input.len());
+    }
+    match by.as_materialized_series().arg_max() {
+        Some(idx) => Ok(input.new_from_index(idx, 1)),
+        None => Ok(Series::new_null(input.name().clone(), 1).into_column()),
+    }
 }
 
 pub(super) fn product(s: &Column) -> PolarsResult<Column> {
@@ -316,8 +356,9 @@ pub(super) fn gather_every(s: &Column, n: usize, offset: usize) -> PolarsResult<
 }
 
 #[cfg(feature = "reinterpret")]
-pub(super) fn reinterpret(s: &Column, signed: bool) -> PolarsResult<Column> {
-    polars_ops::series::reinterpret(s.as_materialized_series(), signed).map(Column::from)
+pub(super) fn reinterpret(s: &Column, dtype: &DataType) -> PolarsResult<Column> {
+    polars_core::chunked_array::ops::reinterpret(s.as_materialized_series(), dtype)
+        .map(Column::from)
 }
 
 pub(super) fn negate(s: &Column) -> PolarsResult<Column> {
@@ -340,16 +381,7 @@ pub(super) fn extend_constant(s: &[Column]) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "row_hash")]
-pub(super) fn row_hash(c: &Column, k0: u64, k1: u64, k2: u64, k3: u64) -> PolarsResult<Column> {
-    use std::hash::BuildHasher;
-
-    use polars_utils::aliases::{
-        PlFixedStateQuality, PlSeedableRandomStateQuality, SeedableFromU64SeedExt,
-    };
-
-    // TODO: don't expose all these seeds.
-    let seed = PlFixedStateQuality::default().hash_one((k0, k1, k2, k3));
-
+pub(super) fn row_hash(c: &Column, seed: u64) -> PolarsResult<Column> {
     // @scalar-opt
     Ok(c.as_materialized_series()
         .hash(PlSeedableRandomStateQuality::seed_from_u64(seed))
@@ -425,11 +457,7 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
     let result = match is_sorted_flag {
         // If the Series is sorted, we can use an optimized binary search to
         // find the value.
-        IsSorted::Ascending | IsSorted::Descending
-            if !needle.is_null() &&
-            // search_sorted() doesn't support decimals at the moment.
-            !series.dtype().is_decimal() =>
-        {
+        IsSorted::Ascending | IsSorted::Descending if !needle.is_null() => {
             use polars_ops::series::SearchSortedSide;
 
             polars_ops::series::search_sorted(
@@ -539,6 +567,11 @@ pub(super) fn fill_null(s: &[Column]) -> PolarsResult<Column> {
 
             let fill_value = s[1].clone();
 
+            // Handle Null dtype columns: fill with the fill value (changes dtype)
+            if series.dtype() == &DataType::Null {
+                return Ok(fill_value.new_from_index(0, series.len()));
+            }
+
             // default branch
             fn default(series: Column, fill_value: Column) -> PolarsResult<Column> {
                 let mask = series.is_not_null();
@@ -569,6 +602,12 @@ pub(super) fn coalesce(s: &mut [Column]) -> PolarsResult<Column> {
 
 pub(super) fn drop_nans(s: Column) -> PolarsResult<Column> {
     match s.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca = s.f16()?;
+            let mask = ca.is_not_nan() | ca.is_null();
+            ca.filter(&mask).map(|ca| ca.into_column())
+        },
         DataType::Float32 => {
             let ca = s.f32()?;
             let mask = ca.is_not_nan() | ca.is_null();
@@ -628,6 +667,16 @@ pub fn as_struct(cols: &[Column]) -> PolarsResult<Column> {
     Ok(StructChunked::from_columns(fst.name().clone(), length, cols)?.into_column())
 }
 
+pub fn as_list(s: &mut [Column]) -> PolarsResult<Column> {
+    let first = s[0].to_unit_list();
+    let other: Vec<Column> = s[1..].iter().map(Column::to_unit_list).collect();
+
+    first
+        .list()?
+        .lst_concat(&other)
+        .map(IntoColumn::into_column)
+}
+
 #[cfg(feature = "log")]
 pub(super) fn entropy(s: &Column, base: f64, normalize: bool) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
@@ -653,14 +702,14 @@ pub(super) fn log(columns: &[Column]) -> PolarsResult<Column> {
 pub(super) fn log1p(s: &Column) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
-    Ok(s.as_materialized_series().log1p().into())
+    Ok(s.as_materialized_series().log1p()?.into())
 }
 
 #[cfg(feature = "log")]
 pub(super) fn exp(s: &Column) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
-    Ok(s.as_materialized_series().exp().into())
+    Ok(s.as_materialized_series().exp()?.into())
 }
 
 pub(super) fn unique(s: &Column, stable: bool) -> PolarsResult<Column> {
@@ -708,6 +757,15 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
 
         use polars_ops::chunked_array::cov::cov;
         let ret = match a.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                use num_traits::AsPrimitive;
+                use polars_utils::float16::pf16;
+
+                let ret =
+                    cov(a.f16().unwrap(), b.f16().unwrap(), ddof).map(AsPrimitive::<pf16>::as_);
+                return Ok(Column::new(name, &[ret]));
+            },
             DataType::Float32 => {
                 let ret = cov(a.f32().unwrap(), b.f32().unwrap(), ddof).map(|v| v as f32);
                 return Ok(Column::new(name, &[ret]));
@@ -733,6 +791,15 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
 
         use polars_ops::chunked_array::cov::pearson_corr;
         let ret = match a.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                use num_traits::AsPrimitive;
+                use polars_utils::float16::pf16;
+
+                let ret =
+                    pearson_corr(a.f16().unwrap(), b.f16().unwrap()).map(AsPrimitive::<pf16>::as_);
+                return Ok(Column::new(name, &[ret]));
+            },
             DataType::Float32 => {
                 let ret = pearson_corr(a.f32().unwrap(), b.f32().unwrap()).map(|v| v as f32);
                 return Ok(Column::new(name, &[ret]));
@@ -763,13 +830,8 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
         let name = PlSmallStr::from_static("spearman_rank_correlation");
         if propagate_nans && a.dtype().is_float() {
             for s in [&a, &b] {
-                if nan_max_s(s.as_materialized_series(), PlSmallStr::EMPTY)
-                    .get(0)
-                    .unwrap()
-                    .extract::<f64>()
-                    .unwrap()
-                    .is_nan()
-                {
+                let max = nan_max_s(s.as_materialized_series(), PlSmallStr::EMPTY);
+                if max.get(0).is_ok_and(|m| m.is_nan()) {
                     return Ok(Column::new(name, &[f64::NAN]));
                 }
             }
@@ -779,26 +841,32 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
         let a = a.drop_nulls();
         let b = b.drop_nulls();
 
-        let a_rank = a
-            .as_materialized_series()
-            .rank(
-                RankOptions {
-                    method: RankMethod::Average,
-                    ..Default::default()
-                },
-                None,
-            )
-            .into();
-        let b_rank = b
-            .as_materialized_series()
-            .rank(
-                RankOptions {
-                    method: RankMethod::Average,
-                    ..Default::default()
-                },
-                None,
-            )
-            .into();
+        let a_rank = a.as_materialized_series().rank(
+            RankOptions {
+                method: RankMethod::Average,
+                ..Default::default()
+            },
+            None,
+        );
+        let b_rank = b.as_materialized_series().rank(
+            RankOptions {
+                method: RankMethod::Average,
+                ..Default::default()
+            },
+            None,
+        );
+
+        // Because rank results in f64, we may need to restore the dtype
+        let a_rank = if a.dtype().is_float() {
+            a_rank.cast(a.dtype())?.into()
+        } else {
+            a_rank.into()
+        };
+        let b_rank = if b.dtype().is_float() {
+            b_rank.cast(b.dtype())?.into()
+        } else {
+            b_rank.into()
+        };
 
         pearson_corr(&[a_rank, b_rank])
     }
@@ -877,6 +945,11 @@ pub(super) fn ewm_mean(
 }
 
 #[cfg(feature = "ewma")]
+pub(super) fn ewm_sum(s: &Column, options: polars_ops::series::EWMOptions) -> PolarsResult<Column> {
+    polars_ops::prelude::ewm_sum(s.as_materialized_series(), options).map(Column::from)
+}
+
+#[cfg(feature = "ewma")]
 pub(super) fn ewm_std(s: &Column, options: polars_ops::series::EWMOptions) -> PolarsResult<Column> {
     polars_ops::prelude::ewm_std(s.as_materialized_series(), options).map(Column::from)
 }
@@ -912,6 +985,31 @@ pub(super) fn ewm_mean_by(s: &[Column], half_life: polars_time::Duration) -> Pol
     .map(Column::from)
 }
 
+#[cfg(feature = "ewma_by")]
+pub(super) fn ewm_sum_by(s: &[Column], half_life: polars_time::Duration) -> PolarsResult<Column> {
+    use polars_ops::series::SeriesMethods;
+
+    let time_zone = match s[1].dtype() {
+        DataType::Datetime(_, Some(time_zone)) => Some(time_zone),
+        _ => None,
+    };
+    polars_ensure!(!half_life.negative(), InvalidOperation: "half_life cannot be negative");
+    polars_time::prelude::ensure_is_constant_duration(half_life, time_zone, "half_life")?;
+    let half_life = half_life.duration_ns();
+    let values = &s[0];
+    let times = &s[1];
+    let times_is_sorted = times
+        .as_materialized_series()
+        .is_sorted(Default::default())?;
+    polars_ops::prelude::ewm_sum_by(
+        values.as_materialized_series(),
+        times.as_materialized_series(),
+        half_life,
+        times_is_sorted,
+    )
+    .map(Column::from)
+}
+
 pub fn row_encode(
     c: &mut [Column],
     dts: Vec<DataType>,
@@ -933,14 +1031,16 @@ pub fn row_encode(
         RowEncodingVariant::Ordered {
             descending,
             nulls_last,
+            broadcast_nulls,
         } => {
             let descending = descending.unwrap_or_else(|| vec![false; c.len()]);
             let nulls_last = nulls_last.unwrap_or_else(|| vec![false; c.len()]);
+            let broadcast_nulls = broadcast_nulls.unwrap_or(false);
 
             assert_eq!(c.len(), descending.len());
             assert_eq!(c.len(), nulls_last.len());
 
-            _get_rows_encoded_ca(name, c, &descending, &nulls_last)
+            _get_rows_encoded_ca(name, c, &descending, &nulls_last, broadcast_nulls)
         },
     }
     .map(IntoColumn::into_column)
@@ -966,9 +1066,13 @@ pub fn row_decode(
         RowEncodingVariant::Ordered {
             descending,
             nulls_last,
+            broadcast_nulls,
         } => {
             let descending = descending.unwrap_or_else(|| vec![false; fields.len()]);
             let nulls_last = nulls_last.unwrap_or_else(|| vec![false; fields.len()]);
+            if broadcast_nulls.is_some() {
+                polars_bail!(InvalidOperation: "broadcast_nulls is not supported for row_decode.");
+            }
 
             assert_eq!(fields.len(), descending.len());
             assert_eq!(fields.len(), nulls_last.len());
@@ -1000,4 +1104,8 @@ pub fn repeat(args: &[Column]) -> PolarsResult<Column> {
     )?;
 
     Ok(c.new_from_index(0, n))
+}
+
+pub fn dynamic_pred(columns: &[Column], pred: &DynamicPredWeakRef) -> PolarsResult<Column> {
+    pred.evaluate(columns)
 }

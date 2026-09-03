@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 import pytest
 
@@ -49,6 +50,53 @@ def test_series_rolling_mean_by(values: pl.Series, by_col: pl.Series) -> None:
     assert_series_equal(actual, expected)
 
 
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        ("mean", [None, None, 5.0, 5.0, 4.67, 4.67, 5.0, 5.0]),
+        ("sum", [0, 0, 5, 5, 14, 14, 20, 20]),
+        ("min", [None, None, 5, 5, 1, 1, 1, 1]),
+        ("max", [None, None, 5, 5, 8, 8, 8, 8]),
+        ("var", [None, None, None, None, 12.33, 12.33, 10.0, 10.0]),
+        ("std", [None, None, None, None, 3.51, 3.51, 3.16, 3.16]),
+    ],
+)
+def test_series_rolling_by_with_nulls(
+    values: pl.Series, by_col: pl.Series, op: str, expected: list[float]
+) -> None:
+    values[[0, 1, 2]] = None
+    actual = getattr(values, f"rolling_{op}_by")(by_col, "2i").round(2)
+    assert_series_equal(actual, pl.Series(expected))
+
+
+@pytest.mark.parametrize(
+    ("rank_op", "expected"),
+    [
+        ("average", [None, None, None, 1.0, 3.0, 1.0, 2.0, 3.0]),
+        ("min", [None, None, None, 1, 3, 1, 2, 3]),
+        ("max", [None, None, None, 1, 3, 1, 2, 3]),
+        ("dense", [None, None, None, 1, 3, 1, 2, 3]),
+        ("random", [None, None, None, 1, 3, 1, 2, 3]),
+    ],
+)
+def test_series_rolling_rank_by_with_nulls(
+    values: pl.Series, by_col: pl.Series, rank_op: Any, expected: list[float]
+) -> None:
+    values[[0, 1, 2]] = None
+    actual = values.rolling_rank_by(by_col, "2i", rank_op).round(2)
+    dtype = pl.Float64 if rank_op == "average" else pl.UInt32
+    assert_series_equal(actual, pl.Series(expected, dtype=dtype))
+
+
+def test_series_rolling_quantile_by_with_nulls(
+    values: pl.Series, by_col: pl.Series
+) -> None:
+    values[[0, 1, 2]] = None
+    actual = values.rolling_quantile_by(by_col, "2i", quantile=0.35).round(2)
+    expected = [None, None, 5.0, 5.0, 5.0, 5.0, 4.0, 4.0]
+    assert_series_equal(actual, pl.Series(expected))
+
+
 def test_series_rolling_median_by(values: pl.Series, by_col: pl.Series) -> None:
     actual = values.rolling_median_by(by_col, "2i")
     expected = pl.Series([7.5, 7.5, 5.5, 5.5, 3.5, 3.5, 5.5, 5.5])
@@ -75,7 +123,7 @@ def test_series_rolling_quantile_by(values: pl.Series, by_col: pl.Series) -> Non
 
 def test_series_rolling_rank_by(values: pl.Series, by_col: pl.Series) -> None:
     actual = values.rolling_rank_by(by_col, "2i", method="average")
-    expected = pl.Series([2.0, 2.0, 2.0, 2.0, 1.0, 1.0, 3.0, 3.0])
+    expected = pl.Series([1.0, 2.0, 1.0, 2.0, 4.0, 1.0, 2.0, 3.0])
     assert_series_equal(actual, expected)
 
 
@@ -148,4 +196,44 @@ def test_series_rolling_rank_by_temporal(
 ) -> None:
     actual = values.rolling_rank_by(by_col_temporal, "2h", method="average")
     expected = pl.Series([1.0, 2.0, 1.0, 2.0, 2.0, 1.0, 2.0, 2.0])
+    assert_series_equal(actual, expected)
+
+
+def test_series_rolling_mean_by_null_by_single() -> None:
+    s = pl.Series([1.0, 2.0, 3.0, 4.0, 5.0])
+    by = pl.Series([1, 2, None, 4, 5], dtype=pl.Int64)
+    actual = s.rolling_mean_by(by, window_size="2i")
+    expected = pl.Series([1.0, 1.5, None, 4.0, 4.5])
+    assert_series_equal(actual, expected)
+
+
+def test_series_rolling_mean_by_null_by_all() -> None:
+    s = pl.Series([1.0, 2.0, 3.0])
+    by = pl.Series([None, None, None], dtype=pl.Int64)
+    actual = s.rolling_mean_by(by, window_size="2i")
+    expected = pl.Series([None, None, None], dtype=pl.Float64)
+    assert_series_equal(actual, expected)
+
+
+def test_series_rolling_mean_by_null_by_unsorted() -> None:
+    s = pl.Series([3.0, 1.0, 2.0, 4.0])
+    by = pl.Series([3, None, 1, 2], dtype=pl.Int64)
+    actual = s.rolling_mean_by(by, window_size="2i")
+    expected = pl.Series([3.5, None, 2.0, 3.0])
+    assert_series_equal(actual, expected)
+
+
+def test_series_rolling_mean_by_null_by_and_values() -> None:
+    s = pl.Series([None, 2.0, 3.0, None, 5.0])
+    by = pl.Series([1, None, 3, 4, 5], dtype=pl.Int64)
+    actual = s.rolling_mean_by(by, window_size="2i")
+    expected = pl.Series([None, None, 3.0, 3.0, 5.0])
+    assert_series_equal(actual, expected)
+
+
+def test_series_rolling_mean_by_null_by_multiple() -> None:
+    s = pl.Series([1.0, 2.0, 3.0, 4.0, 5.0])
+    by = pl.Series([None, 2, None, 4, None], dtype=pl.Int64)
+    actual = s.rolling_mean_by(by, window_size="2i")
+    expected = pl.Series([None, 2.0, None, 4.0, None])
     assert_series_equal(actual, expected)

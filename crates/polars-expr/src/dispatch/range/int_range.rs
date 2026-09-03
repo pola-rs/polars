@@ -2,7 +2,7 @@ use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
 use polars_ops::series::new_int_range;
 
-use super::utils::{ensure_range_bounds_contain_exactly_one_value, numeric_ranges_impl_broadcast};
+use super::utils::{ensure_items_contain_exactly_one_value, numeric_ranges_impl_broadcast};
 
 const CAPACITY_FACTOR: usize = 5;
 
@@ -11,7 +11,7 @@ pub(super) fn int_range(s: &[Column], step: i64, dtype: DataType) -> PolarsResul
     let end = &s[1];
     let name = start.name();
 
-    ensure_range_bounds_contain_exactly_one_value(start, end)?;
+    ensure_items_contain_exactly_one_value(&[start, end], &["start", "end"])?;
 
     // Done by type coercion
     assert!(dtype.is_integer());

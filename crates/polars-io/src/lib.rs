@@ -1,4 +1,4 @@
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![cfg_attr(
     feature = "allow_unused",
@@ -26,13 +26,13 @@ pub mod ndjson;
 mod options;
 #[cfg(feature = "parquet")]
 pub mod parquet;
-#[cfg(feature = "parquet")]
-pub mod partition;
 pub mod path_utils;
 #[cfg(feature = "async")]
 pub mod pl_async;
 pub mod predicates;
 pub mod prelude;
+#[cfg(feature = "scan_lines")]
+pub mod scan_lines;
 mod shared;
 pub mod utils;
 
@@ -41,5 +41,7 @@ pub use cloud::glob as async_glob;
 pub use options::*;
 pub use path_utils::*;
 pub use shared::*;
+pub mod metrics;
 
+pub mod configs;
 pub mod hive;

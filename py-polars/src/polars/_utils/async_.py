@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from asyncio.futures import Future
     from collections.abc import Generator
 
+    from polars import DataFrame
     from polars._plr import PyDataFrame
 
 
@@ -83,20 +84,24 @@ class _AioDataFrameResult(Awaitable[T], Generic[T]):
     def __await__(self) -> Generator[Any, None, T]:
         return self.result.__await__()
 
-    def _callback(self, obj: PyDataFrame | Exception) -> None:
+    def _callback(
+        self: _AioDataFrameResult[DataFrame], obj: PyDataFrame | Exception
+    ) -> None:
         if isinstance(obj, Exception):
             self.loop.call_soon_threadsafe(self.result.set_exception, obj)
         else:
             self.loop.call_soon_threadsafe(
-                self.result.set_result,  # type: ignore[arg-type]
+                self.result.set_result,
                 wrap_df(obj),
             )
 
-    def _callback_all(self, obj: list[PyDataFrame] | Exception) -> None:
+    def _callback_all(
+        self: _AioDataFrameResult[list[DataFrame]], obj: list[PyDataFrame] | Exception
+    ) -> None:
         if isinstance(obj, Exception):
             self.loop.call_soon_threadsafe(self.result.set_exception, obj)
         else:
             self.loop.call_soon_threadsafe(
-                self.result.set_result,  # type: ignore[arg-type]
+                self.result.set_result,
                 [wrap_df(pydf) for pydf in obj],
             )

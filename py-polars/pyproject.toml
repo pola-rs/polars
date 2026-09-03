@@ -9,9 +9,10 @@ readme = "README.md"
 authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
-version = "1.34.0"
+# example: 1.35.0b1
+version = "2.0.0rc1"
 license = { file = "LICENSE" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 
 keywords = ["dataframe", "arrow", "out-of-core"]
 classifiers = [
@@ -23,7 +24,6 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -32,7 +32,8 @@ classifiers = [
   "Topic :: Scientific/Engineering",
   "Typing :: Typed",
 ]
-dependencies = ["polars-runtime-32 == 1.34.0"]
+# example: 1.35.0b1
+dependencies = ["polars-runtime-32 == 2.0.0rc1"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
@@ -42,11 +43,12 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
 # Runtimes
-rt64 = ["polars-runtime-64 == 1.34.0"]
-rtcompat = ["polars-runtime-compat == 1.34.0"]
+# example: 1.35.0b1
+rt64 = ["polars-runtime-64 == 2.0.0rc1"]
+rtcompat = ["polars-runtime-compat == 2.0.0rc1"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
-polars_cloud = ["polars_cloud >= 0.0.1a1"]
+polars_cloud = ["polars_cloud >= 0.9.0"]
 # Interop
 numpy = ["numpy >= 1.16.0"]
 pandas = ["pandas", "polars[pyarrow]"]
@@ -70,8 +72,8 @@ database = ["polars[adbc,connectorx,sqlalchemy]"]
 fsspec = ["fsspec"]
 
 # Other I/O
-deltalake = ["deltalake >= 1.0.0"]
-iceberg = ["pyiceberg >= 0.7.1"]
+deltalake = ["deltalake >= 1.0.0, != 1.5.*"]
+iceberg = ["pyiceberg >= 0.9.0"]
 
 # Other
 async = ["gevent"]
@@ -89,8 +91,41 @@ all = [
   "polars[async,cloudpickle,database,deltalake,excel,fsspec,graph,iceberg,numpy,pandas,plot,pyarrow,pydantic,style,timezone]",
 ]
 
+[tool.pyrefly]
+project-includes = ["src/polars", "tests"]
+search-path = ["./src", "."]
+ignore-missing-imports = [
+  "_polars_runtime_32.*",
+  "_polars_runtime_64.*",
+  "_polars_runtime_compat.*",
+  "IPython.*",
+  "altair.*",
+  "duckdb.*",
+  "pyiceberg.*",
+]
+# pyrefly equivalent of mypy's `follow_imports = "skip"`
+replace-imports-with-any = [
+  "arrow_odbc.*",
+  "jax.*",
+  "marimo.*",
+  "pyarrow.*",
+  "pyiceberg.*",
+  "torch.*",
+]
+# Pyrefly equivalent of mypy ignoring `no-any-return`
+# We exclude the polars module from warn_return_any, because the PyO3 api does not have Python
+# type annotations. See https://github.com/PyO3/pyo3/issues/1112 for a discussion on adding
+# this capability. We could add a stub file for polars._plr (the PyO3 api), but that
+# amounts to duplicating almost all type annotations on our api, as the Python api itself is a
+# thin wrapper around the PyO3 api to start with.
+[[tool.pyrefly.sub-config]]
+matches = "src/polars/**"
+[tool.pyrefly.sub-config.errors]
+bad-return = false
+
 [tool.mypy]
-files = ["polars", "tests"]
+files = ["src/polars", "tests"]
+num_workers = 4
 strict = true
 enable_error_code = [
   "redundant-expr",
@@ -99,6 +134,10 @@ enable_error_code = [
 ]
 disable_error_code = [
   "empty-body",
+  # Lint ignores can become unused depending on the python/mypy versions.
+  # Since we want to support multiple versions it can become an annoyance.
+  # Consider commenting out this line every once in a while to remove actually unused ignores.
+  "unused-ignore",
 ]
 
 [[tool.mypy.overrides]]
@@ -112,11 +151,11 @@ module = [
   "connectorx",
   "dateutil.*",
   "deltalake.*",
+  "duckdb.*",
   "fsspec.*",
   "gevent",
   "great_tables",
   "jax.*",
-  "kuzu",
   "marimo",
   "matplotlib.*",
   "moto.server",
@@ -127,6 +166,7 @@ module = [
   "pyarrow.*",
   "pydantic",
   "pyiceberg.*",
+  "pytz.*",
   "sqlalchemy.*",
   "torch.*",
   "xlsx2csv",
@@ -139,6 +179,7 @@ ignore_missing_imports = true
 module = [
   "IPython.*",
   "matplotlib.*",
+  "pyarrow.*",
 ]
 follow_imports = "skip"
 
@@ -158,6 +199,7 @@ fix = true
 [tool.ruff.lint]
 select = [
   "ANN", # flake8-annotations
+  "ARG", # flake8-unused-arguments
   "B", # flake8-bugbear
   "C4", # flake8-comprehensions
   "D", # flake8-docstrings
@@ -211,7 +253,8 @@ allowed-confusables = ["µ"]
 
 [tool.ruff.lint.per-file-ignores]
 "_dependencies.py" = ["ICN001"]
-"tests/**/*.py" = ["D100", "D102", "D103", "B018", "FBT001"]
+"config.py" = ["FBT001"]
+"tests/**/*.py" = ["ARG", "D100", "D102", "D103", "B018", "F841", "FBT001"]
 
 [tool.ruff.lint.pycodestyle]
 max-doc-length = 88
@@ -239,6 +282,10 @@ addopts = [
   "--strict-config",
   "--strict-markers",
   "--import-mode=importlib",
+  "--dist=loadgroup",
+  # A hard worker crash (e.g. a segfault) hangs under `--dist=loadgroup` when
+  # xdist tries to restart the worker and re-run the crashed group.
+  "--max-worker-restart=0",
   # Default to running fast tests only. To run ALL tests, run: pytest -m ""
   "-m not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only",
 ]
@@ -252,6 +299,7 @@ markers = [
   "write_disk: Tests that write to disk",
   "may_fail_auto_streaming: Test that may fail when automatically using the streaming engine for all lazy queries.",
   "may_fail_cloud: Test that may fail when automatically using the cloud distributed engine for all lazy queries.",
+  "may_fail_strict: Test that may fail strict mode.",
 ]
 filterwarnings = [
   # Fail on warnings
@@ -265,12 +313,7 @@ filterwarnings = [
   "ignore:datetime.datetime.utcnow\\(\\) is deprecated.*:DeprecationWarning",
   # Introspection under PyCharm IDE can generate this in Python 3.12
   "ignore:.*co_lnotab is deprecated, use co_lines.*:DeprecationWarning",
-  # TODO: Excel tests lead to unclosed file warnings
-  # https://github.com/pola-rs/polars/issues/14466
-  "ignore:unclosed file.*:ResourceWarning",
-  # TODO: Database tests lead to unclosed database warnings
-  # https://github.com/pola-rs/polars/issues/20296
-  "ignore:unclosed database.*:ResourceWarning",
+  "ignore:the argument `return_as_string` for `DataFrame.glimpse` is deprecated",
   # Ignore invalid warnings when running earlier versions of SQLAlchemy (we
   # know they are invalid because our standard tests run the latest version)
   "ignore:Deprecated API features detected.*:DeprecationWarning",

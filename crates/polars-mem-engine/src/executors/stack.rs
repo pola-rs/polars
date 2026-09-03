@@ -7,7 +7,6 @@ pub struct StackExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) has_windows: bool,
     pub(crate) exprs: Vec<Arc<dyn PhysicalExpr>>,
-    pub(crate) input_schema: SchemaRef,
     pub(crate) output_schema: SchemaRef,
     pub(crate) options: ProjectionOptions,
     // Can run all operations elementwise
@@ -27,6 +26,9 @@ impl StackExec {
             && df.first_col_n_chunks() > 1
             && df.height() > 0
             && self.options.run_parallel
+            // This condition is necessary because we violate the assumption that a DataFrame has columns equal to its
+            // height in the in-memory engine's common subexpression elimination. We should fix this at some point.
+            && df.columns().iter().all(|c| c.len() == df.height())
         {
             let chunks = df.split_chunks().collect::<Vec<_>>();
             let iter = chunks.into_par_iter().map(|mut df| {
@@ -38,11 +40,11 @@ impl StackExec {
                     self.options.run_parallel,
                 )?;
                 // We don't have to do a broadcast check as cse is not allowed to hit this.
-                df._add_columns(res.into_iter().collect(), schema)?;
+                df.with_columns_mut(res, schema)?;
                 Ok(df)
             });
 
-            let df = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+            let df = RAYON.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
             accumulate_dataframes_vertical_unchecked(df)
         }
         // Only horizontal parallelism
@@ -65,13 +67,13 @@ impl StackExec {
                 // new, unique column names. It is immediately
                 // followed by a projection which pulls out the
                 // possibly mismatching column lengths.
-                unsafe { df.column_extend_unchecked(res) };
+                unsafe { df.columns_mut() }.extend(res);
             } else {
-                let (df_height, df_width) = df.shape();
+                let df_height = df.height();
 
                 // When we have CSE we cannot verify scalars yet.
-                let verify_scalar = if !df.get_columns().is_empty() {
-                    !df.get_columns()[df.width() - 1]
+                let verify_scalar = if !df.columns().is_empty() {
+                    !df.columns()[df.width() - 1]
                         .name()
                         .starts_with(CSE_REPLACED)
                 } else {
@@ -79,7 +81,7 @@ impl StackExec {
                 };
                 for (i, c) in res.iter().enumerate() {
                     let len = c.len();
-                    if verify_scalar && len != df_height && len == 1 && df_width > 0 {
+                    if verify_scalar && len != df_height && len == 1 {
                         #[allow(clippy::collapsible_if)]
                         if !self.exprs[i].is_scalar()
                             && std::env::var("POLARS_ALLOW_NON_SCALAR_EXP").as_deref() != Ok("1")
@@ -95,7 +97,7 @@ impl StackExec {
                         }
                     }
                 }
-                df._add_columns(res.into_iter().collect(), schema)?;
+                df.with_columns_mut(res, schema)?;
             }
             df
         };
@@ -116,24 +118,6 @@ impl Executor for StackExec {
             }
         }
         let df = self.input.execute(state)?;
-
-        let profile_name = if state.has_node_timer() {
-            let by = self
-                .exprs
-                .iter()
-                .map(|s| profile_name(s.as_ref(), self.input_schema.as_ref()))
-                .collect::<PolarsResult<Vec<_>>>()?;
-            let name = comma_delimited("with_column".to_string(), &by);
-            Cow::Owned(name)
-        } else {
-            Cow::Borrowed("")
-        };
-
-        if state.has_node_timer() {
-            let new_state = state.clone();
-            new_state.record(|| self.execute_impl(state, df), profile_name)
-        } else {
-            self.execute_impl(state, df)
-        }
+        self.execute_impl(state, df)
     }
 }

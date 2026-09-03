@@ -3,11 +3,10 @@ from __future__ import annotations
 import contextlib
 import functools
 import re
-import sys
 from collections.abc import Collection
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from polars._dependencies import numpy as np
 from polars._dependencies import pyarrow as pa
@@ -24,6 +23,7 @@ from polars.datatypes.classes import (
     Duration,
     Enum,
     Field,
+    Float16,
     Float32,
     Float64,
     Int8,
@@ -49,21 +49,10 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import dtype_str_repr as _dtype_str_repr
 
 
-OptionType = type(Optional[type])
-if sys.version_info >= (3, 10):
-    from types import NoneType, UnionType
-else:
-    # infer equivalent class
-    NoneType = type(None)
-    UnionType = type(Union[int, float])
-
 if TYPE_CHECKING:
-    from polars._typing import PolarsDataType, PythonDataType, TimeUnit
+    from typing import Final, TypeGuard
 
-    if sys.version_info >= (3, 10):
-        from typing import TypeGuard
-    else:
-        from typing_extensions import TypeGuard
+    from polars._typing import PolarsDataType, PythonDataType, TimeUnit
 
 
 def is_polars_dtype(
@@ -149,6 +138,7 @@ class _DataTypeMappings:
             Datetime: "datetime",
             Decimal: "decimal",
             Duration: "duration",
+            Float16: "f16",
             Float32: "f32",
             Float64: "f64",
             Int8: "i8",
@@ -179,6 +169,7 @@ class _DataTypeMappings:
             Datetime: datetime,
             Decimal: PyDecimal,
             Duration: timedelta,
+            Float16: float,
             Float32: float,
             Float64: float,
             Int8: int,
@@ -209,7 +200,7 @@ class _DataTypeMappings:
             # (np.dtype().kind, np.dtype().itemsize)
             ("M", 8): Datetime,
             ("b", 1): Boolean,
-            ("f", 2): Float32,
+            ("f", 2): Float16,
             ("f", 4): Float32,
             ("f", 8): Float64,
             ("i", 1): Int8,
@@ -225,7 +216,7 @@ class _DataTypeMappings:
 
     @property
     @functools.lru_cache  # noqa: B019
-    def PY_TYPE_TO_ARROW_TYPE(self) -> dict[PythonDataType, pa.lib.DataType]:
+    def PY_TYPE_TO_ARROW_TYPE(self) -> dict[PythonDataType, pa.DataType]:
         return {
             bool: pa.bool_(),
             date: pa.date32(),
@@ -241,21 +232,22 @@ class _DataTypeMappings:
     @property
     @functools.lru_cache  # noqa: B019
     def REPR_TO_DTYPE(self) -> dict[str, PolarsDataType]:
-        def _dtype_str_repr_safe(o: Any) -> PolarsDataType | None:
+        def _dtype_str_repr_safe(o: Any) -> str | None:
             try:
-                return _dtype_str_repr(o.base_type()).split("[")[0]  # type: ignore[return-value]
+                return _dtype_str_repr(o.base_type()).split("[")[0]
             except TypeError:
                 return None
 
         return {
-            _dtype_str_repr_safe(obj): obj  # type: ignore[misc]
+            str_repr: obj
             for obj in globals().values()
-            if is_polars_dtype(obj) and _dtype_str_repr_safe(obj) is not None
+            if is_polars_dtype(obj)
+            and (str_repr := _dtype_str_repr_safe(obj)) is not None
         }
 
 
 # Initialize once (poor man's singleton :)
-DataTypeMappings = _DataTypeMappings()
+DataTypeMappings: Final[_DataTypeMappings] = _DataTypeMappings()
 
 
 def dtype_to_ffiname(dtype: PolarsDataType) -> str:
@@ -278,7 +270,7 @@ def dtype_to_py_type(dtype: PolarsDataType) -> PythonDataType:
         raise NotImplementedError(msg) from None
 
 
-def py_type_to_arrow_type(dtype: PythonDataType) -> pa.lib.DataType:
+def py_type_to_arrow_type(dtype: PythonDataType) -> pa.DataType:
     """Convert a Python dtype to an Arrow dtype."""
     try:
         return DataTypeMappings.PY_TYPE_TO_ARROW_TYPE[dtype]

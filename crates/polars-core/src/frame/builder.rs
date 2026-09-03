@@ -40,14 +40,14 @@ impl DataFrameBuilder {
             .zip(self.builders)
             .map(|(n, b)| {
                 let s = b.freeze(n.clone());
-                assert!(s.len() == self.height);
+                assert_eq!(s.len(), self.height);
                 Column::from(s)
             })
             .collect();
 
         // SAFETY: we checked the lengths and the names are unique because they
         // come from Schema.
-        unsafe { DataFrame::new_no_checks(self.height, columns) }
+        unsafe { DataFrame::new_unchecked(self.height, columns) }
     }
 
     pub fn freeze_reset(&mut self) -> DataFrame {
@@ -64,7 +64,7 @@ impl DataFrameBuilder {
 
         // SAFETY: we checked the lengths and the names are unique because they
         // come from Schema.
-        let out = unsafe { DataFrame::new_no_checks(self.height, columns) };
+        let out = unsafe { DataFrame::new_unchecked(self.height, columns) };
         self.height = 0;
         out
     }
@@ -81,7 +81,6 @@ impl DataFrameBuilder {
     /// if other does not match the schema of this builder.
     pub fn extend(&mut self, other: &DataFrame, share: ShareStrategy) {
         self.subslice_extend(other, 0, other.height(), share);
-        self.height += other.height();
     }
 
     /// Extends this builder with the contents of the given dataframe subslice.
@@ -93,16 +92,12 @@ impl DataFrameBuilder {
         length: usize,
         share: ShareStrategy,
     ) {
-        let columns = other.get_columns();
+        let columns = other.columns();
         assert!(self.builders.len() == columns.len());
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {
                 Column::Series(s) => {
                     builder.subslice_extend(s, start, length, share);
-                },
-                Column::Partitioned(p) => {
-                    // @scalar-opt
-                    builder.subslice_extend(p.as_materialized_series(), start, length, share);
                 },
                 Column::Scalar(sc) => {
                     let len = sc.len().saturating_sub(start).min(length);
@@ -125,22 +120,12 @@ impl DataFrameBuilder {
         repeats: usize,
         share: ShareStrategy,
     ) {
-        let columns = other.get_columns();
+        let columns = other.columns();
         assert!(self.builders.len() == columns.len());
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {
                 Column::Series(s) => {
                     builder.subslice_extend_repeated(s, start, length, repeats, share);
-                },
-                Column::Partitioned(p) => {
-                    // @scalar-opt
-                    builder.subslice_extend_repeated(
-                        p.as_materialized_series(),
-                        start,
-                        length,
-                        repeats,
-                        share,
-                    );
                 },
                 Column::Scalar(sc) => {
                     let len = sc.len().saturating_sub(start).min(length);
@@ -164,22 +149,12 @@ impl DataFrameBuilder {
         repeats: usize,
         share: ShareStrategy,
     ) {
-        let columns = other.get_columns();
+        let columns = other.columns();
         assert!(self.builders.len() == columns.len());
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {
                 Column::Series(s) => {
                     builder.subslice_extend_each_repeated(s, start, length, repeats, share);
-                },
-                Column::Partitioned(p) => {
-                    // @scalar-opt
-                    builder.subslice_extend_each_repeated(
-                        p.as_materialized_series(),
-                        start,
-                        length,
-                        repeats,
-                        share,
-                    );
                 },
                 Column::Scalar(sc) => {
                     let len = sc.len().saturating_sub(start).min(length);
@@ -205,16 +180,12 @@ impl DataFrameBuilder {
         idxs: &[IdxSize],
         share: ShareStrategy,
     ) {
-        let columns = other.get_columns();
+        let columns = other.columns();
         assert!(self.builders.len() == columns.len());
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {
                 Column::Series(s) => {
                     builder.gather_extend(s, idxs, share);
-                },
-                Column::Partitioned(p) => {
-                    // @scalar-opt
-                    builder.gather_extend(p.as_materialized_series(), idxs, share);
                 },
                 Column::Scalar(sc) => {
                     let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());
@@ -233,16 +204,12 @@ impl DataFrameBuilder {
     /// other dataframe is not rechunked.
     pub fn opt_gather_extend(&mut self, other: &DataFrame, idxs: &[IdxSize], share: ShareStrategy) {
         let mut trans_idxs = Vec::new();
-        let columns = other.get_columns();
+        let columns = other.columns();
         assert!(self.builders.len() == columns.len());
         for (builder, column) in self.builders.iter_mut().zip(columns) {
             match column {
                 Column::Series(s) => {
                     builder.opt_gather_extend(s, idxs, share);
-                },
-                Column::Partitioned(p) => {
-                    // @scalar-opt
-                    builder.opt_gather_extend(p.as_materialized_series(), idxs, share);
                 },
                 Column::Scalar(sc) => {
                     let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());

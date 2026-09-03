@@ -10,16 +10,13 @@ impl DateLikeNameSpace {
         self,
         n: Expr,
         week_mask: [bool; 7],
-        holidays: Vec<i32>,
+        holidays: Expr,
         roll: Roll,
     ) -> Expr {
-        self.0.map_binary(
-            FunctionExpr::Business(BusinessFunction::AddBusinessDay {
-                week_mask,
-                holidays,
-                roll,
-            }),
+        self.0.map_ternary(
+            FunctionExpr::Business(BusinessFunction::AddBusinessDay { week_mask, roll }),
             n,
+            holidays,
         )
     }
 
@@ -45,14 +42,6 @@ impl DateLikeNameSpace {
     pub fn cast_time_unit(self, tu: TimeUnit) -> Expr {
         self.0
             .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::CastTimeUnit(
-                tu,
-            )))
-    }
-
-    /// Change the underlying [`TimeUnit`] of the [`Series`]. This does not modify the data.
-    pub fn with_time_unit(self, tu: TimeUnit) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::WithTimeUnit(
                 tu,
             )))
     }
@@ -85,12 +74,11 @@ impl DateLikeNameSpace {
 
     /// Determine whether days are business days.
     #[cfg(feature = "business")]
-    pub fn is_business_day(self, week_mask: [bool; 7], holidays: Vec<i32>) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::Business(BusinessFunction::IsBusinessDay {
-                week_mask,
-                holidays,
-            }))
+    pub fn is_business_day(self, week_mask: [bool; 7], holidays: Expr) -> Expr {
+        self.0.map_binary(
+            FunctionExpr::Business(BusinessFunction::IsBusinessDay { week_mask }),
+            holidays,
+        )
     }
 
     // Compute whether the year of a Date/Datetime is a leap year.
@@ -166,12 +154,6 @@ impl DateLikeNameSpace {
     pub fn date(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::Date))
-    }
-
-    /// Get the (local) datetime of a Datetime.
-    pub fn datetime(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::Datetime))
     }
 
     /// Get the hour of a Datetime/Time64.

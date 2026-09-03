@@ -73,3 +73,7 @@ body[data-md-color-scheme="slate"] .excalidraw svg {
   will-change: filter;
   filter: invert(100%) hue-rotate(180deg);
 }
+
+.md-typeset__table code {
+  text-wrap: nowrap !important;
+}

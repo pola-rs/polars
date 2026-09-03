@@ -1,8 +1,8 @@
 use arrow::array::{Array, BinaryArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::OffsetsBuffer;
+use polars_buffer::Buffer;
 use polars_compute::filter::filter_with_bitmap;
 
 use super::utils::dict_indices_decoder;
@@ -164,7 +164,11 @@ impl utils::Decoder for BinaryDecoder {
         filter: Option<super::Filter>,
         chunks: &mut Vec<Self::Output>,
     ) -> ParquetResult<()> {
-        assert!(state.page_validity.is_none());
+        if state.page_validity.is_some() || matches!(filter, Some(Filter::Predicate(_))) {
+            // Currently we only use BinaryArray for internal (de)serialization, so this is a
+            // limited implementation to save effort.
+            unimplemented!()
+        }
 
         let mut target = Vec::new();
         let mut offsets =

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import os
 import time
 from datetime import date
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -13,7 +13,10 @@ from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars._typing import JoinStrategy
+    from tests.conftest import PlMonkeyPatch
 
 pytestmark = pytest.mark.xdist_group("streaming")
 
@@ -51,10 +54,11 @@ def test_streaming_block_on_literals_6054() -> None:
     ).sort("col_1").to_dict(as_series=False) == {"col_1": [0, 1], "col_2": [0, 5]}
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: non-pure map_batches
-def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+def test_streaming_streamable_functions(
+    plmonkeypatch: PlMonkeyPatch, capfd: Any
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
     calls = 0
 
     def func(df: pl.DataFrame) -> pl.DataFrame:
@@ -79,9 +83,12 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
 
 
 @pytest.mark.slow
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: timing
 def test_cross_join_stack() -> None:
+    morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
+    if morsel_size is not None and int(morsel_size) < 1000:
+        pytest.skip("test is too slow for small morsel sizes")
+
     a = pl.Series(np.arange(100_000)).to_frame().lazy()
     t0 = time.time()
     assert a.join(a, how="cross").head().collect(engine="streaming").shape == (5, 2)
@@ -121,12 +128,14 @@ def test_streaming_literal_expansion() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming
-def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+def test_streaming_apply(plmonkeypatch: PlMonkeyPatch, capfd: Any) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     q = pl.DataFrame({"a": [1, 2]}).lazy()
-    with pytest.warns(PolarsInefficientMapWarning, match="with this one instead"):
+    with pytest.warns(
+        PolarsInefficientMapWarning,
+        match="with this one instead",
+    ):
         (
             q.select(
                 pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Int64)
@@ -156,6 +165,10 @@ def test_streaming_sortedness_propagation_9494() -> None:
 @pytest.mark.write_disk
 @pytest.mark.slow
 def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None:
+    morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
+    if morsel_size is not None and int(morsel_size) < 1000:
+        pytest.skip("test is too slow for small morsel sizes")
+
     tmp_path.mkdir(exist_ok=True)
     p0 = tmp_path / "df0.parquet"
     p1 = tmp_path / "df1.parquet"
@@ -180,13 +193,13 @@ def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None
     join_strategies: list[JoinStrategy] = ["left", "inner"]
     for how in join_strategies:
         assert_frame_equal(
-            lf0.join(
-                lf1, left_on="id", right_on="id_r", how=how, maintain_order="left"
-            ).collect(engine="streaming"),
+            lf0.join(lf1, left_on="id", right_on="id_r", how=how).collect(
+                engine="streaming"
+            ),
             lf0.join(lf1, left_on="id", right_on="id_r", how=how).collect(
                 engine="in-memory"
             ),
-            check_row_order=how == "left",
+            check_row_order=False,
         )
 
 
@@ -284,21 +297,6 @@ def test_boolean_agg_schema() -> None:
 
 
 @pytest.mark.write_disk
-def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
-    with Path.open(tmp_path / "header_no_data.csv", "w") as f:
-        f.write("name, age\n")
-
-    schema = {"name": pl.String, "age": pl.Int32}
-    df = (
-        pl.scan_csv(tmp_path / "header_no_data.csv", schema=schema)
-        .head()
-        .collect(engine="streaming")
-    )
-    assert df.height == 0
-    assert df.schema == schema
-
-
-@pytest.mark.write_disk
 def test_streaming_with_hconcat(tmp_path: Path) -> None:
     df1 = pl.DataFrame(
         {
@@ -382,3 +380,80 @@ def test_i128_sum_reduction() -> None:
         .item()
         == 6
     )
+
+
+def test_streaming_boolean_multiply_unique_24609() -> None:
+    lf = pl.LazyFrame({"a": [True]}).with_columns(x=pl.col("a") * 2).unique("a")
+    expected = lf.collect(engine="in-memory")
+    result = lf.collect(engine="streaming")
+
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_streaming_boolean_multiply_dtype_24609() -> None:
+    lf = pl.LazyFrame({"a": [True]}).with_columns(x=pl.col("a") * 2)
+    assert (
+        lf.collect(engine="streaming").schema == lf.collect(engine="in-memory").schema
+    )
+
+
+def test_streaming_str_replace_scalar_pattern_26789(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
+
+    lf = pl.LazyFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"], "value": ["A", "B"]})
+    q = lf.select([pl.col("foo").str.replace(pl.col("foo").first(), pl.col("value"))])
+    out = q.collect(engine="streaming")
+    assert out.to_dict(as_series=False) == {"foo": ["A", "xyz 678 910t"]}
+
+
+def test_streaming_strptime_infer_datetime(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+    df = pl.DataFrame({"s": ["2020-01-01 00:00:00", "2021-06-15 12:30:00"]})
+    result = df.lazy().select(pl.col("s").str.to_datetime()).collect(engine="streaming")
+    expected = df.lazy().select(pl.col("s").str.to_datetime()).collect()
+    assert_frame_equal(result, expected)
+
+
+def test_streaming_strptime_infer_date(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+    df = pl.DataFrame({"s": ["2020-01-01", "2021-06-15", "2022-12-31"]})
+    result = df.lazy().select(pl.col("s").str.to_date()).collect(engine="streaming")
+    expected = df.lazy().select(pl.col("s").str.to_date()).collect()
+    assert_frame_equal(result, expected)
+
+
+def test_streaming_strptime_infer_all_null() -> None:
+    df = pl.DataFrame({"s": pl.Series([None, None, None], dtype=pl.String)})
+    result = df.lazy().select(pl.col("s").str.to_date()).collect(engine="streaming")
+    assert result["s"].is_null().all()
+    assert result["s"].dtype == pl.Date
+
+
+def test_streaming_strptime_infer_leading_nulls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+    df = pl.DataFrame({"s": [None, None, "2020-01-01", "2021-06-15"]})
+    result = df.lazy().select(pl.col("s").str.to_date()).collect(engine="streaming")
+    expected = df.lazy().select(pl.col("s").str.to_date()).collect()
+    assert_frame_equal(result, expected)
+
+
+def test_streaming_hconcat_strict_27372() -> None:
+    data = pl.LazyFrame({"ct": [1, 2, 3]}, schema={"ct": pl.UInt8})
+    lf = pl.concat(
+        [
+            data.select(
+                x=pl.col.ct
+                ^ pl.lit(pl.Series("LUT", [[0]], pl.List(pl.UInt8))).list.get(0)
+            ),
+            data,
+        ],
+        how="horizontal",
+    )
+
+    result = lf.collect(engine="streaming")
+    expected = lf.collect(engine="in-memory")
+    assert_frame_equal(result, expected)

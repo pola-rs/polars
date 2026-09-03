@@ -10,7 +10,7 @@ use arrow::datatypes::*;
 use arrow::record_batch::RecordBatchT;
 use arrow::types::{NativeType, i256};
 use ethnum::AsI256;
-use polars::prelude::{PlSmallStr, get_column_write_options};
+use polars::prelude::{PlSmallStr, get_encodings};
 use polars_error::PolarsResult;
 use polars_parquet::read::{self as p_read};
 use polars_parquet::write::*;
@@ -33,9 +33,9 @@ fn new_struct(
 
 pub fn read_column<R: Read + Seek>(mut reader: R, column: &str) -> PolarsResult<Box<dyn Array>> {
     let metadata = p_read::read_metadata(&mut reader)?;
-    let schema = p_read::infer_schema(&metadata)?;
+    let mut schema = p_read::infer_schema(&metadata)?;
 
-    let schema = schema.filter(|_, f| f.name == column);
+    schema.retain(|_, f| f.name == column);
 
     let mut reader = FileReader::new(reader, metadata.row_groups, schema, None);
 
@@ -529,7 +529,7 @@ pub fn pyarrow_nullable(column: &str) -> Box<dyn Array> {
         "int32_dict" => {
             let keys = PrimitiveArray::<i32>::from([Some(0), Some(1), None, Some(1)]);
             let values = Box::new(PrimitiveArray::<i32>::from_slice([10, 200]));
-            Box::new(DictionaryArray::try_from_keys(keys, values).unwrap())
+            Box::new(DictionaryArray::try_from_keys(keys, values, false).unwrap())
         },
         "timestamp_us" => Box::new(
             PrimitiveArray::<i64>::from(i64_values)
@@ -675,23 +675,19 @@ fn integration_write(
         data_page_size: None,
     };
 
-    let column_options = get_column_write_options(schema, &[]);
+    let encodings = get_encodings(schema);
 
-    let row_groups = RowGroupIterator::try_new(
-        chunks.iter().cloned().map(Ok),
-        schema,
-        options,
-        column_options.clone(),
-    )?;
+    let row_groups =
+        RowGroupIterator::try_new(chunks.iter().cloned().map(Ok), schema, options, encodings)?;
 
     let writer = Cursor::new(vec![]);
 
-    let mut writer = FileWriter::try_new(writer, schema.clone(), options, &column_options)?;
+    let mut writer = FileWriter::try_new(writer, schema.clone(), options)?;
 
     for group in row_groups {
-        writer.write(group?)?;
+        writer.write(u64::MAX, group?)?;
     }
-    writer.end(None, &column_options)?;
+    writer.end(None)?;
 
     Ok(writer.into_inner().into_inner())
 }

@@ -1,0 +1,172 @@
+use std::num::NonZeroUsize;
+use std::sync::Arc;
+
+use polars_async::executor::{self, TaskPriority};
+use polars_async::primitives::connector;
+use polars_core::runtime::ASYNC;
+use polars_error::PolarsResult;
+use polars_io::metrics::IOMetrics;
+use polars_plan::dsl::{SinkTarget, UnifiedSinkArgs};
+use polars_utils::index::idxsize_to_u64;
+use polars_utils::pl_str::PlSmallStr;
+
+use crate::execute::StreamingExecutionState;
+use crate::morsel::Morsel;
+use crate::nodes::io_sinks::components::morsel_resize_pipeline::MorselResizePipeline;
+use crate::nodes::io_sinks::components::sinked_path_info_list::{
+    SinkedPathInfoEntry, SinkedPathInfoList, call_sinked_paths_callback,
+    requested_sinked_paths_callback_with_non_path_error,
+};
+use crate::nodes::io_sinks::config::{IOSinkNodeConfig, IOSinkTarget};
+use crate::nodes::io_sinks::writers::create_file_writer_starter;
+use crate::nodes::io_sinks::writers::interface::{FileOpenTaskHandle, FileWriterStarter};
+use crate::utils::tokio_handle_ext;
+
+pub fn start_single_file_sink_pipeline(
+    node_name: PlSmallStr,
+    morsel_rx: connector::Receiver<Morsel>,
+    config: IOSinkNodeConfig,
+    execution_state: &StreamingExecutionState,
+    io_metrics: Option<Arc<IOMetrics>>,
+) -> PolarsResult<executor::AbortOnDropHandle<PolarsResult<()>>> {
+    let num_pipelines: NonZeroUsize = execution_state.num_pipelines.try_into().unwrap();
+
+    let inflight_morsel_limit = config.inflight_morsel_limit(num_pipelines);
+    let num_pipelines_per_sink = config.num_pipelines_per_sink(num_pipelines);
+    let upload_chunk_size = config.cloud_upload_chunk_size();
+    let upload_max_concurrency = config.upload_concurrency();
+    let bytes_bufferer_config = config.bytes_bufferer_config();
+
+    let IOSinkNodeConfig {
+        file_format,
+        target: IOSinkTarget::File(target),
+        unified_sink_args:
+            UnifiedSinkArgs {
+                mkdir,
+                maintain_order: _,
+                sync_on_close,
+                cloud_options,
+                sinked_paths_callback,
+            },
+        input_schema,
+    } = config
+    else {
+        unreachable!()
+    };
+
+    let (sinked_path_info_list, sinked_path_info_entry): (
+        Option<SinkedPathInfoList>,
+        Option<SinkedPathInfoEntry>,
+    ) = if sinked_paths_callback.is_some() {
+        let v = SinkedPathInfoList::default();
+        let entry = v.new_entry();
+
+        match &target {
+            SinkTarget::Path(path) => entry.set_path(path.clone()),
+            SinkTarget::Dyn(_) => return Err(requested_sinked_paths_callback_with_non_path_error()),
+        };
+
+        Some((v, entry))
+    } else {
+        None
+    }
+    .unzip();
+
+    let file_schema = input_schema;
+    let verbose = polars_core::config::verbose();
+
+    let file_open_task = {
+        let io_metrics = io_metrics.clone();
+        let sinked_path_info_entry = sinked_path_info_entry.clone();
+        tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(async move {
+            target
+                .open_into_writable_async(
+                    cloud_options.as_deref(),
+                    mkdir,
+                    upload_chunk_size,
+                    upload_max_concurrency.get(),
+                    io_metrics,
+                )
+                .await
+                .map(|x| {
+                    crate::nodes::io_sinks::components::writable::WriteTarget::new(
+                        x,
+                        sinked_path_info_entry,
+                    )
+                })
+        }))
+    };
+    let file_open_task = FileOpenTaskHandle::new(file_open_task, sync_on_close);
+
+    let file_writer_starter: Arc<dyn FileWriterStarter> =
+        create_file_writer_starter(&file_format, &file_schema, bytes_bufferer_config)?;
+    let target_sink_morsel_size = file_writer_starter.target_sink_morsel_size();
+
+    if verbose {
+        eprintln!(
+            "{node_name}: start_single_file_sink_pipeline: \
+            file_writer_starter: {}, \
+            target_sink_morsel_size: {:?}, \
+            inflight_morsel_limit: {}, \
+            upload_chunk_size: {:?}, \
+            upload_concurrency: {}, \
+            io_metrics: {}, \
+            build_sinked_path_info_list: {}",
+            file_writer_starter.writer_name(),
+            target_sink_morsel_size,
+            inflight_morsel_limit,
+            upload_chunk_size,
+            upload_max_concurrency,
+            io_metrics.is_some(),
+            sinked_path_info_list.is_some(),
+        )
+    }
+
+    let (writer_tx, writer_rx) = connector::connector();
+    let writer_handle =
+        file_writer_starter.start_file_writer(writer_rx, file_open_task, num_pipelines_per_sink)?;
+
+    let schema = Arc::clone(&file_schema);
+    let inflight_morsel_semaphore =
+        Arc::new(tokio::sync::Semaphore::new(inflight_morsel_limit.get()));
+
+    let resize_pipeline = MorselResizePipeline {
+        schema,
+        target_sink_morsel_size,
+        inflight_morsel_semaphore,
+        morsel_rx,
+        morsel_tx: writer_tx,
+    };
+
+    let resize_pipeline_handle = executor::AbortOnDropHandle::new(executor::spawn(
+        TaskPriority::High,
+        resize_pipeline.run(),
+    ));
+
+    let handle =
+        executor::AbortOnDropHandle::new(executor::spawn(TaskPriority::High, async move {
+            writer_handle.await?;
+            let sent_size = resize_pipeline_handle.await?;
+
+            if verbose {
+                eprintln!("{node_name}: Statistics: total_size: {sent_size:?}");
+            }
+
+            if let Some(sinked_paths_callback) = sinked_paths_callback {
+                sinked_path_info_entry
+                    .unwrap()
+                    .set_num_rows(idxsize_to_u64(sent_size.num_rows));
+
+                if verbose {
+                    eprintln!("{node_name}: Call sinked path info callback");
+                }
+
+                call_sinked_paths_callback(sinked_paths_callback, sinked_path_info_list.unwrap())
+                    .await?;
+            }
+
+            Ok(())
+        }));
+
+    Ok(handle)
+}

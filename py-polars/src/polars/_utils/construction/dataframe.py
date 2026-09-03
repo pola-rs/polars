@@ -9,7 +9,7 @@ from operator import itemgetter
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
+    cast,
 )
 
 import polars._reexport as pl
@@ -38,9 +38,9 @@ from polars._utils.construction.utils import (
 from polars._utils.various import (
     _is_generator,
     arrlen,
-    issue_warning,
     parse_version,
 )
+from polars._warnings import issue_warning
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Categorical,
@@ -60,11 +60,13 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, MutableMapping
+    from collections.abc import Callable, Iterable, MutableMapping
 
     from polars import DataFrame, Series
     from polars._plr import PySeries
     from polars._typing import (
+        ArrayLike,
+        NonNestedLiteral,
         Orientation,
         PolarsDataType,
         SchemaDefinition,
@@ -75,7 +77,7 @@ _MIN_NUMPY_SIZE_FOR_MULTITHREADING = 1000
 
 
 def dict_to_pydf(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    data: Mapping[str, ArrayLike | NonNestedLiteral | None],
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
@@ -113,35 +115,23 @@ def dict_to_pydf(
         if count_numpy >= 3:
             # yes, multi-threading was easier in python here; we cannot have multiple
             # threads running python and release the gil in pyo3 (it will deadlock).
+            from concurrent.futures import ThreadPoolExecutor
 
-            # (note: 'dummy' is threaded)
-            # We catch FileNotFoundError: see 16675
-            try:
-                import multiprocessing.dummy
-
-                pool_size = thread_pool_size()
-                with multiprocessing.dummy.Pool(pool_size) as pool:
-                    data = dict(
-                        zip(
-                            column_names,
-                            pool.map(
-                                lambda t: (
-                                    pl.Series(t[0], t[1], nan_to_null=nan_to_null)
-                                    if isinstance(t[1], np.ndarray)
-                                    else t[1]
-                                ),
-                                list(data.items()),
+            pool_size = thread_pool_size()
+            with ThreadPoolExecutor(max_workers=pool_size) as pool:
+                data = dict(
+                    zip(
+                        column_names,
+                        pool.map(
+                            lambda t: (
+                                pl.Series(t[0], t[1], nan_to_null=nan_to_null)
+                                if isinstance(t[1], np.ndarray)
+                                else t[1]
                             ),
-                        )
+                            list(data.items()),
+                        ),
+                        strict=True,
                     )
-            except FileNotFoundError:
-                return dict_to_pydf(
-                    data=data,
-                    schema=schema,
-                    schema_overrides=schema_overrides,
-                    strict=strict,
-                    nan_to_null=nan_to_null,
-                    allow_multithreaded=False,
                 )
 
     if not data and schema_overrides:
@@ -318,13 +308,15 @@ def _post_apply_columns(
     for i, col in enumerate(columns):
         dtype = dtypes.get(col)
         pydf_dtype = pydf_dtypes[i]
+        if dtype is None:
+            continue
         if dtype == Categorical != pydf_dtype:
             column_casts.append(F.col(col).cast(Categorical, strict=strict)._pyexpr)
         elif dtype == Enum != pydf_dtype:
             column_casts.append(F.col(col).cast(dtype, strict=strict)._pyexpr)
         elif structs and (struct := structs.get(col)) and struct != pydf_dtype:
             column_casts.append(F.col(col).cast(struct, strict=strict)._pyexpr)
-        elif dtype is not None and dtype != Unknown and dtype != pydf_dtype:
+        elif dtype != Unknown and dtype != pydf_dtype:
             if dtype.is_temporal() and dtype != Duration and pydf_dtype == String:
                 temporal_cast = F.col(col).str.strptime(dtype, strict=strict)._pyexpr  # type: ignore[arg-type]
                 column_casts.append(temporal_cast)
@@ -343,7 +335,7 @@ def _post_apply_columns(
 
 
 def _expand_dict_values(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    data: Mapping[str, ArrayLike | NonNestedLiteral | None],
     *,
     schema_overrides: SchemaDict | None = None,
     strict: bool = True,
@@ -391,6 +383,7 @@ def _expand_dict_values(
                     updated_data[name] = s
 
                 elif arrlen(val) is not None or _is_generator(val):
+                    val = cast("Iterable[Any]", val)  # help type-checkers
                     updated_data[name] = pl.Series(
                         name=name,
                         values=val,
@@ -398,8 +391,8 @@ def _expand_dict_values(
                         strict=strict,
                         nan_to_null=nan_to_null,
                     )
-                elif val is None or isinstance(  # type: ignore[redundant-expr]
-                    val, (int, float, str, bool, date, datetime, time, timedelta)
+                elif val is None or isinstance(
+                    val, (int, float, str, bytes, bool, date, datetime, time, timedelta)
                 ):
                     updated_data[name] = F.repeat(
                         val, array_len, dtype=dtype, eager=True
@@ -411,8 +404,12 @@ def _expand_dict_values(
 
         elif all((arrlen(val) == 0) for val in data.values()):
             for name, val in data.items():
+                val = cast("Iterable[Any]", val)  # help type-checkers
                 updated_data[name] = pl.Series(
-                    name, values=val, dtype=dtypes.get(name), strict=strict
+                    name,
+                    values=val,
+                    dtype=dtypes.get(name),
+                    strict=strict,
                 )
 
         elif all((arrlen(val) is None) for val in data.values()):
@@ -429,17 +426,17 @@ def _expand_dict_values(
 
 
 def _expand_dict_data(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    data: Mapping[str, ArrayLike | NonNestedLiteral | None],
     dtypes: SchemaDict,
     *,
     strict: bool = True,
-) -> Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series]:
+) -> Mapping[str, ArrayLike | NonNestedLiteral | None]:
     """
     Expand any unsized generators/iterators.
 
     (Note that `range` is sized, and will take a fast-path on Series init).
     """
-    expanded_data = {}
+    expanded_data: dict[str, ArrayLike | NonNestedLiteral | None] = {}
     for name, val in data.items():
         expanded_data[name] = (
             pl.Series(name, val, dtypes.get(name), strict=strict)
@@ -492,7 +489,7 @@ def _sequence_to_pydf_dispatcher(
     # third-party libraries (such as numpy/pandas) should be identified inline (below)
     # and THEN registered for dispatch (here) so as not to break lazy-loading behaviour.
 
-    common_params = {
+    common_params: dict[str, Any] = {
         "data": data,
         "schema": schema,
         "schema_overrides": schema_overrides,
@@ -633,13 +630,13 @@ def _sequence_of_sequence_to_pydf(
 
 
 def _sequence_of_series_to_pydf(
-    first_element: Series,
+    first_element: Series,  # noqa: ARG001
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     *,
     schema_overrides: SchemaDict | None,
     strict: bool,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     series_names = [s.name for s in data]
     column_names, schema_overrides = _unpack_schema(
@@ -701,14 +698,14 @@ def _sequence_of_tuple_to_pydf(
 @_sequence_to_pydf_dispatcher.register(Mapping)
 @_sequence_to_pydf_dispatcher.register(dict)
 def _sequence_of_dict_to_pydf(
-    first_element: dict[str, Any],
+    first_element: Mapping[str, Any],  # noqa: ARG001
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     *,
     schema_overrides: SchemaDict | None,
     strict: bool,
     infer_schema_length: int | None,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides
@@ -731,13 +728,13 @@ def _sequence_of_dict_to_pydf(
 
 @_sequence_to_pydf_dispatcher.register(str)
 def _sequence_of_elements_to_pydf(
-    first_element: Any,
+    first_element: Any,  # noqa: ARG001
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     schema_overrides: SchemaDict | None,
     *,
     strict: bool,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides, n_expected=1
@@ -765,13 +762,13 @@ def _sequence_of_numpy_to_pydf(
 
 
 def _sequence_of_pandas_to_pydf(
-    first_element: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,
+    first_element: pd.Series[Any] | pd.Index[Any] | pd.DatetimeIndex,  # noqa: ARG001
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     schema_overrides: SchemaDict | None,
     *,
     strict: bool,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     if schema is None:
         column_names: list[str] = []
@@ -801,7 +798,7 @@ def _sequence_of_dataclasses_to_pydf(
     infer_schema_length: int | None,
     *,
     strict: bool = True,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     """Initialize DataFrame from Python dataclasses."""
     from dataclasses import asdict, astuple
@@ -848,7 +845,7 @@ def _sequence_of_pydantic_models_to_pydf(
     infer_schema_length: int | None,
     *,
     strict: bool,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ARG001
 ) -> PyDataFrame:
     """Initialise DataFrame from pydantic model objects."""
     import pydantic  # note: must already be available in the env here
@@ -952,7 +949,7 @@ def _establish_dataclass_or_model_schema(
             )
 
     if model_fields and len(model_fields) == len(overrides):
-        overrides = dict(zip(model_fields, overrides.values()))
+        overrides = dict(zip(model_fields, overrides.values(), strict=True))
 
     return unpack_nested, column_names, schema_overrides, overrides
 
@@ -1099,17 +1096,20 @@ def pandas_to_pydf(
     _check_pandas_columns(data, include_index=include_index)
 
     convert_index = include_index and not _pandas_has_default_index(data)
-    if not convert_index and all(
-        is_simple_numpy_backed_pandas_series(data[col]) for col in data.columns
-    ):
-        # Convert via NumPy directly, no PyArrow needed.
-        return pl.DataFrame(
-            {str(col): data[col].to_numpy() for col in data.columns},
-            schema=schema,
-            strict=strict,
-            schema_overrides=schema_overrides,
-            nan_to_null=nan_to_null,
-        )._df
+
+    if not convert_index:
+        if data.shape[1] == 0:
+            return PyDataFrame.empty_with_height(data.shape[0])
+
+        if all(is_simple_numpy_backed_pandas_series(data[col]) for col in data.columns):
+            # Convert via NumPy directly, no PyArrow needed.
+            return pl.DataFrame(
+                {str(col): data[col].to_numpy() for col in data.columns},
+                schema=schema,
+                strict=strict,
+                schema_overrides=schema_overrides,
+                nan_to_null=nan_to_null,
+            )._df
 
     if not _PYARROW_AVAILABLE:
         msg = (
@@ -1161,9 +1161,8 @@ def _pandas_has_default_index(df: pd.DataFrame) -> bool:
     else:
         # finally, is the index _equivalent_ to a default unnamed
         # integer index with frame data that was previously sorted
-        return (
-            str(df.index.dtype).startswith("int")
-            and (df.index.sort_values() == np.arange(len(df))).all()
+        return str(df.index.dtype).startswith("int") and bool(
+            (df.index.sort_values() == np.arange(len(df))).all()
         )
 
 
@@ -1189,6 +1188,8 @@ def arrow_to_pydf(
     batches: list[pa.RecordBatch]
     if isinstance(data, pa.RecordBatch):
         batches = [data]
+    elif data.num_columns == 0:
+        return PyDataFrame.empty_with_height(data.num_rows)
     else:
         batches = data.to_batches()
 
@@ -1240,6 +1241,9 @@ def numpy_to_pydf(
             n_columns = 1
 
         elif len(shape) == 2:
+            if shape[1] == 0:
+                return PyDataFrame.empty_with_height(shape[0])
+
             if orient is None and schema is None:
                 # default convention; first axis is rows, second axis is columns
                 n_columns = shape[1]
@@ -1293,7 +1297,7 @@ def numpy_to_pydf(
                 strict=strict,
                 nan_to_null=nan_to_null,
             )._s
-            for series_name, record_name in zip(column_names, record_names)
+            for series_name, record_name in zip(column_names, record_names, strict=True)
         ]
     elif shape == (0,) and n_columns == 0:
         data_series = []

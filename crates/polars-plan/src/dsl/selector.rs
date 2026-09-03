@@ -10,30 +10,28 @@ use super::*;
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for TimeUnitSet {
-    fn schema_name() -> String {
-        "TimeUnitSet".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "TimeUnitSet".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "TimeUnitSet"))
     }
 
-    fn json_schema(_generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        use schemars::json_schema;
         use serde_json::{Map, Value};
 
+        // Add a map of flag names and bit patterns to detect schema changes
         let name_to_bits: Map<String, Value> = Self::all()
             .iter_names()
             .map(|(name, flag)| (name.to_owned(), flag.bits().into()))
             .collect();
 
-        schemars::schema::Schema::Object(schemars::schema::SchemaObject {
-            instance_type: Some(schemars::schema::InstanceType::String.into()),
-            format: Some("bitflags".to_owned()),
-            extensions: schemars::Map::from_iter([
-                // Add a map of flag names and bit patterns to detect schema changes
-                ("bitflags".to_owned(), Value::Object(name_to_bits)),
-            ]),
-            ..Default::default()
+        json_schema!({
+            "type": "string",
+            "format": "bitflags",
+            "bitflags": name_to_bits
         })
     }
 }
@@ -174,7 +172,7 @@ pub enum Selector {
 
 fn dtype_selector(
     schema: &Schema,
-    ignored_columns: &PlHashSet<PlSmallStr>,
+    ignored_columns: &PlIndexSet<PlSmallStr>,
     f: impl Fn(&DataType) -> bool,
 ) -> PlIndexSet<PlSmallStr> {
     PlIndexSet::from_iter(
@@ -194,7 +192,7 @@ impl Selector {
     pub fn into_columns(
         &self,
         schema: &Schema,
-        ignored_columns: &PlHashSet<PlSmallStr>,
+        ignored_columns: &PlIndexSet<PlSmallStr>,
     ) -> PolarsResult<PlIndexSet<PlSmallStr>> {
         let out = match self {
             Self::Union(lhs, rhs) => {
@@ -314,7 +312,7 @@ impl Selector {
     ///
     /// You may also use regexes in the exclude as long as they start with `^` and end with `$`.
     pub fn exclude_cols(self, columns: impl IntoVec<PlSmallStr>) -> Self {
-        self - cols(columns.into_vec())
+        self - functions::cols(columns.into_vec())
     }
 
     pub fn exclude_dtype<D: AsRef<[DataType]>>(self, dtypes: D) -> Self {
@@ -408,7 +406,7 @@ impl DataTypeSelector {
     fn into_columns(
         &self,
         schema: &Schema,
-        ignored_columns: &PlHashSet<PlSmallStr>,
+        ignored_columns: &PlIndexSet<PlSmallStr>,
     ) -> PolarsResult<PlIndexSet<PlSmallStr>> {
         Ok(match self {
             Self::Union(lhs, rhs) => {
@@ -448,7 +446,7 @@ impl DataTypeSelector {
                 .collect(),
             Self::Empty => Default::default(),
             Self::AnyOf(dtypes) => {
-                let dtypes = PlHashSet::from_iter(dtypes.iter().cloned());
+                let dtypes = PlIndexSet::from_iter(dtypes.iter().cloned());
                 dtype_selector(schema, ignored_columns, |dtype| dtypes.contains(dtype))
             },
             Self::Integer => dtype_selector(schema, ignored_columns, |dtype| dtype.is_integer()),

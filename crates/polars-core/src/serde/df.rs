@@ -1,3 +1,4 @@
+use std::io::{Read, Seek};
 use std::sync::Arc;
 
 use arrow::datatypes::Metadata;
@@ -14,6 +15,7 @@ use crate::chunked_array::flags::StatisticsFlags;
 use crate::config;
 use crate::frame::chunk_df_for_writing;
 use crate::prelude::{CompatLevel, DataFrame, SchemaExt};
+use crate::schema::Schema;
 use crate::utils::accumulate_dataframes_vertical_unchecked;
 
 const FLAGS_KEY: PlSmallStr = PlSmallStr::from_static("_PL_FLAGS");
@@ -33,7 +35,7 @@ impl DataFrame {
             arrow::io::ipc::write::StreamWriter::new(writer, WriteOptions { compression: None });
 
         ipc_writer.set_custom_schema_metadata(Arc::new(Metadata::from_iter(
-            self.get_columns().iter().map(|c| {
+            self.columns().iter().map(|c| {
                 (
                     format_pl_smallstr!("{}{}", FLAGS_KEY, c.name()),
                     PlSmallStr::from(c.get_flags().bits().to_string()),
@@ -45,6 +47,7 @@ impl DataFrame {
             FLAGS_KEY,
             serde_json::to_string(
                 &self
+                    .columns()
                     .iter()
                     .map(|s| s.get_flags().bits())
                     .collect::<Vec<u32>>(),
@@ -72,8 +75,9 @@ impl DataFrame {
         Ok(buf)
     }
 
-    pub fn deserialize_from_reader(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
+    pub fn deserialize_from_reader<T: Read + Seek>(reader: &mut T) -> PolarsResult<Self> {
         let mut md = read_stream_metadata(reader)?;
+        let pl_schema = Schema::from_arrow_schema(&md.schema);
 
         let custom_metadata = md.custom_schema_metadata.take();
 
@@ -88,8 +92,9 @@ impl DataFrame {
             .collect::<PolarsResult<Vec<DataFrame>>>()?;
 
         if dfs.is_empty() {
-            return Ok(DataFrame::empty());
+            return Ok(DataFrame::empty_with_schema(&pl_schema));
         }
+
         let mut df = accumulate_dataframes_vertical_unchecked(dfs);
 
         // Set custom metadata (fallible)
@@ -123,7 +128,10 @@ impl DataFrame {
 
             let mut n_set = 0;
 
-            for (c, v) in unsafe { df.get_columns_mut() }.iter_mut().zip(flags) {
+            for (c, v) in unsafe { df.columns_mut_retain_schema() }
+                .iter_mut()
+                .zip(flags)
+            {
                 if let Some(flags) = StatisticsFlags::from_bits(v) {
                     n_set += c.set_flags(flags) as usize;
                 }
@@ -167,7 +175,8 @@ impl<'de> Deserialize<'de> for DataFrame {
     {
         deserialize_map_bytes(deserializer, |b| {
             let v = &mut b.as_ref();
-            Self::deserialize_from_reader(v)
+            let mut reader = std::io::Cursor::new(v);
+            Self::deserialize_from_reader(&mut reader)
         })?
         .map_err(D::Error::custom)
     }
@@ -175,15 +184,15 @@ impl<'de> Deserialize<'de> for DataFrame {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for DataFrame {
-    fn schema_name() -> String {
-        "DataFrame".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "DataFrame".into()
     }
 
     fn schema_id() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(concat!(module_path!(), "::", "DataFrame"))
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         Vec::<u8>::json_schema(generator)
     }
 }

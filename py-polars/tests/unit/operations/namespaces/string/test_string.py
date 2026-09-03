@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from datetime import date, datetime, time
 from typing import Any
 
 import pytest
@@ -7,9 +9,11 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import (
+    AttributeRemovedError,
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
+    PolarsInefficientMapWarning,
     ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -58,6 +62,28 @@ def test_str_slice_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
     with pytest.raises(ShapeError):
         df.select(pl.col("num").str.slice(pl.Series([1, 2])))
+
+
+@pytest.mark.parametrize("descending", [False, True])
+def test_str_slice_sorted_flag(descending: bool) -> None:
+    s = pl.Series("a", ["xb", "ya", "zc"]).sort(descending=descending)
+    flag = "SORTED_DESC" if descending else "SORTED_ASC"
+    kept = ["z", "y", "x"] if descending else ["x", "y", "z"]
+    assert s.flags[flag]
+
+    # prefix -> order preserved, flag kept (in whichever direction it was set)
+    for prefix in (s.str.head(1), s.str.slice(0, 1)):
+        assert prefix.to_list() == kept
+        assert prefix.flags[flag]
+        assert prefix.min() == "x"
+        assert prefix.max() == "z"
+
+    # non-prefix -> order not preserved, flag cleared in both directions
+    for sliced in (s.str.slice(1), s.str.tail(1)):
+        assert not sliced.flags["SORTED_ASC"]
+        assert not sliced.flags["SORTED_DESC"]
+        assert sliced.min() == "a"
+        assert sliced.max() == "c"
 
 
 @pytest.mark.parametrize(
@@ -859,6 +885,85 @@ def test_json_decode_primitive_to_list_11053() -> None:
     assert_frame_equal(output, expected)
 
 
+def test_json_decode_temporal_strings() -> None:
+    df = pl.DataFrame(
+        {
+            "js": [
+                '{"mkt": "AUD/USD", "value": 0.6402, "dtm": "2024-01-04 07:10:13",'
+                ' "dt": "2024-01-04", "tm": "07:10:13"}',
+                '{"mkt": "AUD/USD", "value": 0.6473, "dtm": "2025-02-05 08:11:14",'
+                ' "dt": "2025-02-05", "tm": "08:11:14"}',
+                '{"mkt": "AUD/USD", "value": 0.6078, "dtm": "2026-03-06 09:12:15",'
+                ' "dt": "2026-03-06", "tm": "09:12:15"}',
+                '{"mkt": "AUD/USD", "value": null, "dtm": null, "dt": null, "tm": null}',
+            ]
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "mkt": ["AUD/USD", "AUD/USD", "AUD/USD", "AUD/USD"],
+            "value": [0.6402, 0.6473, 0.6078, None],
+            "dtm": [
+                datetime(2024, 1, 4, 7, 10, 13),
+                datetime(2025, 2, 5, 8, 11, 14),
+                datetime(2026, 3, 6, 9, 12, 15),
+                None,
+            ],
+            "dt": [
+                date(2024, 1, 4),
+                date(2025, 2, 5),
+                date(2026, 3, 6),
+                None,
+            ],
+            "tm": [
+                time(7, 10, 13),
+                time(8, 11, 14),
+                time(9, 12, 15),
+                None,
+            ],
+        },
+        schema={
+            "mkt": pl.String,
+            "value": pl.Float64,
+            "dtm": pl.Datetime("us"),
+            "dt": pl.Date,
+            "tm": pl.Time,
+        },
+    )
+    js_schema = pl.Struct(
+        {
+            "mkt": pl.String,
+            "value": pl.Float64,
+            "dtm": pl.Datetime("us"),
+            "dt": pl.Date,
+            "tm": pl.Time,
+        }
+    )
+    res = df.select(pl.col("js").str.json_decode(dtype=js_schema))
+    assert_frame_equal(res.unnest("js"), expected)
+
+
+def test_json_decode_temporal_numeric() -> None:
+    schema = pl.Struct({"dt": pl.Date, "tm": pl.Time})
+    df = pl.DataFrame(
+        {
+            "js": [
+                '{"dt": 19726, "tm": 25813000000000}',
+                '{"dt": null, "tm": null}',
+            ]
+        }
+    )
+    out = df.select(pl.col("js").str.json_decode(dtype=schema)).unnest("js")
+    expected = pl.DataFrame(
+        {
+            "dt": [date(2024, 1, 4), None],
+            "tm": [time(7, 10, 13), None],
+        },
+        schema={"dt": pl.Date, "tm": pl.Time},
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_jsonpath_single() -> None:
     s = pl.Series(['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}'])
     expected = pl.Series(["1", None, "2", "2.1", "true"])
@@ -1039,9 +1144,9 @@ def test_contains_expr() -> None:
         (["me"], False, True),
         (["Me"], False, False),
         (["Me"], True, True),
-        (pl.Series(["me", "they"]), False, True),
-        (pl.Series(["Me", "they"]), False, False),
-        (pl.Series(["Me", "they"]), True, True),
+        (pl.Series([["me", "they"]]), False, True),
+        (pl.Series([["Me", "they"]]), False, False),
+        (pl.Series([["Me", "they"]]), True, True),
         (["me", "they"], False, True),
         (["Me", "they"], False, False),
         (["Me", "they"], True, True),
@@ -1077,6 +1182,13 @@ def test_contains_any(
             )
         )
     )
+
+
+def test_contains_any_flat_dtype_invalid() -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+    msg = "`str.contains_any` with a flat string datatype is invalid. Use `implode` to wrap the string value into a list."
+    with pytest.raises(InvalidOperationError, match=re.escape(msg)):
+        df.select(pl.col("text").str.contains_any(pl.Series(["me", "they"])))
 
 
 def test_replace() -> None:
@@ -1177,7 +1289,7 @@ def test_replace_all() -> None:
     )
 
 
-def test_replace_all_literal_no_caputures() -> None:
+def test_replace_all_literal_no_captures() -> None:
     # When using literal = True, capture groups should be disabled
 
     # Single row code path in Rust
@@ -1205,7 +1317,7 @@ def test_replace_all_literal_no_caputures() -> None:
     assert df2.get_column("text2")[1] == "I lost $2 yesterday."
 
 
-def test_replace_literal_no_caputures() -> None:
+def test_replace_literal_no_captures() -> None:
     # When using literal = True, capture groups should be disabled
 
     # Single row code path in Rust
@@ -1254,47 +1366,95 @@ def test_replace_expressions() -> None:
 
 
 @pytest.mark.parametrize(
-    ("pattern", "replacement", "case_insensitive", "expected"),
+    ("pattern", "replacement", "case_insensitive", "leftmost", "expected"),
     [
-        (["say"], "", False, "Tell me what you want"),
-        (["me"], ["them"], False, "Tell them what you want"),
-        (["who"], ["them"], False, "Tell me what you want"),
-        (["me", "you"], "it", False, "Tell it what it want"),
-        (["Me", "you"], "it", False, "Tell me what it want"),
-        (["me", "you"], ["it"], False, "Tell it what it want"),
-        (["me", "you"], ["you", "me"], False, "Tell you what me want"),
-        (["me", "You", "them"], "it", False, "Tell it what you want"),
-        (["Me", "you"], "it", True, "Tell it what it want"),
-        (["me", "YOU"], ["you", "me"], True, "Tell you what me want"),
-        (pl.Series(["me", "YOU"]), ["you", "me"], False, "Tell you what you want"),
-        (pl.Series(["me", "YOU"]), ["you", "me"], True, "Tell you what me want"),
+        (["say"], [""], False, False, "Tell me what you want"),
+        (["me"], ["them"], False, False, "Tell them what you want"),
+        (["who"], ["them"], False, False, "Tell me what you want"),
+        (["me", "you"], ["it"], False, False, "Tell it what it want"),
+        (["Me", "you"], ["it"], False, False, "Tell me what it want"),
+        (["me", "you"], ["you", "me"], False, False, "Tell you what me want"),
+        (["me", "You", "them"], ["it"], False, False, "Tell it what you want"),
+        (["Me", "you"], ["it"], True, False, "Tell it what it want"),
+        (["me", "YOU"], ["you", "me"], True, False, "Tell you what me want"),
+        (
+            pl.Series([["me", "YOU"]]),
+            ["you", "me"],
+            False,
+            False,
+            "Tell you what you want",
+        ),
+        (
+            pl.Series([["me", "YOU"]]),
+            ["you", "me"],
+            True,
+            False,
+            "Tell you what me want",
+        ),
+        (
+            ["Tell me", "Tell"],
+            ["Don't tell", "Text"],
+            False,
+            False,
+            "Text me what you want",
+        ),
+        (
+            ["Tell me", "Tell"],
+            ["Don't tell me", "Text"],
+            False,
+            True,
+            "Don't tell me what you want",
+        ),
     ],
 )
 def test_replace_many(
     pattern: pl.Series | list[str],
     replacement: pl.Series | list[str] | str,
     case_insensitive: bool,
+    leftmost: bool,
     expected: str,
 ) -> None:
     df = pl.DataFrame({"text": ["Tell me what you want"]})
     # series
-    assert (
-        expected
-        == df["text"]
-        .str.replace_many(pattern, replacement, ascii_case_insensitive=case_insensitive)
+    val = (
+        df["text"]
+        .str.replace_many(
+            pattern,
+            replacement,
+            ascii_case_insensitive=case_insensitive,
+            leftmost=leftmost,
+        )
         .item()
     )
+    assert expected == val, val
     # expr
-    assert (
-        expected
-        == df.select(
+    val = df.select(
+        pl.col("text").str.replace_many(
+            pattern,
+            replacement,
+            ascii_case_insensitive=case_insensitive,
+            leftmost=leftmost,
+        )
+    ).item()
+    assert expected == val, val
+
+
+def test_replace_many_flat_dtype_invalid() -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+    msg = "`str.replace_many` with a flat str datatype as pattern is invalid. Use `implode` to wrap the string value into a list."
+    with pytest.raises(InvalidOperationError, match=re.escape(msg)):
+        df.select(
             pl.col("text").str.replace_many(
-                pattern,
-                replacement,
-                ascii_case_insensitive=case_insensitive,
+                pl.Series(["me", "they"]), pl.Series([["it"]])
             )
-        ).item()
-    )
+        )
+    msg = "`str.replace_many` with a flat str datatype as replacement is invalid. Use `implode` to wrap the string value into a list."
+    with pytest.raises(InvalidOperationError, match=re.escape(msg)):
+        df.select(
+            pl.col("text").str.replace_many(
+                pl.Series([["me", "they"]]), pl.Series(["it"])
+            )
+        )
 
 
 def test_replace_many_groupby() -> None:
@@ -1304,7 +1464,9 @@ def test_replace_many_groupby() -> None:
             "g": [0, 0, 0, 1, 1, 1, 2, 2, 2],
         }
     )
-    out = df.group_by("g").agg(pl.col.x.str.replace_many(pl.col.x.head(2), ""))
+    out = df.group_by("g").agg(
+        pl.col.x.str.replace_many(pl.col.x.head(2).implode(), pl.Series([[""]]))
+    )
     expected = pl.DataFrame(
         {
             "g": [0, 1, 2],
@@ -1373,7 +1535,7 @@ def test_replace_many_invalid_inputs() -> None:
         df.select(pl.col("text").str.replace_many(["me"]))
 
     with pytest.raises(
-        InvalidOperationError,
+        ShapeError,
         match="expected the same amount of patterns as replacement strings",
     ):
         df.select(pl.col("text").str.replace_many(["a"], ["b", "c"]))
@@ -1387,7 +1549,7 @@ def test_replace_many_invalid_inputs() -> None:
         df.select(pl.col("text").str.replace_many(["me"]))
 
     with pytest.raises(
-        InvalidOperationError,
+        ShapeError,
         match="expected the same amount of patterns as replacement strings",
     ):
         s.str.replace_many(["a"], ["b", "c"])
@@ -1829,28 +1991,6 @@ def test_splitn_expr() -> None:
 def test_titlecase() -> None:
     df = pl.DataFrame(
         {
-            "misc": [
-                "welcome to my world",
-                "double  space",
-                "and\ta\t tab",
-                "by jean-paul sartre, 'esq'",
-                "SOMETIMES/life/gives/you/a/2nd/chance",
-            ],
-        }
-    )
-    expected = [
-        "Welcome To My World",
-        "Double  Space",
-        "And\tA\t Tab",
-        "By Jean-Paul Sartre, 'Esq'",
-        "Sometimes/Life/Gives/You/A/2nd/Chance",
-    ]
-    actual = df.select(pl.col("misc").str.to_titlecase()).to_series()
-    for ex, act in zip(expected, actual):
-        assert ex == act, f"{ex} != {act}"
-
-    df = pl.DataFrame(
-        {
             "quotes": [
                 "'e.t. phone home'",
                 "you talkin' to me?",
@@ -1858,23 +1998,20 @@ def test_titlecase() -> None:
                 "to infinity,and BEYOND!",
                 "say 'what' again!i dare you - I\u00a0double-dare you!",
                 "What.we.got.here... is#failure#to#communicate",
+                "welcome to my world",
+                "double  space",
+                "and\ta\t tab",
+                "by jean-paul sartre, 'esq'",
+                "SOMETIMES/life/gives/you/a/2nd/chance",
             ]
         }
     )
-    expected_str = [
-        "'E.T. Phone Home'",
-        "You Talkin' To Me?",
-        "I Feel The Need--The Need For Speed",
-        "To Infinity,And Beyond!",
-        "Say 'What' Again!I Dare You - I\u00a0Double-Dare You!",
-        "What.We.Got.Here... Is#Failure#To#Communicate",
-    ]
-    expected_py = [s.title() for s in df["quotes"].to_list()]
-    for ex_str, ex_py, act in zip(
-        expected_str, expected_py, df["quotes"].str.to_titlecase()
-    ):
-        assert ex_str == act, f"{ex_str} != {act}"
-        assert ex_py == act, f"{ex_py} != {act}"
+
+    with pytest.warns(PolarsInefficientMapWarning):
+        assert_frame_equal(
+            df.select(pl.col("quotes").str.to_titlecase()),
+            df.select(pl.col("quotes").map_elements(lambda s: s.title())),
+        )
 
 
 def test_string_replace_with_nulls_10124() -> None:
@@ -1946,6 +2083,28 @@ def test_replace_lit_n_char_13385(
     res = s.str.replace("a", "b", literal=True)
     expected_s = pl.Series(expected_data, dtype=pl.String)
     assert_series_equal(res, expected_s)
+
+
+def test_find_many_raises() -> None:
+    df = pl.DataFrame({"values": ["discontent", "foobar"]})
+    patterns = ["winter", "disco", "onte", "discontent"]
+    with pytest.raises(
+        ValueError, match="can not match overlapping patterns when leftmost == True"
+    ):
+        df.select(
+            pl.col("values").str.find_many(patterns, leftmost=True, overlapping=True)
+        )
+
+
+def test_extract_many_raises() -> None:
+    df = pl.DataFrame({"values": ["discontent", "foobar"]})
+    patterns = ["winter", "disco", "onte", "discontent"]
+    with pytest.raises(
+        ValueError, match="can not match overlapping patterns when leftmost == True"
+    ):
+        df.select(
+            pl.col("values").str.extract_many(patterns, leftmost=True, overlapping=True)
+        )
 
 
 def test_extract_many() -> None:
@@ -2127,3 +2286,180 @@ def test_str_replace_null_19601() -> None:
         df.select(result=pl.col("key").str.replace("1", pl.col("1"))),
         pl.DataFrame({"result": ["---", "2"]}),
     )
+
+
+def test_str_json_decode_25237() -> None:
+    s = pl.Series(['[{"a": 0, "b": 1}, {"b": 2}]'])
+
+    dtypes = {s.str.json_decode().dtype for _ in range(20)}
+
+    assert len(dtypes) == 1
+
+
+def test_json_decode_decimal_25789() -> None:
+    s = pl.Series(
+        ['{"a": 1.23}', '{"a": 4.56}', '{"a": null}', '{"a": "30.1271239481230948"}']
+    )
+    result = s.str.json_decode(dtype=pl.Struct({"a": pl.Decimal(4, 2)}))
+    expected = pl.Series(
+        [{"a": 1.23}, {"a": 4.56}, {"a": None}, {"a": 30.13}],
+        dtype=pl.Struct({"a": pl.Decimal(4, 2)}),
+    )
+    assert_series_equal(result, expected)
+
+    with pytest.raises(
+        ComputeError, match=r"error deserializing value.*30.127.* as Decimal\(3, 2\)"
+    ):
+        s.str.json_decode(dtype=pl.Struct({"a": pl.Decimal(3, 2)}))
+
+
+def test_json_decode_i128() -> None:
+    s = pl.Series(
+        [
+            '{"a":170141183460469231731687303715884105723}',
+            '{"a":null}',
+            '{"a":-170141183460469231731687303715759193239}',
+        ]
+    )
+    result = s.str.json_decode(dtype=pl.Struct({"a": pl.Int128}))
+    expected = pl.Series(
+        [{"a": 2**127 - 5}, {"a": None}, {"a": -(2**127) + 124912489}],
+        dtype=pl.Struct({"a": pl.Int128}),
+    )
+    assert_series_equal(result, expected)
+
+
+def test_json_decode_u128() -> None:
+    s = pl.Series(['{"a":340282366920938463463374607431768211451}', '{"a":null}'])
+    result = s.str.json_decode(dtype=pl.Struct({"a": pl.UInt128}))
+    expected = pl.Series(
+        [{"a": 2**128 - 5}, {"a": None}],
+        dtype=pl.Struct({"a": pl.UInt128}),
+    )
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize("dtype", [pl.Enum(["bar", "foo"]), pl.Categorical])
+def test_json_decode_categorical_enum(dtype: pl.DataType) -> None:
+    s = pl.Series(['{"a":"foo"}', '{"a":"bar"}', '{"a":null}', '{"a":"foo"}'])
+    result = s.str.json_decode(dtype=pl.Struct({"a": dtype}))
+    expected = pl.Series(
+        [{"a": "foo"}, {"a": "bar"}, {"a": None}, {"a": "foo"}],
+        dtype=pl.Struct({"a": dtype}),
+    )
+    assert_series_equal(result, expected)
+
+
+def test_str_split_regex() -> None:
+    df = pl.DataFrame({"s": ["foo1bar", "foo99bar", "foo1bar2baz"]})
+
+    out = df.select(split=pl.col("s").str.split(by=r"\d+", literal=False))
+    expected = pl.DataFrame(
+        {"split": [["foo", "bar"], ["foo", "bar"], ["foo", "bar", "baz"]]}
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_str_split_regex_inclusive() -> None:
+    df = pl.DataFrame({"s": ["foo1bar", "foo99bar", "foo1bar2baz"]})
+
+    out = df.select(
+        split=pl.col("s").str.split(by=r"\d+", literal=False, inclusive=True)
+    )
+    expected = pl.DataFrame(
+        {"split": [["foo1", "bar"], ["foo99", "bar"], ["foo1", "bar2", "baz"]]}
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_str_split_regex_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["foo1bar", "foo bar", "foo-bar baz"],
+            "by": [r"\d", r"\s", r"-"],
+        }
+    )
+
+    out = df.select(split=pl.col("s").str.split(by=pl.col("by"), literal=False))
+    expected = pl.DataFrame(
+        {"split": [["foo", "bar"], ["foo", "bar"], ["foo", "bar baz"]]}
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_str_split_regex_expr_inclusive() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["foo1bar", "foo bar", "foo-bar baz"],
+            "by": [r"\d", r"\s", r"-"],
+        }
+    )
+
+    out = df.select(
+        split=pl.col("s").str.split(by=pl.col("by"), literal=False, inclusive=True)
+    )
+    expected = pl.DataFrame(
+        {"split": [["foo1", "bar"], ["foo ", "bar"], ["foo-", "bar baz"]]}
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_str_split_regex_invalid_pattern_strict_true() -> None:
+    df = pl.DataFrame({"s": ["foo1bar", "abc", "123xyz"]})
+
+    with pytest.raises(ComputeError):
+        df.select(split=pl.col("s").str.split(by="(", literal=False, strict=True))
+
+
+def test_str_split_regex_invalid_pattern_strict_false() -> None:
+    df = pl.DataFrame({"s": ["foo1bar", "abc", "123xyz"]})
+
+    out = df.select(split=pl.col("s").str.split(by="(", literal=False, strict=False))
+
+    expected = pl.DataFrame(
+        {
+            "split": pl.Series(
+                "split",
+                [None, None, None],
+                dtype=pl.List(pl.String),
+            )
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_str_split_regex_scalar_string_expr() -> None:
+    df = pl.DataFrame({"by": [r"\d", r"\d+", r"bar"]})
+
+    out = df.select(
+        split=pl.lit("foo1bar2baz").str.split(by=pl.col("by"), literal=False)
+    )
+
+    expected = pl.DataFrame(
+        {
+            "split": [
+                ["foo", "bar", "baz"],  # split by \d
+                ["foo", "bar", "baz"],  # split by \d+
+                ["foo1", "2baz"],  # split by "bar"
+            ]
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_str_concat_removed() -> None:
+    s = pl.Series(["1", None, "2", None])
+    with pytest.raises(
+        AttributeRemovedError, match=re.escape("use `str.join` instead")
+    ):
+        s.str.concat()  # type: ignore[attr-defined]
+    with pytest.raises(
+        AttributeRemovedError, match=re.escape("use `str.join` instead")
+    ):
+        s.to_frame().select(pl.all().str.concat())  # type: ignore[attr-defined]

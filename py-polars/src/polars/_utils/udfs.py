@@ -17,27 +17,23 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
+    Final,
     Literal,
     NamedTuple,
-    Union,
+    TypedDict,
 )
 
 from polars._utils.cache import LRUCache
-from polars._utils.various import no_default, re_escape
+from polars._utils.various import NO_DEFAULT, re_escape
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, MutableMapping
+    from collections.abc import Callable, Iterator, MutableMapping
     from collections.abc import Set as AbstractSet
     from dis import Instruction
+    from typing import TypeAlias
 
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
 
 
 class StackValue(NamedTuple):
@@ -49,11 +45,11 @@ class StackValue(NamedTuple):
 
 
 MapTarget: TypeAlias = Literal["expr", "frame", "series"]
-StackEntry: TypeAlias = Union[str, StackValue]
+StackEntry: TypeAlias = str | StackValue
 
-_MIN_PY311 = sys.version_info >= (3, 11)
-_MIN_PY312 = _MIN_PY311 and sys.version_info >= (3, 12)
-_MIN_PY314 = _MIN_PY312 and sys.version_info >= (3, 14)
+_MIN_PY311: Final = sys.version_info >= (3, 11)
+_MIN_PY312: Final = _MIN_PY311 and sys.version_info >= (3, 12)
+_MIN_PY314: Final = _MIN_PY312 and sys.version_info >= (3, 14)
 
 _BYTECODE_PARSER_CACHE_: MutableMapping[
     tuple[Callable[[Any], Any], str], BytecodeParser
@@ -121,7 +117,7 @@ class OpNames:
 
 
 # math module funcs that we can map to native expressions
-_MATH_FUNCTIONS = frozenset(
+_MATH_FUNCTIONS: Final[frozenset[str]] = frozenset(
     (
         "acos",
         "acosh",
@@ -150,8 +146,8 @@ _MATH_FUNCTIONS = frozenset(
 )
 
 # numpy functions that we can map to native expressions
-_NUMPY_MODULE_ALIASES = frozenset(("np", "numpy"))
-_NUMPY_FUNCTIONS = frozenset(
+_NUMPY_MODULE_ALIASES: Final[frozenset[str]] = frozenset(("np", "numpy"))
+_NUMPY_FUNCTIONS: Final[frozenset[str]] = frozenset(
     (
         # "abs",  # TODO: this one clashes with Python builtin abs
         "arccos",
@@ -181,7 +177,7 @@ _NUMPY_FUNCTIONS = frozenset(
 )
 
 # python attrs/funcs that map to native expressions
-_PYTHON_ATTRS_MAP = {
+_PYTHON_ATTRS_MAP: Final[dict[str, str]] = {
     "date": "dt.date()",
     "day": "dt.day()",
     "hour": "dt.hour()",
@@ -191,9 +187,13 @@ _PYTHON_ATTRS_MAP = {
     "second": "dt.second()",
     "year": "dt.year()",
 }
-_PYTHON_CASTS_MAP = {"float": "Float64", "int": "Int64", "str": "String"}
-_PYTHON_BUILTINS = frozenset(_PYTHON_CASTS_MAP) | {"abs"}
-_PYTHON_METHODS_MAP = {
+_PYTHON_CASTS_MAP: Final[dict[str, str]] = {
+    "float": "Float64",
+    "int": "Int64",
+    "str": "String",
+}
+_PYTHON_BUILTINS: Final[frozenset[str]] = frozenset(_PYTHON_CASTS_MAP) | {"abs"}
+_PYTHON_METHODS_MAP: Final[dict[str, str]] = {
     # string
     "endswith": "str.ends_with",
     "lower": "str.to_lowercase",
@@ -220,7 +220,21 @@ _PYTHON_METHODS_MAP = {
     "year": "dt.year",
 }
 
-_MODULE_FUNCTIONS: list[dict[str, list[AbstractSet[str]]]] = [
+
+class ModuleFunction(TypedDict, total=False):
+    argument_1_opname: list[AbstractSet[str]]
+    argument_2_opname: list[AbstractSet[str]]
+    argument_1_unary_opname: list[AbstractSet[str]]
+    argument_2_unary_opname: list[AbstractSet[str]]
+    module_opname: list[AbstractSet[str]]
+    attribute_opname: list[AbstractSet[str]]
+    module_name: list[AbstractSet[str]]
+    attribute_name: list[AbstractSet[str]]
+    function_name: list[AbstractSet[str]]
+    check_load_global: bool
+
+
+_MODULE_FUNCTIONS: list[ModuleFunction] = [
     # lambda x: numpy.func(x)
     # lambda x: numpy.func(CONSTANT)
     {
@@ -262,7 +276,7 @@ _MODULE_FUNCTIONS: list[dict[str, list[AbstractSet[str]]]] = [
         "module_name": [{"datetime"}],
         "attribute_name": [],
         "function_name": [{"strptime"}],
-        "check_load_global": False,  # type: ignore[dict-item]
+        "check_load_global": False,
     },
     # lambda x: module.attribute.func(x, CONSTANT)
     {
@@ -273,18 +287,19 @@ _MODULE_FUNCTIONS: list[dict[str, list[AbstractSet[str]]]] = [
         "module_name": [{"datetime", "dt"}],
         "attribute_name": [{"datetime"}],
         "function_name": [{"strptime"}],
-        "check_load_global": False,  # type: ignore[dict-item]
+        "check_load_global": False,
     },
 ]
 # In addition to `lambda x: func(x)`, also support cases when a unary operation
 # has been applied to `x`, like `lambda x: func(-x)` or `lambda x: func(~x)`.
+_UNARIES: list[list[AbstractSet[str]]] = [[set(OpNames.UNARY)], []]
 _MODULE_FUNCTIONS = [
-    {**kind, "argument_1_unary_opname": unary}  # type: ignore[dict-item]
+    {**kind, "argument_1_unary_opname": unary}
     for kind in _MODULE_FUNCTIONS
-    for unary in [[set(OpNames.UNARY)], []]
+    for unary in _UNARIES
 ]
 # Lookup for module functions that have different names as polars expressions
-_MODULE_FUNC_TO_EXPR_NAME = {
+_MODULE_FUNC_TO_EXPR_NAME: Final[dict[str, str]] = {
     "math.acos": "arccos",
     "math.acosh": "arccosh",
     "math.asin": "arcsin",
@@ -293,9 +308,9 @@ _MODULE_FUNC_TO_EXPR_NAME = {
     "math.atanh": "arctanh",
     "json.loads": "str.json_decode",
 }
-_RE_IMPLICIT_BOOL = re.compile(r'pl\.col\("([^"]*)"\) & pl\.col\("\1"\)\.(.+)')
-_RE_SERIES_NAMES = re.compile(r"^(s|srs\d?|series)\.")
-_RE_STRIP_BOOL = re.compile(r"^bool\((.+)\)$")
+_RE_IMPLICIT_BOOL: Final = re.compile(r'pl\.col\("([^"]*)"\) & pl\.col\("\1"\)\.(.+)')
+_RE_SERIES_NAMES: Final = re.compile(r"^(s|srs\d?|series)\.")
+_RE_STRIP_BOOL: Final = re.compile(r"^bool\((.+)\)$")
 
 
 def _get_all_caller_variables() -> dict[str, Any]:
@@ -358,7 +373,7 @@ class BytecodeParser:
     _map_target_name: str | None = None
     _can_attempt_rewrite: bool | None = None
     _caller_variables: dict[str, Any] | None = None
-    _col_expression: tuple[str, str] | NoDefault | None = no_default
+    _col_expression: tuple[str, str] | NoDefault | None = NO_DEFAULT
 
     def __init__(self, function: Callable[[Any], Any], map_target: MapTarget) -> None:
         """
@@ -491,7 +506,7 @@ class BytecodeParser:
 
     def to_expression(self, col: str) -> str | None:
         """Translate postfix bytecode instructions to polars expression/string."""
-        if self._col_expression is not no_default and self._col_expression is not None:
+        if self._col_expression is not NO_DEFAULT and self._col_expression is not None:
             col_name, expr = self._col_expression
             if col != col_name:
                 expr = re.sub(
@@ -568,9 +583,9 @@ class BytecodeParser:
         # Import these here so that udfs can be imported without polars installed.
 
         from polars._utils.various import (
-            find_stacklevel,
             in_terminal_that_supports_colour,
         )
+        from polars._warnings import find_stacklevel
         from polars.exceptions import PolarsInefficientMapWarning
 
         suggested_expression = suggestion_override or self.to_expression(col)

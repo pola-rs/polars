@@ -1,3 +1,5 @@
+use polars_utils::broadcast::broadcast_len;
+
 use super::*;
 use crate::utils::align_chunks_binary;
 
@@ -195,6 +197,28 @@ pub mod checked {
             let ca: ChunkedArray<T> =
                 arity::binary_elementwise(lhs, rhs, |opt_l, opt_r| match (opt_l, opt_r) {
                     (Some(l), Some(r)) => l.checked_div(&r),
+                    _ => None,
+                });
+            Ok(ca.into_series())
+        }
+    }
+
+    #[cfg(feature = "dtype-f16")]
+    impl NumOpsDispatchCheckedInner for Float16Type {
+        fn checked_div(lhs: &Float16Chunked, rhs: &Series) -> PolarsResult<Series> {
+            // SAFETY:
+            // see check_div for chunkedarray<T>
+            let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
+
+            let ca: Float16Chunked =
+                arity::binary_elementwise(lhs, rhs, |opt_l, opt_r| match (opt_l, opt_r) {
+                    (Some(l), Some(r)) => {
+                        if r.is_zero() {
+                            None
+                        } else {
+                            Some(l / r)
+                        }
+                    },
                     _ => None,
                 });
             Ok(ca.into_series())
@@ -434,17 +458,10 @@ pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> PolarsResult<Series>>(
             Ok(rhs.try_apply_fields(|rhs| func(s, rhs))?.into_series())
         },
         _ => {
-            let mut s = Cow::Borrowed(s);
-            let mut rhs = Cow::Borrowed(rhs);
+            let len = broadcast_len([s, rhs]).context("struct arithmetic")?;
+            let s = s.broadcast_to(len)?;
+            let rhs = rhs.broadcast_to(len)?;
 
-            match (s.len(), rhs.len()) {
-                (l, r) if l == r => {},
-                (1, _) => s = Cow::Owned(s.new_from_index(0, rhs.len())),
-                (_, 1) => rhs = Cow::Owned(rhs.new_from_index(0, s.len())),
-                (l, r) => {
-                    polars_bail!(ComputeError: "Struct arithmetic between different lengths {l} != {r}")
-                },
-            };
             let (s, rhs) = align_chunks_binary(&s, &rhs);
             let mut s = s.into_owned();
 
@@ -492,6 +509,9 @@ impl Add for &Series {
             (DataType::Array(..), _) | (_, DataType::Array(..)) => {
                 fixed_size_list::NumericFixedSizeListOp::add().execute(self, rhs)
             },
+            (l_dtype, r_dtype) if l_dtype.is_temporal() != r_dtype.is_temporal() => {
+                polars_bail!(opq = add, l_dtype, r_dtype)
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
                 lhs.add_to(rhs.as_ref())
@@ -516,6 +536,9 @@ impl Sub for &Series {
             #[cfg(feature = "dtype-array")]
             (DataType::Array(..), _) | (_, DataType::Array(..)) => {
                 fixed_size_list::NumericFixedSizeListOp::sub().execute(self, rhs)
+            },
+            (l_dtype, r_dtype) if l_dtype.is_temporal() != r_dtype.is_temporal() => {
+                polars_bail!(opq = sub, l_dtype, r_dtype)
             },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;

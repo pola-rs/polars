@@ -1,3 +1,4 @@
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_core::prelude::{AnyValue, IntoColumn};
 use polars_core::utils::last_non_null;
 use polars_error::PolarsResult;
@@ -7,7 +8,6 @@ use polars_ops::series::{
 };
 
 use super::ComputeNode;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::pipe::{RecvPort, SendPort};
@@ -17,7 +17,7 @@ pub struct CumAggNode {
     kind: CumAggKind,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, strum_macros::IntoStaticStr)]
 pub enum CumAggKind {
     Min,
     Max,
@@ -74,32 +74,38 @@ impl ComputeNode for CumAggNode {
 
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(mut m) = recv.recv().await {
-                assert_eq!(m.df().width(), 1);
-                if m.df().height() == 0 {
+                if m.height() == 0 {
                     continue;
                 }
 
-                let s = m.df()[0].as_materialized_series();
-                let out = match self.kind {
-                    CumAggKind::Min => cum_min_with_init(s, false, &self.state),
-                    CumAggKind::Max => cum_max_with_init(s, false, &self.state),
-                    CumAggKind::Sum => cum_sum_with_init(s, false, &self.state),
-                    CumAggKind::Count => {
-                        cum_count_with_init(s, false, self.state.extract().unwrap_or_default())
-                    },
-                    CumAggKind::Prod => cum_prod_with_init(s, false, &self.state),
-                }?;
+                m = m
+                    .try_map(|df| {
+                        assert_eq!(df.width(), 1);
+                        let s = df[0].as_materialized_series();
+                        let out = match self.kind {
+                            CumAggKind::Min => cum_min_with_init(s, false, &self.state),
+                            CumAggKind::Max => cum_max_with_init(s, false, &self.state),
+                            CumAggKind::Sum => cum_sum_with_init(s, false, &self.state),
+                            CumAggKind::Count => cum_count_with_init(
+                                s,
+                                false,
+                                self.state.extract().unwrap_or_default(),
+                            ),
+                            CumAggKind::Prod => cum_prod_with_init(s, false, &self.state),
+                        }?;
 
-                // Find the last non-null value and set that as the state.
-                let last_non_null_idx = if out.has_nulls() {
-                    last_non_null(out.chunks().iter().map(|c| c.validity()), out.len())
-                } else {
-                    Some(out.len() - 1)
-                };
-                if let Some(idx) = last_non_null_idx {
-                    self.state = out.get(idx).unwrap().into_static();
-                }
-                *m.df_mut() = out.into_column().into_frame();
+                        // Find the last non-null value and set that as the state.
+                        let last_non_null_idx = if out.has_nulls() {
+                            last_non_null(out.chunks().iter().map(|arr| arr.as_ref()), out.len())
+                        } else {
+                            Some(out.len() - 1)
+                        };
+                        if let Some(idx) = last_non_null_idx {
+                            self.state = out.get(idx).unwrap().into_static();
+                        }
+                        PolarsResult::Ok(out.into_column().into_frame())
+                    })
+                    .await?;
 
                 if send.send(m).await.is_err() {
                     break;

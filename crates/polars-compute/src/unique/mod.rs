@@ -62,8 +62,10 @@ pub trait GenericUniqueKernel {
 
 mod boolean;
 mod dictionary;
+mod distinct;
 mod primitive;
 
 pub use boolean::BooleanUniqueKernelState;
 pub use dictionary::DictionaryRangedUniqueState;
+pub use distinct::{AmortizedUnique, amortized_unique_from_dtype};
 pub use primitive::PrimitiveRangedUniqueState;

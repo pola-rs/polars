@@ -3,13 +3,13 @@ from __future__ import annotations
 import abc
 import os
 import threading
-from typing import TYPE_CHECKING, Any, Callable, Literal, Union
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 import polars._utils.logging
 from polars._utils.cache import LRUCache
 from polars._utils.logging import eprint, verbose
 from polars._utils.unstable import issue_unstable_warning
-from polars.io.cloud._utils import NoPickleOption
+from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, NoPickleOption
 from polars.io.cloud.credential_provider._providers import (
     CachedCredentialProvider,
     CachingCredentialProvider,
@@ -22,16 +22,17 @@ from polars.io.cloud.credential_provider._providers import (
 )
 
 if TYPE_CHECKING:
-    import sys
+    from collections.abc import Callable
+    from typing import TypeAlias
 
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
+    from polars._typing import StorageOptionsDict
 
-# https://docs.rs/object_store/latest/object_store/enum.ClientConfigKey.html
-OBJECT_STORE_CLIENT_OPTIONS: frozenset[str] = frozenset(
+
+# `storage_options` keys that are ignored when auto-initializing a credential provider.
+AUTOINIT_IGNORED_KEYS: Final[frozenset[str]] = frozenset(
     [
+        # Object store client options
+        # https://docs.rs/object_store/latest/object_store/enum.ClientConfigKey.html
         "allow_http",
         "allow_invalid_certificates",
         "connect_timeout",
@@ -49,12 +50,25 @@ OBJECT_STORE_CLIENT_OPTIONS: frozenset[str] = frozenset(
         "proxy_excludes",
         "timeout",
         "user_agent",
+        *POLARS_STORAGE_CONFIG_KEYS,
+        # Azure
+        "azure_use_azure_cli",
+        "use_azure_cli",
+        # AWS
+        "aws_request_payer",
+        "request_payer",
+        # GCS
+        "google_bucket",
+        "google_bucket_name",
+        "bucket",
+        "bucket_name",
     ]
 )
 
-CredentialProviderBuilderReturn: TypeAlias = Union[
-    CredentialProvider, CredentialProviderFunction, None
-]
+
+CredentialProviderBuilderReturn: TypeAlias = (
+    CredentialProvider | CredentialProviderFunction | None
+)
 
 
 class CredentialProviderBuilder:
@@ -135,6 +149,9 @@ class CredentialProviderBuilder:
         """Initialize with an already constructed provider."""
         return cls(InitializedCredentialProvider(credential_provider))
 
+    def stable_cache_key(self) -> bytes:
+        return self.credential_provider_init.stable_cache_key()
+
     def __getstate__(self) -> Any:
         state = self.credential_provider_init
 
@@ -163,6 +180,10 @@ class CredentialProviderBuilderImpl(abc.ABC):
     def provider_repr(self) -> str:
         """Used for logging."""
 
+    @abc.abstractmethod
+    def stable_cache_key(self) -> bytes:
+        """Content-based key that survives pickle round-trips."""
+
     def __repr__(self) -> str:
         provider_repr = self.provider_repr
         builder_name = type(self).__name__
@@ -188,6 +209,20 @@ class InitializedCredentialProvider(CredentialProviderBuilderImpl):
             lambda: id(self.credential_provider),
             lambda: CachedCredentialProvider(self.credential_provider),
         )
+
+    def stable_cache_key(self) -> bytes:
+        import hashlib
+        import pickle
+
+        verbose = polars._utils.logging.verbose()
+        try:
+            return hashlib.sha256(pickle.dumps(self.credential_provider)).digest()[:16]
+        except Exception as e:
+            if verbose:
+                print(f"CredentialProvider stable_cache_key() failed: {e = }")
+            # If we cannot pickle, there is no need for the cache key to be
+            # globally stable. Instead, a locally stable cache key is sufficient.
+            return id(self.credential_provider).to_bytes(8, byteorder="little")
 
     @property
     def provider_repr(self) -> str:
@@ -294,6 +329,9 @@ class AutoInit(CredentialProviderBuilderImpl):
         hash = hashlib.sha256(pickle.dumps(self))
         return hash.digest()[:16]
 
+    def stable_cache_key(self) -> bytes:
+        return self.get_or_init_cache_key()
+
     @property
     def provider_repr(self) -> str:
         return self.cls.__name__
@@ -310,7 +348,7 @@ def _init_credential_provider_builder(
     | Literal["auto"]
     | None,
     source: Any,
-    storage_options: dict[str, Any] | None,
+    storage_options: StorageOptionsDict | None,
     caller_name: str,
 ) -> CredentialProviderBuilder | None:
     def f() -> CredentialProviderBuilder | None:
@@ -380,9 +418,7 @@ def _init_credential_provider_builder(
                         tenant_id = v
                     elif k in {"azure_storage_account_name", "account_name"}:
                         storage_account = v
-                    elif k in {"azure_use_azure_cli", "use_azure_cli"}:
-                        continue
-                    elif k in OBJECT_STORE_CLIENT_OPTIONS:
+                    elif k in AUTOINIT_IGNORED_KEYS:
                         continue
                     else:
                         # We assume some sort of access key was given, so we
@@ -433,9 +469,7 @@ def _init_credential_provider_builder(
                         "endpoint_url",
                     }:
                         has_endpoint_url = True
-                    elif k in {"aws_request_payer", "request_payer"}:
-                        continue
-                    elif k in OBJECT_STORE_CLIENT_OPTIONS:
+                    elif k in AUTOINIT_IGNORED_KEYS:
                         continue
                     else:
                         # We assume this is some sort of access key
@@ -476,14 +510,7 @@ def _init_credential_provider_builder(
                     # https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html
                     if k in {"token", "bearer_token"}:
                         token = v
-                    elif k in {
-                        "google_bucket",
-                        "google_bucket_name",
-                        "bucket",
-                        "bucket_name",
-                    }:
-                        continue
-                    elif k in OBJECT_STORE_CLIENT_OPTIONS:
+                    elif k in AUTOINIT_IGNORED_KEYS:
                         continue
                     else:
                         # We assume some sort of access key was given, so we

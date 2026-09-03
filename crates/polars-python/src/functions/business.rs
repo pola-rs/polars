@@ -1,4 +1,3 @@
-use polars::lazy::dsl;
 use pyo3::prelude::*;
 
 use crate::PyExpr;
@@ -8,9 +7,10 @@ pub fn business_day_count(
     start: PyExpr,
     end: PyExpr,
     week_mask: [bool; 7],
-    holidays: Vec<i32>,
+    holidays: PyExpr,
 ) -> PyExpr {
     let start = start.inner;
     let end = end.inner;
-    dsl::business_day_count(start, end, week_mask, holidays).into()
+    let holidays = holidays.inner;
+    polars_plan::dsl::functions::business_day_count(start, end, week_mask, holidays).into()
 }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from typing import TYPE_CHECKING
 
 import pytest
@@ -81,7 +82,7 @@ def test_dtype_inference_from_string(
     expected_dtype: PolarsDataType,
 ) -> None:
     inferred_dtype = dtype_from_database_typename(value)
-    assert inferred_dtype == expected_dtype  # type: ignore[operator]
+    assert inferred_dtype == expected_dtype
 
 
 @pytest.mark.parametrize(
@@ -107,21 +108,21 @@ def test_dtype_inference_from_invalid_string(value: str) -> None:
 
 def test_infer_schema_length(tmp_sqlite_inference_db: Path) -> None:
     # note: first row of this test database contains only NULL values
-    conn = sqlite3.connect(tmp_sqlite_inference_db)
-    for infer_len in (2, 100, None):
-        df = pl.read_database(
-            connection=conn,
-            query="SELECT * FROM test_data",
-            infer_schema_length=infer_len,
-        )
-        assert df.schema == {"name": pl.String, "value": pl.Float64}
+    with closing(sqlite3.connect(tmp_sqlite_inference_db)) as conn:
+        for infer_len in (2, 100, None):
+            df = pl.read_database(
+                connection=conn,
+                query="SELECT * FROM test_data",
+                infer_schema_length=infer_len,
+            )
+            assert df.schema == {"name": pl.String, "value": pl.Float64}
 
-    with pytest.raises(
-        ComputeError,
-        match='could not append value: "foo" of type: str.*`infer_schema_length`',
-    ):
-        pl.read_database(
-            connection=conn,
-            query="SELECT * FROM test_data",
-            infer_schema_length=1,
-        )
+        with pytest.raises(
+            ComputeError,
+            match=r'could not append value: "foo" of type: str.*`infer_schema_length`',
+        ):
+            pl.read_database(
+                connection=conn,
+                query="SELECT * FROM test_data",
+                infer_schema_length=1,
+            )

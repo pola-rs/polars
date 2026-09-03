@@ -1,6 +1,6 @@
 mod boolean;
 #[cfg(feature = "dtype-categorical")]
-mod categorical;
+pub mod categorical;
 #[cfg(feature = "dtype-array")]
 pub mod fixed_size_list;
 pub mod list;
@@ -30,12 +30,15 @@ use crate::utils::{NoNull, get_iter_capacity};
 pub trait ChunkedBuilder<N, T: PolarsDataType> {
     fn append_value(&mut self, val: N);
     fn append_null(&mut self);
+
+    #[inline]
     fn append_option(&mut self, opt_val: Option<N>) {
         match opt_val {
             Some(v) => self.append_value(v),
             None => self.append_null(),
         }
     }
+
     fn finish(self) -> ChunkedArray<T>;
 
     fn shrink_to_fit(&mut self);
@@ -239,7 +242,12 @@ mod test {
         builder.append_null();
 
         let out = builder.finish();
-        let out = out.explode(false).unwrap();
+        let out = out
+            .explode(ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            })
+            .unwrap();
         assert_eq!(out.len(), 7);
         assert_eq!(out.get(6).unwrap(), AnyValue::Null);
     }

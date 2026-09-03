@@ -1,5 +1,4 @@
-use std::sync::Arc;
-
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 
 use super::BinaryViewArrayGeneric;
@@ -13,7 +12,9 @@ unsafe impl<T: ViewType + ?Sized> ToFfi for BinaryViewArrayGeneric<T> {
         let mut buffers = Vec::with_capacity(self.buffers.len() + 2);
         buffers.push(self.validity.as_ref().map(|x| x.as_ptr()));
         buffers.push(Some(self.views.storage_ptr().cast::<u8>()));
-        buffers.extend(self.buffers.iter().map(|b| Some(b.storage_ptr())));
+        // Export at the offset_adjusted pointer, not the allocation start. Arises whenever
+        // `binary_to_binview` sees an inlined value before the first non-inlined one. See #28612.
+        buffers.extend(self.buffers.iter().map(|b| Some(b.as_ptr())));
         buffers
     }
 
@@ -67,7 +68,7 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
             return Ok(Self::new_unchecked_unknown_md(
                 dtype,
                 views,
-                Arc::from([]),
+                Buffer::new(),
                 validity,
                 None,
             ));
@@ -91,7 +92,7 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
         Ok(Self::new_unchecked_unknown_md(
             dtype,
             views,
-            Arc::from(variadic_buffers),
+            Buffer::from(variadic_buffers),
             validity,
             None,
         ))

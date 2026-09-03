@@ -7,6 +7,7 @@ import polars as pl
 # --8<-- [start:df]
 df = pl.DataFrame(
     {
+        "country": ["USA", "USA", "USA", "USA", "USA", "Netherlands"],
         "city": [
             "New York",
             "Los Angeles",
@@ -15,7 +16,6 @@ df = pl.DataFrame(
             "Phoenix",
             "Amsterdam",
         ],
-        "country": ["USA", "USA", "USA", "USA", "USA", "Netherlands"],
         "population": [8399000, 3997000, 2705000, 2320000, 1680000, 900000],
     }
 )
@@ -51,15 +51,6 @@ print(result)
 # --8<-- [start:join]
 income = pl.DataFrame(
     {
-        "city": [
-            "New York",
-            "Los Angeles",
-            "Chicago",
-            "Houston",
-            "Amsterdam",
-            "Rotterdam",
-            "Utrecht",
-        ],
         "country": [
             "USA",
             "USA",
@@ -69,15 +60,24 @@ income = pl.DataFrame(
             "Netherlands",
             "Netherlands",
         ],
+        "city": [
+            "New York",
+            "Los Angeles",
+            "Chicago",
+            "Houston",
+            "Amsterdam",
+            "Rotterdam",
+            "Utrecht",
+        ],
         "income": [55000, 62000, 48000, 52000, 42000, 38000, 41000],
     }
 )
 ctx.register_many(income=income)
 result = ctx.execute(
     """
-        SELECT country, city, income, population
+        SELECT income.*, population.population
         FROM population
-        LEFT JOIN income on population.city = income.city
+        LEFT JOIN income ON population.city = income.city
     """
 )
 print(result)

@@ -1,6 +1,4 @@
-use std::{fs, io};
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash, strum_macros::IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum SyncOnCloseType {
@@ -12,24 +10,4 @@ pub enum SyncOnCloseType {
     Data,
     /// Synce the file contents and the metadata.
     All,
-}
-
-pub fn sync_on_close(sync_on_close: SyncOnCloseType, file: &mut fs::File) -> io::Result<()> {
-    match sync_on_close {
-        SyncOnCloseType::None => Ok(()),
-        SyncOnCloseType::Data => file.sync_data(),
-        SyncOnCloseType::All => file.sync_all(),
-    }
-}
-
-#[cfg(feature = "tokio")]
-pub async fn tokio_sync_on_close(
-    sync_on_close: SyncOnCloseType,
-    file: &mut tokio::fs::File,
-) -> io::Result<()> {
-    match sync_on_close {
-        SyncOnCloseType::None => Ok(()),
-        SyncOnCloseType::Data => file.sync_data().await,
-        SyncOnCloseType::All => file.sync_all().await,
-    }
 }

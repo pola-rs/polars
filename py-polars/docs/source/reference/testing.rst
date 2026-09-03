@@ -26,6 +26,7 @@ Polars provides some standard asserts for use with unit tests:
 
     testing.assert_frame_equal
     testing.assert_frame_not_equal
+    testing.assert_schema_equal
     testing.assert_series_equal
     testing.assert_series_not_equal
 
@@ -62,8 +63,6 @@ Strategy helpers
    :toctree: api/
 
     testing.parametric.column
-    testing.parametric.columns
-    testing.parametric.create_list_strategy
 
 
 Profiles

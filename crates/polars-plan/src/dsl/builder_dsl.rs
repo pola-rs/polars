@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+#[cfg(feature = "pivot")]
+use polars_core::frame::PivotColumnNaming;
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
 use polars_io::csv::read::CsvReadOptions;
@@ -9,10 +11,10 @@ use polars_io::ipc::IpcScanOptions;
 use polars_io::parquet::read::ParquetOptions;
 use polars_utils::unique_id::UniqueId;
 
+use crate::dsl::functions::lit;
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonFunction;
 use crate::prelude::*;
-
 pub struct DslBuilder(pub DslPlan);
 
 impl From<DslPlan> for DslBuilder {
@@ -52,7 +54,6 @@ impl DslBuilder {
     }
 
     #[cfg(feature = "parquet")]
-    #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet(
         sources: ScanSources,
         options: ParquetOptions,
@@ -68,7 +69,6 @@ impl DslBuilder {
     }
 
     #[cfg(feature = "ipc")]
-    #[allow(clippy::too_many_arguments)]
     pub fn scan_ipc(
         sources: ScanSources,
         options: IpcScanOptions,
@@ -83,17 +83,48 @@ impl DslBuilder {
         .into())
     }
 
+    #[cfg(feature = "scan_lines")]
+    pub fn scan_lines(
+        sources: ScanSources,
+        unified_scan_args: UnifiedScanArgs,
+        name: PlSmallStr,
+    ) -> PolarsResult<Self> {
+        Ok(DslPlan::Scan {
+            sources,
+            unified_scan_args: Box::new(unified_scan_args),
+            scan_type: Box::new(FileScanDsl::Lines { name }),
+            cached_ir: Default::default(),
+        }
+        .into())
+    }
+
+    pub fn expand_paths(
+        sources: ScanSources,
+        unified_scan_args: UnifiedScanArgs,
+        name: PlSmallStr,
+    ) -> PolarsResult<Self> {
+        Ok(DslPlan::Scan {
+            sources,
+            unified_scan_args: Box::new(unified_scan_args),
+            scan_type: Box::new(FileScanDsl::ExpandedPaths { name }),
+            cached_ir: Default::default(),
+        }
+        .into())
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
     pub fn scan_csv(
         sources: ScanSources,
-        options: CsvReadOptions,
+        options: impl Into<Arc<CsvReadOptions>>,
         unified_scan_args: UnifiedScanArgs,
     ) -> PolarsResult<Self> {
         Ok(DslPlan::Scan {
             sources,
             unified_scan_args: Box::new(unified_scan_args),
-            scan_type: Box::new(FileScanDsl::Csv { options }),
+            scan_type: Box::new(FileScanDsl::Csv {
+                options: options.into(),
+            }),
             cached_ir: Default::default(),
         }
         .into())
@@ -126,7 +157,13 @@ impl DslBuilder {
     }
 
     pub fn drop(self, columns: Selector) -> Self {
-        self.project(vec![Expr::Selector(!columns)], ProjectionOptions::default())
+        self.project(
+            vec![Expr::Selector(!columns)],
+            ProjectionOptions {
+                maintain_dataframe_height: true,
+                ..Default::default()
+            },
+        )
     }
 
     pub fn project(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
@@ -140,7 +177,7 @@ impl DslBuilder {
 
     pub fn fill_null(self, fill_value: Expr) -> Self {
         self.project(
-            vec![all().as_expr().fill_null(fill_value)],
+            vec![functions::all().as_expr().fill_null(fill_value)],
             ProjectionOptions {
                 duplicate_check: false,
                 ..Default::default()
@@ -153,12 +190,12 @@ impl DslBuilder {
             .unwrap_or(DataTypeSelector::Float.as_selector())
             .as_expr()
             .is_nan();
-        self.remove(any_horizontal([is_nan]).unwrap())
+        self.remove(functions::any_horizontal([is_nan]).unwrap())
     }
 
     pub fn drop_nulls(self, subset: Option<Selector>) -> Self {
         let is_not_null = subset.unwrap_or(Selector::Wildcard).as_expr().is_not_null();
-        self.filter(all_horizontal([is_not_null]).unwrap())
+        self.filter(functions::all_horizontal([is_not_null]).unwrap())
     }
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {
@@ -193,18 +230,16 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn pipe_with_schema(self, callback: PlanCallback<(DslPlan, Schema), DslPlan>) -> Self {
+    pub fn pipe_with_schema(
+        self,
+        others: Vec<DslPlan>,
+        callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
+    ) -> Self {
+        let mut input = vec![self.0];
+        input.extend(others);
         DslPlan::PipeWithSchema {
-            input: Arc::new(self.0),
+            input: Arc::from(input),
             callback,
-        }
-        .into()
-    }
-
-    pub fn with_context(self, contexts: Vec<DslPlan>) -> Self {
-        DslPlan::ExtContext {
-            input: Arc::new(self.0),
-            contexts,
         }
         .into()
     }
@@ -228,9 +263,11 @@ impl DslBuilder {
         .into()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn group_by<E: AsRef<[Expr]>>(
         self,
         keys: Vec<Expr>,
+        predicates: Vec<Expr>,
         aggs: E,
         apply: Option<(PlanCallback<DataFrame, DataFrame>, SchemaRef)>,
         maintain_order: bool,
@@ -249,6 +286,7 @@ impl DslBuilder {
         DslPlan::GroupBy {
             input: Arc::new(self.0),
             keys,
+            predicates,
             aggs,
             apply,
             maintain_order,
@@ -280,13 +318,41 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn explode(self, columns: Selector, allow_empty: bool) -> Self {
+    pub fn explode(self, columns: Selector, options: ExplodeOptions, allow_empty: bool) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
             function: DslFunction::Explode {
                 columns,
+                options,
                 allow_empty,
             },
+        }
+        .into()
+    }
+
+    #[cfg(feature = "pivot")]
+    #[expect(clippy::too_many_arguments)]
+    pub fn pivot(
+        self,
+        on: Selector,
+        on_columns: Arc<DataFrame>,
+        index: Selector,
+        values: Selector,
+        agg: Expr,
+        maintain_order: bool,
+        separator: PlSmallStr,
+        column_naming: PivotColumnNaming,
+    ) -> Self {
+        DslPlan::Pivot {
+            input: Arc::new(self.0),
+            on,
+            on_columns,
+            index,
+            values,
+            agg,
+            maintain_order,
+            separator,
+            column_naming,
         }
         .into()
     }
@@ -331,17 +397,35 @@ impl DslBuilder {
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
         options: Arc<JoinOptions>,
-    ) -> Self {
-        DslPlan::Join {
+    ) -> PolarsResult<Self> {
+        polars_ensure!(
+            left_on.len() == right_on.len(),
+            InvalidOperation:
+                "the number of columns given as join key (left: {}, right:{}) should be equal",
+                left_on.len(),
+                right_on.len()
+        );
+
+        Ok(DslPlan::Join {
             input_left: Arc::new(self.0),
             input_right: Arc::new(other),
-            left_on,
-            right_on,
-            predicates: Default::default(),
+            condition: JoinCondition::Equi {
+                on: left_on.into_iter().zip(right_on).collect(),
+            },
             options,
+        }
+        .into())
+    }
+
+    pub fn gather(self, idxs: DslPlan, null_on_oob: bool) -> Self {
+        DslPlan::Gather {
+            input: Arc::new(self.0),
+            idxs: Arc::new(idxs),
+            null_on_oob,
         }
         .into()
     }
+
     pub fn map_private(self, function: DslFunction) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
@@ -365,7 +449,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
+                streamable: optimizations.contains(OptFlags::STREAMING),
                 validate_output,
             }),
         }
@@ -391,7 +475,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
+                streamable: optimizations.contains(OptFlags::STREAMING),
                 fmt_str: name,
             }),
         }

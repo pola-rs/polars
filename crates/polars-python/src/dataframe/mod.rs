@@ -7,13 +7,15 @@ mod general;
 #[cfg(feature = "pymethods")]
 mod io;
 #[cfg(feature = "pymethods")]
+mod map;
+#[cfg(feature = "pymethods")]
 mod serde;
 
 use parking_lot::RwLock;
 use polars::prelude::DataFrame;
 use pyo3::pyclass;
 
-#[pyclass(frozen)]
+#[pyclass(frozen, from_py_object)]
 #[repr(transparent)]
 pub struct PyDataFrame {
     pub df: RwLock<DataFrame>,

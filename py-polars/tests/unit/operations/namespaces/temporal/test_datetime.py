@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -15,6 +15,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType, TemporalLiteral, TimeUnit
 
 
@@ -121,15 +123,6 @@ def test_dt_replace_time_zone_none(time_zone: str | None, time_unit: TimeUnit) -
     result = ser.dt.replace_time_zone(None)
     expected = datetime(2022, 1, 1, 23)
     assert result.dtype == pl.Datetime(time_unit, None)
-    assert result.item() == expected
-
-
-def test_dt_datetime_deprecated() -> None:
-    s = pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone("Asia/Kathmandu")
-    with pytest.deprecated_call():
-        result = s.dt.datetime()
-    expected = datetime(2022, 1, 1, 23)
-    assert result.dtype == pl.Datetime(time_zone=None)
     assert result.item() == expected
 
 
@@ -863,7 +856,7 @@ def test_offset_by() -> None:
     assert df["date_min"].to_list() == expected_dates
 
 
-@pytest.mark.parametrize("time_zone", ["US/Central", None])
+@pytest.mark.parametrize("time_zone", ["America/Chicago", None])
 def test_offset_by_crossing_dst(time_zone: str | None) -> None:
     ser = pl.Series([datetime(2021, 11, 7)]).dt.replace_time_zone(time_zone)
     result = ser.dt.offset_by("1d")
@@ -1400,7 +1393,7 @@ def test_series_duration_timeunits(
         for us in micros
         if isinstance(us, int)
     ):
-        for ns, us in zip(s.dt.total_nanoseconds(), micros):
+        for ns, us in zip(s.dt.total_nanoseconds(), micros, strict=True):
             assert ns == (us * 1000)
 
 
@@ -1417,41 +1410,24 @@ def test_series_datetime_timeunits(
     assert list(s.dt.microsecond()) == [v.microsecond for v in s]
 
 
-def test_dt_median_deprecated() -> None:
-    values = [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)]
-    s = pl.Series(values)
-    with pytest.deprecated_call():
-        result = s.dt.median()
-    assert result == s.median()
-
-
-def test_dt_mean_deprecated() -> None:
-    values = [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)]
-    s = pl.Series(values)
-    with pytest.deprecated_call():
-        result = s.dt.mean()
-    assert result == s.mean()
-
-
 @pytest.mark.parametrize(
     "dtype",
     [
         pl.Date,
         pl.Datetime("ms"),
-        pl.Datetime("ms", "EST"),
+        pl.Datetime("ms", "America/New_York"),
         pl.Datetime("us"),
-        pl.Datetime("us", "EST"),
+        pl.Datetime("us", "America/New_York"),
         pl.Datetime("ns"),
-        pl.Datetime("ns", "EST"),
+        pl.Datetime("ns", "America/New_York"),
     ],
 )
 @pytest.mark.parametrize(
     "value",
     [
-        # date(1677, 9, 22), # See test_literal_from_datetime.
+        date(1677, 9, 22),
         date(1970, 1, 1),
         date(2024, 2, 29),
-        date(2262, 4, 11),
     ],
 )
 def test_literal_from_date(
@@ -1471,29 +1447,22 @@ def test_literal_from_date(
     [
         pl.Date,
         pl.Datetime("ms"),
-        pl.Datetime("ms", "EST"),
+        pl.Datetime("ms", "America/New_York"),
         pl.Datetime("us"),
-        pl.Datetime("us", "EST"),
+        pl.Datetime("us", "America/New_York"),
         pl.Datetime("ns"),
-        pl.Datetime("ns", "EST"),
+        pl.Datetime("ns", "America/New_York"),
     ],
 )
 @pytest.mark.parametrize(
     "value",
     [
-        # Very old dates with a timezone like EST caused problems for the CI due
-        # to the IANA timezone database updating their historical offset, so
-        # these have been disabled for now. A mismatch between the timezone
-        # database that chrono_tz crate uses vs. the one that Python uses (which
-        # differs from platform to platform) will cause this to fail.
-        # datetime(1677, 9, 22),
-        # datetime(1677, 9, 22, tzinfo=ZoneInfo("EST")),
+        datetime(1677, 9, 22),
+        datetime(1677, 9, 22, tzinfo=ZoneInfo("America/New_York")),
         datetime(1970, 1, 1),
-        datetime(1970, 1, 1, tzinfo=ZoneInfo("EST")),
+        datetime(1970, 1, 1, tzinfo=ZoneInfo("America/New_York")),
         datetime(2024, 2, 29),
-        datetime(2024, 2, 29, tzinfo=ZoneInfo("EST")),
-        datetime(2262, 4, 11),
-        datetime(2262, 4, 11, tzinfo=ZoneInfo("EST")),
+        datetime(2024, 2, 29, tzinfo=ZoneInfo("America/New_York")),
     ],
 )
 def test_literal_from_datetime(
@@ -1551,3 +1520,91 @@ def test_literal_from_timedelta(value: time, dtype: pl.Duration | None) -> None:
     out = pl.select(pl.lit(value, dtype=dtype))
     assert out.schema == OrderedDict({"literal": dtype or pl.Duration("us")})
     assert out.item() == value
+
+
+def test_out_of_range_date_year_11991() -> None:
+    # Out-of-range dates should return null instead of wrong values or panicking
+    # Regression test for #11991 where out-of-range dates silently returned
+    # the input value
+    s = pl.Series([-96_465_659]).cast(pl.Date)
+    result = s.dt.year()
+    # Should return null, not the input value -96465659
+    assert result[0] is None
+
+    # is_leap_year should also return null for out-of-range dates
+    result_leap = s.dt.is_leap_year()
+    assert result_leap[0] is None
+
+
+@pytest.mark.parametrize(
+    "method", ["day", "month", "year", "hour", "minute", "second", "weekday"]
+)
+def test_dt_extract_with_null_tz_aware_27862(method: str) -> None:
+    # A null slot's backing value may be anything (only valid, initialized
+    # memory is guaranteed); pandas/pyarrow leave i64::MIN there. Extraction
+    # must skip the masked slot rather than convert it, which previously panicked.
+    pa = pytest.importorskip("pyarrow")
+    i64_min = -(2**63)
+    values = (1609459200000000).to_bytes(8, "little", signed=True) + i64_min.to_bytes(
+        8, "little", signed=True
+    )
+    arr = pa.Array.from_buffers(
+        pa.timestamp("us", tz="UTC"),
+        2,
+        [pa.py_buffer(bytes([0b01])), pa.py_buffer(values)],
+    )
+    s: pl.Series = pl.from_arrow(arr)  # type: ignore[assignment]
+    out = getattr(s.dt, method)()
+    assert out[1] is None
+    assert out[0] is not None
+
+
+@pytest.mark.parametrize("tz", [None, "UTC"])
+@pytest.mark.parametrize("method", ["day", "month", "year", "hour", "minute", "second"])
+def test_dt_extract_present_out_of_range_27862(method: str, tz: str | None) -> None:
+    # A *present* (non-null) timestamp that is out of the representable datetime
+    # range must yield null, not a garbage default value or a panic. Build it by
+    # casting a raw i64 that is far beyond chrono's range into a Datetime column.
+    s = pl.Series([9_000_000_000_000_000_000], dtype=pl.Int64).cast(
+        pl.Datetime("us", tz)
+    )
+    assert s.null_count() == 0  # the value is present, not masked
+    out = getattr(s.dt, method)()
+    assert out[0] is None
+
+
+def test_offset_by_out_of_range_no_panic_29017() -> None:
+    df = pl.DataFrame({"d": [date(2023, 1, 1)]})
+    s = pl.Series("d", [date(2023, 1, 1)])
+
+    with pytest.raises(ComputeError, match="is out of the supported range"):
+        df.with_columns(pl.col("d").dt.offset_by("260120y"))
+
+    with pytest.raises(ComputeError, match="is out of the supported range"):
+        s.dt.offset_by("260120y")
+
+    with pytest.raises(ComputeError, match="is out of the supported range"):
+        s.dt.offset_by("-300000y")
+
+    with pytest.raises(ComputeError, match="is out of the supported range"):
+        s.dt.offset_by("2147483647mo")
+
+    # months large enough that months / 12 overflows i32
+    with pytest.raises(ComputeError, match="is out of the supported range"):
+        s.dt.offset_by("99999999999999999mo")
+
+
+def test_offset_by_boundary_value_succeeds_df_29017() -> None:
+    df = pl.DataFrame({"d": [date(2023, 1, 1)]})
+    result = df.with_columns(pl.col("d").dt.offset_by("260119y"))
+    assert result["d"].dt.year().item() == 262142
+    assert result["d"].dt.month().item() == 1
+    assert result["d"].dt.day().item() == 1
+
+
+def test_offset_by_boundary_value_succeeds_series_29017() -> None:
+    s = pl.Series("d", [date(2023, 1, 1)])
+    result = s.dt.offset_by("260119y")
+    assert result.dt.year().item() == 262142
+    assert result.dt.month().item() == 1
+    assert result.dt.day().item() == 1

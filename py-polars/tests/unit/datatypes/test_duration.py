@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from datetime import timedelta
 from functools import partial
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
-from hypothesis import given
+from hypothesis import assume, given
 
 import polars as pl
 from polars._utils.constants import I64_MAX, I64_MIN
@@ -15,6 +15,8 @@ from polars.testing.parametric import series
 from tests.unit.conftest import FLOAT_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import TimeUnit
 
 
@@ -144,33 +146,14 @@ def test_duration_to_string() -> None:
 
 
 def test_duration_std_var() -> None:
-    df = pl.DataFrame(
-        {"duration": [1000, 5000, 3000]}, schema={"duration": pl.Duration}
-    )
-
-    result = df.select(
-        pl.col("duration").std().name.suffix("_std"),
-    )
-
-    expected = pl.DataFrame(
-        [
-            pl.Series(
-                "duration_std",
-                [timedelta(microseconds=2000)],
-                dtype=pl.Duration(time_unit="us"),
-            ),
-        ]
-    )
-
-    assert_frame_equal(result, expected)
-
+    # `std` and `var` are not supported for Duration (see #23608).
+    s = pl.Series("a", [timedelta(days=1), timedelta(days=2), timedelta(days=4)])
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        df.select(pl.col("duration").var())
-
-
-def test_series_duration_std_var() -> None:
-    s = pl.Series([timedelta(days=1), timedelta(days=2), timedelta(days=4)])
-    assert s.std() == timedelta(days=1, seconds=45578, microseconds=180014)
+        s.to_frame().select(pl.col("a").std())
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        s.to_frame().select(pl.col("a").var())
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        s.std()
     with pytest.raises(pl.exceptions.InvalidOperationError):
         s.var()
 
@@ -288,6 +271,9 @@ def test_duration_float_types_series_11625(
     digit_scale: int,
     s: pl.Series,
 ) -> None:
+    # Float16 does not have enough exponent bits to represent 1_000_000
+    assume(not (s.dtype == pl.Float16 and time_unit == "ms"))
+
     # Exclude cases that could potentially overflow Int64
     s = s.clip(
         0.95 * I64_MIN / digit_scale / time_unit_scale,
@@ -346,9 +332,38 @@ def test_duration_total_units_fractional(
     s: pl.Series,
 ) -> None:
     expected = s.cast(pl.Float64) * time_unit_scale / total_units_scale
+
     actual = total_units_fn(
         pl.select(pl.duration(**{time_unit_kw: s}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
         .to_series()
         .dt,
     )
     assert_series_equal(actual, expected)
+
+    # Check scalar case separately, since it's handled separately
+    actual = total_units_fn(
+        pl.select(pl.duration(**{time_unit_kw: s[0]}, time_unit=time_unit).alias("a"))  # type: ignore[arg-type]
+        .to_series()
+        .dt,
+    )
+    assert_series_equal(actual, expected.slice(0, 1))
+
+
+def test_scalar_i64_overflow() -> None:
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="9223372036854775808",
+    ):
+        pl.select(pl.duration(nanoseconds=2**63))
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="18446744073709551616",
+    ):
+        pl.select(pl.duration(nanoseconds=2**64))
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="-9223372036854775809",
+    ):
+        pl.select(pl.duration(nanoseconds=-(2**63) - 1))

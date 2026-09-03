@@ -21,7 +21,7 @@ where
     pub fn new(func: F, size: usize) -> Self {
         Self {
             func,
-            cache: LruCache::with_capacity(size.max(1)),
+            cache: LruCache::with_capacity(size),
         }
     }
 
@@ -69,7 +69,7 @@ impl<K, V> LruCache<K, V> {
 
 impl<K, V, S> LruCache<K, V, S> {
     pub fn with_capacity_and_hasher(max_capacity: usize, build_hasher: S) -> Self {
-        assert!(max_capacity > 0);
+        let max_capacity = max_capacity.max(1);
         Self {
             // Allocate one more capacity to prevent double-lookup or realloc
             // when doing get_or_insert when full.

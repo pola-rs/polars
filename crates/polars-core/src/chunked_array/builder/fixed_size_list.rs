@@ -31,8 +31,15 @@ impl<T: NativeType> FixedSizeListNumericBuilder<T> {
     }
 }
 
-pub(crate) trait FixedSizeListBuilder {
+pub trait FixedSizeListBuilder {
+    /// # Safety
+    ///
+    /// `arr` must have at least `(offset + 1) * width` valid elements of the
+    /// builder's expected inner type
     unsafe fn push_unchecked(&mut self, arr: &dyn Array, offset: usize);
+    /// # Safety
+    ///
+    /// The builder must have been properly initialized
     unsafe fn push_null(&mut self);
     fn finish(&mut self) -> ArrayChunked;
 }
@@ -131,7 +138,7 @@ impl FixedSizeListBuilder for AnonymousOwnedFixedSizeListBuilder {
     }
 }
 
-pub(crate) fn get_fixed_size_list_builder(
+pub fn get_fixed_size_list_builder(
     inner_type_logical: &DataType,
     capacity: usize,
     width: usize,

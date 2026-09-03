@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime, time
 from typing import Any
 
 import pytest
@@ -61,7 +62,7 @@ def test_array_literals() -> None:
             FROM (
               SELECT
                 -- declare array literals
-                [10,20,30] AS a1,
+                ARRAY[10,20,30] AS a1,
                 ['a','b','c'] AS a2,
               FROM df
             ) tbl
@@ -82,6 +83,138 @@ def test_array_literals() -> None:
                 }
             ),
         )
+
+
+@pytest.mark.parametrize("function_name", ["ARRAY_INNER_PRODUCT", "ARRAY_DOT_PRODUCT"])
+def test_array_inner_product(function_name: str) -> None:
+    df = pl.DataFrame(
+        {
+            "lhs": [[1, 2, 3], [1, None, 3], None, [None, None, None]],
+            "rhs": [
+                [4.0, 5.0, 6.0],
+                [4.0, 5.0, None],
+                [1.0, 2.0, 3.0],
+                [None, None, None],
+            ],
+        },
+        schema={
+            "lhs": pl.Array(pl.Int32, 3),
+            "rhs": pl.Array(pl.Float32, 3),
+        },
+    )
+
+    result = df.sql(f"SELECT {function_name}(lhs, rhs) AS dot FROM self")
+    expected = df.select(pl.col("lhs").arr.dot("rhs").alias("dot"))
+
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("literal", "literal_on_left"),
+    [
+        ("[4.0, 5.0, 6.0]", False),
+        ("ARRAY[4.0, 5.0, 6.0]", True),
+        ("([4.0, 5.0, 6.0])", False),
+    ],
+)
+def test_array_inner_product_literal(literal: str, literal_on_left: bool) -> None:
+    df = pl.DataFrame(
+        {"arr": [[1, 2, 3], [4, 5, 6], None]},
+        schema={"arr": pl.Array(pl.Int32, 3)},
+    )
+    arguments = f"{literal}, arr" if literal_on_left else f"arr, {literal}"
+
+    result = df.sql(f"SELECT ARRAY_INNER_PRODUCT({arguments}) AS dot FROM self")
+    literal_expr = pl.lit([4.0, 5.0, 6.0], dtype=pl.Array(pl.Float64, 3))
+    expected = df.select(
+        (
+            literal_expr.arr.dot("arr")
+            if literal_on_left
+            else pl.col("arr").arr.dot(literal_expr)
+        ).alias("dot")
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_array_inner_product_null_literal() -> None:
+    df = pl.DataFrame(
+        {"values": [[1, 2, 3], [4, None, 6], None]},
+        schema={"values": pl.Array(pl.Int32, 3)},
+    )
+
+    result = df.sql(
+        "SELECT ARRAY_INNER_PRODUCT(values, [NULL, NULL, NULL]) AS dot FROM self"
+    )
+
+    assert_frame_equal(
+        result,
+        pl.DataFrame({"dot": [0, 0, None]}, schema={"dot": pl.Int32}),
+    )
+
+
+def test_array_inner_product_literal_inherits_projection_height() -> None:
+    df = pl.DataFrame({"row": [1, 2, 3]})
+
+    result = df.sql("SELECT ARRAY_INNER_PRODUCT([1, 2], ARRAY[3, 4]) AS dot FROM self")
+
+    assert_frame_equal(result, pl.DataFrame({"dot": [11, 11, 11]}))
+
+
+def test_array_inner_product_non_array_receiver() -> None:
+    df = pl.DataFrame({"lhs": [[1, 2]]})
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="expected Array datatype",
+    ):
+        df.sql("SELECT ARRAY_INNER_PRODUCT(lhs, [3, 4]) FROM self")
+
+
+def test_array_inner_product_uses_native_array_dot_plan() -> None:
+    df = pl.DataFrame(
+        {
+            "lhs": [[1, 2]],
+            "rhs": [[3, 4]],
+        },
+        schema={
+            "lhs": pl.Array(pl.Int64, 2),
+            "rhs": pl.Array(pl.Int64, 2),
+        },
+    )
+
+    with pl.SQLContext(df=df) as ctx:
+        plan = ctx.execute(
+            "SELECT ARRAY_INNER_PRODUCT(lhs, rhs) AS dot FROM df"
+        ).explain(optimized=False)
+
+    assert ".arr.dot([" in plan
+    assert ").arr.sum()" not in plan
+    assert " * " not in plan
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    ["lhs", "lhs, rhs, lhs"],
+)
+def test_array_inner_product_arity(arguments: str) -> None:
+    df = pl.DataFrame(
+        {"lhs": [[1, 2]], "rhs": [[3, 4]]},
+        schema={"lhs": pl.Array(pl.Int64, 2), "rhs": pl.Array(pl.Int64, 2)},
+    )
+
+    with pytest.raises(SQLInterfaceError, match="no function matches"):
+        df.sql(f"SELECT ARRAY_INNER_PRODUCT({arguments}) FROM self")
+
+
+def test_array_inner_product_unequal_widths() -> None:
+    df = pl.DataFrame(
+        {"lhs": [[1, 2]], "rhs": [[3, 4, 5]]},
+        schema={"lhs": pl.Array(pl.Int64, 2), "rhs": pl.Array(pl.Int64, 3)},
+    )
+
+    with pytest.raises(pl.exceptions.ShapeError, match="equal array widths"):
+        df.sql("SELECT ARRAY_INNER_PRODUCT(lhs, rhs) FROM self")
 
 
 @pytest.mark.parametrize(
@@ -173,62 +306,55 @@ def test_array_to_string() -> None:
         pl.sql_expr("ARRAY_TO_STRING(arr)")
 
 
-@pytest.mark.parametrize(
-    "array_keyword",
-    ["ARRAY", ""],
-)
-def test_unnest_table_function(array_keyword: str) -> None:
-    with pl.SQLContext(df=None, eager=True) as ctx:
-        res = ctx.execute(
-            f"""
-            SELECT * FROM
-              UNNEST(
-                {array_keyword}[1, 2, 3, 4],
-                {array_keyword}['ww','xx','yy','zz'],
-                {array_keyword}[23.0, 24.5, 28.0, 27.5]
-              ) AS tbl (x,y,z);
-            """
-        )
-        assert_frame_equal(
-            res,
-            pl.DataFrame(
-                {
-                    "x": [1, 2, 3, 4],
-                    "y": ["ww", "xx", "yy", "zz"],
-                    "z": [23.0, 24.5, 28.0, 27.5],
-                }
-            ),
-        )
+def test_array_typed_literals() -> None:
+    res = pl.sql(
+        """
+        SELECT
+          -- typed temporal literals
+          ARRAY[DATE '2024-01-01', DATE '1969-07-20'] AS dt,
+          ARRAY[TIME '08:30:00', TIME '23:59:59'] AS tm,
+          ARRAY[TIMESTAMP(3) '2024-01-01 12:00:00'] AS dtm,
+          -- cast syntax (::type and CAST)
+          ARRAY['2024-01-01'::date, '1969-07-20'::date] AS dt_cast,
+          ARRAY['08:30:00'::time, '23:59:59'::time] AS tm_cast,
+          ARRAY[CAST('2024-01-01' AS DATE)] AS dt_explicit,
+          -- numeric literal casts
+          ARRAY[100::bigint, -50::bigint] AS i64_cast,
+          ARRAY[1.5::double, -2.7::double] AS f64_cast,
+          ARRAY[['42'::int16], ['-7'::int16]] AS str_to_nested_int16,
+        FROM (VALUES (0)) tbl (x)
+        """,
+        eager=True,
+    )
+    # values are typed properly
+    assert res.to_dict(as_series=False) == {
+        "dt": [[date(2024, 1, 1), date(1969, 7, 20)]],
+        "tm": [[time(8, 30), time(23, 59, 59)]],
+        "dtm": [[datetime(2024, 1, 1, 12, 0)]],
+        "dt_cast": [[date(2024, 1, 1), date(1969, 7, 20)]],
+        "tm_cast": [[time(8, 30), time(23, 59, 59)]],
+        "dt_explicit": [[date(2024, 1, 1)]],
+        "i64_cast": [[100, -50]],
+        "f64_cast": [[1.5, -2.7]],
+        "str_to_nested_int16": [[[42], [-7]]],
+    }
+    # schema exactly matches the casts
+    assert res.schema == {
+        "dt": pl.List(pl.Date),
+        "tm": pl.List(pl.Time),
+        "dtm": pl.List(pl.Datetime("ms", time_zone=None)),
+        "dt_cast": pl.List(pl.Date),
+        "tm_cast": pl.List(pl.Time),
+        "dt_explicit": pl.List(pl.Date),
+        "i64_cast": pl.List(pl.Int64),
+        "f64_cast": pl.List(pl.Float64),
+        "str_to_nested_int16": pl.List(pl.List(pl.Int16)),
+    }
 
 
-def test_unnest_table_function_errors() -> None:
-    with pl.SQLContext(df=None, eager=True) as ctx:
-        with pytest.raises(
-            SQLSyntaxError,
-            match=r'UNNEST table alias must also declare column names, eg: "frame data" \(a,b,c\)',
-        ):
-            ctx.execute('SELECT * FROM UNNEST([1, 2, 3]) AS "frame data"')
-
-        with pytest.raises(
-            SQLSyntaxError,
-            match="UNNEST table alias requires 1 column name, found 2",
-        ):
-            ctx.execute("SELECT * FROM UNNEST([1, 2, 3]) AS tbl (a, b)")
-
-        with pytest.raises(
-            SQLSyntaxError,
-            match="UNNEST table alias requires 2 column names, found 1",
-        ):
-            ctx.execute("SELECT * FROM UNNEST([1,2,3], [3,4,5]) AS tbl (a)")
-
-        with pytest.raises(
-            SQLSyntaxError,
-            match=r"UNNEST table must have an alias",
-        ):
-            ctx.execute("SELECT * FROM UNNEST([1, 2, 3])")
-
-        with pytest.raises(
-            SQLInterfaceError,
-            match=r"UNNEST tables do not \(yet\) support WITH OFFSET|ORDINALITY",
-        ):
-            ctx.execute("SELECT * FROM UNNEST([1, 2, 3]) tbl (colx) WITH OFFSET")
+def test_array_typed_literals_mixed_error() -> None:
+    with pytest.raises(
+        SQLInterfaceError,
+        match="expected consistent dtypes",
+    ):
+        pl.sql("SELECT ARRAY[DATE '2024-01-01', TIME '12:00:00']").collect()

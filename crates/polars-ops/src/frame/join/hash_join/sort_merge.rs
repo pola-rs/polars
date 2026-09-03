@@ -15,7 +15,7 @@ fn par_sorted_merge_left_impl<T>(
 where
     T: PolarsNumericType,
 {
-    let offsets = _split_offsets(s_left.len(), POOL.current_num_threads());
+    let offsets = _split_offsets(s_left.len(), RAYON.current_num_threads());
     let s_left = s_left.rechunk();
     let s_right = s_right.rechunk();
 
@@ -23,11 +23,11 @@ where
     let slice_left = s_left.cont_slice().unwrap();
     let slice_right = s_right.cont_slice().unwrap();
 
-    let indexes = offsets.into_par_iter().map(|(offset, len)| {
+    let indexes = par_map_collect(offsets.len(), &|i| {
+        let (offset, len) = offsets[i];
         let slice_left = &slice_left[offset..offset + len];
         sorted_join::left::join(slice_left, slice_right, offset as IdxSize)
     });
-    let indexes = POOL.install(|| indexes.collect::<Vec<_>>());
 
     let lefts = indexes.iter().map(|t| &t.0).collect::<Vec<_>>();
     let rights = indexes.iter().map(|t| &t.1).collect::<Vec<_>>();
@@ -78,6 +78,10 @@ pub(super) fn par_sorted_merge_left(
         DataType::Int128 => {
             par_sorted_merge_left_impl(s_left.i128().unwrap(), s_right.i128().unwrap())
         },
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            par_sorted_merge_left_impl(s_left.f16().unwrap(), s_right.f16().unwrap())
+        },
         DataType::Float32 => {
             par_sorted_merge_left_impl(s_left.f32().unwrap(), s_right.f32().unwrap())
         },
@@ -95,7 +99,7 @@ fn par_sorted_merge_inner_impl<T>(
 where
     T: PolarsNumericType,
 {
-    let offsets = _split_offsets(s_left.len(), POOL.current_num_threads());
+    let offsets = _split_offsets(s_left.len(), RAYON.current_num_threads());
     let s_left = s_left.rechunk();
     let s_right = s_right.rechunk();
 
@@ -103,11 +107,11 @@ where
     let slice_left = s_left.cont_slice().unwrap();
     let slice_right = s_right.cont_slice().unwrap();
 
-    let indexes = offsets.into_par_iter().map(|(offset, len)| {
+    let indexes = par_map_collect(offsets.len(), &|i| {
+        let (offset, len) = offsets[i];
         let slice_left = &slice_left[offset..offset + len];
         sorted_join::inner::join(slice_left, slice_right, offset as IdxSize)
     });
-    let indexes = POOL.install(|| indexes.collect::<Vec<_>>());
 
     let lefts = indexes.iter().map(|t| &t.0).collect::<Vec<_>>();
     let rights = indexes.iter().map(|t| &t.1).collect::<Vec<_>>();
@@ -157,6 +161,10 @@ pub(super) fn par_sorted_merge_inner_no_nulls(
         #[cfg(feature = "dtype-i128")]
         DataType::Int128 => {
             par_sorted_merge_inner_impl(s_left.i128().unwrap(), s_right.i128().unwrap())
+        },
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            par_sorted_merge_inner_impl(s_left.f16().unwrap(), s_right.f16().unwrap())
         },
         DataType::Float32 => {
             par_sorted_merge_inner_impl(s_left.f32().unwrap(), s_right.f32().unwrap())
@@ -251,7 +259,7 @@ pub(crate) fn _sort_or_hash_inner(
 
             let (left, mut right) = ids;
 
-            POOL.install(|| {
+            RAYON.install(|| {
                 right.par_iter_mut().for_each(|idx| {
                     *idx = unsafe { *reverse_idx_map.get_unchecked(*idx as usize) };
                 });
@@ -279,7 +287,7 @@ pub(crate) fn _sort_or_hash_inner(
 
             let (mut left, right) = ids;
 
-            POOL.install(|| {
+            RAYON.install(|| {
                 left.par_iter_mut().for_each(|idx| {
                     *idx = unsafe { *reverse_idx_map.get_unchecked(*idx as usize) };
                 });
@@ -351,7 +359,7 @@ pub(crate) fn sort_or_hash_left(
             let reverse_idx_map = create_reverse_map_from_arg_sort(sort_idx);
             let (left, mut right) = ids;
 
-            POOL.install(|| {
+            RAYON.install(|| {
                 right.par_iter_mut().for_each(|opt_idx| {
                     if !opt_idx.is_null_idx() {
                         *opt_idx =

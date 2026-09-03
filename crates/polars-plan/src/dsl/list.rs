@@ -2,6 +2,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 
+use crate::dsl::functions::lit;
 use crate::prelude::function_expr::ListFunction;
 use crate::prelude::*;
 
@@ -9,16 +10,6 @@ use crate::prelude::*;
 pub struct ListNameSpace(pub Expr);
 
 impl ListNameSpace {
-    #[cfg(feature = "list_any_all")]
-    pub fn any(self) -> Expr {
-        self.0.map_unary(FunctionExpr::ListExpr(ListFunction::Any))
-    }
-
-    #[cfg(feature = "list_any_all")]
-    pub fn all(self) -> Expr {
-        self.0.map_unary(FunctionExpr::ListExpr(ListFunction::All))
-    }
-
     #[cfg(feature = "list_drop_nulls")]
     pub fn drop_nulls(self) -> Expr {
         self.0
@@ -30,7 +21,7 @@ impl ListNameSpace {
         self,
         n: Expr,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> Expr {
         self.0.map_binary(
@@ -49,7 +40,7 @@ impl ListNameSpace {
         self,
         fraction: Expr,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> Expr {
         self.0.map_binary(
@@ -112,29 +103,6 @@ impl ListNameSpace {
             .map_unary(FunctionExpr::ListExpr(ListFunction::Sort(options)))
     }
 
-    /// Reverse every sublist
-    pub fn reverse(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::Reverse))
-    }
-
-    /// Keep only the unique values in every sublist.
-    pub fn unique(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::Unique(false)))
-    }
-
-    /// Keep only the unique values in every sublist.
-    pub fn unique_stable(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::Unique(true)))
-    }
-
-    pub fn n_unique(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::NUnique))
-    }
-
     /// Get items in every sublist by index.
     pub fn get(self, index: Expr, null_on_oob: bool) -> Expr {
         self.0.map_binary(
@@ -182,13 +150,17 @@ impl ListNameSpace {
         )
     }
 
-    /// Return the index of the minimal value of every sublist
+    /// Return the index of the minimal value of every sublist.
+    ///
+    /// In the case of a tie, this may return the index of any of the minimum values.
     pub fn arg_min(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::ListExpr(ListFunction::ArgMin))
     }
 
-    /// Return the index of the maximum value of every sublist
+    /// Return the index of the maximum value of every sublist.
+    ///
+    /// In the case of a tie, this may return the index of any of the maximum values.
     pub fn arg_max(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::ListExpr(ListFunction::ArgMax))
@@ -234,15 +206,7 @@ impl ListNameSpace {
 
     #[cfg(feature = "list_to_struct")]
     #[allow(clippy::wrong_self_convention)]
-    /// Convert this `List` to a `Series` of type `Struct`. The width will be determined according to
-    /// `ListToStructWidthStrategy` and the names of the fields determined by the given `name_generator`.
-    ///
-    /// # Schema
-    ///
-    /// A polars `LazyFrame` needs to know the schema at all time. The caller therefore must provide
-    /// an `upper_bound` of struct fields that will be set.
-    /// If this is incorrectly downstream operation may fail. For instance an `all().sum()` expression
-    /// will look in the current schema to determine which columns to select.
+    /// Convert this `List` to a `Series` of type `Struct`.
     pub fn to_struct(self, names: Arc<[PlSmallStr]>) -> Expr {
         self.0.map_unary(ListFunction::ToStruct(names))
     }

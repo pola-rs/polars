@@ -2,14 +2,17 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use polars_core::functions::concat_df_horizontal;
+use polars_core::prelude::{Column, IntoColumn};
 use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_error::polars_ensure;
+use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext};
 use polars_utils::itertools::Itertools;
 
 use super::compute_node_prelude::*;
 use crate::DEFAULT_ZIP_HEAD_BUFFER_SIZE;
 use crate::morsel::SourceToken;
+use crate::physical_plan::ZipBehavior;
 
 /// The head of an input stream.
 #[derive(Debug)]
@@ -31,18 +34,20 @@ struct InputHead {
 }
 
 impl InputHead {
-    fn new(schema: Arc<Schema>, may_broadcast: bool) -> Self {
+    fn new(schema: Arc<Schema>, zip_behavior: ZipBehavior) -> Self {
+        let infer_broadcast = matches!(zip_behavior, ZipBehavior::Broadcast) || schema.is_empty();
+
         Self {
             schema,
             morsels: VecDeque::new(),
-            is_broadcast: if may_broadcast { None } else { Some(false) },
+            is_broadcast: if infer_broadcast { None } else { Some(false) },
             total_len: 0,
             stream_exhausted: false,
         }
     }
 
-    fn add_morsel(&mut self, mut morsel: Morsel) {
-        self.total_len += morsel.df().height();
+    async fn add_morsel(&mut self, mut morsel: Morsel, ctx: &MostRecentSpillContext) {
+        self.total_len += morsel.height();
 
         if self.is_broadcast.is_none() {
             if self.total_len > 1 {
@@ -54,14 +59,17 @@ impl InputHead {
             }
         }
 
-        if morsel.df().height() > 0 {
+        if morsel.height() > 0 {
+            // Note that we intentionally don't consume the consume token here
+            // despite buffering it, only when the morsel actually gets zipped.
+            ctx.register(morsel.sf()).await;
             self.morsels.push_back(morsel);
         }
     }
 
     fn notify_no_more_morsels(&mut self) {
         if self.is_broadcast.is_none() {
-            self.is_broadcast = Some(self.total_len == 1);
+            self.is_broadcast = Some(self.total_len == 1 || self.shape() == (0, 0));
         }
         self.stream_exhausted = true;
     }
@@ -70,43 +78,44 @@ impl InputHead {
         self.is_broadcast.is_some() && (self.total_len > 0 || self.stream_exhausted)
     }
 
-    fn min_len(&self) -> Option<usize> {
-        if self.is_broadcast == Some(false) {
-            self.morsels.front().map(|m| m.df().height())
-        } else {
-            None
-        }
-    }
-
-    fn take(&mut self, len: usize) -> DataFrame {
-        if self.is_broadcast.unwrap() {
-            self.morsels[0]
+    async fn take(&mut self, len: usize) -> DataFrame {
+        let columns: Vec<Column> = if self.is_broadcast.unwrap() && self.shape() != (0, 0) {
+            return self.morsels[0]
                 .df()
-                .iter()
-                .map(|s| s.new_from_index(0, len))
-                .collect()
+                .await
+                .broadcast_to(len)
+                .unwrap()
+                .into_owned();
         } else if self.total_len > 0 {
             self.total_len -= len;
-            if self.morsels[0].df().height() == len {
-                self.morsels.pop_front().unwrap().into_df()
+
+            return if self.morsels[0].height() == len {
+                self.morsels.pop_front().unwrap().into_df().await
             } else {
-                let (head, tail) = self.morsels[0].df().split_at(len as i64);
-                *self.morsels[0].df_mut() = tail;
+                let mut df = self.morsels[0].df_mut().await;
+                let (head, tail) = df.split_at(len as i64);
+                *df = tail;
                 head
-            }
+            };
         } else {
             self.schema
                 .iter()
-                .map(|(name, dtype)| Series::full_null(name.clone(), len, dtype))
+                .map(|(name, dtype)| Series::full_null(name.clone(), len, dtype).into_column())
                 .collect()
-        }
+        };
+
+        unsafe { DataFrame::new_unchecked(len, columns) }
     }
 
-    fn consume_broadcast(&mut self) -> DataFrame {
+    async fn consume_broadcast(&mut self) -> DataFrame {
         assert!(self.is_broadcast == Some(true) && self.total_len == 1);
-        let out = self.morsels.pop_front().unwrap().into_df();
+        let out = self.morsels.pop_front().unwrap().into_df().await;
         self.clear();
         out
+    }
+
+    fn shape(&self) -> (usize, usize) {
+        (self.total_len, self.schema.len())
     }
 
     fn clear(&mut self) {
@@ -117,31 +126,33 @@ impl InputHead {
 }
 
 pub struct ZipNode {
-    null_extend: bool,
+    zip_behavior: ZipBehavior,
     out_seq: MorselSeq,
     input_heads: Vec<InputHead>,
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl ZipNode {
-    pub fn new(null_extend: bool, schemas: Vec<Arc<Schema>>) -> Self {
+    pub fn new(zip_behavior: ZipBehavior, schemas: Vec<Arc<Schema>>) -> Self {
         let input_heads = schemas
             .into_iter()
-            .map(|s| InputHead::new(s, !null_extend))
+            .map(|s| InputHead::new(s, zip_behavior))
             .collect();
         Self {
-            null_extend,
+            zip_behavior,
             out_seq: MorselSeq::new(0),
             input_heads,
+            spill_ctx: MostRecentSpillContext::new("zip".into()),
         }
     }
 }
 
 impl ComputeNode for ZipNode {
     fn name(&self) -> &str {
-        if self.null_extend {
-            "zip-null-extend"
-        } else {
-            "zip"
+        match self.zip_behavior {
+            ZipBehavior::NullExtend => "zip-null-extend",
+            ZipBehavior::Broadcast => "zip-broadcast",
+            ZipBehavior::Strict => "zip-strict",
         }
     }
 
@@ -156,31 +167,28 @@ impl ComputeNode for ZipNode {
 
         let mut all_broadcast = true;
         let mut all_done_or_broadcast = true;
-        let mut at_least_one_non_broadcast_done = false;
-        let mut at_least_one_non_broadcast_nonempty = false;
+        let mut nonbroadcast_len = None;
+        let mut all_nonbroadcast_match_len = true;
         for (recv_idx, recv_state) in recv.iter().enumerate() {
             let input_head = &mut self.input_heads[recv_idx];
             if *recv_state == PortState::Done {
                 input_head.notify_no_more_morsels();
-
                 all_done_or_broadcast &=
                     input_head.is_broadcast == Some(true) || input_head.total_len == 0;
-                at_least_one_non_broadcast_done |=
-                    input_head.is_broadcast == Some(false) && input_head.total_len == 0;
+                if input_head.is_broadcast != Some(true) {
+                    all_nonbroadcast_match_len &=
+                        nonbroadcast_len.is_none_or(|l| l == input_head.total_len);
+                    nonbroadcast_len = Some(input_head.total_len);
+                }
             } else {
                 all_done_or_broadcast = false;
             }
 
             all_broadcast &= input_head.is_broadcast == Some(true);
-            at_least_one_non_broadcast_nonempty |=
-                input_head.is_broadcast == Some(false) && input_head.total_len > 0;
         }
 
-        if !self.null_extend {
-            polars_ensure!(
-                !(at_least_one_non_broadcast_done && at_least_one_non_broadcast_nonempty),
-                ShapeMismatch: "zip node received non-equal length inputs"
-            );
+        if !matches!(self.zip_behavior, ZipBehavior::NullExtend) {
+            polars_ensure!(all_nonbroadcast_match_len, ShapeMismatch: "zip node received non-equal length inputs");
         }
 
         let all_output_sent = all_done_or_broadcast && !all_broadcast;
@@ -260,7 +268,9 @@ impl ComputeNode for ZipNode {
                     if let Some(recv) = opt_recv {
                         while !self.input_heads[recv_idx].ready_to_send() {
                             if let Some(morsel) = recv.recv().await {
-                                self.input_heads[recv_idx].add_morsel(morsel);
+                                self.input_heads[recv_idx]
+                                    .add_morsel(morsel, &self.spill_ctx)
+                                    .await;
                             } else {
                                 break;
                             }
@@ -277,21 +287,45 @@ impl ComputeNode for ZipNode {
                 // TODO: recombine morsels to make sure the concatenation is
                 // close to the ideal morsel size.
 
+                let mut should_break = false;
+
                 // Compute common size and send a combined morsel.
-                let Some(common_size) = self.input_heads.iter().flat_map(|h| h.min_len()).min()
+                let Some(common_size) = self
+                    .input_heads
+                    .iter()
+                    .filter_map(|h| {
+                        if h.is_broadcast == Some(false) {
+                            if let Some(m) = h.morsels.front() {
+                                Some(m.height())
+                            } else {
+                                should_break |= match self.zip_behavior {
+                                    ZipBehavior::NullExtend => false,
+                                    ZipBehavior::Broadcast | ZipBehavior::Strict => true,
+                                };
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                    .min()
                 else {
                     // If all input heads are broadcasts we don't get a common size,
                     // we handle this below.
                     break;
                 };
 
-                for input_head in &mut self.input_heads {
-                    out.push(input_head.take(common_size));
+                if should_break {
+                    break;
                 }
-                let out_df = concat_df_horizontal(&out, false)?;
+
+                for input_head in &mut self.input_heads {
+                    out.push(input_head.take(common_size).await);
+                }
+                let out_df = concat_df_horizontal(&out, false, true, false)?;
                 out.clear();
 
-                let morsel = Morsel::new(out_df, self.out_seq, source_token.clone());
+                let morsel = Morsel::new_unregistered(out_df, self.out_seq, source_token.clone());
                 self.out_seq = self.out_seq.successor();
                 if sender.send(morsel).await.is_err() {
                     // Our receiver is no longer interested in any data, no
@@ -318,7 +352,9 @@ impl ComputeNode for ZipNode {
                     while let Some(mut morsel) = recv.recv().await {
                         morsel.source_token().stop();
                         drop(morsel.take_consume_token());
-                        self.input_heads[recv_idx].add_morsel(morsel);
+                        self.input_heads[recv_idx]
+                            .add_morsel(morsel, &self.spill_ctx)
+                            .await;
                     }
                 }
             }
@@ -331,12 +367,12 @@ impl ComputeNode for ZipNode {
                 .all(|h| h.is_broadcast == Some(true));
             if all_broadcast {
                 for input_head in &mut self.input_heads {
-                    out.push(input_head.consume_broadcast());
+                    out.push(input_head.consume_broadcast().await);
                 }
-                let out_df = concat_df_horizontal(&out, false)?;
+                let out_df = concat_df_horizontal(&out, false, true, false)?;
                 out.clear();
 
-                let morsel = Morsel::new(out_df, self.out_seq, source_token.clone());
+                let morsel = Morsel::new_unregistered(out_df, self.out_seq, source_token.clone());
                 self.out_seq = self.out_seq.successor();
                 let _ = sender.send(morsel).await;
             }

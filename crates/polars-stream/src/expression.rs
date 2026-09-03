@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::Column;
+use polars_core::prelude::{Column, GroupPositions};
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
-use polars_expr::prelude::{ExecutionState, PhysicalExpr};
+use polars_expr::prelude::{AggregationContext, ExecutionState, PhysicalExpr};
 
 #[derive(Clone)]
 pub struct StreamExpr {
@@ -26,7 +27,7 @@ impl StreamExpr {
             let state = state.clone();
             let phys_expr = self.inner.clone();
             let df = df.clone();
-            polars_io::pl_async::get_runtime()
+            ASYNC
                 .spawn_blocking(move || phys_expr.evaluate(&df, &state))
                 .await
                 .unwrap()
@@ -35,11 +36,47 @@ impl StreamExpr {
         }
     }
 
+    /// Broadcasts unit-length results to df height. Errors if length does not match df height otherwise.
+    pub async fn evaluate_preserve_len_broadcast(
+        &self,
+        df: &DataFrame,
+        state: &ExecutionState,
+    ) -> PolarsResult<Column> {
+        self.evaluate(df, state)
+            .await?
+            .broadcast_owned_to(df.height())
+    }
+
     pub fn evaluate_blocking(
         &self,
         df: &DataFrame,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         self.inner.evaluate(df, state)
+    }
+
+    pub async fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupPositions,
+        state: &ExecutionState,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        if self.reentrant {
+            let state = state.split();
+            // @NOTE: Clones only the Arc, relatively cheap.
+            let groups = <GroupPositions as Clone>::clone(groups);
+            let phys_expr = self.inner.clone();
+            let df = df.clone();
+            ASYNC
+                .spawn_blocking(move || {
+                    Ok(phys_expr
+                        .evaluate_on_groups(&df, &groups, &state)?
+                        .into_static())
+                })
+                .await
+                .unwrap()
+        } else {
+            self.inner.evaluate_on_groups(df, groups, state)
+        }
     }
 }

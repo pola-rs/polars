@@ -1,4 +1,4 @@
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum RowEncodingVariant {
@@ -6,5 +6,6 @@ pub enum RowEncodingVariant {
     Ordered {
         descending: Option<Vec<bool>>,
         nulls_last: Option<Vec<bool>>,
+        broadcast_nulls: Option<bool>,
     },
 }

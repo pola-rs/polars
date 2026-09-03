@@ -9,19 +9,23 @@ The following methods are available under the `Series.arr` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
+    Series.arr.agg
     Series.arr.all
     Series.arr.any
     Series.arr.arg_max
     Series.arr.arg_min
     Series.arr.contains
     Series.arr.count_matches
+    Series.arr.dot
     Series.arr.explode
+    Series.arr.eval
     Series.arr.first
     Series.arr.get
     Series.arr.join
     Series.arr.last
     Series.arr.len
     Series.arr.max
+    Series.arr.mean
     Series.arr.median
     Series.arr.min
     Series.arr.n_unique

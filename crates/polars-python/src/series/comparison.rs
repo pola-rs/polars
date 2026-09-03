@@ -48,11 +48,13 @@ impl_op!(equal, eq_u8, u8);
 impl_op!(equal, eq_u16, u16);
 impl_op!(equal, eq_u32, u32);
 impl_op!(equal, eq_u64, u64);
+impl_op!(equal, eq_u128, u128);
 impl_op!(equal, eq_i8, i8);
 impl_op!(equal, eq_i16, i16);
 impl_op!(equal, eq_i32, i32);
 impl_op!(equal, eq_i64, i64);
 impl_op!(equal, eq_i128, i128);
+impl_op!(equal, eq_f16, pf16);
 impl_op!(equal, eq_f32, f32);
 impl_op!(equal, eq_f64, f64);
 impl_op!(equal, eq_str, &str);
@@ -61,11 +63,13 @@ impl_op!(not_equal, neq_u8, u8);
 impl_op!(not_equal, neq_u16, u16);
 impl_op!(not_equal, neq_u32, u32);
 impl_op!(not_equal, neq_u64, u64);
+impl_op!(not_equal, neq_u128, u128);
 impl_op!(not_equal, neq_i8, i8);
 impl_op!(not_equal, neq_i16, i16);
 impl_op!(not_equal, neq_i32, i32);
 impl_op!(not_equal, neq_i64, i64);
 impl_op!(not_equal, neq_i128, i128);
+impl_op!(not_equal, neq_f16, pf16);
 impl_op!(not_equal, neq_f32, f32);
 impl_op!(not_equal, neq_f64, f64);
 impl_op!(not_equal, neq_str, &str);
@@ -74,11 +78,13 @@ impl_op!(gt, gt_u8, u8);
 impl_op!(gt, gt_u16, u16);
 impl_op!(gt, gt_u32, u32);
 impl_op!(gt, gt_u64, u64);
+impl_op!(gt, gt_u128, u128);
 impl_op!(gt, gt_i8, i8);
 impl_op!(gt, gt_i16, i16);
 impl_op!(gt, gt_i32, i32);
 impl_op!(gt, gt_i64, i64);
 impl_op!(gt, gt_i128, i128);
+impl_op!(gt, gt_f16, pf16);
 impl_op!(gt, gt_f32, f32);
 impl_op!(gt, gt_f64, f64);
 impl_op!(gt, gt_str, &str);
@@ -87,11 +93,13 @@ impl_op!(gt_eq, gt_eq_u8, u8);
 impl_op!(gt_eq, gt_eq_u16, u16);
 impl_op!(gt_eq, gt_eq_u32, u32);
 impl_op!(gt_eq, gt_eq_u64, u64);
+impl_op!(gt_eq, gt_eq_u128, u128);
 impl_op!(gt_eq, gt_eq_i8, i8);
 impl_op!(gt_eq, gt_eq_i16, i16);
 impl_op!(gt_eq, gt_eq_i32, i32);
 impl_op!(gt_eq, gt_eq_i64, i64);
 impl_op!(gt_eq, gt_eq_i128, i128);
+impl_op!(gt_eq, gt_eq_f16, pf16);
 impl_op!(gt_eq, gt_eq_f32, f32);
 impl_op!(gt_eq, gt_eq_f64, f64);
 impl_op!(gt_eq, gt_eq_str, &str);
@@ -100,11 +108,13 @@ impl_op!(lt, lt_u8, u8);
 impl_op!(lt, lt_u16, u16);
 impl_op!(lt, lt_u32, u32);
 impl_op!(lt, lt_u64, u64);
+impl_op!(lt, lt_u128, u128);
 impl_op!(lt, lt_i8, i8);
 impl_op!(lt, lt_i16, i16);
 impl_op!(lt, lt_i32, i32);
 impl_op!(lt, lt_i64, i64);
 impl_op!(lt, lt_i128, i128);
+impl_op!(lt, lt_f16, pf16);
 impl_op!(lt, lt_f32, f32);
 impl_op!(lt, lt_f64, f64);
 impl_op!(lt, lt_str, &str);
@@ -113,19 +123,23 @@ impl_op!(lt_eq, lt_eq_u8, u8);
 impl_op!(lt_eq, lt_eq_u16, u16);
 impl_op!(lt_eq, lt_eq_u32, u32);
 impl_op!(lt_eq, lt_eq_u64, u64);
+impl_op!(lt_eq, lt_eq_u128, u128);
 impl_op!(lt_eq, lt_eq_i8, i8);
 impl_op!(lt_eq, lt_eq_i16, i16);
 impl_op!(lt_eq, lt_eq_i32, i32);
 impl_op!(lt_eq, lt_eq_i64, i64);
 impl_op!(lt_eq, lt_eq_i128, i128);
+impl_op!(lt_eq, lt_eq_f16, pf16);
 impl_op!(lt_eq, lt_eq_f32, f32);
 impl_op!(lt_eq, lt_eq_f64, f64);
 impl_op!(lt_eq, lt_eq_str, &str);
 
 struct PyDecimal(i128, usize, usize);
 
-impl<'source> FromPyObject<'source> for PyDecimal {
-    fn extract_bound(obj: &Bound<'source, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for PyDecimal {
+    type Error = PyErr;
+
+    fn extract(obj: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         if let Ok(val) = obj.extract() {
             return Ok(PyDecimal(val, DEC128_MAX_PREC, 0));
         }

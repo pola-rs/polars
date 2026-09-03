@@ -13,6 +13,8 @@ Array
      - Returns true if the array contains the value.
    * - :ref:`ARRAY_GET <array_get>`
      - Returns the value at the given index in the array.
+   * - :ref:`ARRAY_INNER_PRODUCT <array_inner_product>`
+     - Returns the inner product of two fixed-size arrays. Alias: ``ARRAY_DOT_PRODUCT``.
    * - :ref:`ARRAY_LENGTH <array_length>`
      - Returns the length of the array.
    * - :ref:`ARRAY_LOWER <array_lower>`
@@ -117,6 +119,61 @@ Returns the value at the given index in the array.
     # │ [1, 2]    ┆ [6, 7]     ┆ 1        ┆ null     │
     # │ [4, 3, 2] ┆ [8, 9, 10] ┆ 4        ┆ 10       │
     # └───────────┴────────────┴──────────┴──────────┘
+
+.. _array_inner_product:
+
+ARRAY_INNER_PRODUCT
+-------------------
+Returns the inner product of two fixed-size arrays of equal width. Their inner
+data types are cast to a common supertype, which must be an integer, ``Float32``,
+or ``Float64``. ``ARRAY_DOT_PRODUCT`` is an alias.
+
+Inputs may be fixed-size Array expressions or direct, known-width SQL array
+literals. Direct literals are interpreted as scalar fixed-size Arrays and
+broadcast against the other input. Other expressions with variable-size List
+dtype are not implicitly converted.
+
+Coordinates where either array element is null do not contribute to the result.
+A non-null row with no valid coordinate pairs returns zero. If either input
+Array is null for a row, the result for that row is null.
+
+**Example:**
+
+.. code-block:: python
+
+    dtype = pl.Array(pl.Float64, 2)
+    df = pl.DataFrame(
+        {
+            "lhs": [[1.0, 2.0], [3.0, 4.0]],
+            "rhs": [[10.0, 20.0], [30.0, 40.0]],
+        },
+        schema={"lhs": dtype, "rhs": dtype},
+    )
+    df.sql("""
+      SELECT ARRAY_INNER_PRODUCT(lhs, rhs) AS dot FROM self
+    """)
+    # shape: (2, 1)
+    # ┌───────┐
+    # │ dot   │
+    # │ ---   │
+    # │ f64   │
+    # ╞═══════╡
+    # │ 50.0  │
+    # │ 250.0 │
+    # └───────┘
+
+    df.sql("""
+      SELECT ARRAY_INNER_PRODUCT(lhs, [10.0, 20.0]) AS dot FROM self
+    """)
+    # shape: (2, 1)
+    # ┌───────┐
+    # │ dot   │
+    # │ ---   │
+    # │ f64   │
+    # ╞═══════╡
+    # │ 50.0  │
+    # │ 110.0 │
+    # └───────┘
 
 .. _array_length:
 
@@ -342,7 +399,7 @@ Unnest/explode an array column into multiple rows.
 
     df = pl.DataFrame(
       {
-        "foo": [["a", "b"], ["c", "d", "e"]],
+        "foo": [["a", "b", "c"], ["d", "e"]],
         "bar": [[6, 7, 8], [9, 10]]
       }
     )

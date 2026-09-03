@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import importlib.util
 import os
 import sys
 from typing import TYPE_CHECKING, Any, Literal
 
+from polars._utils.expired import RemovedParameter, removed_parameters
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_ldf
 from polars.catalog.unity.models import (
@@ -21,7 +23,7 @@ if TYPE_CHECKING:
 
     import deltalake
 
-    from polars._typing import SchemaDict
+    from polars._typing import SchemaDict, StorageOptionsDict
     from polars.catalog.unity.models import DataSourceFormat, TableType
     from polars.dataframe.frame import DataFrame
     from polars.io.cloud import (
@@ -176,6 +178,14 @@ class Catalog:
     ) -> tuple[dict[str, str] | None, dict[str, str], int]:
         return self._client.get_table_credentials(table_id=table_id, write=write)
 
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint='Pass {"max_retries": n} via `storage_options` instead.',
+        ),
+    )
     def scan_table(
         self,
         catalog_name: str,
@@ -184,11 +194,10 @@ class Catalog:
         *,
         delta_table_version: int | str | datetime | None = None,
         delta_table_options: dict[str, Any] | None = None,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int = 2,
     ) -> LazyFrame:
         """
         Retrieve the metadata of the specified table.
@@ -231,8 +240,6 @@ class Catalog:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
 
         """
         table_info = self.get_table_info(catalog_name, namespace, table_name)
@@ -273,12 +280,6 @@ class Catalog:
             )
             raise ValueError(msg)
 
-        if storage_options:
-            storage_options = list(storage_options.items())  # type: ignore[assignment]
-        else:
-            # Handle empty dict input
-            storage_options = None
-
         return wrap_ldf(
             self._client.scan_table(
                 catalog_name,
@@ -286,7 +287,6 @@ class Catalog:
                 table_name,
                 credential_provider=credential_provider,
                 cloud_options=storage_options,
-                retries=retries,
             )
         )
 
@@ -302,7 +302,7 @@ class Catalog:
         ] = "error",
         delta_write_options: dict[str, Any] | None = None,
         delta_merge_options: dict[str, Any] | None = None,
-        storage_options: dict[str, str] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
@@ -603,7 +603,7 @@ class Catalog:
     def _init_credentials(
         self,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        storage_options: dict[str, Any] | None,
+        storage_options: StorageOptionsDict | None,
         table_info: TableInfo,
         *,
         write: bool,
@@ -614,6 +614,9 @@ class Catalog:
     ]:
         from polars.io.cloud.credential_provider._builder import (
             CredentialProviderBuilder,
+        )
+        from polars.io.cloud.credential_provider._providers import (
+            CredentialProviderAzure,
         )
 
         if credential_provider != "auto":
@@ -636,6 +639,21 @@ class Catalog:
 
             if storage_update_options:
                 storage_options = {**(storage_options or {}), **storage_update_options}
+
+            if (
+                table_info.storage_location is not None
+                and (
+                    azure_storage_account_name
+                    := CredentialProviderAzure._extract_adls_uri_storage_account(
+                        table_info.storage_location
+                    )
+                )
+                is not None
+            ):
+                storage_options = storage_options or {}
+                storage_options["azure_storage_account_name"] = (
+                    azure_storage_account_name
+                )
 
             for _ in v:
                 pass
@@ -690,6 +708,10 @@ class Catalog:
 class CatalogCredentialProvider:
     """Retrieves credentials from the Unity catalog temporary credentials API."""
 
+    catalog: Catalog
+    table_id: str
+    write: bool
+
     def __init__(self, catalog: Catalog, table_id: str, *, write: bool) -> None:
         self.catalog = catalog
         self.table_id = table_id
@@ -699,9 +721,7 @@ class CatalogCredentialProvider:
         _, (creds, expiry) = self._credentials_iter()
         return creds, expiry
 
-    def _credentials_iter(
-        self,
-    ) -> Generator[Any]:
+    def _credentials_iter(self) -> Generator[Any]:
         creds, storage_update_options, expiry = self.catalog._get_table_credentials(
             self.table_id, write=self.write
         )

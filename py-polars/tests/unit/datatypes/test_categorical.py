@@ -3,14 +3,22 @@ from __future__ import annotations
 import io
 import operator
 import pickle
-from typing import Callable
+import re
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 import polars as pl
+from polars.exceptions import AttributeRemovedError
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric.strategies.core import series
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def test_categorical_full_outer_join() -> None:
@@ -183,8 +191,8 @@ def test_categorical_global_ordering(
     s2 = pl.Series("b_cat", ["a", "b", "c", "a", "c"], dtype=pl.Categorical)
     assert_series_equal(op(s, s2), expected_lexical)
 
-    s = s.cast(pl.Categorical("lexical"))
-    s2 = s2.cast(pl.Categorical("lexical"))
+    s = s.cast(pl.Categorical())
+    s2 = s2.cast(pl.Categorical())
     assert_series_equal(op(s, s2), expected_lexical)
 
 
@@ -208,8 +216,8 @@ def test_categorical_global_ordering_broadcast_rhs(
     s2 = pl.Series("b_cat", ["a"], dtype=pl.Categorical)
     assert_series_equal(op(s, s2), expected_lexical)
 
-    s = s.cast(pl.Categorical("lexical"))
-    s2 = s2.cast(pl.Categorical("lexical"))
+    s = s.cast(pl.Categorical())
+    s2 = s2.cast(pl.Categorical())
     assert_series_equal(op(s, s2), expected_lexical)
     assert_series_equal(op(s, s2.cast(pl.String)), expected_lexical)
 
@@ -234,8 +242,8 @@ def test_categorical_global_ordering_broadcast_lhs(
     s2 = pl.Series(["c", "a", "b"], dtype=pl.Categorical)
     assert_series_equal(op(s, s2), expected_lexical)
 
-    s = s.cast(pl.Categorical("lexical"))
-    s2 = s2.cast(pl.Categorical("lexical"))
+    s = s.cast(pl.Categorical())
+    s2 = s2.cast(pl.Categorical())
     assert_series_equal(op(s, s2), expected_lexical)
     assert_series_equal(op(s, s2.cast(pl.String)), expected_lexical)
 
@@ -432,7 +440,7 @@ def test_categorical_sort_multiple() -> None:
         }
     )
 
-    result = df.with_columns(pl.col("x").cast(pl.Categorical("lexical"))).sort("n", "x")
+    result = df.with_columns(pl.col("x").cast(pl.Categorical())).sort("n", "x")
     assert result["x"].to_list() == ["bar", "baz", "foo"]
 
 
@@ -636,7 +644,7 @@ def test_categorical_vstack() -> None:
         {"a": pl.Series(["a", "b", "c", "d", "e", "f"], dtype=pl.Categorical)}
     )
     assert_frame_equal(df3, expected)
-    assert set(df3.get_column("a").cat.get_categories().to_list()) >= {
+    assert set(df3.get_column("a").unique().to_list()) == {
         "a",
         "b",
         "c",
@@ -686,13 +694,13 @@ def test_sort_categorical_retain_none() -> None:
 
 
 def test_cat_preserve_lexical_ordering_on_clear() -> None:
-    s = pl.Series("a", ["a", "b"], dtype=pl.Categorical(ordering="lexical"))
+    s = pl.Series("a", ["a", "b"], dtype=pl.Categorical())
     s2 = s.clear()
     assert s.dtype == s2.dtype
 
 
 def test_cat_preserve_lexical_ordering_on_concat() -> None:
-    dtype = pl.Categorical(ordering="lexical")
+    dtype = pl.Categorical()
 
     df = pl.DataFrame({"x": ["b", "a", "c"]}).with_columns(pl.col("x").cast(dtype))
     df2 = pl.concat([df, df])
@@ -700,16 +708,15 @@ def test_cat_preserve_lexical_ordering_on_concat() -> None:
 
 
 @pytest.mark.may_fail_cloud  # reason: sorted flag
-@pytest.mark.may_fail_auto_streaming
 def test_cat_append_lexical_sorted_flag() -> None:
     df = pl.DataFrame({"x": [0, 1, 1], "y": ["B", "B", "A"]}).with_columns(
-        pl.col("y").cast(pl.Categorical(ordering="lexical"))
+        pl.col("y").cast(pl.Categorical())
     )
     df2 = pl.concat([part.sort("y") for part in df.partition_by("x")])
 
     assert not (df2["y"].is_sorted())
 
-    s = pl.Series("a", ["z", "k", "a"], pl.Categorical("lexical"))
+    s = pl.Series("a", ["z", "k", "a"], pl.Categorical())
     s1 = s[[0]]
     s2 = s[[1]]
     s3 = s[[2]]
@@ -717,19 +724,6 @@ def test_cat_append_lexical_sorted_flag() -> None:
     s1.append(s3)
 
     assert not (s1.is_sorted())
-
-
-def test_get_cat_categories_multiple_chunks() -> None:
-    df = pl.DataFrame(
-        [
-            pl.Series("e", ["a", "b"], pl.Categorical),
-        ]
-    )
-    df = pl.concat(
-        [df for _ in range(100)], how="vertical", rechunk=False, parallel=True
-    )
-    cats = df.lazy().select(pl.col("e").cat.get_categories()).collect()["e"].to_list()
-    assert set(cats) >= {"a", "b"}
 
 
 @pytest.mark.parametrize(
@@ -816,7 +810,7 @@ def test_categorical_prefill() -> None:
 def test_categorical_min_max() -> None:
     schema = pl.Schema(
         {
-            "b": pl.Categorical("lexical"),
+            "b": pl.Categorical(),
             "c": pl.Enum(["foo", "bar"]),
         }
     )
@@ -850,7 +844,7 @@ def test_categorical_min_max() -> None:
     assert result_alt.to_dict(as_series=False) == result.to_dict(as_series=False)
 
 
-def test_categorical_io_roundtrip() -> None:
+def test_ipc_categorical_roundtrip() -> None:
     # Ensure dictionary IDs are offsetted correctly when there are nested columns
     # containing multiple categoricals.
     lf = pl.LazyFrame(
@@ -878,9 +872,11 @@ def test_categorical_io_roundtrip() -> None:
     )
 
     lf.sink_ipc(f := io.BytesIO())
+    f.seek(0)
     assert_frame_equal(pl.scan_ipc(f), lf)
 
     lf.sink_parquet(f := io.BytesIO())
+    f.seek(0)
     assert_frame_equal(pl.scan_parquet(f), lf)
 
     assert_frame_equal(pickle.loads(pickle.dumps(lf)), lf)
@@ -951,8 +947,8 @@ def test_categorical_serialization_prunes_unused_categories_24034() -> None:
         schema={"a": cat_dtype},
     )
 
-    lf.sink_ipc(f := io.BytesIO())
-    lf_repeat_100.sink_ipc(f_repeat_100 := io.BytesIO())
+    lf.collect().write_ipc(f := io.BytesIO())
+    lf_repeat_100.collect().write_ipc(f_repeat_100 := io.BytesIO())
     ipc_bytes = f.getvalue()
     ipc_repeat_100_bytes = f_repeat_100.getvalue()
 
@@ -961,8 +957,8 @@ def test_categorical_serialization_prunes_unused_categories_24034() -> None:
     ipc_stream_bytes = f.getvalue()
     ipc_stream_repeat_100_bytes = f_repeat_100.getvalue()
 
-    lf.sink_parquet(f := io.BytesIO())
-    lf_repeat_100.sink_parquet(f_repeat_100 := io.BytesIO())
+    lf.collect().write_parquet(f := io.BytesIO())
+    lf_repeat_100.collect().write_parquet(f_repeat_100 := io.BytesIO())
     parquet_bytes = f.getvalue()
     parquet_repeat_100_bytes = f_repeat_100.getvalue()
 
@@ -1009,3 +1005,49 @@ def test_categorical_serialization_prunes_unused_categories_24034() -> None:
     assert ipc_stream_size_ratio <= 0.8
     assert parquet_size_ratio <= 0.5
     assert pickle_size_ratio <= 0.8
+
+
+@given(data=st.data())
+def test_categories_to_series(data: st.DataObject) -> None:
+    categories = pl.Categories.random()
+    s = data.draw(series(dtype=pl.Categorical(categories)))
+    assert isinstance(s.dtype, pl.Categorical)
+    assert_series_equal(
+        s.dtype.categories.to_series(),
+        s.unique(maintain_order=True).cast(pl.String).drop_nulls(),
+        check_names=False,
+    )
+
+
+@given(data=st.data())
+def test_categories_to_dict(data: st.DataObject) -> None:
+    categories = pl.Categories.random()
+    s = data.draw(series(dtype=pl.Categorical(categories)))
+    assert isinstance(s.dtype, pl.Categorical)
+    assert s.dtype.categories.to_dict() == {
+        key: i
+        for i, key in enumerate(
+            s.unique(maintain_order=True).cast(pl.String).drop_nulls().to_list()
+        )
+    }
+
+
+@pytest.mark.parametrize(
+    ("name", "match"),
+    [
+        ("get_categories", "use `Expr.unique()`"),
+        ("is_local", "Categoricals no longer have a local scope."),
+        ("to_local", "Categoricals no longer have a local scope."),
+        ("uses_lexical_ordering", "Categoricals are now always ordered lexically."),
+    ],
+)
+def test_removed_cat_methods(name: str, match: str) -> None:
+    s = pl.Series(["a", "b"], dtype=pl.Categorical)
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        getattr(s.cat, name)
+
+
+def test_removed_cat_methods_expr() -> None:
+    msg = "use `Expr.unique()`"
+    with pytest.raises(AttributeRemovedError, match=re.escape(msg)):
+        pl.col("a").cat.get_categories  # type: ignore[attr-defined]

@@ -10,7 +10,7 @@ const fn base_path() -> &'static str {
 fn region() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
-        PlPath::new(&format!("{base_path}/region.feather")),
+        PlRefPath::new(format!("{base_path}/region.feather")),
         Default::default(),
         Default::default(),
     )
@@ -19,7 +19,7 @@ fn region() -> LazyFrame {
 fn nation() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
-        PlPath::new(&format!("{base_path}/nation.feather")),
+        PlRefPath::new(format!("{base_path}/nation.feather")),
         Default::default(),
         Default::default(),
     )
@@ -29,7 +29,7 @@ fn nation() -> LazyFrame {
 fn supplier() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
-        PlPath::new(&format!("{base_path}/supplier.feather")),
+        PlRefPath::new(format!("{base_path}/supplier.feather")),
         Default::default(),
         Default::default(),
     )
@@ -39,7 +39,7 @@ fn supplier() -> LazyFrame {
 fn part() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
-        PlPath::new(&format!("{base_path}/part.feather")),
+        PlRefPath::new(format!("{base_path}/part.feather")),
         Default::default(),
         Default::default(),
     )
@@ -49,7 +49,7 @@ fn part() -> LazyFrame {
 fn partsupp() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
-        PlPath::new(&format!("{base_path}/partsupp.feather")),
+        PlRefPath::new(format!("{base_path}/partsupp.feather")),
         Default::default(),
         Default::default(),
     )
@@ -74,7 +74,7 @@ fn test_q2() -> PolarsResult<()> {
             [col("p_partkey"), col("ps_supplycost")],
             [col("p_partkey"), col("ps_supplycost")],
             JoinType::Inner.into(),
-        )
+        )?
         .select([cols([
             "s_acctbal",
             "s_name",

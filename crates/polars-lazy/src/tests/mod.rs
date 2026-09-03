@@ -5,6 +5,8 @@ mod cse;
 #[cfg(feature = "parquet")]
 mod io;
 mod logical;
+#[cfg(feature = "streaming")]
+mod observer;
 mod optimization_checks;
 #[cfg(all(feature = "strings", feature = "cse"))]
 mod pdsh;
@@ -38,7 +40,7 @@ use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::df;
 use polars_core::prelude::*;
 use polars_io::prelude::*;
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 
 #[cfg(feature = "cov")]
 use crate::dsl::pearson_corr;
@@ -61,14 +63,16 @@ static FOODS_IPC: &str = "../../examples/datasets/foods1.ipc";
 
 #[cfg(feature = "csv")]
 fn scan_foods_csv() -> LazyFrame {
-    LazyCsvReader::new(PlPath::new(FOODS_CSV)).finish().unwrap()
+    LazyCsvReader::new(PlRefPath::new(FOODS_CSV))
+        .finish()
+        .unwrap()
 }
 
 #[cfg(feature = "ipc")]
 fn scan_foods_ipc() -> LazyFrame {
     init_files();
     LazyFrame::scan_ipc(
-        PlPath::new(FOODS_IPC),
+        PlRefPath::new(FOODS_IPC),
         Default::default(),
         Default::default(),
     )
@@ -152,7 +156,7 @@ fn scan_foods_parquet(parallel: bool) -> LazyFrame {
         rechunk: true,
         ..Default::default()
     };
-    LazyFrame::scan_parquet(PlPath::new(out_path), args).unwrap()
+    LazyFrame::scan_parquet(PlRefPath::new(out_path), args).unwrap()
 }
 
 #[cfg(feature = "parquet")]
@@ -172,7 +176,7 @@ fn scan_nutri_score_null_column_parquet(parallel: bool) -> LazyFrame {
         rechunk: true,
         ..Default::default()
     };
-    LazyFrame::scan_parquet(PlPath::new(out_path), args).unwrap()
+    LazyFrame::scan_parquet(PlRefPath::new(out_path), args).unwrap()
 }
 
 pub(crate) fn fruits_cars() -> DataFrame {

@@ -1,10 +1,11 @@
 use std::num::NonZeroUsize;
 
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_core::frame::DataFrame;
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_plan::prelude::PlanCallback;
 
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::nodes::ComputeNode;
@@ -53,16 +54,16 @@ impl ComputeNode for CallbackSinkNode {
             recv[0] = PortState::Done;
 
             // Flush the last buffer
-            if !self.buffer.is_empty() && !self.is_done {
+            if self.buffer.height() > 0 && !self.is_done {
                 let function = self.function.clone();
                 let df = std::mem::take(&mut self.buffer);
 
                 assert!(
                     self.chunk_size
-                        .is_some_and(|chunk_size| self.buffer.height() <= chunk_size.into())
+                        .is_some_and(|chunk_size| self.buffer.height() <= chunk_size.get())
                 );
                 state.spawn_subphase_task(async move {
-                    polars_io::pl_async::get_runtime()
+                    ASYNC
                         .spawn_blocking(move || function.call(df))
                         .await
                         .unwrap()?;
@@ -95,15 +96,15 @@ impl ComputeNode for CallbackSinkNode {
             while !self.is_done
                 && let Ok(m) = recv.recv().await
             {
-                let (df, _, _, consume_token) = m.into_inner();
+                let (sf, _, _, consume_token) = m.into_inner();
 
                 // @NOTE: This also performs schema validation.
-                self.buffer.vstack_mut(&df)?;
+                self.buffer.vstack_mut_owned(sf.into_df().await)?;
 
-                while !self.buffer.is_empty()
+                while self.buffer.height() > 0
                     && self
                         .chunk_size
-                        .is_none_or(|chunk_size| self.buffer.height() >= chunk_size.into())
+                        .is_none_or(|chunk_size| self.buffer.height() >= chunk_size.get())
                 {
                     let chunk_size = self.chunk_size.map_or(usize::MAX, Into::into);
 
@@ -113,7 +114,7 @@ impl ComputeNode for CallbackSinkNode {
                         .split_at(self.buffer.height().min(chunk_size) as i64);
 
                     let function = self.function.clone();
-                    let should_stop = polars_io::pl_async::get_runtime()
+                    let should_stop = ASYNC
                         .spawn_blocking(move || function.call(df))
                         .await
                         .unwrap()?;

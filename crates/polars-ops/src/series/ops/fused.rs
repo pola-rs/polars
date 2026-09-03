@@ -4,7 +4,7 @@ use polars_core::prelude::*;
 use polars_core::utils::align_chunks_ternary;
 use polars_core::with_match_physical_numeric_polars_type;
 
-// a + (b * c)
+// (a * b) + c
 fn fma_arr<T: NumericNative>(
     a: &PrimitiveArray<T>,
     b: &PrimitiveArray<T>,
@@ -22,7 +22,7 @@ fn fma_arr<T: NumericNative>(
         .iter()
         .zip(b.iter())
         .zip(c.iter())
-        .map(|((a, b), c)| *a + (*b * *c))
+        .map(|((a, b), c)| *a * *b + *c)
         .collect::<Vec<_>>();
     PrimitiveArray::from_data_default(out.into(), validity)
 }
@@ -51,10 +51,7 @@ pub fn fma_columns(a: &Column, b: &Column, c: &Column) -> Column {
             fma_ca(a, b, c).into_column()
         })
     } else {
-        (a.as_materialized_series()
-            + &(b.as_materialized_series() * c.as_materialized_series()).unwrap())
-            .unwrap()
-            .into()
+        (&(a * b).unwrap() + c).unwrap()
     }
 }
 
@@ -105,10 +102,7 @@ pub fn fsm_columns(a: &Column, b: &Column, c: &Column) -> Column {
             fsm_ca(a, b, c).into_column()
         })
     } else {
-        (a.as_materialized_series()
-            - &(b.as_materialized_series() * c.as_materialized_series()).unwrap())
-            .unwrap()
-            .into()
+        (a - &(b * c).unwrap()).unwrap()
     }
 }
 
@@ -158,9 +152,6 @@ pub fn fms_columns(a: &Column, b: &Column, c: &Column) -> Column {
             fms_ca(a, b, c).into_column()
         })
     } else {
-        (&(a.as_materialized_series() * b.as_materialized_series()).unwrap()
-            - c.as_materialized_series())
-        .unwrap()
-        .into()
+        (&(a * b).unwrap() - c).unwrap()
     }
 }

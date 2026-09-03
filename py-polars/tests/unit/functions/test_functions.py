@@ -11,7 +11,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
-    from polars._typing import ConcatMethod
+    from polars._typing import ConcatMethod, CorrelationMethod, PolarsDataType
 
 
 def test_concat_align() -> None:
@@ -142,9 +142,9 @@ def test_concat_horizontal(lazy: bool) -> None:
     b = pl.DataFrame({"c": [5, 7, 8, 9], "d": [1, 2, 1, 2], "e": [1, 2, 1, 2]})
 
     if lazy:
-        out = pl.concat([a.lazy(), b.lazy()], how="horizontal").collect()
+        out = pl.concat([a.lazy(), b.lazy()], how="horizontal_extend").collect()
     else:
-        out = pl.concat([a, b], how="horizontal")
+        out = pl.concat([a, b], how="horizontal_extend")
 
     expected = pl.DataFrame(
         {
@@ -165,9 +165,11 @@ def test_concat_horizontal_three_dfs(lazy: bool) -> None:
     c = pl.DataFrame({"c1": [1, 2, 3, 4], "c2": [5, 6, 7, 8], "c3": [9, 10, 11, 12]})
 
     if lazy:
-        out = pl.concat([a.lazy(), b.lazy(), c.lazy()], how="horizontal").collect()
+        out = pl.concat(
+            [a.lazy(), b.lazy(), c.lazy()], how="horizontal_extend"
+        ).collect()
     else:
-        out = pl.concat([a, b, c], how="horizontal")
+        out = pl.concat([a, b, c], how="horizontal_extend")
 
     expected = pl.DataFrame(
         {
@@ -200,7 +202,7 @@ def test_concat_horizontal_duplicate_col() -> None:
     b = pl.LazyFrame({"c": [5, 7, 8, 9], "d": [1, 2, 1, 2], "a": [1, 2, 1, 2]})
 
     with pytest.raises(DuplicateError):
-        pl.concat([a, b], how="horizontal").collect()
+        pl.concat([a, b], how="horizontal_extend").collect()
 
 
 def test_concat_vertical() -> None:
@@ -235,7 +237,7 @@ def test_cov() -> None:
     )
 
     # expect same result from both approaches
-    for idx, (r1, r2) in enumerate(zip(res1, res2)):
+    for idx, (r1, r2) in enumerate(zip(res1, res2, strict=True)):
         expected_value = -645.8333333333 if idx == 0 else -1291.6666666666
         assert pytest.approx(expected_value) == r1.item()
         assert_series_equal(r1, r2)
@@ -259,7 +261,7 @@ def test_corr() -> None:
     )
 
     # expect same result from both approaches
-    for idx, (r1, r2) in enumerate(zip(res1, res2)):
+    for idx, (r1, r2) in enumerate(zip(res1, res2, strict=True)):
         assert pytest.approx(-0.412199756 if idx == 0 else -0.5) == r1.item()
         assert_series_equal(r1, r2)
 
@@ -291,6 +293,15 @@ def test_null_handling_correlation() -> None:
         )
         == "nan"
     )
+
+
+# see #25407
+def test_spearman_propagate_nans_with_all_nulls_does_not_panic() -> None:
+    df = pl.select(x=None, y=None).cast(pl.Float64)
+
+    out = df.select(pl.corr("x", "y", method="spearman", propagate_nans=True))
+
+    assert str(out.item()) == "nan"
 
 
 def test_align_frames() -> None:
@@ -352,7 +363,7 @@ def test_align_frames() -> None:
     with pytest.raises(TypeError):
         pl.align_frames(  # type: ignore[type-var]
             pl.from_pandas(pdf1.reset_index()).lazy(),
-            pl.from_pandas(pdf2.reset_index()),
+            pl.from_pandas(pdf2.reset_index()),  # pyrefly: ignore[bad-argument-type]
             on="date",
         )
 
@@ -648,6 +659,86 @@ def test_head_tail(fruits_cars: pl.DataFrame) -> None:
     assert_series_equal(res_expr.to_series(), expected)
 
 
+@pytest.mark.parametrize(
+    "dtype", [pl.Int32, pl.Boolean, pl.String, pl.Categorical, pl.List]
+)
+def test_first_last(dtype: PolarsDataType) -> None:
+    def to_target_dtype(s: pl.Series) -> pl.Series:
+        # For categorical, we must go through String.
+        if dtype == pl.Categorical:
+            return s.cast(pl.String).cast(dtype)
+        # For lists, we have to explicitly construct the list with pl.list,
+        # preserving validity so a null scalar maps to a null list.
+        if dtype == pl.List:
+            inner = s.cast(pl.Int64)
+            return pl.select(
+                pl.when(inner.is_not_null()).then(pl.list(inner)).alias(s.name)
+            ).to_series()
+        return s.cast(dtype)
+
+    # Ensure multiple chunks.
+    s1 = pl.Series("a", [None, None], dtype=pl.Int32)
+    s2 = pl.Series("a", [None, 3, 4, None], dtype=pl.Int32)
+    s3 = pl.Series("a", [None, None], dtype=pl.Int32)
+    s = s1.append(s2).append(s3)
+    s = to_target_dtype(s)
+    lf = s.to_frame().lazy()
+
+    result = lf.select(pl.col("a").first()).collect()
+    expected = to_target_dtype(pl.Series("a", [None])).to_frame()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").first(ignore_nulls=True)).collect()
+    expected = to_target_dtype(pl.Series("a", [3])).to_frame()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").last()).collect()
+    expected = to_target_dtype(pl.Series("a", [None])).to_frame()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").last(ignore_nulls=True)).collect()
+    expected = to_target_dtype(pl.Series("a", [4])).to_frame()
+    assert_frame_equal(result, expected)
+
+    # Test with empty
+    lf = pl.Series("a", [], dtype=dtype).to_frame().lazy()
+    expected = pl.Series("a", [None], dtype=dtype).to_frame()
+
+    result = lf.select(pl.col("a").first()).collect()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").first(ignore_nulls=True)).collect()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").last()).collect()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").last(ignore_nulls=True)).collect()
+    assert_frame_equal(result, expected)
+
+    # Test with no nulls
+    lf = (
+        to_target_dtype(pl.Series("a", [1, 2, 3, 4, 5], dtype=pl.Int32))
+        .to_frame()
+        .lazy()
+    )
+    expected = to_target_dtype(pl.Series("a", [1])).to_frame()
+
+    result = lf.select(pl.col("a").first()).collect()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").first(ignore_nulls=True)).collect()
+    assert_frame_equal(result, expected)
+
+    expected = to_target_dtype(pl.Series("a", [5])).to_frame()
+
+    result = lf.select(pl.col("a").last()).collect()
+    assert_frame_equal(result, expected)
+
+    result = lf.select(pl.col("a").last(ignore_nulls=True)).collect()
+    assert_frame_equal(result, expected)
+
+
 def test_escape_regex() -> None:
     result = pl.escape_regex("abc(\\w+)")
     expected = "abc\\(\\\\w\\+\\)"
@@ -656,7 +747,7 @@ def test_escape_regex() -> None:
     df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
     with pytest.raises(
         TypeError,
-        match="escape_regex function is unsupported for `Expr`, you may want use `Expr.str.escape_regex` instead",
+        match=r"escape_regex function is unsupported for `Expr`, you may want use `Expr\.str\.escape_regex` instead",
     ):
         df.with_columns(escaped=pl.escape_regex(pl.col("text")))  # type: ignore[arg-type]
 
@@ -729,3 +820,26 @@ def test_row_index_expr() -> None:
             schema={"index": pl.get_index_type()},
         ),
     )
+
+
+@pytest.mark.parametrize("dt", [pl.Float16, pl.Float32, pl.Float64])
+@pytest.mark.parametrize("method", ["pearson", "spearman"])
+def test_corr_spearman_float_dtype_26335(
+    dt: pl.DataType, method: CorrelationMethod
+) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 8, 3],
+            "b": [4, 5, 2],
+            "c": ["foo", "foo", "foo"],
+        },
+        schema_overrides={"a": dt, "b": dt},
+    )
+
+    q = df.lazy().select(pl.corr("a", "b", method=method))
+    out = q.collect()
+    assert out.schema["a"] == dt
+
+    q = df.lazy().group_by("c").agg(pl.corr("a", "b", method=method))
+    out = q.collect()
+    assert out.schema["a"] == dt

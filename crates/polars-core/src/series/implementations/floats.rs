@@ -1,9 +1,7 @@
+use num_traits::AsPrimitive;
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
-use crate::chunked_array::comparison::*;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::*;
 
 macro_rules! impl_dyn_series {
@@ -25,15 +23,6 @@ macro_rules! impl_dyn_series {
             fn _get_flags(&self) -> StatisticsFlags {
                 self.0.get_flags()
             }
-            unsafe fn equal_element(
-                &self,
-                idx_self: usize,
-                idx_other: usize,
-                other: &Series,
-            ) -> bool {
-                self.0.equal_element(idx_self, idx_other, other)
-            }
-
             #[cfg(feature = "zip_with")]
             fn zip_with_same_type(
                 &self,
@@ -79,18 +68,28 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "algorithm_group_by")]
+            unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+                self.0.agg_arg_min(groups)
+            }
+
+            #[cfg(feature = "algorithm_group_by")]
+            unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+                self.0.agg_arg_max(groups)
+            }
+
+            #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
                 self.0.agg_sum(groups)
             }
 
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_std(&self, groups: &GroupsType, ddof: u8) -> Series {
-                self.agg_std(groups, ddof)
+                SeriesWrap::agg_std(self, groups, ddof)
             }
 
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_var(&self, groups: &GroupsType, ddof: u8) -> Series {
-                self.agg_var(groups, ddof)
+                SeriesWrap::agg_var(self, groups, ddof)
             }
 
             #[cfg(feature = "algorithm_group_by")]
@@ -209,7 +208,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn median(&self) -> Option<f64> {
-                self.0.median().map(|v| v as f64)
+                self.0.median().map(|v| v.as_())
             }
 
             fn std(&self, ddof: u8) -> Option<f64> {
@@ -246,6 +245,10 @@ macro_rules! impl_dyn_series {
 
             fn rechunk(&self) -> Series {
                 self.0.rechunk().into_owned().into_series()
+            }
+
+            fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+                self.0.clone().with_validity(validity).into_series()
             }
 
             fn new_from_index(&self, index: usize, length: usize) -> Series {
@@ -292,6 +295,11 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::arg_unique(&self.0)
             }
 
+            #[cfg(feature = "algorithm_group_by")]
+            fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+                ChunkUnique::unique_id(&self.0)
+            }
+
             fn is_null(&self) -> BooleanChunked {
                 self.0.is_null()
             }
@@ -324,7 +332,7 @@ macro_rules! impl_dyn_series {
             fn mean_reduce(&self) -> PolarsResult<Scalar> {
                 let mean = self
                     .mean()
-                    .map(|m| m as <$pdt as PolarsDataType>::OwnedPhysical);
+                    .map(AsPrimitive::<<$pdt as PolarsDataType>::OwnedPhysical>::as_);
                 Ok(Scalar::new(self.dtype().clone(), mean.into()))
             }
             fn median_reduce(&self) -> PolarsResult<Scalar> {
@@ -336,6 +344,7 @@ macro_rules! impl_dyn_series {
             fn std_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
                 Ok(VarAggSeries::std_reduce(&self.0, ddof))
             }
+
             fn quantile_reduce(
                 &self,
                 quantile: f64,
@@ -343,6 +352,15 @@ macro_rules! impl_dyn_series {
             ) -> PolarsResult<Scalar> {
                 QuantileAggSeries::quantile_reduce(&self.0, quantile, method)
             }
+
+            fn quantiles_reduce(
+                &self,
+                quantiles: &[f64],
+                method: QuantileMethod,
+            ) -> PolarsResult<Scalar> {
+                QuantileAggSeries::quantiles_reduce(&self.0, quantiles, method)
+            }
+
             #[cfg(feature = "bitwise")]
             fn and_reduce(&self) -> PolarsResult<Scalar> {
                 let dt = <$pdt as PolarsDataType>::get_static_dtype();
@@ -402,5 +420,7 @@ macro_rules! impl_dyn_series {
     };
 }
 
+#[cfg(feature = "dtype-f16")]
+impl_dyn_series!(Float16Chunked, Float16Type);
 impl_dyn_series!(Float32Chunked, Float32Type);
 impl_dyn_series!(Float64Chunked, Float64Type);

@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use polars_core::prelude::*;
+use polars_error::feature_gated;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::{format_pl_smallstr, unitvec};
 #[cfg(feature = "serde")]
@@ -31,7 +32,7 @@ impl DslPlan {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct FileInfo {
@@ -44,20 +45,9 @@ pub struct FileInfo {
     /// Stores the schema used for the reader, as the main schema can contain
     /// extra hive columns.
     pub reader_schema: Option<Either<ArrowSchemaRef, SchemaRef>>,
-    /// - known size
-    /// - estimated size (set to usize::max if unknown).
-    pub row_estimation: (Option<usize>, usize),
-}
-
-// Manual default because `row_estimation.1` needs to be `usize::MAX`.
-impl Default for FileInfo {
-    fn default() -> Self {
-        FileInfo {
-            schema: Default::default(),
-            reader_schema: None,
-            row_estimation: (None, usize::MAX),
-        }
-    }
+    /// Plan-time statistics of the source.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub stats: ScanStats,
 }
 
 impl FileInfo {
@@ -65,12 +55,12 @@ impl FileInfo {
     pub fn new(
         schema: SchemaRef,
         reader_schema: Option<Either<ArrowSchemaRef, SchemaRef>>,
-        row_estimation: (Option<usize>, usize),
+        stats: ScanStats,
     ) -> Self {
         Self {
             schema,
             reader_schema,
-            row_estimation,
+            stats,
         }
     }
 
@@ -109,11 +99,11 @@ impl FileInfo {
 pub(crate) fn det_join_schema(
     schema_left: &SchemaRef,
     schema_right: &SchemaRef,
-    left_on: &[ExprIR],
-    right_on: &[ExprIR],
     options: &JoinOptionsIR,
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<SchemaRef> {
+    let condition = &options.options;
+
     match &options.args.how {
         // semi and anti joins are just filtering operations
         // the schema will never change.
@@ -129,14 +119,16 @@ pub(crate) fn det_join_schema(
         // df(cols=[B, A, B_right])
         JoinType::Right if options.args.should_coalesce() => {
             // Get join names.
-            let mut join_on_left: PlHashSet<_> = PlHashSet::with_capacity(left_on.len());
-            for e in left_on {
+            let mut join_on_left: PlIndexSet<_> =
+                PlIndexSet::with_capacity(condition.left_on_len());
+            for e in condition.left_on() {
                 let field = e.field(schema_left, expr_arena)?;
                 join_on_left.insert(field.name);
             }
 
-            let mut join_on_right: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
-            for e in right_on {
+            let mut join_on_right: PlIndexSet<_> =
+                PlIndexSet::with_capacity(condition.right_on_len());
+            for e in condition.right_on() {
                 let field = e.field(schema_right, expr_arena)?;
                 join_on_right.insert(field.name);
             }
@@ -183,13 +175,14 @@ pub(crate) fn det_join_schema(
 
             let is_coalesced = options.args.should_coalesce();
 
-            let mut join_on_right: PlIndexSet<_> = PlIndexSet::with_capacity(right_on.len());
-            for e in right_on {
+            let mut join_on_right: PlIndexSet<_> =
+                PlIndexSet::with_capacity(condition.right_on_len());
+            for e in condition.right_on() {
                 let field = e.field(schema_right, expr_arena)?;
                 join_on_right.insert(field.name);
             }
 
-            let mut right_by: PlHashSet<&PlSmallStr> = PlHashSet::default();
+            let mut right_by: PlIndexSet<&PlSmallStr> = PlIndexSet::default();
             #[cfg(feature = "asof_join")]
             if let JoinType::AsOf(asof_options) = &options.args.how {
                 if let Some(v) = &asof_options.right_by {
@@ -215,7 +208,11 @@ pub(crate) fn det_join_schema(
                         // values so if the right has a different name, it is added to the schema
                         #[cfg(feature = "asof_join")]
                         if matches!(how, JoinType::AsOf(_)) {
-                            let field_left = left_on[idx].field(schema_left, expr_arena)?;
+                            let field_left = condition
+                                .left_on()
+                                .nth(idx)
+                                .unwrap()
+                                .field(schema_left, expr_arena)?;
                             need_to_include_column = field_left.name != name;
                         }
 
@@ -249,16 +246,63 @@ pub(crate) fn det_join_schema(
     }
 }
 
+/// Returns a new `ArrowSchema` that will have Polars-specific metadata attached for e.g. Categorical
+/// and Enum types.
+pub(crate) fn validate_arrow_schema_conversion(
+    input_schema: &Schema,
+    expected_arrow_schema: &ArrowSchema,
+) -> PolarsResult<ArrowSchema> {
+    polars_ensure!(
+        input_schema.len() == expected_arrow_schema.len()
+        && input_schema
+            .iter_names()
+            .zip(expected_arrow_schema.iter_names())
+            .all(|(l, r)| l == r),
+        SchemaMismatch:
+        "schema names in arrow_schema differ: {:?} != arrow schema names: {:?}",
+        input_schema.names_display(),
+        expected_arrow_schema.values_display(),
+    );
+
+    // Put everything into a struct column and convert that to arrow. This way
+    // top-level columns become `ArrowField`s and the metadata is set properly.
+    feature_gated!("dtype-struct", {
+        let pl_struct_series = Series::full_null(
+            PlSmallStr::EMPTY,
+            0,
+            &DataType::Struct(input_schema.iter_fields().collect()),
+        );
+
+        let arrow_array = pl_struct_series.to_arrow_with_field(
+            0,
+            Cow::Owned(ArrowField::new(
+                PlSmallStr::EMPTY,
+                ArrowDataType::Struct(expected_arrow_schema.iter_values().cloned().collect()),
+                false,
+            )),
+            false,
+        )?;
+
+        let ArrowDataType::Struct(fields) = arrow_array.dtype() else {
+            unreachable!()
+        };
+
+        let mut out = ArrowSchema::from_iter(fields.iter().cloned());
+        *out.metadata_mut() = expected_arrow_schema.metadata().clone();
+
+        Ok(out)
+    })
+}
+
 fn join_suffix_duplicate_help_msg(column_name: &str) -> PolarsError {
     polars_err!(
         Duplicate:
         "\
-column with name '{}' already exists
+column with name '{column_name}' already exists
 
 You may want to try:
 - renaming the column prior to joining
-- using the `suffix` parameter to specify a suffix different to the default one ('_right')",
-        column_name
+- using the `suffix` parameter to specify a suffix different to the default one ('_right')"
     )
 }
 

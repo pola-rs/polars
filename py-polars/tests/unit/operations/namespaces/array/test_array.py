@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import INTEGER_DTYPES
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_arr_min_max() -> None:
@@ -18,6 +24,20 @@ def test_arr_min_max() -> None:
     s_with_null = pl.Series("a", [[None, 2], None, [3, 4]], dtype=pl.Array(pl.Int64, 2))
     assert s_with_null.arr.max().to_list() == [2, None, 4]
     assert s_with_null.arr.min().to_list() == [2, None, 3]
+
+
+def test_arr_mean_median_var_std() -> None:
+    s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+    assert s.arr.mean().to_list() == [1.5, 3.5]
+    assert s.arr.median().to_list() == [1.5, 3.5]
+    assert s.arr.var().to_list() == [0.5, 0.5]
+    assert round(s.arr.std().to_list()[0], 5) == 0.70711
+
+    s_with_null = pl.Series("a", [[3, 4], None, [None, 2]], dtype=pl.Array(pl.Int64, 2))
+    assert s_with_null.arr.mean().to_list() == [3.5, None, 2.0]
+    assert s_with_null.arr.median().to_list() == [3.5, None, 2.0]
+    assert s_with_null.arr.var().to_list() == [0.5, None, None]
+    assert round(s_with_null.arr.std().to_list()[0], 5) == 0.70711
 
 
 def test_array_min_max_dtype_12123() -> None:
@@ -61,6 +81,442 @@ def test_arr_sum(
 ) -> None:
     s = pl.Series("a", data, dtype=pl.Array(dtype, 2))
     assert s.arr.sum().to_list() == expected_sum
+
+
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_arr_dot(dtype: pl.DataType) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            "b": [[7.0, 8.0, 9.0], [1.0, 2.0, 3.0]],
+        },
+        schema={
+            "a": pl.Array(dtype, 3),
+            "b": pl.Array(dtype, 3),
+        },
+    )
+
+    result = df.select(pl.col("a").arr.dot("b")).to_series()
+    expected = pl.Series("a", [50.0, 32.0], dtype=dtype)
+    assert_series_equal(result, expected)
+
+
+def test_arr_dot_broadcast_and_chunks() -> None:
+    lhs = pl.concat(
+        [
+            pl.Series("a", [[1.0, 2.0]], dtype=pl.Array(pl.Float32, 2)),
+            pl.Series("a", [[3.0, 4.0]], dtype=pl.Array(pl.Float32, 2)),
+        ],
+        rechunk=False,
+    )
+    rhs = pl.Series("b", [[10.0, 20.0]], dtype=pl.Array(pl.Float32, 2))
+
+    assert lhs.n_chunks() == 2
+    expected = pl.Series("a", [50.0, 110.0], dtype=pl.Float32)
+    assert_series_equal(lhs.arr.dot(rhs), expected)
+    assert_series_equal(rhs.arr.dot(lhs).rename("a"), expected)
+
+    null_query = pl.Series("b", [None], dtype=pl.Array(pl.Float32, 2))
+    assert_series_equal(
+        lhs.arr.dot(null_query),
+        pl.Series("a", [None, None], dtype=pl.Float32),
+    )
+
+    empty = pl.Series("a", [], dtype=pl.Array(pl.Float32, 2))
+    assert_series_equal(empty.arr.dot(rhs), pl.Series("a", [], dtype=pl.Float32))
+
+
+def test_arr_dot_expr_broadcast() -> None:
+    df = pl.DataFrame(
+        {"embedding": [[1.0, 2.0], [3.0, 4.0]]},
+        schema={"embedding": pl.Array(pl.Float32, 2)},
+    )
+    query = pl.lit([10.0, 20.0], dtype=pl.Array(pl.Float32, 2))
+
+    result = df.select(score=pl.col("embedding").arr.dot(query))
+    expected = pl.DataFrame({"score": [50.0, 110.0]}, schema={"score": pl.Float32})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_dtype"),
+    [
+        pytest.param([10.0, 20.0], pl.Float64, id="list"),
+        pytest.param(
+            pl.Series(
+                "query",
+                [[10.0, 20.0]],
+                dtype=pl.Array(pl.Float32, 2),
+            ),
+            pl.Float32,
+            id="one-row-series",
+        ),
+    ],
+)
+def test_arr_dot_query_vector_streaming(
+    query: Any,
+    expected_dtype: pl.DataType,
+) -> None:
+    df = pl.DataFrame(
+        {"embedding": [[1.0, 2.0], [3.0, 4.0]]},
+        schema={"embedding": pl.Array(pl.Float32, 2)},
+    )
+    q = df.lazy().select(score=pl.col("embedding").arr.dot(query))
+    expected = pl.DataFrame(
+        {"score": [50.0, 110.0]},
+        schema={"score": expected_dtype},
+    )
+
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+    physical_plan = q.show_graph(
+        engine="streaming",
+        plan_stage="physical",
+        raw_output=True,
+    )
+    assert "columnar-function" not in physical_plan
+
+
+def test_arr_dot_query_vector() -> None:
+    embedding = pl.Series(
+        "embedding",
+        [[1.0, 2.0], [3.0, 4.0]],
+        dtype=pl.Array(pl.Float32, 2),
+    )
+    expected = pl.Series("embedding", [50.0, 110.0], dtype=pl.Float64)
+
+    for query in (
+        [10.0, 20.0],
+        np.array([10.0, 20.0]),
+    ):
+        assert_series_equal(embedding.arr.dot(query), expected)
+
+
+def test_arr_dot_query_vector_expansion() -> None:
+    df = pl.DataFrame(
+        {
+            "f32": [[1.0, 2.0], [3.0, 4.0]],
+            "f64": [[5.0, 6.0], [7.0, 8.0]],
+            "other": [1, 2],
+        },
+        schema={
+            "f32": pl.Array(pl.Float32, 2),
+            "f64": pl.Array(pl.Float64, 2),
+            "other": pl.Int64,
+        },
+    )
+    queries: list[tuple[Any, pl.DataFrame]] = [
+        (
+            [10.0, 20.0],
+            pl.DataFrame(
+                {"f32": [50.0, 110.0], "f64": [170.0, 230.0]},
+                schema={"f32": pl.Float64, "f64": pl.Float64},
+            ),
+        ),
+        (
+            np.array([10.0, 20.0], dtype=np.float32),
+            pl.DataFrame(
+                {"f32": [50.0, 110.0], "f64": [170.0, 230.0]},
+                schema={"f32": pl.Float32, "f64": pl.Float64},
+            ),
+        ),
+    ]
+
+    for columns in (pl.col("f32", "f64"), cs.by_dtype(pl.Array)):
+        for query, expected in queries:
+            result = df.lazy().select(columns.arr.dot(query)).collect()
+            assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("lhs_dtype", "rhs_dtype", "expected_dtype"),
+    [
+        pytest.param(pl.Float32, pl.Float64, pl.Float64, id="f32-f64"),
+        pytest.param(pl.Int32, pl.Float32, pl.Float64, id="i32-f32"),
+        pytest.param(pl.Int8, pl.Int16, pl.Int64, id="i8-i16"),
+        pytest.param(pl.UInt64, pl.Int64, pl.Int128, id="u64-i64"),
+    ],
+)
+def test_arr_dot_dtype_coercion(
+    lhs_dtype: pl.DataType,
+    rhs_dtype: pl.DataType,
+    expected_dtype: pl.DataType,
+) -> None:
+    df = pl.DataFrame(
+        {
+            "lhs": [[1, 2], [3, 4]],
+            "rhs": [[10, 20], [30, 40]],
+        },
+        schema={
+            "lhs": pl.Array(lhs_dtype, 2),
+            "rhs": pl.Array(rhs_dtype, 2),
+        },
+    )
+    expected = pl.Series("lhs", [50, 250], dtype=expected_dtype)
+    assert_series_equal(df.select(pl.col("lhs").arr.dot("rhs")).to_series(), expected)
+    assert_series_equal(
+        df.select(pl.col("rhs").arr.dot("lhs")).to_series(),
+        expected.rename("rhs"),
+    )
+
+
+def test_arr_dot_query_vector_must_be_one_dimensional() -> None:
+    embedding = pl.Series(
+        "embedding",
+        [[1.0, 2.0]],
+        dtype=pl.Array(pl.Float32, 2),
+    )
+
+    with pytest.raises(ValueError, match="query vector must be one-dimensional"):
+        embedding.arr.dot(np.array([[1.0, 2.0]]))
+
+    with pytest.raises(pl.exceptions.ShapeError, match="equal array widths"):
+        embedding.arr.dot([1.0, 2.0, 3.0])
+
+
+def test_arr_dot_sliced_inputs() -> None:
+    lhs = pl.Series(
+        "a",
+        [[0.0, 0.0], [1.0, 2.0], [3.0, 4.0]],
+        dtype=pl.Array(pl.Float64, 2),
+    ).slice(1, 2)
+    rhs = pl.Series(
+        "b",
+        [[0.0, 0.0], [10.0, 20.0]],
+        dtype=pl.Array(pl.Float64, 2),
+    ).slice(1, 1)
+
+    expected = pl.Series("a", [50.0, 110.0], dtype=pl.Float64)
+    assert_series_equal(lhs.arr.dot(rhs), expected)
+
+
+def test_arr_dot_nulls() -> None:
+    lhs = pl.Series(
+        "a",
+        [[1.0, None, 3.0], None, [None, 2.0, None]],
+        dtype=pl.Array(pl.Float64, 3),
+    )
+    rhs = pl.Series(
+        "b",
+        [[4.0, 5.0, None], [1.0, 1.0, 1.0], [3.0, None, 4.0]],
+        dtype=pl.Array(pl.Float64, 3),
+    )
+
+    result = lhs.arr.dot(rhs)
+    expected = pl.Series("a", [4.0, None, 0.0], dtype=pl.Float64)
+    assert_series_equal(result, expected)
+
+    zero_width = pl.Series("a", [[], None], dtype=pl.Array(pl.Float64, 0))
+    assert_series_equal(
+        zero_width.arr.dot(zero_width),
+        pl.Series("a", [0.0, None], dtype=pl.Float64),
+    )
+
+
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_arr_dot_special_floating_values(dtype: pl.DataType) -> None:
+    lhs = pl.Series(
+        "a",
+        [
+            [float("nan"), 1.0, 2.0],
+            [float("inf"), 1.0, 2.0],
+            [-float("inf"), 1.0, 2.0],
+            [float("inf"), 1.0, 2.0],
+            [float("inf"), -float("inf"), 1.0],
+            [1e20, 1.0, -1e20],
+        ],
+        dtype=pl.Array(dtype, 3),
+    )
+    rhs = pl.Series(
+        "b",
+        [
+            [1.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0],
+            [0.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0],
+        ],
+        dtype=pl.Array(dtype, 3),
+    )
+    expected = pl.Series(
+        "a",
+        [
+            float("nan"),
+            float("inf"),
+            -float("inf"),
+            float("nan"),
+            float("nan"),
+            0.0,
+        ],
+        dtype=dtype,
+    )
+
+    result = lhs.arr.dot(rhs)
+    assert_series_equal(result, expected)
+
+    fragmented_lhs = pl.concat([lhs.slice(0, 2), lhs.slice(2)], rechunk=False)
+    fragmented_rhs = pl.concat([rhs.slice(0, 4), rhs.slice(4)], rechunk=False)
+    assert fragmented_lhs.n_chunks() == 2
+    assert fragmented_rhs.n_chunks() == 2
+    assert_series_equal(fragmented_lhs.arr.dot(fragmented_rhs), expected)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "rel_tol", "abs_tol", "with_inner_nulls"),
+    [
+        (pl.Float32, 1e-5, 1e-5, False),
+        (pl.Float32, 1e-5, 1e-5, True),
+        (pl.Float64, 1e-12, 1e-12, False),
+        (pl.Float64, 1e-12, 1e-12, True),
+    ],
+)
+def test_arr_dot_wide(
+    dtype: pl.DataType,
+    rel_tol: float,
+    abs_tol: float,
+    with_inner_nulls: bool,
+) -> None:
+    width = 768
+    lhs_values = [
+        None
+        if with_inner_nulls and index % 37 == 0
+        else (
+            (-1.0 if index % 2 else 1.0)
+            * 10.0 ** ((index % 21) - 10)
+            * (1.0 + (index % 23) / 29.0)
+        )
+        for index in range(width)
+    ]
+    rhs_values = [
+        None
+        if with_inner_nulls and index % 41 == 0
+        else (index % 17 + 1) / 19.0 / 10.0 ** ((index % 21) - 10)
+        for index in range(width)
+    ]
+    lhs = pl.Series("a", [lhs_values], dtype=pl.Array(dtype, width))
+    rhs = pl.Series("b", [rhs_values], dtype=pl.Array(dtype, width))
+
+    result = lhs.arr.dot(rhs)
+    composed = (lhs * rhs).arr.sum()
+    assert_series_equal(
+        result,
+        composed,
+        check_exact=False,
+        rel_tol=rel_tol,
+        abs_tol=abs_tol,
+    )
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_arr_dot_integer_dtype(dtype: pl.DataType) -> None:
+    lhs = pl.Series(
+        "a",
+        [[1, None], [None, None], [3, 4]],
+        dtype=pl.Array(dtype, 2),
+    )
+    rhs = pl.Series(
+        "b",
+        [[10, 20], [30, 40], [50, 60]],
+        dtype=pl.Array(dtype, 2),
+    )
+    assert_series_equal(lhs.arr.dot(rhs), (lhs * rhs).arr.sum())
+
+    empty = pl.Series("a", [], dtype=pl.Array(dtype, 2))
+    assert_series_equal(empty.arr.dot(empty), (empty * empty).arr.sum())
+
+
+def test_arr_dot_integer_overflow() -> None:
+    df = pl.DataFrame(
+        {
+            "lhs": [[100, 100]],
+            "rhs": [[2, 2]],
+        },
+        schema={
+            "lhs": pl.Array(pl.Int8, 2),
+            "rhs": pl.Array(pl.Int8, 2),
+        },
+    )
+    q = df.lazy().select(pl.col("lhs").arr.dot("rhs"))
+
+    assert q.collect_schema() == {"lhs": pl.Int64}
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"lhs": [-112]}, schema={"lhs": pl.Int64}),
+    )
+
+    wide_dtype = pl.Array(pl.Int64, 2)
+    assert (
+        df.select(
+            pl.col("lhs").cast(wide_dtype).arr.dot(pl.col("rhs").cast(wide_dtype))
+        ).item()
+        == 400
+    )
+
+
+def test_arr_dot_integer_query_vector_coercion() -> None:
+    lhs = pl.Series("lhs", [[100, 100]], dtype=pl.Array(pl.Int8, 2))
+
+    assert_series_equal(
+        lhs.arr.dot([2, 2]),
+        pl.Series("lhs", [400], dtype=pl.Int64),
+    )
+
+
+@pytest.mark.parametrize(
+    ("dtype", "maximum", "expected"),
+    [
+        (pl.Int32, 2**31 - 1, -(2**31)),
+        (pl.UInt32, 2**32 - 1, 0),
+    ],
+)
+def test_arr_dot_integer_accumulation_overflow(
+    dtype: pl.DataType,
+    maximum: int,
+    expected: int,
+) -> None:
+    lhs = pl.Series("lhs", [[maximum, 1]], dtype=pl.Array(dtype, 2))
+    rhs = pl.Series("rhs", [[1, 1]], dtype=pl.Array(dtype, 2))
+
+    assert_series_equal(
+        lhs.arr.dot(rhs),
+        pl.Series("lhs", [expected], dtype=dtype),
+    )
+
+
+@pytest.mark.parametrize("dtype", [pl.Boolean, pl.Float16, pl.Decimal(10, 2)])
+def test_arr_dot_unsupported_inner_dtype(dtype: pl.DataType) -> None:
+    lf = pl.LazyFrame(schema={"a": pl.Array(dtype, 2)})
+
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"arr\.dot does not support input dtypes",
+    ):
+        lf.select(pl.col("a").arr.dot("a")).collect_schema()
+
+
+def test_arr_dot_non_array_operand() -> None:
+    lhs = pl.Series("a", [[1.0, 2.0]], dtype=pl.Array(pl.Float64, 2))
+    with pytest.raises(InvalidOperationError, match="expects Array inputs"):
+        lhs.to_frame().select(pl.col("a").arr.dot(pl.lit([1.0, 2.0])))
+
+
+def test_arr_dot_shape_errors() -> None:
+    lhs = pl.Series("a", [[1.0, 2.0]], dtype=pl.Array(pl.Float64, 2))
+    different_width = pl.Series("b", [[1.0, 2.0, 3.0]], dtype=pl.Array(pl.Float64, 3))
+    with pytest.raises(pl.exceptions.ShapeError, match="equal array widths"):
+        lhs.arr.dot(different_width)
+
+    different_rows = pl.Series(
+        "b",
+        [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]],
+        dtype=pl.Array(pl.Float64, 2),
+    )
+    two_rows = pl.concat([lhs, lhs])
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"(equal row counts)|(zip node received non-equal length inputs)",
+    ):
+        two_rows.arr.dot(different_rows)
 
 
 @pytest.mark.may_fail_cloud
@@ -170,12 +626,6 @@ def test_array_any_all() -> None:
     expected_all = pl.Series([True, False, False, True, None])
     assert_series_equal(s.arr.all(), expected_all)
 
-    s = pl.Series([[1, 2], [3, 4], [5, 6]], dtype=pl.Array(pl.Int64, 2))
-    with pytest.raises(ComputeError, match="expected boolean elements in array"):
-        s.arr.any()
-    with pytest.raises(ComputeError, match="expected boolean elements in array"):
-        s.arr.all()
-
 
 def test_array_sort() -> None:
     s = pl.Series([[2, None, 1], [1, 3, 2]], dtype=pl.Array(pl.UInt32, 3))
@@ -234,8 +684,13 @@ def test_array_get() -> None:
     assert_frame_equal(out_df, expected_df)
 
     # Out-of-bounds index literal.
-    with pytest.raises(ComputeError, match="get index is out of bounds"):
-        out = s.arr.get(100, null_on_oob=False)
+    with pytest.raises(
+        ComputeError,
+        match="get index 100 is out of bounds for array of width 4",
+    ):
+        s.to_frame().lazy().select(
+            pl.first().arr.get(100, null_on_oob=False)
+        ).collect_schema()
 
     # Negative index literal.
     out = s.arr.get(-2, null_on_oob=False)
@@ -424,7 +879,7 @@ def test_array_explode() -> None:
             "logical": pl.Array(pl.Date, 2),
         },
     )
-    out = df.select(pl.all().arr.explode())
+    out = df.select(pl.all().arr.explode(empty_as_null=True))
     expected = pl.DataFrame(
         {
             "str": ["a", "b", "c", None, None],
@@ -448,7 +903,7 @@ def test_array_explode() -> None:
         ],
         dtype=pl.Array(pl.Date, 2),
     )
-    out_s = s.arr.explode()
+    out_s = s.arr.explode(empty_as_null=False)
     expected_s = pl.Series(
         [
             datetime.date(1998, 1, 1),
@@ -502,7 +957,7 @@ def test_array_to_struct() -> None:
         {"a": [[1, 2, None], [1, 2, 3]]}, schema={"a": pl.Array(pl.Int8, 3)}
     )
     assert df.select(
-        pl.col("a").arr.to_struct(fields=lambda idx: f"col_name_{idx}")
+        pl.col("a").arr.to_struct(["col_name_0", "col_name_1", "col_name_2"])
     ).to_series().to_list() == [
         {"col_name_0": 1, "col_name_1": 2, "col_name_2": None},
         {"col_name_0": 1, "col_name_1": 2, "col_name_2": 3},
@@ -549,13 +1004,16 @@ def test_array_n_unique() -> None:
 
 def test_explode_19049() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3]]}, schema={"a": pl.Array(pl.Int64, 3)})
-    result_df = df.select(pl.col.a.arr.explode())
+    result_df = df.select(pl.col.a.arr.explode(empty_as_null=True))
     expected_df = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.Int64})
     assert_frame_equal(result_df, expected_df)
 
     df = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.Int64})
-    with pytest.raises(InvalidOperationError, match="expected Array type, got: i64"):
-        df.select(pl.col.a.arr.explode())
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected Array datatype for array operation, got: Int64",
+    ):
+        df.select(pl.col.a.arr.explode(empty_as_null=True))
 
 
 def test_array_join_unequal_lengths_22018() -> None:
@@ -628,3 +1086,77 @@ def test_arr_contains() -> None:
         s.arr.contains(1, nulls_equal=True),
         pl.Series([True, False, None], dtype=pl.Boolean),
     )
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("a").arr.contains("z"),
+        pl.col("a").arr.dot(
+            pl.lit([1.0], dtype=pl.Array(pl.Float64, 1)),
+        ),
+        pl.col("a").arr.explode(empty_as_null=True),
+        pl.col("a").arr.sum(),
+        pl.col("a").arr.to_list(),
+        pl.col("a").arr.to_struct(),
+        pl.col("a").arr.unique(),
+        pl.col("a").arr.all(),
+        pl.col("a").arr.any(),
+        pl.col("a").arr.arg_max(),
+        pl.col("a").arr.arg_min(),
+        pl.col("a").arr.count_matches("z"),
+        pl.col("a").arr.first(),
+        pl.col("a").arr.get(0),
+        pl.col("a").arr.join(""),
+        pl.col("a").arr.last(),
+        pl.col("a").arr.len(),
+        pl.col("a").arr.max(),
+        pl.col("a").arr.mean(),
+        pl.col("a").arr.median(),
+        pl.col("a").arr.min(),
+        pl.col("a").arr.n_unique(),
+        pl.col("a").arr.reverse(),
+        pl.col("a").arr.shift(1),
+        pl.col("a").arr.sort(),
+        pl.col("a").arr.std(),
+        pl.col("a").arr.var(),
+    ],
+)
+def test_schema_non_array(expr: pl.Expr) -> None:
+    lf = pl.LazyFrame({"a": ["a", "b", "c"]})
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected Array datatype for array operation, got: String",
+    ):
+        lf.select(expr).collect_schema()
+
+
+def test_array_get_broadcast_26217() -> None:
+    df = pl.DataFrame({"idx": [0, 1, 2, 1, 2, 0, 1]})
+    out = df.select(pl.lit([42, 13, 37], pl.Array(pl.UInt8, 3)).arr.get(pl.col.idx))
+    expected = pl.DataFrame(
+        {"literal": [42, 13, 37, 13, 37, 42, 13]}, schema={"literal": pl.UInt8}
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.debug
+def test_array_idx_size_limit_eval(capfd: Any, plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_ARRAY_EVAL_IDX_SIZE_LIMIT", "20")
+    s = pl.Series([None])
+    width = 19
+    s = s.new_from_index(0, width)
+    assert (
+        pl.Series("a", [s, s, s, s], dtype=pl.Array(pl.Null, width))
+        .to_frame()
+        .select(pl.col("a").arr.eval(pl.element().len() * pl.element()))
+        .head(1)
+        .item()
+        .to_list()
+        == [None] * width
+    )
+
+    captured = capfd.readouterr().err
+    assert "IdxSize limit hit; chunking branch hit" in captured

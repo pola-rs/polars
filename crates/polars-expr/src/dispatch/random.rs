@@ -9,7 +9,7 @@ pub(super) fn shuffle(s: &Column, seed: Option<u64>) -> PolarsResult<Column> {
 pub(super) fn sample_frac(
     s: &[Column],
     with_replacement: bool,
-    shuffle: bool,
+    shuffle: Option<bool>,
     seed: Option<u64>,
 ) -> PolarsResult<Column> {
     let src = &s[0];
@@ -32,7 +32,7 @@ pub(super) fn sample_frac(
 pub(super) fn sample_n(
     s: &[Column],
     with_replacement: bool,
-    shuffle: bool,
+    shuffle: Option<bool>,
     seed: Option<u64>,
 ) -> PolarsResult<Column> {
     let src = &s[0];
@@ -43,7 +43,7 @@ pub(super) fn sample_n(
         ComputeError: "Sample size must be a single value."
     );
 
-    let n_s = n_s.cast(&IDX_DTYPE)?;
+    let n_s = n_s.strict_cast(&IDX_DTYPE)?;
     let n = n_s.idx()?;
 
     match n.get(0) {

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import re
 from functools import reduce
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import (
+    ArgumentRemovedError,
+    ComputeError,
+    InvalidOperationError,
+)
 from polars.testing import assert_frame_equal
 
 
@@ -38,6 +43,7 @@ def test_map_no_dtype_set_8531() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_error_on_reducing_map() -> None:
     df = pl.DataFrame(
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
@@ -118,7 +124,7 @@ def test_lazy_map_schema() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="Expected 'LazyFrame.map' to return a 'DataFrame', got a",
+        match=r"Expected 'LazyFrame\.map' to return a 'DataFrame', got a",
     ):
         df.lazy().map_batches(custom).collect()  # type: ignore[arg-type]
 
@@ -130,7 +136,7 @@ def test_lazy_map_schema() -> None:
 
     with pytest.raises(
         ComputeError,
-        match="The output schema of 'LazyFrame.map' is incorrect. Expected",
+        match=r"The output schema of 'LazyFrame\.map' is incorrect\. Expected",
     ):
         df.lazy().map_batches(custom2).collect()
 
@@ -146,3 +152,38 @@ def test_map_batches_collect_schema_17327() -> None:
     )
     expected = pl.Schema({"a": pl.Int64(), "b": pl.List(pl.Int64)})
     assert q.collect_schema() == expected
+
+
+@pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
+@pytest.mark.parametrize(
+    ("data", "literal", "expected_data"),
+    [
+        ([0, 1, 2, 3], 10, [10, 11, 12, 13]),
+        ([0.0, 1.0, 2.0, 3.0], 10.5, [10.5, 11.5, 12.5, 13.5]),
+        (["hello", "world"], " there", ["hello there", "world there"]),
+    ],
+)
+def test_map_batches_no_return_dtype_25601(
+    data: list[object], literal: object, expected_data: list[object]
+) -> None:
+    # previously this would panic with "internal error: entered unreachable code"
+    # when trying to create default values for Unknown dtype literal inference
+    result = pl.DataFrame({"colx": data}).select(
+        pl.map_batches(
+            exprs=["colx", pl.lit(literal)],
+            function=lambda d: d[0] + d[1],
+            return_dtype=None,
+        )
+    )
+    expected = pl.DataFrame({"colx": expected_data})
+    assert_frame_equal(result, expected)
+
+
+def test_removed_no_optimizations_parameter() -> None:
+    lf = pl.LazyFrame({"a": [1]})
+    msg = (
+        "Use the `predicate_pushdown`, `projection_pushdown`,"
+        " and `slice_pushdown` flags instead."
+    )
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        lf.map_batches(lambda df: df, no_optimizations=True)  # type: ignore[call-arg]

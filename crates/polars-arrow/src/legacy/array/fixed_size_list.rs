@@ -87,7 +87,7 @@ impl AnonymousBuilder {
 
         let values = concatenate_unchecked(&arrays)?;
 
-        let dtype = FixedSizeListArray::default_datatype(inner_dtype.clone(), self.width);
+        let dtype = FixedSizeListArray::default_datatype(values.dtype().clone(), self.width);
         Ok(FixedSizeListArray::new(
             dtype,
             self.length,

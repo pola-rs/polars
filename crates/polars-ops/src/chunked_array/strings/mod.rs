@@ -24,7 +24,7 @@ mod split;
 mod strip;
 #[cfg(feature = "strings")]
 mod substring;
-#[cfg(all(not(feature = "nightly"), feature = "strings"))]
+#[cfg(feature = "strings")]
 mod unicode_internals;
 
 #[cfg(feature = "strings")]

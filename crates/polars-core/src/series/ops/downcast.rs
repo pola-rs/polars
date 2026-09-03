@@ -44,7 +44,7 @@ impl Series {
     /// let s = Series::new("foo".into(), [1i32 ,2, 3]);
     /// let s_squared: Series = s.i32()
     ///     .unwrap()
-    ///     .into_iter()
+    ///     .iter()
     ///     .map(|opt_v| {
     ///         match opt_v {
     ///             Some(v) => Some(v * v),
@@ -66,6 +66,12 @@ impl Series {
     #[cfg(feature = "dtype-i128")]
     pub fn try_i128(&self) -> Option<&Int128Chunked> {
         try_unpack_chunked!(self, DataType::Int128 => Int128Chunked)
+    }
+
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Float16`]
+    #[cfg(feature = "dtype-f16")]
+    pub fn try_f16(&self) -> Option<&Float16Chunked> {
+        try_unpack_chunked!(self, DataType::Float16 => Float16Chunked)
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Float32`]
@@ -186,6 +192,12 @@ impl Series {
         self.try_cat::<Categorical32Type>()
     }
 
+    /// Unpack to [`ExtensionChunked`] of dtype [`DataType::Extension`].
+    #[cfg(feature = "dtype-extension")]
+    pub fn try_ext(&self) -> Option<&ExtensionChunked> {
+        try_unpack_chunked!(self, DataType::Extension(_, _) => ExtensionChunked)
+    }
+
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Struct`]
     #[cfg(feature = "dtype-struct")]
     pub fn try_struct(&self) -> Option<&StructChunked> {
@@ -221,7 +233,7 @@ impl Series {
     /// let s = Series::new("foo".into(), [1i32 ,2, 3]);
     /// let s_squared: Series = s.i32()
     ///     .unwrap()
-    ///     .into_iter()
+    ///     .iter()
     ///     .map(|opt_v| {
     ///         match opt_v {
     ///             Some(v) => Some(v * v),
@@ -246,6 +258,13 @@ impl Series {
     pub fn i128(&self) -> PolarsResult<&Int128Chunked> {
         self.try_i128()
             .ok_or_else(|| unpack_chunked_err!(self => "Int128"))
+    }
+
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Float16`]
+    #[cfg(feature = "dtype-f16")]
+    pub fn f16(&self) -> PolarsResult<&Float16Chunked> {
+        self.try_f16()
+            .ok_or_else(|| unpack_chunked_err!(self => "Float16"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Float32`]
@@ -404,6 +423,13 @@ impl Series {
 
         self.try_struct()
             .ok_or_else(|| unpack_chunked_err!(self => "Struct"))
+    }
+
+    /// Unpack to [`ExtensionChunked`] of dtype [`DataType::Extension`].
+    #[cfg(feature = "dtype-extension")]
+    pub fn ext(&self) -> PolarsResult<&ExtensionChunked> {
+        self.try_ext()
+            .ok_or_else(|| unpack_chunked_err!(self => "Extension"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Null`]

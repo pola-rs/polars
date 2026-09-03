@@ -1,12 +1,26 @@
-//! Implementations of upstream traits for [`ChunkedArray<T>`]
+//! Parallel iterator collection into [`ChunkedArray<T>`]
+//!
+//! Two strategies:
+//!
+//! - `collect_into_linked_list*` — for iterators of unknown length. Folds into
+//!   one accumulator per rayon task and concatenates, so the resulting chunk
+//!   count equals the task count and varies with thread count and stealing.
+//!   `optional_rechunk` is the only backstop.
+//!
+//! - `collect_*_par` — for callers with O(1) random access and a known output
+//!   length. Writes into a single preallocated buffer, so the result is always
+//!   one chunk regardless of how rayon split the work. Preferable.
+
 use std::collections::LinkedList;
 use std::sync::Mutex;
 
+use arrow::bitmap::Bitmap;
 use arrow::pushable::{NoOption, Pushable};
 use rayon::prelude::*;
 
 use super::from_iterator::PolarsAsRef;
 use crate::chunked_array::builder::get_list_builder;
+use crate::datatypes::BooleanChunked;
 use crate::prelude::*;
 use crate::utils::NoNull;
 use crate::utils::flatten::flatten_par;
@@ -318,4 +332,105 @@ where
             None => Ok(collection),
         }
     }
+}
+
+// Collect directly into a single chunk. For directly addressable fixed-size types only.
+pub(crate) fn collect_bool_par<F>(len: usize, f: F) -> BooleanChunked
+where
+    F: Fn(usize) -> bool + Send + Sync,
+{
+    let n_bytes = len.div_ceil(8);
+    let mut values: Vec<u8> = Vec::with_capacity(n_bytes);
+
+    (0..n_bytes)
+        .into_par_iter()
+        .map(|b| {
+            let lo = b * 8;
+            let hi = (lo + 8).min(len);
+            let mut v = 0u8;
+            for (bit, g) in (lo..hi).enumerate() {
+                v |= (f(g) as u8) << bit;
+            }
+            v
+        })
+        .collect_into_vec(&mut values);
+
+    BooleanChunked::from_bitmap(PlSmallStr::EMPTY, Bitmap::from_u8_vec(values, len))
+}
+
+pub(crate) fn collect_bool_opt_par<F>(len: usize, f: F) -> BooleanChunked
+where
+    F: Fn(usize) -> Option<bool> + Send + Sync,
+{
+    let n_bytes = len.div_ceil(8);
+    let mut values: Vec<u8> = Vec::with_capacity(n_bytes);
+    let mut validity: Vec<u8> = Vec::with_capacity(n_bytes);
+
+    (0..n_bytes)
+        .into_par_iter()
+        .map(|b| {
+            let lo = b * 8;
+            let hi = (lo + 8).min(len);
+            let (mut v, mut m) = (0u8, 0u8);
+            for (bit, g) in (lo..hi).enumerate() {
+                if let Some(x) = f(g) {
+                    m |= 1 << bit;
+                    v |= (x as u8) << bit;
+                }
+            }
+            (v, m)
+        })
+        .unzip_into_vecs(&mut values, &mut validity);
+
+    let values = Bitmap::from_u8_vec(values, len);
+    let validity = Bitmap::from_u8_vec(validity, len);
+    let validity = (validity.unset_bits() > 0).then_some(validity);
+    BooleanChunked::with_chunk(
+        PlSmallStr::EMPTY,
+        BooleanArray::new(ArrowDataType::Boolean, values, validity),
+    )
+}
+
+// TODO: Placeholder for the NoNull helpers, future PR.
+#[allow(unused)]
+pub(crate) fn collect_primitive_par<T, F>(len: usize, f: F) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    F: Fn(usize) -> T::Native + Send + Sync,
+{
+    let mut values: Vec<T::Native> = Vec::new();
+    (0..len)
+        .into_par_iter()
+        .map(f)
+        .collect_into_vec(&mut values);
+    ChunkedArray::from_vec(PlSmallStr::EMPTY, values)
+}
+
+pub(crate) fn collect_primitive_opt_par<T, F>(len: usize, f: F) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    F: Fn(usize) -> Option<T::Native> + Send + Sync,
+{
+    let mut values: Vec<T::Native> = vec![T::Native::default(); len];
+    let mut validity: Vec<u8> = Vec::with_capacity(len.div_ceil(8));
+
+    values
+        .par_chunks_mut(8)
+        .enumerate()
+        .map(|(b, out)| {
+            let lo = b * 8;
+            let mut m = 0u8;
+            for (bit, slot) in out.iter_mut().enumerate() {
+                if let Some(x) = f(lo + bit) {
+                    *slot = x;
+                    m |= 1 << bit;
+                }
+            }
+            m
+        })
+        .collect_into_vec(&mut validity);
+
+    let validity = Bitmap::from_u8_vec(validity, len);
+    let validity = (validity.unset_bits() > 0).then_some(validity);
+    ChunkedArray::from_vec_validity(PlSmallStr::EMPTY, values, validity)
 }

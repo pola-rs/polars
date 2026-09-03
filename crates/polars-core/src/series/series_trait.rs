@@ -2,18 +2,16 @@ use std::any::Any;
 use std::borrow::Cow;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
+use arrow::compute::utils::combine_validities_and;
 use polars_compute::rolling::QuantileMethod;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
+use crate::utils::{first_non_null, last_non_null};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum IsSorted {
     Ascending,
     Descending,
@@ -76,14 +74,6 @@ pub(crate) mod private {
 
         fn _set_flags(&mut self, flags: StatisticsFlags);
 
-        unsafe fn equal_element(
-            &self,
-            _idx_self: usize,
-            _idx_other: usize,
-            _other: &Series,
-        ) -> bool {
-            invalid_operation_panic!(equal_element, self)
-        }
         #[expect(clippy::wrong_self_convention)]
         fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a>;
         #[expect(clippy::wrong_self_convention)]
@@ -114,6 +104,22 @@ pub(crate) mod private {
         unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "algorithm_group_by")]
+        unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), &IDX_DTYPE)
+        }
+
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "algorithm_group_by")]
+        unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), &IDX_DTYPE)
+        }
+
         /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
         /// first cast to `Int64` to prevent overflow issues.
         #[cfg(feature = "algorithm_group_by")]
@@ -306,9 +312,15 @@ pub trait SeriesTrait:
         self.len() == 0
     }
 
+    /// Check if Series only consists of nulls.
+    fn is_full_null(&self) -> bool {
+        self.len() == self.null_count()
+    }
+
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series;
 
+    /// Returns the validity of this series as a single bitmap.
     fn rechunk_validity(&self) -> Option<Bitmap> {
         if self.chunks().len() == 1 {
             return self.chunks()[0].validity().cloned();
@@ -327,6 +339,29 @@ pub trait SeriesTrait:
             }
         }
         bm.into_opt_validity()
+    }
+
+    /// Sets the validity mask of this Series to the given bitmap.
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series;
+
+    /// Applies the given mask to this Series, returning a new Series. If a
+    /// validity bit is true nothing changes, if it is false the corresponding
+    /// element becomes null.
+    fn mask(&self, validity: &Bitmap) -> Series {
+        if validity.len() == 1 {
+            if validity.get_bit(0) {
+                Series(self.clone_inner())
+            } else {
+                Series::full_null(self._field().name().clone(), self.len(), self._dtype())
+            }
+        } else if self.len() == 1 && validity.len() != 1 {
+            self.new_from_index(0, validity.len()).mask(validity)
+        } else {
+            self.with_validity(combine_validities_and(
+                self.rechunk_validity().as_ref(),
+                Some(validity),
+            ))
+        }
     }
 
     /// Drop all null values and return a new Series.
@@ -453,6 +488,13 @@ pub trait SeriesTrait:
         polars_bail!(opq = arg_unique, self._dtype());
     }
 
+    /// Get dense ids for each unique value.
+    ///
+    /// Returns: (n_unique, unique_ids)
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        polars_bail!(opq = unique_id, self._dtype());
+    }
+
     /// Get a mask of the null values.
     fn is_null(&self) -> BooleanChunked;
 
@@ -527,9 +569,17 @@ pub trait SeriesTrait:
     fn std_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {
         polars_bail!(opq = std, self._dtype());
     }
-    /// Get the quantile of the ChunkedArray as a new Series of length 1.
+    /// Get the quantile of the Series as a new Series of length 1.
     fn quantile_reduce(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar> {
         polars_bail!(opq = quantile, self._dtype());
+    }
+    /// Get multiple quantiles of the ChunkedArray as a new `List` Scalar
+    fn quantiles_reduce(
+        &self,
+        _quantiles: &[f64],
+        _method: QuantileMethod,
+    ) -> PolarsResult<Scalar> {
+        polars_bail!(opq = quantiles, self._dtype());
     }
     /// Get the bitwise AND of the Series as a new Series of length 1,
     fn and_reduce(&self) -> PolarsResult<Scalar> {
@@ -554,6 +604,23 @@ pub trait SeriesTrait:
         Scalar::new(dt.clone(), av)
     }
 
+    /// Get the first non-null element of the [`Series`] as a [`Scalar`]
+    ///
+    /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
+    fn first_non_null(&self) -> Scalar {
+        let av = if self.len() == 0 {
+            AnyValue::Null
+        } else {
+            let idx = if self.has_nulls() {
+                first_non_null(self.chunks().iter().map(|c| c.as_ref())).unwrap_or(0)
+            } else {
+                0
+            };
+            self.get(idx).map_or(AnyValue::Null, AnyValue::into_static)
+        };
+        Scalar::new(self.dtype().clone(), av)
+    }
+
     /// Get the last element of the [`Series`] as a [`Scalar`]
     ///
     /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
@@ -567,6 +634,25 @@ pub trait SeriesTrait:
         };
 
         Scalar::new(dt.clone(), av)
+    }
+
+    /// Get the last non-null element of the [`Series`] as a [`Scalar`]
+    ///
+    /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
+    fn last_non_null(&self) -> Scalar {
+        let n = self.len();
+        let av = if n == 0 {
+            AnyValue::Null
+        } else {
+            let idx = if self.has_nulls() {
+                last_non_null(self.chunks().iter().map(|c| c.as_ref()), n).unwrap_or(n - 1)
+            } else {
+                n - 1
+            };
+            // SAFETY: len-1 < len if len != 0
+            unsafe { self.get_unchecked(idx) }.into_static()
+        };
+        Scalar::new(self.dtype().clone(), av)
     }
 
     #[cfg(feature = "approx_unique")]

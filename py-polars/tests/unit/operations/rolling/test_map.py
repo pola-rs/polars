@@ -192,3 +192,14 @@ def test_rolling_map_rolling_std() -> None:
 
     expected = s.rolling_std(window_size=4, min_samples=3, center=False)
     assert_series_equal(result, expected)
+
+
+def test_map_rows_object_dtype_25730() -> None:
+    df = pl.DataFrame({"id": [1, 2], "symbol": ["A", "B"]})
+    out = df.select(
+        pl.struct(["id", "symbol"]).map_elements(
+            lambda x: tuple(x.values()), return_dtype=pl.Object
+        )
+    )
+    assert out.schema == pl.Schema({"id": pl.Object})
+    assert out.to_dict(as_series=False) == {"id": [(1, "A"), (2, "B")]}

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any
 
-from polars import functions as F
-from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
@@ -73,6 +71,97 @@ class ArrayNameSpace:
         [
             3
             7
+        ]
+        """
+
+    def dot(self, other: IntoExpr | Sequence[Any]) -> Series:
+        """
+        Compute row-wise dot product with another Array Series or query vector.
+
+        Both inputs must contain equal-width arrays. Their inner data types are cast
+        to a common supertype, which must be an integer, ``Float32``, or ``Float64``.
+        An input with one row is broadcast against the other input.
+        A Python sequence or one-dimensional NumPy array is treated as a one-row
+        Array query.
+        If either input Array is null for a row, the result for that row is null.
+
+        Notes
+        -----
+        Elements are paired by position.
+
+        Pairs where either element is null do not contribute to the sum. If a
+        non-null row has no pairs where both elements are valid, the result is zero.
+
+        Integer operations use wrapping arithmetic. Each pair is multiplied in the
+        common inner data type before the product is converted to the ``arr.sum``
+        accumulator type. Therefore, an ``Int64`` output does not prevent
+        multiplication from overflowing in ``Int8``, ``UInt8``, ``Int16``, or
+        ``UInt16``. Accumulation may also wrap in the output type. To avoid wrapping,
+        cast both Array inputs to a type that can represent each product and the final
+        sum before calling ``dot``.
+
+        NaN and infinity follow floating-point multiplication and addition
+        semantics. Floating-point results are not guaranteed to be bitwise identical
+        to mathematically equivalent expressions that use a different reduction path.
+
+        Examples
+        --------
+        >>> a = pl.Series("a", [[1.0, 2.0], [3.0, 4.0]], dtype=pl.Array(pl.Float64, 2))
+        >>> b = pl.Series("b", [[5.0, 6.0], [7.0, 8.0]], dtype=pl.Array(pl.Float64, 2))
+        >>> a.arr.dot(b)
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+            17.0
+            53.0
+        ]
+
+        A Python sequence can be used as a broadcast query.
+
+        >>> a.arr.dot([2.0, 3.0])
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+            8.0
+            18.0
+        ]
+
+        Integer multiplication can wrap before accumulator promotion.
+
+        >>> a = pl.Series("a", [[100, 100]], dtype=pl.Array(pl.Int8, 2))
+        >>> b = pl.Series("b", [[2, 2]], dtype=pl.Array(pl.Int8, 2))
+        >>> a.arr.dot(b)
+        shape: (1,)
+        Series: 'a' [i64]
+        [
+            -112
+        ]
+
+        Cast both inputs before ``dot`` to perform multiplication and accumulation in
+        a type that can represent the result.
+
+        >>> wide = pl.Array(pl.Int64, 2)
+        >>> a.cast(wide).arr.dot(b.cast(wide))
+        shape: (1,)
+        Series: 'a' [i64]
+        [
+            400
+        ]
+        """
+
+    def mean(self) -> Series:
+        """
+        Compute the mean of the values of the sub-arrays.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.mean()
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+            1.5
+            3.5
         ]
         """
 
@@ -187,18 +276,25 @@ class ArrayNameSpace:
         ]
         """
 
-    def any(self) -> Series:
+    def any(self, *, ignore_nulls: bool = True) -> Series:
         """
         Evaluate whether any boolean value is true for every subarray.
+
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `False`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `True` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Returns
         -------
         Series
             Series of data type :class:`Boolean`.
-
-        Notes
-        -----
-        If there are no non-null elements in a row, the output is `False`.
 
         Examples
         --------
@@ -360,18 +456,25 @@ class ArrayNameSpace:
         ]
         """
 
-    def all(self) -> Series:
+    def all(self, *, ignore_nulls: bool = True) -> Series:
         """
         Evaluate whether all boolean values are true for every subarray.
+
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `True`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `False` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Returns
         -------
         Series
             Series of data type :class:`Boolean`.
-
-        Notes
-        -----
-        If there are no non-null elements in a row, the output is `True`.
 
         Examples
         --------
@@ -449,7 +552,11 @@ class ArrayNameSpace:
 
     def arg_min(self) -> Series:
         """
-        Retrieve the index of the minimal value in every sub-array.
+        Retrieve an index of a minimal value in every sub-array.
+
+        When multiple values are equal to the minimum, this function may arbitrarily
+        return the index of any of the minimum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
 
         Returns
         -------
@@ -472,7 +579,11 @@ class ArrayNameSpace:
 
     def arg_max(self) -> Series:
         """
-        Retrieve the index of the maximum value in every sub-array.
+        Retrieve an index of a maximum value in every sub-array.
+
+        When multiple values are equal to the maximum, this function may arbitrarily
+        return the index of any of the maximum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
 
         Returns
         -------
@@ -605,9 +716,18 @@ class ArrayNameSpace:
 
         """
 
-    def explode(self) -> Series:
+    def explode(
+        self, *, empty_as_null: bool | None = None, keep_nulls: bool = True
+    ) -> Series:
         """
         Returns a column with a separate row for every array element.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty array into a `null`.
+        keep_nulls
+            Explode a `null` array into a `null`.
 
         Returns
         -------
@@ -617,7 +737,7 @@ class ArrayNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3))
-        >>> s.arr.explode()
+        >>> s.arr.explode(empty_as_null=False)
         shape: (6,)
         Series: 'a' [i64]
         [
@@ -684,59 +804,79 @@ class ArrayNameSpace:
 
         """
 
-    def to_struct(
-        self,
-        fields: Callable[[int], str] | Sequence[str] | None = None,
-    ) -> Series:
+    def to_struct(self, fields: Sequence[str] | None = None) -> Series:
         """
         Convert the series of type `Array` to a series of type `Struct`.
 
         Parameters
         ----------
         fields
-            If the name and number of the desired fields is known in advance
-            a list of field names can be given, which will be assigned by index.
-            Otherwise, to dynamically assign field names, a custom function can be
-            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
+            Field names to use for the output. The number of names given must
+            match the width of the input array. If unset, the fields will be
+            named as "field_0", "field_1" .. "field_n".
 
         Examples
         --------
-        Convert array to struct with default field name assignment:
-
-        >>> s1 = pl.Series("n", [[0, 1, 2], [3, 4, 5]], dtype=pl.Array(pl.Int8, 3))
-        >>> s2 = s1.arr.to_struct()
-        >>> s2
-        shape: (2,)
-        Series: 'n' [struct[3]]
+        >>> s = pl.Series(
+        ...     [
+        ...         [1, 0, 0],
+        ...         [0, 1, 0],
+        ...         [0, 0, 1],
+        ...         [None, None, None],
+        ...         None,
+        ...     ],
+        ...     dtype=pl.Array(pl.Int64, 3),
+        ... )
+        >>> print(result := s.arr.to_struct())
+        shape: (5,)
+        Series: '' [struct[3]]
         [
-            {0,1,2}
-            {3,4,5}
+                {1,0,0}
+                {0,1,0}
+                {0,0,1}
+                {null,null,null}
+                null
         ]
-        >>> s2.struct.fields
-        ['field_0', 'field_1', 'field_2']
+        >>> print(result.struct.unnest())
+        shape: (5, 3)
+        ┌─────────┬─────────┬─────────┐
+        │ field_0 ┆ field_1 ┆ field_2 │
+        │ ---     ┆ ---     ┆ ---     │
+        │ i64     ┆ i64     ┆ i64     │
+        ╞═════════╪═════════╪═════════╡
+        │ 1       ┆ 0       ┆ 0       │
+        │ 0       ┆ 1       ┆ 0       │
+        │ 0       ┆ 0       ┆ 1       │
+        │ null    ┆ null    ┆ null    │
+        │ null    ┆ null    ┆ null    │
+        └─────────┴─────────┴─────────┘
 
-        Convert array to struct with field name assignment by function/index:
+        Convert to struct with custom field names:
 
-        >>> s3 = s1.arr.to_struct(fields=lambda idx: f"n{idx:02}")
-        >>> s3.struct.fields
-        ['n00', 'n01', 'n02']
-
-        Convert array to struct with field name assignment by
-        index from a list of names:
-
-        >>> s1.arr.to_struct(fields=["one", "two", "three"]).struct.unnest()
-        shape: (2, 3)
-        ┌─────┬─────┬───────┐
-        │ one ┆ two ┆ three │
-        │ --- ┆ --- ┆ ---   │
-        │ i8  ┆ i8  ┆ i8    │
-        ╞═════╪═════╪═══════╡
-        │ 0   ┆ 1   ┆ 2     │
-        │ 3   ┆ 4   ┆ 5     │
-        └─────┴─────┴───────┘
+        >>> print(result := s.arr.to_struct(["x", "y", "z"]))
+        shape: (5,)
+        Series: '' [struct[3]]
+        [
+                {1,0,0}
+                {0,1,0}
+                {0,0,1}
+                {null,null,null}
+                null
+        ]
+        >>> print(result.struct.unnest())
+        shape: (5, 3)
+        ┌──────┬──────┬──────┐
+        │ x    ┆ y    ┆ z    │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ i64  │
+        ╞══════╪══════╪══════╡
+        │ 1    ┆ 0    ┆ 0    │
+        │ 0    ┆ 1    ┆ 0    │
+        │ 0    ┆ 0    ┆ 1    │
+        │ null ┆ null ┆ null │
+        │ null ┆ null ┆ null │
+        └──────┴──────┴──────┘
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(F.col(s.name).arr.to_struct(fields)).to_series()
 
     def shift(self, n: int | IntoExprColumn = 1) -> Series:
         """

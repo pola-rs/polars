@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import io
-from typing import TYPE_CHECKING, Any
+import json
+import os
+import sys
+import typing
+from typing import IO, TYPE_CHECKING, Any
 
+import pyarrow as pa
 import pyarrow.ipc
 import pytest
 
@@ -12,6 +17,11 @@ from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from polars._typing import IpcCompression
+    from tests.conftest import PlMonkeyPatch
+
+COMPRESSIONS = ["uncompressed", "lz4", "zstd"]
 
 
 @pytest.fixture
@@ -92,11 +102,11 @@ def test_ipc_list_arg(io_files_path: Path) -> None:
 
 
 def test_scan_ipc_local_with_async(
-    monkeypatch: Any,
+    plmonkeypatch: PlMonkeyPatch,
     io_files_path: Path,
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
 
     assert_frame_equal(
         pl.scan_ipc(io_files_path / "foods1.ipc").head(1).collect(),
@@ -123,19 +133,19 @@ def test_sink_ipc_compat_level_22930() -> None:
     f1.seek(0)
     f2.seek(0)
 
-    t1 = pyarrow.ipc.open_file(f1)
+    t1 = pa.ipc.open_file(f1)
     assert "large_string" in str(t1.schema)
     assert_frame_equal(pl.DataFrame(t1.read_all()), df)
 
-    t2 = pyarrow.ipc.open_file(f2)
+    t2 = pa.ipc.open_file(f2)
     assert "large_string" in str(t2.schema)
     assert_frame_equal(pl.DataFrame(t2.read_all()), df)
 
 
 def test_scan_file_info_cache(
-    capfd: Any, monkeypatch: Any, foods_ipc_path: Path
+    capfd: Any, plmonkeypatch: PlMonkeyPatch, foods_ipc_path: Path
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     a = pl.scan_ipc(foods_ipc_path)
     b = pl.scan_ipc(foods_ipc_path)
 
@@ -143,3 +153,580 @@ def test_scan_file_info_cache(
 
     captured = capfd.readouterr().err
     assert "FILE_INFO CACHE HIT" in captured
+
+
+def test_scan_ipc_file_async(
+    plmonkeypatch: PlMonkeyPatch,
+    io_files_path: Path,
+) -> None:
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    foods1 = io_files_path / "foods1.ipc"
+
+    df = pl.scan_ipc(foods1).collect()
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1).select(pl.len()).collect(), df.select(pl.len())
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1).head(1).collect(),
+        df.head(1),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1).tail(1).collect(),
+        df.tail(1),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1).slice(-1, 1).collect(),
+        df.slice(-1, 1),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1).slice(7, 10).collect(),
+        df.slice(7, 10),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1).select(pl.col.calories).collect(),
+        df.select(pl.col.calories),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1).select([pl.col.calories, pl.col.category]).collect(),
+        df.select([pl.col.calories, pl.col.category]),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc([foods1, foods1]).collect(),
+        pl.concat([df, df]),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1).select(pl.col.calories.sum()).collect(),
+        df.select(pl.col.calories.sum()),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(foods1, row_index_name="ri", row_index_offset=42)
+        .slice(0, 1)
+        .select(pl.col.ri)
+        .collect(),
+        df.with_row_index(name="ri", offset=42).slice(0, 1).select(pl.col.ri),
+    )
+
+
+def test_scan_ipc_file_async_dict(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    buf = io.BytesIO()
+    lf = pl.LazyFrame(
+        {"cat": ["A", "B", "C", "A", "C", "B"]}, schema={"cat": pl.Categorical}
+    ).with_row_index()
+    lf.sink_ipc(buf)
+    buf.seek(0)
+
+    out = pl.scan_ipc(buf).collect()
+    expected = lf.collect()
+    assert_frame_equal(out, expected)
+
+
+def test_scan_ipc_file_async_multiple_record_batches(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    buf = io.BytesIO()
+    lf = pl.LazyFrame({"a": list(range(100))})
+    lf.sink_ipc(buf, record_batch_size=10)
+    buf.seek(0)
+    df = lf.collect()
+
+    buffers = typing.cast("list[IO[bytes]]", [buf, buf])
+
+    assert_frame_equal(
+        pl.scan_ipc(buf).collect(),
+        df,
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(buf).head(15).collect(),
+        df.head(15),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(buf).tail(15).collect(),
+        df.tail(15),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(buf).slice(45, 20).collect(),
+        df.slice(45, 20),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(buffers).slice(85, 30).collect(),
+        pl.concat([df.slice(85, 15), df.slice(0, 15)]),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(buf).select(pl.col.a.sum()).collect(),
+        df.select(pl.col.a.sum()),
+    )
+
+    assert_frame_equal(
+        pl.scan_ipc(buffers, row_index_name="ri").tail(15).select(pl.col.ri).collect(),
+        pl.concat([df, df]).with_row_index("ri").tail(15).select(pl.col.ri),
+    )
+
+
+@pytest.mark.parametrize("n_a", [1, 999])
+@pytest.mark.parametrize("n_b", [1, 12, 13, 999])  # problem starts 13
+@pytest.mark.parametrize("compression", COMPRESSIONS)
+def test_scan_ipc_varying_block_metadata_len_c4812(
+    n_a: int, n_b: int, compression: IpcCompression, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    buf = io.BytesIO()
+    df = pl.DataFrame({"a": [n_a * "A", n_b * "B"]})
+    df.lazy().sink_ipc(buf, compression=compression, record_batch_size=1)
+    buf.seek(0)
+
+    with pa.ipc.open_file(buf) as reader:
+        assert [
+            reader.get_batch(i).num_rows for i in range(reader.num_record_batches)
+        ] == [1, 1]
+
+    buf.seek(0)
+    assert_frame_equal(pl.scan_ipc(buf).collect(), df)
+
+
+@pytest.mark.parametrize(
+    "record_batch_size", [1, 2, 5, 7, 50, 99, 100, 101, 299, 300, 100_000]
+)
+@pytest.mark.parametrize("n_chunks", [1, 2, 3])
+def test_sink_ipc_record_batch_size(record_batch_size: int, n_chunks: int) -> None:
+    n_rows = 100
+    buf = io.BytesIO()
+
+    df0 = pl.DataFrame({"a": range(n_rows)})
+    df = df0
+    while n_chunks > 1:
+        df = pl.concat([df, df0])
+        n_chunks -= 1
+
+    df.lazy().sink_ipc(buf, record_batch_size=record_batch_size)
+
+    buf.seek(0)
+    out = pl.scan_ipc(buf).collect()
+    assert_frame_equal(out, df)
+
+    buf.seek(0)
+    with pa.ipc.open_file(buf) as reader:
+        record_batch_lengths = [
+            reader.get_batch(i).num_rows for i in range(reader.num_record_batches)
+        ]
+
+    for i, n_rows in enumerate(record_batch_lengths):
+        assert n_rows == record_batch_size or (
+            i + 1 == len(record_batch_lengths) and n_rows <= record_batch_size
+        )
+
+
+@pytest.mark.parametrize("record_batch_size", [None, 3])
+@pytest.mark.parametrize("slice", [(0, 0), (0, 1), (0, 5), (4, 7), (-1, 1), (-5, 4)])
+@pytest.mark.parametrize("compression", COMPRESSIONS)
+def test_scan_ipc_compression_with_slice_26063(
+    record_batch_size: int, slice: tuple[int, int], compression: IpcCompression
+) -> None:
+    n_rows = 15
+    df = pl.DataFrame({"a": range(n_rows)}).with_columns(
+        pl.col.a.pow(3).cast(pl.String).alias("b")
+    )
+    buf = io.BytesIO()
+
+    df.lazy().sink_ipc(
+        buf, compression=compression, record_batch_size=record_batch_size
+    )
+    buf.seek(0)
+    out = pl.scan_ipc(buf).slice(slice[0], slice[1]).collect()
+    expected = df.slice(slice[0], slice[1])
+    assert_frame_equal(out, expected)
+
+
+def test_sink_scan_ipc_round_trip_statistics() -> None:
+    n_rows = 4_000  # must be higher than (n_vCPU)^2 to avoid sortedness inference
+    buf = io.BytesIO()
+
+    df = (
+        pl.DataFrame({"a": range(n_rows)})
+        .with_columns(pl.col.a.reverse().alias("b"))
+        .with_columns(pl.col.a.shuffle().alias("d"))
+        .with_columns(pl.col.a.shuffle().sort().alias("d"))
+    )
+    df.lazy().sink_ipc(buf, _record_batch_statistics=True)
+    buf.seek(0)
+
+    metadata = df._to_metadata()
+
+    # baseline
+    assert metadata.select(pl.col("sorted_asc").sum()).item() == 2
+    assert metadata.select(pl.col("sorted_dsc").sum()).item() == 1
+
+    # round-trip
+    out = pl.scan_ipc(buf, _record_batch_statistics=True).collect()
+    assert_frame_equal(metadata, out._to_metadata())
+
+    # do not read unless requested
+    out = pl.scan_ipc(buf).collect()
+    assert out._to_metadata().select(pl.col("sorted_asc").sum()).item() == 0
+    assert out._to_metadata().select(pl.col("sorted_dsc").sum()).item() == 0
+
+    # remain pyarrow compatible
+    out = pl.read_ipc(buf, use_pyarrow=True)
+    assert_frame_equal(df, out)
+
+
+def test_sink_ipc_custom_metadata() -> None:
+    f = io.BytesIO()
+    pl.LazyFrame({"a": range(37)}).sink_ipc(
+        f,
+        record_batch_size=10,
+        _record_batch_statistics=True,
+    )
+
+    with pa.ipc.open_file(f) as reader:
+        assert [
+            reader.get_record_batch(i).num_rows
+            for i in range(reader.num_record_batches)
+        ] == [10, 10, 10, 7]
+        assert json.loads(reader.metadata.get(b"__POLARS_IPC_METADATA")) == {
+            "record_batch_cum_len": [10, 20, 30, 37]
+        }
+
+    f = io.BytesIO()
+    pl.LazyFrame({"a": [0, 1, 2, 3, 4]}).sink_ipc(
+        f,
+        record_batch_size=3,
+        _record_batch_statistics=False,
+    )
+
+    with pa.ipc.open_file(f) as reader:
+        assert reader.metadata is None
+
+
+def test_scan_ipc_slicing_and_count_with_custom_metadata(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    df = pl.DataFrame({"a": range(37)})
+
+    f = io.BytesIO()
+    df.lazy().sink_ipc(
+        f,
+        record_batch_size=10,
+        _record_batch_statistics=True,
+    )
+
+    buf = f.getvalue()
+    q = pl.scan_ipc(buf).slice(10, 10)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    capture = capfd.readouterr().err
+    plmonkeypatch.setenv("POLARS_VERBOSE", "0")
+
+    assert (
+        "rb_total_count: 4, rb_full_fetch_count: 1, rb_metadata_fetch_count: 0"
+        in capture
+    )
+
+    assert_frame_equal(out, pl.DataFrame({"a": range(10, 20)}))
+
+    footer_header_len = 10
+    footer_md_and_header_len = footer_header_len + int.from_bytes(
+        buf[-10:][:4], byteorder="little"
+    )
+    footer_md_only_buf = buf[-footer_md_and_header_len:]
+
+    # All the following should pass without needing to access record batch data.
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    assert pl.scan_ipc(footer_md_only_buf).select(pl.len()).collect().item() == 37
+    capture = capfd.readouterr().err
+    plmonkeypatch.setenv("POLARS_VERBOSE", "0")
+
+    # 0 fetches; record batch row counts sourced from custom metadata.
+    assert (
+        "rb_total_count: 4, rb_full_fetch_count: 0, rb_metadata_fetch_count: 0"
+        in capture
+    )
+
+    assert (
+        pl.scan_ipc(3 * [footer_md_only_buf]).select(pl.len()).collect().item() == 111
+    )
+
+    for offset_len in [(0, 0), (-1, 0), (1, 0), (-999, 1), (999, 1)]:
+        assert (
+            pl.scan_ipc([footer_md_only_buf, footer_md_only_buf])
+            .slice(*offset_len)
+            .collect()
+            .height
+            == 0
+        )
+
+    assert (
+        pl.scan_ipc([footer_md_only_buf, footer_md_only_buf])
+        .slice(47, 1)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 1
+    )
+    assert (
+        pl.scan_ipc([footer_md_only_buf, footer_md_only_buf])
+        .slice(47, 999)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 27
+    )
+
+
+def test_scan_ipc_fast_count_does_not_read_row_values(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    df = pl.DataFrame({"a": range(3)})
+    f = io.BytesIO()
+    df.lazy().sink_ipc(
+        f,
+        record_batch_size=999,
+        _record_batch_statistics=False,
+    )
+
+    q = pl.scan_ipc(f.getvalue()).select(pl.len())
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    capture = capfd.readouterr().err
+    plmonkeypatch.setenv("POLARS_VERBOSE", "0")
+
+    assert (
+        "rb_total_count: 1, rb_full_fetch_count: 0, rb_metadata_fetch_count: 1"
+        in capture
+    )
+    assert out.item() == 3
+
+
+def test_scan_ipc_slicing_and_count(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    df = pl.DataFrame({"a": range(3)})
+    f = io.BytesIO()
+    df.lazy().sink_ipc(
+        f,
+        record_batch_size=1,
+        _record_batch_statistics=False,
+    )
+
+    buf = f.getvalue()
+    q = pl.scan_ipc(buf).select(pl.len())
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    capture = capfd.readouterr().err
+    plmonkeypatch.setenv("POLARS_VERBOSE", "0")
+
+    assert (
+        "rb_total_count: 3, rb_full_fetch_count: 0, rb_metadata_fetch_count: 3"
+        in capture
+    )
+    assert out.item() == 3
+
+    q = pl.scan_ipc(buf).slice(1, 1)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    capture = capfd.readouterr().err
+    plmonkeypatch.setenv("POLARS_VERBOSE", "0")
+
+    # rb_metadata_fetch_count == rb_total_count, we fetched all record batch
+    # metadatas to resolve slice.
+    assert (
+        "rb_total_count: 3, rb_full_fetch_count: 1, rb_metadata_fetch_count: 3"
+        in capture
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame({"a": 1}),
+    )
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [["b"], ["a", "b", "c", "d"], ["d", "c", "a", "b"], ["d", "a", "b"]],
+)
+@pytest.mark.parametrize("record_batch_size", [None, 100])
+def test_sink_scan_ipc_round_trip_statistics_projection(
+    selection: list[str], record_batch_size: int
+) -> None:
+    n_rows = 4_000  # must be higher than (n_vCPU)^2 to avoid sortedness inference
+    buf = io.BytesIO()
+
+    df = (
+        pl.DataFrame({"a": range(n_rows)})
+        .with_columns(pl.col.a.reverse().alias("b"))
+        .with_columns(pl.col.a.shuffle().alias("c"))
+        .with_columns(pl.col.a.shuffle().sort().alias("d"))
+    )
+    df.lazy().sink_ipc(
+        buf, record_batch_size=record_batch_size, _record_batch_statistics=True
+    )
+    buf.seek(0)
+
+    # round-trip with projection
+    df = df.select(selection)
+    out = pl.scan_ipc(buf, _record_batch_statistics=True).select(selection).collect()
+    assert_frame_equal(df, out)
+    assert_frame_equal(df._to_metadata(), out._to_metadata())
+
+
+def test_scan_ipc_slice_empty_file() -> None:
+    dfs = [
+        pl.DataFrame({"a": range(0)}),
+        pl.DataFrame({"a": range(100)}),
+        pl.DataFrame({"a": range(0)}),
+        pl.DataFrame({"a": range(100, 200)}),
+    ]
+
+    bufs: list[IO[bytes]] = [io.BytesIO() for _ in range(len(dfs))]
+
+    for i in range(len(dfs)):
+        dfs[i].write_ipc(bufs[i])
+        bufs[i].seek(0)
+
+    expected = pl.concat(dfs).slice(50, 100)
+    actual = pl.scan_ipc(bufs).slice(50, 100).collect()
+
+    assert_frame_equal(expected, actual)
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="needs unix-only `resource` module to measure memory usage",
+)
+@pytest.mark.parametrize("force_async", [True, False])
+def test_sink_ipc_memory_usage(force_async: bool) -> None:
+    import subprocess
+    import sys
+
+    def mem_usage(n_chunks: int) -> int:
+        n_runs = 3
+
+        return min(
+            int(
+                subprocess.check_output(
+                    [
+                        sys.executable,
+                        "-c",
+                        """\
+import resource
+import sys
+import tempfile
+
+import polars as pl
+
+(_, n_chunks) = sys.argv
+
+
+s = pl.Series([0], dtype=pl.UInt32).new_from_index(
+    0,
+    1_000_000,
+)
+df = pl.concat(s for _ in range(int(n_chunks))).to_frame()
+
+with tempfile.NamedTemporaryFile() as f:
+    df.write_ipc(f.name)
+
+print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+
+""",
+                        str(n_chunks),
+                    ],
+                    env={
+                        "POLARS_FORCE_ASYNC": "1" if force_async else "0",
+                        **os.environ,
+                    },
+                ).decode()
+            )
+            for _ in range(n_runs)
+        )
+
+    m1 = mem_usage(1)
+    m10 = mem_usage(10)
+
+    ratio = m10 / m1
+
+    # Ratio
+    # 1.42.1: ~1.17
+    # Fixed branch (debug build): ~1.008
+    assert ratio < 1.05
+
+
+def test_row_count_estimate_ipc(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "a.ipc"
+    pl.DataFrame({"a": range(37)}).write_ipc(path)
+
+    # Polars writes the row count into the footer.
+    assert "ESTIMATED ROWS: 37" in pl.scan_ipc(path).explain()
+
+
+def test_row_count_estimate_ipc_foreign_writer(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "a.ipc"
+
+    # Without the Polars footer the record batch lengths are summed.
+    schema = pa.schema([("a", pa.int64())])
+    with pa.ipc.new_file(path, schema) as writer:
+        for _ in range(4):
+            writer.write_batch(pa.record_batch([pa.array(range(10))], schema=schema))
+
+    assert "ESTIMATED ROWS: 40" in pl.scan_ipc(path).explain()
+
+
+def test_row_count_estimate_ipc_many_blocks(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "a.ipc"
+
+    # Too many record batches to walk, so the count is extrapolated from a sample.
+    schema = pa.schema([("a", pa.int64())])
+    with pa.ipc.new_file(path, schema) as writer:
+        for _ in range(199):
+            writer.write_batch(pa.record_batch([pa.array(range(10))], schema=schema))
+        writer.write_batch(pa.record_batch([pa.array(range(7))], schema=schema))
+
+    assert "ESTIMATED ROWS: 1997" in pl.scan_ipc(path).explain()
+
+
+def test_row_count_estimate_ipc_multifile(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    for name in ("a.ipc", "b.ipc"):
+        pl.DataFrame({"a": range(10)}).write_ipc(tmp_path / name)
+
+    # Only the first source is read, so the rest is extrapolated.
+    assert "ESTIMATED ROWS: 20" in pl.scan_ipc(tmp_path / "*.ipc").explain()

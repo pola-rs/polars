@@ -3,6 +3,7 @@ use std::sync::Arc;
 use either::Either;
 use polars_core::error::{PolarsResult, polars_err};
 use polars_core::schema::SchemaRef;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::python_function::PythonFunction;
 use pyo3::prelude::*;
 #[cfg(feature = "serde")]
@@ -22,6 +23,10 @@ pub struct PythonOptionsDsl {
     pub python_source: PythonScanSource,
     pub validate_schema: bool,
     pub is_pure: bool,
+    /// Optional custom name to display in explain output, eg: PYTHON[<name>].
+    pub explain_name: Option<PlSmallStr>,
+    /// Optional single-line detail to include under the scan header.
+    pub explain_detail: Option<PlSmallStr>,
 }
 
 impl PythonOptionsDsl {
@@ -39,7 +44,7 @@ impl PythonOptionsDsl {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Hash, strum_macros::IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum PythonScanSource {
