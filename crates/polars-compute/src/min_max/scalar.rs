@@ -2,6 +2,8 @@ use arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8Array, Utf8ViewArray,
 };
 use arrow::types::{NativeType, Offset};
+use polars_array::PlBooleanArray;
+use polars_array::arrow::bridge::ToArrow;
 use polars_utils::min_max::MinMax;
 
 use super::MinMaxKernel;
@@ -110,11 +112,11 @@ impl MinMaxKernel for BooleanArray {
     type Scalar<'a> = bool;
 
     fn min_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-        crate::boolean::all(self)
+        crate::boolean::all(&PlBooleanArray::from_arrow(self))
     }
 
     fn max_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-        crate::boolean::any(self)
+        crate::boolean::any(&PlBooleanArray::from_arrow(self))
     }
 
     #[inline(always)]

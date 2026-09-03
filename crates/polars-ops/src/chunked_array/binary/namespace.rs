@@ -10,7 +10,9 @@ use memchr::memmem::find;
 use polars_array::arrow::{export, import};
 use polars_compute::cast::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use polars_compute::size::binary_size_bytes;
-use polars_core::prelude::arity::{broadcast_binary_elementwise_values, unary_elementwise_values};
+use polars_core::prelude::arity::{
+    broadcast_binary_elementwise_values, unary_elementwise_values, unary_mut_values,
+};
 
 use super::*;
 
@@ -129,7 +131,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     /// Get the size of the binary values in bytes.
     fn size_bytes(&self) -> UInt32Chunked {
         let ca = self.as_binary();
-        ca.apply_kernel_cast(&binary_size_bytes)
+        unary_mut_values(ca, binary_size_bytes)
     }
 
     #[cfg(feature = "binary_encoding")]

@@ -60,7 +60,7 @@ where
     T: PolarsNumericType,
     T::Native: BitAnd<Output = T::Native> + Not<Output = T::Native> + Zero,
     T::Native: NativeType,
-    PrimitiveArray<T::Native>: BitwiseKernel<Scalar = T::Native>,
+    PlPrimitiveArray<T::Native>: BitwiseKernel<Scalar = T::Native>,
 {
     type Dtype = T;
 
@@ -85,7 +85,7 @@ where
     T: PolarsNumericType,
     T::Native: BitOr<Output = T::Native> + Zero,
     T::Native: NativeType,
-    PrimitiveArray<T::Native>: BitwiseKernel<Scalar = T::Native>,
+    PlPrimitiveArray<T::Native>: BitwiseKernel<Scalar = T::Native>,
 {
     type Dtype = T;
 
@@ -110,7 +110,7 @@ where
     T: PolarsNumericType,
     T::Native: BitXor<Output = T::Native> + Zero,
     T::Native: NativeType,
-    PrimitiveArray<T::Native>: BitwiseKernel<Scalar = T::Native>,
+    PlPrimitiveArray<T::Native>: BitwiseKernel<Scalar = T::Native>,
 {
     type Dtype = T;
 

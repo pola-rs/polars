@@ -43,6 +43,7 @@ impl NotSimdPrimitive for i128 {}
 impl NotSimdPrimitive for pf16 {}
 
 mod dyn_array;
+mod pl_array;
 mod scalar;
 
 #[cfg(feature = "simd")]

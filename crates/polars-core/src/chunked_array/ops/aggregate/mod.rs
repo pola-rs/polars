@@ -124,7 +124,7 @@ impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: WrappingSum,
-    PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
+    PlPrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
 {
     fn sum(&self) -> Option<T::Native> {
         Some(
@@ -167,12 +167,7 @@ where
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(|arr| match arr.scalar_value() {
-                    // Every element of a scalar chunk is the one value it repeats, which is
-                    // therefore its own extremum: the chunk is read, not written out.
-                    Some(value) => value,
-                    None => MinMaxKernel::min_ignore_nan_kernel(&chunk_to_arrow(arr)),
-                })
+                .filter_map(MinMaxKernel::min_ignore_nan_kernel)
                 .reduce(MinMax::min_ignore_nan),
         }
     }
@@ -204,11 +199,7 @@ where
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(|arr| match arr.scalar_value() {
-                    // See `min`: a scalar chunk is its own extremum.
-                    Some(value) => value,
-                    None => MinMaxKernel::max_ignore_nan_kernel(&chunk_to_arrow(arr)),
-                })
+                .filter_map(MinMaxKernel::max_ignore_nan_kernel)
                 .reduce(MinMax::max_ignore_nan),
         }
     }
@@ -249,11 +240,7 @@ where
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(|arr| match arr.scalar_value() {
-                    // See `min`: a scalar chunk is both its own minimum and its own maximum.
-                    Some(value) => value.map(|value| (value, value)),
-                    None => MinMaxKernel::min_max_ignore_nan_kernel(&chunk_to_arrow(arr)),
-                })
+                .filter_map(MinMaxKernel::min_max_ignore_nan_kernel)
                 .reduce(|(min1, max1), (min2, max2)| {
                     (
                         MinMax::min_ignore_nan(min1, min2),
@@ -330,7 +317,7 @@ where
     T: PolarsNumericType,
     T::Native: WrappingSum + SumCast,
     <T::Native as SumCast>::Sum: WrappingAdd,
-    PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
+    PlPrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
 {
     fn sum_reduce(&self) -> Scalar {
         let v: <T::Native as SumCast>::Sum = if T::Native::is_float() {
