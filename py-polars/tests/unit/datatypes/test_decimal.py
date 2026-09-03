@@ -687,6 +687,21 @@ def test_decimal_truediv_int_schema_29105(int_dtype: PolarsDataType) -> None:
         assert schema[name] == pl.Decimal(38, 4)
 
 
+def test_decimal_add_int_schema_29104(int_dtype: PolarsDataType) -> None:
+    lf = pl.LazyFrame({"i": [1]}, schema={"i": int_dtype}).with_columns(
+        d=pl.lit(1).cast(pl.Decimal(18, 4))
+    )
+
+    for expr, name in (
+        (pl.col("i") / pl.col("d"), "i"),
+        (pl.col("d") / pl.col("i"), "d"),
+    ):
+        q = lf.select(expr)
+        schema = q.collect_schema()
+        assert schema == q.collect().schema
+        assert schema[name] == pl.Decimal(38, 4)
+
+
 def test_decimal_horizontal_20482() -> None:
     b = pl.LazyFrame(
         {

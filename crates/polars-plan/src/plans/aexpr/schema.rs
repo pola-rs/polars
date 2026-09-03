@@ -630,6 +630,10 @@ fn get_arithmetic_field(
                     )?)
                 },
                 #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_integer() => {
+                    Decimal(DEC128_MAX_PREC, *scale)
+                },
+                #[cfg(feature = "dtype-decimal")]
                 (Decimal(_, scale_left), Decimal(_, scale_right)) => {
                     Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
                 },
