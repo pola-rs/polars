@@ -43,69 +43,51 @@
             overlays = [ inputs.rust-overlay.overlays.default ];
           };
 
-          devShells.default = pkgs.mkShell (
-            let
-              runtimePkgs = lib.optionals pkgs.stdenv.hostPlatform.isLinux (
-                with pkgs;
-                [
-                  gcc13
-                  openssl_3_6
-                ]
-              );
-            in
-            {
-              packages =
-                (with pkgs; [
-                  py.python
-                  py.build
-                  py.mypy
-                  rustToolchain
-                  cmake
-                  gnumake
-                  maturin
-                  typos
-                  dprint
-                  uv
-                  zlib
-                  cargo-nextest
-                  samply
-                  hyperfine
-                  graphviz
-                  openssl
-                  pkg-config
-                ])
-                ++ (lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.perf);
+          devShells.default = pkgs.mkShell {
+            packages =
+              (with pkgs; [
+                py.python
+                rustToolchain
+                cargo-nextest
+                cmake
+                dprint
+                gnumake
+                graphviz
+                hyperfine
+                pkg-config
+                samply
+              ])
+              ++ (lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.perf);
 
-              buildInputs = runtimePkgs;
+            buildInputs = with pkgs; [ openssl ];
 
-              shellHook =
-                let
-                  openCmd = if pkgs.stdenv.hostPlatform.isLinux then "xdg-open" else "open";
-                in
-                ''
-                  export WORKSPACE_ROOT=$(git rev-parse --show-toplevel)
+            shellHook =
+              let
+                openCmd = if pkgs.stdenv.hostPlatform.isLinux then "xdg-open" else "open";
+              in
+              ''
+                export WORKSPACE_ROOT=$(git rev-parse --show-toplevel)
 
-                  # Jemmalloc compiled with gcc doesn't like when we ask for the
-                  # compiler to compile with fortify source so lets enable everything
-                  # but fortify and fortify3.
-                  export NIX_HARDENING_ENABLE="bindnow format pic relro stackclashprotection stackprotector strictoverflow zerocallusedregs"
+                # Jemmalloc compiled with gcc doesn't like when we ask for the
+                # compiler to compile with fortify source so lets enable everything
+                # but fortify and fortify3.
+                export NIX_HARDENING_ENABLE="bindnow format pic relro stackclashprotection stackprotector strictoverflow zerocallusedregs"
 
-                  export PYO3_NO_RECOMPILE=1
+                export PYO3_NO_RECOMPILE=1
 
-                  # - cc is needed for numpy to function
-                  # - python shared libs are required for rust-side tests
-                  export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${py.python}/lib"
+                # - cc is needed for numpy to function
+                # - python shared libs are required for rust-side tests
+                export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${py.python}/lib"
 
-                  export POLARS_DOT_SVG_VIEWER="${openCmd} %file%"
-                  export RUST_SRC_PATH="${rustToolchain}/lib/rustlib/src/rust/library"
+                export POLARS_DOT_SVG_VIEWER="${openCmd} %file%"
+                export RUST_SRC_PATH="${rustToolchain}/lib/rustlib/src/rust/library"
 
-                  # Create the virtual environment and install the Python
-                  # requirements if they are missing; a no-op otherwise.
-                  make -s -C "$WORKSPACE_ROOT" .venv
-                  source "$WORKSPACE_ROOT/.venv/bin/activate"
-                '';
-            }
-          );
+                # Create the virtual environment and install the Python
+                # requirements if they are missing; a no-op otherwise.
+                make -s -C "$WORKSPACE_ROOT" .venv
+                source "$WORKSPACE_ROOT/.venv/bin/activate"
+              '';
+          };
         };
     };
 }
