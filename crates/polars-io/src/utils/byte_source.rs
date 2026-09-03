@@ -116,7 +116,7 @@ impl ByteSource for ObjectStoreByteSource {
     async fn get_size(&self) -> PolarsResult<usize> {
         Ok(self
             .store
-            .head(&self.path, ConcurrencyStrategy::Legacy)
+            .head(&self.path, self.concurrency_strategy())
             .await?
             .size as usize)
     }
