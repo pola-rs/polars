@@ -2,7 +2,7 @@
 
 use arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeBinaryArray, FixedSizeListArray,
-    ListArray, NullArray, PrimitiveArray, StructArray, Utf8Array, Utf8ViewArray,
+    ListArray, NullArray, PrimitiveArray, StructArray, Utf8ViewArray,
 };
 use arrow::datatypes::{ArrowDataType, Field};
 use arrow::offset::OffsetsBuffer;
@@ -86,26 +86,6 @@ pub fn binary_to_arrow_large_binary(array: &PlBinaryArray) -> BinaryArray<i64> {
         values,
         validity,
     )
-}
-
-/// Exports a [`PlBinaryArray`] as an Arrow [`Utf8Array`] of
-/// [`LargeUtf8`](ArrowDataType::LargeUtf8), without checking that its bytes are valid UTF-8.
-///
-/// # Safety
-/// Every element of `array` — including the ones under a null — must be valid UTF-8.
-pub unsafe fn binary_to_arrow_large_utf8(array: &PlBinaryArray) -> Utf8Array<i64> {
-    let (values, offsets, validity) = array.to_flat().into_owned().into_inner();
-
-    // SAFETY: the caller guarantees the elements are valid UTF-8, and the offsets came out of a
-    // flat `PlBinaryArray`, which lays them end to end within the values.
-    unsafe {
-        Utf8Array::new_unchecked(
-            ArrowDataType::LargeUtf8,
-            offsets_to_arrow(offsets),
-            values,
-            validity,
-        )
-    }
 }
 
 /// Exports a [`PlBinaryViewArray`] as an Arrow [`BinaryViewArray`] of
