@@ -13,7 +13,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -510,7 +510,7 @@ def test_decimal_explode() -> None:
             "bar": [[D("3.4"), D("3.4")], [D("4.5")]],
         }
     )
-    df = nested_decimal_df.explode("bar", empty_as_null=False)
+    df = nested_decimal_df.explode("bar")
     expected_df = pl.DataFrame(
         {
             "bar": [D("3.4"), D("3.4"), D("4.5")],
@@ -944,3 +944,14 @@ def test_decimal_sum_widens_precision_27576(
         pl.Decimal(precision=38, scale=2)
     )
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_decimal_sum_overflow_28585(
+    engine: Literal["streaming", "in-memory"],
+) -> None:
+    s = pl.Series("d", [D(10**38 - 1)] * 2, dtype=pl.Decimal(38, 0))
+    with pytest.raises(ComputeError, match="overflow in decimal addition in sum"):
+        s.sum()
+    with pytest.raises(ComputeError, match="overflow in decimal addition in sum"):
+        s.to_frame().lazy().select(pl.col("d").sum()).collect(engine=engine)

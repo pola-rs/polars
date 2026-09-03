@@ -97,6 +97,7 @@ pub fn take_double_bounded_range_join_filter(
     schema_right: &Schema,
     output_schema: &Schema,
     suffix: &str,
+    dedup: &mut PredicateDedupState,
 ) -> PolarsResult<Option<(IEJoinCompatiblePredicate, IEJoinCompatiblePredicate, bool)>> {
     use InequalityOperator::*;
     use polars_utils::itertools::Itertools;
@@ -148,6 +149,7 @@ pub fn take_double_bounded_range_join_filter(
                 acc_predicates,
                 &ExprIR::from_node(pred.source_node, expr_arena),
                 expr_arena,
+                dedup,
             );
         }
         return Ok(None);
@@ -165,6 +167,7 @@ pub fn take_double_bounded_range_join_filter(
                 acc_predicates,
                 &ExprIR::from_node(pred.source_node, expr_arena),
                 expr_arena,
+                dedup,
             );
         }
     }
@@ -297,8 +300,25 @@ pub fn try_rewrite_join_type(
     acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
     streaming: bool,
+    dedup: &mut PredicateDedupState,
 ) -> PolarsResult<Option<(Vec<ExprIR>, SchemaRef)>> {
-    if acc_predicates.is_empty() {
+    // A non-equi condition is attached directly to the join, so this must still run even
+    // with nothing pushed down from above.
+    let has_attached_predicate =
+        matches!(&options.options, JoinTypeOptionsIR::CrossAndFilter { .. }) || {
+            #[cfg(feature = "iejoin")]
+            {
+                matches!(
+                    &options.options,
+                    JoinTypeOptionsIR::IEJoin { .. } | JoinTypeOptionsIR::Range { .. }
+                )
+            }
+            #[cfg(not(feature = "iejoin"))]
+            {
+                false
+            }
+        };
+    if acc_predicates.is_empty() && !has_attached_predicate {
         return Ok(None);
     }
 
@@ -310,31 +330,54 @@ pub fn try_rewrite_join_type(
     // Note: The join rewrites here all maintain output column ordering, hence this does not need
     // to return any post-select (inserted inner joins will use JoinCoalesce::KeepColumns).
     (|| {
-        match &options.args.how {
-            #[cfg(feature = "iejoin")]
-            JoinType::IEJoin | JoinType::Range => {},
-            JoinType::Cross => {},
+        // If it is Left/Right and options is set, we have a `join_where`, we can try to lower that
+        // to an IEJoin.
+        let is_outer_non_equi =
+            matches!(options.args.how, JoinType::Left | JoinType::Right) && options.is_non_equi();
 
-            _ => return PolarsResult::Ok(()),
+        #[cfg(feature = "iejoin")]
+        if is_outer_non_equi {
+            try_rewrite_outer_join_algorithm(
+                schema_left,
+                schema_right,
+                output_schema,
+                options,
+                left_on,
+                right_on,
+                expr_arena,
+            )?;
+            return PolarsResult::Ok(());
+        }
+        #[cfg(not(feature = "iejoin"))]
+        if is_outer_non_equi {
+            return PolarsResult::Ok(());
         }
 
-        match &options.options {
-            Some(JoinTypeOptionsIR::CrossAndFilter { .. }) => {
-                let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) =
-                    Arc::make_mut(options).options.take()
-                else {
-                    unreachable!()
-                };
-
-                insert_predicate_dedup(acc_predicates, &predicate, expr_arena);
-            },
-
+        let is_rewrite_candidate = match &options.options {
+            // non-equi joins
+            JoinTypeOptionsIR::CrossAndFilter { .. } => true,
+            // Range joins
             #[cfg(feature = "iejoin")]
-            Some(JoinTypeOptionsIR::IEJoin(_)) => {},
-            None => {},
+            JoinTypeOptionsIR::IEJoin { .. } | JoinTypeOptionsIR::Range { .. } => true,
+            _ => options.args.how.is_cross(),
+        };
+        if !is_rewrite_candidate {
+            return PolarsResult::Ok(());
         }
 
+        if matches!(&options.options, JoinTypeOptionsIR::CrossAndFilter { .. }) {
+            let JoinTypeOptionsIR::CrossAndFilter { predicate } =
+                std::mem::take(&mut Arc::make_mut(options).options)
+            else {
+                unreachable!()
+            };
+
+            insert_predicate_dedup(acc_predicates, &predicate, expr_arena, dedup);
+        }
+
+        // We are in a cross join + filter
         // Try converting to inner join
+        assert!(matches!(options.args.how, JoinType::Cross));
         let equality_conditions = take_inner_join_compatible_filters(
             acc_predicates,
             expr_arena,
@@ -362,12 +405,10 @@ pub fn try_rewrite_join_type(
             return Ok(());
         }
 
-        // Try converting cross join to double-bounded RangeJoin
+        // Try converting cross join to double-bounded RangeJoin.
         #[cfg(feature = "iejoin")]
-        if streaming
-            && matches!(options.args.maintain_order, MaintainOrderJoin::None)
-            && left_on.is_empty()
-        {
+        if streaming && matches!(options.args.maintain_order, MaintainOrderJoin::None) {
+            assert!(left_on.is_empty());
             let range_predicate = take_double_bounded_range_join_filter(
                 acc_predicates,
                 expr_arena,
@@ -375,17 +416,9 @@ pub fn try_rewrite_join_type(
                 schema_right,
                 output_schema,
                 &suffix,
+                dedup,
             )?;
             if let Some((bound_lower, bound_upper, left_is_point)) = range_predicate {
-                let join_options = Arc::make_mut(options);
-                join_options.args.how = JoinType::Range;
-                let JoinTypeOptionsIR::IEJoin(ie_options) = join_options
-                    .options
-                    .get_or_insert(JoinTypeOptionsIR::IEJoin(IEJoinOptions::default()))
-                else {
-                    unreachable!()
-                };
-
                 left_on.push(ExprIR::from_node(bound_lower.input_lhs, expr_arena));
                 let mut rexpr_lower = ExprIR::from_node(bound_lower.input_rhs, expr_arena);
                 remove_suffix(&mut rexpr_lower, expr_arena, schema_right, &suffix);
@@ -402,17 +435,24 @@ pub fn try_rewrite_join_type(
                     debug_assert!(expr_eq(bound_lower.input_rhs, bound_upper.input_rhs));
                     left_on.push(ExprIR::from_node(bound_upper.input_lhs, expr_arena));
                 }
-                ie_options.operator1 = bound_lower.ie_op;
-                ie_options.operator2 = Some(bound_upper.ie_op);
+
+                let join_options = Arc::make_mut(options);
+                join_options.args.how = JoinType::Range;
+                join_options.options = JoinTypeOptionsIR::Range {
+                    ie_options: IEJoinOptions {
+                        operator1: bound_lower.ie_op,
+                        operator2: Some(bound_upper.ie_op),
+                    },
+                    left_on: left_on.clone(),
+                    right_on: right_on.clone(),
+                };
                 return Ok(());
             }
         }
 
-        // Try converting cross join to IEJoin
+        // Try converting cross join to IEJoin.
         #[cfg(feature = "iejoin")]
-        if matches!(options.args.maintain_order, MaintainOrderJoin::None)
-            && left_on.len() < IEJOIN_MAX_PREDICATES
-        {
+        if matches!(options.args.maintain_order, MaintainOrderJoin::None) {
             use polars_utils::itertools::Itertools;
 
             let ie_conditions = take_iejoin_compatible_filters(
@@ -427,22 +467,26 @@ pub fn try_rewrite_join_type(
 
             // If there is only one predicate, prefer lowering to a single-bounded range-join
             if ie_conditions.len() == 1 && streaming {
-                let join_options = Arc::make_mut(options);
-                join_options.args.how = JoinType::Range;
-                let JoinTypeOptionsIR::IEJoin(ie_options) = join_options
-                    .options
-                    .get_or_insert(JoinTypeOptionsIR::IEJoin(IEJoinOptions::default()))
-                else {
-                    unreachable!()
-                };
                 let pred = ie_conditions.into_iter().next().unwrap();
                 left_on.push(ExprIR::from_node(pred.input_lhs, expr_arena));
                 let mut rexpr = ExprIR::from_node(pred.input_rhs, expr_arena);
                 remove_suffix(&mut rexpr, expr_arena, schema_right, &suffix);
                 right_on.push(rexpr);
-                ie_options.operator1 = pred.ie_op;
+
+                let join_options = Arc::make_mut(options);
+                join_options.args.how = JoinType::Range;
+                join_options.options = JoinTypeOptionsIR::Range {
+                    ie_options: IEJoinOptions {
+                        operator1: pred.ie_op,
+                        operator2: None,
+                    },
+                    left_on: left_on.clone(),
+                    right_on: right_on.clone(),
+                };
                 return Ok(());
             }
+
+            let mut ie_options = IEJoinOptions::default();
 
             for IEJoinCompatiblePredicate {
                 input_lhs,
@@ -460,19 +504,13 @@ pub fn try_rewrite_join_type(
                         acc_predicates,
                         &ExprIR::from_node(source_node, expr_arena),
                         expr_arena,
+                        dedup,
                     );
                 } else {
                     left_on.push(ExprIR::from_node(input_lhs, expr_arena));
                     let mut rexpr = ExprIR::from_node(input_rhs, expr_arena);
                     remove_suffix(&mut rexpr, expr_arena, schema_right, &suffix);
                     right_on.push(rexpr);
-
-                    let JoinTypeOptionsIR::IEJoin(ie_options) = join_options
-                        .options
-                        .get_or_insert(JoinTypeOptionsIR::IEJoin(IEJoinOptions::default()))
-                    else {
-                        unreachable!()
-                    };
 
                     match left_on.len() {
                         1 => ie_options.operator1 = ie_op,
@@ -483,6 +521,12 @@ pub fn try_rewrite_join_type(
             }
 
             if options.args.how == JoinType::IEJoin {
+                let join_options = Arc::make_mut(options);
+                join_options.options = JoinTypeOptionsIR::IEJoin {
+                    ie_options,
+                    left_on: left_on.clone(),
+                    right_on: right_on.clone(),
+                };
                 return Ok(());
             }
         }
@@ -514,15 +558,28 @@ pub fn try_rewrite_join_type(
             return Ok(());
         };
 
-        let existing = Arc::make_mut(options)
-            .options
-            .replace(JoinTypeOptionsIR::CrossAndFilter {
+        let existing = std::mem::replace(
+            &mut Arc::make_mut(options).options,
+            JoinTypeOptionsIR::CrossAndFilter {
                 predicate: ExprIR::from_node(nested_loop_predicates, expr_arena),
-            });
-        assert!(existing.is_none()); // Important
+            },
+        );
+        // Important
+        assert!(matches!(existing, JoinTypeOptionsIR::Equi { ref on } if on.is_empty()));
 
         Ok(())
     })()?;
+
+    // The rewrites below reason about `left_on`/`right_on` as equality keys, which does
+    // not hold when the match condition has a non-equality component.
+    if options.is_non_equi() {
+        return Ok(None);
+    }
+
+    // Only equality keys reach here; the non-equi paths install their own condition above.
+    Arc::make_mut(options)
+        .options
+        .set_keys(left_on.clone(), right_on.clone());
 
     if !matches!(
         &options.args.how,
@@ -625,28 +682,12 @@ pub fn try_rewrite_join_type(
     let original_output_schema = match (&original_join_type, &new_join_type) {
         (JoinType::Right, _) | (_, JoinType::Right) => std::mem::replace(
             output_schema,
-            det_join_schema(
-                schema_left,
-                schema_right,
-                left_on,
-                right_on,
-                options,
-                expr_arena,
-            )
-            .unwrap(),
+            det_join_schema(schema_left, schema_right, options, expr_arena).unwrap(),
         ),
         _ => {
             debug_assert_eq!(
                 output_schema,
-                &det_join_schema(
-                    schema_left,
-                    schema_right,
-                    left_on,
-                    right_on,
-                    options,
-                    expr_arena,
-                )
-                .unwrap()
+                &det_join_schema(schema_left, schema_right, options, expr_arena,).unwrap()
             );
             output_schema.clone()
         },
@@ -951,12 +992,102 @@ pub fn try_rewrite_join_type(
     Ok(project_to_original.map(|p| (p, original_output_schema)))
 }
 
+/// Attempts to convert a `Left`/`Right` join's attached non-equi condition into an
+/// `IEJoin`, falling back to leaving it as a (nested-loop) `CrossAndFilter` otherwise.
+#[cfg(feature = "iejoin")]
+fn try_rewrite_outer_join_algorithm(
+    schema_left: &SchemaRef,
+    schema_right: &SchemaRef,
+    output_schema: &Schema,
+    options: &mut Arc<JoinOptionsIR>,
+    left_on: &mut Vec<ExprIR>,
+    right_on: &mut Vec<ExprIR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<()> {
+    use polars_utils::itertools::Itertools;
+
+    let predicate = match std::mem::take(&mut Arc::make_mut(options).options) {
+        JoinTypeOptionsIR::CrossAndFilter { predicate } => predicate,
+        // Already converted to `IEJoin` by an earlier call to this function (on a
+        // previous pass over the same join node) — nothing left to do.
+        already_ie @ JoinTypeOptionsIR::IEJoin { .. } => {
+            Arc::make_mut(options).options = already_ie;
+            return Ok(());
+        },
+        _ => unreachable!(),
+    };
+
+    let suffix = options.args.suffix().clone();
+
+    if matches!(options.args.maintain_order, MaintainOrderJoin::None) {
+        // A throwaway map holding only pieces of this one predicate, so `on_local.is_empty()`
+        // after extraction means "IEJoin captured everything" — nothing else ever touches it.
+        let mut on_local: PlIndexMap<PlSmallStr, ExprIR> = init_indexmap(None);
+        let mut local_dedup = PredicateDedupState::default();
+        insert_predicate_dedup(&mut on_local, &predicate, expr_arena, &mut local_dedup);
+
+        let ie_conditions = take_iejoin_compatible_filters(
+            &mut on_local,
+            expr_arena,
+            schema_left,
+            schema_right,
+            output_schema,
+            &suffix,
+        )?
+        .collect_vec();
+
+        if on_local.is_empty()
+            && !ie_conditions.is_empty()
+            && ie_conditions.len() <= IEJOIN_MAX_PREDICATES
+        {
+            let mut ie_options = IEJoinOptions::default();
+            for (
+                i,
+                IEJoinCompatiblePredicate {
+                    input_lhs,
+                    input_rhs,
+                    ie_op,
+                    ..
+                },
+            ) in ie_conditions.into_iter().enumerate()
+            {
+                left_on.push(ExprIR::from_node(input_lhs, expr_arena));
+                let mut rexpr = ExprIR::from_node(input_rhs, expr_arena);
+                remove_suffix(&mut rexpr, expr_arena, schema_right, &suffix);
+                right_on.push(rexpr);
+
+                match i {
+                    0 => ie_options.operator1 = ie_op,
+                    1 => ie_options.operator2 = Some(ie_op),
+                    _ => unreachable!("{}", IEJOIN_MAX_PREDICATES),
+                }
+            }
+
+            Arc::make_mut(options).options = JoinTypeOptionsIR::IEJoin {
+                ie_options,
+                left_on: left_on.clone(),
+                right_on: right_on.clone(),
+            };
+            return Ok(());
+        }
+        // IEJoin could not represent the whole condition — discard the attempt (nothing
+        // outside this block was mutated) and fall through to keep the original,
+        // untouched `predicate` as a nested-loop `CrossAndFilter` below.
+    }
+
+    let existing = std::mem::replace(
+        &mut Arc::make_mut(options).options,
+        JoinTypeOptionsIR::CrossAndFilter { predicate },
+    );
+    assert!(matches!(existing, JoinTypeOptionsIR::Equi { ref on } if on.is_empty()));
+    Ok(())
+}
+
 struct InnerJoinKeys {
     input_lhs: Node,
     input_rhs: Node,
 }
 
-/// Removes all equality predicates that can be used as inner-join conditions from `acc_predicates`.
 fn take_inner_join_compatible_filters(
     acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,

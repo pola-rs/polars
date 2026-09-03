@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use polars::prelude::CloudScheme;
 use polars_core::config::verbose_print_sensitive;
-use polars_io::cloud::{CloudOptions, CloudRetryConfig};
+use polars_io::cloud::{CloudOptions, CloudRateLimitConfig, CloudRetryConfig};
 use polars_utils::total_ord::TotalOrdWrap;
 use pyo3::exceptions::PyValueError;
 use pyo3::intern;
@@ -34,6 +34,7 @@ impl OptPyCloudOptions<'_> {
         let mut storage_options: Vec<(PyBackedStr, String)> = vec![];
         let mut file_cache_ttl: u64 = 2;
         let mut retry_config = CloudRetryConfig::default();
+        let mut rate_limit_config = CloudRateLimitConfig::default();
 
         let storage_options_dict: Option<Bound<'_, PyDict>> = self.0.extract()?;
 
@@ -101,6 +102,36 @@ impl OptPyCloudOptions<'_> {
                                 .map_err(expected_type!("retry_base_multiplier", "float"))?,
                         ));
                     },
+                    "rate_read_init" => {
+                        rate_limit_config.read.init_rate = value
+                            .extract()
+                            .map_err(expected_type!("rate_read_init", "int"))?;
+                    },
+                    "rate_read_floor" => {
+                        rate_limit_config.read.floor_rate = value
+                            .extract()
+                            .map_err(expected_type!("rate_read_floor", "int"))?;
+                    },
+                    "rate_read_ceiling" => {
+                        rate_limit_config.read.ceiling_rate = value
+                            .extract()
+                            .map_err(expected_type!("rate_read_ceiling", "int"))?;
+                    },
+                    "rate_write_init" => {
+                        rate_limit_config.write.init_rate = value
+                            .extract()
+                            .map_err(expected_type!("rate_write_init", "int"))?;
+                    },
+                    "rate_write_floor" => {
+                        rate_limit_config.write.floor_rate = value
+                            .extract()
+                            .map_err(expected_type!("rate_write_floor", "int"))?;
+                    },
+                    "rate_write_ceiling" => {
+                        rate_limit_config.write.ceiling_rate = value
+                            .extract()
+                            .map_err(expected_type!("rate_write_ceiling", "int"))?;
+                    },
                     _ => {
                         let value: String = value.extract().map_err(expected_type!(&key, "str"))?;
                         storage_options.push((key, value))
@@ -111,7 +142,8 @@ impl OptPyCloudOptions<'_> {
 
         let cloud_options = CloudOptions::from_untyped_config(cloud_scheme, storage_options)
             .map_err(to_py_err)?
-            .with_retry_config(retry_config);
+            .with_retry_config(retry_config)
+            .with_rate_limit_config(rate_limit_config);
 
         #[cfg(feature = "cloud")]
         let mut cloud_options =

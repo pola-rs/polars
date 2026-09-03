@@ -4,6 +4,16 @@ use polars_core::utils::materialize_dyn_int;
 
 use super::*;
 
+pub(super) fn function_sum_output_dtype(dtype: &DataType) -> DataType {
+    match dtype {
+        // Preserve existing function-expression schema behavior. Core reductions
+        // promote Decimal precision, while these expressions currently do not.
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, _) => dtype.clone(),
+        dtype => sum_output_dtype(dtype),
+    }
+}
+
 impl IRFunctionExpr {
     pub(crate) fn get_field(&self, fields: &[Field]) -> PolarsResult<Field> {
         use IRFunctionExpr::*;
@@ -65,8 +75,9 @@ impl IRFunctionExpr {
                 use IRRollingFunction::*;
                 match function {
                     Min | Max => mapper.with_same_dtype(),
-                    Mean | Quantile | Std => mapper.moment_dtype(),
-                    Var => mapper.var_dtype(),
+                    Mean | Quantile => mapper.moment_dtype(),
+                    Std => mapper.var_dtype("std"),
+                    Var => mapper.var_dtype("var"),
                     Sum => mapper.sum_dtype(),
                     Rank => match options.fn_params {
                         Some(RollingFnParams::Rank {
@@ -109,8 +120,9 @@ impl IRFunctionExpr {
                 use IRRollingFunctionBy::*;
                 match function_by {
                     MinBy | MaxBy => mapper.with_same_dtype(),
-                    MeanBy | QuantileBy | StdBy => mapper.moment_dtype(),
-                    VarBy => mapper.var_dtype(),
+                    MeanBy | QuantileBy => mapper.moment_dtype(),
+                    StdBy => mapper.var_dtype("std"),
+                    VarBy => mapper.var_dtype("var"),
                     SumBy => mapper.sum_dtype(),
                     RankBy => match options.fn_params {
                         Some(RollingFnParams::Rank {
@@ -122,7 +134,6 @@ impl IRFunctionExpr {
                     },
                 }
             },
-            Rechunk => mapper.with_same_dtype(),
             ShiftAndFill => mapper.with_same_dtype(),
             DropNans => mapper.with_same_dtype(),
             DropNulls => mapper.with_same_dtype(),
@@ -131,7 +142,7 @@ impl IRFunctionExpr {
                 has_min: _,
                 has_max: _,
             } => mapper.with_same_dtype(),
-            Quantile { method: _ } => mapper.moment_dtype(),
+            Quantile { method: _ } => mapper.quantile_dtype(),
             #[cfg(feature = "mode")]
             Mode { maintain_order: _ } => mapper.with_same_dtype(),
             #[cfg(feature = "moment")]
@@ -298,6 +309,8 @@ impl IRFunctionExpr {
                     polars_ensure!(l.len() == breaks.len() + 1, ShapeMismatch: "provide len(breaks) + 1 labels");
                     l.clone()
                 } else {
+                    use polars_ops::series::compute_labels;
+
                     compute_labels(breaks, *left_closed)?
                 };
                 let enum_dtype = DataType::from_frozen_categories(FrozenCategories::new(
@@ -434,9 +447,9 @@ impl IRFunctionExpr {
             #[cfg(feature = "ewma_by")]
             EwmSumBy { .. } => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "ewma")]
-            EwmStd { .. } => mapper.map_numeric_to_float_dtype(true),
+            EwmStd { .. } => mapper.ewm_var_dtype("ewm_std", true),
             #[cfg(feature = "ewma")]
-            EwmVar { .. } => mapper.var_dtype(),
+            EwmVar { .. } => mapper.ewm_var_dtype("ewm_var", true),
             #[cfg(feature = "replace")]
             Replace => mapper.with_same_dtype(),
             #[cfg(feature = "replace")]
@@ -523,24 +536,12 @@ impl<'a> FieldsMapper<'a> {
         func(&self.fields[0])
     }
 
-    pub fn var_dtype(&self) -> PolarsResult<Field> {
-        if self.fields[0].dtype().leaf_dtype().is_duration() {
-            let map_inner = |dt: &DataType| match dt {
-                dt if dt.is_temporal() => {
-                    polars_bail!(InvalidOperation: "operation `var` is not supported for `{dt}`")
-                },
-                dt => Ok(dt.clone()),
-            };
-
-            self.try_map_dtype(|dt| match dt {
-                #[cfg(feature = "dtype-array")]
-                DataType::Array(inner, _) => map_inner(inner),
-                DataType::List(inner) => map_inner(inner),
-                _ => map_inner(dt),
-            })
-        } else {
-            self.moment_dtype()
+    pub fn var_dtype(&self, op: &'static str) -> PolarsResult<Field> {
+        let leaf_dtype = self.fields[0].dtype().leaf_dtype();
+        if leaf_dtype.is_duration() {
+            polars_bail!(InvalidOperation: "operation `{op}` is not supported for `{leaf_dtype}`");
         }
+        self.moment_dtype()
     }
 
     pub fn moment_dtype(&self) -> PolarsResult<Field> {
@@ -582,6 +583,14 @@ impl<'a> FieldsMapper<'a> {
             DataType::Float32 => DataType::Float32,
             _ => DataType::Float64,
         })
+    }
+
+    pub fn ewm_var_dtype(&self, op: &'static str, coerce_decimal: bool) -> PolarsResult<Field> {
+        let leaf_dtype = self.fields[0].dtype().leaf_dtype();
+        if leaf_dtype.is_duration() {
+            polars_bail!(InvalidOperation: "operation `{op}` is not supported for `{leaf_dtype}`");
+        }
+        self.map_numeric_to_float_dtype(coerce_decimal)
     }
 
     /// Map to a float supertype if numeric, else preserve
@@ -631,7 +640,7 @@ impl<'a> FieldsMapper<'a> {
             .map(|fld| fld.dtype())
             .collect::<Vec<_>>();
         let new_type = func(&dtypes)?;
-        fld.coerce(new_type);
+        fld.set_dtype(new_type);
         Ok(fld)
     }
 
@@ -639,7 +648,7 @@ impl<'a> FieldsMapper<'a> {
     pub fn map_to_supertype(&self) -> PolarsResult<Field> {
         let st = args_to_supertype(self.fields)?;
         let mut first = self.fields[0].clone();
-        first.coerce(st);
+        first.set_dtype(st);
         Ok(first)
     }
 
@@ -651,7 +660,7 @@ impl<'a> FieldsMapper<'a> {
             .inner_dtype()
             .cloned()
             .unwrap_or_else(|| DataType::Unknown(Default::default()));
-        first.coerce(dt);
+        first.set_dtype(dt);
         Ok(first)
     }
 
@@ -716,17 +725,11 @@ impl<'a> FieldsMapper<'a> {
     }
 
     pub fn sum_dtype(&self) -> PolarsResult<Field> {
-        use DataType::*;
-        self.map_dtype(|dtype| match dtype {
-            Int8 | UInt8 | Int16 | UInt16 => Int64,
-            Boolean => IDX_DTYPE,
-            dt => dt.clone(),
-        })
+        self.map_dtype(function_sum_output_dtype)
     }
 
     pub fn nested_sum_type(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
-        use DataType::*;
         let dt = first.dtype().inner_dtype().cloned().ok_or_else(|| {
             polars_err!(
                 InvalidOperation:"expected List or Array type, got dtype: {}",
@@ -734,11 +737,7 @@ impl<'a> FieldsMapper<'a> {
             )
         })?;
 
-        match dt {
-            Boolean => first.coerce(IDX_DTYPE),
-            UInt8 | Int8 | Int16 | UInt16 => first.coerce(Int64),
-            _ => first.coerce(dt),
-        }
+        first.set_dtype(function_sum_output_dtype(&dt));
         Ok(first)
     }
 
@@ -761,7 +760,7 @@ impl<'a> FieldsMapper<'a> {
             Float32 => Float32,
             _ => Float64,
         };
-        first.coerce(new_dt);
+        first.set_dtype(new_dt);
         Ok(first)
     }
 
@@ -787,6 +786,14 @@ impl<'a> FieldsMapper<'a> {
             &DataType::Float64
         };
         Ok(Field::new(self.fields[0].name().clone(), out_dtype.clone()))
+    }
+
+    pub fn quantile_dtype(&self) -> PolarsResult<Field> {
+        let mut out = self.moment_dtype()?;
+        if matches!(self.fields[1].dtype(), DataType::List(_)) {
+            out.set_dtype(DataType::List(Box::new(out.dtype().clone())));
+        }
+        Ok(out)
     }
 
     #[cfg(feature = "extract_jsonpath")]

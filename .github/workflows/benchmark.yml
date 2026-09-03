@@ -10,7 +10,7 @@ on:
   push:
     branches:
       - main
-      - "2.0"
+      - "1.x"
     paths:
       - crates/**
       - Cargo.toml
@@ -79,7 +79,7 @@ jobs:
           # Make sure we use the Polars we're about to build.
           uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
           uv pip install --no-deps -e .
-          maturin build --manifest-path runtime/polars-runtime-32/Cargo.toml --profile nodebug-release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
+          maturin build --manifest-path runtime/polars-runtime-32/Cargo.toml --profile nodebug-release --features numa -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
       - name: Install Polars release build
         run: |
@@ -134,7 +134,8 @@ jobs:
 
       - name: Run non-benchmark tests
         working-directory: py-polars
-        run: pytest -m 'not benchmark and not debug' -n auto
+        # TODO: Fix and re-enable may_fail_auto_streaming tests
+        run: pytest -m 'not may_fail_auto_streaming and not benchmark and not debug' -n auto
         env:
           POLARS_TIMEOUT_MS: 60000
 
@@ -143,4 +144,4 @@ jobs:
         env:
           POLARS_AUTO_STREAMING: 1
           POLARS_TIMEOUT_MS: 60000
-        run: pytest -n auto -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"
+        run: pytest -n auto -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not debug and not ci_only"

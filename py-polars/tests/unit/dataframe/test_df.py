@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 import typing
 from collections import OrderedDict
@@ -22,6 +23,7 @@ from polars._plr import PySeries
 from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import (
+    AttributeRemovedError,
     ColumnNotFoundError,
     ComputeError,
     DuplicateError,
@@ -56,6 +58,29 @@ class MappingObject(Mapping[str, Any]):  # noqa: D101
 
     def __len__(self) -> int:
         return len(self._data)
+
+
+@pytest.mark.parametrize(
+    ("name", "match"),
+    [
+        (
+            "__dataframe__",
+            "the dataframe interchange protocol is not supported anymore. Consider using `to_arrow` or `to_pandas` instead.",
+        ),
+        ("approx_n_unique", "use `select(pl.all().approx_n_unique())` instead."),
+        (
+            "melt",
+            "use `DataFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
+        ),
+        (
+            "with_row_count",
+            "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'.",
+        ),
+    ],
+)
+def test_removed_methods(name: str, match: str) -> None:
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        getattr(pl.DataFrame(), name)
 
 
 def test_version() -> None:
@@ -643,7 +668,7 @@ def test_map_columns() -> None:
 
 def test_explode() -> None:
     df = pl.DataFrame({"letters": ["c", "a"], "nrs": [[1, 2], [1, 3]]})
-    out = df.explode("nrs", empty_as_null=False)
+    out = df.explode("nrs")
     assert out["letters"].to_list() == ["c", "c", "a", "a"]
     assert out["nrs"].to_list() == [1, 2, 1, 3]
 
@@ -995,7 +1020,7 @@ def test_head_group_by() -> None:
         df.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
         .agg([pl.col("*").exclude(keys).head(2).name.keep()])
-        .explode(cs.all().exclude(keys), empty_as_null=False)
+        .explode(cs.all().exclude(keys))
     )
 
     assert out.shape == (5, 4)
@@ -1798,18 +1823,18 @@ def test_reproducible_hash_with_seeds() -> None:
     the same seeds.
     """
     df = pl.DataFrame({"s": [1234, None, 5678]})
-    seeds = (11, 22, 33, 44)
+    seed = 42
     expected = pl.Series(
         "s",
-        [7829205897147972687, 10151361788274345728, 17508017346787321581],
+        [17009557467372503927, 1704163803583719673, 1546285934846828044],
         dtype=pl.UInt64,
     )
-    result = df.hash_rows(*seeds)
-    assert_series_equal(expected, result, check_names=False, check_exact=True)
-    result = df["s"].hash(*seeds)
-    assert_series_equal(expected, result, check_names=False, check_exact=True)
-    result = df.select([pl.col("s").hash(*seeds)])["s"]
-    assert_series_equal(expected, result, check_names=False, check_exact=True)
+    result = df.hash_rows(seed)
+    assert_series_equal(result, expected, check_names=False, check_exact=True)
+    result = df["s"].hash(seed)
+    assert_series_equal(result, expected, check_names=False, check_exact=True)
+    result = df.select([pl.col("s").hash(seed)])["s"]
+    assert_series_equal(result, expected, check_names=False, check_exact=True)
 
 
 @pytest.mark.slow
@@ -1833,7 +1858,6 @@ def test_hash_collision_multiple_columns_equal_values_15390(e: pl.Expr) -> None:
         assert max_bucket_size == 1
 
 
-@pytest.mark.may_fail_auto_streaming  # Python objects not yet supported in row encoding
 @pytest.mark.may_fail_cloud
 def test_hashing_on_python_objects() -> None:
     # see if we can do a group_by, drop_duplicates on a DataFrame with objects.
@@ -1915,7 +1939,7 @@ def test_group_by_cat_list() -> None:
         .agg([pl.col("cat_column")])["cat_column"]
     )
 
-    out = grouped.explode(empty_as_null=False)
+    out = grouped.explode()
     assert out.dtype == pl.Categorical
     assert out[0] == "a"
 
@@ -2017,18 +2041,6 @@ def test_with_row_index_bad_offset_lazy() -> None:
         lf.with_row_index(offset=2**64)
 
 
-def test_with_row_count_deprecated() -> None:
-    df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 2.0]})
-
-    with pytest.deprecated_call():
-        out = df.with_row_count()
-    assert out["row_nr"].to_list() == [0, 1, 2]
-
-    with pytest.deprecated_call():
-        out = df.lazy().with_row_count().collect()
-    assert out["row_nr"].to_list() == [0, 1, 2]
-
-
 @pytest.mark.may_fail_cloud
 def test_filter_with_all_expansion() -> None:
     df = pl.DataFrame(
@@ -2042,8 +2054,6 @@ def test_filter_with_all_expansion() -> None:
     assert out.shape == (2, 3)
 
 
-# TODO: investigate this discrepancy in auto streaming
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud
 def test_extension() -> None:
     class Foo:
@@ -2399,7 +2409,7 @@ def test_group_by_slice_expression_args() -> None:
     out = (
         df.group_by("groups", maintain_order=True)
         .agg([pl.col("vals").slice((pl.len() * 0.1).cast(int), (pl.len() // 5))])
-        .explode("vals", empty_as_null=False)
+        .explode("vals")
     )
 
     expected = pl.DataFrame(
@@ -3201,16 +3211,6 @@ def test_flags() -> None:
         "a": {"SORTED_ASC": True, "SORTED_DESC": False},
         "b": {"SORTED_ASC": False, "SORTED_DESC": False},
     }
-
-
-def test_interchange() -> None:
-    df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
-    dfi = df.__dataframe__()
-
-    # Testing some random properties to make sure conversion happened correctly
-    assert dfi.num_rows() == 2
-    assert dfi.get_column(0).dtype[1] == 64
-    assert dfi.get_column_by_name("c").get_buffers()["data"][0].bufsize == 6
 
 
 def test_from_dicts_undeclared_column_dtype() -> None:

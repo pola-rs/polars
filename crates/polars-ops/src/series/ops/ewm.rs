@@ -38,8 +38,7 @@ macro_rules! dispatch_ewm_kernel {
                 let result = $kernel;
                 Series::try_from(($s.name().clone(), Box::new(result) as ArrayRef))
             },
-            dt if cfg!(debug_assertions) => panic!("{:?}", dt),
-            _ => $fallback($s, $options),
+            dt => polars_bail!(opq = $fallback, dt),
         }
     }};
 }
@@ -105,7 +104,11 @@ pub fn ewm_std(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
             );
             Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
         },
-        _ => ewm_std(&s.cast(&DataType::Float64)?, options),
+        dt => {
+            let casted = s.cast(&DataType::Float64)?;
+            polars_ensure!(casted.dtype() == &DataType::Float64, opq = ewm_std, dt);
+            ewm_std(&casted, options)
+        },
     }
 }
 
@@ -151,6 +154,10 @@ pub fn ewm_var(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
             );
             Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
         },
-        _ => ewm_var(&s.cast(&DataType::Float64)?, options),
+        dt => {
+            let casted = s.cast(&DataType::Float64)?;
+            polars_ensure!(casted.dtype() == &DataType::Float64, opq = ewm_var, dt);
+            ewm_var(&casted, options)
+        },
     }
 }

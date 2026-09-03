@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
@@ -14,6 +15,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import (
+    ArgumentRemovedError,
     ComputeError,
     DuplicateError,
     InvalidOperationError,
@@ -267,11 +269,23 @@ def test_from_arrow_with_bigquery_metadata() -> None:
         schema=arrow_schema,
     )
 
+    df = pl.from_arrow(arrow_tbl)
+    assert isinstance(df, pl.DataFrame)
+
+    # The BigQuery sql-type metadata is retained as an extension dtype,
+    # but must not affect the underlying storage dtypes
+    assert df.schema == {
+        "id": pl.Extension("google:sqlType:integer", pl.Int64),
+        "misc": pl.Extension(
+            "google:sqlType:struct", pl.Struct({"num": pl.Int32, "val": pl.String})
+        ),
+    }
+
     expected_data = {"id": [1, 2], "num": [None, None], "val": [None, None]}
     expected_schema = {"id": pl.Int64, "num": pl.Int32, "val": pl.String}
     assert_frame_equal(
+        df.select(pl.all().ext.storage()).unnest("misc"),
         pl.DataFrame(expected_data, schema=expected_schema),
-        pl.from_arrow(arrow_tbl).unnest("misc"),  # type: ignore[union-attr]
     )
 
 
@@ -401,12 +415,24 @@ def test_from_pyarrow_map() -> None:
     }
 
 
+def test_from_pyarrow_map_preserves_nulls_28652() -> None:
+    pa_map = pa.array([[], None, [("k", 1)]], type=pa.map_(pa.string(), pa.int64()))
+    result = pl.Series(pa_map)
+    assert result.to_list() == [[], None, [{"key": "k", "value": 1}]]
+
+
 def test_from_fixed_size_binary_list() -> None:
     val = [[b"63A0B1C66575DD5708E1EB2B"]]
     arrow_array = pa.array(val, type=pa.list_(pa.binary(24)))
     s = cast("pl.Series", pl.from_arrow(arrow_array))
     assert s.dtype == pl.List(pl.Binary)
     assert s.to_list() == val
+
+
+def test_from_repr_tbl_removed() -> None:
+    msg = "It was renamed to 'data'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.from_repr(tbl="")  # type: ignore[call-arg]
 
 
 def test_dataframe_from_repr() -> None:
@@ -1026,15 +1052,6 @@ def test_misaligned_nested_arrow_19097() -> None:
     assert_series_equal(pl.Series("a", a.to_arrow()), a)
 
 
-def test_arrow_roundtrip_lex_cat_20288() -> None:
-    tb = pl.Series("a", ["A", "B"], pl.Categorical()).to_frame().to_arrow()
-    df = pl.from_arrow(tb)
-    assert isinstance(df, pl.DataFrame)
-    dt = df.schema["a"]
-    assert isinstance(dt, pl.Categorical)
-    assert dt.ordering == "lexical"
-
-
 def test_from_arrow_20271() -> None:
     df = pl.from_arrow(
         pa.table({"b": pa.DictionaryArray.from_arrays([0, 1], ["D", "E"])})
@@ -1044,6 +1061,12 @@ def test_from_arrow_20271() -> None:
         df.to_series(),
         pl.Series("b", ["D", "E"], pl.Categorical),
     )
+
+
+def test_series_to_arrow_future_removed() -> None:
+    msg = "It was renamed to 'compat_level'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.Series("a", [1, 2, 3]).to_arrow(future=True)  # type: ignore[call-arg]
 
 
 def test_to_arrow_empty_chunks_20627() -> None:
@@ -1601,23 +1624,14 @@ def test_sliced_nested_arrow_export_28583(
 
 
 def test_from_arrow_capsule_24511() -> None:
-    # 2.0: Remove FutureWarning and change expected values to be struct-type Series.
-    with pytest.warns(FutureWarning):
-        out = pl.from_arrow(PyCapsuleStreamHolder(pl.DataFrame({"x": 1})))
-
-    assert isinstance(out, pl.DataFrame)
-    assert_frame_equal(
-        out,
-        pl.DataFrame({"x": 1}),
+    assert_series_equal(
+        pl.from_arrow(PyCapsuleStreamHolder(pl.DataFrame({"x": 1}))),  # type: ignore[arg-type]
+        pl.Series([{"x": 1}]),
     )
 
-    with pytest.warns(FutureWarning):
-        out = pl.from_arrow(PyCapsuleArrayHolder(pl.Series([{"x": 1}]).to_arrow()))
-
-    assert isinstance(out, pl.DataFrame)
-    assert_frame_equal(
-        out,
-        pl.DataFrame({"x": 1}),
+    assert_series_equal(
+        pl.from_arrow(PyCapsuleArrayHolder(pl.Series([{"x": 1}]).to_arrow())),  # type: ignore[arg-type]
+        pl.Series([{"x": 1}]),
     )
 
 

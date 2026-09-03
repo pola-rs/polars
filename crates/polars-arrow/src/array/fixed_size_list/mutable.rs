@@ -136,7 +136,7 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
 
     /// Reserves `additional` slots.
     pub fn reserve(&mut self, additional: usize) {
-        self.values.reserve(additional);
+        self.values.reserve(additional * self.size);
         if let Some(x) = self.validity.as_mut() {
             x.reserve(additional)
         }

@@ -12,11 +12,14 @@ use tokio::sync::{Mutex as AsyncMutex, Semaphore as AsyncSemaphore};
 // for spillables.
 const EXPLORE_BEYOND_BEST_SCORE_THRESHOLD: f64 = 20.0;
 
+// Maximum number of SpillFrame candidates we'll consider per attempt.
+const SPILL_FRAME_BATCH_SIZE: u64 = 256;
+
 const MAX_PARALLEL_SPILL_TASKS: usize = 64;
 
 use crate::WeakSpillContext;
-use crate::spill_context::UNEXPLORED_SCORE;
-use crate::spill_token::{DynSpillToken, TrySpillError};
+use crate::spill_context::{InsertReason, RegisteredSpillToken, UNEXPLORED_SCORE};
+use crate::spill_token::{DynSpillToken, SpillStatus, TrySpillError};
 
 static MEMORY_MANAGER: LazyLock<MemoryManager> = LazyLock::new(MemoryManager::new);
 
@@ -30,6 +33,7 @@ pub struct MemoryManager {
     finding_spill_lock: AsyncMutex<()>,
     spill_semaphore: Arc<AsyncSemaphore>,
     est_spill_in_progress: AtomicU64,
+    spills_exist: AtomicBool,
 }
 
 impl MemoryManager {
@@ -39,6 +43,7 @@ impl MemoryManager {
             finding_spill_lock: AsyncMutex::new(()),
             spill_semaphore: Arc::new(AsyncSemaphore::new(MAX_PARALLEL_SPILL_TASKS)),
             est_spill_in_progress: AtomicU64::new(0),
+            spills_exist: AtomicBool::new(false),
         }
     }
 
@@ -46,6 +51,15 @@ impl MemoryManager {
         let usage = crate::estimate_memory_usage();
         let likely_dealt_with = self.est_spill_in_progress.load(Ordering::Relaxed);
         usage.saturating_sub(likely_dealt_with) > config().ooc_memory_budget_bytes()
+    }
+
+    fn should_prefetch(&self) -> bool {
+        if !self.spills_exist.load(Ordering::Acquire) {
+            return false;
+        }
+
+        let usage = crate::estimate_memory_usage();
+        usage < config().ooc_memory_prefetch_bytes()
     }
 
     fn clean_contexts(&self) {
@@ -62,6 +76,8 @@ impl MemoryManager {
     pub async fn spill(&self) {
         if self.should_spill() {
             self.do_spill().await
+        } else if self.should_prefetch() {
+            self.do_prefetch().await
         }
     }
 
@@ -69,6 +85,8 @@ impl MemoryManager {
     pub fn spill_blocking(&self) {
         if self.should_spill() {
             self.do_spill_blocking()
+        } else if self.should_prefetch() {
+            self.do_prefetch_blocking()
         }
     }
 
@@ -97,7 +115,7 @@ impl MemoryManager {
                 },
             ));
 
-            for (spillable, reg_id, sz) in spillables {
+            for (spillable, spill_in_progress, rt) in spillables {
                 let permit = self.spill_semaphore.clone().acquire_owned().await.unwrap();
 
                 let successful_spill = successful_spill.clone();
@@ -105,7 +123,7 @@ impl MemoryManager {
 
                 polars_async::executor::spawn(TaskPriority::High, async move {
                     // Spill, or reinsert if a failure.
-                    match spillable.try_spill(ctx.clone(), reg_id) {
+                    match spillable.clone().try_spill(ctx.clone()) {
                         Ok(spill_success) => {
                             if spill_success.await {
                                 if !successful_spill.0.swap(true, Ordering::Relaxed) {
@@ -113,21 +131,29 @@ impl MemoryManager {
                                         strong.stats().finish_exploration_event(true);
                                     }
                                 }
+
+                                MEMORY_MANAGER.spills_exist.store(true, Ordering::Release);
                             } else {
-                                ctx.0.reinsert(&spillable, reg_id, ctx.1);
+                                // A racy pin interrupted us, the value is still in memory.
+                                spillable.cancel_spill_attempt_and_reinsert(
+                                    rt.registration_id,
+                                    ctx.1,
+                                    InsertReason::Unpin,
+                                );
                             }
                         },
                         Err(TrySpillError::Pinned) => {
-                            ctx.0.reinsert(&spillable, reg_id, ctx.1);
+                            spillable.cancel_spill_attempt_and_reinsert(
+                                rt.registration_id,
+                                ctx.1,
+                                InsertReason::Unpin,
+                            );
                         },
                         Err(TrySpillError::AlreadySpilled) => {},
                     }
 
-                    MEMORY_MANAGER
-                        .est_spill_in_progress
-                        .fetch_sub(sz as u64, Ordering::Relaxed);
-
                     drop(permit);
+                    drop(spill_in_progress);
                 });
             }
         }
@@ -135,9 +161,26 @@ impl MemoryManager {
 
     #[inline(never)]
     #[cold]
+    fn do_prefetch_blocking(&self) {
+        ASYNC.block_in_place_on(self.do_prefetch())
+    }
+
+    #[inline(never)]
+    #[cold]
+    async fn do_prefetch(&self) {}
+
+    #[inline(never)]
+    #[cold]
     async fn find_spillables(
         &self,
-    ) -> Option<(WeakSpillContext, Vec<(Arc<dyn DynSpillToken>, u32, usize)>)> {
+    ) -> Option<(
+        WeakSpillContext,
+        Vec<(
+            Arc<dyn DynSpillToken>,
+            SpillInProgressTracker,
+            RegisteredSpillToken,
+        )>,
+    )> {
         // TODO: don't block here under a certain memory threshold.
         let finding_spill_guard = self.finding_spill_lock.lock().await;
 
@@ -182,28 +225,42 @@ impl MemoryManager {
             };
             strong.stats().start_exploration_event();
 
-            let mut total_est_spill = 0;
+            let mut num_considered = 0;
             let mut candidates = Vec::new();
-            for (cand, reg_id) in ctx.0.pop() {
-                if cand.can_spill()
-                    && let Some(sz) = cand.estimate_byte_size()
-                    && sz as u64 >= min_spill
-                {
-                    total_est_spill += sz as u64;
-                    candidates.push((cand, reg_id, sz));
-                } else {
-                    if !cand.is_spilled_or_dropped() {
-                        ctx.0.reinsert(&cand, reg_id, ctx.1);
-                    }
+            ctx.0.drain_live_while(|rt| {
+                let Some(cand) = rt.upgrade() else {
+                    return true;
+                };
+                match cand.clone().spill_status() {
+                    SpillStatus::InMemory(sz) if sz >= min_spill => {
+                        candidates.push((cand, SpillInProgressTracker::new(sz), rt));
+                    },
+                    SpillStatus::InMemory(_) => {
+                        cand.cancel_spill_attempt_and_reinsert(
+                            rt.registration_id,
+                            ctx.1,
+                            InsertReason::TooSmall(rt.timestamp),
+                        );
+                    },
+                    SpillStatus::Pinned => {
+                        cand.cancel_spill_attempt_and_reinsert(
+                            rt.registration_id,
+                            ctx.1,
+                            InsertReason::Unpin,
+                        );
+                    },
+                    // A spilled token is re-inserted by whoever unspills it, a
+                    // dropped one does not need re-inserting at all.
+                    SpillStatus::Spilled | SpillStatus::Dropped => {},
                 }
-            }
+
+                num_considered += 1;
+                num_considered < SPILL_FRAME_BATCH_SIZE
+            });
 
             if candidates.is_empty() {
                 strong.stats().finish_exploration_event(false);
             } else {
-                // Increment the spill-in-progress to avoid eager over-spilling.
-                self.est_spill_in_progress
-                    .fetch_add(total_est_spill, Ordering::Relaxed);
                 out = Some((ctx, candidates));
                 break;
             }
@@ -214,5 +271,27 @@ impl MemoryManager {
             self.clean_contexts();
         }
         out
+    }
+}
+
+/// Used to update the total bytes of estimated spills in progress.
+struct SpillInProgressTracker {
+    bytes: u64,
+}
+
+impl SpillInProgressTracker {
+    pub fn new(bytes: u64) -> Self {
+        memory_manager()
+            .est_spill_in_progress
+            .fetch_add(bytes, Ordering::Relaxed);
+        Self { bytes }
+    }
+}
+
+impl Drop for SpillInProgressTracker {
+    fn drop(&mut self) {
+        memory_manager()
+            .est_spill_in_progress
+            .fetch_sub(self.bytes, Ordering::Relaxed);
     }
 }

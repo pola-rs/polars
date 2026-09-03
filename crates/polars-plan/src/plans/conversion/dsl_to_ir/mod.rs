@@ -40,7 +40,7 @@ use utils::DslConversionContext;
 
 macro_rules! failed_here {
     ($($t:tt)*) => {
-        format!("'{}'", stringify!($($t)*)).into()
+        concat!("'", stringify!($($t)*), "'")
     }
 }
 pub(super) use failed_here;
@@ -103,7 +103,7 @@ fn run_conversion(lp: IR, ctxt: &mut DslConversionContext, name: &str) -> Polars
     let lp_node = ctxt.lp_arena.add(lp);
     ctxt.conversion_optimizer
         .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, lp_node, false)
-        .map_err(|e| e.context(format!("'{name}' failed").into()))?;
+        .with_context(|| format!("'{name}' failed"))?;
 
     Ok(lp_node)
 }
@@ -184,6 +184,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 python_source,
                 validate_schema,
                 is_pure,
+                explain_name,
+                explain_detail,
             } = options;
 
             IR::PythonScan {
@@ -197,6 +199,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     n_rows: Default::default(),
                     predicate: Default::default(),
                     is_pure,
+                    explain_name,
+                    explain_detail,
                 },
             }
         },
@@ -205,7 +209,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .into_iter()
                 .map(|lp| to_alp_impl(lp, ctxt))
                 .collect::<PolarsResult<Vec<_>>>()
-                .map_err(|e| e.context(failed_here!(vertical concat)))?;
+                .context(failed_here!(vertical concat))?;
 
             if args.diagonal {
                 inputs = concat::convert_diagonal_concat(inputs, ctxt.lp_arena, ctxt.expr_arena)?;
@@ -218,7 +222,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     ctxt.expr_arena,
                     ctxt.opt_flags,
                 )
-                .map_err(|e| e.context(failed_here!(vertical concat)))?;
+                .context(failed_here!(vertical concat))?;
             }
 
             let first_n = *inputs.first().ok_or_else(
@@ -241,7 +245,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .into_iter()
                 .map(|lp| to_alp_impl(lp, ctxt))
                 .collect::<PolarsResult<Vec<_>>>()
-                .map_err(|e| e.context(failed_here!(horizontal concat)))?;
+                .context(failed_here!(horizontal concat))?;
 
             let schema = concat::h_concat_schema(&inputs, ctxt.lp_arena)?;
 
@@ -252,8 +256,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
         },
         DslPlan::Filter { input, predicate } => {
-            let mut input =
-                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(filter)))?;
+            let mut input = to_alp_impl(owned(input), ctxt).context(failed_here!(filter))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
 
             let mut out = Vec::with_capacity(1);
@@ -353,8 +356,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             return run_conversion(lp, ctxt, "filter");
         },
         DslPlan::Slice { input, offset, len } => {
-            let input =
-                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(slice)))?;
+            let input = to_alp_impl(owned(input), ctxt).context(failed_here!(slice))?;
 
             if len == 0 {
                 let input_schema = ctxt
@@ -383,15 +385,21 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             input,
             options,
         } => {
-            let input =
-                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(select)))?;
+            let input = to_alp_impl(owned(input), ctxt).context(failed_here!(select))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
             let (exprs, schema) = prepare_projection(expr, &input_schema, ctxt.opt_flags)
-                .map_err(|e| e.context(failed_here!(select)))?;
+                .context(failed_here!(select))?;
 
             if exprs.is_empty() {
-                ctxt.lp_arena.replace(input, utils::empty_df());
-                return Ok(input);
+                return Ok(if options.maintain_dataframe_height {
+                    ctxt.lp_arena.add(IR::SimpleProjection {
+                        input,
+                        columns: Default::default(),
+                    })
+                } else {
+                    ctxt.lp_arena.replace(input, utils::empty_df());
+                    input
+                });
             }
 
             let eirs = to_expr_irs(
@@ -413,7 +421,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 options,
             };
 
-            return run_conversion(lp, ctxt, "select").map_err(|e| e.context(failed_here!(select)));
+            return run_conversion(lp, ctxt, "select").context(failed_here!(select));
         },
         DslPlan::Sort {
             input,
@@ -421,8 +429,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             slice,
             mut sort_options,
         } => {
-            let input =
-                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(select)))?;
+            let input = to_alp_impl(owned(input), ctxt).context(failed_here!(select))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
 
             // note: if given an Expr::Columns, count the individual cols
@@ -466,7 +473,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     ctxt.expr_arena,
                     ctxt.opt_flags,
                 )
-                .map_err(|e| e.context(failed_here!(sort)))?;
+                .context(failed_here!(sort))?;
 
                 nulls_last.extend(std::iter::repeat_n(n, exprs.len()));
                 descending.extend(std::iter::repeat_n(d, exprs.len()));
@@ -516,14 +523,13 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 sort_options,
             };
 
-            return run_conversion(lp, ctxt, "sort").map_err(|e| e.context(failed_here!(sort)));
+            return run_conversion(lp, ctxt, "sort").context(failed_here!(sort));
         },
         DslPlan::Cache { input, id } => {
             let input = match ctxt.seen_caches.get(&id) {
                 Some(input) => *input,
                 None => {
-                    let input = to_alp_impl(owned(input), ctxt)
-                        .map_err(|e| e.context(failed_here!(cache)))?;
+                    let input = to_alp_impl(owned(input), ctxt).context(failed_here!(cache))?;
                     let seen_before = ctxt.seen_caches.insert(id, input);
                     assert!(
                         seen_before.is_none(),
@@ -583,8 +589,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
 
             // NOTE: As we went into this branch, we know that no predicates are provided.
-            let input =
-                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(group_by)))?;
+            let input = to_alp_impl(owned(input), ctxt).context(failed_here!(group_by))?;
 
             // Rolling + group-by sorts the whole table, so remove unneeded columns
             if ctxt.opt_flags.eager() && options.is_rolling() && !keys.is_empty() {
@@ -600,7 +605,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 ctxt.expr_arena,
                 ctxt.opt_flags,
             )
-            .map_err(|e| e.context(failed_here!(group_by)))?;
+            .context(failed_here!(group_by))?;
 
             let (apply, schema) = if let Some((apply, schema)) = apply {
                 (Some(apply), schema)
@@ -655,27 +660,22 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 }
             };
 
-            return run_conversion(lp, ctxt, "group_by")
-                .map_err(|e| e.context(failed_here!(group_by)));
+            return run_conversion(lp, ctxt, "group_by").context(failed_here!(group_by));
         },
         DslPlan::Join {
             input_left,
             input_right,
-            left_on,
-            right_on,
-            predicates,
+            condition,
             options,
         } => {
             return join::resolve_join(
                 Either::Left(input_left),
                 Either::Left(input_right),
-                left_on,
-                right_on,
-                predicates,
+                condition,
                 JoinOptionsIR::from(Arc::unwrap_or_clone(options)),
                 ctxt,
             )
-            .map_err(|e| e.context(failed_here!(join)))
+            .context(failed_here!(join))
             .map(|t| t.0);
         },
         DslPlan::Gather {
@@ -683,10 +683,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             idxs,
             null_on_oob,
         } => {
-            let input =
-                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(gather)))?;
-            let idxs =
-                to_alp_impl(owned(idxs), ctxt).map_err(|e| e.context(failed_here!(gather)))?;
+            let input = to_alp_impl(owned(input), ctxt).context(failed_here!(gather))?;
+            let idxs = to_alp_impl(owned(idxs), ctxt).context(failed_here!(gather))?;
             let idxs_schema = ctxt.lp_arena.get(idxs).schema(ctxt.lp_arena);
             polars_ensure!(idxs_schema.len() == 1, InvalidOperation: "'gather' indices DataFrame should have a single column");
             let idx_dtype = &idxs_schema.get_at_index(0).unwrap().1;
@@ -702,25 +700,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             exprs,
             options,
         } => {
-            // The (0, 0) DataFrame is an exception - with_columns on it acts like select.
-            if let DslPlan::DataFrameScan { df, schema: _ } = input.as_ref() {
-                if df.shape() == (0, 0) {
-                    return to_alp_impl(
-                        DslPlan::Select {
-                            expr: exprs,
-                            input,
-                            options,
-                        },
-                        ctxt,
-                    );
-                }
-            }
-
-            let input = to_alp_impl(owned(input), ctxt)
-                .map_err(|e| e.context(failed_here!(with_columns)))?;
+            let input = to_alp_impl(owned(input), ctxt).context(failed_here!(with_columns))?;
             let (exprs, schema) =
                 resolve_with_columns(exprs, input, ctxt.lp_arena, ctxt.expr_arena, ctxt.opt_flags)
-                    .map_err(|e| e.context(failed_here!(with_columns)))?;
+                    .context(failed_here!(with_columns))?;
 
             if !ctxt.opt_flags.eager() && std::env::var("POLARS_STRICT_MODE").as_deref() == Ok("1")
             {
@@ -731,7 +714,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let invalid_e = &exprs[pos];
 
                     let err = polars_err!(InvalidOperation: "all expressions should return the same length or scalar;\n\nInvalid expression: {}", node_to_expr(invalid_e.node(), ctxt.expr_arena));
-                    return Err(err.context(failed_here!(with_columns)));
+                    return Err(err.context(failed_here!(with_columns).into()));
                 }
             }
             ctxt.conversion_optimizer
@@ -750,8 +733,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             per_column,
             extra_columns,
         } => {
-            let input =
-                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(unique)))?;
+            let input = to_alp_impl(owned(input), ctxt).context(failed_here!(unique))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
 
             assert_eq!(per_column.len(), match_schema.len());
@@ -860,9 +842,31 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     run_parallel: true,
                     duplicate_check: false,
                     should_broadcast: true,
+                    maintain_dataframe_height: false,
                 },
             };
             return run_conversion(lp, ctxt, "match_to_schema");
+        },
+        DslPlan::SQL {
+            query,
+            relations,
+            cached_stmt,
+        } => {
+            let resolver = crate::dsl::get_sql_resolver().ok_or_else(|| {
+                polars_err!(
+                    ComputeError:
+                    "cannot resolve SQL: no SQL resolver registered; \
+                     build polars with the 'sql' feature"
+                )
+            })?;
+            let resolved = resolver.resolve(
+                &query,
+                relations,
+                cached_stmt.get(),
+                ctxt.lp_arena,
+                ctxt.expr_arena,
+            )?;
+            return to_alp_impl(resolved, ctxt);
         },
         DslPlan::PipeWithSchema { input, callback } => {
             // Derive the schema from the input
@@ -901,8 +905,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         } => {
             use polars_core::frame::PivotColumnNaming;
 
-            let input_node = to_alp_impl(input.as_ref().clone(), ctxt)
-                .map_err(|e| e.context(failed_here!(pivot)))?;
+            let input_node =
+                to_alp_impl(input.as_ref().clone(), ctxt).context(failed_here!(pivot))?;
             let input_schema = ctxt.lp_arena.get(input_node).schema(ctxt.lp_arena);
 
             let on = on.into_columns(input_schema.as_ref(), &Default::default())?;
@@ -1020,11 +1024,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 options: Default::default(),
                 apply: None,
             };
-            return to_alp_impl(lp, ctxt).map_err(|e| e.context(failed_here!(pivot)));
+            return to_alp_impl(lp, ctxt).context(failed_here!(pivot));
         },
         DslPlan::Distinct { input, options } => {
-            let input =
-                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(unique)))?;
+            let input = to_alp_impl(owned(input), ctxt).context(failed_here!(unique))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena).into_owned();
 
             // "subset" param supports cols and/or arbitrary expressions
@@ -1086,6 +1089,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             run_parallel: false,
                             duplicate_check: false,
                             should_broadcast: true,
+                            maintain_dataframe_height: false,
                         },
                     });
                     (
@@ -1122,7 +1126,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         },
         DslPlan::MapFunction { input, function } => {
             let input = to_alp_impl(owned(input), ctxt)
-                .map_err(|e| e.context(failed_here!(format!("{}", function).to_lowercase())))?;
+                .with_context(|| format!("{}", function).to_lowercase())?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
 
             match function {
@@ -1164,7 +1168,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         ctxt.expr_arena,
                         ctxt.opt_flags,
                     )
-                    .map_err(|e| e.context(failed_here!(fill_nan)))?;
+                    .context(failed_here!(fill_nan))?;
 
                     ctxt.conversion_optimizer
                         .fill_scratch(&exprs, ctxt.expr_arena);
@@ -1327,6 +1331,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             run_parallel: false,
                             duplicate_check: false,
                             should_broadcast: false,
+                            maintain_dataframe_height: false,
                         },
                     }
                 },
@@ -1334,31 +1339,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let function = function.into_function_ir(&input_schema)?;
                     IR::MapFunction { input, function }
                 },
-            }
-        },
-        DslPlan::ExtContext { input, contexts } => {
-            let input = to_alp_impl(owned(input), ctxt)
-                .map_err(|e| e.context(failed_here!(with_context)))?;
-            let contexts = contexts
-                .into_iter()
-                .map(|lp| to_alp_impl(lp, ctxt))
-                .collect::<PolarsResult<Vec<_>>>()
-                .map_err(|e| e.context(failed_here!(with_context)))?;
-
-            let mut schema = (**ctxt.lp_arena.get(input).schema(ctxt.lp_arena)).clone();
-            for input in &contexts {
-                let other_schema = ctxt.lp_arena.get(*input).schema(ctxt.lp_arena);
-                for fld in other_schema.iter_fields() {
-                    if schema.get(fld.name()).is_none() {
-                        schema.with_column(fld.name, fld.dtype);
-                    }
-                }
-            }
-
-            IR::ExtContext {
-                input,
-                contexts,
-                schema: Arc::new(schema),
             }
         },
         DslPlan::Sink { input, payload } => {
@@ -1406,14 +1386,13 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     debug_assert!(unified_sink_args.sinked_paths_callback.is_none());
 
                     unified_sink_args.sinked_paths_callback =
-                        Some(SinkedPathsCallback::IcebergCommit(state));
+                        Some(SinkedPathsCallback::IcebergCommit(Box::new(state)));
 
                     return to_alp_impl(*plan, &mut ctxt);
                 })
             }
 
-            let input =
-                to_alp_impl(owned(input), &mut ctxt).map_err(|e| e.context(failed_here!(sink)))?;
+            let input = to_alp_impl(owned(input), &mut ctxt).context(failed_here!(sink))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena).into_owned();
             let payload = match payload {
                 SinkType::Iceberg(_) => unreachable!(),
@@ -1554,7 +1533,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .into_iter()
                 .map(|lp| to_alp_impl(lp, ctxt))
                 .collect::<PolarsResult<Vec<_>>>()
-                .map_err(|e| e.context(failed_here!(vertical concat)))?;
+                .context(failed_here!(vertical concat))?;
             IR::SinkMultiple { inputs }
         },
         #[cfg(feature = "merge_sorted")]
@@ -1564,17 +1543,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             key,
             maintain_order,
         } => {
-            let input_left = to_alp_impl(owned(input_left), ctxt)
-                .map_err(|e| e.context(failed_here!(merge_sorted)))?;
-            let input_right = to_alp_impl(owned(input_right), ctxt)
-                .map_err(|e| e.context(failed_here!(merge_sorted)))?;
+            let input_left =
+                to_alp_impl(owned(input_left), ctxt).context(failed_here!(merge_sorted))?;
+            let input_right =
+                to_alp_impl(owned(input_right), ctxt).context(failed_here!(merge_sorted))?;
 
             let left_schema = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
             let right_schema = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
 
             left_schema
                 .ensure_is_exact_match(&right_schema)
-                .map_err(|err| err.context("merge_sorted".into()))?;
+                .context("merge_sorted")?;
 
             polars_ensure!(
                 !key.is_empty(),
@@ -1582,9 +1561,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             );
 
             for key in key.iter() {
-                left_schema
-                    .try_get(key.as_str())
-                    .map_err(|err| err.context("merge_sorted".into()))?;
+                left_schema.try_get(key.as_str()).context("merge_sorted")?;
             }
 
             IR::MergeSorted {

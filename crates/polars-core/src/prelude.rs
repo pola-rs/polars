@@ -27,6 +27,7 @@ pub use crate::chunked_array::builder::{
 };
 pub use crate::chunked_array::collect::{ChunkedCollectInferIterExt, ChunkedCollectIterExt};
 #[cfg(feature = "dtype-categorical")]
+#[allow(unused)] // See rust-lang/rust/issues/160691.
 pub use crate::chunked_array::logical::categorical::*;
 #[cfg(feature = "ndarray")]
 pub use crate::chunked_array::ndarray::IndexOrder;
@@ -41,7 +42,7 @@ pub use crate::chunked_array::temporal::conversion::*;
 pub use crate::datatypes::{ArrayCollectIterExt, *};
 pub use crate::error::abort::try_raise_polars_abort;
 pub use crate::error::{
-    PolarsError, PolarsResult, polars_bail, polars_ensure, polars_err, polars_warn,
+    PolarsContext, PolarsError, PolarsResult, polars_bail, polars_ensure, polars_err, polars_warn,
 };
 pub use crate::frame::column::{Column, IntoColumn};
 pub use crate::frame::explode::UnpivotArgsIR;

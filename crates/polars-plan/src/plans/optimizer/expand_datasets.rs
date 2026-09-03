@@ -21,8 +21,7 @@ use crate::dsl::MetadataPerSource::Unresolved;
 use crate::dsl::python_dsl::PythonScanSource;
 use crate::dsl::{DslPlan, FileScanIR, UnifiedScanArgs};
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
-use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
-use crate::plans::{AExpr, IR};
+use crate::plans::{AExpr, Card, IR};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 
 pub(super) fn expand_datasets(
@@ -45,7 +44,7 @@ pub(super) fn expand_datasets(
         root,
         &mut FnVisitors::new(
             || (),
-            |key, storage: &mut IRTraversalStorage, _| {
+            |key, storage: &mut Arena<IR>, _| {
                 match (|| {
                     let IR::Scan {
                         sources: _,
@@ -181,10 +180,7 @@ pub(super) fn expand_datasets(
         ),
         &mut vec![],
         &mut vec![],
-        IRTraversalStorage {
-            arena: ir_arena,
-            skip_subtree: |_| false,
-        },
+        ir_arena,
     ) {
         ControlFlow::Continue(()) => {},
         ControlFlow::Break(err) => return Err(err),
@@ -476,8 +472,7 @@ fn expand_python_dataset(
     };
 
     if let Some((physical, deleted)) = unified_scan_args.row_count {
-        let row_count = u64::saturating_sub(physical, deleted) as usize;
-        file_info.row_estimation = (Some(row_count), row_count);
+        file_info.stats.rows = Card::Exact(u64::saturating_sub(physical, deleted));
     }
 
     Ok(scan_ir)

@@ -36,7 +36,6 @@ impl IR {
             MapFunction { .. } => "map_function",
             Union { .. } => "union",
             HConcat { .. } => "hconcat",
-            ExtContext { .. } => "ext_context",
             Sink { payload, .. } => match payload {
                 SinkTypeIR::Memory => "sink (memory)",
                 SinkTypeIR::Callback(..) => "sink (callback)",
@@ -112,7 +111,6 @@ impl IR {
                     Cow::Borrowed(schema) => function.schema(schema).unwrap(),
                 };
             },
-            ExtContext { schema, .. } => schema,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { input_left, .. } => return arena.get(*input_left).schema(arena),
             UnoptimizedDispatch {
@@ -178,7 +176,6 @@ impl IR {
             | GroupBy { schema, .. }
             | Join { schema, .. }
             | HStack { schema, .. }
-            | ExtContext { schema, .. }
             | SimpleProjection {
                 columns: schema, ..
             } => schema.clone(),

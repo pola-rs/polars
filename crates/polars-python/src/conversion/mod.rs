@@ -31,6 +31,7 @@ use polars_lazy::prelude::*;
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
 use polars_plan::dsl::default_values::IcebergDefaultFieldValues;
+use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_utils::compression::{BrotliLevel, GzipLevel, ZstdLevel};
 use polars_utils::pl_serialize;
 use polars_utils::pl_str::PlSmallStr;
@@ -1049,23 +1050,6 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Label> {
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ListToStructWidthStrategy> {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "first_non_null" => ListToStructWidthStrategy::FirstNonNull,
-            "max_width" => ListToStructWidthStrategy::MaxWidth,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "`n_field_strategy` must be one of {{'first_non_null', 'max_width'}}, got {v}",
-                )));
-            },
-        };
-        Ok(Wrap(parsed))
-    }
-}
-
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<NonExistent> {
     type Error = PyErr;
 
@@ -1880,34 +1864,45 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DeletionFilesList> {
         let (deletion_file_type, ob): (PyBackedStr, Bound<'_, PyAny>) = ob.extract()?;
 
         Ok(Wrap(match &*deletion_file_type {
-            "iceberg-position-delete" => {
-                let dict: Bound<'_, PyDict> = ob.extract()?;
+            "iceberg" => {
+                let (position_deletes, deletion_vectors): (Bound<'_, PyDict>, Bound<'_, PyDict>) =
+                    ob.extract()?;
 
                 let mut out = PlIndexMap::new();
 
-                for (k, v) in dict
+                for (k, v) in position_deletes
                     .try_iter()?
-                    .zip(dict.call_method0("values")?.try_iter()?)
+                    .zip(position_deletes.call_method0("values")?.try_iter()?)
                 {
                     let k: usize = k?.extract()?;
-                    let v: Bound<'_, PyAny> = v?.extract()?;
+                    let v: Bound<'_, PyAny> = v?;
 
                     let files = v
                         .try_iter()?
                         .map(|x| {
                             x.and_then(|x| {
-                                let x: String = x.extract()?;
-                                Ok(x)
+                                let x: Wrap<PlRefPath> = x.extract()?;
+                                Ok(x.0)
                             })
                         })
-                        .collect::<PyResult<Arc<[String]>>>()?;
+                        .collect::<PyResult<Buffer<PlRefPath>>>()?;
 
                     if !files.is_empty() {
-                        out.insert(k, files);
+                        out.insert(k, IcebergDeletes::PositionDeletes(files));
                     }
                 }
 
-                DeletionFilesList::IcebergPositionDelete(Arc::new(out))
+                for (k, v) in deletion_vectors
+                    .try_iter()?
+                    .zip(deletion_vectors.call_method0("values")?.try_iter()?)
+                {
+                    let k: usize = k?.extract()?;
+                    let v: Wrap<PlRefPath> = v?.extract()?;
+
+                    out.insert(k, IcebergDeletes::DeletionVector(v.0));
+                }
+
+                DeletionFilesList::Iceberg(Arc::new(out))
             },
 
             "delta-deletion-vector" => {

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
+from polars._utils.expired import (
+    getattr_fallback,
+    raise_for_removed_attributes,
+)
 from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
 from polars._utils.unstable import unstable
 from polars._utils.various import _NamespaceSuggestMixin, qualified_type_name
@@ -15,7 +18,6 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32, Int64
 from polars.functions.business import _holidays_to_expr
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Iterable
 
     from polars import Expr
@@ -29,11 +31,6 @@ if TYPE_CHECKING:
         TimeUnit,
     )
 
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
-
 
 class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
     """Namespace for datetime related expressions."""
@@ -43,17 +40,18 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
     def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
-    @unstable()
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "n"], version="1.12.0")
     def add_business_days(
         self,
         n: int | IntoExpr,
+        *,
         week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
         holidays: Iterable[dt.date] | Expr | pl.Series = (),
         roll: Roll = "raise",
     ) -> Expr:
         """
         Offset by `n` business days.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -186,6 +184,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
           `'2022-11-06 01:30:00 CDT'` by `'1h'` results in
           `'2022-11-06 01:00:00 CDT'`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         every
@@ -310,6 +310,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         `'2022-11-06 01:00:00 CST'`, whereas rounding `'2022-11-06 01:20:00 CDT'` by
         `'1h'` results in `'2022-11-06 01:00:00 CDT'`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         every
@@ -413,6 +415,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         """
         Replace time unit.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         year
@@ -505,6 +509,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         If the underlying expression is a Datetime then its time component is replaced,
         and if it is a Date then a new Datetime is created by combining the two values.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         time
@@ -561,6 +567,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
     def to_string(self, format: str | None = None) -> Expr:
         """
         Convert a Date/Time/Datetime column into a String column with the given format.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.15.0
             Added support for the use of "iso:strict" as a format string.
@@ -722,6 +730,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Similar to `cast(pl.String)`, but this method allows you to customize the
         formatting of the resulting string.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Alias for :func:`to_string`.
 
         Parameters
@@ -788,8 +798,9 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Extract the millennium from underlying representation.
 
         Applies to Date and Datetime columns.
-
         Returns the millennium number in the calendar date.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -831,8 +842,9 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Extract the century from underlying representation.
 
         Applies to Date and Datetime columns.
-
         Returns the century number in the calendar date.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -874,8 +886,9 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Extract year from underlying Date representation.
 
         Applies to Date and Datetime columns.
-
         Returns the year number in the calendar date.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -914,6 +927,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
     ) -> Expr:
         """
         Determine whether each day lands on a business day.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -1005,6 +1020,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
 
         Applies to Date and Datetime columns.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1040,6 +1057,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
 
         Returns the year number in the ISO standard.
         This may not correspond with the calendar year.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -1078,6 +1097,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
 
         Returns the quarter ranging from 1 to 4.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1112,6 +1133,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Returns the month number starting from 1.
         The return value ranges from 1 to 12.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1145,6 +1168,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
 
         Returns the number of days in the month.
         The return value ranges from 28 to 31.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -1185,6 +1210,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Returns the ISO week number starting from 1.
         The return value ranges from 1 to 53. (The last week of year differs by years.)
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1217,6 +1244,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Applies to Date and Datetime columns.
 
         Returns the ISO weekday number where monday = 1 and sunday = 7
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -1266,6 +1295,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Returns the day of month starting from 1.
         The return value ranges from 1 to 31. (The last day of month differs by months.)
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1314,6 +1345,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Returns the day of year starting from 1.
         The return value ranges from 1 to 366. (The last day of year differs by years.)
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1359,6 +1392,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
 
         Applies to Datetime columns only; fails on Date.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1396,6 +1431,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
 
         Applies to Date and Datetime columns.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1427,52 +1464,6 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         """
         return wrap_expr(self._pyexpr.dt_date())
 
-    @deprecated(
-        "`dt.datetime` is deprecated; use `dt.replace_time_zone(None)` instead."
-    )
-    def datetime(self) -> Expr:
-        """
-        Return datetime.
-
-        .. deprecated:: 0.20.4
-            Use the `dt.replace_time_zone(None)` method instead.
-
-        Applies to Datetime columns.
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`Datetime`.
-
-        Examples
-        --------
-        >>> from datetime import datetime
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "datetime UTC": [
-        ...             datetime(1978, 1, 1, 1, 1, 1, 0),
-        ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
-        ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
-        ...         ]
-        ...     },
-        ...     schema={"datetime UTC": pl.Datetime(time_zone="UTC")},
-        ... )
-        >>> df.with_columns(  # doctest: +SKIP
-        ...     pl.col("datetime UTC").dt.datetime().alias("datetime (no timezone)"),
-        ... )
-        shape: (3, 2)
-        ┌─────────────────────────────┬─────────────────────────┐
-        │ datetime UTC                ┆ datetime (no timezone)  │
-        │ ---                         ┆ ---                     │
-        │ datetime[μs, UTC]           ┆ datetime[μs]            │
-        ╞═════════════════════════════╪═════════════════════════╡
-        │ 1978-01-01 01:01:01 UTC     ┆ 1978-01-01 01:01:01     │
-        │ 2024-10-13 05:30:14.500 UTC ┆ 2024-10-13 05:30:14.500 │
-        │ 2065-01-01 10:20:30.060 UTC ┆ 2065-01-01 10:20:30.060 │
-        └─────────────────────────────┴─────────────────────────┘
-        """
-        return wrap_expr(self._pyexpr.dt_datetime())
-
     def hour(self) -> Expr:
         """
         Extract hour from underlying DateTime representation.
@@ -1480,6 +1471,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Applies to Datetime columns.
 
         Returns the hour number from 0 to 23.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -1524,6 +1517,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Applies to Datetime columns.
 
         Returns the minute number from 0 to 59.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -1570,6 +1565,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Returns the integer second number from 0 to 59, or a floating
         point number from 0 < 60 if `fractional=True` that includes
         any milli/micro/nanosecond component.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1637,6 +1634,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
 
         Applies to Datetime columns.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1679,6 +1678,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
 
         Applies to Datetime columns.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1720,6 +1721,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Extract nanoseconds from underlying DateTime representation.
 
         Applies to Datetime columns.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -1803,6 +1806,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         """
         Return a timestamp in the given time unit.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         time_unit : {'ns', 'us', 'ms'}
@@ -1833,59 +1838,11 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         """
         return wrap_expr(self._pyexpr.dt_timestamp(time_unit))
 
-    @deprecated(
-        "`dt.with_time_unit` is deprecated; instead, first cast "
-        "to `Int64` and then cast to the desired data type."
-    )
-    def with_time_unit(self, time_unit: TimeUnit) -> Expr:
-        """
-        Set time unit of an expression of dtype Datetime or Duration.
-
-        .. deprecated:: 0.20.5
-            First cast to `Int64` and then cast to the desired data type.
-
-        This does not modify underlying data, and should be used to fix an incorrect
-        time unit.
-
-        Parameters
-        ----------
-        time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the `Datetime` or `Duration` expression.
-
-        Examples
-        --------
-        >>> from datetime import datetime
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "date": pl.datetime_range(
-        ...             datetime(2001, 1, 1),
-        ...             datetime(2001, 1, 3),
-        ...             "1d",
-        ...             time_unit="ns",
-        ...             eager=True,
-        ...         )
-        ...     }
-        ... )
-        >>> df.select(
-        ...     pl.col("date"),
-        ...     pl.col("date").dt.with_time_unit("us").alias("time_unit_us"),
-        ... )  # doctest: +SKIP
-        shape: (3, 2)
-        ┌─────────────────────┬───────────────────────┐
-        │ date                ┆ time_unit_us          │
-        │ ---                 ┆ ---                   │
-        │ datetime[ns]        ┆ datetime[μs]          │
-        ╞═════════════════════╪═══════════════════════╡
-        │ 2001-01-01 00:00:00 ┆ +32971-04-28 00:00:00 │
-        │ 2001-01-02 00:00:00 ┆ +32974-01-22 00:00:00 │
-        │ 2001-01-03 00:00:00 ┆ +32976-10-18 00:00:00 │
-        └─────────────────────┴───────────────────────┘
-        """
-        return wrap_expr(self._pyexpr.dt_with_time_unit(time_unit))
-
     def cast_time_unit(self, time_unit: TimeUnit) -> Expr:
         """
         Cast the underlying data to another time unit. This may lose precision.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1925,6 +1882,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
     def convert_time_zone(self, time_zone: str) -> Expr:
         """
         Convert to given time zone for an expression of type Datetime.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1983,6 +1942,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
 
         Different from `convert_time_zone`, this will also modify
         the underlying timestamp and will ignore the original time zone.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2079,6 +2040,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         """
         Extract the total days from a Duration type.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         fractional
@@ -2122,6 +2085,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
     def total_hours(self, *, fractional: bool = False) -> Expr:
         """
         Extract the total hours from a Duration type.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2168,6 +2133,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         """
         Extract the total minutes from a Duration type.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         fractional
@@ -2212,6 +2179,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
     def total_seconds(self, *, fractional: bool = False) -> Expr:
         """
         Extract the total seconds from a Duration type.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2259,6 +2228,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
     def total_milliseconds(self, *, fractional: bool = False) -> Expr:
         """
         Extract the total milliseconds from a Duration type.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2308,6 +2279,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         """
         Extract the total microseconds from a Duration type.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         fractional
@@ -2355,6 +2328,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
     def total_nanoseconds(self, *, fractional: bool = False) -> Expr:
         """
         Extract the total nanoseconds from a Duration type.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2409,6 +2384,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         This differs from `pl.col("foo") + timedelta` in that it can
         take months and leap years into account. Note that only a single minus
         sign is allowed in the `by` string, as the first character.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2494,6 +2471,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
 
         For datetimes, the time-of-day is preserved.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -2544,6 +2523,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         Roll forward to the last day of the month.
 
         For datetimes, the time-of-day is preserved.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -2598,6 +2579,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         may vary in the rare case that a country switches time zone, like
         Samoa (Apia) did at the end of 2011.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -2633,6 +2616,8 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         """
         Additional offset currently in effect (typically due to daylight saving time).
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -2663,3 +2648,15 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         └─────────────────────────────┴──────────────┘
         """
         return wrap_expr(self._pyexpr.dt_dst_offset())
+
+    def __getattr__(self, name: str) -> Any:
+        raise_for_removed_attributes(
+            self,
+            name,
+            {
+                "datetime": "use `dt.replace_time_zone(None)` instead.",
+                "with_time_unit": "instead, first cast to `Int64` and then cast to the desired data type.",
+            },
+            version="2.0",
+        )
+        return getattr_fallback(self, super(), name)

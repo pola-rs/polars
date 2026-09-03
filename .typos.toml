@@ -22,6 +22,7 @@ splitted = "splitted"
 strat = "strat"
 striter = "striter"
 typ = "typ"
+aimd = "aimd"
 
 [default.extend-identifiers]
 AKS = "AKS"

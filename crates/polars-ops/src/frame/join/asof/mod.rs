@@ -11,7 +11,7 @@ use polars_utils::total_ord::TotalOrd;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use super::{_finish_join, build_tables};
+use super::{_finish_join, build_tables, build_tables_from_arrays, par_map_collect};
 use crate::frame::IntoDf;
 use crate::series::SeriesMethods;
 
@@ -256,7 +256,7 @@ pub fn _check_asof_columns(
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Hash, strum_macros::IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum AsofStrategy {

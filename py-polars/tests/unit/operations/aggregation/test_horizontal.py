@@ -763,3 +763,32 @@ def test_raise_invalid_types_21835() -> None:
         match=r"got invalid or ambiguous dtypes: '\[i64, str\]' in expression 'min_horizontal'",
     ):
         df.select(pl.min_horizontal("x", "y"))
+
+
+def test_min_max_horizontal_with_nan_28682() -> None:
+    df = pl.DataFrame({"a": [float("nan"), 1.0], "b": [20.0, 2.0], "c": [30.0, 3.0]})
+    out = df.select(
+        xmin=pl.min_horizontal("a", "b", "c"),
+        ymin=pl.min_horizontal("b", "c", "a"),
+        xmax=pl.max_horizontal("a", "b", "c"),
+        ymax=pl.max_horizontal("b", "c", "a"),
+    )
+    expected = pl.DataFrame(
+        {
+            "xmin": [20.0, 1.0],
+            "ymin": [20.0, 1.0],
+            "xmax": [30.0, 3.0],
+            "ymax": [30.0, 3.0],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_min_max_horizontal_scalar_column_29082() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]}).with_columns(s=pl.lit(2.0))
+    out = df.select(
+        mn=pl.min_horizontal("s", pl.lit(3.0)),
+        mx=pl.max_horizontal("s", pl.lit(3.0)),
+    )
+    expected = pl.DataFrame({"mn": [2.0, 2.0, 2.0], "mx": [3.0, 3.0, 3.0]})
+    assert_frame_equal(out, expected)

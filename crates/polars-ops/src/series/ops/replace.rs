@@ -111,12 +111,7 @@ pub fn replace_or_default(
     let default = default.cast(&return_dtype)?;
 
     if old.is_empty() {
-        let out = if default.len() == 1 && s.len() != 1 {
-            default.new_from_index(0, s.len())
-        } else {
-            default
-        };
-        return Ok(out);
+        return default.broadcast_owned_to(s.len());
     }
 
     let old = old.strict_cast(s.dtype())?;

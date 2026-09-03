@@ -86,7 +86,7 @@ impl UnknownKind {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, strum_macros::IntoStaticStr)]
 pub enum DataType {
     Boolean,
     UInt8,
@@ -526,6 +526,38 @@ impl DataType {
             Extension(_, storage) => storage.to_physical(),
             _ => self.clone(),
         }
+    }
+
+    /// Bytes one value of this type takes, or `None` when that depends on the
+    /// value.
+    #[must_use]
+    pub fn byte_width(&self) -> Option<f64> {
+        use DataType::*;
+        Some(match self {
+            Null => 0.0,
+            Boolean => 1.0 / 8.0,
+            Int8 | UInt8 => 1.0,
+            Int16 | UInt16 | Float16 => 2.0,
+            Int32 | UInt32 | Float32 | Date => 4.0,
+            Int64 | UInt64 | Float64 | Datetime(_, _) | Duration(_) | Time => 8.0,
+            Int128 | UInt128 => 16.0,
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => 16.0,
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(cats, _) => cats.physical().dtype().byte_width()?,
+            #[cfg(feature = "dtype-categorical")]
+            Enum(fcats, _) => fcats.physical().dtype().byte_width()?,
+            #[cfg(feature = "dtype-array")]
+            Array(inner, width) => inner.byte_width()? * (*width as f64),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields
+                .iter()
+                .map(|f| f.dtype().byte_width())
+                .sum::<Option<f64>>()?,
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.byte_width()?,
+            _ => return None,
+        })
     }
 
     #[must_use]

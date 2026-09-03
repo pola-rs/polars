@@ -13,11 +13,10 @@ use polars::prelude::PlRefPath;
 use polars::prelude::file::{Writable, WritableTrait};
 use polars_buffer::{Buffer, SharedStorage};
 use polars_error::polars_err;
-use polars_utils::create_file;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyString, PyStringMethods};
+use pyo3::types::{PyBytes, PySlice, PyString, PyStringMethods};
 
 use crate::error::PyPolarsErr;
 use crate::prelude::resolve_homedir;
@@ -29,6 +28,7 @@ pub(crate) struct PyFileLikeObject {
     expects_str: bool,
     /// The object has a flush method.
     has_flush: bool,
+    start_offset: u64,
 }
 
 impl WritableTrait for PyFileLikeObject {
@@ -51,6 +51,7 @@ impl Clone for PyFileLikeObject {
             inner: self.inner.clone_ref(py),
             expects_str: self.expects_str,
             has_flush: self.has_flush,
+            start_offset: self.start_offset,
         })
     }
 }
@@ -60,11 +61,17 @@ impl PyFileLikeObject {
     /// Creates an instance of a `PyFileLikeObject` from a `PyObject`.
     /// To assert the object has the required methods,
     /// instantiate it with `PyFileLikeObject::require`
-    pub(crate) fn new(object: Py<PyAny>, expects_str: bool, has_flush: bool) -> Self {
+    pub(crate) fn new(
+        object: Py<PyAny>,
+        expects_str: bool,
+        has_flush: bool,
+        start_offset: u64,
+    ) -> Self {
         PyFileLikeObject {
             inner: object,
             expects_str,
             has_flush,
+            start_offset,
         }
     }
 
@@ -254,7 +261,7 @@ impl Seek for PyFileLikeObject {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, io::Error> {
         Python::attach(|py| {
             let (whence, offset) = match pos {
-                SeekFrom::Start(i) => (0, i as i64),
+                SeekFrom::Start(i) => (0, (i + self.start_offset) as i64),
                 SeekFrom::Current(i) => (1, i),
                 SeekFrom::End(i) => (2, i),
             };
@@ -333,8 +340,10 @@ pub(crate) fn try_get_pyfile(
                 // invalidate read buffer
                 py_f.call_method0("flush").is_ok()
             } else {
-                // flush write buffer
-                py_f.call_method1("seek", (0, 1)).is_ok()
+                py_f.call_method0("tell")
+                    .ok()
+                    .is_none_or(|x| x.extract::<u64>().ok() == Some(0))
+                    && py_f.call_method1("seek", (0, 1)).is_ok()
             })
     .then(|| {
         py_f.getattr("fileno")
@@ -401,7 +410,11 @@ pub(crate) fn try_get_pyfile(
     let has_flush = py_f
         .getattr_opt("flush")?
         .is_some_and(|flush| flush.is_callable());
-    let f = PyFileLikeObject::new(py_f.unbind(), expects_str, has_flush);
+    let start_offset: u64 = py_f
+        .call_method0("tell")
+        .and_then(|x| x.extract())
+        .unwrap_or(0);
+    let f = PyFileLikeObject::new(py_f.unbind(), expects_str, has_flush, start_offset);
     Ok((EitherRustPythonFile::Py(f), None))
 }
 
@@ -448,9 +461,9 @@ fn get_either_buffer_or_path(
         if let Ok(s) = py_f.extract::<Cow<str>>() {
             let file_path = resolve_homedir(s.as_ref());
             let f = if write {
-                create_file(&file_path).map_err(PyPolarsErr::from)?
+                polars_utils::io::create_file(&file_path).map_err(PyPolarsErr::from)?
             } else {
-                polars_utils::open_file(&file_path).map_err(PyPolarsErr::from)?
+                polars_utils::io::open_file(&file_path).map_err(PyPolarsErr::from)?
             };
             Ok((
                 EitherRustPythonFile::Rust(f.into()),
@@ -480,9 +493,17 @@ fn read_if_bytesio(py_f: Bound<PyAny>) -> Bound<PyAny> {
     if py_f.is_instance(&bytes_io).unwrap() {
         // Note that BytesIO has some memory optimizations ensuring that much of
         // the time getvalue() doesn't need to copy the underlying data:
-        let Ok(bytes) = py_f.call_method0("getvalue") else {
+        let Ok(mut bytes) = py_f.call_method0("getvalue") else {
             return py_f;
         };
+        bytes = py_f
+            .call_method0("tell")
+            .and_then(|pos| {
+                let offset: isize = pos.extract()?;
+                bytes.get_item(PySlice::new(py_f.py(), offset, isize::MAX, 1))
+            })
+            .unwrap_or(bytes);
+
         return bytes;
     }
     py_f

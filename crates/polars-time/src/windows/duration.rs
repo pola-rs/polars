@@ -19,7 +19,7 @@ use polars_core::prelude::{
     Ambiguous, NonExistent, PolarsResult, TimeZone, datetime_to_timestamp_ms,
     datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
 };
-use polars_error::polars_ensure;
+use polars_error::{polars_ensure, polars_err};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -511,15 +511,15 @@ impl Duration {
     #[doc(hidden)]
     pub const fn duration_us(&self) -> i64 {
         self.months * 28 * 24 * 3600 * MICROSECONDS
-            + (self.weeks * NS_WEEK / 1000 + self.nsecs / 1000 + self.days * NS_DAY / 1000)
+            + (self.weeks * (NS_WEEK / 1000) + self.nsecs / 1000 + self.days * (NS_DAY / 1000))
     }
 
     #[doc(hidden)]
     pub const fn duration_ms(&self) -> i64 {
         self.months * 28 * 24 * 3600 * MILLISECONDS
-            + (self.weeks * NS_WEEK / 1_000_000
+            + (self.weeks * (NS_WEEK / 1_000_000)
                 + self.nsecs / 1_000_000
-                + self.days * NS_DAY / 1_000_000)
+                + self.days * (NS_DAY / 1_000_000))
     }
 
     /// Not-to-exceed estimated duration of the window duration. The actual duration will be
@@ -535,21 +535,21 @@ impl Duration {
     #[doc(hidden)]
     pub const fn nte_duration_us(&self) -> i64 {
         self.months * (31 * 24 + 1) * 3600 * MICROSECONDS
-            + self.weeks * NTE_NS_WEEK / 1000
-            + self.days * NTE_NS_DAY / 1000
+            + self.weeks * (NTE_NS_WEEK / 1000)
+            + self.days * (NTE_NS_DAY / 1000)
             + self.nsecs / 1000
     }
 
     #[doc(hidden)]
     pub const fn nte_duration_ms(&self) -> i64 {
         self.months * (31 * 24 + 1) * 3600 * MILLISECONDS
-            + self.weeks * NTE_NS_WEEK / 1_000_000
-            + self.days * NTE_NS_DAY / 1_000_000
+            + self.weeks * (NTE_NS_WEEK / 1_000_000)
+            + self.days * (NTE_NS_DAY / 1_000_000)
             + self.nsecs / 1_000_000
     }
 
     #[doc(hidden)]
-    fn add_month(ts: NaiveDateTime, n_months: i64, negative: bool) -> NaiveDateTime {
+    fn add_month(ts: NaiveDateTime, n_months: i64, negative: bool) -> PolarsResult<NaiveDateTime> {
         let mut months = n_months;
         if negative {
             months = -months;
@@ -557,10 +557,10 @@ impl Duration {
 
         // Retrieve the current date and increment the values
         // based on the number of months
-        let mut year = ts.year();
         let mut month = ts.month() as i32;
         let mut day = ts.day();
-        year += (months / 12) as i32;
+        let year_i64 = ts.year() as i64 + (months / 12);
+        let mut year = i32::try_from(year_i64).map_err(|_| polars_err!(ComputeError: "cannot advance '{}' by {} months: target year {} is out of the supported range", ts, months, year_i64))?;
         month += (months % 12) as i32;
 
         // if the month overflowed or underflowed, adjust the year
@@ -588,8 +588,8 @@ impl Duration {
         let minute = ts.minute();
         let sec = ts.second();
         let nsec = ts.nanosecond();
-        new_datetime(year, month as u32, day, hour, minute, sec, nsec).expect(
-            "Expected valid datetime, please open an issue at https://github.com/pola-rs/polars/issues"
+        new_datetime(year, month as u32, day, hour, minute, sec, nsec).ok_or_else(
+            || polars_err!(ComputeError: "cannot advance '{}' by {} months: date {:04}-{:02}-{:02} is out of the supported range", ts, months, year, month, day)
         )
     }
 
@@ -951,7 +951,7 @@ impl Duration {
                     let result_dt_local = Self::add_month(original_dt_local, d.months, d.negative);
                     datetime_to_timestamp(self.localize_result_rfc_5545(
                         original_dt_utc,
-                        result_dt_local,
+                        result_dt_local?,
                         tz,
                     )?)
                 },
@@ -959,7 +959,7 @@ impl Duration {
                     timestamp_to_datetime(t),
                     d.months,
                     d.negative,
-                )),
+                )?),
             };
         }
 

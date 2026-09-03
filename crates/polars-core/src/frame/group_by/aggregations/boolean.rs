@@ -2,13 +2,19 @@ use arrow::bitmap::bitmask::BitMask;
 
 use super::*;
 use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::from_iterator_par::{collect_bool_opt_par, collect_bool_par};
 use crate::chunked_array::{arg_max_bool, arg_min_bool};
 
 pub fn _agg_helper_idx_bool<F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &IdxVec)) -> Option<bool> + Send + Sync,
 {
-    let ca: BooleanChunked = RAYON.install(|| groups.into_par_iter().map(f).collect());
+    let ca: BooleanChunked = RAYON.install(|| {
+        let groups_len = groups.len();
+        let first = groups.first();
+        let all = groups.all();
+        collect_bool_opt_par(groups_len, |g| f((first[g], &all[g])))
+    });
     ca.into_series()
 }
 
@@ -16,7 +22,7 @@ pub fn _agg_helper_slice_bool<F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<bool> + Send + Sync,
 {
-    let ca: BooleanChunked = RAYON.install(|| groups.par_iter().copied().map(f).collect());
+    let ca: BooleanChunked = RAYON.install(|| collect_bool_opt_par(groups.len(), |g| f(groups[g])));
     ca.into_series()
 }
 
@@ -293,7 +299,9 @@ impl BooleanChunked {
         let values = self.rechunk();
         let values = values.downcast_as_array();
 
-        let ca: BooleanChunked = RAYON.install(|| {
+        let groups_len = groups.len();
+
+        let ca = RAYON.install(|| {
             let validity = values
                 .validity()
                 .filter(|v| v.unset_bits() > 0)
@@ -302,46 +310,35 @@ impl BooleanChunked {
 
             if !ignore_nulls && let Some(validity) = validity {
                 match groups {
-                    GroupsType::Idx(idx) => idx
-                        .into_par_iter()
-                        .map(|(_, idx)| idx_kleene(values, validity, idx))
-                        .collect(),
-                    GroupsType::Slice {
-                        groups,
-                        overlapping: _,
-                        monotonic: _,
-                    } => groups
-                        .into_par_iter()
-                        .map(|[start, length]| slice_kleene(values, validity, *start, *length))
-                        .collect(),
+                    GroupsType::Idx(idx) => {
+                        let all = idx.all();
+                        collect_bool_opt_par(groups_len, |g| idx_kleene(values, validity, &all[g]))
+                    },
+                    GroupsType::Slice { groups, .. } => collect_bool_opt_par(groups_len, |g| {
+                        let [s, l] = groups[g];
+                        slice_kleene(values, validity, s, l)
+                    }),
                 }
             } else {
                 match groups {
-                    GroupsType::Idx(idx) => match validity {
-                        None => idx
-                            .into_par_iter()
-                            .map(|(_, idx)| idx_no_valid(values, idx))
-                            .collect(),
-                        Some(validity) => idx
-                            .into_par_iter()
-                            .map(|(_, idx)| idx_validity(values, validity, idx))
-                            .collect(),
+                    GroupsType::Idx(idx) => {
+                        let all = idx.all();
+                        match validity {
+                            None => collect_bool_par(groups_len, |g| idx_no_valid(values, &all[g])),
+                            Some(validity) => collect_bool_par(groups_len, |g| {
+                                idx_validity(values, validity, &all[g])
+                            }),
+                        }
                     },
-                    GroupsType::Slice {
-                        groups,
-                        overlapping: _,
-                        monotonic: _,
-                    } => match validity {
-                        None => groups
-                            .into_par_iter()
-                            .map(|[start, length]| slice_no_valid(values, *start, *length))
-                            .collect(),
-                        Some(validity) => groups
-                            .into_par_iter()
-                            .map(|[start, length]| {
-                                slice_validity(values, validity, *start, *length)
-                            })
-                            .collect(),
+                    GroupsType::Slice { groups, .. } => match validity {
+                        None => collect_bool_par(groups_len, |g| {
+                            let [s, l] = groups[g];
+                            slice_no_valid(values, s, l)
+                        }),
+                        Some(validity) => collect_bool_par(groups_len, |g| {
+                            let [s, l] = groups[g];
+                            slice_validity(values, validity, s, l)
+                        }),
                     },
                 }
             }

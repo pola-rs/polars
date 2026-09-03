@@ -4,8 +4,6 @@
 pub mod cat;
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
-#[cfg(feature = "rolling_window_by")]
-pub(crate) use polars_time::prelude::*;
 
 mod arithmetic;
 mod arity;
@@ -40,6 +38,7 @@ mod scan_sources;
 mod selector;
 #[cfg(feature = "serde")]
 mod serializable_plan;
+mod sql;
 mod statistics;
 #[cfg(feature = "strings")]
 pub mod string;
@@ -51,6 +50,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 mod iter;
+mod join;
 mod plan;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
@@ -60,6 +60,7 @@ pub use expr::*;
 #[cfg(feature = "dtype-extension")]
 pub use extension::*;
 pub use function_expr::*;
+pub use join::JoinCondition;
 pub use list::*;
 pub use match_to_schema::*;
 #[cfg(feature = "meta")]
@@ -76,6 +77,7 @@ use polars_core::series::ops::NullBehavior;
 #[cfg(feature = "is_close")]
 use polars_utils::total_ord::TotalOrdWrap;
 pub use selector::{DataTypeSelector, Selector, TimeUnitSet, TimeZoneSet};
+pub use sql::{CachedSqlStatement, SqlResolver, get_sql_resolver, set_sql_resolver};
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;
@@ -211,11 +213,6 @@ impl Expr {
         self.map_binary(FunctionExpr::Quantile { method }, quantile)
     }
 
-    /// Get the group indexes of the group by operation.
-    pub fn agg_groups(self) -> Self {
-        AggExpr::AggGroups(Arc::new(self)).into()
-    }
-
     /// Explode the String/List column.
     pub fn explode(self, options: ExplodeOptions) -> Self {
         Expr::Explode {
@@ -237,11 +234,6 @@ impl Expr {
     /// Append expressions. This is done by adding the chunks of `other` to this [`Series`].
     pub fn append<E: Into<Expr>>(self, other: E, upcast: bool) -> Self {
         self.map_binary(FunctionExpr::Append { upcast }, other.into())
-    }
-
-    /// Collect all chunks into a single chunk before continuing.
-    pub fn rechunk(self) -> Self {
-        self.map_unary(FunctionExpr::Rechunk)
     }
 
     /// Get the first `n` elements of the Expr result.
@@ -271,12 +263,16 @@ impl Expr {
         self.map_unary(FunctionExpr::ArgUnique)
     }
 
-    /// Get the index value that has the minimum value.
+    /// Get an index of a minimal value.
+    ///
+    /// In the case of a tie, this may return the index of any of the minimum values.
     pub fn arg_min(self) -> Self {
         self.map_unary(FunctionExpr::ArgMin)
     }
 
-    /// Get the index value that has the maximum value.
+    /// Get an index of a maximum value.
+    ///
+    /// In the case of a tie, this may return the index of any of the maximum values.
     pub fn arg_max(self) -> Self {
         self.map_unary(FunctionExpr::ArgMax)
     }
@@ -1620,8 +1616,8 @@ impl Expr {
 
     #[cfg(feature = "row_hash")]
     /// Compute the hash of every element.
-    pub fn hash(self, k0: u64, k1: u64, k2: u64, k3: u64) -> Expr {
-        self.map_unary(FunctionExpr::Hash(k0, k1, k2, k3))
+    pub fn hash(self, seed: u64) -> Expr {
+        self.map_unary(FunctionExpr::Hash(seed))
     }
 
     pub fn to_physical(self) -> Expr {

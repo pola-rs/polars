@@ -118,13 +118,10 @@ pub fn replace_all(
     })?;
     let replace_with = replace_with.str()?;
 
-    let replace_with = if replace_with.len() == 1 && patterns.len() > 1 {
-        replace_with.new_from_index(0, patterns.len())
-    } else {
-        replace_with.clone()
-    };
+    let replace_with = replace_with
+        .broadcast_to(patterns.len())
+        .context("expected the same amount of patterns as replacement strings")?;
 
-    polars_ensure!(patterns.len() == replace_with.len(), InvalidOperation: "expected the same amount of patterns as replacement strings");
     polars_ensure!(patterns.null_count() == 0 && replace_with.null_count() == 0, InvalidOperation: "'patterns'/'replace_with' should not have nulls");
     let replace_with = replace_with
         .downcast_iter()
