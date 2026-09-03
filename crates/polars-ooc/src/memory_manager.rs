@@ -223,6 +223,11 @@ impl MemoryManager {
                 break;
             }
 
+            // Rejected by the bandit; scores are sorted descending so the rest are too.
+            if score <= 0.0 {
+                break;
+            }
+
             // Refuse to consider contexts which are significantly worse than
             // the best already-explored one.
             if score * EXPLORE_BEYOND_BEST_SCORE_THRESHOLD < best_explored_score {
