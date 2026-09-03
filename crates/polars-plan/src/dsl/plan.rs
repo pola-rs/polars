@@ -278,6 +278,18 @@ impl DslPlan {
     }
 
     #[cfg(feature = "serde")]
+    pub fn serialize_json_into(&self, writer: &mut dyn Write) -> PolarsResult<()> {
+        use polars_error::to_compute_err;
+        serde_json::to_writer(writer, self).map_err(to_compute_err)
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn deserialize_json_from_str(json: &str) -> PolarsResult<Self> {
+        use polars_error::to_compute_err;
+        serde_json::from_str(json).map_err(to_compute_err)
+    }
+
+    #[cfg(feature = "serde")]
     pub fn serialize_versioned<W: Write>(
         &self,
         mut writer: W,
