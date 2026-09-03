@@ -2,7 +2,7 @@ use arrow::array::{PrimitiveArray, StaticArray as _};
 use arrow::bitmap::Bitmap;
 #[cfg(feature = "dtype-date")]
 use chrono::DateTime;
-use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-date")]
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;

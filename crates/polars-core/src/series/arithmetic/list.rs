@@ -129,12 +129,12 @@ mod inner {
     use either::Either;
     use list_utils::with_match_pl_num_arith;
     use num_traits::Zero;
+    use polars_array::arrow::bridge::chunk_to_arrow;
     use polars_compute::arithmetic::pl_num::PlNumArithmetic;
     use polars_utils::float::IsFloat;
 
     use super::super::list_utils::{BinaryOpApplyType, Broadcast, NumericOp};
     use super::super::*;
-    use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 
     /// Utility to perform a binary operation between the primitive values of
     /// 2 columns, where at least one of the columns is a `ListChunked` type.
@@ -775,7 +775,7 @@ mod inner {
 
                     let (arr, n_values) = Option::take(&mut self.list_to_prim_lhs).unwrap();
                     // The kernel writes the results back into the values, which asks for the
-                    // Arrow array that shares them — see `arrow_bridge`. Dropping the chunk
+                    // Arrow array that shares them — see `polars_array::arrow::bridge`. Dropping the chunk
                     // leaves this the only reference to them.
                     let mut arr_lhs = chunk_to_arrow(
                         arr.as_any()

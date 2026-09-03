@@ -33,7 +33,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
         if s.is_empty() {
             self.append_empty();
         } else {
-            // The builder is the Arrow one, so the chunk crosses over — see `arrow_bridge`. It
+            // The builder is the Arrow one, so the chunk crosses over — see `polars_array::arrow::bridge`. It
             // takes one array per element, so a series of several chunks is rechunked first.
             let s = if s.n_chunks() > 1 { s.rechunk() } else { s };
             let arrow = polars_array::arrow::export::to_arrow(&*s.chunks()[0]);

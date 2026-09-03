@@ -4,6 +4,8 @@ mod var;
 
 use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float, One, ToPrimitive, Zero};
+use polars_array::arrow::bridge::chunk_to_arrow;
+use polars_array::as_flat;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_compute::float_sum;
@@ -19,7 +21,6 @@ pub use var::*;
 use super::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
-use crate::chunked_array::arrow_bridge::{as_flat, chunk_to_arrow};
 use crate::chunked_array::{ChunkedArray, arg_max_binary, arg_min_binary};
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
@@ -127,7 +128,7 @@ where
 {
     fn sum(&self) -> Option<T::Native> {
         Some(
-            // The kernel is the Arrow one, so each chunk crosses over — see `arrow_bridge`.
+            // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
             // TODO(polars-array-scalar): the sum of a scalar chunk is its value times its length.
             self.downcast_iter()
                 .map(|arr| sum(&chunk_to_arrow(arr)))

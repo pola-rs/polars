@@ -1,6 +1,6 @@
+use polars_array::arrow::bridge::with_arrow_chunk;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_compute::ewm::EwmStateUpdate;
-use polars_core::chunked_array::arrow_bridge::with_arrow_chunk;
 use polars_core::prelude::IntoColumn;
 use polars_core::series::Series;
 use polars_error::PolarsResult;

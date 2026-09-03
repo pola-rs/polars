@@ -1,5 +1,5 @@
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::moment::{KurtosisState, SkewState, kurtosis, skew};
-use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
 use polars_core::prelude::*;
 
 use crate::prelude::SeriesSealed;

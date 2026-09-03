@@ -110,7 +110,7 @@ impl ChunkReverse for ArrayChunked {
         }
         let ca = self.rechunk();
         let arr = ca.downcast_as_array();
-        // The builder is the Arrow one, so the values cross over — see `arrow_bridge`.
+        // The builder is the Arrow one, so the values cross over — see `polars_array::arrow::bridge`.
         let values = export::to_arrow(&*array_values(arr));
         let values = &*values;
 

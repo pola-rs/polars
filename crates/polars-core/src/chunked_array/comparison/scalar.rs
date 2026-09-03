@@ -50,7 +50,7 @@ fn bitonic_mask<T: PolarsNumericType>(
     let chunks = ca.downcast_iter().map(|arr| {
         // The sorted flag is what makes this worth a partition point, and a sorted array of more
         // than one element is never in the scalar representation.
-        let arr = crate::chunked_array::arrow_bridge::as_flat(arr);
+        let arr = polars_array::as_flat(arr);
         let values = arr.as_slice();
         let true_range_start = if let Some(f_a) = f_a {
             values.partition_point(|x| !apply::<T>(f_a, *x, rhs))
@@ -240,7 +240,9 @@ impl ChunkCompareEq<&str> for StringChunked {
     }
 
     fn equal_missing(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_with_options_flat(self, |arr| arr.tot_eq_missing_kernel_broadcast(rhs).into())
+        arity::unary_mut_with_options_flat(self, |arr| {
+            arr.tot_eq_missing_kernel_broadcast(rhs).into()
+        })
     }
 
     fn not_equal(&self, rhs: &str) -> BooleanChunked {
@@ -248,7 +250,9 @@ impl ChunkCompareEq<&str> for StringChunked {
     }
 
     fn not_equal_missing(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_with_options_flat(self, |arr| arr.tot_ne_missing_kernel_broadcast(rhs).into())
+        arity::unary_mut_with_options_flat(self, |arr| {
+            arr.tot_ne_missing_kernel_broadcast(rhs).into()
+        })
     }
 }
 

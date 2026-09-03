@@ -1,7 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::marker::PhantomData;
 
-use crate::chunked_array::validity::combine_validities_and;
+use polars_array::bitmap::combine_validities_and;
+
 use crate::prelude::*;
 use crate::utils::{index_to_chunked_index, index_to_chunked_index_rev};
 

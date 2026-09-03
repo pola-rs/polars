@@ -1,6 +1,6 @@
 use either::Either;
+use polars_array::as_flat;
 
-use crate::chunked_array::arrow_bridge::as_flat;
 use crate::prelude::*;
 
 impl<T: PolarsNumericType> ChunkedArray<T> {
@@ -19,7 +19,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
             let mut buf = Vec::with_capacity(self.len());
 
             // The values are read as a slice, so a chunk that is not laid out flat is written
-            // out first — see `arrow_bridge::as_flat`.
+            // out first — see `polars_array::as_flat`.
             for arr in self.downcast_iter() {
                 buf.extend_from_slice(as_flat(arr).as_slice())
             }

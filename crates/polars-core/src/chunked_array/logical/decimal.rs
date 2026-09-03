@@ -1,13 +1,13 @@
 use std::borrow::Cow;
 
 use arrow::bitmap::Bitmap;
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::decimal::{
     DEC128_MAX_PREC, dec128_fits, dec128_mul, dec128_rescale, dec128_verify_prec_scale,
     i128_to_dec128,
 };
 
 use super::*;
-use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 use crate::chunked_array::cast::cast_arrow_chunks;
 use crate::prelude::arity::{unary_elementwise, unary_kernel};
 use crate::prelude::*;
@@ -81,7 +81,7 @@ impl LogicalType for DecimalChunked {
                 // Normally we don't set the Arrow logical type, but now we temporarily set it so
                 // we can re-use the compute cast kernels.
                 let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
-                // The kernels are the Arrow ones, so the chunks cross over — see `arrow_bridge`.
+                // The kernels are the Arrow ones, so the chunks cross over — see `polars_array::arrow::bridge`.
                 let chunks = self
                     .physical()
                     .chunks

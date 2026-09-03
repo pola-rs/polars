@@ -1,7 +1,8 @@
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::legacy::kernels::set::{scatter_single_non_null, set_with_mask};
+use polars_array::arrow::bridge::chunk_to_arrow;
+use polars_array::as_flat;
 
-use crate::chunked_array::arrow_bridge::{as_flat, chunk_to_arrow};
 use crate::prelude::*;
 use crate::utils::align_chunks_binary;
 
@@ -62,7 +63,7 @@ where
                 // Fast path uses kernel.
                 if self.chunks.len() == 1 {
                     // The kernel is the Arrow one, so the chunk crosses over and the result
-                    // crosses back — see `arrow_bridge`.
+                    // crosses back — see `polars_array::arrow::bridge`.
                     let arr = scatter_single_non_null(
                         &chunk_to_arrow(self.downcast_iter().next().unwrap()),
                         idx,
@@ -121,7 +122,7 @@ where
                 .zip(mask.downcast_iter())
                 .map(|(arr, mask)| {
                     // The kernel is the Arrow one, so both chunks cross over and the result
-                    // crosses back — see `arrow_bridge`.
+                    // crosses back — see `polars_array::arrow::bridge`.
                     let out = set_with_mask(
                         &chunk_to_arrow(arr),
                         &chunk_to_arrow(mask),

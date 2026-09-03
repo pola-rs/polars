@@ -1,8 +1,8 @@
 use arrow::compute::utils::combine_validities_and;
 use polars_array::PlFixedSizeListArray;
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_array::arrow::{export, import};
 use polars_compute::horizontal_flatten::horizontal_flatten_unchecked;
-use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
 use polars_core::prelude::{ArrayChunked, Column, DataType, IntoColumn, StaticArray};
 use polars_core::series::Series;
 use polars_error::{PolarsContext, PolarsResult};

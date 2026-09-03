@@ -673,7 +673,7 @@ unsafe fn to_physical_and_dtype(
                 }
                 .unwrap();
                 // The chunks cross back into the Arrow arrays this function works with — see
-                // `arrow_bridge`.
+                // `polars_array::arrow::bridge`.
                 let chunks = s
                     .chunks()
                     .iter()
@@ -690,7 +690,7 @@ unsafe fn to_physical_and_dtype(
                 }
                 .unwrap();
                 // The chunks cross back into the Arrow arrays this function works with — see
-                // `arrow_bridge`.
+                // `polars_array::arrow::bridge`.
                 let chunks = s
                     .chunks()
                     .iter()

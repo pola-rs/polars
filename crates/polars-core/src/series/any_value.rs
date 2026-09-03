@@ -469,7 +469,7 @@ fn any_values_to_binary_offset(
             },
         }
     }
-    // The builder is the Arrow one, so the array crosses over — see `arrow_bridge`.
+    // The builder is the Arrow one, so the array crosses over — see `polars_array::arrow::bridge`.
     let arr: BinaryArray<i64> = builder.into();
     Ok(BinaryOffsetChunked::with_chunk(
         Default::default(),

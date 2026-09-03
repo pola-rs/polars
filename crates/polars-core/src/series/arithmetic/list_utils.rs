@@ -2,13 +2,13 @@
 use arrow::array::PrimitiveArray;
 use arrow::compute::utils::combine_validities_and;
 use num_traits::Zero;
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::arithmetic::ArithmeticKernel;
 use polars_compute::comparisons::TotalEqKernel;
 use polars_error::PolarsResult;
 use polars_utils::float::IsFloat;
 
 use super::*;
-use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 use crate::series::ChunkedArray;
 use crate::utils::try_get_supertype;
 
@@ -94,7 +94,7 @@ impl NumericOp {
             let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
 
             // The kernels are the Arrow ones, so the chunks cross over and the result crosses
-            // back — see `arrow_bridge`.
+            // back — see `polars_array::arrow::bridge`.
             let lhs = chunk_to_arrow(lhs.downcast_get(0).unwrap());
             let rhs = chunk_to_arrow(rhs.downcast_get(0).unwrap());
 

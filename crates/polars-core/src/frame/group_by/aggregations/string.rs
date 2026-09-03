@@ -1,5 +1,6 @@
+use polars_array::arrow::bridge::chunk_to_arrow;
+
 use super::*;
-use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 
 pub fn _agg_helper_idx_bin<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
 where
@@ -37,7 +38,7 @@ impl BinaryChunked {
             GroupsType::Idx(groups) => {
                 let ca_self = self.rechunk();
                 // The kernels below are the Arrow ones, so the chunk crosses over — see
-                // `arrow_bridge`.
+                // `polars_array::arrow::bridge`.
                 let arr = chunk_to_arrow(ca_self.downcast_as_array());
                 let arr = &arr;
                 let no_nulls = arr.null_count() == 0;
@@ -102,7 +103,7 @@ impl BinaryChunked {
             GroupsType::Idx(groups) => {
                 let ca_self = self.rechunk();
                 // The kernels below are the Arrow ones, so the chunk crosses over — see
-                // `arrow_bridge`.
+                // `polars_array::arrow::bridge`.
                 let arr = chunk_to_arrow(ca_self.downcast_as_array());
                 let arr = &arr;
                 let no_nulls = arr.null_count() == 0;
@@ -165,7 +166,7 @@ impl BinaryChunked {
         }
 
         let ca_self = self.rechunk();
-        // The kernels below are the Arrow ones, so the chunk crosses over — see `arrow_bridge`.
+        // The kernels below are the Arrow ones, so the chunk crosses over — see `polars_array::arrow::bridge`.
         let arr = chunk_to_arrow(ca_self.downcast_as_array());
         let arr = &arr;
         let no_nulls = arr.null_count() == 0;
@@ -222,7 +223,7 @@ impl BinaryChunked {
         }
 
         let ca_self = self.rechunk();
-        // The kernels below are the Arrow ones, so the chunk crosses over — see `arrow_bridge`.
+        // The kernels below are the Arrow ones, so the chunk crosses over — see `polars_array::arrow::bridge`.
         let arr = chunk_to_arrow(ca_self.downcast_as_array());
         let arr = &arr;
         let no_nulls = arr.null_count() == 0;

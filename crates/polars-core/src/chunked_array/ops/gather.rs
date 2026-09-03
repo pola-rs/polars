@@ -3,13 +3,13 @@ use std::sync::OnceLock;
 
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
+use polars_array::arrow::bridge::{ToArrow, with_arrow_chunk};
+use polars_array::as_flat;
+use polars_array::builder::{ShareStrategy, builder_like};
 use polars_compute::gather::take_unchecked;
 use polars_error::polars_ensure;
 use polars_utils::index::check_bounds;
 
-use polars_array::builder::{ShareStrategy, builder_like};
-
-use crate::chunked_array::arrow_bridge::{ToArrow, as_flat, with_arrow_chunk};
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::Container;
@@ -156,8 +156,8 @@ where
 impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for ChunkedArray<T>
 where
     T: PolarsDataType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
-    T::Array: for<'a> ArrayFromIter<T::Physical<'a>>
-        + for<'a> ArrayFromIter<Option<T::Physical<'a>>>,
+    T::Array:
+        for<'a> ArrayFromIter<T::Physical<'a>> + for<'a> ArrayFromIter<Option<T::Physical<'a>>>,
 {
     /// Gather values from ChunkedArray by index.
     unsafe fn take_unchecked(&self, indices: &I) -> Self {
@@ -183,8 +183,8 @@ pub fn _update_gather_sorted_flag(sorted_arr: IsSorted, sorted_idx: IsSorted) ->
 impl<T: PolarsDataType> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T>
 where
     T: PolarsDataType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
-    T::Array: for<'a> ArrayFromIter<T::Physical<'a>>
-        + for<'a> ArrayFromIter<Option<T::Physical<'a>>>,
+    T::Array:
+        for<'a> ArrayFromIter<T::Physical<'a>> + for<'a> ArrayFromIter<Option<T::Physical<'a>>>,
 {
     /// Gather values from ChunkedArray by index.
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
@@ -350,8 +350,8 @@ impl IdxCa {
         let validity: Bitmap = idx.iter().map(|idx| !idx.is_null_idx()).collect_trusted();
         let idx = bytemuck::cast_slice::<_, IdxSize>(idx);
         let arr = unsafe { arrow::ffi::mmap::slice(idx) };
-        let arr = polars_array::arrow::import::primitive_from_arrow(&arr)
-            .with_validity(Some(validity));
+        let arr =
+            polars_array::arrow::import::primitive_from_arrow(&arr).with_validity(Some(validity));
         let ca = IdxCa::with_chunk(PlSmallStr::EMPTY, arr);
 
         f(&ca)

@@ -1078,7 +1078,7 @@ impl Series {
         size += self
             .chunks()
             .iter()
-            // The kernel is the Arrow one, so each chunk crosses over — see `arrow_bridge`.
+            // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
             .map(|arr| estimated_bytes_size(&*polars_array::arrow::export::to_arrow(&**arr)))
             .sum::<usize>();
 

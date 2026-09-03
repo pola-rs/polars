@@ -5,12 +5,13 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::compute::utils::{combine_validities_and, combine_validities_and_not};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
+use polars_array::arrow::bridge::{chunk_from_arrow, flat_to_arrow};
 use polars_array::arrow::export;
+use polars_array::as_flat;
 use polars_compute::if_then_else::{IfThenElseKernel, if_then_else_validity};
 use polars_error::PolarsContext;
 use polars_utils::broadcast::broadcast_len;
 
-use crate::chunked_array::arrow_bridge::{as_flat, chunk_from_arrow, flat_to_arrow};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
@@ -23,7 +24,7 @@ const SHAPE_MISMATCH_STR: &str =
 ///
 /// This is [`IfThenElseKernel`] over the arrays of `polars-array` rather than over the Arrow ones:
 /// a chunk crosses over to the Arrow kernel and the result crosses back — see
-/// [`arrow_bridge`](crate::chunked_array::arrow_bridge) — except for an object array, which has no
+/// [`bridge`](polars_array::arrow::bridge) — except for an object array, which has no
 /// Arrow counterpart and answers the kernel itself.
 ///
 /// The chunks reach it [`Flat`], which is what an Arrow array is; a chunk in the

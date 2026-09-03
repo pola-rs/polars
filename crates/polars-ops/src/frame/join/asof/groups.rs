@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
 use num_traits::Zero;
-use polars_core::chunked_array::arrow_bridge::chunk_from_arrow;
+use polars_array::arrow::bridge::chunk_from_arrow;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;

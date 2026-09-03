@@ -1,7 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::{Array, BinaryViewArrayGeneric, BooleanArray, PrimitiveArray, View, ViewType};
+use polars_array::arrow::bridge::{chunk_from_arrow, chunk_to_arrow};
 use polars_buffer::Buffer;
-use polars_core::chunked_array::arrow_bridge::{chunk_from_arrow, chunk_to_arrow};
 use polars_core::prelude::*;
 use polars_core::utils::arrow::bitmap::MutableBitmap;
 use polars_core::utils::arrow::types::NativeType;

@@ -7,9 +7,8 @@
 
 use arrow::bitmap::Bitmap;
 use polars_array::Flat;
+use polars_array::arrow::bridge::ToArrow;
 use polars_compute::comparisons::{TotalEqKernel, TotalOrdKernel};
-
-use crate::chunked_array::arrow_bridge::ToArrow;
 
 /// The counterpart of [`TotalEqKernel`] for the arrays of `polars-array`.
 pub trait PlTotalEqKernel: Sized {

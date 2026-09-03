@@ -314,7 +314,7 @@ impl TryFrom<SerializableScalar> for Scalar {
             #[cfg(feature = "dtype-categorical")]
             S::Enum { value, categories } => Self::new_enum(
                 value,
-                &crate::chunked_array::arrow_bridge::chunk_to_arrow(
+                &polars_array::arrow::bridge::chunk_to_arrow(
                     categories.str()?.rechunk().downcast_as_array(),
                 ),
             )?,

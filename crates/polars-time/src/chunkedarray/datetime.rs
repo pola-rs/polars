@@ -1,7 +1,7 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::compute::temporal;
+use polars_array::arrow::bridge::{chunk_from_arrow, chunk_to_arrow};
 use polars_compute::cast::{CastOptionsImpl, cast};
-use polars_core::chunked_array::arrow_bridge::{chunk_from_arrow, chunk_to_arrow};
 use polars_core::prelude::*;
 #[cfg(feature = "timezones")]
 use polars_ops::chunked_array::datetime::replace_time_zone;

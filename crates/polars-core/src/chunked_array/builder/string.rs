@@ -50,14 +50,14 @@ impl<T: ViewType + ?Sized> BinViewChunkedBuilder<T> {
 
 impl StringChunkedBuilder {
     pub fn finish(mut self) -> StringChunked {
-        // The builder is the Arrow one, so the array crosses over — see `arrow_bridge`.
+        // The builder is the Arrow one, so the array crosses over — see `polars_array::arrow::bridge`.
         let arr = polars_array::arrow::import::from_arrow(&*self.chunk_builder.as_box());
         ChunkedArray::new_with_compute_len(self.field, vec![arr])
     }
 }
 impl BinaryChunkedBuilder {
     pub fn finish(mut self) -> BinaryChunked {
-        // The builder is the Arrow one, so the array crosses over — see `arrow_bridge`.
+        // The builder is the Arrow one, so the array crosses over — see `polars_array::arrow::bridge`.
         let arr = polars_array::arrow::import::from_arrow(&*self.chunk_builder.as_box());
         ChunkedArray::new_with_compute_len(self.field, vec![arr])
     }

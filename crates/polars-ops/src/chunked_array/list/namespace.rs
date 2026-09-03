@@ -1,8 +1,8 @@
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::gather::sublist::list::{index_is_oob, sublist_get};
-use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
@@ -347,7 +347,9 @@ pub trait ListNameSpaceImpl: AsList {
 
         let chunks = ca
             .downcast_iter()
-            .map(|arr| polars_array::arrow::import::from_arrow(&*sublist_get(&chunk_to_arrow(arr), idx)))
+            .map(|arr| {
+                polars_array::arrow::import::from_arrow(&*sublist_get(&chunk_to_arrow(arr), idx))
+            })
             .collect::<Vec<_>>();
 
         // SAFETY: every element in list has dtype equal to its inner type

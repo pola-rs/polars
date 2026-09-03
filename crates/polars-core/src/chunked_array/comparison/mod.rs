@@ -8,9 +8,9 @@ use std::ops::{BitAnd, BitOr, Not};
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use num_traits::{NumCast, ToPrimitive};
+use polars_array::bitmap::invert;
 
 use crate::chunked_array::comparison::kernel::{PlTotalEqKernel, PlTotalOrdKernel};
-use crate::chunked_array::validity::invert;
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::series::implementations::null::NullChunked;

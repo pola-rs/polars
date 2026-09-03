@@ -1,7 +1,7 @@
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_array::arrow::{export, import};
 use polars_compute::filter::filter as filter_fn;
 
-use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
@@ -34,7 +34,7 @@ where
                 self,
                 filter,
                 // The kernel is the Arrow one, so both chunks cross over and the result crosses
-                // back — see `arrow_bridge`.
+                // back — see `polars_array::arrow::bridge`.
                 |left, mask| {
                     import::from_arrow(&*filter_fn(&*export::to_arrow(left), &chunk_to_arrow(mask)))
                 },

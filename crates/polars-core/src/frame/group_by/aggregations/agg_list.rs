@@ -1,7 +1,7 @@
+use polars_array::as_flat;
 use polars_utils::index::idxsize_to_u64;
 
 use super::*;
-use crate::chunked_array::arrow_bridge::as_flat;
 use crate::chunked_array::builder::ListNullChunkedBuilder;
 use crate::series::implementations::null::NullChunked;
 

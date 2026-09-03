@@ -1,6 +1,8 @@
 use std::hash::BuildHasher;
 
 use arrow::bitmap::utils::get_bit_unchecked;
+use polars_array::arrow::bridge::chunk_to_arrow;
+use polars_array::as_flat;
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::hashing::{_boost_hash_combine, folded_multiply};
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
@@ -8,7 +10,6 @@ use rayon::prelude::*;
 use xxhash_rust::xxh3::xxh3_64_with_seed;
 
 use super::*;
-use crate::chunked_array::arrow_bridge::{as_flat, chunk_to_arrow};
 use crate::prelude::*;
 use crate::runtime::RAYON;
 use crate::series::implementations::null::NullChunked;

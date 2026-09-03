@@ -305,7 +305,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             // The mask is inverted in whatever representation it is in — a scalar one is a
             // single bit — so this is `O(1)` for a chunk that is fully null or fully valid.
             let bitmap = match arr.validity() {
-                Some(valid) => crate::chunked_array::validity::invert(valid),
+                Some(valid) => polars_array::bitmap::invert(valid),
                 None => Bitmap::new_with_value(false, 1),
             };
             boolean_from_bits(bitmap, arr.len())

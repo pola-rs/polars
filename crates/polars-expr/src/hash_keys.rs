@@ -4,7 +4,7 @@ use std::hash::BuildHasher;
 use arrow::array::{Array, BinaryArray, BinaryViewArray, PrimitiveArray, UInt64Array};
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and_many;
-use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType, *};

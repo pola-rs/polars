@@ -78,7 +78,7 @@ impl Series {
     /// A Series `[1, 2, 3]` becomes `[[1], [2], [3]]`.
     pub fn to_unit_list(&self) -> ListChunked {
         // The kernel is the Arrow one, so each chunk crosses over and the result crosses back —
-        // see `arrow_bridge`. The chunks carry no logical type, so the inner dtype is this
+        // see `polars_array::arrow::bridge`. The chunks carry no logical type, so the inner dtype is this
         // series'.
         let chunks = self
             .chunks()

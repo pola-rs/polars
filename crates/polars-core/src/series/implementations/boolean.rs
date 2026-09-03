@@ -1,5 +1,6 @@
+use polars_array::arrow::bridge::chunk_to_arrow;
+
 use super::*;
-use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 use crate::prelude::*;
 
 impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
@@ -330,7 +331,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
             self.0
                 .downcast_iter()
                 .filter(|arr| !arr.is_empty())
-                // The kernel is the Arrow one, so each chunk crosses over — see `arrow_bridge`.
+                // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
                 .filter_map(|arr| {
                     polars_compute::bitwise::BitwiseKernel::reduce_and(&chunk_to_arrow(arr))
                 })
@@ -346,7 +347,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
             self.0
                 .downcast_iter()
                 .filter(|arr| !arr.is_empty())
-                // The kernel is the Arrow one, so each chunk crosses over — see `arrow_bridge`.
+                // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
                 .filter_map(|arr| {
                     polars_compute::bitwise::BitwiseKernel::reduce_or(&chunk_to_arrow(arr))
                 })
@@ -362,7 +363,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
             self.0
                 .downcast_iter()
                 .filter(|arr| !arr.is_empty())
-                // The kernel is the Arrow one, so each chunk crosses over — see `arrow_bridge`.
+                // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
                 .filter_map(|arr| {
                     polars_compute::bitwise::BitwiseKernel::reduce_xor(&chunk_to_arrow(arr))
                 })

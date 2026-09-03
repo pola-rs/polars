@@ -1,5 +1,6 @@
+use polars_array::as_flat;
+
 use super::*;
-use crate::chunked_array::arrow_bridge::as_flat;
 
 pub struct ListPrimitiveChunkedBuilder<T>
 where
@@ -144,7 +145,7 @@ Expected {}, got {}.", self.field.dtype(), s.dtype())
         ca.downcast_iter().for_each(|arr| {
             if arr.null_count() == 0 {
                 // The values are read as a slice, so a chunk that is not laid out flat is written
-                // out first — see `arrow_bridge::as_flat`.
+                // out first — see `polars_array::as_flat`.
                 values.extend_from_slice(as_flat(arr).as_slice())
             } else {
                 // SAFETY:

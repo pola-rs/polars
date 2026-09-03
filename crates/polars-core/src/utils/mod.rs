@@ -1397,10 +1397,8 @@ pub fn coalesce_nulls_columns(a: &Column, b: &Column) -> (Column, Column) {
         let mut a = a.as_materialized_series().rechunk();
         let mut b = b.as_materialized_series().rechunk();
         for (arr_a, arr_b) in unsafe { a.chunks_mut().iter_mut().zip(b.chunks_mut()) } {
-            let validity = crate::chunked_array::validity::combine_validities_and(
-                arr_a.validity(),
-                arr_b.validity(),
-            );
+            let validity =
+                polars_array::bitmap::combine_validities_and(arr_a.validity(), arr_b.validity());
             let validity = validity.map(PlBitmap::into_flat_or_scalar);
             *arr_a = arr_a.with_validity_broadcast(validity.clone());
             *arr_b = arr_b.with_validity_broadcast(validity);

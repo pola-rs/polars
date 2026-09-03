@@ -5,6 +5,7 @@ pub use arrow::array::ArrayRef;
 pub(crate) use arrow::array::*;
 // The explicit imports of the array crate shadow the glob above: a `ChunkedArray` is backed by the
 // arrays of `polars-array`, and `arrow::array` is only what it is imported from and exported to.
+pub use polars_array::arrow::bridge::ToArrow;
 pub use polars_array::{
     Flat, PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBitmapRef,
     PlBooleanArray, PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray, PlNullArray,
@@ -35,7 +36,6 @@ pub use crate::chunked_array::ChunkedArray;
 #[cfg(feature = "dtype-struct")]
 pub use crate::chunked_array::StructChunked;
 pub use crate::chunked_array::arithmetic::ArithmeticChunked;
-pub use crate::chunked_array::arrow_bridge::ToArrow;
 pub use crate::chunked_array::builder::{
     BinaryChunkedBuilder, BooleanChunkedBuilder, ChunkedBuilder, ListBinaryChunkedBuilder,
     ListBooleanChunkedBuilder, ListBuilderTrait, ListPrimitiveChunkedBuilder,
@@ -56,7 +56,6 @@ pub use crate::chunked_array::ops::rolling_window::RollingOptionsFixedWindow;
 pub use crate::chunked_array::ops::*;
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;
-pub use crate::chunked_array::validity::PlBitmapRefExt;
 pub use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter, StaticArray, *};
 pub use crate::error::abort::try_raise_polars_abort;
 pub use crate::error::{

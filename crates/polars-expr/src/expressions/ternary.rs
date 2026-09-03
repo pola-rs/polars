@@ -1,4 +1,4 @@
-use polars_core::chunked_array::validity::combine_validities_and;
+use polars_array::bitmap::combine_validities_and;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_plan::prelude::*;

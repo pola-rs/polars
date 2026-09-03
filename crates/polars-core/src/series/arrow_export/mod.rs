@@ -117,7 +117,7 @@ impl ToArrowConverter {
     ///
     /// This is [`Self::array_to_arrow`] for a caller that holds the chunk itself rather than an
     /// Arrow array — the export is written against the Arrow arrays, see
-    /// [`arrow_bridge`](crate::chunked_array::arrow_bridge). The crossing is `O(1)` for a
+    /// [`bridge`](polars_array::arrow::bridge). The crossing is `O(1)` for a
     /// [`flat`](polars_array::broadcast) chunk and `O(len)` for a scalar one, which is written out.
     pub fn chunk_to_arrow<'a>(
         &mut self,

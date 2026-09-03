@@ -14,6 +14,8 @@ use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
+use polars_array::arrow::bridge::chunk_to_arrow;
+use polars_array::as_flat;
 use polars_compute::rolling::no_nulls::{
     MaxWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
 };
@@ -33,7 +35,6 @@ use polars_utils::kahan_sum::KahanSum;
 use polars_utils::min_max::MinMax;
 use rayon::prelude::*;
 
-use crate::chunked_array::arrow_bridge::{as_flat, chunk_to_arrow};
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::from_iterator_par::collect_primitive_opt_par;
 use crate::chunked_array::{arg_max_numeric, arg_min_numeric};
@@ -88,7 +89,7 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
     let arr = with_match_physical_numeric_polars_type!(phys_dtype, |$T| {
         let ca: &ChunkedArray<$T> = by_phys.as_ref().as_ref().as_ref();
         // The kernel reads the values as a slice, so a chunk that is not laid out flat is
-        // written out first — see `arrow_bridge::as_flat`.
+        // written out first — see `polars_array::as_flat`.
         let arr = as_flat(ca.downcast_as_array());
         let values = arr.as_slice();
         let validity = arr.validity();
@@ -515,7 +516,7 @@ where
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
                 // The kernels below are the Arrow ones, so the chunk crosses over — see
-                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // `polars_array::arrow::bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
                 // the crossing, where the kernel only ever reads one repeated value.
                 let chunk = ca.downcast_iter().next().unwrap();
                 let arr = chunk_to_arrow(chunk);
@@ -706,7 +707,7 @@ where
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
                 // The kernels below are the Arrow ones, so the chunk crosses over — see
-                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // `polars_array::arrow::bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
                 // the crossing, where the kernel only ever reads one repeated value.
                 let chunk = ca.downcast_iter().next().unwrap();
                 let arr = chunk_to_arrow(chunk);
@@ -882,7 +883,7 @@ where
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
                 // The kernels below are the Arrow ones, so the chunk crosses over — see
-                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // `polars_array::arrow::bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
                 // the crossing, where the kernel only ever reads one repeated value.
                 let chunk = ca.downcast_iter().next().unwrap();
                 let arr = chunk_to_arrow(chunk);
@@ -974,7 +975,7 @@ where
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
                 // The kernels below are the Arrow ones, so the chunk crosses over — see
-                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // `polars_array::arrow::bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
                 // the crossing, where the kernel only ever reads one repeated value.
                 let chunk = ca.downcast_iter().next().unwrap();
                 let arr = chunk_to_arrow(chunk);
@@ -1067,7 +1068,7 @@ where
             GroupsType::Idx(groups) => {
                 let ca = ca.rechunk();
                 // The kernels below are the Arrow ones, so the chunk crosses over — see
-                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // `polars_array::arrow::bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
                 // the crossing, where the kernel only ever reads one repeated value.
                 let chunk = ca.downcast_iter().next().unwrap();
                 let arr = chunk_to_arrow(chunk);
@@ -1149,7 +1150,7 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 // The kernels below are the Arrow ones, so the chunk crosses over — see
-                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // `polars_array::arrow::bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
                 // the crossing, where the kernel only ever reads one repeated value.
                 let chunk = ca.downcast_iter().next().unwrap();
                 let arr = chunk_to_arrow(chunk);
@@ -1280,7 +1281,7 @@ where
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
                 // The kernels below are the Arrow ones, so the chunk crosses over — see
-                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // `polars_array::arrow::bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
                 // the crossing, where the kernel only ever reads one repeated value.
                 let chunk = ca.downcast_get(0).unwrap();
                 let arr = chunk_to_arrow(chunk);
@@ -1355,7 +1356,7 @@ where
             GroupsType::Idx(groups) => {
                 let ca_self = self.rechunk();
                 // The kernels below are the Arrow ones, so the chunk crosses over — see
-                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // `polars_array::arrow::bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
                 // the crossing, where the kernel only ever reads one repeated value.
                 let chunk = ca_self.downcast_iter().next().unwrap();
                 let arr = chunk_to_arrow(chunk);
@@ -1409,7 +1410,7 @@ where
             GroupsType::Idx(groups) => {
                 let ca_self = self.rechunk();
                 // The kernels below are the Arrow ones, so the chunk crosses over — see
-                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // `polars_array::arrow::bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
                 // the crossing, where the kernel only ever reads one repeated value.
                 let chunk = ca_self.downcast_iter().next().unwrap();
                 let arr = chunk_to_arrow(chunk);

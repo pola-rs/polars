@@ -2,10 +2,10 @@ use std::ops::{BitAnd, BitOr, BitXor};
 
 use arrow::compute::bitwise;
 use arrow::compute::utils::combine_validities_and;
+use polars_array::arrow::bridge::{chunk_from_arrow, flat_to_arrow};
 
 use super::*;
 use crate::chunked_array::arity::apply_binary_kernel_broadcast;
-use crate::chunked_array::arrow_bridge::{chunk_from_arrow, flat_to_arrow};
 
 impl<T> BitAnd for &ChunkedArray<T>
 where
@@ -19,7 +19,7 @@ where
             self,
             rhs,
             // The kernels are the Arrow ones, so the chunks cross over and the results cross
-            // back — see `arrow_bridge`.
+            // back — see `polars_array::arrow::bridge`.
             |l, r| chunk_from_arrow(&bitwise::and(&flat_to_arrow(l), &flat_to_arrow(r))),
             |l, r| chunk_from_arrow(&bitwise::and_scalar(&flat_to_arrow(r), &l)),
             |l, r| chunk_from_arrow(&bitwise::and_scalar(&flat_to_arrow(l), &r)),
@@ -39,7 +39,7 @@ where
             self,
             rhs,
             // The kernels are the Arrow ones, so the chunks cross over and the results cross
-            // back — see `arrow_bridge`.
+            // back — see `polars_array::arrow::bridge`.
             |l, r| chunk_from_arrow(&bitwise::or(&flat_to_arrow(l), &flat_to_arrow(r))),
             |l, r| chunk_from_arrow(&bitwise::or_scalar(&flat_to_arrow(r), &l)),
             |l, r| chunk_from_arrow(&bitwise::or_scalar(&flat_to_arrow(l), &r)),
@@ -59,7 +59,7 @@ where
             self,
             rhs,
             // The kernels are the Arrow ones, so the chunks cross over and the results cross
-            // back — see `arrow_bridge`.
+            // back — see `polars_array::arrow::bridge`.
             |l, r| chunk_from_arrow(&bitwise::xor(&flat_to_arrow(l), &flat_to_arrow(r))),
             |l, r| chunk_from_arrow(&bitwise::xor_scalar(&flat_to_arrow(r), &l)),
             |l, r| chunk_from_arrow(&bitwise::xor_scalar(&flat_to_arrow(l), &r)),

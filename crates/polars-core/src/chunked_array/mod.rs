@@ -5,16 +5,15 @@ use std::sync::Arc;
 
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
+use polars_array::arrow::bridge::with_arrow_chunk;
 use polars_compute::filter::filter_with_bitmap;
 use polars_utils::broadcast::BroadcastLength;
 
-use crate::chunked_array::arrow_bridge::with_arrow_chunk;
 use crate::prelude::{ChunkTakeUnchecked, *};
 
 pub mod ops;
 #[macro_use]
 pub mod arithmetic;
-pub mod arrow_bridge;
 pub mod builder;
 pub mod cast;
 pub mod collect;
@@ -25,7 +24,6 @@ pub mod float;
 pub mod iterator;
 #[cfg(feature = "ndarray")]
 pub(crate) mod ndarray;
-pub mod validity;
 
 pub mod arg_min_max;
 #[cfg(feature = "dtype-array")]

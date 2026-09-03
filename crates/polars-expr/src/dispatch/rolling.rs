@@ -1,7 +1,6 @@
 use std::ops::BitAnd;
 
 use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
-use polars_core::chunked_array::validity::PlBitmapRefExt;
 use polars_core::error::PolarsResult;
 #[cfg(feature = "cov")]
 use polars_core::error::polars_bail;

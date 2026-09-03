@@ -1,6 +1,6 @@
+use polars_array::arrow::bridge::chunk_to_arrow;
 #[cfg(feature = "moment")]
 use polars_array::arrow::import;
-use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
 use polars_core::prelude::*;
 #[cfg(feature = "moment")]
 use {

@@ -1,7 +1,8 @@
 use arrow::Either;
+use polars_array::arrow::bridge::chunk_to_arrow;
+use polars_array::as_flat;
 use polars_array::concatenate::concatenate;
 
-use crate::chunked_array::arrow_bridge::{as_flat, chunk_to_arrow};
 use crate::prelude::append::update_sorted_flag_before_append;
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -57,7 +58,7 @@ where
 
         // First we must obtain an owned version of the array. The values are written into in
         // place where this is the only reference to them, which asks for the Arrow array that
-        // shares them — see `arrow_bridge`.
+        // shares them — see `polars_array::arrow::bridge`.
         let arr = chunk_to_arrow(self.downcast_iter().next().unwrap());
 
         // now we drop our owned ArrayRefs so that
@@ -133,7 +134,7 @@ impl BooleanChunked {
             return Ok(());
         }
         // The bits are written into in place where this is the only reference to them, which
-        // asks for the Arrow array that shares them — see `arrow_bridge`.
+        // asks for the Arrow array that shares them — see `polars_array::arrow::bridge`.
         let arr = chunk_to_arrow(self.downcast_iter().next().unwrap());
 
         // now we drop our owned ArrayRefs so that

@@ -9,8 +9,8 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use arrow::compute::utils::combine_validities_and;
 use num_traits::{Num, NumCast, ToPrimitive};
 pub use numeric::ArithmeticChunked;
+use polars_array::arrow::bridge::{chunk_from_arrow, flat_to_arrow};
 
-use crate::chunked_array::arrow_bridge::{chunk_from_arrow, flat_to_arrow};
 use crate::prelude::arity::unary_elementwise_values;
 use crate::prelude::*;
 
@@ -98,7 +98,7 @@ impl Add for &BinaryChunked {
         }
 
         // The kernel is the Arrow one, so both chunks cross over and the result crosses back —
-        // see `arrow_bridge`.
+        // see `polars_array::arrow::bridge`.
         arity::binary_kernel_flat(
             self,
             rhs,
@@ -127,8 +127,7 @@ impl Add<&[u8]> for &BinaryChunked {
 }
 
 fn add_boolean(a: &PlBooleanArray, b: &PlBooleanArray) -> PlPrimitiveArray<IdxSize> {
-    let validity =
-        crate::chunked_array::validity::combine_validities_and(a.validity(), b.validity());
+    let validity = polars_array::bitmap::combine_validities_and(a.validity(), b.validity());
 
     let values = a
         .values_iter()

@@ -43,7 +43,7 @@ pub trait ListBuilderTrait {
     }
 
     fn finish(&mut self) -> ListChunked {
-        // The builders are the Arrow ones, so the array crosses over — see `arrow_bridge`.
+        // The builders are the Arrow ones, so the array crosses over — see `polars_array::arrow::bridge`.
         let arr = polars_array::arrow::import::from_arrow(&*self.inner_array());
 
         let mut ca = ListChunked::new_with_compute_len(Arc::new(self.field().clone()), vec![arr]);

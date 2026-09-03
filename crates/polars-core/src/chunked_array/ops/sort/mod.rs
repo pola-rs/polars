@@ -255,7 +255,7 @@ where
     arg_sort_fast_path!(ca, options);
     if ca.null_count() == 0 {
         // The kernel reads the values as a slice, so a chunk that is not laid out flat is
-        // written out first — see `arrow_bridge::as_flat`.
+        // written out first — see `polars_array::as_flat`.
         let flat = ca.to_flat();
         let iter = flat.data_views().map(|values| values.iter().copied());
         arg_sort::arg_sort_no_nulls(
@@ -293,7 +293,7 @@ fn arg_sort_multiple_numeric<T: PolarsNumericType>(
     if no_nulls {
         let mut vals = Vec::with_capacity(ca.len());
         // The values are read as a slice, so a chunk that is not laid out flat is written out
-        // first — see `arrow_bridge::as_flat`.
+        // first — see `polars_array::as_flat`.
         let flat = ca.to_flat();
         for values in flat.data_views() {
             vals.extend_trusted_len(values.iter().map(|v| {
@@ -412,7 +412,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         // We must rechunk to ensure that all views point into the proper buffers.
         let ca = self.rechunk();
         // The views are sorted and put back one per element, so a chunk that is not laid out flat
-        // is written out first — see `arrow_bridge`.
+        // is written out first — see `polars_array::arrow::bridge`.
         let arr = ca.downcast_as_array().to_flat();
         let length = arr.len();
 

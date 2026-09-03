@@ -6,10 +6,10 @@ use std::borrow::Cow;
 
 use arrow::bitmap::BitmapBuilder;
 use either::Either;
+use polars_array::as_flat;
 use polars_array::builder::{PlArrayBuilder, builder_like};
 use polars_array::concatenate::concatenate;
 
-use crate::chunked_array::arrow_bridge::as_flat;
 use crate::chunked_array::new_empty_chunk;
 use crate::prelude::*;
 

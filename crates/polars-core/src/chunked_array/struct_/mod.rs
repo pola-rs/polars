@@ -429,10 +429,7 @@ impl StructChunked {
         // We keep length and dtypes the same.
         unsafe {
             for (a, b) in self.downcast_iter_mut().zip(other.downcast_iter()) {
-                let new = crate::chunked_array::validity::combine_validities_and(
-                    a.validity(),
-                    b.validity(),
-                );
+                let new = polars_array::bitmap::combine_validities_and(a.validity(), b.validity());
                 a.set_validity_broadcast(new.map(PlBitmap::into_flat_or_scalar))
             }
         }

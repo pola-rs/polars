@@ -2,12 +2,12 @@
 
 use std::borrow::Cow;
 
+use polars_array::as_flat;
 use polars_compute::cast::CastOptionsImpl;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 
 use super::flags::StatisticsFlags;
-use crate::chunked_array::arrow_bridge::as_flat;
 #[cfg(feature = "dtype-datetime")]
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
@@ -49,7 +49,7 @@ impl From<CastOptions> for CastOptionsImpl {
 /// Casts the chunks of a [`ChunkedArray`] to `dtype`, through the Arrow cast kernel.
 ///
 /// Each chunk crosses to Arrow and back, which is `O(1)` in each direction — see
-/// [`with_arrow_chunk`](crate::chunked_array::arrow_bridge::with_arrow_chunk) — so what the cast
+/// [`with_arrow_chunk`](polars_array::arrow::bridge::with_arrow_chunk) — so what the cast
 /// costs is the cast itself.
 pub(crate) fn cast_chunks(
     chunks: &[PlArrayRef],

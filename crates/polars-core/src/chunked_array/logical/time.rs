@@ -16,7 +16,7 @@ impl Int64Chunked {
             .map(|chunk| {
                 // We need to retain the PhysicalType underneath, but we should properly update the
                 // validity as that might change because Time is not valid for all values of Int64.
-                // The cast is the Arrow one, so the chunk crosses over — see `arrow_bridge`.
+                // The cast is the Arrow one, so the chunk crosses over — see `polars_array::arrow::bridge`.
                 let casted = polars_compute::cast::cast(
                     &*polars_array::arrow::export::to_arrow(&*chunk),
                     &ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),

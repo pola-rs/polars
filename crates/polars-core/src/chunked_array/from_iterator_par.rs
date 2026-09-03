@@ -97,7 +97,7 @@ where
     fn from_par_iter<I: IntoParallelIterator<Item = Option<T::Native>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutablePrimitiveArray::new);
         // The chunks are frozen as Arrow arrays, which cross into the arrays a `ChunkedArray` is
-        // made of in `O(1)` — see `arrow_bridge`.
+        // made of in `O(1)` — see `polars_array::arrow::bridge`.
         Self::from_chunk_iter(PlSmallStr::EMPTY, chunks.iter().map(ToArrow::from_arrow))
             .optional_rechunk()
     }
@@ -107,7 +107,7 @@ impl FromParallelIterator<bool> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = bool>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBooleanArray::new);
         // The chunks are frozen as Arrow arrays, which cross into the arrays a `ChunkedArray` is
-        // made of in `O(1)` — see `arrow_bridge`.
+        // made of in `O(1)` — see `polars_array::arrow::bridge`.
         Self::from_chunk_iter(PlSmallStr::EMPTY, chunks.iter().map(ToArrow::from_arrow))
             .optional_rechunk()
     }
@@ -117,7 +117,7 @@ impl FromParallelIterator<Option<bool>> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<bool>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBooleanArray::new);
         // The chunks are frozen as Arrow arrays, which cross into the arrays a `ChunkedArray` is
-        // made of in `O(1)` — see `arrow_bridge`.
+        // made of in `O(1)` — see `polars_array::arrow::bridge`.
         Self::from_chunk_iter(PlSmallStr::EMPTY, chunks.iter().map(ToArrow::from_arrow))
             .optional_rechunk()
     }
@@ -130,7 +130,7 @@ where
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
         // The chunks are frozen as Arrow arrays, which cross into the arrays a `ChunkedArray` is
-        // made of in `O(1)` — see `arrow_bridge`.
+        // made of in `O(1)` — see `polars_array::arrow::bridge`.
         Self::from_chunk_iter(PlSmallStr::EMPTY, chunks.iter().map(ToArrow::from_arrow))
             .optional_rechunk()
     }
@@ -143,7 +143,7 @@ where
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
         // The chunks are frozen as Arrow arrays, which cross into the arrays a `ChunkedArray` is
-        // made of in `O(1)` — see `arrow_bridge`.
+        // made of in `O(1)` — see `polars_array::arrow::bridge`.
         Self::from_chunk_iter(PlSmallStr::EMPTY, chunks.iter().map(ToArrow::from_arrow))
             .optional_rechunk()
     }
@@ -156,7 +156,7 @@ where
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
         // The chunks are frozen as Arrow arrays, which cross into the arrays a `ChunkedArray` is
-        // made of in `O(1)` — see `arrow_bridge`.
+        // made of in `O(1)` — see `polars_array::arrow::bridge`.
         Self::from_chunk_iter(PlSmallStr::EMPTY, chunks.iter().map(ToArrow::from_arrow))
             .optional_rechunk()
     }
@@ -169,7 +169,7 @@ where
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
         // The chunks are frozen as Arrow arrays, which cross into the arrays a `ChunkedArray` is
-        // made of in `O(1)` — see `arrow_bridge`.
+        // made of in `O(1)` — see `polars_array::arrow::bridge`.
         Self::from_chunk_iter(PlSmallStr::EMPTY, chunks.iter().map(ToArrow::from_arrow))
             .optional_rechunk()
     }

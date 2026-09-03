@@ -74,13 +74,13 @@ mod inner {
     use fixed_size_list::NumericFixedSizeListOp;
     use list_utils::with_match_pl_num_arith;
     use num_traits::Zero;
+    use polars_array::arrow::bridge::chunk_to_arrow;
     use polars_compute::arithmetic::pl_num::PlNumArithmetic;
     use polars_utils::float::IsFloat;
 
     use super::super::list_utils::{BinaryOpApplyType, Broadcast, NumericOp};
     use super::super::*;
     use crate::chunked_array::array::array_values;
-    use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 
     /// Utility to perform a binary operation between the primitive values of
     /// 2 columns, where at least one of the columns is a `ArrayChunked` type.

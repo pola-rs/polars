@@ -1,7 +1,7 @@
+use polars_array::bitmap::{combine_validities_and, invert};
 
 use super::*;
 use crate::chunked_array::flags::StatisticsFlags;
-use crate::chunked_array::validity::{PlBitmapRefExt, combine_validities_and, invert};
 
 impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get a mask of the null values.

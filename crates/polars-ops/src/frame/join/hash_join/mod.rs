@@ -7,7 +7,7 @@ mod single_keys_outer;
 #[cfg(feature = "semi_anti_join")]
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
-use polars_core::chunked_array::arrow_bridge::chunk_from_arrow;
+use polars_array::arrow::bridge::chunk_from_arrow;
 use polars_core::runtime::RAYON;
 use polars_core::utils::_set_partition_size;
 use polars_utils::index::ChunkId;

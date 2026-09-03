@@ -1,5 +1,5 @@
+use polars_array::arrow::bridge::{chunk_from_arrow, flat_to_arrow};
 use polars_compute::arithmetic::ArithmeticKernel;
-use polars_core::chunked_array::arrow_bridge::{chunk_from_arrow, flat_to_arrow};
 use polars_core::chunked_array::ops::arity::apply_binary_kernel_broadcast;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-struct")]

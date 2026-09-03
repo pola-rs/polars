@@ -1,10 +1,10 @@
 use ndarray::prelude::*;
+use polars_array::as_flat;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::chunked_array::arrow_bridge::as_flat;
 use crate::prelude::*;
 use crate::runtime::RAYON;
 
@@ -144,7 +144,7 @@ impl DataFrame {
 
                             let mut chunk_offset = 0;
                             // The values are read as slices, so a chunk that is not laid out flat
-                            // is written out first — see `arrow_bridge::as_flat`.
+                            // is written out first — see `polars_array::as_flat`.
                             for arr in ca.downcast_iter() {
                                 let arr = as_flat(arr);
                                 let vals = arr.values();

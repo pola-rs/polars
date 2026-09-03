@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
 use num_traits::AsPrimitive;
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::moment::VarState;
-use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
 use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;

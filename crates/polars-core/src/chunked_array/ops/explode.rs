@@ -1,8 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use arrow::bitmap::utils::set_bit_unchecked;
 use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_array::as_flat;
 
-use crate::chunked_array::arrow_bridge::as_flat;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 
@@ -36,7 +36,7 @@ where
     fn explode_by_offsets(&self, offsets: &[i64], options: ExplodeOptions) -> Series {
         debug_assert_eq!(self.chunks.len(), 1);
         // The values are read as one run, so a chunk that is not laid out flat is written out
-        // first — see `arrow_bridge::as_flat`.
+        // first — see `polars_array::as_flat`.
         let arr = as_flat(self.downcast_iter().next().unwrap());
 
         // make sure that we don't look beyond the sliced array

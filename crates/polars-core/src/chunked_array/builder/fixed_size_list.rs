@@ -80,7 +80,7 @@ impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
 
     fn finish(&mut self) -> ArrayChunked {
         let arr: FixedSizeListArray = self.inner.take().unwrap().into();
-        // The builder is the Arrow one, so the result crosses back — see `arrow_bridge`.
+        // The builder is the Arrow one, so the result crosses back — see `polars_array::arrow::bridge`.
         let arr = <PlFixedSizeListArray as ToArrow>::from_arrow(&arr);
         // SAFETY: physical type matches the logical
         unsafe {

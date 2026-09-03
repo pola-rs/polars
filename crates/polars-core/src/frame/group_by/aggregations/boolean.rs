@@ -1,7 +1,8 @@
 use arrow::bitmap::bitmask::BitMask;
+use polars_array::arrow::bridge::chunk_to_arrow;
+use polars_array::as_flat;
 
 use super::*;
-use crate::chunked_array::arrow_bridge::{as_flat, chunk_to_arrow};
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::from_iterator_par::{collect_bool_opt_par, collect_bool_par};
 use crate::chunked_array::{arg_max_bool, arg_min_bool};
@@ -95,7 +96,7 @@ impl BooleanChunked {
             }
         }
         let ca_self = self.rechunk();
-        // The kernels below are the Arrow ones, so the chunk crosses over — see `arrow_bridge`.
+        // The kernels below are the Arrow ones, so the chunk crosses over — see `polars_array::arrow::bridge`.
         let arr = chunk_to_arrow(ca_self.downcast_iter().next().unwrap());
         let arr = &arr;
         let no_nulls = arr.null_count() == 0;
@@ -143,7 +144,7 @@ impl BooleanChunked {
         }
 
         let ca_self = self.rechunk();
-        // The kernels below are the Arrow ones, so the chunk crosses over — see `arrow_bridge`.
+        // The kernels below are the Arrow ones, so the chunk crosses over — see `polars_array::arrow::bridge`.
         let arr = chunk_to_arrow(ca_self.downcast_iter().next().unwrap());
         let arr = &arr;
         let no_nulls = arr.null_count() == 0;
@@ -194,7 +195,7 @@ impl BooleanChunked {
         }
 
         let ca_self = self.rechunk();
-        // The kernels below are the Arrow ones, so the chunk crosses over — see `arrow_bridge`.
+        // The kernels below are the Arrow ones, so the chunk crosses over — see `polars_array::arrow::bridge`.
         let arr = chunk_to_arrow(ca_self.downcast_iter().next().unwrap());
         let arr = &arr;
         let no_nulls = arr.null_count() == 0;
@@ -245,7 +246,7 @@ impl BooleanChunked {
         }
 
         let ca_self = self.rechunk();
-        // The kernels below are the Arrow ones, so the chunk crosses over — see `arrow_bridge`.
+        // The kernels below are the Arrow ones, so the chunk crosses over — see `polars_array::arrow::bridge`.
         let arr = chunk_to_arrow(ca_self.downcast_iter().next().unwrap());
         let arr = &arr;
         let no_nulls = arr.null_count() == 0;
@@ -312,7 +313,7 @@ impl BooleanChunked {
 
         let ca = RAYON.install(|| {
             // The masks are read as one run, so a chunk that is not laid out flat is written out
-            // first — see `arrow_bridge::as_flat`.
+            // first — see `polars_array::as_flat`.
             let values = as_flat(values);
             let validity = values
                 .validity()

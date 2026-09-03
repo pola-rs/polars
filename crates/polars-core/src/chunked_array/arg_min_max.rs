@@ -1,8 +1,8 @@
+use polars_array::as_flat;
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMaxPolicy};
 
 use crate::chunked_array::ChunkedArray;
-use crate::chunked_array::arrow_bridge::as_flat;
 use crate::chunked_array::flat::FlatNumericChunkedArray;
 use crate::chunked_array::ops::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,

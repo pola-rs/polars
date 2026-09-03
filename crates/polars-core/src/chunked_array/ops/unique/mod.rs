@@ -2,10 +2,10 @@ use std::hash::Hash;
 use std::ops::Deref;
 
 use arrow::bitmap::MutableBitmap;
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::unique::BooleanUniqueKernelState;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash, TotalOrdWrap};
 
-use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -347,7 +347,7 @@ impl ChunkUnique for BooleanChunked {
 
         let mut state = BooleanUniqueKernelState::new();
 
-        // The kernel is the Arrow one, so each chunk crosses over — see `arrow_bridge`.
+        // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
         for arr in self.downcast_iter() {
             state.append(&chunk_to_arrow(arr));
 

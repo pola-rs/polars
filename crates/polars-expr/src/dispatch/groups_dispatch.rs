@@ -5,11 +5,10 @@ use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
+#[cfg(feature = "moment")]
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
-#[cfg(feature = "moment")]
-use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
-use polars_core::chunked_array::validity::PlBitmapRefExt;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;

@@ -1,9 +1,9 @@
 use arrow::array::PrimitiveArray;
 use arrow::types::NativeType;
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::bitwise::BitwiseKernel;
 
 use super::{BooleanType, ChunkBitwiseReduce, ChunkedArray, PolarsNumericType};
-use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 
 impl<T> ChunkBitwiseReduce for ChunkedArray<T>
 where
@@ -15,7 +15,7 @@ where
 
     fn and_reduce(&self) -> Option<Self::Physical> {
         self.downcast_iter()
-            // The kernel is the Arrow one, so each chunk crosses over — see `arrow_bridge`.
+            // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
             // TODO(polars-array-scalar): the reduction of a scalar chunk follows from its single
             // value and its length.
             .filter_map(|arr| BitwiseKernel::reduce_and(&chunk_to_arrow(arr)))
@@ -24,7 +24,7 @@ where
 
     fn or_reduce(&self) -> Option<Self::Physical> {
         self.downcast_iter()
-            // The kernel is the Arrow one, so each chunk crosses over — see `arrow_bridge`.
+            // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
             // TODO(polars-array-scalar): the reduction of a scalar chunk follows from its single
             // value and its length.
             .filter_map(|arr| BitwiseKernel::reduce_or(&chunk_to_arrow(arr)))
@@ -33,7 +33,7 @@ where
 
     fn xor_reduce(&self) -> Option<Self::Physical> {
         self.downcast_iter()
-            // The kernel is the Arrow one, so each chunk crosses over — see `arrow_bridge`.
+            // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
             // TODO(polars-array-scalar): the reduction of a scalar chunk follows from its single
             // value and its length.
             .filter_map(|arr| BitwiseKernel::reduce_xor(&chunk_to_arrow(arr)))
@@ -46,7 +46,7 @@ impl ChunkBitwiseReduce for ChunkedArray<BooleanType> {
 
     fn and_reduce(&self) -> Option<Self::Physical> {
         self.downcast_iter()
-            // The kernel is the Arrow one, so each chunk crosses over — see `arrow_bridge`.
+            // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
             // TODO(polars-array-scalar): the reduction of a scalar chunk follows from its single
             // value and its length.
             .filter_map(|arr| BitwiseKernel::reduce_and(&chunk_to_arrow(arr)))
@@ -55,7 +55,7 @@ impl ChunkBitwiseReduce for ChunkedArray<BooleanType> {
 
     fn or_reduce(&self) -> Option<Self::Physical> {
         self.downcast_iter()
-            // The kernel is the Arrow one, so each chunk crosses over — see `arrow_bridge`.
+            // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
             // TODO(polars-array-scalar): the reduction of a scalar chunk follows from its single
             // value and its length.
             .filter_map(|arr| BitwiseKernel::reduce_or(&chunk_to_arrow(arr)))
@@ -64,7 +64,7 @@ impl ChunkBitwiseReduce for ChunkedArray<BooleanType> {
 
     fn xor_reduce(&self) -> Option<Self::Physical> {
         self.downcast_iter()
-            // The kernel is the Arrow one, so each chunk crosses over — see `arrow_bridge`.
+            // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
             // TODO(polars-array-scalar): the reduction of a scalar chunk follows from its single
             // value and its length.
             .filter_map(|arr| BitwiseKernel::reduce_xor(&chunk_to_arrow(arr)))

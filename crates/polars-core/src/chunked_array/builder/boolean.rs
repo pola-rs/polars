@@ -20,7 +20,7 @@ impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
     }
 
     fn finish(mut self) -> BooleanChunked {
-        // The builder is the Arrow one, so the array crosses over — see `arrow_bridge`.
+        // The builder is the Arrow one, so the array crosses over — see `polars_array::arrow::bridge`.
         let arr = polars_array::arrow::import::from_arrow(&*self.array_builder.as_box());
         ChunkedArray::new_with_compute_len(Arc::new(self.field), vec![arr])
     }

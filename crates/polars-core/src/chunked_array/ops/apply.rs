@@ -2,10 +2,10 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::borrow::Cow;
 
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_array::arrow::import;
 
 use crate::chunked_array::arity::{unary_elementwise, unary_elementwise_values};
-use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 use crate::chunked_array::cast::CastOptions;
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -124,7 +124,7 @@ where
     use arrow::Either::*;
     let chunks = chunks.into_iter().map(|arr| {
         // The kernel writes over the values buffer where it can, which asks for the Arrow array
-        // that shares it — see `arrow_bridge`. A scalar chunk is written out by the crossing.
+        // that shares it — see `polars_array::arrow::bridge`. A scalar chunk is written out by the crossing.
         // TODO(polars-array-scalar): a scalar chunk holds one value standing for every element,
         // so `f` could be applied to that single value in `O(1)` instead of writing it out.
         let owned_arr = chunk_to_arrow(
@@ -627,7 +627,7 @@ impl StringChunked {
 /// Runs an Arrow kernel over every chunk of `ca`, handing the results back as chunks.
 ///
 /// The kernels of the crates around this one are written against the Arrow arrays, so each chunk
-/// crosses over and the result crosses back — see [`arrow_bridge`](crate::chunked_array::arrow_bridge).
+/// crosses over and the result crosses back — see [`bridge`](polars_array::arrow::bridge).
 /// A chunk in the [`scalar`](polars_array::broadcast) representation is written out by the
 /// crossing.
 fn apply_arrow_kernel<T: PolarsDataType>(

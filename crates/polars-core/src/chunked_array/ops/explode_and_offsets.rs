@@ -189,7 +189,7 @@ impl ChunkExplode for ListChunked {
             };
 
             // SAFETY: the indices we generate are in bounds. The kernel is the Arrow one, so
-            // the values cross over and the result crosses back — see `arrow_bridge`.
+            // the values cross over and the result crosses back — see `polars_array::arrow::bridge`.
             let chunk = unsafe {
                 import::from_arrow(&*take_unchecked(
                     &*export::to_arrow(&*values),

@@ -1,5 +1,5 @@
+use polars_array::arrow::bridge::{chunk_from_arrow, flat_to_arrow};
 use polars_core::chunked_array::ChunkedArray;
-use polars_core::chunked_array::arrow_bridge::{chunk_from_arrow, flat_to_arrow};
 use polars_core::chunked_array::ops::arity::unary_mut_values_flat;
 use polars_core::prelude::DataType;
 use polars_core::series::Series;

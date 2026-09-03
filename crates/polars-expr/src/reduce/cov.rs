@@ -1,6 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::moment::{CovState, PearsonState};
-use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
 use polars_core::prelude::*;
 use polars_core::utils::{align_chunks_binary, try_get_supertype};
 

@@ -1,10 +1,10 @@
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_array::arrow::export;
 use polars_array::{PlArray, PlFixedSizeListArray, PlListArray, PlStructArray, StaticArray};
 use polars_compute::find_validity_mismatch::find_validity_mismatch;
 use polars_utils::IdxSize;
 
 use super::ListChunked;
-use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::{ChunkedArray, FalseT, PolarsDataType, ToArrow};
 use crate::series::Series;
@@ -120,7 +120,7 @@ impl ChunkNestingUtils for ListChunked {
         let mut offset: IdxSize = 0;
         for (l, r) in slf.downcast_iter().zip(other.chunks()) {
             let start_length = idxs.len();
-            // The kernel is the Arrow one, so both chunks cross over — see `arrow_bridge`.
+            // The kernel is the Arrow one, so both chunks cross over — see `polars_array::arrow::bridge`.
             find_validity_mismatch(&*export::to_arrow(l), &*export::to_arrow(&**r), idxs);
             for idx in idxs[start_length..].iter_mut() {
                 *idx += offset;
@@ -227,7 +227,7 @@ impl ChunkNestingUtils for super::ArrayChunked {
         let mut offset: IdxSize = 0;
         for (l, r) in slf.downcast_iter().zip(other.chunks()) {
             let start_length = idxs.len();
-            // The kernel is the Arrow one, so both chunks cross over — see `arrow_bridge`.
+            // The kernel is the Arrow one, so both chunks cross over — see `polars_array::arrow::bridge`.
             find_validity_mismatch(&*export::to_arrow(l), &*export::to_arrow(&**r), idxs);
             for idx in idxs[start_length..].iter_mut() {
                 *idx += offset;
@@ -337,7 +337,7 @@ impl ChunkNestingUtils for super::StructChunked {
         let mut offset: IdxSize = 0;
         for (l, r) in slf.downcast_iter().zip(other.chunks()) {
             let start_length = idxs.len();
-            // The kernel is the Arrow one, so both chunks cross over — see `arrow_bridge`.
+            // The kernel is the Arrow one, so both chunks cross over — see `polars_array::arrow::bridge`.
             find_validity_mismatch(&*export::to_arrow(l), &*export::to_arrow(&**r), idxs);
             for idx in idxs[start_length..].iter_mut() {
                 *idx += offset;
@@ -369,7 +369,7 @@ impl<T: PolarsDataType<IsNested = FalseT>> ChunkNestingUtils for ChunkedArray<T>
         let mut offset: IdxSize = 0;
         for (l, r) in slf.downcast_iter().zip(other.chunks()) {
             let start_length = idxs.len();
-            // The kernel is the Arrow one, so both chunks cross over — see `arrow_bridge`.
+            // The kernel is the Arrow one, so both chunks cross over — see `polars_array::arrow::bridge`.
             find_validity_mismatch(&*export::to_arrow(l), &*export::to_arrow(&**r), idxs);
             for idx in idxs[start_length..].iter_mut() {
                 *idx += offset;

@@ -1,11 +1,12 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::error::Error;
 
+use polars_array::bitmap::combine_validities_and;
 use polars_array::builder::StaticArrayBuilder;
-use polars_array::{Flat, PlArray, PlBitmap, PlBitmapRef, PlUtf8ViewArrayBuilder, StaticArray};
+use polars_array::{
+    Flat, PlArray, PlBitmap, PlBitmapRef, PlUtf8ViewArrayBuilder, StaticArray, as_flat,
+};
 
-use crate::chunked_array::arrow_bridge::as_flat;
-use crate::chunked_array::validity::{PlBitmapRefExt, combine_validities_and};
 use crate::prelude::PlArrayRef;
 
 /// An Arrow array, which is what the kernels that hand a [`Series`] back produce: the [`DataType`]

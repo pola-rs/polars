@@ -1,6 +1,6 @@
 use arrow::array::{Array, PrimitiveArray};
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::min_max::MinMaxKernel;
-use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
