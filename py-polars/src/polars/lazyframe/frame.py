@@ -2395,7 +2395,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
-        engine: EngineType | None = "auto",
+        engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
@@ -2429,7 +2429,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         arrow_schema: ArrowSchemaExportable | None = None,
         mkdir: bool = False,
         lazy: bool = False,
-        engine: EngineType | None = "auto",
+        engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame | None:
@@ -2549,7 +2549,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Select the engine used to process the query (default ``"auto"``).
             Ignored when `lazy=True`: building the returned plan does not
             involve an engine; one is only chosen when the plan is collected.
-            May be set to `None` only when `lazy=True`.
             A :class:`~.Engine` instance may also be passed. Supported engine
             names are:
 
@@ -2635,10 +2634,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 mkdir=mkdir,
                 sinked_paths_callback=sinked_paths_callback,
             )
-
-        if engine is None:
-            msg = "`engine=None` is only supported when `lazy=True`"
-            raise ValueError(msg)
 
         _select_engine(engine).sink_parquet(
             self,
@@ -3126,7 +3121,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
-        engine: EngineType | None = "auto",
+        engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         _record_batch_statistics: bool = False,
         sinked_paths_callback: SinkedPathsCallback | None = None,
@@ -3155,7 +3150,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: bool = False,
-        engine: EngineType | None = "auto",
+        engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         _record_batch_statistics: bool = False,
         sinked_paths_callback: SinkedPathsCallback | None = None,
@@ -3242,7 +3237,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Select the engine used to process the query (default ``"auto"``).
             Ignored when `lazy=True`: building the returned plan does not
             involve an engine; one is only chosen when the plan is collected.
-            May be set to `None` only when `lazy=True`.
             A :class:`~.Engine` instance may also be passed. Supported engine
             names are:
 
@@ -3327,10 +3321,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 sinked_paths_callback=sinked_paths_callback,
             )
 
-        if engine is None:
-            msg = "`engine=None` is only supported when `lazy=True`"
-            raise ValueError(msg)
-
         _select_engine(engine).sink_ipc(
             self,
             path,
@@ -3412,7 +3402,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
-        engine: EngineType | None = "auto",
+        engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame: ...
 
@@ -3453,7 +3443,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: bool = False,
-        engine: EngineType | None = "auto",
+        engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame | None:
         """
@@ -3599,7 +3589,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Select the engine used to process the query (default ``"auto"``).
             Ignored when `lazy=True`: building the returned plan does not
             involve an engine; one is only chosen when the plan is collected.
-            May be set to `None` only when `lazy=True`.
             A :class:`~.Engine` instance may also be passed. Supported engine
             names are:
 
@@ -3685,10 +3674,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 mkdir=mkdir,
             )
 
-        if engine is None:
-            msg = "`engine=None` is only supported when `lazy=True`"
-            raise ValueError(msg)
-
         _select_engine(engine).sink_csv(
             self,
             path,
@@ -3754,7 +3739,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
-        engine: EngineType | None = "auto",
+        engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame: ...
 
@@ -3781,7 +3766,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: bool = False,
-        engine: EngineType | None = "auto",
+        engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame | None:
         """
@@ -3873,7 +3858,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Select the engine used to process the query (default ``"auto"``).
             Ignored when `lazy=True`: building the returned plan does not
             involve an engine; one is only chosen when the plan is collected.
-            May be set to `None` only when `lazy=True`.
             A :class:`~.Engine` instance may also be passed. Supported engine
             names are:
 
@@ -3945,10 +3929,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 mkdir=mkdir,
             )
 
-        if engine is None:
-            msg = "`engine=None` is only supported when `lazy=True`"
-            raise ValueError(msg)
-
         _select_engine(engine).sink_ndjson(
             self,
             path,
@@ -3984,7 +3964,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         chunk_size: int | None = None,
         maintain_order: bool = True,
         lazy: Literal[True],
-        engine: EngineType | None = "auto",
+        engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> pl.LazyFrame: ...
 
@@ -3996,7 +3976,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         chunk_size: int | None = None,
         maintain_order: bool = True,
         lazy: bool = False,
-        engine: EngineType | None = "auto",
+        engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> pl.LazyFrame | None:
         """
@@ -4031,7 +4011,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Select the engine used to process the query (default ``"auto"``).
             Ignored when `lazy=True`: building the returned plan does not
             involve an engine; one is only chosen when the plan is collected.
-            May be set to `None` only when `lazy=True`.
             A :class:`~.Engine` instance may also be passed. Supported engine
             names are:
 
@@ -4071,10 +4050,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 chunk_size=chunk_size,
                 maintain_order=maintain_order,
             )
-
-        if engine is None:
-            msg = "`engine=None` is only supported when `lazy=True`"
-            raise ValueError(msg)
 
         _select_engine(engine).sink_batches(
             self,

@@ -133,10 +133,9 @@ def test_select_engine_is_idempotent() -> None:
         assert _select_engine(once) is once
 
 
-@pytest.mark.parametrize("engine", ["bogus", None])
-def test_select_engine_invalid_raises(engine: Any) -> None:
+def test_select_engine_invalid_raises() -> None:
     with pytest.raises(ValueError, match="Invalid engine argument"):
-        _select_engine(engine)
+        _select_engine("bogus")  # type: ignore[arg-type]
 
 
 def test_select_engine_honors_affinity(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -310,8 +309,7 @@ def test_lazy_sink_plan_is_independent_of_the_engine(
     # we need to use a real file: `serialize` refuses to encode an
     # in-memory sink target, and comparing plan bytes is the whole point
     path = tmp_path / "out.parquet"
-    engines: list[EngineType | None] = [
-        None,
+    engines: list[EngineType] = [
         "auto",
         "in-memory",
         "streaming",
@@ -332,23 +330,6 @@ def test_lazy_sink_plan_executes(lf: pl.LazyFrame) -> None:
 def test_lazy_sink_still_rejects_an_invalid_engine_name(lf: pl.LazyFrame) -> None:
     with pytest.raises(ValueError, match="Invalid engine argument"):
         lf.sink_parquet(io.BytesIO(), lazy=True, engine="nonsense")  # type: ignore[call-overload]
-
-
-@pytest.mark.parametrize(
-    "sink",
-    [
-        lambda lf, out: lf.sink_parquet(out, engine=None),
-        lambda lf, out: lf.sink_ipc(out, engine=None),
-        lambda lf, out: lf.sink_csv(out, engine=None),
-        lambda lf, out: lf.sink_ndjson(out, engine=None),
-        lambda lf, _out: lf.sink_batches(print, engine=None),
-    ],
-)
-def test_engine_none_requires_a_lazy_sink(
-    lf: pl.LazyFrame, sink: Callable[[pl.LazyFrame, IO[bytes]], Any]
-) -> None:
-    with pytest.raises(ValueError, match=r"`engine=None`.*`lazy=True`"):
-        sink(lf, io.BytesIO())
 
 
 @pytest.mark.parametrize(
