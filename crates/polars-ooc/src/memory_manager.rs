@@ -15,10 +15,6 @@ const EXPLORE_BEYOND_BEST_SCORE_THRESHOLD: f64 = 20.0;
 // Maximum number of SpillFrame candidates we'll consider per attempt.
 const SPILL_FRAME_BATCH_SIZE: u64 = 256;
 
-const MAX_PARALLEL_SPILL_TASKS: usize = 64;
-
-const MAX_PARALLEL_PREFETCH_TASKS: usize = 64;
-
 use crate::WeakSpillContext;
 use crate::spill_context::{
     InsertReason, PrefetchScheduleResult, RegisteredSpillToken, UNEXPLORED_SCORE,
@@ -49,8 +45,13 @@ impl MemoryManager {
             contexts: RwLock::new(Vec::new()),
             finding_spill_lock: AsyncMutex::new(()),
             finding_prefetch_lock: AsyncMutex::new(()),
-            spill_semaphore: Arc::new(AsyncSemaphore::new(MAX_PARALLEL_SPILL_TASKS)),
-            prefetch_semaphore: Arc::new(AsyncSemaphore::new(MAX_PARALLEL_PREFETCH_TASKS)),
+            // Read once here: the semaphores are sized at construction, and
+            // MEMORY_MANAGER is a LazyLock, so changing these afterwards has no
+            // effect.
+            spill_semaphore: Arc::new(AsyncSemaphore::new(config().ooc_max_parallel_spill_tasks())),
+            prefetch_semaphore: Arc::new(AsyncSemaphore::new(
+                config().ooc_max_parallel_prefetch_tasks(),
+            )),
             est_spill_in_progress: AtomicU64::new(0),
             est_prefetch_in_progress: AtomicU64::new(0),
             spills_exist: AtomicBool::new(false),
