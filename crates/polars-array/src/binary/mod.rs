@@ -9,7 +9,8 @@ use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
 use crate::broadcast::{
     assert_broadcastable, broadcast_index, is_flat_buffer_len, is_flat_offsets_len,
-    is_scalar_buffer_len, is_scalar_offsets_len, is_valid_buffer_len,
+    is_scalar_buffer_len, is_scalar_offsets_len, is_valid_buffer_len, scalar_buffer_len,
+    scalar_offsets_len,
 };
 use crate::flat::Flat;
 
@@ -300,10 +301,16 @@ impl PlBinaryArray {
     /// ```
     #[inline]
     pub fn new_scalar(value: &[u8], length: usize) -> Self {
-        let offsets = Buffer::from_owner([0, value.len() as u64]);
+        // There is no element for the bytes to be shared by when there are no elements at all,
+        // which is why an empty array is the one that keeps nothing of the value it repeats: no
+        // bytes, and no range over them either.
+        if length == 0 {
+            return Self::new_empty();
+        }
+
         Self {
             values: Buffer::from(value.to_vec()),
-            offsets,
+            offsets: Buffer::from_owner([0, value.len() as u64]),
             length,
             validity: None,
         }
@@ -318,9 +325,9 @@ impl PlBinaryArray {
     pub fn new_full_null(length: usize) -> Self {
         Self {
             values: Buffer::new(),
-            offsets: Buffer::zeroed(2),
+            offsets: Buffer::zeroed(scalar_offsets_len(length)),
             length,
-            validity: Some(Bitmap::new_zeroed(1)),
+            validity: Some(Bitmap::new_zeroed(scalar_buffer_len(length))),
         }
     }
 
@@ -763,12 +770,19 @@ impl PlBinaryArray {
                 self.offsets
                     .slice_in_place_unchecked(offset..offset + length + 1)
             };
+        } else if length == 0 {
+            // An empty slice covers no range, so the one offset that holds no starts is all it
+            // keeps of the range every element of this array shares.
+            unsafe { self.offsets.slice_in_place_unchecked(0..1) };
         }
 
-        // A scalar mask is unaffected by slicing: every element reads the same bit.
+        // A scalar mask is unaffected by slicing — every element reads the same bit — with the one
+        // exception of an empty slice, which keeps no element to read it.
         if let Some(validity) = self.validity.as_mut() {
             if validity.len() == self.length {
                 unsafe { validity.slice_unchecked(offset, length) };
+            } else if length == 0 {
+                unsafe { validity.slice_unchecked(0, 0) };
             }
         }
 
@@ -826,6 +840,10 @@ impl PlBinaryArray {
         // mask that makes every element of the result null, over no bytes at all.
         if unsafe { self.is_null_unchecked(index) } {
             return Self::new_full_null(length);
+        }
+
+        if length == 0 {
+            return Self::new_empty();
         }
 
         // Nothing is copied: the values are cloned as they are, and the two offsets every element

@@ -1,7 +1,7 @@
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{PolarsResult, polars_ensure};
 
-use crate::broadcast::{is_flat_buffer_len, is_valid_buffer_len};
+use crate::broadcast::{is_flat_buffer_len, is_valid_buffer_len, scalar_buffer_len};
 
 mod iterator;
 mod reference;
@@ -122,7 +122,7 @@ impl PlBitmap {
     #[inline]
     pub fn new_scalar(value: bool, length: usize) -> Self {
         Self {
-            bitmap: Bitmap::new_with_value(value, 1),
+            bitmap: Bitmap::new_with_value(value, scalar_buffer_len(length)),
             length,
         }
     }
@@ -259,9 +259,12 @@ impl PlBitmap {
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         debug_assert!(offset + length <= self.length);
 
-        // A scalar bitmap is unaffected by slicing: every element reads the same bit.
+        // A scalar bitmap is unaffected by slicing — every element reads the same bit — with the
+        // one exception of an empty slice, which keeps no element to read it.
         if self.is_flat() {
             unsafe { self.bitmap.slice_unchecked(offset, length) };
+        } else if length == 0 {
+            unsafe { self.bitmap.slice_unchecked(0, 0) };
         }
 
         self.length = length;

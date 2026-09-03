@@ -8,7 +8,7 @@ use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
 use crate::broadcast::{
     assert_broadcastable, broadcast_index, is_flat_buffer_len, is_scalar_buffer_len,
-    is_valid_buffer_len,
+    is_valid_buffer_len, scalar_buffer_len,
 };
 use crate::flat::Flat;
 
@@ -213,8 +213,16 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// Creates a [`PlPrimitiveArray`] of `length` copies of `value`, in `O(1)` memory.
     #[inline]
     pub fn new_scalar(value: T, length: usize) -> Self {
+        // There is no element for the value to be shared by when there are no elements at all,
+        // which is why an empty array is the one that keeps nothing of the value it repeats.
+        let values = if length == 0 {
+            Buffer::new()
+        } else {
+            Buffer::from_owner([value])
+        };
+
         Self {
-            values: Buffer::from_owner([value]),
+            values,
             length,
             validity: None,
         }
@@ -224,9 +232,9 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     #[inline]
     pub fn new_full_null(length: usize) -> Self {
         Self {
-            values: Buffer::zeroed(1),
+            values: Buffer::zeroed(scalar_buffer_len(length)),
             length,
-            validity: Some(Bitmap::new_zeroed(1)),
+            validity: Some(Bitmap::new_zeroed(scalar_buffer_len(length))),
         }
     }
 
@@ -575,16 +583,21 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         debug_assert!(offset + length <= self.length);
 
-        // Scalar buffers are unaffected by slicing: every element reads the same slot.
+        // Scalar buffers are unaffected by slicing — every element reads the same slot — with the
+        // one exception of an empty slice, which keeps no element to read it.
         if self.values_are_flat() {
             unsafe {
                 self.values
                     .slice_in_place_unchecked(offset..offset + length)
             };
+        } else if length == 0 {
+            unsafe { self.values.slice_in_place_unchecked(0..0) };
         }
         if let Some(validity) = self.validity.as_mut() {
             if validity.len() == self.length {
                 unsafe { validity.slice_unchecked(offset, length) };
+            } else if length == 0 {
+                unsafe { validity.slice_unchecked(0, 0) };
             }
         }
 
@@ -646,11 +659,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         // mask that makes every element of the result null.
         let value = unsafe { self.value_unchecked(index) };
 
-        Self {
-            values: Buffer::from_owner([value]),
-            length,
-            validity: None,
-        }
+        Self::new_scalar(value, length)
     }
 
     /// Returns an equivalent array whose backing buffers all hold one slot per element.

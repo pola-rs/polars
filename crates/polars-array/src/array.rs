@@ -295,8 +295,9 @@ mod tests {
 
     use super::*;
     use crate::{
-        PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray,
+        PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBooleanArray, PlFixedSizeBinaryArray,
         PlFixedSizeListArray, PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray,
+        PlUtf8ViewArray, StaticArray,
     };
 
     fn arrays() -> Vec<Box<dyn PlArray>> {
@@ -350,6 +351,92 @@ mod tests {
                 length,
             )),
         ]
+    }
+
+    /// Asserts that `array` holds no elements and no slot in any backing buffer, which is what
+    /// makes an empty array flat as well as scalar.
+    fn assert_empty_and_flat<A: StaticArray>(array: A) {
+        assert!(array.is_empty(), "{array:?}");
+        assert!(array.is_flat(), "{array:?}");
+    }
+
+    /// The value a scalar array repeats is kept in one slot per backing buffer — except when
+    /// there is no element to read it, which is what leaves an empty array with empty buffers.
+    #[test]
+    fn an_empty_array_keeps_no_scalar_slot() {
+        let element = || Box::new(PlPrimitiveArray::from_vec(vec![1i64, 2]));
+
+        // Built empty outright.
+        assert_empty_and_flat(PlPrimitiveArray::<i64>::new_scalar(7, 0));
+        assert_empty_and_flat(PlPrimitiveArray::<i64>::new_full_null(0));
+        assert_empty_and_flat(PlBooleanArray::new_scalar(true, 0));
+        assert_empty_and_flat(PlBooleanArray::new_full_null(0));
+        assert_empty_and_flat(PlBinaryArray::new_scalar(b"ab", 0));
+        assert_empty_and_flat(PlBinaryArray::new_full_null(0));
+        assert_empty_and_flat(PlBinaryViewArray::new_scalar(b"ab", 0));
+        assert_empty_and_flat(PlBinaryViewArray::new_full_null(0));
+        assert_empty_and_flat(PlUtf8ViewArray::new_scalar("ab", 0));
+        assert_empty_and_flat(PlUtf8ViewArray::new_full_null(0));
+        assert_empty_and_flat(PlFixedSizeBinaryArray::new_scalar(b"ab", 0));
+        assert_empty_and_flat(PlFixedSizeBinaryArray::new_full_null(2, 0));
+        assert_empty_and_flat(PlListArray::new_scalar(element(), 0));
+        assert_empty_and_flat(PlListArray::new_full_null(element(), 0));
+        assert_empty_and_flat(PlFixedSizeListArray::new_scalar(element(), 0));
+        assert_empty_and_flat(PlFixedSizeListArray::new_full_null(element(), 0));
+        assert_empty_and_flat(PlStructArray::new_full_null(
+            vec![Box::new(PlPrimitiveArray::<i64>::new_empty())],
+            0,
+        ));
+        assert_empty_and_flat(PlNullArray::new_full_null(0));
+        assert!(PlBitmap::new_scalar(true, 0).is_flat());
+        // A null array has no buffer of its own; the mask it hands out is the one to check.
+        assert!(
+            PlNullArray::new_full_null(0)
+                .validity()
+                .flat_bitmap()
+                .is_some()
+        );
+
+        // Repeated no times out of an element of an array at hand.
+        assert_empty_and_flat(PlPrimitiveArray::from_vec(vec![1i64, 2]).new_from_index(0, 0));
+        assert_empty_and_flat(PlBooleanArray::from_vec(vec![true, false]).new_from_index(0, 0));
+        assert_empty_and_flat(
+            PlBinaryArray::from_values_iter([b"ab".as_slice()]).new_from_index(0, 0),
+        );
+        assert_empty_and_flat(
+            PlBinaryViewArray::from_values_iter([b"a value that is too long to inline".as_slice()])
+                .new_from_index(0, 0),
+        );
+        assert_empty_and_flat(
+            PlFixedSizeBinaryArray::from_vec(vec![1u8, 2], 2).new_from_index(0, 0),
+        );
+        assert_empty_and_flat(PlListArray::new_scalar(element(), 1).new_from_index(0, 0));
+        assert_empty_and_flat(PlFixedSizeListArray::new_scalar(element(), 1).new_from_index(0, 0));
+        assert_empty_and_flat(
+            PlStructArray::new_full_null(
+                vec![Box::new(PlPrimitiveArray::<i64>::new_full_null(1))],
+                1,
+            )
+            .new_from_index(0, 0),
+        );
+
+        // Sliced down to nothing, which leaves no element to read the slot either.
+        assert_empty_and_flat(PlPrimitiveArray::<i64>::new_scalar(7, 5).sliced(0, 0));
+        assert_empty_and_flat(PlPrimitiveArray::<i64>::new_full_null(5).sliced(0, 0));
+        assert_empty_and_flat(PlBooleanArray::new_full_null(5).sliced(0, 0));
+        assert_empty_and_flat(PlBinaryArray::new_full_null(5).sliced(0, 0));
+        assert_empty_and_flat(PlBinaryViewArray::new_full_null(5).sliced(0, 0));
+        assert_empty_and_flat(PlFixedSizeBinaryArray::new_full_null(2, 5).sliced(0, 0));
+        assert_empty_and_flat(PlListArray::new_full_null(element(), 5).sliced(0, 0));
+        assert_empty_and_flat(PlFixedSizeListArray::new_full_null(element(), 5).sliced(0, 0));
+        assert_empty_and_flat(
+            PlStructArray::new_full_null(
+                vec![Box::new(PlPrimitiveArray::<i64>::new_full_null(5))],
+                5,
+            )
+            .sliced(0, 0),
+        );
+        assert!(PlBitmap::new_scalar(true, 5).sliced(0, 0).is_flat());
     }
 
     #[test]

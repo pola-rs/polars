@@ -9,7 +9,7 @@ use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
 use crate::broadcast::{
     assert_broadcastable, broadcast_index, is_flat_buffer_len, is_scalar_buffer_len,
-    is_valid_buffer_len,
+    is_valid_buffer_len, scalar_buffer_len,
 };
 use crate::flat::Flat;
 
@@ -291,6 +291,12 @@ impl PlBinaryViewArray {
     /// assert_eq!(arr.value(999_999_999), b"a value too long to inline");
     /// ```
     pub fn new_scalar(value: &[u8], length: usize) -> Self {
+        // There is no element for the value to be shared by when there are no elements at all,
+        // which is why an empty array is the one that keeps nothing of the value it repeats.
+        if length == 0 {
+            return Self::new_empty();
+        }
+
         // The one value is all the array ever holds, so its bytes are copied into a buffer that
         // fits them exactly: a scalar array costs what the value costs, and no block more.
         let (view, buffers) = copy_only_value(value);
@@ -309,10 +315,10 @@ impl PlBinaryViewArray {
         Self {
             // A zeroed view holds no bytes at all, which is a view like any other: the value of a
             // null element is undetermined, so it need not be written out.
-            views: Buffer::zeroed(1),
+            views: Buffer::zeroed(scalar_buffer_len(length)),
             buffers: Buffer::new(),
             length,
-            validity: Some(Bitmap::new_zeroed(1)),
+            validity: Some(Bitmap::new_zeroed(scalar_buffer_len(length))),
         }
     }
 
@@ -736,13 +742,18 @@ impl PlBinaryViewArray {
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         debug_assert!(offset + length <= self.length);
 
-        // Scalar buffers are unaffected by slicing: every element reads the same slot.
+        // Scalar buffers are unaffected by slicing — every element reads the same slot — with the
+        // one exception of an empty slice, which keeps no element to read it.
         if self.views_are_flat() {
             unsafe { self.views.slice_in_place_unchecked(offset..offset + length) };
+        } else if length == 0 {
+            unsafe { self.views.slice_in_place_unchecked(0..0) };
         }
         if let Some(validity) = self.validity.as_mut() {
             if validity.len() == self.length {
                 unsafe { validity.slice_unchecked(offset, length) };
+            } else if length == 0 {
+                unsafe { validity.slice_unchecked(0, 0) };
             }
         }
 
@@ -798,6 +809,10 @@ impl PlBinaryViewArray {
 
         if unsafe { self.is_null_unchecked(index) } {
             return Self::new_full_null(length);
+        }
+
+        if length == 0 {
+            return Self::new_empty();
         }
 
         let view = unsafe { self.view_unchecked(index) };

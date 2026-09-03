@@ -52,7 +52,11 @@ impl PlNullArray {
     /// The validity mask, which masks out every element.
     #[inline]
     pub fn validity(&self) -> PlBitmapRef<'static> {
-        return unsafe { PlBitmapRef::new_broadcast_unchecked(&SCALAR, self.length) };
+        // An empty array has no element to share the bit, so its mask is empty as well: that is
+        // the mask a scalar mask of no bits holds. See [`crate::broadcast`].
+        let bitmap = if self.length == 0 { &EMPTY } else { &SCALAR };
+        return unsafe { PlBitmapRef::new_broadcast_unchecked(bitmap, self.length) };
+        static EMPTY: LazyLock<Bitmap> = LazyLock::new(Bitmap::new);
         static SCALAR: LazyLock<Bitmap> = LazyLock::new(|| Bitmap::new_zeroed(1));
     }
 

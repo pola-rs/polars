@@ -6,6 +6,9 @@ use super::*;
 fn boolean_from_bits(bits: Bitmap, length: usize) -> PlBooleanArray {
     if bits.len() == length {
         PlBooleanArray::new(bits, length, None)
+    } else if length == 0 {
+        // There is no element to share the single bit, so an empty array keeps none of it.
+        PlBooleanArray::new_empty()
     } else {
         PlBooleanArray::new_broadcast(bits, length, None)
     }

@@ -49,10 +49,34 @@ pub const fn is_flat_buffer_len(buffer_len: usize, length: usize) -> bool {
 /// A scalar buffer holds the single value every element shares, so [`broadcast_index`] maps every
 /// element onto slot `0`. This is what the broadcasting constructors — `try_new_broadcast` and its
 /// companions — require of every backing buffer. An array of no elements reads no slot at all, so
-/// it additionally admits an empty buffer. See the [module docs](self).
+/// it additionally admits an empty buffer, which is the form this crate builds it in: see
+/// [`scalar_buffer_len`]. See the [module docs](self).
 #[inline]
 pub const fn is_scalar_buffer_len(buffer_len: usize, length: usize) -> bool {
     buffer_len == 1 || (length == 0 && buffer_len == 0)
+}
+
+/// The number of slots a scalar backing buffer holds for an array of `length` elements.
+///
+/// This is the one slot every element shares, or none at all when there is no element to share
+/// it: the scalar buffer of an empty array is itself empty, which makes that array flat as well
+/// as scalar — the coincidence an array of one element also has. Every constructor of this crate
+/// builds the scalar representation to this length, so that an array of no elements is readable
+/// as flat rather than as neither. See the [module docs](self).
+#[inline]
+pub const fn scalar_buffer_len(length: usize) -> usize {
+    (length > 0) as usize
+}
+
+/// The number of offsets a scalar list or binary array of `length` elements holds.
+///
+/// The offsets hold one more slot than the starts, so this is [`scalar_buffer_len`] plus the end
+/// of the last element: two offsets cutting out the one range every element shares, or — for an
+/// array of no elements, which covers no range — the single offset that holds no starts at all.
+/// See the [module docs](self).
+#[inline]
+pub const fn scalar_offsets_len(length: usize) -> usize {
+    scalar_buffer_len(length) + 1
 }
 
 /// Whether a backing buffer of length `buffer_len` is valid for an array of length `length`.

@@ -4,7 +4,9 @@ use polars_error::{PolarsResult, polars_ensure};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
-use crate::broadcast::{is_flat_buffer_len, is_scalar_buffer_len, is_valid_buffer_len};
+use crate::broadcast::{
+    is_flat_buffer_len, is_scalar_buffer_len, is_valid_buffer_len, scalar_buffer_len,
+};
 use crate::flat::Flat;
 
 mod builder;
@@ -203,7 +205,11 @@ impl PlStructArray {
     /// Panics if any field does not have exactly `length` elements.
     #[inline]
     pub fn new_full_null(fields: Vec<Box<dyn PlArray>>, length: usize) -> Self {
-        Self::new_broadcast(fields, length, Some(Bitmap::new_zeroed(1)))
+        Self::new_broadcast(
+            fields,
+            length,
+            Some(Bitmap::new_zeroed(scalar_buffer_len(length))),
+        )
     }
 
     /// The number of elements in this array.
@@ -422,10 +428,13 @@ impl PlStructArray {
             unsafe { field.slice_unchecked(offset, length) };
         }
 
-        // A scalar mask is unaffected by slicing: every element reads the same bit.
+        // A scalar mask is unaffected by slicing — every element reads the same bit — with the one
+        // exception of an empty slice, which keeps no element to read it.
         if let Some(validity) = self.validity.as_mut() {
             if validity.len() == self.length {
                 unsafe { validity.slice_unchecked(offset, length) };
+            } else if length == 0 {
+                unsafe { validity.slice_unchecked(0, 0) };
             }
         }
 
@@ -478,7 +487,7 @@ impl PlStructArray {
     pub unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Self {
         debug_assert!(index < self.length);
 
-        let validity = unsafe { self.is_null_unchecked(index) }.then(|| Bitmap::new_zeroed(1));
+        let is_null = unsafe { self.is_null_unchecked(index) };
 
         // The field values of a null row are undetermined, so they are repeated as they are found:
         // it is the mask that makes every row of the result null.
@@ -486,9 +495,12 @@ impl PlStructArray {
             .fields
             .iter()
             .map(|field| unsafe {
-                if validity.is_some() {
+                if is_null {
+                    // The row is masked off in the field it is repeated out of, which holds this
+                    // array's elements rather than the result's — and there is at least one of
+                    // them, since `index` is in bounds — so the mask is a single bit either way.
                     field
-                        .with_validity_broadcast(validity.clone())
+                        .with_validity_broadcast(Some(Bitmap::new_zeroed(1)))
                         .new_from_index_unchecked(index, length)
                 } else {
                     field.new_from_index_unchecked(index, length)
@@ -496,8 +508,10 @@ impl PlStructArray {
             })
             .collect();
 
+        let validity = is_null.then(|| Bitmap::new_zeroed(scalar_buffer_len(length)));
+
         // SAFETY: every field repeated one element `length` times, so it holds `length` elements,
-        // and the mask is a single bit and therefore scalar.
+        // and the mask holds the slots a scalar mask of that length holds.
         unsafe { Self::new_broadcast_unchecked(fields, length, validity) }
     }
 

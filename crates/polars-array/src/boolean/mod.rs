@@ -4,7 +4,9 @@ use polars_error::{PolarsResult, polars_ensure};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
-use crate::broadcast::{is_flat_buffer_len, is_scalar_buffer_len, is_valid_buffer_len};
+use crate::broadcast::{
+    is_flat_buffer_len, is_scalar_buffer_len, is_valid_buffer_len, scalar_buffer_len,
+};
 use crate::flat::Flat;
 
 mod builder;
@@ -218,7 +220,7 @@ impl PlBooleanArray {
     #[inline]
     pub fn new_scalar(value: bool, length: usize) -> Self {
         Self {
-            values: Bitmap::new_with_value(value, 1),
+            values: Bitmap::new_with_value(value, scalar_buffer_len(length)),
             length,
             validity: None,
         }
@@ -228,9 +230,9 @@ impl PlBooleanArray {
     #[inline]
     pub fn new_full_null(length: usize) -> Self {
         Self {
-            values: Bitmap::new_zeroed(1),
+            values: Bitmap::new_zeroed(scalar_buffer_len(length)),
             length,
-            validity: Some(Bitmap::new_zeroed(1)),
+            validity: Some(Bitmap::new_zeroed(scalar_buffer_len(length))),
         }
     }
 
@@ -570,13 +572,18 @@ impl PlBooleanArray {
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         debug_assert!(offset + length <= self.length);
 
-        // Scalar bitmaps are unaffected by slicing: every element reads the same bit.
+        // Scalar bitmaps are unaffected by slicing — every element reads the same bit — with the
+        // one exception of an empty slice, which keeps no element to read it.
         if self.values_are_flat() {
             unsafe { self.values.slice_unchecked(offset, length) };
+        } else if length == 0 {
+            unsafe { self.values.slice_unchecked(0, 0) };
         }
         if let Some(validity) = self.validity.as_mut() {
             if validity.len() == self.length {
                 unsafe { validity.slice_unchecked(offset, length) };
+            } else if length == 0 {
+                unsafe { validity.slice_unchecked(0, 0) };
             }
         }
 
@@ -638,11 +645,7 @@ impl PlBooleanArray {
         // mask that makes every element of the result null.
         let value = unsafe { self.value_unchecked(index) };
 
-        Self {
-            values: Bitmap::new_with_value(value, 1),
-            length,
-            validity: None,
-        }
+        Self::new_scalar(value, length)
     }
 
     /// Returns an equivalent array whose backing bitmaps all hold one bit per element.

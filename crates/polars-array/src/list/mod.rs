@@ -9,7 +9,8 @@ use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
 use crate::broadcast::{
     assert_broadcastable, broadcast_index, is_flat_buffer_len, is_flat_offsets_len,
-    is_scalar_buffer_len, is_scalar_offsets_len, is_valid_buffer_len,
+    is_scalar_buffer_len, is_scalar_offsets_len, is_valid_buffer_len, scalar_buffer_len,
+    scalar_offsets_len,
 };
 use crate::concatenate::concatenate_repeated;
 use crate::flat::Flat;
@@ -261,10 +262,15 @@ impl PlListArray {
     /// element of a list array is [`Self::new_from_index`].
     #[inline]
     pub fn new_scalar(element: Box<dyn PlArray>, length: usize) -> Self {
-        let offsets = Buffer::from_owner([0, element.len() as u64]);
+        // There is no element for the list to be shared by when there are no elements at all,
+        // which is why an empty array is the one that covers no range of the values it repeats.
+        if length == 0 {
+            return Self::new_empty(element);
+        }
+
         Self {
+            offsets: Buffer::from_owner([0, element.len() as u64]),
             values: element,
-            offsets,
             length,
             validity: None,
         }
@@ -279,9 +285,9 @@ impl PlListArray {
     pub fn new_full_null(values: Box<dyn PlArray>, length: usize) -> Self {
         Self {
             values,
-            offsets: Buffer::zeroed(2),
+            offsets: Buffer::zeroed(scalar_offsets_len(length)),
             length,
-            validity: Some(Bitmap::new_zeroed(1)),
+            validity: Some(Bitmap::new_zeroed(scalar_buffer_len(length))),
         }
     }
 
@@ -720,12 +726,19 @@ impl PlListArray {
                 self.offsets
                     .slice_in_place_unchecked(offset..offset + length + 1)
             };
+        } else if length == 0 {
+            // An empty slice covers no range, so the one offset that holds no starts is all it
+            // keeps of the range every element of this array shares.
+            unsafe { self.offsets.slice_in_place_unchecked(0..1) };
         }
 
-        // A scalar mask is unaffected by slicing: every element reads the same bit.
+        // A scalar mask is unaffected by slicing — every element reads the same bit — with the one
+        // exception of an empty slice, which keeps no element to read it.
         if let Some(validity) = self.validity.as_mut() {
             if validity.len() == self.length {
                 unsafe { validity.slice_unchecked(offset, length) };
+            } else if length == 0 {
+                unsafe { validity.slice_unchecked(0, 0) };
             }
         }
 
@@ -781,6 +794,10 @@ impl PlListArray {
 
         if unsafe { self.is_null_unchecked(index) } {
             return Self::new_full_null(self.values.clone(), length);
+        }
+
+        if length == 0 {
+            return Self::new_empty(self.values.clone());
         }
 
         // Nothing is repeated: the values array is cloned as it is, and the two offsets every

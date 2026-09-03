@@ -9,7 +9,7 @@ use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
 use crate::broadcast::{
     assert_broadcastable, is_flat_buffer_len, is_flat_fixed_size_values_len, is_scalar_buffer_len,
-    is_scalar_fixed_size_values_len, is_valid_buffer_len,
+    is_scalar_fixed_size_values_len, is_valid_buffer_len, scalar_buffer_len,
 };
 use crate::flat::Flat;
 
@@ -297,7 +297,7 @@ impl PlFixedSizeBinaryArray {
             },
             width,
             length,
-            validity: Some(Bitmap::new_zeroed(1)),
+            validity: Some(Bitmap::new_zeroed(scalar_buffer_len(length))),
         }
     }
 
@@ -709,10 +709,13 @@ impl PlFixedSizeBinaryArray {
             unsafe { self.values.slice_in_place_unchecked(0..0) };
         }
 
-        // A scalar mask is unaffected by slicing: every element reads the same bit.
+        // A scalar mask is unaffected by slicing — every element reads the same bit — with the one
+        // exception of an empty slice, which keeps no element to read it.
         if let Some(validity) = self.validity.as_mut() {
             if validity.len() == self.length {
                 unsafe { validity.slice_unchecked(offset, length) };
+            } else if length == 0 {
+                unsafe { validity.slice_unchecked(0, 0) };
             }
         }
 
