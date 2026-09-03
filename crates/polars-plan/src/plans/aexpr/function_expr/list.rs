@@ -119,7 +119,7 @@ impl IRListFunction {
             Sort(_) => mapper.ensure_is_list()?.with_same_dtype(),
             Length => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_sets")]
-            SetOperation(_) => mapper.ensure_is_list()?.with_same_dtype(),
+            SetOperation(_) => mapper.ensure_is_list()?.map_to_list_supertype(),
             Join(_) => mapper.try_map_dtype(|dtype| {
                 let DataType::List(inner_dtype) = dtype else {
                     polars_bail!(
