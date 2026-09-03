@@ -152,10 +152,10 @@ def test_eager_engine_ignores_affinity(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POLARS_ENGINE_AFFINITY", "streaming")
     plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
 
-    # internal eager operations resolve no affinity; Rust picks the engine
-    assert _eager_engine().name == "auto"
+    # internal eager operations always run in-memory
+    assert _eager_engine().name == "in-memory"
     with pl.Config(engine_affinity=pl.StreamingEngine()):
-        assert _eager_engine().name == "auto"
+        assert _eager_engine().name == "in-memory"
 
 
 def test_engine_is_abstract() -> None:
