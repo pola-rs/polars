@@ -344,6 +344,10 @@ jobs:
         with:
           command: build
           target: ${{ matrix.target }}
+          # `maturin-action` only forwards environment variables matching a
+          # fixed prefix allowlist into the manylinux/musllinux container, so
+          # `POLARS_BUILD_SHA` has to be passed through explicitly.
+          docker-options: -e POLARS_BUILD_SHA
           args: >
             --profile ${{ inputs.dry-run == true && 'dev' || 'dist-release' }}
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
