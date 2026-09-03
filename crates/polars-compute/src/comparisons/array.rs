@@ -36,6 +36,10 @@ where
 impl TotalEqKernel for FixedSizeListArray {
     type Scalar = Box<dyn Array>;
 
+    fn validity_mask(&self) -> Option<&Bitmap> {
+        self.validity()
+    }
+
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
         // Nested comparison always done with eq_missing, propagating doesn't
         // make any sense.

@@ -1,8 +1,12 @@
-use arrow::array::Array;
 use arrow::bitmap::{self, Bitmap};
 
-pub trait TotalEqKernel: Sized + Array {
+pub trait TotalEqKernel: Sized {
     type Scalar: ?Sized;
+
+    // The validity mask, with one bit per element. This is what `Array::validity` hands out for
+    // an Arrow array; the arrays of `polars-array` implement these kernels in their flat
+    // representation, whose mask is flat in turn.
+    fn validity_mask(&self) -> Option<&Bitmap>;
 
     // These kernels ignore validity entirely (results for nulls are unspecified
     // but initialized).
@@ -15,7 +19,7 @@ pub trait TotalEqKernel: Sized + Array {
     // to anything else.
     fn tot_eq_missing_kernel(&self, other: &Self) -> Bitmap {
         let q = self.tot_eq_kernel(other);
-        match (self.validity(), other.validity()) {
+        match (self.validity_mask(), other.validity_mask()) {
             (None, None) => q,
             (None, Some(r)) => &q & r,
             (Some(l), None) => &q & l,
@@ -25,7 +29,7 @@ pub trait TotalEqKernel: Sized + Array {
 
     fn tot_ne_missing_kernel(&self, other: &Self) -> Bitmap {
         let q = self.tot_ne_kernel(other);
-        match (self.validity(), other.validity()) {
+        match (self.validity_mask(), other.validity_mask()) {
             (None, None) => q,
             (None, Some(r)) => &q | &!r,
             (Some(l), None) => &q | &!l,
@@ -34,7 +38,7 @@ pub trait TotalEqKernel: Sized + Array {
     }
     fn tot_eq_missing_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
         let q = self.tot_eq_kernel_broadcast(other);
-        if let Some(valid) = self.validity() {
+        if let Some(valid) = self.validity_mask() {
             bitmap::binary(&q, valid, |q, v| q & v)
         } else {
             q
@@ -43,7 +47,7 @@ pub trait TotalEqKernel: Sized + Array {
 
     fn tot_ne_missing_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
         let q = self.tot_ne_kernel_broadcast(other);
-        if let Some(valid) = self.validity() {
+        if let Some(valid) = self.validity_mask() {
             bitmap::binary(&q, valid, |q, v| q | !v)
         } else {
             q
@@ -52,7 +56,7 @@ pub trait TotalEqKernel: Sized + Array {
 }
 
 // Low-level comparison kernel.
-pub trait TotalOrdKernel: Sized + Array {
+pub trait TotalOrdKernel: Sized {
     type Scalar: ?Sized;
 
     // These kernels ignore validity entirely (results for nulls are unspecified
@@ -80,6 +84,7 @@ mod dictionary;
 mod dyn_array;
 mod list;
 mod null;
+mod pl_array;
 mod scalar;
 mod struct_;
 mod utf8;

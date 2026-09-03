@@ -1,44 +1,50 @@
 use std::any::TypeId;
 
-use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::BitmapBuilder;
 use arrow::types::NativeType;
+use polars_array::{Flat, PlPrimitiveArray};
+
+/// The array a kernel reads: flat, so its every buffer holds one slot per element.
+pub(crate) type PArr<T> = Flat<PlPrimitiveArray<T>>;
+/// The array a kernel writes, which is flat unless it is a single value repeated.
+pub(crate) type POut<T> = PlPrimitiveArray<T>;
 
 // Low-level comparison kernel.
-pub trait ArithmeticKernel: Sized + Array {
-    type Scalar;
+pub trait ArithmeticKernel: Sized {
+    /// The element type of the array this operates on, which a broadcasting kernel takes one of.
+    type Scalar: NativeType;
     type TrueDivT: NativeType;
 
-    fn wrapping_abs(self) -> Self;
-    fn wrapping_neg(self) -> Self;
-    fn wrapping_add(self, rhs: Self) -> Self;
-    fn wrapping_sub(self, rhs: Self) -> Self;
-    fn wrapping_mul(self, rhs: Self) -> Self;
-    fn wrapping_floor_div(self, rhs: Self) -> Self;
-    fn wrapping_trunc_div(self, rhs: Self) -> Self;
-    fn wrapping_mod(self, rhs: Self) -> Self;
+    fn wrapping_abs(self) -> POut<Self::Scalar>;
+    fn wrapping_neg(self) -> POut<Self::Scalar>;
+    fn wrapping_add(self, rhs: Self) -> POut<Self::Scalar>;
+    fn wrapping_sub(self, rhs: Self) -> POut<Self::Scalar>;
+    fn wrapping_mul(self, rhs: Self) -> POut<Self::Scalar>;
+    fn wrapping_floor_div(self, rhs: Self) -> POut<Self::Scalar>;
+    fn wrapping_trunc_div(self, rhs: Self) -> POut<Self::Scalar>;
+    fn wrapping_mod(self, rhs: Self) -> POut<Self::Scalar>;
 
-    fn wrapping_add_scalar(self, rhs: Self::Scalar) -> Self;
-    fn wrapping_sub_scalar(self, rhs: Self::Scalar) -> Self;
-    fn wrapping_sub_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self;
-    fn wrapping_mul_scalar(self, rhs: Self::Scalar) -> Self;
-    fn wrapping_floor_div_scalar(self, rhs: Self::Scalar) -> Self;
-    fn wrapping_floor_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self;
-    fn wrapping_trunc_div_scalar(self, rhs: Self::Scalar) -> Self;
-    fn wrapping_trunc_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self;
-    fn wrapping_mod_scalar(self, rhs: Self::Scalar) -> Self;
-    fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self;
+    fn wrapping_add_scalar(self, rhs: Self::Scalar) -> POut<Self::Scalar>;
+    fn wrapping_sub_scalar(self, rhs: Self::Scalar) -> POut<Self::Scalar>;
+    fn wrapping_sub_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<Self::Scalar>;
+    fn wrapping_mul_scalar(self, rhs: Self::Scalar) -> POut<Self::Scalar>;
+    fn wrapping_floor_div_scalar(self, rhs: Self::Scalar) -> POut<Self::Scalar>;
+    fn wrapping_floor_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<Self::Scalar>;
+    fn wrapping_trunc_div_scalar(self, rhs: Self::Scalar) -> POut<Self::Scalar>;
+    fn wrapping_trunc_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<Self::Scalar>;
+    fn wrapping_mod_scalar(self, rhs: Self::Scalar) -> POut<Self::Scalar>;
+    fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<Self::Scalar>;
 
-    fn checked_mul_scalar(self, rhs: Self::Scalar) -> Self;
+    fn checked_mul_scalar(self, rhs: Self::Scalar) -> POut<Self::Scalar>;
 
-    fn true_div(self, rhs: Self) -> PrimitiveArray<Self::TrueDivT>;
-    fn true_div_scalar(self, rhs: Self::Scalar) -> PrimitiveArray<Self::TrueDivT>;
-    fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> PrimitiveArray<Self::TrueDivT>;
+    fn true_div(self, rhs: Self) -> POut<Self::TrueDivT>;
+    fn true_div_scalar(self, rhs: Self::Scalar) -> POut<Self::TrueDivT>;
+    fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<Self::TrueDivT>;
 
     // TODO: remove these.
     // These are flooring division for integer types, true division for floating point types.
-    fn legacy_div(self, rhs: Self) -> Self {
-        if TypeId::of::<Self>() == TypeId::of::<PrimitiveArray<Self::TrueDivT>>() {
+    fn legacy_div(self, rhs: Self) -> POut<Self::Scalar> {
+        if TypeId::of::<Self::Scalar>() == TypeId::of::<Self::TrueDivT>() {
             let ret = self.true_div(rhs);
             unsafe {
                 let cast_ret = std::mem::transmute_copy(&ret);
@@ -49,8 +55,8 @@ pub trait ArithmeticKernel: Sized + Array {
             self.wrapping_floor_div(rhs)
         }
     }
-    fn legacy_div_scalar(self, rhs: Self::Scalar) -> Self {
-        if TypeId::of::<Self>() == TypeId::of::<PrimitiveArray<Self::TrueDivT>>() {
+    fn legacy_div_scalar(self, rhs: Self::Scalar) -> POut<Self::Scalar> {
+        if TypeId::of::<Self::Scalar>() == TypeId::of::<Self::TrueDivT>() {
             let ret = self.true_div_scalar(rhs);
             unsafe {
                 let cast_ret = std::mem::transmute_copy(&ret);
@@ -62,8 +68,8 @@ pub trait ArithmeticKernel: Sized + Array {
         }
     }
 
-    fn legacy_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self {
-        if TypeId::of::<Self>() == TypeId::of::<PrimitiveArray<Self::TrueDivT>>() {
+    fn legacy_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<Self::Scalar> {
+        if TypeId::of::<Self::Scalar>() == TypeId::of::<Self::TrueDivT>() {
             let ret = ArithmeticKernel::true_div_scalar_lhs(lhs, rhs);
             unsafe {
                 let cast_ret = std::mem::transmute_copy(&ret);
@@ -82,7 +88,6 @@ pub trait ArithmeticKernel: Sized + Array {
 pub trait HasPrimitiveArithmeticKernel: NativeType + PrimitiveArithmeticKernelImpl {}
 impl<T: NativeType + PrimitiveArithmeticKernelImpl> HasPrimitiveArithmeticKernel for T {}
 
-use PrimitiveArray as PArr;
 use num_traits::{CheckedMul, WrappingMul};
 use polars_utils::vec::PushUnchecked;
 
@@ -90,63 +95,63 @@ use polars_utils::vec::PushUnchecked;
 pub trait PrimitiveArithmeticKernelImpl: NativeType {
     type TrueDivT: NativeType;
 
-    fn prim_wrapping_abs(lhs: PArr<Self>) -> PArr<Self>;
-    fn prim_wrapping_neg(lhs: PArr<Self>) -> PArr<Self>;
-    fn prim_wrapping_add(lhs: PArr<Self>, rhs: PArr<Self>) -> PArr<Self>;
-    fn prim_wrapping_sub(lhs: PArr<Self>, rhs: PArr<Self>) -> PArr<Self>;
-    fn prim_wrapping_mul(lhs: PArr<Self>, rhs: PArr<Self>) -> PArr<Self>;
-    fn prim_wrapping_floor_div(lhs: PArr<Self>, rhs: PArr<Self>) -> PArr<Self>;
-    fn prim_wrapping_trunc_div(lhs: PArr<Self>, rhs: PArr<Self>) -> PArr<Self>;
-    fn prim_wrapping_mod(lhs: PArr<Self>, rhs: PArr<Self>) -> PArr<Self>;
+    fn prim_wrapping_abs(lhs: PArr<Self>) -> POut<Self>;
+    fn prim_wrapping_neg(lhs: PArr<Self>) -> POut<Self>;
+    fn prim_wrapping_add(lhs: PArr<Self>, rhs: PArr<Self>) -> POut<Self>;
+    fn prim_wrapping_sub(lhs: PArr<Self>, rhs: PArr<Self>) -> POut<Self>;
+    fn prim_wrapping_mul(lhs: PArr<Self>, rhs: PArr<Self>) -> POut<Self>;
+    fn prim_wrapping_floor_div(lhs: PArr<Self>, rhs: PArr<Self>) -> POut<Self>;
+    fn prim_wrapping_trunc_div(lhs: PArr<Self>, rhs: PArr<Self>) -> POut<Self>;
+    fn prim_wrapping_mod(lhs: PArr<Self>, rhs: PArr<Self>) -> POut<Self>;
 
-    fn prim_wrapping_add_scalar(lhs: PArr<Self>, rhs: Self) -> PArr<Self>;
-    fn prim_wrapping_sub_scalar(lhs: PArr<Self>, rhs: Self) -> PArr<Self>;
-    fn prim_wrapping_sub_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> PArr<Self>;
-    fn prim_wrapping_mul_scalar(lhs: PArr<Self>, rhs: Self) -> PArr<Self>;
-    fn prim_wrapping_floor_div_scalar(lhs: PArr<Self>, rhs: Self) -> PArr<Self>;
-    fn prim_wrapping_floor_div_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> PArr<Self>;
-    fn prim_wrapping_trunc_div_scalar(lhs: PArr<Self>, rhs: Self) -> PArr<Self>;
-    fn prim_wrapping_trunc_div_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> PArr<Self>;
-    fn prim_wrapping_mod_scalar(lhs: PArr<Self>, rhs: Self) -> PArr<Self>;
-    fn prim_wrapping_mod_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> PArr<Self>;
+    fn prim_wrapping_add_scalar(lhs: PArr<Self>, rhs: Self) -> POut<Self>;
+    fn prim_wrapping_sub_scalar(lhs: PArr<Self>, rhs: Self) -> POut<Self>;
+    fn prim_wrapping_sub_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> POut<Self>;
+    fn prim_wrapping_mul_scalar(lhs: PArr<Self>, rhs: Self) -> POut<Self>;
+    fn prim_wrapping_floor_div_scalar(lhs: PArr<Self>, rhs: Self) -> POut<Self>;
+    fn prim_wrapping_floor_div_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> POut<Self>;
+    fn prim_wrapping_trunc_div_scalar(lhs: PArr<Self>, rhs: Self) -> POut<Self>;
+    fn prim_wrapping_trunc_div_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> POut<Self>;
+    fn prim_wrapping_mod_scalar(lhs: PArr<Self>, rhs: Self) -> POut<Self>;
+    fn prim_wrapping_mod_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> POut<Self>;
 
-    fn prim_checked_mul_scalar(lhs: PArr<Self>, rhs: Self) -> PArr<Self>;
+    fn prim_checked_mul_scalar(lhs: PArr<Self>, rhs: Self) -> POut<Self>;
 
-    fn prim_true_div(lhs: PArr<Self>, rhs: PArr<Self>) -> PArr<Self::TrueDivT>;
-    fn prim_true_div_scalar(lhs: PArr<Self>, rhs: Self) -> PArr<Self::TrueDivT>;
-    fn prim_true_div_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> PArr<Self::TrueDivT>;
+    fn prim_true_div(lhs: PArr<Self>, rhs: PArr<Self>) -> POut<Self::TrueDivT>;
+    fn prim_true_div_scalar(lhs: PArr<Self>, rhs: Self) -> POut<Self::TrueDivT>;
+    fn prim_true_div_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> POut<Self::TrueDivT>;
 }
 
 #[rustfmt::skip]
-impl<T: HasPrimitiveArithmeticKernel> ArithmeticKernel for PrimitiveArray<T> {
+impl<T: HasPrimitiveArithmeticKernel> ArithmeticKernel for PArr<T> {
     type Scalar = T;
     type TrueDivT = T::TrueDivT;
 
-    fn wrapping_abs(self) -> Self { T::prim_wrapping_abs(self) }
-    fn wrapping_neg(self) -> Self { T::prim_wrapping_neg(self) }
-    fn wrapping_add(self, rhs: Self) -> Self { T::prim_wrapping_add(self, rhs) }
-    fn wrapping_sub(self, rhs: Self) -> Self { T::prim_wrapping_sub(self, rhs) }
-    fn wrapping_mul(self, rhs: Self) -> Self { T::prim_wrapping_mul(self, rhs) }
-    fn wrapping_floor_div(self, rhs: Self) -> Self { T::prim_wrapping_floor_div(self, rhs) }
-    fn wrapping_trunc_div(self, rhs: Self) -> Self { T::prim_wrapping_trunc_div(self, rhs) }
-    fn wrapping_mod(self, rhs: Self) -> Self { T::prim_wrapping_mod(self, rhs) }
+    fn wrapping_abs(self) -> POut<T> { T::prim_wrapping_abs(self) }
+    fn wrapping_neg(self) -> POut<T> { T::prim_wrapping_neg(self) }
+    fn wrapping_add(self, rhs: Self) -> POut<T> { T::prim_wrapping_add(self, rhs) }
+    fn wrapping_sub(self, rhs: Self) -> POut<T> { T::prim_wrapping_sub(self, rhs) }
+    fn wrapping_mul(self, rhs: Self) -> POut<T> { T::prim_wrapping_mul(self, rhs) }
+    fn wrapping_floor_div(self, rhs: Self) -> POut<T> { T::prim_wrapping_floor_div(self, rhs) }
+    fn wrapping_trunc_div(self, rhs: Self) -> POut<T> { T::prim_wrapping_trunc_div(self, rhs) }
+    fn wrapping_mod(self, rhs: Self) -> POut<T> { T::prim_wrapping_mod(self, rhs) }
 
-    fn wrapping_add_scalar(self, rhs: Self::Scalar) -> Self { T::prim_wrapping_add_scalar(self, rhs) }
-    fn wrapping_sub_scalar(self, rhs: Self::Scalar) -> Self { T::prim_wrapping_sub_scalar(self, rhs) }
-    fn wrapping_sub_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self { T::prim_wrapping_sub_scalar_lhs(lhs, rhs) }
-    fn wrapping_mul_scalar(self, rhs: Self::Scalar) -> Self { T::prim_wrapping_mul_scalar(self, rhs) }
-    fn wrapping_floor_div_scalar(self, rhs: Self::Scalar) -> Self { T::prim_wrapping_floor_div_scalar(self, rhs) }
-    fn wrapping_floor_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self { T::prim_wrapping_floor_div_scalar_lhs(lhs, rhs) }
-    fn wrapping_trunc_div_scalar(self, rhs: Self::Scalar) -> Self { T::prim_wrapping_trunc_div_scalar(self, rhs) }
-    fn wrapping_trunc_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self { T::prim_wrapping_trunc_div_scalar_lhs(lhs, rhs) }
-    fn wrapping_mod_scalar(self, rhs: Self::Scalar) -> Self { T::prim_wrapping_mod_scalar(self, rhs) }
-    fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self { T::prim_wrapping_mod_scalar_lhs(lhs, rhs) }
+    fn wrapping_add_scalar(self, rhs: Self::Scalar) -> POut<T> { T::prim_wrapping_add_scalar(self, rhs) }
+    fn wrapping_sub_scalar(self, rhs: Self::Scalar) -> POut<T> { T::prim_wrapping_sub_scalar(self, rhs) }
+    fn wrapping_sub_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<T> { T::prim_wrapping_sub_scalar_lhs(lhs, rhs) }
+    fn wrapping_mul_scalar(self, rhs: Self::Scalar) -> POut<T> { T::prim_wrapping_mul_scalar(self, rhs) }
+    fn wrapping_floor_div_scalar(self, rhs: Self::Scalar) -> POut<T> { T::prim_wrapping_floor_div_scalar(self, rhs) }
+    fn wrapping_floor_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<T> { T::prim_wrapping_floor_div_scalar_lhs(lhs, rhs) }
+    fn wrapping_trunc_div_scalar(self, rhs: Self::Scalar) -> POut<T> { T::prim_wrapping_trunc_div_scalar(self, rhs) }
+    fn wrapping_trunc_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<T> { T::prim_wrapping_trunc_div_scalar_lhs(lhs, rhs) }
+    fn wrapping_mod_scalar(self, rhs: Self::Scalar) -> POut<T> { T::prim_wrapping_mod_scalar(self, rhs) }
+    fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<T> { T::prim_wrapping_mod_scalar_lhs(lhs, rhs) }
 
-    fn checked_mul_scalar(self, rhs: Self::Scalar) -> Self { T::prim_checked_mul_scalar(self, rhs) }
+    fn checked_mul_scalar(self, rhs: Self::Scalar) -> POut<T> { T::prim_checked_mul_scalar(self, rhs) }
 
-    fn true_div(self, rhs: Self) -> PrimitiveArray<Self::TrueDivT> { T::prim_true_div(self, rhs) }
-    fn true_div_scalar(self, rhs: Self::Scalar) -> PrimitiveArray<Self::TrueDivT> { T::prim_true_div_scalar(self, rhs) }
-    fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> PrimitiveArray<Self::TrueDivT> { T::prim_true_div_scalar_lhs(lhs, rhs) }
+    fn true_div(self, rhs: Self) -> POut<Self::TrueDivT> { T::prim_true_div(self, rhs) }
+    fn true_div_scalar(self, rhs: Self::Scalar) -> POut<Self::TrueDivT> { T::prim_true_div_scalar(self, rhs) }
+    fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<Self::TrueDivT> { T::prim_true_div_scalar_lhs(lhs, rhs) }
 }
 
 mod float;
@@ -155,9 +160,9 @@ mod signed;
 mod unsigned;
 
 fn prim_checked_mul_scalar<I: NativeType + CheckedMul + WrappingMul>(
-    array: &PrimitiveArray<I>,
+    array: &PArr<I>,
     factor: I,
-) -> PrimitiveArray<I> {
+) -> POut<I> {
     let values = array.values();
     let mut out = Vec::with_capacity(array.len());
     let mut i = 0;
@@ -169,11 +174,7 @@ fn prim_checked_mul_scalar<I: NativeType + CheckedMul + WrappingMul>(
     }
 
     if out.len() == array.len() {
-        return PrimitiveArray::<I>::new(
-            I::PRIMITIVE.into(),
-            out.into(),
-            array.validity().cloned(),
-        );
+        return POut::<I>::new(out.into(), array.len(), array.validity().cloned());
     }
 
     let mut validity = BitmapBuilder::with_capacity(array.len());
@@ -196,5 +197,5 @@ fn prim_checked_mul_scalar<I: NativeType + CheckedMul + WrappingMul>(
         Some(arr_validity) => arrow::bitmap::and(&validity, arr_validity),
     };
 
-    PrimitiveArray::<I>::new(I::PRIMITIVE.into(), out.into(), Some(validity))
+    POut::<I>::new(out.into(), array.len(), Some(validity))
 }

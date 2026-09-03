@@ -3209,6 +3209,7 @@ dependencies = [
  "itoa",
  "num-bigint",
  "num-traits",
+ "polars-array",
  "polars-arrow",
  "polars-buffer",
  "polars-error",

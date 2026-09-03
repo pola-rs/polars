@@ -148,6 +148,54 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
         ZipValidity::new_with_validity(self.values_iter(), self.validity())
     }
 
+    /// The backing values buffer as a mutable slice, if no other array shares it.
+    ///
+    /// This is what lets a kernel write its result over its argument. It hands out `None` when
+    /// the buffer is shared, which leaves the caller to allocate one of its own.
+    #[inline]
+    pub fn values_mut(&mut self) -> Option<&mut [T]> {
+        self.0.values.get_mut_slice()
+    }
+
+    /// Takes the validity mask out, leaving every element valid.
+    ///
+    /// This is what keeps a kernel from combining the same masks twice: the masks come out before
+    /// the values are handed over, and their combination goes onto the result.
+    #[inline]
+    pub fn take_validity(&mut self) -> Option<Bitmap> {
+        self.0.validity.take()
+    }
+
+    /// Reinterprets the values buffer as one of `U`, keeping the validity mask.
+    ///
+    /// This is what a kernel that writes its result over its argument crosses back through, `U`
+    /// being the element type it produced. It is `O(1)`.
+    ///
+    /// # Panics
+    /// Panics unless `T` and `U` have the same size and alignment.
+    pub fn transmute<U: NativeType>(self) -> Flat<PlPrimitiveArray<U>> {
+        let (values, validity) = self.into_inner();
+        let values = values
+            .try_transmute::<U>()
+            .expect("values buffer cannot be reinterpreted");
+        let length = values.len();
+
+        // SAFETY: the buffers held one slot per element, and reinterpreting the values buffer as
+        // a type of the same size leaves it one slot per element too.
+        unsafe { Flat::new(PlPrimitiveArray::new_unchecked(values, length, validity)) }
+    }
+
+    /// Fills every element with `value`, leaving the validity mask as it is.
+    ///
+    /// The result is the single value repeated, so this is `O(1)` — it is not laid out flat, which
+    /// is why it comes back as a [`PlPrimitiveArray`].
+    pub fn fill_with(self, value: T) -> PlPrimitiveArray<T> {
+        let length = self.len();
+        let (_, validity) = self.into_inner();
+
+        PlPrimitiveArray::new_scalar(value, length).with_validity(validity)
+    }
+
     /// Consumes this array into its backing buffers, which both hold one slot per element.
     ///
     /// The length is not part of the result: it is the length of the values buffer.
@@ -185,6 +233,63 @@ impl<T: NativeType> PartialEq<Flat<PlPrimitiveArray<T>>> for PlPrimitiveArray<T>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn values_are_written_over_when_the_buffer_is_not_shared() {
+        let mut flat = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]).to_flat();
+        flat.values_mut().expect("the buffer is not shared")[0] = 7;
+        assert_eq!(flat.as_slice(), [7, 2, 3]);
+
+        // A second reference to the buffer leaves the caller to allocate one of its own.
+        let shared = flat.clone();
+        assert!(flat.values_mut().is_none());
+        drop(shared);
+    }
+
+    #[test]
+    fn the_validity_mask_comes_out_flat() {
+        let mut flat: Flat<PlPrimitiveArray<i32>> = [Some(1), None, Some(3)]
+            .into_iter()
+            .collect::<PlPrimitiveArray<i32>>()
+            .to_flat();
+
+        let validity = flat.take_validity().expect("the array has a null");
+        assert_eq!(validity.len(), 3);
+        assert_eq!(flat.null_count(), 0);
+        assert!(flat.take_validity().is_none());
+    }
+
+    #[test]
+    fn values_are_reinterpreted_in_place() {
+        let flat = PlPrimitiveArray::from_vec(vec![1u32, 2, 3]).to_flat();
+        let values = flat.values().as_ptr();
+
+        let transmuted = flat.transmute::<i32>();
+
+        assert_eq!(transmuted.as_slice(), [1i32, 2, 3]);
+        assert_eq!(
+            transmuted.values().as_ptr().cast::<u32>(),
+            values,
+            "the values buffer must be reinterpreted, not copied",
+        );
+    }
+
+    #[test]
+    fn filling_repeats_the_single_value() {
+        let flat: Flat<PlPrimitiveArray<i32>> = [Some(1), None, Some(3)]
+            .into_iter()
+            .collect::<PlPrimitiveArray<i32>>()
+            .to_flat();
+
+        let filled = flat.fill_with(7);
+
+        // The value is not written out, and the mask it was filled under is left alone.
+        assert!(filled.values_are_scalar());
+        assert_eq!(filled.len(), 3);
+        assert_eq!(filled.get(0), Some(7));
+        assert_eq!(filled.get(1), None);
+        assert_eq!(filled.get(2), Some(7));
+    }
 
     #[test]
     fn to_flat_materializes_scalars() {

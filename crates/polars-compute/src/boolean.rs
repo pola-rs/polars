@@ -1,6 +1,7 @@
 use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::{binary_fold, quaternary, ternary};
 use arrow::datatypes::ArrowDataType;
+use polars_array::{Flat, PlBooleanArray};
 
 /// Returns whether any of the non-null values in the array are `true`.
 ///
@@ -45,7 +46,7 @@ pub fn not(array: &BooleanArray) -> BooleanArray {
 }
 
 /// Logical 'or' operation on two arrays with [Kleene logic](https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics)..
-pub fn or(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
+pub fn or(lhs: &Flat<PlBooleanArray>, rhs: &Flat<PlBooleanArray>) -> PlBooleanArray {
     assert_eq!(
         lhs.len(),
         rhs.len(),
@@ -108,11 +109,11 @@ pub fn or(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
         },
         (None, None) => None,
     };
-    BooleanArray::new(ArrowDataType::Boolean, lhs_values | rhs_values, validity)
+    PlBooleanArray::new(lhs_values | rhs_values, lhs.len(), validity)
 }
 
 /// Logical 'and' operation on two arrays with [Kleene logic](https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics).
-pub fn and(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
+pub fn and(lhs: &Flat<PlBooleanArray>, rhs: &Flat<PlBooleanArray>) -> PlBooleanArray {
     assert_eq!(
         lhs.len(),
         rhs.len(),
@@ -174,5 +175,5 @@ pub fn and(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
         },
         (None, None) => None,
     };
-    BooleanArray::new(ArrowDataType::Boolean, lhs_values & rhs_values, validity)
+    PlBooleanArray::new(lhs_values & rhs_values, lhs.len(), validity)
 }

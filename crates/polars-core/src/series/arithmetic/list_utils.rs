@@ -2,7 +2,8 @@
 use arrow::array::PrimitiveArray;
 use arrow::compute::utils::combine_validities_and;
 use num_traits::Zero;
-use polars_array::arrow::bridge::chunk_to_arrow;
+use polars_array::arrow::bridge::{ToArrow, chunk_to_arrow};
+use polars_array::{Flat, PlPrimitiveArray};
 use polars_compute::arithmetic::ArithmeticKernel;
 use polars_compute::comparisons::TotalEqKernel;
 use polars_error::PolarsResult;
@@ -93,21 +94,20 @@ impl NumericOp {
             let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
             let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
 
-            // The kernels are the Arrow ones, so the chunks cross over and the result crosses
-            // back — see `polars_array::arrow::bridge`.
-            let lhs = chunk_to_arrow(lhs.downcast_get(0).unwrap());
-            let rhs = chunk_to_arrow(rhs.downcast_get(0).unwrap());
+            // TODO(polars-array-scalar): the kernels want one slot per element, so a chunk
+            // repeating a single value is written out rather than operated on once.
+            let lhs = StaticArray::to_flat(lhs.downcast_get(0).unwrap());
+            let rhs = StaticArray::to_flat(rhs.downcast_get(0).unwrap());
 
-            let out = self.apply_arithmetic_kernel::<$T>(lhs, rhs);
-            <<$T as PolarsDataType>::Array as ToArrow>::from_arrow(&out).into_boxed()
+            self.apply_arithmetic_kernel::<$T>(lhs, rhs).into_boxed()
         })
     }
 
     fn apply_arithmetic_kernel<T: PolarsNumericType>(
         &self,
-        lhs: PrimitiveArray<T::Native>,
-        rhs: PrimitiveArray<T::Native>,
-    ) -> PrimitiveArray<T::Native> {
+        lhs: Flat<PlPrimitiveArray<T::Native>>,
+        rhs: Flat<PlPrimitiveArray<T::Native>>,
+    ) -> PlPrimitiveArray<T::Native> {
         match self {
             Self::Add => ArithmeticKernel::wrapping_add(lhs, rhs),
             Self::Sub => ArithmeticKernel::wrapping_sub(lhs, rhs),
@@ -127,6 +127,28 @@ impl NumericOp {
         r: T::Native,
         swapped: bool,
     ) -> PrimitiveArray<T::Native> {
+        // TODO(polars-array-scalar): the caller holds the leaf as an Arrow array, so a chunk
+        // repeating a single value has been written out before it gets here. The values cross
+        // over to the kernel and the result crosses back — see `polars_array::arrow::bridge`.
+        let arr_lhs = {
+            let imported = <T::Array as ToArrow>::from_arrow(&arr_lhs);
+            // Dropping the Arrow array leaves the import the only reference to the values, which
+            // is what lets the kernel write its result over them.
+            drop(arr_lhs);
+            // SAFETY: an import of an Arrow array is flat, an Arrow array being one slot per
+            // element.
+            unsafe { Flat::new(imported) }
+        };
+
+        chunk_to_arrow(&self.apply_array_to_scalar_kernel::<T>(arr_lhs, r, swapped))
+    }
+
+    fn apply_array_to_scalar_kernel<T: PolarsNumericType>(
+        &self,
+        arr_lhs: Flat<PlPrimitiveArray<T::Native>>,
+        r: T::Native,
+        swapped: bool,
+    ) -> PlPrimitiveArray<T::Native> {
         match self {
             Self::Add => ArithmeticKernel::wrapping_add_scalar(arr_lhs, r),
             Self::Sub => {

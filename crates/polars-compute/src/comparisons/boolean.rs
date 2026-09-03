@@ -6,6 +6,10 @@ use super::{TotalEqKernel, TotalOrdKernel};
 impl TotalEqKernel for BooleanArray {
     type Scalar = bool;
 
+    fn validity_mask(&self) -> Option<&Bitmap> {
+        self.validity()
+    }
+
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
         bitmap::binary(self.values(), other.values(), |l, r| !(l ^ r))
     }

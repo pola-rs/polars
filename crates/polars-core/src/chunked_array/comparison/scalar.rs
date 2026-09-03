@@ -82,7 +82,7 @@ impl<T, Rhs> ChunkCompareEq<Rhs> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     Rhs: ToPrimitive,
-    Flat<T::Array>: PlTotalOrdKernel<Scalar = T::Native> + PlTotalEqKernel<Scalar = T::Native>,
+    Flat<T::Array>: TotalOrdKernel<Scalar = T::Native> + TotalEqKernel<Scalar = T::Native>,
 {
     type Item = BooleanChunked;
 
@@ -135,7 +135,7 @@ impl<T, Rhs> ChunkCompareIneq<Rhs> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     Rhs: ToPrimitive,
-    Flat<T::Array>: PlTotalOrdKernel<Scalar = T::Native> + PlTotalEqKernel<Scalar = T::Native>,
+    Flat<T::Array>: TotalOrdKernel<Scalar = T::Native> + TotalEqKernel<Scalar = T::Native>,
 {
     type Item = BooleanChunked;
 

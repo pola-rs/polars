@@ -7,6 +7,10 @@ use super::{TotalEqKernel, TotalOrdKernel};
 impl<O: Offset> TotalEqKernel for Utf8Array<O> {
     type Scalar = str;
 
+    fn validity_mask(&self) -> Option<&Bitmap> {
+        self.validity()
+    }
+
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
         self.to_binary().tot_eq_kernel(&other.to_binary())
     }

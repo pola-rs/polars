@@ -1,4 +1,3 @@
-pub mod kernel;
 mod scalar;
 
 #[cfg(feature = "dtype-categorical")]
@@ -9,8 +8,8 @@ use std::ops::{BitAnd, BitOr, Not};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use num_traits::{NumCast, ToPrimitive};
 use polars_array::bitmap::invert;
+use polars_compute::comparisons::{TotalEqKernel, TotalOrdKernel};
 
-use crate::chunked_array::comparison::kernel::{PlTotalEqKernel, PlTotalOrdKernel};
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::series::implementations::null::NullChunked;
@@ -18,7 +17,7 @@ use crate::series::implementations::null::NullChunked;
 impl<T> ChunkCompareEq<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    Flat<T::Array>: PlTotalOrdKernel<Scalar = T::Native> + PlTotalEqKernel<Scalar = T::Native>,
+    Flat<T::Array>: TotalOrdKernel<Scalar = T::Native> + TotalEqKernel<Scalar = T::Native>,
 {
     type Item = BooleanChunked;
 
@@ -142,7 +141,7 @@ where
 impl<T> ChunkCompareIneq<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    Flat<T::Array>: PlTotalOrdKernel<Scalar = T::Native> + PlTotalEqKernel<Scalar = T::Native>,
+    Flat<T::Array>: TotalOrdKernel<Scalar = T::Native> + TotalEqKernel<Scalar = T::Native>,
 {
     type Item = BooleanChunked;
 
@@ -781,8 +780,8 @@ impl ChunkCompareEq<&ListChunked> for ListChunked {
         _list_comparison_helper(
             self,
             rhs,
-            PlTotalEqKernel::tot_eq_kernel,
-            PlTotalEqKernel::tot_eq_kernel_broadcast,
+            TotalEqKernel::tot_eq_kernel,
+            TotalEqKernel::tot_eq_kernel_broadcast,
             false,
             false,
         )
@@ -792,8 +791,8 @@ impl ChunkCompareEq<&ListChunked> for ListChunked {
         _list_comparison_helper(
             self,
             rhs,
-            PlTotalEqKernel::tot_eq_missing_kernel,
-            PlTotalEqKernel::tot_eq_missing_kernel_broadcast,
+            TotalEqKernel::tot_eq_missing_kernel,
+            TotalEqKernel::tot_eq_missing_kernel_broadcast,
             true,
             false,
         )
@@ -803,8 +802,8 @@ impl ChunkCompareEq<&ListChunked> for ListChunked {
         _list_comparison_helper(
             self,
             rhs,
-            PlTotalEqKernel::tot_ne_kernel,
-            PlTotalEqKernel::tot_ne_kernel_broadcast,
+            TotalEqKernel::tot_ne_kernel,
+            TotalEqKernel::tot_ne_kernel_broadcast,
             false,
             true,
         )
@@ -814,8 +813,8 @@ impl ChunkCompareEq<&ListChunked> for ListChunked {
         _list_comparison_helper(
             self,
             rhs,
-            PlTotalEqKernel::tot_ne_missing_kernel,
-            PlTotalEqKernel::tot_ne_missing_kernel_broadcast,
+            TotalEqKernel::tot_ne_missing_kernel,
+            TotalEqKernel::tot_ne_missing_kernel_broadcast,
             true,
             true,
         )
@@ -995,8 +994,8 @@ impl ChunkCompareEq<&ArrayChunked> for ArrayChunked {
         _array_comparison_helper(
             self,
             rhs,
-            PlTotalEqKernel::tot_eq_kernel,
-            PlTotalEqKernel::tot_eq_kernel_broadcast,
+            TotalEqKernel::tot_eq_kernel,
+            TotalEqKernel::tot_eq_kernel_broadcast,
             false,
             false,
         )
@@ -1006,8 +1005,8 @@ impl ChunkCompareEq<&ArrayChunked> for ArrayChunked {
         _array_comparison_helper(
             self,
             rhs,
-            PlTotalEqKernel::tot_eq_missing_kernel,
-            PlTotalEqKernel::tot_eq_missing_kernel_broadcast,
+            TotalEqKernel::tot_eq_missing_kernel,
+            TotalEqKernel::tot_eq_missing_kernel_broadcast,
             true,
             false,
         )
@@ -1017,8 +1016,8 @@ impl ChunkCompareEq<&ArrayChunked> for ArrayChunked {
         _array_comparison_helper(
             self,
             rhs,
-            PlTotalEqKernel::tot_ne_kernel,
-            PlTotalEqKernel::tot_ne_kernel_broadcast,
+            TotalEqKernel::tot_ne_kernel,
+            TotalEqKernel::tot_ne_kernel_broadcast,
             false,
             true,
         )
@@ -1028,8 +1027,8 @@ impl ChunkCompareEq<&ArrayChunked> for ArrayChunked {
         _array_comparison_helper(
             self,
             rhs,
-            PlTotalEqKernel::tot_ne_missing_kernel,
-            PlTotalEqKernel::tot_ne_missing_kernel_broadcast,
+            TotalEqKernel::tot_ne_missing_kernel,
+            TotalEqKernel::tot_ne_missing_kernel_broadcast,
             true,
             true,
         )

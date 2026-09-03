@@ -6,6 +6,10 @@ use super::{TotalEqKernel, TotalOrdKernel};
 impl TotalEqKernel for NullArray {
     type Scalar = Box<dyn Array>;
 
+    fn validity_mask(&self) -> Option<&Bitmap> {
+        self.validity()
+    }
+
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
         assert!(self.len() == other.len());
         Bitmap::new_with_value(true, self.len())

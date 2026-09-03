@@ -1,8 +1,7 @@
 use std::ops::{BitAnd, BitOr, BitXor};
 
-use arrow::compute::bitwise;
 use arrow::compute::utils::combine_validities_and;
-use polars_array::arrow::bridge::{chunk_from_arrow, flat_to_arrow};
+use polars_compute::arity::{prim_binary_values, prim_unary_values};
 
 use super::*;
 use crate::chunked_array::arity::apply_binary_kernel_broadcast;
@@ -18,11 +17,9 @@ where
         apply_binary_kernel_broadcast(
             self,
             rhs,
-            // The kernels are the Arrow ones, so the chunks cross over and the results cross
-            // back — see `polars_array::arrow::bridge`.
-            |l, r| chunk_from_arrow(&bitwise::and(&flat_to_arrow(l), &flat_to_arrow(r))),
-            |l, r| chunk_from_arrow(&bitwise::and_scalar(&flat_to_arrow(r), &l)),
-            |l, r| chunk_from_arrow(&bitwise::and_scalar(&flat_to_arrow(l), &r)),
+            |l, r| prim_binary_values(l.clone(), r.clone(), |a, b| a & b),
+            |l, r| prim_unary_values(r.clone(), |b| l & b),
+            |l, r| prim_unary_values(l.clone(), |a| a & r),
         )
     }
 }
@@ -38,11 +35,9 @@ where
         apply_binary_kernel_broadcast(
             self,
             rhs,
-            // The kernels are the Arrow ones, so the chunks cross over and the results cross
-            // back — see `polars_array::arrow::bridge`.
-            |l, r| chunk_from_arrow(&bitwise::or(&flat_to_arrow(l), &flat_to_arrow(r))),
-            |l, r| chunk_from_arrow(&bitwise::or_scalar(&flat_to_arrow(r), &l)),
-            |l, r| chunk_from_arrow(&bitwise::or_scalar(&flat_to_arrow(l), &r)),
+            |l, r| prim_binary_values(l.clone(), r.clone(), |a, b| a | b),
+            |l, r| prim_unary_values(r.clone(), |b| l | b),
+            |l, r| prim_unary_values(l.clone(), |a| a | r),
         )
     }
 }
@@ -58,11 +53,9 @@ where
         apply_binary_kernel_broadcast(
             self,
             rhs,
-            // The kernels are the Arrow ones, so the chunks cross over and the results cross
-            // back — see `polars_array::arrow::bridge`.
-            |l, r| chunk_from_arrow(&bitwise::xor(&flat_to_arrow(l), &flat_to_arrow(r))),
-            |l, r| chunk_from_arrow(&bitwise::xor_scalar(&flat_to_arrow(r), &l)),
-            |l, r| chunk_from_arrow(&bitwise::xor_scalar(&flat_to_arrow(l), &r)),
+            |l, r| prim_binary_values(l.clone(), r.clone(), |a, b| a ^ b),
+            |l, r| prim_unary_values(r.clone(), |b| l ^ b),
+            |l, r| prim_unary_values(l.clone(), |a| a ^ r),
         )
     }
 }
@@ -96,17 +89,7 @@ impl BitOr for &BooleanChunked {
             _ => {},
         }
 
-        arity::binary_kernel_flat(
-            self,
-            rhs,
-            |l, r| {
-                chunk_from_arrow(&polars_compute::boolean::or(
-                    &flat_to_arrow(l),
-                    &flat_to_arrow(r),
-                ))
-            },
-            self.name().clone(),
-        )
+        arity::binary_kernel_flat(self, rhs, polars_compute::boolean::or, self.name().clone())
     }
 }
 
@@ -183,17 +166,7 @@ impl BitAnd for &BooleanChunked {
             _ => {},
         }
 
-        arity::binary_kernel_flat(
-            self,
-            rhs,
-            |l, r| {
-                chunk_from_arrow(&polars_compute::boolean::and(
-                    &flat_to_arrow(l),
-                    &flat_to_arrow(r),
-                ))
-            },
-            self.name().clone(),
-        )
+        arity::binary_kernel_flat(self, rhs, polars_compute::boolean::and, self.name().clone())
     }
 }
 

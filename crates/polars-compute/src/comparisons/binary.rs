@@ -8,6 +8,10 @@ use super::{TotalEqKernel, TotalOrdKernel};
 impl<O: Offset> TotalEqKernel for BinaryArray<O> {
     type Scalar = [u8];
 
+    fn validity_mask(&self) -> Option<&Bitmap> {
+        self.validity()
+    }
+
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
         assert!(self.len() == other.len());
         self.values_iter()
@@ -71,6 +75,10 @@ impl<O: Offset> TotalOrdKernel for BinaryArray<O> {
 
 impl TotalEqKernel for FixedSizeBinaryArray {
     type Scalar = [u8];
+
+    fn validity_mask(&self) -> Option<&Bitmap> {
+        self.validity()
+    }
 
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
         assert!(self.len() == other.len());
