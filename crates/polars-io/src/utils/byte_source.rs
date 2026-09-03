@@ -352,12 +352,15 @@ impl ByteSource for FileByteSource {
         let size = self.size;
         let o_direct = self.o_direct_align;
 
-        let _permit = self.permits.acquire().await.unwrap();
+        let permit = self.permits.clone().acquire_owned().await.unwrap();
 
         self.io_metrics()
             .record_io_read(len as u64, async move {
                 ASYNC
-                    .spawn_blocking(move || read_at(&file, o_direct, offset, len, size))
+                    .spawn_blocking(move || {
+                        let _permit = permit;
+                        read_at(&file, o_direct, offset, len, size)
+                    })
                     .await
             })
             .await
