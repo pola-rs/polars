@@ -15,8 +15,6 @@ pub struct Flat<T>(pub(crate) T);
 impl<T: PlArray> Flat<T> {
     /// Slices this array in place to `length` elements starting at `offset`.
     ///
-    /// This function is `O(1)`; the result is flat, like every slice of a flat array.
-    ///
     /// # Panics
     /// Panics if `offset + length > self.len()`.
     pub fn slice(&mut self, offset: usize, length: usize) {
@@ -25,8 +23,6 @@ impl<T: PlArray> Flat<T> {
 
     /// Slices this array in place to `length` elements starting at `offset`.
     ///
-    /// This function is `O(1)`; the result is flat, like every slice of a flat array.
-    ///
     /// # Safety
     /// `offset + length` must not exceed `self.len()`.
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
@@ -34,8 +30,6 @@ impl<T: PlArray> Flat<T> {
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// This function is `O(1)`.
     ///
     /// # Panics
     /// Panics if `offset + length > self.len()`.
@@ -47,8 +41,6 @@ impl<T: PlArray> Flat<T> {
 
     /// Returns this array sliced to `length` elements starting at `offset`.
     ///
-    /// This function is `O(1)`.
-    ///
     /// # Safety
     /// `offset + length` must not exceed `self.len()`.
     #[must_use]
@@ -58,10 +50,6 @@ impl<T: PlArray> Flat<T> {
     }
 
     /// Replaces the validity mask with a flat one.
-    ///
-    /// There is no broadcasting counterpart to this:
-    /// [`PlArray::set_validity_broadcast`] admits the single bit every element shares, which
-    /// would leave this array no longer flat.
     ///
     /// # Panics
     /// Panics if `validity` does not have exactly [`len`](PlArray::len) bits.
@@ -91,25 +79,14 @@ impl<T: PlArray> Flat<T> {
 impl<T> Flat<T> {
     /// Wraps `array` as a flat one.
     ///
-    /// This is how a type outside this crate builds the wrapper: the array it holds stays private,
-    /// so [`Flat::as_array`] and [`Flat::into_array`] are the only ways back out and the invariant
-    /// cannot be broken by writing over the field. Reach for it when the array is laid out flat by
-    /// construction, or to lift a wrapper of an array of this crate — the arrays here reach it
-    /// through their own `to_flat`, and `Flat<ChunkedArray<T>>` through this.
-    ///
     /// # Safety
-    /// Every backing buffer of `array` must hold one slot per element. What that means for a type
-    /// that is not an array of this crate is that type's business: for a `ChunkedArray` it is that
-    /// every chunk is flat.
+    /// Every backing buffer of `array` must hold one slot per element.
     #[inline(always)]
     pub const unsafe fn new(array: T) -> Self {
         Self(array)
     }
 
     /// Borrows `array` as a flat one.
-    ///
-    /// This is [`Flat::new`] without taking ownership, which the wrapper being
-    /// `repr(transparent)` is what makes possible.
     ///
     /// # Safety
     /// As [`Flat::new`].
@@ -128,9 +105,6 @@ impl<T> Flat<T> {
 
     /// Borrows `array` as a flat one, mutably.
     ///
-    /// This is [`Flat::new_ref`] with a mutable borrow, for a caller that means to change the
-    /// array through the wrapper — writing over the values of a flat primitive array, say.
-    ///
     /// # Safety
     /// As [`Flat::new`], and the array must still be flat when the borrow ends.
     #[inline(always)]
@@ -142,10 +116,6 @@ impl<T> Flat<T> {
 
     /// The array itself, mutably.
     ///
-    /// The wrapper deliberately does not deref mutably — mutating the array behind it could
-    /// invalidate the invariant — so this is the escape hatch for the mutations that keep it, such
-    /// as writing over the values of a flat primitive array without touching its length.
-    ///
     /// # Safety
     /// The array must still be flat when the borrow ends: every backing buffer must hold one slot
     /// per element.
@@ -155,8 +125,6 @@ impl<T> Flat<T> {
     }
 
     /// Unwraps the array, giving up the guarantee that it is flat.
-    ///
-    /// This is not the `into_inner` of the concrete wrappers, which hands out the backing buffers.
     #[inline(always)]
     pub fn into_array(self) -> T {
         self.0
@@ -220,11 +188,6 @@ impl<T: std::fmt::Debug> std::fmt::Debug for Flat<T> {
 }
 
 /// Borrows `array` as a flat one, writing out its buffers only if it is not laid out flat.
-///
-/// This is what a caller that needs a [`Flat`] array — to hand it to a kernel, or to read its
-/// backing buffers — reaches for when it does not know the representation. It is
-/// [`StaticArray::as_flat`] that answers with a borrow or nothing, leaving the writing out to the
-/// caller.
 #[inline]
 pub fn as_flat<A: StaticArray>(array: &A) -> Cow<'_, Flat<A>> {
     match array.as_flat() {

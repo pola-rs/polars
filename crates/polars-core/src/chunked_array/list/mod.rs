@@ -118,11 +118,15 @@ impl ListChunked {
             return Cow::Borrowed(self);
         };
 
-        let ca = if physical_repr.chunks().len() == 1 && self.chunks().len() > 1 {
-            // Physical repr got rechunked, rechunk self as well.
-            self.rechunk()
+        let (ca, physical_repr) = if physical_repr.chunks().len() == 1 && self.chunks().len() > 1 {
+            // Physical repr got rechunked, rechunk self as well. Rechunking a list array keeps
+            // only the values its offsets reach, so the values are converted again out of the
+            // rechunked array rather than reused: the two have to agree on how many there are.
+            let ca = self.rechunk();
+            let physical_repr = ca.get_inner().to_physical_repr().into_owned();
+            (ca, physical_repr)
         } else {
-            Cow::Borrowed(self)
+            (Cow::Borrowed(self), physical_repr)
         };
 
         assert_eq!(ca.chunks().len(), physical_repr.chunks().len());

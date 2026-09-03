@@ -4,11 +4,6 @@ use polars_utils::slice_broadcast_iter::SliceBroadcastIter;
 
 /// Iterates the slots a backing buffer holds for an array of `length` elements, in order.
 ///
-/// This is [`broadcast_index`] hoisted out of the loop: which of the two representations the
-/// buffer is in is settled once, here, rather than at every element, so that a flat buffer is
-/// walked as the slice it already is — which vectorizes — and a scalar one yields the single
-/// value it holds `length` times over, without materializing it.
-///
 /// # Panics
 /// Panics unless `buffer` is [flat](is_flat_buffer_len) or [scalar](is_scalar_buffer_len) for
 /// `length`, which every array of this crate upholds of every buffer it is backed by.
@@ -23,79 +18,42 @@ pub(crate) fn broadcast_slice<T>(buffer: &[T], length: usize) -> SliceBroadcastI
 }
 
 /// Maps a logical element index onto a slot in a backing buffer of length `buffer_len`.
-///
-/// Returns `i` when the buffer holds a slot for every element, and `0` when the buffer is a
-/// scalar buffer holding one shared value.
-///
-/// The result is only in bounds when `i` is a valid element index of an array whose length and
-/// buffers satisfy the invariants described in the [module docs](self).
 #[inline(always)]
 pub const fn broadcast_index(i: usize, buffer_len: usize) -> usize {
     if i < buffer_len { i } else { 0 }
 }
 
 /// Whether a backing buffer of length `buffer_len` is *flat* for an array of length `length`.
-///
-/// A flat buffer holds one slot per element, so [`broadcast_index`] is the identity on it. This is
-/// what the non-broadcasting constructors — `try_new` and its companions — require of every
-/// backing buffer. See the [module docs](self).
 #[inline]
 pub const fn is_flat_buffer_len(buffer_len: usize, length: usize) -> bool {
     buffer_len == length
 }
 
 /// Whether a backing buffer of length `buffer_len` is *scalar* for an array of length `length`.
-///
-/// A scalar buffer holds the single value every element shares, so [`broadcast_index`] maps every
-/// element onto slot `0`. This is what the broadcasting constructors — `try_new_broadcast` and its
-/// companions — require of every backing buffer. An array of no elements reads no slot at all, so
-/// it additionally admits an empty buffer, which is the form this crate builds it in: see
-/// [`scalar_buffer_len`]. See the [module docs](self).
 #[inline]
 pub const fn is_scalar_buffer_len(buffer_len: usize, length: usize) -> bool {
     buffer_len == 1 || (length == 0 && buffer_len == 0)
 }
 
 /// The number of slots a scalar backing buffer holds for an array of `length` elements.
-///
-/// This is the one slot every element shares, or none at all when there is no element to share
-/// it: the scalar buffer of an empty array is itself empty, which makes that array flat as well
-/// as scalar — the coincidence an array of one element also has. Every constructor of this crate
-/// builds the scalar representation to this length, so that an array of no elements is readable
-/// as flat rather than as neither. See the [module docs](self).
 #[inline]
 pub const fn scalar_buffer_len(length: usize) -> usize {
     (length > 0) as usize
 }
 
 /// The number of offsets a scalar list or binary array of `length` elements holds.
-///
-/// The offsets hold one more slot than the starts, so this is [`scalar_buffer_len`] plus the end
-/// of the last element: two offsets cutting out the one range every element shares, or — for an
-/// array of no elements, which covers no range — the single offset that holds no starts at all.
-/// See the [module docs](self).
 #[inline]
 pub const fn scalar_offsets_len(length: usize) -> usize {
     scalar_buffer_len(length) + 1
 }
 
 /// Whether a backing buffer of length `buffer_len` is valid for an array of length `length`.
-///
-/// A buffer is valid exactly when it is [flat](is_flat_buffer_len) or
-/// [scalar](is_scalar_buffer_len); the two coincide for an array of one element, and both admit
-/// the empty buffer of an array of none.
 #[inline]
 pub const fn is_valid_buffer_len(buffer_len: usize, length: usize) -> bool {
     is_flat_buffer_len(buffer_len, length) || is_scalar_buffer_len(buffer_len, length)
 }
 
 /// Whether an array of `length` elements broadcasts to an array of `to_length` elements.
-///
-/// Broadcasting repeats the single element of an array of length one to any length; an array of
-/// any other length only broadcasts to the length it already has. This is
-/// [`is_valid_buffer_len`] of the logical lengths — an array broadcasts to `to_length` exactly
-/// when its elements would be a valid backing buffer of `to_length` elements. See the [module
-/// docs](self).
 #[inline]
 pub const fn is_broadcastable(length: usize, to_length: usize) -> bool {
     is_valid_buffer_len(length, to_length)
@@ -110,12 +68,8 @@ pub(crate) fn assert_broadcastable(length: usize, to_length: usize) {
     );
 }
 
-/// Whether an offsets buffer of length `offsets_len` is *flat* for a list or binary array of
-/// length `length`.
-///
-/// The offsets hold one more slot than the starts they begin with — the end of the last element —
-/// so this is [`is_flat_buffer_len`] of one slot fewer. An empty buffer is never flat: the end of
-/// the last element is needed even when there are no elements. See the [module docs](self).
+/// Whether an offsets buffer of length `offsets_len` is *flat* for a list or binary array of length
+/// `length`.
 #[inline]
 pub const fn is_flat_offsets_len(offsets_len: usize, length: usize) -> bool {
     match offsets_len.checked_sub(1) {
@@ -126,11 +80,6 @@ pub const fn is_flat_offsets_len(offsets_len: usize, length: usize) -> bool {
 
 /// Whether an offsets buffer of length `offsets_len` is *scalar* for a list or binary array of
 /// length `length`.
-///
-/// This is [`is_scalar_buffer_len`] of the starts, which are one slot fewer than the offsets: two
-/// offsets stand for the one range every element shares. An array of no elements covers no range,
-/// so it additionally admits the single offset that holds no starts at all. See the [module
-/// docs](self).
 #[inline]
 pub const fn is_scalar_offsets_len(offsets_len: usize, length: usize) -> bool {
     match offsets_len.checked_sub(1) {
@@ -141,10 +90,6 @@ pub const fn is_scalar_offsets_len(offsets_len: usize, length: usize) -> bool {
 
 /// Whether an offsets buffer of length `offsets_len` is valid for a list or binary array of length
 /// `length`.
-///
-/// The offsets are valid exactly when they are [flat](is_flat_offsets_len) or
-/// [scalar](is_scalar_offsets_len). An empty buffer is never valid: the end of the last element is
-/// needed even when there are no elements. See the [module docs](self).
 #[inline]
 pub const fn is_valid_offsets_len(offsets_len: usize, length: usize) -> bool {
     is_flat_offsets_len(offsets_len, length) || is_scalar_offsets_len(offsets_len, length)
@@ -152,10 +97,6 @@ pub const fn is_valid_offsets_len(offsets_len: usize, length: usize) -> bool {
 
 /// Whether a values array of `values_len` values is *flat* for a fixed size list array of `length`
 /// elements that are `width` values wide.
-///
-/// The values hold `width` slots per element rather than one, so this is
-/// [`is_flat_buffer_len`] scaled by the width: the values of every element, laid end to end. See
-/// the [module docs](self).
 #[inline]
 pub const fn is_flat_fixed_size_values_len(values_len: usize, width: usize, length: usize) -> bool {
     match length.checked_mul(width) {
@@ -167,11 +108,6 @@ pub const fn is_flat_fixed_size_values_len(values_len: usize, width: usize, leng
 
 /// Whether a values array of `values_len` values is *scalar* for a fixed size list array of
 /// `length` elements that are `width` values wide.
-///
-/// A scalar values array holds the one element every element covers, which is `width` values wide.
-/// Being empty leaves no element for it to stand for, so a `length` of zero admits only empty
-/// values — unlike the buffers above, which an empty array lets stand either way. See the [module
-/// docs](self).
 #[inline]
 pub const fn is_scalar_fixed_size_values_len(
     values_len: usize,
@@ -187,9 +123,6 @@ pub const fn is_scalar_fixed_size_values_len(
 
 /// Whether a values array of `values_len` values is valid for a fixed size list array of `length`
 /// elements that are `width` values wide.
-///
-/// The values are valid exactly when they are [flat](is_flat_fixed_size_values_len) or
-/// [scalar](is_scalar_fixed_size_values_len). See the [module docs](self).
 #[inline]
 pub const fn is_valid_fixed_size_values_len(
     values_len: usize,

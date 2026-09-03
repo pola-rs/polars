@@ -13,24 +13,14 @@ use crate::{
 };
 
 /// The Arrow array that holds the same elements as an array of this crate.
-///
-/// See the [module docs](self) for what this is for and why it is defined on [`Flat`] arrays.
 pub trait ToArrow: StaticArray {
     /// The Arrow array this one's buffers cross into.
-    ///
-    /// This is the Arrow array of the *physical* layout: a [`PlBinaryViewArray`] crosses into a
-    /// [`BinaryViewArray`], and it is [`PlUtf8ViewArray`] — the wrapper that carries the UTF-8
-    /// invariant — that crosses into a [`Utf8ViewArray`].
     type Arrow: Array;
 
     /// Hands the backing buffers of `array` to the Arrow array that holds the same elements.
-    ///
-    /// This is `O(1)`: `array` is flat, so every buffer already holds one slot per element.
     fn to_arrow(array: &Flat<Self>) -> Self::Arrow;
 
     /// Takes the backing buffers of `array` back.
-    ///
-    /// This is `O(1)`, and the result is flat, an Arrow array being one slot per element.
     fn from_arrow(array: &Self::Arrow) -> Self;
 }
 
@@ -161,29 +151,19 @@ impl ToArrow for PlNullArray {
 }
 
 /// Hands the backing buffers of a flat chunk to the Arrow array that holds the same elements.
-///
-/// This is [`ToArrow::to_arrow`] as a free function, for a caller that has the flatness already —
-/// [`as_flat`](crate::as_flat) is what gets it. It is `O(1)`.
 #[inline]
 pub fn flat_to_arrow<A: ToArrow>(array: &Flat<A>) -> A::Arrow {
     A::to_arrow(array)
 }
 
 /// Takes the backing buffers of an Arrow array back as the chunk that holds the same elements.
-///
-/// This is [`ToArrow::from_arrow`] as a free function, which is what an Arrow kernel's result
-/// crosses back through. It is `O(1)`, and the result is flat.
 #[inline]
 pub fn chunk_from_arrow<A: ToArrow>(array: &A::Arrow) -> A {
     A::from_arrow(array)
 }
 
-/// Hands `array` to the Arrow array that holds the same elements, writing it out first if it is
-/// not laid out flat.
-///
-/// This is [`ToArrow::to_arrow`] for an array whose representation is not known: `O(1)` for a flat
-/// array and `O(len)` for a scalar one. Prefer taking a [`Flat`] array where the caller can say
-/// which it has.
+/// Hands `array` to the Arrow array that holds the same elements, writing it out first if it is not
+/// laid out flat.
 #[inline]
 pub fn chunk_to_arrow<A: ToArrow>(array: &A) -> A::Arrow {
     match array.as_flat() {
@@ -193,9 +173,6 @@ pub fn chunk_to_arrow<A: ToArrow>(array: &A) -> A::Arrow {
 }
 
 /// Runs an Arrow kernel over a chunk of unknown type, importing what it hands back.
-///
-/// This is the untyped counterpart of [`ToArrow`], for the kernels that take a `dyn Array`. It is
-/// `O(1)` at both ends for a flat chunk; a scalar one is written out by the export.
 pub fn with_arrow_chunk<F>(chunk: &dyn PlArray, kernel: F) -> Box<dyn PlArray>
 where
     F: FnOnce(&dyn Array) -> Box<dyn Array>,

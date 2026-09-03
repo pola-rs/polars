@@ -29,9 +29,6 @@ impl PlNullArray {
     }
 
     /// Creates a [`PlNullArray`] of `length` nulls, in `O(1)` memory.
-    ///
-    /// This is [`Self::new`] under the name the other arrays use, so that a null array can be
-    /// built the same way as a fully null array of any other type.
     #[inline]
     pub const fn new_full_null(length: usize) -> Self {
         Self::new(length)
@@ -112,8 +109,6 @@ impl PlNullArray {
 
     /// Slices this array in place to `length` elements starting at `offset`.
     ///
-    /// This function is `O(1)`.
-    ///
     /// # Panics
     /// Panics if `offset + length > self.len()`.
     pub fn slice(&mut self, offset: usize, length: usize) {
@@ -126,8 +121,6 @@ impl PlNullArray {
 
     /// Slices this array in place to `length` elements starting at `offset`.
     ///
-    /// This function is `O(1)`.
-    ///
     /// # Safety
     /// `offset + length` must not exceed `self.len()`.
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
@@ -139,8 +132,6 @@ impl PlNullArray {
 
     /// Returns this array sliced to `length` elements starting at `offset`.
     ///
-    /// This function is `O(1)`.
-    ///
     /// # Panics
     /// Panics if `offset + length > self.len()`.
     #[must_use]
@@ -150,8 +141,6 @@ impl PlNullArray {
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// This function is `O(1)`.
     ///
     /// # Safety
     /// `offset + length` must not exceed `self.len()`.
@@ -163,9 +152,6 @@ impl PlNullArray {
 
     /// Creates a [`PlNullArray`] of `length` copies of the element at `index`, which is a null.
     ///
-    /// This function is `O(1)`. The index is only bounds-checked: every element of this array is
-    /// the same null, so there is nothing to read at it.
-    ///
     /// # Panics
     /// Panics if `index >= self.len()`.
     #[inline]
@@ -175,8 +161,6 @@ impl PlNullArray {
     }
 
     /// Creates a [`PlNullArray`] of `length` copies of the element at `index`, which is a null.
-    ///
-    /// This function is `O(1)`.
     ///
     /// # Safety
     /// `index` must be smaller than `self.len()`.
@@ -188,9 +172,6 @@ impl PlNullArray {
 
     /// Whether every backing buffer of this array holds one slot per element, which a
     /// [`PlNullArray`] does vacuously: it has no buffers at all, only a length.
-    ///
-    /// Its validity mask reads as scalar — a single unset bit covering every element — but there
-    /// is no buffer behind it to write out, so there is no scalar representation to leave.
     #[inline]
     pub const fn is_flat(&self) -> bool {
         true
@@ -198,16 +179,13 @@ impl PlNullArray {
 
     /// Whether this array is a single element repeated over its length, which a [`PlNullArray`]
     /// always is: every element is the same null, held in `O(1)` memory.
-    ///
-    /// A null array is therefore scalar and [`flat`](Self::is_flat) at once — it has no buffer
-    /// that could be one and not the other.
     #[inline]
     pub const fn is_scalar(&self) -> bool {
         true
     }
 
     /// Returns this array in the flat representation, which is this array — see
-    /// [`PlNullArray::is_flat`]. This function is `O(1)`.
+    /// [`PlNullArray::is_flat`].
     #[inline]
     pub fn to_flat(&self) -> Flat<Self> {
         // SAFETY: a null array has no backing buffer that could be scalar.
@@ -299,10 +277,6 @@ impl PlArray for PlNullArray {
     }
 
     /// Does nothing: an array of nothing but nulls has no element a mask could make valid.
-    ///
-    /// This is the one array whose validity cannot be replaced, so unlike the others it accepts
-    /// any mask — including one that is neither flat nor scalar — and ignores it. In particular
-    /// [`without_validity`](PlArray::without_validity) leaves every element null.
     #[inline]
     fn set_validity(&mut self, _validity: Option<Bitmap>) {}
 

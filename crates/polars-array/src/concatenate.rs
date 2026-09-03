@@ -22,10 +22,6 @@ struct MappedBroadcastIter<'a, 'm, T: ?Sized, S> {
     /// The elements left to yield, each of which is mapped to what it stands for.
     inner: SliceBroadcastIter<'a, S>,
     /// What an element of the slice stands for, which is yielded in its place.
-    ///
-    /// This is borrowed rather than held, since a map composed onto another one — the fields of
-    /// the arrays this yields, say — closes over that one, and a closure has to live somewhere
-    /// for as long as the repetition it maps.
     map: &'m dyn Fn(&'a S) -> &'a T,
 }
 
@@ -55,9 +51,6 @@ impl<'a, 'm, T: ?Sized, S> MappedBroadcastIter<'a, 'm, T, S> {
     }
 
     /// What the distinct elements left to yield stand for, in the order they are repeated in.
-    ///
-    /// A repeated element is one element however often it is left to be yielded, including no
-    /// times at all: what is distinct about it does not depend on the repetition.
     fn distinct(&self) -> impl ExactSizeIterator<Item = &'a T> + use<'a, 'm, T, S> {
         let distinct = match self.inner.clone().split() {
             Ok(slice) => slice,
@@ -73,10 +66,6 @@ impl<'a, 'm, T: ?Sized, S> MappedBroadcastIter<'a, 'm, T, S> {
     }
 
     /// How many times over the elements left to yield repeat the distinct ones.
-    ///
-    /// This is the `repeats` a repetition was built with, until iteration starts eating into it,
-    /// and one for a slice that is walked once — zero when it holds nothing to walk, which keeps
-    /// the total length this is multiplied into at zero.
     fn repeats(&self) -> usize {
         match self.inner.clone().split() {
             Ok(slice) => usize::from(!slice.is_empty()),
@@ -119,8 +108,8 @@ impl<'a, T: ?Sized, S> Iterator for MappedBroadcastIter<'a, '_, T, S> {
         self.inner.size_hint()
     }
 
-    /// Hoists the branch on how the elements are walked out of the loop, the way the inner
-    /// iterator does; `for_each` and `collect` route through here.
+    /// Hoists the branch on how the elements are walked out of the loop, the way the inner iterator
+    /// does; `for_each` and `collect` route through here.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where
@@ -133,91 +122,26 @@ impl<'a, T: ?Sized, S> Iterator for MappedBroadcastIter<'a, '_, T, S> {
 
 impl<T: ?Sized, S> ExactSizeIterator for MappedBroadcastIter<'_, '_, T, S> {}
 
-/// An element of a slice of pointers to arrays stands for the array it points to: the array
-/// itself where the slice is one of arrays, and the one in the box where it is one of boxes.
+/// An element of a slice of pointers to arrays stands for the array it points to: the array itself
+/// where the slice is one of arrays, and the one in the box where it is one of boxes.
 fn pointee<S: Deref<Target = T>, T: ?Sized>(element: &S) -> &T {
     element
 }
 
 /// Concatenates `arrays`, in order, into a single array of their common [`PlArrayType`].
 ///
-/// This dispatches to the typed function for that array type; see the [module docs](self) for when
-/// the result keeps the scalar representation instead of being materialized.
-///
-/// Only the array types of the arrays themselves are checked, since that is all a
-/// [`PlArrayType`] carries: what a nested array is taken over is checked where it is concatenated,
-/// which is not reached when a fast path hands back one of the arrays unchanged.
-///
 /// # Errors
-/// This function errors if `arrays` is empty, if the arrays do not all have the same
-/// [`PlArrayType`], if primitive arrays of that type do not all have the same element type, or if
-/// the values of nested arrays do not concatenate.
-///
-/// # Example
-/// ```
-/// use polars_array::concatenate::concatenate;
-/// use polars_array::{PlArray, PlPrimitiveArray};
-///
-/// let lhs = PlPrimitiveArray::from_vec(vec![1i32, 2]);
-/// let rhs = PlPrimitiveArray::from_iter([Some(3i32), None]);
-/// let concatenated = concatenate(&[&lhs, &rhs]).unwrap();
-///
-/// assert_eq!(concatenated.len(), 4);
-/// assert_eq!(concatenated.null_count(), 1);
-/// assert_eq!(
-///     concatenated
-///         .as_any()
-///         .downcast_ref::<PlPrimitiveArray<i32>>()
-///         .unwrap()
-///         .iter()
-///         .collect::<Vec<_>>(),
-///     [Some(1), Some(2), Some(3), None],
-/// );
-/// ```
+/// This function errors if `arrays` is empty, if the arrays differ in [`PlArrayType`] or element
+/// type, or if the values of nested arrays do not concatenate.
 pub fn concatenate(arrays: &[&dyn PlArray]) -> PolarsResult<Box<dyn PlArray>> {
     concatenate_impl(MappedBroadcastIter::new(arrays, &pointee))
 }
 
 /// Concatenates `repeats` copies of `array` into a single array of its [`PlArrayType`].
 ///
-/// This is what repeating the elements of an array as a whole means, as opposed to repeating one
-/// of them: [`PlArray::new_from_index`] is the latter, and is what this dispatches to when there
-/// is only the one element to repeat. Repeating no copies, or an array that holds no elements,
-/// yields an empty array; a single copy is the array itself.
-///
-/// Outside those cases this is `O(len * repeats)`: the elements of the result come from more than
-/// one copy, so what a copy stands for has to be written out — see the [module docs](self) for
-/// when it does not.
-///
 /// # Errors
 /// This function errors if the values of a nested array do not concatenate with themselves, which
 /// they always do unless an outside implementation of [`PlArray`] misreports its array type.
-///
-/// # Example
-/// ```
-/// use polars_array::concatenate::concatenate_repeated;
-/// use polars_array::{PlArray, PlPrimitiveArray};
-///
-/// let arr = PlPrimitiveArray::from_vec(vec![1i32, 2]);
-/// let repeated = concatenate_repeated(&arr, 3).unwrap();
-///
-/// assert_eq!(repeated.len(), 6);
-/// assert_eq!(
-///     repeated
-///         .as_any()
-///         .downcast_ref::<PlPrimitiveArray<i32>>()
-///         .unwrap()
-///         .iter()
-///         .collect::<Vec<_>>(),
-///     [Some(1), Some(2), Some(1), Some(2), Some(1), Some(2)],
-/// );
-///
-/// // A single element is repeated without being written out: a billion copies of it are `O(1)`.
-/// let one = PlPrimitiveArray::from_vec(vec![7i32]);
-/// let repeated = concatenate_repeated(&one, 1_000_000_000).unwrap();
-///
-/// assert_eq!(repeated.len(), 1_000_000_000);
-/// ```
 pub fn concatenate_repeated(array: &dyn PlArray, repeats: usize) -> PolarsResult<Box<dyn PlArray>> {
     // No copy holds an element, so the result is empty. It is still sliced out of the array
     // itself, which is what carries anything a `PlArrayType` does not — the values of a list
@@ -327,25 +251,6 @@ fn concatenate_impl<'a, S>(
 }
 
 /// Concatenates the validity masks of `arrays`, in order, into the mask of their concatenation.
-///
-/// Returns `None` when no element of any array is null, which is the mask of a fully valid array,
-/// and a scalar (one-bit) mask when every element of every array is null. Otherwise the mask is
-/// materialized, one bit per element, which is `O(total length)`.
-///
-/// # Example
-/// ```
-/// use polars_array::concatenate::concatenate_validities;
-/// use polars_array::PlPrimitiveArray;
-///
-/// // Nothing is null, so there is no mask to build.
-/// let valid = PlPrimitiveArray::from_vec(vec![1i32, 2]);
-/// assert!(concatenate_validities(&[&valid, &valid]).is_none());
-///
-/// // Everything is null, so a single bit stands for a billion elements.
-/// let null = PlPrimitiveArray::<i32>::new_full_null(1_000_000_000);
-/// let validity = concatenate_validities(&[&null, &null]).unwrap();
-/// assert_eq!(validity.len(), 1);
-/// ```
 pub fn concatenate_validities<A: PlArray + ?Sized>(arrays: &[&A]) -> Option<Bitmap> {
     let map = &pointee;
     let iter = MappedBroadcastIter::new(arrays, map);
@@ -383,24 +288,6 @@ fn concatenate_validities_with<A: PlArray + ?Sized, S>(
 }
 
 /// Concatenates `arrays`, in order, into a single [`PlPrimitiveArray`].
-///
-/// See the [module docs](self) for when the result keeps the scalar representation instead of
-/// being materialized. Concatenating no arrays yields an empty array.
-///
-/// # Example
-/// ```
-/// use polars_array::concatenate::concatenate_primitive;
-/// use polars_array::PlPrimitiveArray;
-///
-/// // Two arrays standing for the same repeated element concatenate in `O(1)`.
-/// let lhs = PlPrimitiveArray::new_scalar(7i32, 1_000_000_000);
-/// let rhs = PlPrimitiveArray::new_scalar(7i32, 1_000_000_000);
-/// let concatenated = concatenate_primitive(&[&lhs, &rhs]);
-///
-/// assert_eq!(concatenated.len(), 2_000_000_000);
-/// assert_eq!(concatenated.scalar_values(), Some(7));
-/// assert!(concatenated.is_scalar());
-/// ```
 pub fn concatenate_primitive<T: NativeType>(
     arrays: &[&PlPrimitiveArray<T>],
 ) -> PlPrimitiveArray<T> {
@@ -447,9 +334,6 @@ fn concatenate_primitive_impl<T: NativeType, S>(
 }
 
 /// Concatenates `arrays`, in order, into a single [`PlBooleanArray`].
-///
-/// See the [module docs](self) for when the result keeps the scalar representation instead of
-/// being materialized. Concatenating no arrays yields an empty array.
 pub fn concatenate_boolean(arrays: &[&PlBooleanArray]) -> PlBooleanArray {
     concatenate_boolean_impl(MappedBroadcastIter::new(arrays, &pointee))
 }
@@ -495,34 +379,6 @@ fn concatenate_boolean_impl<S>(
 
 /// Concatenates `arrays`, in order, into a single [`PlBinaryArray`] over the bytes their elements
 /// cover.
-///
-/// The offsets are rebased onto the concatenated bytes, and the bytes an input holds outside its
-/// own offsets — which slicing leaves behind — are dropped. See the [module docs](self) for when
-/// the result keeps the scalar representation; outside those cases the offsets of the result are
-/// flat, so an input whose own offsets are scalar has its element written out once per element it
-/// stands for, since no two elements of a flat binary array can cover the same range.
-/// Concatenating no arrays yields an empty array.
-///
-/// # Example
-/// ```
-/// use polars_array::concatenate::concatenate_binary;
-/// use polars_array::PlBinaryArray;
-///
-/// let lhs = PlBinaryArray::from_values_iter([b"foo".as_slice()]);
-/// let rhs = PlBinaryArray::from_values_iter([b"bar".as_slice(), b"baz"]);
-/// let concatenated = concatenate_binary(&[&lhs, &rhs]);
-///
-/// assert_eq!(concatenated.len(), 3);
-/// assert_eq!(concatenated.value(2), b"baz");
-///
-/// // Two arrays standing for the same repeated element concatenate in `O(value.len())`.
-/// let arr = PlBinaryArray::new_scalar(b"ab", 1_000_000_000);
-/// let concatenated = concatenate_binary(&[&arr, &arr]);
-///
-/// assert_eq!(concatenated.len(), 2_000_000_000);
-/// assert_eq!(concatenated.scalar_offsets(), Some(0..2));
-/// assert!(concatenated.is_scalar());
-/// ```
 pub fn concatenate_binary(arrays: &[&PlBinaryArray]) -> PlBinaryArray {
     concatenate_binary_impl(MappedBroadcastIter::new(arrays, &pointee))
 }
@@ -621,26 +477,8 @@ fn concatenate_binary_impl<S>(
 /// Concatenates `arrays`, in order, into a single [`PlBinaryViewArray`] over the data buffers of
 /// all of them.
 ///
-/// The bytes of the elements are never copied: the data buffers of the arrays are appended to one
-/// another and the views are rebased onto them, so this costs a view per element rather than the
-/// bytes of one. See the [module docs](self) for when the result keeps the scalar representation
-/// instead of being materialized. Concatenating no arrays yields an empty array.
-///
 /// # Panics
 /// Panics if the arrays hold more data buffers between them than a view can index.
-///
-/// # Example
-/// ```
-/// use polars_array::concatenate::concatenate_binview;
-/// use polars_array::PlBinaryViewArray;
-///
-/// let lhs = PlBinaryViewArray::from_values_iter([b"foo".as_slice()]);
-/// let rhs = PlBinaryViewArray::from_values_iter([b"bar".as_slice(), b"baz"]);
-/// let concatenated = concatenate_binview(&[&lhs, &rhs]);
-///
-/// assert_eq!(concatenated.len(), 3);
-/// assert_eq!(concatenated.value(2), b"baz");
-/// ```
 pub fn concatenate_binview(arrays: &[&PlBinaryViewArray]) -> PlBinaryViewArray {
     concatenate_binview_impl(MappedBroadcastIter::new(arrays, &pointee))
 }
@@ -723,29 +561,9 @@ fn concatenate_binview_impl<S>(
 /// Concatenates `arrays`, in order, into a single [`PlFixedSizeBinaryArray`] over the bytes their
 /// elements cover.
 ///
-/// Every array has to agree on the width, which is what the elements of the result are as wide as.
-/// See the [module docs](self) for when the result keeps the scalar representation; outside those
-/// cases the values of the result are flat, so an input whose own values are scalar has its element
-/// written out once per element it stands for, since the values of a flat fixed size binary array
-/// hold one width per element.
-///
 /// # Errors
 /// This function errors if `arrays` is empty, since there is then no width for the elements of the
 /// result to have, or if the arrays do not all have the same width.
-///
-/// # Example
-/// ```
-/// use polars_array::concatenate::concatenate_fixed_size_binary;
-/// use polars_array::PlFixedSizeBinaryArray;
-///
-/// // Two arrays standing for the same repeated element concatenate in `O(width)`.
-/// let arr = PlFixedSizeBinaryArray::new_scalar(b"ab", 1_000_000_000);
-/// let concatenated = concatenate_fixed_size_binary(&[&arr, &arr]).unwrap();
-///
-/// assert_eq!(concatenated.len(), 2_000_000_000);
-/// assert_eq!(concatenated.scalar_values(), Some(b"ab".as_slice()));
-/// assert!(concatenated.is_scalar());
-/// ```
 pub fn concatenate_fixed_size_binary(
     arrays: &[&PlFixedSizeBinaryArray],
 ) -> PolarsResult<PlFixedSizeBinaryArray> {
@@ -832,16 +650,9 @@ fn concatenate_fixed_size_binary_impl<S>(
 /// Concatenates `arrays`, in order, into a single [`PlFixedSizeListArray`] over the concatenation
 /// of the values their lists reach.
 ///
-/// Every array has to agree on the width, which is what the lists of the result are as wide as.
-/// See the [module docs](self) for when the result keeps the scalar representation; outside those
-/// cases the values of the result are flat, so an input whose own values are scalar has its
-/// element written out once per element it stands for, since the values of a flat fixed size list
-/// array hold one width per element.
-///
 /// # Errors
-/// This function errors if `arrays` is empty, since there is no values array to take the lists of
-/// the result over, if the arrays do not all have the same width, or if the values do not
-/// concatenate.
+/// This function errors if `arrays` is empty, if the arrays do not all have the same width, or if
+/// the values do not concatenate.
 pub fn concatenate_fixed_size_list(
     arrays: &[&PlFixedSizeListArray],
 ) -> PolarsResult<PlFixedSizeListArray> {
@@ -927,10 +738,6 @@ fn concatenate_fixed_size_list_impl<S>(
 }
 
 /// Concatenates `arrays`, in order, into a single [`PlNullArray`].
-///
-/// A null array is nothing but a length, so this is `O(1)`: the lengths are added up and every
-/// element of the result is null, like every element of every input. Concatenating no arrays
-/// yields an empty array.
 pub fn concatenate_null(arrays: &[&PlNullArray]) -> PlNullArray {
     concatenate_null_impl(MappedBroadcastIter::new(arrays, &pointee))
 }
@@ -942,10 +749,6 @@ fn concatenate_null_impl<S>(iter: MappedBroadcastIter<'_, '_, PlNullArray, S>) -
 
 /// Concatenates `arrays`, in order, into a single [`PlStructArray`], concatenating each field with
 /// the field at the same position of every other array.
-///
-/// The fields carry their own representation, so a struct array of nothing but scalar fields
-/// concatenates in `O(1)` exactly when its fields do. Concatenating no arrays yields an empty
-/// array without fields.
 ///
 /// # Errors
 /// This function errors if the arrays do not all have the same number of fields, or if any of the
@@ -1000,12 +803,6 @@ fn concatenate_struct_impl<S>(
 
 /// Concatenates `arrays`, in order, into a single [`PlListArray`] over the concatenation of the
 /// values their lists reach.
-///
-/// The offsets are rebased onto that values array, and the values an input holds outside its own
-/// offsets — which slicing leaves behind — are dropped. See the [module docs](self) for when the
-/// result keeps the scalar representation; outside those cases the offsets of the result are flat,
-/// so an input whose own offsets are scalar has its element written out once per element it stands
-/// for, since no two elements of a flat list array can cover the same range.
 ///
 /// # Errors
 /// This function errors if `arrays` is empty, since there is no values array to take the lists of
@@ -1097,14 +894,6 @@ fn concatenate_list_impl<S>(
 }
 
 /// The one array that holds every element of the concatenation, if the others are all empty.
-///
-/// Returns the first array when they are all empty: the concatenation is empty as well, and the
-/// first array is what carries anything a [`PlArrayType`] does not — the values of a list array,
-/// the fields of a struct array. Returns `None` when more than one array holds elements, and for
-/// no arrays at all, which has no array to hand back.
-///
-/// An array that is repeated holds every element of the concatenation only if the repetition is of
-/// a single copy: the other copies hold the very same elements over again.
 fn only_non_empty<'a, A: PlArray + ?Sized, S>(
     iter: &MappedBroadcastIter<'a, '_, A, S>,
 ) -> Option<&'a A> {
@@ -1143,12 +932,8 @@ fn total_length_and_null_count<A: PlArray + ?Sized, S>(
     )
 }
 
-/// The element every element of every array equals, if `element` sees one for each of them and
-/// they all agree.
-///
-/// The arrays that hold no elements are skipped: they have no element to disagree. Returns `None`
-/// when no array holds elements, since there is then no element to repeat. Only the distinct
-/// arrays are looked at: a repeated array agrees with itself.
+/// The element every element of every array equals, if `element` sees one for each of them and they
+/// all agree.
 fn shared_element<'a, A: PlArray, T: PartialEq, S>(
     iter: &MappedBroadcastIter<'a, '_, A, S>,
     element: impl Fn(&'a A) -> Option<T>,
@@ -1167,9 +952,6 @@ fn shared_element<'a, A: PlArray, T: PartialEq, S>(
 
 /// What the arrays `iter` yields stand for as an `A`, or `None` if that is not the concrete array
 /// type of every one of them.
-///
-/// The arrays are downcast where they are yielded, so what this maps is the very slice they are
-/// already in: walking them as an `A` materializes no slice of its own.
 fn try_downcast_map<'a, A: PlArray, S>(
     iter: &MappedBroadcastIter<'a, '_, dyn PlArray, S>,
 ) -> Option<impl Fn(&'a S) -> &'a A> {
@@ -1183,8 +965,7 @@ fn try_downcast_map<'a, A: PlArray, S>(
 }
 
 /// [`try_downcast_map`], for the `array_type` every array reports, which guarantees `A` is their
-/// concrete array type — unless one of them is an outside implementation of [`PlArray`] reporting
-/// an array type that is not its own.
+/// concrete array type.
 fn downcast_map<'a, A: PlArray, S>(
     iter: &MappedBroadcastIter<'a, '_, dyn PlArray, S>,
     array_type: PlArrayType,
@@ -1201,10 +982,6 @@ fn downcast_map<'a, A: PlArray, S>(
 
 /// Concatenates the arrays `iter` yields as [`PlPrimitiveArray<T>`], or returns `None` if that is
 /// not the concrete array type of every one of them.
-///
-/// The element type this is called with is the one of the first array, which the others have to
-/// agree on: their equal [`PlArrayType`] does not make them agree, since a
-/// [`PrimitiveType`](crate::PrimitiveType) does not pin an element type down.
 fn concatenate_primitive_as<'a, T: NativeType, S>(
     iter: &MappedBroadcastIter<'a, '_, dyn PlArray, S>,
 ) -> Option<Box<dyn PlArray>> {

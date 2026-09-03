@@ -32,11 +32,6 @@ impl<'a> PlListValuesIter<'a> {
     }
 
     /// Whether the array holds the one element every position reads, rather than one each.
-    ///
-    /// A single element is what an array being broadcast holds — and what an array of one element
-    /// holds when it is not. Either way position zero is the only element there is. This does not
-    /// depend on the position being read, so a loop over them settles it once rather than at every
-    /// one.
     #[inline(always)]
     fn is_broadcast(&self) -> bool {
         self.array.len() == 1
@@ -123,11 +118,6 @@ impl<'a> PlListIter<'a> {
     }
 
     /// Whether the array holds the one element every position reads, rather than one each.
-    ///
-    /// A single element is what an array being broadcast holds — and what an array of one element
-    /// holds when it is not. Either way position zero is the only element there is. This does not
-    /// depend on the position being read, so a loop over them settles it once rather than at every
-    /// one.
     #[inline(always)]
     fn is_broadcast(&self) -> bool {
         self.array.len() == 1

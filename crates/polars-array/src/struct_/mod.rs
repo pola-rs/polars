@@ -26,12 +26,6 @@ pub struct PlStructArray {
 impl PlStructArray {
     /// Creates a flat [`PlStructArray`] out of its internal components.
     ///
-    /// The validity mask has to hold one bit per element. [`Self::try_new_broadcast`] is what
-    /// builds the scalar one; this function never infers it from a mask that happens to hold a
-    /// single bit. The fields are the same either way — a struct array never broadcasts them, and
-    /// a field that stands for one repeated value is a scalar array of `length` elements in its
-    /// own right. This function is `O(num_fields)`.
-    ///
     /// # Errors
     /// This function errors if any field does not have exactly `length` elements, or if `validity`
     /// does not hold exactly `length` bits.
@@ -96,15 +90,9 @@ impl PlStructArray {
 
     /// Creates a [`PlStructArray`] out of its internal components and a scalar validity mask.
     ///
-    /// The mask has to hold the single bit every element shares, which is what makes a struct
-    /// array of nothing but nulls `O(1)`. The fields are the same as [`Self::try_new`] asks for:
-    /// a struct array never broadcasts them, so this is the only backing buffer the two families
-    /// differ over. This function is `O(num_fields)`.
-    ///
     /// # Errors
     /// This function errors if any field does not have exactly `length` elements, or if `validity`
-    /// does not hold exactly one bit. An array of no elements reads no bit at all, so it
-    /// additionally admits an empty mask.
+    /// does not hold exactly one bit.
     pub fn try_new_broadcast(
         fields: Vec<Box<dyn PlArray>>,
         length: usize,
@@ -182,11 +170,9 @@ impl PlStructArray {
 
     /// Creates a fully valid [`PlStructArray`] from `fields`, taking its length from them.
     ///
-    /// This function is `O(num_fields)`.
-    ///
     /// # Panics
     /// Panics if `fields` is empty — an array without fields has no length to take — or if the
-    /// fields do not all have the same length. Use [`Self::new`] to build either.
+    /// fields do not all have the same length.
     pub fn from_fields(fields: Vec<Box<dyn PlArray>>) -> Self {
         let length = fields
             .first()
@@ -196,10 +182,6 @@ impl PlStructArray {
     }
 
     /// Creates a [`PlStructArray`] of `length` nulls over `fields`, in `O(1)` extra memory.
-    ///
-    /// The fields are kept as they are: every row is null, so their values are undetermined, but
-    /// they still have to hold `length` elements each. Pass scalar fields to keep the whole array
-    /// `O(1)`.
     ///
     /// # Panics
     /// Panics if any field does not have exactly `length` elements.
@@ -252,11 +234,6 @@ impl PlStructArray {
     }
 
     /// The validity mask, if any element may be null.
-    ///
-    /// The returned [`PlBitmapRef`] has [`Self::len`] bits regardless of whether the backing bitmap
-    /// is flat or scalar, so reading validity through it needs no knowledge of which
-    /// representation this array is in. This mask says nothing about the fields: a valid row may
-    /// still hold a null value in any of them.
     #[inline]
     pub fn validity(&self) -> Option<PlBitmapRef<'_>> {
         // SAFETY: the mask is flat or scalar for `self.length`, upheld by every constructor.
@@ -266,16 +243,12 @@ impl PlStructArray {
     }
 
     /// Whether the validity mask holds a single bit shared by every element.
-    ///
-    /// This says nothing about the fields, which carry their own representation.
     #[inline]
     pub fn validity_is_scalar(&self) -> bool {
         self.validity().is_some_and(|v| v.is_scalar())
     }
 
     /// Returns whether the element at `i` is valid (non-null).
-    ///
-    /// A valid row may still hold a null value in any of its fields.
     ///
     /// # Panics
     /// Panics if `i >= self.len()`.
@@ -316,11 +289,6 @@ impl PlStructArray {
     }
 
     /// The number of null elements.
-    ///
-    /// Null values inside the fields do not count: only rows this array itself masks out are null.
-    ///
-    /// This is `O(1)` for a scalar validity mask and `O(len)` for a flat one, amortized over
-    /// repeated calls on the same [`Bitmap`].
     pub fn null_count(&self) -> usize {
         self.validity().map_or(0, |validity| validity.unset_bits())
     }
@@ -335,8 +303,6 @@ impl PlStructArray {
     ///
     /// # Panics
     /// Panics if `validity` does not hold one bit per element.
-    /// [`Self::with_validity_broadcast`] is what installs the single bit every element shares;
-    /// this function never infers that from a mask that happens to hold one bit.
     #[must_use]
     pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
         self.set_validity(validity);
@@ -347,8 +313,6 @@ impl PlStructArray {
     ///
     /// # Panics
     /// Panics if `validity` does not hold one bit per element.
-    /// [`Self::set_validity_broadcast`] is what installs the single bit every element shares;
-    /// this function never infers that from a mask that happens to hold one bit.
     pub fn set_validity(&mut self, validity: Option<Bitmap>) {
         if let Some(validity) = validity.as_ref() {
             assert!(
@@ -373,10 +337,6 @@ impl PlStructArray {
 
     /// Replaces the validity mask with one that broadcasts over this array.
     ///
-    /// This is [`Self::set_validity`] widened to the scalar representation: the mask is either
-    /// flat — one bit per element — or the single bit every element shares. See
-    /// [`crate::broadcast`].
-    ///
     /// # Panics
     /// Panics if `validity` is neither flat nor scalar for this array's length.
     pub fn set_validity_broadcast(&mut self, validity: Option<Bitmap>) {
@@ -392,8 +352,6 @@ impl PlStructArray {
     }
 
     /// Drops the validity mask, making every row valid.
-    ///
-    /// The fields keep their own validity: a row that is valid may still hold null field values.
     #[must_use]
     pub fn without_validity(mut self) -> Self {
         self.validity = None;
@@ -401,8 +359,6 @@ impl PlStructArray {
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.
-    ///
-    /// This function is `O(num_fields)`.
     ///
     /// # Panics
     /// Panics if `offset + length > self.len()`.
@@ -415,8 +371,6 @@ impl PlStructArray {
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.
-    ///
-    /// This function is `O(num_fields)`.
     ///
     /// # Safety
     /// `offset + length` must not exceed `self.len()`.
@@ -443,8 +397,6 @@ impl PlStructArray {
 
     /// Returns this array sliced to `length` elements starting at `offset`.
     ///
-    /// This function is `O(num_fields)`.
-    ///
     /// # Panics
     /// Panics if `offset + length > self.len()`.
     #[must_use]
@@ -454,8 +406,6 @@ impl PlStructArray {
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// This function is `O(num_fields)`.
     ///
     /// # Safety
     /// `offset + length` must not exceed `self.len()`.
@@ -467,9 +417,6 @@ impl PlStructArray {
 
     /// Creates a [`PlStructArray`] of `length` copies of the row at `index`.
     ///
-    /// Every field repeats its own element, so this is `O(num_fields)` and the result is one row in
-    /// `O(1)` memory. A null row repeats as `length` nulls.
-    ///
     /// # Panics
     /// Panics if `index >= self.len()`.
     #[inline]
@@ -479,8 +426,6 @@ impl PlStructArray {
     }
 
     /// Creates a [`PlStructArray`] of `length` copies of the row at `index`.
-    ///
-    /// This function is `O(num_fields)`.
     ///
     /// # Safety
     /// `index` must be smaller than `self.len()`.
@@ -516,22 +461,12 @@ impl PlStructArray {
     }
 
     /// Whether every backing buffer of this array holds one slot per element.
-    ///
-    /// A struct array never broadcasts its fields — each holds one element per row already — so
-    /// the only buffer of its own is the validity mask, and this is
-    /// [`validity_is_scalar`](Self::validity_is_scalar) answered the other way round. Whether a
-    /// *field* is flat is a question for that field.
     #[inline]
     pub fn is_flat(&self) -> bool {
         !self.validity_is_scalar()
     }
 
     /// Whether this array is a single row repeated over its length, in `O(1)` memory.
-    ///
-    /// A struct array has no buffer of its own but the validity mask, so this asks that the mask
-    /// be scalar or absent *and* that every field be scalar in turn: a row is the values its
-    /// fields hold at that index, and it only repeats if each of them does. An array of no fields
-    /// is a length and a mask, and is scalar whenever that mask is.
     #[inline]
     pub fn is_scalar(&self) -> bool {
         self.validity().is_none_or(|validity| validity.is_scalar())
@@ -539,9 +474,6 @@ impl PlStructArray {
     }
 
     /// Returns this array in the flat representation, writing out a scalar validity mask.
-    ///
-    /// This is `O(1)` for an array that is already flat and `O(len)` for one whose mask is
-    /// scalar; the fields are handed over as they are — see [`PlStructArray::is_flat`].
     #[must_use]
     pub fn to_flat(&self) -> Flat<Self> {
         if self.is_flat() {
@@ -569,9 +501,6 @@ impl PlStructArray {
 
 /// Returns `field` with `mask` merged into its validity, so that the undetermined values of rows
 /// the struct array masks out are ignored when comparing fields.
-///
-/// This is only reached for a mask that is neither all-set nor all-unset, which cannot be
-/// scalar, so materializing it costs no more than the mask already does.
 fn masked(field: &dyn PlArray, mask: PlBitmapRef<'_>) -> Box<dyn PlArray> {
     let validity = match field.validity() {
         Some(field_validity) => and(&field_validity.to_flat(), &mask.to_flat()),
@@ -587,8 +516,8 @@ impl Default for PlStructArray {
     }
 }
 
-/// Compares two arrays row-wise; the representation (flat or scalar) is irrelevant, and so are
-/// the field values of null rows.
+/// Compares two arrays row-wise; the representation (flat or scalar) is irrelevant, and so are the
+/// field values of null rows.
 impl PartialEq for PlStructArray {
     fn eq(&self, other: &Self) -> bool {
         if self.length != other.length || self.fields.len() != other.fields.len() {
@@ -700,9 +629,6 @@ impl PlArray for PlStructArray {
 }
 
 /// Checks that every field of a struct array of `length` elements has that many elements itself.
-///
-/// This is the half of the validation that both families of constructors share: a struct array
-/// never broadcasts its fields, so only its validity mask tells the representations apart.
 fn validate_fields(fields: &[Box<dyn PlArray>], length: usize) -> PolarsResult<()> {
     for (i, field) in fields.iter().enumerate() {
         polars_ensure!(

@@ -2,32 +2,6 @@
 
 /// Runs a body with `T` bound to the element type of a
 /// [`PlPrimitiveArray`](crate::PlPrimitiveArray).
-///
-/// The array to dispatch on comes first and the body second, written as a closure over the element
-/// type: `with_match_pl_primitive_array_type!(array, |T| { ... })`. The body is expanded once per
-/// element type a primitive array can be taken over, and the one whose element type the array
-/// actually has is the one that runs. This evaluates to `Some(body)` for that element type, and to
-/// `None` when the array is not a primitive array at all — so every expansion of the body has to
-/// have the same type.
-///
-/// The dispatch is on the concrete type the array downcasts to rather than on its
-/// [`PlArrayType`](crate::PlArrayType), since a [`PrimitiveType`](crate::PrimitiveType) does not
-/// pin the element type down: [`View`](arrow::array::View) and `u128` are both
-/// [`PrimitiveType::UInt128`](crate::PrimitiveType::UInt128).
-///
-/// # Example
-/// ```
-/// use polars_array::{PlArray, PlBooleanArray, PlPrimitiveArray, with_match_pl_primitive_array_type};
-///
-/// let array: Box<dyn PlArray> = Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3]));
-/// let size = with_match_pl_primitive_array_type!(&*array, |T| size_of::<T>());
-/// assert_eq!(size, Some(4));
-///
-/// // There is no element type to run the body with if the array is not a primitive array.
-/// let array: Box<dyn PlArray> = Box::new(PlBooleanArray::from_vec(vec![true]));
-/// let size = with_match_pl_primitive_array_type!(&*array, |T| size_of::<T>());
-/// assert_eq!(size, None);
-/// ```
 #[macro_export]
 macro_rules! with_match_pl_primitive_array_type {
     ($array:expr, |$T:ident| $body:expr $(,)?) => {{
@@ -52,9 +26,6 @@ macro_rules! with_match_pl_primitive_array_type {
 
 /// The body of [`with_match_pl_primitive_array_type`], which binds `$T` to the element type in
 /// `$element` the array is taken over.
-///
-/// The binding is a type alias, so `$T` is a type and nothing else: it cannot be used as the name
-/// of a value, a trait or a lifetime.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __with_match_pl_primitive_array_type__ {(

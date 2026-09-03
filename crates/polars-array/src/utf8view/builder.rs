@@ -52,9 +52,6 @@ impl PlUtf8ViewArrayBuilder {
 }
 
 /// Borrows an array of strings as the bytes under them.
-///
-/// This is [`PlUtf8ViewArray::as_binview`] as a free function, so that it can be passed to the
-/// inner builder without shadowing anything.
 #[inline(always)]
 fn as_binview(array: &PlUtf8ViewArray) -> &PlBinaryViewArray {
     array.as_binview()

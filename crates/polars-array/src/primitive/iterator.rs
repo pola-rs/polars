@@ -51,8 +51,7 @@ impl<T: NativeType> Iterator for PlPrimitiveValuesIter<'_, T> {
     }
 
     /// Hoists the representation out of the loop: flat values fold as the slice they are, which
-    /// vectorizes, and scalar ones fold over the single value they hold. `for_each`, `sum`,
-    /// `collect` and friends route through here.
+    /// vectorizes, and scalar ones fold over the single value they hold.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where
@@ -114,9 +113,6 @@ impl<'a, T: NativeType> PlPrimitiveIter<'a, T> {
     }
 
     /// The values and the mask that says which of them are elements, to walk in one loop.
-    ///
-    /// The mask has its representation hoisted out, so that the loop the caller runs reads no
-    /// mask at all where every element is valid, and neither mask nor values where none is.
     #[inline]
     fn split(self) -> (SliceBroadcastIter<'a, T>, ValidityFold<'a>) {
         (self.values, self.validity.into_mask())

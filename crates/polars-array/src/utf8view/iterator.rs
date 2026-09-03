@@ -104,7 +104,8 @@ impl ExactSizeIterator for PlUtf8ViewValuesIter<'_> {
 // change how many there are.
 unsafe impl TrustedLen for PlUtf8ViewValuesIter<'_> {}
 
-/// Iterator over the elements of a [`PlUtf8ViewArray`](super::PlUtf8ViewArray), `None` for the null ones.
+/// Iterator over the elements of a [`PlUtf8ViewArray`](super::PlUtf8ViewArray), `None` for the null
+/// ones.
 #[derive(Clone)]
 pub struct PlUtf8ViewIter<'a>(PlBinaryViewIter<'a>);
 

@@ -8,20 +8,9 @@ use crate::flat::Flat;
 
 /// The methods a [`PlFixedSizeListArray`] gains from holding the values of every element and one
 /// validity bit per element.
-///
-/// These are the counterparts of the methods on
-/// [`FixedSizeListArray`](arrow::array::FixedSizeListArray), whose values array *is* its elements:
-/// they hand out the backing buffers as they are and read them without a broadcast. Each shadows
-/// the broadcast-aware method of the same name on [`PlFixedSizeListArray`], which remains
-/// reachable through the deref — including the iterators, which read the elements the same way
-/// either way.
 impl Flat<PlFixedSizeListArray> {
     /// The values array, holding exactly [`len`](PlFixedSizeListArray::len) `*`
     /// [`width`](PlFixedSizeListArray::width) values.
-    ///
-    /// Unlike [`PlFixedSizeListArray::flat_values`], this needs no [`Option`] to admit a scalar
-    /// values array: element `i` is the `width` values at `i * width`. The values of null elements
-    /// are undetermined (they can be any list of the width).
     #[inline]
     pub fn values(&self) -> &dyn PlArray {
         &*self.0.values
@@ -29,19 +18,12 @@ impl Flat<PlFixedSizeListArray> {
 
     /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
     /// [`len`](PlFixedSizeListArray::len) bits.
-    ///
-    /// Unlike [`PlFixedSizeListArray::validity`], this needs no
-    /// [`PlBitmapRef`](crate::PlBitmapRef) to hide a scalar bit: bit `i` is element `i`.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
         self.0.validity.as_ref()
     }
 
-    /// Consumes this array into its internal components, whose values and bits are one per
-    /// element.
-    ///
-    /// The length is not part of the result: it is the length of the values array divided by the
-    /// width.
+    /// Consumes this array into its internal components, whose values and bits are one per element.
     #[inline]
     pub fn into_inner(self) -> (Box<dyn PlArray>, usize, Option<Bitmap>) {
         let PlFixedSizeListArray {

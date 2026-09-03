@@ -12,8 +12,8 @@ use crate::builder::{
 
 /// A builder of a [`PlListArray`].
 pub struct PlListArrayBuilder<B: PlArrayBuilder = Box<dyn PlArrayBuilder>> {
-    /// The start of every element appended so far, plus the end of the last: one slot more than
-    /// the elements, which is what the offsets of a flat list array hold.
+    /// The start of every element appended so far, plus the end of the last: one slot more than the
+    /// elements, which is what the offsets of a flat list array hold.
     offsets: Vec<u64>,
     values: B,
     validity: OptBitmapBuilder,
@@ -57,10 +57,6 @@ impl<B: PlArrayBuilder> PlListArrayBuilder<B> {
     }
 
     /// Appends the `length` elements of `other` starting at `start`, ignoring its validity mask.
-    ///
-    /// The elements of an array whose offsets are flat are laid end to end, so the values of all
-    /// of them are appended in one go and the offsets are the ones `other` already holds, rebased
-    /// onto the values appended so far.
     fn extend_values(
         &mut self,
         other: &PlListArray,

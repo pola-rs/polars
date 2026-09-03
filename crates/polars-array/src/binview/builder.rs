@@ -48,14 +48,9 @@ impl PlBinaryViewArrayBuilder {
 
     /// Appends `value` as an element of its own.
     ///
-    /// The bytes are copied into the buffers this builder is writing into unless a view inlines
-    /// them, which is what makes this the one way to append a value that is not already an element
-    /// of an array — a string built into a buffer the caller reuses, say.
-    ///
     /// # Panics
     /// Panics if `value` is longer than
-    /// [`BINVIEW_MAX_ROW_BYTE_LEN`](arrow::array::BINVIEW_MAX_ROW_BYTE_LEN) bytes, which no view
-    /// can point at.
+    /// [`BINVIEW_MAX_ROW_BYTE_LEN`](arrow::array::BINVIEW_MAX_ROW_BYTE_LEN) bytes.
     pub fn push_value(&mut self, value: &[u8]) {
         let view = self.copy_value(value);
         self.views.push(view);
@@ -113,17 +108,13 @@ impl PlBinaryViewArrayBuilder {
     ///
     /// # Panics
     /// Panics if `bytes` is longer than
-    /// [`BINVIEW_MAX_ROW_BYTE_LEN`](arrow::array::BINVIEW_MAX_ROW_BYTE_LEN), the longest a view
-    /// can point at.
+    /// [`BINVIEW_MAX_ROW_BYTE_LEN`](arrow::array::BINVIEW_MAX_ROW_BYTE_LEN) bytes.
     fn copy_value(&mut self, bytes: &[u8]) -> View {
         let buffer_idx_offset = self.buffer_idx_offset();
         copy_value(&mut self.active, buffer_idx_offset, bytes)
     }
 
     /// The view `view` of `buffers` becomes over the data buffers of this builder.
-    ///
-    /// A view that inlines its bytes carries them itself, so it is already what it stands for.
-    /// Otherwise the buffer it points into is adopted, or the bytes it points at are copied.
     fn take_view(
         &mut self,
         mut view: View,

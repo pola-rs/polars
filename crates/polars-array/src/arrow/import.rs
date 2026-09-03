@@ -21,12 +21,9 @@ use crate::{
 
 /// Imports an Arrow array as the array of this crate that holds the same elements.
 ///
-/// The logical type of `array` is dropped and what comes back is the physical array underneath it,
-/// which shares its backing buffers with `array` — see the [module docs](self).
-///
 /// # Panics
-/// Panics if `array` is a dictionary, union or map array, or if its elements are of a type no
-/// array of this crate is taken over.
+/// Panics if `array` is a dictionary, union or map array, or if its elements are of a type no array
+/// of this crate is taken over.
 pub fn from_arrow(array: &dyn Array) -> Box<dyn PlArray> {
     match array.dtype().to_physical_type() {
         PhysicalType::Null => Box::new(null_from_arrow(downcast(array))),
@@ -97,9 +94,6 @@ pub fn primitive_from_arrow<T: NativeType>(array: &PrimitiveArray<T>) -> PlPrimi
 }
 
 /// Imports an Arrow [`BinaryArray`] as a [`PlBinaryArray`].
-///
-/// This is `O(1)` for `BinaryArray<i64>` and `O(len)` for `BinaryArray<i32>`, whose offsets are
-/// widened — see [`offsets_from_arrow`].
 pub fn binary_from_arrow<O: Offset>(array: &BinaryArray<O>) -> PlBinaryArray {
     // SAFETY: an Arrow array's offsets are ordered, one per element plus the end of the last, and
     // end within the values; widening them preserves that, as does its flat validity mask.
@@ -114,10 +108,6 @@ pub fn binary_from_arrow<O: Offset>(array: &BinaryArray<O>) -> PlBinaryArray {
 }
 
 /// Imports an Arrow [`Utf8Array`] as a [`PlBinaryArray`] of its bytes.
-///
-/// The promise that those bytes are valid UTF-8 is a logical type, which the imported array does
-/// not carry. This is `O(1)` for `Utf8Array<i64>` and `O(len)` for `Utf8Array<i32>`, whose offsets
-/// are widened — see [`offsets_from_arrow`].
 pub fn utf8_from_arrow<O: Offset>(array: &Utf8Array<O>) -> PlBinaryArray {
     // SAFETY: an Arrow array's offsets are ordered, one per element plus the end of the last, and
     // end within the values; widening them preserves that, as does its flat validity mask.
@@ -131,12 +121,8 @@ pub fn utf8_from_arrow<O: Offset>(array: &Utf8Array<O>) -> PlBinaryArray {
     }
 }
 
-/// Imports an Arrow [`BinaryViewArray`](arrow::array::BinaryViewArray) or
-/// [`Utf8ViewArray`](arrow::array::Utf8ViewArray) as a [`PlBinaryViewArray`] of its bytes, which
-/// is `O(1)`.
-///
-/// The promise that the bytes of a [`Utf8ViewArray`](arrow::array::Utf8ViewArray) are valid UTF-8
-/// is a logical type, which the imported array does not carry.
+/// Imports an Arrow binary or UTF-8 view array as a [`PlBinaryViewArray`] of its bytes, in
+/// `O(1)`.
 pub fn binary_view_from_arrow<T: ViewType + ?Sized>(
     array: &BinaryViewArrayGeneric<T>,
 ) -> PlBinaryViewArray {
@@ -152,12 +138,8 @@ pub fn binary_view_from_arrow<T: ViewType + ?Sized>(
     }
 }
 
-/// Imports an Arrow [`Utf8ViewArray`](arrow::array::Utf8ViewArray) as a [`PlUtf8ViewArray`],
-/// which is `O(1)`.
-///
-/// Unlike [`binary_view_from_arrow`] this keeps the promise that the bytes are valid UTF-8, which
-/// the Arrow data type carries and [`PlUtf8ViewArray`] carries too — so the round trip through
-/// [`export::to_arrow`](crate::arrow::export::to_arrow) is lossless for a string array.
+/// Imports an Arrow [`Utf8ViewArray`](arrow::array::Utf8ViewArray) as a [`PlUtf8ViewArray`], which
+/// is `O(1)`.
 pub fn utf8_view_from_arrow(array: &BinaryViewArrayGeneric<str>) -> PlUtf8ViewArray {
     // SAFETY: the elements of an Arrow `Utf8ViewArray` are valid UTF-8.
     unsafe { PlUtf8ViewArray::from_binview_unchecked(binary_view_from_arrow(array)) }
@@ -179,12 +161,8 @@ pub fn fixed_size_binary_from_arrow(array: &FixedSizeBinaryArray) -> PlFixedSize
 
 /// Imports an Arrow [`ListArray`] as a [`PlListArray`], importing its values along with it.
 ///
-/// This is `O(1)` for `ListArray<i64>` and `O(len)` for `ListArray<i32>`, whose offsets are
-/// widened — see [`offsets_from_arrow`].
-///
 /// # Panics
-/// Panics if the values of `array` have no counterpart in this crate — see the [module
-/// docs](self).
+/// Panics if the values of `array` have no counterpart in this crate — see the [module docs](self).
 pub fn list_from_arrow<O: Offset>(array: &ListArray<O>) -> PlListArray {
     let values = from_arrow(&**array.values());
 
@@ -204,8 +182,7 @@ pub fn list_from_arrow<O: Offset>(array: &ListArray<O>) -> PlListArray {
 /// along with it, which is `O(1)`.
 ///
 /// # Panics
-/// Panics if the values of `array` have no counterpart in this crate — see the [module
-/// docs](self).
+/// Panics if the values of `array` have no counterpart in this crate — see the [module docs](self).
 pub fn fixed_size_list_from_arrow(array: &FixedSizeListArray) -> PlFixedSizeListArray {
     let values = from_arrow(&**array.values());
 
@@ -224,9 +201,6 @@ pub fn fixed_size_list_from_arrow(array: &FixedSizeListArray) -> PlFixedSizeList
 /// Imports an Arrow [`StructArray`] as a [`PlStructArray`], importing its fields along with it,
 /// which is `O(fields)`.
 ///
-/// The names of the fields are part of the data type of `array` rather than of its values, so they
-/// are dropped along with it: what carries over is the field arrays, in order.
-///
 /// # Panics
 /// Panics if a field of `array` has no counterpart in this crate — see the [module docs](self).
 pub fn struct_from_arrow(array: &StructArray) -> PlStructArray {
@@ -242,10 +216,6 @@ pub fn struct_from_arrow(array: &StructArray) -> PlStructArray {
 }
 
 /// Imports Arrow offsets as the 64-bit offsets a [`PlBinaryArray`] and a [`PlListArray`] hold.
-///
-/// The 64-bit Arrow offsets have the layout the ones here do and are non-negative, so they are
-/// reinterpreted in `O(1)`. The 32-bit ones are of another width, so they are widened into a
-/// buffer of their own, which is `O(len)` in both time and memory.
 pub fn offsets_from_arrow<O: Offset>(offsets: &OffsetsBuffer<O>) -> Buffer<u64> {
     // The dispatch is on the concrete type rather than on `O::IS_LARGE` so that a buffer of
     // another width is never reinterpreted: only an `i64` buffer is handed to `try_transmute`.

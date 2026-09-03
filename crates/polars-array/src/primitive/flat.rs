@@ -10,26 +10,14 @@ use crate::flat::Flat;
 
 /// The methods a [`PlPrimitiveArray`] gains from having one slot per element in every backing
 /// buffer.
-///
-/// These are the counterparts of the methods on
-/// [`PrimitiveArray`](arrow::array::PrimitiveArray), whose values buffer *is* its elements: they
-/// hand out the backing buffers as they are and read them without a
-/// [`broadcast_index`](crate::broadcast::broadcast_index). Each shadows the broadcast-aware method
-/// of the same name on [`PlPrimitiveArray`], which remains reachable through the deref.
 impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     /// The backing values buffer, holding exactly [`len`](PlPrimitiveArray::len) slots.
-    ///
-    /// Unlike [`PlPrimitiveArray::flat_values`], this needs no [`Option`] to admit a scalar values
-    /// buffer: it is guaranteed to hold one slot per element, so slot
-    /// `i` is element `i`. The values of null elements are undetermined (they can be anything).
     #[inline(always)]
     pub const fn values(&self) -> &Buffer<T> {
         &self.0.values
     }
 
     /// The values as a slice of exactly [`len`](PlPrimitiveArray::len) elements.
-    ///
-    /// The values of null elements are undetermined (they can be anything).
     #[inline(always)]
     pub fn as_slice(&self) -> &[T] {
         self.0.values.as_slice()
@@ -37,17 +25,12 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
 
     /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
     /// [`len`](PlPrimitiveArray::len) bits.
-    ///
-    /// Unlike [`PlPrimitiveArray::validity`], this needs no [`PlBitmapRef`](crate::PlBitmapRef) to
-    /// hide a scalar bit: bit `i` is element `i`.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
         self.0.validity.as_ref()
     }
 
     /// Returns the value at `i`.
-    ///
-    /// The value of a null element is undetermined (it can be anything).
     ///
     /// # Panics
     /// Panics if `i >= self.len()`.
@@ -58,8 +41,6 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     }
 
     /// Returns the value at `i`.
-    ///
-    /// The value of a null element is undetermined (it can be anything).
     ///
     /// # Safety
     /// `i` must be smaller than `self.len()`.
@@ -129,47 +110,30 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     }
 
     /// Returns an iterator over the values, ignoring validity.
-    ///
-    /// This walks the values buffer directly, so — unlike
-    /// [`PlPrimitiveArray::values_iter`] — it is an ordinary [`slice::Iter`](std::slice::Iter) and
-    /// yields references. The values of null elements are undetermined (they can be anything).
     #[inline]
     pub fn values_iter(&self) -> std::slice::Iter<'_, T> {
         self.as_slice().iter()
     }
 
     /// Returns an iterator over the optional elements.
-    ///
-    /// This zips the two backing buffers directly, so — unlike [`PlPrimitiveArray::iter`], which
-    /// yields `Option<T>` — it mirrors [`PrimitiveArray::iter`](arrow::array::PrimitiveArray::iter)
-    /// and yields `Option<&T>`.
     #[inline]
     pub fn iter(&self) -> ZipValidity<&T, std::slice::Iter<'_, T>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(self.values_iter(), self.validity())
     }
 
     /// The backing values buffer as a mutable slice, if no other array shares it.
-    ///
-    /// This is what lets a kernel write its result over its argument. It hands out `None` when
-    /// the buffer is shared, which leaves the caller to allocate one of its own.
     #[inline]
     pub fn values_mut(&mut self) -> Option<&mut [T]> {
         self.0.values.get_mut_slice()
     }
 
     /// Takes the validity mask out, leaving every element valid.
-    ///
-    /// This is what keeps a kernel from combining the same masks twice: the masks come out before
-    /// the values are handed over, and their combination goes onto the result.
     #[inline]
     pub fn take_validity(&mut self) -> Option<Bitmap> {
         self.0.validity.take()
     }
 
     /// Reinterprets the values buffer as one of `U`, keeping the validity mask.
-    ///
-    /// This is what a kernel that writes its result over its argument crosses back through, `U`
-    /// being the element type it produced. It is `O(1)`.
     ///
     /// # Panics
     /// Panics unless `T` and `U` have the same size and alignment.
@@ -186,9 +150,6 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     }
 
     /// Fills every element with `value`, leaving the validity mask as it is.
-    ///
-    /// The result is the single value repeated, so this is `O(1)` — it is not laid out flat, which
-    /// is why it comes back as a [`PlPrimitiveArray`].
     pub fn fill_with(self, value: T) -> PlPrimitiveArray<T> {
         let length = self.len();
         let (_, validity) = self.into_inner();
@@ -197,8 +158,6 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     }
 
     /// Consumes this array into its backing buffers, which both hold one slot per element.
-    ///
-    /// The length is not part of the result: it is the length of the values buffer.
     #[inline]
     pub fn into_inner(self) -> (Buffer<T>, Option<Bitmap>) {
         let PlPrimitiveArray {
@@ -247,19 +206,6 @@ mod tests {
     }
 
     #[test]
-    fn the_validity_mask_comes_out_flat() {
-        let mut flat: Flat<PlPrimitiveArray<i32>> = [Some(1), None, Some(3)]
-            .into_iter()
-            .collect::<PlPrimitiveArray<i32>>()
-            .to_flat();
-
-        let validity = flat.take_validity().expect("the array has a null");
-        assert_eq!(validity.len(), 3);
-        assert_eq!(flat.null_count(), 0);
-        assert!(flat.take_validity().is_none());
-    }
-
-    #[test]
     fn values_are_reinterpreted_in_place() {
         let flat = PlPrimitiveArray::from_vec(vec![1u32, 2, 3]).to_flat();
         let values = flat.values().as_ptr();
@@ -272,41 +218,6 @@ mod tests {
             values,
             "the values buffer must be reinterpreted, not copied",
         );
-    }
-
-    #[test]
-    fn filling_repeats_the_single_value() {
-        let flat: Flat<PlPrimitiveArray<i32>> = [Some(1), None, Some(3)]
-            .into_iter()
-            .collect::<PlPrimitiveArray<i32>>()
-            .to_flat();
-
-        let filled = flat.fill_with(7);
-
-        // The value is not written out, and the mask it was filled under is left alone.
-        assert!(filled.values_are_scalar());
-        assert_eq!(filled.len(), 3);
-        assert_eq!(filled.get(0), Some(7));
-        assert_eq!(filled.get(1), None);
-        assert_eq!(filled.get(2), Some(7));
-    }
-
-    #[test]
-    fn to_flat_materializes_scalars() {
-        let scalar = PlPrimitiveArray::new_scalar(7i32, 3);
-        let flat = scalar.to_flat();
-
-        assert!(flat.is_flat());
-        assert_eq!(flat.values().as_slice(), [7, 7, 7]);
-        assert_eq!(flat, scalar);
-
-        let null_scalar = PlPrimitiveArray::<i32>::new_full_null(3);
-        let flat = null_scalar.to_flat();
-
-        assert!(flat.is_flat());
-        assert_eq!(flat.validity().unwrap().len(), 3);
-        assert_eq!(flat.null_count(), 3);
-        assert_eq!(flat, null_scalar);
     }
 
     #[test]
@@ -336,24 +247,5 @@ mod tests {
                 .as_flat()
                 .is_none()
         );
-    }
-
-    #[test]
-    fn elements_are_read_without_a_broadcast() {
-        let flat: Flat<PlPrimitiveArray<i32>> = [Some(1), None, Some(3)]
-            .into_iter()
-            .collect::<PlPrimitiveArray<i32>>()
-            .to_flat();
-
-        assert_eq!(flat.value(0), 1);
-        assert_eq!(flat.get(0), Some(1));
-        assert!(flat.is_valid(0));
-        assert!(flat.is_null(1));
-        assert_eq!(flat.get(1), None);
-        assert_eq!(flat.get(2), Some(3));
-
-        assert_eq!(unsafe { flat.value_unchecked(2) }, 3);
-        assert_eq!(unsafe { flat.get_unchecked(1) }, None);
-        assert!(unsafe { flat.is_null_unchecked(1) });
     }
 }

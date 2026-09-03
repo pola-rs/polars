@@ -10,29 +10,14 @@ use crate::flat::Flat;
 
 /// The methods a [`PlBinaryArray`] gains from holding the range of every element and one validity
 /// bit per element.
-///
-/// These are the counterparts of the methods on [`BinaryArray`](arrow::array::BinaryArray), whose
-/// offsets *are* the ranges of its elements: they hand out the backing buffers as they are and
-/// read them without a [`broadcast_index`](crate::broadcast::broadcast_index). Each shadows the
-/// broadcast-aware method of the same name on [`PlBinaryArray`], which remains reachable through
-/// the deref — including the iterators, which read the elements the same way either way.
 impl Flat<PlBinaryArray> {
     /// The backing offsets buffer, holding exactly [`len`](PlBinaryArray::len) `+ 1` offsets.
-    ///
-    /// Unlike [`PlBinaryArray::flat_offsets`], this needs no [`Option`] to admit scalar offsets:
-    /// element `i` covers `offsets[i]..offsets[i + 1]` of [`values`](PlBinaryArray::values). The
-    /// offsets are not normalized: the first one is whatever slicing left it, not necessarily
-    /// zero.
     #[inline(always)]
     pub const fn offsets(&self) -> &Buffer<u64> {
         &self.0.offsets
     }
 
     /// The backing values buffer, holding the bytes the offsets cut the elements out of.
-    ///
-    /// Being flat says nothing about the values: they are not trimmed to what the offsets reach,
-    /// so they may hold bytes before the first offset and after the last, exactly as
-    /// [`PlBinaryArray::values`] does.
     #[inline(always)]
     pub const fn values(&self) -> &Buffer<u8> {
         &self.0.values
@@ -46,18 +31,12 @@ impl Flat<PlBinaryArray> {
 
     /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
     /// [`len`](PlBinaryArray::len) bits.
-    ///
-    /// Unlike [`PlBinaryArray::validity`], this needs no [`PlBitmapRef`](crate::PlBitmapRef) to
-    /// hide a scalar bit: bit `i` is element `i`.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
         self.0.validity.as_ref()
     }
 
-    /// Consumes this array into its internal components, whose ranges and bits are one per
-    /// element.
-    ///
-    /// The length is not part of the result: it is one fewer than the number of offsets.
+    /// Consumes this array into its internal components, whose ranges and bits are one per element.
     #[inline]
     pub fn into_inner(self) -> (Buffer<u8>, Buffer<u64>, Option<Bitmap>) {
         let PlBinaryArray {
@@ -71,8 +50,6 @@ impl Flat<PlBinaryArray> {
     }
 
     /// The range of [`Self::values`] the element at `i` covers.
-    ///
-    /// The range of a null element is undetermined (it can be any valid range).
     ///
     /// # Panics
     /// Panics if `i >= self.len()`.
@@ -100,8 +77,6 @@ impl Flat<PlBinaryArray> {
 
     /// Returns the bytes of the element at `i`.
     ///
-    /// The value of a null element is undetermined (it can be any byte string).
-    ///
     /// # Panics
     /// Panics if `i >= self.len()`.
     #[inline]
@@ -111,8 +86,6 @@ impl Flat<PlBinaryArray> {
     }
 
     /// Returns the bytes of the element at `i`.
-    ///
-    /// The value of a null element is undetermined (it can be any byte string).
     ///
     /// # Safety
     /// `i` must be smaller than `self.len()`.

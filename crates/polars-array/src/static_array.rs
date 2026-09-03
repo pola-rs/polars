@@ -27,68 +27,13 @@ use crate::{
 };
 
 /// An array whose element type is known statically.
-///
-/// This is the typed counterpart of [`PlArray`]: where that trait exposes only what does not
-/// depend on the element type, so that it can be a trait object, this one names the element type
-/// and hands out the values themselves. Code that is generic over the array rather than over the
-/// element type — a kernel written once for every array of this crate — is written against this
-/// trait, and reaches everything else through the [`PlArray`] supertrait.
-///
-/// Reading an element goes through the same broadcast the concrete arrays use, so it does not
-/// matter whether the array is flat or scalar; see [`crate::broadcast`] for the rules. Every
-/// method here is the trait's view of the inherent method of the same name on the concrete array,
-/// which remains the one to call when the concrete type is known — the two agree, and the inherent
-/// one wins name resolution. The two methods that would collide with a [`PlArray`] method of the
-/// same name carry a `_typed` suffix instead, since they return `Self` where [`PlArray`] returns a
-/// `Box<dyn PlArray>`.
-///
-/// # Construction
-///
-/// Unlike [`StaticArray`](arrow::array::StaticArray) of the Arrow arrays, this trait has no
-/// constructors: the arrays of this crate carry no logical type, so there is nothing an array of a
-/// nested type could be constructed *from* — a [`PlListArray`] needs the array its lists are taken
-/// over, which no length and no element type imply. Building an array generically is what
-/// [`Self::Builder`] is for, and building one shaped like an array at hand is what
-/// [`builder_like`](crate::builder::builder_like) is for.
-///
-/// # Example
-/// ```
-/// use polars_array::{PlBooleanArray, PlPrimitiveArray, StaticArray};
-///
-/// /// The elements of an array that are not null, in order.
-/// fn valid_elements<A: StaticArray>(array: &A) -> Vec<A::ValueT<'_>> {
-///     array.iter().flatten().collect()
-/// }
-///
-/// assert_eq!(valid_elements(&PlPrimitiveArray::from_vec(vec![1i32, 2])), [1, 2]);
-/// assert!(valid_elements(&PlBooleanArray::new_full_null(2)).is_empty());
-/// ```
 pub trait StaticArray: PlArray + Clone {
     /// One element of this array, borrowed from it.
-    ///
-    /// This is `()` for the arrays whose elements carry no value of their own: a
-    /// [`PlStructArray`], whose values live in its field arrays, and a [`PlNullArray`], which has
-    /// no values at all.
     type ValueT<'a>: Clone
     where
         Self: 'a;
 
     /// One element of this array, in a type whose all-zero bit pattern is a value of its own.
-    ///
-    /// A kernel that fills a [`Vec`] with one slot per element needs something to leave in the
-    /// slots it has no value for — the elements it is about to mask off as null. That is what
-    /// this type is: a stand-in for [`Self::ValueT`] that every value converts into, and which
-    /// has something to leave a slot at when there is no value, [`Zeroable::zeroed`].
-    ///
-    /// For an element that is already zeroable — a number, a `bool` — this is the element type
-    /// unchanged, and the zero is zero or `false`. For one that is a reference, which has no
-    /// zero, it is [`Option`] of it, and the zero is [`None`]. Either way what a zeroed slot
-    /// holds is not a value the kernel meant to write: it is the validity mask, put on afterwards
-    /// with [`Self::with_validity_typed`], that says which slots those were.
-    ///
-    /// The vector is turned into the array by collecting it — see
-    /// [`ZeroableArrayFromIter`](crate::collect::ZeroableArrayFromIter), which is this crate's
-    /// [`from_zeroable_vec`](arrow::array::StaticArray::from_zeroable_vec).
     type ZeroableValueT<'a>: Zeroable + From<Self::ValueT<'a>>
     where
         Self: 'a;
@@ -112,10 +57,6 @@ pub trait StaticArray: PlArray + Clone {
         Self: 'a;
 
     /// The builder that builds this array.
-    ///
-    /// Constructing one takes whatever the array is built out of — the builder of the values of a
-    /// [`PlListArray`], the width of a [`PlFixedSizeListArray`] — so it is the concrete builder
-    /// that has the constructor, not this trait.
     type Builder: StaticArrayBuilder<Array = Self>;
 
     /// Returns the element at `i`, whether or not it is null.
@@ -165,29 +106,18 @@ pub trait StaticArray: PlArray + Clone {
     /// Returns an iterator over `length` elements, repeating the single element of this array if
     /// that is all it holds.
     ///
-    /// This is [`Self::values_iter`] of this array broadcast to `length` elements, which is `O(1)`
-    /// — the copies are never materialized. See [`crate::broadcast`].
-    ///
     /// # Panics
     /// Panics if `self.len()` is neither `length` nor one.
     fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_>;
 
     /// Returns this array with its validity mask replaced by a flat one.
     ///
-    /// This is [`PlArray::with_validity`] without the trait object, which is what the `_typed`
-    /// suffix is for.
-    ///
     /// # Panics
     /// Panics if `validity` does not hold one bit per element.
-    /// [`Self::with_validity_broadcast_typed`] is what installs the single bit every element
-    /// shares; this function never infers that from a mask that happens to hold one bit.
     #[must_use]
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self;
 
     /// Returns this array with its validity mask replaced by one that broadcasts over it.
-    ///
-    /// This is [`PlArray::with_validity_broadcast`] without the trait object, which is what the
-    /// `_typed` suffix is for.
     ///
     /// # Panics
     /// Panics if `validity` is neither flat nor scalar for this array's length.
@@ -196,32 +126,16 @@ pub trait StaticArray: PlArray + Clone {
 
     /// Returns an array of `length` copies of the element at `index`.
     ///
-    /// This is [`PlArray::new_from_index`] without the trait object, which is what the `_typed`
-    /// suffix is for.
-    ///
     /// # Panics
     /// Panics if `index >= self.len()`.
     #[must_use]
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self;
 
     /// Whether every backing buffer of this array holds one slot per element.
-    ///
-    /// This is what [`StaticArray::as_flat`] answers with a borrow rather than with a `bool`; see
-    /// [`crate::broadcast`] for the rules.
     fn is_flat(&self) -> bool;
 
     /// The element every element of this array equals, if it is entirely stored in the scalar
     /// representation.
-    ///
-    /// The inner [`Option`] is that element, so an array of nothing but nulls yields
-    /// `Some(None)`. Returns `None` for an empty array, which has no element to share, and
-    /// whenever a backing buffer is flat over more than one element.
-    ///
-    /// This is what an elementwise kernel dispatches on to hand a repeated value to the
-    /// single-value kernel rather than materialize [`PlArray::len`] copies of it with
-    /// [`StaticArray::to_flat`] — it is the `O(1)` shortcut past a scalar array of unbounded
-    /// length. It is the trait's view of the inherent `scalar_value` of the concrete arrays,
-    /// which is the one to call when the concrete type is known.
     #[inline]
     fn scalar_value(&self) -> Option<Option<Self::ValueT<'_>>> {
         // SAFETY: the array is not empty, so element 0 is in bounds.
@@ -229,23 +143,13 @@ pub trait StaticArray: PlArray + Clone {
     }
 
     /// Returns this array in the flat representation, writing out every buffer that is scalar.
-    ///
-    /// This is `O(1)` for an array that is already flat and `O(len)` for one that is not — see
-    /// [`Flat`] and the concrete arrays for the exact cost.
     #[must_use]
     fn to_flat(&self) -> Flat<Self>;
 
     /// Borrows this array as a flat one, or `None` if any backing buffer is scalar.
-    ///
-    /// This is the `O(1)` half of [`StaticArray::to_flat`]: it never writes a buffer out, so the
-    /// caller decides what an array that is not laid out flat costs.
     fn as_flat(&self) -> Option<&Flat<Self>>;
 
     /// Boxes this array as a [`PlArray`] trait object.
-    ///
-    /// This is [`Box::new`] for every array in this crate: a trait object always downcasts to the
-    /// array it really is, [`PlUtf8ViewArray`] — which is `repr(transparent)` over a
-    /// [`PlBinaryViewArray`] but a distinct [`PlArrayType`](crate::PlArrayType) — included.
     #[inline]
     fn into_boxed(self) -> Box<dyn PlArray>
     where
@@ -761,8 +665,7 @@ impl StaticArray for PlFixedSizeListArray {
 }
 
 /// A [`PlStructArray`] holds no values of its own: an element is a row across the field arrays,
-/// which are reached through [`PlStructArray::fields`] and read as the arrays they are. What is
-/// left of an element is whether it is null, so the value of one is `()`.
+/// which are reached through [`PlStructArray::fields`] and read as the arrays they are.
 impl StaticArray for PlStructArray {
     type ValueT<'a> = ();
     type ZeroableValueT<'a> = ();
@@ -848,8 +751,8 @@ impl StaticArray for PlNullArray {
         std::iter::repeat_n((), length)
     }
 
-    /// Returns this array unchanged: an array of nothing but nulls has no element a mask could
-    /// make valid, exactly as [`PlArray::set_validity`] documents.
+    /// Returns this array unchanged: an array of nothing but nulls has no element a mask could make
+    /// valid, exactly as [`PlArray::set_validity`] documents.
     #[inline]
     fn with_validity_typed(self, _validity: Option<Bitmap>) -> Self {
         self
@@ -983,8 +886,8 @@ mod tests {
     use super::*;
     use crate::iterator_tests::assert_iterates;
 
-    /// The iterator of an array whose elements carry no value of their own, in both
-    /// representations of its validity mask.
+    /// The iterator of an array whose elements carry no value of their own, in both representations
+    /// of its validity mask.
     mod unit_iter {
         use super::*;
 

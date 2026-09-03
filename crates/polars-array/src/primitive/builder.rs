@@ -35,9 +35,6 @@ impl<T: NativeType> PlPrimitiveArrayBuilder<T> {
     }
 
     /// Appends the `length` values of `other` starting at `start`, ignoring its validity mask.
-    ///
-    /// A scalar values buffer is not materialized to be read: the one value it holds is the value
-    /// of every element the subslice covers.
     fn extend_values(&mut self, other: &PlPrimitiveArray<T>, start: usize, length: usize) {
         if let Some(values) = other.flat_values() {
             self.values

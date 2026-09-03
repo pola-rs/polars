@@ -4,7 +4,8 @@ use arrow::trusted_len::TrustedLen;
 
 use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 
-/// Iterator over the elements of a [`PlFixedSizeBinaryArray`](super::PlFixedSizeBinaryArray), ignoring validity.
+/// Iterator over the elements of a [`PlFixedSizeBinaryArray`](super::PlFixedSizeBinaryArray),
+/// ignoring validity.
 #[derive(Clone)]
 pub struct PlFixedSizeBinaryValuesIter<'a> {
     values: &'a [u8],
@@ -26,11 +27,6 @@ impl<'a> PlFixedSizeBinaryValuesIter<'a> {
     }
 
     /// Whether the values hold the one element every element covers, rather than one per element.
-    ///
-    /// A single element wide is what scalar values are — and what the values of an array of one
-    /// element are too, whichever representation it is in. Either way every position reads them
-    /// from the start. This does not depend on the position being read, so a loop over the
-    /// elements settles it once rather than at every one of them.
     #[inline(always)]
     fn is_scalar(&self) -> bool {
         self.values.len() == self.width
@@ -125,7 +121,8 @@ impl ExactSizeIterator for PlFixedSizeBinaryValuesIter<'_> {
 
 unsafe impl TrustedLen for PlFixedSizeBinaryValuesIter<'_> {}
 
-/// Iterator over the optional elements of a [`PlFixedSizeBinaryArray`](super::PlFixedSizeBinaryArray).
+/// Iterator over the optional elements of a
+/// [`PlFixedSizeBinaryArray`](super::PlFixedSizeBinaryArray).
 #[derive(Clone)]
 pub struct PlFixedSizeBinaryIter<'a> {
     values: PlFixedSizeBinaryValuesIter<'a>,
@@ -133,11 +130,11 @@ pub struct PlFixedSizeBinaryIter<'a> {
 }
 
 impl<'a> PlFixedSizeBinaryIter<'a> {
-    /// # Safety
-    /// `values` must be flat or scalar for `length` and `width`, per [`crate::broadcast`].
-    ///
     /// # Panics
     /// Panics unless `validity` has `length` bits.
+    ///
+    /// # Safety
+    /// `values` must be flat or scalar for `length` and `width`, per [`crate::broadcast`].
     #[inline]
     pub(super) fn new(
         values: &'a [u8],
@@ -154,9 +151,6 @@ impl<'a> PlFixedSizeBinaryIter<'a> {
     }
 
     /// The values and the mask that says which of them are elements, to walk in one loop.
-    ///
-    /// The mask has its representation hoisted out, so that the loop the caller runs reads no
-    /// mask at all where every element is valid, and neither mask nor values where none is.
     #[inline]
     fn split(self) -> (PlFixedSizeBinaryValuesIter<'a>, ValidityFold<'a>) {
         (self.values, self.validity.into_mask())

@@ -12,7 +12,8 @@ pub(crate) use iterator::{ValidityFold, ValidityIter};
 pub use reference::PlBitmapRef;
 pub use validity::{combine_validities_and, invert};
 
-/// An immutable, cheaply cloneable mask of `length` bits, in either the flat or the scalar representation.
+/// An immutable, cheaply cloneable mask of `length` bits, in either the flat or the scalar
+/// representation.
 #[derive(Clone)]
 pub struct PlBitmap {
     /// Scalar: bitmap.len() == 1
@@ -23,12 +24,8 @@ pub struct PlBitmap {
 impl PlBitmap {
     /// Creates a flat [`PlBitmap`] of `length` bits backed by `bitmap`.
     ///
-    /// This function is `O(1)`.
-    ///
     /// # Errors
     /// This function errors unless `bitmap` holds one bit per element.
-    /// [`Self::try_new_broadcast`] is what wraps the single bit every element shares; this
-    /// function never infers that from a bitmap that happens to hold one bit.
     pub fn try_new(bitmap: Bitmap, length: usize) -> PolarsResult<Self> {
         polars_ensure!(
             is_flat_buffer_len(bitmap.len(), length),
@@ -52,8 +49,7 @@ impl PlBitmap {
     /// Creates a flat [`PlBitmap`] of `length` bits backed by `bitmap`, without validating it.
     ///
     /// # Safety
-    /// `bitmap` must hold one bit per element, i.e. have `length` bits. [`Self::new_broadcast`]
-    /// and its companions are what admit the single bit every element shares.
+    /// `bitmap` must hold one bit per element, i.e. have `length` bits.
     #[inline]
     pub unsafe fn new_unchecked(bitmap: Bitmap, length: usize) -> Self {
         debug_assert!(is_flat_buffer_len(bitmap.len(), length));
@@ -61,12 +57,6 @@ impl PlBitmap {
     }
 
     /// Creates a [`PlBitmap`] of `length` bits backed by a `bitmap` that broadcasts over them.
-    ///
-    /// This is [`Self::try_new`] widened to the scalar representation: `bitmap` is either flat —
-    /// one bit per element — or the single bit every element shares, which is what
-    /// [`Self::into_flat_or_scalar`] hands back. See [`crate::broadcast`].
-    ///
-    /// This function is `O(1)`.
     ///
     /// # Errors
     /// This function errors if `bitmap` is neither flat (length equal to `length`) nor scalar
@@ -140,11 +130,6 @@ impl PlBitmap {
     }
 
     /// The backing bitmap, if it holds one bit per element.
-    ///
-    /// This is the `O(1)` counterpart of [`Self::to_flat`]: it materializes nothing, and returns
-    /// `None` rather than expanding a scalar mask. Reach for the bit a scalar mask shares with
-    /// [`Self::scalar_value`] instead — between them the two cover every mask that has bits at
-    /// all, so a `None` from both is an empty mask.
     #[inline]
     pub fn flat_bitmap(&self) -> Option<&Bitmap> {
         self.is_flat().then_some(&self.bitmap)
@@ -158,37 +143,24 @@ impl PlBitmap {
     }
 
     /// Returns the backing bitmap and the logical length of this mask.
-    ///
-    /// The bitmap is *not* guaranteed to have [`Self::len`] bits: it is either flat or scalar,
-    /// which is why the length comes with it. Index it through
-    /// [`broadcast_index`](crate::broadcast::broadcast_index), or reach for
-    /// [`Self::flat_bitmap`] to get one that needs no such care.
     #[inline]
     pub fn into_inner(self) -> (Bitmap, usize) {
         (self.bitmap, self.length)
     }
 
     /// Whether the backing bitmap holds a single bit shared by every element.
-    ///
-    /// A mask of one bit over one element is both scalar and [`flat`](Self::is_flat): the two
-    /// representations coincide, and this reports them both.
     #[inline]
     pub fn is_scalar(&self) -> bool {
         self.bitmap.len() == 1
     }
 
     /// Whether the backing bitmap holds one bit per element.
-    ///
-    /// A mask of one bit over one element is both flat and [`scalar`](Self::is_scalar).
     #[inline]
     pub fn is_flat(&self) -> bool {
         self.bitmap.len() == self.length
     }
 
     /// The bit shared by every element, if the backing bitmap holds a single bit.
-    ///
-    /// Returns `None` for a flat mask of more than one bit, and for an empty mask. A mask of
-    /// length one is both flat and scalar, so it yields its only bit.
     #[inline]
     pub fn scalar_value(&self) -> Option<bool> {
         self.as_ref().scalar_value()
@@ -213,18 +185,12 @@ impl PlBitmap {
     }
 
     /// The number of unset bits.
-    ///
-    /// This is `O(1)` for a scalar mask and `O(len)` for a flat one, amortized over repeated
-    /// calls on the same [`Bitmap`].
     #[inline]
     pub fn unset_bits(&self) -> usize {
         self.as_ref().unset_bits()
     }
 
     /// The number of set bits.
-    ///
-    /// This is `O(1)` for a scalar mask and `O(len)` for a flat one, amortized over repeated
-    /// calls on the same [`Bitmap`].
     #[inline]
     pub fn set_bits(&self) -> usize {
         self.as_ref().set_bits()
@@ -238,8 +204,6 @@ impl PlBitmap {
 
     /// Slices this mask in place to `length` bits starting at `offset`.
     ///
-    /// This function is `O(1)`.
-    ///
     /// # Panics
     /// Panics if `offset + length > self.len()`.
     pub fn slice(&mut self, offset: usize, length: usize) {
@@ -251,8 +215,6 @@ impl PlBitmap {
     }
 
     /// Slices this mask in place to `length` bits starting at `offset`.
-    ///
-    /// This function is `O(1)`.
     ///
     /// # Safety
     /// `offset + length` must not exceed `self.len()`.
@@ -272,8 +234,6 @@ impl PlBitmap {
 
     /// Returns this mask sliced to `length` bits starting at `offset`.
     ///
-    /// This function is `O(1)`.
-    ///
     /// # Panics
     /// Panics if `offset + length > self.len()`.
     #[must_use]
@@ -284,8 +244,6 @@ impl PlBitmap {
 
     /// Returns this mask sliced to `length` bits starting at `offset`.
     ///
-    /// This function is `O(1)`.
-    ///
     /// # Safety
     /// `offset + length` must not exceed `self.len()`.
     #[must_use]
@@ -295,29 +253,17 @@ impl PlBitmap {
     }
 
     /// Returns an equivalent mask whose backing bitmap holds one bit per element.
-    ///
-    /// This expands a scalar mask and is therefore `O(len)`; it is a no-op clone when this mask
-    /// [`is_flat`](Self::is_flat).
     pub fn to_flat(&self) -> Self {
         Self::from_bitmap(self.as_ref().to_flat())
     }
 
     /// Consumes this mask into the backing bitmap, keeping the scalar representation.
-    ///
-    /// This is [`Self::into_bitmap`] that does not write a scalar mask out: the single bit is
-    /// handed back as the one-bit bitmap it is, which makes this `O(1)`. The length the mask
-    /// stands for is dropped along the way, so the result belongs on an array through
-    /// `set_validity_broadcast` — the setter that reads a bitmap against the array's own length,
-    /// rather than taking its `len` for the mask's.
     #[inline]
     pub fn into_flat_or_scalar(self) -> Bitmap {
         self.bitmap
     }
 
     /// Consumes this mask into an ordinary [`Bitmap`] holding one bit per element.
-    ///
-    /// This expands a scalar mask and is therefore `O(len)`; it is free when this mask
-    /// [`is_flat`](Self::is_flat).
     pub fn into_bitmap(self) -> Bitmap {
         if self.is_flat() {
             self.bitmap
@@ -348,7 +294,7 @@ impl From<MutableBitmap> for PlBitmap {
     }
 }
 
-/// Takes ownership of the backing bitmap, preserving the representation. This is `O(1)`.
+/// Takes ownership of the backing bitmap, preserving the representation.
 impl From<PlBitmapRef<'_>> for PlBitmap {
     #[inline]
     fn from(mask: PlBitmapRef<'_>) -> Self {
@@ -406,9 +352,6 @@ impl std::fmt::Debug for PlBitmap {
 }
 
 /// Compares two validity masks over `length` elements, treating an absent mask as all valid.
-///
-/// This is what the arrays whose elements are not a single value — the nested ones — compare their
-/// validity with before looking at what they hold.
 pub(crate) fn validity_eq(
     lhs: Option<PlBitmapRef<'_>>,
     rhs: Option<PlBitmapRef<'_>>,

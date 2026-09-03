@@ -6,7 +6,8 @@ use polars_utils::slice_broadcast_iter::SliceBroadcastIter;
 use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 use crate::broadcast::broadcast_slice;
 
-/// Iterator over the values of a [`PlBinaryViewArray`](super::PlBinaryViewArray), ignoring validity.
+/// Iterator over the values of a [`PlBinaryViewArray`](super::PlBinaryViewArray), ignoring
+/// validity.
 #[derive(Clone)]
 pub struct PlBinaryViewValuesIter<'a> {
     views: SliceBroadcastIter<'a, View>,
@@ -14,11 +15,11 @@ pub struct PlBinaryViewValuesIter<'a> {
 }
 
 impl<'a> PlBinaryViewValuesIter<'a> {
-    /// # Safety
-    /// Every view must read bytes that `buffers` holds.
-    ///
     /// # Panics
     /// Panics unless `views` is flat or scalar for `length`, per [`crate::broadcast`].
+    ///
+    /// # Safety
+    /// Every view must read bytes that `buffers` holds.
     #[inline]
     pub(super) fn new(views: &'a [View], buffers: &'a [Buffer<u8>], length: usize) -> Self {
         Self {
@@ -66,8 +67,8 @@ impl<'a> Iterator for PlBinaryViewValuesIter<'a> {
         Some(Self::get(self.buffers, view))
     }
 
-    /// Hoists the representation out of the loop: flat views fold as the slice they are, and
-    /// scalar ones fold over the single view they hold.
+    /// Hoists the representation out of the loop: flat views fold as the slice they are, and scalar
+    /// ones fold over the single view they hold.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where
@@ -121,12 +122,12 @@ pub struct PlBinaryViewIter<'a> {
 }
 
 impl<'a> PlBinaryViewIter<'a> {
-    /// # Safety
-    /// Every view must read bytes that `buffers` holds.
-    ///
     /// # Panics
     /// Panics unless `views` is flat or scalar for `length`, per [`crate::broadcast`], and
     /// `validity` has `length` bits.
+    ///
+    /// # Safety
+    /// Every view must read bytes that `buffers` holds.
     #[inline]
     pub(super) fn new(
         views: &'a [View],

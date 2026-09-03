@@ -3,10 +3,6 @@
 use std::fmt::Debug;
 
 /// Asserts that `iter` yields `expected`, however it is driven.
-///
-/// This covers every method the iterators of this crate specialize, on both ends, as well as the
-/// count they report while they are being driven — a wrong one is unsoundness rather than a wrong
-/// answer, since they are all [`TrustedLen`](arrow::trusted_len::TrustedLen).
 pub(crate) fn assert_iterates<I>(iter: I, expected: &[I::Item])
 where
     I: DoubleEndedIterator + ExactSizeIterator + Clone,

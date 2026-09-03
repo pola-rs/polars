@@ -55,9 +55,6 @@ impl PlFixedSizeBinaryArrayBuilder {
 
     /// Appends the bytes of the `length` elements of `other` starting at `start`, ignoring its
     /// validity mask.
-    ///
-    /// Scalar values are not materialized to be read: the one element they hold is appended once
-    /// per element the subslice covers.
     fn extend_values(&mut self, other: &PlFixedSizeBinaryArray, start: usize, length: usize) {
         if let Some(values) = other.flat_values() {
             let bytes = &values[start * self.width..(start + length) * self.width];

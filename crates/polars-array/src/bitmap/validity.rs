@@ -6,17 +6,6 @@ use crate::{PlBitmap, PlBitmapRef};
 
 /// The `and` of two masks over the same elements, or `None` if neither has a null.
 ///
-/// A scalar mask on either side is a shortcut rather than something to write out: two of them
-/// `and` to a single bit, one that is unset everywhere makes the whole result a single unset bit,
-/// and one that is set everywhere hands the other side back in whatever representation it is in.
-/// Only two flat masks cost `O(len)`.
-///
-/// The result is therefore flat *or* scalar, whichever came out cheaper, which is why it comes
-/// back as a [`PlBitmap`]: the mask carries the number of elements it covers, so a scalar result
-/// is not mistaken for a mask over the single element its backing bitmap has bits for. Hand it to
-/// an array through `set_validity_broadcast` — which admits both representations — with
-/// [`PlBitmap::into_flat_or_scalar`], or materialize a flat mask with [`PlBitmap::into_bitmap`].
-///
 /// # Panics
 /// Panics if the masks are over a different number of elements.
 pub fn combine_validities_and(
@@ -55,9 +44,6 @@ pub fn combine_validities_and(
 }
 
 /// The bits of `mask`, inverted: set where an element is null.
-///
-/// The result is in the same representation as `mask`, so this is `O(1)` for a scalar mask —
-/// whose single bit inverts to a single bit — and `O(len)` for a flat one.
 pub fn invert(mask: PlBitmapRef<'_>) -> Bitmap {
     // The backing bitmap is flat or scalar for the mask's length, and inverting it bit for bit
     // leaves it that way; there is nothing to expand first.

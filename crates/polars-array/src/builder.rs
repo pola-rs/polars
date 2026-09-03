@@ -2,9 +2,6 @@
 
 /// Whether a builder may adopt the buffers of the arrays it appends, rather than copying out of
 /// them.
-///
-/// This is [`ShareStrategy`] of the Arrow builders, which the builders of this crate take for the
-/// same reason: see the [module docs](self).
 pub use arrow::array::builder::ShareStrategy;
 use arrow::bitmap::OptBitmapBuilder;
 use polars_utils::IdxSize;
@@ -23,20 +20,11 @@ use crate::{
 };
 
 /// A builder of one concrete array type.
-///
-/// This is the typed builder trait: it names the array it builds, so what it appends are arrays of
-/// that type rather than trait objects. See the [module docs](self) for what the extend methods do
-/// and what a builder freezes; [`PlArrayBuilder`] is the trait object of this trait, which every
-/// implementor gets for free.
 pub trait StaticArrayBuilder: Send {
     /// The array this builder builds.
     type Array: StaticArray;
 
     /// Reserves capacity for at least `additional` more elements.
-    ///
-    /// A [`PlListArrayBuilder`] is the one builder that does not pass this on to its child: how
-    /// many values the elements of a list array reach is not implied by how many elements there
-    /// are.
     fn reserve(&mut self, additional: usize);
 
     /// The number of elements appended so far.
@@ -77,9 +65,6 @@ pub trait StaticArrayBuilder: Send {
 
     /// Appends the `length` elements of `other` starting at `start` `repeats` times over.
     ///
-    /// The run of elements is what is repeated, so appending `abc` twice appends `abcabc`; it is
-    /// [`Self::subslice_extend_each_repeated`] that appends `aabbcc`.
-    ///
     /// # Panics
     /// Panics if `start + length > other.len()`.
     fn subslice_extend_repeated(
@@ -97,9 +82,6 @@ pub trait StaticArrayBuilder: Send {
     }
 
     /// Appends each of the `length` elements of `other` starting at `start` `repeats` times over.
-    ///
-    /// It is each element that is repeated, so appending `abc` twice appends `aabbcc`; it is
-    /// [`Self::subslice_extend_repeated`] that appends `abcabc`.
     ///
     /// # Panics
     /// Panics if `start + length > other.len()`.
@@ -124,28 +106,6 @@ pub trait StaticArrayBuilder: Send {
 }
 
 /// A trait object over the builders in this crate.
-///
-/// This is the counterpart of [`PlArray`] on the building side, and it is what the builders of the
-/// nested arrays hold their children as: the values of a [`PlListArray`] are a `Box<dyn PlArray>`,
-/// so the builder of those values is a `Box<dyn PlArrayBuilder>`. Every [`StaticArrayBuilder`] is
-/// one, and the arrays it is fed are downcast to the type it builds — which is what makes appending
-/// an array of the wrong type a panic rather than a compile error.
-///
-/// # Example
-/// ```
-/// use polars_array::builder::{PlArrayBuilder, ShareStrategy, builder_like};
-/// use polars_array::{PlArray, PlPrimitiveArray};
-///
-/// let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
-///
-/// let mut builder = builder_like(&array);
-/// builder.subslice_extend(&array, 1, 2, ShareStrategy::Always);
-/// builder.extend_nulls(1);
-///
-/// let built = builder.freeze();
-/// assert_eq!(built.len(), 3);
-/// assert_eq!(built.null_count(), 1);
-/// ```
 #[allow(private_bounds)]
 pub trait PlArrayBuilder: PlArrayBuilderBoxedHelper + Send {
     /// Reserves capacity for at least `additional` more elements.
@@ -175,8 +135,8 @@ pub trait PlArrayBuilder: PlArrayBuilderBoxedHelper + Send {
     /// Appends the `length` elements of `other` starting at `start`, in order.
     ///
     /// # Panics
-    /// Panics if `other` is not of the type this builder builds, or if
-    /// `start + length > other.len()`.
+    /// Panics if `other` is not of the type this builder builds, or if `start + length >
+    /// other.len()`.
     fn subslice_extend(
         &mut self,
         other: &dyn PlArray,
@@ -450,29 +410,6 @@ impl PlArrayBuilder for Box<dyn PlArrayBuilder> {
 }
 
 /// An empty builder of the arrays that `array` is one of.
-///
-/// This is the counterpart of [`make_builder`](arrow::array::builder::make_builder), which takes
-/// the dtype the built array is to have. The arrays in this crate carry no logical type, so what
-/// stands in for it is an array of the physical shape the result is to have: the element type of a
-/// [`PlPrimitiveArray`](crate::PlPrimitiveArray), the width of a [`PlFixedSizeBinaryArray`] or a
-/// [`PlFixedSizeListArray`], the field arrays of a [`PlStructArray`] — recursively, since the
-/// builder of a nested array is built out of the builders of its children. Nothing but the shape
-/// of `array` is read, so an empty array does as well as one holding elements.
-///
-/// # Example
-/// ```
-/// use polars_array::builder::{PlArrayBuilder, ShareStrategy, builder_like};
-/// use polars_array::{PlArray, PlListArray, PlPrimitiveArray};
-///
-/// let array = PlListArray::new_empty(Box::new(PlPrimitiveArray::<i32>::new_empty()));
-///
-/// let mut builder = builder_like(&array);
-/// builder.extend_nulls(3);
-///
-/// let built = builder.freeze();
-/// assert_eq!(built.array_type(), array.array_type());
-/// assert_eq!(built.null_count(), 3);
-/// ```
 pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
     match array.array_type() {
         PlArrayType::Primitive(_) => with_match_pl_primitive_array_type!(array, |T| {
@@ -528,26 +465,8 @@ pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
 
 /// An array of `length` nulls of the type that `array` is one of.
 ///
-/// This is the [`builder_like`] of a fully null array, and like it, nothing but the shape of
-/// `array` is read — the element type, the width, the field arrays — so an empty array does as
-/// well as one holding elements. Unlike building one null at a time, this keeps the
-/// [`scalar`](crate::broadcast) representation: the result is `O(1)` in memory for every array but
-/// a [`PlStructArray`], which is `O(num_fields)`, so its length is unbounded by its memory use.
-///
 /// # Panics
 /// Panics for an object array, which has no builder in this crate either.
-///
-/// # Example
-/// ```
-/// use polars_array::builder::full_null_like;
-/// use polars_array::{PlArray, PlPrimitiveArray};
-///
-/// let array = PlPrimitiveArray::<i32>::new_empty();
-/// let nulls = full_null_like(&array, 1_000_000_000);
-///
-/// assert_eq!(nulls.array_type(), array.array_type());
-/// assert_eq!(nulls.null_count(), 1_000_000_000);
-/// ```
 pub fn full_null_like(array: &dyn PlArray, length: usize) -> Box<dyn PlArray> {
     match array.array_type() {
         PlArrayType::Null => Box::new(PlNullArray::new(length)),
@@ -605,8 +524,8 @@ pub fn full_null_like(array: &dyn PlArray, length: usize) -> Box<dyn PlArray> {
     }
 }
 
-/// Panics unless the `length` elements starting at `start` are in bounds of an array of
-/// `array_len` elements.
+/// Panics unless the `length` elements starting at `start` are in bounds of an array of `array_len`
+/// elements.
 pub(crate) fn assert_subslice(array_len: usize, start: usize, length: usize) {
     assert!(
         start
@@ -618,8 +537,6 @@ pub(crate) fn assert_subslice(array_len: usize, start: usize, length: usize) {
 }
 
 /// Appends the `length` bits of `validity` starting at `start` to `dst`.
-///
-/// A scalar mask is appended as the single bit it holds, repeated, rather than being materialized.
 pub(crate) fn subslice_extend_validity(
     dst: &mut OptBitmapBuilder,
     validity: Option<PlBitmapRef<'_>>,

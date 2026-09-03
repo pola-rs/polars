@@ -26,9 +26,6 @@ pub struct PlUtf8ViewArray(PlBinaryViewArray);
 
 impl PlUtf8ViewArray {
     /// Wraps `array`, checking that every one of its elements is valid UTF-8.
-    ///
-    /// This is `O(total_bytes_len)`: the elements masked off as null are checked too, because a
-    /// validity mask can be replaced without the bytes under it changing.
     pub fn from_binview(array: PlBinaryViewArray) -> PolarsResult<Self> {
         validate_utf8(&array)?;
         // SAFETY: just validated.
@@ -230,8 +227,8 @@ impl PlUtf8ViewArray {
     /// Returns this array with every view replaced by what `update_view` makes of it.
     ///
     /// # Safety
-    /// The views the closure hands back must uphold every invariant of a view: each must read
-    /// bytes this array's data buffers hold, and those bytes must be valid UTF-8.
+    /// The views the closure hands back must uphold every invariant of a view: each must read bytes
+    /// this array's data buffers hold, and those bytes must be valid UTF-8.
     pub unsafe fn apply_views<F: FnMut(View, &str) -> View>(&self, mut update_view: F) -> Self {
         // TODO(polars-array-scalar): a scalar array holds one view standing for every element, so
         // the views could be mapped in `O(1)` rather than written out flat first.

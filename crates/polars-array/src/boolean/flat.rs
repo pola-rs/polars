@@ -7,18 +7,8 @@ use super::PlBooleanArray;
 use crate::flat::Flat;
 
 /// The methods a [`PlBooleanArray`] gains from having one bit per element in every backing bitmap.
-///
-/// These are the counterparts of the methods on [`BooleanArray`](arrow::array::BooleanArray), whose
-/// values bitmap *is* its elements: they hand out the backing bitmaps as they are and read them
-/// without a [`broadcast_index`](crate::broadcast::broadcast_index). Each shadows the
-/// broadcast-aware method of the same name on [`PlBooleanArray`], which remains reachable through
-/// the deref.
 impl Flat<PlBooleanArray> {
     /// The values, as an ordinary [`Bitmap`] of exactly [`len`](PlBooleanArray::len) bits.
-    ///
-    /// Unlike [`PlBooleanArray::values`], this needs no [`PlBitmapRef`](crate::PlBitmapRef) to hide
-    /// a scalar bit: bit `i` is element `i`. The values of null elements are undetermined (they can
-    /// be anything).
     #[inline(always)]
     pub const fn values(&self) -> &Bitmap {
         &self.0.values
@@ -33,8 +23,6 @@ impl Flat<PlBooleanArray> {
 
     /// Returns the value at `i`.
     ///
-    /// The value of a null element is undetermined (it can be anything).
-    ///
     /// # Panics
     /// Panics if `i >= self.len()`.
     #[inline]
@@ -44,8 +32,6 @@ impl Flat<PlBooleanArray> {
     }
 
     /// Returns the value at `i`.
-    ///
-    /// The value of a null element is undetermined (it can be anything).
     ///
     /// # Safety
     /// `i` must be smaller than `self.len()`.
@@ -115,27 +101,18 @@ impl Flat<PlBooleanArray> {
     }
 
     /// Returns an iterator over the values, ignoring validity.
-    ///
-    /// This walks the values bitmap directly, so — unlike [`PlBooleanArray::values_iter`] — it is
-    /// an ordinary [`BitmapIter`]. The values of null elements are undetermined (they can be
-    /// anything).
     #[inline]
     pub fn values_iter(&self) -> BitmapIter<'_> {
         self.0.values.iter()
     }
 
     /// Returns an iterator over the optional elements.
-    ///
-    /// This zips the two backing bitmaps directly, so — unlike [`PlBooleanArray::iter`] — it
-    /// mirrors [`BooleanArray::iter`](arrow::array::BooleanArray::iter).
     #[inline]
     pub fn iter(&self) -> ZipValidity<bool, BitmapIter<'_>, BitmapIter<'_>> {
         ZipValidity::new_with_validity(self.values_iter(), self.validity())
     }
 
     /// Consumes this array into its backing bitmaps, which both hold one bit per element.
-    ///
-    /// The length is not part of the result: it is the length of the values bitmap.
     #[inline]
     pub fn into_inner(self) -> (Bitmap, Option<Bitmap>) {
         let PlBooleanArray {
@@ -158,8 +135,8 @@ impl<'a> IntoIterator for &'a Flat<PlBooleanArray> {
     }
 }
 
-/// Compares an array of unknown representation against a flat one; see
-/// [`PartialEq<PlBooleanArray> for Flat<PlBooleanArray>`](Flat).
+/// Compares an array of unknown representation against a flat one; see [`PartialEq<PlBooleanArray>
+/// for Flat<PlBooleanArray>`](Flat).
 impl PartialEq<Flat<PlBooleanArray>> for PlBooleanArray {
     #[inline]
     fn eq(&self, other: &Flat<PlBooleanArray>) -> bool {

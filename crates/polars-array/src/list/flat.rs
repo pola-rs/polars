@@ -7,21 +7,10 @@ use super::PlListArray;
 use crate::array::PlArray;
 use crate::flat::Flat;
 
-/// The methods a [`PlListArray`] gains from holding the range of every element and one validity
-/// bit per element.
-///
-/// These are the counterparts of the methods on [`ListArray`](arrow::array::ListArray), whose
-/// offsets *are* the ranges of its elements: they hand out the backing buffers as they are and
-/// read them without a [`broadcast_index`](crate::broadcast::broadcast_index). Each shadows the
-/// broadcast-aware method of the same name on [`PlListArray`], which remains reachable through the
-/// deref — including the iterators, which read the elements the same way either way.
+/// The methods a [`PlListArray`] gains from holding the range of every element and one validity bit
+/// per element.
 impl Flat<PlListArray> {
     /// The backing offsets buffer, holding exactly [`len`](PlListArray::len) `+ 1` offsets.
-    ///
-    /// Unlike [`PlListArray::flat_offsets`], this needs no [`Option`] to admit scalar offsets:
-    /// element `i` covers `offsets[i]..offsets[i + 1]` of [`values`](PlListArray::values). The
-    /// offsets are not normalized: the first one is whatever slicing left it, not necessarily
-    /// zero.
     #[inline(always)]
     pub const fn offsets(&self) -> &Buffer<u64> {
         &self.0.offsets
@@ -29,18 +18,12 @@ impl Flat<PlListArray> {
 
     /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
     /// [`len`](PlListArray::len) bits.
-    ///
-    /// Unlike [`PlListArray::validity`], this needs no [`PlBitmapRef`](crate::PlBitmapRef) to hide
-    /// a scalar bit: bit `i` is element `i`.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
         self.0.validity.as_ref()
     }
 
-    /// Consumes this array into its internal components, whose ranges and bits are one per
-    /// element.
-    ///
-    /// The length is not part of the result: it is one fewer than the number of offsets.
+    /// Consumes this array into its internal components, whose ranges and bits are one per element.
     #[inline]
     pub fn into_inner(self) -> (Box<dyn PlArray>, Buffer<u64>, Option<Bitmap>) {
         let PlListArray {

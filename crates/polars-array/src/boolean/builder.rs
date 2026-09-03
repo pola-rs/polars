@@ -32,9 +32,6 @@ impl PlBooleanArrayBuilder {
     }
 
     /// Appends the `length` values of `other` starting at `start`, ignoring its validity mask.
-    ///
-    /// A scalar values bitmap is not materialized to be read: the one bit it holds is the value of
-    /// every element the subslice covers.
     fn extend_values(&mut self, other: &PlBooleanArray, start: usize, length: usize) {
         if let Some(values) = other.flat_values() {
             self.values

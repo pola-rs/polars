@@ -20,7 +20,8 @@ mod iterator;
 pub use builder::PlFixedSizeBinaryArrayBuilder;
 pub use iterator::{PlFixedSizeBinaryIter, PlFixedSizeBinaryValuesIter};
 
-/// An immutable, cheaply cloneable sequence of `length` optional byte strings of `width` bytes each, over one values buffer.
+/// An immutable, cheaply cloneable sequence of `length` optional byte strings of `width` bytes
+/// each, over one values buffer.
 #[derive(Clone)]
 pub struct PlFixedSizeBinaryArray {
     /// Scalar: values.len() == width
@@ -33,11 +34,6 @@ pub struct PlFixedSizeBinaryArray {
 
 impl PlFixedSizeBinaryArray {
     /// Creates a flat [`PlFixedSizeBinaryArray`] out of its internal components.
-    ///
-    /// The values have to hold the bytes of every element, laid end to end, and the validity mask
-    /// one bit per element. [`Self::try_new_broadcast`] is what builds the scalar representation;
-    /// this function never infers it from a buffer that happens to be one element wide. This
-    /// function is `O(1)`: there is only the length of `values` to check against the width.
     ///
     /// # Errors
     /// This function errors if `values` does not hold exactly `length * width` bytes, or if
@@ -85,8 +81,6 @@ impl PlFixedSizeBinaryArray {
     /// Creates a flat [`PlFixedSizeBinaryArray`] out of its internal components without validating
     /// them.
     ///
-    /// This function is `O(1)`.
-    ///
     /// # Safety
     /// `values` must hold exactly `length * width` bytes, and `validity` exactly `length` bits.
     #[inline]
@@ -116,14 +110,9 @@ impl PlFixedSizeBinaryArray {
     /// Creates a scalar [`PlFixedSizeBinaryArray`] of `length` elements out of its internal
     /// components.
     ///
-    /// The values have to hold the `width` bytes of the one element every element covers, and the
-    /// validity mask the single bit they share, which makes this `O(1)` in `length` as well as in
-    /// time. [`Self::try_new`] is what builds the flat representation.
-    ///
     /// # Errors
     /// This function errors if `values` does not hold exactly `width` bytes, or if `validity` does
-    /// not hold exactly one bit. An empty array has no element for the values to stand for, so it
-    /// admits only empty values, and an empty mask alongside the single bit.
+    /// not hold exactly one bit.
     pub fn try_new_broadcast(
         values: Buffer<u8>,
         width: usize,
@@ -174,8 +163,6 @@ impl PlFixedSizeBinaryArray {
     /// Creates a scalar [`PlFixedSizeBinaryArray`] of `length` elements out of its internal
     /// components without validating them.
     ///
-    /// This function is `O(1)`.
-    ///
     /// # Safety
     /// `values` must hold exactly `width` bytes — or none at all, if `length` is zero — and
     /// `validity` exactly one bit, or none at all if `length` is zero.
@@ -217,9 +204,6 @@ impl PlFixedSizeBinaryArray {
     /// Creates a fully valid, flat [`PlFixedSizeBinaryArray`] by cutting `values` into elements of
     /// `width` bytes, taking its length from how many of them there are.
     ///
-    /// The values are read as flat — `length * width` bytes — so this never builds the scalar
-    /// representation: [`Self::new_scalar`] is what does. This function is `O(1)`.
-    ///
     /// # Panics
     /// Panics if `width` is zero, which leaves no number of elements to cut the values into, or if
     /// the length of `values` is not a multiple of `width`.
@@ -245,8 +229,8 @@ impl PlFixedSizeBinaryArray {
         }
     }
 
-    /// Creates a fully valid, flat [`PlFixedSizeBinaryArray`] by cutting a [`Vec`] into elements
-    /// of `width` bytes.
+    /// Creates a fully valid, flat [`PlFixedSizeBinaryArray`] by cutting a [`Vec`] into elements of
+    /// `width` bytes.
     ///
     /// # Panics
     /// Panics under the conditions [`Self::from_values`] panics.
@@ -257,10 +241,6 @@ impl PlFixedSizeBinaryArray {
 
     /// Creates a [`PlFixedSizeBinaryArray`] of `length` copies of `value`, in the memory of that
     /// one value.
-    ///
-    /// The length of `value` is the width of the result: every element covers all of it. This
-    /// function is `O(value.len())`, and so is the result's memory use. Repeating an element of an
-    /// array at hand is [`Self::new_from_index`], which copies nothing at all.
     #[inline]
     pub fn new_scalar(value: &[u8], length: usize) -> Self {
         let width = value.len();
@@ -283,10 +263,6 @@ impl PlFixedSizeBinaryArray {
 
     /// Creates a [`PlFixedSizeBinaryArray`] of `length` nulls whose elements are `width` bytes
     /// wide.
-    ///
-    /// Every element is null, so its bytes are undetermined; a zeroed buffer stands in for the one
-    /// element they all cover, which is what keeps both the validity mask and the values a single
-    /// shared slot. This function is `O(1)`.
     #[inline]
     pub fn new_full_null(width: usize, length: usize) -> Self {
         Self {
@@ -314,55 +290,30 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// The number of bytes in every element.
-    ///
-    /// This is as much a part of the array as its length: a null element is as wide as any other,
-    /// since it is the mask and not the width that makes it null.
     #[inline(always)]
     pub const fn width(&self) -> usize {
         self.width
     }
 
     /// The backing values buffer, if it holds the bytes of every element, laid end to end.
-    ///
-    /// Element `i` is then the [`width`](Self::width) bytes at `i * width`, with no
-    /// [`broadcast_index`](crate::broadcast::broadcast_index) in the way. This is the `O(1)`
-    /// counterpart of [`Self::to_flat`]: it materializes nothing, and returns `None` rather than
-    /// repeating a scalar buffer. Reach for the bytes a scalar buffer shares with
-    /// [`Self::scalar_values`] instead — between them the two cover every array that has elements
-    /// at all, so a `None` from both is an empty array. The values of null elements are
-    /// undetermined (they can be any byte string of the width).
     #[inline]
     pub fn flat_values(&self) -> Option<&Buffer<u8>> {
         self.values_are_flat().then_some(&self.values)
     }
 
     /// The bytes every element of this array reads, if the values hold a single element.
-    ///
-    /// This is the values half of [`Self::scalar_value`], which additionally asks that the
-    /// validity mask be scalar and reports the null the mask makes of these bytes. Returns `None`
-    /// for values that are flat over more than one element, and for an empty array, which has no
-    /// element to share a value. The value of a null element is undetermined (it can be any byte
-    /// string of the width).
     #[inline]
     pub fn scalar_values(&self) -> Option<&[u8]> {
         self.values_are_scalar().then(|| self.values.as_slice())
     }
 
     /// Consumes this array into its internal components.
-    ///
-    /// The values are *not* guaranteed to hold [`Self::len`] `*` [`Self::width`] bytes: they are
-    /// either flat or scalar, which is why the width and the length come with them. See
-    /// [`crate::broadcast`] for how to read them.
     #[inline]
     pub fn into_inner(self) -> (Buffer<u8>, usize, usize, Option<Bitmap>) {
         (self.values, self.width, self.length, self.validity)
     }
 
     /// The validity mask, if any element may be null.
-    ///
-    /// The returned [`PlBitmapRef`] has [`Self::len`] bits regardless of whether the backing
-    /// bitmap is flat or scalar, so reading validity through it needs no knowledge of which
-    /// representation this array is in.
     #[inline]
     pub fn validity(&self) -> Option<PlBitmapRef<'_>> {
         // SAFETY: the mask is flat or scalar for `self.length`, upheld by every constructor.
@@ -371,20 +322,14 @@ impl PlFixedSizeBinaryArray {
             .map(|validity| unsafe { PlBitmapRef::new_broadcast_unchecked(validity, self.length) })
     }
 
-    /// Whether the values hold the single element every element of this array covers, so that
-    /// every element is the same value.
-    ///
-    /// An array of one element is both scalar and [`flat`](Self::values_are_flat): the two
-    /// representations coincide, and this reports them both. So is an array of width zero, whose
-    /// elements hold no bytes to lay out either way.
+    /// Whether the values hold the single element every element of this array covers, so that every
+    /// element is the same value.
     #[inline]
     pub fn values_are_scalar(&self) -> bool {
         self.values.len() == self.width && self.length >= 1
     }
 
     /// Whether the values hold the bytes of every element, laid end to end.
-    ///
-    /// An array of one element is both flat and [`scalar`](Self::values_are_scalar).
     #[inline]
     pub fn values_are_flat(&self) -> bool {
         // A length times a width that overflows a `usize` is longer than any buffer can be, so
@@ -400,15 +345,13 @@ impl PlFixedSizeBinaryArray {
 
     /// Whether this array's values hold the bytes of every element and its mask one bit per
     /// element.
-    ///
-    /// An array of one element is both flat and [`scalar`](Self::is_scalar).
     #[inline]
     pub fn is_flat(&self) -> bool {
         self.values_are_flat() && self.validity().is_none_or(|validity| validity.is_flat())
     }
 
-    /// Whether this array is entirely stored in the scalar representation, and therefore stands
-    /// for a single value repeated [`Self::len`] times in the memory of that value alone.
+    /// Whether this array is entirely stored in the scalar representation, and therefore stands for
+    /// a single value repeated [`Self::len`] times in the memory of that value alone.
     #[inline]
     pub fn is_scalar(&self) -> bool {
         self.values_are_scalar() && self.validity().is_none_or(|v| v.is_scalar())
@@ -416,12 +359,6 @@ impl PlFixedSizeBinaryArray {
 
     /// The single element every element of this array equals, if both backing buffers hold one
     /// slot.
-    ///
-    /// The inner [`Option`] is that element, so an array of nothing but nulls yields `Some(None)`.
-    /// Returns `None` for an empty array, and whenever a buffer is flat over more than one element
-    /// — its elements need not be equal, even if the other buffer is scalar.
-    ///
-    /// This is what lets equality and formatting avoid walking a scalar array of unbounded length.
     #[inline]
     pub fn scalar_value(&self) -> Option<Option<&[u8]>> {
         let is_shared = self.values.len() == self.width
@@ -436,10 +373,6 @@ impl PlFixedSizeBinaryArray {
 
     /// The range of the backing values buffer the element at `i` covers, which is always
     /// [`Self::width`] bytes wide.
-    ///
-    /// This is an index into the buffer [`Self::flat_values`] hands out, or into the single
-    /// element [`Self::scalar_values`] does — for scalar values every element covers the same
-    /// range, which is all of them.
     ///
     /// # Panics
     /// Panics if `i >= self.len()`.
@@ -470,9 +403,6 @@ impl PlFixedSizeBinaryArray {
 
     /// Returns the bytes of the element at `i`.
     ///
-    /// This function is `O(1)`. The value of a null element is undetermined (it can be any byte
-    /// string of the width).
-    ///
     /// # Panics
     /// Panics if `i >= self.len()`.
     #[inline]
@@ -482,9 +412,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// Returns the bytes of the element at `i`.
-    ///
-    /// This function is `O(1)`. The value of a null element is undetermined (it can be any byte
-    /// string of the width).
     ///
     /// # Safety
     /// `i` must be smaller than `self.len()`.
@@ -555,9 +482,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// The number of null elements.
-    ///
-    /// This is `O(1)` for a scalar validity mask and `O(len)` for a flat one, amortized over
-    /// repeated calls on the same [`Bitmap`].
     pub fn null_count(&self) -> usize {
         self.validity().map_or(0, |validity| validity.unset_bits())
     }
@@ -569,8 +493,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// Returns an iterator over the elements, ignoring validity.
-    ///
-    /// The values of null elements are undetermined (they can be any byte string of the width).
     #[inline]
     pub fn values_iter(&self) -> PlFixedSizeBinaryValuesIter<'_> {
         PlFixedSizeBinaryValuesIter::new(self.values.as_slice(), self.width, self.length)
@@ -590,12 +512,6 @@ impl PlFixedSizeBinaryArray {
     /// Returns an iterator over `length` elements, repeating the single element of this array if
     /// that is all it holds, and ignoring validity.
     ///
-    /// This array either has `length` elements — in which case this is [`Self::values_iter`] — or
-    /// a single element, which the `length` values this yields are then all read from.
-    /// Broadcasting is `O(1)`, and allocates nothing: the value is repeated as it is read, rather
-    /// than materialized into an array to iterate the way [`Self::new_from_index`] would have to.
-    /// The values of null elements are undetermined (they can be any byte string of the width).
-    ///
     /// # Panics
     /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
     #[inline]
@@ -610,8 +526,6 @@ impl PlFixedSizeBinaryArray {
     ///
     /// # Panics
     /// Panics if `validity` does not hold one bit per element.
-    /// [`Self::with_validity_broadcast`] is what installs the single bit every element shares;
-    /// this function never infers that from a mask that happens to hold one bit.
     #[must_use]
     pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
         self.set_validity(validity);
@@ -622,8 +536,6 @@ impl PlFixedSizeBinaryArray {
     ///
     /// # Panics
     /// Panics if `validity` does not hold one bit per element.
-    /// [`Self::set_validity_broadcast`] is what installs the single bit every element shares;
-    /// this function never infers that from a mask that happens to hold one bit.
     pub fn set_validity(&mut self, validity: Option<Bitmap>) {
         if let Some(validity) = validity.as_ref() {
             assert!(
@@ -648,10 +560,6 @@ impl PlFixedSizeBinaryArray {
 
     /// Replaces the validity mask with one that broadcasts over this array.
     ///
-    /// This is [`Self::set_validity`] widened to the scalar representation: the mask is either
-    /// flat — one bit per element — or the single bit every element shares. See
-    /// [`crate::broadcast`].
-    ///
     /// # Panics
     /// Panics if `validity` is neither flat nor scalar for this array's length.
     pub fn set_validity_broadcast(&mut self, validity: Option<Bitmap>) {
@@ -675,8 +583,6 @@ impl PlFixedSizeBinaryArray {
 
     /// Slices this array in place to `length` elements starting at `offset`.
     ///
-    /// This function is `O(1)`.
-    ///
     /// # Panics
     /// Panics if `offset + length > self.len()`.
     pub fn slice(&mut self, offset: usize, length: usize) {
@@ -688,8 +594,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.
-    ///
-    /// This function is `O(1)`.
     ///
     /// # Safety
     /// `offset + length` must not exceed `self.len()`.
@@ -724,8 +628,6 @@ impl PlFixedSizeBinaryArray {
 
     /// Returns this array sliced to `length` elements starting at `offset`.
     ///
-    /// This function is `O(1)`.
-    ///
     /// # Panics
     /// Panics if `offset + length > self.len()`.
     #[must_use]
@@ -735,8 +637,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// This function is `O(1)`.
     ///
     /// # Safety
     /// `offset + length` must not exceed `self.len()`.
@@ -748,10 +648,6 @@ impl PlFixedSizeBinaryArray {
 
     /// Creates a [`PlFixedSizeBinaryArray`] of `length` copies of the element at `index`.
     ///
-    /// This function is `O(1)`: the values of the result are the element being repeated, sliced
-    /// out of the very same buffer, and every one of its elements covers all of them. A null
-    /// element repeats as `length` nulls.
-    ///
     /// # Panics
     /// Panics if `index >= self.len()`.
     #[inline]
@@ -761,8 +657,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// Creates a [`PlFixedSizeBinaryArray`] of `length` copies of the element at `index`.
-    ///
-    /// This function is `O(1)`.
     ///
     /// # Safety
     /// `index` must be smaller than `self.len()`.
@@ -794,26 +688,6 @@ impl PlFixedSizeBinaryArray {
 
     /// Returns an equivalent array whose values hold the bytes of every element and whose mask
     /// holds one bit per element.
-    ///
-    /// Materializing scalar values is what costs here: the one element every element covers has to
-    /// be written out once per element, which is `O(len * width)`. Nothing is written out when
-    /// every element is null, since the bytes of a null element are undetermined and a zeroed
-    /// buffer stands in for them. The result carries its representation in its type: see [`Flat`]
-    /// for what a flat array is a proof of.
-    ///
-    /// # Example
-    /// ```
-    /// use polars_array::PlFixedSizeBinaryArray;
-    ///
-    /// // Three copies of `ab`, over the bytes of that one value.
-    /// let scalar = PlFixedSizeBinaryArray::new_scalar(b"ab", 3);
-    /// assert!(scalar.flat_values().is_none());
-    ///
-    /// // Its flat counterpart holds the three elements one after the other.
-    /// let flat = scalar.to_flat();
-    /// assert_eq!(flat.as_slice(), b"ababab");
-    /// assert_eq!(flat, scalar);
-    /// ```
     pub fn to_flat(&self) -> Flat<Self> {
         if self.is_flat() {
             return Flat(self.clone());
@@ -846,22 +720,6 @@ impl PlFixedSizeBinaryArray {
 
     /// Borrows this array as a [`Flat`] one, if its values already hold the bytes of every element
     /// and its mask one bit per element.
-    ///
-    /// This is the `O(1)` counterpart of [`Self::to_flat`]: it materializes nothing, and returns
-    /// `None` rather than writing out a scalar buffer when this array is not
-    /// [`flat`](Self::is_flat).
-    ///
-    /// # Example
-    /// ```
-    /// use polars_array::PlFixedSizeBinaryArray;
-    ///
-    /// let arr = PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 2);
-    /// assert_eq!(arr.as_flat().unwrap().as_slice(), [1, 2, 3, 4]);
-    ///
-    /// // A billion copies of one value share its bytes, so they have to be written out.
-    /// let scalar = PlFixedSizeBinaryArray::new_scalar(b"ab", 1_000_000_000);
-    /// assert!(scalar.as_flat().is_none());
-    /// ```
     #[inline]
     pub fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: the values of a flat array hold the width of every element, and its mask one bit
@@ -891,10 +749,8 @@ impl<'a> IntoIterator for &'a PlFixedSizeBinaryArray {
     }
 }
 
-/// Compares two arrays element-wise; neither the representation (flat or scalar) nor the values of
-/// null elements are part of a value, so an array compares equal to any other one holding the same
-/// byte strings. The width is part of one: byte strings of different widths are different values,
-/// and an array holds nothing else.
+/// Compares two arrays element-wise, disregarding the representation and the values of null
+/// elements.
 impl PartialEq for PlFixedSizeBinaryArray {
     fn eq(&self, other: &Self) -> bool {
         if self.length != other.length || self.width != other.width {

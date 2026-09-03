@@ -9,23 +9,8 @@ use crate::flat::Flat;
 
 /// The methods a [`PlBinaryViewArray`] gains from having one slot per element in its views and its
 /// validity mask.
-///
-/// These are the counterparts of the methods on
-/// [`BinaryViewArray`](arrow::array::BinaryViewArray), whose views *are* its elements: they hand
-/// out the views and the mask as they are and read them without a
-/// [`broadcast_index`](crate::broadcast::broadcast_index). Each shadows the broadcast-aware method
-/// of the same name on [`PlBinaryViewArray`], which remains reachable through the deref.
-///
-/// The data buffers are not among them: they are indexed by the views rather than by an element
-/// index, so being flat says nothing about them and [`PlBinaryViewArray::data_buffers`] is the
-/// only way to reach them, flat or not.
 impl Flat<PlBinaryViewArray> {
     /// The backing views buffer, holding exactly [`len`](PlBinaryViewArray::len) slots.
-    ///
-    /// Unlike [`PlBinaryViewArray::flat_views`], this needs no [`Option`] to admit a scalar views
-    /// buffer: it is guaranteed to hold one view per element, so slot
-    /// `i` is element `i`. The views of null elements are undetermined (they can be anything that
-    /// reads bytes the array holds).
     #[inline(always)]
     pub const fn views(&self) -> &Buffer<View> {
         &self.0.views
@@ -33,9 +18,6 @@ impl Flat<PlBinaryViewArray> {
 
     /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
     /// [`len`](PlBinaryViewArray::len) bits.
-    ///
-    /// Unlike [`PlBinaryViewArray::validity`], this needs no [`PlBitmapRef`](crate::PlBitmapRef)
-    /// to hide a scalar bit: bit `i` is element `i`.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
         self.0.validity.as_ref()
@@ -63,8 +45,6 @@ impl Flat<PlBinaryViewArray> {
 
     /// Returns the value at `i`.
     ///
-    /// The value of a null element is undetermined (it can be anything).
-    ///
     /// # Panics
     /// Panics if `i >= self.len()`.
     #[inline]
@@ -74,8 +54,6 @@ impl Flat<PlBinaryViewArray> {
     }
 
     /// Returns the value at `i`.
-    ///
-    /// The value of a null element is undetermined (it can be anything).
     ///
     /// # Safety
     /// `i` must be smaller than `self.len()`.
@@ -151,9 +129,6 @@ impl Flat<PlBinaryViewArray> {
     }
 
     /// Consumes this array into its views, the data buffers they read, and its validity mask.
-    ///
-    /// The length is not part of the result: it is the length of the views. The data buffers are
-    /// handed out as they are, since they never held one slot per element to begin with.
     #[inline]
     pub fn into_inner(self) -> (Buffer<View>, Buffer<Buffer<u8>>, Option<Bitmap>) {
         let PlBinaryViewArray {

@@ -26,11 +26,6 @@ impl<'a> PlBinaryValuesIter<'a> {
     }
 
     /// Whether the offsets hold the one range every element covers, rather than one per element.
-    ///
-    /// Two offsets are a single range, which is what scalar offsets are — and what the offsets of
-    /// an array of one element are too, whichever representation it is in. Either way position
-    /// zero is the only start there is. This does not depend on the position being read, so a
-    /// loop over the elements settles it once rather than at every one of them.
     #[inline(always)]
     fn is_scalar(&self) -> bool {
         self.offsets.len() == 2
@@ -139,12 +134,12 @@ pub struct PlBinaryIter<'a> {
 }
 
 impl<'a> PlBinaryIter<'a> {
-    /// # Safety
-    /// `offsets` must be flat or scalar for `length`, per [`crate::broadcast`], and must be
-    /// ordered and bounded by the length of `values`.
-    ///
     /// # Panics
     /// Panics unless `validity` has `length` bits.
+    ///
+    /// # Safety
+    /// `offsets` must be flat or scalar for `length`, per [`crate::broadcast`], and must be ordered
+    /// and bounded by the length of `values`.
     #[inline]
     pub(super) fn new(
         values: &'a [u8],
@@ -161,9 +156,6 @@ impl<'a> PlBinaryIter<'a> {
     }
 
     /// The values and the mask that says which of them are elements, to walk in one loop.
-    ///
-    /// The mask has its representation hoisted out, so that the loop the caller runs reads no
-    /// mask at all where every element is valid, and neither mask nor values where none is.
     #[inline]
     fn split(self) -> (PlBinaryValuesIter<'a>, ValidityFold<'a>) {
         (self.values, self.validity.into_mask())

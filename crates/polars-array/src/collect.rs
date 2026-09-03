@@ -11,29 +11,6 @@ use crate::static_array::StaticArray;
 use crate::{PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlPrimitiveArray, PlUtf8ViewArray};
 
 /// An array that can be collected from an iterator of `T`.
-///
-/// This is [`FromIterator`] with the array in the generic parameter rather than the trait, which
-/// is what lets a caller that is generic over the array it builds name the bound; see the
-/// [module docs](self) for why that matters and for which arrays implement it.
-///
-/// The four methods are one collect each: infallible or fallible, over an iterator of unknown
-/// length or one whose length can be trusted. Only the first is required — the others have
-/// defaults that fall back to it — and only the ones an array can do better on are overridden, so
-/// the trusted variants are not by themselves a promise of a faster path.
-///
-/// # Example
-/// ```
-/// use polars_array::collect::ArrayFromIter;
-/// use polars_array::PlPrimitiveArray;
-///
-/// let array = PlPrimitiveArray::arr_from_iter([Some(1i32), None]);
-/// assert_eq!(array.len(), 2);
-/// assert_eq!(array.null_count(), 1);
-///
-/// // The fallible collect stops at the first error.
-/// let failed = PlPrimitiveArray::<i32>::try_arr_from_iter([Ok(1), Err("nope")]);
-/// assert_eq!(failed.unwrap_err(), "nope");
-/// ```
 pub trait ArrayFromIter<T>: Sized {
     /// Collects `iter` into an array of its elements, in order.
     fn arr_from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self;
@@ -49,14 +26,9 @@ pub trait ArrayFromIter<T>: Sized {
     }
 
     /// Collects `iter` into an array of its elements, in order, returning the first error instead.
-    ///
-    /// The iterator is not walked past an error, so what follows one is never evaluated.
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<T, E>>>(iter: I) -> Result<Self, E>;
 
     /// Collects an iterator whose length can be trusted, returning the first error instead.
-    ///
-    /// The iterator is not walked past an error, so what follows one is never evaluated — the
-    /// trusted length is the length of the iterator, not of the array this returns.
     #[inline(always)]
     fn try_arr_from_iter_trusted<E, I>(iter: I) -> Result<Self, E>
     where
@@ -68,22 +40,6 @@ pub trait ArrayFromIter<T>: Sized {
 }
 
 /// [`ArrayFromIter`] as a method on the iterator, the way [`Iterator::collect`] reads.
-///
-/// Every iterator implements this for every array, so `collect_arr` is available wherever
-/// `collect` is; which array is built is the type parameter, inferred from the context the same
-/// way `collect` infers its collection.
-///
-/// # Example
-/// ```
-/// use polars_array::collect::ArrayCollectIterExt;
-/// use polars_array::{PlBooleanArray, PlPrimitiveArray};
-///
-/// let squares: PlPrimitiveArray<i32> = (1..=4).map(|x| x * x).collect_arr();
-/// assert_eq!(squares.flat_values().unwrap().as_slice(), [1, 4, 9, 16]);
-///
-/// let parity: PlBooleanArray = squares.values_iter().map(|x| x % 2 == 0).collect_arr();
-/// assert_eq!(parity.values_iter().collect::<Vec<_>>(), [false, true, false, true]);
-/// ```
 pub trait ArrayCollectIterExt<A: StaticArray>: Iterator + Sized {
     /// Collects this iterator into an array of its elements, in order.
     #[inline(always)]
@@ -130,61 +86,10 @@ impl<A: StaticArray, I: Iterator> ArrayCollectIterExt<A> for I {}
 
 /// An array that can be collected from the [zeroable stand-ins](StaticArray::ZeroableValueT) for
 /// its elements.
-///
-/// This is [`ArrayFromIter`] over [`StaticArray::ZeroableValueT`], which is a bound a caller
-/// cannot name without writing out the higher-ranked projection. Every array that can be
-/// collected at all implements it — the zeroable stand-in for an element is the element type
-/// itself or an [`Option`] of it, and those are what such an array is collected from already — so
-/// it is [`from_zeroable_vec`](arrow::array::StaticArray::from_zeroable_vec) of the Arrow arrays,
-/// minus the dtype the arrays of this crate do not carry.
-///
-/// This is what a kernel that walks an array element by element collects: it fills one slot per
-/// element, leaves the slots it has no value for zeroed, and puts the mask that says which those
-/// were on the array afterwards with
-/// [`with_validity_typed`](StaticArray::with_validity_typed). Which is to say that the values a
-/// zeroed slot collects as are unspecified — [`None`] collects as a null, a zeroed number as a
-/// zero — and it is the mask, not the value, that makes the element null.
-///
-/// # Example
-/// ```
-/// use arrow::bitmap::BitmapBuilder;
-/// use bytemuck::Zeroable;
-/// use polars_array::collect::ZeroableArrayFromIter;
-/// use polars_array::{PlBinaryViewArray, PlPrimitiveArray, StaticArray};
-///
-/// /// The elements of `array` at `indices`, with an out-of-bounds index standing for a null.
-/// fn opt_gather<A: ZeroableArrayFromIter>(array: &A, indices: &[usize]) -> A {
-///     let mut validity = BitmapBuilder::with_capacity(indices.len());
-///
-///     let values: Vec<A::ZeroableValueT<'_>> = indices
-///         .iter()
-///         .map(|&i| {
-///             let value = (i < array.len()).then(|| array.get(i)).flatten();
-///             validity.push(value.is_some());
-///             // The slot of an element there is no value for is left zeroed.
-///             value.map_or_else(Zeroable::zeroed, Into::into)
-///         })
-///         .collect();
-///
-///     A::arr_from_zeroable_iter(values).with_validity_typed(validity.into_opt_validity())
-/// }
-///
-/// let array: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect();
-/// let gathered = opt_gather(&array, &[2, 9, 0, 1]);
-/// assert_eq!(gathered.iter().collect::<Vec<_>>(), [Some(3), None, Some(1), None]);
-///
-/// // An element that is null is one there is no value for either, so its slot is zeroed too.
-/// let array: PlBinaryViewArray = [Some(b"foo".as_slice()), None].into_iter().collect();
-/// let gathered = opt_gather(&array, &[0, 9, 1]);
-/// assert_eq!(gathered.iter().collect::<Vec<_>>(), [Some(b"foo".as_slice()), None, None]);
-/// ```
 pub trait ZeroableArrayFromIter:
     StaticArray + for<'a> ArrayFromIter<Self::ZeroableValueT<'a>>
 {
     /// Collects `iter` into an array of its elements, in order.
-    ///
-    /// This is [`ArrayFromIter::arr_from_iter`] over the zeroable values, named so that it can be
-    /// reached without the projection spelled out.
     #[inline(always)]
     fn arr_from_zeroable_iter<'a, I>(iter: I) -> Self
     where
@@ -310,12 +215,6 @@ impl ArrayFromIter<Option<bool>> for PlBooleanArray {
 
 /// The values a [`PlBinaryArray`] or a [`PlBinaryViewArray`] can be collected from: the byte
 /// slices, and the strings, owned or borrowed.
-///
-/// This is not [`AsRef<[u8]>`] because that would leave the implementation over the values and the
-/// one over the optional values overlapping: nothing stops a downstream crate from implementing
-/// `AsRef<[u8]>` for `Option<&[u8]>`, so the compiler has to assume it might. A trait that is
-/// private to this crate cannot grow such an implementation, which is what keeps the two apart. It
-/// also lets a [`Cow<str>`] be collected, which is not [`AsRef<[u8]>`] either.
 trait IntoBytes {
     /// What this turns into, which is the byte slice itself for everything but a [`Cow<str>`].
     type AsRefT: AsRef<[u8]>;
@@ -468,12 +367,6 @@ impl<V: IntoBytes> ArrayFromIter<Option<V>> for PlBinaryViewArray {
 }
 
 /// The values a [`PlUtf8ViewArray`] can be collected from: the strings, owned or borrowed.
-///
-/// This is the marker that keeps that array's invariant across a collect. The bytes reach the
-/// inner [`PlBinaryViewArray`] through the same [`IntoBytes`] conversion any byte string does, and
-/// it is membership of this trait — a `&str`, a [`String`], a [`Cow<str>`](Cow), and nothing else
-/// — that says they were a string to begin with. It is private to this crate for the same reason
-/// [`IntoBytes`] is, and so that nothing downstream can add a value to it that is not one.
 trait IntoUtf8Bytes: Sized {}
 
 impl IntoUtf8Bytes for &str {}
@@ -545,8 +438,7 @@ mod tests {
         assert!(values.is_flat() && options.is_flat());
     }
 
-    /// Every fallible collect returns the first error, and none of them walks the iterator past
-    /// it.
+    /// Every fallible collect returns the first error, and none of them walks the iterator past it.
     #[test]
     fn a_fallible_collect_stops_at_the_first_error() {
         /// The error of collecting `[Ok(value), Err("nope"), Ok(value)]`, and how many of those

@@ -18,15 +18,6 @@ use crate::{
 
 /// Exports an array of this crate as the Arrow array that holds the same elements.
 ///
-/// The array carries no logical type, so the Arrow array it comes back as is the one that promises
-/// the least about its elements: a [`PlBinaryArray`] exports as a [`BinaryArray`] rather than as a
-/// [`Utf8Array`], and a [`PlBinaryViewArray`] as a [`BinaryViewArray`] rather than as a
-/// [`Utf8ViewArray`]. The functions this dispatches to are what export the others — see the
-/// [module docs](self).
-///
-/// This shares the backing buffers with `array`, so it is `O(1)` for a
-/// [`flat`](crate::broadcast) array and `O(len)` for a scalar one, which is written out.
-///
 /// # Panics
 /// Panics if `array` is an object array, which has no Arrow counterpart.
 pub fn to_arrow(array: &dyn PlArray) -> Box<dyn Array> {
@@ -71,20 +62,13 @@ pub fn null_to_arrow_null(array: &PlNullArray) -> NullArray {
 
 /// Exports a [`PlBooleanArray`] as an Arrow [`BooleanArray`] of
 /// [`Boolean`](ArrowDataType::Boolean).
-///
-/// This is `O(1)` for a [`flat`](crate::broadcast) array and `O(len)` for a scalar one, which is
-/// written out.
 pub fn boolean_to_arrow_boolean(array: &PlBooleanArray) -> BooleanArray {
     let (values, validity) = array.to_flat().into_inner();
     BooleanArray::new(ArrowDataType::Boolean, values, validity)
 }
 
-/// Exports a [`PlPrimitiveArray`] as an Arrow [`PrimitiveArray`] of the data type its element type
-/// is the storage of — [`Int32`](ArrowDataType::Int32) for an `i32`, and so on for every
-/// [`PrimitiveType`](arrow::datatypes::PrimitiveType).
-///
-/// This is `O(1)` for a [`flat`](crate::broadcast) array and `O(len)` for a scalar one, which is
-/// written out.
+/// Exports a [`PlPrimitiveArray`] as an Arrow [`PrimitiveArray`] of the data type `T` is the
+/// storage of.
 pub fn primitive_to_arrow_primitive<T: NativeType>(
     array: &PlPrimitiveArray<T>,
 ) -> PrimitiveArray<T> {
@@ -94,10 +78,6 @@ pub fn primitive_to_arrow_primitive<T: NativeType>(
 
 /// Exports a [`PlBinaryArray`] as an Arrow [`BinaryArray`] of
 /// [`LargeBinary`](ArrowDataType::LargeBinary).
-///
-/// The 32-bit-offset [`Binary`](ArrowDataType::Binary) is not an export target — see the [module
-/// docs](self). This is `O(1)` for a [`flat`](crate::broadcast) array and `O(len)` for a scalar
-/// one, which is written out.
 pub fn binary_to_arrow_large_binary(array: &PlBinaryArray) -> BinaryArray<i64> {
     let (values, offsets, validity) = array.to_flat().into_inner();
     BinaryArray::new(
@@ -110,13 +90,6 @@ pub fn binary_to_arrow_large_binary(array: &PlBinaryArray) -> BinaryArray<i64> {
 
 /// Exports a [`PlBinaryArray`] as an Arrow [`Utf8Array`] of
 /// [`LargeUtf8`](ArrowDataType::LargeUtf8), without checking that its bytes are valid UTF-8.
-///
-/// This is [`binary_to_arrow_large_binary`] behind a data type that promises the bytes are a
-/// string, which nothing in this crate establishes — see the [module docs](self). The
-/// 32-bit-offset [`Utf8`](ArrowDataType::Utf8) is not an export target.
-///
-/// This is `O(1)` for a [`flat`](crate::broadcast) array and `O(len)` for a scalar one, which is
-/// written out.
 ///
 /// # Safety
 /// Every element of `array` — including the ones under a null — must be valid UTF-8.
@@ -137,9 +110,6 @@ pub unsafe fn binary_to_arrow_large_utf8(array: &PlBinaryArray) -> Utf8Array<i64
 
 /// Exports a [`PlBinaryViewArray`] as an Arrow [`BinaryViewArray`] of
 /// [`BinaryView`](ArrowDataType::BinaryView).
-///
-/// This is `O(1)` for a [`flat`](crate::broadcast) array and `O(len)` for a scalar one, which is
-/// written out.
 pub fn binview_to_arrow_binview(array: &PlBinaryViewArray) -> BinaryViewArray {
     let (views, buffers, validity) = array.to_flat().into_inner();
 
@@ -158,13 +128,6 @@ pub fn binview_to_arrow_binview(array: &PlBinaryViewArray) -> BinaryViewArray {
 
 /// Exports a [`PlUtf8ViewArray`] as an Arrow [`Utf8ViewArray`] of
 /// [`Utf8View`](ArrowDataType::Utf8View).
-///
-/// This needs no `unsafe`: the UTF-8 the Arrow data type promises is exactly the invariant
-/// [`PlUtf8ViewArray`] carries — see [`crate::utf8view`]. A [`PlBinaryViewArray`], whose bytes are
-/// not known to be a string, exports through [`binview_to_arrow_binview`] instead.
-///
-/// This is `O(1)` for a [`flat`](crate::broadcast) array and `O(len)` for a scalar one, which is
-/// written out.
 pub fn utf8view_to_arrow_utf8view(array: &PlUtf8ViewArray) -> Utf8ViewArray {
     let (views, buffers, validity) = array.as_binview().to_flat().into_inner();
 
@@ -183,9 +146,6 @@ pub fn utf8view_to_arrow_utf8view(array: &PlUtf8ViewArray) -> Utf8ViewArray {
 
 /// Exports a [`PlFixedSizeBinaryArray`] as an Arrow [`FixedSizeBinaryArray`] of
 /// [`FixedSizeBinary`](ArrowDataType::FixedSizeBinary) of the width its elements have.
-///
-/// This is `O(1)` for a [`flat`](crate::broadcast) array and `O(len)` for a scalar one, which is
-/// written out.
 ///
 /// # Panics
 /// Panics if the elements of `array` are zero bytes wide: an Arrow fixed size binary array derives
@@ -207,15 +167,8 @@ pub fn fixed_size_binary_to_arrow_fixed_size_binary(
     )
 }
 
-/// Exports a [`PlListArray`] as an Arrow [`ListArray`] of
-/// [`LargeList`](ArrowDataType::LargeList), exporting its values along with it.
-///
-/// The data type of the values is the one they export with, named the way
-/// [`ListArray::default_datatype`] names it. The 32-bit-offset [`List`](ArrowDataType::List) is not
-/// an export target — see the [module docs](self).
-///
-/// This is `O(1)` for a [`flat`](crate::broadcast) array over flat values and `O(len)` for a
-/// scalar one, which is written out.
+/// Exports a [`PlListArray`] as an Arrow [`ListArray`] of [`LargeList`](ArrowDataType::LargeList),
+/// exporting its values along with it.
 ///
 /// # Panics
 /// Panics if the values of `array` have no Arrow counterpart — see the [module docs](self).
@@ -227,15 +180,8 @@ pub fn list_to_arrow_large_list(array: &PlListArray) -> ListArray<i64> {
     ListArray::new(dtype, offsets_to_arrow(offsets), values, validity)
 }
 
-/// Exports a [`PlFixedSizeListArray`] as an Arrow [`FixedSizeListArray`] of
-/// [`FixedSizeList`](ArrowDataType::FixedSizeList) of the width its elements have, exporting its
-/// values along with it.
-///
-/// The data type of the values is the one they export with, named the way
-/// [`FixedSizeListArray::default_datatype`] names it.
-///
-/// This is `O(1)` for a [`flat`](crate::broadcast) array over flat values and `O(len)` for a
-/// scalar one, which is written out.
+/// Exports a [`PlFixedSizeListArray`] as an Arrow [`FixedSizeListArray`] of the width its elements
+/// have, exporting its values along with it.
 ///
 /// # Panics
 /// Panics if the values of `array` have no Arrow counterpart — see the [module docs](self).
@@ -250,14 +196,8 @@ pub fn fixed_size_list_to_arrow_fixed_size_list(
     FixedSizeListArray::new(dtype, length, values, validity)
 }
 
-/// Exports a [`PlStructArray`] as an Arrow [`StructArray`] of
-/// [`Struct`](ArrowDataType::Struct), exporting its fields along with it.
-///
-/// A field array carries no name, so the exported fields are named after their index — `"0"`,
-/// `"1"`, and so on — and are of the data type they export with.
-///
-/// This is `O(1)` for a [`flat`](crate::broadcast) array over flat fields and `O(len)` for one
-/// whose validity mask or fields are written out.
+/// Exports a [`PlStructArray`] as an Arrow [`StructArray`] of [`Struct`](ArrowDataType::Struct),
+/// exporting its fields along with it.
 ///
 /// # Panics
 /// Panics if a field of `array` has no Arrow counterpart — see the [module docs](self).
@@ -281,10 +221,6 @@ pub fn struct_to_arrow_struct(array: &PlStructArray) -> StructArray {
 
 /// Exports the 64-bit offsets a [`PlBinaryArray`] and a [`PlListArray`] hold as the 64-bit Arrow
 /// offsets, which is `O(1)`.
-///
-/// The two have the same layout, so the buffer is reinterpreted rather than copied. That
-/// reinterpretation is unchecked: an offset past [`i64::MAX`] comes back negative, which no offset
-/// into a buffer that fits in memory is.
 pub fn offsets_to_arrow(offsets: Buffer<u64>) -> OffsetsBuffer<i64> {
     debug_assert!(offsets.last().is_none_or(|&last| last <= i64::MAX as u64));
 

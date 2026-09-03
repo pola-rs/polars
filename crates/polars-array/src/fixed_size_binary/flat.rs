@@ -8,21 +8,9 @@ use crate::flat::Flat;
 
 /// The methods a [`PlFixedSizeBinaryArray`] gains from holding the bytes of every element and one
 /// validity bit per element.
-///
-/// These are the counterparts of the methods on
-/// [`FixedSizeBinaryArray`](arrow::array::FixedSizeBinaryArray), whose values buffer *is* its
-/// elements: they hand out the backing buffers as they are and read them without a broadcast.
-/// Each shadows the broadcast-aware method of the same name on [`PlFixedSizeBinaryArray`], which
-/// remains reachable through the deref — including the iterators, which read the elements the same
-/// way either way.
 impl Flat<PlFixedSizeBinaryArray> {
     /// The backing values buffer, holding exactly [`len`](PlFixedSizeBinaryArray::len) `*`
     /// [`width`](PlFixedSizeBinaryArray::width) bytes.
-    ///
-    /// Unlike [`PlFixedSizeBinaryArray::flat_values`], this needs no [`Option`] to admit scalar
-    /// values: it is guaranteed to hold the bytes of every
-    /// element, laid end to end: element `i` is the `width` bytes at `i * width`. The values of
-    /// null elements are undetermined (they can be any byte string of the width).
     #[inline(always)]
     pub const fn values(&self) -> &Buffer<u8> {
         &self.0.values
@@ -30,8 +18,6 @@ impl Flat<PlFixedSizeBinaryArray> {
 
     /// The values as a slice of exactly [`len`](PlFixedSizeBinaryArray::len) `*`
     /// [`width`](PlFixedSizeBinaryArray::width) bytes.
-    ///
-    /// The values of null elements are undetermined (they can be any byte string of the width).
     #[inline(always)]
     pub fn as_slice(&self) -> &[u8] {
         self.0.values.as_slice()
@@ -39,17 +25,12 @@ impl Flat<PlFixedSizeBinaryArray> {
 
     /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
     /// [`len`](PlFixedSizeBinaryArray::len) bits.
-    ///
-    /// Unlike [`PlFixedSizeBinaryArray::validity`], this needs no
-    /// [`PlBitmapRef`](crate::PlBitmapRef) to hide a scalar bit: bit `i` is element `i`.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
         self.0.validity.as_ref()
     }
 
     /// Returns the bytes of the element at `i`.
-    ///
-    /// The value of a null element is undetermined (it can be any byte string of the width).
     ///
     /// # Panics
     /// Panics if `i >= self.len()`.
@@ -60,8 +41,6 @@ impl Flat<PlFixedSizeBinaryArray> {
     }
 
     /// Returns the bytes of the element at `i`.
-    ///
-    /// The value of a null element is undetermined (it can be any byte string of the width).
     ///
     /// # Safety
     /// `i` must be smaller than `self.len()`.

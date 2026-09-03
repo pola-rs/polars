@@ -112,7 +112,6 @@ impl Iterator for PlBitmapIter<'_> {
 
     /// Hoists the representation out of the loop: a flat mask folds over the positions it covers,
     /// which are independent of one another, and a scalar one folds over the single bit it shares.
-    /// `for_each`, `collect` and friends route through here.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where
@@ -189,8 +188,7 @@ pub(crate) enum ValidityIter<'a> {
         front: usize,
         back: usize,
     },
-    /// The single bit every element shares. An array with no mask at all shares a set bit, so it
-    /// is this variant too rather than one of its own: the two are the same walk.
+    /// The single bit every element shares.
     Scalar(bool),
 }
 

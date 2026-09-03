@@ -64,10 +64,6 @@ impl PlBinaryArrayBuilder {
     }
 
     /// Appends the `length` elements of `other` starting at `start`, ignoring its validity mask.
-    ///
-    /// The elements of an array whose offsets are flat are laid end to end, so the bytes of all of
-    /// them are appended in one go and the offsets are the ones `other` already holds, rebased onto
-    /// the bytes appended so far.
     fn extend_values(&mut self, other: &PlBinaryArray, start: usize, length: usize) {
         let Some(offsets) = other.flat_offsets() else {
             // The offsets are not flat, so every element covers the same bytes — which are appended

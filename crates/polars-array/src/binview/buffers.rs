@@ -14,15 +14,6 @@ const _: () = assert!(MAX_EXP_BLOCK_SIZE < BINVIEW_ARROW_BUFFER_LEN_LIMIT);
 
 /// Copies `bytes` into `buffers`, and returns the [`View`] holding them.
 ///
-/// A view of up to [`View::MAX_INLINE_SIZE`] bytes carries them itself, so a short value reaches
-/// no buffer at all. Anything longer is written into the buffer at the end of `buffers` — the only
-/// one still being written into — or into a fresh one pushed onto it where it does not fit.
-/// `buffer_idx_offset` is the index the first of `buffers` has among the data buffers of the array
-/// being built, which is what the buffer index of the returned view is relative to.
-///
-/// No buffer is longer than [`BINVIEW_ARROW_BUFFER_LEN_LIMIT`], the length an Arrow buffer is
-/// addressable up to, unless it holds a single value longer than that on its own.
-///
 /// # Panics
 /// Panics if `bytes` is longer than [`BINVIEW_MAX_ROW_BYTE_LEN`], the longest a view can point at,
 /// or if the buffers of the array being built outgrow the buffer index of a view.
@@ -36,11 +27,6 @@ pub(super) fn copy_value(buffers: &mut Vec<Vec<u8>>, buffer_idx_offset: u32, byt
 }
 
 /// Copies `bytes` into a data buffer of its own, and returns the [`View`] holding them.
-///
-/// This is [`copy_value`] for the one value an array holds — a scalar array, say. Nothing is
-/// written after it, so the buffer is allocated to fit rather than to leave room for values still
-/// to come, and it is buffer `0` of the array being built. There is no buffer at all where the
-/// view carries the bytes itself.
 ///
 /// # Panics
 /// Panics if `bytes` is longer than [`BINVIEW_MAX_ROW_BYTE_LEN`], the longest a view can point at.

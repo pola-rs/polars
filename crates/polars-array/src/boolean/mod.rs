@@ -29,10 +29,6 @@ pub struct PlBooleanArray {
 impl PlBooleanArray {
     /// Creates a flat [`PlBooleanArray`] out of its internal components.
     ///
-    /// Every backing bitmap has to hold one bit per element. [`Self::try_new_broadcast`] is what
-    /// builds the scalar representation; this function never infers it from a bitmap that happens
-    /// to hold a single bit. This function is `O(1)`.
-    ///
     /// # Errors
     /// This function errors if `values` or `validity` does not hold exactly `length` bits.
     pub fn try_new(values: Bitmap, length: usize, validity: Option<Bitmap>) -> PolarsResult<Self> {
@@ -92,13 +88,8 @@ impl PlBooleanArray {
 
     /// Creates a scalar [`PlBooleanArray`] of `length` elements out of its internal components.
     ///
-    /// Every backing bitmap has to hold the single bit every element shares, which makes this
-    /// `O(1)` in `length` as well as in time. [`Self::try_new`] is what builds the flat
-    /// representation.
-    ///
     /// # Errors
-    /// This function errors if `values` or `validity` does not hold exactly one bit. An array of
-    /// no elements reads no bit at all, so it additionally admits an empty bitmap.
+    /// This function errors if `values` or `validity` does not hold exactly one bit.
     pub fn try_new_broadcast(
         values: Bitmap,
         length: usize,
@@ -200,12 +191,6 @@ impl PlBooleanArray {
 
     /// Creates a fully valid [`PlBooleanArray`] whose values are the bits of `values`, in whatever
     /// representation that mask is in.
-    ///
-    /// A [`PlBitmap`] already knows whether it is flat or scalar for the elements it covers, so
-    /// nothing is inferred here: a scalar mask becomes a scalar array of the same length, and a
-    /// flat one a flat array. This is what a kernel that computes its result as a mask — a
-    /// validity mask inverted, say — hands over without writing a scalar result out. This
-    /// function is `O(1)`.
     #[inline]
     pub fn from_pl_bitmap(values: PlBitmap) -> Self {
         let (values, length) = values.into_inner();
@@ -249,12 +234,6 @@ impl PlBooleanArray {
     }
 
     /// The values, ignoring validity.
-    ///
-    /// The returned [`PlBitmapRef`] has [`Self::len`] bits regardless of whether the backing bitmap
-    /// is flat or scalar, so reading values through it needs no knowledge of which
-    /// representation this array is in. Reach for the backing [`Bitmap`] — which is *not*
-    /// guaranteed to have [`Self::len`] bits — with [`Self::flat_values`], or materialize a flat
-    /// one with [`PlBitmapRef::to_flat`].
     #[inline]
     pub fn values(&self) -> PlBitmapRef<'_> {
         // SAFETY: the bitmap is flat or scalar for `self.length`, upheld by every constructor.
@@ -262,35 +241,18 @@ impl PlBooleanArray {
     }
 
     /// The backing values bitmap, if it holds one bit per element.
-    ///
-    /// Bit `i` is then the value of element `i`, with no
-    /// [`broadcast_index`](crate::broadcast::broadcast_index) in the way. This is the `O(1)`
-    /// counterpart of [`Self::to_flat`]: it materializes nothing, and returns `None` rather than
-    /// expanding a scalar bitmap. Reach for the bit a scalar bitmap shares with
-    /// [`Self::scalar_values`] instead — between them the two cover every array that has elements
-    /// at all, so a `None` from both is an empty array. The values of null elements are
-    /// undetermined (they can be anything).
     #[inline]
     pub fn flat_values(&self) -> Option<&Bitmap> {
         self.values_are_flat().then_some(&self.values)
     }
 
     /// The value every element of this array reads, if the values bitmap holds a single bit.
-    ///
-    /// This is the values half of [`Self::scalar_value`], which additionally asks that the
-    /// validity mask be scalar and reports the null the mask makes of this value. Returns `None`
-    /// for a values bitmap that is flat over more than one element, and for an empty array, which
-    /// has no element to share a value. The value of a null element is undetermined (it can be
-    /// anything).
     #[inline]
     pub fn scalar_values(&self) -> Option<bool> {
         self.values().scalar_value()
     }
 
     /// The validity mask, if any element may be null.
-    ///
-    /// The returned [`PlBitmapRef`] has [`Self::len`] bits regardless of whether the backing bitmap
-    /// is flat or scalar, exactly like [`Self::values`].
     #[inline]
     pub fn validity(&self) -> Option<PlBitmapRef<'_>> {
         // SAFETY: the mask is flat or scalar for `self.length`, upheld by every constructor.
@@ -300,17 +262,12 @@ impl PlBooleanArray {
     }
 
     /// Whether the values bitmap holds a single bit shared by every element.
-    ///
-    /// An array of one element is both scalar and [`flat`](Self::is_flat): the two representations
-    /// coincide, and this reports them both.
     #[inline]
     pub fn values_are_scalar(&self) -> bool {
         self.values.len() == 1
     }
 
     /// Whether the values bitmap holds one bit per element.
-    ///
-    /// An array of one element is both flat and [`scalar`](Self::values_are_scalar).
     #[inline]
     pub fn values_are_flat(&self) -> bool {
         self.values.len() == self.length
@@ -323,8 +280,6 @@ impl PlBooleanArray {
     }
 
     /// Whether every backing bitmap has one bit per element.
-    ///
-    /// An array of one element is both flat and [`scalar`](Self::is_scalar).
     #[inline]
     pub fn is_flat(&self) -> bool {
         self.values_are_flat() && self.validity().is_none_or(|validity| validity.is_flat())
@@ -339,12 +294,6 @@ impl PlBooleanArray {
 
     /// The single element every element of this array equals, if every backing bitmap holds one
     /// bit.
-    ///
-    /// The inner [`Option`] is that element, so an array of nothing but nulls yields
-    /// `Some(None)`. Returns `None` for an empty array, and whenever a backing bitmap is flat over
-    /// more than one element — its elements need not be equal, even if the other bitmap is scalar.
-    ///
-    /// This is what lets equality and formatting avoid walking a scalar array of unbounded length.
     #[inline]
     pub fn scalar_value(&self) -> Option<Option<bool>> {
         let is_shared = self.values.len() == 1
@@ -359,8 +308,6 @@ impl PlBooleanArray {
 
     /// Returns the value at `i`.
     ///
-    /// The value of a null element is undetermined (it can be anything).
-    ///
     /// # Panics
     /// Panics if `i >= self.len()`.
     #[inline]
@@ -369,8 +316,6 @@ impl PlBooleanArray {
     }
 
     /// Returns the value at `i`.
-    ///
-    /// The value of a null element is undetermined (it can be anything).
     ///
     /// # Safety
     /// `i` must be smaller than `self.len()`.
@@ -439,9 +384,6 @@ impl PlBooleanArray {
     }
 
     /// The number of null elements.
-    ///
-    /// This is `O(1)` for a scalar validity mask and `O(len)` for a flat one, amortized over
-    /// repeated calls on the same [`Bitmap`].
     pub fn null_count(&self) -> usize {
         self.validity().map_or(0, |validity| validity.unset_bits())
     }
@@ -453,8 +395,6 @@ impl PlBooleanArray {
     }
 
     /// Returns an iterator over the values, ignoring validity.
-    ///
-    /// The values of null elements are undetermined (they can be anything).
     #[inline]
     pub fn values_iter(&self) -> PlBitmapIter<'_> {
         self.values().iter()
@@ -466,14 +406,8 @@ impl PlBooleanArray {
         PlBooleanIter::new(self.values(), self.validity(), self.length)
     }
 
-    /// Returns an iterator over `length` values, repeating the single value of this array if
-    /// that is all it holds, and ignoring validity.
-    ///
-    /// This array either has `length` elements — in which case this is [`Self::values_iter`] — or
-    /// a single element, which the `length` values this yields are then all read from.
-    /// Broadcasting is `O(1)`, and allocates nothing: the value is repeated as it is read, rather
-    /// than materialized into an array to iterate the way [`Self::new_from_index`] would have to.
-    /// The values of null elements are undetermined (they can be anything).
+    /// Returns an iterator over `length` values, repeating the single value of this array if that
+    /// is all it holds, and ignoring validity.
     ///
     /// # Panics
     /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
@@ -486,8 +420,6 @@ impl PlBooleanArray {
     ///
     /// # Panics
     /// Panics if `validity` does not hold one bit per element.
-    /// [`Self::with_validity_broadcast`] is what installs the single bit every element shares;
-    /// this function never infers that from a mask that happens to hold one bit.
     #[must_use]
     pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
         self.set_validity(validity);
@@ -498,8 +430,6 @@ impl PlBooleanArray {
     ///
     /// # Panics
     /// Panics if `validity` does not hold one bit per element.
-    /// [`Self::set_validity_broadcast`] is what installs the single bit every element shares;
-    /// this function never infers that from a mask that happens to hold one bit.
     pub fn set_validity(&mut self, validity: Option<Bitmap>) {
         if let Some(validity) = validity.as_ref() {
             assert!(
@@ -524,10 +454,6 @@ impl PlBooleanArray {
 
     /// Replaces the validity mask with one that broadcasts over this array.
     ///
-    /// This is [`Self::set_validity`] widened to the scalar representation: the mask is either
-    /// flat — one bit per element — or the single bit every element shares. See
-    /// [`crate::broadcast`].
-    ///
     /// # Panics
     /// Panics if `validity` is neither flat nor scalar for this array's length.
     pub fn set_validity_broadcast(&mut self, validity: Option<Bitmap>) {
@@ -551,8 +477,6 @@ impl PlBooleanArray {
 
     /// Slices this array in place to `length` elements starting at `offset`.
     ///
-    /// This function is `O(1)`.
-    ///
     /// # Panics
     /// Panics if `offset + length > self.len()`.
     pub fn slice(&mut self, offset: usize, length: usize) {
@@ -564,8 +488,6 @@ impl PlBooleanArray {
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.
-    ///
-    /// This function is `O(1)`.
     ///
     /// # Safety
     /// `offset + length` must not exceed `self.len()`.
@@ -592,8 +514,6 @@ impl PlBooleanArray {
 
     /// Returns this array sliced to `length` elements starting at `offset`.
     ///
-    /// This function is `O(1)`.
-    ///
     /// # Panics
     /// Panics if `offset + length > self.len()`.
     #[must_use]
@@ -603,8 +523,6 @@ impl PlBooleanArray {
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// This function is `O(1)`.
     ///
     /// # Safety
     /// `offset + length` must not exceed `self.len()`.
@@ -616,9 +534,6 @@ impl PlBooleanArray {
 
     /// Creates a [`PlBooleanArray`] of `length` copies of the element at `index`.
     ///
-    /// This function is `O(1)`: the result is scalar, so it holds a single bit no matter how long
-    /// it is. A null element repeats as `length` nulls.
-    ///
     /// # Panics
     /// Panics if `index >= self.len()`.
     #[inline]
@@ -628,8 +543,6 @@ impl PlBooleanArray {
     }
 
     /// Creates a [`PlBooleanArray`] of `length` copies of the element at `index`.
-    ///
-    /// This function is `O(1)`.
     ///
     /// # Safety
     /// `index` must be smaller than `self.len()`.
@@ -649,10 +562,6 @@ impl PlBooleanArray {
     }
 
     /// Returns an equivalent array whose backing bitmaps all hold one bit per element.
-    ///
-    /// This materializes any scalar bitmap and is therefore `O(len)`; it is a no-op clone when
-    /// this array [`is_flat`](Self::is_flat). The result carries its representation in its type:
-    /// see [`Flat`] for what a flat array can do that this one cannot.
     pub fn to_flat(&self) -> Flat<Self> {
         if self.is_flat() {
             return Flat(self.clone());
@@ -675,23 +584,6 @@ impl PlBooleanArray {
 
     /// Borrows this array as a [`Flat`] one, if every backing bitmap already holds one bit per
     /// element.
-    ///
-    /// This is the `O(1)` counterpart of [`Self::to_flat`]: it materializes nothing, and returns
-    /// `None` rather than expanding a scalar bitmap when this array is not
-    /// [`flat`](Self::is_flat).
-    ///
-    /// # Example
-    /// ```
-    /// use polars_array::PlBooleanArray;
-    ///
-    /// let arr = PlBooleanArray::from_vec(vec![true, false]);
-    /// assert_eq!(arr.as_flat().unwrap().values_iter().collect::<Vec<_>>(), [true, false]);
-    ///
-    /// // A scalar array holds one bit for both elements, so it has to be materialized.
-    /// let scalar = PlBooleanArray::new_scalar(true, 2);
-    /// assert!(scalar.as_flat().is_none());
-    /// assert_eq!(scalar.to_flat().values().len(), 2);
-    /// ```
     #[inline]
     pub fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: every backing bitmap of a flat array holds one bit per element.

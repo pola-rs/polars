@@ -36,11 +36,6 @@ pub struct PlBinaryViewArray {
 impl PlBinaryViewArray {
     /// Creates a flat [`PlBinaryViewArray`] out of its internal components.
     ///
-    /// Every backing buffer has to hold one slot per element. [`Self::try_new_broadcast`] is what
-    /// builds the scalar representation; this function never infers it from a buffer that happens
-    /// to hold a single slot. Unlike the `try_new` of the other arrays, this is `O(views)` rather
-    /// than `O(1)`: every view is checked against the buffers it reads.
-    ///
     /// # Errors
     /// This function errors if `views` or `validity` does not hold exactly `length` slots, or if a
     /// view does not read bytes that `buffers` holds.
@@ -90,14 +85,11 @@ impl PlBinaryViewArray {
         Self::try_new(views, buffers, length, validity).unwrap()
     }
 
-    /// Creates a flat [`PlBinaryViewArray`] out of its internal components without validating
-    /// them.
-    ///
-    /// This is the `O(1)` counterpart of [`Self::try_new`], which walks every view.
+    /// Creates a flat [`PlBinaryViewArray`] out of its internal components without validating them.
     ///
     /// # Safety
-    /// `views` and `validity` must each hold exactly `length` slots, and every view must read
-    /// bytes that `buffers` holds.
+    /// `views` and `validity` must each hold exactly `length` slots, and every view must read bytes
+    /// that `buffers` holds.
     #[inline]
     pub unsafe fn new_unchecked(
         views: Buffer<View>,
@@ -125,13 +117,9 @@ impl PlBinaryViewArray {
 
     /// Creates a scalar [`PlBinaryViewArray`] of `length` elements out of its internal components.
     ///
-    /// Every backing buffer has to hold the single value every element shares, which makes this
-    /// `O(1)` in `length`. [`Self::try_new`] is what builds the flat representation.
-    ///
     /// # Errors
-    /// This function errors if `views` or `validity` does not hold exactly one slot, or if the
-    /// view does not read bytes that `buffers` holds. An array of no elements reads no slot at
-    /// all, so it additionally admits an empty buffer.
+    /// This function errors if `views` or `validity` does not hold exactly one slot, or if the view
+    /// does not read bytes that `buffers` holds.
     pub fn try_new_broadcast(
         views: Buffer<View>,
         buffers: Buffer<Buffer<u8>>,
@@ -224,8 +212,6 @@ impl PlBinaryViewArray {
 
     /// Creates a flat, fully valid [`PlBinaryViewArray`] from `views` over `buffers`.
     ///
-    /// The length is the length of the views, which is what makes the result flat.
-    ///
     /// # Panics
     /// Panics if a view does not read bytes that `buffers` holds.
     #[inline]
@@ -236,23 +222,9 @@ impl PlBinaryViewArray {
 
     /// Creates a flat, fully valid [`PlBinaryViewArray`] holding `values`, in order.
     ///
-    /// The values that are too long to be inlined into a view are copied into the data buffers of
-    /// the result, so this is `O(total bytes)`.
-    ///
     /// # Panics
     /// Panics if a value is longer than
-    /// [`BINVIEW_MAX_ROW_BYTE_LEN`](arrow::array::BINVIEW_MAX_ROW_BYTE_LEN) bytes, which no view
-    /// can point at.
-    ///
-    /// # Example
-    /// ```
-    /// use polars_array::PlBinaryViewArray;
-    ///
-    /// let arr = PlBinaryViewArray::from_values_iter([b"foo".as_slice(), b"bar"]);
-    /// assert_eq!(arr.len(), 2);
-    /// assert_eq!(arr.null_count(), 0);
-    /// assert_eq!(arr.value(0), b"foo");
-    /// ```
+    /// [`BINVIEW_MAX_ROW_BYTE_LEN`](arrow::array::BINVIEW_MAX_ROW_BYTE_LEN) bytes.
     pub fn from_values_iter<V: AsRef<[u8]>, I: IntoIterator<Item = V>>(values: I) -> Self {
         let values = values.into_iter();
         let (lower, _) = values.size_hint();
@@ -273,23 +245,7 @@ impl PlBinaryViewArray {
     ///
     /// # Panics
     /// Panics if `value` is longer than
-    /// [`BINVIEW_MAX_ROW_BYTE_LEN`](arrow::array::BINVIEW_MAX_ROW_BYTE_LEN) bytes, which no view
-    /// can point at.
-    ///
-    /// # Example
-    /// ```
-    /// use polars_array::PlBinaryViewArray;
-    ///
-    /// // The bytes are inlined into the one view all billion elements share.
-    /// let arr = PlBinaryViewArray::new_scalar(b"foo", 1_000_000_000);
-    /// assert!(arr.is_scalar());
-    /// assert!(arr.data_buffers().is_empty());
-    ///
-    /// // Bytes that do not fit in a view are held by a single data buffer.
-    /// let arr = PlBinaryViewArray::new_scalar(b"a value too long to inline", 1_000_000_000);
-    /// assert_eq!(arr.data_buffers().len(), 1);
-    /// assert_eq!(arr.value(999_999_999), b"a value too long to inline");
-    /// ```
+    /// [`BINVIEW_MAX_ROW_BYTE_LEN`](arrow::array::BINVIEW_MAX_ROW_BYTE_LEN) bytes.
     pub fn new_scalar(value: &[u8], length: usize) -> Self {
         // There is no element for the value to be shared by when there are no elements at all,
         // which is why an empty array is the one that keeps nothing of the value it repeats.
@@ -335,45 +291,24 @@ impl PlBinaryViewArray {
     }
 
     /// The backing views buffer, if it holds one slot per element.
-    ///
-    /// Slot `i` is then the view of element `i`, with no [`broadcast_index`] in the way. This is
-    /// the `O(1)` counterpart of [`Self::to_flat`]: it materializes nothing, and returns `None`
-    /// rather than writing out a scalar buffer. Reach for the view a scalar buffer shares with
-    /// [`Self::scalar_views`] instead — between them the two cover every array that has elements
-    /// at all, so a `None` from both is an empty array. The views of null elements are
-    /// undetermined (they can be anything that reads bytes this array holds).
     #[inline]
     pub fn flat_views(&self) -> Option<&Buffer<View>> {
         self.views_are_flat().then_some(&self.views)
     }
 
     /// The view every element of this array reads, if the views buffer holds a single slot.
-    ///
-    /// This is the views half of [`Self::scalar_value`], which additionally asks that the validity
-    /// mask be scalar and reports the null the mask makes of this view. Returns `None` for a views
-    /// buffer that is flat over more than one element, and for an empty array, which has no
-    /// element to share a view. The view of a null element is undetermined (it can be anything
-    /// that reads bytes this array holds).
     #[inline]
     pub fn scalar_views(&self) -> Option<View> {
         (self.views_are_scalar() && self.length > 0).then(|| self.views[0])
     }
 
     /// The buffers the views that do not inline their bytes point into.
-    ///
-    /// These are indexed by the views rather than by an element index, so — unlike the views
-    /// themselves — they are neither flat nor scalar for this array's length, and being
-    /// [`flat`](Self::is_flat) says nothing about them.
     #[inline(always)]
     pub const fn data_buffers(&self) -> &Buffer<Buffer<u8>> {
         &self.buffers
     }
 
     /// The validity mask, if any element may be null.
-    ///
-    /// The returned [`PlBitmapRef`] has [`Self::len`] bits regardless of whether the backing
-    /// bitmap is flat or scalar, so reading validity through it needs no knowledge of which
-    /// representation this array is in.
     #[inline]
     pub fn validity(&self) -> Option<PlBitmapRef<'_>> {
         // SAFETY: the mask is flat or scalar for `self.length`, upheld by every constructor.
@@ -383,17 +318,12 @@ impl PlBinaryViewArray {
     }
 
     /// Whether the views buffer holds a single view shared by every element.
-    ///
-    /// An array of one element is both scalar and [`flat`](Self::is_flat): the two representations
-    /// coincide, and this reports them both.
     #[inline]
     pub fn views_are_scalar(&self) -> bool {
         self.views.len() == 1
     }
 
     /// Whether the views buffer holds one slot per element.
-    ///
-    /// An array of one element is both flat and [`scalar`](Self::views_are_scalar).
     #[inline]
     pub fn views_are_flat(&self) -> bool {
         self.views.len() == self.length
@@ -406,11 +336,6 @@ impl PlBinaryViewArray {
     }
 
     /// Whether every backing buffer has one slot per element.
-    ///
-    /// The data buffers are not one of them: they are indexed by the views, so how many of them
-    /// there are has nothing to do with this array's length.
-    ///
-    /// An array of one element is both flat and [`scalar`](Self::is_scalar).
     #[inline]
     pub fn is_flat(&self) -> bool {
         self.views_are_flat() && self.validity().is_none_or(|validity| validity.is_flat())
@@ -425,12 +350,6 @@ impl PlBinaryViewArray {
 
     /// The single element every element of this array equals, if every backing buffer holds one
     /// slot.
-    ///
-    /// The inner [`Option`] is that element, so an array of nothing but nulls yields
-    /// `Some(None)`. Returns `None` for an empty array, and whenever a backing buffer is flat over
-    /// more than one element — its elements need not be equal, even if the other buffer is scalar.
-    ///
-    /// This is what lets equality and formatting avoid walking a scalar array of unbounded length.
     #[inline]
     pub fn scalar_value(&self) -> Option<Option<&[u8]>> {
         let is_shared = self.views.len() == 1
@@ -445,9 +364,6 @@ impl PlBinaryViewArray {
 
     /// Returns the view of the element at `i`.
     ///
-    /// The view of a null element is undetermined (it can be anything that reads bytes this array
-    /// holds).
-    ///
     /// # Panics
     /// Panics if `i >= self.len()`.
     #[inline]
@@ -457,9 +373,6 @@ impl PlBinaryViewArray {
     }
 
     /// Returns the view of the element at `i`.
-    ///
-    /// The view of a null element is undetermined (it can be anything that reads bytes this array
-    /// holds).
     ///
     /// # Safety
     /// `i` must be smaller than `self.len()`.
@@ -475,8 +388,6 @@ impl PlBinaryViewArray {
 
     /// Returns the value at `i`.
     ///
-    /// The value of a null element is undetermined (it can be anything).
-    ///
     /// # Panics
     /// Panics if `i >= self.len()`.
     #[inline]
@@ -486,8 +397,6 @@ impl PlBinaryViewArray {
     }
 
     /// Returns the value at `i`.
-    ///
-    /// The value of a null element is undetermined (it can be anything).
     ///
     /// # Safety
     /// `i` must be smaller than `self.len()`.
@@ -562,9 +471,6 @@ impl PlBinaryViewArray {
     }
 
     /// The number of null elements.
-    ///
-    /// This is `O(1)` for a scalar validity mask and `O(len)` for a flat one, amortized over
-    /// repeated calls on the same [`Bitmap`].
     pub fn null_count(&self) -> usize {
         self.validity().map_or(0, |validity| validity.unset_bits())
     }
@@ -576,11 +482,6 @@ impl PlBinaryViewArray {
     }
 
     /// The number of bytes it would take to lay the values of the valid elements end to end.
-    ///
-    /// This counts the bytes of every element, whether its view inlines them or points at a data
-    /// buffer, and counts a repeated element once per element it stands for — so it is *not* the
-    /// size of this array in memory. That makes it `O(1)` for scalar views and `O(len)` for flat
-    /// ones. See [`Self::total_buffer_len`] for what the data buffers hold.
     ///
     /// # Panics
     /// Panics if the total overflows a `usize`, which the scalar representation makes possible
@@ -609,18 +510,11 @@ impl PlBinaryViewArray {
     }
 
     /// The number of bytes the data buffers hold.
-    ///
-    /// This is what the views that do not inline their bytes point into, which is neither what the
-    /// elements hold — the bytes of an element that no view points at are still counted, and the
-    /// inlined ones are not — nor bounded by this array's length. See [`Self::total_bytes_len`]
-    /// for the elements themselves.
     pub fn total_buffer_len(&self) -> usize {
         self.buffers.iter().map(|buffer| buffer.len()).sum()
     }
 
     /// Returns an iterator over the values, ignoring validity.
-    ///
-    /// The values of null elements are undetermined (they can be anything).
     #[inline]
     pub fn values_iter(&self) -> PlBinaryViewValuesIter<'_> {
         PlBinaryViewValuesIter::new(&self.views, &self.buffers, self.length)
@@ -632,14 +526,8 @@ impl PlBinaryViewArray {
         PlBinaryViewIter::new(&self.views, &self.buffers, self.validity(), self.length)
     }
 
-    /// Returns an iterator over `length` values, repeating the single value of this array if
-    /// that is all it holds, and ignoring validity.
-    ///
-    /// This array either has `length` elements — in which case this is [`Self::values_iter`] — or
-    /// a single element, which the `length` values this yields are then all read from.
-    /// Broadcasting is `O(1)`, and allocates nothing: the value is repeated as it is read, rather
-    /// than materialized into an array to iterate the way [`Self::new_from_index`] would have to.
-    /// The values of null elements are undetermined (they can be anything).
+    /// Returns an iterator over `length` values, repeating the single value of this array if that
+    /// is all it holds, and ignoring validity.
     ///
     /// # Panics
     /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
@@ -655,8 +543,6 @@ impl PlBinaryViewArray {
     ///
     /// # Panics
     /// Panics if `validity` does not hold one bit per element.
-    /// [`Self::with_validity_broadcast`] is what installs the single bit every element shares;
-    /// this function never infers that from a mask that happens to hold one bit.
     #[must_use]
     pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
         self.set_validity(validity);
@@ -667,8 +553,6 @@ impl PlBinaryViewArray {
     ///
     /// # Panics
     /// Panics if `validity` does not hold one bit per element.
-    /// [`Self::set_validity_broadcast`] is what installs the single bit every element shares;
-    /// this function never infers that from a mask that happens to hold one bit.
     pub fn set_validity(&mut self, validity: Option<Bitmap>) {
         if let Some(validity) = validity.as_ref() {
             assert!(
@@ -693,10 +577,6 @@ impl PlBinaryViewArray {
 
     /// Replaces the validity mask with one that broadcasts over this array.
     ///
-    /// This is [`Self::set_validity`] widened to the scalar representation: the mask is either
-    /// flat — one bit per element — or the single bit every element shares. See
-    /// [`crate::broadcast`].
-    ///
     /// # Panics
     /// Panics if `validity` is neither flat nor scalar for this array's length.
     pub fn set_validity_broadcast(&mut self, validity: Option<Bitmap>) {
@@ -720,9 +600,6 @@ impl PlBinaryViewArray {
 
     /// Slices this array in place to `length` elements starting at `offset`.
     ///
-    /// This function is `O(1)`. The data buffers are left as they are, so the bytes of the
-    /// elements this drops are still held onto — [`Self::total_buffer_len`] does not shrink.
-    ///
     /// # Panics
     /// Panics if `offset + length > self.len()`.
     pub fn slice(&mut self, offset: usize, length: usize) {
@@ -734,8 +611,6 @@ impl PlBinaryViewArray {
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.
-    ///
-    /// This function is `O(1)`.
     ///
     /// # Safety
     /// `offset + length` must not exceed `self.len()`.
@@ -762,8 +637,6 @@ impl PlBinaryViewArray {
 
     /// Returns this array sliced to `length` elements starting at `offset`.
     ///
-    /// This function is `O(1)`.
-    ///
     /// # Panics
     /// Panics if `offset + length > self.len()`.
     #[must_use]
@@ -773,8 +646,6 @@ impl PlBinaryViewArray {
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// This function is `O(1)`.
     ///
     /// # Safety
     /// `offset + length` must not exceed `self.len()`.
@@ -786,10 +657,6 @@ impl PlBinaryViewArray {
 
     /// Creates a [`PlBinaryViewArray`] of `length` copies of the element at `index`.
     ///
-    /// This function is `O(1)`: the result is scalar, so it holds a single view no matter how long
-    /// it is, and it keeps at most the one data buffer that view reads rather than the bytes
-    /// themselves. A null element repeats as `length` nulls.
-    ///
     /// # Panics
     /// Panics if `index >= self.len()`.
     #[inline]
@@ -799,8 +666,6 @@ impl PlBinaryViewArray {
     }
 
     /// Creates a [`PlBinaryViewArray`] of `length` copies of the element at `index`.
-    ///
-    /// This function is `O(1)`.
     ///
     /// # Safety
     /// `index` must be smaller than `self.len()`.
@@ -839,24 +704,6 @@ impl PlBinaryViewArray {
     }
 
     /// Returns an equivalent array whose views and mask both hold one slot per element.
-    ///
-    /// This materializes any scalar buffer and is therefore `O(len)`; it is a no-op clone when
-    /// this array [`is_flat`](Self::is_flat). Only the views are written out — the bytes they read
-    /// stay in the data buffers they are already in, so repeating an element costs the 16 bytes of
-    /// its view rather than the bytes of its value. The result carries its representation in its
-    /// type: see [`Flat`] for what a flat array can do that this one cannot.
-    ///
-    /// # Example
-    /// ```
-    /// use polars_array::PlBinaryViewArray;
-    ///
-    /// let scalar = PlBinaryViewArray::new_scalar(b"foo", 3);
-    /// assert!(scalar.flat_views().is_none());
-    ///
-    /// let flat = scalar.to_flat();
-    /// assert_eq!(flat.views().len(), 3);
-    /// assert_eq!(flat, scalar);
-    /// ```
     pub fn to_flat(&self) -> Flat<Self> {
         if self.is_flat() {
             return Flat(self.clone());
@@ -887,21 +734,6 @@ impl PlBinaryViewArray {
 
     /// Borrows this array as a [`Flat`] one, if its views and mask already hold one slot per
     /// element.
-    ///
-    /// This is the `O(1)` counterpart of [`Self::to_flat`]: it materializes nothing, and returns
-    /// `None` rather than writing out a scalar buffer when this array is not
-    /// [`flat`](Self::is_flat).
-    ///
-    /// # Example
-    /// ```
-    /// use polars_array::PlBinaryViewArray;
-    ///
-    /// let arr = PlBinaryViewArray::from_values_iter([b"foo".as_slice(), b"bar"]);
-    /// assert_eq!(arr.as_flat().unwrap().views().len(), 2);
-    ///
-    /// // A billion copies of one value share a single view, so it has to be written out.
-    /// assert!(PlBinaryViewArray::new_scalar(b"foo", 1_000_000_000).as_flat().is_none());
-    /// ```
     #[inline]
     pub fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: the views and the mask of a flat array hold one slot per element.
@@ -910,12 +742,6 @@ impl PlBinaryViewArray {
 }
 
 /// Validates that every view of `views` reads bytes that `buffers` holds.
-///
-/// This is the binary counterpart of
-/// [`validate_utf8_views`](arrow::array::validate_utf8_views): the bytes themselves are anything
-/// at all, so what is left to check is that they are there to be read, and that a view agrees with
-/// the copy of their first four bytes it carries — two views over the same bytes have to compare
-/// equal as the 16 bytes they are.
 fn validate_views(views: &[View], buffers: &[Buffer<u8>]) -> PolarsResult<()> {
     for view in views {
         if let Some(inlined) = view.get_inlined_slice() {
@@ -1016,9 +842,8 @@ impl<'a> IntoIterator for &'a PlBinaryViewArray {
     }
 }
 
-/// Compares two arrays element-wise; neither the representation (flat or scalar) nor how the bytes
-/// of an element are reached is part of a value, so an array compares equal to any other one
-/// holding the same values.
+/// Compares two arrays element-wise, disregarding the representation and how the bytes are
+/// reached.
 impl PartialEq for PlBinaryViewArray {
     fn eq(&self, other: &Self) -> bool {
         if self.length != other.length {

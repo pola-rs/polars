@@ -28,9 +28,6 @@ impl<'a> PlBooleanIter<'a> {
     }
 
     /// The values and the mask that says which of them are elements, to walk in one loop.
-    ///
-    /// The mask has its representation hoisted out, so that the loop the caller runs reads no
-    /// mask at all where every element is valid, and neither mask nor values where none is.
     #[inline]
     fn split(self) -> (PlBitmapIter<'a>, ValidityFold<'a>) {
         (self.values, self.validity.into_mask())
