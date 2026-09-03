@@ -28,18 +28,12 @@
           system,
           pkgs,
           lib,
-          self',
           ...
         }:
         let
           rustToolchain = pkgs.fenix.fromToolchainName {
             name = (lib.importTOML ./rust-toolchain.toml).toolchain.channel;
             sha256 = "sha256-wBCNU5N9ftXKTMzvUW3xolIXmK5Z/93SdAxK1sMRDxQ=";
-          };
-
-          rustPlatform = pkgs.makeRustPlatform {
-            cargo = rustToolchain;
-            rustc = rustToolchain;
           };
 
           # Create an alias for python packages, such that we can use the same python version for everything
@@ -361,56 +355,8 @@
                   export POLARS_DOT_SVG_VIEWER="${openCmd} %file%"
                   export RUST_SRC_PATH="${rustToolchain.rust-src}/lib/rustlib/src/rust/library"
                 '';
-
             }
           );
-          packages = {
-            polars = py.buildPythonPackage {
-              pname = "polars";
-              version = (lib.importTOML ./py-polars/runtime/polars-runtime-32/Cargo.toml).package.version;
-
-              build-system = [ rustToolchain.maturinBuildHook ];
-
-              nativeBuildInputs = with pkgs; [
-                pkg-config
-                rustPlatform.cargoSetupHook
-                rustPlatform.cargoBuildHook
-                rustPlatform.cargoInstallHook
-                rustToolchain
-              ];
-
-              maturinBuildFlags = [
-                "-m"
-                "py-polars/runtime/polars-runtime-32/Cargo.toml"
-                "--uv"
-              ];
-              postInstall = ''
-                # Move polars.abi3.so -> polars.so
-                local polarsSo=""
-                local soName=""
-                while IFS= read -r -d "" p ; do
-                  polarsSo=$p
-                  soName="$(basename "$polarsSo")"
-                  [[ "$soName" == polars.so ]] && break
-                done < <( find "$out" -iname "polars*.so" -print0 )
-                [[ -z "''${polarsSo:-}" ]] && echo "polars.so not found" >&2 && exit 1
-                if [[ "$soName" != polars.so ]] ; then
-                  mv "$polarsSo" "$(dirname "$polarsSo")/polars.so"
-                fi
-              '';
-
-              src = ./.;
-              cargoDeps = pkgs.rustPlatform.importCargoLock {
-                lockFile = ./Cargo.lock;
-                outputHashes = {
-                  "pyo3-0.24.2" = "sha256-0V4cT3DstG9mZvdIVZXzoQlNyvtBuLOvlMe1XDZp3/0=";
-                  "tikv-jemalloc-sys-0.6.0+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7" =
-                    "sha256-nvXKBd5tKSe4hPTtMKriYhlgAML9gdDHZG8nNRzgjXM=";
-                };
-              };
-            };
-            default = self'.packages.polars;
-          };
         };
     };
 }
