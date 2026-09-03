@@ -1,5 +1,6 @@
 use arrow::array::View;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
+use buffers::{copy_only_value, copy_value};
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 
@@ -12,6 +13,7 @@ use crate::broadcast::{
 };
 use crate::flat::Flat;
 
+mod buffers;
 mod builder;
 mod flat;
 mod iterator;
@@ -272,7 +274,9 @@ impl PlBinaryViewArray {
     /// the result, so this is `O(total bytes)`.
     ///
     /// # Panics
-    /// Panics if a value is longer than `u32::MAX` bytes, which no view can point at.
+    /// Panics if a value is longer than
+    /// [`BINVIEW_MAX_ROW_BYTE_LEN`](arrow::array::BINVIEW_MAX_ROW_BYTE_LEN) bytes, which no view
+    /// can point at.
     ///
     /// # Example
     /// ```
@@ -290,7 +294,7 @@ impl PlBinaryViewArray {
         let mut views = Vec::with_capacity(lower);
         let mut buffers = Vec::new();
         for value in values {
-            views.push(View::new_with_buffers(value.as_ref(), 0, &mut buffers));
+            views.push(copy_value(&mut buffers, 0, value.as_ref()));
         }
 
         let length = views.len();
@@ -302,7 +306,9 @@ impl PlBinaryViewArray {
     /// Creates a [`PlBinaryViewArray`] of `length` copies of `value`, in `O(value.len())` memory.
     ///
     /// # Panics
-    /// Panics if `value` is longer than `u32::MAX` bytes, which no view can point at.
+    /// Panics if `value` is longer than
+    /// [`BINVIEW_MAX_ROW_BYTE_LEN`](arrow::array::BINVIEW_MAX_ROW_BYTE_LEN) bytes, which no view
+    /// can point at.
     ///
     /// # Example
     /// ```
@@ -319,8 +325,9 @@ impl PlBinaryViewArray {
     /// assert_eq!(arr.value(999_999_999), b"a value too long to inline");
     /// ```
     pub fn new_scalar(value: &[u8], length: usize) -> Self {
-        let mut buffers = Vec::new();
-        let view = View::new_with_buffers(value, 0, &mut buffers);
+        // The one value is all the array ever holds, so its bytes are copied into a buffer that
+        // fits them exactly: a scalar array costs what the value costs, and no block more.
+        let (view, buffers) = copy_only_value(value);
 
         Self {
             views: Buffer::from_owner([view]),
@@ -995,7 +1002,7 @@ impl<V: AsRef<[u8]>> FromIterator<Option<V>> for PlBinaryViewArray {
         for value in iter {
             match value {
                 Some(value) => {
-                    views.push(View::new_with_buffers(value.as_ref(), 0, &mut buffers));
+                    views.push(copy_value(&mut buffers, 0, value.as_ref()));
                     validity.push(true);
                 },
                 // The value of a null element is undetermined, so nothing is written out for it.

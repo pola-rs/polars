@@ -5,10 +5,12 @@ use crate::broadcast::{is_flat_buffer_len, is_valid_buffer_len};
 
 mod iterator;
 mod reference;
+mod validity;
 
 pub use iterator::PlBitmapIter;
 pub(crate) use iterator::{ValidityFold, ValidityIter};
 pub use reference::PlBitmapRef;
+pub use validity::{combine_validities_and, invert};
 
 /// An immutable, cheaply cloneable mask of `length` bits, in either the flat or the scalar
 /// representation.

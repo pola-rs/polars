@@ -1,10 +1,12 @@
 //! The wrapper that marks an array as being in the flat representation.
 
+use std::borrow::Cow;
 use std::ops::Deref;
 
 use arrow::bitmap::Bitmap;
 
 use crate::array::PlArray;
+use crate::static_array::StaticArray;
 
 /// An array whose backing buffers all hold one slot per element.
 ///
@@ -250,6 +252,20 @@ impl<T: PartialEq> PartialEq<T> for Flat<T> {
 impl<T: std::fmt::Debug> std::fmt::Debug for Flat<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+/// Borrows `array` as a flat one, writing out its buffers only if it is not laid out flat.
+///
+/// This is what a caller that needs a [`Flat`] array — to hand it to a kernel, or to read its
+/// backing buffers — reaches for when it does not know the representation. It is
+/// [`StaticArray::as_flat`] that answers with a borrow or nothing, leaving the writing out to the
+/// caller.
+#[inline]
+pub fn as_flat<A: StaticArray>(array: &A) -> Cow<'_, Flat<A>> {
+    match array.as_flat() {
+        Some(flat) => Cow::Borrowed(flat),
+        None => Cow::Owned(array.to_flat()),
     }
 }
 

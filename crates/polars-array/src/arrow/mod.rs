@@ -7,6 +7,11 @@
 //! so importing drops it — see [`import`] — and exporting has to put one back, which is why every
 //! Arrow array has an export function of its own that inlines the data type it exports as — see
 //! [`export`].
+//!
+//! [`bridge`] is the typed crossing built on those two: it names, for each array of this crate,
+//! the Arrow array that holds the same elements, so a kernel written for one can be called on the
+//! other.
 
+pub mod bridge;
 pub mod export;
 pub mod import;

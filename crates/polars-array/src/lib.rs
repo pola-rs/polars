@@ -56,7 +56,7 @@ pub use builder::{PlArrayBuilder, StaticArrayBuilder};
 pub use collect::{ArrayCollectIterExt, ArrayFromIter, ZeroableArrayFromIter};
 pub use fixed_size_binary::{PlFixedSizeBinaryArray, PlFixedSizeBinaryArrayBuilder};
 pub use fixed_size_list::{PlFixedSizeListArray, PlFixedSizeListArrayBuilder};
-pub use flat::Flat;
+pub use flat::{Flat, as_flat};
 pub use list::{PlListArray, PlListArrayBuilder};
 pub use null::{PlNullArray, PlNullArrayBuilder};
 pub use primitive::{PlPrimitiveArray, PlPrimitiveArrayBuilder};

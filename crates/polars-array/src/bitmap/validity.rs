@@ -1,13 +1,14 @@
-//! Combining the validity masks of chunks.
+//! Combining the validity masks of arrays.
 //!
-//! A chunk hands its mask out as a [`PlBitmapRef`], which is either flat — one bit per element —
+//! An array hands its mask out as a [`PlBitmapRef`], which is either flat — one bit per element —
 //! or scalar, a single bit standing for every element. The helpers here combine two of those
 //! without writing a scalar mask out when they do not have to: the `and` of two scalar masks is
-//! itself one bit, so a `ChunkedArray` that is fully null stays `O(1)` in memory across an
-//! operation that only touches validity.
+//! itself one bit, so an array that is fully null stays `O(1)` in memory across an operation that
+//! only touches validity.
 
 use arrow::bitmap::Bitmap;
-use polars_array::{PlBitmap, PlBitmapRef};
+
+use crate::{PlBitmap, PlBitmapRef};
 
 /// The `and` of two masks over the same elements, or `None` if neither has a null.
 ///
@@ -67,26 +68,6 @@ pub fn invert(mask: PlBitmapRef<'_>) -> Bitmap {
     // The backing bitmap is flat or scalar for the mask's length, and inverting it bit for bit
     // leaves it that way; there is nothing to expand first.
     !mask.into_inner().0
-}
-
-/// An extension of [`PlBitmapRef`] with the conversion the helpers here need.
-pub trait PlBitmapRefExt {
-    /// This mask as a [`Bitmap`], keeping the scalar representation where it has one.
-    ///
-    /// This is [`PlBitmapRef::to_flat`] that does not write a scalar mask out: the single bit is
-    /// handed back as the one-bit bitmap it is, which the arrays of `polars-array` read as scalar.
-    /// The result goes on an array through `set_validity_broadcast`, which is the setter that
-    /// admits both representations.
-    fn to_flat_or_scalar(&self) -> Bitmap;
-}
-
-impl PlBitmapRefExt for PlBitmapRef<'_> {
-    #[inline]
-    fn to_flat_or_scalar(&self) -> Bitmap {
-        // The backing bitmap is already flat or scalar for the mask's length, which is exactly
-        // what an array accepts as its own mask: hand it over as it is.
-        self.into_inner().0.clone()
-    }
 }
 
 #[cfg(test)]

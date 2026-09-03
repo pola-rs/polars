@@ -239,6 +239,19 @@ impl<'a> PlBitmapRef<'a> {
         }
     }
 
+    /// This mask as a [`Bitmap`], keeping the scalar representation where it has one.
+    ///
+    /// This is [`to_flat`](Self::to_flat) that does not write a scalar mask out: the single bit is
+    /// handed back as the one-bit bitmap it is, which the arrays of this crate read as scalar. The
+    /// result goes on an array through `set_validity_broadcast`, which is the setter that admits
+    /// both representations.
+    #[inline]
+    pub fn to_flat_or_scalar(&self) -> Bitmap {
+        // The backing bitmap is already flat or scalar for the mask's length, which is exactly
+        // what an array accepts as its own mask: hand it over as it is.
+        self.bitmap.clone()
+    }
+
     /// Returns this mask over `length` bits, repeating its single bit if that is all it holds.
     ///
     /// This mask either has `length` bits, in which case this returns it unchanged, or a single

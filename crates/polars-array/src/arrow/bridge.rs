@@ -1,32 +1,31 @@
 //! Handing a chunk to an Arrow kernel, and taking the result back.
 //!
-//! The chunks of a `ChunkedArray` are the arrays of `polars-array`; the kernels of
-//! `polars-compute` are written against the Arrow arrays of `polars-arrow`. The two lay their
-//! elements out the same way and are built on the same [`Buffer`](polars_buffer::Buffer) and
-//! [`Bitmap`](arrow::bitmap::Bitmap), so crossing between them moves the backing buffers rather
-//! than copying the elements.
+//! The arrays of this crate are what a chunk is made of; the kernels of `polars-compute` are
+//! written against the Arrow arrays of `polars-arrow`. The two lay their elements out the same way
+//! and are built on the same [`Buffer`](polars_buffer::Buffer) and [`Bitmap`](arrow::bitmap::Bitmap),
+//! so crossing between them moves the backing buffers rather than copying the elements.
 //!
-//! [`ToArrow`] is that crossing, typed: it names, for each array of `polars-array`, the Arrow
-//! array that holds the same elements, so that a kernel written for one can be called on the
-//! other without a downcast. It is defined on [`Flat`] arrays only — an Arrow array holds one slot
-//! per element, which is what being flat means, and an array in the
-//! [`scalar`](polars_array::broadcast) representation has to be written out before it can cross.
-//! That is what keeps the cost visible at the call site: the dispatch in
-//! [`arity`](crate::chunked_array::ops::arity) decides what a scalar chunk costs a kernel, and
-//! reaches for a broadcasting kernel where the repeated value is all the kernel needs.
+//! [`ToArrow`] is that crossing, typed: it names, for each array of this crate, the Arrow array
+//! that holds the same elements, so that a kernel written for one can be called on the other
+//! without a downcast. It is defined on [`Flat`] arrays only — an Arrow array holds one slot per
+//! element, which is what being flat means, and an array in the [`scalar`](crate::broadcast)
+//! representation has to be written out before it can cross. That is what keeps the cost visible
+//! at the call site: the caller decides what a scalar chunk costs a kernel, and reaches for a
+//! broadcasting kernel where the repeated value is all the kernel needs.
 
 use arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray, ListArray, NullArray,
     PrimitiveArray, StructArray, Utf8ViewArray,
 };
 use arrow::types::NativeType;
-use polars_array::arrow::{export, import};
-use polars_array::{
+
+use crate::arrow::{export, import};
+use crate::{
     Flat, PlArray, PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeListArray,
     PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray, PlUtf8ViewArray, StaticArray,
 };
 
-/// The Arrow array that holds the same elements as an array of `polars-array`.
+/// The Arrow array that holds the same elements as an array of this crate.
 ///
 /// See the [module docs](self) for what this is for and why it is defined on [`Flat`] arrays.
 pub trait ToArrow: StaticArray {
@@ -177,7 +176,7 @@ impl ToArrow for PlNullArray {
 /// Hands the backing buffers of a flat chunk to the Arrow array that holds the same elements.
 ///
 /// This is [`ToArrow::to_arrow`] as a free function, for a caller that has the flatness already —
-/// [`as_flat`] is what gets it. It is `O(1)`.
+/// [`as_flat`](crate::as_flat) is what gets it. It is `O(1)`.
 #[inline]
 pub fn flat_to_arrow<A: ToArrow>(array: &Flat<A>) -> A::Arrow {
     A::to_arrow(array)
@@ -203,18 +202,6 @@ pub fn chunk_to_arrow<A: ToArrow>(array: &A) -> A::Arrow {
     match array.as_flat() {
         Some(flat) => A::to_arrow(flat),
         None => A::to_arrow(&array.to_flat()),
-    }
-}
-
-/// Borrows `array` as a flat one, writing out its buffers only if it is not laid out flat.
-///
-/// This is what a caller that needs a [`Flat`] array — to hand it to a kernel, or to read its
-/// backing buffers — reaches for when it does not know the representation.
-#[inline]
-pub fn as_flat<A: StaticArray>(array: &A) -> std::borrow::Cow<'_, Flat<A>> {
-    match array.as_flat() {
-        Some(flat) => std::borrow::Cow::Borrowed(flat),
-        None => std::borrow::Cow::Owned(array.to_flat()),
     }
 }
 

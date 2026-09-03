@@ -7,6 +7,7 @@ use polars_utils::IdxSize;
 use polars_utils::aliases::PlHashMap;
 
 use super::PlBinaryViewArray;
+use super::buffers::copy_value;
 use crate::builder::{
     ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
     opt_gather_extend_validity, subslice_extend_each_repeated_validity, subslice_extend_validity,
@@ -79,6 +80,11 @@ impl PlBinaryViewArrayBuilder {
     /// The bytes are copied into the buffers this builder is writing into unless a view inlines
     /// them, which is what makes this the one way to append a value that is not already an element
     /// of an array — a string built into a buffer the caller reuses, say.
+    ///
+    /// # Panics
+    /// Panics if `value` is longer than
+    /// [`BINVIEW_MAX_ROW_BYTE_LEN`](arrow::array::BINVIEW_MAX_ROW_BYTE_LEN) bytes, which no view
+    /// can point at.
     pub fn push_value(&mut self, value: &[u8]) {
         let view = self.copy_value(value);
         self.views.push(view);
@@ -133,9 +139,14 @@ impl PlBinaryViewArrayBuilder {
 
     /// A view over the bytes of `self`, holding `bytes` — copied into the buffers being written
     /// into unless the view inlines them.
+    ///
+    /// # Panics
+    /// Panics if `bytes` is longer than
+    /// [`BINVIEW_MAX_ROW_BYTE_LEN`](arrow::array::BINVIEW_MAX_ROW_BYTE_LEN), the longest a view
+    /// can point at.
     fn copy_value(&mut self, bytes: &[u8]) -> View {
-        let offset = self.buffer_idx_offset();
-        View::new_with_buffers(bytes, offset, &mut self.active)
+        let buffer_idx_offset = self.buffer_idx_offset();
+        copy_value(&mut self.active, buffer_idx_offset, bytes)
     }
 
     /// The view `view` of `buffers` becomes over the data buffers of this builder.
