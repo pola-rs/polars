@@ -36,10 +36,13 @@ fn extract_groups_array(
         .into_iter()
         .map(|builder| builder.freeze().into_boxed())
         .collect();
-    // The mask of a struct array holds one bit per element, which is what a scalar one stands
-    // for; the field names live in the `DataType` of the `Series` this becomes a chunk of.
+    // The input's mask carries over in whatever representation it is in, so it goes on through
+    // the broadcast setter rather than a constructor that takes only one of the two; the field
+    // names live in the `DataType` of the `Series` this becomes a chunk of.
     let validity = arr.validity().map(|v| v.to_flat_or_scalar());
-    Ok(PlStructArray::new_broadcast(values, arr.len(), validity).into_boxed())
+    Ok(PlStructArray::new(values, arr.len(), None)
+        .with_validity_broadcast(validity)
+        .into_boxed())
 }
 
 #[cfg(feature = "extract_groups")]

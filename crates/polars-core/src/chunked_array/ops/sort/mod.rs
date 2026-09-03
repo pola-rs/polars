@@ -29,43 +29,58 @@ use crate::runtime::RAYON;
 use crate::series::IsSorted;
 use crate::utils::NoNull;
 
-fn partition_nulls<T: Copy>(
-    values: &mut [T],
-    mut validity: Option<Bitmap>,
+/// Moves the values of the valid elements to one end of `values` and the nulls to the other,
+/// returning the run of valid values and the mask of the result. `validity` covers one element of
+/// `values` per bit, in either representation.
+fn partition_nulls<'a, T: Copy>(
+    values: &'a mut [T],
+    validity: Option<PlBitmapRef<'_>>,
     options: SortOptions,
-) -> (&mut [T], Option<Bitmap>) {
-    let partitioned = if let Some(bitmap) = &validity {
-        // Partition null last first
-        let mut out_len = 0;
-        for idx in bitmap.true_idx_iter() {
-            unsafe { *values.get_unchecked_mut(out_len) = *values.get_unchecked(idx) };
-            out_len += 1;
-        }
-        let valid_count = out_len;
-        let null_count = values.len() - valid_count;
-        validity = Some(create_validity(
-            bitmap.len(),
-            bitmap.unset_bits(),
-            options.nulls_last,
-        ));
+) -> (&'a mut [T], Option<Bitmap>) {
+    let Some(mask) = validity else {
+        return (values, None);
+    };
+    debug_assert_eq!(mask.len(), values.len());
 
-        // Views are correctly partitioned.
-        if options.nulls_last {
-            &mut values[..valid_count]
-        }
-        // We need to swap the ends.
-        else {
-            // swap nulls with end
-            let mut end = values.len() - 1;
-
-            for i in 0..null_count {
-                unsafe { *values.get_unchecked_mut(end) = *values.get_unchecked(i) };
-                end = end.saturating_sub(1);
+    // A scalar mask is a single bit standing for every element: either nothing is null, in which
+    // case there is nothing to partition, or everything is.
+    let valid_count = match mask.scalar_value() {
+        Some(true) => return (values, None),
+        Some(false) => 0,
+        None => {
+            let bitmap = mask.flat_bitmap().expect("a mask is flat or scalar");
+            // Partition null last first
+            let mut out_len = 0;
+            for idx in bitmap.true_idx_iter() {
+                unsafe { *values.get_unchecked_mut(out_len) = *values.get_unchecked(idx) };
+                out_len += 1;
             }
-            &mut values[null_count..]
+            out_len
+        },
+    };
+
+    let null_count = values.len() - valid_count;
+    // The mask covers the elements of `values`, however many bits the one handed in held.
+    let validity = Some(create_validity(
+        values.len(),
+        null_count,
+        options.nulls_last,
+    ));
+
+    // Views are correctly partitioned.
+    let partitioned = if options.nulls_last {
+        &mut values[..valid_count]
+    }
+    // We need to swap the ends.
+    else {
+        // swap nulls with end
+        let mut end = values.len() - 1;
+
+        for i in 0..null_count {
+            unsafe { *values.get_unchecked_mut(end) = *values.get_unchecked(i) };
+            end = end.saturating_sub(1);
         }
-    } else {
-        values
+        &mut values[null_count..]
     };
     (partitioned, validity)
 }
@@ -419,7 +434,9 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         let (views, buffers, validity) = arr.into_inner();
         let mut views = views.to_vec();
 
-        let (partitioned_part, validity) = partition_nulls(&mut views, validity, options);
+        // The array was written out flat, so its mask holds one bit per element.
+        let mask = validity.as_ref().map(|v| PlBitmapRef::new(v, length));
+        let (partitioned_part, validity) = partition_nulls(&mut views, mask, options);
 
         sort_unstable_by_branch(partitioned_part, options, |a, b| unsafe {
             a.get_slice_unchecked(&buffers)
@@ -621,11 +638,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
         } else {
             // This branch (almost?) never gets called as the row-encoding also encodes nulls.
             let length = idx.len();
-            let (partitioned_part, validity) = partition_nulls(
-                &mut idx,
-                arr.validity().map(|v| v.to_flat_or_scalar()),
-                options,
-            );
+            let (partitioned_part, validity) = partition_nulls(&mut idx, arr.validity(), options);
             argsort(partitioned_part);
             IdxCa::with_chunk(
                 self.name().clone(),
@@ -923,7 +936,36 @@ pub unsafe fn perfect_sort(idx: &[(IdxSize, IdxSize)], out: &mut Vec<IdxSize>) {
 
 #[cfg(test)]
 mod test {
+    use arrow::bitmap::Bitmap;
+
     use crate::prelude::*;
+
+    #[test]
+    fn arg_sort_over_a_scalar_validity_mask() {
+        // `full_null` repeats a single unset bit, which `partition_nulls` has to read as the mask
+        // of every element rather than of the one bit it holds.
+        let scalar = BinaryOffsetChunked::full_null(PlSmallStr::EMPTY, 4);
+        assert!(scalar.downcast_as_array().validity().unwrap().is_scalar());
+
+        // The same column with the mask written out, which is what the result has to match.
+        let mut flat = BinaryOffsetChunked::full_null(PlSmallStr::EMPTY, 4);
+        flat.set_validity(Some(Bitmap::new_zeroed(4)));
+        assert!(!flat.downcast_as_array().validity().unwrap().is_scalar());
+
+        for nulls_last in [false, true] {
+            let options = SortOptions::default().with_nulls_last(nulls_last);
+            let expected = flat.arg_sort(options);
+            let out = scalar.arg_sort(options);
+
+            assert_eq!(out.len(), 4);
+            assert_eq!(out.null_count(), 4);
+            assert_eq!(
+                out.iter().collect::<Vec<_>>(),
+                expected.iter().collect::<Vec<_>>(),
+            );
+        }
+    }
+
     #[test]
     fn test_arg_sort() {
         let a = Int32Chunked::new(
