@@ -166,10 +166,7 @@ pub fn chunk_from_arrow<A: ToArrow>(array: &A::Arrow) -> A {
 /// laid out flat.
 #[inline]
 pub fn chunk_to_arrow<A: ToArrow>(array: &A) -> A::Arrow {
-    match array.as_flat() {
-        Some(flat) => A::to_arrow(flat),
-        None => A::to_arrow(&array.to_flat()),
-    }
+    A::to_arrow(&array.to_flat())
 }
 
 /// Runs an Arrow kernel over a chunk of unknown type, importing what it hands back.
