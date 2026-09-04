@@ -691,14 +691,17 @@ def test_decimal_truediv_int_schema_29105(int_dtype: PolarsDataType) -> None:
     "int_dtype",
     [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt32],
 )
-def test_decimal_add_int_schema_29104(int_dtype: PolarsDataType) -> None:
+@pytest.mark.parametrize("op", [operator.add, operator.sub, operator.mul])
+def test_decimal_arithmetic_int_schema_29104(
+    int_dtype: PolarsDataType, op: Callable[[pl.Expr, pl.Expr], pl.Expr]
+) -> None:
     lf = pl.LazyFrame({"i": [1]}, schema={"i": int_dtype}).with_columns(
         d=pl.lit(1).cast(pl.Decimal(18, 4))
     )
 
     for expr, name in (
-        (pl.col("i") / pl.col("d"), "i"),
-        (pl.col("d") / pl.col("i"), "d"),
+        (op(pl.col("i"), pl.col("d")), "i"),
+        (op(pl.col("d"), pl.col("i")), "d"),
     ):
         q = lf.select(expr)
         schema = q.collect_schema()
