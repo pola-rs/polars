@@ -46,7 +46,7 @@ pyo3 = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
-reqwest = { workspace = true, optional = true, features = ["json"] }
+reqwest = { workspace = true, optional = true, features = ["json", "query"] }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { version = "1", optional = true }
