@@ -1,5 +1,5 @@
 use arrow::bitmap::bitmask::BitMask;
-use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
+use polars_compute::unique::{AmortizedUnique, amortized_unique_like};
 
 use super::*;
 use crate::prelude::row_encode::encode_rows_unordered;
@@ -300,9 +300,12 @@ impl Series {
         // Keep the Column for the sort-fallback path. Big groups go through
         // `Series::n_unique`, bypassing the amortized hashset.
         let col = values.clone();
-        let values = values.rechunk_to_arrow(CompatLevel::newest());
-        let values = values.as_ref();
-        let state = amortized_unique_from_dtype(values.dtype());
+        // The state is picked from the chunk it then walks, so the representation of that chunk
+        // is resolved once here rather than once per group — and a chunk that repeats one value
+        // is not written out to be walked at all.
+        let values = values.as_materialized_series().rechunk();
+        let values = &*values.chunks()[0];
+        let state = amortized_unique_like(values);
 
         struct CloneWrapper(Box<dyn AmortizedUnique>);
         impl Clone for CloneWrapper {

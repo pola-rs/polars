@@ -8,7 +8,7 @@ use arrow::trusted_len::TrustMyLength;
 use polars_array::PlPrimitiveArray;
 #[cfg(feature = "moment")]
 use polars_compute::rolling::QuantileMethod;
-use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
+use polars_compute::unique::{AmortizedUnique, amortized_unique_like};
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
@@ -720,9 +720,12 @@ pub fn unique<'a>(
         values
     };
 
-    let values = values.rechunk_to_arrow(CompatLevel::newest());
-    let values = values.as_ref();
-    let state = amortized_unique_from_dtype(values.dtype());
+    // The state is picked from the chunk it then walks, so the representation of that chunk is
+    // resolved once here rather than once per group — and a chunk that repeats one value is not
+    // written out to be walked at all.
+    let values = values.as_materialized_series().rechunk();
+    let values = &*values.chunks()[0];
+    let state = amortized_unique_like(values);
 
     struct CloneWrapper(Box<dyn AmortizedUnique>);
     impl Clone for CloneWrapper {

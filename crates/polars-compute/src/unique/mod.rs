@@ -45,4 +45,4 @@ mod boolean;
 mod distinct;
 
 pub use boolean::BooleanUniqueKernelState;
-pub use distinct::{AmortizedUnique, amortized_unique_from_dtype};
+pub use distinct::{AmortizedUnique, amortized_unique_like};
