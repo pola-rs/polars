@@ -1,5 +1,6 @@
 use std::sync::{Arc, LazyLock};
 
+use arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};
 use arrow::datatypes::{
     ArrowDataType, ArrowSchema, ExtensionType, Field, PARQUET_EMPTY_STRUCT, TimeUnit,
 };
@@ -315,6 +316,46 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         ),
         ArrowDataType::UInt128 | ArrowDataType::Int128 => {
             (PhysicalType::FixedLenByteArray(16), None, None)
+        },
+        ArrowDataType::Map(entries, _keys_sorted) => {
+            let ArrowDataType::Struct(entry_fields) = entries.dtype().to_storage() else {
+                polars_bail!(
+                    InvalidOperation:
+                    "Map entries must be a struct, got {:?}", entries.dtype(),
+                )
+            };
+            let [key, value] = entry_fields.as_slice() else {
+                polars_bail!(
+                    InvalidOperation:
+                    "Map entries must have exactly two fields, got {}", entry_fields.len(),
+                )
+            };
+
+            let key = Field {
+                name: MAP_KEY_NAME,
+                is_nullable: false,
+                ..key.clone()
+            };
+            let value = Field {
+                name: MAP_VALUE_NAME,
+                ..value.clone()
+            };
+
+            return Ok(ParquetType::from_group(
+                name,
+                repetition,
+                Some(GroupConvertedType::Map),
+                Some(GroupLogicalType::Map),
+                vec![ParquetType::from_group(
+                    PlSmallStr::from_static("key_value"),
+                    Repetition::Repeated,
+                    None,
+                    None,
+                    vec![to_parquet_type(&key)?, to_parquet_type(&value)?],
+                    None,
+                )],
+                field_id,
+            ));
         },
         ArrowDataType::List(f)
         | ArrowDataType::FixedSizeList(f, _)

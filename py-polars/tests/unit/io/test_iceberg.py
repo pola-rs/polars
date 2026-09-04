@@ -2307,7 +2307,7 @@ def test_scan_iceberg_nested_column_cast_deletion_rename(tmp_path: Path) -> None
                 {
                     "field_1": [
                         {"key": [datetime(2025, 1, 1), None], "value": [1, 2, None]},
-                        {"key": [datetime(2025, 1, 1), None], "value": None},
+                        {"key": [datetime(2025, 1, 2), None], "value": None},
                     ],
                     "field_2": 7,
                     "field_3": "F3",
@@ -2360,22 +2360,16 @@ def test_scan_iceberg_nested_column_cast_deletion_rename(tmp_path: Path) -> None
             "column_1": pl.List(
                 pl.Struct(
                     {
-                        "field_1": pl.List(
-                            pl.Struct({"key": pl.List(pl.Datetime("us")), "value": pl.List(pl.Int32)})
-                        ),
+                        "field_1": pl.Map(pl.List(pl.Datetime("us")), pl.List(pl.Int32)),
                         "field_2": pl.Int32,
                         "field_3": pl.String,
                     }
                 )
             ),
             "column_2": pl.String,
-            "column_3": pl.List(
-                pl.Struct(
-                    {
-                        "key": pl.Struct({"field_1": pl.Int32, "field_2": pl.Int32, "field_3": pl.Int32}),
-                        "value": pl.Struct({"field_1": pl.Int32, "field_2": pl.Int32, "field_3": pl.Int32}),
-                    }
-                )
+            "column_3": pl.Map(
+                pl.Struct({"field_1": pl.Int32, "field_2": pl.Int32, "field_3": pl.Int32}),
+                pl.Struct({"field_1": pl.Int32, "field_2": pl.Int32, "field_3": pl.Int32}),
             ),
         },
     )  # fmt: skip
@@ -2484,7 +2478,7 @@ def test_scan_iceberg_nested_column_cast_deletion_rename(tmp_path: Path) -> None
                     {
                         "field_2": [
                             {"key": [datetime(2025, 1, 1, 0, 0), None], "value": [1, 2, None]},
-                            {"key": [datetime(2025, 1, 1), None], "value": None},
+                            {"key": [datetime(2025, 1, 2), None], "value": None},
                         ],
                         "field_1": "F3",
                     }
@@ -2508,25 +2502,17 @@ def test_scan_iceberg_nested_column_cast_deletion_rename(tmp_path: Path) -> None
             ],
         },
         schema={
-            "column_1": pl.List(
-                pl.Struct(
-                    {
-                        "key": pl.Struct({"field_1": pl.Int32, "field_2": pl.Int32, "field_3": pl.Int32}),
-                        "value": pl.Struct({"field_1": pl.Int64, "field_2": pl.Int64}),
-                    }
-                )
+            "column_1": pl.Map(
+                pl.Struct({"field_1": pl.Int32, "field_2": pl.Int32, "field_3": pl.Int32}),
+                pl.Struct({"field_1": pl.Int64, "field_2": pl.Int64}),
             ),
             "column_2": pl.List(
                 pl.Struct(
                     {
                         "field_1": pl.String,
-                        "field_2": pl.List(
-                            pl.Struct(
-                                {
-                                    "key": pl.List(pl.Datetime(time_unit="us", time_zone=None)),
-                                    "value": pl.List(pl.Int32),
-                                }
-                            )
+                        "field_2": pl.Map(
+                            pl.List(pl.Datetime(time_unit="us", time_zone=None)),
+                            pl.List(pl.Int32),
                         ),
                     }
                 )
