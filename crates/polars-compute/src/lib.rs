@@ -1,4 +1,19 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
+//! The compute kernels of Polars.
+//!
+//! These read the arrays of `polars-array`, which carry no type of their own and whose buffers may
+//! stand for a value repeated over every element rather than holding one slot per element. A
+//! kernel that reads such a chunk answers it without writing it out — often in `O(1)` — and each
+//! module says at the top of its `pl_array` submodule what that means for the operation it
+//! implements. What is left over the Arrow arrays of `polars-arrow` is there on purpose:
+//!
+//! * [`cast`] is dispatched on a *pair* of `ArrowDataType`s, which is what a cast is, and most of
+//!   what reaches it is Arrow on both sides. A chunk crosses over through [`cast::cast_chunk`].
+//! * [`cardinality`] is reached only by the Parquet writer, which already holds Arrow arrays.
+//! * The Arrow leaves of [`comparisons`], [`gather`], [`if_then_else`], [`filter`] and [`min_max`]
+//!   are what the kernels over a chunk cross over to once it is known to lay one slot out per
+//!   element, and are also what the Parquet reader and writer reach directly. They read one slot
+//!   per element throughout.
 
 use arrow::types::NativeType;
 
