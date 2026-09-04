@@ -131,6 +131,7 @@ dtype-categorical = [
 ]
 dtype-decimal = ["polars-core/dtype-decimal", "polars-expr/dtype-decimal", "polars-plan/dtype-decimal"]
 dtype-extension = ["polars-core/dtype-extension", "polars-expr/dtype-extension", "polars-plan/dtype-extension"]
+dtype-map = ["polars-core/dtype-map", "polars-expr/dtype-map", "polars-plan/dtype-map"]
 ewma = ["polars-expr/ewma", "polars-plan/ewma"]
 mode = ["polars-expr/mode", "polars-plan/mode"]
 moment = ["polars-expr/moment", "polars-plan/moment"]

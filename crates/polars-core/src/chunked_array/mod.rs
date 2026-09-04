@@ -1080,6 +1080,37 @@ pub fn new_empty_chunk(dtype: &DataType) -> PlArrayRef {
     polars_array::arrow::import::from_arrow(&*new_empty_array(arrow_dtype))
 }
 
+/// Re-chunk `values` so that its chunk lengths match `chunk_lens`.
+///
+/// The sum of `chunk_lens` must equal `values.len()`. Returns a clone when the chunks
+/// already line up, so passing already-aligned values costs nothing.
+pub(crate) fn align_inner_chunks(
+    chunk_lens: impl Iterator<Item = usize>,
+    values: &Series,
+) -> Series {
+    let chunk_lens = chunk_lens.collect::<Vec<_>>();
+
+    if chunk_lens.len() == values.chunks().len()
+        && chunk_lens
+            .iter()
+            .zip(values.chunks())
+            .all(|(len, arr)| *len == arr.len())
+    {
+        return values.clone();
+    }
+
+    let mut values = values.rechunk();
+    let chunks = unsafe { values.chunks_mut() };
+    let mut arr = chunks.pop().unwrap();
+    chunks.extend(chunk_lens.into_iter().map(|len| {
+        let chunk = arr.sliced(0, len);
+        arr = arr.sliced(len, arr.len() - len);
+        chunk
+    }));
+    assert!(arr.is_empty());
+    values
+}
+
 pub(crate) fn to_primitive<T: PolarsNumericType>(
     values: Vec<T::Native>,
     validity: Option<Bitmap>,

@@ -4,7 +4,6 @@ mod var;
 
 use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float, One, ToPrimitive, Zero};
-use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_array::bitmap::combine_validities_and;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DEC128_MAX_PREC;

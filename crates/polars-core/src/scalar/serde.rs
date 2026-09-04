@@ -84,6 +84,8 @@ pub enum SerializableScalar {
     Float64(f64),
     /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
+    #[cfg(feature = "dtype-map")]
+    Map(Series),
     /// A binary true or false.
     Boolean(bool),
     /// A UTF8 encoded string type.
@@ -156,6 +158,8 @@ impl TryFrom<Scalar> for SerializableScalar {
             AnyValue::Float32(v) => Self::Float32(v),
             AnyValue::Float64(v) => Self::Float64(v),
             AnyValue::List(series) => Self::List(series),
+            #[cfg(feature = "dtype-map")]
+            AnyValue::Map(entries) => Self::Map(entries),
             AnyValue::Boolean(v) => Self::Boolean(v),
             AnyValue::String(v) => Self::String(PlSmallStr::from(v)),
             AnyValue::StringOwned(v) => Self::String(v),
@@ -288,6 +292,8 @@ impl TryFrom<SerializableScalar> for Scalar {
             S::Float32(v) => Self::from(v),
             S::Float64(v) => Self::from(v),
             S::List(v) => Self::new_list(v),
+            #[cfg(feature = "dtype-map")]
+            S::Map(entries) => Self::map_from_entries(entries),
             S::Boolean(v) => Self::from(v),
             S::String(v) => Self::from(v),
             S::Binary(v) => Self::from(v),

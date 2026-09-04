@@ -58,6 +58,7 @@ dtype-full = [
   "dtype-i16",
   "dtype-i128",
   "dtype-i8",
+  "dtype-map",
   "dtype-struct",
   "dtype-time",
   "dtype-u16",
@@ -77,6 +78,7 @@ dtype-extension = ["polars-plan/dtype-extension", "polars-ops/dtype-extension"]
 dtype-i16 = ["polars-plan/dtype-i16"]
 dtype-i8 = ["polars-plan/dtype-i8"]
 dtype-i128 = ["polars-plan/dtype-i128"]
+dtype-map = ["polars-plan/dtype-map", "polars-ops/dtype-map"]
 dtype-struct = ["polars-plan/dtype-struct", "polars-ops/dtype-struct"]
 dtype-time = ["polars-plan/dtype-time", "polars-time/dtype-time", "temporal"]
 dtype-u128 = ["polars-plan/dtype-u128"]

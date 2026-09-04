@@ -254,6 +254,19 @@ impl ToArrowConverter {
 
                 Box::new(arr)
             },
+            #[cfg(feature = "dtype-map")]
+            (DataType::Map(_, _), ArrowDataType::Map(_, _)) => {
+                let entries_dtype = polars_dtype.map_entries_dtype().unwrap();
+                self.map_array_to_arrow(array, &entries_dtype, arrow_field)?
+            },
+            (DataType::List(entries_dtype), ArrowDataType::Map(_, _)) => {
+                self.map_array_to_arrow(array, entries_dtype, arrow_field)?
+            },
+            #[cfg(feature = "dtype-map")]
+            (DataType::Map(_, _), ArrowDataType::LargeList(_)) => {
+                let storage_dtype = polars_dtype.map_storage_dtype().unwrap();
+                self.array_to_arrow_impl(array, &storage_dtype, arrow_field)?
+            },
             #[cfg(feature = "dtype-array")]
             (DataType::Array(item_dtype, width), ArrowDataType::FixedSizeList(_, arrow_width)) => {
                 use arrow::array::FixedSizeListArray;
@@ -460,6 +473,53 @@ impl ToArrowConverter {
                 array.to_boxed()
             },
         })
+    }
+
+    /// Export a list of map entries as a `MapArray`.
+    fn map_array_to_arrow(
+        &mut self,
+        array: &dyn Array,
+        entries_dtype: &DataType,
+        arrow_field: Cow<'_, ArrowField>,
+    ) -> PolarsResult<Box<dyn Array>> {
+        use arrow::array::MapArray;
+        use arrow::offset::OffsetsBuffer;
+
+        let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
+
+        let mut arrow_dtype = to_owned_dtype(arrow_field);
+
+        let ArrowDataType::Map(arrow_entries_field, _keys_sorted) = &mut arrow_dtype else {
+            unreachable!()
+        };
+
+        self.attach_pl_field_metadata(std::iter::once((
+            entries_dtype,
+            arrow_entries_field.as_mut(),
+        )));
+
+        let entries = self.array_to_arrow(
+            arr.values().as_ref(),
+            entries_dtype,
+            Cow::Borrowed(arrow_entries_field.as_ref()),
+        )?;
+
+        // Arrow's MAP offsets are `i32`, a Polars list's are `i64`.
+        let offsets = OffsetsBuffer::<i32>::try_from(arr.offsets()).map_err(|_| {
+            polars_err!(
+                InvalidOperation:
+                "to_arrow() conversion failed: {} map entries overflow the i32 offsets \
+                of the arrow MAP type",
+                arr.offsets().last(),
+            )
+        })?;
+
+        Ok(Box::new(MapArray::try_new(
+            arrow_dtype,
+            offsets,
+            entries,
+            arr.validity().cloned(),
+        )?))
     }
 
     #[inline]

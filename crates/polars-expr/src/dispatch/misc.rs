@@ -706,14 +706,14 @@ pub(super) fn log(columns: &[Column]) -> PolarsResult<Column> {
 pub(super) fn log1p(s: &Column) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
-    Ok(s.as_materialized_series().log1p().into())
+    Ok(s.as_materialized_series().log1p()?.into())
 }
 
 #[cfg(feature = "log")]
 pub(super) fn exp(s: &Column) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
-    Ok(s.as_materialized_series().exp().into())
+    Ok(s.as_materialized_series().exp()?.into())
 }
 
 pub(super) fn unique(s: &Column, stable: bool) -> PolarsResult<Column> {

@@ -73,8 +73,7 @@ fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
     BooleanChunked::from_bitmap(ca.name().clone(), out.into())
 }
 
-#[cfg(feature = "dtype-struct")]
-fn is_first_distinct_struct(s: &Series) -> PolarsResult<BooleanChunked> {
+fn is_first_distinct_by_groups(s: &Series) -> PolarsResult<BooleanChunked> {
     let groups = s.group_tuples(true, false)?;
     let first = groups.take_group_firsts();
     let mut out = MutableBitmap::with_capacity(s.len());
@@ -88,26 +87,19 @@ fn is_first_distinct_struct(s: &Series) -> PolarsResult<BooleanChunked> {
     Ok(BooleanChunked::from_bitmap(s.name().clone(), out.into()))
 }
 
-fn is_first_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
-    let groups = ca.group_tuples(true, false)?;
-    let first = groups.take_group_firsts();
-    let mut out = MutableBitmap::with_capacity(ca.len());
-    out.extend_constant(ca.len(), false);
-
-    for idx in first {
-        // Group tuples are always in bounds
-        unsafe { out.set_unchecked(idx as usize, true) }
-    }
-
-    Ok(BooleanChunked::from_bitmap(ca.name().clone(), out.into()))
-}
-
 pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
     // fast path.
     if s.is_empty() {
         return Ok(BooleanChunked::full_null(s.name().clone(), 0));
     } else if s.len() == 1 {
         return Ok(BooleanChunked::new(s.name().clone(), &[true]));
+    }
+
+    // A Map groups on its row-encoded entries, so it must not reach the `List` arm below,
+    // which sees the nested `List(Struct)` storage.
+    #[cfg(feature = "dtype-map")]
+    if matches!(s.dtype(), DataType::Map(_, _)) {
+        return is_first_distinct_by_groups(s);
     }
 
     let s = s.to_physical_repr();
@@ -144,14 +136,13 @@ pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             }
         },
         #[cfg(feature = "dtype-struct")]
-        Struct(_) => return is_first_distinct_struct(&s),
+        Struct(_) => return is_first_distinct_by_groups(&s),
         List(inner) => {
             polars_ensure!(
                 !inner.is_nested(),
                 InvalidOperation: "`is_first_distinct` on list type is only allowed if the inner type is not nested."
             );
-            let ca = s.list().unwrap();
-            return is_first_distinct_list(ca);
+            return is_first_distinct_by_groups(&s);
         },
         dt => polars_bail!(opq = is_first_distinct, dt),
     };

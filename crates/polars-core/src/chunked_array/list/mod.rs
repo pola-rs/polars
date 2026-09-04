@@ -5,8 +5,8 @@ use std::borrow::Cow;
 
 use arrow::bitmap::BitmapBuilder;
 use polars_array::concatenate::concatenate;
-use polars_utils::itertools::Itertools;
 
+use super::align_inner_chunks;
 use crate::chunked_array::new_empty_chunk;
 use crate::prelude::*;
 
@@ -243,32 +243,8 @@ impl ListChunked {
             assert_eq!(values.len(), self.inner_length());
         }
 
-        // Align the chunks of the lists inner values and the values series.
-        fn align_inner_chunks(ca: &'_ ListChunked, values: &'_ Series) -> Series {
-            if ca.chunks().len() == values.chunks().len()
-                && ca
-                    .downcast_iter()
-                    .map(|arr| arr.values().len())
-                    .zip(values.chunks().iter().map(|arr| arr.len()))
-                    .all_equal()
-            {
-                return values.clone();
-            }
-
-            let mut values = values.rechunk();
-            let chunks = unsafe { values.chunks_mut() };
-            let mut arr = chunks.pop().unwrap();
-            chunks.extend(ca.downcast_iter().map(|ca_arr| {
-                let length = ca_arr.values().len();
-                let chunk = arr.sliced(0, length);
-                arr = arr.sliced(length, arr.len() - length);
-                chunk
-            }));
-            assert!(arr.is_empty());
-            values
-        }
-
-        let values = align_inner_chunks(self, values);
+        // Align the chunks of the list's inner values and the values series.
+        let values = align_inner_chunks(self.downcast_iter().map(|arr| arr.values().len()), values);
         let values_dtype = values.dtype().clone();
 
         let chunks = self

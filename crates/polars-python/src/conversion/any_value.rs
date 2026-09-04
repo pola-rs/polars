@@ -14,15 +14,20 @@ use polars::datatypes::OwnedObject;
 use polars::datatypes::{DataType, Field, TimeUnit};
 use polars::prelude::{AnyValue, PlSmallStr, Series, TimeZone};
 use polars_compute::decimal::{DEC128_MAX_PREC, DecimalFmtBuffer, dec128_fits};
+use polars_core::prelude::try_unpack_map_entries;
+#[cfg(feature = "dtype-map")]
+use polars_core::scalar::Scalar;
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
+#[cfg(feature = "dtype-map")]
+use polars_core::utils::arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use polars_utils::aliases::PlFixedStateQuality;
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
-    PyBool, PyBytes, PyDate, PyDateTime, PyDelta, PyDict, PyFloat, PyInt, PyList, PyMapping,
-    PyRange, PySequence, PyString, PyTime, PyTuple, PyType, PyTzInfo,
+    IntoPyDict, PyBool, PyBytes, PyDate, PyDateTime, PyDelta, PyDict, PyFloat, PyInt, PyList,
+    PyMapping, PyRange, PySequence, PyString, PyTime, PyTuple, PyType, PyTzInfo,
 };
 use pyo3::{IntoPyObjectExt, PyTypeCheck, intern};
 
@@ -59,7 +64,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<AnyValue<'static>> {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        py_object_to_any_value(&ob.to_owned(), true, true).map(Wrap)
+        py_object_to_any_value(&ob.to_owned(), true, true, None).map(Wrap)
     }
 }
 
@@ -108,6 +113,7 @@ pub(crate) fn any_value_into_py_object<'py>(
         },
         AnyValue::Time(v) => nanos_since_midnight_to_naivetime(v).into_bound_py_any(py),
         AnyValue::Array(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(py),
+        AnyValue::Map(entries) => Ok(map_dict(py, &entries)?.into_any()),
         ref av @ AnyValue::Struct(_, _, flds) => {
             Ok(struct_dict(py, av._iter_struct_av(), flds)?.into_any())
         },
@@ -181,11 +187,107 @@ type InitFn = fn(&Bound<'_, PyAny>, bool) -> PyResult<AnyValue<'static>>;
 pub(crate) static LUT: Mutex<HashMap<TypeObjectKey, InitFn, PlFixedStateQuality>> =
     Mutex::new(HashMap::with_hasher(PlFixedStateQuality::with_seed(0)));
 
+/// Build the entries of one `Map` row from a Python mapping.
+#[cfg(feature = "dtype-map")]
+fn get_map(
+    ob: &Bound<'_, PyAny>,
+    strict: bool,
+    key_dtype: &DataType,
+    value_dtype: &DataType,
+) -> PyResult<AnyValue<'static>> {
+    let py = ob.py();
+    let items = ob.cast::<PyMapping>()?.items()?;
+
+    let mut keys = Vec::with_capacity(items.len());
+    let mut values = Vec::with_capacity(keys.capacity());
+    for item in items.try_iter()? {
+        let item = item?.cast_into::<PyTuple>()?;
+        keys.push(item.get_item(0)?);
+        values.push(item.get_item(1)?);
+    }
+
+    // We must call the Python constructor in order to preserve the Python casting rules.
+    let keys = py_series_of(py, MAP_KEY_NAME, keys, key_dtype, strict)?;
+    let values = py_series_of(py, MAP_VALUE_NAME, values, value_dtype, strict)?;
+
+    Ok(Scalar::new_map(&keys, &values).into_value())
+}
+
+#[cfg(feature = "dtype-map")]
+fn py_series_of<'py>(
+    py: Python<'py>,
+    name: PlSmallStr,
+    values: impl IntoPyObject<'py>,
+    dtype: &DataType,
+    strict: bool,
+) -> PyResult<Series> {
+    let kwargs = PyDict::new(py);
+    kwargs.set_item("dtype", &Wrap(dtype.clone()))?;
+    kwargs.set_item("strict", strict)?;
+    let s = pl_series(py).call(py, (name.as_str(), values), Some(&kwargs))?;
+    super::get_series(s.bind(py))
+}
+
+/// Row-oriented DataFrame construction bypasses Python container recursion, so rebuild one
+/// value through `Series` to preserve nested Maps.
+#[cfg(feature = "dtype-map")]
+fn get_container_of_map(
+    ob: &Bound<'_, PyAny>,
+    dtype: &DataType,
+    strict: bool,
+) -> PyResult<AnyValue<'static>> {
+    let py = ob.py();
+    let values = PyList::new(py, [ob])?;
+    let s = py_series_of(py, PlSmallStr::EMPTY, values.as_any(), dtype, strict)?;
+    Ok(s.get(0).map_err(PyPolarsErr::from)?.into_static())
+}
+
+/// Whether `ob` is the entries form of a `Map`: a sequence of `{key, value}` mappings.
+#[cfg(feature = "dtype-map")]
+fn is_map_entries(ob: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if !(ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>()) {
+        return Ok(false);
+    }
+    for entry in ob.try_iter()? {
+        let Ok(entry) = entry?.cast_into::<PyMapping>() else {
+            return Ok(false);
+        };
+        if entry.len()? != 2
+            || !entry.contains(MAP_KEY_NAME.as_str())?
+            || !entry.contains(MAP_VALUE_NAME.as_str())?
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Render a map's entries as a Python dict.
+fn map_dict<'py>(py: Python<'py>, entries: &Series) -> PyResult<Bound<'py, PyDict>> {
+    let (keys, values) = try_unpack_map_entries(entries).map_err(PyPolarsErr::from)?;
+    if keys.dtype().is_nested() {
+        return Err(PyTypeError::new_err(format!(
+            "cannot convert a Map with key dtype `{}` to a Python dict: \
+             a nested key is not hashable",
+            keys.dtype(),
+        )));
+    }
+
+    keys.iter()
+        .zip(values.iter())
+        .map(|(key, value)| (Wrap(key), Wrap(value)))
+        .into_py_dict(py)
+}
+
 /// Convert a Python object to an [`AnyValue`].
+///
+/// When known, `dtype` disambiguates Map dictionaries and containers holding nested Maps.
+#[cfg_attr(not(feature = "dtype-map"), expect(unused_variables))]
 pub(crate) fn py_object_to_any_value(
     ob: &Bound<'_, PyAny>,
     strict: bool,
     allow_object: bool,
+    dtype: Option<&DataType>,
 ) -> PyResult<AnyValue<'static>> {
     // Conversion functions.
     fn get_null(_ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
@@ -377,7 +479,7 @@ pub(crate) fn py_object_to_any_value(
             let mut iter = list.try_iter()?;
             let mut avs = Vec::new();
             for item in &mut iter {
-                let av = py_object_to_any_value(&item?, strict, true)?;
+                let av = py_object_to_any_value(&item?, strict, true, None)?;
                 let is_null = av.is_null();
                 avs.push(av);
                 if is_null {
@@ -405,7 +507,7 @@ pub(crate) fn py_object_to_any_value(
             // Push the rest of the anyvalues and use slower converter.
             avs.reserve(length);
             for item in &mut iter {
-                avs.push(py_object_to_any_value(&item?, strict, true)?);
+                avs.push(py_object_to_any_value(&item?, strict, true, None)?);
             }
 
             let (dtype, _n_dtypes) = any_values_to_supertype_and_n_dtypes(&avs)
@@ -439,7 +541,7 @@ pub(crate) fn py_object_to_any_value(
             let (key_py, val_py) = (item.get_item(0)?, item.get_item(1)?);
 
             let key: Cow<str> = key_py.extract()?;
-            let val = py_object_to_any_value(&val_py, strict, true)?;
+            let val = py_object_to_any_value(&val_py, strict, true, None)?;
 
             keys.push(Field::new(key.as_ref().into(), val.dtype()));
             vals.push(val);
@@ -454,7 +556,7 @@ pub(crate) fn py_object_to_any_value(
         let mut vals = Vec::with_capacity(len);
         for (k, v) in dict.into_iter() {
             let key = k.extract::<Cow<str>>()?;
-            let val = py_object_to_any_value(&v, strict, true)?;
+            let val = py_object_to_any_value(&v, strict, true, None)?;
             let dtype = val.dtype();
             keys.push(Field::new(key.as_ref().into(), dtype));
             vals.push(val)
@@ -472,7 +574,7 @@ pub(crate) fn py_object_to_any_value(
         let mut vals = Vec::with_capacity(len);
         for (k, v) in fields.into_iter().zip(tuple.into_iter()) {
             let key = k.extract::<Cow<str>>()?;
-            let val = py_object_to_any_value(&v, strict, true)?;
+            let val = py_object_to_any_value(&v, strict, true, None)?;
             let dtype = val.dtype();
             keys.push(Field::new(key.as_ref().into(), dtype));
             vals.push(val)
@@ -566,6 +668,33 @@ pub(crate) fn py_object_to_any_value(
             } else {
                 Err(PyValueError::new_err(format!("Cannot convert {ob}")))
             }
+        }
+    }
+
+    // A dict can be a Struct or a Map, so we decide using the target dtype.
+    #[cfg(feature = "dtype-map")]
+    if let Some(dtype) = dtype.filter(|dt| dt.contains_map()) {
+        if ob.is_none() {
+            return Ok(AnyValue::Null);
+        }
+        match dtype {
+            DataType::Map(key_dtype, value_dtype)
+                if ob.is_instance_of::<PyDict>() || PyMapping::type_check(ob) =>
+            {
+                return get_map(ob, strict, key_dtype, value_dtype);
+            },
+            DataType::List(_) | DataType::Struct(_) | DataType::Extension(_, _) => {
+                return get_container_of_map(ob, dtype, strict);
+            },
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, _) => return get_container_of_map(ob, dtype, strict),
+            // The only way to construct a Map whose key dtype contains a type that is not hashable in Python
+            DataType::Map(_, _) if is_map_entries(ob)? => {
+                return get_container_of_map(ob, &dtype.map_storage_dtype().unwrap(), strict);
+            },
+            // A Map target that is neither a mapping nor well-formed entries. Fall through
+            // to the untargeted conversion, which reports the mismatch.
+            _ => {},
         }
     }
 

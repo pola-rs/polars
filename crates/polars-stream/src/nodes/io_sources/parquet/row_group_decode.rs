@@ -12,6 +12,7 @@ use polars_io::predicates::{
     ColumnPredicateExpr, ColumnPredicates, ScanIOPredicate, SpecializedColumnPredicate,
 };
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
+use polars_io::prelude::_internal::canonicalize_parquet_maps;
 use polars_io::prelude::try_set_sorted_flag;
 use polars_parquet::read::{Filter, PredicateFilter, PrimitiveLogicalType};
 use polars_utils::pl_str::PlSmallStr;
@@ -278,6 +279,7 @@ fn decode_column(
     }
 
     let mut series = Series::try_from((arrow_field, arrays))?;
+    canonicalize_parquet_maps(&mut series)?;
 
     if let Some(col_idxs) = row_group_data
         .row_group_metadata
@@ -689,11 +691,14 @@ fn decode_column_prefiltered(
         }
     }
 
-    let series = if !prefilter {
+    let mut series = if !prefilter {
         series.filter(mask)?
     } else {
         series
     };
+
+    // Done after the filter so that discarded rows cost nothing.
+    canonicalize_parquet_maps(&mut series)?;
 
     assert_eq!(series.len(), expected_num_rows);
 

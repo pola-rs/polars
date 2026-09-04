@@ -9,6 +9,7 @@ use either::Either;
 use polars_array::builder::{PlArrayBuilder, builder_like};
 use polars_array::concatenate::concatenate;
 
+use super::align_inner_chunks;
 use crate::chunked_array::new_empty_chunk;
 use crate::prelude::*;
 
@@ -201,6 +202,45 @@ impl ArrayChunked {
         // SAFETY: Data type of arrays matches because they are chunks from the same array.
         unsafe {
             Series::from_chunks_and_dtype_unchecked(self.name().clone(), chunks, self.inner_dtype())
+        }
+    }
+
+    /// The total number of inner values across all chunks, i.e. `len() * width()`
+    /// discounting sliced-away chunks.
+    pub fn inner_length(&self) -> usize {
+        self.downcast_iter().map(|c| c.len() * c.width()).sum()
+    }
+
+    /// Rebuild the arrays around new inner values, reusing the widths and outer validity.
+    ///
+    /// `values` must have `inner_length()` elements; its chunks need not line up with
+    /// this array's, but nothing is copied when they do.
+    pub fn with_inner_values(&self, values: &Series) -> ArrayChunked {
+        if cfg!(debug_assertions) {
+            assert_eq!(values.len(), self.inner_length());
+        }
+
+        // Align the chunks of the array's inner values and the values series.
+        let values = align_inner_chunks(
+            self.downcast_iter().map(|arr| arr.len() * arr.width()),
+            values,
+        );
+        let values_dtype = values.dtype().clone();
+        let width = self.width();
+
+        let chunks = self
+            .downcast_iter()
+            .zip(values.into_chunks())
+            .map(|(ca_arr, v_arr)| array_with_values(ca_arr, v_arr).into_boxed())
+            .collect::<Vec<_>>();
+
+        // SAFETY: the chunks' inner dtype is derived from `values`' own chunks.
+        unsafe {
+            ArrayChunked::from_chunks_and_dtype_unchecked(
+                self.name().clone(),
+                chunks,
+                DataType::Array(Box::new(values_dtype), width),
+            )
         }
     }
 

@@ -86,6 +86,7 @@ impl DeletionFilesProvider {
                     }),
                     pipeline_budget: std::sync::OnceLock::new(),
                     shared_prefetch_wait_group_slot: Default::default(),
+                    file_read_context: std::sync::OnceLock::new(),
                     io_metrics: io_metrics.map(OnceLock::from).unwrap_or_default(),
                 };
 

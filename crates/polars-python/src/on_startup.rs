@@ -13,6 +13,9 @@ use polars_error::abort::register_polars_abort_mechanism;
 use polars_ffi::version_0::SeriesExport;
 use polars_plan::plans::python_df_to_rust;
 use polars_utils::python_convert_registry::{FromPythonConvertRegistry, PythonConvertRegistry};
+use polars_utils::version::{
+    set_polars_lib_build_commit, set_polars_lib_name, set_polars_lib_version,
+};
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use pyo3::types::PyCFunction;
@@ -110,6 +113,10 @@ static WARN_FUNCTION: OnceLock<Py<PyAny>> = OnceLock::new();
 pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_function: Py<PyAny>) {
     // TODO: should we throw an error if we try to initialize while already initialized?
     POLARS_REGISTRY_INIT_LOCK.get_or_init(|| {
+        set_polars_lib_name("Polars (python)");
+        set_polars_lib_version(crate::PYPOLARS_VERSION);
+        set_polars_lib_build_commit(crate::PYPOLARS_BUILD_COMMIT);
+
         WARN_FUNCTION.set(warn_function).unwrap();
         set_polars_allow_extension(true);
 

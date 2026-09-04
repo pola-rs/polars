@@ -130,6 +130,15 @@ impl Series {
                 Series::from_chunks_and_dtype_unchecked(name, chunks, storage),
             )
             .into_series(),
+            #[cfg(feature = "dtype-map")]
+            Map(_, _) => {
+                let storage = Series::from_chunks_and_dtype_unchecked(
+                    name,
+                    chunks,
+                    &dtype.map_storage_dtype().unwrap(),
+                );
+                MapChunked::from_storage_unchecked(dtype.clone(), storage).into_series()
+            },
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let mut ca =
@@ -548,7 +557,7 @@ impl Series {
                 let chunks = cast_chunks(&chunks, &DataType::Binary, CastOptions::NonStrict)?;
                 Ok(BinaryChunked::from_arrow_chunks(name, chunks).into_series())
             },
-            ArrowDataType::Map(field, _is_ordered) => {
+            ArrowDataType::Map(field, _keys_sorted) => {
                 let struct_arrays = chunks
                     .iter()
                     .map(|arr| {
@@ -557,8 +566,32 @@ impl Series {
                     })
                     .collect::<Vec<_>>();
 
-                let (phys_struct_arrays, dtype) =
+                let (phys_struct_arrays, entries_dtype) =
                     to_physical_and_dtype(struct_arrays, field.metadata.as_deref());
+
+                #[cfg(feature = "dtype-map")]
+                let map_dtype = entries_dtype.map_from_positional_entries_dtype();
+                #[cfg(not(feature = "dtype-map"))]
+                let map_dtype: Option<DataType> = None;
+
+                #[cfg(feature = "dtype-map")]
+                let phys_struct_arrays: Vec<ArrayRef> = if map_dtype.is_some() {
+                    phys_struct_arrays
+                        .into_iter()
+                        .map(|mut entries| {
+                            rename_map_entries(&mut entries);
+                            entries
+                        })
+                        .collect()
+                } else {
+                    phys_struct_arrays
+                };
+
+                let storage_dtype = match &map_dtype {
+                    #[cfg(feature = "dtype-map")]
+                    Some(dtype) => dtype.map_storage_dtype().unwrap(),
+                    _ => DataType::List(Box::new(entries_dtype)),
+                };
 
                 let chunks = chunks
                     .iter()
@@ -578,14 +611,20 @@ impl Series {
                     })
                     .collect();
 
-                unsafe {
-                    let out = ListChunked::from_arrow_chunks_and_dtype_unchecked(
-                        name,
-                        chunks,
-                        DataType::List(Box::new(dtype)),
-                    );
+                let storage = unsafe {
+                    ListChunked::from_arrow_chunks_and_dtype_unchecked(name, chunks, storage_dtype)
+                }
+                .into_series();
 
-                    Ok(out.into_series())
+                match map_dtype {
+                    #[cfg(feature = "dtype-map")]
+                    Some(dtype) => {
+                        Ok(
+                            unsafe { MapChunked::from_storage_unchecked(dtype, storage) }
+                                .into_series(),
+                        )
+                    },
+                    _ => Ok(storage),
                 }
             },
             ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
@@ -646,6 +685,20 @@ impl Series {
 
 fn convert<F: Fn(&dyn Array) -> ArrayRef>(arr: &[ArrayRef], f: F) -> Vec<ArrayRef> {
     arr.iter().map(|arr| f(&**arr)).collect()
+}
+
+/// Normalize the field names of one chunk of map entries. Only the names change, so the
+/// buffers stay valid.
+#[cfg(feature = "dtype-map")]
+fn rename_map_entries(entries: &mut ArrayRef) {
+    let ArrowDataType::Struct(fields) = entries.dtype_mut() else {
+        unreachable!("map entries are a struct")
+    };
+    let [key, value] = fields.as_mut_slice() else {
+        unreachable!("map entries have two fields")
+    };
+    key.name = MAP_KEY_NAME;
+    value.name = MAP_VALUE_NAME;
 }
 
 /// Converts to physical types and bubbles up the correct [`DataType`].

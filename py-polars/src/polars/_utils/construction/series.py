@@ -43,6 +43,7 @@ from polars.datatypes import (
     Duration,
     Enum,
     List,
+    Map,
     Null,
     Object,
     String,
@@ -194,6 +195,16 @@ def sequence_to_pyseries(
                 raise TypeError(msg)
 
         return pyseries
+
+    elif isinstance(dtype, Map):
+        # A dict is otherwise inferred as a Struct, so the Map dtype has to drive this.
+        return PySeries.new_from_any_values_and_dtype(
+            name, values, dtype, strict=strict
+        )
+
+    elif dtype == Map:
+        msg = "Map requires a key and a value type, e.g. `pl.Map(pl.String, pl.Int64)`"
+        raise TypeError(msg)
 
     elif dtype == Struct:
         # This is very bad. Goes via rows? And needs to do outer nullability separate.

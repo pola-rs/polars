@@ -61,5 +61,8 @@ pub fn infer_schema_with_options(
     let mut metadata = parse_key_value_metadata(file_metadata.key_value_metadata());
 
     let schema = read_schema_from_metadata(&mut metadata)?;
-    Ok(schema.unwrap_or_else(|| parquet_to_arrow_schema_with_options(fields, options)))
+    match schema {
+        Some(schema) => Ok(schema),
+        None => parquet_to_arrow_schema_with_options(fields, options),
+    }
 }

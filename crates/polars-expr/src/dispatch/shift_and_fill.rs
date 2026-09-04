@@ -16,6 +16,7 @@ where
 #[cfg(any(
     feature = "object",
     feature = "dtype-struct",
+    feature = "dtype-map",
     feature = "dtype-categorical"
 ))]
 fn shift_and_fill_with_mask(s: &Column, n: i64, fill_value: &Column) -> PolarsResult<Column> {
@@ -93,9 +94,12 @@ pub(super) fn shift_and_fill(args: &[Column]) -> PolarsResult<Column> {
         Object(_) => shift_and_fill_with_mask(s, n, fill_value_s),
         #[cfg(feature = "dtype-struct")]
         Struct(_) => shift_and_fill_with_mask(s, n, fill_value_s),
+        #[cfg(feature = "dtype-map")]
+        Map(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
         #[cfg(feature = "dtype-categorical")]
         Categorical(_, _) | Enum(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
-        dt if dt.is_primitive_numeric() || dt.is_logical() => {
+        // Not `is_logical`: a nested logical dtype has no primitive physical downcast.
+        dt if dt.to_physical().is_primitive_numeric() => {
             macro_rules! dispatch {
                 ($ca:expr, $n:expr, $fill_value:expr) => {{ shift_and_fill_numeric($ca, $n, $fill_value).into_column() }};
             }

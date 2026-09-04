@@ -73,6 +73,7 @@ pub mod tick_counter;
 pub mod total_ord;
 pub mod unique_id;
 pub mod vec;
+pub mod version;
 pub mod with_drop;
 
 #[cfg(feature = "async-utils")]

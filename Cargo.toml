@@ -74,7 +74,7 @@ num-bigint = "0.4.6"
 num-derive = "0.4.2"
 num-traits = "0.2"
 numpy = "0.29"
-object_store = { version = "0.13.1", default-features = false, features = ["fs"] }
+object_store = { version = "0.14.1", default-features = false, features = ["fs"] }
 parking_lot = "0.12"
 percent-encoding = "2.3"
 pin-project-lite = "0.2"
@@ -87,7 +87,7 @@ rayon = "1.9"
 recursive = "0.1"
 regex = "1.9"
 regex-syntax = "0.8.5"
-reqwest = { version = "0.12", default-features = false }
+reqwest = { version = "0.13", default-features = false, features = ["system-proxy"] }
 rmp-serde = "1.3"
 rustflags = "0.1.7"
 schemars = { version = "1.2.1", features = ["preserve_order"] }
@@ -171,8 +171,9 @@ question_mark = "allow" # https://github.com/rust-lang/rust-clippy/issues/17384
 [patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
-# custom DNS resolver - ref https://github.com/apache/arrow-rs-object-store/pull/728
-object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", rev = "f50a6e5c564b2b5933eca15cd20ff9b5614374a1" }
+# `DnsResolver` (https://github.com/apache/arrow-rs-object-store/pull/728) is unreleased,
+# drop this patch once object_store 0.14.2 is out.
+object_store = { git = "https://github.com/apache/arrow-rs-object-store", rev = "b07471e2bc341278f86e30cf80a850d56cbe2c67" }
 color-backtrace = { git = "https://github.com/orlp/color-backtrace", rev = "20f5eea183563bb4cfac9a4d65901d4a1002cde2" }
 
 # https://github.com/tikv/jemallocator/pull/168

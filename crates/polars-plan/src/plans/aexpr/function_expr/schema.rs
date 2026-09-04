@@ -29,6 +29,8 @@ impl IRFunctionExpr {
             #[cfg(feature = "dtype-extension")]
             Extension(func) => func.get_field(mapper),
             ListExpr(func) => func.get_field(mapper),
+            #[cfg(feature = "dtype-map")]
+            MapExpr(func) => func.get_field(mapper),
             #[cfg(feature = "strings")]
             StringExpr(s) => s.get_field(mapper),
             #[cfg(feature = "dtype-struct")]
@@ -283,7 +285,15 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             InterpolateBy => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "log")]
-            Entropy { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
+            Entropy { .. } => mapper.map_to_float_dtype(),
+            #[cfg(feature = "log")]
+            Log1p => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log1p")?
+                .map_to_float_dtype(),
+            #[cfg(feature = "log")]
+            Exp => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "exp")?
+                .map_to_float_dtype(),
             #[cfg(feature = "log")]
             Log => mapper.log_dtype(),
             Unique(_) => mapper.with_same_dtype(),

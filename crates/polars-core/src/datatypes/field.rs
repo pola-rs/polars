@@ -296,8 +296,13 @@ impl DataType {
             },
             ArrowDataType::LargeBinary | ArrowDataType::Binary => DataType::Binary,
             ArrowDataType::FixedSizeBinary(_) => DataType::Binary,
-            ArrowDataType::Map(inner, _is_sorted) => {
-                DataType::List(Self::from_arrow_field(inner).boxed())
+            ArrowDataType::Map(inner, _keys_sorted) => {
+                let entries = Self::from_arrow_field(inner);
+                #[cfg(feature = "dtype-map")]
+                let map = entries.map_from_positional_entries_dtype();
+                #[cfg(not(feature = "dtype-map"))]
+                let map: Option<DataType> = None;
+                map.unwrap_or_else(|| DataType::List(entries.boxed()))
             },
             ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
                 check_allow_importing_interval_as_struct("month_day_nano_interval").unwrap();
