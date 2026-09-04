@@ -2724,12 +2724,18 @@ impl SQLContext {
                 table_with_joins,
                 alias,
             } => {
-                let lf =
-                    self.execute_isolated(|ctx| ctx.execute_from_statement(table_with_joins))?;
-                match alias {
-                    Some(a) => Ok((a.name.value.clone(), lf)),
-                    None => Ok(("".to_string(), lf)),
-                }
+                // Only an alias makes the parenthesized join a scope of its own; bare parens
+                // just group, so their relation aliases stay visible to the enclosing query.
+                let lf = match alias {
+                    Some(_) => {
+                        self.execute_isolated(|ctx| ctx.execute_from_statement(table_with_joins))?
+                    },
+                    None => self.execute_from_statement(table_with_joins)?,
+                };
+                let name = alias
+                    .as_ref()
+                    .map_or_else(String::new, |a| a.name.value.clone());
+                Ok((name, lf))
             },
             // Support bare table, optionally with an alias, for now
             _ => polars_bail!(SQLInterface: "not yet implemented: {}", relation),
