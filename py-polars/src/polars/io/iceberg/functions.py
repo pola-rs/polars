@@ -105,6 +105,8 @@ def scan_iceberg(
         object must implement ``unwrap_key(wrapped_key, wrapping_key_id)`` and
         return the unwrapped key as bytes.
 
+        The callback is invoked synchronously from a Polars worker thread.
+
         Providing this parameter uses an experimental ``iceberg-rust`` reader.
         It currently supports local filesystem tables only. Predicates are
         evaluated by Polars after scanning rather than pushed into the reader.
