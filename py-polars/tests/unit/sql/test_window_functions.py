@@ -758,3 +758,53 @@ def test_window_order_by_mixed_nulls_placement_error() -> None:
         ctx.execute(
             "SELECT ROW_NUMBER() OVER (ORDER BY a NULLS LAST, b NULLS FIRST) FROM df"
         )
+
+
+@pytest.mark.parametrize(
+    "agg",
+    [
+        "CORR(a, b)",
+        "COVAR_POP(a, b)",
+        "COVAR_SAMP(a, b)",
+        "QUANTILE_CONT(a, 0.5)",
+        "QUANTILE_DISC(a, 0.5)",
+        "STRING_AGG(g, '-')",
+    ],
+)
+def test_window_multi_arg_aggregate_partition_by(agg: str) -> None:
+    lf = pl.LazyFrame(
+        {
+            "i": [0, 1, 2, 3, 4],
+            "g": ["a", "a", "a", "b", "b"],
+            "a": [1, 2, 3, 4, 5],
+            "b": [1, 3, 2, 10, 20],
+        }
+    )
+    assert_sql_matches(
+        {"df": lf},
+        query=f"""
+            SELECT i, g, {agg} OVER (PARTITION BY g) AS res
+            FROM df
+            ORDER BY i
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_window_array_agg_partition_by() -> None:
+    lf = pl.LazyFrame(
+        {
+            "i": [0, 1, 2, 3, 4],
+            "g": ["a", "a", "a", "b", "b"],
+            "a": [1, 2, 3, 4, 5],
+        }
+    )
+    assert_sql_matches(
+        lf,
+        query="SELECT i, ARRAY_AGG(a) OVER (PARTITION BY g) AS res FROM self ORDER BY i",
+        compare_with=None,
+        expected={
+            "i": [0, 1, 2, 3, 4],
+            "res": [[1, 2, 3], [1, 2, 3], [1, 2, 3], [4, 5], [4, 5]],
+        },
+    )

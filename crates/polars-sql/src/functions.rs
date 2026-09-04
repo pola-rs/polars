@@ -1860,12 +1860,14 @@ impl SQLFunctionVisitor<'_> {
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        Ok(self
+        let expr = self
             .ctx
             .function_registry
             .get_udf(func_name)?
             .ok_or_else(|| polars_err!(SQLInterface: "UDF {} not found", func_name))?
-            .call(args))
+            .call(args);
+
+        self.apply_window_spec(expr, &self.func.over)
     }
 
     /// Validate window frame specifications.
@@ -2031,6 +2033,7 @@ impl SQLFunctionVisitor<'_> {
                 .dot(self.parse_array_inner_product_arg(rhs)?)),
             _ => self.not_supported_error(),
         }
+        .and_then(|e| self.apply_window_spec(e, &self.func.over))
     }
 
     fn visit_unary(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
@@ -2107,6 +2110,7 @@ impl SQLFunctionVisitor<'_> {
             },
             _ => self.not_supported_error(),
         }
+        .and_then(|e| self.apply_window_spec(e, &self.func.over))
     }
 
     fn visit_variadic(&mut self, f: impl Fn(&[Expr]) -> Expr) -> PolarsResult<Expr> {
@@ -2126,7 +2130,7 @@ impl SQLFunctionVisitor<'_> {
                 return self.not_supported_error();
             };
         }
-        f(&expr_args)
+        f(&expr_args).and_then(|e| self.apply_window_spec(e, &self.func.over))
     }
 
     fn try_visit_ternary<Arg: FromSQLExpr>(
@@ -2147,6 +2151,7 @@ impl SQLFunctionVisitor<'_> {
             },
             _ => self.not_supported_error(),
         }
+        .and_then(|e| self.apply_window_spec(e, &self.func.over))
     }
 
     fn visit_nullary(&self, f: impl Fn() -> Expr) -> PolarsResult<Expr> {
@@ -2216,7 +2221,7 @@ impl SQLFunctionVisitor<'_> {
                     sql_expr,
                     "ARRAY_AGG",
                 )?;
-                Ok(base.implode(true))
+                self.apply_window_spec(base.implode(true), &self.func.over)
             },
             _ => {
                 polars_bail!(SQLSyntax: "ARRAY_AGG must have exactly one argument; found {}", args.len())
@@ -2264,9 +2269,12 @@ impl SQLFunctionVisitor<'_> {
             .list()
             .join(separator, true);
 
-        Ok(when(base.clone().null_count().lt(base.len()))
-            .then(joined)
-            .otherwise(lit(LiteralValue::untyped_null())))
+        self.apply_window_spec(
+            when(base.clone().null_count().lt(base.len()))
+                .then(joined)
+                .otherwise(lit(LiteralValue::untyped_null())),
+            &self.func.over,
+        )
     }
 
     fn visit_arr_to_string(&mut self) -> PolarsResult<Expr> {
