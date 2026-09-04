@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
 #[cfg(feature = "moment")]
-use polars_array::arrow::bridge::chunk_to_arrow;
+use polars_array::PlPrimitiveArray;
+#[cfg(feature = "moment")]
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
@@ -562,7 +562,7 @@ pub fn moment_agg<'a, S: Default>(
     state: &ExecutionState,
 
     insert_one: impl Fn(&mut S, f64) + Send + Sync,
-    new_from_slice: impl Fn(&PrimitiveArray<f64>, usize, usize) -> S + Send + Sync,
+    new_from_slice: impl Fn(&PlPrimitiveArray<f64>, usize, usize) -> S + Send + Sync,
     finalize: impl Fn(S) -> Option<f64> + Send + Sync,
 ) -> PolarsResult<AggregationContext<'a>> {
     assert_eq!(inputs.len(), 1);
@@ -591,19 +591,28 @@ pub fn moment_agg<'a, S: Default>(
     let ca = ac.flat_naive();
     let ca = ca.f64()?;
     let ca = ca.rechunk();
-    // The moment kernels below are Arrow ones and read the values as a slice, so the chunk
-    // crosses the bridge once here rather than per group.
-    let arr = chunk_to_arrow(ca.downcast_as_array());
+    let arr = ca.downcast_as_array();
 
     let ca = RAYON.install(|| match &**ac.groups.as_ref() {
         GroupsType::Idx(idx) => {
+            // A group's elements lie at arbitrary positions, so the chunk is laid out one value
+            // per element once here rather than its representation being resolved at every one of
+            // them.
+            //
+            // TODO(polars-array-scalar): that writes out a chunk that repeats a single value,
+            // whose every group is that value with the weight of the group's non-null elements.
+            // Reaching it in `O(1)` per group needs a hook for a repeated value, which the states
+            // only expose to `new_from_slice` below.
+            let arr = arr.to_flat();
+            let values = arr.as_slice();
+
             if let Some(validity) = arr.validity().filter(|v| v.unset_bits() > 0) {
                 idx.into_par_iter()
                     .map(|(_, idx)| {
                         let mut state = S::default();
                         for &i in idx.iter() {
                             if unsafe { validity.get_bit_unchecked(i as usize) } {
-                                insert_one(&mut state, arr.values()[i as usize]);
+                                insert_one(&mut state, values[i as usize]);
                             }
                         }
                         finalize(state)
@@ -614,7 +623,7 @@ pub fn moment_agg<'a, S: Default>(
                     .map(|(_, idx)| {
                         let mut state = S::default();
                         for &i in idx.iter() {
-                            insert_one(&mut state, arr.values()[i as usize]);
+                            insert_one(&mut state, values[i as usize]);
                         }
                         finalize(state)
                     })
@@ -627,9 +636,7 @@ pub fn moment_agg<'a, S: Default>(
             monotonic: _,
         } => groups
             .into_par_iter()
-            .map(|[start, length]| {
-                finalize(new_from_slice(&arr, *start as usize, *length as usize))
-            })
+            .map(|[start, length]| finalize(new_from_slice(arr, *start as usize, *length as usize)))
             .collect::<Float64Chunked>(),
     });
 

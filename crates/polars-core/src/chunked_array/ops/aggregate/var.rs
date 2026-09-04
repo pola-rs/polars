@@ -1,4 +1,3 @@
-use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::moment::VarState;
 
 use super::*;
@@ -17,9 +16,8 @@ where
 {
     fn var(&self, ddof: u8) -> Option<f64> {
         let mut out = VarState::default();
-        // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
         for arr in self.downcast_iter() {
-            out.combine(&polars_compute::moment::var(&chunk_to_arrow(arr)))
+            out.combine(&polars_compute::moment::var(arr))
         }
         out.finalize(ddof)
     }

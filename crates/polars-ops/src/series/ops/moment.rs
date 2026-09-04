@@ -1,4 +1,3 @@
-use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::moment::{KurtosisState, SkewState, kurtosis, skew};
 use polars_core::prelude::*;
 
@@ -20,10 +19,8 @@ pub trait MomentSeries: SeriesSealed {
         let ca = s.f64().unwrap();
 
         let mut state = SkewState::default();
-        // TODO(polars-array-scalar): the kernel is an Arrow one, so a scalar chunk is written out
-        // here rather than its one value being folded in with the weight of the whole chunk.
         for arr in ca.downcast_iter() {
-            state.combine(&skew(&chunk_to_arrow(arr)));
+            state.combine(&skew(arr));
         }
         Ok(state.finalize(bias))
     }
@@ -43,9 +40,8 @@ pub trait MomentSeries: SeriesSealed {
         let ca = s.f64().unwrap();
 
         let mut state = KurtosisState::default();
-        // TODO(polars-array-scalar): as in `skew`, a scalar chunk is written out here.
         for arr in ca.downcast_iter() {
-            state.combine(&kurtosis(&chunk_to_arrow(arr)));
+            state.combine(&kurtosis(arr));
         }
         Ok(state.finalize(fisher, bias))
     }

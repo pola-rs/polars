@@ -1,7 +1,6 @@
 use std::marker::PhantomData;
 
 use num_traits::AsPrimitive;
-use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::moment::VarState;
 use polars_core::with_match_physical_numeric_polars_type;
 
@@ -94,9 +93,7 @@ impl<T: PolarsNumericType> Reducer for VarStdReducer<T> {
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
         for arr in ca.downcast_iter() {
-            // TODO(polars-array-scalar): the kernel is an Arrow one, so a scalar chunk is written
-            // out here rather than its one value being folded in with the weight of the chunk.
-            v.combine(&polars_compute::moment::var(&chunk_to_arrow(arr)))
+            v.combine(&polars_compute::moment::var(arr))
         }
     }
 

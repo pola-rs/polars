@@ -1,5 +1,4 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::moment::{CovState, PearsonState};
 use polars_core::prelude::*;
 use polars_core::utils::{align_chunks_binary, try_get_supertype};
@@ -77,12 +76,7 @@ impl GroupedReduction for CovGroupedReduction {
         let (cx, cy) = align_chunks_binary(cx, cy);
         let state = &mut self.values[group_idx as usize];
         for (ax, ay) in cx.downcast_iter().zip(cy.downcast_iter()) {
-            // TODO(polars-array-scalar): the kernel is an Arrow one, so a scalar chunk is written
-            // out here rather than its one value being folded in with the weight of the chunk.
-            state.combine(&polars_compute::moment::cov(
-                &chunk_to_arrow(ax),
-                &chunk_to_arrow(ay),
-            ));
+            state.combine(&polars_compute::moment::cov(ax, ay));
         }
         Ok(())
     }
@@ -228,12 +222,7 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
         let (cx, cy) = align_chunks_binary(cx, cy);
         let state = &mut self.values[group_idx as usize];
         for (ax, ay) in cx.downcast_iter().zip(cy.downcast_iter()) {
-            // TODO(polars-array-scalar): the kernel is an Arrow one, so a scalar chunk is written
-            // out here rather than its one value being folded in with the weight of the chunk.
-            state.combine(&polars_compute::moment::pearson_corr(
-                &chunk_to_arrow(ax),
-                &chunk_to_arrow(ay),
-            ));
+            state.combine(&polars_compute::moment::pearson_corr(ax, ay));
         }
         Ok(())
     }

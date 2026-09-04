@@ -85,7 +85,7 @@ pub trait ChunkAggSeries {
     }
 }
 
-fn sum<T>(array: &PrimitiveArray<T>) -> T
+fn sum<T>(array: &PlPrimitiveArray<T>) -> T
 where
     T: NumericNative + NativeType + WrappingSum,
 {
@@ -97,18 +97,18 @@ where
         unsafe {
             if T::is_f16() {
                 let f16_arr =
-                    std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<pf16>>(array);
+                    std::mem::transmute::<&PlPrimitiveArray<T>, &PlPrimitiveArray<pf16>>(array);
                 // We do not trust the numerical accuracy of f16 summation
                 let sum: pf16 = float_sum::sum_arr_as_f32(f16_arr).as_();
                 std::mem::transmute_copy::<pf16, T>(&sum)
             } else if T::is_f32() {
                 let f32_arr =
-                    std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<f32>>(array);
+                    std::mem::transmute::<&PlPrimitiveArray<T>, &PlPrimitiveArray<f32>>(array);
                 let sum = float_sum::sum_arr_as_f32(f32_arr);
                 std::mem::transmute_copy::<f32, T>(&sum)
             } else if T::is_f64() {
                 let f64_arr =
-                    std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<f64>>(array);
+                    std::mem::transmute::<&PlPrimitiveArray<T>, &PlPrimitiveArray<f64>>(array);
                 let sum = float_sum::sum_arr_as_f64(f64_arr);
                 std::mem::transmute_copy::<f64, T>(&sum)
             } else {
@@ -128,25 +128,17 @@ where
 {
     fn sum(&self) -> Option<T::Native> {
         Some(
-            // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
-            // TODO(polars-array-scalar): the sum of a scalar chunk is its one value added up as
-            // many times as the chunk has non-null elements, which is `O(log n)` doublings for an
-            // integer. Reaching that needs `WrappingAdd` on `T::Native`, which this impl does not
-            // bound, and floats have no exact answer to fall back on: the kernel sums them
-            // pairwise, which no closed form reproduces.
+            // An integer chunk that repeats one value adds that value up in `O(log n)` doublings;
+            // floats still sum pairwise, since no closed form reproduces that — see
+            // `polars_compute::float_sum::sum_arr_as_f32`.
             self.downcast_iter()
-                .map(|arr| sum(&chunk_to_arrow(arr)))
+                .map(sum)
                 .fold(T::Native::zero(), |acc, v| acc + v),
         )
     }
 
     fn _sum_as_f64(&self) -> f64 {
-        // TODO(polars-array-scalar): the sum of a scalar chunk is its value times the number of
-        // non-null elements, but the kernel sums pairwise, so the two do not round alike; see
-        // `sum` above.
-        self.downcast_iter()
-            .map(|arr| float_sum::sum_arr_as_f64(&chunk_to_arrow(arr)))
-            .sum()
+        self.downcast_iter().map(float_sum::sum_arr_as_f64).sum()
     }
 
     fn min(&self) -> Option<T::Native> {
@@ -324,7 +316,7 @@ where
             self.sum().map(Into::into).unwrap_or_else(Zero::zero)
         } else {
             self.downcast_iter()
-                .map(|arr| wrapping_sum_arr_upcast(&chunk_to_arrow(arr)))
+                .map(wrapping_sum_arr_upcast)
                 .fold(Zero::zero(), |a, b| a.wrapping_add(&b))
         };
         Scalar::new(sum_output_dtype(&T::get_static_dtype()), v.into())
