@@ -793,6 +793,8 @@ def test_map_invalid_key_dtype_is_rejected_without_data(dtype: pl.Map) -> None:
         lambda: pl.Series("m", [None], dtype=dtype),
         lambda: pl.DataFrame(schema={"m": dtype}),
         lambda: pl.select(pl.lit(None).cast(dtype)),
+        # Reaches `Series::full_null` with the dtype and never calls the function.
+        lambda: pl.Series("m", [None]).map_elements(lambda v: v, return_dtype=dtype),
     ):
         with pytest.raises((InvalidOperationError, TypeError), match="Map key dtype"):
             build()

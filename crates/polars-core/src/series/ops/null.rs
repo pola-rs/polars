@@ -7,6 +7,10 @@ use crate::chunked_array::object::registry::get_object_builder;
 use crate::prelude::*;
 
 impl Series {
+    /// Create a Series of `size` null values with the requested dtype.
+    ///
+    /// # Panics
+    /// Panics if `dtype` is an invalid Map dtype.
     pub fn full_null(name: PlSmallStr, size: usize, dtype: &DataType) -> Self {
         // match the logical types and create them
         match dtype {
@@ -95,7 +99,12 @@ impl Series {
             },
             #[cfg(feature = "dtype-map")]
             DataType::Map(_, _) => {
+                dtype
+                    .ensure_valid_map_dtype()
+                    .expect("invalid Map dtype in `Series::full_null`");
+
                 let storage = Series::full_null(name, size, &dtype.map_storage_dtype().unwrap());
+                // SAFETY: the dtype is valid, and an all-null Map holds no entries.
                 unsafe { MapChunked::from_storage_unchecked(dtype.clone(), storage) }.into_series()
             },
             #[cfg(feature = "dtype-extension")]
