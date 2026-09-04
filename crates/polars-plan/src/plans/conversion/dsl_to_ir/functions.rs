@@ -1,5 +1,5 @@
 use arrow::legacy::error::PolarsResult;
-use polars_core::utils::try_get_supertype;
+use polars_core::utils::{SuperTypeFlags, try_get_supertype, try_get_supertype_with_options};
 use polars_utils::arena::Node;
 use polars_utils::format_pl_smallstr;
 use polars_utils::option::OptionTry;
@@ -7,6 +7,8 @@ use polars_utils::option::OptionTry;
 use super::expr_to_ir::ExprToIRContext;
 use super::*;
 use crate::constants::get_literal_name;
+#[cfg(feature = "cutqcut")]
+use crate::dsl::{BinMethod, IntervalSpec};
 use crate::dsl::{Expr, FunctionExpr};
 use crate::plans::conversion::dsl_to_ir::expr_to_ir::to_expr_irs;
 use crate::plans::{AExpr, IRFunctionExpr};
@@ -1007,6 +1009,52 @@ pub(super) fn convert_functions(
             left_closed,
             allow_duplicates,
             include_breaks,
+        },
+        #[cfg(feature = "cutqcut")]
+        F::Bin(mut options) => {
+            let input_dtype = e[0].dtype(ctx.schema, ctx.arena)?.clone();
+            let name = options.method.name();
+
+            if options.method.requires_numeric_input() {
+                polars_ensure!(
+                    input_dtype.is_numeric(),
+                    InvalidOperation: "`{}` requires a numeric input, got `{}`", name, input_dtype
+                );
+            } else {
+                polars_ensure!(
+                    input_dtype.is_ord(),
+                    InvalidOperation: "`{}` requires an orderable input, got `{}`", name, input_dtype
+                );
+            }
+            if let BinMethod::Intervals { spec, .. } = &mut options.method
+                && let IntervalSpec::Breaks(input_breaks) = spec
+            {
+                let breaks = if input_dtype.is_numeric() && input_breaks.dtype().is_numeric() {
+                    let opts = (SuperTypeFlags::default()
+                        & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING)
+                        .into();
+                    let supertype =
+                        try_get_supertype_with_options(&input_dtype, input_breaks.dtype(), opts)?;
+
+                    if input_dtype != supertype {
+                        let node = ctx.arena.add(AExpr::Cast {
+                            expr: e[0].node(),
+                            dtype: supertype.clone(),
+                            options: CastOptions::Strict,
+                        });
+                        e[0] = ExprIR::new(node, e[0].output_name_inner().clone());
+                    }
+
+                    input_breaks.cast(&supertype)?
+                } else {
+                    // Take care to not convert Enum to String.
+                    input_breaks.strict_cast(&input_dtype)?
+                };
+
+                *spec = IntervalSpec::from_breaks(breaks).context(name)?;
+            }
+
+            I::Bin(options)
         },
         #[cfg(feature = "rle")]
         F::RLE => I::RLE,

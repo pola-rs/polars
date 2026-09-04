@@ -368,6 +368,33 @@ impl IRFunctionExpr {
                 ]);
                 mapper.with_dtype(struct_dt)
             },
+            #[cfg(feature = "cutqcut")]
+            Bin(options) => {
+                let n_bins = options.method.n_bins();
+                let bin_dtype = match &options.labels {
+                    None => DataType::UInt32,
+                    Some(labels) => {
+                        polars_ensure!(
+                            labels.len() == n_bins,
+                            ShapeMismatch: "`{}` produces {} bins but got {} labels",
+                            options.method.name(), n_bins, labels.len()
+                        );
+                        DataType::from_frozen_categories(FrozenCategories::new(
+                            labels.iter().map(|s| s.as_str()),
+                        )?)
+                    },
+                };
+                if !options.include_intervals {
+                    return mapper.with_dtype(bin_dtype);
+                }
+                // The input has been converted to the correct type during DSL -> IR conversion.
+                let bound = mapper.args()[0].dtype().clone();
+                mapper.with_dtype(DataType::Struct(vec![
+                    Field::new(PlSmallStr::from_static("bin"), bin_dtype),
+                    Field::new(PlSmallStr::from_static("left"), bound.clone()),
+                    Field::new(PlSmallStr::from_static("right"), bound),
+                ]))
+            },
             #[cfg(feature = "rle")]
             RLE => mapper.map_dtype(|dt| {
                 DataType::Struct(vec![

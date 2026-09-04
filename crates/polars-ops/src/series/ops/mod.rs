@@ -1,6 +1,8 @@
 #[cfg(feature = "abs")]
 mod abs;
 pub mod arg_min_max;
+#[cfg(feature = "cutqcut")]
+mod binning;
 mod bitwise;
 #[cfg(feature = "business")]
 mod business;
@@ -69,6 +71,8 @@ pub(crate) mod various;
 #[cfg(feature = "abs")]
 pub use abs::*;
 pub use arg_min_max::ArgAgg;
+#[cfg(feature = "cutqcut")]
+pub use binning::*;
 pub use bitwise::*;
 #[cfg(feature = "business")]
 pub use business::*;

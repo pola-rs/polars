@@ -1418,6 +1418,12 @@ impl Expr {
         })
     }
 
+    #[cfg(feature = "cutqcut")]
+    /// Assign each value to a bin.
+    pub fn bin(self, options: BinOptions) -> Expr {
+        self.map_unary(FunctionExpr::Bin(options))
+    }
+
     #[cfg(feature = "rle")]
     /// Get the lengths of runs of identical values.
     pub fn rle(self) -> Expr {

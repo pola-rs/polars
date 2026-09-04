@@ -415,6 +415,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             allow_duplicates,
             include_breaks
         ),
+        #[cfg(feature = "cutqcut")]
+        F::Bin(options) => map!(misc::bin, options.clone()),
         #[cfg(feature = "rle")]
         F::RLE => map!(polars_ops::series::rle),
         #[cfg(feature = "rle")]

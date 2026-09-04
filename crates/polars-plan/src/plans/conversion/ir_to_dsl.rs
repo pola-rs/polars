@@ -1066,6 +1066,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             allow_duplicates,
             include_breaks,
         },
+        #[cfg(feature = "cutqcut")]
+        IF::Bin(options) => F::Bin(options),
         #[cfg(feature = "rle")]
         IF::RLE => F::RLE,
         #[cfg(feature = "rle")]

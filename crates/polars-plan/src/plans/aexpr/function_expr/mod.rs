@@ -90,6 +90,8 @@ pub use self::struct_::IRStructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::IRTrigonometricFunction;
 use super::*;
+#[cfg(feature = "cutqcut")]
+pub use crate::dsl::{BinMethod, BinOptions, FractionSpec, IntervalSpec};
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
@@ -309,6 +311,8 @@ pub enum IRFunctionExpr {
         allow_duplicates: bool,
         include_breaks: bool,
     },
+    #[cfg(feature = "cutqcut")]
+    Bin(BinOptions),
     #[cfg(feature = "rle")]
     RLE,
     #[cfg(feature = "rle")]
@@ -672,6 +676,8 @@ impl Hash for IRFunctionExpr {
                 allow_duplicates.hash(state);
                 include_breaks.hash(state);
             },
+            #[cfg(feature = "cutqcut")]
+            Bin(options) => options.hash(state),
             #[cfg(feature = "rle")]
             RLE => {},
             #[cfg(feature = "rle")]
@@ -893,6 +899,8 @@ impl Display for IRFunctionExpr {
             Cut { .. } => "cut",
             #[cfg(feature = "cutqcut")]
             QCut { .. } => "qcut",
+            #[cfg(feature = "cutqcut")]
+            Bin(options) => options.method.name(),
             #[cfg(feature = "dtype-array")]
             Reshape(_) => "reshape",
             #[cfg(feature = "repeat_by")]
@@ -1224,6 +1232,35 @@ impl IRFunctionExpr {
             },
             #[cfg(feature = "cutqcut")]
             F::QCut { .. } => FunctionOptions::length_preserving()
+                .with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY),
+            #[cfg(feature = "cutqcut")]
+            F::Bin(BinOptions {
+                method:
+                    BinMethod::Intervals {
+                        spec: IntervalSpec::Breaks(_),
+                        ..
+                    },
+                ..
+            }) => {
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY)
+            },
+            #[cfg(feature = "cutqcut")]
+            F::Bin(BinOptions {
+                method:
+                    BinMethod::Intervals {
+                        spec: IntervalSpec::Count(_),
+                        ..
+                    }
+                    | BinMethod::Quantiles { .. },
+                ..
+            }) => FunctionOptions::length_preserving().with_flags(|f| {
+                f | FunctionFlags::PASS_NAME_TO_APPLY | FunctionFlags::NON_ORDER_OBSERVING
+            }),
+            #[cfg(feature = "cutqcut")]
+            F::Bin(BinOptions {
+                method: BinMethod::Ranks { .. },
+                ..
+            }) => FunctionOptions::length_preserving()
                 .with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY),
             #[cfg(feature = "rle")]
             F::RLE => FunctionOptions::groupwise(),
