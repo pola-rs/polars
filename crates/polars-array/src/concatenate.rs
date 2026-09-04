@@ -1,150 +1,151 @@
 //! Concatenation of arrays into a single array of the same physical representation.
 
-use std::ops::Deref;
-
 use arrow::array::View;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
-use polars_utils::slice_broadcast_iter::SliceBroadcastIter;
 
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::broadcast::ArrayRepr;
+use crate::primitive::bytes;
 use crate::{
     PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray, PlFixedSizeListArray,
     PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray, PlUtf8ViewArray,
     with_match_pl_primitive_array_type,
 };
 
-/// The elements of a slice, in order, or one element over and over, each as what it stands for.
-struct MappedBroadcastIter<'a, 'm, T: ?Sized, S> {
-    /// The elements left to yield, each of which is mapped to what it stands for.
-    inner: SliceBroadcastIter<'a, S>,
-    /// What an element of the slice stands for, which is yielded in its place.
-    map: &'m dyn Fn(&'a S) -> &'a T,
+/// The arrays a concatenation is made of: `count` distinct arrays, read by index, which the
+/// concatenation lays down `repeats` times over.
+///
+/// The arrays are reached through a `dyn Fn` rather than held as a slice so that this type is
+/// generic in the array type alone. Every caller points at its arrays in its own way — a slice of
+/// references, a slice of boxes, one array repeated, one field of every array of another list —
+/// and carrying that shape as a type parameter is what used to fan every concatenation out into a
+/// copy per shape, on top of the copy per element type it already costs.
+struct ArrayList<'a, 'f, A: ?Sized> {
+    /// The array at an index below [`Self::count`].
+    get: &'f dyn Fn(usize) -> &'a A,
+    /// How many distinct arrays there are to read.
+    count: usize,
+    /// How many times over the concatenation lays the distinct arrays down.
+    repeats: usize,
 }
 
-impl<'a, 'm, T: ?Sized, S> MappedBroadcastIter<'a, 'm, T, S> {
-    /// What the elements of `slice` stand for, in order, once.
-    fn new(slice: &'a [S], map: &'m dyn Fn(&'a S) -> &'a T) -> Self {
+impl<'a, 'f, A: ?Sized> ArrayList<'a, 'f, A> {
+    /// The `count` arrays `get` reads, in order, once.
+    fn new(get: &'f dyn Fn(usize) -> &'a A, count: usize) -> Self {
         Self {
-            inner: SliceBroadcastIter::new(slice),
-            map,
+            get,
+            count,
+            repeats: 1,
         }
     }
 
-    /// What `element` stands for, `repeats` times over.
+    /// The `count` arrays `get` reads, in order, `repeats` times over.
+    fn repeated(get: &'f dyn Fn(usize) -> &'a A, count: usize, repeats: usize) -> Self {
+        Self {
+            get,
+            count,
+            repeats,
+        }
+    }
+
+    /// The distinct arrays, in the order they are repeated in.
+    fn distinct(&self) -> impl ExactSizeIterator<Item = &'a A> + Clone + use<'a, 'f, A> {
+        let get = self.get;
+        (0..self.count).map(get)
+    }
+
+    /// Every array of the concatenation, in order, the repeats included.
+    fn iter(&self) -> impl ExactSizeIterator<Item = &'a A> + Clone + use<'a, 'f, A> {
+        let (get, count) = (self.get, self.count);
+        // There is no index to wrap around where there is no array to read, and the empty range
+        // below never reaches the remainder.
+        (0..self.len()).map(move |index| get(index % count))
+    }
+
+    /// The array at `index`, which is where a reader composed onto this one starts.
+    fn at(&self, index: usize) -> &'a A {
+        (self.get)(index)
+    }
+
+    /// How many arrays the concatenation is made of, the repeats included.
     ///
     /// # Panics
-    /// Panics if `repeats` is more than half a `usize`, which no concatenation has the memory to
-    /// back: an element of it is at least a bit wide.
-    fn repeat(element: &'a S, repeats: usize, map: &'m dyn Fn(&'a S) -> &'a T) -> Self {
-        assert!(
-            repeats <= usize::MAX >> 1,
-            "the number of arrays to concatenate overflows a `usize`",
-        );
-        Self {
-            inner: SliceBroadcastIter::repeat(element, repeats),
-            map,
-        }
+    /// Panics if that overflows a `usize`, which no concatenation has the memory to back: an
+    /// element of it is at least a bit wide.
+    fn len(&self) -> usize {
+        self.count
+            .checked_mul(self.repeats)
+            .expect("the number of arrays to concatenate overflows a `usize`")
     }
 
-    /// What the distinct elements left to yield stand for, in the order they are repeated in.
-    fn distinct(&self) -> impl ExactSizeIterator<Item = &'a T> + use<'a, 'm, T, S> {
-        let distinct = match self.inner.clone().split() {
-            Ok(slice) => slice,
-            Err((element, _)) => std::slice::from_ref(element),
-        };
-        distinct.iter().map(self.map)
-    }
-
-    /// What one element of the slice stands for, which is where a map composed onto this one
-    /// starts.
-    fn get(&self, element: &'a S) -> &'a T {
-        (self.map)(element)
-    }
-
-    /// How many times over the elements left to yield repeat the distinct ones.
-    fn repeats(&self) -> usize {
-        match self.inner.clone().split() {
-            Ok(slice) => usize::from(!slice.is_empty()),
-            Err((_, repeats)) => repeats,
-        }
-    }
-
-    /// The same elements left to yield, standing for something else — the arrays this yields
-    /// downcast to their concrete type, say, or one of their fields.
-    fn mapped<'n, U: ?Sized>(
-        &self,
-        map: &'n dyn Fn(&'a S) -> &'a U,
-    ) -> MappedBroadcastIter<'a, 'n, U, S> {
-        MappedBroadcastIter {
-            inner: self.inner.clone(),
-            map,
+    /// The same arrays, read as something else — downcast to their concrete array type, say, or
+    /// narrowed to one of their fields.
+    fn read_as<'n, B: ?Sized>(&self, get: &'n dyn Fn(usize) -> &'a B) -> ArrayList<'a, 'n, B> {
+        ArrayList {
+            get,
+            count: self.count,
+            repeats: self.repeats,
         }
     }
 }
 
-impl<T: ?Sized, S> Clone for MappedBroadcastIter<'_, '_, T, S> {
+impl<A: ?Sized> Clone for ArrayList<'_, '_, A> {
     fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            map: self.map,
-        }
+        *self
     }
 }
 
-impl<'a, T: ?Sized, S> Iterator for MappedBroadcastIter<'a, '_, T, S> {
-    type Item = &'a T;
+impl<A: ?Sized> Copy for ArrayList<'_, '_, A> {}
 
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next().map(self.map)
-    }
+/// Something that stands in as a [`PlArray`] trait object: every array of this crate, and the
+/// trait object itself.
+///
+/// This is what lets the parts of a concatenation that read nothing but the length, the null
+/// count and the validity mask of an array be written once over `dyn PlArray`, whichever concrete
+/// array type the caller holds.
+trait AsPlArray {
+    fn as_pl_array(&self) -> &dyn PlArray;
+}
 
-    #[inline]
-    fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        self.inner.nth(n).map(self.map)
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.inner.size_hint()
-    }
-
-    /// The elements are as many as the inner iterator has left, however they are walked.
-    #[inline]
-    fn count(self) -> usize {
-        self.inner.count()
-    }
-
-    /// Reads the last element rather than walking to it, which the inner iterator can do for
-    /// either of its representations.
-    #[inline]
-    fn last(self) -> Option<Self::Item> {
-        self.inner.last().map(self.map)
-    }
-
-    /// Hoists the branch on how the elements are walked out of the loop, the way the inner iterator
-    /// does; `for_each` and `collect` route through here.
-    #[inline]
-    fn fold<B, F>(self, init: B, mut f: F) -> B
-    where
-        F: FnMut(B, Self::Item) -> B,
-    {
-        let map = self.map;
-        self.inner.fold(init, |acc, element| f(acc, map(element)))
+impl<A: PlArray> AsPlArray for A {
+    #[inline(always)]
+    fn as_pl_array(&self) -> &dyn PlArray {
+        self
     }
 }
 
-impl<T: ?Sized, S> ExactSizeIterator for MappedBroadcastIter<'_, '_, T, S> {}
+impl AsPlArray for dyn PlArray {
+    #[inline(always)]
+    fn as_pl_array(&self) -> &dyn PlArray {
+        self
+    }
+}
 
-/// An element of a slice of pointers to arrays stands for the array it points to: the array itself
-/// where the slice is one of arrays, and the one in the box where it is one of boxes.
-fn pointee<S: Deref<Target = T>, T: ?Sized>(element: &S) -> &T {
-    element
+impl<'a, 'f, A: AsPlArray + ?Sized> ArrayList<'a, 'f, A> {
+    /// The distinct arrays, as trait objects.
+    fn distinct_erased(&self) -> impl ExactSizeIterator<Item = &'a dyn PlArray> + use<'a, 'f, A> {
+        self.distinct().map(AsPlArray::as_pl_array)
+    }
+
+    /// Every array of the concatenation, the repeats included, as trait objects.
+    fn iter_erased(&self) -> impl ExactSizeIterator<Item = &'a dyn PlArray> + use<'a, 'f, A> {
+        self.iter().map(AsPlArray::as_pl_array)
+    }
+
+    /// The total number of elements the arrays hold and how many of them are null, per
+    /// [`total_length_and_null_count`].
+    fn length_and_null_count(&self) -> (usize, usize) {
+        total_length_and_null_count(&mut self.distinct_erased(), self.repeats)
+    }
+
+    /// The validity mask of the concatenation, per [`concatenate_validities_with`].
+    fn validities(&self, length: usize, null_count: usize) -> Option<Bitmap> {
+        concatenate_validities_with(&mut self.iter_erased(), length, null_count)
+    }
 }
 
 /// Concatenates `arrays`, in order, into a single array of their common [`PlArrayType`].
@@ -153,7 +154,7 @@ fn pointee<S: Deref<Target = T>, T: ?Sized>(element: &S) -> &T {
 /// This function errors if `arrays` is empty, if the arrays differ in [`PlArrayType`] or element
 /// type, or if the values of nested arrays do not concatenate.
 pub fn concatenate(arrays: &[&dyn PlArray]) -> PolarsResult<Box<dyn PlArray>> {
-    concatenate_impl(MappedBroadcastIter::new(arrays, &pointee))
+    concatenate_impl(ArrayList::new(&|index| arrays[index], arrays.len()))
 }
 
 /// Concatenates `repeats` copies of `array` into a single array of its [`PlArrayType`].
@@ -180,15 +181,13 @@ pub fn concatenate_repeated(array: &dyn PlArray, repeats: usize) -> PolarsResult
         return Ok(array.new_from_index(0, repeats));
     }
 
-    concatenate_impl(MappedBroadcastIter::repeat(&array, repeats, &pointee))
+    concatenate_impl(ArrayList::repeated(&|_| array, 1, repeats))
 }
 
-/// Concatenates the arrays `iter` yields, in order, into a single array of their common
+/// Concatenates the arrays of `list`, in order, into a single array of their common
 /// [`PlArrayType`], which is what [`concatenate`] and [`concatenate_repeated`] both come down to.
-fn concatenate_impl<'a, S>(
-    iter: MappedBroadcastIter<'a, '_, dyn PlArray, S>,
-) -> PolarsResult<Box<dyn PlArray>> {
-    let mut distinct = iter.distinct();
+fn concatenate_impl(list: ArrayList<'_, '_, dyn PlArray>) -> PolarsResult<Box<dyn PlArray>> {
+    let mut distinct = list.distinct();
     let Some(first) = distinct.next() else {
         polars_bail!(InvalidOperation: "cannot concatenate an empty list of arrays");
     };
@@ -205,11 +204,11 @@ fn concatenate_impl<'a, S>(
 
     match array_type {
         PlArrayType::Boolean => {
-            let map = downcast_map::<PlBooleanArray, _>(&iter, array_type)?;
-            Ok(Box::new(concatenate_boolean_impl(iter.mapped(&map))))
+            let get = downcast_get::<PlBooleanArray>(&list, array_type)?;
+            Ok(Box::new(concatenate_boolean_impl(list.read_as(&get))))
         },
         PlArrayType::Primitive(primitive) => {
-            with_match_pl_primitive_array_type!(first, |T| concatenate_primitive_as::<T, _>(&iter))
+            with_match_pl_primitive_array_type!(first, |T| concatenate_primitive_as::<T>(&list))
                 .flatten()
                 .ok_or_else(|| {
                     polars_err!(
@@ -221,47 +220,47 @@ fn concatenate_impl<'a, S>(
                 })
         },
         PlArrayType::Binary => {
-            let map = downcast_map::<PlBinaryArray, _>(&iter, array_type)?;
-            Ok(Box::new(concatenate_binary_impl(iter.mapped(&map))))
+            let get = downcast_get::<PlBinaryArray>(&list, array_type)?;
+            Ok(Box::new(concatenate_binary_impl(list.read_as(&get))))
         },
         PlArrayType::BinaryView => {
-            let map = downcast_map::<PlBinaryViewArray, _>(&iter, array_type)?;
-            Ok(Box::new(concatenate_binview_impl(iter.mapped(&map))))
+            let get = downcast_get::<PlBinaryViewArray>(&list, array_type)?;
+            Ok(Box::new(concatenate_binview_impl(list.read_as(&get))))
         },
         PlArrayType::Utf8View => {
             // A string array is a binary view array whose bytes are UTF-8, so it concatenates the
             // same way; what the wrapper adds is the promise, which is re-established below.
-            let map = downcast_map::<PlUtf8ViewArray, _>(&iter, array_type)?;
-            let bytes_map = |array: &'a S| map(array).as_binview();
-            let concatenated = concatenate_binview_impl(iter.mapped(&bytes_map));
+            let get = downcast_get::<PlUtf8ViewArray>(&list, array_type)?;
+            let bytes_get = |index| get(index).as_binview();
+            let concatenated = concatenate_binview_impl(list.read_as(&bytes_get));
             // SAFETY: every element came from a `PlUtf8ViewArray`, so every one is valid UTF-8.
             Ok(Box::new(unsafe {
                 PlUtf8ViewArray::from_binview_unchecked(concatenated)
             }))
         },
         PlArrayType::FixedSizeBinary => {
-            let map = downcast_map::<PlFixedSizeBinaryArray, _>(&iter, array_type)?;
+            let get = downcast_get::<PlFixedSizeBinaryArray>(&list, array_type)?;
             Ok(Box::new(concatenate_fixed_size_binary_impl(
-                iter.mapped(&map),
+                list.read_as(&get),
             )?))
         },
         PlArrayType::Struct => {
-            let map = downcast_map::<PlStructArray, _>(&iter, array_type)?;
-            Ok(Box::new(concatenate_struct_impl(iter.mapped(&map))?))
+            let get = downcast_get::<PlStructArray>(&list, array_type)?;
+            Ok(Box::new(concatenate_struct_impl(list.read_as(&get))?))
         },
         PlArrayType::List => {
-            let map = downcast_map::<PlListArray, _>(&iter, array_type)?;
-            Ok(Box::new(concatenate_list_impl(iter.mapped(&map))?))
+            let get = downcast_get::<PlListArray>(&list, array_type)?;
+            Ok(Box::new(concatenate_list_impl(list.read_as(&get))?))
         },
         PlArrayType::FixedSizeList => {
-            let map = downcast_map::<PlFixedSizeListArray, _>(&iter, array_type)?;
+            let get = downcast_get::<PlFixedSizeListArray>(&list, array_type)?;
             Ok(Box::new(concatenate_fixed_size_list_impl(
-                iter.mapped(&map),
+                list.read_as(&get),
             )?))
         },
         PlArrayType::Null => {
-            let map = downcast_map::<PlNullArray, _>(&iter, array_type)?;
-            Ok(Box::new(concatenate_null_impl(iter.mapped(&map))))
+            let get = downcast_get::<PlNullArray>(&list, array_type)?;
+            Ok(Box::new(concatenate_null_impl(list.read_as(&get))))
         },
         x @ PlArrayType::Object { .. } => {
             panic!("polars-array: no concatenate impl for {x:?}")
@@ -270,16 +269,21 @@ fn concatenate_impl<'a, S>(
 }
 
 /// Concatenates the validity masks of `arrays`, in order, into the mask of their concatenation.
-pub fn concatenate_validities<A: PlArray + ?Sized>(arrays: &[&A]) -> Option<Bitmap> {
-    let map = &pointee;
-    let iter = MappedBroadcastIter::new(arrays, map);
-    let (length, null_count) = total_length_and_null_count(&iter);
-    concatenate_validities_with(iter, length, null_count)
+#[allow(private_bounds)]
+pub fn concatenate_validities<A: PlArray + AsPlArray + ?Sized>(arrays: &[&A]) -> Option<Bitmap> {
+    let get = |index: usize| arrays[index];
+    let list = ArrayList::new(&get, arrays.len());
+    let (length, null_count) = list.length_and_null_count();
+    list.validities(length, null_count)
 }
 
 /// [`concatenate_validities`], for a caller that has already counted the elements and the nulls.
-fn concatenate_validities_with<A: PlArray + ?Sized, S>(
-    iter: MappedBroadcastIter<'_, '_, A, S>,
+///
+/// The arrays arrive as a trait object rather than as an iterator to be monomorphized over: a
+/// mask is built out of whole arrays at a time, so the one indirect call per array this costs is
+/// nothing against the copy of this function every caller would otherwise be handed.
+fn concatenate_validities_with(
+    arrays: &mut dyn Iterator<Item = &dyn PlArray>,
     length: usize,
     null_count: usize,
 ) -> Option<Bitmap> {
@@ -292,7 +296,7 @@ fn concatenate_validities_with<A: PlArray + ?Sized, S>(
     }
 
     let mut validity = BitmapBuilder::with_capacity(length);
-    for array in iter {
+    for array in arrays {
         let null_count = array.null_count();
         if null_count == 0 {
             validity.extend_constant(array.len(), true);
@@ -310,18 +314,18 @@ fn concatenate_validities_with<A: PlArray + ?Sized, S>(
 pub fn concatenate_primitive<T: NativeType>(
     arrays: &[&PlPrimitiveArray<T>],
 ) -> PlPrimitiveArray<T> {
-    concatenate_primitive_impl(MappedBroadcastIter::new(arrays, &pointee))
+    concatenate_primitive_impl(ArrayList::new(&|index| arrays[index], arrays.len()))
 }
 
 /// [`concatenate_primitive`], over the arrays `iter` yields.
-fn concatenate_primitive_impl<T: NativeType, S>(
-    iter: MappedBroadcastIter<'_, '_, PlPrimitiveArray<T>, S>,
+fn concatenate_primitive_impl<T: NativeType>(
+    list: ArrayList<'_, '_, PlPrimitiveArray<T>>,
 ) -> PlPrimitiveArray<T> {
-    if let Some(array) = only_non_empty(&iter) {
+    if let Some(array) = only_non_empty(&list) {
         return array.clone();
     }
 
-    let (length, null_count) = total_length_and_null_count(&iter);
+    let (length, null_count) = list.length_and_null_count();
 
     // Every element is null, so every value is undetermined and none of them has to be written.
     if length > 0 && null_count == length {
@@ -329,43 +333,53 @@ fn concatenate_primitive_impl<T: NativeType, S>(
     }
 
     // Every array stands for the same repeated element, which the result repeats over all of them.
-    if let Some(element) = shared_element(&iter, PlPrimitiveArray::scalar_value) {
+    //
+    // The elements are compared as bytes rather than with `PartialEq`, which is the one place
+    // this crate compares bytes on purpose: an array repeating `-0.0` and one repeating `+0.0`
+    // hold equal numbers with different bytes, and collapsing the two onto whichever came first
+    // would hand back the wrong zero for the other. Bytes that agree are the same value, so this
+    // only ever declines a collapse that would have changed one — a `NaN` repeated by two arrays
+    // now collapses in `O(1)` where comparing the floats left it to be written out.
+    let scalar_bytes = |array: &PlPrimitiveArray<T>| {
+        array
+            .scalar_value()
+            .map(|element| element.map(bytes::to_bytes))
+    };
+    if let Some(element) = shared_element(&list, scalar_bytes) {
         return match element {
-            Some(value) => PlPrimitiveArray::new_scalar(value, length),
+            Some(value) => PlPrimitiveArray::new_scalar(bytes::from_bytes::<T>(value), length),
             None => PlPrimitiveArray::new_full_null(length),
         };
     }
 
-    let validity = concatenate_validities_with(iter.clone(), length, null_count);
+    let validity = list.validities(length, null_count);
 
+    // Copying the values out is what the concatenation comes down to, and it reads nothing of
+    // them but their bytes, so it is taken over the byte class of `T` rather than over `T`.
     let mut values = Vec::with_capacity(length);
-    for array in iter.filter(|array| !array.is_empty()) {
-        if let Some(array_values) = array.flat_values() {
-            values.extend_from_slice(array_values.as_slice());
-        } else if let Some(value) = array.scalar_values() {
-            values.extend(std::iter::repeat_n(value, array.len()));
-        }
+    for array in list.iter() {
+        bytes::extend_subslice(&mut values, array.values_bytes(), 0, array.len());
     }
 
     // SAFETY: the values hold one slot per element of the concatenation, and the mask is the one
     // `concatenate_validities_with` built for that many elements.
-    unsafe { PlPrimitiveArray::new_unchecked(Buffer::from(values), length, validity) }
+    unsafe {
+        PlPrimitiveArray::new_unchecked(bytes::buffer_from_byte_vec::<T>(values), length, validity)
+    }
 }
 
 /// Concatenates `arrays`, in order, into a single [`PlBooleanArray`].
 pub fn concatenate_boolean(arrays: &[&PlBooleanArray]) -> PlBooleanArray {
-    concatenate_boolean_impl(MappedBroadcastIter::new(arrays, &pointee))
+    concatenate_boolean_impl(ArrayList::new(&|index| arrays[index], arrays.len()))
 }
 
 /// [`concatenate_boolean`], over the arrays `iter` yields.
-fn concatenate_boolean_impl<S>(
-    iter: MappedBroadcastIter<'_, '_, PlBooleanArray, S>,
-) -> PlBooleanArray {
-    if let Some(array) = only_non_empty(&iter) {
+fn concatenate_boolean_impl(list: ArrayList<'_, '_, PlBooleanArray>) -> PlBooleanArray {
+    if let Some(array) = only_non_empty(&list) {
         return array.clone();
     }
 
-    let (length, null_count) = total_length_and_null_count(&iter);
+    let (length, null_count) = list.length_and_null_count();
 
     // Every element is null, so every value is undetermined and none of them has to be written.
     if length > 0 && null_count == length {
@@ -373,17 +387,17 @@ fn concatenate_boolean_impl<S>(
     }
 
     // Every array stands for the same repeated element, which the result repeats over all of them.
-    if let Some(element) = shared_element(&iter, PlBooleanArray::scalar_value) {
+    if let Some(element) = shared_element(&list, PlBooleanArray::scalar_value) {
         return match element {
             Some(value) => PlBooleanArray::new_scalar(value, length),
             None => PlBooleanArray::new_full_null(length),
         };
     }
 
-    let validity = concatenate_validities_with(iter.clone(), length, null_count);
+    let validity = list.validities(length, null_count);
 
     let mut values = BitmapBuilder::with_capacity(length);
-    for array in iter.filter(|array| !array.is_empty()) {
+    for array in list.iter().filter(|array| !array.is_empty()) {
         if let Some(array_values) = array.flat_values() {
             values.extend_from_bitmap(array_values);
         } else if let Some(value) = array.scalar_values() {
@@ -399,18 +413,16 @@ fn concatenate_boolean_impl<S>(
 /// Concatenates `arrays`, in order, into a single [`PlBinaryArray`] over the bytes their elements
 /// cover.
 pub fn concatenate_binary(arrays: &[&PlBinaryArray]) -> PlBinaryArray {
-    concatenate_binary_impl(MappedBroadcastIter::new(arrays, &pointee))
+    concatenate_binary_impl(ArrayList::new(&|index| arrays[index], arrays.len()))
 }
 
 /// [`concatenate_binary`], over the arrays `iter` yields.
-fn concatenate_binary_impl<S>(
-    iter: MappedBroadcastIter<'_, '_, PlBinaryArray, S>,
-) -> PlBinaryArray {
-    if let Some(array) = only_non_empty(&iter) {
+fn concatenate_binary_impl(list: ArrayList<'_, '_, PlBinaryArray>) -> PlBinaryArray {
+    if let Some(array) = only_non_empty(&list) {
         return array.clone();
     }
 
-    let (length, null_count) = total_length_and_null_count(&iter);
+    let (length, null_count) = list.length_and_null_count();
 
     // There is no element to concatenate, however many arrays there are, so there are no bytes to
     // keep around for one either.
@@ -424,7 +436,7 @@ fn concatenate_binary_impl<S>(
     }
 
     // Every array stands for the same repeated element, which the result repeats over all of them.
-    if let Some(element) = shared_element(&iter, PlBinaryArray::scalar_value) {
+    if let Some(element) = shared_element(&list, PlBinaryArray::scalar_value) {
         return match element {
             Some(value) => PlBinaryArray::new_scalar(value, length),
             // An element shared as null makes every element of every array null, which the branch
@@ -433,7 +445,7 @@ fn concatenate_binary_impl<S>(
         };
     }
 
-    let validity = concatenate_validities_with(iter.clone(), length, null_count);
+    let validity = list.validities(length, null_count);
 
     // One pass over the distinct arrays is what the concatenation is made of: the copies of them
     // cover the very same bytes over again, so the pass is repeated rather than built twice.
@@ -441,7 +453,7 @@ fn concatenate_binary_impl<S>(
     let mut offsets: Vec<u64> = Vec::with_capacity(length + 1);
     offsets.push(0);
 
-    for array in iter.distinct().filter(|array| !array.is_empty()) {
+    for array in list.distinct().filter(|array| !array.is_empty()) {
         let end = offsets[offsets.len() - 1];
 
         if let Some(array_offsets) = array.flat_offsets() {
@@ -472,7 +484,7 @@ fn concatenate_binary_impl<S>(
     // was just built, repeated — its offsets rebased onto the bytes the copies before it wrote.
     let pass_bytes = values.len();
     let pass_elements = offsets.len() - 1;
-    for copy in 1..iter.repeats() {
+    for copy in 1..list.repeats {
         values.extend_from_within(..pass_bytes);
 
         let base = pass_bytes as u64 * copy as u64;
@@ -499,18 +511,16 @@ fn concatenate_binary_impl<S>(
 /// # Panics
 /// Panics if the arrays hold more data buffers between them than a view can index.
 pub fn concatenate_binview(arrays: &[&PlBinaryViewArray]) -> PlBinaryViewArray {
-    concatenate_binview_impl(MappedBroadcastIter::new(arrays, &pointee))
+    concatenate_binview_impl(ArrayList::new(&|index| arrays[index], arrays.len()))
 }
 
 /// [`concatenate_binview`], over the arrays `iter` yields.
-fn concatenate_binview_impl<S>(
-    iter: MappedBroadcastIter<'_, '_, PlBinaryViewArray, S>,
-) -> PlBinaryViewArray {
-    if let Some(array) = only_non_empty(&iter) {
+fn concatenate_binview_impl(list: ArrayList<'_, '_, PlBinaryViewArray>) -> PlBinaryViewArray {
+    if let Some(array) = only_non_empty(&list) {
         return array.clone();
     }
 
-    let (length, null_count) = total_length_and_null_count(&iter);
+    let (length, null_count) = list.length_and_null_count();
 
     // There is no element to concatenate, however many arrays there are, so there is no data
     // buffer to keep around for one either.
@@ -524,20 +534,20 @@ fn concatenate_binview_impl<S>(
     }
 
     // Every array stands for the same repeated element, which the result repeats over all of them.
-    if let Some(element) = shared_element(&iter, PlBinaryViewArray::scalar_value) {
+    if let Some(element) = shared_element(&list, PlBinaryViewArray::scalar_value) {
         return match element {
             Some(value) => PlBinaryViewArray::new_scalar(value, length),
             None => PlBinaryViewArray::new_full_null(length),
         };
     }
 
-    let validity = concatenate_validities_with(iter.clone(), length, null_count);
+    let validity = list.validities(length, null_count);
 
     // One pass over the distinct arrays is what the concatenation is made of: the copies of them
     // hold the very same views over the very same data buffers, so neither is built twice.
     let mut buffers: Vec<Buffer<u8>> = Vec::new();
     let mut views: Vec<View> = Vec::with_capacity(length);
-    for array in iter.distinct().filter(|array| !array.is_empty()) {
+    for array in list.distinct().filter(|array| !array.is_empty()) {
         buffers.extend(array.data_buffers().iter().cloned());
         let end = u32::try_from(buffers.len())
             .expect("the concatenation holds more data buffers than a view can index");
@@ -561,7 +571,7 @@ fn concatenate_binview_impl<S>(
     // Every copy of the distinct arrays holds the same elements over again, which is the pass that
     // was just built, repeated.
     let pass = views.len();
-    for _ in 1..iter.repeats() {
+    for _ in 1..list.repeats {
         views.extend_from_within(..pass);
     }
 
@@ -586,14 +596,14 @@ fn concatenate_binview_impl<S>(
 pub fn concatenate_fixed_size_binary(
     arrays: &[&PlFixedSizeBinaryArray],
 ) -> PolarsResult<PlFixedSizeBinaryArray> {
-    concatenate_fixed_size_binary_impl(MappedBroadcastIter::new(arrays, &pointee))
+    concatenate_fixed_size_binary_impl(ArrayList::new(&|index| arrays[index], arrays.len()))
 }
 
 /// [`concatenate_fixed_size_binary`], over the arrays `iter` yields.
-fn concatenate_fixed_size_binary_impl<S>(
-    iter: MappedBroadcastIter<'_, '_, PlFixedSizeBinaryArray, S>,
+fn concatenate_fixed_size_binary_impl(
+    list: ArrayList<'_, '_, PlFixedSizeBinaryArray>,
 ) -> PolarsResult<PlFixedSizeBinaryArray> {
-    let mut distinct = iter.distinct();
+    let mut distinct = list.distinct();
     let Some(first) = distinct.next() else {
         polars_bail!(
             InvalidOperation:
@@ -612,11 +622,11 @@ fn concatenate_fixed_size_binary_impl<S>(
         );
     }
 
-    if let Some(array) = only_non_empty(&iter) {
+    if let Some(array) = only_non_empty(&list) {
         return Ok(array.clone());
     }
 
-    let (length, null_count) = total_length_and_null_count(&iter);
+    let (length, null_count) = list.length_and_null_count();
 
     // Every element is null, so every value is undetermined and none of them has to be written
     // out: a zeroed element of the width stands in for the one they all cover.
@@ -625,7 +635,7 @@ fn concatenate_fixed_size_binary_impl<S>(
     }
 
     // Every array stands for the same repeated element, which the result repeats over all of them.
-    if let Some(element) = shared_element(&iter, PlFixedSizeBinaryArray::scalar_value) {
+    if let Some(element) = shared_element(&list, PlFixedSizeBinaryArray::scalar_value) {
         return Ok(match element {
             Some(element) => PlFixedSizeBinaryArray::new_scalar(element, length),
             // An element shared as null makes every element of every array null, which the branch
@@ -634,7 +644,7 @@ fn concatenate_fixed_size_binary_impl<S>(
         });
     }
 
-    let validity = concatenate_validities_with(iter.clone(), length, null_count);
+    let validity = list.validities(length, null_count);
 
     // One pass over the distinct arrays is what the concatenation is made of: the copies of them
     // cover the very same bytes over again, so the pass is repeated rather than built twice.
@@ -642,7 +652,7 @@ fn concatenate_fixed_size_binary_impl<S>(
         .checked_mul(width)
         .expect("the values of the concatenation overflow a `usize`");
     let mut values: Vec<u8> = Vec::with_capacity(flat_len);
-    for array in iter.distinct().filter(|array| !array.is_empty()) {
+    for array in list.distinct().filter(|array| !array.is_empty()) {
         if let Some(array_values) = array.flat_values() {
             values.extend_from_slice(array_values.as_slice());
         } else if let Some(element) = array.scalar_values() {
@@ -655,7 +665,7 @@ fn concatenate_fixed_size_binary_impl<S>(
     }
 
     let pass = values.len();
-    for _ in 1..iter.repeats() {
+    for _ in 1..list.repeats {
         values.extend_from_within(..pass);
     }
 
@@ -675,14 +685,14 @@ fn concatenate_fixed_size_binary_impl<S>(
 pub fn concatenate_fixed_size_list(
     arrays: &[&PlFixedSizeListArray],
 ) -> PolarsResult<PlFixedSizeListArray> {
-    concatenate_fixed_size_list_impl(MappedBroadcastIter::new(arrays, &pointee))
+    concatenate_fixed_size_list_impl(ArrayList::new(&|index| arrays[index], arrays.len()))
 }
 
 /// [`concatenate_fixed_size_list`], over the arrays `iter` yields.
-fn concatenate_fixed_size_list_impl<S>(
-    iter: MappedBroadcastIter<'_, '_, PlFixedSizeListArray, S>,
+fn concatenate_fixed_size_list_impl(
+    list: ArrayList<'_, '_, PlFixedSizeListArray>,
 ) -> PolarsResult<PlFixedSizeListArray> {
-    let mut distinct = iter.distinct();
+    let mut distinct = list.distinct();
     let Some(first) = distinct.next() else {
         polars_bail!(
             InvalidOperation:
@@ -700,17 +710,17 @@ fn concatenate_fixed_size_list_impl<S>(
         );
     }
 
-    if let Some(array) = only_non_empty(&iter) {
+    if let Some(array) = only_non_empty(&list) {
         return Ok(array.clone());
     }
 
-    let (length, null_count) = total_length_and_null_count(&iter);
+    let (length, null_count) = list.length_and_null_count();
 
     // The values of some element, which is what the undetermined values of a fully null result are
     // taken from: every array agrees on the width, so any element of any of them is as wide as the
     // result needs. There is one whenever the concatenation holds an element at all.
     let undetermined = || {
-        let array = iter
+        let array = list
             .distinct()
             .find(|array| !array.is_empty())
             .expect("a concatenation that holds elements has an array that holds one");
@@ -724,7 +734,7 @@ fn concatenate_fixed_size_list_impl<S>(
     }
 
     // Every array stands for the same repeated element, which the result repeats over all of them.
-    if let Some(element) = shared_element(&iter, PlFixedSizeListArray::scalar_value) {
+    if let Some(element) = shared_element(&list, PlFixedSizeListArray::scalar_value) {
         return Ok(match element {
             Some(element) => PlFixedSizeListArray::new_scalar(element, length),
             // An element shared as null makes every element of every array null, which the branch
@@ -736,8 +746,8 @@ fn concatenate_fixed_size_list_impl<S>(
     // The values of each array are what its elements cover, which is the whole values array of a
     // flat one; scalar values are the one element they share, which the result writes out once per
     // element it stands for.
-    let mut values = Vec::with_capacity(iter.len());
-    for array in iter.clone() {
+    let mut values = Vec::with_capacity(list.len());
+    for array in list.iter() {
         if let Some(array_values) = array.flat_values() {
             values.push(array_values.to_boxed());
         } else if let Some(element) = array.scalar_values() {
@@ -748,8 +758,8 @@ fn concatenate_fixed_size_list_impl<S>(
     }
 
     // The values of the arrays are concatenated through the boxes they were sliced into.
-    let values = concatenate_impl(MappedBroadcastIter::new(values.as_slice(), &pointee))?;
-    let validity = concatenate_validities_with(iter, length, null_count);
+    let values = concatenate_impl(ArrayList::new(&|index| &*values[index], values.len()))?;
+    let validity = list.validities(length, null_count);
 
     // SAFETY: every array contributed the width of each of its elements, so the values hold one
     // width per element of the concatenation, and the mask covers that many elements.
@@ -758,12 +768,12 @@ fn concatenate_fixed_size_list_impl<S>(
 
 /// Concatenates `arrays`, in order, into a single [`PlNullArray`].
 pub fn concatenate_null(arrays: &[&PlNullArray]) -> PlNullArray {
-    concatenate_null_impl(MappedBroadcastIter::new(arrays, &pointee))
+    concatenate_null_impl(ArrayList::new(&|index| arrays[index], arrays.len()))
 }
 
 /// [`concatenate_null`], over the arrays `iter` yields.
-fn concatenate_null_impl<S>(iter: MappedBroadcastIter<'_, '_, PlNullArray, S>) -> PlNullArray {
-    PlNullArray::new(total_length_and_null_count(&iter).0)
+fn concatenate_null_impl(list: ArrayList<'_, '_, PlNullArray>) -> PlNullArray {
+    PlNullArray::new(list.length_and_null_count().0)
 }
 
 /// Concatenates `arrays`, in order, into a single [`PlStructArray`], concatenating each field with
@@ -773,14 +783,12 @@ fn concatenate_null_impl<S>(iter: MappedBroadcastIter<'_, '_, PlNullArray, S>) -
 /// This function errors if the arrays do not all have the same number of fields, or if any of the
 /// fields do not concatenate.
 pub fn concatenate_struct(arrays: &[&PlStructArray]) -> PolarsResult<PlStructArray> {
-    concatenate_struct_impl(MappedBroadcastIter::new(arrays, &pointee))
+    concatenate_struct_impl(ArrayList::new(&|index| arrays[index], arrays.len()))
 }
 
 /// [`concatenate_struct`], over the arrays `iter` yields.
-fn concatenate_struct_impl<S>(
-    iter: MappedBroadcastIter<'_, '_, PlStructArray, S>,
-) -> PolarsResult<PlStructArray> {
-    let mut distinct = iter.distinct();
+fn concatenate_struct_impl(list: ArrayList<'_, '_, PlStructArray>) -> PolarsResult<PlStructArray> {
+    let mut distinct = list.distinct();
     let Some(first) = distinct.next() else {
         return Ok(PlStructArray::new_empty());
     };
@@ -795,16 +803,16 @@ fn concatenate_struct_impl<S>(
         );
     }
 
-    if let Some(array) = only_non_empty(&iter) {
+    if let Some(array) = only_non_empty(&list) {
         return Ok(array.clone());
     }
 
-    let (length, null_count) = total_length_and_null_count(&iter);
+    let (length, null_count) = list.length_and_null_count();
 
     // The field at each position is concatenated over the very same repetition, so the fields of
     // the result are as long as the concatenation itself.
     let fields = (0..num_fields)
-        .map(|i| concatenate_impl(iter.mapped(&|array| iter.get(array).field(i))))
+        .map(|i| concatenate_impl(list.read_as(&|index| list.at(index).field(i))))
         .collect::<PolarsResult<Vec<_>>>()?;
 
     // Every row is null, so a single shared bit is the whole mask. The fields are kept as they
@@ -813,7 +821,7 @@ fn concatenate_struct_impl<S>(
         return Ok(PlStructArray::new_full_null(fields, length));
     }
 
-    let validity = concatenate_validities_with(iter, length, null_count);
+    let validity = list.validities(length, null_count);
 
     // SAFETY: every field is the concatenation of the fields at that position, so it is as long as
     // the arrays together, and the mask is the flat one built for that many elements.
@@ -827,14 +835,12 @@ fn concatenate_struct_impl<S>(
 /// This function errors if `arrays` is empty, since there is no values array to take the lists of
 /// the result over, or if the values do not concatenate.
 pub fn concatenate_list(arrays: &[&PlListArray]) -> PolarsResult<PlListArray> {
-    concatenate_list_impl(MappedBroadcastIter::new(arrays, &pointee))
+    concatenate_list_impl(ArrayList::new(&|index| arrays[index], arrays.len()))
 }
 
 /// [`concatenate_list`], over the arrays `iter` yields.
-fn concatenate_list_impl<S>(
-    iter: MappedBroadcastIter<'_, '_, PlListArray, S>,
-) -> PolarsResult<PlListArray> {
-    let Some(first) = iter.distinct().next() else {
+fn concatenate_list_impl(list: ArrayList<'_, '_, PlListArray>) -> PolarsResult<PlListArray> {
+    let Some(first) = list.distinct().next() else {
         polars_bail!(
             InvalidOperation:
             "cannot concatenate an empty list of list arrays: there is no values array to take \
@@ -842,11 +848,11 @@ fn concatenate_list_impl<S>(
         );
     };
 
-    if let Some(array) = only_non_empty(&iter) {
+    if let Some(array) = only_non_empty(&list) {
         return Ok(array.clone());
     }
 
-    let (length, null_count) = total_length_and_null_count(&iter);
+    let (length, null_count) = list.length_and_null_count();
 
     // Every element is null, so every list is undetermined and none of them has to be written out;
     // the values array is what determines the type of the lists, of which the first one will do.
@@ -858,7 +864,7 @@ fn concatenate_list_impl<S>(
     }
 
     // Every array stands for the same repeated element, which the result repeats over all of them.
-    if let Some(element) = shared_element(&iter, PlListArray::scalar_value) {
+    if let Some(element) = shared_element(&list, PlListArray::scalar_value) {
         return Ok(match element {
             Some(element) => PlListArray::new_scalar(element, length),
             None => PlListArray::new_full_null(first.values().to_boxed(), length),
@@ -867,12 +873,12 @@ fn concatenate_list_impl<S>(
 
     // The values of each array are sliced to what its offsets reach, so that the offsets of the
     // result can be rebased onto their concatenation.
-    let mut values = Vec::with_capacity(iter.len());
+    let mut values = Vec::with_capacity(list.len());
     let mut offsets = Vec::with_capacity(length + 1);
     offsets.push(0);
 
     let mut end = 0;
-    for array in iter.clone() {
+    for array in list.iter() {
         if array.is_empty() {
             // No element of the array is reachable, but its values are still what the type of its
             // lists is taken from, which every array has to agree on.
@@ -912,8 +918,8 @@ fn concatenate_list_impl<S>(
     }
 
     // The values of the arrays are concatenated through the boxes they were sliced into.
-    let values = concatenate_impl(MappedBroadcastIter::new(values.as_slice(), &pointee))?;
-    let validity = concatenate_validities_with(iter, length, null_count);
+    let values = concatenate_impl(ArrayList::new(&|index| &*values[index], values.len()))?;
+    let validity = list.validities(length, null_count);
 
     // SAFETY: the offsets are the lengths of the lists of every array in order, so they are
     // ordered and end at the length of the values; the mask covers that many elements.
@@ -921,27 +927,30 @@ fn concatenate_list_impl<S>(
 }
 
 /// The one array that holds every element of the concatenation, if the others are all empty.
-fn only_non_empty<'a, A: PlArray + ?Sized, S>(
-    iter: &MappedBroadcastIter<'a, '_, A, S>,
-) -> Option<&'a A> {
-    let mut non_empty = iter.distinct().filter(|array| !array.is_empty());
+fn only_non_empty<'a, A: ?Sized + PlArray>(list: &ArrayList<'a, '_, A>) -> Option<&'a A> {
+    let mut non_empty = list.distinct().filter(|array| !array.is_empty());
     match non_empty.next() {
-        Some(array) => (non_empty.next().is_none() && iter.repeats() == 1).then_some(array),
-        None => iter.distinct().next(),
+        Some(array) => (non_empty.next().is_none() && list.repeats == 1).then_some(array),
+        None => list.distinct().next(),
     }
 }
 
-/// The total number of elements the arrays `iter` yields hold, and how many of them are null.
+/// The total number of elements `distinct` arrays hold `repeats` times over, and how many of those
+/// elements are null.
+///
+/// The arrays arrive as a trait object rather than as an iterator to be monomorphized over, for
+/// the reason [`concatenate_validities_with`] gives.
 ///
 /// # Panics
 /// Panics if the total length overflows a `usize`, which the scalar representation makes possible
 /// without the memory to back it.
-fn total_length_and_null_count<A: PlArray + ?Sized, S>(
-    iter: &MappedBroadcastIter<'_, '_, A, S>,
+fn total_length_and_null_count(
+    distinct: &mut dyn Iterator<Item = &dyn PlArray>,
+    repeats: usize,
 ) -> (usize, usize) {
     let mut length = 0usize;
     let mut null_count = 0usize;
-    for array in iter.distinct() {
+    for array in distinct {
         length = length
             .checked_add(array.len())
             .expect("the total length of the concatenation overflows a `usize`");
@@ -949,7 +958,6 @@ fn total_length_and_null_count<A: PlArray + ?Sized, S>(
     }
 
     // Every copy of the distinct arrays holds the same elements over again.
-    let repeats = iter.repeats();
     (
         length
             .checked_mul(repeats)
@@ -961,12 +969,12 @@ fn total_length_and_null_count<A: PlArray + ?Sized, S>(
 
 /// The element every element of every array equals, if `element` sees one for each of them and they
 /// all agree.
-fn shared_element<'a, A: PlArray, T: PartialEq, S>(
-    iter: &MappedBroadcastIter<'a, '_, A, S>,
+fn shared_element<'a, A: PlArray, T: PartialEq>(
+    list: &ArrayList<'a, '_, A>,
     element: impl Fn(&'a A) -> Option<T>,
 ) -> Option<T> {
     let mut shared = None;
-    for array in iter.distinct().filter(|array| !array.is_empty()) {
+    for array in list.distinct().filter(|array| !array.is_empty()) {
         let element = element(array)?;
         match &shared {
             Some(shared) if *shared != element => return None,
@@ -977,27 +985,27 @@ fn shared_element<'a, A: PlArray, T: PartialEq, S>(
     shared
 }
 
-/// What the arrays `iter` yields stand for as an `A`, or `None` if that is not the concrete array
-/// type of every one of them.
-fn try_downcast_map<'a, A: PlArray, S>(
-    iter: &MappedBroadcastIter<'a, '_, dyn PlArray, S>,
-) -> Option<impl Fn(&'a S) -> &'a A> {
-    if !iter.distinct().all(|array| array.as_any().is::<A>()) {
+/// Reads the arrays of `list` as an `A`, or `None` if that is not the concrete array type of every
+/// one of them.
+fn try_downcast_get<'a, 'f, A: PlArray>(
+    list: &ArrayList<'a, 'f, dyn PlArray>,
+) -> Option<impl Fn(usize) -> &'a A + use<'a, 'f, A>> {
+    if !list.distinct().all(|array| array.as_any().is::<A>()) {
         return None;
     }
 
-    let map = iter.map;
-    // Every distinct array was just seen to be an `A`, and the repetition yields nothing else.
-    Some(move |element: &'a S| map(element).as_any().downcast_ref::<A>().unwrap())
+    let get = list.get;
+    // Every distinct array was just seen to be an `A`, and the repetition reaches nothing else.
+    Some(move |index: usize| get(index).as_any().downcast_ref::<A>().unwrap())
 }
 
-/// [`try_downcast_map`], for the `array_type` every array reports, which guarantees `A` is their
+/// [`try_downcast_get`], for the `array_type` every array reports, which guarantees `A` is their
 /// concrete array type.
-fn downcast_map<'a, A: PlArray, S>(
-    iter: &MappedBroadcastIter<'a, '_, dyn PlArray, S>,
+fn downcast_get<'a, 'f, A: PlArray>(
+    list: &ArrayList<'a, 'f, dyn PlArray>,
     array_type: PlArrayType,
-) -> PolarsResult<impl Fn(&'a S) -> &'a A> {
-    try_downcast_map(iter).ok_or_else(|| {
+) -> PolarsResult<impl Fn(usize) -> &'a A + use<'a, 'f, A>> {
+    try_downcast_get(list).ok_or_else(|| {
         polars_err!(
             InvalidOperation:
             "cannot concatenate arrays that report the array type {:?} but are not all of the \
@@ -1007,13 +1015,13 @@ fn downcast_map<'a, A: PlArray, S>(
     })
 }
 
-/// Concatenates the arrays `iter` yields as [`PlPrimitiveArray<T>`], or returns `None` if that is
-/// not the concrete array type of every one of them.
-fn concatenate_primitive_as<'a, T: NativeType, S>(
-    iter: &MappedBroadcastIter<'a, '_, dyn PlArray, S>,
+/// Concatenates the arrays of `list` as [`PlPrimitiveArray<T>`], or returns `None` if that is not
+/// the concrete array type of every one of them.
+fn concatenate_primitive_as<T: NativeType>(
+    list: &ArrayList<'_, '_, dyn PlArray>,
 ) -> Option<Box<dyn PlArray>> {
-    let map = try_downcast_map::<PlPrimitiveArray<T>, _>(iter)?;
-    Some(Box::new(concatenate_primitive_impl(iter.mapped(&map))))
+    let get = try_downcast_get::<PlPrimitiveArray<T>>(list)?;
+    Some(Box::new(concatenate_primitive_impl(list.read_as(&get))))
 }
 
 #[cfg(test)]
@@ -1057,6 +1065,36 @@ mod tests {
             concatenated.flat_values().unwrap().as_slice(),
             [6, 6, 6, 7, 7]
         );
+    }
+
+    /// Repeated elements are collapsed onto one when their *bytes* agree, not when `==` does.
+    ///
+    /// `-0.0 == 0.0`, so comparing the floats would collapse an array of each onto whichever came
+    /// first and hand back the wrong zero for the other — a sign that survives a division. `NaN`
+    /// is the other way round: it equals nothing, itself included, so comparing the floats would
+    /// write out a repeat that the bytes collapse in `O(1)`.
+    #[test]
+    fn the_two_zeroes_are_kept_apart_and_repeated_nans_are_not_written_out() {
+        let negative = PlPrimitiveArray::new_scalar(-0.0f64, 2);
+        let positive = PlPrimitiveArray::new_scalar(0.0f64, 2);
+        let concatenated = concatenate_primitive(&[&negative, &positive]);
+
+        assert!(concatenated.is_flat());
+        let signs: Vec<bool> = concatenated
+            .flat_values()
+            .unwrap()
+            .iter()
+            .map(|value| value.is_sign_negative())
+            .collect();
+        assert_eq!(signs, [true, true, false, false]);
+
+        // The same bytes are the same value, so a repeated `NaN` still collapses.
+        let nans = PlPrimitiveArray::new_scalar(f64::NAN, 1_000_000_000);
+        let concatenated = concatenate_primitive(&[&nans, &nans]);
+
+        assert_eq!(concatenated.len(), 2_000_000_000);
+        assert!(concatenated.is_scalar());
+        assert!(concatenated.value(1_999_999_999).is_nan());
     }
 
     #[test]

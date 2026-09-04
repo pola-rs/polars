@@ -2,19 +2,23 @@
 
 use arrow::bitmap::OptBitmapBuilder;
 use arrow::types::NativeType;
-use polars_buffer::Buffer;
 use polars_utils::IdxSize;
-use polars_utils::vec::PushUnchecked;
 
 use super::PlPrimitiveArray;
+use super::bytes::{self, Bytes};
 use crate::builder::{
     ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
     opt_gather_extend_validity, subslice_extend_each_repeated_validity, subslice_extend_validity,
 };
 
 /// A builder of a [`PlPrimitiveArray`].
+///
+/// The values are held as the bytes of `T` rather than as `T`, so that appending them is compiled
+/// once per byte class rather than once per element type; see [`bytes`]. Nothing this builder
+/// does reads what a value means, so nothing is given up by holding them that way, and the
+/// reinterpretation back to `T` in [`freeze`](StaticArrayBuilder::freeze) is `O(1)`.
 pub struct PlPrimitiveArrayBuilder<T: NativeType> {
-    values: Vec<T>,
+    values: Vec<Bytes<T>>,
     validity: OptBitmapBuilder,
 }
 
@@ -36,13 +40,7 @@ impl<T: NativeType> PlPrimitiveArrayBuilder<T> {
 
     /// Appends the `length` values of `other` starting at `start`, ignoring its validity mask.
     fn extend_values(&mut self, other: &PlPrimitiveArray<T>, start: usize, length: usize) {
-        if let Some(values) = other.flat_values() {
-            self.values
-                .extend_from_slice(&values[start..start + length]);
-        } else if let Some(value) = other.scalar_values() {
-            self.values.resize(self.values.len() + length, value);
-        }
-        // An empty array is neither, and the subslice it admits covers no element to append.
+        bytes::extend_subslice(&mut self.values, other.values_bytes(), start, length);
     }
 }
 
@@ -72,7 +70,7 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
         // alongside them.
         unsafe {
             PlPrimitiveArray::new_unchecked(
-                Buffer::from(self.values),
+                bytes::buffer_from_byte_vec::<T>(self.values),
                 length,
                 self.validity.into_opt_validity(),
             )
@@ -86,7 +84,7 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
         // SAFETY: as in `freeze`.
         unsafe {
             PlPrimitiveArray::new_unchecked(
-                Buffer::from(values),
+                bytes::buffer_from_byte_vec::<T>(values),
                 length,
                 validity.into_opt_validity(),
             )
@@ -95,7 +93,7 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
 
     fn extend_nulls(&mut self, length: usize) {
         // The value of a null element is undetermined, so anything at all does.
-        self.values.resize(self.values.len() + length, T::default());
+        bytes::extend_undetermined(&mut self.values, length);
         self.validity.extend_constant(length, false);
     }
 
@@ -121,23 +119,14 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
         _share: ShareStrategy,
     ) {
         assert_subslice(other.len(), start, length);
-        self.values.reserve(length * repeats);
 
-        if let Some(values) = other.flat_values() {
-            for value in &values[start..start + length] {
-                // SAFETY: room for every repeat of every value was just reserved.
-                unsafe {
-                    for _ in 0..repeats {
-                        self.values.push_unchecked(*value);
-                    }
-                }
-            }
-        } else if let Some(value) = other.scalar_values() {
-            // Every element repeats the same value, so which of them is repeated is immaterial.
-            self.values
-                .resize(self.values.len() + length * repeats, value);
-        }
-        // An empty array is neither, and the subslice it admits covers no element to append.
+        bytes::extend_subslice_each_repeated(
+            &mut self.values,
+            other.values_bytes(),
+            start,
+            length,
+            repeats,
+        );
 
         subslice_extend_each_repeated_validity(
             &mut self.validity,
@@ -154,18 +143,8 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
         idxs: &[IdxSize],
         _share: ShareStrategy,
     ) {
-        if let Some(values) = other.flat_values() {
-            let values = values.as_slice();
-            // SAFETY: the indices are in bounds of the array, whose values are flat.
-            self.values.extend(
-                idxs.iter()
-                    .map(|idx| unsafe { *values.get_unchecked(*idx as usize) }),
-            );
-        } else if let Some(value) = other.scalar_values() {
-            // Every index reads the one value the array holds.
-            self.values.resize(self.values.len() + idxs.len(), value);
-        }
-        // An empty array is neither, and admits no index to gather.
+        // SAFETY: the indices are in bounds of the array, and therefore of its values.
+        unsafe { bytes::extend_gathered(&mut self.values, other.values_bytes(), idxs) };
 
         // SAFETY: the indices are in bounds of the array, and therefore of its mask.
         unsafe { gather_extend_validity(&mut self.validity, other.validity(), idxs) };
@@ -177,20 +156,7 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
         idxs: &[IdxSize],
         _share: ShareStrategy,
     ) {
-        self.values.reserve(idxs.len());
-
-        for idx in idxs {
-            let idx = *idx as usize;
-            let value = if idx < other.len() {
-                // SAFETY: the index is in bounds of the array, so it broadcasts into the values.
-                unsafe { other.value_unchecked(idx) }
-            } else {
-                // The value of a null element is undetermined, so anything at all does.
-                T::default()
-            };
-            // SAFETY: room for one value per index was just reserved.
-            unsafe { self.values.push_unchecked(value) };
-        }
+        bytes::extend_opt_gathered(&mut self.values, other.values_bytes(), other.len(), idxs);
 
         opt_gather_extend_validity(&mut self.validity, other.validity(), idxs, other.len());
     }

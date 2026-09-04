@@ -16,6 +16,7 @@ use crate::broadcast::{
 use crate::flat::Flat;
 
 mod builder;
+pub(crate) mod bytes;
 mod flat;
 mod iterator;
 
@@ -212,7 +213,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         let values = if length == 0 {
             Buffer::new()
         } else {
-            Buffer::from_owner([value])
+            bytes::buffer_from_bytes::<T>(Buffer::from_owner([bytes::to_bytes(value)]))
         };
 
         Self {
@@ -226,7 +227,9 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     #[inline]
     pub fn new_full_null(length: usize) -> Self {
         Self {
-            values: Buffer::zeroed(scalar_buffer_len(length)),
+            // The value of a null element is undetermined, so the one slot every element shares
+            // is never read and need not be written.
+            values: bytes::buffer_from_bytes::<T>(bytes::undetermined(scalar_buffer_len(length))),
             length,
             validity: Some(Bitmap::new_zeroed(scalar_buffer_len(length))),
         }
@@ -251,6 +254,19 @@ impl<T: NativeType> PlPrimitiveArray<T> {
             ArrayRepr::Scalar(self.values[0])
         } else {
             ArrayRepr::Flat(&self.values)
+        }
+    }
+
+    /// Which representation the backing values buffer is in, along with its bytes.
+    ///
+    /// This is what the routines of [`bytes`] are handed: they move the values around without
+    /// reading what they mean, and so are taken over the byte class of `T` rather than over `T`
+    /// itself, which is nine copies of each instead of seventeen.
+    #[inline]
+    pub(crate) fn values_bytes(&self) -> bytes::ValuesBytes<'_, bytes::Bytes<T>> {
+        match self.values_repr() {
+            ArrayRepr::Flat(values) => ArrayRepr::Flat(bytes::slice_to_bytes(values.as_slice())),
+            ArrayRepr::Scalar(value) => ArrayRepr::Scalar(bytes::to_bytes(value)),
         }
     }
 
@@ -611,6 +627,8 @@ impl<T: NativeType> PlPrimitiveArray<T> {
             return Cow::Borrowed(flat);
         }
 
+        // Writing the repeated value out is the one costly step here, and it reads nothing of the
+        // value but its bytes, so it is taken over the byte class of `T` rather than over `T`.
         let values = if self.values_are_flat() {
             self.values.clone()
         } else if self.length == 0 {
@@ -618,9 +636,10 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         } else if self.scalar_value() == Some(None) {
             // Every element is null, and the value of a null element is undetermined, so the
             // repeated value need not be written out: a zeroed buffer stands in for it.
-            Buffer::zeroed(self.length)
+            bytes::buffer_from_bytes::<T>(bytes::undetermined(self.length))
         } else {
-            Buffer::from(vec![self.values[0]; self.length])
+            let value = bytes::to_bytes(self.values[0]);
+            bytes::buffer_from_bytes::<T>(bytes::repeat(value, self.length))
         };
 
         let validity = self

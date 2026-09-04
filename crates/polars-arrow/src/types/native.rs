@@ -48,7 +48,10 @@ pub trait NativeType:
     /// Type denoting its representation as aligned bytes.
     ///
     /// This is `[u8; N]` where `N = size_of::<Self>` and has alignment `align_of::<Self>`.
-    type AlignedBytes: AlignedBytes<Unaligned = Self::Bytes> + From<Self> + Into<Self>;
+    ///
+    /// It is `Send` and `Sync` for the same reason the element type itself is: a buffer that
+    /// holds the bytes of elements crosses threads exactly where a buffer of the elements does.
+    type AlignedBytes: AlignedBytes<Unaligned = Self::Bytes> + From<Self> + Into<Self> + Send + Sync;
 
     /// To bytes in little endian
     fn to_le_bytes(&self) -> Self::Bytes;
