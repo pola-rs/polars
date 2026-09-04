@@ -1982,6 +1982,8 @@ def collect_all(
     Common Subplan Elimination is applied on the combined plan, meaning
     that diverging queries will run only once.
 
+    .. engine-support:: in-memory, streaming, distributed
+
     Parameters
     ----------
     lazy_frames
