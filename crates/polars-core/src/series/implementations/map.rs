@@ -1,4 +1,5 @@
 use super::*;
+use crate::chunked_array::ops::sort::arg_sort_multiple::argsort_multiple_row_fmt;
 use crate::prelude::*;
 
 unsafe impl IntoSeries for MapChunked {
@@ -55,7 +56,8 @@ impl private::PrivateSeries for SeriesWrap<MapChunked> {
     }
 
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
-        self.0.storage().into_total_ord_inner()
+        // Report the logical dtype rather than the unsupported List storage dtype.
+        invalid_operation_panic!(into_total_ord_inner, self)
     }
 
     fn vec_hash(
@@ -99,7 +101,17 @@ impl private::PrivateSeries for SeriesWrap<MapChunked> {
         by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
-        self.0.storage().arg_sort_multiple(by, options)
+        // Multi-column sorting of nested dtypes uses row encoding.
+        let mut columns = Vec::with_capacity(by.len() + 1);
+        columns.push(self.0.clone().into_series().into_column());
+        columns.extend(by.iter().cloned());
+
+        argsort_multiple_row_fmt(
+            &columns,
+            options.descending.clone(),
+            options.nulls_last.clone(),
+            options.multithreaded,
+        )
     }
 }
 
