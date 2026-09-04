@@ -12,6 +12,7 @@ from polars.lazyframe.resolver._resolver import LazyFrameResolver
 # This file mirrors all the definitions made in the polars-python Rust API.
 
 __version__: str
+_BUILD_COMMIT: str
 __build__: Any
 _ir_nodes: Any
 _allocator: Any

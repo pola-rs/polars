@@ -3384,6 +3384,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "home",
  "itoa",
+ "libc",
  "memchr",
  "memmap2",
  "num-traits",

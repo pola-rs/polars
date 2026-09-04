@@ -142,7 +142,7 @@ impl IRFunctionExpr {
                 has_min: _,
                 has_max: _,
             } => mapper.with_same_dtype(),
-            Quantile { method: _ } => mapper.moment_dtype(),
+            Quantile { method: _ } => mapper.quantile_dtype(),
             #[cfg(feature = "mode")]
             Mode { maintain_order: _ } => mapper.with_same_dtype(),
             #[cfg(feature = "moment")]
@@ -283,7 +283,15 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             InterpolateBy => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "log")]
-            Entropy { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
+            Entropy { .. } => mapper.map_to_float_dtype(),
+            #[cfg(feature = "log")]
+            Log1p => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log1p")?
+                .map_to_float_dtype(),
+            #[cfg(feature = "log")]
+            Exp => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "exp")?
+                .map_to_float_dtype(),
             #[cfg(feature = "log")]
             Log => mapper.log_dtype(),
             Unique(_) => mapper.with_same_dtype(),
@@ -640,7 +648,7 @@ impl<'a> FieldsMapper<'a> {
             .map(|fld| fld.dtype())
             .collect::<Vec<_>>();
         let new_type = func(&dtypes)?;
-        fld.coerce(new_type);
+        fld.set_dtype(new_type);
         Ok(fld)
     }
 
@@ -648,7 +656,7 @@ impl<'a> FieldsMapper<'a> {
     pub fn map_to_supertype(&self) -> PolarsResult<Field> {
         let st = args_to_supertype(self.fields)?;
         let mut first = self.fields[0].clone();
-        first.coerce(st);
+        first.set_dtype(st);
         Ok(first)
     }
 
@@ -660,7 +668,7 @@ impl<'a> FieldsMapper<'a> {
             .inner_dtype()
             .cloned()
             .unwrap_or_else(|| DataType::Unknown(Default::default()));
-        first.coerce(dt);
+        first.set_dtype(dt);
         Ok(first)
     }
 
@@ -737,7 +745,7 @@ impl<'a> FieldsMapper<'a> {
             )
         })?;
 
-        first.coerce(function_sum_output_dtype(&dt));
+        first.set_dtype(function_sum_output_dtype(&dt));
         Ok(first)
     }
 
@@ -760,7 +768,7 @@ impl<'a> FieldsMapper<'a> {
             Float32 => Float32,
             _ => Float64,
         };
-        first.coerce(new_dt);
+        first.set_dtype(new_dt);
         Ok(first)
     }
 
@@ -786,6 +794,14 @@ impl<'a> FieldsMapper<'a> {
             &DataType::Float64
         };
         Ok(Field::new(self.fields[0].name().clone(), out_dtype.clone()))
+    }
+
+    pub fn quantile_dtype(&self) -> PolarsResult<Field> {
+        let mut out = self.moment_dtype()?;
+        if matches!(self.fields[1].dtype(), DataType::List(_)) {
+            out.set_dtype(DataType::List(Box::new(out.dtype().clone())));
+        }
+        Ok(out)
     }
 
     #[cfg(feature = "extract_jsonpath")]
