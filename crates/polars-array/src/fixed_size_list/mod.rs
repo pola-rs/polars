@@ -493,13 +493,17 @@ impl PlFixedSizeListArray {
     /// Returns an iterator over the elements, ignoring validity.
     #[inline]
     pub fn values_iter(&self) -> PlFixedSizeListValuesIter<'_> {
-        PlFixedSizeListValuesIter::new(self)
+        // SAFETY: the values are flat or scalar for this array's length, upheld by every
+        // constructor.
+        PlFixedSizeListValuesIter::new(&*self.values, self.width, self.length)
     }
 
     /// Returns an iterator over the optional elements.
     #[inline]
     pub fn iter(&self) -> PlFixedSizeListIter<'_> {
-        PlFixedSizeListIter::new(self)
+        // SAFETY: the values are flat or scalar for this array's length, upheld by every
+        // constructor.
+        PlFixedSizeListIter::new(&*self.values, self.width, self.validity(), self.length)
     }
 
     /// Returns an iterator over `length` elements, repeating the single element of this array if
@@ -510,8 +514,9 @@ impl PlFixedSizeListArray {
     #[inline]
     pub fn broadcast_values_iter(&self, length: usize) -> PlFixedSizeListValuesIter<'_> {
         assert_broadcastable(self.length, length);
-        // SAFETY: this array broadcasts to `length`, which is what was just asserted.
-        PlFixedSizeListValuesIter::new_broadcast(self, length)
+        // SAFETY: this array broadcasts to `length`, which is what was just asserted, so its
+        // values are flat or scalar for it.
+        PlFixedSizeListValuesIter::new(&*self.values, self.width, length)
     }
 
     /// Returns this array with its validity mask replaced by a flat one.
