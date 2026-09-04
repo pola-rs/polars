@@ -34,6 +34,7 @@ pub mod ordered_union;
 pub mod peak_minmax;
 pub mod reduce;
 pub mod repeat;
+pub mod reverse;
 pub mod rle;
 pub mod rle_id;
 #[cfg(feature = "dynamic_group_by")]
