@@ -2062,6 +2062,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         By default, all query optimizations are enabled. Individual optimizations may
         be disabled through the `optimizations` parameter.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         engine
