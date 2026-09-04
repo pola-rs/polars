@@ -10,7 +10,6 @@ from typing import IO, TYPE_CHECKING, Any, ClassVar, Literal, overload
 
 from polars._dependencies import import_optional
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
-from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import normalize_filepath, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_ldf
@@ -61,17 +60,6 @@ def _to_sink_target(
     else:
         msg = f"`path` argument has invalid type {qualified_type_name(path)!r}, and cannot be turned into a sink target"
         raise TypeError(msg)
-
-
-def _apply_retries_deprecation(
-    retries: int | None, storage_options: StorageOptionsDict | None
-) -> StorageOptionsDict | None:
-    if retries is not None:
-        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
-        issue_deprecation_warning(msg)
-        storage_options = storage_options or {}
-        storage_options["max_retries"] = retries
-    return storage_options
 
 
 class Engine(ABC):
@@ -220,7 +208,6 @@ class Engine(ABC):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
@@ -244,7 +231,6 @@ class Engine(ABC):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         lazy: bool,
@@ -281,7 +267,6 @@ class Engine(ABC):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         lazy: bool,
@@ -302,7 +287,6 @@ class Engine(ABC):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         lazy: bool,
@@ -527,7 +511,6 @@ class _LocalEngine(Engine):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
@@ -566,8 +549,6 @@ class _LocalEngine(Engine):
                 "distinct_count": True,
                 "null_count": True,
             }
-
-        storage_options = _apply_retries_deprecation(retries, storage_options)
 
         credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_parquet"
@@ -618,7 +599,6 @@ class _LocalEngine(Engine):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         lazy: bool,
@@ -631,8 +611,6 @@ class _LocalEngine(Engine):
             _init_credential_provider_builder,
         )
         from polars.io.partition import _SinkOptions
-
-        storage_options = _apply_retries_deprecation(retries, storage_options)
 
         credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_ipc"
@@ -697,7 +675,6 @@ class _LocalEngine(Engine):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         lazy: bool,
@@ -720,8 +697,6 @@ class _LocalEngine(Engine):
         del credential_provider
 
         target = _to_sink_target(path)
-
-        storage_options = _apply_retries_deprecation(retries, storage_options)
 
         sink_options = _SinkOptions(
             mkdir=mkdir,
@@ -765,7 +740,6 @@ class _LocalEngine(Engine):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         lazy: bool,
@@ -775,8 +749,6 @@ class _LocalEngine(Engine):
             _init_credential_provider_builder,
         )
         from polars.io.partition import _SinkOptions
-
-        storage_options = _apply_retries_deprecation(retries, storage_options)
 
         credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_ndjson"
@@ -959,12 +931,11 @@ class GPUEngine(_LocalEngine):
         cudf_polars = import_optional(
             "cudf_polars",
             err_prefix="GPU engine requested, but required package",
+            err_suffix="could not be imported",
             install_message=(
-                "Please install using the command "
-                "`pip install cudf-polars-cu12` "
-                "(CUDA 12 is required for RAPIDS cuDF v25.08 and later). "
-                "If your system has a CUDA 11 driver, install with "
-                "`pip install cudf-polars-cu11==25.06` "
+                "Please install the cuDF Polars distribution matching your CUDA "
+                "version. See the GPU support documentation for installation "
+                "instructions: https://docs.pola.rs/user-guide/gpu-support/."
             ),
         )
         return partial(cudf_polars.execute_with_cudf, config=self)

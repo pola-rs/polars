@@ -415,9 +415,11 @@ async fn start_reader_impl(
         reader_capabilities,
         file_projection_builder,
         cast_columns_policy,
+        extra_columns_policy,
         missing_columns_policy,
         forbid_extra_columns,
         num_pipelines,
+        max_concurrent_scans,
         disable_morsel_split,
         last_morsel_pipelines,
         verbose,
@@ -615,6 +617,8 @@ async fn start_reader_impl(
         pre_slice,
         predicate,
         cast_columns_policy: cast_columns_policy.clone(),
+        missing_columns_policy,
+        extra_columns_policy,
         num_pipelines,
         disable_morsel_split,
         last_morsel_pipelines,
@@ -691,6 +695,7 @@ async fn start_reader_impl(
                 first_morsel,
                 first_morsel_position,
                 num_pipelines,
+                max_concurrent_scans,
             }
             .run();
 

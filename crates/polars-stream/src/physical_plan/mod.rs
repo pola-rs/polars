@@ -22,8 +22,8 @@ use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::StrptimeOptions;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    CastColumnsPolicy, ColumnsUdf, FileSinkOptions, MissingColumnsPolicy, PartitionedSinkOptionsIR,
-    PredicateFileSkip, ScanSources, TableStatistics,
+    CastColumnsPolicy, ColumnsUdf, ExtraColumnsPolicy, FileSinkOptions, MissingColumnsPolicy,
+    PartitionedSinkOptionsIR, PredicateFileSkip, ScanSources, TableStatistics,
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
@@ -285,6 +285,9 @@ pub enum PhysNodeKind {
         dtype: DataType,
         options: StrptimeOptions,
 
+        /// Name the input had before lowering aliased it; used in error messages.
+        input_name: PlSmallStr,
+
         /// Ambiguous can be `raise`, `earliest`, `latest` and `null`.
         ///
         /// If it is broadcast and it is `raise` or `null`, we can actually execute it in this
@@ -401,6 +404,7 @@ pub enum PhysNodeKind {
         hive_parts: Option<HivePartitionsDf>,
         include_file_paths: Option<PlSmallStr>,
         cast_columns_policy: CastColumnsPolicy,
+        extra_columns_policy: ExtraColumnsPolicy,
         missing_columns_policy: MissingColumnsPolicy,
         forbid_extra_columns: Option<ForbidExtraColumns>,
 

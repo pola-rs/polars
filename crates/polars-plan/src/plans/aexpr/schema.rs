@@ -201,7 +201,7 @@ impl AExpr {
                             _ => None,
                         };
                         if let Some(dt) = dt {
-                            field.coerce(dt);
+                            field.set_dtype(dt);
                         }
                         Ok(field)
                     },
@@ -224,7 +224,7 @@ impl AExpr {
                             !field.dtype().is_object(),
                             InvalidOperation: "cannot implode 'object' dtype; nested objects are not supported"
                         );
-                        field.coerce(DataType::List(field.dtype().clone().into()));
+                        field.set_dtype(DataType::List(field.dtype().clone().into()));
                         Ok(field)
                     },
                     Std(expr, _) => {
@@ -235,21 +235,16 @@ impl AExpr {
                     Var(expr, _) => {
                         let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
                         let mapper = FieldsMapper::new(&field);
-                        mapper.var_dtype()
+                        mapper.moment_dtype()
                     },
                     NUnique(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
-                        field.coerce(IDX_DTYPE);
+                        field.set_dtype(IDX_DTYPE);
                         Ok(field)
                     },
                     Count { input, .. } => {
                         let mut field = ctx.arena.get(*input).to_field_impl(ctx)?;
-                        field.coerce(IDX_DTYPE);
-                        Ok(field)
-                    },
-                    AggGroups(expr) => {
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
-                        field.coerce(IDX_DTYPE.implode());
+                        field.set_dtype(IDX_DTYPE);
                         Ok(field)
                     },
                 }
@@ -272,7 +267,7 @@ impl AExpr {
                     try_get_supertype(truthy.dtype(), falsy.dtype())?
                 };
 
-                truthy.coerce(st);
+                truthy.set_dtype(st);
                 Ok(truthy)
             },
             AnonymousFunction {
@@ -350,7 +345,7 @@ impl AExpr {
                             .collect(),
                     );
                     let mut out = struct_field.clone();
-                    out.coerce(dtype);
+                    out.set_dtype(dtype);
                     Ok(out)
                 } else {
                     let dt = struct_field.dtype();
@@ -449,8 +444,7 @@ impl AExpr {
             | Agg(Std(expr, _))
             | Agg(Var(expr, _))
             | Agg(NUnique(expr))
-            | Agg(Count { input: expr, .. })
-            | Agg(AggGroups(expr)) => expr_arena.get(*expr).to_name(expr_arena),
+            | Agg(Count { input: expr, .. }) => expr_arena.get(*expr).to_name(expr_arena),
             AnonymousFunction { input, fmt_str, .. } | AnonymousAgg { input, fmt_str, .. } => {
                 if input.is_empty() {
                     fmt_str.as_ref().clone()
@@ -646,15 +640,14 @@ fn get_arithmetic_field(
             if (left_field.dtype.is_bool() ^ right_field.dtype.is_bool())
                 && (left_field.dtype.is_numeric() ^ right_field.dtype.is_numeric()) =>
         {
-            let supertype = try_get_supertype(&left_field.dtype, &right_field.dtype)?;
-            polars_warn!(
-                Deprecation,
-                "{op} on {:?} and {:?} is deprecated and will raise a ComputeError in Polars 2.0\n\
-                Hint: cast the Boolean to {supertype:?} using pl.Expr.cast().",
+            polars_bail!(
+                ComputeError:
+                "{op} on {:?} and {:?} is not supported\n\
+                Hint: cast the Boolean to {:?} using pl.Expr.cast().",
                 left_field.dtype,
                 right_field.dtype,
+                try_get_supertype(&left_field.dtype, &right_field.dtype)?,
             );
-            supertype
         },
         _ => {
             match (&left_field.dtype, &right_field.dtype) {
@@ -681,7 +674,7 @@ fn get_arithmetic_field(
                 },
                 (l, Duration(_)) if l.is_primitive_numeric() => match op {
                     Operator::Multiply => {
-                        left_field.coerce(right_field.dtype);
+                        left_field.set_dtype(right_field.dtype);
                         return Ok(left_field);
                     },
                     _ => {
@@ -699,7 +692,7 @@ fn get_arithmetic_field(
                 #[cfg(feature = "dtype-decimal")]
                 (Decimal(_, scale_left), Decimal(_, scale_right)) => {
                     let dtype = Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right));
-                    left_field.coerce(dtype);
+                    left_field.set_dtype(dtype);
                     return Ok(left_field);
                 },
 
@@ -721,7 +714,7 @@ fn get_arithmetic_field(
                         list_dtype.leaf_dtype(),
                         other_dtype.leaf_dtype(),
                     )?);
-                    left_field.coerce(dtype);
+                    left_field.set_dtype(dtype);
                     return Ok(left_field);
                 },
                 #[cfg(feature = "dtype-array")]
@@ -730,7 +723,7 @@ fn get_arithmetic_field(
                         list_dtype.leaf_dtype(),
                         other_dtype.leaf_dtype(),
                     )?);
-                    left_field.coerce(dtype);
+                    left_field.set_dtype(dtype);
                     return Ok(left_field);
                 },
                 _ => {
@@ -743,7 +736,7 @@ fn get_arithmetic_field(
                             (AExpr::Literal(_), AExpr::Literal(_)) => {},
                             (AExpr::Literal(_), _) if left_field.dtype.is_unknown() => {
                                 // literal will be coerced to match right type
-                                left_field.coerce(right_field.dtype);
+                                left_field.set_dtype(right_field.dtype);
                                 return Ok(left_field);
                             },
                             _ => {},
@@ -756,7 +749,7 @@ fn get_arithmetic_field(
         },
     };
 
-    left_field.coerce(super_type);
+    left_field.set_dtype(super_type);
     Ok(left_field)
 }
 
@@ -764,7 +757,7 @@ fn get_truediv_field(left: Node, right: Node, ctx: &ToFieldContext) -> PolarsRes
     let mut left_field = ctx.arena.get(left).to_field_impl(ctx)?;
     let right_field = ctx.arena.get(right).to_field_impl(ctx)?;
     let out_type = get_truediv_dtype(left_field.dtype(), right_field.dtype())?;
-    left_field.coerce(out_type);
+    left_field.set_dtype(out_type);
     Ok(left_field)
 }
 
@@ -868,11 +861,11 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
         },
         #[cfg(feature = "dtype-decimal")]
-        (l @ Decimal(_, _), r) if r.is_primitive_numeric() => {
-            if r.is_float() {
+        (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_primitive_numeric() => {
+            if dtype.is_float() {
                 Float64
             } else {
-                l.clone()
+                Decimal(DEC128_MAX_PREC, *scale)
             }
         },
         #[cfg(all(feature = "dtype-u8", feature = "dtype-f16"))]

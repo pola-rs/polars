@@ -23,20 +23,14 @@ macro_rules! set_unwrapped_or_0 {
 }
 
 #[pyfunction]
-pub fn rolling_corr(
-    x: PyExpr,
-    y: PyExpr,
-    window_size: IdxSize,
-    min_periods: IdxSize,
-    ddof: u8,
-) -> PyExpr {
+pub fn rolling_corr(x: PyExpr, y: PyExpr, window_size: IdxSize, min_periods: IdxSize) -> PyExpr {
     dsl::rolling_corr(
         x.inner,
         y.inner,
         RollingCovOptions {
             min_periods,
             window_size,
-            ddof,
+            ddof: None,
         },
     )
     .into()
@@ -56,7 +50,7 @@ pub fn rolling_cov(
         RollingCovOptions {
             min_periods,
             window_size,
-            ddof,
+            ddof: Some(ddof),
         },
     )
     .into()
@@ -174,31 +168,37 @@ pub fn collect_all_with_callback(
     optflags: PyOptFlags,
     lambda: Py<PyAny>,
     py: Python<'_>,
-) {
-    let plans = lfs
-        .into_iter()
-        .map(|lf| lf.ldf.into_inner().logical_plan)
-        .collect();
-    let result = py
-        .enter_polars(|| {
-            LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner.into_inner())
-        })
-        .map(|dfs| {
-            dfs.into_iter()
-                .map(Into::into)
-                .collect::<Vec<PyDataFrame>>()
-        });
+) -> PyResult<()> {
+    py.enter_polars_ok(|| {
+        // We use a tokio spawn_blocking here as it has a high blocking
+        // thread pool limit.
+        polars_core::runtime::ASYNC.spawn_blocking(move || {
+            let plans = lfs
+                .into_iter()
+                .map(|lf| lf.ldf.into_inner().logical_plan)
+                .collect();
 
-    Python::attach(|py| match result {
-        Ok(dfs) => {
-            lambda.call1(py, (dfs,)).map_err(|err| err.restore(py)).ok();
-        },
-        Err(err) => {
-            lambda
-                .call1(py, (PyErr::from(err),))
-                .map_err(|err| err.restore(py))
-                .ok();
-        },
+            let result =
+                LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner.into_inner())
+                    .map(|dfs| {
+                        dfs.into_iter()
+                            .map(Into::into)
+                            .collect::<Vec<PyDataFrame>>()
+                    })
+                    .map_err(PyPolarsErr::from);
+
+            Python::attach(|py| match result {
+                Ok(dfs) => {
+                    lambda.call1(py, (dfs,)).map_err(|err| err.restore(py)).ok();
+                },
+                Err(err) => {
+                    lambda
+                        .call1(py, (PyErr::from(err),))
+                        .map_err(|err| err.restore(py))
+                        .ok();
+                },
+            })
+        });
     })
 }
 
@@ -514,7 +514,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
             ))
         };
 
-        let av = py_object_to_any_value(value, true, allow_object).map_err(|_| raise())?;
+        let av = py_object_to_any_value(value, true, allow_object, None).map_err(|_| raise())?;
         match av {
             #[cfg(feature = "object")]
             AnyValue::ObjectOwned(_) => {

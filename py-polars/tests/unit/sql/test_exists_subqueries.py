@@ -296,3 +296,195 @@ def test_decorrelated_exists_is_order_independent() -> None:
     expected = ctx.execute(query).collect(engine="in-memory").row(0)
     results = {ctx.execute(query).collect(engine="streaming").row(0) for _ in range(8)}
     assert results == {expected}
+
+
+def test_exists_subquery_multi_relation_inner_from() -> None:
+    frames = {
+        "customer": pl.DataFrame({"c_customer_sk": [1, 2, 3]}),
+        "store_sales": pl.DataFrame(
+            {"ss_customer_sk": [1, 1, 2], "ss_sold_date_sk": [1, 2, 2]}
+        ),
+        "date_dim": pl.DataFrame({"d_date_sk": [1, 2], "d_year": [2000, 2001]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT c_customer_sk FROM customer c
+            WHERE EXISTS (
+                SELECT * FROM store_sales, date_dim
+                WHERE c.c_customer_sk = ss_customer_sk
+                  AND ss_sold_date_sk = d_date_sk
+                  AND d_year = 2001
+            )
+            ORDER BY c_customer_sk
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_exists_and_not_exists_multi_relation_inner_from() -> None:
+    frames = {
+        "customer": pl.DataFrame({"c_customer_sk": [1, 2, 3, 4]}),
+        "store_sales": pl.DataFrame(
+            {"ss_customer_sk": [1, 2], "ss_sold_date_sk": [2, 2]}
+        ),
+        "web_sales": pl.DataFrame({"ws_customer_sk": [2], "ws_sold_date_sk": [2]}),
+        "date_dim": pl.DataFrame({"d_date_sk": [1, 2], "d_year": [2000, 2001]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT c_customer_sk FROM customer c
+            WHERE EXISTS (
+                SELECT * FROM store_sales, date_dim
+                WHERE c.c_customer_sk = ss_customer_sk
+                  AND ss_sold_date_sk = d_date_sk AND d_year = 2001
+            )
+            AND NOT EXISTS (
+                SELECT * FROM web_sales, date_dim
+                WHERE c.c_customer_sk = ws_customer_sk
+                  AND ws_sold_date_sk = d_date_sk AND d_year = 2001
+            )
+            ORDER BY c_customer_sk
+        """,
+        compare_with="duckdb",
+    )
+
+
+def _q16_frames() -> dict[str, pl.DataFrame]:
+    # the TPC-DS q16 shape: outer predicates alongside a self-correlated
+    # EXISTS whose correlation is not equality-only
+    return {
+        "sales": pl.DataFrame(
+            {
+                "order_no": [1, 1, 2, 2, 3, 4],
+                "warehouse": [10, 20, 10, 10, 30, 40],
+                "state": ["GA", "GA", "GA", "GA", "CA", "GA"],
+                "cost": [5, 6, 7, 8, 9, 10],
+            }
+        ),
+    }
+
+
+_Q16_QUERY = """
+    SELECT sum(cost) AS total FROM sales s1
+    WHERE s1.state = 'GA'
+      AND EXISTS (
+          SELECT * FROM sales s2
+          WHERE s1.order_no = s2.order_no
+            AND s1.warehouse <> s2.warehouse
+      )
+"""
+
+
+def test_exists_does_not_block_predicate_pushdown() -> None:
+    # the outer predicate must be applied below the row index the EXISTS
+    # introduces, or it never reaches the scan
+    with pl.SQLContext(frames=_q16_frames()) as ctx:
+        plan = ctx.execute(_Q16_QUERY).explain()
+
+    assert "ROW INDEX" in plan, plan
+    assert plan.index("ROW INDEX") < plan.index('col("state") == "GA"'), plan
+
+
+def test_exists_with_outer_predicates_matches_duckdb() -> None:
+    assert_sql_matches(
+        frames=_q16_frames(),
+        query=_Q16_QUERY,
+        compare_with="duckdb",
+        expected={"total": [11]},
+    )
+
+
+def test_exists_outer_predicate_in_disjunction_not_split() -> None:
+    # an OR is a single conjunct, so nothing may be applied early
+    assert_sql_matches(
+        frames=_q16_frames(),
+        query="""
+            SELECT sum(cost) AS total FROM sales s1
+            WHERE (s1.state = 'CA' OR s1.warehouse = 40)
+              AND EXISTS (
+                  SELECT * FROM sales s2
+                  WHERE s1.order_no = s2.order_no
+                    AND s1.warehouse <> s2.warehouse
+              )
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_exists_outer_predicate_with_nulls() -> None:
+    # a NULL outer predicate is neither true nor false
+    frames = {
+        "sales": pl.DataFrame(
+            {
+                "order_no": [1, 1, 2, 2, 3],
+                "warehouse": [10, 20, 10, 20, 30],
+                "state": ["GA", None, "GA", "GA", None],
+                "cost": [5, 6, 7, 8, 9],
+            }
+        ),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT order_no, warehouse FROM sales s1
+            WHERE s1.state = 'GA'
+              AND EXISTS (
+                  SELECT * FROM sales s2
+                  WHERE s1.order_no = s2.order_no
+                    AND s1.warehouse <> s2.warehouse
+              )
+            ORDER BY order_no, warehouse
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_delete_with_exists_and_outer_predicate() -> None:
+    # DELETE negates the conjunction as a whole, so no conjunct may be applied
+    # on its own
+    with pl.SQLContext(frames=_q16_frames()) as ctx:
+        remaining = ctx.execute(
+            """
+            DELETE FROM sales
+            WHERE state = 'GA'
+              AND EXISTS (
+                  SELECT * FROM sales s2
+                  WHERE sales.order_no = s2.order_no
+                    AND sales.warehouse <> s2.warehouse
+              )
+            """
+        ).collect()
+
+    assert remaining.to_dict(as_series=False) == {
+        "order_no": [2, 2, 3, 4],
+        "warehouse": [10, 10, 30, 40],
+        "state": ["GA", "GA", "CA", "GA"],
+        "cost": [7, 8, 9, 10],
+    }
+
+
+def test_in_subquery_does_not_block_predicate_pushdown() -> None:
+    # `IN (subquery)` reaches the same rewrite as EXISTS
+    frames = {
+        "sales": pl.DataFrame(
+            {
+                "cust": [1, 2, 3, 4],
+                "state": ["GA", "GA", "CA", "GA"],
+                "amt": [5, 6, 7, 8],
+            }
+        ),
+        "returns": pl.DataFrame({"cust": [2, 3, 4]}),
+    }
+    query = """
+        SELECT sum(amt) AS total FROM sales
+        WHERE state = 'GA'
+          AND cust IN (SELECT cust FROM returns)
+    """
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with="duckdb",
+        expected={"total": [14]},
+    )

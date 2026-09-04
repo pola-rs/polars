@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use chrono_tz::Tz;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
-use polars_async::primitives::distributor_channel::distributor_channel;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType, GroupsType, TimeUnit};
@@ -14,6 +13,7 @@ use polars_time::prelude::{RollingWindower, ensure_duration_matches_dtype};
 use polars_time::{ClosedWindow, Duration};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::ComputeNode;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
@@ -22,6 +22,7 @@ use crate::expression::StreamExpr;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::pipe::{RecvPort, SendPort};
+use crate::utils::morsel_distributor::morsel_distributor;
 
 type NextWindows = (Vec<[IdxSize; 2]>, DataFrame, Column);
 
@@ -42,6 +43,7 @@ pub struct RollingGroupBy {
     index_column: PlSmallStr,
     windower: RollingWindower,
     aggs: Arc<[(PlSmallStr, StreamExpr)]>,
+    seq_offset: Arc<RelaxedCell<u64>>,
 }
 impl RollingGroupBy {
     pub fn new(
@@ -97,6 +99,7 @@ impl RollingGroupBy {
             index_column,
             windower,
             aggs,
+            seq_offset: Arc::default(),
         })
     }
 
@@ -263,7 +266,7 @@ impl ComputeNode for RollingGroupBy {
                     _ = send
                         .send(Morsel::new_unregistered(
                             df,
-                            self.seq.successor(),
+                            self.seq.successor().offset_by_u64(self.seq_offset.load()),
                             SourceToken::new(),
                         ))
                         .await;
@@ -281,9 +284,10 @@ impl ComputeNode for RollingGroupBy {
         let mut recv = recv.serial();
         let send = send_ports[0].take().unwrap().parallel();
 
-        let (mut distributor, rxs) = distributor_channel::<(Morsel, Column, Vec<[IdxSize; 2]>)>(
+        let (mut distributor, rxs) = morsel_distributor(
             send.len(),
             *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
+            self.seq_offset.clone(),
         );
 
         // Worker tasks.
@@ -294,7 +298,7 @@ impl ComputeNode for RollingGroupBy {
             let aggs = self.aggs.clone();
             let state = state.in_memory_exec_state.split();
             scope.spawn_task(TaskPriority::High, async move {
-                while let Ok((mut morsel, key, windows)) = rx.recv().await {
+                while let Ok((mut morsel, (key, windows))) = rx.recv().await {
                     morsel = morsel
                         .async_try_map::<PolarsError, _, _>(async |df| {
                             Self::evaluate_one(windows, key, &aggs, &state, df).await
@@ -369,8 +373,7 @@ impl ComputeNode for RollingGroupBy {
                     if distributor
                         .send((
                             Morsel::new_unregistered(df, seq, source_token),
-                            key,
-                            windows,
+                            (key, windows),
                         ))
                         .await
                         .is_err()

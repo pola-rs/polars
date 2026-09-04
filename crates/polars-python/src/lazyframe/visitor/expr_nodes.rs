@@ -1040,11 +1040,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 arguments: vec![n.0],
                 options: ddof.into_py_any(py)?,
             },
-            IRAggExpr::AggGroups(n) => Agg {
-                name: "agg_groups".into_py_any(py)?,
-                arguments: vec![n.0],
-                options: py.None(),
-            },
         }
         .into_py_any(py),
         AExpr::Ternary {
@@ -1115,14 +1110,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     // Callable name generators are deprecated in favor of explicit field names and
                     // cannot be represented in the typed view.
-                    IRArrayFunction::ToStruct(name_generator) => match name_generator {
-                        None => (PyArrayFunction::ToStruct, py.None()).into_py_any(py),
-                        Some(_) => {
-                            return Err(PyNotImplementedError::new_err(
-                                "array to_struct with a name generator",
-                            ));
-                        },
-                    },
+                    IRArrayFunction::ToStruct { fields } => (
+                        PyArrayFunction::ToStruct,
+                        fields.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                    )
+                        .into_py_any(py),
                 },
                 IRFunctionExpr::BinaryExpr(_) => {
                     return Err(PyNotImplementedError::new_err("binary expr"));
@@ -1132,6 +1124,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 },
                 IRFunctionExpr::Extension(_) => {
                     return Err(PyNotImplementedError::new_err("extension expr"));
+                },
+                IRFunctionExpr::MapExpr(f) => {
+                    return Err(PyNotImplementedError::new_err(format!("{f}")));
                 },
                 IRFunctionExpr::ListExpr(listfun) => match listfun {
                     IRListFunction::Concat => (PyListFunction::Concat,).into_py_any(py),
@@ -1209,6 +1204,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         names.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                     )
                         .into_py_any(py),
+                    IRListFunction::ToMap => {
+                        return Err(PyNotImplementedError::new_err(format!("{listfun}")));
+                    },
                 },
                 IRFunctionExpr::Bitwise(bitwisefun) => {
                     let py_function = match bitwisefun {
@@ -1460,7 +1458,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     IRTemporalFunction::Time => (PyTemporalFunction::Time,).into_py_any(py),
                     IRTemporalFunction::Date => (PyTemporalFunction::Date,).into_py_any(py),
-                    IRTemporalFunction::Datetime => (PyTemporalFunction::Datetime,).into_py_any(py),
                     IRTemporalFunction::Duration(time_unit) => {
                         (PyTemporalFunction::Duration, Wrap(*time_unit)).into_py_any(py)
                     },
@@ -1505,9 +1502,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     IRTemporalFunction::CastTimeUnit(time_unit) => {
                         (PyTemporalFunction::CastTimeUnit, Wrap(*time_unit)).into_py_any(py)
-                    },
-                    IRTemporalFunction::WithTimeUnit(time_unit) => {
-                        (PyTemporalFunction::WithTimeUnit, Wrap(*time_unit)).into_py_any(py)
                     },
                     #[cfg(feature = "timezones")]
                     IRTemporalFunction::ConvertTimeZone(time_zone) => {
@@ -1619,9 +1613,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRPowFunction::Sqrt => ("sqrt",).into_py_any(py),
                     IRPowFunction::Cbrt => ("cbrt",).into_py_any(py),
                 },
-                IRFunctionExpr::Hash(seed, seed_1, seed_2, seed_3) => {
-                    ("hash", seed, seed_1, seed_2, seed_3).into_py_any(py)
-                },
+                IRFunctionExpr::Hash(seed) => ("hash", seed).into_py_any(py),
                 IRFunctionExpr::ArgWhere => ("argwhere",).into_py_any(py),
                 #[cfg(feature = "index_of")]
                 IRFunctionExpr::IndexOf => ("index_of",).into_py_any(py),
@@ -1833,7 +1825,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     )
                         .into_py_any(py)
                 },
-                IRFunctionExpr::Rechunk => ("rechunk",).into_py_any(py),
                 IRFunctionExpr::ShiftAndFill => ("shift_and_fill",).into_py_any(py),
                 IRFunctionExpr::Shift => ("shift",).into_py_any(py),
                 IRFunctionExpr::DropNans => ("drop_nans",).into_py_any(py),
@@ -1959,9 +1950,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                 },
                 #[cfg(feature = "peaks")]
-                IRFunctionExpr::PeakMin => ("peak_max",).into_py_any(py),
+                IRFunctionExpr::PeakMin => ("peak_min",).into_py_any(py),
                 #[cfg(feature = "peaks")]
-                IRFunctionExpr::PeakMax => ("peak_min",).into_py_any(py),
+                IRFunctionExpr::PeakMax => ("peak_max",).into_py_any(py),
                 #[cfg(feature = "cutqcut")]
                 IRFunctionExpr::Cut {
                     breaks,

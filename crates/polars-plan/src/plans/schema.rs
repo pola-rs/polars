@@ -32,7 +32,7 @@ impl DslPlan {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct FileInfo {
@@ -45,20 +45,9 @@ pub struct FileInfo {
     /// Stores the schema used for the reader, as the main schema can contain
     /// extra hive columns.
     pub reader_schema: Option<Either<ArrowSchemaRef, SchemaRef>>,
-    /// - known size
-    /// - estimated size (set to usize::max if unknown).
-    pub row_estimation: (Option<usize>, usize),
-}
-
-// Manual default because `row_estimation.1` needs to be `usize::MAX`.
-impl Default for FileInfo {
-    fn default() -> Self {
-        FileInfo {
-            schema: Default::default(),
-            reader_schema: None,
-            row_estimation: (None, usize::MAX),
-        }
-    }
+    /// Plan-time statistics of the source.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub stats: ScanStats,
 }
 
 impl FileInfo {
@@ -66,12 +55,12 @@ impl FileInfo {
     pub fn new(
         schema: SchemaRef,
         reader_schema: Option<Either<ArrowSchemaRef, SchemaRef>>,
-        row_estimation: (Option<usize>, usize),
+        stats: ScanStats,
     ) -> Self {
         Self {
             schema,
             reader_schema,
-            row_estimation,
+            stats,
         }
     }
 

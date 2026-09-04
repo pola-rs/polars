@@ -82,6 +82,16 @@ impl ColumnChunkMetadata {
         self.compact_metadata().num_values
     }
 
+    /// Null count from the chunk statistics
+    pub fn null_count(&self) -> Option<i64> {
+        self.compact_metadata().statistics.as_ref()?.null_count
+    }
+
+    /// Distinct count from the chunk statistics
+    pub fn distinct_count(&self) -> Option<i64> {
+        self.compact_metadata().statistics.as_ref()?.distinct_count
+    }
+
     /// [`Compression`] for this column.
     pub fn compression(&self) -> Compression {
         self.compact_metadata().codec

@@ -26,6 +26,7 @@ pub mod python;
 pub use python::*;
 pub mod prune;
 mod schema;
+mod stats;
 mod to_description;
 pub mod visitor;
 
@@ -41,4 +42,5 @@ pub use iterator::*;
 pub use lit::*;
 pub use optimizer::*;
 pub use schema::*;
+pub use stats::*;
 pub use to_description::*;

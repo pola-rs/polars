@@ -130,6 +130,7 @@ dtype-i16 = []
 dtype-i128 = ["polars-compute/dtype-i128"]
 dtype-decimal = ["arrow/dtype-decimal", "polars-compute/cast", "polars-compute/dtype-decimal", "dtype-i128"]
 dtype-extension = ["polars-dtype/dtype-extension"]
+dtype-map = ["dtype-struct"]
 dtype-u8 = []
 dtype-u16 = []
 dtype-u128 = ["polars-compute/dtype-u128"]
@@ -138,7 +139,7 @@ dtype-categorical = ["polars-dtype/dtype-categorical"]
 dtype-struct = []
 
 # scale to terabytes?
-bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
+bigidx = ["arrow/bigidx", "polars-utils/bigidx", "dtype-i128"]
 python = ["polars-error/python"]
 
 serde = [

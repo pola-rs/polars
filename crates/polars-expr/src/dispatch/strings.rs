@@ -466,23 +466,39 @@ pub(super) fn split_regex(s: &[Column], inclusive: bool, strict: bool) -> Polars
     Ok(out.into_column())
 }
 
+/// Yield nulls when a non-strict parse could not infer a format, and report the
+/// values that failed when strict.
+#[cfg(feature = "temporal")]
+fn finish_strptime(
+    out: PolarsResult<Column>,
+    input: &Column,
+    dtype: &DataType,
+    options: &StrptimeOptions,
+) -> PolarsResult<Column> {
+    let out = match out {
+        Err(_) if !options.strict && options.format.is_none() => {
+            Column::full_null(input.name().clone(), input.len(), dtype)
+        },
+        out => out?,
+    };
+
+    if options.strict && input.null_count() != out.null_count() {
+        handle_casting_failures(input.as_materialized_series(), out.as_materialized_series())?;
+    }
+    Ok(out)
+}
+
 #[cfg(feature = "dtype-date")]
 fn to_date(s: &Column, options: &StrptimeOptions) -> PolarsResult<Column> {
     let ca = s.str()?;
-    let out = {
-        if options.exact {
-            ca.as_date(options.format.as_deref(), options.cache)?
-                .into_column()
-        } else {
-            ca.as_date_not_exact(options.format.as_deref())?
-                .into_column()
-        }
-    };
-
-    if options.strict && ca.null_count() != out.null_count() {
-        handle_casting_failures(s.as_materialized_series(), out.as_materialized_series())?;
+    let out = if options.exact {
+        ca.as_date(options.format.as_deref(), options.cache)
+    } else {
+        ca.as_date_not_exact(options.format.as_deref())
     }
-    Ok(out.into_column())
+    .map(|ca| ca.into_column());
+
+    finish_strptime(out, s, &DataType::Date, options)
 }
 
 #[cfg(feature = "dtype-datetime")]
@@ -511,33 +527,28 @@ fn to_datetime(
     };
 
     let out = if options.exact {
-        datetime_strings
-            .as_datetime(
-                options.format.as_deref(),
-                *time_unit,
-                options.cache,
-                tz_aware,
-                time_zone,
-                ambiguous,
-            )?
-            .into_column()
+        datetime_strings.as_datetime(
+            options.format.as_deref(),
+            *time_unit,
+            options.cache,
+            tz_aware,
+            time_zone,
+            ambiguous,
+        )
     } else {
-        datetime_strings
-            .as_datetime_not_exact(
-                options.format.as_deref(),
-                *time_unit,
-                tz_aware,
-                time_zone,
-                ambiguous,
-                true,
-            )?
-            .into_column()
-    };
-
-    if options.strict && datetime_strings.null_count() != out.null_count() {
-        handle_casting_failures(s[0].as_materialized_series(), out.as_materialized_series())?;
+        datetime_strings.as_datetime_not_exact(
+            options.format.as_deref(),
+            *time_unit,
+            tz_aware,
+            time_zone,
+            ambiguous,
+            true,
+        )
     }
-    Ok(out.into_column())
+    .map(|ca| ca.into_column());
+
+    let dtype = DataType::Datetime(*time_unit, time_zone.cloned());
+    finish_strptime(out, &s[0], &dtype, options)
 }
 
 #[cfg(feature = "dtype-time")]
@@ -546,15 +557,12 @@ fn to_time(s: &Column, options: &StrptimeOptions) -> PolarsResult<Column> {
         options.exact, ComputeError: "non-exact not implemented for Time data type"
     );
 
-    let ca = s.str()?;
-    let out = ca
-        .as_time(options.format.as_deref(), options.cache)?
-        .into_column();
+    let out = s
+        .str()?
+        .as_time(options.format.as_deref(), options.cache)
+        .map(|ca| ca.into_column());
 
-    if options.strict && ca.null_count() != out.null_count() {
-        handle_casting_failures(s.as_materialized_series(), out.as_materialized_series())?;
-    }
-    Ok(out.into_column())
+    finish_strptime(out, s, &DataType::Time, options)
 }
 
 #[cfg(feature = "concat_str")]

@@ -11,7 +11,11 @@ import pytest
 
 import polars as pl
 from polars._plr import InvalidOperationError
-from polars.exceptions import ChronoFormatWarning
+from polars.exceptions import (
+    ArgumentRemovedError,
+    AttributeRemovedError,
+    ChronoFormatWarning,
+)
 from polars.expr.string import _validate_format_argument
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import (
@@ -74,12 +78,6 @@ def test_filter_where() -> None:
     )
     expected = pl.DataFrame({"a": [1, 2, 3], "c": [[7], [5, 8], [6, 9]]})
     assert_frame_equal(result_filter, expected)
-
-    with pytest.deprecated_call():
-        result_where = df.group_by("a", maintain_order=True).agg(
-            pl.col("b").where(pl.col("b") > 4).alias("c")
-        )
-    assert_frame_equal(result_where, expected)
 
     # apply filter constraints using kwargs
     df = pl.DataFrame(
@@ -253,6 +251,30 @@ def test_exp_log1p(dtype_in: PolarsDataType, dtype_out: PolarsDataType) -> None:
     assert result.collect_schema() == expected.schema
 
 
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series("a", [{"a": 1, "b": "x"}]),
+        pl.Series("a", ["1", "2", "3"]),
+        pl.Series("a", [date(2020, 1, 1), date(2021, 1, 1)]),
+        pl.Series("a", [[1, 2], [3]]),
+    ],
+)
+def test_exp_log1p_invalid_dtype_29102(s: pl.Series) -> None:
+    lf = pl.LazyFrame([s])
+
+    for expr in (pl.col("a").exp(), pl.col("a").log1p()):
+        q = lf.select(expr)
+
+        # planner: schema resolution must reject the input dtype
+        with pytest.raises(InvalidOperationError):
+            q.collect_schema()
+
+        # engine: execution must error, not segfault
+        with pytest.raises(InvalidOperationError):
+            q.collect()
+
+
 def test_dot_in_group_by() -> None:
     df = pl.DataFrame(
         {
@@ -410,15 +432,8 @@ def test_expression_appends() -> None:
     df = pl.DataFrame({"a": [1, 1, 2]})
 
     assert df.select(pl.repeat(None, 3).append(pl.col("a"))).n_chunks() == 2
-    msg = "`Expr.rechunk()` is deprecated and will be removed in Polars 2.0"
-    with pytest.deprecated_call(match=re.escape(msg)):
-        assert (
-            df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk()).n_chunks() == 1
-        )
-    del msg
 
     out = df.select(pl.concat([pl.repeat(None, 3), pl.col("a")], rechunk=True))
-
     assert out.n_chunks() == 1
     assert out.to_series().to_list() == [None, None, None, 1, 1, 2]
 
@@ -781,21 +796,6 @@ def test_slice() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.may_fail_cloud  # reason: shrink_dtype
-def test_function_expr_scalar_identification_18755() -> None:
-    # The function uses `ApplyOptions::GroupWise`, however the input is scalar.
-    with pytest.warns(
-        DeprecationWarning,
-        match=r"use `Series\.shrink_dtype` instead",
-    ):
-        assert_frame_equal(
-            pl.DataFrame({"a": [1, 2]}).with_columns(
-                pl.lit(5, pl.Int64).shrink_dtype().alias("b")
-            ),
-            pl.DataFrame({"a": [1, 2], "b": pl.Series([5, 5], dtype=pl.Int64)}),
-        )
-
-
 @pytest.mark.parametrize(
     ("format", "bad_pattern"),
     [
@@ -811,13 +811,6 @@ def test_validate_format_argument_raises_chrono_format_warning(
         match=rf"Detected the pattern `{re.escape(bad_pattern)}`",
     ):
         _validate_format_argument(format)
-
-
-def test_concat_deprecation() -> None:
-    with pytest.deprecated_call(match=r"`str\.concat` is deprecated."):
-        pl.Series(["foo"]).str.concat()
-    with pytest.deprecated_call(match=r"`str\.concat` is deprecated."):
-        pl.DataFrame({"foo": ["bar"]}).select(pl.all().str.concat())
 
 
 @pytest.mark.parametrize(
@@ -887,3 +880,46 @@ def test_reinterpret_errors_13659() -> None:
 def test_append_no_upcast_27345() -> None:
     with pytest.raises(pl.exceptions.SchemaError):
         pl.select(pl.lit("Bob").append(1, upcast=False))
+
+
+@pytest.mark.parametrize(
+    ("name", "msg"),
+    [("from_json", "use `Expr.deserialize` instead")],
+)
+def test_expr_removed_classmethods(name: str, msg: str) -> None:
+    with pytest.raises(AttributeRemovedError, match=re.escape(msg)):
+        getattr(pl.Expr, name)
+
+
+@pytest.mark.parametrize(
+    ("name", "msg"),
+    [
+        ("register_plugin", "use `polars.plugins.register_plugin_function` instead"),
+        ("shrink_dtype", "use `Series.shrink_dtype` instead"),
+        ("where", "use `filter` instead"),
+        ("agg_groups", "use `df.with_row_index().group_by(...).agg(pl.col('index'))`"),
+        ("flatten", "use `Expr.list.explode(keep_nulls=False, empty_as_null=False)`"),
+        ("rechunk", "Use `df.rechunk()` after collecting the results instead."),
+    ],
+)
+def test_removed_methods(name: str, msg: str) -> None:
+    with pytest.raises(AttributeRemovedError, match=re.escape(msg)):
+        getattr(pl.col("a"), name)
+
+
+def test_removed_to_struct_parameters() -> None:
+    upper_bound_msg = (
+        "Pass the field names explicitly via `fields` instead, e.g."
+        ' `fields=[f"field_{i}" for i in range(upper_bound)]`.'
+    )
+    n_field_strategy_msg = "Pass the field names explicitly via `fields`."
+
+    expr = pl.col("a").list
+    with pytest.raises(ArgumentRemovedError, match=re.escape(upper_bound_msg)):
+        expr.to_struct(upper_bound=2)  # type: ignore[call-arg]
+    with pytest.raises(ArgumentRemovedError, match=re.escape(n_field_strategy_msg)):
+        expr.to_struct(n_field_strategy="max_width")  # type: ignore[call-arg]
+
+    series = pl.Series("a", [[1, 2]]).list
+    with pytest.raises(ArgumentRemovedError, match=re.escape(upper_bound_msg)):
+        series.to_struct(upper_bound=2)  # type: ignore[call-arg]

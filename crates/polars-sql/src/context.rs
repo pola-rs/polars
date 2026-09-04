@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::ops::Deref;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use polars_core::frame::row::Row;
 use polars_core::prelude::*;
@@ -32,7 +32,7 @@ use crate::sql_expr::{
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
     expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
-    expr_refers_to_table, sql_expr_cols_all_in_schema,
+    expr_refers_to_table, sql_expr_cols_all_in_schema, statement_registers_table,
 };
 use crate::subquery::{LowerScope, SubqueryBindings, desugar_quantified_subqueries};
 use crate::table_functions::PolarsTableFunctions;
@@ -44,6 +44,10 @@ pub struct TableInfo {
     pub(crate) name: PlSmallStr,
     pub(crate) schema: Arc<Schema>,
 }
+
+/// An `ORDER BY` clause pointed at the aggregated frame, with the named
+/// aggregates the `GROUP BY` has to add for it.
+type ResolvedOrderBy = (Option<OrderBy>, Vec<(PlSmallStr, Expr)>);
 
 struct SelectModifiers {
     exclude: PlHashSet<String>,                // SELECT * EXCLUDE
@@ -215,6 +219,9 @@ pub(crate) enum FilterMode {
 pub struct SQLContext {
     pub(crate) table_map: Arc<RwLock<PlHashMap<String, LazyFrame>>>,
     pub(crate) function_registry: Arc<dyn FunctionRegistry>,
+    /// Set once a caller installs their own registry; user-defined functions cannot be
+    /// carried in the DSL, so such a context resolves its queries eagerly.
+    custom_function_registry: bool,
     pub(crate) lp_arena: Arena<IR>,
     pub(crate) expr_arena: Arena<AExpr>,
 
@@ -229,8 +236,10 @@ pub struct SQLContext {
 
 impl Default for SQLContext {
     fn default() -> Self {
+        crate::register_sql_resolver();
         Self {
             function_registry: Arc::new(DefaultFunctionRegistry {}),
+            custom_function_registry: false,
             table_map: Default::default(),
             cte_map: Default::default(),
             table_aliases: Default::default(),
@@ -305,22 +314,14 @@ impl SQLContext {
     /// # }
     ///```
     pub fn execute(&mut self, query: &str) -> PolarsResult<LazyFrame> {
-        let mut parser = Parser::new(&GenericDialect);
-        parser = parser.with_options(ParserOptions {
-            trailing_commas: true,
-            ..Default::default()
-        });
+        let mut stmt = parse_single_statement(query)?;
 
-        let mut ast = parser
-            .try_with_sql(query)
-            .map_err(to_sql_interface_err)?
-            .parse_statements()
-            .map_err(to_sql_interface_err)?;
+        if self.can_defer(&stmt) {
+            return Ok(LazyFrame::from(self.defer_query(query, stmt)));
+        }
 
-        polars_ensure!(ast.len() == 1, SQLInterface: "one (and only one) statement can be parsed at a time");
-        let stmt = ast.first_mut().unwrap();
-        desugar_quantified_subqueries(stmt);
-        let res = self.execute_statement(stmt)?;
+        desugar_quantified_subqueries(&mut stmt);
+        let res = self.execute_statement(&stmt)?;
 
         // Ensure the result uses the proper arenas.
         // This will instantiate new arenas with a new version.
@@ -328,19 +329,85 @@ impl SQLContext {
         let expr_arena = std::mem::take(&mut self.expr_arena);
         res.set_cached_arena(lp_arena, expr_arena);
 
-        // Every execution should clear the statement-level maps.
+        self.clear_statement_state();
+        Ok(res)
+    }
+
+    /// Whether resolving `stmt` can be deferred to the DSL -> IR conversion.
+    ///
+    /// Neither a registered relation nor a user-defined function survives the round trip
+    /// through the DSL, so a statement that needs either runs eagerly.
+    fn can_defer(&self, stmt: &Statement) -> bool {
+        !self.custom_function_registry
+            && is_read_only_query(stmt)
+            && !statement_registers_table(stmt)
+    }
+
+    /// Build a [`DslPlan::SQL`] holding `query` and a snapshot of the relations it references.
+    ///
+    /// `stmt` is kept alongside so that resolving does not parse `query` again.
+    fn defer_query(&self, query: &str, mut stmt: Statement) -> DslPlan {
+        let relations = statement_table_identifiers(&stmt, false, true)
+            .into_iter()
+            .filter_map(|name| {
+                let lf = self.get_table_from_current_scope(&name)?;
+                Some((PlSmallStr::from_string(name), lf.logical_plan))
+            })
+            .collect();
+
+        desugar_quantified_subqueries(&mut stmt);
+        DslPlan::SQL {
+            query: Arc::new(query.to_owned()),
+            relations,
+            cached_stmt: CachedSqlStatement::new(Arc::new(stmt)),
+        }
+    }
+
+    /// Execute `query` eagerly against the given arenas, returning the resulting DSL.
+    ///
+    /// Resolves a [`DslPlan::SQL`] node. The caller's arenas are used so that input schemas
+    /// resolve into the arenas of the ongoing conversion. `cached` is the desugared statement
+    /// the node was built with, and `query` is only parsed when it is absent.
+    pub(crate) fn execute_with_arenas(
+        &mut self,
+        query: &str,
+        cached: Option<&Statement>,
+        lp_arena: &mut Arena<IR>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> PolarsResult<DslPlan> {
+        let parsed;
+        let stmt = match cached {
+            Some(stmt) => stmt,
+            None => {
+                let mut stmt = parse_single_statement(query)?;
+                desugar_quantified_subqueries(&mut stmt);
+                parsed = stmt;
+                &parsed
+            },
+        };
+
+        std::mem::swap(&mut self.lp_arena, lp_arena);
+        std::mem::swap(&mut self.expr_arena, expr_arena);
+        let res = self.execute_statement(stmt);
+        std::mem::swap(&mut self.lp_arena, lp_arena);
+        std::mem::swap(&mut self.expr_arena, expr_arena);
+
+        self.clear_statement_state();
+        Ok(res?.logical_plan)
+    }
+
+    fn clear_statement_state(&mut self) {
         self.cte_map.clear();
         self.table_aliases.clear();
         self.joined_aliases.clear();
         self.named_windows.clear();
-
-        Ok(res)
     }
 
     /// Add a function registry to the SQLContext.
     /// The registry provides the ability to add custom functions to the SQLContext.
     pub fn with_function_registry(mut self, function_registry: Arc<dyn FunctionRegistry>) -> Self {
         self.function_registry = function_registry;
+        self.custom_function_registry = true;
         self
     }
 
@@ -351,6 +418,7 @@ impl SQLContext {
 
     /// Get a mutable reference to the function registry of the SQLContext
     pub fn registry_mut(&mut self) -> &mut dyn FunctionRegistry {
+        self.custom_function_registry = true;
         Arc::get_mut(&mut self.function_registry).unwrap()
     }
 }
@@ -366,6 +434,7 @@ impl SQLContext {
             // Context-level; needs to remain visible in nested scopes.
             // (Note: shared by Arc, no need to deep-copy)
             function_registry: self.function_registry.clone(),
+            custom_function_registry: self.custom_function_registry,
 
             ..Default::default()
         }
@@ -409,29 +478,26 @@ impl SQLContext {
     /// Whether `name` may be used as a table qualifier. Nothing is known before
     /// a `FROM` is processed, so anything is allowed until then.
     pub(super) fn relation_in_scope(&self, name: &str) -> bool {
-        self.active_relations.is_empty() || self.active_relations.contains(name)
+        self.active_relations.is_empty()
+            || self.active_relations.contains(name)
+            || self
+                .active_relations
+                .iter()
+                .any(|relation| relation.eq_ignore_ascii_case(name))
     }
 
+    /// Resolve a relation innermost-scope-first: a `FROM` alias, then a CTE, then
+    /// a registered table.
     pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
-        // Resolve the table name in the current scope; multi-stage fallback
-        // * table name → cte name
-        // * table alias → cte alias
-        self.table_map
-            .read()
-            .unwrap()
-            .get(name)
+        get_ignoring_case(&self.table_aliases, name)
+            .and_then(|aliased| self.get_table_unaliased(aliased))
+            .or_else(|| self.get_table_unaliased(name))
+    }
+
+    fn get_table_unaliased(&self, name: &str) -> Option<LazyFrame> {
+        get_ignoring_case(&self.cte_map, name)
             .cloned()
-            .or_else(|| self.cte_map.get(name).cloned())
-            .or_else(|| {
-                self.table_aliases.get(name).and_then(|alias| {
-                    self.table_map
-                        .read()
-                        .unwrap()
-                        .get(alias.as_str())
-                        .or_else(|| self.cte_map.get(alias.as_str()))
-                        .cloned()
-                })
-            })
+            .or_else(|| get_ignoring_case(&self.table_map.read().unwrap(), name).cloned())
     }
 
     /// Execute a query in an isolated context. This prevents subqueries from mutating
@@ -548,7 +614,7 @@ impl SQLContext {
     }
 
     pub(super) fn resolve_name(&self, tbl_name: &str, column_name: &str) -> String {
-        if let Some(aliases) = self.joined_aliases.get(tbl_name) {
+        if let Some(aliases) = get_ignoring_case(&self.joined_aliases, tbl_name) {
             if let Some(name) = aliases.get(column_name) {
                 return name.to_string();
             }
@@ -1728,6 +1794,11 @@ impl SQLContext {
                                 Ok,
                             )
                         },
+                        // Drop the alias that restores the unqualified name, so two
+                        // relations sharing a column name give distinct keys.
+                        SQLExpr::CompoundIdentifier(_) => self
+                            .expr_or_ordinal(e, &projections, None, Some(&schema), "GROUP BY")
+                            .map(|e| strip_outer_alias(&e)),
                         _ => self.expr_or_ordinal(e, &projections, None, Some(&schema), "GROUP BY"),
                     })
                     .collect::<PolarsResult<_>>()?
@@ -1820,14 +1891,17 @@ impl SQLContext {
 
             // Apply the remaining modifiers and establish the final projection
             if have_order_by {
-                // We can safely use `with_columns()` and avoid a join if:
-                // * There is already a projection that projects to the table height.
-                // * All projection heights inherit from context (e.g. all scalar literals that
-                //   are to be broadcasted to table height).
-                if projection_heights.contains(ExprSqlProjectionHeightBehavior::MaintainsColumn)
+                if select_stmt.from.is_empty() || projections.is_empty() {
+                    lf = lf.select(projections);
+                } else if projection_heights
+                    .contains(ExprSqlProjectionHeightBehavior::MaintainsColumn)
                     || projection_heights == ExprSqlProjectionHeightBehavior::InheritsContext
                 {
-                    lf = lf.with_columns(projections);
+                    // We can safely use `with_columns()` and avoid a join if:
+                    // * There is already a projection that projects to the table height.
+                    // * All projection heights inherit from context (e.g. all scalar literals that
+                    //   are to be broadcasted to table height).
+                    lf = lf.with_columns(projections)
                 } else {
                     // We hit this branch if the output height is not guaranteed to match the table
                     // height. E.g.:
@@ -1873,6 +1947,8 @@ impl SQLContext {
             // Note: If `have_order_by`, with_columns is already done above.
             if projection_heights == ExprSqlProjectionHeightBehavior::InheritsContext
                 && !have_order_by
+                && !select_stmt.from.is_empty()
+                && !retained_cols.is_empty()
             {
                 // All projections need to be broadcasted to table height, so evaluate in `with_columns()`
                 lf = lf.with_columns(retained_cols).select(retained_names);
@@ -1892,10 +1968,16 @@ impl SQLContext {
                 .as_deref()
                 .map(|expr| parse_sql_expr(expr, self, Some(&schema)))
                 .transpose()?;
-            let disambiguated_projections;
-            (lf, disambiguated_projections) =
-                self.process_group_by(lf, &group_by_keys, projections, &explicit_aliases, having)?;
-            lf = self.process_order_by(lf, &query.order_by, None)?;
+            let (disambiguated_projections, order_by);
+            (lf, disambiguated_projections, order_by) = self.process_group_by(
+                lf,
+                &group_by_keys,
+                projections,
+                &explicit_aliases,
+                having,
+                &query.order_by,
+            )?;
+            lf = self.process_order_by(lf, &order_by, None)?;
 
             // Drop any extra columns (eg: added to maintain ORDER BY access to original cols)
             let output_cols: Vec<_> = disambiguated_projections
@@ -2123,12 +2205,18 @@ impl SQLContext {
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
-            (lf, _) =
+            let mut placeholders;
+            (lf, placeholders) =
                 self.process_subqueries(lf, vec![&mut filter_expression], SubqueryShape::Scalar)?;
             lf = match filter_mode {
                 FilterMode::KeepTrue => lf.filter(filter_expression),
                 FilterMode::RemoveTrue => lf.remove(filter_expression),
             };
+
+            // Flag and placeholder columns exist only for the filter above. A SELECT
+            // projects them away afterwards, but a DELETE returns this frame as-is.
+            placeholders.extend(bindings.into_iter().map(|(_, _, name)| name));
+            lf = drop_subquery_placeholders(lf, placeholders);
         }
         Ok(lf)
     }
@@ -2202,6 +2290,8 @@ impl SQLContext {
                 let r_suffixed = suffix_conflicting_columns(r, tbl_left, tbl_right, &suffix);
                 all_predicates.push(l.eq(r_suffixed));
             }
+            let all_predicates: Vec<Expr> =
+                all_predicates.into_iter().map(strip_join_aliases).collect();
             tbl_left
                 .frame
                 .clone()
@@ -2258,13 +2348,27 @@ impl SQLContext {
         // disconnected relations fall through to a cross join, in source order.
         while !pending.is_empty() {
             let left_schema = self.get_frame_schema(lf)?;
-            let next = pending
+            // Relations each pending entry brings into scope.
+            let pending_relations: Vec<PlHashSet<String>> = pending
                 .iter()
-                .position(|(_, _, r_name, right_schema)| {
+                .map(|(tbl_expr, ..)| declared_relations(std::slice::from_ref(*tbl_expr)))
+                .collect();
+            let deferred_tables = |skip: usize| -> Vec<String> {
+                pending_relations
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| *i != skip)
+                    .flat_map(|(_, names)| names.iter().cloned())
+                    .collect()
+            };
+            let next = (0..pending.len())
+                .find(|&i| {
+                    let (_, _, r_name, right_schema) = &pending[i];
                     extract_join_predicates(
                         &remaining_where,
                         &joined_table_names,
                         r_name,
+                        &deferred_tables(i),
                         &left_schema,
                         right_schema,
                     )
@@ -2272,11 +2376,13 @@ impl SQLContext {
                     .is_some()
                 })
                 .unwrap_or(0);
+            let deferred = deferred_tables(next);
             let (tbl_expr, rf, r_name, right_schema) = pending.remove(next);
             let (join_expr, residual) = extract_join_predicates(
                 &remaining_where,
                 &joined_table_names,
                 &r_name,
+                &deferred,
                 &left_schema,
                 &right_schema,
             );
@@ -2753,6 +2859,48 @@ impl SQLContext {
         Ok(drop_subquery_placeholders(sorted, subquery_names))
     }
 
+    /// Point every aggregate restated in `ORDER BY` at the column that holds it.
+    ///
+    /// One the `SELECT` list already computes is reached by its output name;
+    /// any other is returned for the `GROUP BY` to add.
+    fn resolve_order_by_aggregates(
+        &mut self,
+        order_by: &Option<OrderBy>,
+        projections: &[Expr],
+        schema: &Schema,
+    ) -> PolarsResult<ResolvedOrderBy> {
+        let mut clause = order_by.clone();
+        let mut extra: Vec<(PlSmallStr, Expr)> = Vec::new();
+
+        if let Some(OrderBy {
+            kind: OrderByKind::Expressions(exprs),
+            ..
+        }) = &mut clause
+        {
+            for ob in exprs {
+                // Anything without an aggregate already resolves against the
+                // aggregated frame.
+                let Ok(parsed) = parse_sql_expr(&ob.expr, self, Some(schema)) else {
+                    continue;
+                };
+                if !has_expr(&parsed, |e| matches!(e, Expr::Agg(_) | Expr::Len)) {
+                    continue;
+                }
+                let parsed = strip_outer_alias(&parsed);
+                let name = match projections.iter().find(|p| strip_outer_alias(p) == parsed) {
+                    Some(projection) => projection.to_field(schema)?.name,
+                    None => {
+                        let name = format_pl_smallstr!("__POLARS_ORDERAGG_{}", extra.len());
+                        extra.push((name.clone(), parsed.alias(name.clone())));
+                        name
+                    },
+                };
+                ob.expr = SQLExpr::Identifier(Ident::new(name.as_str()));
+            }
+        }
+        Ok((clause, extra))
+    }
+
     fn process_group_by(
         &mut self,
         mut lf: LazyFrame,
@@ -2760,7 +2908,8 @@ impl SQLContext {
         projections: Vec<Expr>,
         explicit_aliases: &[bool],
         having: Option<Expr>,
-    ) -> PolarsResult<(LazyFrame, Vec<Expr>)> {
+        order_by: &Option<OrderBy>,
+    ) -> PolarsResult<(LazyFrame, Vec<Expr>, Option<OrderBy>)> {
         let schema_before = self.get_frame_schema(&mut lf)?;
         let group_by_keys_schema =
             expressions_to_schema(group_by_keys, &schema_before, |duplicate_name: &str| {
@@ -2775,6 +2924,8 @@ impl SQLContext {
                 .collect(),
             &schema_before,
         )?;
+        let (order_by, order_by_aggs) =
+            self.resolve_order_by_aggregates(order_by, &projections, &schema_before)?;
 
         let projections: Vec<Expr> = projections
             .into_iter()
@@ -2784,6 +2935,8 @@ impl SQLContext {
         // Note: remove the `group_by` keys as Polars adds those implicitly.
         let mut aliased_aggregations: PlHashMap<PlSmallStr, PlSmallStr> = PlHashMap::new();
         let mut aggregation_projection = Vec::with_capacity(projections.len());
+        let mut window_projection: Vec<Expr> = Vec::new();
+        let mut window_agg_count: usize = 0;
         let mut projection_overrides = PlHashMap::with_capacity(projections.len());
         let mut projection_aliases = PlHashSet::new();
         let mut group_key_aliases = PlHashSet::new();
@@ -2838,6 +2991,18 @@ impl SQLContext {
             }
             let field = e_inner.to_field(&schema_before)?;
             if is_non_group_key_expr {
+                // Window functions run on the aggregated frame; only the aggregates
+                // inside them run in the group context.
+                if has_expr(e, |e| matches!(e, Expr::Over { .. })) {
+                    let window_expr = hoist_group_aggregates(
+                        strip_outer_alias(e),
+                        &schema_before,
+                        &mut aggregation_projection,
+                        &mut window_agg_count,
+                    );
+                    window_projection.push(window_expr.alias(field.name.clone()));
+                    continue;
+                }
                 let mut e = e.clone();
                 if let Expr::Agg(AggExpr::Implode {
                     input: expr,
@@ -2898,12 +3063,20 @@ impl SQLContext {
             None => (lf, None),
         };
 
+        aggregation_projection.extend(order_by_aggs.iter().map(|(_, e)| e.clone()));
+
         let group_by = lf.group_by(group_by_keys);
         let aggregated = match having {
             Some(having) => group_by.having(having),
             None => group_by,
         }
         .agg(&aggregation_projection);
+
+        let aggregated = if window_projection.is_empty() {
+            aggregated
+        } else {
+            aggregated.with_columns(&window_projection)
+        };
 
         let projection_schema =
             expressions_to_schema(&projections, &schema_before, |duplicate_name: &str| {
@@ -2947,6 +3120,9 @@ impl SQLContext {
 
         // Include original GROUP BY columns for ORDER BY access (if aliased).
         let mut output_projection = final_projection;
+        for (name, _) in &order_by_aggs {
+            output_projection.push(col(name.clone()));
+        }
         for key_name in group_by_keys_schema.iter_names() {
             if !projection_schema.contains(key_name) {
                 // Original col name not in output - add for ORDER BY access
@@ -2964,7 +3140,11 @@ impl SQLContext {
                 }
             }
         }
-        Ok((aggregated.select(&output_projection), projections.clone()))
+        Ok((
+            aggregated.select(&output_projection),
+            projections.clone(),
+            order_by,
+        ))
     }
 
     fn process_limit_offset(
@@ -3232,6 +3412,15 @@ fn get_using_cols(op: &JoinOperator) -> Option<impl Iterator<Item = String> + '_
     }
 }
 
+/// Look up a relation name, falling back to a case-insensitive match.
+fn get_ignoring_case<'a, V>(map: &'a PlHashMap<String, V>, name: &str) -> Option<&'a V> {
+    map.get(name).or_else(|| {
+        map.iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value)
+    })
+}
+
 /// Prefix for the internal outer columns produced by correlated-subquery decorrelation.
 pub(crate) const CORRELATED_COL_PREFIX: &str = "__POLARS_CORR_";
 
@@ -3300,6 +3489,14 @@ fn reject_unresolved_subquery(expr: &Expr, clause: &str) -> PolarsResult<()> {
 }
 
 /// Strip the outer alias from an expression (if present) for expression equality comparison.
+/// Remove every alias, so a join key or predicate names the underlying column.
+fn strip_join_aliases(expr: Expr) -> Expr {
+    expr.map_expr(|e| match e {
+        Expr::Alias(inner, _) => Arc::unwrap_or_clone(inner),
+        e => e,
+    })
+}
+
 fn strip_outer_alias(expr: &Expr) -> Expr {
     if let Expr::Alias(inner, _) = expr {
         inner.as_ref().clone()
@@ -3386,13 +3583,16 @@ fn expr_cols_all_in_schema(expr: &Expr, schema: &Schema) -> bool {
     found_cols && all_in_schema
 }
 
-/// Determine which parsed join expressions actually belong in `left_om` and which in `right_on`.
+/// Determine which parsed join expressions actually belong in `left_on` and which in `right_on`.
 ///
 /// This needs to be handled carefully because in SQL joins you can write "join on" constraints
 /// either way round, and in joins with more than two tables you can also join against an earlier
 /// table (e.g.: you could be joining `df1` to `df2` to `df3`, but the final join condition where
-/// we join `df2` to `df3` could refer to `df1.a = df3.b`; this takes a little more work to
+/// we join `df2` to `df3` could refer to `df1.a = df3.b`); this takes a little more work to
 /// resolve as our native `join` function operates on only two tables at a time.
+///
+/// An operand can also be constant (`ON df1.x = df2.x AND df2.flag = 'y'`), in which case it has
+/// no table of its own and takes whichever side the other operand does not.
 fn determine_left_right_join_on(
     ctx: &mut SQLContext,
     expr_left: &SQLExpr,
@@ -3403,14 +3603,15 @@ fn determine_left_right_join_on(
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     // parse, removing any aliases that may have been added by `resolve_column`
     // (called inside `parse_sql_expr`) as we need the actual/underlying col
-    let left_on = match parse_sql_expr(expr_left, ctx, Some(join_schema))? {
-        Expr::Alias(inner, _) => Arc::unwrap_or_clone(inner),
-        e => e,
-    };
-    let right_on = match parse_sql_expr(expr_right, ctx, Some(join_schema))? {
-        Expr::Alias(inner, _) => Arc::unwrap_or_clone(inner),
-        e => e,
-    };
+    let left_on = strip_join_aliases(parse_sql_expr(expr_left, ctx, Some(join_schema))?);
+    let right_on = strip_join_aliases(parse_sql_expr(expr_right, ctx, Some(join_schema))?);
+
+    // a constant operand is a literal, or any other expression referencing no column (such as
+    // `UPPER('it')`); it can be evaluated against either input, so it has no table affinity
+    let (left_is_const, right_is_const) = (
+        !expr_references_any_column(expr_left),
+        !expr_references_any_column(expr_right),
+    );
 
     // ------------------------------------------------------------------
     // simple/typical case: can fully resolve SQL-level table references
@@ -3429,6 +3630,13 @@ fn determine_left_right_join_on(
         ((true, false), (false, true)) => return Ok((vec![left_on], vec![right_on])),
         // reversed: left expr → right table, right expr → left table
         ((false, true), (true, false)) => return Ok((vec![right_on], vec![left_on])),
+        // qualified column vs constant: the qualifier alone settles it (note that this also
+        // covers a column name that is present in *both* schemas, which schema-based
+        // resolution below cannot disambiguate)
+        ((true, false), _) if right_is_const => return Ok((vec![left_on], vec![right_on])),
+        ((false, true), _) if right_is_const => return Ok((vec![right_on], vec![left_on])),
+        (_, (false, true)) if left_is_const => return Ok((vec![left_on], vec![right_on])),
+        (_, (true, false)) if left_is_const => return Ok((vec![right_on], vec![left_on])),
         // unsupported: one side references *both* tables
         ((true, true), _) | (_, (true, true)) if tbl_left.name != tbl_right.name => {
             polars_bail!(
@@ -3448,19 +3656,27 @@ fn determine_left_right_join_on(
     // more involved: additionally employ schema-based column resolution
     // (applies to unqualified columns and/or chained joins)
     // ------------------------------------------------------------------
-    let left_on_cols_in = (
-        expr_cols_all_in_schema(&left_on, &tbl_left.schema),
-        expr_cols_all_in_schema(&left_on, &tbl_right.schema),
-    );
-    let right_on_cols_in = (
-        expr_cols_all_in_schema(&right_on, &tbl_left.schema),
-        expr_cols_all_in_schema(&right_on, &tbl_right.schema),
-    );
+    // a constant resolves against either schema, so we report it as belonging to both and let
+    // the arms below take the side that the other (schema-unique) operand leaves free
+    let cols_in_schemas = |expr: &Expr, is_const: bool| {
+        if is_const {
+            (true, true)
+        } else {
+            (
+                expr_cols_all_in_schema(expr, &tbl_left.schema),
+                expr_cols_all_in_schema(expr, &tbl_right.schema),
+            )
+        }
+    };
+    let left_on_cols_in = cols_in_schemas(&left_on, left_is_const);
+    let right_on_cols_in = cols_in_schemas(&right_on, right_is_const);
+
     match (left_on_cols_in, right_on_cols_in) {
         // each expression's columns exist in exactly one schema
         ((true, false), (false, true)) => Ok((vec![left_on], vec![right_on])),
         ((false, true), (true, false)) => Ok((vec![right_on], vec![left_on])),
-        // one expression in both, other only in one; prefer the unique one
+        // one expression is in both schemas (or is constant) and the other in only one;
+        // the unique one decides, and the ambiguous one takes the remaining side
         ((true, true), (true, false)) => Ok((vec![right_on], vec![left_on])),
         ((true, true), (false, true)) => Ok((vec![left_on], vec![right_on])),
         ((true, false), (true, true)) => Ok((vec![left_on], vec![right_on])),
@@ -3555,6 +3771,41 @@ fn process_join_on(
             SQLInterface: "unsupported join constraint expression: {:?}", sql_expr
         ),
     }
+}
+
+/// Replace aggregates over pre-aggregation columns with references to hoisted
+/// aggregation outputs, collecting the hoisted aggregates into `agg_out`.
+///
+/// In `avg(sum(x)) OVER (...)`, `sum(x)` is hoisted and `avg(...) OVER (...)` is
+/// left to run on the aggregated frame.
+fn hoist_group_aggregates(
+    expr: Expr,
+    schema_before: &Schema,
+    agg_out: &mut Vec<Expr>,
+    counter: &mut usize,
+) -> Expr {
+    expr.map_expr(|e| match e {
+        e if matches!(e, Expr::Agg(_))
+            && has_expr(
+                &e,
+                |inner| matches!(inner, Expr::Column(name) if schema_before.contains(name)),
+            ) =>
+        {
+            // An identical aggregate may appear in both the window body and its ORDER BY.
+            let existing = agg_out.iter().find_map(|agg| match agg {
+                Expr::Alias(inner, name) if **inner == e => Some(name.clone()),
+                _ => None,
+            });
+            let name = existing.unwrap_or_else(|| {
+                let name = format_pl_smallstr!("__POLARS_WINAGG_{}", *counter);
+                *counter += 1;
+                agg_out.push(e.clone().alias(name.clone()));
+                name
+            });
+            col(name)
+        },
+        e => e,
+    })
 }
 
 /// Whether `expr` reduces a group to a scalar; shared by SELECT-projection
@@ -3719,12 +3970,16 @@ fn flatten_and_conditions(expr: &SQLExpr) -> Vec<&SQLExpr> {
 }
 
 /// Reconstruct a SQL AND-expression tree from a list of conditions.
-fn combine_and_conditions(conditions: Vec<SQLExpr>) -> Option<SQLExpr> {
+/// Fold `conditions` into a single expression joined by `op`; `None` if empty.
+pub(crate) fn combine_conditions(
+    conditions: Vec<SQLExpr>,
+    op: SQLBinaryOperator,
+) -> Option<SQLExpr> {
     conditions
         .into_iter()
         .reduce(|left, right| SQLExpr::BinaryOp {
             left: Box::new(left),
-            op: SQLBinaryOperator::And,
+            op: op.clone(),
             right: Box::new(right),
         })
 }
@@ -3737,9 +3992,22 @@ fn is_join_comparison(
     expr: &SQLExpr,
     left_tables: &[String],
     right_table: &str,
+    deferred_tables: &[String],
     left_schema: &Schema,
     right_schema: &Schema,
 ) -> bool {
+    // A condition naming a relation joined in a later round stays in the
+    // residual WHERE until that relation is present.
+    if deferred_tables
+        .iter()
+        .any(|table| expr_refers_to_table(expr, table.as_str()))
+    {
+        return false;
+    }
+    // A subquery is not a join key; its correlated columns name outer relations.
+    if expr_contains_subquery(expr) {
+        return false;
+    }
     if let SQLExpr::BinaryOp {
         left,
         op:
@@ -3769,8 +4037,10 @@ fn is_join_comparison(
         let (left_is_right, left_is_left) = operand_side(left);
         let (right_is_right, right_is_left) = operand_side(right);
 
-        // One side references a left table, the other references the right table
-        (left_is_right && right_is_left) || (right_is_right && left_is_left)
+        // One operand must name only a left table and the other only the right one;
+        // an operand spanning both stays a filter, as it belongs to neither side.
+        (left_is_right && !left_is_left && right_is_left && !right_is_right)
+            || (right_is_right && !right_is_left && left_is_left && !left_is_right)
     } else {
         false
     }
@@ -3782,6 +4052,7 @@ fn extract_join_predicates(
     where_expr: &Option<SQLExpr>,
     left_tables: &[String],
     right_table: &str,
+    deferred_tables: &[String],
     left_schema: &Schema,
     right_schema: &Schema,
 ) -> (Option<SQLExpr>, Option<SQLExpr>) {
@@ -3792,15 +4063,22 @@ fn extract_join_predicates(
     let mut join_conds = Vec::new();
     let mut filter_conds = Vec::new();
     for cond in conditions {
-        if is_join_comparison(cond, left_tables, right_table, left_schema, right_schema) {
+        if is_join_comparison(
+            cond,
+            left_tables,
+            right_table,
+            deferred_tables,
+            left_schema,
+            right_schema,
+        ) {
             join_conds.push(cond.clone());
         } else {
             filter_conds.push(cond.clone());
         }
     }
     (
-        combine_and_conditions(join_conds),
-        combine_and_conditions(filter_conds),
+        combine_conditions(join_conds, SQLBinaryOperator::And),
+        combine_conditions(filter_conds, SQLBinaryOperator::And),
     )
 }
 
@@ -3812,25 +4090,34 @@ pub fn extract_table_identifiers(
     include_schema: bool,
     unique: bool,
 ) -> PolarsResult<Vec<String>> {
-    let mut parser = Parser::new(&GenericDialect);
-    parser = parser.with_options(ParserOptions {
-        trailing_commas: true,
-        ..Default::default()
-    });
-    let ast = parser
-        .try_with_sql(query)
-        .map_err(to_sql_interface_err)?
-        .parse_statements()
-        .map_err(to_sql_interface_err)?;
+    let ast = parse_sql(query)?;
+    let mut tables = Vec::new();
+    for stmt in &ast {
+        tables.extend(statement_table_identifiers(stmt, include_schema, false));
+    }
+    Ok(if unique {
+        tables
+            .into_iter()
+            .collect::<PlIndexSet<_>>()
+            .into_iter()
+            .collect()
+    } else {
+        tables
+    })
+}
 
+/// Table identifiers referenced by a single parsed statement.
+fn statement_table_identifiers(
+    stmt: &Statement,
+    include_schema: bool,
+    unique: bool,
+) -> Vec<String> {
     let mut collector = TableIdentifierCollector {
         include_schema,
         ..Default::default()
     };
-    for stmt in &ast {
-        let _ = stmt.visit(&mut collector);
-    }
-    Ok(if unique {
+    let _ = stmt.visit(&mut collector);
+    if unique {
         collector
             .tables
             .into_iter()
@@ -3839,7 +4126,36 @@ pub fn extract_table_identifiers(
             .collect()
     } else {
         collector.tables
-    })
+    }
+}
+
+/// Whether `stmt` is a query that only reads; `INSERT`/`UPDATE` bodies write to the context.
+fn is_read_only_query(stmt: &Statement) -> bool {
+    match stmt {
+        Statement::Query(query) => {
+            !matches!(query.body.as_ref(), SetExpr::Insert(_) | SetExpr::Update(_))
+        },
+        _ => false,
+    }
+}
+
+fn parse_single_statement(query: &str) -> PolarsResult<Statement> {
+    let ast = parse_sql(query)?;
+    polars_ensure!(ast.len() == 1, SQLInterface: "one (and only one) statement can be parsed at a time");
+    Ok(ast.into_iter().next().unwrap())
+}
+
+fn parse_sql(query: &str) -> PolarsResult<Vec<Statement>> {
+    let mut parser = Parser::new(&GenericDialect);
+    parser = parser.with_options(ParserOptions {
+        trailing_commas: true,
+        ..Default::default()
+    });
+    parser
+        .try_with_sql(query)
+        .map_err(to_sql_interface_err)?
+        .parse_statements()
+        .map_err(to_sql_interface_err)
 }
 
 bitflags::bitflags! {

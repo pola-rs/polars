@@ -10,7 +10,12 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
 import polars._reexport as pl
 import polars.datatypes
-import polars.functions as F
+from polars._utils.expired import (
+    RemovedParameter,
+    getattr_fallback,
+    raise_for_removed_attributes,
+    removed_parameters,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars._plr as plr
@@ -31,7 +36,6 @@ if TYPE_CHECKING:
 
     from polars import Series
     from polars._typing import (
-        CategoricalOrdering,
         PolarsDataType,
         PythonDataType,
         SchemaDict,
@@ -740,8 +744,8 @@ class Categories:
     a `Series` or `DataFrame`), the mapping is cleaned up by Polars:
 
         >>> del s
-        >>> print(fruit["apple"])
-        None
+        >>> "apple" in fruit
+        False
 
     If you wish to keep a persistent mapping, simply keep alive some object which
     uses the mapping, e.g. `keepalive = pl.Series([], dtype=pl.Categorical(fruit))`.
@@ -836,16 +840,16 @@ class Categories:
         """Returns whether this refers to the global categories."""
         return self._categories.is_global()
 
-    def __getitem__(self, key: str | int | None) -> str | int | None:
-        # TODO: In 2.0, this should raise KeyError instead of returning if key is a str.
-        # and an IndexError should be raised if the int key is larger than self.len().
-        # TODO: In 2.0, this should raise TypeError instead of returning if key is None.
-        if key is None:
-            return key
-        elif isinstance(key, str):
-            return self._categories.get_cat(key)
+    def __getitem__(self, key: str | int) -> str | int:
+        if isinstance(key, str):
+            if (cat := self._categories.get_cat(key)) is None:
+                raise KeyError(key)
+            return cat
         elif isinstance(key, int):
-            return self._categories.cat_to_str(key)
+            if (s := self._categories.cat_to_str(key)) is None:
+                msg = f"category index out of range: {key}"
+                raise IndexError(msg)
+            return s
         else:
             msg = f"invalid key type {type(key)}; expected str or int"
             raise TypeError(msg)
@@ -938,56 +942,20 @@ class Categorical(DataType):
         :py:class:`Categories`. If not provided, the global categories
         (`pl.Categories()`) are used.
 
-        For legacy reasons if the string is either `"physical"` or `"lexical"`,
-        it is ignored and a warning is issued. If you wish to use a `Categories`
-        named `"physical"` or `"lexical"`, please pass it using
-        :py:class:`Categories` explicitly.
-
-    ordering : {'lexical', 'physical'}
-        This used to specify how this type was ordered, but now does nothing.
-
-        .. deprecated:: 1.32.0
-            Parameter is now ignored. Always behaves as if `'lexical'` was passed.
-
     See Also
     --------
     Categories
     """
 
-    ordering: CategoricalOrdering | None
     categories: Categories
 
     def __init__(
         self,
         categories: Categories | str | None = None,
-        *,
-        ordering: CategoricalOrdering | None = None,
     ) -> None:
-        # Because we supported the positional 'ordering' arg in the past, we
-        # need to check for this in the categories argument.
         if isinstance(categories, str):
-            if categories == "physical" or categories == "lexical":
-                from polars._utils.deprecation import issue_deprecation_warning
-
-                msg = (
-                    "the ordering parameter on Categorical is deprecated. The ordering is now always lexical."
-                    "\n\nIf you meant to use a Categories named 'physical' or 'lexical', pass it using pl.Categories('physical') or pl.Categories('lexical')."
-                )
-                issue_deprecation_warning(msg, version="1.32.0")
-                categories = Categories()
-            else:
-                categories = Categories(name=categories)
-
-        if ordering is not None:
-            from polars._utils.deprecation import issue_deprecation_warning
-
-            issue_deprecation_warning(
-                "the ordering parameter on Categorical is deprecated. The ordering is now always lexical.",
-                version="1.32.0",
-            )
-
-        self.ordering = "lexical"
-        if categories is None:
+            self.categories = Categories(name=categories)
+        elif categories is None:
             self.categories = Categories()
         else:
             self.categories = categories
@@ -1087,26 +1055,19 @@ class Enum(DataType):
         class_name = self.__class__.__name__
         return f"{class_name}(categories={self.categories.to_list()!r})"
 
-    def union(self, other: Enum) -> Enum:
-        """
-        Union of two Enums.
+    if not TYPE_CHECKING:
 
-        .. deprecated:: 1.38
-            `Enum.union()` is deprecated and will be removed in version 2.0.
-            Enums are ordered sets and union cannot preserve both orderings.
-        """
-        from polars._utils.deprecation import issue_deprecation_warning
-
-        issue_deprecation_warning(
-            "`Enum.union()` is deprecated and will be removed in version 2.0. "
-            "Enums are ordered sets and union cannot preserve both orderings.",
-            version="1.38",
-        )
-        return Enum(
-            F.concat((self.categories, other.categories)).unique(maintain_order=True)
-        )
-
-    __or__ = union
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "union": "construct the combined `Enum` explicitly, e.g."
+                    " `pl.Enum([*lhs.categories, *rhs.categories])`.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
 
 
 class Object(ObjectType):
@@ -1178,6 +1139,64 @@ class List(NestedType):
         return f"{class_name}({self.inner!r})"
 
 
+class Map(NestedType):
+    """
+    Key-value mapping type.
+
+    Keys are unique within a row and never null. Entry order is preserved and
+    participates in equality and hashing.
+
+    Duplicate keys are resolved when a map is built, keeping the first position and the
+    last value.
+
+    Parameters
+    ----------
+    key
+        The `DataType` of the keys. Must be row-encodable, so `Object` is not allowed.
+
+        A nested key dtype is accepted by Polars but has no Python representation.
+    value
+        The `DataType` of the values.
+
+    Examples
+    --------
+    >>> s = pl.Series("a", [{"x": 1, "y": 2}], dtype=pl.Map(pl.String, pl.Int64))
+    >>> s
+    shape: (1,)
+    Series: 'a' [map[str, i64]]
+    [
+            {"x": 1, "y": 2}
+    ]
+    """
+
+    key: PolarsDataType
+    value: PolarsDataType
+
+    def __init__(
+        self,
+        key: PolarsDataType | PythonDataType,
+        value: PolarsDataType | PythonDataType,
+    ) -> None:
+        self.key = polars.datatypes.parse_into_dtype(key)
+        self.value = polars.datatypes.parse_into_dtype(value)
+
+    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
+        # Bare dtype classes act as wildcards throughout the dtype API.
+        if type(other) is DataTypeClass and issubclass(other, Map):
+            return True
+        elif isinstance(other, Map):
+            return self.key == other.key and self.value == other.value
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash((self.__class__, self.key, self.value))
+
+    def __repr__(self) -> str:
+        class_name = self.__class__.__name__
+        return f"{class_name}({self.key!r}, {self.value!r})"
+
+
 class Array(NestedType):
     """
     Fixed length list type.
@@ -1191,8 +1210,8 @@ class Array(NestedType):
     width
         The length of the arrays.
 
-        .. deprecated:: 0.20.31
-            The `width` parameter for `Array` is deprecated. Use `shape` instead.
+        .. versionchanged:: 0.20.31
+            The `width` parameter for `Array` has been removed. Use `shape` instead.
 
     Examples
     --------
@@ -1210,22 +1229,20 @@ class Array(NestedType):
     size: int
     shape: tuple[int, ...]
 
+    @removed_parameters(
+        RemovedParameter(
+            name="width",
+            deprecated_in="0.20.31",
+            removed_in="2.0",
+            hint="use `shape` instead.",
+        )
+    )
     def __init__(
         self,
         inner: PolarsDataType | PythonDataType,
         shape: int | tuple[int, ...] | None = None,
-        *,
-        width: int | None = None,
     ) -> None:
-        if width is not None:
-            from polars._utils.deprecation import issue_deprecation_warning
-
-            issue_deprecation_warning(
-                "the `width` parameter for `Array` is deprecated. Use `shape` instead.",
-                version="0.20.31",
-            )
-            shape = width
-        elif shape is None:
+        if shape is None:
             msg = "Array constructor is missing the required argument `shape`"
             raise TypeError(msg)
 
@@ -1279,16 +1296,13 @@ class Array(NestedType):
         class_name = self.__class__.__name__
         return f"{class_name}({dtype!r}, shape={self.shape})"
 
-    @property
-    def width(self) -> int:
-        """The size of the Array."""
-        from polars._utils.deprecation import issue_deprecation_warning
+    if not TYPE_CHECKING:
 
-        issue_deprecation_warning(
-            "the `width` attribute for `Array` is deprecated. Use `size` instead.",
-            version="0.20.31",
-        )
-        return self.size
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self, name, {"width": "use `size` instead."}, version="2.0"
+            )
+            return getattr_fallback(self, super(), name)
 
 
 class Field:

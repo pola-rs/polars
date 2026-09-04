@@ -77,6 +77,7 @@ __all__ = [
     "is_selector",
     "last",
     "list",
+    "map",
     "matches",
     "nested",
     "numeric",
@@ -378,6 +379,8 @@ class Selector(Expr):
                     selectors += [array()]
                 elif dt is pldt.Struct:
                     selectors += [struct()]
+                elif dt is pldt.Map:
+                    selectors += [map()]
                 elif dt is pldt.Decimal:
                     selectors += [decimal()]
                 else:
@@ -471,9 +474,6 @@ class Selector(Expr):
     def __and__(self, other: Any) -> Expr: ...
 
     def __and__(self, other: Any) -> Selector | Expr:
-        if is_column(other):  # @2.0: remove
-            colname = other.meta.output_name()
-            other = by_name(colname)
         if is_selector(other):
             return Selector._from_pyselector(
                 PySelector.intersect(self._pyselector, other._pyselector)
@@ -491,8 +491,6 @@ class Selector(Expr):
     def __or__(self, other: Any) -> Expr: ...
 
     def __or__(self, other: Any) -> Selector | Expr:
-        if is_column(other):  # @2.0: remove
-            other = by_name(other.meta.output_name())
         if is_selector(other):
             return Selector._from_pyselector(
                 PySelector.union(self._pyselector, other._pyselector)
@@ -501,8 +499,6 @@ class Selector(Expr):
             return self.as_expr().__or__(other)
 
     def __ror__(self, other: Any) -> Expr:
-        if is_column(other):
-            other = by_name(other.meta.output_name())
         return self.as_expr().__ror__(other)
 
     @overload
@@ -530,8 +526,6 @@ class Selector(Expr):
     def __xor__(self, other: Any) -> Expr: ...
 
     def __xor__(self, other: Any) -> Selector | Expr:
-        if is_column(other):  # @2.0: remove
-            other = by_name(other.meta.output_name())
         if is_selector(other):
             return Selector._from_pyselector(
                 PySelector.exclusive_or(self._pyselector, other._pyselector)
@@ -540,8 +534,6 @@ class Selector(Expr):
             return self.as_expr().__xor__(other)
 
     def __rxor__(self, other: Any) -> Expr:
-        if is_column(other):  # @2.0: remove
-            other = by_name(other.meta.output_name())
         return self.as_expr().__rxor__(other)
 
     def exclude(
@@ -1593,6 +1585,63 @@ def struct() -> Selector:
     └─────┴─────┘
     """
     return Selector._from_pyselector(PySelector.struct_())
+
+
+@unstable()
+def map() -> Selector:
+    """
+    Select all map columns.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    list : Select all list columns.
+    struct : Select all struct columns.
+    nested : Select all nested columns.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": pl.Series(
+    ...             [{"a": 1}, {"b": 2}], dtype=pl.Map(pl.String, pl.Int64)
+    ...         ),
+    ...         "bar": [123, 456],
+    ...     },
+    ... )
+
+    Select all map columns:
+
+    >>> df.select(cs.map())
+    shape: (2, 1)
+    ┌───────────────┐
+    │ foo           │
+    │ ---           │
+    │ map[str, i64] │
+    ╞═══════════════╡
+    │ {"a": 1}      │
+    │ {"b": 2}      │
+    └───────────────┘
+
+    Select all columns *except* for those that are maps:
+
+    >>> df.select(~cs.map())
+    shape: (2, 1)
+    ┌─────┐
+    │ bar │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 123 │
+    │ 456 │
+    └─────┘
+    """
+    return Selector._from_pyselector(PySelector.map())
 
 
 @unstable()

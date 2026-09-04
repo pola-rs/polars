@@ -9,6 +9,8 @@ pub use datatype_fn::*;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
+#[cfg(feature = "serde")]
+use polars_error::to_compute_err;
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -49,7 +51,6 @@ pub enum AggExpr {
         include_nulls: bool,
     },
     Sum(Arc<Expr>),
-    AggGroups(Arc<Expr>),
     Std(Arc<Expr>, u8),
     Var(Arc<Expr>, u8),
 }
@@ -431,6 +432,35 @@ impl Default for Expr {
 pub enum Excluded {
     Name(PlSmallStr),
     Dtype(DataType),
+}
+
+#[cfg(feature = "serde")]
+impl Expr {
+    /// Serialize with the self-describing (forward compatible) format.
+    pub fn serialize_binary_into(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
+        polars_utils::pl_serialize::serialize_into_writer::<_, _, true>(writer, self)
+    }
+
+    pub fn deserialize_binary_from(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
+        polars_utils::pl_serialize::deserialize_from_reader::<_, _, true>(reader)
+    }
+
+    /// Serialize with the compact format, not portable.
+    pub fn serialize_compact_into(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
+        polars_utils::pl_serialize::serialize_into_writer::<_, _, false>(writer, self)
+    }
+
+    pub fn deserialize_compact_from(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
+        polars_utils::pl_serialize::deserialize_from_reader::<_, _, false>(reader)
+    }
+
+    pub fn serialize_json_into(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
+        serde_json::to_writer(writer, self).map_err(to_compute_err)
+    }
+
+    pub fn deserialize_json_from_str(json: &str) -> PolarsResult<Self> {
+        serde_json::from_str(json).map_err(to_compute_err)
+    }
 }
 
 impl Expr {

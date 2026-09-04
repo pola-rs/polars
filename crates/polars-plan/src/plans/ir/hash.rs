@@ -39,6 +39,8 @@ impl IR {
                         predicate,
                         validate_schema,
                         is_pure,
+                        explain_name: _,
+                        explain_detail: _,
                     },
             } => {
                 // Hash the Python function object using the pointer to the object.
@@ -195,11 +197,6 @@ impl IR {
             } => {
                 options.hash(state);
             },
-            IR::ExtContext {
-                input: _,
-                contexts: _,
-                schema: _,
-            } => {},
             IR::Sink { input: _, payload } => {
                 payload.shallow_hash(state, expr_hash);
             },

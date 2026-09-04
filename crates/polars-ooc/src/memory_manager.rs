@@ -18,8 +18,8 @@ const SPILL_FRAME_BATCH_SIZE: u64 = 256;
 const MAX_PARALLEL_SPILL_TASKS: usize = 64;
 
 use crate::WeakSpillContext;
-use crate::spill_context::UNEXPLORED_SCORE;
-use crate::spill_token::{DynSpillToken, TrySpillError};
+use crate::spill_context::{InsertReason, RegisteredSpillToken, UNEXPLORED_SCORE};
+use crate::spill_token::{DynSpillToken, SpillStatus, TrySpillError};
 
 static MEMORY_MANAGER: LazyLock<MemoryManager> = LazyLock::new(MemoryManager::new);
 
@@ -115,7 +115,7 @@ impl MemoryManager {
                 },
             ));
 
-            for (spillable, reg_id, sz) in spillables {
+            for (spillable, spill_in_progress, rt) in spillables {
                 let permit = self.spill_semaphore.clone().acquire_owned().await.unwrap();
 
                 let successful_spill = successful_spill.clone();
@@ -123,7 +123,7 @@ impl MemoryManager {
 
                 polars_async::executor::spawn(TaskPriority::High, async move {
                     // Spill, or reinsert if a failure.
-                    match spillable.try_spill(ctx.clone(), reg_id) {
+                    match spillable.clone().try_spill(ctx.clone()) {
                         Ok(spill_success) => {
                             if spill_success.await {
                                 if !successful_spill.0.swap(true, Ordering::Relaxed) {
@@ -131,23 +131,29 @@ impl MemoryManager {
                                         strong.stats().finish_exploration_event(true);
                                     }
                                 }
-                            } else {
-                                ctx.0.reinsert(&spillable, reg_id, ctx.1);
-                            }
 
-                            MEMORY_MANAGER.spills_exist.store(true, Ordering::Release);
+                                MEMORY_MANAGER.spills_exist.store(true, Ordering::Release);
+                            } else {
+                                // A racy pin interrupted us, the value is still in memory.
+                                spillable.cancel_spill_attempt_and_reinsert(
+                                    rt.registration_id,
+                                    ctx.1,
+                                    InsertReason::Unpin,
+                                );
+                            }
                         },
                         Err(TrySpillError::Pinned) => {
-                            ctx.0.reinsert(&spillable, reg_id, ctx.1);
+                            spillable.cancel_spill_attempt_and_reinsert(
+                                rt.registration_id,
+                                ctx.1,
+                                InsertReason::Unpin,
+                            );
                         },
                         Err(TrySpillError::AlreadySpilled) => {},
                     }
 
-                    MEMORY_MANAGER
-                        .est_spill_in_progress
-                        .fetch_sub(sz as u64, Ordering::Relaxed);
-
                     drop(permit);
+                    drop(spill_in_progress);
                 });
             }
         }
@@ -167,7 +173,14 @@ impl MemoryManager {
     #[cold]
     async fn find_spillables(
         &self,
-    ) -> Option<(WeakSpillContext, Vec<(Arc<dyn DynSpillToken>, u32, usize)>)> {
+    ) -> Option<(
+        WeakSpillContext,
+        Vec<(
+            Arc<dyn DynSpillToken>,
+            SpillInProgressTracker,
+            RegisteredSpillToken,
+        )>,
+    )> {
         // TODO: don't block here under a certain memory threshold.
         let finding_spill_guard = self.finding_spill_lock.lock().await;
 
@@ -212,20 +225,33 @@ impl MemoryManager {
             };
             strong.stats().start_exploration_event();
 
-            let mut total_est_spill = 0;
             let mut num_considered = 0;
             let mut candidates = Vec::new();
-            ctx.0.drain_while(|cand, reg_id| {
-                if cand.can_spill()
-                    && let Some(sz) = cand.estimate_byte_size()
-                    && sz as u64 >= min_spill
-                {
-                    total_est_spill += sz as u64;
-                    candidates.push((cand, reg_id, sz));
-                } else {
-                    if !cand.is_spilled_or_dropped() {
-                        ctx.0.reinsert(&cand, reg_id, ctx.1);
-                    }
+            ctx.0.drain_live_while(|rt| {
+                let Some(cand) = rt.upgrade() else {
+                    return true;
+                };
+                match cand.clone().spill_status() {
+                    SpillStatus::InMemory(sz) if sz >= min_spill => {
+                        candidates.push((cand, SpillInProgressTracker::new(sz), rt));
+                    },
+                    SpillStatus::InMemory(_) => {
+                        cand.cancel_spill_attempt_and_reinsert(
+                            rt.registration_id,
+                            ctx.1,
+                            InsertReason::TooSmall(rt.timestamp),
+                        );
+                    },
+                    SpillStatus::Pinned => {
+                        cand.cancel_spill_attempt_and_reinsert(
+                            rt.registration_id,
+                            ctx.1,
+                            InsertReason::Unpin,
+                        );
+                    },
+                    // A spilled token is re-inserted by whoever unspills it, a
+                    // dropped one does not need re-inserting at all.
+                    SpillStatus::Spilled | SpillStatus::Dropped => {},
                 }
 
                 num_considered += 1;
@@ -235,9 +261,6 @@ impl MemoryManager {
             if candidates.is_empty() {
                 strong.stats().finish_exploration_event(false);
             } else {
-                // Increment the spill-in-progress to avoid eager over-spilling.
-                self.est_spill_in_progress
-                    .fetch_add(total_est_spill, Ordering::Relaxed);
                 out = Some((ctx, candidates));
                 break;
             }
@@ -248,5 +271,27 @@ impl MemoryManager {
             self.clean_contexts();
         }
         out
+    }
+}
+
+/// Used to update the total bytes of estimated spills in progress.
+struct SpillInProgressTracker {
+    bytes: u64,
+}
+
+impl SpillInProgressTracker {
+    pub fn new(bytes: u64) -> Self {
+        memory_manager()
+            .est_spill_in_progress
+            .fetch_add(bytes, Ordering::Relaxed);
+        Self { bytes }
+    }
+}
+
+impl Drop for SpillInProgressTracker {
+    fn drop(&mut self) {
+        memory_manager()
+            .est_spill_in_progress
+            .fetch_sub(self.bytes, Ordering::Relaxed);
     }
 }

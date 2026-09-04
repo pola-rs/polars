@@ -95,6 +95,8 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::Categorical(_) => false,
         #[cfg(feature = "dtype-extension")]
         F::Extension(_) => false,
+        #[cfg(feature = "dtype-map")]
+        F::MapExpr(_) => false,
         F::ListExpr(l) => is_inherently_nondeterministic_list_fn(l),
         #[cfg(feature = "strings")]
         F::StringExpr(_) => false,
@@ -137,7 +139,6 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::RollingExpr { function, .. } => is_inherently_nondeterministic_rolling_fn(function),
         #[cfg(feature = "rolling_window_by")]
         F::RollingExprBy { .. } => false,
-        F::Rechunk => false,
         F::ShiftAndFill => false,
         F::Shift => false,
         F::DropNans => false,
@@ -278,7 +279,7 @@ fn is_inherently_nondeterministic_array_fn(f: &IRArrayFunction) -> bool {
         #[cfg(feature = "array_count")]
         A::CountMatches => false,
         #[cfg(feature = "array_to_struct")]
-        A::ToStruct(_) => false,
+        A::ToStruct { fields: _ } => false,
     }
 }
 
@@ -340,6 +341,8 @@ fn is_inherently_nondeterministic_list_fn(f: &IRListFunction) -> bool {
         L::ToArray(_) => false,
         #[cfg(feature = "list_to_struct")]
         L::ToStruct(_) => false,
+        #[cfg(feature = "dtype-map")]
+        L::ToMap => false,
 
         // Inherently non-deterministic: draws random samples.
         #[cfg(feature = "list_sample")]

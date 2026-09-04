@@ -72,6 +72,40 @@ impl PyExpr {
 
     fn meta_is_scalar_literal(&self) -> bool {
         matches!(&self.inner, Expr::Literal(lv) if lv.is_scalar())
+    fn meta_is_length_preserving(&self) -> PyResult<bool> {
+        Ok(self
+            .inner
+            .clone()
+            .meta()
+            .is_length_preserving()
+            .map_err(PyPolarsErr::from)?)
+    }
+
+    fn meta_is_scalar(&self) -> PyResult<bool> {
+        Ok(self
+            .inner
+            .clone()
+            .meta()
+            .is_scalar()
+            .map_err(PyPolarsErr::from)?)
+    }
+
+    fn meta_is_known_length(&self) -> PyResult<bool> {
+        Ok(self
+            .inner
+            .clone()
+            .meta()
+            .is_known_length()
+            .map_err(PyPolarsErr::from)?)
+    }
+
+    fn meta_is_row_separable(&self) -> PyResult<bool> {
+        Ok(self
+            .inner
+            .clone()
+            .meta()
+            .is_row_separable()
+            .map_err(PyPolarsErr::from)?)
     }
 
     fn compute_tree_format(

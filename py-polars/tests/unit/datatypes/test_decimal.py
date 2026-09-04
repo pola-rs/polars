@@ -19,6 +19,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from polars._typing import PolarsDataType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -510,7 +511,7 @@ def test_decimal_explode() -> None:
             "bar": [[D("3.4"), D("3.4")], [D("4.5")]],
         }
     )
-    df = nested_decimal_df.explode("bar", empty_as_null=False)
+    df = nested_decimal_df.explode("bar")
     expected_df = pl.DataFrame(
         {
             "bar": [D("3.4"), D("3.4"), D("4.5")],
@@ -665,6 +666,25 @@ def test_decimal_arithmetic_schema_int() -> None:
     assert_series_equal((1 + s), pl.Series("literal", [2.0], dtype=pl.Decimal(38, 6)))
     assert_series_equal((s * 1), pl.Series("x", [1.0], dtype=pl.Decimal(38, 6)))
     assert_series_equal((1 * s), pl.Series("literal", [1.0], dtype=pl.Decimal(38, 6)))
+
+
+@pytest.mark.parametrize(
+    "int_dtype",
+    [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt32],
+)
+def test_decimal_truediv_int_schema_29105(int_dtype: PolarsDataType) -> None:
+    lf = pl.LazyFrame({"i": [1]}, schema={"i": int_dtype}).with_columns(
+        d=pl.lit(1).cast(pl.Decimal(18, 4))
+    )
+
+    for expr, name in (
+        (pl.col("i") / pl.col("d"), "i"),
+        (pl.col("d") / pl.col("i"), "d"),
+    ):
+        q = lf.select(expr)
+        schema = q.collect_schema()
+        assert schema == q.collect().schema
+        assert schema[name] == pl.Decimal(38, 4)
 
 
 def test_decimal_horizontal_20482() -> None:
