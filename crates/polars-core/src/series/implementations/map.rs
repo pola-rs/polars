@@ -301,8 +301,8 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
     }
 
     fn propagate_nulls(&self) -> Option<Series> {
-        let propagated = self.0.storage().propagate_nulls()?;
-        Some(self.rewrap(propagated))
+        // List propagation would null entries retained by null Map rows.
+        self.0.propagate_nulls().map(IntoSeries::into_series)
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {

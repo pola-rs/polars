@@ -72,6 +72,30 @@ impl MapChunked {
         &self.storage
     }
 
+    /// Rebuild this Map around storage known to preserve its entries.
+    ///
+    /// # Safety
+    /// `storage` must uphold the Map invariants: non-null entries, non-null keys, and
+    /// keys unique within each row. Null rows are exempt, as their entries are
+    /// unreachable.
+    ///
+    /// Adding, removing, or reordering whole rows satisfies this requirement. Operations
+    /// that modify entries must also preserve key uniqueness.
+    ///
+    /// # Panics
+    /// If `storage` does not have the dtype of [`Self::storage`].
+    pub(crate) unsafe fn with_storage_unchecked(&self, storage: Series) -> Self {
+        assert_eq!(
+            storage.dtype(),
+            self.storage.dtype(),
+            "operation on Map storage changed its dtype",
+        );
+        Self {
+            dtype: self.dtype.clone(),
+            storage,
+        }
+    }
+
     /// Mutable access is crate-private to protect the map invariants.
     pub(crate) fn storage_mut(&mut self) -> &mut Series {
         &mut self.storage
@@ -133,6 +157,25 @@ impl MapChunked {
         );
 
         unsafe { Self::from_storage_unchecked(dtype, storage) }
+    }
+
+    /// Propagate nulls within entry children without changing row or entry validity.
+    pub(crate) fn propagate_nulls(&self) -> Option<Self> {
+        let storage = self.storage.list().unwrap();
+        let entries = storage.get_inner();
+        let (keys, values) = unpack_map_entries(&entries);
+
+        let new_keys = keys.propagate_nulls();
+        let new_values = values.propagate_nulls();
+        if new_keys.is_none() && new_values.is_none() {
+            return None;
+        }
+        let keys = new_keys.unwrap_or(keys);
+        let values = new_values.unwrap_or(values);
+        let storage = repack_map_storage(storage, &keys, &values).into_series();
+
+        // SAFETY: only values below nested nulls change; layout and key semantics remain.
+        Some(unsafe { self.with_storage_unchecked(storage) })
     }
 
     /// The entries of every row, flattened.

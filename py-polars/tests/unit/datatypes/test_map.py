@@ -1213,3 +1213,38 @@ def test_map_nested_key_conversion_is_an_error_not_a_panic(
     # supported error case, so it must not turn into a panic.
     with pytest.raises(TypeError, match="not hashable"):
         convert(s)
+
+
+def test_map_null_row_keeping_its_entries() -> None:
+    # Arrow lets a null row keep its entries instead of being empty, and other producers
+    # do that. Null propagation must not null those entries: it runs before casting and
+    # row encoding, and nulling them breaks the non-null entry invariant.
+    pa = pytest.importorskip("pyarrow")
+
+    keys = pa.array([Decimal("1.50"), Decimal("2.50")], type=pa.decimal128(10, 2))
+    values = pa.array([1, 2], type=pa.int64())
+    arr = pa.MapArray.from_arrays(pa.array([0, 1, 2], type=pa.int32()), keys, values)
+    # Mark row 0 null while the offsets keep pointing at its entry.
+    arr = pa.Array.from_buffers(
+        arr.type,
+        2,
+        [pa.py_buffer(bytes([0b10])), arr.buffers()[1]],
+        children=[arr.values],
+    )
+    s = pl.from_arrow(pa.table({"m": arr}))["m"]
+    assert s.dtype == pl.Map(pl.Decimal(10, 2), pl.Int64)
+    assert s.to_arrow().offsets.to_pylist() == [0, 1, 2]
+    assert s.to_list() == [None, {Decimal("2.50"): 2}]
+
+    # Rescaling a Decimal key is the cast that revalidates the entries.
+    rescaled = s.cast(pl.Map(pl.Decimal(12, 3), pl.Int64))
+    assert rescaled.to_list() == [None, {Decimal("2.500"): 2}]
+
+    # A value cast keeps the entries, so they have to stay exportable.
+    widened = s.cast(pl.Map(pl.Decimal(10, 2), pl.Float64))
+    assert widened.to_list() == [None, {Decimal("2.50"): 2.0}]
+    assert widened.to_arrow().values.null_count == 0
+
+    # Row encoding also propagates first.
+    assert s.to_frame().group_by("m").len().height == 2
+    assert s.to_frame().sort("m")["m"].to_list() == [None, {Decimal("2.50"): 2}]
