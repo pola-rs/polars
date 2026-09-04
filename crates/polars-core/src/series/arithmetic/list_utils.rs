@@ -2,8 +2,8 @@
 use arrow::array::PrimitiveArray;
 use arrow::compute::utils::combine_validities_and;
 use num_traits::Zero;
+use polars_array::PlPrimitiveArray;
 use polars_array::arrow::bridge::{ToArrow, chunk_to_arrow};
-use polars_array::{Flat, PlPrimitiveArray};
 use polars_compute::arithmetic::ArithmeticKernel;
 use polars_compute::comparisons::TotalEqKernel;
 use polars_error::PolarsResult;
@@ -94,10 +94,11 @@ impl NumericOp {
             let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
             let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
 
-            // TODO(polars-array-scalar): the kernels want one slot per element, so a chunk
-            // repeating a single value is written out rather than operated on once.
-            let lhs = lhs.downcast_get(0).unwrap().to_flat().into_owned();
-            let rhs = rhs.downcast_get(0).unwrap().to_flat().into_owned();
+            // The kernels read the chunks in whatever representation they are in, so a chunk
+            // that repeats a single value is operated on once rather than written out; the
+            // clones are a refcount bump per backing buffer.
+            let lhs = lhs.downcast_get(0).unwrap().clone();
+            let rhs = rhs.downcast_get(0).unwrap().clone();
 
             self.apply_arithmetic_kernel::<$T>(lhs, rhs).into_boxed()
         })
@@ -105,8 +106,8 @@ impl NumericOp {
 
     fn apply_arithmetic_kernel<T: PolarsNumericType>(
         &self,
-        lhs: Flat<PlPrimitiveArray<T::Native>>,
-        rhs: Flat<PlPrimitiveArray<T::Native>>,
+        lhs: PlPrimitiveArray<T::Native>,
+        rhs: PlPrimitiveArray<T::Native>,
     ) -> PlPrimitiveArray<T::Native> {
         match self {
             Self::Add => ArithmeticKernel::wrapping_add(lhs, rhs),
@@ -135,9 +136,7 @@ impl NumericOp {
             // Dropping the Arrow array leaves the import the only reference to the values, which
             // is what lets the kernel write its result over them.
             drop(arr_lhs);
-            // SAFETY: an import of an Arrow array is flat, an Arrow array being one slot per
-            // element.
-            unsafe { Flat::new(imported) }
+            imported
         };
 
         chunk_to_arrow(&self.apply_array_to_scalar_kernel::<T>(arr_lhs, r, swapped))
@@ -145,7 +144,7 @@ impl NumericOp {
 
     fn apply_array_to_scalar_kernel<T: PolarsNumericType>(
         &self,
-        arr_lhs: Flat<PlPrimitiveArray<T::Native>>,
+        arr_lhs: PlPrimitiveArray<T::Native>,
         r: T::Native,
         swapped: bool,
     ) -> PlPrimitiveArray<T::Native> {

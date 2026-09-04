@@ -202,32 +202,6 @@ where
     out.new_from_index_typed(0, length)
 }
 
-/// [`elementwise_flat`] for a kernel that takes its chunk by value.
-#[inline]
-fn elementwise_owned_flat<A, Arr, F>(arr: A, op: &mut F) -> Arr
-where
-    A: StaticArray,
-    Arr: StaticArray,
-    F: FnMut(Flat<A>) -> Arr,
-{
-    let length = arr.len();
-    if arr.as_flat().is_none() && PlArray::is_scalar(&arr) && length >= 2 {
-        let mut single = arr;
-        single.slice(0, 1);
-
-        let out = op(single.to_flat().into_owned());
-        debug_assert_eq!(
-            out.len(),
-            1,
-            "an elementwise kernel answers one element with one"
-        );
-
-        return out.new_from_index_typed(0, length);
-    }
-
-    op(arr.to_flat().into_owned())
-}
-
 /// Applies an elementwise kernel written against the [`flat`](polars_array::broadcast)
 /// representation: this is [`unary_kernel`] over the backing buffers.
 ///
@@ -259,29 +233,6 @@ where
 {
     let name = ca.name().clone();
     let iter = ca.downcast_into_iter().map(op);
-    ChunkedArray::from_chunk_iter(name, iter)
-}
-
-/// Applies an owned elementwise kernel written against the [`flat`](polars_array::broadcast)
-/// representation: [`unary_kernel_owned`] for a kernel that reads the backing buffers directly.
-///
-/// `op` must be elementwise; a [`scalar`](polars_array::broadcast) chunk reaches it as the single
-/// element it repeats, and the result is repeated in turn. See [`elementwise_flat`].
-#[inline]
-pub fn unary_elementwise_kernel_owned_flat<T, V, F, Arr>(
-    ca: ChunkedArray<T>,
-    mut op: F,
-) -> ChunkedArray<V>
-where
-    T: PolarsDataType,
-    V: PolarsDataType<Array = Arr>,
-    Arr: StaticArray,
-    F: FnMut(Flat<T::Array>) -> Arr,
-{
-    let name = ca.name().clone();
-    let iter = ca
-        .downcast_into_iter()
-        .map(|arr| elementwise_owned_flat(arr, &mut op));
     ChunkedArray::from_chunk_iter(name, iter)
 }
 
@@ -1111,7 +1062,98 @@ where
     }
 }
 
+/// Applies a binary kernel to the chunks of `lhs` and `rhs`, handing a side that is one value
+/// repeated to the kernel written for a repeated operand.
+///
+/// The chunks reach the kernel in whatever representation they are in, for it to read as it sees
+/// fit: this is the helper for a kernel that handles the [`scalar`](polars_array::broadcast)
+/// representation itself. See [`apply_binary_kernel_broadcast_flat`] for one that does not.
 pub fn apply_binary_kernel_broadcast<'l, 'r, L, R, O, K, LK, RK>(
+    lhs: &'l ChunkedArray<L>,
+    rhs: &'r ChunkedArray<R>,
+    kernel: K,
+    lhs_broadcast_kernel: LK,
+    rhs_broadcast_kernel: RK,
+) -> ChunkedArray<O>
+where
+    L: PolarsDataType,
+    R: PolarsDataType,
+    O: PolarsDataType,
+    K: Fn(&L::Array, &R::Array) -> O::Array,
+    LK: Fn(L::Physical<'l>, &R::Array) -> O::Array,
+    RK: Fn(&L::Array, R::Physical<'r>) -> O::Array,
+{
+    let name = lhs.name();
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    // The broadcast paths come first, so that a side that is one value repeated reaches the
+    // kernel as that value. What is left is the path over two chunks of the same length.
+    let out = match (lhs.scalar_value(), rhs.scalar_value()) {
+        // broadcast right path
+        (_, Some(rhs)) if lhs.len() == length => match rhs {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(rhs) => unary_kernel(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
+        },
+        (Some(lhs), _) => match lhs {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(lhs) => unary_kernel(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr)),
+        },
+        _ => binary_mut_with_options(lhs, rhs, |lhs, rhs| kernel(lhs, rhs), name.clone()),
+    };
+    out.with_name(name.clone())
+}
+
+/// [`apply_binary_kernel_broadcast`] for a kernel that takes its chunks by value.
+pub fn apply_binary_kernel_broadcast_owned<L, R, O, K, LK, RK>(
+    lhs: ChunkedArray<L>,
+    rhs: ChunkedArray<R>,
+    kernel: K,
+    lhs_broadcast_kernel: LK,
+    rhs_broadcast_kernel: RK,
+) -> ChunkedArray<O>
+where
+    L: PolarsDataType,
+    R: PolarsDataType,
+    O: PolarsDataType,
+    K: Fn(L::Array, R::Array) -> O::Array,
+    for<'a> LK: Fn(L::Physical<'a>, R::Array) -> O::Array,
+    for<'a> RK: Fn(L::Array, R::Physical<'a>) -> O::Array,
+{
+    let name = lhs.name().to_owned();
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    // See [`apply_binary_kernel_broadcast`] for what the two broadcast paths are. The scalar
+    // check is a borrow, so it is taken before either side is moved into a kernel.
+    let lhs_repeats = lhs.scalar_value().is_some();
+    let rhs_repeats = rhs.scalar_value().is_some();
+
+    // broadcast right path
+    let out = if rhs_repeats && lhs.len() == length {
+        match rhs.scalar_value().unwrap() {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(rhs) => unary_kernel_owned(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
+        }
+    } else if lhs_repeats {
+        match lhs.scalar_value().unwrap() {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(lhs) => unary_kernel_owned(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr)),
+        }
+    } else {
+        binary_owned(lhs, rhs, kernel)
+    };
+    out.with_name(name)
+}
+
+/// [`apply_binary_kernel_broadcast`] for a kernel written against the
+/// [`flat`](polars_array::broadcast) representation, which a [`scalar`](polars_array::broadcast)
+/// chunk is written out to reach.
+///
+/// The kernel is elementwise, so two scalar chunks reach it as the single element each repeats
+/// and the answer is repeated in turn; a scalar chunk that meets a flat one is what gets written
+/// out. Prefer [`apply_binary_kernel_broadcast`] for a kernel that reads its chunks itself.
+pub fn apply_binary_kernel_broadcast_flat<'l, 'r, L, R, O, K, LK, RK>(
     lhs: &'l ChunkedArray<L>,
     rhs: &'r ChunkedArray<R>,
     kernel: K,
@@ -1149,53 +1191,6 @@ where
         _ => binary_elementwise_kernel_flat(lhs, rhs, |lhs, rhs| kernel(lhs, rhs), name.clone()),
     };
     out.with_name(name.clone())
-}
-
-pub fn apply_binary_kernel_broadcast_owned<L, R, O, K, LK, RK>(
-    lhs: ChunkedArray<L>,
-    rhs: ChunkedArray<R>,
-    kernel: K,
-    lhs_broadcast_kernel: LK,
-    rhs_broadcast_kernel: RK,
-) -> ChunkedArray<O>
-where
-    L: PolarsDataType,
-    R: PolarsDataType,
-    O: PolarsDataType,
-    K: Fn(Flat<L::Array>, Flat<R::Array>) -> O::Array,
-    for<'a> LK: Fn(L::Physical<'a>, Flat<R::Array>) -> O::Array,
-    for<'a> RK: Fn(Flat<L::Array>, R::Physical<'a>) -> O::Array,
-{
-    let name = lhs.name().to_owned();
-    let length = broadcast_height(lhs.len(), rhs.len())
-        .expect("cannot apply operation on arrays of different lengths");
-
-    // See [`apply_binary_kernel_broadcast`] for what the two broadcast paths are. The scalar
-    // check is a borrow, so it is taken before either side is moved into a kernel.
-    let lhs_repeats = lhs.scalar_value().is_some();
-    let rhs_repeats = rhs.scalar_value().is_some();
-
-    // broadcast right path
-    let out = if rhs_repeats && lhs.len() == length {
-        match rhs.scalar_value().unwrap() {
-            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
-            Some(rhs) => unary_kernel_owned(lhs, |arr| {
-                rhs_broadcast_kernel(arr.to_flat().into_owned(), rhs.clone())
-            }),
-        }
-    } else if lhs_repeats {
-        match lhs.scalar_value().unwrap() {
-            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
-            Some(lhs) => unary_kernel_owned(rhs, |arr| {
-                lhs_broadcast_kernel(lhs.clone(), arr.to_flat().into_owned())
-            }),
-        }
-    } else {
-        binary_owned(lhs, rhs, |lhs, rhs| {
-            kernel(lhs.to_flat().into_owned(), rhs.to_flat().into_owned())
-        })
-    };
-    out.with_name(name)
 }
 
 #[cfg(test)]

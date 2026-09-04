@@ -13,8 +13,8 @@ fn floor_div_ca<T: PolarsNumericType>(
     apply_binary_kernel_broadcast(
         lhs,
         rhs,
-        // TODO(polars-array-scalar): the arithmetic kernels want one slot per element, so a chunk
-        // reaches them written out rather than as a repeated value divided once.
+        // The clones are a refcount bump per backing buffer: the kernel reads a chunk that
+        // repeats a single value as that value, so it is divided once rather than written out.
         |l, r| ArithmeticKernel::wrapping_floor_div(l.clone(), r.clone()),
         |l, r| ArithmeticKernel::wrapping_floor_div_scalar_lhs(l, r.clone()),
         |l, r| ArithmeticKernel::wrapping_floor_div_scalar(l.clone(), r),

@@ -4,7 +4,12 @@ use arrow::bitmap::BitmapBuilder;
 use arrow::types::NativeType;
 use polars_array::{Flat, PlPrimitiveArray};
 
-/// The array a kernel reads: flat, so its every buffer holds one slot per element.
+use self::pl_array::{binary, unary};
+
+/// The array the inner kernels read: flat, so its every buffer holds one slot per element.
+///
+/// [`ArithmeticKernel`] itself takes a chunk in whatever representation it is in and hands the
+/// inner kernel only what it has to read; see [`pl_array`].
 pub(crate) type PArr<T> = Flat<PlPrimitiveArray<T>>;
 /// The array a kernel writes, which is flat unless it is a single value repeated.
 pub(crate) type POut<T> = PlPrimitiveArray<T>;
@@ -122,39 +127,46 @@ pub trait PrimitiveArithmeticKernelImpl: NativeType {
     fn prim_true_div_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> POut<Self::TrueDivT>;
 }
 
+/// The kernels of [`PrimitiveArithmeticKernelImpl`], each behind the dispatch that hands it only
+/// the part of a chunk it has to read. A chunk that repeats a single value is never written out
+/// one slot per element to get to one; see [`pl_array`].
 #[rustfmt::skip]
-impl<T: HasPrimitiveArithmeticKernel> ArithmeticKernel for PArr<T> {
+impl<T: HasPrimitiveArithmeticKernel> ArithmeticKernel for PlPrimitiveArray<T> {
     type Scalar = T;
     type TrueDivT = T::TrueDivT;
 
-    fn wrapping_abs(self) -> POut<T> { T::prim_wrapping_abs(self) }
-    fn wrapping_neg(self) -> POut<T> { T::prim_wrapping_neg(self) }
-    fn wrapping_add(self, rhs: Self) -> POut<T> { T::prim_wrapping_add(self, rhs) }
-    fn wrapping_sub(self, rhs: Self) -> POut<T> { T::prim_wrapping_sub(self, rhs) }
-    fn wrapping_mul(self, rhs: Self) -> POut<T> { T::prim_wrapping_mul(self, rhs) }
-    fn wrapping_floor_div(self, rhs: Self) -> POut<T> { T::prim_wrapping_floor_div(self, rhs) }
-    fn wrapping_trunc_div(self, rhs: Self) -> POut<T> { T::prim_wrapping_trunc_div(self, rhs) }
-    fn wrapping_mod(self, rhs: Self) -> POut<T> { T::prim_wrapping_mod(self, rhs) }
+    fn wrapping_abs(self) -> POut<T> { unary(self, T::prim_wrapping_abs) }
+    fn wrapping_neg(self) -> POut<T> { unary(self, T::prim_wrapping_neg) }
 
-    fn wrapping_add_scalar(self, rhs: Self::Scalar) -> POut<T> { T::prim_wrapping_add_scalar(self, rhs) }
-    fn wrapping_sub_scalar(self, rhs: Self::Scalar) -> POut<T> { T::prim_wrapping_sub_scalar(self, rhs) }
-    fn wrapping_sub_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<T> { T::prim_wrapping_sub_scalar_lhs(lhs, rhs) }
-    fn wrapping_mul_scalar(self, rhs: Self::Scalar) -> POut<T> { T::prim_wrapping_mul_scalar(self, rhs) }
-    fn wrapping_floor_div_scalar(self, rhs: Self::Scalar) -> POut<T> { T::prim_wrapping_floor_div_scalar(self, rhs) }
-    fn wrapping_floor_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<T> { T::prim_wrapping_floor_div_scalar_lhs(lhs, rhs) }
-    fn wrapping_trunc_div_scalar(self, rhs: Self::Scalar) -> POut<T> { T::prim_wrapping_trunc_div_scalar(self, rhs) }
-    fn wrapping_trunc_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<T> { T::prim_wrapping_trunc_div_scalar_lhs(lhs, rhs) }
-    fn wrapping_mod_scalar(self, rhs: Self::Scalar) -> POut<T> { T::prim_wrapping_mod_scalar(self, rhs) }
-    fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<T> { T::prim_wrapping_mod_scalar_lhs(lhs, rhs) }
+    // Addition and multiplication are the two that commute, so a repeated left operand reaches
+    // the same kernel a repeated right one does, with the sides swapped.
+    fn wrapping_add(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_add, |l, r| T::prim_wrapping_add_scalar(r, l), T::prim_wrapping_add_scalar) }
+    fn wrapping_sub(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_sub, T::prim_wrapping_sub_scalar_lhs, T::prim_wrapping_sub_scalar) }
+    fn wrapping_mul(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_mul, |l, r| T::prim_wrapping_mul_scalar(r, l), T::prim_wrapping_mul_scalar) }
+    fn wrapping_floor_div(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_floor_div, T::prim_wrapping_floor_div_scalar_lhs, T::prim_wrapping_floor_div_scalar) }
+    fn wrapping_trunc_div(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_trunc_div, T::prim_wrapping_trunc_div_scalar_lhs, T::prim_wrapping_trunc_div_scalar) }
+    fn wrapping_mod(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_mod, T::prim_wrapping_mod_scalar_lhs, T::prim_wrapping_mod_scalar) }
 
-    fn checked_mul_scalar(self, rhs: Self::Scalar) -> POut<T> { T::prim_checked_mul_scalar(self, rhs) }
+    fn wrapping_add_scalar(self, rhs: Self::Scalar) -> POut<T> { unary(self, |lhs| T::prim_wrapping_add_scalar(lhs, rhs)) }
+    fn wrapping_sub_scalar(self, rhs: Self::Scalar) -> POut<T> { unary(self, |lhs| T::prim_wrapping_sub_scalar(lhs, rhs)) }
+    fn wrapping_sub_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<T> { unary(rhs, |rhs| T::prim_wrapping_sub_scalar_lhs(lhs, rhs)) }
+    fn wrapping_mul_scalar(self, rhs: Self::Scalar) -> POut<T> { unary(self, |lhs| T::prim_wrapping_mul_scalar(lhs, rhs)) }
+    fn wrapping_floor_div_scalar(self, rhs: Self::Scalar) -> POut<T> { unary(self, |lhs| T::prim_wrapping_floor_div_scalar(lhs, rhs)) }
+    fn wrapping_floor_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<T> { unary(rhs, |rhs| T::prim_wrapping_floor_div_scalar_lhs(lhs, rhs)) }
+    fn wrapping_trunc_div_scalar(self, rhs: Self::Scalar) -> POut<T> { unary(self, |lhs| T::prim_wrapping_trunc_div_scalar(lhs, rhs)) }
+    fn wrapping_trunc_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<T> { unary(rhs, |rhs| T::prim_wrapping_trunc_div_scalar_lhs(lhs, rhs)) }
+    fn wrapping_mod_scalar(self, rhs: Self::Scalar) -> POut<T> { unary(self, |lhs| T::prim_wrapping_mod_scalar(lhs, rhs)) }
+    fn wrapping_mod_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<T> { unary(rhs, |rhs| T::prim_wrapping_mod_scalar_lhs(lhs, rhs)) }
 
-    fn true_div(self, rhs: Self) -> POut<Self::TrueDivT> { T::prim_true_div(self, rhs) }
-    fn true_div_scalar(self, rhs: Self::Scalar) -> POut<Self::TrueDivT> { T::prim_true_div_scalar(self, rhs) }
-    fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<Self::TrueDivT> { T::prim_true_div_scalar_lhs(lhs, rhs) }
+    fn checked_mul_scalar(self, rhs: Self::Scalar) -> POut<T> { unary(self, |lhs| T::prim_checked_mul_scalar(lhs, rhs)) }
+
+    fn true_div(self, rhs: Self) -> POut<Self::TrueDivT> { binary(self, rhs, T::prim_true_div, T::prim_true_div_scalar_lhs, T::prim_true_div_scalar) }
+    fn true_div_scalar(self, rhs: Self::Scalar) -> POut<Self::TrueDivT> { unary(self, |lhs| T::prim_true_div_scalar(lhs, rhs)) }
+    fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<Self::TrueDivT> { unary(rhs, |rhs| T::prim_true_div_scalar_lhs(lhs, rhs)) }
 }
 
 mod float;
+mod pl_array;
 pub mod pl_num;
 mod signed;
 mod unsigned;

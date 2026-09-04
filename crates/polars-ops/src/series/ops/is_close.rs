@@ -2,7 +2,7 @@ use std::cmp::max_by;
 
 use arrow::compute::utils::combine_validities_and;
 use num_traits::AsPrimitive;
-use polars_core::prelude::arity::apply_binary_kernel_broadcast;
+use polars_core::prelude::arity::apply_binary_kernel_broadcast_flat;
 use polars_core::prelude::*;
 
 pub fn is_close(
@@ -23,28 +23,28 @@ pub fn is_close(
 
     let ca = match (s.dtype(), other.dtype()) {
         #[cfg(feature = "dtype-f16")]
-        (DataType::Float16, DataType::Float16) => apply_binary_kernel_broadcast(
+        (DataType::Float16, DataType::Float16) => apply_binary_kernel_broadcast_flat(
             s.f16().unwrap(),
             other.f16().unwrap(),
             |l, r| is_close_kernel::<Float16Type>(l, r, abs_tol, rel_tol, nans_equal),
             |v, ca| is_close_kernel_unary::<Float16Type>(ca, v.as_(), abs_tol, rel_tol, nans_equal),
             |ca, v| is_close_kernel_unary::<Float16Type>(ca, v.as_(), abs_tol, rel_tol, nans_equal),
         ),
-        (DataType::Float32, DataType::Float32) => apply_binary_kernel_broadcast(
+        (DataType::Float32, DataType::Float32) => apply_binary_kernel_broadcast_flat(
             s.f32().unwrap(),
             other.f32().unwrap(),
             |l, r| is_close_kernel::<Float32Type>(l, r, abs_tol, rel_tol, nans_equal),
             |v, ca| is_close_kernel_unary::<Float32Type>(ca, v.as_(), abs_tol, rel_tol, nans_equal),
             |ca, v| is_close_kernel_unary::<Float32Type>(ca, v.as_(), abs_tol, rel_tol, nans_equal),
         ),
-        (DataType::Float64, DataType::Float64) => apply_binary_kernel_broadcast(
+        (DataType::Float64, DataType::Float64) => apply_binary_kernel_broadcast_flat(
             s.f64().unwrap(),
             other.f64().unwrap(),
             |l, r| is_close_kernel::<Float64Type>(l, r, abs_tol, rel_tol, nans_equal),
             |v, ca| is_close_kernel_unary::<Float64Type>(ca, v.as_(), abs_tol, rel_tol, nans_equal),
             |ca, v| is_close_kernel_unary::<Float64Type>(ca, v.as_(), abs_tol, rel_tol, nans_equal),
         ),
-        _ => apply_binary_kernel_broadcast(
+        _ => apply_binary_kernel_broadcast_flat(
             s.cast(&DataType::Float64)?.f64().unwrap(),
             other.cast(&DataType::Float64)?.f64().unwrap(),
             |l, r| is_close_kernel::<Float64Type>(l, r, abs_tol, rel_tol, nans_equal),

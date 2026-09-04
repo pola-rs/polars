@@ -4,7 +4,7 @@ use arrow::compute::utils::combine_validities_and;
 use polars_compute::arity::{prim_binary_values, prim_unary_values};
 
 use super::*;
-use crate::chunked_array::arity::apply_binary_kernel_broadcast;
+use crate::chunked_array::arity::apply_binary_kernel_broadcast_flat;
 
 impl<T> BitAnd for &ChunkedArray<T>
 where
@@ -14,7 +14,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn bitand(self, rhs: Self) -> Self::Output {
-        apply_binary_kernel_broadcast(
+        apply_binary_kernel_broadcast_flat(
             self,
             rhs,
             |l, r| prim_binary_values(l.clone(), r.clone(), |a, b| a & b),
@@ -32,7 +32,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn bitor(self, rhs: Self) -> Self::Output {
-        apply_binary_kernel_broadcast(
+        apply_binary_kernel_broadcast_flat(
             self,
             rhs,
             |l, r| prim_binary_values(l.clone(), r.clone(), |a, b| a | b),
@@ -50,7 +50,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn bitxor(self, rhs: Self) -> Self::Output {
-        apply_binary_kernel_broadcast(
+        apply_binary_kernel_broadcast_flat(
             self,
             rhs,
             |l, r| prim_binary_values(l.clone(), r.clone(), |a, b| a ^ b),
