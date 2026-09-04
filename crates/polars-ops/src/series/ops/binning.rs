@@ -1,4 +1,5 @@
 use arrow::compute::concatenate::concatenate_validities;
+use polars_core::chunked_array::ops::binning::IntervalSpec;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
 
@@ -247,4 +248,36 @@ fn empty_bins(
         include_intervals.then(|| Series::full_null(PlSmallStr::EMPTY, n_bins - 1, s.dtype()));
     let bin_idx = IdxCa::full_null(s.name().clone(), s.len());
     finish_bins(s.name().clone(), &bin_idx, n_bins, breaks.as_ref(), labels)
+}
+
+pub fn bin_intervals(
+    s: &Series,
+    spec: &IntervalSpec,
+    labels: Option<&[PlSmallStr]>,
+    include_intervals: bool,
+    right_closed: bool,
+) -> PolarsResult<Series> {
+    let breaks = match spec {
+        // Both sides already share a dtype: the DSL to IR conversion casts the
+        // breakpoints to the input, or wraps the input in a `Cast` to their supertype.
+        // `bins_from_breaks` rejects a mismatch rather than papering over it here.
+        IntervalSpec::Breaks(breaks) => Series::clone(breaks),
+        IntervalSpec::Count(n_bins) => {
+            let n_bins = n_bins.get();
+            // No usable min/max: an empty or all-null column.
+            let Some(breaks) = uniform_interval_breaks(s, n_bins, right_closed)? else {
+                return empty_bins(s, n_bins, labels, include_intervals);
+            };
+            breaks
+        },
+    };
+
+    let bin_idx = bins_from_breaks(s, &breaks, right_closed)?;
+    finish_bins(
+        s.name().clone(),
+        &bin_idx,
+        breaks.len() + 1,
+        include_intervals.then_some(&breaks),
+        labels,
+    )
 }
