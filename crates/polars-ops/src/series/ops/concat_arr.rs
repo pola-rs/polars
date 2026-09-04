@@ -1,8 +1,6 @@
 use arrow::compute::utils::combine_validities_and;
-use polars_array::PlFixedSizeListArray;
-use polars_array::arrow::bridge::chunk_to_arrow;
-use polars_array::arrow::{export, import};
-use polars_compute::horizontal_flatten::horizontal_flatten_unchecked;
+use polars_array::{PlArray, PlFixedSizeListArray};
+use polars_compute::horizontal_flatten::horizontal_flatten;
 use polars_core::prelude::{ArrayChunked, Column, DataType, IntoColumn, StaticArray};
 use polars_core::series::Series;
 use polars_error::{PolarsContext, PolarsResult};
@@ -38,6 +36,7 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
 
             // Don't expand scalars to height, this is handled by the `horizontal_flatten` kernel.
             let s = c.as_materialized_series_maintain_scalar();
+            let rows = s.len();
 
             match s.dtype() {
                 DataType::Array(inner, width) => {
@@ -54,27 +53,32 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
                         validities.push(v)
                     }
 
-                    // TODO(polars-array-scalar): the flatten kernel is an Arrow one, so a scalar
-                    // chunk is written out rather than its one row being concatenated once.
-                    (
-                        chunk_to_arrow(arr.downcast_as_array()).values().clone(),
-                        *width,
-                    )
+                    // A chunk that repeats one element holds the values of that one row, which is
+                    // what the flatten kernel broadcasts over the output: the row is not written
+                    // out once per row of the column to reach it.
+                    let chunk = arr.downcast_as_array();
+                    let values = chunk
+                        .flat_values()
+                        .or_else(|| chunk.scalar_values())
+                        .expect("the values of a fixed size list array are flat or scalar");
+
+                    (values.to_boxed(), *width, rows)
                 },
                 dtype => {
                     debug_assert_eq!(dtype, inner_dtype);
                     // Note: We ignore the validity of non-array input columns, their outer is always valid after
                     // being reshaped to (-1, 1).
-                    (export::to_arrow(&*s.rechunk().into_chunks()[0]), 1)
+                    (s.rechunk().into_chunks().swap_remove(0), 1, rows)
                 },
             }
         })
         // Filter out zero-width
         .filter(|x| x.1 > 0)
-        .inspect(|x| {
-            calculated_width += x.1;
-            all_unit_len &= x.0.len() == 1;
+        .inspect(|(_, width, rows)| {
+            calculated_width += width;
+            all_unit_len &= rows * width == 1;
         })
+        .map(|(array, width, _)| (array, width))
         .unzip();
 
     assert_eq!(calculated_width, width);
@@ -98,10 +102,9 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
     // At this point the output height and all arrays should have non-zero length
     let out = if all_unit_len && width > 0 {
         // Fast-path for all scalars
-        let inner_arr = unsafe { horizontal_flatten_unchecked(&arrays, &widths, 1) };
+        let inner_arr = horizontal_flatten(&arrays, &widths, 1);
 
-        let arr =
-            PlFixedSizeListArray::new(import::from_arrow(&*inner_arr), width, 1, outer_validity);
+        let arr = PlFixedSizeListArray::new(inner_arr, width, 1, outer_validity);
 
         // The chunk carries no inner type, so the array is built with its dtype directly.
         let out = unsafe {
@@ -115,23 +118,15 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
         return Ok(out.into_column().new_from_index(0, output_height));
     } else {
         let inner_arr = if width == 0 {
-            export::to_arrow(
-                &*Series::new_empty(PlSmallStr::EMPTY, inner_dtype)
-                    .into_chunks()
-                    .into_iter()
-                    .next()
-                    .unwrap(),
-            )
+            Series::new_empty(PlSmallStr::EMPTY, inner_dtype)
+                .into_chunks()
+                .swap_remove(0)
         } else {
-            unsafe { horizontal_flatten_unchecked(&arrays, &widths, output_height) }
+            horizontal_flatten(&arrays, &widths, output_height)
         };
 
-        let arr = PlFixedSizeListArray::new(
-            import::from_arrow(&*inner_arr),
-            width,
-            output_height,
-            outer_validity,
-        );
+        let arr =
+            PlFixedSizeListArray::new(inner_arr, width, output_height, outer_validity);
 
         // The chunk carries no inner type, so the array is built with its dtype directly.
         let out = unsafe {
