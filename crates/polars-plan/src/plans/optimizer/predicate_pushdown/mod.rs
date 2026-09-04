@@ -708,35 +708,18 @@ impl PredicatePushDown {
             UnoptimizedDispatch { .. } => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             },
-            Resolver {
-                resolver,
-                resolver_schema,
-                projection,
-                slice,
-                filters,
-                filter_drop_columns_idx,
-                resolved_dsl,
-                resolved_ir: Some(resolved_node),
-            } => {
-                let optimized = self.pushdown_and_continue(
-                    lp_arena.take(resolved_node),
-                    acc_predicates,
-                    lp_arena,
-                    expr_arena,
-                    false,
-                )?;
-                lp_arena.replace(resolved_node, optimized);
-
-                Ok(Resolver {
-                    resolver,
-                    resolver_schema,
-                    projection,
-                    slice,
-                    filters,
-                    filter_drop_columns_idx,
-                    resolved_dsl,
-                    resolved_ir: Some(resolved_node),
-                })
+            // Already resolved: `resolved_ir` is the single input of this node, so we
+            // recurse into it through the normal input dispatch.
+            lp @ Resolver {
+                resolved_ir: Some(_),
+                ..
+            } => self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false),
+            // Not resolved, but a slice was already pushed into this node. Predicates
+            // influence slice sizes / indices, so absorbing them here would evaluate them
+            // before the slice (see the `Slice` arm above). The resolver is only given a
+            // `limit`, it cannot apply the offset itself, so we keep the predicates local.
+            lp @ Resolver { slice: Some(_), .. } => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             },
             Resolver {
                 resolver,

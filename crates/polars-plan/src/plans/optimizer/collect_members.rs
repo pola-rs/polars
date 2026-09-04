@@ -52,7 +52,7 @@ impl MemberCollector {
             has_group_by: false,
             has_hint: false,
             with_columns_count: 0,
-            seen_dsl_resolvers: Default::default(),
+            seen_dsl_resolvers: Some(Default::default()),
             #[cfg(feature = "cse")]
             scans: UniqueScans::default(),
         }

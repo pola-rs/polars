@@ -955,38 +955,17 @@ impl SlicePushDown {
                 // Slice can always be pushed down for sinks
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
             },
+            // Already resolved: `resolved_ir` is the single input of this node, so we
+            // push the state into it through the normal input dispatch. Note that this
+            // must go through `pushdown()` on the resolved node itself, so that node's
+            // own rules apply (e.g. a `Sort` or `Filter` root must not be crossed).
             (
-                Resolver {
-                    resolver,
-                    resolver_schema,
-                    projection,
-                    slice,
-                    filters,
-                    filter_drop_columns_idx,
-                    resolved_dsl,
-                    resolved_ir: Some(resolved_node),
+                lp @ Resolver {
+                    resolved_ir: Some(_),
+                    ..
                 },
-                Some(state),
-            ) => {
-                let optimized = self.pushdown_and_continue(
-                    lp_arena.take(resolved_node),
-                    Some(state),
-                    lp_arena,
-                    expr_arena,
-                )?;
-                lp_arena.replace(resolved_node, optimized);
-
-                Ok(Resolver {
-                    resolver,
-                    resolver_schema,
-                    projection,
-                    slice,
-                    filters,
-                    filter_drop_columns_idx,
-                    resolved_dsl,
-                    resolved_ir: Some(resolved_node),
-                })
-            },
+                state,
+            ) => self.pushdown_and_continue(lp, state, lp_arena, expr_arena),
             (
                 Resolver {
                     resolver,

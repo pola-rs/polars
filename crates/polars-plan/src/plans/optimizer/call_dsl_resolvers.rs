@@ -164,7 +164,7 @@ pub(super) fn call_dsl_resolvers(
 
     let verbose = verbose();
 
-    if verbose && !deshare_caches.is_empty() {
+    if verbose && deshared_cache_count > 0 {
         eprintln!("call_dsl_resolvers: split shared memory caches (n = {deshared_cache_count})")
     }
 
@@ -265,9 +265,13 @@ pub(super) fn call_dsl_resolvers(
 
                 let ir_node_schema = ir_arena.get(ir_node).schema(ir_arena).into_owned();
 
-                if applied_filters.is_empty()
-                    && let Some((mut offset, len)) = slice
-                {
+                // The resolver is only handed a `limit` (= offset + len), never the
+                // offset, so it can never apply a non-zero offset itself. Predicate
+                // pushdown therefore refuses to place filters on a resolver that already
+                // carries a slice, which means we can always apply the slice here.
+                debug_assert!(slice.is_none() || filters.is_empty());
+
+                if let Some((mut offset, len)) = slice {
                     if slice_offset_applied {
                         offset = 0
                     }

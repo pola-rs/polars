@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
     from polars._typing import SchemaDict
     from polars.lazyframe.resolver._resolver import FilterExpr
+    from tests.conftest import PlMonkeyPatch
 
 
 class InMemoryLazyFrameResolver(LazyFrameResolver):  # noqa: D101
@@ -135,6 +136,94 @@ def test_lazyframe_resolver_filter() -> None:
         q.collect(),
         pl.DataFrame(height=1),
     )
+
+
+def test_lazyframe_resolver_slice_with_filter() -> None:
+    # A slice pushed into the resolver must still be applied, also when the
+    # resolver reports that it applied the filters itself. The resolver is only
+    # given `limit` (= offset + len), so it can never apply the offset.
+    lf = pl.LazyFrame({"a": [0, 1, 2, 3]})
+
+    resolver = InMemoryLazyFrameResolver(lf, use_filter_drop_columns_idx=True)
+    resolver.resolve_lazyframe = Mock(wraps=resolver.resolve_lazyframe)  # type: ignore[method-assign]
+
+    q = resolver.lazy().slice(1, 2).filter(pl.col("a") != 2)
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1]}))
+
+    # Filters are not handed to a resolver that already carries a slice - the
+    # protocol cannot express "slice, then filter".
+    kwargs = resolver.resolve_lazyframe.call_args.kwargs
+    assert kwargs["limit"] == 3
+    assert kwargs["filters"] == []
+
+    # A negative offset is not expressible as a limit at all.
+    resolver = InMemoryLazyFrameResolver(lf, use_filter_drop_columns_idx=True)
+    resolver.resolve_lazyframe = Mock(wraps=resolver.resolve_lazyframe)  # type: ignore[method-assign]
+
+    q = resolver.lazy().slice(-3, 2).filter(pl.col("a") != 2)
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1]}))
+
+    kwargs = resolver.resolve_lazyframe.call_args.kwargs
+    assert kwargs["limit"] is None
+    assert kwargs["filters"] == []
+
+
+def test_lazyframe_resolver_cse_gating(
+    capfd: pytest.CaptureFixture[str],
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    msg = "found multiple sources; run comm_subplan_elim"
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+
+        # No resolvers at all - CSE must not be forced.
+        capfd.readouterr()
+        pl.LazyFrame({"a": [1]}).filter(pl.col("a") == 1).collect()
+        assert msg not in capfd.readouterr().err
+
+        # Distinct resolvers - `cse_eq` is False, so there is nothing to eliminate.
+        capfd.readouterr()
+        pl.concat(
+            [
+                InMemoryLazyFrameResolver(pl.LazyFrame({"a": [1]})).lazy(),
+                InMemoryLazyFrameResolver(pl.LazyFrame({"a": [1]})).lazy(),
+            ]
+        ).collect()
+        assert msg not in capfd.readouterr().err
+
+        # Two references to a resolver that reports itself as CSE-equal.
+        resolver = InMemoryLazyFrameResolver(
+            pl.LazyFrame({"a": [1]}),
+            cse_eq=lambda self, other: self is other,
+        )
+        lf = resolver.lazy()
+
+        capfd.readouterr()
+        pl.concat([lf, lf]).collect()
+        assert msg in capfd.readouterr().err
+
+
+def test_lazyframe_resolver_deshare_cache_verbose(
+    capfd: pytest.CaptureFixture[str],
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    msg = "call_dsl_resolvers: split shared memory caches"
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_VERBOSE", "1")
+
+        # A single resolver shares its cache with nobody.
+        capfd.readouterr()
+        InMemoryLazyFrameResolver(pl.LazyFrame({"a": [1]})).lazy().collect()
+        assert msg not in capfd.readouterr().err
+
+        # The same resolver referenced twice shares one cache, which is split.
+        lf = InMemoryLazyFrameResolver(pl.LazyFrame({"a": [1]})).lazy()
+
+        capfd.readouterr()
+        pl.concat([lf, lf]).collect()
+        assert f"{msg} (n = 1)" in capfd.readouterr().err
 
 
 def test_lazyframe_resolver_cse() -> None:
