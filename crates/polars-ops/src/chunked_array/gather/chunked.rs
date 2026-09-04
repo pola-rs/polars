@@ -143,9 +143,10 @@ impl TakeChunked for Series {
         use DataType::*;
         match self.dtype() {
             dt if dt.is_primitive_numeric() => {
-                with_match_physical_numeric_polars_type!(self.dtype(), |$T| {
-                    let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
-                    ca.take_chunked_unchecked(by, sorted, avoid_sharing).into_series()
+                with_match_physical_numeric_polars_type!(self.dtype(), |T| {
+                    let ca: &ChunkedArray<T> = self.as_ref().as_ref();
+                    ca.take_chunked_unchecked(by, sorted, avoid_sharing)
+                        .into_series()
                 })
             },
             Boolean => {
@@ -220,11 +221,12 @@ impl TakeChunked for Series {
             },
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
-                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
-                    let ca = self.cat::<$C>().unwrap();
-                    CategoricalChunked::<$C>::from_cats_and_dtype_unchecked(
-                        ca.physical().take_chunked_unchecked(by, sorted, avoid_sharing),
-                        self.dtype().clone()
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |C| {
+                    let ca = self.cat::<C>().unwrap();
+                    CategoricalChunked::<C>::from_cats_and_dtype_unchecked(
+                        ca.physical()
+                            .take_chunked_unchecked(by, sorted, avoid_sharing),
+                        self.dtype().clone(),
                     )
                     .into_series()
                 })
@@ -243,9 +245,10 @@ impl TakeChunked for Series {
         use DataType::*;
         match self.dtype() {
             dt if dt.is_primitive_numeric() => {
-                with_match_physical_numeric_polars_type!(self.dtype(), |$T| {
-                 let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
-                 ca.take_opt_chunked_unchecked(by, avoid_sharing).into_series()
+                with_match_physical_numeric_polars_type!(self.dtype(), |T| {
+                    let ca: &ChunkedArray<T> = self.as_ref().as_ref();
+                    ca.take_opt_chunked_unchecked(by, avoid_sharing)
+                        .into_series()
                 })
             },
             Boolean => {
@@ -320,11 +323,11 @@ impl TakeChunked for Series {
             },
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
-                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
-                    let ca = self.cat::<$C>().unwrap();
-                    CategoricalChunked::<$C>::from_cats_and_dtype_unchecked(
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |C| {
+                    let ca = self.cat::<C>().unwrap();
+                    CategoricalChunked::<C>::from_cats_and_dtype_unchecked(
                         ca.physical().take_opt_chunked_unchecked(by, avoid_sharing),
-                        self.dtype().clone()
+                        self.dtype().clone(),
                     )
                     .into_series()
                 })

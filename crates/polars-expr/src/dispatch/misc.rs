@@ -536,8 +536,8 @@ pub(super) fn sign(s: &Column) -> PolarsResult<Column> {
     let dtype = s.dtype();
     use polars_core::datatypes::*;
     match dtype {
-        _ if dtype.is_primitive_numeric() => with_match_physical_numeric_polars_type!(dtype, |$T| {
-            let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
+        _ if dtype.is_primitive_numeric() => with_match_physical_numeric_polars_type!(dtype, |T| {
+            let ca: &ChunkedArray<T> = s.as_ref().as_ref();
             Ok(sign_impl(ca))
         }),
         DataType::Decimal(_, scale) => {

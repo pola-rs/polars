@@ -4,9 +4,12 @@ use crate::prelude::*;
 unsafe impl<T: PolarsCategoricalType> IntoSeries for CategoricalChunked<T> {
     fn into_series(self) -> Series {
         // We do this hack to go from generic T to concrete T to avoid adding bounds on IntoSeries.
-        with_match_categorical_physical_type!(T::physical(), |$C| {
+        with_match_categorical_physical_type!(T::physical(), |C| {
             unsafe {
-                Series(Arc::new(SeriesWrap(core::mem::transmute::<Self, CategoricalChunked<$C>>(self))))
+                Series(Arc::new(SeriesWrap(core::mem::transmute::<
+                    Self,
+                    CategoricalChunked<C>,
+                >(self))))
             }
         })
     }

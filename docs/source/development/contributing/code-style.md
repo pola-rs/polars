@@ -85,9 +85,9 @@ fn compute_chunked_array_2_args<T: PolarsNumericType>(
 
 pub fn compute_expr_2_args(arg_1: &Series, arg_2: &Series) -> Series {
     // Dispatch the numerical series to `compute_chunked_array_2_args`.
-    with_match_physical_numeric_polars_type!(arg_1.dtype(), |$T| {
-        let ca_1: &ChunkedArray<$T> = arg_1.as_ref().as_ref().as_ref();
-        let ca_2: &ChunkedArray<$T> = arg_2.as_ref().as_ref().as_ref();
+    with_match_physical_numeric_polars_type!(arg_1.dtype(), |T| {
+        let ca_1: &ChunkedArray<T> = arg_1.as_ref().as_ref();
+        let ca_2: &ChunkedArray<T> = arg_2.as_ref().as_ref();
         compute_chunked_array_2_args(ca_1, ca_2).into_series()
     })
 }

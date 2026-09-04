@@ -41,15 +41,18 @@ pub fn new_min_reduction(
         Null => Box::new(NullGroupedReduction::default()),
         String | Binary => Box::new(VecGroupedReduction::new(dtype, BinaryMinReducer)),
         _ if dtype.is_integer() || dtype.is_temporal() || dtype.is_enum() => {
-            with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VMGR::new(dtype, NumReducer::<Min<$T>>::new()))
+            with_match_physical_integer_polars_type!(dtype.to_physical(), |T| {
+                Box::new(VMGR::new(dtype, NumReducer::<Min<T>>::new()))
             })
         },
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VMGR::new(dtype, NumReducer::<Min<Int128Type>>::new())),
         #[cfg(feature = "dtype-categorical")]
-        Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), |$C| {
-            Box::new(VMGR::new(dtype.clone(), CatMinReducer::<$C>(map.clone(), PhantomData)))
+        Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), |C| {
+            Box::new(VMGR::new(
+                dtype.clone(),
+                CatMinReducer::<C>(map.clone(), PhantomData),
+            ))
         }),
         _ => polars_bail!(InvalidOperation: "`min` operation not supported for dtype `{dtype}`"),
     })
@@ -83,15 +86,18 @@ pub fn new_max_reduction(
         Null => Box::new(NullGroupedReduction::default()),
         String | Binary => Box::new(VecGroupedReduction::new(dtype, BinaryMaxReducer)),
         _ if dtype.is_integer() || dtype.is_temporal() || dtype.is_enum() => {
-            with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VMGR::new(dtype, NumReducer::<Max<$T>>::new()))
+            with_match_physical_integer_polars_type!(dtype.to_physical(), |T| {
+                Box::new(VMGR::new(dtype, NumReducer::<Max<T>>::new()))
             })
         },
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VMGR::new(dtype, NumReducer::<Max<Int128Type>>::new())),
         #[cfg(feature = "dtype-categorical")]
-        Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), |$C| {
-            Box::new(VMGR::new(dtype.clone(), CatMaxReducer::<$C>(map.clone(), PhantomData)))
+        Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), |C| {
+            Box::new(VMGR::new(
+                dtype.clone(),
+                CatMaxReducer::<C>(map.clone(), PhantomData),
+            ))
         }),
         _ => polars_bail!(InvalidOperation: "`max` operation not supported for dtype `{dtype}`"),
     })

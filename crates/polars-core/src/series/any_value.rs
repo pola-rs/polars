@@ -597,8 +597,8 @@ fn any_values_to_categorical(
     dtype: &DataType,
     strict: bool,
 ) -> PolarsResult<Series> {
-    with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |$C| {
-        let mut builder = CategoricalChunkedBuilder::<$C>::new(PlSmallStr::EMPTY, dtype.clone());
+    with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |C| {
+        let mut builder = CategoricalChunkedBuilder::<C>::new(PlSmallStr::EMPTY, dtype.clone());
 
         let mut owned = String::new(); // Amortize allocations.
         for av in values {
@@ -606,10 +606,10 @@ fn any_values_to_categorical(
                 AnyValue::String(s) => builder.append_str(s),
                 AnyValue::StringOwned(s) => builder.append_str(s),
 
-                &AnyValue::Enum(cat, &ref map) |
-                &AnyValue::EnumOwned(cat, ref map) |
-                &AnyValue::Categorical(cat, &ref map) |
-                &AnyValue::CategoricalOwned(cat, ref map) => builder.append_cat(cat, map),
+                &AnyValue::Enum(cat, &ref map)
+                | &AnyValue::EnumOwned(cat, ref map)
+                | &AnyValue::Categorical(cat, &ref map)
+                | &AnyValue::CategoricalOwned(cat, ref map) => builder.append_cat(cat, map),
 
                 AnyValue::Binary(_) | AnyValue::BinaryOwned(_) if !strict => {
                     builder.append_null();
@@ -618,7 +618,7 @@ fn any_values_to_categorical(
                 AnyValue::Null => {
                     builder.append_null();
                     Ok(())
-                }
+                },
 
                 av => {
                     if strict {

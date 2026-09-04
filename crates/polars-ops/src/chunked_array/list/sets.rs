@@ -377,11 +377,17 @@ fn array_set_operation(
             polars_bail!(InvalidOperation: "boolean type not yet supported in list 'set' operations")
         },
         _ => {
-            with_match_physical_numeric_type!(DataType::from_arrow_dtype(dtype), |$T| {
-                let a = values_a.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
-                let b = values_b.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
+            with_match_physical_numeric_type!(DataType::from_arrow_dtype(dtype), |T| {
+                let a = values_a
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<T>>()
+                    .unwrap();
+                let b = values_b
+                    .as_any()
+                    .downcast_ref::<PrimitiveArray<T>>()
+                    .unwrap();
 
-                primitive(&a, &b, offsets_a, offsets_b, set_op, validity)
+                primitive(a, b, offsets_a, offsets_b, set_op, validity)
             })
         },
     }

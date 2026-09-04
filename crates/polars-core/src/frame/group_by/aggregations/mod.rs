@@ -86,8 +86,8 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
     let starts: Vec<IdxSize> = slices.iter().map(|s| s[0]).collect();
     let ends: Vec<IdxSize> = slices.iter().map(|s| s[0] + s[1]).collect();
 
-    let arr = with_match_physical_numeric_polars_type!(phys_dtype, |$T| {
-        let ca: &ChunkedArray<$T> = by_phys.as_ref().as_ref().as_ref();
+    let arr = with_match_physical_numeric_polars_type!(phys_dtype, |T| {
+        let ca: &ChunkedArray<T> = by_phys.as_ref().as_ref().as_ref();
         let arr = ca.downcast_as_array();
         let values = arr.values().as_slice();
         let validity = arr.validity();

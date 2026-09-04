@@ -112,9 +112,9 @@ fn scatter_impl(
 
     match mutable_s.dtype() {
         dt if dt.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(dt, |$T| {
-                let ca: &mut ChunkedArray<$T> = mutable_s.as_mut();
-                let values: &ChunkedArray<$T> = values.as_ref().as_ref();
+            with_match_physical_numeric_polars_type!(dt, |T| {
+                let ca: &mut ChunkedArray<T> = mutable_s.as_mut();
+                let values: &ChunkedArray<T> = values.as_ref().as_ref();
                 ca.scatter(idx, values.iter())
             })
         },

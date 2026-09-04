@@ -100,22 +100,19 @@ impl Series {
 
         if phys_dtype.is_primitive_numeric() {
             if arr.null_count() == 0 {
-                with_match_physical_numeric_type!(phys_dtype, |$T| {
-                        let arr = arr.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
-                        let values = arr.values().as_slice();
-                        Box::new(values.iter().map(|&value| AnyValue::from(value))) as Box<dyn ExactSizeIterator<Item=AnyValue<'_>> + '_>
+                with_match_physical_numeric_type!(phys_dtype, |T| {
+                    let arr = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
+                    let values = arr.values().as_slice();
+                    Box::new(values.iter().map(|&value| AnyValue::from(value)))
+                        as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
                 })
             } else {
-                with_match_physical_numeric_type!(phys_dtype, |$T| {
-                        let arr = arr.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
-                        Box::new(arr.iter().map(|value| {
-
-                        match value {
-                            Some(value) => AnyValue::from(*value),
-                            None => AnyValue::Null
-                        }
-
-                    })) as Box<dyn ExactSizeIterator<Item=AnyValue<'_>> + '_>
+                with_match_physical_numeric_type!(phys_dtype, |T| {
+                    let arr = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
+                    Box::new(arr.iter().map(|value| match value {
+                        Some(value) => AnyValue::from(*value),
+                        None => AnyValue::Null,
+                    })) as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
                 })
             }
         } else {

@@ -25,8 +25,8 @@ macro_rules! impl_bitop {
                             Cow::Borrowed(rhs)
                         };
 
-                        with_match_physical_integer_polars_type!(dt, |$T| {
-                            let lhs: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
+                        with_match_physical_integer_polars_type!(dt, |T| {
+                            let lhs: &ChunkedArray<T> = self.as_ref().as_ref().as_ref();
                             let rhs = lhs.unpack_series_matching_type(&rhs)?;
                             Ok(lhs.$f(&rhs).into_series())
                         })

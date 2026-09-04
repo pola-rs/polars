@@ -236,23 +236,27 @@ pub trait RoundSeries: SeriesSealed {
         }
 
         polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "round_sig_figs can only be used on numeric types" );
-        with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-            let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-            let s = ca.apply_values(|value| {
-                let value = AsPrimitive::<f64>::as_(value);
-                if value == 0.0 {
-                    return AsPrimitive::<<$T as PolarsNumericType>::Native>::as_(value);
-                }
-                // To deal with very large/small numbers we split up 10^n in 5^n and 2^n.
-                // The scaling by 2^n is almost always lossless.
-                let exp = digits - 1 - value.abs().log10().floor() as i32;
-                let pow5 = 5.0_f64.powi(exp);
-                let scaled = libm::scalbn(value, exp) * pow5;
-                let descaled = libm::scalbn(scaled.round() / pow5, -exp);
-                AsPrimitive::<<$T as PolarsNumericType>::Native>::as_(
-                    if descaled.is_finite() { descaled } else { value }
-                )
-            }).into_series();
+        with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+            let ca: &ChunkedArray<T> = s.as_ref().as_ref();
+            let s = ca
+                .apply_values(|value| {
+                    let value = AsPrimitive::<f64>::as_(value);
+                    if value == 0.0 {
+                        return AsPrimitive::<<T as PolarsNumericType>::Native>::as_(value);
+                    }
+                    // To deal with very large/small numbers we split up 10^n in 5^n and 2^n.
+                    // The scaling by 2^n is almost always lossless.
+                    let exp = digits - 1 - value.abs().log10().floor() as i32;
+                    let pow5 = 5.0_f64.powi(exp);
+                    let scaled = libm::scalbn(value, exp) * pow5;
+                    let descaled = libm::scalbn(scaled.round() / pow5, -exp);
+                    AsPrimitive::<<T as PolarsNumericType>::Native>::as_(if descaled.is_finite() {
+                        descaled
+                    } else {
+                        value
+                    })
+                })
+                .into_series();
             return Ok(s);
         });
     }

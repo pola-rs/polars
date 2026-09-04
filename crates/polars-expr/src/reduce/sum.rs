@@ -19,8 +19,8 @@ pub fn new_sum_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReducti
     Ok(match dtype {
         Boolean => Box::new(VGR::new(dtype, BoolSumReducer)),
         _ if dtype.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VGR::new(dtype, NumSumReducer::<$T>(PhantomData)))
+            with_match_physical_numeric_polars_type!(dtype.to_physical(), |T| {
+                Box::new(VGR::new(dtype, NumSumReducer::<T>(PhantomData)))
             })
         },
         #[cfg(feature = "dtype-decimal")]

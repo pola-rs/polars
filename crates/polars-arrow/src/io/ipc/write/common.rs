@@ -46,22 +46,19 @@ pub fn dictionaries_to_encode(
     match array.dtype().to_physical_type() {
         Utf8 | LargeUtf8 | Binary | LargeBinary | Primitive(_) | Boolean | Null
         | FixedSizeBinary | BinaryView | Utf8View => Ok(()),
-        Dictionary(key_type) => match_integer_type!(key_type, |$T| {
-            let dict_id = field.dictionary_id
-                .ok_or_else(|| polars_err!(InvalidOperation: "Dictionaries must have an associated id"))?;
+        Dictionary(key_type) => match_integer_type!(key_type, |T| {
+            let dict_id = field.dictionary_id.ok_or_else(
+                || polars_err!(InvalidOperation: "Dictionaries must have an associated id"),
+            )?;
 
             if dictionary_tracker.insert(dict_id, array)? {
                 dicts_to_encode.push((dict_id, array.to_boxed()));
             }
 
-            let array = array.as_any().downcast_ref::<DictionaryArray<$T>>().unwrap();
+            let array = array.as_any().downcast_ref::<DictionaryArray<T>>().unwrap();
             let values = array.values();
             // @Q? Should this not pick fields[0]?
-            dictionaries_to_encode(field,
-                values.as_ref(),
-                dictionary_tracker,
-                dicts_to_encode,
-            )?;
+            dictionaries_to_encode(field, values.as_ref(), dictionary_tracker, dicts_to_encode)?;
 
             Ok(())
         }),
@@ -156,8 +153,8 @@ pub fn encode_dictionary(
         panic!("Given array is not a DictionaryArray")
     };
 
-    match_integer_type!(key_type, |$T| {
-        let array: &DictionaryArray<$T> = array.as_any().downcast_ref().unwrap();
+    match_integer_type!(key_type, |T| {
+        let array: &DictionaryArray<T> = array.as_any().downcast_ref().unwrap();
 
         encode_dictionary_values(dict_id, array.values().as_ref(), options)
     })
@@ -488,11 +485,8 @@ impl DictionaryTracker {
     pub fn insert(&mut self, dict_id: i64, array: &dyn Array) -> PolarsResult<bool> {
         let values = match array.dtype().to_storage() {
             ArrowDataType::Dictionary(key_type, _, _) => {
-                match_integer_type!(key_type, |$T| {
-                    let array = array
-                        .as_any()
-                        .downcast_ref::<DictionaryArray<$T>>()
-                        .unwrap();
+                match_integer_type!(key_type, |T| {
+                    let array = array.as_any().downcast_ref::<DictionaryArray<T>>().unwrap();
                     array.values()
                 })
             },

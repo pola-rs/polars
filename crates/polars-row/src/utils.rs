@@ -3,25 +3,24 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 
 #[macro_export]
 macro_rules! with_match_arrow_primitive_type {(
-    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+    $key_type:expr, |$T:ident| $($body:tt)*
 ) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use arrow::datatypes::ArrowDataType::*;
     use polars_utils::float16::pf16;
     match $key_type {
-        Int8 => __with_ty__! { i8 },
-        Int16 => __with_ty__! { i16 },
-        Int32 => __with_ty__! { i32 },
-        Int64 => __with_ty__! { i64 },
-        Int128 => __with_ty__! { i128 },
-        UInt8 => __with_ty__! { u8 },
-        UInt16 => __with_ty__! { u16 },
-        UInt32 => __with_ty__! { u32 },
-        UInt64 => __with_ty__! { u64 },
-        UInt128 => __with_ty__! { u128 },
-        Float16 => __with_ty__! { pf16 },
-        Float32 => __with_ty__! { f32 },
-        Float64 => __with_ty__! { f64 },
+        Int8 => { #[allow(dead_code)] type $T = i8; $($body)* },
+        Int16 => { #[allow(dead_code)] type $T = i16; $($body)* },
+        Int32 => { #[allow(dead_code)] type $T = i32; $($body)* },
+        Int64 => { #[allow(dead_code)] type $T = i64; $($body)* },
+        Int128 => { #[allow(dead_code)] type $T = i128; $($body)* },
+        UInt8 => { #[allow(dead_code)] type $T = u8; $($body)* },
+        UInt16 => { #[allow(dead_code)] type $T = u16; $($body)* },
+        UInt32 => { #[allow(dead_code)] type $T = u32; $($body)* },
+        UInt64 => { #[allow(dead_code)] type $T = u64; $($body)* },
+        UInt128 => { #[allow(dead_code)] type $T = u128; $($body)* },
+        Float16 => { #[allow(dead_code)] type $T = pf16; $($body)* },
+        Float32 => { #[allow(dead_code)] type $T = f32; $($body)* },
+        Float64 => { #[allow(dead_code)] type $T = f64; $($body)* },
         _ => unreachable!(),
     }
 })}

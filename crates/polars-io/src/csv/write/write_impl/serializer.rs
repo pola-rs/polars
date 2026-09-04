@@ -874,16 +874,17 @@ pub(super) fn serializer_for<'a>(
         ),
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(_, mapping) | DataType::Enum(_, mapping) => {
-            polars_core::with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |$C| {
+            polars_core::with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |C| {
                 string_serializer(
                     |iter| {
-                        let &idx: &<$C as PolarsCategoricalType>::Native = Iterator::next(iter).expect(TOO_MANY_MSG)?;
+                        let &idx: &<C as PolarsCategoricalType>::Native =
+                            Iterator::next(iter).expect(TOO_MANY_MSG)?;
                         Some(unsafe { mapping.cat_to_str_unchecked(idx.as_cat()) })
                     },
                     options,
                     |arr| {
                         arr.as_any()
-                            .downcast_ref::<PrimitiveArray<<$C as PolarsCategoricalType>::Native>>()
+                            .downcast_ref::<PrimitiveArray<<C as PolarsCategoricalType>::Native>>()
                             .expect(ARRAY_MISMATCH_MSG)
                             .iter()
                     },

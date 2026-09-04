@@ -24,10 +24,10 @@ fn map_enum_cats(
     let fcats = FrozenCategories::new(labels.iter().map(|s| s.as_str()))?;
     let enum_dtype = DataType::from_frozen_categories(fcats.clone());
 
-    with_match_categorical_physical_type!(fcats.physical(), |$C| {
+    with_match_categorical_physical_type!(fcats.physical(), |C| {
         if include_breaks {
             let right_ends = [sorted_breaks, &[f64::INFINITY]].concat();
-            let mut bld = CategoricalChunkedBuilder::<$C>::new(out_name.clone(), enum_dtype);
+            let mut bld = CategoricalChunkedBuilder::<C>::new(out_name.clone(), enum_dtype);
             let mut brk_vals = PrimitiveChunkedBuilder::<Float64Type>::new(
                 PlSmallStr::from_static("breakpoint"),
                 s.len(),
@@ -49,9 +49,12 @@ fn map_enum_cats(
                 });
 
             let outvals = [brk_vals.finish().into_series(), bld.finish().into_series()];
-            Ok(StructChunked::from_series(out_name, outvals[0].len(), outvals.iter())?.into_series())
+            Ok(
+                StructChunked::from_series(out_name, outvals[0].len(), outvals.iter())?
+                    .into_series(),
+            )
         } else {
-            Ok(CategoricalChunked::<$C>::from_str_iter(
+            Ok(CategoricalChunked::<C>::from_str_iter(
                 out_name,
                 enum_dtype,
                 s_iter.map(|opt| {

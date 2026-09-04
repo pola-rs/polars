@@ -88,14 +88,14 @@ impl NumericOp {
         let lhs = lhs.rechunk();
         let rhs = rhs.rechunk();
 
-        with_match_physical_numeric_polars_type!(lhs.dtype(), |$T| {
-            let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
-            let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+        with_match_physical_numeric_polars_type!(lhs.dtype(), |T| {
+            let lhs: &ChunkedArray<T> = lhs.as_ref().as_ref();
+            let rhs: &ChunkedArray<T> = rhs.as_ref().as_ref();
 
             let lhs = lhs.downcast_get(0).unwrap();
             let rhs = rhs.downcast_get(0).unwrap();
 
-            Box::new(self.apply_arithmetic_kernel::<$T>(lhs.clone(), rhs.clone()))
+            Box::new(self.apply_arithmetic_kernel::<T>(lhs.clone(), rhs.clone()))
         })
     }
 
@@ -159,38 +159,44 @@ impl NumericOp {
 }
 
 macro_rules! with_match_pl_num_arith {
-    ($op:expr, $swapped:expr, | $_:tt $OP:tt | $($body:tt)* ) => ({
-        macro_rules! __with_func__ {( $_ $OP:tt ) => ( $($body)* )}
-
+    ($op:expr, $swapped:expr, |$OP:ident| $($body:tt)* ) => ({
         match $op {
-            NumericOp::Add => __with_func__! { (PlNumArithmetic::wrapping_add) },
+            NumericOp::Add => { let $OP = PlNumArithmetic::wrapping_add; $($body)* },
             NumericOp::Sub => {
                 if $swapped {
-                    __with_func__! { (|b, a| PlNumArithmetic::wrapping_sub(a, b)) }
+                    let $OP = |b, a| PlNumArithmetic::wrapping_sub(a, b);
+                    $($body)*
                 } else {
-                    __with_func__! { (PlNumArithmetic::wrapping_sub) }
+                    let $OP = PlNumArithmetic::wrapping_sub;
+                    $($body)*
                 }
             },
-            NumericOp::Mul => __with_func__! { (PlNumArithmetic::wrapping_mul) },
+            NumericOp::Mul => { let $OP = PlNumArithmetic::wrapping_mul; $($body)* },
             NumericOp::Div => {
                 if $swapped {
-                    __with_func__! { (|b, a| PlNumArithmetic::legacy_div(a, b)) }
+                    let $OP = |b, a| PlNumArithmetic::legacy_div(a, b);
+                    $($body)*
                 } else {
-                    __with_func__! { (PlNumArithmetic::legacy_div) }
+                    let $OP = PlNumArithmetic::legacy_div;
+                    $($body)*
                 }
             },
             NumericOp::Rem => {
                 if $swapped {
-                    __with_func__! { (|b, a| PlNumArithmetic::wrapping_mod(a, b)) }
+                    let $OP = |b, a| PlNumArithmetic::wrapping_mod(a, b);
+                    $($body)*
                 } else {
-                    __with_func__! { (PlNumArithmetic::wrapping_mod) }
+                    let $OP = PlNumArithmetic::wrapping_mod;
+                    $($body)*
                 }
             },
             NumericOp::FloorDiv => {
                 if $swapped {
-                    __with_func__! { (|b, a| PlNumArithmetic::wrapping_floor_div(a, b)) }
+                    let $OP = |b, a| PlNumArithmetic::wrapping_floor_div(a, b);
+                    $($body)*
                 } else {
-                    __with_func__! { (PlNumArithmetic::wrapping_floor_div) }
+                    let $OP = PlNumArithmetic::wrapping_floor_div;
+                    $($body)*
                 }
             },
         }

@@ -100,8 +100,8 @@ pub fn convert_and_bound_index(
         InvalidOperation: "expected integers as index"
     );
 
-    with_match_physical_integer_polars_type!(dtype, |$T| {
-        let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
+    with_match_physical_integer_polars_type!(dtype, |T| {
+        let ca: &ChunkedArray<T> = s.as_ref().as_ref();
         convert_and_bound_idx_ca(ca, target_len, null_on_oob)
     })
 }

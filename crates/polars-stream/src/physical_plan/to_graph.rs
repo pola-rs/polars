@@ -1656,9 +1656,9 @@ fn to_graph_rec<'a>(
 
             let state: Box<dyn EwmStateUpdate + Send> = match ewm_variant {
                 EwmMean { .. } => {
-                    with_match_physical_float_type!(dtype, |$T| {
-                        let state: EwmMeanState<$T> = EwmMeanState::new(
-                            AsPrimitive::<$T>::as_(options.alpha),
+                    with_match_physical_float_type!(dtype, |T| {
+                        let state: EwmMeanState<T> = EwmMeanState::new(
+                            AsPrimitive::<T>::as_(options.alpha),
                             options.adjust,
                             options.min_periods,
                             options.ignore_nulls,
@@ -1668,9 +1668,9 @@ fn to_graph_rec<'a>(
                     })
                 },
                 EwmSum { .. } => {
-                    with_match_physical_float_type!(dtype, |$T| {
-                        let state: EwmSumState<$T> = EwmSumState::new(
-                            AsPrimitive::<$T>::as_(options.alpha),
+                    with_match_physical_float_type!(dtype, |T| {
+                        let state: EwmSumState<T> = EwmSumState::new(
+                            AsPrimitive::<T>::as_(options.alpha),
                             options.min_periods,
                             options.ignore_nulls,
                         );
@@ -1678,9 +1678,9 @@ fn to_graph_rec<'a>(
                         Box::new(state)
                     })
                 },
-                _ => with_match_physical_float_type!(dtype, |$T| {
-                    let state: EwmCovState<$T> = EwmCovState::new(
-                        AsPrimitive::<$T>::as_(options.alpha),
+                _ => with_match_physical_float_type!(dtype, |T| {
+                    let state: EwmCovState<T> = EwmCovState::new(
+                        AsPrimitive::<T>::as_(options.alpha),
                         options.adjust,
                         options.bias,
                         options.min_periods,

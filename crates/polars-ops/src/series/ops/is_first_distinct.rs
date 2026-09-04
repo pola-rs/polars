@@ -120,8 +120,8 @@ pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             return is_first_distinct(&s);
         },
         dt if dt.is_float() => {
-            with_match_physical_float_polars_type!(s.dtype(), |$T| {
-                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+            with_match_physical_float_polars_type!(s.dtype(), |T| {
+                let ca: &ChunkedArray<T> = s.as_ref().as_ref().as_ref();
                 is_first_distinct_numeric(ca)
             })
         },

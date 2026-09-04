@@ -59,9 +59,9 @@ pub fn offset_buffers_children_dictionary(array: &dyn Array) -> BuffersChildren 
     match array.dtype().to_physical_type() {
         Null => ffi_dyn!(array, NullArray),
         Boolean => ffi_dyn!(array, BooleanArray),
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
-            ffi_dyn!(array, PrimitiveArray<$T>)
-        }),
+        Primitive(primitive) => {
+            with_match_primitive_type_full!(primitive, |T| ffi_dyn!(array, PrimitiveArray<T>))
+        },
         Binary => ffi_dyn!(array, BinaryArray<i32>),
         LargeBinary => ffi_dyn!(array, BinaryArray<i64>),
         FixedSizeBinary => ffi_dyn!(array, FixedSizeBinaryArray),
@@ -76,8 +76,8 @@ pub fn offset_buffers_children_dictionary(array: &dyn Array) -> BuffersChildren 
         BinaryView => ffi_dyn!(array, BinaryViewArray),
         Utf8View => ffi_dyn!(array, Utf8ViewArray),
         Dictionary(key_type) => {
-            match_integer_type!(key_type, |$T| {
-                let array = array.as_any().downcast_ref::<DictionaryArray<$T>>().unwrap();
+            match_integer_type!(key_type, |T| {
+                let array = array.as_any().downcast_ref::<DictionaryArray<T>>().unwrap();
                 (
                     array.offset().unwrap(),
                     array.buffers(),

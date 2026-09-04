@@ -17,8 +17,8 @@ pub fn get_value_display<'a, F: Write + 'a>(
         Boolean => Box::new(|f, index| {
             super::boolean::fmt::write_value(array.as_any().downcast_ref().unwrap(), index, f)
         }),
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
-            let writer = super::primitive::fmt::get_write_value::<$T, _>(
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |T| {
+            let writer = super::primitive::fmt::get_write_value::<T, _>(
                 array.as_any().downcast_ref().unwrap(),
             );
             Box::new(move |f, index| writer(f, index))
@@ -105,9 +105,14 @@ pub fn get_value_display<'a, F: Write + 'a>(
                 f,
             )
         }),
-        Dictionary(key_type) => match_integer_type!(key_type, |$T| {
+        Dictionary(key_type) => match_integer_type!(key_type, |T| {
             Box::new(move |f, index| {
-                super::dictionary::fmt::write_value::<$T,_>(array.as_any().downcast_ref().unwrap(), index, null, f)
+                super::dictionary::fmt::write_value::<T, _>(
+                    array.as_any().downcast_ref().unwrap(),
+                    index,
+                    null,
+                    f,
+                )
             })
         }),
     }

@@ -433,8 +433,8 @@ mod inner {
             debug_assert_eq!(prim_dtype, &self.output_primitive_dtype);
 
             // Safety: Leaf dtypes have been checked to be numeric by `try_new()`
-            let out = with_match_physical_numeric_polars_type!(&prim_dtype, |$T| {
-                self._finish_impl::<$T>(prim_lhs, prim_rhs)
+            let out = with_match_physical_numeric_polars_type!(&prim_dtype, |T| {
+                self._finish_impl::<T>(prim_lhs, prim_rhs)
             })?;
 
             debug_assert_eq!(out.dtype(), &output_dtype);
@@ -531,18 +531,15 @@ mod inner {
                     // list lengths.
                     let mut mismatch_pos = 0;
 
-                    with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
+                    with_match_pl_num_arith!(&self.op.0, self.swapped, |op| {
                         for (i, ((lhs_start, lhs_len), (rhs_start, rhs_len))) in offsets_lhs
                             .offset_and_length_iter()
                             .zip(offsets_rhs.offset_and_length_iter())
                             .enumerate()
                         {
-                            if
-                                (mismatch_pos == i)
-                                & (
-                                    (lhs_len == rhs_len)
-                                    | unsafe { !self.outer_validity.get_bit_unchecked(i) }
-                                )
+                            if (mismatch_pos == i)
+                                & ((lhs_len == rhs_len)
+                                    | unsafe { !self.outer_validity.get_bit_unchecked(i) })
                             {
                                 mismatch_pos += 1;
                             }
@@ -557,7 +554,7 @@ mod inner {
 
                                 let l = unsafe { arr_lhs.value_unchecked(l_idx) };
                                 let r = unsafe { arr_rhs.value_unchecked(r_idx) };
-                                let v = $OP(l, r);
+                                let v = op(l, r);
 
                                 unsafe { out_ptr.add(l_idx).write(v) };
                             }
@@ -640,8 +637,10 @@ mod inner {
 
                     let mut mismatch_pos = 0;
 
-                    with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
-                        for (i, (lhs_start, lhs_len)) in offsets_lhs.offset_and_length_iter().enumerate() {
+                    with_match_pl_num_arith!(&self.op.0, self.swapped, |op| {
+                        for (i, (lhs_start, lhs_len)) in
+                            offsets_lhs.offset_and_length_iter().enumerate()
+                        {
                             if ((lhs_len == width) & (mismatch_pos == i))
                                 | unsafe { !self.outer_validity.get_bit_unchecked(i) }
                             {
@@ -656,7 +655,7 @@ mod inner {
 
                                 let l = unsafe { arr_lhs.value_unchecked(l_idx) };
                                 let r = unsafe { arr_rhs.value_unchecked(r_idx) };
-                                let v = $OP(l, r);
+                                let v = op(l, r);
 
                                 unsafe {
                                     out_ptr.add(l_idx).write(v);
@@ -737,14 +736,15 @@ mod inner {
                     let mut out_vec = Vec::<T::Native>::with_capacity(n_values);
                     let out_ptr = out_vec.as_mut_ptr();
 
-                    with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
-                        for (i, l_range) in OffsetsBuffer::<i64>::leaf_ranges_iter(offsets_lhs).enumerate()
+                    with_match_pl_num_arith!(&self.op.0, self.swapped, |op| {
+                        for (i, l_range) in
+                            OffsetsBuffer::<i64>::leaf_ranges_iter(offsets_lhs).enumerate()
                         {
                             let r = unsafe { arr_rhs.value_unchecked(i) };
                             for l_idx in l_range {
                                 unsafe {
                                     let l = arr_lhs.value_unchecked(l_idx);
-                                    let v = $OP(l, r);
+                                    let v = op(l, r);
                                     out_ptr.add(l_idx).write(v);
                                 }
                             }
@@ -788,14 +788,15 @@ mod inner {
                     let arr_lhs_mut_slice = arr_lhs.get_mut_values().unwrap();
                     assert_eq!(arr_lhs_mut_slice.len(), n_values);
 
-                    with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
-                        for (i, l_range) in OffsetsBuffer::<i64>::leaf_ranges_iter(offsets_lhs).enumerate()
+                    with_match_pl_num_arith!(&self.op.0, self.swapped, |op| {
+                        for (i, l_range) in
+                            OffsetsBuffer::<i64>::leaf_ranges_iter(offsets_lhs).enumerate()
                         {
                             let r = unsafe { arr_rhs.value_unchecked(i) };
                             for l_idx in l_range {
                                 unsafe {
                                     let l = arr_lhs_mut_slice.get_unchecked_mut(l_idx);
-                                    *l = $OP(*l, r);
+                                    *l = op(*l, r);
                                 }
                             }
                         }

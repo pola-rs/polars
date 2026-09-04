@@ -664,8 +664,8 @@ unsafe fn encode_flat_array(
                 }
             }
 
-            with_match_arrow_primitive_type!(dt, |$T| {
-                let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
+            with_match_arrow_primitive_type!(dt, |T| {
+                let array = array.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
                 numeric::encode(buffer, array, opt, offsets);
             })
         },

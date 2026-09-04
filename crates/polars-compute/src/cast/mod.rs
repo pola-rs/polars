@@ -420,11 +420,11 @@ pub fn cast(
         (Struct(_), _) | (_, Struct(_)) => polars_bail!(InvalidOperation:
             "Cannot cast from struct to other types"
         ),
-        (Dictionary(index_type, ..), _) => match_integer_type!(index_type, |$T| {
-            dictionary_cast_dyn::<$T>(array, to_type, options)
+        (Dictionary(index_type, ..), _) => match_integer_type!(index_type, |T| {
+            dictionary_cast_dyn::<T>(array, to_type, options)
         }),
-        (_, Dictionary(index_type, value_type, ordered)) => match_integer_type!(index_type, |$T| {
-            cast_to_dictionary::<$T>(array, value_type, *ordered, options)
+        (_, Dictionary(index_type, value_type, ordered)) => match_integer_type!(index_type, |T| {
+            cast_to_dictionary::<T>(array, value_type, *ordered, options)
         }),
         // not supported by polars
         // (List(_), FixedSizeList(inner, size)) => cast_list_to_fixed_size_list::<i32>(

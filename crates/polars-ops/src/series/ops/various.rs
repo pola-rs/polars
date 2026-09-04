@@ -149,9 +149,9 @@ fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
     }
 
     if s.dtype().is_primitive_numeric() {
-        with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-            let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-            return Ok(is_sorted_ca_num::<$T>(ca, options))
+        with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+            let ca: &ChunkedArray<T> = s.as_ref().as_ref();
+            return Ok(is_sorted_ca_num::<T>(ca, options));
         })
     }
 
@@ -185,9 +185,9 @@ fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
     let phys = non_null.to_physical_repr();
     let s_phys = phys.as_ref();
     if s_phys.dtype().is_primitive_numeric() {
-        with_match_physical_numeric_polars_type!(s_phys.dtype(), |$T| {
-            let ca: &ChunkedArray<$T> = s_phys.as_ref().as_ref().as_ref();
-            return Ok(is_sorted_ca_num::<$T>(ca, options))
+        with_match_physical_numeric_polars_type!(s_phys.dtype(), |T| {
+            let ca: &ChunkedArray<T> = s_phys.as_ref().as_ref();
+            return Ok(is_sorted_ca_num::<T>(ca, options));
         })
     }
 
@@ -274,8 +274,8 @@ fn is_sorted_categorical_lexical_adjacent(s: &Series, options: SortOptions) -> P
         ComputeError: "internal error: expected Categorical in lexical `is_sorted` path",
     );
 
-    with_match_categorical_physical_type!(s.dtype().cat_physical().unwrap(), |$C| {
-        let ca = s.cat::<$C>()?;
+    with_match_categorical_physical_type!(s.dtype().cat_physical().unwrap(), |C| {
+        let ca = s.cat::<C>()?;
 
         // `ca.null_count() == 0` implies each `phys` row decodes via `iter_str` to `Some(..)`
         Ok(is_sorted_adjacent_total_ord(

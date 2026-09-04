@@ -54,9 +54,9 @@ pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Ar
             let values = values.as_any().downcast_ref().unwrap();
             Box::new(boolean::take_unchecked(values, indices))
         },
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |T| {
             let values = values.as_any().downcast_ref().unwrap();
-            Box::new(primitive::take_primitive_unchecked::<$T>(&values, indices))
+            Box::new(primitive::take_primitive_unchecked::<T>(values, indices))
         }),
         LargeBinary => {
             let values = values.as_any().downcast_ref().unwrap();

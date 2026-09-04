@@ -17,15 +17,16 @@ pub fn peak_min_max(
             peak_min_max(&column, start, end, is_peak_max)
         },
         dt if dt.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(dt, |$T| {
-                let ca: &ChunkedArray<$T> = column.as_ref().as_ref().as_ref();
+            with_match_physical_numeric_polars_type!(dt, |T| {
+                let ca: &ChunkedArray<T> = column.as_ref().as_ref();
                 let start = start.extract();
                 let end = end.extract();
                 Ok(if is_peak_max {
                     peak_max_with_start_end(ca, start, end)
                 } else {
                     peak_min_with_start_end(ca, start, end)
-                }.with_name(name))
+                }
+                .with_name(name))
             })
         },
         dt => polars_bail!(opq = peak_max, dt),

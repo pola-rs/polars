@@ -268,12 +268,13 @@ impl<T: PolarsCategoricalType> LogicalType for CategoricalChunked<T> {
 
             DataType::Enum(fcats, _mapping) => {
                 // TODO @ cat-rework: if len >= self.mapping().upper_bound(), remap categories then index into array.
-                let ret = with_match_categorical_physical_type!(fcats.physical(), |$C| {
-                    CategoricalChunked::<$C>::from_str_iter(
+                let ret = with_match_categorical_physical_type!(fcats.physical(), |C| {
+                    CategoricalChunked::<C>::from_str_iter(
                         self.name().clone(),
                         dtype.clone(),
-                        self.iter_str()
-                    )?.into_series()
+                        self.iter_str(),
+                    )?
+                    .into_series()
                 });
 
                 if options.is_strict() && self.null_count() != ret.null_count() {
@@ -285,15 +286,17 @@ impl<T: PolarsCategoricalType> LogicalType for CategoricalChunked<T> {
 
             DataType::Categorical(cats, _mapping) => {
                 // TODO @ cat-rework: if len >= self.mapping().upper_bound(), remap categories then index into array.
-                Ok(
-                    with_match_categorical_physical_type!(cats.physical(), |$C| {
-                        CategoricalChunked::<$C>::from_str_iter(
+                Ok(with_match_categorical_physical_type!(
+                    cats.physical(),
+                    |C| {
+                        CategoricalChunked::<C>::from_str_iter(
                             self.name().clone(),
                             dtype.clone(),
-                            self.iter_str()
-                        )?.into_series()
-                    }),
-                )
+                            self.iter_str(),
+                        )?
+                        .into_series()
+                    }
+                ))
             },
 
             dt if dt.is_integer() => {

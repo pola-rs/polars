@@ -465,165 +465,158 @@ macro_rules! match_arrow_dtype_apply_macro_ca {
 
 #[macro_export]
 macro_rules! with_match_physical_numeric_type {(
-    $dtype:expr, | $_:tt $T:ident | $($body:tt)*
+    $dtype:expr, |$T:ident| $($body:tt)*
 ) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     #[cfg(feature = "dtype-f16")]
     use polars_utils::float16::pf16;
     use $crate::datatypes::DataType::*;
     match $dtype {
         #[cfg(feature = "dtype-i8")]
-        Int8 => __with_ty__! { i8 },
+        Int8 => { #[allow(dead_code)] type $T = i8; $($body)* },
         #[cfg(feature = "dtype-i16")]
-        Int16 => __with_ty__! { i16 },
-        Int32 => __with_ty__! { i32 },
-        Int64 => __with_ty__! { i64 },
+        Int16 => { #[allow(dead_code)] type $T = i16; $($body)* },
+        Int32 => { #[allow(dead_code)] type $T = i32; $($body)* },
+        Int64 => { #[allow(dead_code)] type $T = i64; $($body)* },
         #[cfg(feature = "dtype-i128")]
-        Int128 => __with_ty__! { i128 },
+        Int128 => { #[allow(dead_code)] type $T = i128; $($body)* },
         #[cfg(feature = "dtype-u8")]
-        UInt8 => __with_ty__! { u8 },
+        UInt8 => { #[allow(dead_code)] type $T = u8; $($body)* },
         #[cfg(feature = "dtype-u16")]
-        UInt16 => __with_ty__! { u16 },
-        UInt32 => __with_ty__! { u32 },
-        UInt64 => __with_ty__! { u64 },
+        UInt16 => { #[allow(dead_code)] type $T = u16; $($body)* },
+        UInt32 => { #[allow(dead_code)] type $T = u32; $($body)* },
+        UInt64 => { #[allow(dead_code)] type $T = u64; $($body)* },
         #[cfg(feature = "dtype-u128")]
-        UInt128 => __with_ty__! { u128 },
+        UInt128 => { #[allow(dead_code)] type $T = u128; $($body)* },
         #[cfg(feature = "dtype-f16")]
-        Float16 => __with_ty__! { pf16 },
-        Float32 => __with_ty__! { f32 },
-        Float64 => __with_ty__! { f64 },
+        Float16 => { #[allow(dead_code)] type $T = pf16; $($body)* },
+        Float32 => { #[allow(dead_code)] type $T = f32; $($body)* },
+        Float64 => { #[allow(dead_code)] type $T = f64; $($body)* },
         dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
 #[macro_export]
 macro_rules! with_match_physical_integer_type {(
-    $dtype:expr, | $_:tt $T:ident | $($body:tt)*
+    $dtype:expr, |$T:ident| $($body:tt)*
 ) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     #[cfg(feature = "dtype-f16")]
     use polars_utils::float16::pf16;
     use $crate::datatypes::DataType::*;
     match $dtype {
         #[cfg(feature = "dtype-i8")]
-        Int8 => __with_ty__! { i8 },
+        Int8 => { #[allow(dead_code)] type $T = i8; $($body)* },
         #[cfg(feature = "dtype-i16")]
-        Int16 => __with_ty__! { i16 },
-        Int32 => __with_ty__! { i32 },
-        Int64 => __with_ty__! { i64 },
+        Int16 => { #[allow(dead_code)] type $T = i16; $($body)* },
+        Int32 => { #[allow(dead_code)] type $T = i32; $($body)* },
+        Int64 => { #[allow(dead_code)] type $T = i64; $($body)* },
         #[cfg(feature = "dtype-i128")]
-        Int128 => __with_ty__! { i128 },
+        Int128 => { #[allow(dead_code)] type $T = i128; $($body)* },
         #[cfg(feature = "dtype-u8")]
-        UInt8 => __with_ty__! { u8 },
+        UInt8 => { #[allow(dead_code)] type $T = u8; $($body)* },
         #[cfg(feature = "dtype-u16")]
-        UInt16 => __with_ty__! { u16 },
-        UInt32 => __with_ty__! { u32 },
-        UInt64 => __with_ty__! { u64 },
+        UInt16 => { #[allow(dead_code)] type $T = u16; $($body)* },
+        UInt32 => { #[allow(dead_code)] type $T = u32; $($body)* },
+        UInt64 => { #[allow(dead_code)] type $T = u64; $($body)* },
         #[cfg(feature = "dtype-u128")]
-        UInt128 => __with_ty__! { u128 },
+        UInt128 => { #[allow(dead_code)] type $T = u128; $($body)* },
         dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
 #[macro_export]
 macro_rules! with_match_physical_float_type {(
-    $dtype:expr, | $_:tt $T:ident | $($body:tt)*
+    $dtype:expr, |$T:ident| $($body:tt)*
 ) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use polars_utils::float16::pf16;
     use $crate::datatypes::DataType::*;
     match $dtype {
         #[cfg(feature = "dtype-f16")]
-        Float16 => __with_ty__! { pf16 },
-        Float32 => __with_ty__! { f32 },
-        Float64 => __with_ty__! { f64 },
+        Float16 => { #[allow(dead_code)] type $T = pf16; $($body)* },
+        Float32 => { #[allow(dead_code)] type $T = f32; $($body)* },
+        Float64 => { #[allow(dead_code)] type $T = f64; $($body)* },
         dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
 #[macro_export]
 macro_rules! with_match_physical_float_polars_type {(
-    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+    $key_type:expr, |$T:ident| $($body:tt)*
 ) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use $crate::datatypes::DataType::*;
     match $key_type {
         #[cfg(feature = "dtype-f16")]
-        Float16 => __with_ty__! { Float16Type },
-        Float32 => __with_ty__! { Float32Type },
-        Float64 => __with_ty__! { Float64Type },
+        Float16 => { #[allow(dead_code)] type $T = Float16Type; $($body)* },
+        Float32 => { #[allow(dead_code)] type $T = Float32Type; $($body)* },
+        Float64 => { #[allow(dead_code)] type $T = Float64Type; $($body)* },
         dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
 #[macro_export]
 macro_rules! with_match_physical_numeric_polars_type {(
-    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+    $key_type:expr, |$T:ident| $($body:tt)*
 ) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use $crate::datatypes::DataType::*;
     match $key_type {
             #[cfg(feature = "dtype-i8")]
-        Int8 => __with_ty__! { Int8Type },
+        Int8 => { #[allow(dead_code)] type $T = Int8Type; $($body)* },
             #[cfg(feature = "dtype-i16")]
-        Int16 => __with_ty__! { Int16Type },
-        Int32 => __with_ty__! { Int32Type },
-        Int64 => __with_ty__! { Int64Type },
+        Int16 => { #[allow(dead_code)] type $T = Int16Type; $($body)* },
+        Int32 => { #[allow(dead_code)] type $T = Int32Type; $($body)* },
+        Int64 => { #[allow(dead_code)] type $T = Int64Type; $($body)* },
             #[cfg(feature = "dtype-i128")]
-        Int128 => __with_ty__! { Int128Type },
+        Int128 => { #[allow(dead_code)] type $T = Int128Type; $($body)* },
             #[cfg(feature = "dtype-u8")]
-        UInt8 => __with_ty__! { UInt8Type },
+        UInt8 => { #[allow(dead_code)] type $T = UInt8Type; $($body)* },
             #[cfg(feature = "dtype-u16")]
-        UInt16 => __with_ty__! { UInt16Type },
-        UInt32 => __with_ty__! { UInt32Type },
-        UInt64 => __with_ty__! { UInt64Type },
+        UInt16 => { #[allow(dead_code)] type $T = UInt16Type; $($body)* },
+        UInt32 => { #[allow(dead_code)] type $T = UInt32Type; $($body)* },
+        UInt64 => { #[allow(dead_code)] type $T = UInt64Type; $($body)* },
             #[cfg(feature = "dtype-u128")]
-        UInt128 => __with_ty__! { UInt128Type },
+        UInt128 => { #[allow(dead_code)] type $T = UInt128Type; $($body)* },
             #[cfg(feature = "dtype-f16")]
-        Float16 => __with_ty__! { Float16Type },
-        Float32 => __with_ty__! { Float32Type },
-        Float64 => __with_ty__! { Float64Type },
+        Float16 => { #[allow(dead_code)] type $T = Float16Type; $($body)* },
+        Float32 => { #[allow(dead_code)] type $T = Float32Type; $($body)* },
+        Float64 => { #[allow(dead_code)] type $T = Float64Type; $($body)* },
         dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
 #[macro_export]
 macro_rules! with_match_physical_integer_polars_type {(
-    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+    $key_type:expr, |$T:ident| $($body:tt)*
 ) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use $crate::datatypes::DataType::*;
     use $crate::datatypes::*;
     match $key_type {
         #[cfg(feature = "dtype-i8")]
-        Int8 => __with_ty__! { Int8Type },
+        Int8 => { #[allow(dead_code)] type $T = Int8Type; $($body)* },
         #[cfg(feature = "dtype-i16")]
-        Int16 => __with_ty__! { Int16Type },
-        Int32 => __with_ty__! { Int32Type },
-        Int64 => __with_ty__! { Int64Type },
+        Int16 => { #[allow(dead_code)] type $T = Int16Type; $($body)* },
+        Int32 => { #[allow(dead_code)] type $T = Int32Type; $($body)* },
+        Int64 => { #[allow(dead_code)] type $T = Int64Type; $($body)* },
         #[cfg(feature = "dtype-i128")]
-        Int128 => __with_ty__! { Int128Type },
+        Int128 => { #[allow(dead_code)] type $T = Int128Type; $($body)* },
         #[cfg(feature = "dtype-u8")]
-        UInt8 => __with_ty__! { UInt8Type },
+        UInt8 => { #[allow(dead_code)] type $T = UInt8Type; $($body)* },
         #[cfg(feature = "dtype-u16")]
-        UInt16 => __with_ty__! { UInt16Type },
-        UInt32 => __with_ty__! { UInt32Type },
-        UInt64 => __with_ty__! { UInt64Type },
+        UInt16 => { #[allow(dead_code)] type $T = UInt16Type; $($body)* },
+        UInt32 => { #[allow(dead_code)] type $T = UInt32Type; $($body)* },
+        UInt64 => { #[allow(dead_code)] type $T = UInt64Type; $($body)* },
         #[cfg(feature = "dtype-u128")]
-        UInt128 => __with_ty__! { UInt128Type },
+        UInt128 => { #[allow(dead_code)] type $T = UInt128Type; $($body)* },
         dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
 
 #[macro_export]
 macro_rules! with_match_categorical_physical_type {(
-    $dtype:expr, | $_:tt $T:ident | $($body:tt)*
+    $dtype:expr, |$T:ident| $($body:tt)*
 ) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     match $dtype {
-        CategoricalPhysical::U8 => __with_ty__! { Categorical8Type },
-        CategoricalPhysical::U16 => __with_ty__! { Categorical16Type },
-        CategoricalPhysical::U32 => __with_ty__! { Categorical32Type },
+        CategoricalPhysical::U8 => { #[allow(dead_code)] type $T = Categorical8Type; $($body)* },
+        CategoricalPhysical::U16 => { #[allow(dead_code)] type $T = Categorical16Type; $($body)* },
+        CategoricalPhysical::U32 => { #[allow(dead_code)] type $T = Categorical32Type; $($body)* },
     }
 })}
 

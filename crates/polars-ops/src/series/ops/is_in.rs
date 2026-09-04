@@ -671,8 +671,8 @@ pub fn is_in(
     match needle.dtype() {
         #[cfg(feature = "dtype-categorical")]
         dt @ DataType::Categorical(_, _) | dt @ DataType::Enum(_, _) => {
-            with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
-                is_in_cat_and_enum(needle.cat::<$C>().unwrap(), haystack, nulls_equal)
+            with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |C| {
+                is_in_cat_and_enum(needle.cat::<C>().unwrap(), haystack, nulls_equal)
             })
         },
         DataType::String => {
@@ -698,8 +698,8 @@ pub fn is_in(
             let s = needle.to_physical_repr();
             let other = haystack.to_physical_repr();
             let other = other.as_ref();
-            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+            with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+                let ca: &ChunkedArray<T> = s.as_ref().as_ref().as_ref();
                 is_in_numeric(ca, other, nulls_equal)
             })
         },

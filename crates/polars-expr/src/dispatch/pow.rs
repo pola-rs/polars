@@ -6,7 +6,7 @@ use polars_core::prelude::{
     ChunkApply, ChunkedArray, Column, DataType, IntoColumn, PolarsFloatType, PolarsIntegerType,
     PolarsNumericType,
 };
-use polars_core::with_match_physical_integer_type;
+use polars_core::with_match_physical_integer_polars_type;
 
 fn pow_on_chunked_arrays<T, F>(
     base: &ChunkedArray<T>,
@@ -119,7 +119,7 @@ fn pow_on_series(base: &Column, exponent: &Column) -> PolarsResult<Column> {
 
     // if false, dtype is float
     if base_dtype.is_integer() {
-        with_match_physical_integer_type!(base_dtype, |$native_type| {
+        with_match_physical_integer_polars_type!(base_dtype, |T| {
             if exponent_dtype.is_float() {
                 match exponent_dtype {
                     #[cfg(feature = "dtype-f16")]
@@ -139,7 +139,11 @@ fn pow_on_series(base: &Column, exponent: &Column) -> PolarsResult<Column> {
                     _ => unreachable!(),
                 }
             } else {
-                let ca = base.$native_type().unwrap();
+                let ca: &ChunkedArray<T> = base
+                    .as_materialized_series()
+                    .as_any()
+                    .downcast_ref()
+                    .unwrap();
                 let exponent = exponent.strict_cast(&DataType::UInt32).map_err(|err| polars_err!(
                     InvalidOperation:
                     "{}\n\nHint: if you were trying to raise an integer to a negative integer power, please cast your base or exponent to float first.",

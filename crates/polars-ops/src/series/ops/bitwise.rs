@@ -20,18 +20,18 @@ macro_rules! apply_bitwise_op {
                     ).into_series())
                 },
                 dt if dt.is_integer() => {
-                    with_match_physical_integer_polars_type!(dt, |$T| {
-                        let ca: &ChunkedArray<$T> = s.as_any().downcast_ref().unwrap();
-                        Ok(unary_mut_values::<$T, UInt32Type, _, _>(
+                    with_match_physical_integer_polars_type!(dt, |T| {
+                        let ca: &ChunkedArray<T> = s.as_any().downcast_ref().unwrap();
+                        Ok(unary_mut_values::<T, UInt32Type, _, _>(
                             ca,
                             |a| polars_compute::bitwise::BitwiseKernel::$op(a),
                         ).into_series())
                     })
                 },
                 dt if dt.is_float() => {
-                    with_match_physical_float_polars_type!(dt, |$T| {
-                        let ca: &ChunkedArray<$T> = s.as_any().downcast_ref().unwrap();
-                        Ok(unary_mut_values::<$T, UInt32Type, _, _>(
+                    with_match_physical_float_polars_type!(dt, |T| {
+                        let ca: &ChunkedArray<T> = s.as_any().downcast_ref().unwrap();
+                        Ok(unary_mut_values::<T, UInt32Type, _, _>(
                             ca,
                             |a| polars_compute::bitwise::BitwiseKernel::$op(a),
                         ).into_series())

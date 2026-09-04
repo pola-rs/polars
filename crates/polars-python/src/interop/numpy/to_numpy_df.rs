@@ -95,8 +95,8 @@ fn try_df_to_numpy_view(py: Python<'_>, df: &DataFrame, allow_nulls: bool) -> Op
 
     let arr = match first_dtype {
         dt if dt.is_primitive_numeric() => {
-            with_match_physical_numpy_polars_type!(first_dtype, |$T| {
-                numeric_df_to_numpy_view::<$T>(py, df, owner)
+            with_match_physical_numpy_polars_type!(first_dtype, |T| {
+                numeric_df_to_numpy_view::<T>(py, df, owner)
             })
         },
         DataType::Datetime(_, _) | DataType::Duration(_) => {
@@ -138,16 +138,16 @@ fn check_df_columns_contiguous(df: &DataFrame) -> bool {
 
     match columns.first().unwrap().dtype() {
         dt if dt.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(dt, |$T| {
+            with_match_physical_numeric_polars_type!(dt, |T| {
                 let slices = columns
                     .iter()
                     .map(|s| {
-                        let ca: &ChunkedArray<$T> = s.as_materialized_series().unpack().unwrap();
+                        let ca: &ChunkedArray<T> = s.as_materialized_series().unpack().unwrap();
                         ca.data_views().next().unwrap()
                     })
                     .collect::<Vec<_>>();
 
-                check_slices_contiguous::<$T>(slices)
+                check_slices_contiguous::<T>(slices)
             })
         },
         DataType::Datetime(_, _) | DataType::Duration(_) => {
@@ -257,8 +257,8 @@ fn try_df_to_numpy_numeric_supertype(
     let st = dtypes_to_supertype(df.columns().iter().map(|s| s.dtype())).ok()?;
 
     let np_array = match st {
-        dt if dt.is_primitive_numeric() => with_match_physical_numpy_polars_type!(dt, |$T| {
-            let arr = py.enter_polars(|| df.to_ndarray::<$T>(order)).ok()?;
+        dt if dt.is_primitive_numeric() => with_match_physical_numpy_polars_type!(dt, |T| {
+            let arr = py.enter_polars(|| df.to_ndarray::<T>(order)).ok()?;
             arr.into_pyarray(py).into_py_any(py).ok()?
         }),
         _ => return None,

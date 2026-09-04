@@ -252,11 +252,13 @@ where
                 )
             },
             x if x.is_float() => {
-                with_match_physical_float_polars_type!(left_by_s.dtype(), |$T| {
-                    let left_by: &ChunkedArray<$T> = left_by_s.as_materialized_series().as_ref().as_ref().as_ref();
-                    let right_by: &ChunkedArray<$T> = right_by_s.as_materialized_series().as_ref().as_ref().as_ref();
-                    asof_join_by_numeric::<T, $T, A, F>(
-                        left_by, right_by, left_asof, right_asof, filter, allow_eq
+                with_match_physical_float_polars_type!(left_by_s.dtype(), |B| {
+                    let left_by: &ChunkedArray<B> =
+                        left_by_s.as_materialized_series().as_ref().as_ref();
+                    let right_by: &ChunkedArray<B> =
+                        right_by_s.as_materialized_series().as_ref().as_ref();
+                    asof_join_by_numeric::<T, B, A, F>(
+                        left_by, right_by, left_asof, right_asof, filter, allow_eq,
                     )?
                 })
             },

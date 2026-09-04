@@ -36,17 +36,15 @@ pub(super) fn naive_jaccard_sim(a: &ListChunked, b: &ListChunked) -> PolarsResul
         a.inner_dtype().is_integer(),
         ComputeError: "inner data types must be integer"
     );
-    Ok(with_match_physical_integer_type!(a.inner_dtype(), |$T| {
-    polars::prelude::arity::binary_elementwise(a, b, |a, b| {
-        match (a, b) {
+    Ok(with_match_physical_integer_type!(a.inner_dtype(), |T| {
+        polars::prelude::arity::binary_elementwise(a, b, |a, b| match (a, b) {
             (Some(a), Some(b)) => {
-                let a = a.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
-                let b = b.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
+                let a = a.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
+                let b = b.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
                 Some(jacc_helper(a, b))
             },
-            _ => None
-        }
-    })
+            _ => None,
+        })
     }))
 }
 

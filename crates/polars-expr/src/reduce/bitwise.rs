@@ -15,8 +15,8 @@ pub fn new_bitwise_and_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
     match dtype {
         Boolean => Box::new(BoolMinGroupedReduction::default()),
         _ if dtype.is_integer() => {
-            with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VMGR::new(dtype, NumReducer::<BitwiseAnd<$T>>::new()))
+            with_match_physical_integer_polars_type!(dtype.to_physical(), |T| {
+                Box::new(VMGR::new(dtype, NumReducer::<BitwiseAnd<T>>::new()))
             })
         },
         _ => unimplemented!(),
@@ -29,8 +29,8 @@ pub fn new_bitwise_or_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
     match dtype {
         Boolean => Box::new(BoolMaxGroupedReduction::default()),
         _ if dtype.is_integer() => {
-            with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VMGR::new(dtype, NumReducer::<BitwiseOr<$T>>::new()))
+            with_match_physical_integer_polars_type!(dtype.to_physical(), |T| {
+                Box::new(VMGR::new(dtype, NumReducer::<BitwiseOr<T>>::new()))
             })
         },
         _ => unimplemented!(),
@@ -43,8 +43,8 @@ pub fn new_bitwise_xor_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
     match dtype {
         Boolean => Box::new(BoolXorGroupedReduction::default()),
         _ if dtype.is_integer() => {
-            with_match_physical_integer_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VMGR::new(dtype, NumReducer::<BitwiseXor<$T>>::new()))
+            with_match_physical_integer_polars_type!(dtype.to_physical(), |T| {
+                Box::new(VMGR::new(dtype, NumReducer::<BitwiseXor<T>>::new()))
             })
         },
         _ => unimplemented!(),

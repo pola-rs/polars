@@ -27,27 +27,27 @@ macro_rules! impl_eq_compare {
             #[cfg(feature = "dtype-categorical")]
             (Categorical(lcats, _), Categorical(rcats, _)) => {
                 ensure_same_categories(lcats, rcats)?;
-                return with_match_categorical_physical_type!(lcats.physical(), |$C| {
-                    lhs.cat::<$C>().unwrap().$method(rhs.cat::<$C>().unwrap())
+                return with_match_categorical_physical_type!(lcats.physical(), |C| {
+                    lhs.cat::<C>().unwrap().$method(rhs.cat::<C>().unwrap())
                 })
             },
             #[cfg(feature = "dtype-categorical")]
             (Enum(lfcats, _), Enum(rfcats, _)) => {
                 ensure_same_frozen_categories(lfcats, rfcats)?;
-                return with_match_categorical_physical_type!(lfcats.physical(), |$C| {
-                    lhs.cat::<$C>().unwrap().$method(rhs.cat::<$C>().unwrap())
+                return with_match_categorical_physical_type!(lfcats.physical(), |C| {
+                    lhs.cat::<C>().unwrap().$method(rhs.cat::<C>().unwrap())
                 })
             },
             #[cfg(feature = "dtype-categorical")]
             (Categorical(_, _) | Enum(_, _), String) => {
-                return with_match_categorical_physical_type!(lhs.dtype().cat_physical().unwrap(), |$C| {
-                    Ok(lhs.cat::<$C>().unwrap().$method(rhs.str().unwrap()))
+                return with_match_categorical_physical_type!(lhs.dtype().cat_physical().unwrap(), |C| {
+                    Ok(lhs.cat::<C>().unwrap().$method(rhs.str().unwrap()))
                 })
             },
             #[cfg(feature = "dtype-categorical")]
             (String, Categorical(_, _) | Enum(_, _)) => {
-                return with_match_categorical_physical_type!(rhs.dtype().cat_physical().unwrap(), |$C| {
-                    Ok(rhs.cat::<$C>().unwrap().$method(lhs.str().unwrap()))
+                return with_match_categorical_physical_type!(rhs.dtype().cat_physical().unwrap(), |C| {
+                    Ok(rhs.cat::<C>().unwrap().$method(lhs.str().unwrap()))
                 })
             },
             #[cfg(feature = "dtype-map")]
@@ -151,28 +151,28 @@ macro_rules! impl_ineq_compare {
             #[cfg(feature = "dtype-categorical")]
             (Categorical(lcats, _), Categorical(rcats, _)) => {
                 ensure_same_categories(lcats, rcats)?;
-                return with_match_categorical_physical_type!(lcats.physical(), |$C| {
-                    lhs.cat::<$C>().unwrap().$method(rhs.cat::<$C>().unwrap())
+                return with_match_categorical_physical_type!(lcats.physical(), |C| {
+                    lhs.cat::<C>().unwrap().$method(rhs.cat::<C>().unwrap())
                 })
             },
             #[cfg(feature = "dtype-categorical")]
             (Enum(lfcats, _), Enum(rfcats, _)) => {
                 ensure_same_frozen_categories(lfcats, rfcats)?;
-                return with_match_categorical_physical_type!(lfcats.physical(), |$C| {
-                    lhs.cat::<$C>().unwrap().$method(rhs.cat::<$C>().unwrap())
+                return with_match_categorical_physical_type!(lfcats.physical(), |C| {
+                    lhs.cat::<C>().unwrap().$method(rhs.cat::<C>().unwrap())
                 })
             },
             #[cfg(feature = "dtype-categorical")]
             (Categorical(_, _) | Enum(_, _), String) => {
-                return with_match_categorical_physical_type!(lhs.dtype().cat_physical().unwrap(), |$C| {
-                    lhs.cat::<$C>().unwrap().$method(rhs.str().unwrap())
+                return with_match_categorical_physical_type!(lhs.dtype().cat_physical().unwrap(), |C| {
+                    lhs.cat::<C>().unwrap().$method(rhs.str().unwrap())
                 })
             },
             #[cfg(feature = "dtype-categorical")]
             (String, Categorical(_, _) | Enum(_, _)) => {
-                return with_match_categorical_physical_type!(rhs.dtype().cat_physical().unwrap(), |$C| {
+                return with_match_categorical_physical_type!(rhs.dtype().cat_physical().unwrap(), |C| {
                     // We use the reverse method as string <-> enum comparisons are only implemented one-way.
-                    rhs.cat::<$C>().unwrap().$rev_method(lhs.str().unwrap())
+                    rhs.cat::<C>().unwrap().$rev_method(lhs.str().unwrap())
                 })
             },
             // Delegating to the storage would report the `List(Struct)` dtypes.
@@ -383,8 +383,8 @@ impl ChunkCompareEq<&str> for Series {
             DataType::String => Ok(self.str().unwrap().equal(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) | DataType::Enum(_, _) => Ok(
-                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
-                    self.cat::<$C>().unwrap().equal(rhs)
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |C| {
+                    self.cat::<C>().unwrap().equal(rhs)
                 }),
             ),
             #[cfg(feature = "dtype-extension")]
@@ -399,8 +399,8 @@ impl ChunkCompareEq<&str> for Series {
             DataType::String => Ok(self.str().unwrap().equal_missing(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) | DataType::Enum(_, _) => Ok(
-                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
-                    self.cat::<$C>().unwrap().equal_missing(rhs)
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |C| {
+                    self.cat::<C>().unwrap().equal_missing(rhs)
                 }),
             ),
             #[cfg(feature = "dtype-extension")]
@@ -419,8 +419,8 @@ impl ChunkCompareEq<&str> for Series {
             DataType::String => Ok(self.str().unwrap().not_equal(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) | DataType::Enum(_, _) => Ok(
-                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
-                    self.cat::<$C>().unwrap().not_equal(rhs)
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |C| {
+                    self.cat::<C>().unwrap().not_equal(rhs)
                 }),
             ),
             #[cfg(feature = "dtype-extension")]
@@ -435,8 +435,8 @@ impl ChunkCompareEq<&str> for Series {
             DataType::String => Ok(self.str().unwrap().not_equal_missing(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) | DataType::Enum(_, _) => Ok(
-                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
-                    self.cat::<$C>().unwrap().not_equal_missing(rhs)
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |C| {
+                    self.cat::<C>().unwrap().not_equal_missing(rhs)
                 }),
             ),
             #[cfg(feature = "dtype-extension")]
@@ -455,8 +455,8 @@ impl ChunkCompareIneq<&str> for Series {
             DataType::String => Ok(self.str().unwrap().gt(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) | DataType::Enum(_, _) => Ok(
-                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
-                    self.cat::<$C>().unwrap().gt(rhs)
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |C| {
+                    self.cat::<C>().unwrap().gt(rhs)
                 }),
             ),
             #[cfg(feature = "dtype-extension")]
@@ -473,8 +473,8 @@ impl ChunkCompareIneq<&str> for Series {
             DataType::String => Ok(self.str().unwrap().gt_eq(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) | DataType::Enum(_, _) => Ok(
-                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
-                    self.cat::<$C>().unwrap().gt_eq(rhs)
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |C| {
+                    self.cat::<C>().unwrap().gt_eq(rhs)
                 }),
             ),
             #[cfg(feature = "dtype-extension")]
@@ -491,8 +491,8 @@ impl ChunkCompareIneq<&str> for Series {
             DataType::String => Ok(self.str().unwrap().lt(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) | DataType::Enum(_, _) => Ok(
-                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
-                    self.cat::<$C>().unwrap().lt(rhs)
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |C| {
+                    self.cat::<C>().unwrap().lt(rhs)
                 }),
             ),
             #[cfg(feature = "dtype-extension")]
@@ -509,8 +509,8 @@ impl ChunkCompareIneq<&str> for Series {
             DataType::String => Ok(self.str().unwrap().lt_eq(rhs)),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) | DataType::Enum(_, _) => Ok(
-                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |$C| {
-                    self.cat::<$C>().unwrap().lt_eq(rhs)
+                with_match_categorical_physical_type!(self.dtype().cat_physical().unwrap(), |C| {
+                    self.cat::<C>().unwrap().lt_eq(rhs)
                 }),
             ),
             #[cfg(feature = "dtype-extension")]
