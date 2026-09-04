@@ -126,7 +126,7 @@ const DEFAULT_FILE_READ_CONCURRENCY: u64 = 32;
 
 /// Access pattern hint for local file reads (Linux: `posix_fadvise`).
 const FILE_POSIX_FADV: &str = "POLARS_FILE_POSIX_FADV";
-const DEFAULT_FILE_POSIX_FADV: FileAdvice = FileAdvice::Random;
+const DEFAULT_FILE_POSIX_FADV: FileAdvice = FileAdvice::Normal;
 
 static KNOWN_OPTIONS: &[&str] = &[
     // Public.
