@@ -11,6 +11,7 @@ use std::ops::Div;
 
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
+use polars_plan::dsl::functions::{DurationArgs, duration};
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::{has_expr, typed_lit};
 use polars_time::Duration;
@@ -608,6 +609,40 @@ impl SQLExprVisitor<'_> {
         Ok(expr)
     }
 
+    /// Best-effort dtype for an expression; `None` if it cannot be resolved.
+    fn expr_dtype(&self, expr: &Expr) -> Option<DataType> {
+        let empty = Schema::default();
+        let schema = self.active_schema.unwrap_or(&empty);
+        expr.to_field(schema).ok().map(|fld| fld.dtype)
+    }
+
+    /// `date + n` / `date - n` shift the date by a whole number of days.
+    fn date_day_offset(&self, lhs: &Expr, op: &SQLBinaryOperator, rhs: &Expr) -> Option<Expr> {
+        let subtract = matches!(op, SQLBinaryOperator::Minus);
+        let left_dtype = self.expr_dtype(lhs);
+        let right_dtype = self.expr_dtype(rhs);
+        let is_date = |dtype: &Option<DataType>| matches!(dtype, Some(DataType::Date));
+        let is_int =
+            |dtype: &Option<DataType>| dtype.as_ref().is_some_and(|dtype| dtype.is_integer());
+
+        let (date, days) = if is_date(&left_dtype) && is_int(&right_dtype) {
+            (lhs, rhs)
+        } else if !subtract && is_date(&right_dtype) && is_int(&left_dtype) {
+            (rhs, lhs)
+        } else {
+            return None;
+        };
+        let offset = duration(DurationArgs {
+            days: days.clone(),
+            ..Default::default()
+        });
+        Some(if subtract {
+            date.clone() - offset
+        } else {
+            date.clone() + offset
+        })
+    }
+
     /// Visit a SQL binary operator.
     ///
     /// e.g. "column + 1", "column1 <= column2"
@@ -654,6 +689,12 @@ impl SQLExprVisitor<'_> {
             _ => (self.visit_expr(left)?, self.visit_expr(right)?),
         };
         rhs = self.convert_temporal_strings(&lhs, &rhs);
+
+        if matches!(op, SQLBinaryOperator::Plus | SQLBinaryOperator::Minus)
+            && let Some(expr) = self.date_day_offset(&lhs, op, &rhs)
+        {
+            return Ok(expr);
+        }
 
         Ok(match op {
             // ----
