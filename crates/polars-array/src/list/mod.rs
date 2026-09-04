@@ -509,13 +509,17 @@ impl PlListArray {
     /// Returns an iterator over the elements, ignoring validity.
     #[inline]
     pub fn values_iter(&self) -> PlListValuesIter<'_> {
-        PlListValuesIter::new(self)
+        // SAFETY: the offsets are flat or scalar for this array's length, are ordered and are
+        // bounded by the length of the values, all upheld by every constructor.
+        PlListValuesIter::new(&*self.values, &self.offsets, self.length)
     }
 
     /// Returns an iterator over the optional elements.
     #[inline]
     pub fn iter(&self) -> PlListIter<'_> {
-        PlListIter::new(self)
+        // SAFETY: the offsets are flat or scalar for this array's length, are ordered and are
+        // bounded by the length of the values, all upheld by every constructor.
+        PlListIter::new(&*self.values, &self.offsets, self.validity(), self.length)
     }
 
     /// Returns an iterator over `length` elements, repeating the single element of this array if
@@ -526,8 +530,9 @@ impl PlListArray {
     #[inline]
     pub fn broadcast_values_iter(&self, length: usize) -> PlListValuesIter<'_> {
         assert_broadcastable(self.length, length);
-        // SAFETY: this array broadcasts to `length`, which is what was just asserted.
-        PlListValuesIter::new_broadcast(self, length)
+        // SAFETY: this array broadcasts to `length`, which is what was just asserted, so its
+        // offsets are flat or scalar for it.
+        PlListValuesIter::new(&*self.values, &self.offsets, length)
     }
 
     /// Returns this array with its validity mask replaced by a flat one.
