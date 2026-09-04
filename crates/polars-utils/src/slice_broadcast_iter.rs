@@ -1,33 +1,51 @@
 use core::iter::FusedIterator;
-use core::marker::PhantomData;
 use core::mem::size_of;
-use core::ptr::NonNull;
 use core::{fmt, slice};
 
+/// An iterator over a slice that is either flat (one slot per element) or scalar (a single slot
+/// every element shares).
+///
+/// The representation is resolved once, at construction, so that the flat arm is an ordinary
+/// [`slice::Iter`]. Deciding per step instead — branchlessly or not — leaves the stride a runtime
+/// value, which stops the loop from vectorizing.
 pub struct SliceBroadcastIter<'a, T> {
-    ptr: NonNull<T>,
-    /// `(remaining << 1) | broadcast`
-    state: usize,
-    _lt: PhantomData<&'a [T]>,
+    repr: Repr<'a, T>,
+}
+
+/// The mode the iterator turned out to be in, resolved once.
+enum Repr<'a, T> {
+    /// One slot per element, walked as the slice it is.
+    Flat(slice::Iter<'a, T>),
+    /// The single item every element shares, and how many are left to yield.
+    Broadcast { item: &'a T, remaining: usize },
 }
 
 const _: () = {
-    assert!(size_of::<SliceBroadcastIter<'static, u8>>() == 2 * size_of::<usize>());
-    // NonNull's niche keeps Option free.
-    assert!(size_of::<Option<SliceBroadcastIter<'static, u8>>>() == 2 * size_of::<usize>());
+    // One word more than the packed encoding this replaced, in exchange for a flat arm the
+    // optimizer can widen.
+    assert!(size_of::<SliceBroadcastIter<'static, u8>>() == 3 * size_of::<usize>());
+    // The slice iterator's non-null pointer leaves a niche, so `Option` stays free.
+    assert!(size_of::<Option<SliceBroadcastIter<'static, u8>>>() == 3 * size_of::<usize>());
 };
 
-// Same bounds as `slice::Iter`.
-unsafe impl<T: Sync> Send for SliceBroadcastIter<'_, T> {}
-unsafe impl<T: Sync> Sync for SliceBroadcastIter<'_, T> {}
+impl<T> Clone for Repr<'_, T> {
+    #[inline]
+    fn clone(&self) -> Self {
+        match self {
+            Self::Flat(iter) => Self::Flat(iter.clone()),
+            Self::Broadcast { item, remaining } => Self::Broadcast {
+                item,
+                remaining: *remaining,
+            },
+        }
+    }
+}
 
 impl<T> Clone for SliceBroadcastIter<'_, T> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
-            ptr: self.ptr,
-            state: self.state,
-            _lt: PhantomData,
+            repr: self.repr.clone(),
         }
     }
 }
@@ -46,70 +64,61 @@ impl<'a, T> SliceBroadcastIter<'a, T> {
     /// `src.len() == 1` (broadcast mode).
     #[inline]
     pub fn new_broadcast(src: &'a [T], n: usize) -> Option<Self> {
-        let broadcast = if src.len() == n {
-            false
-        } else if src.len() == 1 {
-            true
+        if src.len() == n {
+            Some(Self::new(src))
+        } else if let [item] = src {
+            Some(Self::repeat(item, n))
         } else {
-            return None;
-        };
-        Some(Self::from_raw(src.as_ptr(), n, broadcast))
+            None
+        }
     }
 
     /// Normal mode: yields every element of `src`.
     #[inline]
     pub fn new(src: &'a [T]) -> Self {
-        Self::from_raw(src.as_ptr(), src.len(), false)
+        Self {
+            repr: Repr::Flat(src.iter()),
+        }
     }
 
     /// Broadcast mode: yields `item` exactly `n` times.
     #[inline]
     pub fn repeat(item: &'a T, n: usize) -> Self {
-        Self::from_raw(item, n, true)
-    }
-
-    #[inline]
-    fn from_raw(ptr: *const T, n: usize, broadcast: bool) -> Self {
-        // Non-ZST slices can never be this long, so this folds away.
-        if size_of::<T>() == 0 {
-            assert!(n <= usize::MAX >> 1, "broadcast length too large for ZST");
-        }
-        debug_assert!(n <= usize::MAX >> 1);
         Self {
-            ptr: unsafe { NonNull::new_unchecked(ptr.cast_mut()) },
-            state: (n << 1) | broadcast as usize,
-            _lt: PhantomData,
+            repr: Repr::Broadcast { item, remaining: n },
         }
     }
 
-    /// `0` when broadcasting, `usize::MAX` otherwise.
     #[inline(always)]
-    const fn mask(&self) -> usize {
-        (self.state & 1).wrapping_sub(1)
+    pub fn len(&self) -> usize {
+        match &self.repr {
+            Repr::Flat(iter) => iter.len(),
+            Repr::Broadcast { remaining, .. } => *remaining,
+        }
     }
 
     #[inline(always)]
-    pub const fn len(&self) -> usize {
-        self.state >> 1
-    }
-
-    #[inline(always)]
-    pub const fn is_empty(&self) -> bool {
-        self.state < 2
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     #[inline(always)]
     pub const fn is_broadcast(&self) -> bool {
-        self.state & 1 != 0
+        matches!(self.repr, Repr::Broadcast { .. })
     }
 
-    /// Branchless random access.
+    /// Random access into the elements left to yield.
     ///
     /// # Safety
     /// `i < self.len()`.
     #[inline(always)]
     pub unsafe fn get_unchecked(&self, i: usize) -> &'a T {
-        unsafe { &*self.ptr.as_ptr().add(i & self.mask()) }
+        match &self.repr {
+            // SAFETY: `i` is in bounds of the elements left to yield, which is what the slice the
+            // iterator has left holds.
+            Repr::Flat(iter) => unsafe { iter.as_slice().get_unchecked(i) },
+            Repr::Broadcast { item, .. } => item,
+        }
     }
 
     #[inline]
@@ -121,11 +130,9 @@ impl<'a, T> SliceBroadcastIter<'a, T> {
     /// loop: `Ok(slice)` in normal mode, `Err((item, count))` in broadcast mode.
     #[inline]
     pub fn split(self) -> Result<&'a [T], (&'a T, usize)> {
-        let n = self.len();
-        if self.is_broadcast() {
-            Err((unsafe { &*self.ptr.as_ptr() }, n))
-        } else {
-            Ok(unsafe { slice::from_raw_parts(self.ptr.as_ptr(), n) })
+        match self.repr {
+            Repr::Flat(iter) => Ok(iter.as_slice()),
+            Repr::Broadcast { item, remaining } => Err((item, remaining)),
         }
     }
 }
@@ -135,14 +142,13 @@ impl<'a, T> Iterator for SliceBroadcastIter<'a, T> {
 
     #[inline]
     fn next(&mut self) -> Option<&'a T> {
-        if self.state < 2 {
-            return None;
+        match &mut self.repr {
+            Repr::Flat(iter) => iter.next(),
+            Repr::Broadcast { item, remaining } => {
+                *remaining = remaining.checked_sub(1)?;
+                Some(item)
+            },
         }
-        let p = self.ptr;
-        let step = size_of::<T>() & self.mask();
-        self.ptr = unsafe { NonNull::new_unchecked(p.as_ptr().byte_add(step)) };
-        self.state -= 2;
-        Some(unsafe { &*p.as_ptr() })
     }
 
     #[inline]
@@ -158,20 +164,25 @@ impl<'a, T> Iterator for SliceBroadcastIter<'a, T> {
 
     #[inline]
     fn last(self) -> Option<&'a T> {
-        let n = self.len();
-        (n != 0).then(|| unsafe { self.get_unchecked(n - 1) })
+        match self.repr {
+            Repr::Flat(iter) => iter.last(),
+            Repr::Broadcast { item, remaining } => (remaining != 0).then_some(item),
+        }
     }
 
     #[inline]
     fn nth(&mut self, k: usize) -> Option<&'a T> {
-        if k >= self.len() {
-            self.state &= 1; // exhaust, keep mode
-            return None;
+        match &mut self.repr {
+            Repr::Flat(iter) => iter.nth(k),
+            Repr::Broadcast { item, remaining } => {
+                let Some(left) = remaining.checked_sub(k + 1) else {
+                    *remaining = 0;
+                    return None;
+                };
+                *remaining = left;
+                Some(item)
+            },
         }
-        let step = size_of::<T>().wrapping_mul(k) & self.mask();
-        self.ptr = unsafe { NonNull::new_unchecked(self.ptr.as_ptr().byte_add(step)) };
-        self.state -= k << 1;
-        self.next()
     }
 
     /// Hoists the mode branch out of the loop. `for_each`, `sum`, `collect` and friends route
@@ -197,22 +208,22 @@ impl<'a, T> Iterator for SliceBroadcastIter<'a, T> {
 impl<'a, T> DoubleEndedIterator for SliceBroadcastIter<'a, T> {
     #[inline]
     fn next_back(&mut self) -> Option<&'a T> {
-        if self.state < 2 {
-            return None;
+        match &mut self.repr {
+            Repr::Flat(iter) => iter.next_back(),
+            Repr::Broadcast { item, remaining } => {
+                *remaining = remaining.checked_sub(1)?;
+                Some(item)
+            },
         }
-        self.state -= 2;
-        let off = size_of::<T>().wrapping_mul(self.state >> 1) & self.mask();
-        Some(unsafe { &*self.ptr.as_ptr().byte_add(off) })
     }
 
     #[inline]
     fn nth_back(&mut self, k: usize) -> Option<&'a T> {
-        if k >= self.len() {
-            self.state &= 1; // exhaust, keep mode
-            return None;
+        match &mut self.repr {
+            Repr::Flat(iter) => iter.nth_back(k),
+            // Every element is the same one, so walking in from either end is the same walk.
+            Repr::Broadcast { .. } => self.nth(k),
         }
-        self.state -= k << 1;
-        self.next_back()
     }
 
     /// Hoists the mode branch out of the loop, the way [`Iterator::fold`] does. `rev().collect()`
@@ -238,7 +249,7 @@ impl<'a, T> DoubleEndedIterator for SliceBroadcastIter<'a, T> {
 impl<T> ExactSizeIterator for SliceBroadcastIter<'_, T> {
     #[inline]
     fn len(&self) -> usize {
-        self.state >> 1
+        Self::len(self)
     }
 }
 

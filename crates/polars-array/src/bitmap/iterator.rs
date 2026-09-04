@@ -212,6 +212,18 @@ impl<'a> ValidityIter<'a> {
 
         match validity.flat_bitmap() {
             Some(bitmap) => {
+                // A mask whose bits are all the same says no more than the single bit they share,
+                // and saying it that way keeps the fold off the bit-reading path. The count is
+                // only read where the bitmap already caches it, so this stays `O(1)`.
+                if let Some(unset_bits) = bitmap.lazy_unset_bits() {
+                    if unset_bits == 0 {
+                        return Self::Scalar(true);
+                    }
+                    if unset_bits == bitmap.len() {
+                        return Self::Scalar(false);
+                    }
+                }
+
                 let (bytes, offset, length) = bitmap.as_slice();
                 Self::Flat {
                     bytes,
@@ -281,9 +293,51 @@ impl<'a> ValidityIter<'a> {
 
 #[cfg(test)]
 mod tests {
+    use arrow::bitmap::Bitmap;
 
-    use crate::PlBitmap;
+    use super::{ValidityFold, ValidityIter};
+    use crate::bitmap::PlBitmapRef;
     use crate::iterator_tests::assert_iterates;
+    use crate::{PlBitmap, PlPrimitiveArray};
+
+    #[test]
+    fn a_uniform_mask_is_walked_as_the_bit_it_shares() {
+        fn uniform(bitmap: &Bitmap) -> ValidityFold<'_> {
+            assert!(
+                bitmap.lazy_unset_bits().is_some(),
+                "the count must be cached, or nothing is collapsed",
+            );
+            let mask = PlBitmapRef::new(bitmap, bitmap.len());
+            ValidityIter::new(Some(mask)).into_mask()
+        }
+
+        let set = Bitmap::new_with_value(true, 100);
+        let unset = Bitmap::new_with_value(false, 100);
+        assert!(matches!(uniform(&set), ValidityFold::Valid));
+        assert!(matches!(uniform(&unset), ValidityFold::Null));
+
+        // A mask that is not uniform is still read bit by bit.
+        let mixed = Bitmap::from_iter([true, false, true]);
+        assert_eq!(mixed.unset_bits(), 1);
+        let mask = PlBitmapRef::new(&mixed, 3);
+        assert!(matches!(
+            ValidityIter::new(Some(mask)).into_mask(),
+            ValidityFold::Bits(_),
+        ));
+    }
+
+    #[test]
+    fn collapsing_a_uniform_mask_keeps_the_elements_it_yields() {
+        let values = vec![1i32, 2, 3];
+
+        let all_valid = PlPrimitiveArray::from_vec(values.clone())
+            .with_validity(Some(Bitmap::new_with_value(true, 3)));
+        assert_iterates(all_valid.iter(), &[Some(1), Some(2), Some(3)]);
+
+        let all_null = PlPrimitiveArray::from_vec(values)
+            .with_validity(Some(Bitmap::new_with_value(false, 3)));
+        assert_iterates(all_null.iter(), &[None, None, None]);
+    }
 
     #[test]
     fn flat() {

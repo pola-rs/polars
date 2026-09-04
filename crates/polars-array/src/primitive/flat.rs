@@ -1,11 +1,10 @@
 //! What a [`PlPrimitiveArray`] gains from being known to be [`Flat`].
 
 use arrow::bitmap::Bitmap;
-use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::types::NativeType;
 use polars_buffer::Buffer;
 
-use super::PlPrimitiveArray;
+use super::{PlPrimitiveArray, PlPrimitiveIter};
 use crate::flat::Flat;
 
 /// The methods a [`PlPrimitiveArray`] gains from having one slot per element in every backing
@@ -116,9 +115,14 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     }
 
     /// Returns an iterator over the optional elements.
+    ///
+    /// Knowing the array is flat buys nothing here, so this is the array's own iterator. Arrow's
+    /// `ZipValidity`, which this used to return, resolves its representation once per step rather
+    /// than once per walk and leaves [`Iterator::fold`] to the default; either of those stops the
+    /// loop from vectorizing.
     #[inline]
-    pub fn iter(&self) -> ZipValidity<&T, std::slice::Iter<'_, T>, BitmapIter<'_>> {
-        ZipValidity::new_with_validity(self.values_iter(), self.validity())
+    pub fn iter(&self) -> PlPrimitiveIter<'_, T> {
+        self.0.iter()
     }
 
     /// The backing values buffer as a mutable slice, if no other array shares it.
@@ -171,8 +175,8 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
 }
 
 impl<'a, T: NativeType> IntoIterator for &'a Flat<PlPrimitiveArray<T>> {
-    type Item = Option<&'a T>;
-    type IntoIter = ZipValidity<&'a T, std::slice::Iter<'a, T>, BitmapIter<'a>>;
+    type Item = Option<T>;
+    type IntoIter = PlPrimitiveIter<'a, T>;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
@@ -222,6 +226,17 @@ mod tests {
             values,
             "the values buffer must be reinterpreted, not copied",
         );
+    }
+
+    #[test]
+    fn elements_are_the_ones_the_array_itself_yields() {
+        let arr: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect();
+        let flat = arr.as_flat().expect("the array is flat");
+
+        let expected = [Some(1), None, Some(3)];
+        assert_eq!(flat.iter().collect::<Vec<_>>(), expected);
+        assert_eq!(flat.into_iter().collect::<Vec<_>>(), expected);
+        assert_eq!(flat.values_iter().copied().collect::<Vec<_>>(), [1, 0, 3]);
     }
 
     #[test]

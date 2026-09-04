@@ -196,12 +196,12 @@ where
                 if targets_have_nulls {
                     idx_arr
                         .iter()
-                        .map(|i| target.get_unchecked(*i? as usize))
+                        .map(|i| target.get_unchecked(i? as usize))
                         .collect_arr_trusted()
                 } else {
                     idx_arr
                         .iter()
-                        .map(|i| Some(target.value_unchecked(*i? as usize)))
+                        .map(|i| Some(target.value_unchecked(i? as usize)))
                         .collect_arr_trusted()
                 }
             } else {
@@ -209,12 +209,12 @@ where
                 if targets_have_nulls {
                     idx_arr
                         .iter()
-                        .map(|i| target_get_unchecked(&targets, &cumlens, *i?))
+                        .map(|i| target_get_unchecked(&targets, &cumlens, i?))
                         .collect_arr_trusted()
                 } else {
                     idx_arr
                         .iter()
-                        .map(|i| Some(target_value_unchecked(&targets, &cumlens, *i?)))
+                        .map(|i| Some(target_value_unchecked(&targets, &cumlens, i?)))
                         .collect_arr_trusted()
                 }
             }
@@ -245,13 +245,13 @@ impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
                 if targets_have_nulls {
                     let arr: PlBinaryViewArray = idx_arr
                         .iter()
-                        .map(|i| target_get_unchecked(&targets, &cumlens, *i?))
+                        .map(|i| target_get_unchecked(&targets, &cumlens, i?))
                         .collect_arr_trusted();
                     arr.into_boxed()
                 } else {
                     let arr: PlBinaryViewArray = idx_arr
                         .iter()
-                        .map(|i| Some(target_value_unchecked(&targets, &cumlens, *i?)))
+                        .map(|i| Some(target_value_unchecked(&targets, &cumlens, i?)))
                         .collect_arr_trusted();
                     arr.into_boxed()
                 }
@@ -281,13 +281,13 @@ impl ChunkTakeUnchecked<IdxCa> for StringChunked {
                 if targets_have_nulls {
                     let arr: PlUtf8ViewArray = idx_arr
                         .iter()
-                        .map(|i| target_get_unchecked(&targets, &cumlens, *i?))
+                        .map(|i| target_get_unchecked(&targets, &cumlens, i?))
                         .collect_arr_trusted();
                     arr.into_boxed()
                 } else {
                     let arr: PlUtf8ViewArray = idx_arr
                         .iter()
-                        .map(|i| Some(target_value_unchecked(&targets, &cumlens, *i?)))
+                        .map(|i| Some(target_value_unchecked(&targets, &cumlens, i?)))
                         .collect_arr_trusted();
                     arr.into_boxed()
                 }
@@ -390,7 +390,7 @@ impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
                         builder.extend_nulls(1);
                         continue;
                     };
-                    let (chunk_idx, arr_idx) = resolve_chunked_idx(*idx, &cumlens);
+                    let (chunk_idx, arr_idx) = resolve_chunked_idx(idx, &cumlens);
                     builder.subslice_extend(
                         *targets.get_unchecked(chunk_idx),
                         arr_idx,
@@ -453,7 +453,7 @@ impl ChunkTakeUnchecked<IdxCa> for ListChunked {
                         builder.extend_nulls(1);
                         continue;
                     };
-                    let (chunk_idx, arr_idx) = resolve_chunked_idx(*idx, &cumlens);
+                    let (chunk_idx, arr_idx) = resolve_chunked_idx(idx, &cumlens);
                     builder.subslice_extend(
                         *targets.get_unchecked(chunk_idx),
                         arr_idx,

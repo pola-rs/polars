@@ -13,8 +13,6 @@
 //! this module do, and what the `slice_*` functions keep holding as an array is sliced down to
 //! nothing.
 
-use std::sync::LazyLock;
-
 use arrow::bitmap::Bitmap;
 use polars_buffer::Buffer;
 use polars_utils::slice_broadcast_iter::SliceBroadcastIter;
@@ -156,8 +154,14 @@ pub const fn is_valid_fixed_size_values_len(
 
 /// An empty [`Bitmap`] that lives for the whole program, to borrow where a mask over no elements
 /// is called for.
+///
+/// The bitmap is built at compile time rather than lazily: this sits behind
+/// [`PlBitmapRef::new_broadcast_unchecked`](crate::bitmap::PlBitmapRef::new_broadcast_unchecked),
+/// and so behind every `validity()` call, where a lazy initializer's opaque call would clobber
+/// what the optimizer knows about memory and stop it from folding away a caller's own checks.
+#[inline(always)]
 pub(crate) fn empty_bitmap() -> &'static Bitmap {
-    static EMPTY: LazyLock<Bitmap> = LazyLock::new(Bitmap::new);
+    static EMPTY: Bitmap = Bitmap::new();
     &EMPTY
 }
 

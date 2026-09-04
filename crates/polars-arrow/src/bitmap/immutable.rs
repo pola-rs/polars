@@ -92,9 +92,19 @@ pub(super) fn check(bytes: &[u8], offset: usize, length: usize) -> PolarsResult<
 
 impl Bitmap {
     /// Initializes an empty [`Bitmap`].
+    ///
+    /// This is `const` so that a borrow of an empty bitmap can be handed out from a `static`,
+    /// rather than from a lazily initialized one whose opaque call would keep the optimizer from
+    /// reasoning across it.
     #[inline]
-    pub fn new() -> Self {
-        Self::default()
+    pub const fn new() -> Self {
+        Self {
+            storage: SharedStorage::empty(),
+            offset: 0,
+            length: 0,
+            // An empty bitmap has an exactly known count of zero unset bits.
+            unset_bit_count_cache: RelaxedCell::new_u64(0),
+        }
     }
 
     /// Initializes a new [`Bitmap`] from vector of bytes and a length.
