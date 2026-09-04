@@ -541,6 +541,7 @@ fn visualize_plan_rec(
             hive_parts,
             include_file_paths,
             cast_columns_policy: _,
+            extra_columns_policy: _,
             missing_columns_policy: _,
             forbid_extra_columns: _,
             deletion_files,
@@ -753,12 +754,19 @@ fn visualize_plan_rec(
         PhysNodeKind::InMemoryJoin {
             input_left,
             input_right,
-            left_on,
-            right_on,
             args,
-            ..
-        }
-        | PhysNodeKind::EquiJoin {
+            options,
+        } => {
+            let (left_on, right_on) = options.key_vecs();
+            let label = fmt_join_label(
+                "in-memory-join",
+                &fmt_exprs_to_label(&left_on, expr_arena, FormatExprStyle::NoAliases),
+                &fmt_exprs_to_label(&right_on, expr_arena, FormatExprStyle::NoAliases),
+                args,
+            );
+            (label, &[*input_left, *input_right][..])
+        },
+        PhysNodeKind::EquiJoin {
             input_left,
             input_right,
             left_on,
@@ -776,7 +784,6 @@ fn visualize_plan_rec(
             let base_label = match phys_sm[node_key].kind {
                 PhysNodeKind::MergeJoin { .. } => "merge-join",
                 PhysNodeKind::EquiJoin { .. } => "equi-join",
-                PhysNodeKind::InMemoryJoin { .. } => "in-memory-join",
                 PhysNodeKind::SemiAntiJoin {
                     output_bool: false, ..
                 } if args.how.is_semi() => "semi-join",

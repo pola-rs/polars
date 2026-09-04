@@ -3,12 +3,14 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::time::Duration;
 
 mod engine;
+mod file_advice;
 mod parse;
 mod resolve_mode;
 mod spill_format;
 pub mod spill_path;
 
 pub use engine::Engine;
+pub use file_advice::FileAdvice;
 use polars_error::polars_warn;
 pub use resolve_mode::ResolveMode;
 pub use spill_format::SpillFormat;
@@ -78,6 +80,9 @@ const DEFAULT_OOC_MEMORY_BUDGET_FRACTION: f64 = 0.8;
 const OOC_MEMORY_BUDGET_MB: &str = "POLARS_OOC_MEMORY_BUDGET_MB";
 const DEFAULT_OOC_MEMORY_BUDGET_MB: u64 = u64::MAX;
 
+const OOC_MEMORY_PREFETCH_FRACTION: &str = "POLARS_OOC_MEMORY_PREFETCH_FRACTION";
+const DEFAULT_OOC_MEMORY_PREFETCH_FRACTION: f64 = 0.8;
+
 const OOC_DISK_BUDGET_MB: &str = "POLARS_OOC_DISK_BUDGET_MB";
 const DEFAULT_OOC_DISK_BUDGET_MB: u64 = u64::MAX;
 
@@ -112,6 +117,17 @@ const DEFAULT_NUMA_MOCK_REGIONS: u64 = 0;
 const DISABLE_HTTP_RATE_LIMIT: &str = "POLARS_DISABLE_HTTP_RATE_LIMIT";
 const DEFAULT_DISABLE_HTTP_RATE_LIMIT: bool = false;
 
+/// Use direct I/O (Linux: `O_DIRECT`), bypassing the page cache.
+const DIRECT_IO: &str = "POLARS_DIRECT_IO";
+const DEFAULT_DIRECT_IO: bool = false;
+
+const FILE_READ_CONCURRENCY: &str = "POLARS_FILE_READ_CONCURRENCY";
+const DEFAULT_FILE_READ_CONCURRENCY: u64 = 32;
+
+/// Access pattern hint for local file reads (Linux: `posix_fadvise`).
+const FILE_POSIX_FADV: &str = "POLARS_FILE_POSIX_FADV";
+const DEFAULT_FILE_POSIX_FADV: FileAdvice = FileAdvice::Random;
+
 static KNOWN_OPTIONS: &[&str] = &[
     // Public.
     VERBOSE,
@@ -129,7 +145,6 @@ static KNOWN_OPTIONS: &[&str] = &[
     /*
     Not yet supported public options:
 
-        "POLARS_AUTO_STRUCTIFY"
         "POLARS_FMT_STR_LEN"
         "POLARS_FMT_MAX_COLS"
         "POLARS_FMT_TABLE_FORMATTING"
@@ -157,6 +172,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_SPILL_COMPRESSION_LEVEL,
     OOC_MEMORY_BUDGET_FRACTION,
     OOC_MEMORY_BUDGET_MB,
+    OOC_MEMORY_PREFETCH_FRACTION,
     OOC_DISK_BUDGET_MB,
     OOC_SPILL_MIN_BYTES,
     OOC_LOG_METRICS,
@@ -166,6 +182,9 @@ static KNOWN_OPTIONS: &[&str] = &[
     NUMA_AWARE,
     NUMA_MOCK_REGIONS,
     DISABLE_HTTP_RATE_LIMIT,
+    DIRECT_IO,
+    FILE_READ_CONCURRENCY,
+    FILE_POSIX_FADV,
 ];
 
 pub struct Config {
@@ -190,6 +209,7 @@ pub struct Config {
     ooc_spill_compression_level: AtomicU64,
     ooc_memory_budget_fraction: AtomicU64,
     ooc_memory_budget_bytes: AtomicU64,
+    ooc_memory_prefetch_fraction: AtomicU64,
     ooc_disk_budget_bytes: AtomicU64,
     ooc_spill_min_bytes: AtomicU64,
     ooc_log_metrics: AtomicBool,
@@ -199,6 +219,12 @@ pub struct Config {
     numa_aware: AtomicBool,
     numa_mock_regions: AtomicU64,
     disable_http_rate_limit: AtomicBool,
+    direct_io: AtomicBool,
+    file_read_concurrency: AtomicU64,
+    file_posix_fadv: AtomicU8,
+
+    // Derived from others.
+    ooc_memory_prefetch_bytes: AtomicU64,
 }
 
 impl Config {
@@ -230,6 +256,9 @@ impl Config {
             ooc_memory_budget_bytes: AtomicU64::new(
                 DEFAULT_OOC_MEMORY_BUDGET_MB.saturating_mul(1_000_000),
             ),
+            ooc_memory_prefetch_fraction: AtomicU64::new(
+                DEFAULT_OOC_MEMORY_PREFETCH_FRACTION.to_bits(),
+            ),
             ooc_disk_budget_bytes: AtomicU64::new(
                 DEFAULT_OOC_DISK_BUDGET_MB.saturating_mul(1_000_000),
             ),
@@ -244,6 +273,10 @@ impl Config {
             numa_aware: AtomicBool::new(DEFAULT_NUMA_AWARE),
             numa_mock_regions: AtomicU64::new(DEFAULT_NUMA_MOCK_REGIONS),
             disable_http_rate_limit: AtomicBool::new(DEFAULT_DISABLE_HTTP_RATE_LIMIT),
+            direct_io: AtomicBool::new(DEFAULT_DIRECT_IO),
+            file_read_concurrency: AtomicU64::new(DEFAULT_FILE_READ_CONCURRENCY),
+            file_posix_fadv: AtomicU8::new(DEFAULT_FILE_POSIX_FADV as u8),
+            ooc_memory_prefetch_bytes: AtomicU64::new(0),
         };
         cfg.reload_env_vars();
         cfg
@@ -257,11 +290,21 @@ impl Config {
         for var in KNOWN_OPTIONS {
             self.reload_env_var(var);
         }
+
+        self.recompute_derived();
     }
 
     /// Reload a specific environment variable.
     pub fn reload_env_var(&self, var: &str) {
         self.apply_env_var(var, std::env::var(var).ok().as_deref());
+        self.recompute_derived();
+    }
+
+    fn recompute_derived(&self) {
+        let bytes = self.ooc_memory_budget_bytes.load(Ordering::Relaxed);
+        let frac = f64::from_bits(self.ooc_memory_budget_fraction.load(Ordering::Relaxed));
+        self.ooc_memory_prefetch_bytes
+            .store((bytes as f64 * frac) as u64, Ordering::Relaxed);
     }
 
     fn apply_env_var(&self, var: &str, val: Option<&str>) {
@@ -368,6 +411,12 @@ impl Config {
                     .saturating_mul(1_000_000),
                 Ordering::Relaxed,
             ),
+            OOC_MEMORY_PREFETCH_FRACTION => self.ooc_memory_prefetch_fraction.store(
+                val.and_then(|x| parse::parse_f64_with_limits(var, x, 0.0, 0.95))
+                    .unwrap_or(DEFAULT_OOC_MEMORY_PREFETCH_FRACTION)
+                    .to_bits(),
+                Ordering::Relaxed,
+            ),
             OOC_DISK_BUDGET_MB => self.ooc_disk_budget_bytes.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_OOC_DISK_BUDGET_MB)
@@ -414,6 +463,21 @@ impl Config {
             DISABLE_HTTP_RATE_LIMIT => self.disable_http_rate_limit.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_DISABLE_HTTP_RATE_LIMIT),
+                Ordering::Relaxed,
+            ),
+            DIRECT_IO => self.direct_io.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_DIRECT_IO),
+                Ordering::Relaxed,
+            ),
+            FILE_READ_CONCURRENCY => self.file_read_concurrency.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_FILE_READ_CONCURRENCY),
+                Ordering::Relaxed,
+            ),
+            FILE_POSIX_FADV => self.file_posix_fadv.store(
+                val.and_then(|x| parse::parse_file_advice(var, x))
+                    .unwrap_or(DEFAULT_FILE_POSIX_FADV) as u8,
                 Ordering::Relaxed,
             ),
             _ => {
@@ -539,6 +603,16 @@ impl Config {
     }
 
     #[inline(always)]
+    pub fn ooc_memory_prefetch_fraction(&self) -> f64 {
+        f64::from_bits(self.ooc_memory_prefetch_fraction.load(Ordering::Relaxed))
+    }
+
+    #[inline(always)]
+    pub fn ooc_memory_prefetch_bytes(&self) -> u64 {
+        self.ooc_memory_prefetch_bytes.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
     pub fn ooc_disk_budget_bytes(&self) -> u64 {
         self.ooc_disk_budget_bytes.load(Ordering::Relaxed)
     }
@@ -593,6 +667,21 @@ impl Config {
     #[inline(always)]
     pub fn disable_http_rate_limit(&self) -> bool {
         self.disable_http_rate_limit.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn direct_io(&self) -> bool {
+        self.direct_io.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn file_read_concurrency(&self) -> u64 {
+        self.file_read_concurrency.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn file_posix_fadv(&self) -> FileAdvice {
+        FileAdvice::from_discriminant(self.file_posix_fadv.load(Ordering::Relaxed))
     }
 }
 

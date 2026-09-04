@@ -1,5 +1,3 @@
-#[cfg(feature = "iejoin")]
-use polars::prelude::JoinTypeOptionsIR;
 use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::python_dsl::PythonScanSource;
 use polars::prelude::{ColumnMapping, PredicateFileSkip};
@@ -10,6 +8,8 @@ use polars_ops::prelude::AsofStrategy;
 use polars_ops::prelude::JoinType;
 use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_plan::plans::{HintIR, IR};
+#[cfg(feature = "iejoin")]
+use polars_plan::prelude::JoinTypeOptionsIR;
 use polars_plan::prelude::{FileScanIR, FunctionIR, PythonPredicate, UnifiedScanArgs};
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
@@ -376,14 +376,6 @@ pub struct HConcat {
     #[pyo3(get)]
     options: Py<PyAny>,
 }
-#[pyclass(frozen)]
-/// This allows expressions to access other tables
-pub struct ExtContext {
-    #[pyo3(get)]
-    input: usize,
-    #[pyo3(get)]
-    contexts: Vec<usize>,
-}
 
 #[pyclass(frozen)]
 pub struct Sink {
@@ -578,15 +570,13 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             input_left,
             input_right,
             schema: _,
-            left_on,
-            right_on,
             options,
         } => {
             Join {
                 input_left: input_left.0,
                 input_right: input_right.0,
-                left_on: left_on.iter().map(|e| e.into()).collect(),
-                right_on: right_on.iter().map(|e| e.into()).collect(),
+                left_on: options.options.left_on().map(|e| e.into()).collect(),
+                right_on: options.options.right_on().map(|e| e.into()).collect(),
                 options: {
                     let how = &options.args.how;
                     let name = Into::<&str>::into(how).into_pyobject(py)?;
@@ -622,7 +612,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                             },
                             #[cfg(feature = "iejoin")]
                             JoinType::IEJoin => {
-                                let Some(JoinTypeOptionsIR::IEJoin(ie_options)) = &options.options
+                                let JoinTypeOptionsIR::IEJoin { ie_options, .. } = &options.options
                                 else {
                                     unreachable!()
                                 };
@@ -638,7 +628,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                             },
                             // This is a cross join fused with a predicate. Shown in the IR::explain as
                             // NESTED LOOP JOIN
-                            JoinType::Cross if options.options.is_some() => {
+                            JoinType::Cross if options.is_non_equi() => {
                                 return Err(PyNotImplementedError::new_err("nested loop join"));
                             },
                             _ => name.into_any().unbind(),
@@ -800,15 +790,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 options.broadcast_unit_length,
             )
                 .into_py_any(py)?,
-        }
-        .into_py_any(py),
-        IR::ExtContext {
-            input,
-            contexts,
-            schema: _,
-        } => ExtContext {
-            input: input.0,
-            contexts: contexts.iter().map(|n| n.0).collect(),
         }
         .into_py_any(py),
         IR::Sink { input, payload } => Sink {

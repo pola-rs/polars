@@ -619,9 +619,12 @@ def test_row_index_filter_22612(scan: Any, write: Any) -> None:
 
     if write is pl.DataFrame.write_parquet:
         df.write_parquet(f, row_group_size=5)
+        f.seek(0)
         assert pq.read_metadata(f).num_row_groups == 2
     else:
         write(df, f)
+
+    f.seek(0)
 
     for end in range(2, 10):
         assert_frame_equal(
@@ -645,6 +648,7 @@ def test_row_index_filter_22612(scan: Any, write: Any) -> None:
 def test_row_index_name_in_file(scan: Any, write: Any) -> None:
     f = io.BytesIO()
     write(pl.DataFrame({"index": 1}), f)
+    f.seek(0)
 
     with pytest.raises(
         pl.exceptions.DuplicateError,
@@ -660,6 +664,9 @@ def test_extra_columns_not_ignored_22218() -> None:
 
     dfs[0].write_parquet(files[0])
     dfs[1].write_parquet(files[1])
+
+    for f in files:
+        f.seek(0)
 
     with pytest.raises(
         pl.exceptions.SchemaError,
@@ -690,6 +697,9 @@ def test_scan_null_upcast(scan: Any, write: Any) -> None:
 
     write(dfs[0], files[0])
     write(dfs[1], files[1])
+
+    for f in files:
+        f.seek(0)
 
     # Prevent CSV schema inference from loading as string (it looks at multiple
     # files).
@@ -725,6 +735,9 @@ def test_scan_null_upcast_to_nested(scan: Any, write: Any) -> None:
 
     write(dfs[0], files[0])
     write(dfs[1], files[1])
+
+    for f in files:
+        f.seek(0)
 
     # Prevent CSV schema inference from loading as string (it looks at multiple
     # files).

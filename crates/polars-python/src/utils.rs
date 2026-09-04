@@ -12,7 +12,7 @@ use pyo3::{PyErr, PyResult, Python};
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::series::PySeries;
-use crate::timeout::{cancel_polars_timeout, is_timeout_enabled, schedule_polars_timeout};
+use crate::timeout::{is_timeout_enabled, schedule_polars_timeout};
 
 /// Calls method on downcasted ChunkedArray for all possible publicly exposed Polars dtypes.
 #[macro_export]
@@ -60,6 +60,7 @@ macro_rules! apply_all_polars_dtypes {
                 .unwrap()
                 .$method($($args),*)
             },
+            DataType::Map(_, _) => $self.map().unwrap().$method($($args),*),
             DataType::Extension(_, _) => $self.ext().unwrap().$method($($args),*),
 
             DataType::Null => $self.null().unwrap().$method($($args),*),
@@ -138,14 +139,11 @@ impl EnterPolarsExt for Python<'_> {
         T: Ungil + Send,
         E: Ungil + Send + Into<PyPolarsErr>,
     {
-        let timeout = if is_timeout_enabled() {
+        let _timeout_guard = is_timeout_enabled().then(|| {
             std::hint::cold_path();
             schedule_polars_timeout(get_traceback(self).ok())
-        } else {
-            None
-        };
+        });
         let ret = self.detach(|| catch_polars_abort(AssertUnwindSafe(f)));
-        cancel_polars_timeout(timeout);
         match ret {
             Ok(Ok(ret)) => Ok(ret),
             Ok(Err(err)) => Err(PyErr::from(err.into())),

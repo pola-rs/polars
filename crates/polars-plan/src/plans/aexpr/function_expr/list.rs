@@ -51,6 +51,8 @@ pub enum IRListFunction {
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
     ToStruct(Arc<[PlSmallStr]>),
+    #[cfg(feature = "dtype-map")]
+    ToMap,
 }
 
 impl<'a> FieldsMapper<'a> {
@@ -91,8 +93,8 @@ impl IRListFunction {
             Max => mapper.ensure_is_list()?.map_to_list_and_array_inner_dtype(),
             Mean => mapper.nested_mean_median_type(),
             Median => mapper.nested_mean_median_type(),
-            Std(_) => mapper.ensure_is_list()?.moment_dtype(), // Need to also have this sometimes marked as float32 or duration..
-            Var(_) => mapper.ensure_is_list()?.var_dtype(),
+            Std(_) => mapper.ensure_is_list()?.var_dtype("std"),
+            Var(_) => mapper.ensure_is_list()?.var_dtype("var"),
             ArgMin => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
             ArgMax => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
@@ -153,6 +155,16 @@ impl IRListFunction {
                         .collect::<Vec<_>>(),
                 ))
             }),
+            #[cfg(feature = "dtype-map")]
+            ToMap => mapper.try_map_dtype(|dtype| {
+                let DataType::List(entries) = dtype else {
+                    polars_bail!(
+                        InvalidOperation:
+                        "`list.to_map` requires a List dtype, got `{dtype}`",
+                    );
+                };
+                entries.map_from_named_entries_dtype()
+            }),
         }
     }
 
@@ -200,6 +212,8 @@ impl IRListFunction {
             L::ToArray(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_to_struct")]
             L::ToStruct(_) => FunctionOptions::elementwise(),
+            #[cfg(feature = "dtype-map")]
+            L::ToMap => FunctionOptions::elementwise(),
         }
     }
 }
@@ -260,6 +274,8 @@ impl Display for IRListFunction {
             ToArray(_) => "to_array",
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "dtype-map")]
+            ToMap => "to_map",
         };
         write!(f, "list.{name}")
     }

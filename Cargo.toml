@@ -163,6 +163,7 @@ features = [
 ]
 
 [workspace.lints.clippy]
+chunks_exact_to_as_chunks = "allow" # https://github.com/rust-lang/rust-clippy/issues/17359
 collapsible_if = "allow"
 question_mark = "allow" # https://github.com/rust-lang/rust-clippy/issues/17384
 

@@ -607,6 +607,11 @@ impl Series {
                     .map(|ca| ca.into_series())
             },
 
+            #[cfg(feature = "dtype-map")]
+            (D::List(_), D::Map(_, _)) => {
+                let storage = self.from_physical_unchecked(&dtype.map_storage_dtype().unwrap())?;
+                Ok(MapChunked::from_storage_unchecked(dtype.clone(), storage).into_series())
+            },
             #[cfg(feature = "dtype-extension")]
             (_, D::Extension(typ, storage)) => {
                 let storage_series = self.from_physical_unchecked(storage.as_ref())?;
@@ -805,6 +810,11 @@ impl Series {
             Struct(_) => match self.struct_().unwrap().to_physical_repr() {
                 Cow::Borrowed(_) => Cow::Borrowed(self),
                 Cow::Owned(ca) => Cow::Owned(ca.into_series()),
+            },
+            #[cfg(feature = "dtype-map")]
+            Map(_, _) => match self.map().unwrap().storage().to_physical_repr() {
+                Cow::Borrowed(storage) => Cow::Owned(storage.clone()),
+                Cow::Owned(storage) => Cow::Owned(storage),
             },
             #[cfg(feature = "dtype-extension")]
             Extension(_, _) => self.ext().unwrap().storage().to_physical_repr(),
@@ -1169,7 +1179,6 @@ impl BroadcastLength for Series {
 
 #[cfg(test)]
 mod test {
-    use crate::prelude::*;
     use crate::series::*;
 
     #[test]

@@ -450,6 +450,11 @@ impl Debug for Series {
                     "Series"
                 )
             },
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(_, _) => {
+                let dt = format!("{}", self.dtype());
+                format_array!(f, self.map().unwrap(), &dt, self.name(), "Series")
+            },
             #[cfg(feature = "dtype-extension")]
             DataType::Extension(_, _) => {
                 let dt = format!("{}", self.dtype());
@@ -1212,6 +1217,8 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-array")]
             AnyValue::Array(s, _size) => write!(f, "{}", s.fmt_list()),
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
+            #[cfg(feature = "dtype-map")]
+            AnyValue::Map(s) => fmt_map(f, s),
             #[cfg(feature = "object")]
             AnyValue::Object(v) => write!(f, "{v}"),
             #[cfg(feature = "object")]
@@ -1262,6 +1269,33 @@ impl Display for PlTzAware<'_> {
             panic!("activate 'timezones' feature")
         }
     }
+}
+
+/// Renders a map row as `{"a": 1, "b": 2}`
+#[cfg(feature = "dtype-map")]
+fn fmt_map(f: &mut Formatter<'_>, entries: &Series) -> fmt::Result {
+    let (keys, values) =
+        try_unpack_map_entries(entries).expect("Map entries have canonical key and value fields");
+
+    // Same truncation as `Series::fmt_list`.
+    let max_items = get_list_len_limit();
+    let ellipsis = get_ellipsis();
+    let shown = max_items.min(entries.len());
+
+    write!(f, "{{")?;
+    for i in 0..shown {
+        if i > 0 {
+            write!(f, ", ")?;
+        }
+        write!(f, "{}: {}", keys.get(i).unwrap(), values.get(i).unwrap())?;
+    }
+    if shown < entries.len() {
+        if shown > 0 {
+            write!(f, ", ")?;
+        }
+        write!(f, "{ellipsis}")?;
+    }
+    write!(f, "}}")
 }
 
 #[cfg(feature = "dtype-struct")]

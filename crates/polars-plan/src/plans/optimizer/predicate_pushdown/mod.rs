@@ -97,10 +97,7 @@ impl PredicatePushDown {
                 let mut inputs = lp.inputs();
                 let input = inputs.next().unwrap();
                 // projections should only have a single input.
-                if inputs.next().is_some() {
-                    // except for ExtContext
-                    assert!(matches!(lp, IR::ExtContext { .. }));
-                }
+                assert!(inputs.next().is_none());
                 input
             };
 
@@ -460,8 +457,6 @@ impl PredicatePushDown {
             Join {
                 input_left,
                 input_right,
-                left_on,
-                right_on,
                 schema,
                 options,
             } => process_join(
@@ -470,8 +465,6 @@ impl PredicatePushDown {
                 expr_arena,
                 input_left,
                 input_right,
-                left_on,
-                right_on,
                 schema,
                 options,
                 acc_predicates,
@@ -653,10 +646,7 @@ impl PredicatePushDown {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
             // Pushed down passed these nodes
-            lp @ HStack { .. }
-            | lp @ Select { .. }
-            | lp @ SimpleProjection { .. }
-            | lp @ ExtContext { .. } => {
+            lp @ HStack { .. } | lp @ Select { .. } | lp @ SimpleProjection { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             },
             // NOT Pushed down passed these nodes

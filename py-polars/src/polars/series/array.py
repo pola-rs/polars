@@ -2,12 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from polars import functions as F
-from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
     from polars import Series
     from polars._plr import PySeries
@@ -81,7 +79,7 @@ class ArrayNameSpace:
         Compute row-wise dot product with another Array Series or query vector.
 
         Both inputs must contain equal-width arrays. Their inner data types are cast
-        to a common supertype, which must be ``Float32`` or ``Float64``.
+        to a common supertype, which must be an integer, ``Float32``, or ``Float64``.
         An input with one row is broadcast against the other input.
         A Python sequence or one-dimensional NumPy array is treated as a one-row
         Array query.
@@ -92,13 +90,19 @@ class ArrayNameSpace:
         Elements are paired by position.
 
         Pairs where either element is null do not contribute to the sum. If a
-        non-null row has no pairs where both elements are valid, the result is
-        ``0.0``.
+        non-null row has no pairs where both elements are valid, the result is zero.
 
-        Accumulation and output use the common floating-point data type. NaN and
-        infinity follow floating-point multiplication and addition semantics.
-        Results are not guaranteed to be bitwise identical to mathematically
-        equivalent expressions that use a different reduction path.
+        Integer operations use wrapping arithmetic. Each pair is multiplied in the
+        common inner data type before the product is converted to the ``arr.sum``
+        accumulator type. Therefore, an ``Int64`` output does not prevent
+        multiplication from overflowing in ``Int8``, ``UInt8``, ``Int16``, or
+        ``UInt16``. Accumulation may also wrap in the output type. To avoid wrapping,
+        cast both Array inputs to a type that can represent each product and the final
+        sum before calling ``dot``.
+
+        NaN and infinity follow floating-point multiplication and addition
+        semantics. Floating-point results are not guaranteed to be bitwise identical
+        to mathematically equivalent expressions that use a different reduction path.
 
         Examples
         --------
@@ -120,6 +124,28 @@ class ArrayNameSpace:
         [
             8.0
             18.0
+        ]
+
+        Integer multiplication can wrap before accumulator promotion.
+
+        >>> a = pl.Series("a", [[100, 100]], dtype=pl.Array(pl.Int8, 2))
+        >>> b = pl.Series("b", [[2, 2]], dtype=pl.Array(pl.Int8, 2))
+        >>> a.arr.dot(b)
+        shape: (1,)
+        Series: 'a' [i64]
+        [
+            -112
+        ]
+
+        Cast both inputs before ``dot`` to perform multiplication and accumulation in
+        a type that can represent the result.
+
+        >>> wide = pl.Array(pl.Int64, 2)
+        >>> a.cast(wide).arr.dot(b.cast(wide))
+        shape: (1,)
+        Series: 'a' [i64]
+        [
+            400
         ]
         """
 
@@ -778,59 +804,79 @@ class ArrayNameSpace:
 
         """
 
-    def to_struct(
-        self,
-        fields: Callable[[int], str] | Sequence[str] | None = None,
-    ) -> Series:
+    def to_struct(self, fields: Sequence[str] | None = None) -> Series:
         """
         Convert the series of type `Array` to a series of type `Struct`.
 
         Parameters
         ----------
         fields
-            If the name and number of the desired fields is known in advance
-            a list of field names can be given, which will be assigned by index.
-            Otherwise, to dynamically assign field names, a custom function can be
-            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
+            Field names to use for the output. The number of names given must
+            match the width of the input array. If unset, the fields will be
+            named as "field_0", "field_1" .. "field_n".
 
         Examples
         --------
-        Convert array to struct with default field name assignment:
-
-        >>> s1 = pl.Series("n", [[0, 1, 2], [3, 4, 5]], dtype=pl.Array(pl.Int8, 3))
-        >>> s2 = s1.arr.to_struct()
-        >>> s2
-        shape: (2,)
-        Series: 'n' [struct[3]]
+        >>> s = pl.Series(
+        ...     [
+        ...         [1, 0, 0],
+        ...         [0, 1, 0],
+        ...         [0, 0, 1],
+        ...         [None, None, None],
+        ...         None,
+        ...     ],
+        ...     dtype=pl.Array(pl.Int64, 3),
+        ... )
+        >>> print(result := s.arr.to_struct())
+        shape: (5,)
+        Series: '' [struct[3]]
         [
-            {0,1,2}
-            {3,4,5}
+                {1,0,0}
+                {0,1,0}
+                {0,0,1}
+                {null,null,null}
+                null
         ]
-        >>> s2.struct.fields
-        ['field_0', 'field_1', 'field_2']
+        >>> print(result.struct.unnest())
+        shape: (5, 3)
+        ┌─────────┬─────────┬─────────┐
+        │ field_0 ┆ field_1 ┆ field_2 │
+        │ ---     ┆ ---     ┆ ---     │
+        │ i64     ┆ i64     ┆ i64     │
+        ╞═════════╪═════════╪═════════╡
+        │ 1       ┆ 0       ┆ 0       │
+        │ 0       ┆ 1       ┆ 0       │
+        │ 0       ┆ 0       ┆ 1       │
+        │ null    ┆ null    ┆ null    │
+        │ null    ┆ null    ┆ null    │
+        └─────────┴─────────┴─────────┘
 
-        Convert array to struct with field name assignment by function/index:
+        Convert to struct with custom field names:
 
-        >>> s3 = s1.arr.to_struct(fields=lambda idx: f"n{idx:02}")
-        >>> s3.struct.fields
-        ['n00', 'n01', 'n02']
-
-        Convert array to struct with field name assignment by
-        index from a list of names:
-
-        >>> s1.arr.to_struct(fields=["one", "two", "three"]).struct.unnest()
-        shape: (2, 3)
-        ┌─────┬─────┬───────┐
-        │ one ┆ two ┆ three │
-        │ --- ┆ --- ┆ ---   │
-        │ i8  ┆ i8  ┆ i8    │
-        ╞═════╪═════╪═══════╡
-        │ 0   ┆ 1   ┆ 2     │
-        │ 3   ┆ 4   ┆ 5     │
-        └─────┴─────┴───────┘
+        >>> print(result := s.arr.to_struct(["x", "y", "z"]))
+        shape: (5,)
+        Series: '' [struct[3]]
+        [
+                {1,0,0}
+                {0,1,0}
+                {0,0,1}
+                {null,null,null}
+                null
+        ]
+        >>> print(result.struct.unnest())
+        shape: (5, 3)
+        ┌──────┬──────┬──────┐
+        │ x    ┆ y    ┆ z    │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ i64  │
+        ╞══════╪══════╪══════╡
+        │ 1    ┆ 0    ┆ 0    │
+        │ 0    ┆ 1    ┆ 0    │
+        │ 0    ┆ 0    ┆ 1    │
+        │ null ┆ null ┆ null │
+        │ null ┆ null ┆ null │
+        └──────┴──────┴──────┘
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(F.col(s.name).arr.to_struct(fields)).to_series()
 
     def shift(self, n: int | IntoExprColumn = 1) -> Series:
         """

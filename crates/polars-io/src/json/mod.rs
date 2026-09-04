@@ -80,6 +80,22 @@ use simd_json::BorrowedValue;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
 
+/// Reject dtypes that `polars-json` cannot serialize.
+pub fn ensure_json_writable(_dtype: &DataType) -> PolarsResult<()> {
+    #[cfg(feature = "object")]
+    polars_ensure!(
+        !_dtype.contains_objects(),
+        ComputeError: "cannot write 'Object' datatype to json"
+    );
+    #[cfg(feature = "dtype-map")]
+    polars_ensure!(
+        !_dtype.contains_map(),
+        ComputeError:
+        "cannot write 'Map' datatype to json\n\nConsider `Expr.map.entries` to write the entries as a list of structs."
+    );
+    Ok(())
+}
+
 /// The format to use to write the DataFrame to JSON: `Json` (a JSON array)
 /// or `JsonLines` (each row output on a separate line).
 ///
@@ -137,11 +153,11 @@ where
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         df.align_chunks_par();
-        let fields = df.columns()
+        let fields = df
+            .columns()
             .iter()
             .map(|s| {
-                #[cfg(feature = "object")]
-                polars_ensure!(!matches!(s.dtype(), DataType::Object(_)), ComputeError: "cannot write 'Object' datatype to json");
+                ensure_json_writable(s.dtype())?;
                 Ok(s.field().to_arrow(CompatLevel::newest()))
             })
             .collect::<PolarsResult<Vec<_>>>()?;
@@ -182,11 +198,11 @@ where
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
     pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
-        let fields = df.columns()
+        let fields = df
+            .columns()
             .iter()
             .map(|s| {
-                #[cfg(feature = "object")]
-                polars_ensure!(!matches!(s.dtype(), DataType::Object(_)), ComputeError: "cannot write 'Object' datatype to json");
+                ensure_json_writable(s.dtype())?;
                 Ok(s.field().to_arrow(CompatLevel::newest()))
             })
             .collect::<PolarsResult<Vec<_>>>()?;

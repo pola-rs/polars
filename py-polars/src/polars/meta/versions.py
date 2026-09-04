@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import re
 import sys
 
 from polars._cpu_check import get_runtime_repr
-from polars._utils.polars_version import get_polars_version
+from polars._utils.polars_version import get_polars_build_commit, get_polars_version
 from polars.meta.index_type import get_index_type
 
 
@@ -16,6 +17,7 @@ def show_versions() -> None:
     >>> pl.show_versions()  # doctest: +SKIP
     --------Version info---------
     Polars:               0.20.22
+    Build:                a1b2c3d4e5f
     Index type:           UInt32
     Platform:             macOS-14.4.1-arm64-arm-64bit
     Python:               3.11.8 (main, Feb  6 2024, 21:21:21) [Clang 15.0.0 (clang-1500.1.0.2.5)]
@@ -46,11 +48,19 @@ def show_versions() -> None:
     import platform
 
     deps = _get_dependency_list()
-    core_properties = ("Polars", "Index type", "Platform", "Python", "Runtime")
+    core_properties = (
+        "Polars",
+        "Build",
+        "Index type",
+        "Platform",
+        "Python",
+        "Runtime",
+    )
     keylen = max(len(x) for x in [*core_properties, "Azure CLI", *deps]) + 1
 
     print("--------Version info---------")
     print(f"{'Polars:':{keylen}s} {get_polars_version()}")
+    print(f"{'Build:':{keylen}s} {get_polars_build_commit()}")
     print(f"{'Index type:':{keylen}s} {get_index_type()}")
     print(f"{'Platform:':{keylen}s} {platform.platform()}")
     print(f"{'Python:':{keylen}s} {sys.version}")
@@ -108,6 +118,18 @@ def _get_dependency_version(dep_name: str) -> str:
         module = importlib.import_module(dep_name)
     except ImportError:
         return "<not installed>"
+
+    # TODO: At the time of writing, polars_cloud fails to parse version numbers
+    # that contain alpha or rc versions, and crashes. However, polars_cloud will
+    # always pin to a specific polars-oss version anyway, so for now we ignore this
+    # error.
+    except RuntimeError as e:
+        if dep_name == "polars_cloud" and re.match(
+            r"^Unsupported version of polars: 2.0.0rc\d+$", e.args[0]
+        ):
+            return "<runtime error>"
+        else:
+            raise
 
     if hasattr(module, "__version__"):
         module_version = module.__version__

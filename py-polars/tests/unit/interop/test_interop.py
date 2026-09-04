@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
@@ -14,6 +15,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import (
+    ArgumentRemovedError,
     ComputeError,
     DuplicateError,
     InvalidOperationError,
@@ -267,11 +269,23 @@ def test_from_arrow_with_bigquery_metadata() -> None:
         schema=arrow_schema,
     )
 
+    df = pl.from_arrow(arrow_tbl)
+    assert isinstance(df, pl.DataFrame)
+
+    # The BigQuery sql-type metadata is retained as an extension dtype,
+    # but must not affect the underlying storage dtypes
+    assert df.schema == {
+        "id": pl.Extension("google:sqlType:integer", pl.Int64),
+        "misc": pl.Extension(
+            "google:sqlType:struct", pl.Struct({"num": pl.Int32, "val": pl.String})
+        ),
+    }
+
     expected_data = {"id": [1, 2], "num": [None, None], "val": [None, None]}
     expected_schema = {"id": pl.Int64, "num": pl.Int32, "val": pl.String}
     assert_frame_equal(
+        df.select(pl.all().ext.storage()).unnest("misc"),
         pl.DataFrame(expected_data, schema=expected_schema),
-        pl.from_arrow(arrow_tbl).unnest("misc"),  # type: ignore[union-attr]
     )
 
 
@@ -392,19 +406,18 @@ def test_from_pyarrow_map() -> None:
     pl.DataFrame(pa_table.slice(0, 0))
 
     result = pl.DataFrame(pa_table)
+    assert result.schema == {"idx": pl.Int16, "mapping": pl.Map(pl.String, pl.String)}
     assert result.to_dict(as_series=False) == {
         "idx": [1, 2],
-        "mapping": [
-            [{"key": "a", "value": "something"}],
-            [{"key": "a", "value": "else"}, {"key": "b", "value": "another key"}],
-        ],
+        "mapping": [{"a": "something"}, {"a": "else", "b": "another key"}],
     }
 
 
 def test_from_pyarrow_map_preserves_nulls_28652() -> None:
     pa_map = pa.array([[], None, [("k", 1)]], type=pa.map_(pa.string(), pa.int64()))
     result = pl.Series(pa_map)
-    assert result.to_list() == [[], None, [{"key": "k", "value": 1}]]
+    assert result.dtype == pl.Map(pl.String, pl.Int64)
+    assert result.to_list() == [{}, None, {"k": 1}]
 
 
 def test_from_fixed_size_binary_list() -> None:
@@ -413,6 +426,12 @@ def test_from_fixed_size_binary_list() -> None:
     s = cast("pl.Series", pl.from_arrow(arrow_array))
     assert s.dtype == pl.List(pl.Binary)
     assert s.to_list() == val
+
+
+def test_from_repr_tbl_removed() -> None:
+    msg = "It was renamed to 'data'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.from_repr(tbl="")  # type: ignore[call-arg]
 
 
 def test_dataframe_from_repr() -> None:
@@ -1032,15 +1051,6 @@ def test_misaligned_nested_arrow_19097() -> None:
     assert_series_equal(pl.Series("a", a.to_arrow()), a)
 
 
-def test_arrow_roundtrip_lex_cat_20288() -> None:
-    tb = pl.Series("a", ["A", "B"], pl.Categorical()).to_frame().to_arrow()
-    df = pl.from_arrow(tb)
-    assert isinstance(df, pl.DataFrame)
-    dt = df.schema["a"]
-    assert isinstance(dt, pl.Categorical)
-    assert dt.ordering == "lexical"
-
-
 def test_from_arrow_20271() -> None:
     df = pl.from_arrow(
         pa.table({"b": pa.DictionaryArray.from_arrays([0, 1], ["D", "E"])})
@@ -1050,6 +1060,12 @@ def test_from_arrow_20271() -> None:
         df.to_series(),
         pl.Series("b", ["D", "E"], pl.Categorical),
     )
+
+
+def test_series_to_arrow_future_removed() -> None:
+    msg = "It was renamed to 'compat_level'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.Series("a", [1, 2, 3]).to_arrow(future=True)  # type: ignore[call-arg]
 
 
 def test_to_arrow_empty_chunks_20627() -> None:
@@ -1103,37 +1119,38 @@ def test_from_arrow_map_containing_timestamp_23658() -> None:
         ),
     )
 
-    expect = pl.DataFrame(
+    out = pl.DataFrame(arrow_tbl)
+    assert out.schema == pl.Schema(
         {
-            "column_1": [
-                [
-                    {
-                        "field_1": [
-                            {"key": 1, "value": datetime(2025, 1, 1)},
-                            {"key": 2, "value": datetime(2025, 1, 2)},
-                            {"key": 2, "value": None},
-                        ]
-                    },
-                    {"field_1": []},
-                    None,
-                ]
-            ],
-        },
-        schema={
             "column_1": pl.List(
-                pl.Struct(
-                    {
-                        "field_1": pl.List(
-                            pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")})
-                        )
-                    }
-                )
+                pl.Struct({"field_1": pl.Map(pl.Int32, pl.Datetime("ms"))})
             )
-        },
+        }
     )
 
-    out = pl.DataFrame(arrow_tbl)
-    assert_frame_equal(out, expect)
+    # Arrow import does not canonicalize, so the duplicate key 2 survives in the
+    # entries; a Python dict cannot hold it, and keeps the last value.
+    entries = pl.List(pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")}))
+    assert out["column_1"].explode().struct.field("field_1").cast(
+        entries
+    ).to_list() == [
+        [
+            {"key": 1, "value": datetime(2025, 1, 1)},
+            {"key": 2, "value": datetime(2025, 1, 2)},
+            {"key": 2, "value": None},
+        ],
+        [],
+        None,
+    ]
+    assert out.to_dicts() == [
+        {
+            "column_1": [
+                {"field_1": {1: datetime(2025, 1, 1), 2: None}},
+                {"field_1": {}},
+                None,
+            ]
+        }
+    ]
 
 
 def test_schema_constructor_from_schema_capsule() -> None:
@@ -1141,9 +1158,7 @@ def test_schema_constructor_from_schema_capsule() -> None:
         [pa.field("test", pa.map_(pa.int32(), pa.timestamp("ms")))]
     )
 
-    assert pl.Schema(arrow_schema) == {
-        "test": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Datetime("ms")}))
-    }
+    assert pl.Schema(arrow_schema) == {"test": pl.Map(pl.Int32, pl.Datetime("ms"))}
 
     # Test __arrow_c_schema__ implementation on `pl.Schema`
     assert pa.schema(pl.Schema({"x": pl.Int32})) == pa.schema(
@@ -1607,23 +1622,14 @@ def test_sliced_nested_arrow_export_28583(
 
 
 def test_from_arrow_capsule_24511() -> None:
-    # 2.0: Remove FutureWarning and change expected values to be struct-type Series.
-    with pytest.warns(FutureWarning):
-        out = pl.from_arrow(PyCapsuleStreamHolder(pl.DataFrame({"x": 1})))
-
-    assert isinstance(out, pl.DataFrame)
-    assert_frame_equal(
-        out,
-        pl.DataFrame({"x": 1}),
+    assert_series_equal(
+        pl.from_arrow(PyCapsuleStreamHolder(pl.DataFrame({"x": 1}))),  # type: ignore[arg-type]
+        pl.Series([{"x": 1}]),
     )
 
-    with pytest.warns(FutureWarning):
-        out = pl.from_arrow(PyCapsuleArrayHolder(pl.Series([{"x": 1}]).to_arrow()))
-
-    assert isinstance(out, pl.DataFrame)
-    assert_frame_equal(
-        out,
-        pl.DataFrame({"x": 1}),
+    assert_series_equal(
+        pl.from_arrow(PyCapsuleArrayHolder(pl.Series([{"x": 1}]).to_arrow())),  # type: ignore[arg-type]
+        pl.Series([{"x": 1}]),
     )
 
 

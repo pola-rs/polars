@@ -99,6 +99,7 @@ from polars.datatypes import (
     Int64,
     Int128,
     List,
+    Map,
     Null,
     Object,
     String,
@@ -127,7 +128,6 @@ from polars.functions import (
     approx_n_unique,
     arange,
     arctan2,
-    arctan2d,
     arg_sort_by,
     arg_where,
     business_day_count,
@@ -164,7 +164,6 @@ from polars.functions import (
     fold,
     format,
     from_epoch,
-    groups,
     head,
     implode,
     int_range,
@@ -221,7 +220,6 @@ from polars.io import (
     read_avro,
     read_clipboard,
     read_csv,
-    read_csv_batched,
     read_database,
     read_database_uri,
     read_delta,
@@ -268,7 +266,6 @@ from polars.meta import (
     get_index_type,
     show_versions,
     thread_pool_size,
-    threadpool_size,
 )
 from polars.schema import Schema
 from polars.series import Series
@@ -328,6 +325,7 @@ __all__ = [
     "Int64",
     "Int128",
     "List",
+    "Map",
     "Null",
     "Object",
     "String",
@@ -352,7 +350,6 @@ __all__ = [
     "read_avro",
     "read_clipboard",
     "read_csv",
-    "read_csv_batched",
     "read_database",
     "read_database_uri",
     "read_delta",
@@ -432,7 +429,6 @@ __all__ = [
     "approx_n_unique",
     "arange",
     "arctan2",
-    "arctan2d",
     "arg_sort_by",
     "coalesce",
     "col",
@@ -457,7 +453,6 @@ __all__ = [
     "fold",
     "format",
     "from_epoch",
-    "groups",
     "head",
     "implode",
     "int_range",
@@ -504,7 +499,6 @@ __all__ = [
     "get_index_type",
     "show_versions",
     "thread_pool_size",
-    "threadpool_size",
     # polars.sql
     "SQLContext",
     "sql",
@@ -531,30 +525,33 @@ if not TYPE_CHECKING:
 
         # Deprecate re-export of exceptions at top-level
         if name in dir(exceptions):
-            from polars._utils.deprecation import issue_deprecation_warning
-
-            issue_deprecation_warning(
-                message=(
-                    f"accessing `{name}` from the top-level `polars` module was deprecated "
-                    "in version 1.0.0. Import it directly from the `polars.exceptions` module "
-                    f"instead, e.g.: `from polars.exceptions import {name}`"
-                ),
+            msg = (
+                f"accessing `{name}` from the top-level `polars` module was deprecated "
+                "in version 1.0.0. Import it directly from the `polars.exceptions` module "
+                f"instead, e.g.: `from polars.exceptions import {name}`"
             )
-            return getattr(exceptions, name)
+            raise exceptions.AttributeRemovedError(msg)
 
         # Deprecate data type groups at top-level
         import polars.datatypes.group as dtgroup
 
         if name in dir(dtgroup):
-            from polars._utils.deprecation import issue_deprecation_warning
-
-            issue_deprecation_warning(
-                message=(
-                    f"`{name}` was deprecated in version 1.0.0. Define your own data type groups or "
-                    "use the `polars.selectors` module for selecting columns of a certain data type."
-                ),
+            msg = (
+                f"`{name}` was deprecated in version 1.0.0. Define your own data type groups or "
+                "use the `polars.selectors` module for selecting columns of a certain data type."
             )
-            return getattr(dtgroup, name)
+            raise exceptions.AttributeRemovedError(msg)
+
+        # Functions removed in 2.0
+        removed = {
+            "arctan2d": "use `arctan2` followed by `.degrees()` instead.",
+            "groups": "use `df.with_row_index().group_by(...).agg(pl.col('index'))` instead.",
+            "read_csv_batched": "use `scan_csv` instead, in conjunction with `LazyFrame.collect(engine='streaming')`.",
+            "threadpool_size": "it was renamed; use `thread_pool_size` instead.",
+        }
+        if name in removed:
+            msg = f"`{name}` was removed in version 2.0; {removed[name]}"
+            raise exceptions.AttributeRemovedError(msg)
 
         msg = f"module {__name__!r} has no attribute {name!r}"
         raise AttributeError(msg)

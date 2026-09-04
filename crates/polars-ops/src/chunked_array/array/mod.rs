@@ -9,6 +9,7 @@ mod sum_mean;
 #[cfg(feature = "array_to_struct")]
 mod to_struct;
 
+pub use dot::is_supported_array_dot_dtype;
 pub use namespace::ArrayNameSpace;
 use polars_core::prelude::*;
 #[cfg(feature = "array_to_struct")]

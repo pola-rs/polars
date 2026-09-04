@@ -19,6 +19,8 @@ mod extension;
 #[cfg(feature = "fused")]
 mod fused;
 mod list;
+#[cfg(feature = "dtype-map")]
+mod map;
 #[cfg(feature = "ffi_plugin")]
 pub mod plugin;
 mod pow;
@@ -69,6 +71,8 @@ pub use self::cat::IRCategoricalFunction;
 pub use self::datetime::IRTemporalFunction;
 #[cfg(feature = "dtype-extension")]
 pub use self::extension::IRExtensionFunction;
+#[cfg(feature = "dtype-map")]
+pub use self::map::IRMapFunction;
 pub use self::pow::IRPowFunction;
 #[cfg(feature = "range")]
 pub use self::range::IRRangeFunction;
@@ -101,6 +105,8 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "dtype-extension")]
     Extension(IRExtensionFunction),
     ListExpr(IRListFunction),
+    #[cfg(feature = "dtype-map")]
+    MapExpr(IRMapFunction),
     #[cfg(feature = "strings")]
     StringExpr(IRStringFunction),
     #[cfg(feature = "dtype-struct")]
@@ -126,7 +132,7 @@ pub enum IRFunctionExpr {
     NullCount,
     Pow(IRPowFunction),
     #[cfg(feature = "row_hash")]
-    Hash(u64, u64, u64, u64),
+    Hash(u64),
     #[cfg(feature = "arg_where")]
     ArgWhere,
     #[cfg(feature = "index_of")]
@@ -156,7 +162,6 @@ pub enum IRFunctionExpr {
         function_by: IRRollingFunctionBy,
         options: RollingOptionsDynamicWindow,
     },
-    Rechunk,
     ShiftAndFill,
     Shift,
     DropNans,
@@ -424,6 +429,8 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "dtype-extension")]
             Extension(f) => f.hash(state),
             ListExpr(f) => f.hash(state),
+            #[cfg(feature = "dtype-map")]
+            MapExpr(f) => f.hash(state),
             #[cfg(feature = "strings")]
             StringExpr(f) => f.hash(state),
             #[cfg(feature = "dtype-struct")]
@@ -514,7 +521,7 @@ impl Hash for IRFunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill | Rechunk | MinBy | MaxBy => {},
+            | ArgMax | Product | Shift | ShiftAndFill | MinBy | MaxBy => {},
             ArgSort {
                 descending,
                 nulls_last,
@@ -543,7 +550,7 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "sign")]
             Sign => {},
             #[cfg(feature = "row_hash")]
-            Hash(a, b, c, d) => (a, b, c, d).hash(state),
+            Hash(seed) => seed.hash(state),
             FillNull => {},
             #[cfg(feature = "rolling_window")]
             RollingExpr { function, options } => {
@@ -740,6 +747,8 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "dtype-extension")]
             Extension(func) => return write!(f, "{func}"),
             ListExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "dtype-map")]
+            MapExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "strings")]
             StringExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-struct")]
@@ -759,7 +768,7 @@ impl Display for IRFunctionExpr {
             NullCount => "null_count",
             Pow(func) => return write!(f, "{func}"),
             #[cfg(feature = "row_hash")]
-            Hash(_, _, _, _) => "hash",
+            Hash(_) => "hash",
             #[cfg(feature = "arg_where")]
             ArgWhere => "arg_where",
             #[cfg(feature = "index_of")]
@@ -779,7 +788,6 @@ impl Display for IRFunctionExpr {
             RollingExpr { function, .. } => return write!(f, "{function}"),
             #[cfg(feature = "rolling_window_by")]
             RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
-            Rechunk => "rechunk",
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
@@ -1046,6 +1054,8 @@ impl IRFunctionExpr {
             #[cfg(feature = "dtype-extension")]
             F::Extension(e) => e.function_options(),
             F::ListExpr(e) => e.function_options(),
+            #[cfg(feature = "dtype-map")]
+            F::MapExpr(e) => e.function_options(),
             #[cfg(feature = "strings")]
             F::StringExpr(e) => e.function_options(),
             #[cfg(feature = "dtype-struct")]
@@ -1067,7 +1077,7 @@ impl IRFunctionExpr {
             F::Hist { .. } => FunctionOptions::groupwise(),
             F::NullCount => FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING),
             #[cfg(feature = "row_hash")]
-            F::Hash(_, _, _, _) => FunctionOptions::elementwise(),
+            F::Hash(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "arg_where")]
             F::ArgWhere => FunctionOptions::groupwise(),
             #[cfg(feature = "index_of")]
@@ -1093,7 +1103,6 @@ impl IRFunctionExpr {
             F::RollingExpr { .. } => FunctionOptions::length_preserving(),
             #[cfg(feature = "rolling_window_by")]
             F::RollingExprBy { .. } => FunctionOptions::length_preserving(),
-            F::Rechunk => FunctionOptions::length_preserving(),
             F::ShiftAndFill => FunctionOptions::length_preserving(),
             F::Shift => FunctionOptions::length_preserving(),
             F::DropNans => {

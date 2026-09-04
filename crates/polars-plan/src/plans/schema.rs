@@ -32,7 +32,7 @@ impl DslPlan {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct FileInfo {
@@ -45,20 +45,9 @@ pub struct FileInfo {
     /// Stores the schema used for the reader, as the main schema can contain
     /// extra hive columns.
     pub reader_schema: Option<Either<ArrowSchemaRef, SchemaRef>>,
-    /// - known size
-    /// - estimated size (set to usize::max if unknown).
-    pub row_estimation: (Option<usize>, usize),
-}
-
-// Manual default because `row_estimation.1` needs to be `usize::MAX`.
-impl Default for FileInfo {
-    fn default() -> Self {
-        FileInfo {
-            schema: Default::default(),
-            reader_schema: None,
-            row_estimation: (None, usize::MAX),
-        }
-    }
+    /// Plan-time statistics of the source.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub stats: ScanStats,
 }
 
 impl FileInfo {
@@ -66,12 +55,12 @@ impl FileInfo {
     pub fn new(
         schema: SchemaRef,
         reader_schema: Option<Either<ArrowSchemaRef, SchemaRef>>,
-        row_estimation: (Option<usize>, usize),
+        stats: ScanStats,
     ) -> Self {
         Self {
             schema,
             reader_schema,
-            row_estimation,
+            stats,
         }
     }
 
@@ -110,11 +99,11 @@ impl FileInfo {
 pub(crate) fn det_join_schema(
     schema_left: &SchemaRef,
     schema_right: &SchemaRef,
-    left_on: &[ExprIR],
-    right_on: &[ExprIR],
     options: &JoinOptionsIR,
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<SchemaRef> {
+    let condition = &options.options;
+
     match &options.args.how {
         // semi and anti joins are just filtering operations
         // the schema will never change.
@@ -130,14 +119,16 @@ pub(crate) fn det_join_schema(
         // df(cols=[B, A, B_right])
         JoinType::Right if options.args.should_coalesce() => {
             // Get join names.
-            let mut join_on_left: PlIndexSet<_> = PlIndexSet::with_capacity(left_on.len());
-            for e in left_on {
+            let mut join_on_left: PlIndexSet<_> =
+                PlIndexSet::with_capacity(condition.left_on_len());
+            for e in condition.left_on() {
                 let field = e.field(schema_left, expr_arena)?;
                 join_on_left.insert(field.name);
             }
 
-            let mut join_on_right: PlIndexSet<_> = PlIndexSet::with_capacity(right_on.len());
-            for e in right_on {
+            let mut join_on_right: PlIndexSet<_> =
+                PlIndexSet::with_capacity(condition.right_on_len());
+            for e in condition.right_on() {
                 let field = e.field(schema_right, expr_arena)?;
                 join_on_right.insert(field.name);
             }
@@ -184,8 +175,9 @@ pub(crate) fn det_join_schema(
 
             let is_coalesced = options.args.should_coalesce();
 
-            let mut join_on_right: PlIndexSet<_> = PlIndexSet::with_capacity(right_on.len());
-            for e in right_on {
+            let mut join_on_right: PlIndexSet<_> =
+                PlIndexSet::with_capacity(condition.right_on_len());
+            for e in condition.right_on() {
                 let field = e.field(schema_right, expr_arena)?;
                 join_on_right.insert(field.name);
             }
@@ -216,7 +208,11 @@ pub(crate) fn det_join_schema(
                         // values so if the right has a different name, it is added to the schema
                         #[cfg(feature = "asof_join")]
                         if matches!(how, JoinType::AsOf(_)) {
-                            let field_left = left_on[idx].field(schema_left, expr_arena)?;
+                            let field_left = condition
+                                .left_on()
+                                .nth(idx)
+                                .unwrap()
+                                .field(schema_left, expr_arena)?;
                             need_to_include_column = field_left.name != name;
                         }
 
