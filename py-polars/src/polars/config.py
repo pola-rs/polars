@@ -76,7 +76,7 @@ _POLARS_CFG_ENV_VARS: Final[set[str]] = {
     "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION",
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
     "POLARS_FMT_TABLE_ROUNDED_CORNERS",
-    "POLARS_STREAMING_CHUNK_SIZE",
+    "POLARS_IDEAL_MORSEL_SIZE",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
     "POLARS_MAX_EXPR_DEPTH",
@@ -946,14 +946,14 @@ class Config(contextlib.ContextDecorator, metaclass=_Meta):
             of this size.
         """
         if size is None:
-            os.environ.pop("POLARS_STREAMING_CHUNK_SIZE", None)
+            os.environ.pop("POLARS_IDEAL_MORSEL_SIZE", None)
         else:
             if size < 1:
                 msg = "number of rows per chunk must be >= 1"
                 raise ValueError(msg)
 
-            os.environ["POLARS_STREAMING_CHUNK_SIZE"] = str(size)
-        plr.config_reload_env_var("POLARS_STREAMING_CHUNK_SIZE")
+            os.environ["POLARS_IDEAL_MORSEL_SIZE"] = str(size)
+        plr.config_reload_env_var("POLARS_IDEAL_MORSEL_SIZE")
         return cls
 
     @classmethod

@@ -1,4 +1,5 @@
 import io
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
@@ -891,6 +892,10 @@ def test_projection_pushdown_filter_len_to_sum() -> None:
 def test_projection_pushdown_union_len_pushdown_28657(
     union_fn: Callable[..., pl.LazyFrame],
 ) -> None:
+    morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
+    if morsel_size is not None and int(morsel_size) < 1000:
+        pytest.skip("test is too slow for small morsel sizes")
+
     lf = union_fn(
         [
             pl.LazyFrame({"a": [1, 2, 3], "b": [1, 2, 3]})

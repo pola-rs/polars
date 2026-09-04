@@ -85,10 +85,6 @@ def test_streaming_streamable_functions(
 @pytest.mark.slow
 @pytest.mark.may_fail_cloud  # reason: timing
 def test_cross_join_stack() -> None:
-    morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
-    if morsel_size is not None and int(morsel_size) < 1000:
-        pytest.skip("test is too slow for small morsel sizes")
-
     a = pl.Series(np.arange(100_000)).to_frame().lazy()
     t0 = time.time()
     assert a.join(a, how="cross").head().collect(engine="streaming").shape == (5, 2)
