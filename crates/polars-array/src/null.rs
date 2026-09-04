@@ -319,6 +319,12 @@ impl PlNullArrayBuilder {
     pub const fn new() -> Self {
         Self { length: 0 }
     }
+
+    /// Appends a null, which is the only element a null array has.
+    #[inline]
+    pub const fn push_null(&mut self) {
+        self.length += 1;
+    }
 }
 
 impl StaticArrayBuilder for PlNullArrayBuilder {

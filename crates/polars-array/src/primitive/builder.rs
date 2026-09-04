@@ -1,7 +1,7 @@
 //! The builder of a [`PlPrimitiveArray`].
 
 use arrow::bitmap::OptBitmapBuilder;
-use arrow::types::NativeType;
+use arrow::types::{AlignedBytes, NativeType};
 use polars_utils::IdxSize;
 
 use super::PlPrimitiveArray;
@@ -36,6 +36,35 @@ impl<T: NativeType> PlPrimitiveArrayBuilder<T> {
         let mut builder = Self::new();
         builder.reserve(capacity);
         builder
+    }
+
+    /// Appends `value` as an element of its own.
+    ///
+    /// This is the one routine here that is *not* taken over the byte class of `T`: a `Vec` of
+    /// byte-class slots is already only as many distinct `push`es as there are byte classes, and
+    /// unlike everything in [`bytes`] this one is called per element, so it stays inlinable in the
+    /// caller that holds the loop.
+    #[inline]
+    pub fn push_value(&mut self, value: T) {
+        self.values.push(bytes::to_bytes(value));
+        self.validity.extend_constant(1, true);
+    }
+
+    /// Appends a null.
+    #[inline]
+    pub fn push_null(&mut self) {
+        // The value of a null element is undetermined, so anything at all does.
+        self.values.push(Bytes::<T>::zeros());
+        self.validity.extend_constant(1, false);
+    }
+
+    /// Appends `value`, or a null if it is [`None`].
+    #[inline]
+    pub fn push(&mut self, value: Option<T>) {
+        match value {
+            Some(value) => self.push_value(value),
+            None => self.push_null(),
+        }
     }
 
     /// Appends the `length` values of `other` starting at `start`, ignoring its validity mask.
@@ -208,6 +237,30 @@ mod tests {
             built.iter().collect::<Vec<_>>(),
             [Some(3), Some(1), None, None, None],
         );
+    }
+
+    #[test]
+    fn pushing_elements_one_at_a_time() {
+        let mut builder = PlPrimitiveArrayBuilder::<i32>::with_capacity(4);
+        builder.push_value(1);
+        builder.push_null();
+        builder.push(Some(3));
+        builder.push(None);
+        assert_eq!(builder.len(), 4);
+
+        // An element appended one at a time is the element an appended array holds.
+        let mut appended = PlPrimitiveArrayBuilder::<i32>::new();
+        appended.extend(&builder.freeze_reset(), ShareStrategy::Never);
+
+        // The mask only comes into being once a null is pushed.
+        let mut valid = PlPrimitiveArrayBuilder::<i32>::new();
+        valid.push_value(7);
+
+        assert_eq!(
+            appended.freeze().iter().collect::<Vec<_>>(),
+            [Some(1), None, Some(3), None],
+        );
+        assert!(valid.freeze().validity().is_none());
     }
 
     #[test]

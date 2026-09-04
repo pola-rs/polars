@@ -42,6 +42,48 @@ impl PlFixedSizeBinaryArrayBuilder {
         self.width
     }
 
+    /// Appends `value` as an element of its own.
+    ///
+    /// # Panics
+    /// Panics unless `value` is exactly [`width`](Self::width) bytes long, which every element of
+    /// the built array covers.
+    #[inline]
+    pub fn push_value(&mut self, value: &[u8]) {
+        assert_eq!(
+            value.len(),
+            self.width,
+            "cannot append a byte string of {} bytes to a builder of width {}",
+            value.len(),
+            self.width,
+        );
+
+        self.values.extend_from_slice(value);
+        self.length += 1;
+        self.validity.extend_constant(1, true);
+    }
+
+    /// Appends a null.
+    #[inline]
+    pub fn push_null(&mut self) {
+        // The bytes of a null element are undetermined, but there are as many of them as there are
+        // of any other element: the width is what every element covers.
+        self.values.resize(self.values.len() + self.width, 0);
+        self.length += 1;
+        self.validity.extend_constant(1, false);
+    }
+
+    /// Appends `value`, or a null if it is [`None`].
+    ///
+    /// # Panics
+    /// Panics under the conditions [`Self::push_value`] panics.
+    #[inline]
+    pub fn push(&mut self, value: Option<&[u8]>) {
+        match value {
+            Some(value) => self.push_value(value),
+            None => self.push_null(),
+        }
+    }
+
     /// Panics unless `other` is as wide as the elements this builds.
     fn assert_width(&self, other: &PlFixedSizeBinaryArray) {
         assert_eq!(
@@ -245,6 +287,33 @@ mod tests {
             .iter()
             .map(|element| element.map(<[u8]>::to_vec))
             .collect()
+    }
+
+    #[test]
+    fn pushing_elements_one_at_a_time() {
+        let mut builder = PlFixedSizeBinaryArrayBuilder::with_capacity(2, 4);
+        builder.push_value(b"ab");
+        builder.push_null();
+        builder.push(Some(b"cd".as_slice()));
+        builder.push(None);
+
+        assert_eq!(builder.len(), 4);
+
+        let built = builder.freeze();
+        assert_eq!(built.width(), 2);
+        assert_eq!(
+            elements(&built),
+            [Some(b"ab".to_vec()), None, Some(b"cd".to_vec()), None],
+        );
+        // A null element covers the width every other element does, undetermined though its bytes
+        // are, which is what keeps the values laid out end to end.
+        assert_eq!(built.flat_values().unwrap().len(), 8);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot append a byte string of 3 bytes to a builder of width 2")]
+    fn pushing_an_element_of_the_wrong_width_panics() {
+        PlFixedSizeBinaryArrayBuilder::new(2).push_value(b"abc");
     }
 
     #[test]

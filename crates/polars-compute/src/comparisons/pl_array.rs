@@ -10,14 +10,14 @@ use arrow::bitmap::Bitmap;
 use polars_array::PlFixedSizeListArray;
 use polars_array::arrow::bridge::ToArrow;
 use polars_array::{
-    Flat, PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlListArray, PlStructArray,
-    PlUtf8ViewArray, StaticArray,
+    Flat, PlArray, PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlListArray, PlStructArray,
+    PlUtf8ViewArray,
 };
 
 use super::{TotalEqKernel, TotalOrdKernel};
 
 /// The validity mask of a flat array, which holds one bit per element like its every other buffer.
-fn flat_validity<A: StaticArray>(array: &Flat<A>) -> Option<&Bitmap> {
+fn flat_validity<A: PlArray>(array: &Flat<A>) -> Option<&Bitmap> {
     array.as_array().validity().map(|validity| {
         validity
             .flat_bitmap()

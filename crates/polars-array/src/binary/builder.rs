@@ -50,6 +50,32 @@ impl PlBinaryArrayBuilder {
         self.offsets.push(self.last_offset() + length as u64);
     }
 
+    /// Appends `value` as an element of its own.
+    #[inline]
+    pub fn push_value(&mut self, value: &[u8]) {
+        self.values.extend_from_slice(value);
+        self.push_offset(value.len());
+        self.validity.extend_constant(1, true);
+    }
+
+    /// Appends a null.
+    #[inline]
+    pub fn push_null(&mut self) {
+        // The value of a null element is undetermined, so the empty byte string it covers reaches
+        // no bytes to append: it starts and ends where the last element ended.
+        self.push_offset(0);
+        self.validity.extend_constant(1, false);
+    }
+
+    /// Appends `value`, or a null if it is [`None`].
+    #[inline]
+    pub fn push(&mut self, value: Option<&[u8]>) {
+        match value {
+            Some(value) => self.push_value(value),
+            None => self.push_null(),
+        }
+    }
+
     /// Appends `element` `repeats` times over, one element per copy.
     fn extend_repeated(&mut self, element: &[u8], repeats: usize) {
         self.values.reserve(repeats * element.len());
@@ -325,6 +351,25 @@ mod tests {
                 None,
             ],
         );
+    }
+
+    #[test]
+    fn pushing_elements_one_at_a_time() {
+        let mut builder = PlBinaryArrayBuilder::with_capacity(4);
+        builder.push_value(b"foo");
+        builder.push_null();
+        builder.push(Some(b"".as_slice()));
+        builder.push(None);
+
+        assert_eq!(builder.len(), 4);
+
+        let built = builder.freeze();
+        assert_eq!(
+            elements(&built),
+            [Some(b"foo".to_vec()), None, Some(Vec::new()), None],
+        );
+        // A null covers no bytes, so it leaves the values where the last element ended.
+        assert_eq!(built.values().len(), 3);
     }
 
     #[test]

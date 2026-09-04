@@ -31,6 +31,30 @@ impl PlBooleanArrayBuilder {
         builder
     }
 
+    /// Appends `value` as an element of its own.
+    #[inline]
+    pub fn push_value(&mut self, value: bool) {
+        self.values.push(value);
+        self.validity.extend_constant(1, true);
+    }
+
+    /// Appends a null.
+    #[inline]
+    pub fn push_null(&mut self) {
+        // The value of a null element is undetermined, so anything at all does.
+        self.values.push(false);
+        self.validity.extend_constant(1, false);
+    }
+
+    /// Appends `value`, or a null if it is [`None`].
+    #[inline]
+    pub fn push(&mut self, value: Option<bool>) {
+        match value {
+            Some(value) => self.push_value(value),
+            None => self.push_null(),
+        }
+    }
+
     /// Appends the `length` values of `other` starting at `start`, ignoring its validity mask.
     fn extend_values(&mut self, other: &PlBooleanArray, start: usize, length: usize) {
         if let Some(values) = other.flat_values() {
@@ -221,6 +245,26 @@ mod tests {
             built.iter().collect::<Vec<_>>(),
             [Some(false), Some(true), None, Some(true), None],
         );
+    }
+
+    #[test]
+    fn pushing_elements_one_at_a_time() {
+        let mut builder = PlBooleanArrayBuilder::with_capacity(4);
+        builder.push_value(true);
+        builder.push_null();
+        builder.push(Some(false));
+        builder.push(None);
+
+        assert_eq!(builder.len(), 4);
+        assert_eq!(
+            builder.freeze().iter().collect::<Vec<_>>(),
+            [Some(true), None, Some(false), None],
+        );
+
+        // The mask only comes into being once a null is pushed.
+        let mut valid = PlBooleanArrayBuilder::new();
+        valid.push_value(true);
+        assert!(valid.freeze().validity().is_none());
     }
 
     #[test]
