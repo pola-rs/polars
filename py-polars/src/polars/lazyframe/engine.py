@@ -2,27 +2,32 @@
 
 from __future__ import annotations
 
-import io
 from abc import ABC, abstractmethod
 from functools import partial
-from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, ClassVar, Literal, overload
 
 from polars._dependencies import import_optional
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.unstable import issue_unstable_warning
-from polars._utils.various import normalize_filepath, qualified_type_name
-from polars._utils.wrap import wrap_df, wrap_ldf
+from polars._utils.wrap import wrap_df
 from polars._warnings import issue_warning
 from polars.lazyframe.in_process import InProcessQuery
 from polars.lazyframe.query_result import SingleNodeQueryResult
+from polars.lazyframe.sink_plan import (
+    _sink_batches_plan,
+    _sink_csv_plan,
+    _sink_ipc_plan,
+    _sink_ndjson_plan,
+    _sink_parquet_plan,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
+    from pathlib import Path
 
     from rmm.mr import DeviceMemoryResource  # type: ignore[import-not-found]
 
-    from polars._plr import PyCollectBatches, PyLazyFrame
+    from polars._plr import PyCollectBatches
     from polars._typing import (
         ArrowSchemaExportable,
         AsyncResult,
@@ -41,25 +46,6 @@ if TYPE_CHECKING:
     from polars.lazyframe.frame import LazyFrame
     from polars.lazyframe.opt_flags import QueryOptFlags
     from polars.lazyframe.query_result import QueryResult
-
-
-def _to_sink_target(
-    path: str | Path | IO[bytes] | IO[str] | PartitionBy,
-) -> str | Path | IO[bytes] | IO[str] | PartitionBy:
-    from polars.io.partition import PartitionBy
-
-    if isinstance(path, (str, Path)):
-        return normalize_filepath(path)
-    elif isinstance(path, io.IOBase):
-        return path
-    elif isinstance(path, PartitionBy):
-        return path
-    elif callable(getattr(path, "write", None)):
-        # This allows for custom writers
-        return path
-    else:
-        msg = f"`path` argument has invalid type {qualified_type_name(path)!r}, and cannot be turned into a sink target"
-        raise TypeError(msg)
 
 
 class Engine(ABC):
@@ -212,10 +198,9 @@ class Engine(ABC):
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
         mkdir: bool,
-        lazy: bool,
         optimizations: QueryOptFlags,
         sinked_paths_callback: SinkedPathsCallback | None,
-    ) -> LazyFrame | None:
+    ) -> None:
         """See :meth:`polars.LazyFrame.sink_parquet`."""
         msg = f"`sink_parquet` is not supported by {type(self).__name__}"
         raise NotImplementedError(msg)
@@ -233,11 +218,10 @@ class Engine(ABC):
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
-        lazy: bool,
         optimizations: QueryOptFlags,
         _record_batch_statistics: bool,
         sinked_paths_callback: SinkedPathsCallback | None,
-    ) -> LazyFrame | None:
+    ) -> None:
         """See :meth:`polars.LazyFrame.sink_ipc`."""
         msg = f"`sink_ipc` is not supported by {type(self).__name__}"
         raise NotImplementedError(msg)
@@ -269,9 +253,8 @@ class Engine(ABC):
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
-        lazy: bool,
         optimizations: QueryOptFlags,
-    ) -> LazyFrame | None:
+    ) -> None:
         """See :meth:`polars.LazyFrame.sink_csv`."""
         msg = f"`sink_csv` is not supported by {type(self).__name__}"
         raise NotImplementedError(msg)
@@ -289,9 +272,8 @@ class Engine(ABC):
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
-        lazy: bool,
         optimizations: QueryOptFlags,
-    ) -> LazyFrame | None:
+    ) -> None:
         """See :meth:`polars.LazyFrame.sink_ndjson`."""
         msg = f"`sink_ndjson` is not supported by {type(self).__name__}"
         raise NotImplementedError(msg)
@@ -303,9 +285,8 @@ class Engine(ABC):
         *,
         chunk_size: int | None,
         maintain_order: bool,
-        lazy: bool,
         optimizations: QueryOptFlags,
-    ) -> LazyFrame | None:
+    ) -> None:
         """See :meth:`polars.LazyFrame.sink_batches`."""
         msg = f"`sink_batches` is not supported by {type(self).__name__}"
         raise NotImplementedError(msg)
@@ -488,16 +469,6 @@ class _LocalEngine(Engine):
         )
         return result
 
-    def _finish_sink(
-        self, ldf_py: PyLazyFrame, *, lazy: bool, optimizations: QueryOptFlags
-    ) -> LazyFrame | None:
-        """Return a lazy sink plan, or execute it."""
-        lf = wrap_ldf(ldf_py)
-        if lazy:
-            return lf
-        self.collect(lf, optimizations=optimizations)
-        return None
-
     def sink_parquet(
         self,
         lf: LazyFrame,
@@ -515,78 +486,31 @@ class _LocalEngine(Engine):
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
         mkdir: bool,
-        lazy: bool,
         optimizations: QueryOptFlags,
         sinked_paths_callback: SinkedPathsCallback | None,
-    ) -> LazyFrame | None:
-        from polars._utils.parquet import wrap_parquet_metadata_callback
-        from polars.io.cloud.credential_provider._builder import (
-            _init_credential_provider_builder,
+    ) -> None:
+        """See :meth:`polars.LazyFrame.sink_parquet`."""
+        self.collect(
+            _sink_parquet_plan(
+                lf,
+                path,
+                compression=compression,
+                compression_level=compression_level,
+                statistics=statistics,
+                row_group_size=row_group_size,
+                data_page_size=data_page_size,
+                maintain_order=maintain_order,
+                storage_options=storage_options,
+                credential_provider=credential_provider,
+                sync_on_close=sync_on_close,
+                metadata=metadata,
+                arrow_schema=arrow_schema,
+                mkdir=mkdir,
+                sinked_paths_callback=sinked_paths_callback,
+            ),
+            optimizations=optimizations,
         )
-        from polars.io.partition import _SinkOptions
-
-        if metadata is not None:
-            msg = "`metadata` parameter is considered experimental"
-            issue_unstable_warning(msg)
-
-        if arrow_schema is not None:
-            msg = "`arrow_schema` parameter is considered unstable"
-            issue_unstable_warning(msg)
-
-        if isinstance(statistics, bool) and statistics:
-            statistics = {
-                "min": True,
-                "max": True,
-                "distinct_count": False,
-                "null_count": True,
-            }
-        elif isinstance(statistics, bool) and not statistics:
-            statistics = {}
-        elif statistics == "full":
-            statistics = {
-                "min": True,
-                "max": True,
-                "distinct_count": True,
-                "null_count": True,
-            }
-
-        credential_provider_builder = _init_credential_provider_builder(
-            credential_provider, path, storage_options, "sink_parquet"
-        )
-        del credential_provider
-
-        target = _to_sink_target(path)
-
-        if isinstance(metadata, dict):
-            if metadata:
-                metadata = list(metadata.items())  # type: ignore[assignment]
-            else:
-                # Handle empty dict input
-                metadata = None
-        elif callable(metadata):
-            metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore[assignment]
-
-        sink_options = _SinkOptions(
-            mkdir=mkdir,
-            maintain_order=maintain_order,
-            sync_on_close=sync_on_close,
-            storage_options=storage_options,
-            credential_provider=credential_provider_builder,
-            sinked_paths_callback=sinked_paths_callback,
-        )
-
-        ldf_py = lf._ldf.sink_parquet(
-            target=target,
-            sink_options=sink_options,
-            compression=compression,
-            compression_level=compression_level,
-            statistics=statistics,
-            row_group_size=row_group_size,
-            data_page_size=data_page_size,
-            metadata=metadata,
-            arrow_schema=arrow_schema,
-        )
-        return self._finish_sink(ldf_py, lazy=lazy, optimizations=optimizations)
+        return None
 
     def sink_ipc(
         self,
@@ -601,54 +525,29 @@ class _LocalEngine(Engine):
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
-        lazy: bool,
         optimizations: QueryOptFlags,
         _record_batch_statistics: bool,
         sinked_paths_callback: SinkedPathsCallback | None,
-    ) -> LazyFrame | None:
-        from polars.interchange.protocol import CompatLevel
-        from polars.io.cloud.credential_provider._builder import (
-            _init_credential_provider_builder,
+    ) -> None:
+        """See :meth:`polars.LazyFrame.sink_ipc`."""
+        self.collect(
+            _sink_ipc_plan(
+                lf,
+                path,
+                compression=compression,
+                compat_level=compat_level,
+                record_batch_size=record_batch_size,
+                maintain_order=maintain_order,
+                storage_options=storage_options,
+                credential_provider=credential_provider,
+                sync_on_close=sync_on_close,
+                mkdir=mkdir,
+                _record_batch_statistics=_record_batch_statistics,
+                sinked_paths_callback=sinked_paths_callback,
+            ),
+            optimizations=optimizations,
         )
-        from polars.io.partition import _SinkOptions
-
-        credential_provider_builder = _init_credential_provider_builder(
-            credential_provider, path, storage_options, "sink_ipc"
-        )
-        del credential_provider
-
-        target = _to_sink_target(path)
-
-        compat_level_py: int | bool
-        if compat_level is None:
-            compat_level_py = True
-        elif isinstance(compat_level, CompatLevel):
-            compat_level_py = compat_level._version
-        else:
-            msg = f"`compat_level` has invalid type: {qualified_type_name(compat_level)!r}"
-            raise TypeError(msg)
-
-        if compression is None:
-            compression = "uncompressed"
-
-        sink_options = _SinkOptions(
-            mkdir=mkdir,
-            maintain_order=maintain_order,
-            sync_on_close=sync_on_close,
-            storage_options=storage_options,
-            credential_provider=credential_provider_builder,
-            sinked_paths_callback=sinked_paths_callback,
-        )
-
-        ldf_py = lf._ldf.sink_ipc(
-            target=target,
-            sink_options=sink_options,
-            compression=compression,
-            compat_level=compat_level_py,
-            record_batch_size=record_batch_size,
-            record_batch_statistics=_record_batch_statistics,
-        )
-        return self._finish_sink(ldf_py, lazy=lazy, optimizations=optimizations)
+        return None
 
     def sink_csv(
         self,
@@ -677,57 +576,39 @@ class _LocalEngine(Engine):
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
-        lazy: bool,
         optimizations: QueryOptFlags,
-    ) -> LazyFrame | None:
-        from polars.io.cloud.credential_provider._builder import (
-            _init_credential_provider_builder,
+    ) -> None:
+        """See :meth:`polars.LazyFrame.sink_csv`."""
+        self.collect(
+            _sink_csv_plan(
+                lf,
+                path,
+                include_bom=include_bom,
+                compression=compression,
+                compression_level=compression_level,
+                check_extension=check_extension,
+                include_header=include_header,
+                separator=separator,
+                line_terminator=line_terminator,
+                quote_char=quote_char,
+                batch_size=batch_size,
+                datetime_format=datetime_format,
+                date_format=date_format,
+                time_format=time_format,
+                float_scientific=float_scientific,
+                float_precision=float_precision,
+                decimal_comma=decimal_comma,
+                null_value=null_value,
+                quote_style=quote_style,
+                maintain_order=maintain_order,
+                storage_options=storage_options,
+                credential_provider=credential_provider,
+                sync_on_close=sync_on_close,
+                mkdir=mkdir,
+            ),
+            optimizations=optimizations,
         )
-        from polars.io.csv._utils import _check_arg_is_1byte
-        from polars.io.partition import _SinkOptions
-
-        _check_arg_is_1byte("separator", separator, can_be_empty=False)
-        _check_arg_is_1byte("quote_char", quote_char, can_be_empty=False)
-        if not null_value:
-            null_value = None
-
-        credential_provider_builder = _init_credential_provider_builder(
-            credential_provider, path, storage_options, "sink_csv"
-        )
-        del credential_provider
-
-        target = _to_sink_target(path)
-
-        sink_options = _SinkOptions(
-            mkdir=mkdir,
-            maintain_order=maintain_order,
-            sync_on_close=sync_on_close,
-            storage_options=storage_options,
-            credential_provider=credential_provider_builder,
-        )
-
-        ldf_py = lf._ldf.sink_csv(
-            target=target,
-            sink_options=sink_options,
-            include_bom=include_bom,
-            compression=compression,
-            compression_level=compression_level,
-            check_extension=check_extension,
-            include_header=include_header,
-            separator=ord(separator),
-            line_terminator=line_terminator,
-            quote_char=ord(quote_char),
-            batch_size=batch_size,
-            datetime_format=datetime_format,
-            date_format=date_format,
-            time_format=time_format,
-            float_scientific=float_scientific,
-            float_precision=float_precision,
-            decimal_comma=decimal_comma,
-            null_value=null_value,
-            quote_style=quote_style,
-        )
-        return self._finish_sink(ldf_py, lazy=lazy, optimizations=optimizations)
+        return None
 
     def sink_ndjson(
         self,
@@ -742,37 +623,25 @@ class _LocalEngine(Engine):
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
-        lazy: bool,
         optimizations: QueryOptFlags,
-    ) -> LazyFrame | None:
-        from polars.io.cloud.credential_provider._builder import (
-            _init_credential_provider_builder,
+    ) -> None:
+        """See :meth:`polars.LazyFrame.sink_ndjson`."""
+        self.collect(
+            _sink_ndjson_plan(
+                lf,
+                path,
+                compression=compression,
+                compression_level=compression_level,
+                check_extension=check_extension,
+                maintain_order=maintain_order,
+                storage_options=storage_options,
+                credential_provider=credential_provider,
+                sync_on_close=sync_on_close,
+                mkdir=mkdir,
+            ),
+            optimizations=optimizations,
         )
-        from polars.io.partition import _SinkOptions
-
-        credential_provider_builder = _init_credential_provider_builder(
-            credential_provider, path, storage_options, "sink_ndjson"
-        )
-        del credential_provider
-
-        target = _to_sink_target(path)
-
-        sink_options = _SinkOptions(
-            mkdir=mkdir,
-            maintain_order=maintain_order,
-            sync_on_close=sync_on_close,
-            storage_options=storage_options,
-            credential_provider=credential_provider_builder,
-        )
-
-        ldf_py = lf._ldf.sink_ndjson(
-            target=target,
-            compression=compression,
-            compression_level=compression_level,
-            check_extension=check_extension,
-            sink_options=sink_options,
-        )
-        return self._finish_sink(ldf_py, lazy=lazy, optimizations=optimizations)
+        return None
 
     def sink_batches(
         self,
@@ -781,20 +650,19 @@ class _LocalEngine(Engine):
         *,
         chunk_size: int | None,
         maintain_order: bool,
-        lazy: bool,
         optimizations: QueryOptFlags,
-    ) -> LazyFrame | None:
-        from polars._utils.wrap import wrap_df
-
-        def _wrap(pydf: Any) -> bool:
-            return bool(function(wrap_df(pydf)))
-
-        ldf_py = lf._ldf.sink_batches(
-            function=_wrap,
-            maintain_order=maintain_order,
-            chunk_size=chunk_size,
+    ) -> None:
+        """See :meth:`polars.LazyFrame.sink_batches`."""
+        self.collect(
+            _sink_batches_plan(
+                lf,
+                function,
+                chunk_size=chunk_size,
+                maintain_order=maintain_order,
+            ),
+            optimizations=optimizations,
         )
-        return self._finish_sink(ldf_py, lazy=lazy, optimizations=optimizations)
+        return None
 
 
 class _CollectBatches:
