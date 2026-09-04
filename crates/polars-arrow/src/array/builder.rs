@@ -342,7 +342,7 @@ pub fn make_builder(dtype: &ArrowDataType) -> Box<dyn ArrayBuilder> {
     match dtype.to_physical_type() {
         Null => Box::new(NullArrayBuilder::new(dtype.clone())),
         Boolean => Box::new(BooleanArrayBuilder::new(dtype.clone())),
-        Primitive(prim_t) => with_match_primitive_type_full!(prim_t, |T| {
+        Primitive(prim_t) => with_match_primitive_type_full!(prim_t, impl<T> {
             Box::new(PrimitiveArrayBuilder::<T>::new(dtype.clone()))
         }),
         LargeBinary => Box::new(BinaryArrayBuilder::<i64>::new(dtype.clone())),

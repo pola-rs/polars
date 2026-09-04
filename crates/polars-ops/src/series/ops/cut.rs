@@ -24,7 +24,7 @@ fn map_enum_cats(
     let fcats = FrozenCategories::new(labels.iter().map(|s| s.as_str()))?;
     let enum_dtype = DataType::from_frozen_categories(fcats.clone());
 
-    with_match_categorical_physical_type!(fcats.physical(), |C| {
+    with_match_categorical_physical_type!(fcats.physical(), impl<C> {
         if include_breaks {
             let right_ends = [sorted_breaks, &[f64::INFINITY]].concat();
             let mut bld = CategoricalChunkedBuilder::<C>::new(out_name.clone(), enum_dtype);

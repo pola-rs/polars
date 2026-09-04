@@ -3,7 +3,7 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 
 #[macro_export]
 macro_rules! with_match_arrow_primitive_type {(
-    $key_type:expr, |$T:ident| $($body:tt)*
+    $key_type:expr, impl<$T:ident> $($body:tt)*
 ) => ({
     use arrow::datatypes::ArrowDataType::*;
     use polars_utils::float16::pf16;

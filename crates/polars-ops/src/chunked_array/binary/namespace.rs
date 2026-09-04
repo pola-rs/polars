@@ -215,7 +215,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 let arrow_data_type = dtype
                     .to_arrow(CompatLevel::newest())
                     .underlying_physical_type();
-                with_match_physical_numeric_polars_type!(dtype, |T| {
+                with_match_physical_numeric_polars_type!(dtype, impl<T> {
                     ca.chunks()
                         .iter()
                         .map(|chunk| {
@@ -233,19 +233,18 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 if inner_dtype.is_primitive_numeric() || inner_dtype.is_temporal() =>
             {
                 let inner_dtype = inner_dtype.to_physical();
-                let result: Vec<ArrayRef> =
-                    with_match_physical_numeric_polars_type!(inner_dtype, |T| {
-                        ca.chunks()
-                            .iter()
-                            .map(|chunk| {
-                                binview_to_fixed_size_list_dyn::<<T as PolarsNumericType>::Native>(
-                                    &**chunk,
-                                    *array_width,
-                                    is_little_endian,
-                                )
-                            })
-                            .collect::<Result<Vec<ArrayRef>, _>>()
-                    })?;
+                let result: Vec<ArrayRef> = with_match_physical_numeric_polars_type!(inner_dtype, impl<T> {
+                    ca.chunks()
+                        .iter()
+                        .map(|chunk| {
+                            binview_to_fixed_size_list_dyn::<<T as PolarsNumericType>::Native>(
+                                &**chunk,
+                                *array_width,
+                                is_little_endian,
+                            )
+                        })
+                        .collect::<Result<Vec<ArrayRef>, _>>()
+                })?;
                 Ok(result)
             },
             _ => Err(

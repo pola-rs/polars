@@ -19,7 +19,7 @@ impl Series {
             },
             #[cfg(feature = "dtype-categorical")]
             dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => {
-                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |C| {
+                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), impl<C> {
                     CategoricalChunked::<C>::full_null_with_dtype(name, size, dtype.clone())
                         .into_series()
                 })

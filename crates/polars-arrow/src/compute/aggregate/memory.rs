@@ -53,7 +53,7 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
             let array = array.as_any().downcast_ref::<DaysMsArray>().unwrap();
             array.values().len() * size_of::<i32>() * 2 + validity_size(array.validity())
         },
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, impl<T> {
             let array = array.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
 
             array.values().len() * size_of::<T>() + validity_size(array.validity())
@@ -125,7 +125,7 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
                 .sum::<usize>();
             types + offsets + fields
         },
-        Dictionary(key_type) => match_integer_type!(key_type, |T| {
+        Dictionary(key_type) => match_integer_type!(key_type, impl<T> {
             let array = array.as_any().downcast_ref::<DictionaryArray<T>>().unwrap();
             estimated_bytes_size(array.keys()) + estimated_bytes_size(array.values().as_ref())
         }),

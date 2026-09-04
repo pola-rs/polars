@@ -226,7 +226,7 @@ pub trait SeriesOpsTime: AsSeries {
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
         let s = self.as_series().to_float()?;
-        with_match_physical_float_polars_type!(s.dtype(), |T| {
+        with_match_physical_float_polars_type!(s.dtype(), impl<T> {
             let ca: &ChunkedArray<T> = s.as_ref().as_ref();
             rolling_agg_by::<T, _, MeanWindow<_>, MeanWindow<_>>(ca, by, options)
         })
@@ -237,7 +237,7 @@ pub trait SeriesOpsTime: AsSeries {
     #[cfg(feature = "rolling_window")]
     fn rolling_mean(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
         let s = self.as_series().to_float()?;
-        with_match_physical_float_polars_type!(s.dtype(), |T| {
+        with_match_physical_float_polars_type!(s.dtype(), impl<T> {
             let ca: &ChunkedArray<T> = s.as_ref().as_ref();
             rolling_agg(
                 ca,
@@ -271,7 +271,7 @@ pub trait SeriesOpsTime: AsSeries {
             s.dtype()
         );
 
-        with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+        with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
             let ca: &ChunkedArray<T> = s.as_ref().as_ref();
             type Native = <T as PolarsNumericType>::Native;
             type SM<'a> = SumWindow<'a, Native, Native>;
@@ -300,7 +300,7 @@ pub trait SeriesOpsTime: AsSeries {
             s.dtype()
         );
 
-        with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+        with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
             let ca: &ChunkedArray<T> = s.as_ref().as_ref();
             rolling_agg(
                 ca,
@@ -319,7 +319,7 @@ pub trait SeriesOpsTime: AsSeries {
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
         let s = self.as_series().to_float()?;
-        with_match_physical_float_polars_type!(s.dtype(), |T| {
+        with_match_physical_float_polars_type!(s.dtype(), impl<T> {
             let ca: &ChunkedArray<T> = s.as_ref().as_ref();
             rolling_agg_by::<T, _, no_nulls::QuantileWindow<_>, nulls::QuantileWindow<_>>(
                 ca, by, options,
@@ -331,7 +331,7 @@ pub trait SeriesOpsTime: AsSeries {
     #[cfg(feature = "rolling_window")]
     fn rolling_quantile(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
         let s = self.as_series().to_float()?;
-        with_match_physical_float_polars_type!(s.dtype(), |T| {
+        with_match_physical_float_polars_type!(s.dtype(), impl<T> {
             let ca: &ChunkedArray<T> = s.as_ref().as_ref();
             rolling_agg(
                 ca,
@@ -372,7 +372,7 @@ pub trait SeriesOpsTime: AsSeries {
             },
         }
 
-        with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+        with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
             let ca: &ChunkedArray<T> = s.as_ref().as_ref();
             rolling_agg_by::<T, _, no_nulls::MinWindow<_>, nulls::MinWindow<_>>(ca, by, options)
         })
@@ -407,7 +407,7 @@ pub trait SeriesOpsTime: AsSeries {
             },
         }
 
-        with_match_physical_numeric_polars_type!(dt, |T| {
+        with_match_physical_numeric_polars_type!(dt, impl<T> {
             let ca: &ChunkedArray<T> = s.as_ref().as_ref();
             rolling_agg(
                 ca,
@@ -448,7 +448,7 @@ pub trait SeriesOpsTime: AsSeries {
             },
         }
 
-        with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+        with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
             let ca: &ChunkedArray<T> = s.as_ref().as_ref();
             rolling_agg_by::<T, _, no_nulls::MaxWindow<_>, nulls::MaxWindow<_>>(ca, by, options)
         })
@@ -483,7 +483,7 @@ pub trait SeriesOpsTime: AsSeries {
             },
         }
 
-        with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+        with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
             let ca: &ChunkedArray<T> = s.as_ref().as_ref();
             rolling_agg(
                 ca,
@@ -503,7 +503,7 @@ pub trait SeriesOpsTime: AsSeries {
     ) -> PolarsResult<Series> {
         let s = self.as_series().to_float()?;
 
-        with_match_physical_float_polars_type!(s.dtype(), |T| {
+        with_match_physical_float_polars_type!(s.dtype(), impl<T> {
             let ca: &ChunkedArray<T> = s.as_ref().as_ref();
 
             rolling_agg_by::<
@@ -520,7 +520,7 @@ pub trait SeriesOpsTime: AsSeries {
     fn rolling_var(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
         let s = self.as_series().to_float()?;
 
-        with_match_physical_float_polars_type!(s.dtype(), |T| {
+        with_match_physical_float_polars_type!(s.dtype(), impl<T> {
             let ca: &ChunkedArray<T> = s.as_ref().as_ref();
 
             rolling_agg(
@@ -540,7 +540,7 @@ pub trait SeriesOpsTime: AsSeries {
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
         self.rolling_var_by(by, options).map(|mut s| {
-            with_match_physical_float_polars_type!(s.dtype(), |T| {
+            with_match_physical_float_polars_type!(s.dtype(), impl<T> {
                 let ca: &mut ChunkedArray<T> = s._get_inner_mut().as_mut();
                 ca.apply_mut(|v| v.sqrt());
             });
@@ -553,7 +553,7 @@ pub trait SeriesOpsTime: AsSeries {
     #[cfg(feature = "rolling_window")]
     fn rolling_std(&self, options: RollingOptionsFixedWindow) -> PolarsResult<Series> {
         self.rolling_var(options).map(|mut s| {
-            with_match_physical_float_polars_type!(s.dtype(), |T| {
+            with_match_physical_float_polars_type!(s.dtype(), impl<T> {
                 let ca: &mut ChunkedArray<T> = s._get_inner_mut().as_mut();
                 ca.apply_mut(|v| v.sqrt());
             });
@@ -596,7 +596,7 @@ pub trait SeriesOpsTime: AsSeries {
             unreachable!("expected RollingFnParams::Rank");
         };
 
-        with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+        with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
             let ca: &ChunkedArray<T> = s.as_ref().as_ref();
 
             match method {
@@ -646,7 +646,7 @@ pub trait SeriesOpsTime: AsSeries {
             },
         }
 
-        with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+        with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
             let ca: &ChunkedArray<T> = s.as_ref().as_ref();
             let ca = ca.clone();
 

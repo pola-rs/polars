@@ -13,7 +13,7 @@ pub fn new_mean_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduct
     Ok(match dtype {
         Boolean => Box::new(VGR::new(dtype, BoolMeanReducer)),
         _ if dtype.is_primitive_numeric() || dtype.is_temporal() => {
-            with_match_physical_numeric_polars_type!(dtype.to_physical(), |T| {
+            with_match_physical_numeric_polars_type!(dtype.to_physical(), impl<T> {
                 Box::new(VGR::new(dtype, NumMeanReducer::<T>(PhantomData)))
             })
         },

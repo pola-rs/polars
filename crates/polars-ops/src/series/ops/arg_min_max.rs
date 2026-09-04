@@ -18,7 +18,7 @@ pub trait ArgAgg {
 }
 
 macro_rules! with_match_physical_numeric_polars_type {(
-    $key_type:expr, |$T:ident| $($body:tt)*
+    $key_type:expr, impl<$T:ident> $($body:tt)*
 ) => ({
     use DataType::*;
     match $key_type {
@@ -53,7 +53,7 @@ impl ArgAgg for Series {
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
             Categorical(cats, _) => {
-                with_match_categorical_physical_type!(cats.physical(), |C| {
+                with_match_categorical_physical_type!(cats.physical(), impl<C> {
                     arg_min_cat(self.cat::<C>().unwrap())
                 })
             },
@@ -67,7 +67,7 @@ impl ArgAgg for Series {
             BinaryOffset => arg_min_binary_offset(self.binary_offset().unwrap()),
             Boolean => arg_min_bool(self.bool().unwrap()),
             dt if dt.is_primitive_numeric() => {
-                with_match_physical_numeric_polars_type!(phys_s.dtype(), |T| {
+                with_match_physical_numeric_polars_type!(phys_s.dtype(), impl<T> {
                     let ca: &ChunkedArray<T> = phys_s.as_ref().as_ref().as_ref();
                     arg_min_numeric(ca)
                 })
@@ -87,7 +87,7 @@ impl ArgAgg for Series {
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
             Categorical(cats, _) => {
-                with_match_categorical_physical_type!(cats.physical(), |C| {
+                with_match_categorical_physical_type!(cats.physical(), impl<C> {
                     arg_max_cat(self.cat::<C>().unwrap())
                 })
             },
@@ -101,7 +101,7 @@ impl ArgAgg for Series {
             BinaryOffset => arg_max_binary_offset(self.binary_offset().unwrap()),
             Boolean => arg_max_bool(self.bool().unwrap()),
             dt if dt.is_primitive_numeric() => {
-                with_match_physical_numeric_polars_type!(phys_s.dtype(), |T| {
+                with_match_physical_numeric_polars_type!(phys_s.dtype(), impl<T> {
                     let ca: &ChunkedArray<T> = phys_s.as_ref().as_ref().as_ref();
                     arg_max_numeric(ca)
                 })

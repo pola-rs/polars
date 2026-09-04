@@ -59,7 +59,7 @@ impl PySeries {
                 DataType::Categorical(_, _) | DataType::Enum(_, _) => {
                     with_match_categorical_physical_type!(
                         series.dtype().cat_physical().unwrap(),
-                        |C| PyList::new(py, series.cat::<C>().unwrap().iter_str())?
+                        impl<C> PyList::new(py, series.cat::<C>().unwrap().iter_str())?
                     )
                 },
                 #[cfg(feature = "object")]

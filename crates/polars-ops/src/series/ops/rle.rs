@@ -33,7 +33,7 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
             return Ok(());
         },
         dt if dt.is_float() => {
-            with_match_physical_float_polars_type!(dt, |T| {
+            with_match_physical_float_polars_type!(dt, impl<T> {
                 let ca: &ChunkedArray<T> = s.as_ref().as_ref().as_ref();
                 rle_lengths_helper_ca(ca, lengths);
                 return Ok(());

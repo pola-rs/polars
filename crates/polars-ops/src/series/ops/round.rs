@@ -236,7 +236,7 @@ pub trait RoundSeries: SeriesSealed {
         }
 
         polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "round_sig_figs can only be used on numeric types" );
-        with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+        with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
             let ca: &ChunkedArray<T> = s.as_ref().as_ref();
             let s = ca
                 .apply_values(|value| {

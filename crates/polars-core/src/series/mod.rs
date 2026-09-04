@@ -518,7 +518,7 @@ impl Series {
             DataType::Struct(_) => self.struct_().unwrap().cast_unchecked(dtype),
             DataType::List(_) => self.list().unwrap().cast_unchecked(dtype),
             dt if dt.is_primitive_numeric() => {
-                with_match_physical_numeric_polars_type!(dt, |T| {
+                with_match_physical_numeric_polars_type!(dt, impl<T> {
                     let ca: &ChunkedArray<T> = self.as_ref().as_ref();
                     ca.cast_unchecked(dtype)
                 })
@@ -553,7 +553,7 @@ impl Series {
 
             #[cfg(feature = "dtype-categorical")]
             (phys, D::Categorical(cats, _)) if &cats.physical().dtype() == phys => {
-                with_match_categorical_physical_type!(cats.physical(), |C| {
+                with_match_categorical_physical_type!(cats.physical(), impl<C> {
                     type CA = ChunkedArray<<C as PolarsCategoricalType>::PolarsPhysical>;
                     let ca = self.as_ref().as_any().downcast_ref::<CA>().unwrap();
                     Ok(CategoricalChunked::<C>::from_cats_and_dtype_unchecked(
@@ -565,7 +565,7 @@ impl Series {
             },
             #[cfg(feature = "dtype-categorical")]
             (phys, D::Enum(fcats, _)) if &fcats.physical().dtype() == phys => {
-                with_match_categorical_physical_type!(fcats.physical(), |C| {
+                with_match_categorical_physical_type!(fcats.physical(), impl<C> {
                     type CA = ChunkedArray<<C as PolarsCategoricalType>::PolarsPhysical>;
                     let ca = self.as_ref().as_any().downcast_ref::<CA>().unwrap();
                     Ok(CategoricalChunked::<C>::from_cats_and_dtype_unchecked(
@@ -790,7 +790,7 @@ impl Series {
             Time => Cow::Owned(self.time().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-categorical")]
             dt @ (Categorical(_, _) | Enum(_, _)) => {
-                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |C| {
+                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), impl<C> {
                     let ca = self.cat::<C>().unwrap();
                     Cow::Owned(ca.physical().clone().into_series())
                 })

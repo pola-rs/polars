@@ -23,7 +23,7 @@ pub trait LogSeries: SeriesSealed {
             (dt1, dt2) if dt1 == dt2 && dt1.is_float() => {
                 let s = s.to_physical_repr();
                 let base = base.to_physical_repr();
-                with_match_physical_float_polars_type!(s.dtype(), |T| {
+                with_match_physical_float_polars_type!(s.dtype(), impl<T> {
                     let ca: &ChunkedArray<T> = s.as_ref().as_ref().as_ref();
                     let base_ca: &ChunkedArray<T> = base.as_ref().as_ref().as_ref();
                     let out: ChunkedArray<T> =
@@ -51,7 +51,7 @@ pub trait LogSeries: SeriesSealed {
         use DataType::*;
         match s.dtype() {
             dt if dt.is_integer() => {
-                with_match_physical_integer_polars_type!(s.dtype(), |T| {
+                with_match_physical_integer_polars_type!(s.dtype(), impl<T> {
                     let ca: &ChunkedArray<T> = s.as_ref().as_ref();
                     Ok(log1p(ca).into_series())
                 })
@@ -78,7 +78,7 @@ pub trait LogSeries: SeriesSealed {
         use DataType::*;
         match s.dtype() {
             dt if dt.is_integer() => {
-                with_match_physical_integer_polars_type!(s.dtype(), |T| {
+                with_match_physical_integer_polars_type!(s.dtype(), impl<T> {
                     let ca: &ChunkedArray<T> = s.as_ref().as_ref();
                     Ok(exp(ca).into_series())
                 })

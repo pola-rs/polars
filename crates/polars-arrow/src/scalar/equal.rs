@@ -38,14 +38,14 @@ fn equal(lhs: &dyn Scalar, rhs: &dyn Scalar) -> bool {
     match lhs.dtype().to_physical_type() {
         Null => dyn_eq!(NullScalar, lhs, rhs),
         Boolean => dyn_eq!(BooleanScalar, lhs, rhs),
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, impl<T> {
             dyn_eq!(PrimitiveScalar<T>, lhs, rhs)
         }),
         LargeUtf8 => dyn_eq!(Utf8Scalar<i64>, lhs, rhs),
         LargeBinary => dyn_eq!(BinaryScalar<i64>, lhs, rhs),
         LargeList => dyn_eq!(ListScalar<i64>, lhs, rhs),
         Dictionary(key_type) => {
-            match_integer_type!(key_type, |T| dyn_eq!(DictionaryScalar<T>, lhs, rhs))
+            match_integer_type!(key_type, impl<T> dyn_eq!(DictionaryScalar<T>, lhs, rhs))
         },
         Struct => dyn_eq!(StructScalar, lhs, rhs),
         FixedSizeBinary => dyn_eq!(FixedSizeBinaryScalar, lhs, rhs),

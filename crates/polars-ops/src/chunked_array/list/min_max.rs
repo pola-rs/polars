@@ -82,7 +82,7 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
                 Ok(out.into_series())
             },
             dt if dt.to_physical().is_primitive_numeric() => {
-                with_match_physical_numeric_polars_type!(dt.to_physical(), |T| {
+                with_match_physical_numeric_polars_type!(dt.to_physical(), impl<T> {
                     let out: ChunkedArray<T> =
                         ca.to_physical_repr().apply_amortized_generic(|opt_s| {
                             let s = opt_s?;
@@ -201,7 +201,7 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
                 Ok(out.into_series())
             },
             dt if dt.to_physical().is_primitive_numeric() => {
-                with_match_physical_numeric_polars_type!(dt.to_physical(), |T| {
+                with_match_physical_numeric_polars_type!(dt.to_physical(), impl<T> {
                     let out: ChunkedArray<T> =
                         ca.to_physical_repr().apply_amortized_generic(|opt_s| {
                             let s = opt_s?;

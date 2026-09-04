@@ -377,7 +377,7 @@ fn array_set_operation(
             polars_bail!(InvalidOperation: "boolean type not yet supported in list 'set' operations")
         },
         _ => {
-            with_match_physical_numeric_type!(DataType::from_arrow_dtype(dtype), |T| {
+            with_match_physical_numeric_type!(DataType::from_arrow_dtype(dtype), impl<T> {
                 let a = values_a
                     .as_any()
                     .downcast_ref::<PrimitiveArray<T>>()

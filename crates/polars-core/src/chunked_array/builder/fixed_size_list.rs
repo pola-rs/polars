@@ -147,7 +147,7 @@ pub fn get_fixed_size_list_builder(
     let phys_dtype = inner_type_logical.to_physical();
 
     let builder = if phys_dtype.is_primitive_numeric() {
-        with_match_physical_numeric_type!(phys_dtype, |T| {
+        with_match_physical_numeric_type!(phys_dtype, impl<T> {
             // SAFETY: physical type match logical type
             unsafe {
                 Box::new(FixedSizeListNumericBuilder::<T>::new(

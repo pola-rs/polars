@@ -95,7 +95,7 @@ fn try_df_to_numpy_view(py: Python<'_>, df: &DataFrame, allow_nulls: bool) -> Op
 
     let arr = match first_dtype {
         dt if dt.is_primitive_numeric() => {
-            with_match_physical_numpy_polars_type!(first_dtype, |T| {
+            with_match_physical_numpy_polars_type!(first_dtype, impl<T> {
                 numeric_df_to_numpy_view::<T>(py, df, owner)
             })
         },
@@ -138,7 +138,7 @@ fn check_df_columns_contiguous(df: &DataFrame) -> bool {
 
     match columns.first().unwrap().dtype() {
         dt if dt.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(dt, |T| {
+            with_match_physical_numeric_polars_type!(dt, impl<T> {
                 let slices = columns
                     .iter()
                     .map(|s| {
@@ -257,7 +257,7 @@ fn try_df_to_numpy_numeric_supertype(
     let st = dtypes_to_supertype(df.columns().iter().map(|s| s.dtype())).ok()?;
 
     let np_array = match st {
-        dt if dt.is_primitive_numeric() => with_match_physical_numpy_polars_type!(dt, |T| {
+        dt if dt.is_primitive_numeric() => with_match_physical_numpy_polars_type!(dt, impl<T> {
             let arr = py.enter_polars(|| df.to_ndarray::<T>(order)).ok()?;
             arr.into_pyarray(py).into_py_any(py).ok()?
         }),

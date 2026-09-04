@@ -419,7 +419,7 @@ mod inner {
             debug_assert_eq!(prim_dtype, &self.output_primitive_dtype);
 
             // Safety: Leaf dtypes have been checked to be numeric by `try_new()`
-            let out = with_match_physical_numeric_polars_type!(&prim_dtype, |T| {
+            let out = with_match_physical_numeric_polars_type!(&prim_dtype, impl<T> {
                 self._finish_impl::<T>(prim_lhs, prim_rhs)
             });
 
@@ -466,14 +466,14 @@ mod inner {
                     let out_ptr: *mut T::Native = out_vec.as_mut_ptr();
                     let stride = self.stride;
 
-                    with_match_pl_num_arith!(&self.op.0, self.swapped, |op| {
+                    with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
                         unsafe {
                             for outer_idx in 0..self.output_len {
                                 for inner_idx in 0..stride {
                                     let l = arr_lhs.value_unchecked(stride * outer_idx + inner_idx);
                                     let r = arr_rhs.value_unchecked(inner_idx);
 
-                                    *out_ptr.add(stride * outer_idx + inner_idx) = op(l, r);
+                                    *out_ptr.add(stride * outer_idx + inner_idx) = $OP(l, r);
                                 }
                             }
                         }
@@ -516,7 +516,7 @@ mod inner {
                     let out_ptr: *mut T::Native = out_vec.as_mut_ptr();
                     let stride = self.stride;
 
-                    with_match_pl_num_arith!(&self.op.0, self.swapped, |op| {
+                    with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
                         unsafe {
                             for outer_idx in 0..self.output_len {
                                 let r = arr_rhs.value_unchecked(outer_idx);
@@ -524,7 +524,7 @@ mod inner {
                                 for inner_idx in 0..stride {
                                     let l = arr_lhs.value_unchecked(inner_idx);
 
-                                    *out_ptr.add(stride * outer_idx + inner_idx) = op(l, r);
+                                    *out_ptr.add(stride * outer_idx + inner_idx) = $OP(l, r);
                                 }
                             }
                         }
@@ -566,7 +566,7 @@ mod inner {
                     let out_ptr: *mut T::Native = out_vec.as_mut_ptr();
                     let stride = self.stride;
 
-                    with_match_pl_num_arith!(&self.op.0, self.swapped, |op| {
+                    with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
                         unsafe {
                             for outer_idx in 0..self.output_len {
                                 let r = arr_rhs.value_unchecked(outer_idx);
@@ -575,7 +575,7 @@ mod inner {
                                     let idx = stride * outer_idx + inner_idx;
                                     let l = arr_lhs.value_unchecked(idx);
 
-                                    *out_ptr.add(idx) = op(l, r);
+                                    *out_ptr.add(idx) = $OP(l, r);
                                 }
                             }
                         }

@@ -47,7 +47,7 @@ fn get_leaves(array: &FixedSizeListArray) -> &dyn Array {
 
 fn get_buffer_and_size(array: &dyn Array) -> (&[u8], usize) {
     match array.dtype().to_physical_type() {
-        PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |T| {
+        PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, impl<T> {
             let arr = array.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
             let values = arr.values();
             (bytemuck::cast_slice(values), size_of::<T>())
@@ -60,7 +60,7 @@ fn get_buffer_and_size(array: &dyn Array) -> (&[u8], usize) {
 
 unsafe fn from_buffer(mut buf: ManuallyDrop<Vec<u8>>, dtype: &ArrowDataType) -> ArrayRef {
     match dtype.to_physical_type() {
-        PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |T| {
+        PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, impl<T> {
             let ptr = buf.as_mut_ptr();
             let len_units = buf.len();
             let cap_units = buf.capacity();
@@ -83,7 +83,7 @@ unsafe fn from_buffer(mut buf: ManuallyDrop<Vec<u8>>, dtype: &ArrowDataType) -> 
 #[allow(clippy::unnecessary_cast)]
 unsafe fn aligned_vec(dt: &ArrowDataType, n_bytes: usize) -> Vec<u8> {
     match dt.to_physical_type() {
-        PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |T| {
+        PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, impl<T> {
             let n_units = (n_bytes / size_of::<T>()) + 1;
 
             let mut aligned: Vec<T> = Vec::with_capacity(n_units);

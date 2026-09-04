@@ -90,7 +90,7 @@ pub fn concatenate_unchecked<A: AsRef<dyn Array>>(arrays: &[A]) -> PolarsResult<
         Null => Ok(Box::new(concatenate_null(arrays))),
         Boolean => Ok(Box::new(concatenate_bool(arrays))),
         Primitive(ptype) => {
-            with_match_primitive_type_full!(ptype, |T| {
+            with_match_primitive_type_full!(ptype, impl<T> {
                 Ok(Box::new(concatenate_primitive::<T, _>(arrays)))
             })
         },

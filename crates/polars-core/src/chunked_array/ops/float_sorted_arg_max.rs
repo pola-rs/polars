@@ -46,7 +46,7 @@ pub fn float_arg_max_sorted_ascending<T>(ca: &ChunkedArray<T>) -> usize
 where
     T: PolarsNumericType,
 {
-    with_match_physical_float_polars_type!(ca.dtype(), |F| {
+    with_match_physical_float_polars_type!(ca.dtype(), impl<F> {
         let ca: &ChunkedArray<F> =
             unsafe { &*(ca as *const ChunkedArray<T> as *const ChunkedArray<F>) };
         ca.float_arg_max_sorted_ascending()
@@ -59,7 +59,7 @@ pub fn float_arg_max_sorted_descending<T>(ca: &ChunkedArray<T>) -> usize
 where
     T: PolarsNumericType,
 {
-    with_match_physical_float_polars_type!(ca.dtype(), |F| {
+    with_match_physical_float_polars_type!(ca.dtype(), impl<F> {
         let ca: &ChunkedArray<F> =
             unsafe { &*(ca as *const ChunkedArray<T> as *const ChunkedArray<F>) };
         ca.float_arg_max_sorted_descending()

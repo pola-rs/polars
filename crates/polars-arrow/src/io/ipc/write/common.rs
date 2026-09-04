@@ -46,7 +46,7 @@ pub fn dictionaries_to_encode(
     match array.dtype().to_physical_type() {
         Utf8 | LargeUtf8 | Binary | LargeBinary | Primitive(_) | Boolean | Null
         | FixedSizeBinary | BinaryView | Utf8View => Ok(()),
-        Dictionary(key_type) => match_integer_type!(key_type, |T| {
+        Dictionary(key_type) => match_integer_type!(key_type, impl<T> {
             let dict_id = field.dictionary_id.ok_or_else(
                 || polars_err!(InvalidOperation: "Dictionaries must have an associated id"),
             )?;
@@ -153,7 +153,7 @@ pub fn encode_dictionary(
         panic!("Given array is not a DictionaryArray")
     };
 
-    match_integer_type!(key_type, |T| {
+    match_integer_type!(key_type, impl<T> {
         let array: &DictionaryArray<T> = array.as_any().downcast_ref().unwrap();
 
         encode_dictionary_values(dict_id, array.values().as_ref(), options)
@@ -485,7 +485,7 @@ impl DictionaryTracker {
     pub fn insert(&mut self, dict_id: i64, array: &dyn Array) -> PolarsResult<bool> {
         let values = match array.dtype().to_storage() {
             ArrowDataType::Dictionary(key_type, _, _) => {
-                match_integer_type!(key_type, |T| {
+                match_integer_type!(key_type, impl<T> {
                     let array = array.as_any().downcast_ref::<DictionaryArray<T>>().unwrap();
                     array.values()
                 })

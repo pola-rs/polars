@@ -368,7 +368,7 @@ pub fn cum_min_with_init(
         },
         dt if dt.to_physical().is_primitive_numeric() => {
             let s = s.to_physical_repr();
-            with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+            with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
                 let ca: &ChunkedArray<T> = s.as_ref().as_ref().as_ref();
                 let out = cum_min_numeric(ca, reverse, init.extract()).into_series();
                 if dt.is_logical() {
@@ -406,7 +406,7 @@ pub fn cum_max_with_init(
         },
         dt if dt.to_physical().is_primitive_numeric() => {
             let s = s.to_physical_repr();
-            with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+            with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
                 let ca: &ChunkedArray<T> = s.as_ref().as_ref().as_ref();
                 let out = cum_max_numeric(ca, reverse, init.extract()).into_series();
                 if dt.is_logical() {

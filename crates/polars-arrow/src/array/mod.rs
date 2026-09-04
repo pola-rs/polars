@@ -355,7 +355,7 @@ impl std::fmt::Debug for dyn Array + '_ {
         match self.dtype().to_physical_type() {
             Null => fmt_dyn!(self, NullArray, f),
             Boolean => fmt_dyn!(self, BooleanArray, f),
-            Primitive(primitive) => with_match_primitive_type_full!(primitive, |T| {
+            Primitive(primitive) => with_match_primitive_type_full!(primitive, impl<T> {
                 fmt_dyn!(self, PrimitiveArray<T>, f)
             }),
             BinaryView => fmt_dyn!(self, BinaryViewArray, f),
@@ -371,7 +371,7 @@ impl std::fmt::Debug for dyn Array + '_ {
             Struct => fmt_dyn!(self, StructArray, f),
             Union => fmt_dyn!(self, UnionArray, f),
             Dictionary(key_type) => {
-                match_integer_type!(key_type, |T| fmt_dyn!(self, DictionaryArray::<T>, f))
+                match_integer_type!(key_type, impl<T> fmt_dyn!(self, DictionaryArray::<T>, f))
             },
             Map => fmt_dyn!(self, MapArray, f),
         }
@@ -384,7 +384,7 @@ pub fn new_empty_array(dtype: ArrowDataType) -> Box<dyn Array> {
     match dtype.to_physical_type() {
         Null => Box::new(NullArray::new_empty(dtype)),
         Boolean => Box::new(BooleanArray::new_empty(dtype)),
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, impl<T> {
             Box::new(PrimitiveArray::<T>::new_empty(dtype))
         }),
         Binary => Box::new(BinaryArray::<i32>::new_empty(dtype)),
@@ -401,7 +401,7 @@ pub fn new_empty_array(dtype: ArrowDataType) -> Box<dyn Array> {
         Utf8View => Box::new(Utf8ViewArray::new_empty(dtype)),
         BinaryView => Box::new(BinaryViewArray::new_empty(dtype)),
         Dictionary(key_type) => {
-            match_integer_type!(key_type, |T| {
+            match_integer_type!(key_type, impl<T> {
                 Box::new(DictionaryArray::<T>::new_empty(dtype))
             })
         },
@@ -417,7 +417,7 @@ pub fn new_null_array(dtype: ArrowDataType, length: usize) -> Box<dyn Array> {
     match dtype.to_physical_type() {
         Null => Box::new(NullArray::new_null(dtype, length)),
         Boolean => Box::new(BooleanArray::new_null(dtype, length)),
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, impl<T> {
             Box::new(PrimitiveArray::<T>::new_null(dtype, length))
         }),
         Binary => Box::new(BinaryArray::<i32>::new_null(dtype, length)),
@@ -434,7 +434,7 @@ pub fn new_null_array(dtype: ArrowDataType, length: usize) -> Box<dyn Array> {
         BinaryView => Box::new(BinaryViewArray::new_null(dtype, length)),
         Utf8View => Box::new(Utf8ViewArray::new_null(dtype, length)),
         Dictionary(key_type) => {
-            match_integer_type!(key_type, |T| {
+            match_integer_type!(key_type, impl<T> {
                 Box::new(DictionaryArray::<T>::new_null(dtype, length))
             })
         },
@@ -640,7 +640,7 @@ pub fn clone(array: &dyn Array) -> Box<dyn Array> {
         Null => clone_dyn!(array, NullArray),
         Boolean => clone_dyn!(array, BooleanArray),
         Primitive(primitive) => {
-            with_match_primitive_type_full!(primitive, |T| clone_dyn!(array, PrimitiveArray<T>))
+            with_match_primitive_type_full!(primitive, impl<T> clone_dyn!(array, PrimitiveArray<T>))
         },
         Binary => clone_dyn!(array, BinaryArray<i32>),
         LargeBinary => clone_dyn!(array, BinaryArray<i64>),
@@ -656,7 +656,7 @@ pub fn clone(array: &dyn Array) -> Box<dyn Array> {
         BinaryView => clone_dyn!(array, BinaryViewArray),
         Utf8View => clone_dyn!(array, Utf8ViewArray),
         Dictionary(key_type) => {
-            match_integer_type!(key_type, |T| clone_dyn!(array, DictionaryArray::<T>))
+            match_integer_type!(key_type, impl<T> clone_dyn!(array, DictionaryArray::<T>))
         },
     }
 }

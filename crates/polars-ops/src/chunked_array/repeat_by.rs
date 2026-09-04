@@ -163,7 +163,7 @@ pub fn repeat_by(s: &Series, by: &IdxCa) -> PolarsResult<ListChunked> {
         },
         D::Binary => repeat_by_binary(s_phys.binary().unwrap(), by),
         dt if dt.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(dt, |T| {
+            with_match_physical_numeric_polars_type!(dt, impl<T> {
                 let ca: &ChunkedArray<T> = s_phys.as_ref().as_ref().as_ref();
                 repeat_by_primitive(ca, by)
             })

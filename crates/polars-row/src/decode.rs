@@ -369,7 +369,7 @@ unsafe fn decode(
                 }
             }
 
-            with_match_arrow_primitive_type!(dt, |T| {
+            with_match_arrow_primitive_type!(dt, impl<T> {
                 numeric::decode_primitive::<T>(rows, opt).to_boxed()
             })
         },

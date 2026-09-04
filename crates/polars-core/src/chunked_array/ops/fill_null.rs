@@ -120,7 +120,7 @@ impl Series {
                     {
                         with_match_categorical_physical_type!(
                             logical_type.cat_physical().unwrap(),
-                            |C| {
+                            impl<C> {
                                 let ca = self.cat::<C>().unwrap();
                                 fill_null_cat(ca, strategy)
                             }
@@ -138,7 +138,7 @@ impl Series {
                         fill_null_binary(ca, strategy).map(|ca| ca.into_series())
                     },
                     dt if dt.is_primitive_numeric() => {
-                        with_match_physical_numeric_polars_type!(dt, |T| {
+                        with_match_physical_numeric_polars_type!(dt, impl<T> {
                             let ca: &ChunkedArray<T> = s.as_ref().as_ref().as_ref();
                             fill_null_numeric(ca, strategy).map(|ca| ca.into_series())
                         })

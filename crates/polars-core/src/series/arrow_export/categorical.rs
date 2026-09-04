@@ -46,10 +46,9 @@ impl CategoricalToArrowConverter {
 
         match arrow_field.dtype() {
             ArrowDataType::Dictionary(arrow_key_type, values_type, _) => {
-                let expected_key_type: IntegerType =
-                    with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |C| {
-                        <<C as PolarsCategoricalType>::Native as DictionaryKey>::KEY_TYPE
-                    });
+                let expected_key_type: IntegerType = with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), impl<C> {
+                    <<C as PolarsCategoricalType>::Native as DictionaryKey>::KEY_TYPE
+                });
 
                 if *arrow_key_type != expected_key_type {
                     bail_unhandled_arrow_conversion_dtype_pair!(dtype, arrow_field)
@@ -76,7 +75,7 @@ impl CategoricalToArrowConverter {
             },
         }
 
-        let out = with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |C| {
+        let out = with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), impl<C> {
             let keys_arr: &PrimitiveArray<<C as PolarsCategoricalType>::Native> =
                 keys_arr.as_any().downcast_ref().unwrap();
 
@@ -101,7 +100,7 @@ impl CategoricalToArrowConverter {
                 let key = Arc::as_ptr(mapping) as *const () as usize;
 
                 if !self.converters.contains_key(&key) {
-                    with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |C| {
+                    with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), impl<C> {
                         self.converters.insert(
                             key,
                             CategoricalArrayToArrowConverter::Categorical {

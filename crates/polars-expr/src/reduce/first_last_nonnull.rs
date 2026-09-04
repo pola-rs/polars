@@ -29,7 +29,7 @@ fn new_nonnull_reduction_with_policy<P: NonNullPolicy + 'static>(
             || dtype.is_categorical()
             || dtype.is_enum() =>
         {
-            with_match_physical_numeric_polars_type!(dtype.to_physical(), |T| {
+            with_match_physical_numeric_polars_type!(dtype.to_physical(), impl<T> {
                 Box::new(VGR::new(
                     dtype,
                     NumFirstLastNonNullReducer::<_, T>(policy, PhantomData),

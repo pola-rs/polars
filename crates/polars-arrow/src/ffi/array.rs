@@ -25,7 +25,7 @@ pub unsafe fn try_from<A: ArrowArrayRef>(array: A) -> PolarsResult<Box<dyn Array
         Primitive(PrimitiveType::MonthDayNano) => {
             Box::new(PrimitiveArray::<months_days_ns>::try_from_ffi(array)?)
         },
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, impl<T> {
             Box::new(PrimitiveArray::<T>::try_from_ffi(array)?)
         }),
         Utf8 => Box::new(Utf8Array::<i32>::try_from_ffi(array)?),
@@ -38,7 +38,7 @@ pub unsafe fn try_from<A: ArrowArrayRef>(array: A) -> PolarsResult<Box<dyn Array
         FixedSizeList => Box::new(FixedSizeListArray::try_from_ffi(array)?),
         Struct => Box::new(StructArray::try_from_ffi(array)?),
         Dictionary(key_type) => {
-            match_integer_type!(key_type, |T| {
+            match_integer_type!(key_type, impl<T> {
                 Box::new(DictionaryArray::<T>::try_from_ffi(array)?)
             })
         },

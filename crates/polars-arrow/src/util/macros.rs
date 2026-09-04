@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! with_match_primitive_type {(
-    $key_type:expr, |$T:ident| $($body:tt)*
+    $key_type:expr, impl<$T:ident> $($body:tt)*
 ) => ({
     use polars_utils::float16::pf16;
     use $crate::datatypes::PrimitiveType::*;
@@ -26,7 +26,7 @@ macro_rules! with_match_primitive_type {(
 
 #[macro_export]
 macro_rules! with_match_primitive_type_full {(
-    $key_type:expr, |$T:ident| $($body:tt)*
+    $key_type:expr, impl<$T:ident> $($body:tt)*
 ) => ({
     use polars_utils::float16::pf16;
     use $crate::datatypes::PrimitiveType::*;
@@ -52,7 +52,7 @@ macro_rules! with_match_primitive_type_full {(
 
 #[macro_export]
 macro_rules! match_integer_type {(
-    $key_type:expr, |$T:ident| $($body:tt)*
+    $key_type:expr, impl<$T:ident> $($body:tt)*
 ) => ({
     use $crate::datatypes::IntegerType::*;
     match $key_type {

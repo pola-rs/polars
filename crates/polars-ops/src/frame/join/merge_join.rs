@@ -51,7 +51,7 @@ pub fn match_keys(
     assert_eq!(build_keys.dtype(), probe_keys.dtype());
     match build_keys.dtype() {
         dt if dt.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(dt, |T| {
+            with_match_physical_numeric_polars_type!(dt, impl<T> {
                 type PhysCa = ChunkedArray<T>;
                 let build_keys_ca: &PhysCa = build_keys.as_ref().as_ref();
                 dispatch!(build_keys_ca)
@@ -62,7 +62,7 @@ pub fn match_keys(
         DataType::Binary => dispatch!(build_keys.binary().unwrap()),
         DataType::BinaryOffset => dispatch!(build_keys.binary_offset().unwrap()),
         #[cfg(feature = "dtype-categorical")]
-        DataType::Enum(cats, _) => with_match_categorical_physical_type!(cats.physical(), |C| {
+        DataType::Enum(cats, _) => with_match_categorical_physical_type!(cats.physical(), impl<C> {
             type PhysCa = ChunkedArray<<C as PolarsCategoricalType>::PolarsPhysical>;
             let build_keys_ca: &PhysCa = build_keys.as_ref().as_ref();
             dispatch!(build_keys_ca)

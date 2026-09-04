@@ -46,7 +46,7 @@ where
 }
 
 pub(super) fn build_l2_array(s: &Series, order: &[IdxSize]) -> PolarsResult<Vec<L2Item>> {
-    with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+    with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
         build_l2_array_impl::<T>(s.as_ref().as_ref(), order)
     })
 }

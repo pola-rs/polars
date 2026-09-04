@@ -43,7 +43,7 @@ pub unsafe fn horizontal_flatten_unchecked(
             output_height,
             dtype,
         )),
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, impl<T> {
             Box::new(horizontal_flatten_unchecked_impl_generic(
                 &arrays
                     .iter()

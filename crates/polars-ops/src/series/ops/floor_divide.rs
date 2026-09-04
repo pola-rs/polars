@@ -45,7 +45,7 @@ pub fn floor_div_series(a: &Series, b: &Series) -> PolarsResult<Series> {
     let a = a.to_physical_repr();
     let b = b.to_physical_repr();
 
-    let out = with_match_physical_numeric_polars_type!(a.dtype(), |T| {
+    let out = with_match_physical_numeric_polars_type!(a.dtype(), impl<T> {
         let a: &ChunkedArray<T> = a.as_ref().as_ref().as_ref();
         let b: &ChunkedArray<T> = b.as_ref().as_ref().as_ref();
 

@@ -57,7 +57,7 @@ pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
         max.to_physical_repr(),
     );
 
-    with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+    with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
         let ca: &ChunkedArray<T> = s.as_ref().as_ref().as_ref();
         let min: &ChunkedArray<T> = min.as_ref().as_ref().as_ref();
         let max: &ChunkedArray<T> = max.as_ref().as_ref().as_ref();
@@ -94,7 +94,7 @@ pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
 
     let (s, max) = (s.to_physical_repr(), max.to_physical_repr());
 
-    with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+    with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
         let ca: &ChunkedArray<T> = s.as_ref().as_ref().as_ref();
         let max: &ChunkedArray<T> = max.as_ref().as_ref().as_ref();
         let out = clip_helper_single_bound(ca, max, clamp_max).into_series();
@@ -130,7 +130,7 @@ pub fn clip_min(s: &Series, min: &Series) -> PolarsResult<Series> {
 
     let (s, min) = (s.to_physical_repr(), min.to_physical_repr());
 
-    with_match_physical_numeric_polars_type!(s.dtype(), |T| {
+    with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
         let ca: &ChunkedArray<T> = s.as_ref().as_ref().as_ref();
         let min: &ChunkedArray<T> = min.as_ref().as_ref().as_ref();
         let out = clip_helper_single_bound(ca, min, clamp_min).into_series();

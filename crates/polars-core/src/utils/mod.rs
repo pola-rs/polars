@@ -465,7 +465,7 @@ macro_rules! match_arrow_dtype_apply_macro_ca {
 
 #[macro_export]
 macro_rules! with_match_physical_numeric_type {(
-    $dtype:expr, |$T:ident| $($body:tt)*
+    $dtype:expr, impl<$T:ident> $($body:tt)*
 ) => ({
     #[cfg(feature = "dtype-f16")]
     use polars_utils::float16::pf16;
@@ -497,7 +497,7 @@ macro_rules! with_match_physical_numeric_type {(
 
 #[macro_export]
 macro_rules! with_match_physical_integer_type {(
-    $dtype:expr, |$T:ident| $($body:tt)*
+    $dtype:expr, impl<$T:ident> $($body:tt)*
 ) => ({
     #[cfg(feature = "dtype-f16")]
     use polars_utils::float16::pf16;
@@ -525,7 +525,7 @@ macro_rules! with_match_physical_integer_type {(
 
 #[macro_export]
 macro_rules! with_match_physical_float_type {(
-    $dtype:expr, |$T:ident| $($body:tt)*
+    $dtype:expr, impl<$T:ident> $($body:tt)*
 ) => ({
     use polars_utils::float16::pf16;
     use $crate::datatypes::DataType::*;
@@ -540,7 +540,7 @@ macro_rules! with_match_physical_float_type {(
 
 #[macro_export]
 macro_rules! with_match_physical_float_polars_type {(
-    $key_type:expr, |$T:ident| $($body:tt)*
+    $key_type:expr, impl<$T:ident> $($body:tt)*
 ) => ({
     use $crate::datatypes::DataType::*;
     match $key_type {
@@ -554,7 +554,7 @@ macro_rules! with_match_physical_float_polars_type {(
 
 #[macro_export]
 macro_rules! with_match_physical_numeric_polars_type {(
-    $key_type:expr, |$T:ident| $($body:tt)*
+    $key_type:expr, impl<$T:ident> $($body:tt)*
 ) => ({
     use $crate::datatypes::DataType::*;
     match $key_type {
@@ -584,7 +584,7 @@ macro_rules! with_match_physical_numeric_polars_type {(
 
 #[macro_export]
 macro_rules! with_match_physical_integer_polars_type {(
-    $key_type:expr, |$T:ident| $($body:tt)*
+    $key_type:expr, impl<$T:ident> $($body:tt)*
 ) => ({
     use $crate::datatypes::DataType::*;
     use $crate::datatypes::*;
@@ -611,7 +611,7 @@ macro_rules! with_match_physical_integer_polars_type {(
 
 #[macro_export]
 macro_rules! with_match_categorical_physical_type {(
-    $dtype:expr, |$T:ident| $($body:tt)*
+    $dtype:expr, impl<$T:ident> $($body:tt)*
 ) => ({
     match $dtype {
         CategoricalPhysical::U8 => { #[allow(dead_code)] type $T = Categorical8Type; $($body)* },

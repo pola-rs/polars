@@ -51,14 +51,13 @@ impl PreComputedKeys {
                     .try_into()
                     .unwrap();
 
-                let (bytes, width): (Buffer<u8>, usize) =
-                    with_match_physical_integer_type!(dt, |T| {
-                        let arr: &PrimitiveArray<T> = arr.as_any().downcast_ref().unwrap();
-                        (
-                            arr.values().clone().try_transmute().unwrap(),
-                            std::mem::size_of::<T>(),
-                        )
-                    });
+                let (bytes, width): (Buffer<u8>, usize) = with_match_physical_integer_type!(dt, impl<T> {
+                    let arr: &PrimitiveArray<T> = arr.as_any().downcast_ref().unwrap();
+                    (
+                        arr.values().clone().try_transmute().unwrap(),
+                        std::mem::size_of::<T>(),
+                    )
+                });
 
                 assert_eq!(width * arr.len(), bytes.len());
 

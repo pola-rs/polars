@@ -73,7 +73,7 @@ pub(super) fn array_dispatch(
     width: usize,
     agg_type: AggType,
 ) -> Series {
-    let chunks: Vec<ArrayRef> = with_match_physical_numeric_polars_type!(values.dtype(), |T| {
+    let chunks: Vec<ArrayRef> = with_match_physical_numeric_polars_type!(values.dtype(), impl<T> {
         let ca: &ChunkedArray<T> = values.as_ref().as_ref();
         ca.downcast_iter()
             .map(|arr| match agg_type {

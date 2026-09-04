@@ -597,7 +597,7 @@ fn any_values_to_categorical(
     dtype: &DataType,
     strict: bool,
 ) -> PolarsResult<Series> {
-    with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |C| {
+    with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), impl<C> {
         let mut builder = CategoricalChunkedBuilder::<C>::new(PlSmallStr::EMPTY, dtype.clone());
 
         let mut owned = String::new(); // Amortize allocations.

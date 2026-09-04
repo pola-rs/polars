@@ -17,7 +17,7 @@ pub fn peak_min_max(
             peak_min_max(&column, start, end, is_peak_max)
         },
         dt if dt.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(dt, |T| {
+            with_match_physical_numeric_polars_type!(dt, impl<T> {
                 let ca: &ChunkedArray<T> = column.as_ref().as_ref();
                 let start = start.extract();
                 let end = end.extract();

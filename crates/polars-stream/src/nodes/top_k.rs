@@ -485,7 +485,7 @@ fn new_top_k_reducer(
         let (_name, dt) = key_schema.get_at_index(0).unwrap();
         match dt {
             dt if dt.is_primitive_numeric() | dt.is_temporal() | dt.is_decimal() | dt.is_enum() => {
-                return with_match_physical_numeric_polars_type!(dt.to_physical(), |T| {
+                return with_match_physical_numeric_polars_type!(dt.to_physical(), impl<T> {
                     match (reverse[0], nulls_last[0]) {
                         (false, false) => Box::new(PrimitiveBottomK::<T, true, false>::new(k)),
                         (false, true) => Box::new(PrimitiveBottomK::<T, true, true>::new(k)),

@@ -94,7 +94,7 @@ fn min_max_binary_columns(left: &Column, right: &Column, min: bool) -> PolarsRes
         let lhs = lhs.to_physical_repr();
         let rhs = rhs.to_physical_repr();
 
-        with_match_physical_numeric_polars_type!(lhs.dtype(), |T| {
+        with_match_physical_numeric_polars_type!(lhs.dtype(), impl<T> {
             let a: &ChunkedArray<T> = lhs.as_ref().as_ref().as_ref();
             let b: &ChunkedArray<T> = rhs.as_ref().as_ref().as_ref();
 

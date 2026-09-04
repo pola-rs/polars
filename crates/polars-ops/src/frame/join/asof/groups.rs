@@ -252,7 +252,7 @@ where
                 )
             },
             x if x.is_float() => {
-                with_match_physical_float_polars_type!(left_by_s.dtype(), |B| {
+                with_match_physical_float_polars_type!(left_by_s.dtype(), impl<B> {
                     let left_by: &ChunkedArray<B> =
                         left_by_s.as_materialized_series().as_ref().as_ref();
                     let right_by: &ChunkedArray<B> =

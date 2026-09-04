@@ -42,7 +42,7 @@ pub fn eager_int_range(
         .into());
     }
 
-    with_match_physical_integer_polars_type!(dtype, |T| {
+    with_match_physical_integer_polars_type!(dtype, impl<T> {
         let start_v: <T as PolarsNumericType>::Native = lower.extract()?;
         let end_v: <T as PolarsNumericType>::Native = upper.extract()?;
         let step: i64 = step.extract()?;

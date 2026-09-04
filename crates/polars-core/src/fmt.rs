@@ -416,14 +416,14 @@ impl Debug for Series {
             DataType::Object(_) => format_object_array(f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(cats, _) => {
-                with_match_categorical_physical_type!(cats.physical(), |C| {
+                with_match_categorical_physical_type!(cats.physical(), impl<C> {
                     format_array!(f, self.cat::<C>().unwrap(), "cat", self.name(), "Series")
                 })
             },
 
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(fcats, _) => {
-                with_match_categorical_physical_type!(fcats.physical(), |C| {
+                with_match_categorical_physical_type!(fcats.physical(), impl<C> {
                     format_array!(f, self.cat::<C>().unwrap(), "enum", self.name(), "Series")
                 })
             },

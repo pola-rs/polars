@@ -59,7 +59,7 @@ pub fn read<R: Read + Seek>(
             scratch,
         )
         .map(|x| x.boxed()),
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, impl<T> {
             read_primitive::<T, _>(
                 field_nodes,
                 dtype,
@@ -206,7 +206,7 @@ pub fn read<R: Read + Seek>(
         )
         .map(|x| x.boxed()),
         Dictionary(key_type) => {
-            match_integer_type!(key_type, |T| {
+            match_integer_type!(key_type, impl<T> {
                 read_dictionary::<T, _>(
                     field_nodes,
                     dtype,

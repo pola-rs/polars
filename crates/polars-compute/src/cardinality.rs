@@ -42,7 +42,7 @@ pub fn estimate_cardinality(array: &dyn Array) -> usize {
             cardinality
         },
 
-        PT::Primitive(primitive_type) => with_match_primitive_type_full!(primitive_type, |T| {
+        PT::Primitive(primitive_type) => with_match_primitive_type_full!(primitive_type, impl<T> {
             let mut hll = HyperLogLog::new();
 
             let array = array.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();

@@ -32,7 +32,7 @@ impl ListChunked {
                 ExplodeByOffsets::explode_by_offsets(t, offsets, options).into_series()
             },
             dtype => {
-                with_match_physical_numeric_polars_type!(dtype, |T| {
+                with_match_physical_numeric_polars_type!(dtype, impl<T> {
                     let t: &ChunkedArray<T> = values.as_ref().as_ref();
                     ExplodeByOffsets::explode_by_offsets(t, offsets, options).into_series()
                 })

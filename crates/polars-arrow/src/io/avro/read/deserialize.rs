@@ -21,7 +21,7 @@ fn make_mutable(
         PhysicalType::Boolean => {
             Box::new(MutableBooleanArray::with_capacity(capacity)) as Box<dyn MutableArray>
         },
-        PhysicalType::Primitive(primitive) => with_match_primitive_type_full!(primitive, |T| {
+        PhysicalType::Primitive(primitive) => with_match_primitive_type_full!(primitive, impl<T> {
             Box::new(MutablePrimitiveArray::<T>::with_capacity(capacity).to(dtype.clone()))
                 as Box<dyn MutableArray>
         }),

@@ -119,7 +119,7 @@ fn pow_on_series(base: &Column, exponent: &Column) -> PolarsResult<Column> {
 
     // if false, dtype is float
     if base_dtype.is_integer() {
-        with_match_physical_integer_polars_type!(base_dtype, |T| {
+        with_match_physical_integer_polars_type!(base_dtype, impl<T> {
             if exponent_dtype.is_float() {
                 match exponent_dtype {
                     #[cfg(feature = "dtype-f16")]

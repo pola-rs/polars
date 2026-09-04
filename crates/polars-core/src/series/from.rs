@@ -107,7 +107,7 @@ impl Series {
             Binary => BinaryChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-categorical")]
             dt @ (Categorical(_, _) | Enum(_, _)) => {
-                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |C| {
+                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), impl<C> {
                     let phys = ChunkedArray::from_chunks(name, chunks);
                     CategoricalChunked::<C>::from_cats_and_dtype_unchecked(phys, dt.clone())
                         .into_series()
@@ -630,7 +630,7 @@ impl Series {
             casted = Cow::Owned(cats.cast(&phys_dtype)?);
         }
 
-        let out = with_match_categorical_physical_type!(phys, |C| {
+        let out = with_match_categorical_physical_type!(phys, impl<C> {
             // SAFETY: we are guarded by the type system.
             type PhysCa = ChunkedArray<<C as PolarsCategoricalType>::PolarsPhysical>;
             let ca: &PhysCa = casted.as_ref().as_ref().as_ref();
@@ -859,7 +859,7 @@ unsafe fn import_arrow_dictionary_array(
                 let values = arr.values();
                 let values = cast(&**values, &ArrowDataType::Utf8View)?;
                 let values = values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-                with_match_categorical_physical_type!(polars_dtype.cat_physical().unwrap(), |C| {
+                with_match_categorical_physical_type!(polars_dtype.cat_physical().unwrap(), impl<C> {
                     let ca = CategoricalChunked::<C>::from_str_iter(
                         name,
                         polars_dtype.clone(),

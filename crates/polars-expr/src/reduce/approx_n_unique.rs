@@ -14,7 +14,7 @@ pub fn new_approx_n_unique_reduction(dtype: DataType) -> PolarsResult<Box<dyn Gr
     Ok(match dtype {
         Boolean => Box::new(VGR::new(dtype, R::<BooleanType>::default())),
         _ if dtype.is_primitive_numeric() || dtype.is_temporal() => {
-            with_match_physical_numeric_polars_type!(dtype.to_physical(), |T| {
+            with_match_physical_numeric_polars_type!(dtype.to_physical(), impl<T> {
                 Box::new(VGR::new(dtype, R::<T>::default()))
             })
         },

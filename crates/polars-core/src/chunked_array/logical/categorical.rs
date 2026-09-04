@@ -268,7 +268,7 @@ impl<T: PolarsCategoricalType> LogicalType for CategoricalChunked<T> {
 
             DataType::Enum(fcats, _mapping) => {
                 // TODO @ cat-rework: if len >= self.mapping().upper_bound(), remap categories then index into array.
-                let ret = with_match_categorical_physical_type!(fcats.physical(), |C| {
+                let ret = with_match_categorical_physical_type!(fcats.physical(), impl<C> {
                     CategoricalChunked::<C>::from_str_iter(
                         self.name().clone(),
                         dtype.clone(),
@@ -288,7 +288,7 @@ impl<T: PolarsCategoricalType> LogicalType for CategoricalChunked<T> {
                 // TODO @ cat-rework: if len >= self.mapping().upper_bound(), remap categories then index into array.
                 Ok(with_match_categorical_physical_type!(
                     cats.physical(),
-                    |C| {
+                    impl<C> {
                         CategoricalChunked::<C>::from_str_iter(
                             self.name().clone(),
                             dtype.clone(),

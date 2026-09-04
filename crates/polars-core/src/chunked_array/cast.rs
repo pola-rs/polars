@@ -226,7 +226,7 @@ where
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(cats, _mapping) => {
                 polars_ensure!(self.dtype() == &cats.physical().dtype(), ComputeError: "cannot cast numeric types to 'Categorical'");
-                with_match_categorical_physical_type!(cats.physical(), |C| {
+                with_match_categorical_physical_type!(cats.physical(), impl<C> {
                     // SAFETY: we are guarded by the type system.
                     type PhysCa = ChunkedArray<<C as PolarsCategoricalType>::PolarsPhysical>;
                     let ca = unsafe { &*(self as *const ChunkedArray<T> as *const PhysCa) };
@@ -243,7 +243,7 @@ where
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(fcats, _mapping) => {
                 polars_ensure!(self.dtype() == &fcats.physical().dtype(), ComputeError: "cannot cast numeric types to 'Enum'");
-                with_match_categorical_physical_type!(fcats.physical(), |C| {
+                with_match_categorical_physical_type!(fcats.physical(), impl<C> {
                     // SAFETY: we are guarded by the type system.
                     type PhysCa = ChunkedArray<<C as PolarsCategoricalType>::PolarsPhysical>;
                     let ca = unsafe { &*(self as *const ChunkedArray<T> as *const PhysCa) };
@@ -265,7 +265,7 @@ impl ChunkCast for StringChunked {
         match dtype {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(cats, _mapping) => {
-                with_match_categorical_physical_type!(cats.physical(), |C| {
+                with_match_categorical_physical_type!(cats.physical(), impl<C> {
                     Ok(CategoricalChunked::<C>::from_str_iter(
                         self.name().clone(),
                         dtype.clone(),
@@ -276,7 +276,7 @@ impl ChunkCast for StringChunked {
             },
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(fcats, _mapping) => {
-                let ret = with_match_categorical_physical_type!(fcats.physical(), |C| {
+                let ret = with_match_categorical_physical_type!(fcats.physical(), impl<C> {
                     CategoricalChunked::<C>::from_str_iter(
                         self.name().clone(),
                         dtype.clone(),

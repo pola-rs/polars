@@ -20,7 +20,7 @@ macro_rules! apply_bitwise_op {
                     ).into_series())
                 },
                 dt if dt.is_integer() => {
-                    with_match_physical_integer_polars_type!(dt, |T| {
+                    with_match_physical_integer_polars_type!(dt, impl<T> {
                         let ca: &ChunkedArray<T> = s.as_any().downcast_ref().unwrap();
                         Ok(unary_mut_values::<T, UInt32Type, _, _>(
                             ca,
@@ -29,7 +29,7 @@ macro_rules! apply_bitwise_op {
                     })
                 },
                 dt if dt.is_float() => {
-                    with_match_physical_float_polars_type!(dt, |T| {
+                    with_match_physical_float_polars_type!(dt, impl<T> {
                         let ca: &ChunkedArray<T> = s.as_any().downcast_ref().unwrap();
                         Ok(unary_mut_values::<T, UInt32Type, _, _>(
                             ca,

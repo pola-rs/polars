@@ -146,7 +146,7 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
                 .unwrap()
         },
         dt if dt.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(dt, |T| {
+            with_match_physical_numeric_polars_type!(dt, impl<T> {
                 let lhs: &ChunkedArray<T> = lhs.as_ref().as_ref();
                 let rhs: &ChunkedArray<T> = rhs.as_ref().as_ref();
                 merge_ca(lhs, rhs, merge_indicator).into_series()
@@ -190,7 +190,7 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<boo
     #[cfg(feature = "dtype-categorical")]
     if lhs.dtype().is_categorical() || lhs.dtype().is_enum() {
         let cat_phys = lhs.dtype().cat_physical().unwrap();
-        with_match_categorical_physical_type!(cat_phys, |C| {
+        with_match_categorical_physical_type!(cat_phys, impl<C> {
             let lhs = lhs.cat::<C>().unwrap();
             let rhs = rhs.cat::<C>().unwrap();
             return Ok(get_merge_indicator(lhs.iter_str(), rhs.iter_str()));
@@ -230,7 +230,7 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<boo
             get_merge_indicator(lhs.iter(), rhs.iter())
         },
         dt if dt.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(lhs_s.dtype(), |T| {
+            with_match_physical_numeric_polars_type!(lhs_s.dtype(), impl<T> {
                 let lhs: &ChunkedArray<T> = lhs_s.as_ref().as_ref();
                 let rhs: &ChunkedArray<T> = rhs_s.as_ref().as_ref();
 

@@ -17,7 +17,7 @@ macro_rules! no_call_const {
 // Same as OSS except for the feature gates.
 #[macro_export]
 macro_rules! with_match_physical_numeric_polars_type {(
-    $key_type:expr, |$T:ident| $($body:tt)*
+    $key_type:expr, impl<$T:ident> $($body:tt)*
 ) => ({
     use $crate::datatypes::DataType::*;
     match $key_type {

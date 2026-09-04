@@ -638,7 +638,7 @@ fn iejoin_tuples(
     let l2_order = l2_order.rechunk();
     let l2_order = l2_order.downcast_as_array().values().as_slice();
 
-    let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(x.dtype(), |T| {
+    let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(x.dtype(), impl<T> {
         ie_join_impl_t::<T>(
             slice,
             l1_order,
@@ -748,43 +748,42 @@ fn piecewise_merge_join_tuples(
         .as_ref()
         .map(|order| order.downcast_get(0).unwrap().values().as_slice());
 
-    let (left_row_idx, right_row_idx) =
-        with_match_physical_numeric_polars_type!(left_ordered.dtype(), |T| {
-            match op {
-                InequalityOperator::Lt => piecewise_merge_join_impl_t::<T, _>(
-                    slice,
-                    left_order,
-                    right_order,
-                    left_ordered,
-                    right_ordered,
-                    |l, r| l.tot_lt(r),
-                ),
-                InequalityOperator::LtEq => piecewise_merge_join_impl_t::<T, _>(
-                    slice,
-                    left_order,
-                    right_order,
-                    left_ordered,
-                    right_ordered,
-                    |l, r| l.tot_le(r),
-                ),
-                InequalityOperator::Gt => piecewise_merge_join_impl_t::<T, _>(
-                    slice,
-                    left_order,
-                    right_order,
-                    left_ordered,
-                    right_ordered,
-                    |l, r| l.tot_gt(r),
-                ),
-                InequalityOperator::GtEq => piecewise_merge_join_impl_t::<T, _>(
-                    slice,
-                    left_order,
-                    right_order,
-                    left_ordered,
-                    right_ordered,
-                    |l, r| l.tot_ge(r),
-                ),
-            }
-        })?;
+    let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(left_ordered.dtype(), impl<T> {
+        match op {
+            InequalityOperator::Lt => piecewise_merge_join_impl_t::<T, _>(
+                slice,
+                left_order,
+                right_order,
+                left_ordered,
+                right_ordered,
+                |l, r| l.tot_lt(r),
+            ),
+            InequalityOperator::LtEq => piecewise_merge_join_impl_t::<T, _>(
+                slice,
+                left_order,
+                right_order,
+                left_ordered,
+                right_ordered,
+                |l, r| l.tot_le(r),
+            ),
+            InequalityOperator::Gt => piecewise_merge_join_impl_t::<T, _>(
+                slice,
+                left_order,
+                right_order,
+                left_ordered,
+                right_ordered,
+                |l, r| l.tot_gt(r),
+            ),
+            InequalityOperator::GtEq => piecewise_merge_join_impl_t::<T, _>(
+                slice,
+                left_order,
+                right_order,
+                left_ordered,
+                right_ordered,
+                |l, r| l.tot_ge(r),
+            ),
+        }
+    })?;
 
     debug_assert_eq!(left_row_idx.len(), right_row_idx.len());
     let left_row_idx = IdxCa::from_vec("".into(), left_row_idx);

@@ -43,7 +43,7 @@ fn fma_ca<T: PolarsNumericType>(
 
 pub fn fma_columns(a: &Column, b: &Column, c: &Column) -> Column {
     if a.len() == b.len() && a.len() == c.len() {
-        with_match_physical_numeric_polars_type!(a.dtype(), |T| {
+        with_match_physical_numeric_polars_type!(a.dtype(), impl<T> {
             let a: &ChunkedArray<T> = a.as_materialized_series().as_ref().as_ref();
             let b: &ChunkedArray<T> = b.as_materialized_series().as_ref().as_ref();
             let c: &ChunkedArray<T> = c.as_materialized_series().as_ref().as_ref();
@@ -94,7 +94,7 @@ fn fsm_ca<T: PolarsNumericType>(
 
 pub fn fsm_columns(a: &Column, b: &Column, c: &Column) -> Column {
     if a.len() == b.len() && a.len() == c.len() {
-        with_match_physical_numeric_polars_type!(a.dtype(), |T| {
+        with_match_physical_numeric_polars_type!(a.dtype(), impl<T> {
             let a: &ChunkedArray<T> = a.as_materialized_series().as_ref().as_ref();
             let b: &ChunkedArray<T> = b.as_materialized_series().as_ref().as_ref();
             let c: &ChunkedArray<T> = c.as_materialized_series().as_ref().as_ref();
@@ -144,7 +144,7 @@ fn fms_ca<T: PolarsNumericType>(
 
 pub fn fms_columns(a: &Column, b: &Column, c: &Column) -> Column {
     if a.len() == b.len() && a.len() == c.len() {
-        with_match_physical_numeric_polars_type!(a.dtype(), |T| {
+        with_match_physical_numeric_polars_type!(a.dtype(), impl<T> {
             let a: &ChunkedArray<T> = a.as_materialized_series().as_ref().as_ref();
             let b: &ChunkedArray<T> = b.as_materialized_series().as_ref().as_ref();
             let c: &ChunkedArray<T> = c.as_materialized_series().as_ref().as_ref();
