@@ -1,5 +1,5 @@
 use arrow::compute::concatenate::concatenate_validities;
-use polars_core::chunked_array::ops::binning::IntervalSpec;
+use polars_core::chunked_array::ops::binning::{FractionSpec, IntervalSpec};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
 
@@ -27,6 +27,25 @@ fn bins_from_breaks(s: &Series, breaks: &Series, right_closed: bool) -> PolarsRe
     Ok(search_sorted(breaks, s, side, false)?
         .with_name(s.name().clone())
         .with_validity(concatenate_validities(s.chunks())))
+}
+
+/// Gather the value at each given position within the non-null values in sorted order.
+///
+/// Positions at or past the non-null count yield null, as required by a trailing empty bin.
+fn gather_at_sorted_positions(
+    s: &Series,
+    sort_idx: &IdxCa,
+    positions: &[IdxSize],
+) -> PolarsResult<Series> {
+    let non_null_len = sort_idx.len() as IdxSize;
+
+    let wanted: IdxCa = positions
+        .iter()
+        .map(|p| (*p < non_null_len).then_some(*p))
+        .collect_ca(PlSmallStr::EMPTY);
+
+    let phys_idx = sort_idx.take(&wanted)?;
+    s.take(&phys_idx)
 }
 
 /// Measure and apply an offset in the unsigned domain so full-width signed spans do not
@@ -161,6 +180,32 @@ fn uniform_interval_breaks(
     unsafe { breaks.from_physical_unchecked(dtype) }.map(Some)
 }
 
+/// Breakpoint positions for explicit quantile probabilities: `floor(q * (len - 1))`,
+/// matching `QuantileMethod::Lower`.
+fn quantile_break_positions(non_null_len: usize, probs: &[f64]) -> Vec<IdxSize> {
+    if non_null_len == 0 {
+        return vec![0; probs.len()];
+    }
+    let span = (non_null_len - 1) as f64;
+    probs
+        .iter()
+        .map(|q| (span * q).floor() as IdxSize)
+        .collect()
+}
+
+/// Breakpoint positions for `n_bins` equiprobable bins. Integer arithmetic avoids
+/// off-by-one errors from expanding the cuts to inexact `f64` probabilities.
+fn quantile_break_positions_uniform(non_null_len: usize, n_bins: usize) -> Vec<IdxSize> {
+    let n_breaks = n_bins - 1;
+    if non_null_len == 0 {
+        return vec![0; n_breaks];
+    }
+    let span = non_null_len - 1;
+    (1..=n_breaks)
+        .map(|i| ((i * span) / n_bins) as IdxSize)
+        .collect()
+}
+
 /// Turn a column of bin indices into the final output.
 ///
 /// Without labels the bins are returned as `UInt32`, with labels as an `Enum` over them.
@@ -277,6 +322,63 @@ pub fn bin_intervals(
         s.name().clone(),
         &bin_idx,
         breaks.len() + 1,
+        include_intervals.then_some(&breaks),
+        labels,
+    )
+}
+
+pub fn bin_quantiles(
+    s: &Series,
+    spec: &FractionSpec,
+    labels: Option<&[PlSmallStr]>,
+    include_intervals: bool,
+    right_closed: bool,
+) -> PolarsResult<Series> {
+    let non_null_len = s.len() - s.null_count();
+    let positions = match spec {
+        FractionSpec::Explicit(probs) => quantile_break_positions(non_null_len, probs),
+        FractionSpec::Count(n_bins) => quantile_break_positions_uniform(non_null_len, n_bins.get()),
+    };
+    bin_at_positions(
+        s,
+        &positions,
+        spec.n_bins(),
+        labels,
+        include_intervals,
+        right_closed,
+    )
+}
+
+/// Shared tail of the position-derived forms: sort the non-null values once, gather the
+/// boundary values sitting at the given positions, and bin against them.
+fn bin_at_positions(
+    s: &Series,
+    positions: &[IdxSize],
+    n_bins: usize,
+    labels: Option<&[PlSmallStr]>,
+    include_intervals: bool,
+    right_closed: bool,
+) -> PolarsResult<Series> {
+    let non_null_len = s.len() - s.null_count();
+    if non_null_len == 0 {
+        return empty_bins(s, n_bins, labels, include_intervals);
+    }
+
+    let sort_idx = s
+        .arg_sort(SortOptions {
+            descending: false,
+            nulls_last: true,
+            ..Default::default()
+        })
+        .slice(0, non_null_len);
+
+    let breaks = gather_at_sorted_positions(s, &sort_idx, positions)?;
+    let bin_idx = bins_from_breaks(s, &breaks, right_closed)?;
+
+    finish_bins(
+        s.name().clone(),
+        &bin_idx,
+        n_bins,
         include_intervals.then_some(&breaks),
         labels,
     )
