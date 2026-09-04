@@ -28,6 +28,7 @@ pub mod if_then_else;
 pub mod min_max;
 pub mod moment;
 pub mod nan;
+mod nesting;
 pub mod propagate_dictionary;
 pub mod propagate_nulls;
 pub mod rolling;
