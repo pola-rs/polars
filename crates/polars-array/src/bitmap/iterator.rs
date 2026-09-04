@@ -406,6 +406,87 @@ impl<'a> ValidityIter<'a> {
         self.next_back()
     }
 
+    /// Whether the element the values are about to yield at the front is valid, without checking
+    /// that the mask still covers one.
+    ///
+    /// The mask of an element iterator is walked in lockstep with the values and holds a bit for
+    /// every one of them, so a value yielded is itself the proof that a bit is there to read. The
+    /// check [`Self::next`] makes instead is a branch the loop over the values cannot be unrolled
+    /// across, which costs more than the read it guards.
+    ///
+    /// # Safety
+    /// The mask must still cover an element at the front.
+    #[inline(always)]
+    pub(crate) unsafe fn next_unchecked(&mut self) -> bool {
+        match self {
+            Self::Flat { bytes, front, back } => {
+                debug_assert!(*front < *back);
+                let i = *front;
+                *front = i + 1;
+                bit(bytes, i)
+            },
+            Self::Scalar(value) => *value,
+        }
+    }
+
+    /// Whether the element the values are about to yield at the back is valid, without checking
+    /// that the mask still covers one.
+    ///
+    /// # Safety
+    /// The mask must still cover an element at the back.
+    #[inline(always)]
+    pub(crate) unsafe fn next_back_unchecked(&mut self) -> bool {
+        match self {
+            Self::Flat { bytes, front, back } => {
+                debug_assert!(*front < *back);
+                *back -= 1;
+                bit(bytes, *back)
+            },
+            Self::Scalar(value) => *value,
+        }
+    }
+
+    /// Whether the element the values are about to yield `n` positions on is valid, without
+    /// checking that the mask still covers one.
+    ///
+    /// # Safety
+    /// The mask must still cover the element `n` positions on from the front.
+    #[inline(always)]
+    pub(crate) unsafe fn nth_unchecked(&mut self, n: usize) -> bool {
+        if let Self::Flat { front, .. } = self {
+            // The element `n` positions on is one the mask covers, so its bit is below the back.
+            *front += n;
+        }
+
+        // SAFETY: the mask covers the element now at the front, per the caller.
+        unsafe { self.next_unchecked() }
+    }
+
+    /// Whether the element the values are about to yield `n` positions in from the back is valid,
+    /// without checking that the mask still covers one.
+    ///
+    /// # Safety
+    /// The mask must still cover the element `n` positions in from the back.
+    #[inline(always)]
+    pub(crate) unsafe fn nth_back_unchecked(&mut self, n: usize) -> bool {
+        if let Self::Flat { back, .. } = self {
+            // The element `n` positions in is one the mask covers, so its bit is at or above the
+            // front.
+            *back -= n;
+        }
+
+        // SAFETY: the mask covers the element now at the back, per the caller.
+        unsafe { self.next_back_unchecked() }
+    }
+
+    /// Leaves the mask covering nothing, which is where walking it to its end leaves it.
+    #[inline(always)]
+    pub(crate) fn exhaust(&mut self) {
+        if let Self::Flat { front, back, .. } = self {
+            *back = *front;
+        }
+    }
+
     /// The mask the elements left to yield are under, with its representation hoisted out.
     #[inline]
     pub(crate) fn into_mask(self) -> ValidityFold<'a> {
