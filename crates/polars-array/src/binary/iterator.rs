@@ -1,5 +1,4 @@
 use std::marker::PhantomData;
-use std::num::NonZero;
 use std::ptr::NonNull;
 use std::slice;
 
@@ -8,19 +7,13 @@ use arrow::trusted_len::TrustedLen;
 use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 use crate::broadcast::is_flat_offsets_len;
 
-/// The bit of the tagged offsets pointer that is set when the offsets are scalar.
-///
-/// Offsets are eight byte aligned, so their low three bits are free to carry the tag; the length
-/// is left alone by it, and reaches [`usize::MAX`] the way a scalar array's does.
-const SCALAR: usize = 1;
-
 /// Iterator over the elements of a [`PlBinaryArray`](super::PlBinaryArray), ignoring validity.
 ///
-/// The representation of the offsets is resolved once, at construction, into the tag the offsets
-/// pointer carries, and every position is folded onto a slot through that tag without a branch.
-/// A loop that walks the elements one way — [`fold`](Iterator::fold), [`rfold`] or a hand written
-/// one over [`split`](Self::split) — drops even that, and reads the offsets as the plain slice
-/// they are.
+/// The representation of the offsets is resolved once, at construction, into the mask every
+/// position is folded through, and no step of the walk branches on it again. A loop that walks the
+/// elements one way — [`fold`](Iterator::fold), [`rfold`] or a hand written one over
+/// [`split`](Self::split) — drops even the mask, and reads the offsets as the plain slice they
+/// are.
 ///
 /// [`rfold`]: DoubleEndedIterator::rfold
 #[derive(Clone)]
@@ -28,13 +21,24 @@ pub struct PlBinaryValuesIter<'a> {
     /// The bytes the offsets cut the elements out of. How many there are is never asked: every
     /// offset is in bounds of them, so the length would only be carried to be thrown away.
     values: NonNull<u8>,
-    /// The offsets of the elements left to yield, tagged with [`SCALAR`] when they are the one
-    /// range every element covers rather than one start each.
+    /// The offsets of the elements left to yield.
     ///
     /// Flat offsets hold exactly `remaining + 1` slots from here, which walking the front keeps
     /// true; scalar offsets hold their two slots wherever the front has walked to, which is
     /// nowhere — the step every walk takes is zero for them.
     offsets: NonNull<u64>,
+    /// [`usize::MAX`] while the offsets are flat and `0` once they are scalar, to fold every
+    /// position onto the one slot scalar offsets hold without branching on which they are.
+    ///
+    /// This is a field rather than a tag bit stolen from `offsets` so that the walk never has to
+    /// read it back out of a pointer it is also stepping. A tag in the pointer is recovered with
+    /// `ptrtoint`, which loses the alignment the free bits come from, so the mask — and the step
+    /// derived from it — turns into a value that changes with the pointer as far as the compiler
+    /// can tell, and is rebuilt inside the loop instead of being hoisted out of it. Held apart, it
+    /// is loop invariant by construction, and is a constant outright wherever the caller has
+    /// pinned the representation down, which leaves the offsets walked at a constant stride: an
+    /// affine walk the vectorizer can take.
+    index_mask: usize,
     /// The number of elements left to yield, over the whole range of a `usize`: a scalar array is
     /// as long as it says it is, and is never walked to find out.
     remaining: usize,
@@ -42,10 +46,10 @@ pub struct PlBinaryValuesIter<'a> {
 }
 
 const _: () = {
-    // Three words, down from the six two slices and a range take.
-    assert!(size_of::<PlBinaryValuesIter<'static>>() == 3 * size_of::<usize>());
+    // Four words, down from the six two slices and a range take.
+    assert!(size_of::<PlBinaryValuesIter<'static>>() == 4 * size_of::<usize>());
     // The niche of the pointers keeps `Option` free.
-    assert!(size_of::<Option<PlBinaryValuesIter<'static>>>() == 3 * size_of::<usize>());
+    assert!(size_of::<Option<PlBinaryValuesIter<'static>>>() == 4 * size_of::<usize>());
 };
 
 // SAFETY: the iterator holds nothing but the shared borrows of bytes and offsets it was built
@@ -93,10 +97,10 @@ impl<'a> PlBinaryValuesIter<'a> {
 
         Self {
             values: NonNull::from(values).cast(),
-            // The tag rides in a bit the alignment of the offsets leaves free.
-            offsets: NonNull::from(offsets)
-                .cast::<u64>()
-                .map_addr(|addr| addr | (scalar as usize)),
+            offsets: NonNull::from(offsets).cast(),
+            // All ones for flat offsets, which leaves every position as it is, and none for scalar
+            // ones, which folds every position onto the single range they hold.
+            index_mask: (scalar as usize).wrapping_sub(1),
             remaining: length,
             _lifetime: PhantomData,
         }
@@ -105,30 +109,14 @@ impl<'a> PlBinaryValuesIter<'a> {
     /// Whether the offsets hold the one range every element covers, rather than one per element.
     #[inline(always)]
     fn is_scalar(&self) -> bool {
-        self.offsets.addr().get() & SCALAR != 0
-    }
-
-    /// The offsets of the elements left to yield, without the tag they carry.
-    #[inline(always)]
-    fn offsets(&self) -> NonNull<u64> {
-        // SAFETY: clearing a bit that the eight byte alignment of the offsets keeps unset in
-        // their own address leaves that address as it was, which is not null.
-        self.offsets
-            .map_addr(|addr| unsafe { NonZero::new_unchecked(addr.get() & !SCALAR) })
-    }
-
-    /// `usize::MAX` while the offsets are flat and `0` once they are scalar, to fold every
-    /// position onto the one slot scalar offsets hold without branching on which they are.
-    #[inline(always)]
-    fn index_mask(&self) -> usize {
-        (self.offsets.addr().get() & SCALAR).wrapping_sub(1)
+        self.index_mask == 0
     }
 
     /// How far the offsets walk per element dropped: one offset while they are flat, and nowhere
     /// at all once they are scalar, whose two slots every element reads.
     #[inline(always)]
     fn step(&self) -> usize {
-        size_of::<u64>() & self.index_mask()
+        size_of::<u64>() & self.index_mask
     }
 
     /// The bytes the element `i` positions on covers.
@@ -143,7 +131,7 @@ impl<'a> PlBinaryValuesIter<'a> {
         unsafe {
             // Scalar offsets fold every position onto the one range they hold; flat ones hold the
             // start of the element and the end that follows it.
-            let offsets = self.offsets().as_ptr().add(i & self.index_mask());
+            let offsets = self.offsets.as_ptr().add(i & self.index_mask);
             let start = offsets.read() as usize;
             let end = offsets.add(1).read() as usize;
 
@@ -163,13 +151,12 @@ impl<'a> PlBinaryValuesIter<'a> {
         debug_assert!(n <= self.remaining);
 
         // Flat offsets are walked `n` slots on, which stays within the buffer holding them, and
-        // scalar ones are walked nowhere: the step is zero, which is the only case the pointer is
-        // tagged in, and so the only case its address is not one it may be offset from.
+        // scalar ones are walked nowhere.
         let step = n.wrapping_mul(self.step());
 
         // SAFETY: flat offsets hold one slot more than the elements left, so `n` of them is at
-        // most one past their end; a step of whole offsets also leaves the tag bit alone.
-        self.offsets = unsafe { NonNull::new_unchecked(self.offsets.as_ptr().byte_add(step)) };
+        // most one past their end.
+        self.offsets = unsafe { self.offsets.byte_add(step) };
         self.remaining -= n;
     }
 
@@ -201,7 +188,7 @@ impl<'a> PlBinaryValuesIter<'a> {
         // there are `remaining + 1` of them — which does not wrap, since a buffer that long does
         // not fit in memory — and the last of them is read here rather than indexed for, which
         // would leave the loop walking them behind a bounds check it can never fail.
-        let offsets_ptr = self.offsets().as_ptr();
+        let offsets_ptr = self.offsets.as_ptr();
         // SAFETY: the last of the offsets is the end of the last element left to yield.
         let end = unsafe { offsets_ptr.add(self.remaining).read() } as usize;
 
@@ -456,19 +443,14 @@ impl<'a> Iterator for PlBinaryIter<'a> {
 
     /// Hoists the validity mask out of the loop, and the representation of the offsets with it.
     #[inline]
-    fn fold<B, F>(self, init: B, mut f: F) -> B
+    fn fold<B, F>(self, init: B, f: F) -> B
     where
         F: FnMut(B, Self::Item) -> B,
     {
-        match self.split() {
-            (values, ValidityFold::Valid) => values.fold(init, |acc, value| f(acc, Some(value))),
-            (values, ValidityFold::Null) => values.fold(init, |acc, _| f(acc, None)),
-            (values, ValidityFold::Bits(mask)) => {
-                values.zip(mask).fold(init, |acc, (value, is_valid)| {
-                    f(acc, is_valid.then_some(value))
-                })
-            },
-        }
+        let (values, mask) = self.split();
+        // SAFETY: the mask has one bit per element, and the values and the mask are walked in
+        // lockstep, so it has a bit for every value left to yield.
+        unsafe { mask.fold_values(values, init, f) }
     }
 }
 
@@ -477,6 +459,25 @@ impl DoubleEndedIterator for PlBinaryIter<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         let value = self.values.next_back()?;
         Some(self.validity.next_back().then_some(value))
+    }
+
+    #[inline]
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        // The mask is advanced alongside the values, whether or not there is a value left.
+        let is_valid = self.validity.nth_back(n);
+        let value = self.values.nth_back(n)?;
+        Some(is_valid.then_some(value))
+    }
+
+    /// Hoists the validity mask out of the loop, the way [`Iterator::fold`] does.
+    #[inline]
+    fn rfold<B, F>(self, init: B, f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let (values, mask) = self.split();
+        // SAFETY: the mask has a bit for every value left to yield, per `Iterator::fold`.
+        unsafe { mask.rfold_values(values, init, f) }
     }
 }
 
@@ -491,6 +492,8 @@ unsafe impl TrustedLen for PlBinaryIter<'_> {}
 
 #[cfg(test)]
 mod tests {
+
+    use arrow::bitmap::Bitmap;
 
     use super::PlBinaryValues;
     use crate::PlBinaryArray;
@@ -560,6 +563,22 @@ mod tests {
             Some(b"xy".as_slice())
         );
         assert_eq!(array.iter().last(), Some(Some(b"xy".as_slice())));
+        assert_eq!(
+            array.iter().nth_back(999_999_999),
+            Some(Some(b"xy".as_slice()))
+        );
+    }
+
+    /// A mask of mixed bits, which is read by position alongside the elements the offsets cut out.
+    #[test]
+    fn mixed_validity() {
+        let array = flat_array().with_validity(Some(Bitmap::from_iter([true, false, true])));
+
+        assert_iterates(array.values_iter(), &elements());
+        assert_iterates(
+            array.iter(),
+            &[Some(elements()[0]), None, Some(elements()[2])],
+        );
     }
 
     /// Nothing is stolen from the length to say which representation the offsets are in, so a

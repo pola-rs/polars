@@ -160,6 +160,7 @@ impl<'a> PlBitmapRef<'a> {
     }
 
     /// The number of unset bits.
+    #[inline]
     pub fn unset_bits(&self) -> usize {
         if self.is_scalar() {
             // Every element shares the single bit; an empty mask never reads it.

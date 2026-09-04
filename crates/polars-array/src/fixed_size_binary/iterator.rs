@@ -1,16 +1,29 @@
-use std::ops::Range;
+use std::slice::ChunksExact;
 
 use arrow::trusted_len::TrustedLen;
 
 use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
+use crate::broadcast::is_flat_fixed_size_values_len;
 
 /// Iterator over the elements of a [`PlFixedSizeBinaryArray`](super::PlFixedSizeBinaryArray),
 /// ignoring validity.
+///
+/// The representation of the values is resolved once, at construction, so that the flat arm is the
+/// plain [`ChunksExact`] it is. Deciding per element instead leaves every read behind a load of the
+/// length of the values and a select on it, and leaves the stride of the walk a value the loop
+/// cannot hoist.
 #[derive(Clone)]
 pub struct PlFixedSizeBinaryValuesIter<'a> {
-    values: &'a [u8],
-    width: usize,
-    range: Range<usize>,
+    repr: Repr<'a>,
+}
+
+/// The representation the values turned out to be in, resolved once.
+#[derive(Clone)]
+enum Repr<'a> {
+    /// One element per position, `width` bytes each, walked as the chunks they are.
+    Flat(ChunksExact<'a, u8>),
+    /// The one element every position reads, and how many are left to read it.
+    Scalar { value: &'a [u8], remaining: usize },
 }
 
 impl<'a> PlFixedSizeBinaryValuesIter<'a> {
@@ -19,25 +32,26 @@ impl<'a> PlFixedSizeBinaryValuesIter<'a> {
     /// [`crate::broadcast`].
     #[inline]
     pub(super) fn new(values: &'a [u8], width: usize, length: usize) -> Self {
-        Self {
-            values,
-            width,
-            range: 0..length,
-        }
-    }
+        // Values as long as one element hold the one every position reads; values the caller
+        // promises are valid hold one element each when they are not. The two coincide for a
+        // single element, and for elements no bytes wide — which `chunks_exact` has no chunk for
+        // at all — either of which the scalar arm yields the same bytes for.
+        let repr = if values.len() == width {
+            Repr::Scalar {
+                value: values,
+                remaining: length,
+            }
+        } else {
+            // Values that are not as long as one element are flat, which for a width of zero
+            // they cannot be: the flat length is zero, and that is the width.
+            debug_assert!(
+                is_flat_fixed_size_values_len(values.len(), width, length),
+                "neither flat nor scalar",
+            );
+            Repr::Flat(values.chunks_exact(width))
+        };
 
-    /// Whether the values hold the one element every element covers, rather than one per element.
-    #[inline(always)]
-    fn is_scalar(&self) -> bool {
-        self.values.len() == self.width
-    }
-
-    #[inline(always)]
-    fn get(&self, i: usize) -> &'a [u8] {
-        let start = if self.is_scalar() { 0 } else { i * self.width };
-        // SAFETY: `i` comes from `self.range`, so the element it reads is in bounds of the values:
-        // either flat over every position, or the one element all of them read from the start.
-        unsafe { self.values.get_unchecked(start..start + self.width) }
+        Self { repr }
     }
 }
 
@@ -46,76 +60,118 @@ impl<'a> Iterator for PlFixedSizeBinaryValuesIter<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.range.next().map(|i| self.get(i))
+        match &mut self.repr {
+            Repr::Flat(chunks) => chunks.next(),
+            Repr::Scalar { value, remaining } => {
+                *remaining = remaining.checked_sub(1)?;
+                Some(value)
+            },
+        }
     }
 
     #[inline]
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        self.range.nth(n).map(|i| self.get(i))
+        match &mut self.repr {
+            Repr::Flat(chunks) => chunks.nth(n),
+            Repr::Scalar { value, remaining } => {
+                let Some(left) = remaining.checked_sub(n + 1) else {
+                    *remaining = 0;
+                    return None;
+                };
+                *remaining = left;
+                Some(value)
+            },
+        }
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.range.size_hint()
+        let n = self.len();
+        (n, Some(n))
     }
 
     #[inline]
     fn count(self) -> usize {
-        self.range.len()
+        self.len()
     }
 
     #[inline]
-    fn last(mut self) -> Option<Self::Item> {
-        self.next_back()
+    fn last(self) -> Option<Self::Item> {
+        match self.repr {
+            Repr::Flat(chunks) => chunks.last(),
+            Repr::Scalar { value, remaining } => (remaining != 0).then_some(value),
+        }
     }
 
-    /// Hoists the representation of the values out of the loop: flat ones are walked as the
-    /// consecutive elements they are, and scalar ones fold over the one element they hold.
+    /// Hoists the representation of the values out of the loop: flat ones fold as the consecutive
+    /// elements they are, and scalar ones fold over the one element they hold.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where
         F: FnMut(B, Self::Item) -> B,
     {
-        let count = self.range.len();
-
-        if self.is_scalar() {
-            // The values are scalar, so every element covers the one element they hold — which
-            // is what position zero reads, and is sliced once here rather than per element. This
-            // is also where a width of zero lands, which `chunks_exact` has no chunk for.
-            if count == 0 {
-                return init;
-            }
-            let value = self.get(0);
-            return (0..count).fold(init, |acc, _| f(acc, value));
+        match self.repr {
+            Repr::Flat(chunks) => chunks.fold(init, f),
+            Repr::Scalar { value, remaining } => {
+                let mut acc = init;
+                for _ in 0..remaining {
+                    acc = f(acc, value);
+                }
+                acc
+            },
         }
-
-        // SAFETY: flat values lay the elements end to end, `width` bytes each, so the ones the
-        // range covers are in bounds.
-        let elements = unsafe {
-            self.values
-                .get_unchecked(self.range.start * self.width..self.range.end * self.width)
-        };
-
-        elements.chunks_exact(self.width).fold(init, f)
     }
 }
 
 impl DoubleEndedIterator for PlFixedSizeBinaryValuesIter<'_> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.range.next_back().map(|i| self.get(i))
+        match &mut self.repr {
+            Repr::Flat(chunks) => chunks.next_back(),
+            Repr::Scalar { value, remaining } => {
+                *remaining = remaining.checked_sub(1)?;
+                Some(value)
+            },
+        }
     }
 
     #[inline]
     fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-        self.range.nth_back(n).map(|i| self.get(i))
+        if let Repr::Flat(chunks) = &mut self.repr {
+            return chunks.nth_back(n);
+        }
+
+        // Every position of scalar values reads the one element they hold, so walking in from
+        // either end drops the same number of them and reads the same bytes.
+        self.nth(n)
+    }
+
+    /// Hoists the representation of the values out of the loop, the way [`Iterator::fold`] does.
+    #[inline]
+    fn rfold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        match self.repr {
+            Repr::Flat(chunks) => chunks.rfold(init, f),
+            Repr::Scalar { value, remaining } => {
+                let mut acc = init;
+                for _ in 0..remaining {
+                    acc = f(acc, value);
+                }
+                acc
+            },
+        }
     }
 }
 
 impl ExactSizeIterator for PlFixedSizeBinaryValuesIter<'_> {
     #[inline]
     fn len(&self) -> usize {
-        self.range.len()
+        match &self.repr {
+            Repr::Flat(chunks) => chunks.len(),
+            Repr::Scalar { remaining, .. } => *remaining,
+        }
     }
 }
 
@@ -192,19 +248,14 @@ impl<'a> Iterator for PlFixedSizeBinaryIter<'a> {
 
     /// Hoists the validity mask out of the loop, and the representation of the values with it.
     #[inline]
-    fn fold<B, F>(self, init: B, mut f: F) -> B
+    fn fold<B, F>(self, init: B, f: F) -> B
     where
         F: FnMut(B, Self::Item) -> B,
     {
-        match self.split() {
-            (values, ValidityFold::Valid) => values.fold(init, |acc, value| f(acc, Some(value))),
-            (values, ValidityFold::Null) => values.fold(init, |acc, _| f(acc, None)),
-            (values, ValidityFold::Bits(mask)) => {
-                values.zip(mask).fold(init, |acc, (value, is_valid)| {
-                    f(acc, is_valid.then_some(value))
-                })
-            },
-        }
+        let (values, mask) = self.split();
+        // SAFETY: the mask has one bit per element, and the values and the mask are walked in
+        // lockstep, so it has a bit for every value left to yield.
+        unsafe { mask.fold_values(values, init, f) }
     }
 }
 
@@ -213,6 +264,25 @@ impl DoubleEndedIterator for PlFixedSizeBinaryIter<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         let value = self.values.next_back()?;
         Some(self.validity.next_back().then_some(value))
+    }
+
+    #[inline]
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        // The mask is advanced alongside the values, whether or not there is a value left.
+        let is_valid = self.validity.nth_back(n);
+        let value = self.values.nth_back(n)?;
+        Some(is_valid.then_some(value))
+    }
+
+    /// Hoists the validity mask out of the loop, the way [`Iterator::fold`] does.
+    #[inline]
+    fn rfold<B, F>(self, init: B, f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let (values, mask) = self.split();
+        // SAFETY: the mask has a bit for every value left to yield, per `Iterator::fold`.
+        unsafe { mask.rfold_values(values, init, f) }
     }
 }
 
@@ -227,6 +297,9 @@ unsafe impl TrustedLen for PlFixedSizeBinaryIter<'_> {}
 
 #[cfg(test)]
 mod tests {
+
+    use arrow::bitmap::Bitmap;
+    use polars_buffer::Buffer;
 
     use crate::PlFixedSizeBinaryArray;
     use crate::iterator_tests::assert_iterates;
@@ -263,6 +336,68 @@ mod tests {
 
         assert_eq!(array.values_iter().count(), 1_000_000_000);
         assert_eq!(array.values_iter().nth(999_999_999), Some(b"xy".as_slice()));
+        assert_eq!(
+            array.values_iter().nth_back(999_999_999),
+            Some(b"xy".as_slice())
+        );
         assert_eq!(array.iter().last(), Some(Some(b"xy".as_slice())));
+        assert_eq!(
+            array.iter().nth_back(999_999_999),
+            Some(Some(b"xy".as_slice()))
+        );
+    }
+
+    /// A mask of mixed bits, which is read by position alongside the elements.
+    #[test]
+    fn mixed_validity() {
+        let array = flat_array().with_validity(Some(Bitmap::from_iter([true, false, true])));
+
+        assert_iterates(array.values_iter(), &elements());
+        assert_iterates(
+            array.iter(),
+            &[Some(elements()[0]), None, Some(elements()[2])],
+        );
+    }
+
+    /// The elements of a sliced array start partway into the values, which are still cut into the
+    /// chunks the width makes of them.
+    #[test]
+    fn sliced() {
+        let array = flat_array().sliced(1, 2);
+
+        assert_iterates(array.values_iter(), &elements()[1..]);
+        assert_iterates(
+            array.iter(),
+            &elements()[1..]
+                .iter()
+                .copied()
+                .map(Some)
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    /// An array of no elements, which keeps no element for a scalar one to repeat.
+    #[test]
+    fn empty() {
+        assert_iterates(flat_array().sliced(0, 0).values_iter(), &[]);
+        assert_iterates(
+            PlFixedSizeBinaryArray::new_scalar(b"xy", 0).values_iter(),
+            &[],
+        );
+    }
+
+    /// Elements no bytes wide, which are all the same empty slice however many there are — and
+    /// which the chunks of a flat walk would have no end of.
+    #[test]
+    fn a_width_of_zero() {
+        let empty: &[u8] = b"";
+
+        let flat = PlFixedSizeBinaryArray::new(Buffer::new(), 0, 3, None);
+        assert_iterates(flat.values_iter(), &[empty; 3]);
+        assert_iterates(flat.iter(), &[Some(empty); 3]);
+
+        let scalar = PlFixedSizeBinaryArray::new_scalar(empty, 3);
+        assert_iterates(scalar.values_iter(), &[empty; 3]);
+        assert_iterates(scalar.iter(), &[Some(empty); 3]);
     }
 }

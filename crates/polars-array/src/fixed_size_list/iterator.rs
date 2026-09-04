@@ -11,6 +11,12 @@ use crate::broadcast::is_broadcastable;
 pub struct PlFixedSizeListValuesIter<'a> {
     array: &'a PlFixedSizeListArray,
     range: Range<usize>,
+    /// `usize::MAX` while the array holds one element per position, and `0` once it holds the one
+    /// element every position reads.
+    ///
+    /// Resolving this once keeps the length of the array out of the loop, and folding a position
+    /// through it costs no branch at all.
+    index_mask: usize,
 }
 
 impl<'a> PlFixedSizeListValuesIter<'a> {
@@ -28,23 +34,26 @@ impl<'a> PlFixedSizeListValuesIter<'a> {
         Self {
             array,
             range: 0..length,
+            // An array of a single element holds the one every position reads; one of as many
+            // elements as there are positions holds one each.
+            index_mask: if array.len() == 1 { 0 } else { usize::MAX },
         }
     }
 
-    /// Whether the array holds the one element every position reads, rather than one each.
+    /// The element at position `i`, which the mask folds onto the one a broadcast array holds.
+    ///
+    /// # Safety
+    /// `i` must be one of the positions the iterator was built for.
     #[inline(always)]
-    fn is_broadcast(&self) -> bool {
-        self.array.len() == 1
-    }
-
-    #[inline(always)]
-    fn get(&self, i: usize) -> Box<dyn PlArray> {
-        // SAFETY: `i` comes from `self.range`, so it is in bounds of the array unless the array
-        // is being broadcast, in which case it holds the one element every position reads.
-        unsafe {
-            self.array
-                .value_unchecked(if self.is_broadcast() { 0 } else { i })
-        }
+    unsafe fn get(
+        array: &'a PlFixedSizeListArray,
+        index_mask: usize,
+        i: usize,
+    ) -> Box<dyn PlArray> {
+        // SAFETY: `i` is one of the iterator's positions, so it is in bounds of the array unless
+        // the array is being broadcast, in which case the mask folds it onto the one element it
+        // holds.
+        unsafe { array.value_unchecked(i & index_mask) }
     }
 }
 
@@ -53,12 +62,16 @@ impl Iterator for PlFixedSizeListValuesIter<'_> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.range.next().map(|i| self.get(i))
+        let i = self.range.next()?;
+        // SAFETY: the position comes from the range the iterator was built for.
+        Some(unsafe { Self::get(self.array, self.index_mask, i) })
     }
 
     #[inline]
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        self.range.nth(n).map(|i| self.get(i))
+        let i = self.range.nth(n)?;
+        // SAFETY: the position comes from the range the iterator was built for.
+        Some(unsafe { Self::get(self.array, self.index_mask, i) })
     }
 
     #[inline]
@@ -75,17 +88,51 @@ impl Iterator for PlFixedSizeListValuesIter<'_> {
     fn last(mut self) -> Option<Self::Item> {
         self.next_back()
     }
+
+    /// Hoists the walk over the positions out of the loop, which `collect` and `for_each` route
+    /// through: the positions are folded as the range they are, rather than stepped one `Option`
+    /// at a time, and the array they read is loaded once.
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let (array, index_mask) = (self.array, self.index_mask);
+
+        self.range.fold(init, |acc, i| {
+            // SAFETY: the position comes from the range the iterator was built for.
+            f(acc, unsafe { Self::get(array, index_mask, i) })
+        })
+    }
 }
 
 impl DoubleEndedIterator for PlFixedSizeListValuesIter<'_> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.range.next_back().map(|i| self.get(i))
+        let i = self.range.next_back()?;
+        // SAFETY: the position comes from the range the iterator was built for.
+        Some(unsafe { Self::get(self.array, self.index_mask, i) })
     }
 
     #[inline]
     fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-        self.range.nth_back(n).map(|i| self.get(i))
+        let i = self.range.nth_back(n)?;
+        // SAFETY: the position comes from the range the iterator was built for.
+        Some(unsafe { Self::get(self.array, self.index_mask, i) })
+    }
+
+    /// Hoists the walk over the positions out of the loop, the way [`Iterator::fold`] does.
+    #[inline]
+    fn rfold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let (array, index_mask) = (self.array, self.index_mask);
+
+        self.range.rfold(init, |acc, i| {
+            // SAFETY: the position comes from the range the iterator was built for.
+            f(acc, unsafe { Self::get(array, index_mask, i) })
+        })
     }
 }
 
@@ -97,6 +144,12 @@ unsafe impl TrustedLen for PlFixedSizeListValuesIter<'_> {}
 pub struct PlFixedSizeListIter<'a> {
     array: &'a PlFixedSizeListArray,
     range: Range<usize>,
+    /// `usize::MAX` while the array holds one element per position, and `0` once it holds the one
+    /// element every position reads.
+    ///
+    /// Resolving this once keeps the length of the array out of the loop, and folding a position
+    /// through it costs no branch at all.
+    index_mask: usize,
 }
 
 impl<'a> PlFixedSizeListIter<'a> {
@@ -114,23 +167,26 @@ impl<'a> PlFixedSizeListIter<'a> {
         Self {
             array,
             range: 0..length,
+            // An array of a single element holds the one every position reads; one of as many
+            // elements as there are positions holds one each.
+            index_mask: if array.len() == 1 { 0 } else { usize::MAX },
         }
     }
 
-    /// Whether the array holds the one element every position reads, rather than one each.
+    /// The element at position `i`, which the mask folds onto the one a broadcast array holds.
+    ///
+    /// # Safety
+    /// `i` must be one of the positions the iterator was built for.
     #[inline(always)]
-    fn is_broadcast(&self) -> bool {
-        self.array.len() == 1
-    }
-
-    #[inline(always)]
-    fn get(&self, i: usize) -> Option<Box<dyn PlArray>> {
-        // SAFETY: `i` comes from `self.range`, so it is in bounds of the array unless the array
-        // is being broadcast, in which case it holds the one element every position reads.
-        unsafe {
-            self.array
-                .get_unchecked(if self.is_broadcast() { 0 } else { i })
-        }
+    unsafe fn get(
+        array: &'a PlFixedSizeListArray,
+        index_mask: usize,
+        i: usize,
+    ) -> Option<Box<dyn PlArray>> {
+        // SAFETY: `i` is one of the iterator's positions, so it is in bounds of the array unless
+        // the array is being broadcast, in which case the mask folds it onto the one element it
+        // holds.
+        unsafe { array.get_unchecked(i & index_mask) }
     }
 }
 
@@ -139,12 +195,16 @@ impl Iterator for PlFixedSizeListIter<'_> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.range.next().map(|i| self.get(i))
+        let i = self.range.next()?;
+        // SAFETY: the position comes from the range the iterator was built for.
+        Some(unsafe { Self::get(self.array, self.index_mask, i) })
     }
 
     #[inline]
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        self.range.nth(n).map(|i| self.get(i))
+        let i = self.range.nth(n)?;
+        // SAFETY: the position comes from the range the iterator was built for.
+        Some(unsafe { Self::get(self.array, self.index_mask, i) })
     }
 
     #[inline]
@@ -161,17 +221,51 @@ impl Iterator for PlFixedSizeListIter<'_> {
     fn last(mut self) -> Option<Self::Item> {
         self.next_back()
     }
+
+    /// Hoists the walk over the positions out of the loop, which `collect` and `for_each` route
+    /// through: the positions are folded as the range they are, rather than stepped one `Option`
+    /// at a time, and the array they read is loaded once.
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let (array, index_mask) = (self.array, self.index_mask);
+
+        self.range.fold(init, |acc, i| {
+            // SAFETY: the position comes from the range the iterator was built for.
+            f(acc, unsafe { Self::get(array, index_mask, i) })
+        })
+    }
 }
 
 impl DoubleEndedIterator for PlFixedSizeListIter<'_> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.range.next_back().map(|i| self.get(i))
+        let i = self.range.next_back()?;
+        // SAFETY: the position comes from the range the iterator was built for.
+        Some(unsafe { Self::get(self.array, self.index_mask, i) })
     }
 
     #[inline]
     fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-        self.range.nth_back(n).map(|i| self.get(i))
+        let i = self.range.nth_back(n)?;
+        // SAFETY: the position comes from the range the iterator was built for.
+        Some(unsafe { Self::get(self.array, self.index_mask, i) })
+    }
+
+    /// Hoists the walk over the positions out of the loop, the way [`Iterator::fold`] does.
+    #[inline]
+    fn rfold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let (array, index_mask) = (self.array, self.index_mask);
+
+        self.range.rfold(init, |acc, i| {
+            // SAFETY: the position comes from the range the iterator was built for.
+            f(acc, unsafe { Self::get(array, index_mask, i) })
+        })
     }
 }
 
@@ -222,6 +316,14 @@ mod tests {
 
         assert_eq!(array.values_iter().count(), 1_000_000_000);
         assert_eq!(array.values_iter().nth(999_999_999), Some(element(&[1, 2])));
+        assert_eq!(
+            array.values_iter().nth_back(999_999_999),
+            Some(element(&[1, 2]))
+        );
         assert_eq!(array.iter().last(), Some(Some(element(&[1, 2]))));
+        assert_eq!(
+            array.iter().nth_back(999_999_999),
+            Some(Some(element(&[1, 2])))
+        );
     }
 }

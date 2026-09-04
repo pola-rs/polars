@@ -245,17 +245,31 @@ impl Bitmap {
     ///
     /// This function counts the number of unset bits if it is not already
     /// computed. Repeated calls use the cached bitcount.
+    ///
+    /// Reading the cache is inlined and counting is not, so that a caller whose count is already
+    /// known is left with a load rather than a call: a call here is an opaque write to the
+    /// compiler, and sinks behind it whatever the caller had established about the array the mask
+    /// belongs to — the representation of its buffers included.
+    #[inline]
     pub fn unset_bits(&self) -> usize {
-        self.lazy_unset_bits().unwrap_or_else(|| {
-            let zeros = count_zeros(&self.storage, self.offset, self.length);
-            self.unset_bit_count_cache.store(zeros as u64);
-            zeros
-        })
+        self.lazy_unset_bits()
+            .unwrap_or_else(|| self.count_unset_bits())
+    }
+
+    /// Counts the unset bits of this [`Bitmap`] and caches the count, for [`Self::unset_bits`] to
+    /// call the first time it is asked.
+    #[cold]
+    #[inline(never)]
+    fn count_unset_bits(&self) -> usize {
+        let zeros = count_zeros(&self.storage, self.offset, self.length);
+        self.unset_bit_count_cache.store(zeros as u64);
+        zeros
     }
 
     /// Returns the number of unset bits on this [`Bitmap`] if it is known.
     ///
     /// Guaranteed to be `<= self.len()`.
+    #[inline]
     pub fn lazy_unset_bits(&self) -> Option<usize> {
         let cache = self.unset_bit_count_cache.load();
         has_cached_unset_bit_count(cache).then_some(cache as usize)

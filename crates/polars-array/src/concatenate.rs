@@ -104,8 +104,26 @@ impl<'a, T: ?Sized, S> Iterator for MappedBroadcastIter<'a, '_, T, S> {
     }
 
     #[inline]
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.inner.nth(n).map(self.map)
+    }
+
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.inner.size_hint()
+    }
+
+    /// The elements are as many as the inner iterator has left, however they are walked.
+    #[inline]
+    fn count(self) -> usize {
+        self.inner.count()
+    }
+
+    /// Reads the last element rather than walking to it, which the inner iterator can do for
+    /// either of its representations.
+    #[inline]
+    fn last(self) -> Option<Self::Item> {
+        self.inner.last().map(self.map)
     }
 
     /// Hoists the branch on how the elements are walked out of the loop, the way the inner iterator

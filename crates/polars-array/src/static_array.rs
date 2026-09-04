@@ -859,9 +859,9 @@ impl Iterator for PlUnitIter<'_> {
         match self.validity.into_mask() {
             ValidityFold::Valid => (0..remaining).fold(init, |acc, _| f(acc, Some(()))),
             ValidityFold::Null => (0..remaining).fold(init, |acc, _| f(acc, None)),
-            ValidityFold::Bits(mask) => {
-                mask.fold(init, |acc, is_valid| f(acc, is_valid.then_some(())))
-            },
+            ValidityFold::Bits(mask) => mask
+                .iter()
+                .fold(init, |acc, is_valid| f(acc, is_valid.then_some(()))),
         }
     }
 }
@@ -871,6 +871,35 @@ impl DoubleEndedIterator for PlUnitIter<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.remaining = self.remaining.checked_sub(1)?;
         Some(self.validity.next_back().then_some(()))
+    }
+
+    #[inline]
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        // The mask is advanced alongside the elements, whether or not there is one left.
+        let is_valid = self.validity.nth_back(n);
+        let Some(remaining) = self.remaining.checked_sub(n + 1) else {
+            self.remaining = 0;
+            return None;
+        };
+        self.remaining = remaining;
+        Some(is_valid.then_some(()))
+    }
+
+    /// Hoists the validity mask out of the loop, the way [`Iterator::fold`] does.
+    #[inline]
+    fn rfold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let remaining = self.remaining;
+
+        match self.validity.into_mask() {
+            ValidityFold::Valid => (0..remaining).fold(init, |acc, _| f(acc, Some(()))),
+            ValidityFold::Null => (0..remaining).fold(init, |acc, _| f(acc, None)),
+            ValidityFold::Bits(mask) => mask
+                .iter()
+                .rfold(init, |acc, is_valid| f(acc, is_valid.then_some(()))),
+        }
     }
 }
 
@@ -901,6 +930,31 @@ mod tests {
                 PlStructArray::new(vec![field], 3, Some(Bitmap::from_iter([true, false, true])));
 
             assert_iterates(array.iter(), &[Some(()), None, Some(())]);
+        }
+
+        /// An array whose elements are all valid, or all null, folds over the count alone.
+        #[test]
+        fn a_struct_under_a_uniform_mask() {
+            let field = Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3]));
+            let array = PlStructArray::new(vec![field.clone()], 3, None);
+            assert_iterates(array.iter(), &[Some(()); 3]);
+
+            let all_null =
+                PlStructArray::new(vec![field], 3, Some(Bitmap::new_with_value(false, 3)));
+            assert_iterates(all_null.iter(), &[None; 3]);
+        }
+
+        /// Walking in from either end of an array of a billion elements, which the default
+        /// `nth_back` would step to one element at a time.
+        #[test]
+        fn a_scalar_struct_is_not_materialized() {
+            let field = Box::new(PlPrimitiveArray::new_scalar(1i32, 1_000_000_000));
+            let array = PlStructArray::new(vec![field], 1_000_000_000, None);
+
+            assert_eq!(array.iter().count(), 1_000_000_000);
+            assert_eq!(array.iter().nth(999_999_999), Some(Some(())));
+            assert_eq!(array.iter().nth_back(999_999_999), Some(Some(())));
+            assert_eq!(array.iter().last(), Some(Some(())));
         }
     }
 

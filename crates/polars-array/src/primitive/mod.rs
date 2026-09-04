@@ -400,6 +400,13 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// The number of null elements.
+    ///
+    /// Inlined so that an array with no mask to count is answered without a call at all: one left
+    /// standing is an opaque write as far as the compiler is concerned, and sinks behind it every
+    /// fact the caller had established about the array — the representation of its buffers
+    /// included — which is exactly what a caller asking [`Self::has_nulls`] ahead of a walk is
+    /// trying to hand the walk.
+    #[inline]
     pub fn null_count(&self) -> usize {
         self.validity().map_or(0, |validity| validity.unset_bits())
     }

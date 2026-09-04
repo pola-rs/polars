@@ -348,8 +348,12 @@ impl PlBinaryArray {
     #[inline]
     pub fn offsets_are_flat(&self) -> bool {
         // The offsets are never empty, and hold the start of every element plus the end of the
-        // last.
-        self.offsets.len() - 1 == self.length
+        // last. This is spelled as the predicate the iterators resolve their own representation
+        // with, rather than as the subtraction it comes down to for an array that upholds its
+        // invariants: a caller that asserts this ahead of a walk is then asserting the very
+        // condition the walk branches on, which folds the branch — and the tag it reads, and the
+        // step it computes — out of the loop.
+        is_flat_offsets_len(self.offsets.len(), self.length)
     }
 
     /// Whether the validity mask holds a single bit shared by every element.
@@ -515,6 +519,13 @@ impl PlBinaryArray {
     }
 
     /// The number of null elements.
+    ///
+    /// Inlined so that an array with no mask to count is answered without a call at all: one left
+    /// standing is an opaque write as far as the compiler is concerned, and sinks behind it every
+    /// fact the caller had established about the array — the representation of its buffers
+    /// included — which is exactly what a caller asking [`Self::has_nulls`] ahead of a walk is
+    /// trying to hand the walk.
+    #[inline]
     pub fn null_count(&self) -> usize {
         self.validity().map_or(0, |validity| validity.unset_bits())
     }

@@ -1,9 +1,9 @@
 //! What a [`PlBooleanArray`] gains from being known to be [`Flat`].
 
 use arrow::bitmap::Bitmap;
-use arrow::bitmap::utils::{BitmapIter, ZipValidity};
+use arrow::bitmap::utils::BitmapIter;
 
-use super::PlBooleanArray;
+use super::{PlBooleanArray, PlBooleanIter};
 use crate::flat::Flat;
 
 /// The methods a [`PlBooleanArray`] gains from having one bit per element in every backing bitmap.
@@ -107,9 +107,14 @@ impl Flat<PlBooleanArray> {
     }
 
     /// Returns an iterator over the optional elements.
+    ///
+    /// Knowing the array is flat buys nothing here, so this is the array's own iterator. Arrow's
+    /// `ZipValidity`, which this used to return, resolves its representation once per step rather
+    /// than once per walk and leaves [`Iterator::fold`] to the default; either of those stops the
+    /// loop from vectorizing.
     #[inline]
-    pub fn iter(&self) -> ZipValidity<bool, BitmapIter<'_>, BitmapIter<'_>> {
-        ZipValidity::new_with_validity(self.values_iter(), self.validity())
+    pub fn iter(&self) -> PlBooleanIter<'_> {
+        self.0.iter()
     }
 
     /// Consumes this array into its backing bitmaps, which both hold one bit per element.
@@ -127,7 +132,7 @@ impl Flat<PlBooleanArray> {
 
 impl<'a> IntoIterator for &'a Flat<PlBooleanArray> {
     type Item = Option<bool>;
-    type IntoIter = ZipValidity<bool, BitmapIter<'a>, BitmapIter<'a>>;
+    type IntoIter = PlBooleanIter<'a>;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {

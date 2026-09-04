@@ -185,19 +185,14 @@ impl<'a> Iterator for PlBinaryViewIter<'a> {
 
     /// Hoists the validity mask out of the loop, and the representation of the views with it.
     #[inline]
-    fn fold<B, F>(self, init: B, mut f: F) -> B
+    fn fold<B, F>(self, init: B, f: F) -> B
     where
         F: FnMut(B, Self::Item) -> B,
     {
-        match self.split() {
-            (values, ValidityFold::Valid) => values.fold(init, |acc, value| f(acc, Some(value))),
-            (values, ValidityFold::Null) => values.fold(init, |acc, _| f(acc, None)),
-            (values, ValidityFold::Bits(mask)) => {
-                values.zip(mask).fold(init, |acc, (value, is_valid)| {
-                    f(acc, is_valid.then_some(value))
-                })
-            },
-        }
+        let (values, mask) = self.split();
+        // SAFETY: the mask has one bit per element, and the values and the mask are walked in
+        // lockstep, so it has a bit for every value left to yield.
+        unsafe { mask.fold_values(values, init, f) }
     }
 }
 
@@ -206,6 +201,25 @@ impl DoubleEndedIterator for PlBinaryViewIter<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         let value = self.values.next_back()?;
         Some(self.validity.next_back().then_some(value))
+    }
+
+    #[inline]
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        // The mask is advanced alongside the values, whether or not there is a value left.
+        let is_valid = self.validity.nth_back(n);
+        let value = self.values.nth_back(n)?;
+        Some(is_valid.then_some(value))
+    }
+
+    /// Hoists the validity mask out of the loop, the way [`Iterator::fold`] does.
+    #[inline]
+    fn rfold<B, F>(self, init: B, f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let (values, mask) = self.split();
+        // SAFETY: the mask has a bit for every value left to yield, per `Iterator::fold`.
+        unsafe { mask.rfold_values(values, init, f) }
     }
 }
 
@@ -220,6 +234,8 @@ unsafe impl TrustedLen for PlBinaryViewIter<'_> {}
 
 #[cfg(test)]
 mod tests {
+
+    use arrow::bitmap::Bitmap;
 
     use crate::PlBinaryViewArray;
     use crate::iterator_tests::assert_iterates;
@@ -261,6 +277,26 @@ mod tests {
 
         assert_eq!(array.values_iter().count(), 1_000_000_000);
         assert_eq!(array.values_iter().nth(999_999_999), Some(b"xy".as_slice()));
+        assert_eq!(
+            array.values_iter().nth_back(999_999_999),
+            Some(b"xy".as_slice())
+        );
         assert_eq!(array.iter().last(), Some(Some(b"xy".as_slice())));
+        assert_eq!(
+            array.iter().nth_back(999_999_999),
+            Some(Some(b"xy".as_slice()))
+        );
+    }
+
+    /// A mask of mixed bits, which is read by position alongside the views.
+    #[test]
+    fn mixed_validity() {
+        let array = flat_array().with_validity(Some(Bitmap::from_iter([true, false, true])));
+
+        assert_iterates(array.values_iter(), &elements());
+        assert_iterates(
+            array.iter(),
+            &[Some(elements()[0]), None, Some(elements()[2])],
+        );
     }
 }
