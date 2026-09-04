@@ -1,4 +1,3 @@
-use polars_array::arrow::bridge::with_arrow_chunk;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_compute::ewm::EwmStateUpdate;
 use polars_core::prelude::IntoColumn;
@@ -60,12 +59,11 @@ impl ComputeNode for EwmNode {
                 unsafe {
                     let c = df.columns_mut_retain_schema().get_mut(0).unwrap();
 
-                    // TODO(polars-array-scalar): the kernel is stateful over the elements it sees,
-                    // so a scalar chunk is written out on the way to Arrow.
+                    // The kernel is a recurrence over every element it sees, so the morsel is
+                    // read as the one chunk to fold the state over in order. A scalar chunk stays
+                    // in `O(1)` memory throughout: the kernel iterates it where it lies.
                     let rechunked = c.as_materialized_series().rechunk();
-                    let updated = with_arrow_chunk(&*rechunked.chunks()[0], |arr| {
-                        self.state.ewm_state_update(arr)
-                    });
+                    let updated = self.state.ewm_state_update(&*rechunked.chunks()[0]);
 
                     *c = Series::from_chunks_and_dtype_unchecked(
                         c.name().clone(),

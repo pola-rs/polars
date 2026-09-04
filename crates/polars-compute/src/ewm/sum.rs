@@ -1,9 +1,9 @@
-use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType;
+use polars_array::{PlArray, PlPrimitiveArray, StaticArray};
 
-use crate::ewm::EwmStateUpdate;
+use crate::ewm::{EwmStateUpdate, chunk_of};
 
-pub fn ewm_sum<I, T>(xs: I, alpha: T, min_periods: usize, ignore_nulls: bool) -> PrimitiveArray<T>
+pub fn ewm_sum<I, T>(xs: I, alpha: T, min_periods: usize, ignore_nulls: bool) -> PlPrimitiveArray<T>
 where
     I: IntoIterator<Item = Option<T>>,
     T: num_traits::Float + NativeType + std::ops::MulAssign,
@@ -34,9 +34,9 @@ where
         }
     }
 
-    pub fn update(&mut self, values: &PrimitiveArray<T>) -> PrimitiveArray<T> {
-        self.update_iter(values.iter().map(|x| x.copied()))
-            .collect()
+    /// Advances the state over the elements of `values`, one output element per input element.
+    pub fn update(&mut self, values: &PlPrimitiveArray<T>) -> PlPrimitiveArray<T> {
+        self.update_iter(values.iter()).collect()
     }
 
     pub fn update_iter<I>(&mut self, values: I) -> impl Iterator<Item = Option<T>>
@@ -65,10 +65,8 @@ impl<T> EwmStateUpdate for EwmSumState<T>
 where
     T: NativeType + num_traits::Float + std::ops::MulAssign,
 {
-    fn ewm_state_update(&mut self, values: &dyn Array) -> Box<dyn Array> {
-        let values: &PrimitiveArray<T> = values.as_any().downcast_ref().unwrap();
-        let out: PrimitiveArray<T> = self.update(values);
-        out.boxed()
+    fn ewm_state_update(&mut self, values: &dyn PlArray) -> Box<dyn PlArray> {
+        self.update(chunk_of::<T>(values)).into_boxed()
     }
 }
 
@@ -88,12 +86,12 @@ mod test {
             for min_periods in [0, 1] {
                 let result = ewm_sum(xs.clone(), ALPHA, min_periods, ignore_nulls);
                 let expected =
-                    PrimitiveArray::from(vec![Some(1.0f64), Some(2.5f64), Some(4.25f64)]);
+                    PlPrimitiveArray::from_iter(vec![Some(1.0f64), Some(2.5f64), Some(4.25f64)]);
                 assert_allclose!(result, expected, EPS);
             }
 
             let result = ewm_sum(xs.clone(), ALPHA, 2, ignore_nulls);
-            let expected = PrimitiveArray::from(vec![None, Some(2.5f64), Some(4.25f64)]);
+            let expected = PlPrimitiveArray::from_iter(vec![None, Some(2.5f64), Some(4.25f64)]);
             assert_allclose!(result, expected, EPS);
         }
     }
@@ -113,7 +111,7 @@ mod test {
 
         assert_allclose!(
             ewm_sum(xs1.clone(), ALPHA, 0, true),
-            PrimitiveArray::from(vec![
+            PlPrimitiveArray::from_iter(vec![
                 None,
                 None,
                 Some(5.0),
@@ -128,7 +126,7 @@ mod test {
 
         assert_allclose!(
             ewm_sum(xs1.clone(), ALPHA, 0, false),
-            PrimitiveArray::from(vec![
+            PlPrimitiveArray::from_iter(vec![
                 None,
                 None,
                 Some(5.0),
