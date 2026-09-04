@@ -98,27 +98,27 @@ fn flatten_structs(
     output_height: usize,
     out_len: usize,
 ) -> PlStructArray {
-    let structs: Vec<&PlStructArray> = arrays
-        .iter()
-        .map(|array| downcast::<PlStructArray>(&**array))
-        .collect();
-
     // A field array holds one element per element of the struct it belongs to, so it is as wide
     // and as long as that struct: which of the two the flatten reads it as is the same either way.
-    let mut field = Vec::with_capacity(structs.len());
-    let fields: Vec<Box<dyn PlArray>> = (0..structs[0].num_fields())
+    let mut field = Vec::with_capacity(arrays.len());
+    let fields: Vec<Box<dyn PlArray>> = (0..downcast::<PlStructArray>(&**(&arrays[0]))
+        .num_fields())
         .map(|i| {
             field.clear();
-            field.extend(structs.iter().map(|array| array.field(i).to_boxed()));
+            field.extend(
+                arrays
+                    .iter()
+                    .map(|array| downcast::<PlStructArray>(&**array).field(i).to_boxed()),
+            );
             horizontal_flatten(&field, widths, output_height)
         })
         .collect();
 
-    let validity = structs
+    let validity = arrays
         .iter()
         .any(|array| array.validity().is_some())
         .then(|| {
-            let masks: Vec<Box<dyn PlArray>> = structs
+            let masks: Vec<Box<dyn PlArray>> = arrays
                 .iter()
                 .map(|array| {
                     let mask = match array.validity() {
