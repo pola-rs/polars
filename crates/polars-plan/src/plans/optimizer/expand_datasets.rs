@@ -261,6 +261,7 @@ fn expand_python_dataset(
                 live_filter_columns: cached_live_filter_columns,
                 pyarrow_predicate: cached_pyarrow_predicate,
                 expanded_dsl: _,
+                row_count: _,
                 python_scan: _,
             } = resolved;
 
@@ -274,7 +275,7 @@ fn expand_python_dataset(
         None => None,
     };
 
-    if let Some((expanded_dsl, version)) = dataset_object.to_dataset_scan(
+    if let Some(resolved) = dataset_object.to_dataset_scan(
         existing_resolved_version_key,
         limit,
         projection.as_deref(),
@@ -283,12 +284,13 @@ fn expand_python_dataset(
         py_scan_resolve_threadpool,
     )? {
         *guard = Some(ExpandedDataset {
-            version,
+            version: resolved.version,
             limit,
             projection,
             live_filter_columns,
             pyarrow_predicate,
-            expanded_dsl,
+            expanded_dsl: resolved.plan,
+            row_count: resolved.row_count,
             python_scan: None,
         })
     }
@@ -300,8 +302,11 @@ fn expand_python_dataset(
         live_filter_columns: _,
         pyarrow_predicate: _,
         expanded_dsl,
+        row_count,
         python_scan,
     } = guard.as_mut().unwrap();
+
+    unified_scan_args.row_count = *row_count;
 
     match expanded_dsl {
         DslPlan::Scan {
@@ -564,6 +569,7 @@ pub struct ExpandedDataset {
     live_filter_columns: Option<Arc<[PlSmallStr]>>,
     pyarrow_predicate: Option<String>,
     expanded_dsl: DslPlan,
+    row_count: Option<(u64, u64)>,
 
     /// Fallback python scan
     #[cfg(feature = "python")]
@@ -596,6 +602,7 @@ impl Debug for ExpandedDataset {
             live_filter_columns,
             pyarrow_predicate,
             expanded_dsl,
+            row_count,
 
             #[cfg(feature = "python")]
             python_scan,
@@ -615,6 +622,7 @@ impl Debug for ExpandedDataset {
             } else {
                 "None"
             },
+            row_count,
             #[cfg(feature = "python")]
             python_scan: python_scan.as_ref().map(
                 |ExpandedPythonScan {
@@ -643,6 +651,7 @@ impl Debug for ExpandedDataset {
                 pub live_filter_columns: &'a Option<Arc<[PlSmallStr]>>,
                 pub pyarrow_predicate: &'static str,
                 pub expanded_dsl: &'a str,
+                pub row_count: &'a Option<(u64, u64)>,
 
                 #[cfg(feature = "python")]
                 pub python_scan: Option<PlSmallStr>,

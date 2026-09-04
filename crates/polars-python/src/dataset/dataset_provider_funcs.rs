@@ -1,17 +1,18 @@
 //! Note: Currently only used for Iceberg / Delta.
 use std::sync::{Arc, LazyLock};
 
-use polars::prelude::{DslPlan, PlSmallStr, Schema, SchemaRef};
+use polars::prelude::{PlSmallStr, Schema, SchemaRef};
 use polars_core::config;
 use polars_error::PolarsResult;
+use polars_plan::dsl::ResolvedPythonDataset;
 use polars_plan::plans::PyScanResolveThreadPool;
 use polars_utils::python_function::PythonObject;
 use pyo3::call::PyCallArgs;
 use pyo3::conversion::FromPyObject;
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyAnyMethods, PyDict, PyList, PyListMethods};
-use pyo3::{Py, PyAny, PyResult, Python, intern};
+use pyo3::types::{PyAnyMethods, PyDict, PyList, PyListMethods, PyTuple};
+use pyo3::{Py, PyAny, PyErr, PyResult, Python, intern};
 
 use crate::interned;
 use crate::interop::arrow::to_rust::field_to_rust;
@@ -94,7 +95,7 @@ pub fn to_dataset_scan(
     filter_columns: Option<&[PlSmallStr]>,
     pyarrow_predicate: Option<&str>,
     py_scan_resolve_threadpool: &PyScanResolveThreadPool,
-) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
+) -> PolarsResult<Option<ResolvedPythonDataset>> {
     Python::attach(|py| {
         let kwargs = PyDict::new(py);
 
@@ -131,16 +132,36 @@ pub fn to_dataset_scan(
             kwargs.set_item(intern!(py, "pyarrow_predicate"), pyarrow_predicate)?;
         }
 
-        let Some((scan, version)): Option<(Py<PyAny>, Wrap<PlSmallStr>)> = py_spawn_call(
+        let result = py_spawn_call(
             py,
             &dataset_object.getattr(py, intern!(py, "to_dataset_scan"))?,
             (),
             Some(&kwargs),
             py_scan_resolve_threadpool,
-        )?
-        .extract(py)?
-        else {
+        )?;
+
+        if result.is_none(py) {
             return Ok(None);
+        }
+
+        let result = result
+            .bind(py)
+            .cast::<PyTuple>()
+            .map_err(<PyErr as From<pyo3::CastError>>::from)?;
+        let result_len = result.len()?;
+        if !matches!(result_len, 2 | 3) {
+            return Err(PyValueError::new_err(
+                "dataset scan must return (LazyFrame, version) or (LazyFrame, version, row_count)",
+            )
+            .into());
+        }
+
+        let scan = result.get_item(0)?.unbind();
+        let Wrap(version) = result.get_item(1)?.extract::<Wrap<PlSmallStr>>()?;
+        let row_count = if result_len == 3 {
+            result.get_item(2)?.extract::<Option<(u64, u64)>>()?
+        } else {
+            None
         };
 
         let Ok(lf) = get_lf(scan.bind(py)) else {
@@ -149,7 +170,11 @@ pub fn to_dataset_scan(
             );
         };
 
-        Ok(Some((lf.logical_plan, version.0)))
+        Ok(Some(ResolvedPythonDataset {
+            plan: lf.logical_plan,
+            version,
+            row_count,
+        }))
     })
 }
 

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
+from itertools import islice
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, Final, Literal, TypeAlias
 
@@ -20,8 +21,11 @@ from polars.io.iceberg._utils import (
 from polars.io.scan_options.cast_options import ScanCastOptions
 
 if TYPE_CHECKING:
+    from collections.abc import Collection, Iterator
+
     import pyarrow as pa
     import pyiceberg.catalog
+    import pyiceberg.manifest
     import pyiceberg.schema
     import pyiceberg.table
     import pyiceberg.typedef
@@ -29,6 +33,9 @@ if TYPE_CHECKING:
     from polars._typing import StorageOptionsDict
     from polars.io.cloud._utils import NoPickleOption
     from polars.lazyframe.frame import LazyFrame
+
+
+_ICEBERG_FILE_TASK_BATCH_SIZE: Final = 128
 
 
 class IcebergTableSerializer(ABC):
@@ -230,7 +237,7 @@ class IcebergScanResolver:
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
         pyarrow_predicate: str | None = None,
-    ) -> tuple[LazyFrame, str] | None:
+    ) -> tuple[LazyFrame, str] | tuple[LazyFrame, str, tuple[int, int] | None] | None:
         """Construct a LazyFrame scan."""
         if (
             scan_data := self._to_dataset_scan_impl(
@@ -243,7 +250,12 @@ class IcebergScanResolver:
         ) is None:
             return None
 
-        return scan_data.to_lazyframe(), scan_data.snapshot_id_key
+        out = scan_data.to_lazyframe(), scan_data.snapshot_id_key
+
+        if isinstance(scan_data, _StreamingNativeIcebergScanData):
+            return out[0], out[1], scan_data.row_count
+
+        return out
 
     def _to_dataset_scan_impl(
         self,
@@ -253,7 +265,12 @@ class IcebergScanResolver:
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
         pyarrow_predicate: str | None = None,
-    ) -> _NativeIcebergScanData | _PyIcebergScanData | None:
+    ) -> (
+        _NativeIcebergScanData
+        | _StreamingNativeIcebergScanData
+        | _PyIcebergScanData
+        | None
+    ):
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
         import polars._utils.logging
@@ -380,31 +397,18 @@ class IcebergScanResolver:
             is not None
         }
 
-        sources = []
-        missing_field_defaults = IdentityTransformedPartitionValuesBuilder(
-            tbl,
-            projected_iceberg_schema,
-        )
-        statistics_loader: IcebergStatisticsLoader | None = (
-            IcebergStatisticsLoader(tbl, iceberg_schema.select(*filter_columns))
-            if self.use_metadata_statistics and filter_columns is not None
+        column_mapping = schema_to_pyarrow(iceberg_schema)
+        storage_options = (
+            _convert_iceberg_to_object_store_storage_options(
+                self.table.iceberg_storage_properties
+            )
+            if self.table.iceberg_storage_properties is not None
             else None
         )
-        position_delete_files: dict[int, list[str]] = {}
-        deletion_vectors: dict[int, str] = {}
-        total_physical_rows: int = 0
-        total_deleted_rows: int = 0
-        total_position_delete_files = 0
-        total_deletion_vectors = 0
+
+        native_scan_data_builder: _NativeIcebergScanDataBuilder | None = None
 
         if reader_override != "pyiceberg" and not fallback_reason:
-            from pyiceberg.manifest import DataFileContent, FileFormat
-
-            if verbose:
-                eprint("IcebergScanResolver: to_dataset_scan(): begin path expansion")
-
-            start_time = perf_counter()
-
             scan = tbl.scan(
                 snapshot_id=snapshot_id,
                 limit=limit,
@@ -414,70 +418,55 @@ class IcebergScanResolver:
             if iceberg_table_filter is not None:
                 scan = scan.filter(iceberg_table_filter)
 
-            for i, file_info in enumerate(scan.plan_files()):
-                if file_info.file.file_format != FileFormat.PARQUET:
-                    fallback_reason = (
-                        f"non-parquet format: {file_info.file.file_format}"
-                    )
-                    break
-
-                if file_info.delete_files:
-                    position_delete_files[i] = []
-                    position_delete_num_rows = 0
-                    deletion_vector_num_rows = 0
-
-                    for deletion_file in file_info.delete_files:
-                        if deletion_file.content != DataFileContent.POSITION_DELETES:
-                            fallback_reason = (
-                                "unsupported deletion file type: "
-                                f"{deletion_file.content}"
-                            )
-                            break
-
-                        match deletion_file.file_format:
-                            case FileFormat.PARQUET:
-                                position_delete_files[i].append(deletion_file.file_path)
-                                position_delete_num_rows += deletion_file.record_count
-
-                            case FileFormat.PUFFIN:
-                                if i in deletion_vectors:
-                                    fallback_reason = "multiple deletion vectors associated with one data file"
-                                    break
-
-                                deletion_vectors[i] = deletion_file.file_path
-                                deletion_vector_num_rows += deletion_file.record_count
-
-                            case x:
-                                fallback_reason = (
-                                    f"unsupported deletion file format: {x}"
-                                )
-                                break
-
-                    if i in deletion_vectors:
-                        total_deleted_rows += deletion_vector_num_rows
-                        total_deletion_vectors += 1
-                        del position_delete_files[i]
-                    else:
-                        total_deleted_rows += position_delete_num_rows
-                        total_position_delete_files += len(position_delete_files[i])
-
-                if fallback_reason:
-                    break
-
-                missing_field_defaults.push_partition_values(
-                    current_index=i,
-                    partition_spec_id=file_info.file.spec_id,
-                    partition_values=file_info.file.partition,
+            if (
+                reader_override == "native"
+                and filter_columns is None
+                and projection != []
+                and _can_stream_iceberg_file_tasks(tbl, scan)
+            ):
+                return _StreamingNativeIcebergScanData(
+                    table=self.table,
+                    snapshot_id=int(snapshot_id_key),
+                    limit=limit,
+                    selected_fields=selected_fields,
+                    projected_iceberg_schema=projected_iceberg_schema,
+                    iceberg_schema=iceberg_schema,
+                    column_mapping=column_mapping,
+                    initial_defaults=initial_defaults,
+                    storage_options=storage_options,
+                    snapshot_id_key=snapshot_id_key,
+                    use_metadata_statistics=self.use_metadata_statistics,
+                    fast_deletion_count=self.fast_deletion_count,
+                    task_batch_size=_ICEBERG_FILE_TASK_BATCH_SIZE,
+                    row_count=_streaming_iceberg_row_count(
+                        scan.snapshot(),
+                        use_metadata_statistics=self.use_metadata_statistics,
+                    ),
                 )
 
-                if statistics_loader is not None:
-                    statistics_loader.push_file_statistics(file_info.file)
+            if verbose:
+                eprint("IcebergScanResolver: to_dataset_scan(): begin path expansion")
 
-                total_physical_rows += file_info.file.record_count
+            start_time = perf_counter()
+            native_scan_data_builder = _NativeIcebergScanDataBuilder(
+                tbl=tbl,
+                projected_iceberg_schema=projected_iceberg_schema,
+                iceberg_schema=iceberg_schema,
+                column_mapping=column_mapping,
+                initial_defaults=initial_defaults,
+                filter_columns=filter_columns,
+                use_metadata_statistics=self.use_metadata_statistics,
+                fast_deletion_count=self.fast_deletion_count,
+                storage_options=storage_options,
+                snapshot_id_key=snapshot_id_key,
+                scan_schema=None,
+            )
 
-                sources.append(
-                    _normalize_windows_iceberg_file_uri(file_info.file.file_path)
-                )
+            for file_info in scan.plan_files():
+                if fallback_reason := native_scan_data_builder.push(
+                    file_info.file, file_info.delete_files
+                ):
+                    break
 
             if verbose:
                 elapsed = perf_counter() - start_time
@@ -487,57 +476,22 @@ class IcebergScanResolver:
                 )
 
         if not fallback_reason:
+            assert native_scan_data_builder is not None
+
             if verbose:
                 eprint(
                     "IcebergScanResolver: to_dataset_scan(): "
                     f"native scan_parquet(): "
-                    f"num_sources: {len(sources)}, "
+                    f"num_sources: {len(native_scan_data_builder.sources)}, "
                     f"snapshot ID: {snapshot_id}, "
                     f"schema ID: {schema_id}, "
-                    f"num_position_delete_files: {total_position_delete_files}, "
-                    f"num_deletion_vectors: {total_deletion_vectors}"
+                    "num_position_delete_files: "
+                    f"{native_scan_data_builder.total_position_delete_files}, "
+                    "num_deletion_vectors: "
+                    f"{native_scan_data_builder.total_deletion_vectors}"
                 )
 
-            # The arrow schema returned by `schema_to_pyarrow` will contain
-            # 'PARQUET:field_id'
-            column_mapping = schema_to_pyarrow(iceberg_schema)
-
-            identity_transformed_values = missing_field_defaults.finish()
-
-            min_max_statistics = (
-                statistics_loader.finish(len(sources), identity_transformed_values)
-                if statistics_loader is not None
-                else None
-            )
-
-            storage_options = (
-                _convert_iceberg_to_object_store_storage_options(
-                    self.table.iceberg_storage_properties
-                )
-                if self.table.iceberg_storage_properties is not None
-                else None
-            )
-
-            return _NativeIcebergScanData(
-                sources=sources,
-                projected_iceberg_schema=projected_iceberg_schema,
-                column_mapping=column_mapping,
-                default_values=(identity_transformed_values, initial_defaults),
-                position_delete_files=position_delete_files,
-                deletion_vectors=deletion_vectors,
-                min_max_statistics=min_max_statistics,
-                statistics_loader=statistics_loader,
-                storage_options=storage_options,
-                row_count=(
-                    (total_physical_rows, total_deleted_rows)
-                    if (
-                        self.use_metadata_statistics
-                        and (self.fast_deletion_count or total_deleted_rows == 0)
-                    )
-                    else None
-                ),
-                snapshot_id_key=snapshot_id_key,
-            )
+            return native_scan_data_builder.finish()
 
         elif reader_override == "native":
             msg = f"iceberg reader_override='native' failed: {fallback_reason}"
@@ -578,6 +532,133 @@ class _ResolvedScanDataBase(ABC):
 
 
 @dataclass(kw_only=True)
+class _NativeIcebergScanDataBuilder:
+    tbl: pyiceberg.table.Table
+    projected_iceberg_schema: pyiceberg.schema.Schema
+    iceberg_schema: pyiceberg.schema.Schema
+    column_mapping: pa.Schema
+    initial_defaults: dict[int, pl.Series]
+    filter_columns: list[str] | None
+    use_metadata_statistics: bool
+    fast_deletion_count: bool
+    storage_options: StorageOptionsDict | None
+    snapshot_id_key: str
+    scan_schema: dict[str, pl.DataType] | None
+    sources: list[str] = field(default_factory=list)
+    position_delete_files: dict[int, list[str]] = field(default_factory=dict)
+    deletion_vectors: dict[int, str] = field(default_factory=dict)
+    total_physical_rows: int = 0
+    total_deleted_rows: int = 0
+    total_position_delete_files: int = 0
+    total_deletion_vectors: int = 0
+    missing_field_defaults: IdentityTransformedPartitionValuesBuilder = field(
+        init=False
+    )
+    statistics_loader: IcebergStatisticsLoader | None = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.missing_field_defaults = IdentityTransformedPartitionValuesBuilder(
+            self.tbl,
+            self.projected_iceberg_schema,
+        )
+        self.statistics_loader = (
+            IcebergStatisticsLoader(
+                self.tbl, self.iceberg_schema.select(*self.filter_columns)
+            )
+            if self.use_metadata_statistics and self.filter_columns is not None
+            else None
+        )
+
+    def push(
+        self,
+        data_file: pyiceberg.manifest.DataFile,
+        delete_files: Collection[pyiceberg.manifest.DataFile],
+    ) -> str | None:
+        from pyiceberg.manifest import DataFileContent, FileFormat
+
+        if data_file.file_format != FileFormat.PARQUET:
+            return f"non-parquet format: {data_file.file_format}"
+
+        i = len(self.sources)
+
+        if delete_files:
+            self.position_delete_files[i] = []
+            position_delete_num_rows = 0
+            deletion_vector_num_rows = 0
+
+            for deletion_file in delete_files:
+                if deletion_file.content != DataFileContent.POSITION_DELETES:
+                    return f"unsupported deletion file type: {deletion_file.content}"
+
+                match deletion_file.file_format:
+                    case FileFormat.PARQUET:
+                        self.position_delete_files[i].append(deletion_file.file_path)
+                        position_delete_num_rows += deletion_file.record_count
+
+                    case FileFormat.PUFFIN:
+                        if i in self.deletion_vectors:
+                            return "multiple deletion vectors associated with one data file"
+
+                        self.deletion_vectors[i] = deletion_file.file_path
+                        deletion_vector_num_rows += deletion_file.record_count
+
+                    case x:
+                        return f"unsupported deletion file format: {x}"
+
+            if i in self.deletion_vectors:
+                self.total_deleted_rows += deletion_vector_num_rows
+                self.total_deletion_vectors += 1
+                del self.position_delete_files[i]
+            else:
+                self.total_deleted_rows += position_delete_num_rows
+                self.total_position_delete_files += len(self.position_delete_files[i])
+
+        self.missing_field_defaults.push_partition_values(
+            current_index=i,
+            partition_spec_id=data_file.spec_id,
+            partition_values=data_file.partition,
+        )
+
+        if self.statistics_loader is not None:
+            self.statistics_loader.push_file_statistics(data_file)
+
+        self.total_physical_rows += data_file.record_count
+        self.sources.append(_normalize_windows_iceberg_file_uri(data_file.file_path))
+
+        return None
+
+    def finish(self) -> _NativeIcebergScanData:
+        identity_transformed_values = self.missing_field_defaults.finish()
+        min_max_statistics = (
+            self.statistics_loader.finish(
+                len(self.sources), identity_transformed_values
+            )
+            if self.statistics_loader is not None
+            else None
+        )
+
+        return _NativeIcebergScanData(
+            sources=self.sources,
+            projected_iceberg_schema=self.projected_iceberg_schema,
+            column_mapping=self.column_mapping,
+            default_values=(identity_transformed_values, self.initial_defaults),
+            position_delete_files=self.position_delete_files,
+            deletion_vectors=self.deletion_vectors,
+            min_max_statistics=min_max_statistics,
+            statistics_loader=self.statistics_loader,
+            storage_options=self.storage_options,
+            row_count=(
+                (self.total_physical_rows, self.total_deleted_rows)
+                if self.use_metadata_statistics
+                and (self.fast_deletion_count or self.total_deleted_rows == 0)
+                else None
+            ),
+            snapshot_id_key=self.snapshot_id_key,
+            scan_schema=self.scan_schema,
+        )
+
+
+@dataclass(kw_only=True)
 class _NativeIcebergScanData(_ResolvedScanDataBase):
     """Resolved parameters for a native Iceberg scan."""
 
@@ -597,12 +678,14 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     # (physical, deleted)
     row_count: tuple[int, int] | None
     snapshot_id_key: str
+    scan_schema: dict[str, pl.DataType] | None
 
     def to_lazyframe(self) -> pl.LazyFrame:
         from polars.io.parquet.functions import scan_parquet
 
         return scan_parquet(
             self.sources,
+            schema=self.scan_schema,
             cast_options=ScanCastOptions._default_iceberg(),
             missing_columns="insert",
             extra_columns="ignore",
@@ -619,6 +702,51 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
 
 
 @dataclass(kw_only=True)
+class _StreamingNativeIcebergScanData(_ResolvedScanDataBase):
+    table: IcebergTableWrap
+    snapshot_id: int
+    limit: int | None
+    selected_fields: tuple[str, ...]
+    projected_iceberg_schema: pyiceberg.schema.Schema
+    iceberg_schema: pyiceberg.schema.Schema
+    column_mapping: pa.Schema
+    initial_defaults: dict[int, pl.Series]
+    storage_options: StorageOptionsDict | None
+    snapshot_id_key: str
+    use_metadata_statistics: bool
+    fast_deletion_count: bool
+    task_batch_size: int
+    row_count: tuple[int, int] | None
+
+    def to_lazyframe(self) -> pl.LazyFrame:
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        func = partial(
+            _scan_native_iceberg_file_tasks,
+            self.table,
+            snapshot_id=self.snapshot_id,
+            limit=self.limit,
+            selected_fields=self.selected_fields,
+            projected_iceberg_schema=self.projected_iceberg_schema,
+            iceberg_schema=self.iceberg_schema,
+            column_mapping=self.column_mapping,
+            initial_defaults=self.initial_defaults,
+            storage_options=self.storage_options,
+            snapshot_id_key=self.snapshot_id_key,
+            use_metadata_statistics=self.use_metadata_statistics,
+            fast_deletion_count=self.fast_deletion_count,
+            task_batch_size=self.task_batch_size,
+        )
+
+        return pl.LazyFrame._scan_python_function(
+            schema_to_pyarrow(self.projected_iceberg_schema),
+            func,
+            pyarrow=True,
+            is_pure=True,
+        )
+
+
+@dataclass(kw_only=True)
 class _PyIcebergScanData(_ResolvedScanDataBase):
     """Resolved parameters for reading via PyIceberg."""
 
@@ -629,6 +757,231 @@ class _PyIcebergScanData(_ResolvedScanDataBase):
 
     def to_lazyframe(self) -> pl.LazyFrame:
         return self.lf
+
+
+def _can_stream_iceberg_file_tasks(tbl: pyiceberg.table.Table, scan: Any) -> bool:
+    server_side_planning = getattr(scan, "_should_use_server_side_planning", None)
+    if server_side_planning is not None and server_side_planning():
+        return False
+
+    snapshot = scan.snapshot()
+    if snapshot is None or snapshot.summary is None:
+        return False
+
+    manifests = snapshot.manifests(tbl.io)
+    planner: Any = getattr(scan, "_manifest_planner", scan)
+
+    return (
+        all(
+            tbl.specs()[manifest.partition_spec_id].is_unpartitioned()
+            for manifest in manifests
+        )
+        and str(snapshot.summary.get("total-delete-files")) == "0"
+        and all(
+            callable(getattr(planner, name, None))
+            for name in (
+                "_build_manifest_evaluator",
+                "_build_partition_evaluator",
+                "_build_metrics_evaluator",
+                "_check_sequence_number",
+            )
+        )
+    )
+
+
+def _streaming_iceberg_row_count(
+    snapshot: Any, *, use_metadata_statistics: bool
+) -> tuple[int, int] | None:
+    if (
+        not use_metadata_statistics
+        or snapshot is None
+        or snapshot.summary is None
+        or (total_records := snapshot.summary.get("total-records")) is None
+    ):
+        return None
+
+    return int(total_records), 0
+
+
+def _iter_iceberg_data_files(scan: Any) -> Iterator[pyiceberg.manifest.DataFile]:
+    from pyiceberg.avro.file import AvroFile
+    from pyiceberg.manifest import (
+        DEFAULT_READ_VERSION,
+        INITIAL_SEQUENCE_NUMBER,
+        MANIFEST_ENTRY_SCHEMAS,
+        DataFile,
+        DataFileContent,
+        FileFormat,
+        ManifestContent,
+        ManifestEntry,
+        ManifestEntryStatus,
+        _inherit_from_manifest,
+    )
+
+    snapshot = scan.snapshot()
+    if snapshot is None:
+        return
+
+    planner: Any = getattr(scan, "_manifest_planner", scan)
+    manifest_evaluators: dict[int, Any] = {}
+    manifests: list[Any] = []
+
+    for manifest in snapshot.manifests(scan.io):
+        spec_id = manifest.partition_spec_id
+        manifest_evaluator = manifest_evaluators.get(spec_id)
+        if manifest_evaluator is None:
+            manifest_evaluator = planner._build_manifest_evaluator(spec_id)
+            manifest_evaluators[spec_id] = manifest_evaluator
+
+        if manifest_evaluator(manifest):
+            manifests.append(manifest)
+
+    min_sequence_number = min(
+        (
+            manifest.min_sequence_number or INITIAL_SEQUENCE_NUMBER
+            for manifest in manifests
+            if manifest.content == ManifestContent.DATA
+        ),
+        default=INITIAL_SEQUENCE_NUMBER,
+    )
+    partition_evaluators: dict[int, Any] = {}
+    metrics_evaluator = planner._build_metrics_evaluator()
+
+    for manifest in manifests:
+        if not planner._check_sequence_number(min_sequence_number, manifest):
+            continue
+
+        spec_id = manifest.partition_spec_id
+        partition_evaluator = partition_evaluators.get(spec_id)
+        if partition_evaluator is None:
+            partition_evaluator = planner._build_partition_evaluator(spec_id)
+            partition_evaluators[spec_id] = partition_evaluator
+
+        input_file = scan.io.new_input(manifest.manifest_path)
+        with AvroFile[ManifestEntry](
+            input_file,
+            MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION],
+            read_types={-1: ManifestEntry, 2: DataFile},
+            read_enums={
+                0: ManifestEntryStatus,
+                101: FileFormat,
+                134: DataFileContent,
+            },
+        ) as reader:
+            for entry in reader:
+                if entry.status == ManifestEntryStatus.DELETED:
+                    continue
+
+                entry = _inherit_from_manifest(entry, manifest)
+                data_file = entry.data_file
+                if partition_evaluator(data_file) and metrics_evaluator(data_file):
+                    yield data_file
+
+
+def _scan_native_iceberg_file_tasks(
+    table: IcebergTableWrap,
+    *,
+    snapshot_id: int | None,
+    limit: int | None,
+    selected_fields: tuple[str, ...],
+    projected_iceberg_schema: pyiceberg.schema.Schema,
+    iceberg_schema: pyiceberg.schema.Schema,
+    column_mapping: pa.Schema,
+    initial_defaults: dict[int, pl.Series],
+    storage_options: StorageOptionsDict | None,
+    snapshot_id_key: str,
+    use_metadata_statistics: bool,
+    fast_deletion_count: bool,
+    task_batch_size: int,
+) -> tuple[Iterator[pl.DataFrame], bool]:
+    return (
+        _iter_native_iceberg_file_tasks(
+            table,
+            snapshot_id=snapshot_id,
+            limit=limit,
+            selected_fields=selected_fields,
+            projected_iceberg_schema=projected_iceberg_schema,
+            iceberg_schema=iceberg_schema,
+            column_mapping=column_mapping,
+            initial_defaults=initial_defaults,
+            storage_options=storage_options,
+            snapshot_id_key=snapshot_id_key,
+            use_metadata_statistics=use_metadata_statistics,
+            fast_deletion_count=fast_deletion_count,
+            task_batch_size=task_batch_size,
+        ),
+        False,
+    )
+
+
+def _iter_native_iceberg_file_tasks(
+    table: IcebergTableWrap,
+    *,
+    snapshot_id: int | None,
+    limit: int | None,
+    selected_fields: tuple[str, ...],
+    projected_iceberg_schema: pyiceberg.schema.Schema,
+    iceberg_schema: pyiceberg.schema.Schema,
+    column_mapping: pa.Schema,
+    initial_defaults: dict[int, pl.Series],
+    storage_options: StorageOptionsDict | None,
+    snapshot_id_key: str,
+    use_metadata_statistics: bool,
+    fast_deletion_count: bool,
+    task_batch_size: int,
+) -> Iterator[pl.DataFrame]:
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+    from pyiceberg.manifest import DataFileContent
+
+    tbl = table.get()
+    scan_schema = dict(pl.Schema(schema_to_pyarrow(projected_iceberg_schema)))
+    scan = tbl.scan(
+        snapshot_id=snapshot_id,
+        limit=limit,
+        selected_fields=selected_fields,
+    )
+
+    def data_files() -> Iterator[pyiceberg.manifest.DataFile]:
+        remaining = limit
+        if remaining == 0:
+            return
+
+        for data_file in _iter_iceberg_data_files(scan):
+            if data_file.content != DataFileContent.DATA:
+                msg = (
+                    "iceberg reader_override='native' failed: snapshot summary "
+                    "reported no delete files but scan planning encountered one"
+                )
+                raise ComputeError(msg)
+
+            yield data_file
+            if remaining is not None:
+                remaining -= data_file.record_count
+                if remaining <= 0:
+                    return
+
+    file_iter = data_files()
+    while file_batch := list(islice(file_iter, task_batch_size)):
+        builder = _NativeIcebergScanDataBuilder(
+            tbl=tbl,
+            projected_iceberg_schema=projected_iceberg_schema,
+            iceberg_schema=iceberg_schema,
+            column_mapping=column_mapping,
+            initial_defaults=initial_defaults,
+            filter_columns=None,
+            use_metadata_statistics=use_metadata_statistics,
+            fast_deletion_count=fast_deletion_count,
+            storage_options=storage_options,
+            snapshot_id_key=snapshot_id_key,
+            scan_schema=scan_schema,
+        )
+
+        for data_file in file_batch:
+            if fallback_reason := builder.push(data_file, ()):
+                msg = f"iceberg reader_override='native' failed: {fallback_reason}"
+                raise ComputeError(msg)
+
+        yield from builder.finish().to_lazyframe().collect_batches(lazy=True)
 
 
 def _redact_dict_values(obj: Any) -> Any:

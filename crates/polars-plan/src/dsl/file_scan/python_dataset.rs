@@ -13,6 +13,12 @@ use crate::plans::PyScanResolveThreadPool;
 /// * The impls for converting from Python objects are there.
 pub static DATASET_PROVIDER_VTABLE: OnceLock<PythonDatasetProviderVTable> = OnceLock::new();
 
+pub struct ResolvedPythonDataset {
+    pub plan: DslPlan,
+    pub version: PlSmallStr,
+    pub row_count: Option<(u64, u64)>,
+}
+
 pub struct PythonDatasetProviderVTable {
     pub name: fn(dataset_object: &PythonObject) -> PlSmallStr,
 
@@ -30,7 +36,7 @@ pub struct PythonDatasetProviderVTable {
         filter_columns: Option<&[PlSmallStr]>,
         pyarrow_predicate: Option<&str>,
         py_scan_resolve_threadpool: &PyScanResolveThreadPool,
-    ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>>,
+    ) -> PolarsResult<Option<ResolvedPythonDataset>>,
 }
 
 pub fn dataset_provider_vtable() -> Result<&'static PythonDatasetProviderVTable, &'static str> {
@@ -74,7 +80,7 @@ impl PythonDatasetProvider {
         filter_columns: Option<&[PlSmallStr]>,
         pyarrow_predicate: Option<&str>,
         py_scan_resolve_threadpool: &PyScanResolveThreadPool,
-    ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
+    ) -> PolarsResult<Option<ResolvedPythonDataset>> {
         (dataset_provider_vtable().unwrap().to_dataset_scan)(
             &self.dataset_object,
             existing_resolved_version_key,

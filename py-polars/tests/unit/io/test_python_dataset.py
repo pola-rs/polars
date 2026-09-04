@@ -19,17 +19,20 @@ if TYPE_CHECKING:
 class CapturingDataset:
     """Minimal dataset provider that records the predicate Polars lowers for it."""
 
-    def __init__(self, df: pl.DataFrame) -> None:
+    def __init__(
+        self, df: pl.DataFrame, *, row_count: tuple[int, int] | None = None
+    ) -> None:
         self.df = df
         self.arrow_schema = df.to_arrow().schema
         self.pyarrow_predicate: str | None = None
+        self.row_count = row_count
 
     def schema(self) -> pa.Schema:
         return self.arrow_schema
 
     def to_dataset_scan(
         self, *, pyarrow_predicate: str | None = None, **_kwargs: Any
-    ) -> tuple[pl.LazyFrame, str]:
+    ) -> tuple[pl.LazyFrame, str] | tuple[pl.LazyFrame, str, tuple[int, int] | None]:
         self.pyarrow_predicate = pyarrow_predicate
 
         def impl(*_args: Any, **_kwargs: Any) -> tuple[Iterator[pl.DataFrame], bool]:
@@ -39,6 +42,9 @@ class CapturingDataset:
         lf = pl.LazyFrame._scan_python_function(
             self.arrow_schema, impl, pyarrow=True, is_pure=True
         )
+
+        if self.row_count is not None:
+            return lf, "v1", self.row_count
 
         return lf, "v1"
 
@@ -101,6 +107,14 @@ def df() -> pl.DataFrame:
             "val": [0.25, 0.5, 0.75, 1.0, 1.25, 1.5],
         }
     )
+
+
+def test_dataset_provider_row_count(df: pl.DataFrame) -> None:
+    dataset = CapturingDataset(df, row_count=(df.height, 0))
+    lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset))
+
+    assert f"ESTIMATED ROWS: {df.height}" in lf.explain()
+    assert_frame_equal(lf.collect(), df)
 
 
 def test_dataset_provider_predicate_comparison(df: pl.DataFrame) -> None:
