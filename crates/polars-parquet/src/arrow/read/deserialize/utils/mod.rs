@@ -376,7 +376,7 @@ pub(super) trait Decoder: Sized {
         };
 
         let filtered =
-            polars_compute::filter::filter_with_bitmap(intermediate_array.as_ref(), &mask);
+            polars_compute::filter::filter_arrow_with_bitmap(intermediate_array.as_ref(), &mask);
 
         pred_true_mask.extend_from_bitmap(&mask);
         self.extend_decoded(decoded, filtered.as_ref(), is_optional)?;

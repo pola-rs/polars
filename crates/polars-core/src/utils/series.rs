@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use polars_compute::find_validity_mismatch::find_validity_mismatch;
-use polars_compute::gather::take_unchecked;
+use polars_compute::gather::take_arrow_unchecked;
 
 use crate::prelude::*;
 use crate::series::amortized_iter::AmortSeries;
@@ -128,7 +128,7 @@ pub fn handle_array_casting_failures(input: &dyn Array, output: &dyn Array) -> P
 
     let num_failures = idxs.len();
     let failures = PrimitiveArray::with_slice(&idxs[..num_failures.min(10)], |idxs| unsafe {
-        take_unchecked(input, &idxs)
+        take_arrow_unchecked(input, &idxs)
     });
 
     polars_bail!(

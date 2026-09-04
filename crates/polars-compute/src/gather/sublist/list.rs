@@ -6,7 +6,7 @@ use arrow::legacy::utils::CustomIterTools;
 use arrow::offset::{Offsets, OffsetsBuffer};
 use polars_utils::IdxSize;
 
-use crate::gather::take_unchecked;
+use crate::gather::take_arrow_unchecked;
 
 /// Get the indices that would result in a get operation on the lists values.
 /// for example, consider this list:
@@ -99,7 +99,7 @@ pub fn sublist_get(arr: &ListArray<i64>, index: i64) -> ArrayRef {
     let values = arr.values();
     // SAFETY:
     // the indices we generate are in bounds
-    unsafe { take_unchecked(&**values, &take_by) }
+    unsafe { take_arrow_unchecked(&**values, &take_by) }
 }
 
 /// Check if an index is out of bounds for at least one sublist.

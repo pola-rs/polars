@@ -223,8 +223,9 @@ pub(super) fn cast_list_to_fixed_size_list<O: Offset>(
                 }
             }
         }
-        let take_values =
-            unsafe { crate::gather::take_unchecked(list.values().as_ref(), &indices.freeze()) };
+        let take_values = unsafe {
+            crate::gather::take_arrow_unchecked(list.values().as_ref(), &indices.freeze())
+        };
 
         cast(take_values.as_ref(), inner.dtype(), options)?
     };

@@ -2,9 +2,9 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::{self, Bitmap};
 use arrow::datatypes::ArrowDataType;
 
-use super::{IfThenElseKernel, if_then_else_validity};
+use super::{IfThenElseArrowKernel, if_then_else_validity};
 
-impl IfThenElseKernel for BooleanArray {
+impl IfThenElseArrowKernel for BooleanArray {
     type Scalar<'a> = bool;
 
     fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self {

@@ -188,14 +188,11 @@ impl ChunkExplode for ListChunked {
                 (indices, new_offsets)
             };
 
-            // SAFETY: the indices we generate are in bounds. The kernel is the Arrow one, so
-            // the values cross over and the result crosses back — see `polars_array::arrow::bridge`.
-            let chunk = unsafe {
-                import::from_arrow(&*take_unchecked(
-                    &*export::to_arrow(&*values),
-                    &indices.into(),
-                ))
-            };
+            let indices: PrimitiveArray<IdxSize> = indices.into();
+
+            // SAFETY: the indices we generate are in bounds.
+            let chunk =
+                unsafe { take_unchecked(&*values, &import::primitive_from_arrow(&indices)) };
             // SAFETY: inner_dtype should be correct
             let s = unsafe {
                 Series::from_chunks_and_dtype_unchecked(
@@ -330,13 +327,10 @@ impl ChunkExplode for ArrayChunked {
             offsets.push(current_offset);
         });
 
+        let indices: PrimitiveArray<IdxSize> = indices.into();
+
         // SAFETY: the indices we generate are in bounds
-        let chunk = unsafe {
-            import::from_arrow(&*take_unchecked(
-                &*export::to_arrow(&*values),
-                &indices.into(),
-            ))
-        };
+        let chunk = unsafe { take_unchecked(&*values, &import::primitive_from_arrow(&indices)) };
         // SAFETY: monotonically increasing
         let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
 

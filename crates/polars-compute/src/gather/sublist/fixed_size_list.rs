@@ -6,7 +6,7 @@ use polars_error::{PolarsResult, polars_bail};
 use polars_utils::IdxSize;
 use polars_utils::index::NullCount;
 
-use crate::gather::take_unchecked;
+use crate::gather::take_arrow_unchecked;
 
 fn sub_fixed_size_list_get_indexes_literal(width: usize, len: usize, index: i64) -> IdxArr {
     (0..len)
@@ -54,7 +54,7 @@ pub fn sub_fixed_size_list_get_literal(
     let values = arr.values();
     // SAFETY:
     // the indices we generate are in bounds
-    unsafe { Ok(take_unchecked(&**values, &take_by)) }
+    unsafe { Ok(take_arrow_unchecked(&**values, &take_by)) }
 }
 
 pub fn sub_fixed_size_list_get(
@@ -70,5 +70,5 @@ pub fn sub_fixed_size_list_get(
     let values = arr.values();
     // SAFETY:
     // the indices we generate are in bounds
-    unsafe { Ok(take_unchecked(&**values, &take_by)) }
+    unsafe { Ok(take_arrow_unchecked(&**values, &take_by)) }
 }

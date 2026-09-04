@@ -3,7 +3,6 @@ use std::sync::OnceLock;
 
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
-use polars_array::arrow::bridge::{ToArrow, with_arrow_chunk};
 use polars_array::builder::{ShareStrategy, builder_like};
 use polars_compute::gather::take_unchecked;
 use polars_error::polars_ensure;
@@ -13,16 +12,15 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::Container;
 
-/// Gathers the elements of `target` at `idx`, through the Arrow kernel of `polars-compute`.
+/// Gathers the elements of `target` at `idx`, through the kernel of `polars-compute`.
 ///
 /// # Safety
 /// Every index must be in bounds of `target`.
 unsafe fn take_chunk_unchecked(
     target: &dyn PlArray,
-    idx: &Flat<PlPrimitiveArray<IdxSize>>,
+    idx: &PlPrimitiveArray<IdxSize>,
 ) -> PlArrayRef {
-    let idx = <PlPrimitiveArray<IdxSize> as ToArrow>::to_arrow(idx);
-    with_arrow_chunk(target, |arr| unsafe { take_unchecked(arr, &idx) })
+    unsafe { take_unchecked(target, idx) }
 }
 
 pub fn check_bounds_nulls(idx: &Flat<PlPrimitiveArray<IdxSize>>, len: IdxSize) -> PolarsResult<()> {
@@ -238,11 +236,11 @@ impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
-            let idx_arr = idx_arr.to_flat();
             if targets.len() == 1 {
                 let target = targets.first().unwrap();
-                take_chunk_unchecked(*target, &idx_arr)
+                take_chunk_unchecked(*target, idx_arr)
             } else {
+                let idx_arr = idx_arr.to_flat();
                 let cumlens = cumulative_lengths(&targets);
                 if targets_have_nulls {
                     let arr: PlBinaryViewArray = idx_arr
@@ -274,11 +272,11 @@ impl ChunkTakeUnchecked<IdxCa> for StringChunked {
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
-            let idx_arr = idx_arr.to_flat();
             if targets.len() == 1 {
                 let target = targets.first().unwrap();
-                take_chunk_unchecked(*target, &idx_arr)
+                take_chunk_unchecked(*target, idx_arr)
             } else {
+                let idx_arr = idx_arr.to_flat();
                 let cumlens = cumulative_lengths(&targets);
                 if targets_have_nulls {
                     let arr: PlUtf8ViewArray = idx_arr
@@ -328,7 +326,7 @@ impl ChunkTakeUnchecked<IdxCa> for StructChunked {
         let chunks = a
             .downcast_iter()
             .zip(index.downcast_iter())
-            .map(|(arr, idx)| take_chunk_unchecked(arr, &idx.to_flat()))
+            .map(|(arr, idx)| take_chunk_unchecked(arr, idx))
             .collect::<Vec<_>>();
         self.copy_with_chunks(chunks)
     }
@@ -363,8 +361,10 @@ impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
         if self.n_chunks() > 1 && should_rechunk(self.len(), indices.len()) {
             let ca = self.rechunk();
             let idx = indices.rechunk();
-            let idx = idx.downcast_as_array().to_flat();
-            let chunks = vec![take_chunk_unchecked(ca.downcast_as_array(), &idx)];
+            let chunks = vec![take_chunk_unchecked(
+                ca.downcast_as_array(),
+                idx.downcast_as_array(),
+            )];
             return self.copy_with_chunks(chunks);
         }
 
@@ -375,10 +375,11 @@ impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
         let chunks = indices
             .downcast_iter()
             .map(|idx_arr| {
-                let idx_arr = idx_arr.to_flat();
                 if let [target] = targets[..] {
-                    return take_chunk_unchecked(target, &idx_arr);
+                    return take_chunk_unchecked(target, idx_arr);
                 }
+
+                let idx_arr = idx_arr.to_flat();
 
                 // The chunks carry no inner type to build a nested chunk out of, but the target
                 // does: the elements are appended into a builder shaped like it, one at a time.
@@ -423,8 +424,10 @@ impl ChunkTakeUnchecked<IdxCa> for ListChunked {
         if self.n_chunks() > 1 && should_rechunk(self.len(), indices.len()) {
             let ca = self.rechunk();
             let idx = indices.rechunk();
-            let idx = idx.downcast_as_array().to_flat();
-            let chunks = vec![take_chunk_unchecked(ca.downcast_as_array(), &idx)];
+            let chunks = vec![take_chunk_unchecked(
+                ca.downcast_as_array(),
+                idx.downcast_as_array(),
+            )];
             return self.copy_with_chunks(chunks);
         }
 
@@ -435,10 +438,11 @@ impl ChunkTakeUnchecked<IdxCa> for ListChunked {
         let chunks = indices
             .downcast_iter()
             .map(|idx_arr| {
-                let idx_arr = idx_arr.to_flat();
                 if let [target] = targets[..] {
-                    return take_chunk_unchecked(target, &idx_arr);
+                    return take_chunk_unchecked(target, idx_arr);
                 }
+
+                let idx_arr = idx_arr.to_flat();
 
                 // The chunks carry no inner type to build a nested chunk out of, but the target
                 // does: the elements are appended into a builder shaped like it, one at a time.

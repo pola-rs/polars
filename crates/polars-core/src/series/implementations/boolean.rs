@@ -1,5 +1,3 @@
-use polars_array::arrow::bridge::chunk_to_arrow;
-
 use super::*;
 use crate::prelude::*;
 

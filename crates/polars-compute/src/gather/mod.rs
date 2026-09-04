@@ -17,6 +17,10 @@
 // under the License.
 
 //! Defines take kernel for [`Array`]
+//!
+//! [`take_arrow_unchecked`] reads one slot per element throughout; the kernel over the arrays of
+//! `polars-array` is [`take_unchecked`], which crosses over to it once a chunk is known to be laid
+//! out that way.
 
 use arrow::array::{
     self, Array, ArrayCollectIterExt, ArrayFromIterDtype, BinaryViewArray, NullArray, StaticArray,
@@ -32,17 +36,19 @@ pub mod boolean;
 pub mod fixed_size_list;
 pub mod generic_binary;
 pub mod list;
+mod pl_array;
 pub mod primitive;
 pub mod structure;
 pub mod sublist;
 
 use arrow::with_match_primitive_type_full;
+pub use pl_array::take_unchecked;
 
 /// Returns a new [`Array`] with only indices at `indices`. Null indices are taken as nulls.
 /// The returned array has a length equal to `indices.len()`.
 /// # Safety
 /// Doesn't do bound checks
-pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Array> {
+pub unsafe fn take_arrow_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Array> {
     if indices.len() == 0 {
         return new_empty_array(values.dtype().clone());
     }

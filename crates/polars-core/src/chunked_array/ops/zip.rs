@@ -1,12 +1,8 @@
 use std::borrow::Cow;
 
-use arrow::array::Array;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::compute::utils::{combine_validities_and, combine_validities_and_not};
-use arrow::datatypes::ArrowDataType;
-use arrow::types::NativeType;
-use polars_array::arrow::bridge::{chunk_from_arrow, flat_to_arrow};
-use polars_array::arrow::export;
+use polars_array::PlBitmap;
+use polars_array::bitmap::{combine_validities_and, invert};
 use polars_compute::if_then_else::{IfThenElseKernel, if_then_else_validity};
 use polars_error::PolarsContext;
 use polars_utils::broadcast::broadcast_len;
@@ -18,136 +14,6 @@ use crate::utils::{align_chunks_binary, align_chunks_ternary};
 
 const SHAPE_MISMATCH_STR: &str =
     "shapes of `self`, `mask` and `other` are not suitable for `zip_with` operation";
-
-/// The `if_then_else` kernel over the chunks of a [`ChunkedArray`]: [`IfThenElseKernel`] over the
-/// arrays of `polars-array`, which reach it [`Flat`], except for an object array.
-pub trait ChunkZipKernel: StaticArray {
-    /// The elements of `if_true` where `mask` is set, and of `if_false` where it is not.
-    fn if_then_else(mask: &Bitmap, if_true: &Flat<Self>, if_false: &Flat<Self>) -> Self;
-
-    /// As [`Self::if_then_else`], with a single value standing for every element of `if_true`.
-    fn if_then_else_broadcast_true(
-        mask: &Bitmap,
-        if_true: Self::ValueT<'_>,
-        if_false: &Flat<Self>,
-    ) -> Self;
-
-    /// As [`Self::if_then_else`], with a single value standing for every element of `if_false`.
-    fn if_then_else_broadcast_false(
-        mask: &Bitmap,
-        if_true: &Flat<Self>,
-        if_false: Self::ValueT<'_>,
-    ) -> Self;
-
-    /// As [`Self::if_then_else`], with a single value standing for either side.
-    fn if_then_else_broadcast_both(
-        mask: &Bitmap,
-        if_true: Self::ValueT<'_>,
-        if_false: Self::ValueT<'_>,
-    ) -> Self;
-}
-
-/// The body of a [`ChunkZipKernel`] that hands its chunks to the Arrow kernel. `$to_arrow_scalar`
-/// maps a single value to the one the Arrow kernel takes; `$dtype` is the result's Arrow dtype.
-macro_rules! arrow_zip_kernel {
-    ($to_arrow_scalar:expr, |$t:ident, $f:ident| $dtype:expr) => {
-        #[inline]
-        fn if_then_else(mask: &Bitmap, if_true: &Flat<Self>, if_false: &Flat<Self>) -> Self {
-            chunk_from_arrow(&IfThenElseKernel::if_then_else(
-                mask,
-                &flat_to_arrow(if_true),
-                &flat_to_arrow(if_false),
-            ))
-        }
-
-        #[inline]
-        fn if_then_else_broadcast_true(
-            mask: &Bitmap,
-            if_true: Self::ValueT<'_>,
-            if_false: &Flat<Self>,
-        ) -> Self {
-            chunk_from_arrow(&IfThenElseKernel::if_then_else_broadcast_true(
-                mask,
-                $to_arrow_scalar(if_true),
-                &flat_to_arrow(if_false),
-            ))
-        }
-
-        #[inline]
-        fn if_then_else_broadcast_false(
-            mask: &Bitmap,
-            if_true: &Flat<Self>,
-            if_false: Self::ValueT<'_>,
-        ) -> Self {
-            chunk_from_arrow(&IfThenElseKernel::if_then_else_broadcast_false(
-                mask,
-                &flat_to_arrow(if_true),
-                $to_arrow_scalar(if_false),
-            ))
-        }
-
-        #[inline]
-        fn if_then_else_broadcast_both(
-            mask: &Bitmap,
-            if_true: Self::ValueT<'_>,
-            if_false: Self::ValueT<'_>,
-        ) -> Self {
-            let $t = $to_arrow_scalar(if_true);
-            let $f = $to_arrow_scalar(if_false);
-            let dtype = $dtype;
-            chunk_from_arrow(&IfThenElseKernel::if_then_else_broadcast_both(
-                dtype, mask, $t, $f,
-            ))
-        }
-    };
-}
-
-/// The element of a nested array, exported as the Arrow array the kernel takes.
-#[inline]
-fn to_arrow_element(element: Box<dyn PlArray>) -> Box<dyn Array> {
-    export::to_arrow(&*element)
-}
-
-/// The Arrow data type of a list of `values`.
-fn large_list_dtype(values: &dyn Array) -> ArrowDataType {
-    ArrowDataType::LargeList(Box::new(ArrowField::new(
-        LIST_VALUES_NAME,
-        values.dtype().clone(),
-        true,
-    )))
-}
-
-impl<T: NativeType> ChunkZipKernel for PlPrimitiveArray<T>
-where
-    PrimitiveArray<T>: for<'a> IfThenElseKernel<Scalar<'a> = T>,
-{
-    arrow_zip_kernel!(std::convert::identity, |_t, _f| T::PRIMITIVE.into());
-}
-
-impl ChunkZipKernel for PlBooleanArray {
-    arrow_zip_kernel!(std::convert::identity, |_t, _f| ArrowDataType::Boolean);
-}
-
-impl ChunkZipKernel for PlUtf8ViewArray {
-    arrow_zip_kernel!(std::convert::identity, |_t, _f| ArrowDataType::Utf8View);
-}
-
-impl ChunkZipKernel for PlBinaryViewArray {
-    arrow_zip_kernel!(std::convert::identity, |_t, _f| ArrowDataType::BinaryView);
-}
-
-impl ChunkZipKernel for PlListArray {
-    // The elements of a list array are arrays of their own, whose data type the result carries.
-    arrow_zip_kernel!(to_arrow_element, |t, _f| large_list_dtype(&*t));
-}
-
-#[cfg(feature = "dtype-array")]
-impl ChunkZipKernel for PlFixedSizeListArray {
-    arrow_zip_kernel!(to_arrow_element, |t, _f| ArrowDataType::FixedSizeList(
-        Box::new(ArrowField::new(LIST_VALUES_NAME, t.dtype().clone(), true)),
-        t.len(),
-    ));
-}
 
 /// The result of a mask that reads the same at every element: `mask_len` is the height that mask
 /// covers, which is one for a column of a single element and the height of the column for one
@@ -168,42 +34,44 @@ where
     Ok(ret.with_name(if_true.name().clone()))
 }
 
-/// The bits of a mask chunk that [`bool_null_to_false`] left flat and fully valid.
+/// The bits of a mask chunk that [`bool_null_to_false`] left fully valid, written out one bit per
+/// element for the kernels that read them that way.
 fn mask_values(mask: &PlBooleanArray) -> Bitmap {
-    mask.to_flat().values().clone()
+    bool_null_to_false(mask).into_bitmap()
 }
 
-fn bool_null_to_false(mask: &PlBooleanArray) -> Bitmap {
-    // TODO(polars-array-scalar): a scalar mask stands for one bit at every element, which this
-    // writes out to hand back one bit per element.
-    let mask = mask.to_flat();
-    if mask.null_count() == 0 {
-        mask.values().clone()
-    } else {
-        mask.values() & mask.validity().unwrap()
-    }
+/// The bits of `mask`, reading a null as unset — which is what a null means to `zip_with`.
+fn bool_null_to_false(mask: &PlBooleanArray) -> PlBitmap {
+    // An element the mask says nothing about is one it does not pick, which is what an unset bit
+    // says in turn: the two fold together into the one mask the kernels read. A mask that repeats
+    // a single bit stays a single bit.
+    combine_validities_and(Some(mask.values()), mask.validity())
+        .expect("the values of a mask are a mask of their own")
 }
 
-/// Combines the validities of ca with the bits in mask using the given combiner.
+/// Combines the validity of `ca` with the bits of `mask`, which are inverted first if `not_mask`.
 ///
-/// If the mask itself has validity, those null bits are converted to false.
-fn combine_validities_chunked<
-    T: PolarsDataType,
-    F: Fn(Option<&Bitmap>, Option<&Bitmap>) -> Option<Bitmap>,
->(
+/// A null in the mask is read as unset, as it is throughout `zip_with`.
+fn combine_validities_chunked<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
     mask: &BooleanChunked,
-    combiner: F,
+    not_mask: bool,
 ) -> ChunkedArray<T> {
     let (ca_al, mask_al) = align_chunks_binary(ca, mask);
     let chunks = ca_al
         .downcast_iter()
         .zip(mask_al.downcast_iter())
         .map(|(a, m)| {
-            let bm = bool_null_to_false(m);
-            let a_validity = a.validity().map(|v| v.to_flat().into_owned());
-            let validity = combiner(a_validity.as_ref(), Some(&bm));
-            a.clone().with_validity_typed(validity)
+            let length = m.len();
+            let mut bm = bool_null_to_false(m);
+            if not_mask {
+                // Inverting leaves the mask in the representation it is in: a single bit stays a
+                // single bit, which keeps a fully null or fully valid result in `O(1)` memory.
+                bm = PlBitmap::new_broadcast(invert(bm.as_ref()), length);
+            }
+            let validity = combine_validities_and(a.validity(), Some(bm.as_ref()));
+            a.clone()
+                .with_validity_broadcast_typed(validity.map(PlBitmap::into_flat_or_scalar))
         });
     ChunkedArray::from_chunk_iter_like(ca, chunks)
 }
@@ -211,7 +79,7 @@ fn combine_validities_chunked<
 impl<T> ChunkZip<T> for ChunkedArray<T>
 where
     T: PolarsDataType<IsStruct = FalseT>,
-    T::Array: ChunkZipKernel,
+    T::Array: IfThenElseKernel,
     ChunkedArray<T>: ChunkExpandAtIndex<T>,
 {
     fn zip_with(
@@ -238,22 +106,18 @@ where
         let ret = if if_true.len() == 1 && if_false.len() == 1 {
             match (if_true.get(0), if_false.get(0)) {
                 (None, None) => ChunkedArray::full_null_like(if_true, mask.len()),
-                (None, Some(_)) => combine_validities_chunked(
-                    &if_false.new_from_index(0, mask.len()),
-                    mask,
-                    combine_validities_and_not,
-                ),
-                (Some(_), None) => combine_validities_chunked(
-                    &if_true.new_from_index(0, mask.len()),
-                    mask,
-                    combine_validities_and,
-                ),
+                (None, Some(_)) => {
+                    combine_validities_chunked(&if_false.new_from_index(0, mask.len()), mask, true)
+                },
+                (Some(_), None) => {
+                    combine_validities_chunked(&if_true.new_from_index(0, mask.len()), mask, false)
+                },
                 (Some(t), Some(f)) => {
                     let chunks = mask.downcast_iter().map(|m| {
                         let bm = bool_null_to_false(m);
                         let t = t.clone();
                         let f = f.clone();
-                        ChunkZipKernel::if_then_else_broadcast_both(&bm, t, f)
+                        IfThenElseKernel::if_then_else_broadcast_both(bm.as_ref(), t, f)
                     });
                     ChunkedArray::from_chunk_iter_like(if_true, chunks)
                 },
@@ -268,7 +132,7 @@ where
                 .zip(if_true_al.downcast_iter())
                 .zip(if_false_al.downcast_iter())
                 .map(|((m, t), f)| {
-                    ChunkZipKernel::if_then_else(&bool_null_to_false(m), &t.to_flat(), &f.to_flat())
+                    IfThenElseKernel::if_then_else(bool_null_to_false(m).as_ref(), t, f)
                 });
             ChunkedArray::from_chunk_iter_like(if_true, chunks)
 
@@ -283,11 +147,11 @@ where
                     .map(|(m, f)| {
                         let bm = bool_null_to_false(m);
                         let t = true_scalar.clone();
-                        ChunkZipKernel::if_then_else_broadcast_true(&bm, t, &f.to_flat())
+                        IfThenElseKernel::if_then_else_broadcast_true(bm.as_ref(), t, f)
                     });
                 ChunkedArray::from_chunk_iter_like(if_true, chunks)
             } else {
-                combine_validities_chunked(if_false, mask, combine_validities_and_not)
+                combine_validities_chunked(if_false, mask, true)
             }
 
         // Broadcast false value.
@@ -302,11 +166,11 @@ where
                         .map(|(m, t)| {
                             let bm = bool_null_to_false(m);
                             let f = false_scalar.clone();
-                            ChunkZipKernel::if_then_else_broadcast_false(&bm, &t.to_flat(), f)
+                            IfThenElseKernel::if_then_else_broadcast_false(bm.as_ref(), t, f)
                         });
                 ChunkedArray::from_chunk_iter_like(if_false, chunks)
             } else {
-                combine_validities_chunked(if_true, mask, combine_validities_and)
+                combine_validities_chunked(if_true, mask, false)
             }
         } else {
             polars_bail!(ShapeMismatch: SHAPE_MISMATCH_STR)
@@ -318,8 +182,8 @@ where
 
 // Basic implementation for ObjectArray.
 #[cfg(feature = "object")]
-impl<T: PolarsObject> ChunkZipKernel for ObjectArray<T> {
-    fn if_then_else(mask: &Bitmap, if_true: &Flat<Self>, if_false: &Flat<Self>) -> Self {
+impl<T: PolarsObject> IfThenElseKernel for ObjectArray<T> {
+    fn if_then_else_flat(mask: &Bitmap, if_true: &Flat<Self>, if_false: &Flat<Self>) -> Self {
         mask.iter()
             .zip(if_true.iter())
             .zip(if_false.iter())
@@ -327,7 +191,7 @@ impl<T: PolarsObject> ChunkZipKernel for ObjectArray<T> {
             .collect_arr()
     }
 
-    fn if_then_else_broadcast_true(
+    fn if_then_else_flat_broadcast_true(
         mask: &Bitmap,
         if_true: Self::ValueT<'_>,
         if_false: &Flat<Self>,
@@ -338,7 +202,7 @@ impl<T: PolarsObject> ChunkZipKernel for ObjectArray<T> {
             .collect_arr()
     }
 
-    fn if_then_else_broadcast_false(
+    fn if_then_else_flat_broadcast_false(
         mask: &Bitmap,
         if_true: &Flat<Self>,
         if_false: Self::ValueT<'_>,
@@ -349,7 +213,7 @@ impl<T: PolarsObject> ChunkZipKernel for ObjectArray<T> {
             .collect_arr()
     }
 
-    fn if_then_else_broadcast_both(
+    fn if_then_else_flat_broadcast_both(
         mask: &Bitmap,
         if_true: Self::ValueT<'_>,
         if_false: Self::ValueT<'_>,
@@ -418,9 +282,14 @@ impl ChunkZip<StructType> for StructChunked {
         let mut mask = mask.into_owned();
         unsafe {
             for arr in mask.downcast_iter_mut() {
-                let bm = bool_null_to_false(arr);
                 let length = arr.len();
-                *arr = PlBooleanArray::new(bm, length, None);
+                // A mask that repeats a single bit says the same of every element and stays that
+                // one bit; anything else holds one bit per element, as it did before.
+                let bm = bool_null_to_false(arr);
+                *arr = match bm.scalar_value() {
+                    Some(bit) => PlBooleanArray::new_scalar(bit, length),
+                    None => PlBooleanArray::new(bm.into_bitmap(), length, None),
+                };
             }
             mask.set_null_count(0);
         }
@@ -673,5 +542,103 @@ impl ChunkZip<StructType> for StructChunked {
             assert_eq!(start_null_count, out.null_count());
         }
         Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_array::PlPrimitiveArray;
+
+    use super::*;
+
+    /// A mask of two chunks, the first of which repeats `bit` and the second of which is laid out
+    /// one bit per element. Only a mask of more than one chunk reaches the per-chunk kernels with
+    /// a chunk that repeats a single bit — a single one is answered before them.
+    fn split_mask(bit: bool, rest: [bool; 3]) -> BooleanChunked {
+        BooleanChunked::from_chunk_iter(
+            "mask".into(),
+            [
+                PlBooleanArray::new_scalar(bit, 3),
+                PlBooleanArray::from_vec(rest.to_vec()),
+            ],
+        )
+    }
+
+    /// Six elements over two chunks, to line up with [`split_mask`].
+    fn split_values(values: [Option<i32>; 6]) -> Int32Chunked {
+        Int32Chunked::from_chunk_iter(
+            "values".into(),
+            [
+                PlPrimitiveArray::from_iter(values[..3].iter().copied()),
+                PlPrimitiveArray::from_iter(values[3..].iter().copied()),
+            ],
+        )
+    }
+
+    /// A chunk of the mask that repeats one bit picks the same side for every element it covers.
+    #[test]
+    fn a_repeated_bit_in_one_chunk_picks_one_side() {
+        let if_true = split_values([Some(1), Some(2), Some(3), Some(4), Some(5), Some(6)]);
+        let if_false = split_values([Some(-1), None, Some(-3), Some(-4), Some(-5), Some(-6)]);
+
+        let zipped = if_true
+            .zip_with(&split_mask(true, [true, false, true]), &if_false)
+            .unwrap();
+        assert_eq!(
+            Vec::from_iter(zipped.iter()),
+            [Some(1), Some(2), Some(3), Some(4), Some(-5), Some(6)],
+        );
+
+        let zipped = if_true
+            .zip_with(&split_mask(false, [true, false, true]), &if_false)
+            .unwrap();
+        assert_eq!(
+            Vec::from_iter(zipped.iter()),
+            [Some(-1), None, Some(-3), Some(4), Some(-5), Some(6)],
+        );
+    }
+
+    /// The same holds where one side is a single element that stands for the whole column, whose
+    /// nulls reach the result through the mask alone.
+    #[test]
+    fn a_repeated_bit_in_one_chunk_picks_a_broadcast_side() {
+        let if_true = Int32Chunked::from_slice("t".into(), &[7]);
+        let if_false = split_values([Some(-1), Some(-2), Some(-3), Some(-4), Some(-5), Some(-6)]);
+
+        for bit in [false, true] {
+            let mask = split_mask(bit, [true, false, true]);
+            let zipped = if_true.zip_with(&mask, &if_false).unwrap();
+
+            let expected = Vec::from_iter(
+                mask.iter()
+                    .zip(if_false.iter())
+                    .map(|(m, f)| if m == Some(true) { Some(7) } else { f }),
+            );
+            assert_eq!(Vec::from_iter(zipped.iter()), expected);
+        }
+
+        // A null on the broadcast side leaves the mask alone to say which elements survive, which
+        // is the path that combines the two validities rather than zipping any values.
+        let null = Int32Chunked::full_null("t".into(), 1);
+        for bit in [false, true] {
+            let mask = split_mask(bit, [true, false, true]);
+
+            let zipped = null.zip_with(&mask, &if_false).unwrap();
+            let expected = Vec::from_iter(
+                mask.iter()
+                    .zip(if_false.iter())
+                    .map(|(m, f)| if m == Some(true) { None } else { f }),
+            );
+            assert_eq!(Vec::from_iter(zipped.iter()), expected);
+
+            // The same the other way around, which inverts the mask before combining it.
+            let zipped = if_false.zip_with(&mask, &null).unwrap();
+            let expected = Vec::from_iter(
+                mask.iter()
+                    .zip(if_false.iter())
+                    .map(|(m, t)| if m == Some(true) { t } else { None }),
+            );
+            assert_eq!(Vec::from_iter(zipped.iter()), expected);
+        }
     }
 }

@@ -31,7 +31,10 @@ pub trait SortedUniqueKernel: Array {
 /// `State` between many chunks and allows for different implementations for the same array (e.g. a
 /// maintain order and no maintain-order variant).
 pub trait RangedUniqueKernel {
-    type Array: Array;
+    /// The array whose elements are appended to the state, and which the unique ones come back
+    /// in. This is an array of `polars-array` where the kernel reads one, and an Arrow array
+    /// where it has yet to.
+    type Array;
 
     /// Returns whether all the values in the whole range are in the state
     fn has_seen_all(&self) -> bool;

@@ -1,6 +1,8 @@
 #![allow(clippy::eq_op)] // We use x != x to detect NaN generically.
 
 use arrow::bitmap::Bitmap;
+use arrow::types::NativeType;
+use polars_array::{PlBitmap, PlBooleanArray, PlPrimitiveArray};
 use polars_buffer::SharedStorage;
 use polars_utils::float::IsFloat;
 
@@ -38,18 +40,22 @@ pub fn first_nan_idx<T: PartialEq + IsFloat>(slice: &[T]) -> Option<usize> {
 
 /// Returns a bitmap, where bitmap[i] = slice[i].is_nan(). If None is returned
 /// none of the elements are NaN.
-pub fn is_nan<T: PartialEq + IsFloat>(slice: &[T]) -> Option<Bitmap> {
-    is_not_nan_impl(slice, true)
+pub fn is_nan_slice<T: PartialEq + IsFloat>(slice: &[T]) -> Option<Bitmap> {
+    nan_mask_slice(slice, true)
 }
 
 /// Returns a bitmap, where bitmap[i] = !slice[i].is_nan(). If None is returned
 /// none of the elements are NaN.
-pub fn is_not_nan<T: PartialEq + IsFloat>(slice: &[T]) -> Option<Bitmap> {
-    is_not_nan_impl(slice, false)
+pub fn is_not_nan_slice<T: PartialEq + IsFloat>(slice: &[T]) -> Option<Bitmap> {
+    nan_mask_slice(slice, false)
 }
 
-fn is_not_nan_impl<T: PartialEq + IsFloat>(slice: &[T], invert: bool) -> Option<Bitmap> {
+/// Returns a bitmap where bit `i` says whether `slice[i]` is NaN, if `nan_is_set`, and whether it
+/// is not, otherwise. `None` stands for a slice that holds no NaN at all, whose mask is therefore
+/// `nan_is_set` nowhere and `!nan_is_set` everywhere.
+fn nan_mask_slice<T: PartialEq + IsFloat>(slice: &[T], nan_is_set: bool) -> Option<Bitmap> {
     assert!(T::is_float());
+    let invert = nan_is_set;
     let invert_mask = if invert { u64::MAX } else { 0 };
     let first_idx = first_nan_idx(slice)?;
     let no_nan_chunks = first_idx / 64;
@@ -92,4 +98,97 @@ fn is_not_nan_impl<T: PartialEq + IsFloat>(slice: &[T], invert: bool) -> Option<
         .unwrap();
     let bitmap = unsafe { Bitmap::from_inner_unchecked(storage, 0, slice.len(), Some(unset_bits)) };
     Some(bitmap)
+}
+
+/// Returns a mask that is set where `array` is NaN.
+///
+/// A null element is NaN nowhere and not-NaN nowhere either: the mask carries `array`'s validity,
+/// so the answer at a null element is null in turn.
+pub fn is_nan<T: NativeType + IsFloat>(array: &PlPrimitiveArray<T>) -> PlBooleanArray {
+    nan_mask(array, true)
+}
+
+/// Returns a mask that is set where `array` is not NaN; see [`is_nan`].
+pub fn is_not_nan<T: NativeType + IsFloat>(array: &PlPrimitiveArray<T>) -> PlBooleanArray {
+    nan_mask(array, false)
+}
+
+fn nan_mask<T: NativeType + IsFloat>(
+    array: &PlPrimitiveArray<T>,
+    nan_is_set: bool,
+) -> PlBooleanArray {
+    // A scalar values buffer holds the one value every element reads: it is tested once, and the
+    // one answer stands for the whole chunk, in `O(1)` memory.
+    let values = match array.scalar_values() {
+        Some(value) => PlBitmap::new_scalar((value != value) == nan_is_set, array.len()),
+        None => {
+            let slice = array
+                .flat_values()
+                .expect("a values buffer that is not scalar is flat");
+
+            match nan_mask_slice(slice, nan_is_set) {
+                Some(mask) => PlBitmap::new(mask, array.len()),
+                // No element is NaN, so the whole mask is the one answer that holds for all of
+                // them, which needs no slot per element either.
+                None => PlBitmap::new_scalar(!nan_is_set, array.len()),
+            }
+        },
+    };
+
+    PlBooleanArray::from_pl_bitmap(values).with_validity_broadcast(
+        array
+            .validity()
+            .map(|validity| validity.to_flat_or_scalar()),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The one value a scalar chunk holds is tested once, and the mask repeats the answer rather
+    /// than holding a bit per element.
+    #[test]
+    fn a_repeated_value_is_tested_once() {
+        let nans = PlPrimitiveArray::new_scalar(f64::NAN, 100);
+        assert!(is_nan(&nans).values_are_scalar());
+        assert_eq!(is_nan(&nans), PlBooleanArray::new_scalar(true, 100));
+        assert_eq!(is_not_nan(&nans), PlBooleanArray::new_scalar(false, 100));
+
+        let numbers = PlPrimitiveArray::new_scalar(1.0f64, 100);
+        assert!(is_nan(&numbers).values_are_scalar());
+        assert_eq!(is_nan(&numbers), PlBooleanArray::new_scalar(false, 100));
+        assert_eq!(is_not_nan(&numbers), PlBooleanArray::new_scalar(true, 100));
+    }
+
+    /// A chunk laid out one value per element is tested one element at a time, and the mask comes
+    /// out with the validity it went in with.
+    #[test]
+    fn every_element_is_tested() {
+        let arr = PlPrimitiveArray::from_iter([Some(1.0f64), None, Some(f64::NAN)]);
+        assert_eq!(
+            is_nan(&arr),
+            PlBooleanArray::from_iter([Some(false), None, Some(true)]),
+        );
+        assert_eq!(
+            is_not_nan(&arr),
+            PlBooleanArray::from_iter([Some(true), None, Some(false)]),
+        );
+    }
+
+    /// A flat chunk that holds no NaN at all needs no slot per element to say so.
+    #[test]
+    fn a_chunk_without_nan_answers_once() {
+        let arr = PlPrimitiveArray::from_vec(vec![1.0f64, 2.0, 3.0]);
+        assert!(is_nan(&arr).values_are_scalar());
+        assert_eq!(is_nan(&arr), PlBooleanArray::new_scalar(false, 3));
+        assert_eq!(is_not_nan(&arr), PlBooleanArray::new_scalar(true, 3));
+    }
+
+    #[test]
+    fn an_empty_chunk_is_tested_nowhere() {
+        let empty = PlPrimitiveArray::<f64>::new_empty();
+        assert!(is_nan(&empty).is_empty());
+        assert!(is_not_nan(&empty).is_empty());
+    }
 }

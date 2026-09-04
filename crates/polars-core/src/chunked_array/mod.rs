@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
-use polars_array::arrow::bridge::with_arrow_chunk;
 use polars_compute::filter::filter_with_bitmap;
 use polars_utils::broadcast::BroadcastLength;
 
@@ -392,8 +391,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                     if arr.null_count() == 0 {
                         arr.to_boxed()
                     } else {
-                        let mask = arr.validity().unwrap().to_flat();
-                        with_arrow_chunk(&**arr, |arr| filter_with_bitmap(arr, &mask))
+                        filter_with_bitmap(&**arr, arr.validity().unwrap())
                     }
                 })
                 .collect();
