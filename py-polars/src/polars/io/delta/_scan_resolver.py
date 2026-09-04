@@ -15,6 +15,10 @@ from polars.io.cloud.credential_provider._providers import (
 from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
 from polars.io.parquet.functions import scan_parquet
 from polars.io.scan_options.cast_options import ScanCastOptions
+from polars.lazyframe.resolver._resolver import (
+    LazyFrameResolver,
+    ResolvedLazyFrameProps,
+)
 from polars.schema import Schema
 
 if TYPE_CHECKING:
@@ -25,11 +29,13 @@ if TYPE_CHECKING:
     from polars._typing import DeletionFiles, StorageOptionsDict
     from polars.io.cloud._utils import NoPickleOption
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
-    from polars.lazyframe.frame import LazyFrame
+    from polars.lazyframe.resolver._resolver import (
+        FilterExpr,
+    )
 
 
 @dataclass(kw_only=True)
-class DeltaDataset:
+class DeltaScanResolver(LazyFrameResolver):
     """Dataset interface for Delta."""
 
     table_: NoPickleOption[DeltaTable]
@@ -43,23 +49,31 @@ class DeltaDataset:
     use_pyarrow: bool
     pyarrow_options: dict[str, Any] | None
 
-    #
-    # PythonDatasetProvider interface functions
-    #
-
     def schema(self) -> Schema:
         """Fetch the schema of the table."""
         return Schema(self.table().schema())
 
-    def to_dataset_scan(
+    def cse_eq(self, other: DeltaScanResolver) -> bool:
+        return (
+            self.table_uri() == other.table_uri()
+            and self.version == other.version
+            and self.storage_options == other.storage_options
+            and self.credential_provider_builder == other.credential_provider_builder
+            and self.delta_table_options == other.delta_table_options
+            and self.use_pyarrow == other.use_pyarrow
+            and self.pyarrow_options == other.pyarrow_options
+        )
+
+    def resolve_lazyframe(
         self,
         *,
-        existing_resolved_version_key: str | None = None,
-        limit: int | None = None,
-        projection: list[str] | None = None,
-        filter_columns: list[str] | None = None,
-        pyarrow_predicate: str | None = None,
-    ) -> tuple[LazyFrame, str] | None:
+        projection: list[str] | None,
+        limit: int | None,
+        filters: list[FilterExpr],  # noqa: ARG002
+        filter_columns: list[str],
+        filter_drop_columns_idx: int | None,
+        existing_resolved_version_key: str | None,
+    ) -> pl.LazyFrame | tuple[pl.LazyFrame | None, ResolvedLazyFrameProps]:
         """Construct a LazyFrame scan."""
         import polars as pl
         import polars._utils.logging
@@ -68,15 +82,19 @@ class DeltaDataset:
 
         if verbose:
             eprint(
-                "DeltaDataset: to_dataset_scan(): "
+                "DeltaScanResolver: resolve_lazyframe(): "
                 f"version: {self.version}, "
                 f"limit: {limit}, "
                 f"projection: {projection}, "
-                f"filter_columns: {filter_columns}, "
+                f"filter_drop_columns_idx: {filter_drop_columns_idx}, "
                 f"use_pyarrow: {self.use_pyarrow}"
             )
 
         table = self.table()
+        schema = self.schema()
+        projected_schema = (
+            {x: schema[x] for x in projection} if projection is not None else schema
+        )
         version = self.version if self.version is not None else table.version()
         version_key = str(version)
 
@@ -86,10 +104,12 @@ class DeltaDataset:
         ):
             if verbose:
                 eprint(
-                    f"DeltaDataset: to_dataset_scan(): early return ({version_key = })"
+                    f"DeltaScanResolver: to_dataset_scan(): early return ({version_key = })"
                 )
 
-            return None
+            return None, ResolvedLazyFrameProps(version_key=version_key)
+
+        applied_filters: set[int] = set()
 
         if self.use_pyarrow:
             import polars.io.pyarrow_dataset.anonymous_scan
@@ -97,43 +117,17 @@ class DeltaDataset:
 
             dataset = table.to_pyarrow_dataset(**(self.pyarrow_options or {}))
 
-            pa_predicate_expr = None
-            if pyarrow_predicate is not None:
-                import pyarrow as pa
-
-                from polars._utils.convert import (
-                    to_py_date,
-                    to_py_datetime,
-                    to_py_time,
-                    to_py_timedelta,
-                )
-                from polars.datatypes import Date, Datetime, Duration
-
-                pa_predicate_expr = eval(
-                    pyarrow_predicate,
-                    {
-                        "pa": pa,
-                        "Date": Date,
-                        "Datetime": Datetime,
-                        "Duration": Duration,
-                        "to_py_date": to_py_date,
-                        "to_py_datetime": to_py_datetime,
-                        "to_py_time": to_py_time,
-                        "to_py_timedelta": to_py_timedelta,
-                    },
-                )
-
             func = partial(
                 polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl,
                 dataset,
-                n_rows=limit,
-                predicate=pa_predicate_expr,
-                with_columns=projection,
             )
 
             return LazyFrame._scan_python_function(
                 dataset.schema, func, pyarrow=True, is_pure=True
-            ), version_key
+            ), ResolvedLazyFrameProps(
+                version_key=version_key,
+                applied_filters=applied_filters,
+            )
 
         table_md = table.metadata()
         partition_columns = set(table_md.partition_columns)
@@ -146,7 +140,7 @@ class DeltaDataset:
         start_time = perf_counter()
 
         if verbose:
-            eprint("DeltaDataset: to_dataset_scan(): begin path expansion")
+            eprint("DeltaScanResolver: to_dataset_scan(): begin path expansion")
 
         paths = table.file_uris()
 
@@ -156,7 +150,7 @@ class DeltaDataset:
         if verbose:
             elapsed = perf_counter() - start_time
             eprint(
-                "DeltaDataset: to_dataset_scan(): "
+                "DeltaScanResolver: to_dataset_scan(): "
                 f"native scan_parquet(): "
                 f"num_files: {len(paths)}, "
                 f"path expansion time: {elapsed:.3f}s"
@@ -169,7 +163,7 @@ class DeltaDataset:
                 schema=schema,
                 verbose=verbose,
             )
-            if filter_columns is not None
+            if filter_columns
             else None
         )
 
@@ -214,6 +208,7 @@ class DeltaDataset:
 
         return scan_parquet(
             paths,
+            schema=projected_schema,
             hive_schema=hive_schema if len(partition_columns) > 0 else None,
             hive_partitioning=len(partition_columns) > 0,
             cast_options=ScanCastOptions._default_iceberg(),
@@ -223,7 +218,10 @@ class DeltaDataset:
             credential_provider=self.credential_provider_builder,  # type: ignore[arg-type]
             _table_statistics=table_statistics,
             _deletion_files=deletion_files,
-        ), version_key
+        ), ResolvedLazyFrameProps(
+            version_key=version_key,
+            applied_filters=applied_filters,
+        )
 
     #
     # Accessors
@@ -373,7 +371,7 @@ def _fetch_deletion_vectors(table: DeltaTable) -> pl.DataFrame | None:
     dv_table = pl.DataFrame(table.deletion_vectors())
 
     if verbose and dv_table.height > 0:
-        eprint(f"DeltaDataset: has deletion_vectors, file_count: {len(dv_table)}")
+        eprint(f"DeltaScanResolver: has deletion_vectors, file_count: {len(dv_table)}")
 
     if len(dv_table) == 0:
         return None
