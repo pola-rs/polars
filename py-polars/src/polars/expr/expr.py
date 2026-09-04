@@ -800,7 +800,7 @@ class Expr(metaclass=_Meta):
         """
         Return whether the column is empty.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -3850,7 +3850,7 @@ class Expr(metaclass=_Meta):
         """
         Check whether the expression contains one or more null values.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
