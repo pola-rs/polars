@@ -236,7 +236,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         // SAFETY:
         // We don't change the data type of the chunks, nor the length.
         for (arr, validity) in unsafe { self.chunks_mut().iter_mut() }.zip(validities.iter()) {
-            *arr = arr.with_validity(validity.clone())
+            *arr = arr.with_validity(validity.clone().map(PlBitmap::from_bitmap))
         }
     }
 

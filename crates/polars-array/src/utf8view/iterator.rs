@@ -209,10 +209,10 @@ unsafe impl TrustedLen for PlUtf8ViewIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-
     use arrow::bitmap::Bitmap;
 
     use crate::PlUtf8ViewArray;
+    use crate::bitmap::PlBitmap;
     use crate::iterator_tests::assert_iterates;
 
     /// The elements of a flat array: one that is inlined into its view, one that is not, and one
@@ -260,7 +260,9 @@ mod tests {
     /// A mask of mixed bits, which is read by position alongside the strings.
     #[test]
     fn mixed_validity() {
-        let array = flat_array().with_validity(Some(Bitmap::from_iter([true, false, true])));
+        let array = flat_array().with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
+            true, false, true,
+        ]))));
 
         assert_iterates(array.values_iter(), &elements());
         assert_iterates(

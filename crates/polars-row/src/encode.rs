@@ -1141,7 +1141,7 @@ mod tests {
 
         // A struct array's own buffer is only its mask, and every field holds one element per row.
         assert_representations_agree(
-            Box::new(PlStructArray::new_broadcast(
+            Box::new(PlStructArray::new(
                 vec![Box::new(PlPrimitiveArray::new_scalar(7i64, LENGTH))],
                 LENGTH,
                 None,

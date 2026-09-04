@@ -77,7 +77,7 @@ impl ChunkReverse for BinaryChunked {
                     views.into(),
                     arr.data_buffers().clone(),
                     length,
-                    validity,
+                    validity.map(PlBitmap::from_bitmap),
                 )
                 .into_boxed();
                 BinaryChunked::from_chunks_and_dtype_unchecked(

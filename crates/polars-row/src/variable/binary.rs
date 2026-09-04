@@ -13,7 +13,7 @@
 use std::mem::MaybeUninit;
 
 use polars_array::builder::StaticArrayBuilder;
-use polars_array::{PlBinaryViewArray, PlBinaryViewArrayBuilder};
+use polars_array::{PlBinaryViewArray, PlBinaryViewArrayBuilder, PlBitmap};
 use polars_utils::slice::Slice2Uninit;
 
 use crate::row::RowEncodingOptions;
@@ -250,5 +250,7 @@ pub(crate) unsafe fn decode_binview(
         mutable.push_value(&scratch);
     }
 
-    mutable.freeze().with_validity(validity)
+    mutable
+        .freeze()
+        .with_validity(validity.map(PlBitmap::from_bitmap))
 }

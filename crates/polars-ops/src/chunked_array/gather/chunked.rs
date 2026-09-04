@@ -497,7 +497,7 @@ unsafe fn take_chunked_unchecked_struct<const B: u64>(
     out.downcast_iter_mut()
         .next()
         .unwrap()
-        .set_validity(validity.into_opt_validity());
+        .set_validity(validity.into_opt_validity().map(PlBitmap::from_bitmap));
     out
 }
 
@@ -552,7 +552,7 @@ unsafe fn take_opt_chunked_unchecked_struct<const B: u64>(
     out.downcast_iter_mut()
         .next()
         .unwrap()
-        .set_validity(validity.into_opt_validity());
+        .set_validity(validity.into_opt_validity().map(PlBitmap::from_bitmap));
     out
 }
 

@@ -1,9 +1,7 @@
 use std::any::Any;
 
-use arrow::bitmap::Bitmap;
-
 use crate::array_type::PlArrayType;
-use crate::bitmap::PlBitmapRef;
+use crate::bitmap::{PlBitmap, PlBitmapRef};
 
 /// A trait object over the arrays in this crate.
 pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
@@ -119,37 +117,21 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
         sliced
     }
 
-    /// Replaces the validity mask with a flat one.
+    /// Replaces the validity mask, which keeps the representation it is in: a [`PlBitmap`] that
+    /// stands for a single bit is not written out one bit per element to be set.
     ///
     /// # Panics
-    /// Panics if `validity` does not hold one bit per element.
-    fn set_validity(&mut self, validity: Option<Bitmap>);
+    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
+    fn set_validity(&mut self, validity: Option<PlBitmap>);
 
-    /// Replaces the validity mask with one that broadcasts over this array.
-    ///
-    /// # Panics
-    /// Panics if `validity` is neither flat nor scalar for this array's length.
-    fn set_validity_broadcast(&mut self, validity: Option<Bitmap>);
-
-    /// Returns this array with its validity mask replaced by a flat one.
+    /// Returns this array with its validity mask replaced, keeping its representation.
     ///
     /// # Panics
     /// Panics under the conditions [`Self::set_validity`] panics.
     #[must_use]
-    fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn PlArray> {
+    fn with_validity(&self, validity: Option<PlBitmap>) -> Box<dyn PlArray> {
         let mut new = self.to_boxed();
         new.set_validity(validity);
-        new
-    }
-
-    /// Returns this array with its validity mask replaced by one that broadcasts over it.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::set_validity_broadcast`] panics.
-    #[must_use]
-    fn with_validity_broadcast(&self, validity: Option<Bitmap>) -> Box<dyn PlArray> {
-        let mut new = self.to_boxed();
-        new.set_validity_broadcast(validity);
         new
     }
 

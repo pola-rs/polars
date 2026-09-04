@@ -266,6 +266,7 @@ fn repeat_wrapping_add<T: Zero + WrappingAdd + Copy>(value: T, count: usize) -> 
 #[cfg(test)]
 mod tests {
     use arrow::bitmap::Bitmap;
+    use polars_array::PlBitmap;
 
     use super::*;
 
@@ -275,10 +276,10 @@ mod tests {
         validity: Option<&Bitmap>,
         length: usize,
     ) -> [PlPrimitiveArray<T>; 2] {
-        let scalar =
-            PlPrimitiveArray::new_scalar(value, length).with_validity_broadcast(validity.cloned());
+        let scalar = PlPrimitiveArray::new_scalar(value, length)
+            .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
         let flat = PlPrimitiveArray::from_vec(vec![value; length])
-            .with_validity_broadcast(validity.cloned());
+            .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
         assert_eq!(scalar, flat);
         [scalar, flat]
     }
@@ -349,7 +350,7 @@ mod tests {
 
         // Values laid out one per element under a mask that leaves every one of them null.
         let masked = PlPrimitiveArray::from_vec(vec![5i32; 4])
-            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
+            .with_validity(Some(PlBitmap::new_scalar(false, 4)));
         assert_eq!(wrapping_sum_arr(&masked), 0);
 
         let empty = PlPrimitiveArray::<i32>::new_empty();
@@ -366,7 +367,7 @@ mod tests {
 
         // A mask that repeats a set bit leaves every element counting.
         let all_valid = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
-            .with_validity_broadcast(Some(Bitmap::new_with_value(true, 1)));
+            .with_validity(Some(PlBitmap::new_scalar(true, 3)));
         assert_eq!(wrapping_sum_arr(&all_valid), 6);
     }
 

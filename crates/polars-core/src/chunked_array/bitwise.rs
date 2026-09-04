@@ -130,7 +130,7 @@ impl BitXor for &BooleanChunked {
                 |l_arr, r_arr| {
                     let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
                     let values = l_arr.values() ^ r_arr.values();
-                    PlBooleanArray::new(values, l_arr.len(), validity)
+                    PlBooleanArray::new(values, l_arr.len(), validity.map(PlBitmap::from_bitmap))
                 },
                 self.name().clone(),
             )

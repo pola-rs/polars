@@ -4,7 +4,7 @@ use std::mem::MaybeUninit;
 
 use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
-use polars_array::{ArrayRepr, PlPrimitiveArray};
+use polars_array::{ArrayRepr, PlBitmap, PlPrimitiveArray};
 use polars_utils::float16::pf16;
 use polars_utils::slice::*;
 use polars_utils::total_ord::{canonical_f16, canonical_f32, canonical_f64};
@@ -293,7 +293,11 @@ where
     let increment_len = T::ENCODED_LEN;
 
     increment_row_counter(rows, increment_len);
-    PlPrimitiveArray::new(values.into(), rows.len(), validity)
+    PlPrimitiveArray::new(
+        values.into(),
+        rows.len(),
+        validity.map(PlBitmap::from_bitmap),
+    )
 }
 
 unsafe fn increment_row_counter(rows: &mut [&[u8]], fixed_size: usize) {

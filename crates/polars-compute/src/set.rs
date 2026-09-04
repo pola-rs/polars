@@ -14,7 +14,7 @@ use std::ops::BitOr;
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::utils::SlicesIterator;
 use arrow::types::NativeType;
-use polars_array::{ArrayRepr, PlBooleanArray, PlPrimitiveArray};
+use polars_array::{ArrayRepr, PlBitmap, PlBooleanArray, PlPrimitiveArray};
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::IdxSize;
 
@@ -155,7 +155,7 @@ pub fn set_with_mask<T: NativeType>(
         .validity()
         .map(|validity| validity.to_flat().bitor(mask_values));
 
-    PlPrimitiveArray::new(buf.into(), array.len(), validity)
+    PlPrimitiveArray::new(buf.into(), array.len(), validity.map(PlBitmap::from_bitmap))
 }
 
 /// Sets the elements of `array` at `idx` to `value`, leaving its validity as it is.
@@ -190,7 +190,11 @@ where
         .validity()
         .map(|validity| validity.to_flat().into_owned());
 
-    Ok(PlPrimitiveArray::new(buf.into(), array.len(), validity))
+    Ok(PlPrimitiveArray::new(
+        buf.into(),
+        array.len(),
+        validity.map(PlBitmap::from_bitmap),
+    ))
 }
 
 #[cfg(test)]

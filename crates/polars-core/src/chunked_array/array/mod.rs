@@ -32,7 +32,7 @@ pub(crate) fn array_with_values(
 
     // SAFETY: just checked that the values hold `width` values for every element.
     unsafe { PlFixedSizeListArray::new_unchecked(values, width, length, None) }
-        .with_validity_broadcast(arr.validity().map(|v| v.to_flat_or_scalar()))
+        .with_validity(arr.validity().map(PlBitmap::from))
 }
 
 /// Lays `elements` out as the chunk of an [`ArrayChunked`] of `width` and `inner_dtype`, writing
@@ -84,7 +84,7 @@ pub(crate) fn collect_array_chunk(
             values,
             width,
             length,
-            has_nulls.then(|| validity.freeze()),
+            (has_nulls.then(|| validity.freeze())).map(PlBitmap::from_bitmap),
         )
     }
 }
@@ -141,14 +141,18 @@ impl ArrayChunked {
         let chunk_len_validity_iter =
             if physical_repr.chunks().len() == 1 && self.chunks().len() > 1 {
                 // Physical repr got rechunked, rechunk our validity as well.
-                Either::Left(std::iter::once((self.len(), self.rechunk_validity())))
+                Either::Left(std::iter::once((
+                    self.len(),
+                    // Rechunking writes the mask out one bit per element.
+                    self.rechunk_validity().map(PlBitmap::from_bitmap),
+                )))
             } else {
                 // No rechunking, expect the same number of chunks.
                 assert_eq!(self.chunks().len(), physical_repr.chunks().len());
                 Either::Right(
                     self.chunks()
                         .iter()
-                        .map(|c| (c.len(), c.validity().map(|v| v.to_flat_or_scalar()))),
+                        .map(|c| (c.len(), c.validity().map(PlBitmap::from))),
                 )
             };
 
@@ -159,7 +163,7 @@ impl ArrayChunked {
                 // SAFETY: the values are the physical repr of the ones taken out, so they still
                 // hold the width of every element, laid end to end.
                 unsafe { PlFixedSizeListArray::new_unchecked(values, width, len, None) }
-                    .with_validity_broadcast(validity)
+                    .with_validity(validity)
                     .into_boxed()
             })
             .collect();

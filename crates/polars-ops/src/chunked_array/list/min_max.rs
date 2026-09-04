@@ -49,7 +49,7 @@ where
     let out = min_between_offsets(values, offsets);
     // Collecting leaves `out` flat, so its mask holds one bit per element like the other one.
     let new_validity = combine_validities_and(out.as_flat().unwrap().validity(), validity);
-    out.with_validity(new_validity)
+    out.with_validity(new_validity.map(PlBitmap::from_bitmap))
 }
 
 fn min_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
@@ -158,7 +158,7 @@ where
     let out = max_between_offsets(values, offsets);
     // Collecting leaves `out` flat, so its mask holds one bit per element like the other one.
     let new_validity = combine_validities_and(out.as_flat().unwrap().validity(), validity);
-    out.with_validity(new_validity)
+    out.with_validity(new_validity.map(PlBitmap::from_bitmap))
 }
 
 fn max_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {

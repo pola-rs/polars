@@ -39,9 +39,9 @@ fn extract_groups_array(
     // The input's mask carries over in whatever representation it is in, so it goes on through
     // the broadcast setter rather than a constructor that takes only one of the two; the field
     // names live in the `DataType` of the `Series` this becomes a chunk of.
-    let validity = arr.validity().map(|v| v.to_flat_or_scalar());
+    let validity = arr.validity().map(PlBitmap::from);
     Ok(PlStructArray::new(values, arr.len(), None)
-        .with_validity_broadcast(validity)
+        .with_validity(validity)
         .into_boxed())
 }
 

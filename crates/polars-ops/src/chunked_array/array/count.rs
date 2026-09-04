@@ -25,7 +25,8 @@ pub(super) fn count_boolean_bits(ca: &ArrayChunked) -> IdxCa {
         assert_eq!(mask.null_count(), 0);
         let out = count_bits_set(mask.values(), arr.len(), arr.width());
         // One count per element, and the mask of the array holds one bit per element as well.
-        PlPrimitiveArray::from_vec(out).with_validity(arr.validity().cloned())
+        PlPrimitiveArray::from_vec(out)
+            .with_validity(arr.validity().cloned().map(PlBitmap::from_bitmap))
     })
 }
 

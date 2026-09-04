@@ -176,6 +176,8 @@ where
 
 #[cfg(test)]
 mod test {
+    use polars_array::PlBitmap;
+
     use super::*;
     use crate::rolling::flat_chunk;
 
@@ -183,7 +185,9 @@ mod test {
     fn test_rolling_median_nulls() {
         let arr = &flat_chunk(
             vec![1.0f64, 2.0, 3.0, 4.0],
-            Some(Bitmap::from(&[true, false, true, true])),
+            Some(PlBitmap::from_bitmap(Bitmap::from(&[
+                true, false, true, true,
+            ]))),
         );
         let med_pars = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: 0.5,
@@ -216,7 +220,9 @@ mod test {
         // compare quantiles to corresponding min/max/median values
         let values = &flat_chunk(
             vec![1.0f64, 2.0, 3.0, 4.0, 5.0],
-            Some(Bitmap::from(&[true, false, false, true, true])),
+            Some(PlBitmap::from_bitmap(Bitmap::from(&[
+                true, false, false, true, true,
+            ]))),
         );
 
         let methods = vec![

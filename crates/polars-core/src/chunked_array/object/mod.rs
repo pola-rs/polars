@@ -268,33 +268,18 @@ impl<T: PolarsObject> PlArray for ObjectArray<T> {
             .slice_in_place_unchecked(offset..offset + length);
     }
 
-    fn set_validity(&mut self, validity: Option<Bitmap>) {
-        if let Some(validity) = validity.as_ref() {
-            assert!(
-                is_flat_buffer_len(validity.len(), self.len()),
-                "validity mask of length {} is not flat for an array of length {}",
-                validity.len(),
-                self.len(),
-            );
-        }
-        self.validity = validity;
-    }
-
-    fn set_validity_broadcast(&mut self, validity: Option<Bitmap>) {
-        // A scalar mask covers every element with a single bit; an object array has nowhere to
-        // hold one, so it is written out to the mask the array's length calls for.
+    fn set_validity(&mut self, validity: Option<PlBitmap>) {
+        // A mask that repeats a single bit covers every element with it; an object array has
+        // nowhere to hold one, so it is written out to the bit per element its length calls for.
         self.validity = validity.map(|validity| {
-            assert!(
-                is_valid_buffer_len(validity.len(), self.len()),
-                "validity mask of length {} is neither flat nor scalar for an array of length {}",
+            assert_eq!(
+                validity.len(),
+                self.len(),
+                "validity mask of {} elements does not cover an array of length {}",
                 validity.len(),
                 self.len(),
             );
-            if is_flat_buffer_len(validity.len(), self.len()) {
-                validity
-            } else {
-                Bitmap::new_with_value(validity.get_bit(0), self.len())
-            }
+            validity.into_bitmap()
         });
     }
 
@@ -364,16 +349,9 @@ impl<T: PolarsObject> StaticArray for ObjectArray<T> {
     }
 
     #[inline]
-    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
         let mut out = self;
         PlArray::set_validity(&mut out, validity);
-        out
-    }
-
-    #[inline]
-    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
-        let mut out = self;
-        PlArray::set_validity_broadcast(&mut out, validity);
         out
     }
 

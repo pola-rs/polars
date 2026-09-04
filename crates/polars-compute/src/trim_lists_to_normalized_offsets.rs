@@ -11,7 +11,9 @@
 //! comes back in the representation it went in — an array whose every element is the same list
 //! keeps its two offsets, and is trimmed in `O(1)`.
 
-use polars_array::{PlArray, PlArrayType, PlFixedSizeListArray, PlListArray, PlStructArray};
+use polars_array::{
+    PlArray, PlArrayType, PlBitmap, PlFixedSizeListArray, PlListArray, PlStructArray,
+};
 use polars_buffer::Buffer;
 
 use crate::nesting::{covered_range, downcast, fsl_with_values, struct_with_fields};
@@ -55,7 +57,8 @@ pub fn trim_lists_to_normalized_offsets_list(array: &PlListArray) -> Option<PlLi
     let values = trim_lists_to_normalized_offsets(&*values).unwrap_or(values);
 
     let offsets_are_flat = array.offsets_are_flat();
-    let (_, offsets, length, validity) = array.clone().into_inner();
+    let validity = array.validity().map(PlBitmap::from);
+    let (_, offsets, length, _) = array.clone().into_inner();
 
     // Every offset moves back by the one start they all sit past, which leaves the buffer exactly
     // as long as it was: a scalar array keeps its two offsets, and stays scalar.
@@ -73,7 +76,7 @@ pub fn trim_lists_to_normalized_offsets_list(array: &PlListArray) -> Option<PlLi
     // `length`.
     Some(unsafe {
         if offsets_are_flat {
-            PlListArray::new_unchecked(values, offsets, length, validity)
+            PlListArray::new_unchecked(values, offsets, length, validity.clone())
         } else {
             PlListArray::new_broadcast_unchecked(values, offsets, length, validity)
         }

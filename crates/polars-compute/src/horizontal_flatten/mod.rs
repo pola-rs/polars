@@ -11,7 +11,7 @@
 //! [`flatten_structs`].
 
 use polars_array::builder::{ShareStrategy, builder_like};
-use polars_array::{PlArray, PlArrayBuilder, PlArrayType, PlBooleanArray, PlStructArray};
+use polars_array::{PlArray, PlArrayBuilder, PlArrayType, PlBitmap, PlBooleanArray, PlStructArray};
 
 use crate::nesting::downcast;
 
@@ -137,7 +137,7 @@ fn flatten_structs(
         });
 
     // A struct of no fields carries nothing but its length, which the widths still say.
-    PlStructArray::new(fields, out_len, None).with_validity_broadcast(validity)
+    PlStructArray::new(fields, out_len, None).with_validity(validity.map(PlBitmap::from_bitmap))
 }
 
 /// Whether `array` holds the one row of `width` values it stands for at every output row, rather
@@ -164,7 +164,6 @@ fn is_broadcast(array: &dyn PlArray, width: usize, output_height: usize) -> bool
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
     use polars_array::{PlPrimitiveArray, PlStructArray, PlUtf8ViewArray};
 
     use super::*;
@@ -342,10 +341,10 @@ mod tests {
     #[test]
     fn a_struct_mask_that_repeats_one_bit_is_read_as_one() {
         let boxed = |value: i32, validity: Option<bool>| -> Box<dyn PlArray> {
-            Box::new(PlStructArray::new_broadcast(
+            Box::new(PlStructArray::new(
                 vec![Box::new(PlPrimitiveArray::new_scalar(value, 4))],
                 4,
-                validity.map(|bit| Bitmap::new_with_value(bit, 1)),
+                validity.map(|bit| PlBitmap::new_scalar(bit, 4)),
             ))
         };
 

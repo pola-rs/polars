@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_array::{PlArray, PlStructArray};
+use polars_array::{PlArray, PlBitmap, PlStructArray};
 use polars_core::chunked_array::StructChunked;
 use polars_core::datatypes::{DataType, Field, ListChunked};
 use polars_core::runtime::RAYON;
@@ -43,7 +43,7 @@ pub trait ToStruct: AsList {
                 vec![Box::new(PlStructArray::new(
                     field_arrays,
                     ca.len(),
-                    ca.rechunk_validity(),
+                    ca.rechunk_validity().map(PlBitmap::from_bitmap),
                 ))],
                 ca.len(),
                 outer_validity.map_or(0, |x| x.unset_bits()),

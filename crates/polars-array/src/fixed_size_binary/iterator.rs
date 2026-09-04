@@ -382,11 +382,11 @@ unsafe impl TrustedLen for PlFixedSizeBinaryIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-
     use arrow::bitmap::Bitmap;
     use polars_buffer::Buffer;
 
     use crate::PlFixedSizeBinaryArray;
+    use crate::bitmap::PlBitmap;
     use crate::iterator_tests::assert_iterates;
 
     /// The elements of a flat array of three elements two bytes wide.
@@ -435,7 +435,9 @@ mod tests {
     /// A mask of mixed bits, which is read by position alongside the elements.
     #[test]
     fn mixed_validity() {
-        let array = flat_array().with_validity(Some(Bitmap::from_iter([true, false, true])));
+        let array = flat_array().with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
+            true, false, true,
+        ]))));
 
         assert_iterates(array.values_iter(), &elements());
         assert_iterates(
@@ -450,7 +452,9 @@ mod tests {
     #[test]
     fn sliced_mixed_validity() {
         let array = PlFixedSizeBinaryArray::from_vec(b"abcdefghij".to_vec(), 2)
-            .with_validity(Some(Bitmap::from_iter([true, false, true, true, false])))
+            .with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
+                true, false, true, true, false,
+            ]))))
             .sliced(1, 3);
 
         assert_iterates(array.values_iter(), &[b"cd", b"ef", b"gh"]);
@@ -463,8 +467,9 @@ mod tests {
     /// A mask under a scalar array, which every position reads the same bit of.
     #[test]
     fn scalar_values_under_a_mixed_mask() {
-        let array = PlFixedSizeBinaryArray::new_scalar(b"xy", 3)
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
+        let array = PlFixedSizeBinaryArray::new_scalar(b"xy", 3).with_validity(Some(
+            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true])),
+        ));
 
         assert_iterates(
             array.iter(),

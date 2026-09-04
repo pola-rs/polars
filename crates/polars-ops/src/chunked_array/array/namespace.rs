@@ -202,7 +202,7 @@ pub trait ArrayNameSpace: AsArray {
                     PlArrayBuilder::freeze(builder),
                     slice_len,
                     arr.len(),
-                    validity.into_opt_validity(),
+                    validity.into_opt_validity().map(PlBitmap::from_bitmap),
                 )
                 .into_boxed()
             })

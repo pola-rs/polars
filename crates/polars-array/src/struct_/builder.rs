@@ -5,6 +5,7 @@ use polars_utils::IdxSize;
 
 use super::PlStructArray;
 use crate::array::PlArray;
+use crate::bitmap::PlBitmap;
 use crate::builder::{
     PlArrayBuilder, ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
     opt_gather_extend_validity, subslice_extend_each_repeated_validity, subslice_extend_validity,
@@ -85,7 +86,7 @@ impl StaticArrayBuilder for PlStructArrayBuilder {
 
     fn freeze(self) -> PlStructArray {
         let length = self.length;
-        let validity = self.validity.into_opt_validity();
+        let validity = self.validity.into_opt_validity().map(PlBitmap::from_bitmap);
         let fields = self
             .fields
             .into_iter()
@@ -105,7 +106,13 @@ impl StaticArrayBuilder for PlStructArrayBuilder {
             .map(|field| field.freeze_reset())
             .collect();
         // SAFETY: as in `freeze`.
-        unsafe { PlStructArray::new_unchecked(fields, length, validity.into_opt_validity()) }
+        unsafe {
+            PlStructArray::new_unchecked(
+                fields,
+                length,
+                validity.into_opt_validity().map(PlBitmap::from_bitmap),
+            )
+        }
     }
 
     fn extend_nulls(&mut self, length: usize) {
@@ -187,6 +194,7 @@ mod tests {
     use arrow::bitmap::Bitmap;
 
     use super::PlStructArrayBuilder;
+    use crate::bitmap::PlBitmap;
     use crate::builder::{ShareStrategy, StaticArrayBuilder, builder_like};
     use crate::{PlBooleanArray, PlPrimitiveArray, PlStructArray};
 
@@ -198,7 +206,9 @@ mod tests {
                 Box::new(PlBooleanArray::new_scalar(true, 3)),
             ],
             3,
-            Some(Bitmap::from_iter([true, false, true])),
+            Some(PlBitmap::from_bitmap(Bitmap::from_iter([
+                true, false, true,
+            ]))),
         )
     }
 

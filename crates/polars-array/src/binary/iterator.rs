@@ -492,11 +492,11 @@ unsafe impl TrustedLen for PlBinaryIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-
     use arrow::bitmap::Bitmap;
 
     use super::PlBinaryValues;
     use crate::PlBinaryArray;
+    use crate::bitmap::PlBitmap;
     use crate::iterator_tests::assert_iterates;
 
     /// The elements of a flat array, which are of different lengths and include an empty one.
@@ -572,7 +572,9 @@ mod tests {
     /// A mask of mixed bits, which is read by position alongside the elements the offsets cut out.
     #[test]
     fn mixed_validity() {
-        let array = flat_array().with_validity(Some(Bitmap::from_iter([true, false, true])));
+        let array = flat_array().with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
+            true, false, true,
+        ]))));
 
         assert_iterates(array.values_iter(), &elements());
         assert_iterates(

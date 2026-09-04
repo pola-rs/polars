@@ -45,7 +45,7 @@ pub(crate) fn collect_list_chunk(
             values,
             offsets.into(),
             length,
-            has_nulls.then(|| validity.freeze()),
+            (has_nulls.then(|| validity.freeze())).map(PlBitmap::from_bitmap),
         )
     }
 }
@@ -55,12 +55,12 @@ pub(crate) fn collect_list_chunk(
 pub(crate) fn list_with_values(arr: &PlListArray, values: PlArrayRef) -> PlListArray {
     assert_eq!(arr.values().len(), values.len());
     let offsets_are_flat = arr.offsets_are_flat();
-    let (_, offsets, length, validity) = arr.clone().into_inner();
+    let validity = arr.validity().map(PlBitmap::from);
+    let (_, offsets, length, _) = arr.clone().into_inner();
 
     // SAFETY: only the values are replaced, by an array of the same length, so the offsets still
-    // cover them and are in the representation they were taken out in. The mask is put back on
-    // afterwards, because its representation is not the one the offsets are in: a scalar mask over
-    // flat offsets, and a flat mask over scalar offsets, are both arrays this crate hands out.
+    // cover them and are in the representation they were taken out in. The constructor decides the
+    // offsets; the mask carries its own representation and goes back on afterwards.
     let out = unsafe {
         if offsets_are_flat {
             PlListArray::new_unchecked(values, offsets, length, None)
@@ -68,7 +68,7 @@ pub(crate) fn list_with_values(arr: &PlListArray, values: PlArrayRef) -> PlListA
             PlListArray::new_broadcast_unchecked(values, offsets, length, None)
         }
     };
-    out.with_validity_broadcast(validity)
+    out.with_validity(validity)
 }
 
 impl ListChunked {
@@ -280,8 +280,9 @@ mod test {
     #[test]
     fn list_with_values_keeps_a_mask_of_either_representation() {
         // Scalar offsets — one range every element shares — under a flat mask.
-        let arr = PlListArray::new_full_null(values(vec![1, 2]), 4)
-            .with_validity_broadcast(Some(Bitmap::from_iter([true, false, true, false])));
+        let arr = PlListArray::new_full_null(values(vec![1, 2]), 4).with_validity(Some(
+            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true, false])),
+        ));
         assert!(!arr.offsets_are_flat());
         assert!(arr.validity().unwrap().is_flat());
 
@@ -292,7 +293,7 @@ mod test {
 
         // And the other way around: flat offsets under a scalar mask.
         let arr = PlListArray::new(values(vec![1, 2]), vec![0, 1, 2].into(), 2, None)
-            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
+            .with_validity(Some(PlBitmap::new_scalar(false, 2)));
         assert!(arr.offsets_are_flat());
         assert!(arr.validity().unwrap().is_scalar());
 

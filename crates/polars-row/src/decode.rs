@@ -3,8 +3,8 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_array::{
-    PlArray, PlBinaryArray, PlFixedSizeListArray, PlListArray, PlNullArray, PlPrimitiveArray,
-    PlStructArray, PlUtf8ViewArray,
+    PlArray, PlBinaryArray, PlBitmap, PlFixedSizeListArray, PlListArray, PlNullArray,
+    PlPrimitiveArray, PlStructArray, PlUtf8ViewArray,
 };
 use polars_buffer::Buffer;
 use polars_dtype::categorical::CatNative;
@@ -275,7 +275,11 @@ unsafe fn decode(
                     .collect(),
                 _ => unreachable!(),
             };
-            Box::new(PlStructArray::new(values, rows.len(), validity))
+            Box::new(PlStructArray::new(
+                values,
+                rows.len(),
+                validity.map(PlBitmap::from_bitmap),
+            ))
         },
         D::FixedSizeList(fsl_field, width) => {
             let validity = decode_validity(rows, opt);
@@ -297,7 +301,7 @@ unsafe fn decode(
                 values,
                 *width,
                 rows.len(),
-                validity,
+                validity.map(PlBitmap::from_bitmap),
             ))
         },
         D::List(list_field) | D::LargeList(list_field) => {
@@ -359,7 +363,12 @@ unsafe fn decode(
 
             // SAFETY: the offsets are pushed in order and end at the number of values decoded.
             Box::new(unsafe {
-                PlListArray::new_unchecked(values, Buffer::from(offsets), num_rows, validity)
+                PlListArray::new_unchecked(
+                    values,
+                    Buffer::from(offsets),
+                    num_rows,
+                    validity.map(PlBitmap::from_bitmap),
+                )
             })
         },
 

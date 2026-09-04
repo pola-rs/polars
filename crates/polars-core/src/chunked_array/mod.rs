@@ -642,8 +642,10 @@ where
         }
         let mut i = 0;
         for chunk in unsafe { self.chunks_mut() } {
-            *chunk =
-                chunk.with_validity(validity.as_ref().map(|v| v.clone().sliced(i, chunk.len())));
+            *chunk = chunk.with_validity(
+                (validity.as_ref().map(|v| v.clone().sliced(i, chunk.len())))
+                    .map(PlBitmap::from_bitmap),
+            );
             i += chunk.len();
         }
         self.null_count = validity.map(|v| v.unset_bits()).unwrap_or(0);
@@ -870,7 +872,7 @@ impl ArrayChunked {
                     values,
                     offsets.into(),
                     chunk.len(),
-                    chunk.validity().map(|v| v.to_flat().into_owned()),
+                    (chunk.validity().map(|v| v.to_flat().into_owned())).map(PlBitmap::from_bitmap),
                 )) as PlArrayRef
             })
             .collect();
@@ -1116,7 +1118,7 @@ pub(crate) fn to_primitive<T: PolarsNumericType>(
     validity: Option<Bitmap>,
 ) -> PlPrimitiveArray<T::Native> {
     let length = values.len();
-    PlPrimitiveArray::new(values.into(), length, validity)
+    PlPrimitiveArray::new(values.into(), length, validity.map(PlBitmap::from_bitmap))
 }
 
 pub(crate) fn to_array<T: PolarsNumericType>(

@@ -188,7 +188,7 @@ mod test {
         // A mask that marks every element null leaves no list to index at all.
         let all_null = arr
             .clone()
-            .with_validity_broadcast(Some(PlBitmap::new_scalar(false, 100).into_flat_or_scalar()));
+            .with_validity(Some(PlBitmap::new_scalar(false, 100)));
         assert_eq!(sublist_get(&all_null, 1).null_count(), 100);
         assert!(!index_is_oob(&all_null, 3));
     }
@@ -199,7 +199,7 @@ mod test {
     fn a_repeated_element_under_a_flat_mask() {
         let arr =
             PlListArray::new_scalar(PlPrimitiveArray::from_vec(vec![1i32, 2]).into_boxed(), 3)
-                .with_validity_broadcast(Some([true, false, true].into_iter().collect()));
+                .with_validity(Some([true, false, true].into_iter().collect()));
 
         assert_eq!(as_i32(&*sublist_get(&arr, 0)), [Some(1), None, Some(1)]);
         assert!(!index_is_oob(&arr, 1));

@@ -408,7 +408,7 @@ where
     let validity = (validity.unset_bits() > 0).then_some(validity);
     BooleanChunked::with_chunk(
         PlSmallStr::EMPTY,
-        PlBooleanArray::new(values, len, validity),
+        PlBooleanArray::new(values, len, validity.map(PlBitmap::from_bitmap)),
     )
 }
 

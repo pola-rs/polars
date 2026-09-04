@@ -218,7 +218,10 @@ impl<R: NumericReduction> Reducer for NumReducer<R> {
         m: Option<Bitmap>,
         dtype: &DataType,
     ) -> PolarsResult<Series> {
-        let arr = Box::new(PlPrimitiveArray::<Self::Value>::from_vec(v).with_validity(m));
+        let arr = Box::new(
+            PlPrimitiveArray::<Self::Value>::from_vec(v)
+                .with_validity(m.map(PlBitmap::from_bitmap)),
+        );
         Ok(unsafe { Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![arr], dtype) })
     }
 }

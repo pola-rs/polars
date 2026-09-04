@@ -68,7 +68,7 @@ impl Series {
                         Buffer::default(),
                         Buffer::from(offsets),
                         size,
-                        Some(Bitmap::new_zeroed(size)),
+                        Some(PlBitmap::from_bitmap(Bitmap::new_zeroed(size))),
                     )
                 };
 

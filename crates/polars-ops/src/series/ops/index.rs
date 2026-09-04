@@ -1,7 +1,7 @@
 use arrow::bitmap::BitmapBuilder;
 use arrow::compute::utils::combine_validities_and;
 use num_traits::{Bounded, ToPrimitive, Zero};
-use polars_array::PlPrimitiveArray;
+use polars_array::{PlBitmap, PlPrimitiveArray};
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::prelude::{ChunkedArray, IdxCa, IdxSize, PolarsIntegerType, Series};
 use polars_core::with_match_physical_integer_polars_type;
@@ -72,7 +72,7 @@ where
     let ca_valid = ca.rechunk_validity();
     // Both masks hold one bit per element, and so does the array they go on.
     let valid = combine_validities_and(in_bounds_valid.as_ref(), ca_valid.as_ref());
-    let out = idx_arr.with_validity(valid);
+    let out = idx_arr.with_validity(valid.map(PlBitmap::from_bitmap));
 
     if !null_on_oob && out.null_count() != ca.null_count() {
         polars_bail!(

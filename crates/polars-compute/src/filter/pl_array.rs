@@ -67,9 +67,7 @@ pub fn filter_with_bitmap(array: &dyn PlArray, mask: PlBitmapRef<'_>) -> Box<dyn
 
         return match array.validity() {
             None => filtered,
-            Some(validity) => filtered.with_validity_broadcast(Some(
-                filter_pl_bitmap(validity, mask, kept).into_flat_or_scalar(),
-            )),
+            Some(validity) => filtered.with_validity(Some(filter_pl_bitmap(validity, mask, kept))),
         };
     }
 

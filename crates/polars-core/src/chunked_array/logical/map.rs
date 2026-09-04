@@ -448,7 +448,7 @@ fn gather_entries(
     // SAFETY: the offsets were built by counting the entries kept for every element in turn, so
     // they cover the gathered entries, laid end to end.
     unsafe { PlListArray::new_unchecked(new_entries.into_boxed(), offsets, arr.len(), None) }
-        .with_validity_broadcast(arr.validity().map(|v| v.to_flat_or_scalar()))
+        .with_validity(arr.validity().map(PlBitmap::from))
         .into_boxed()
 }
 

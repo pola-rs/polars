@@ -1,4 +1,5 @@
 use arrow::compute::utils::{combine_validities_and, combine_validities_and3};
+use polars_array::PlBitmap;
 use polars_utils::floor_divmod::FloorDivMod;
 use strength_reduce::*;
 
@@ -40,7 +41,7 @@ macro_rules! impl_signed_arith_kernel {
                 );
                 let ret =
                     prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_floor_div_mod(rhs).0);
-                ret.with_validity(valid)
+                ret.with_validity(valid.map(PlBitmap::from_bitmap))
             }
 
             fn prim_wrapping_trunc_div(mut lhs: PArr<$T>, mut other: PArr<$T>) -> POut<$T> {
@@ -53,7 +54,7 @@ macro_rules! impl_signed_arith_kernel {
                 let ret = prim_binary_values(lhs, other, |lhs, rhs| {
                     if rhs != 0 { lhs.wrapping_div(rhs) } else { 0 }
                 });
-                ret.with_validity(valid)
+                ret.with_validity(valid.map(PlBitmap::from_bitmap))
             }
 
             fn prim_wrapping_mod(mut lhs: PArr<$T>, mut other: PArr<$T>) -> POut<$T> {
@@ -65,7 +66,7 @@ macro_rules! impl_signed_arith_kernel {
                 );
                 let ret =
                     prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_floor_div_mod(rhs).1);
-                ret.with_validity(valid)
+                ret.with_validity(valid.map(PlBitmap::from_bitmap))
             }
 
             fn prim_wrapping_add_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
@@ -135,7 +136,7 @@ macro_rules! impl_signed_arith_kernel {
                 } else {
                     prim_unary_values(rhs, |x| lhs.wrapping_floor_div_mod(x).0)
                 };
-                ret.with_validity(valid)
+                ret.with_validity(valid.map(PlBitmap::from_bitmap))
             }
 
             fn prim_wrapping_trunc_div_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
@@ -167,7 +168,7 @@ macro_rules! impl_signed_arith_kernel {
                 } else {
                     prim_unary_values(rhs, |x| if x != 0 { lhs.wrapping_div(x) } else { 0 })
                 };
-                ret.with_validity(valid)
+                ret.with_validity(valid.map(PlBitmap::from_bitmap))
             }
 
             fn prim_wrapping_mod_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
@@ -203,7 +204,7 @@ macro_rules! impl_signed_arith_kernel {
                 } else {
                     prim_unary_values(rhs, |x| lhs.wrapping_floor_div_mod(x).1)
                 };
-                ret.with_validity(valid)
+                ret.with_validity(valid.map(PlBitmap::from_bitmap))
             }
 
             fn prim_checked_mul_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {

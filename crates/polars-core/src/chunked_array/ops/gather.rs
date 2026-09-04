@@ -345,8 +345,8 @@ impl IdxCa {
         let validity: Bitmap = idx.iter().map(|idx| !idx.is_null_idx()).collect_trusted();
         let idx = bytemuck::cast_slice::<_, IdxSize>(idx);
         let arr = unsafe { arrow::ffi::mmap::slice(idx) };
-        let arr =
-            polars_array::arrow::import::primitive_from_arrow(&arr).with_validity(Some(validity));
+        let arr = polars_array::arrow::import::primitive_from_arrow(&arr)
+            .with_validity(Some(PlBitmap::from_bitmap(validity)));
         let ca = IdxCa::with_chunk(PlSmallStr::EMPTY, arr);
 
         f(&ca)

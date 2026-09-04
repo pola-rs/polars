@@ -23,7 +23,7 @@ fn mask_with_inputs<A: StaticArray>(
     // handed back a result of a different height than its inputs panics here.
     let inputs = combine_validities_and(lhs, rhs);
     let validity = combine_validities_and(inputs.as_ref().map(PlBitmap::as_ref), ret.validity());
-    ret.with_validity_broadcast_typed(validity.map(PlBitmap::into_flat_or_scalar))
+    ret.with_validity_typed(validity)
 }
 
 /// The height of the output of an elementwise operation over two columns of these lengths, or
@@ -280,9 +280,9 @@ where
     }
 
     let iter = ca.downcast_iter().map(|arr| {
-        let validity = arr.validity().map(|v| v.to_flat_or_scalar());
+        let validity = arr.validity().map(PlBitmap::from);
         let arr: V::Array = arr.values_iter().map(&mut op).collect_arr();
-        arr.with_validity_broadcast_typed(validity)
+        arr.with_validity_typed(validity)
     });
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
@@ -306,9 +306,9 @@ where
     }
 
     let iter = ca.downcast_iter().map(|arr| {
-        let validity = arr.validity().map(|v| v.to_flat_or_scalar());
+        let validity = arr.validity().map(PlBitmap::from);
         let arr: V::Array = arr.values_iter().map(&mut op).try_collect_arr()?;
-        Ok(arr.with_validity_broadcast_typed(validity))
+        Ok(arr.with_validity_typed(validity))
     });
     ChunkedArray::try_from_chunk_iter(ca.name().clone(), iter)
 }
@@ -325,9 +325,9 @@ where
     Arr: StaticArray,
     F: FnMut(&T::Array) -> Arr,
 {
-    let iter = ca.downcast_iter().map(|arr| {
-        op(arr).with_validity_broadcast_typed(arr.validity().map(|v| v.to_flat_or_scalar()))
-    });
+    let iter = ca
+        .downcast_iter()
+        .map(|arr| op(arr).with_validity_typed(arr.validity().map(PlBitmap::from)));
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
@@ -349,8 +349,7 @@ where
     F: FnMut(&Flat<T::Array>) -> Arr,
 {
     let iter = ca.downcast_iter().map(|arr| {
-        elementwise_flat(arr, &mut op)
-            .with_validity_broadcast_typed(arr.validity().map(|v| v.to_flat_or_scalar()))
+        elementwise_flat(arr, &mut op).with_validity_typed(arr.validity().map(PlBitmap::from))
     });
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
@@ -541,7 +540,7 @@ where
                 .map(|(lhs_val, rhs_val)| op(lhs_val, rhs_val));
 
             let array: V::Array = element_iter.collect_arr();
-            array.with_validity_broadcast_typed(validity.map(PlBitmap::into_flat_or_scalar))
+            array.with_validity_typed(validity)
         });
     ChunkedArray::from_chunk_iter(lhs.name().clone(), iter)
 }
@@ -1180,7 +1179,11 @@ mod tests {
         unary_elementwise_kernel_flat(ca, |arr| {
             *calls += 1;
             let values = Bitmap::from_iter(arr.values_iter().map(|v| *v == 7));
-            PlBooleanArray::new(values, arr.len(), arr.validity().cloned())
+            PlBooleanArray::new(
+                values,
+                arr.len(),
+                arr.validity().cloned().map(PlBitmap::from_bitmap),
+            )
         })
     }
 
@@ -1224,8 +1227,9 @@ mod tests {
     /// element standing for the rest, so it is written out as before.
     #[test]
     fn a_half_scalar_chunk_is_written_out() {
-        let arr = PlPrimitiveArray::new_scalar(7i32, 4)
-            .with_validity(Some(Bitmap::from_iter([true, false, true, true])));
+        let arr = PlPrimitiveArray::new_scalar(7i32, 4).with_validity(Some(PlBitmap::from_bitmap(
+            Bitmap::from_iter([true, false, true, true]),
+        )));
         assert!(!arr.is_scalar() && !arr.is_flat());
 
         let mut calls = 0;

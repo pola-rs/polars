@@ -126,7 +126,7 @@ impl HashKeys {
                     .map(|c| c.as_materialized_series().rechunk_validity())
                     .collect_vec();
                 let combined = combine_validities_and_many(&validities);
-                keys_encoded.set_validity(combined);
+                keys_encoded.set_validity(combined.map(PlBitmap::from_bitmap));
             }
 
             // TODO: use vechash? Not supported yet for lists.

@@ -645,7 +645,12 @@ fn cast_list(
 
     // The offsets and the mask are handed over as they are: only the values were cast.
     let (_, offsets, length, validity) = arr.into_owned().into_array().into_inner();
-    let new_arr = PlListArray::new(new_values, offsets, length, validity);
+    let new_arr = PlListArray::new(
+        new_values,
+        offsets,
+        length,
+        validity.map(PlBitmap::from_bitmap),
+    );
     Ok((Box::new(new_arr), inner_dtype))
 }
 
@@ -665,7 +670,12 @@ unsafe fn cast_list_unchecked(ca: &ListChunked, child_type: &DataType) -> Polars
     let new_values = new_inner.rechunk().array_ref(0).clone();
 
     let (_, offsets, length, validity) = arr.into_owned().into_array().into_inner();
-    let new_arr = PlListArray::new(new_values, offsets, length, validity);
+    let new_arr = PlListArray::new(
+        new_values,
+        offsets,
+        length,
+        validity.map(PlBitmap::from_bitmap),
+    );
     Ok(ListChunked::from_chunks_and_dtype_unchecked(
         ca.name().clone(),
         vec![Box::new(new_arr)],
@@ -701,7 +711,12 @@ fn cast_fixed_size_list(
 
     // The width and the mask are handed over as they are: only the values were cast.
     let (_, width, length, validity) = arr.into_owned().into_array().into_inner();
-    let new_arr = PlFixedSizeListArray::new(new_values, width, length, validity);
+    let new_arr = PlFixedSizeListArray::new(
+        new_values,
+        width,
+        length,
+        validity.map(PlBitmap::from_bitmap),
+    );
     Ok((Box::new(new_arr), inner_dtype))
 }
 

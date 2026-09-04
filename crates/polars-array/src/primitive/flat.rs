@@ -5,6 +5,7 @@ use arrow::types::NativeType;
 use polars_buffer::Buffer;
 
 use super::{PlPrimitiveArray, PlPrimitiveIter};
+use crate::bitmap::PlBitmap;
 use crate::flat::Flat;
 
 /// The methods a [`PlPrimitiveArray`] gains from having one slot per element in every backing
@@ -143,6 +144,7 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     /// Panics unless `T` and `U` have the same size and alignment.
     pub fn transmute<U: NativeType>(self) -> Flat<PlPrimitiveArray<U>> {
         let (values, validity) = self.into_inner();
+        let validity = validity.map(PlBitmap::from_bitmap);
         let values = values
             .try_transmute::<U>()
             .expect("values buffer cannot be reinterpreted");
@@ -157,6 +159,7 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     pub fn fill_with(self, value: T) -> PlPrimitiveArray<T> {
         let length = self.len();
         let (_, validity) = self.into_inner();
+        let validity = validity.map(PlBitmap::from_bitmap);
 
         PlPrimitiveArray::new_scalar(value, length).with_validity(validity)
     }
@@ -255,7 +258,7 @@ mod tests {
         assert!(PlPrimitiveArray::new_scalar(7i32, 3).as_flat().is_none());
         assert!(
             PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
-                .with_validity_broadcast(Some(Bitmap::new_zeroed(1)))
+                .with_validity(Some(PlBitmap::new_scalar(false, 3)))
                 .as_flat()
                 .is_none()
         );

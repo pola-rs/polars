@@ -696,7 +696,7 @@ impl Series {
             dt if dt.is_primitive_numeric() => {
                 // A chunk of one value repeated is scalar, so this is `O(1)` in memory.
                 let arr = PlBooleanArray::new_scalar(false, self.len())
-                    .with_validity(self.rechunk_validity());
+                    .with_validity(self.rechunk_validity().map(PlBitmap::from_bitmap));
                 Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
             },
             _ => polars_bail!(opq = is_nan, self.dtype()),
@@ -714,7 +714,7 @@ impl Series {
             dt if dt.is_primitive_numeric() => {
                 // A chunk of one value repeated is scalar, so this is `O(1)` in memory.
                 let arr = PlBooleanArray::new_scalar(true, self.len())
-                    .with_validity(self.rechunk_validity());
+                    .with_validity(self.rechunk_validity().map(PlBitmap::from_bitmap));
                 Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
             },
             _ => polars_bail!(opq = is_not_nan, self.dtype()),
@@ -732,7 +732,7 @@ impl Series {
             dt if dt.is_primitive_numeric() => {
                 // A chunk of one value repeated is scalar, so this is `O(1)` in memory.
                 let arr = PlBooleanArray::new_scalar(true, self.len())
-                    .with_validity(self.rechunk_validity());
+                    .with_validity(self.rechunk_validity().map(PlBitmap::from_bitmap));
                 Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
             },
             _ => polars_bail!(opq = is_finite, self.dtype()),
@@ -750,7 +750,7 @@ impl Series {
             dt if dt.is_primitive_numeric() => {
                 // A chunk of one value repeated is scalar, so this is `O(1)` in memory.
                 let arr = PlBooleanArray::new_scalar(false, self.len())
-                    .with_validity(self.rechunk_validity());
+                    .with_validity(self.rechunk_validity().map(PlBitmap::from_bitmap));
                 Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
             },
             _ => polars_bail!(opq = is_infinite, self.dtype()),

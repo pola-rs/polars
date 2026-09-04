@@ -118,10 +118,10 @@ unsafe impl TrustedLen for PlBooleanIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-
     use arrow::bitmap::Bitmap;
 
     use crate::PlBooleanArray;
+    use crate::bitmap::PlBitmap;
     use crate::iterator_tests::assert_iterates;
 
     #[test]
@@ -155,8 +155,9 @@ mod tests {
     /// alongside them.
     #[test]
     fn mixed_validity() {
-        let array = PlBooleanArray::from_vec(vec![true, false, true, false])
-            .with_validity(Some(Bitmap::from_iter([true, false, true, true])));
+        let array = PlBooleanArray::from_vec(vec![true, false, true, false]).with_validity(Some(
+            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true, true])),
+        ));
 
         assert_iterates(array.values_iter(), &[true, false, true, false]);
         assert_iterates(array.iter(), &[Some(true), None, Some(true), Some(false)]);
@@ -166,7 +167,9 @@ mod tests {
     #[test]
     fn a_sliced_mask_is_read_from_its_own_front() {
         let array = PlBooleanArray::from_vec(vec![true, true, false, true, false])
-            .with_validity(Some(Bitmap::from_iter([true, true, false, true, false])))
+            .with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
+                true, true, false, true, false,
+            ]))))
             .sliced(2, 3);
 
         assert_iterates(array.values_iter(), &[false, true, false]);

@@ -1,4 +1,5 @@
 use arrow::array::LIST_VALUES_NAME;
+use polars_array::PlBitmap;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::chunked_array::flags::StatisticsFlags;
 use polars_core::prelude::{Column, DataType, IntoColumn, PlArrayRef};
@@ -137,7 +138,12 @@ impl ColumnTransform {
                     // mapped, and that leaves their number untouched.
                     let (_, offsets, length, validity) =
                         list_arr.into_owned().into_array().into_inner();
-                    let list_arr = PlListArray::new(values, offsets, length, validity);
+                    let list_arr = PlListArray::new(
+                        values,
+                        offsets,
+                        length,
+                        validity.map(PlBitmap::from_bitmap),
+                    );
 
                     out_chunks.push(Box::new(list_arr))
                 }
@@ -204,8 +210,12 @@ impl ColumnTransform {
                     // mapped, and that leaves their number untouched.
                     let (_, width, length, validity) =
                         fixed_size_list_arr.into_owned().into_array().into_inner();
-                    let fixed_size_list_arr =
-                        PlFixedSizeListArray::new(values, width, length, validity);
+                    let fixed_size_list_arr = PlFixedSizeListArray::new(
+                        values,
+                        width,
+                        length,
+                        validity.map(PlBitmap::from_bitmap),
+                    );
 
                     out_chunks.push(Box::new(fixed_size_list_arr))
                 }

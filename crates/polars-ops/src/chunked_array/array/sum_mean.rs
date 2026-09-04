@@ -28,7 +28,7 @@ where
 
     // One sum per element, and `validity` holds one bit per element as well.
     PlPrimitiveArray::from_vec(summed)
-        .with_validity(validity.cloned())
+        .with_validity(validity.cloned().map(PlBitmap::from_bitmap))
         .into_boxed()
 }
 

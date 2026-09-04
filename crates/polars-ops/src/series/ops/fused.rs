@@ -25,7 +25,7 @@ fn fma_arr<T: NumericNative>(
         .zip(c.iter())
         .map(|((a, b), c)| *a * *b + *c)
         .collect::<Vec<_>>();
-    PlPrimitiveArray::from_vec(out).with_validity(validity)
+    PlPrimitiveArray::from_vec(out).with_validity(validity.map(PlBitmap::from_bitmap))
 }
 
 fn fma_ca<T: PolarsNumericType>(
@@ -78,7 +78,7 @@ fn fsm_arr<T: NumericNative>(
         .zip(c.iter())
         .map(|((a, b), c)| *a - (*b * *c))
         .collect::<Vec<_>>();
-    PlPrimitiveArray::from_vec(out).with_validity(validity)
+    PlPrimitiveArray::from_vec(out).with_validity(validity.map(PlBitmap::from_bitmap))
 }
 
 fn fsm_ca<T: PolarsNumericType>(
@@ -130,7 +130,7 @@ fn fms_arr<T: NumericNative>(
         .zip(c.iter())
         .map(|((a, b), c)| (*a * *b) - *c)
         .collect::<Vec<_>>();
-    PlPrimitiveArray::from_vec(out).with_validity(validity)
+    PlPrimitiveArray::from_vec(out).with_validity(validity.map(PlBitmap::from_bitmap))
 }
 
 fn fms_ca<T: PolarsNumericType>(

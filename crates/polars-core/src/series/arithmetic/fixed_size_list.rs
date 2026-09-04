@@ -843,7 +843,7 @@ mod inner {
 
             // SAFETY: the values hold `width` values for every element, just asserted.
             unsafe { PlFixedSizeListArray::new_unchecked(inner_array, width, level_height, None) }
-                .with_validity(opt_validity)
+                .with_validity(opt_validity.map(PlBitmap::from_bitmap))
         }
     }
 }

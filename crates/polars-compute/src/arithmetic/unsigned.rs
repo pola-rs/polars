@@ -1,4 +1,5 @@
 use arrow::compute::utils::{combine_validities_and, combine_validities_and3};
+use polars_array::PlBitmap;
 use strength_reduce::*;
 
 use super::{PArr, POut, PrimitiveArithmeticKernelImpl};
@@ -38,7 +39,7 @@ macro_rules! impl_unsigned_arith_kernel {
                     Some(&mask),
                 );
                 let ret = prim_binary_values(lhs, other, |a, b| if b != 0 { a / b } else { 0 });
-                ret.with_validity(valid)
+                ret.with_validity(valid.map(PlBitmap::from_bitmap))
             }
 
             fn prim_wrapping_trunc_div(lhs: PArr<$T>, rhs: PArr<$T>) -> POut<$T> {
@@ -53,7 +54,7 @@ macro_rules! impl_unsigned_arith_kernel {
                     Some(&mask),
                 );
                 let ret = prim_binary_values(lhs, other, |a, b| if b != 0 { a % b } else { 0 });
-                ret.with_validity(valid)
+                ret.with_validity(valid.map(PlBitmap::from_bitmap))
             }
 
             fn prim_wrapping_add_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
@@ -101,7 +102,7 @@ macro_rules! impl_unsigned_arith_kernel {
                 } else {
                     prim_unary_values(rhs, |x| if x != 0 { lhs / x } else { 0 })
                 };
-                ret.with_validity(valid)
+                ret.with_validity(valid.map(PlBitmap::from_bitmap))
             }
 
             fn prim_wrapping_trunc_div_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
@@ -131,7 +132,7 @@ macro_rules! impl_unsigned_arith_kernel {
                 } else {
                     prim_unary_values(rhs, |x| if x != 0 { lhs % x } else { 0 })
                 };
-                ret.with_validity(valid)
+                ret.with_validity(valid.map(PlBitmap::from_bitmap))
             }
 
             fn prim_checked_mul_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {

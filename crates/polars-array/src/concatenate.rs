@@ -8,6 +8,7 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
+use crate::bitmap::PlBitmap;
 use crate::broadcast::ArrayRepr;
 use crate::primitive::bytes;
 use crate::{
@@ -352,7 +353,9 @@ fn concatenate_primitive_impl<T: NativeType>(
         };
     }
 
-    let validity = list.validities(length, null_count);
+    let validity = list
+        .validities(length, null_count)
+        .map(PlBitmap::from_bitmap);
 
     // Copying the values out is what the concatenation comes down to, and it reads nothing of
     // them but their bytes, so it is taken over the byte class of `T` rather than over `T`.
@@ -394,7 +397,9 @@ fn concatenate_boolean_impl(list: ArrayList<'_, '_, PlBooleanArray>) -> PlBoolea
         };
     }
 
-    let validity = list.validities(length, null_count);
+    let validity = list
+        .validities(length, null_count)
+        .map(PlBitmap::from_bitmap);
 
     let mut values = BitmapBuilder::with_capacity(length);
     for array in list.iter().filter(|array| !array.is_empty()) {
@@ -445,7 +450,9 @@ fn concatenate_binary_impl(list: ArrayList<'_, '_, PlBinaryArray>) -> PlBinaryAr
         };
     }
 
-    let validity = list.validities(length, null_count);
+    let validity = list
+        .validities(length, null_count)
+        .map(PlBitmap::from_bitmap);
 
     // One pass over the distinct arrays is what the concatenation is made of: the copies of them
     // cover the very same bytes over again, so the pass is repeated rather than built twice.
@@ -541,7 +548,9 @@ fn concatenate_binview_impl(list: ArrayList<'_, '_, PlBinaryViewArray>) -> PlBin
         };
     }
 
-    let validity = list.validities(length, null_count);
+    let validity = list
+        .validities(length, null_count)
+        .map(PlBitmap::from_bitmap);
 
     // One pass over the distinct arrays is what the concatenation is made of: the copies of them
     // hold the very same views over the very same data buffers, so neither is built twice.
@@ -644,7 +653,9 @@ fn concatenate_fixed_size_binary_impl(
         });
     }
 
-    let validity = list.validities(length, null_count);
+    let validity = list
+        .validities(length, null_count)
+        .map(PlBitmap::from_bitmap);
 
     // One pass over the distinct arrays is what the concatenation is made of: the copies of them
     // cover the very same bytes over again, so the pass is repeated rather than built twice.
@@ -759,7 +770,9 @@ fn concatenate_fixed_size_list_impl(
 
     // The values of the arrays are concatenated through the boxes they were sliced into.
     let values = concatenate_impl(ArrayList::new(&|index| &*values[index], values.len()))?;
-    let validity = list.validities(length, null_count);
+    let validity = list
+        .validities(length, null_count)
+        .map(PlBitmap::from_bitmap);
 
     // SAFETY: every array contributed the width of each of its elements, so the values hold one
     // width per element of the concatenation, and the mask covers that many elements.
@@ -821,7 +834,9 @@ fn concatenate_struct_impl(list: ArrayList<'_, '_, PlStructArray>) -> PolarsResu
         return Ok(PlStructArray::new_full_null(fields, length));
     }
 
-    let validity = list.validities(length, null_count);
+    let validity = list
+        .validities(length, null_count)
+        .map(PlBitmap::from_bitmap);
 
     // SAFETY: every field is the concatenation of the fields at that position, so it is as long as
     // the arrays together, and the mask is the flat one built for that many elements.
@@ -919,7 +934,9 @@ fn concatenate_list_impl(list: ArrayList<'_, '_, PlListArray>) -> PolarsResult<P
 
     // The values of the arrays are concatenated through the boxes they were sliced into.
     let values = concatenate_impl(ArrayList::new(&|index| &*values[index], values.len()))?;
-    let validity = list.validities(length, null_count);
+    let validity = list
+        .validities(length, null_count)
+        .map(PlBitmap::from_bitmap);
 
     // SAFETY: the offsets are the lengths of the lists of every array in order, so they are
     // ordered and end at the length of the values; the mask covers that many elements.

@@ -232,6 +232,7 @@ impl_min_max_kernel! {
 #[cfg(test)]
 mod tests {
     use arrow::bitmap::Bitmap;
+    use polars_array::PlBitmap;
 
     use super::*;
 
@@ -241,10 +242,10 @@ mod tests {
         validity: Option<&Bitmap>,
         length: usize,
     ) -> [PlPrimitiveArray<T>; 2] {
-        let scalar =
-            PlPrimitiveArray::new_scalar(value, length).with_validity_broadcast(validity.cloned());
+        let scalar = PlPrimitiveArray::new_scalar(value, length)
+            .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
         let flat = PlPrimitiveArray::from_vec(vec![value; length])
-            .with_validity_broadcast(validity.cloned());
+            .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
         assert_eq!(scalar, flat);
         [scalar, flat]
     }
@@ -324,9 +325,10 @@ mod tests {
             // the elements it marks are left, so long as one of them is.
             for valid in 0..=length {
                 let mask: Bitmap = (0..length).map(|i| i < valid).collect();
-                let repeated =
-                    PlPrimitiveArray::new_scalar(7i32, length).with_validity(Some(mask.clone()));
-                let flat = PlPrimitiveArray::from_vec(vec![7i32; length]).with_validity(Some(mask));
+                let repeated = PlPrimitiveArray::new_scalar(7i32, length)
+                    .with_validity(Some(PlBitmap::from_bitmap(mask.clone())));
+                let flat = PlPrimitiveArray::from_vec(vec![7i32; length])
+                    .with_validity(Some(PlBitmap::from_bitmap(mask)));
 
                 assert!(repeated.values_are_scalar());
                 assert_eq!(repeated, flat);
@@ -346,9 +348,10 @@ mod tests {
             for bit in [false, true] {
                 let values: Vec<i32> = (0..length as i32).rev().collect();
                 let one_bit = PlPrimitiveArray::from_vec(values.clone())
-                    .with_validity_broadcast(Some(Bitmap::new_with_value(bit, 1)));
-                let flat = PlPrimitiveArray::from_vec(values)
-                    .with_validity(Some(Bitmap::new_with_value(bit, length)));
+                    .with_validity(Some(PlBitmap::new_scalar(bit, length)));
+                let flat = PlPrimitiveArray::from_vec(values).with_validity(Some(
+                    PlBitmap::from_bitmap(Bitmap::new_with_value(bit, length)),
+                ));
 
                 assert!(one_bit.validity_is_scalar());
                 assert_eq!(one_bit, flat);
@@ -377,9 +380,10 @@ mod tests {
 
         for bit in [false, true] {
             let one_bit = PlPrimitiveArray::from_vec(values.clone())
-                .with_validity_broadcast(Some(Bitmap::new_with_value(bit, 1)));
-            let flat = PlPrimitiveArray::from_vec(values.clone())
-                .with_validity(Some(Bitmap::new_with_value(bit, values.len())));
+                .with_validity(Some(PlBitmap::new_scalar(bit, values.len())));
+            let flat = PlPrimitiveArray::from_vec(values.clone()).with_validity(Some(
+                PlBitmap::from_bitmap(Bitmap::new_with_value(bit, values.len())),
+            ));
 
             assert!(one_bit.validity_is_scalar());
             let is_nan = |value: Option<f64>| value.map(f64::is_nan);
@@ -410,7 +414,7 @@ mod tests {
 
         // And one that marks nothing leaves no element at all.
         let all_null = PlPrimitiveArray::new_scalar(f64::NAN, 4)
-            .with_validity_broadcast(Some(Bitmap::new_with_value(false, 1)));
+            .with_validity(Some(PlBitmap::new_scalar(false, 4)));
         assert_eq!(all_null.min_ignore_nan_kernel(), None);
         assert_eq!(all_null.max_propagate_nan_kernel(), None);
     }

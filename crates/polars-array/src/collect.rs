@@ -7,6 +7,7 @@ use arrow::trusted_len::TrustedLen;
 use arrow::types::NativeType;
 use polars_buffer::Buffer;
 
+use crate::bitmap::PlBitmap;
 use crate::static_array::StaticArray;
 use crate::{PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlPrimitiveArray, PlUtf8ViewArray};
 
@@ -159,7 +160,7 @@ impl<T: NativeType> ArrayFromIter<Option<T>> for PlPrimitiveArray<T> {
         Ok(Self::new(
             Buffer::from(values),
             length,
-            validity.into_opt_validity(),
+            validity.into_opt_validity().map(PlBitmap::from_bitmap),
         ))
     }
 }
@@ -208,7 +209,7 @@ impl ArrayFromIter<Option<bool>> for PlBooleanArray {
         Ok(Self::new(
             values.freeze(),
             length,
-            validity.into_opt_validity(),
+            validity.into_opt_validity().map(PlBitmap::from_bitmap),
         ))
     }
 }
@@ -321,7 +322,7 @@ impl<V: IntoBytes> ArrayFromIter<Option<V>> for PlBinaryArray {
                 Buffer::from(bytes),
                 Buffer::from(offsets),
                 length,
-                validity.into_opt_validity(),
+                validity.into_opt_validity().map(PlBitmap::from_bitmap),
             )
         })
     }

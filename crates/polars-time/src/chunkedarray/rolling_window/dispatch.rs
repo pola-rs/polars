@@ -146,7 +146,8 @@ where
         let computed =
             rolling_agg_by::<T, Out, NoNullsAgg, NullsAgg>(&ca_filtered, &by_filtered, options)?;
 
-        let gather_arr = PlPrimitiveArray::from_vec(ranks).with_validity(Some(validity));
+        let gather_arr =
+            PlPrimitiveArray::from_vec(ranks).with_validity(Some(PlBitmap::from_bitmap(validity)));
         let gather_ca = IdxCa::with_chunk(PlSmallStr::EMPTY, gather_arr);
         return Ok(unsafe { computed.take_unchecked(&gather_ca) });
     }

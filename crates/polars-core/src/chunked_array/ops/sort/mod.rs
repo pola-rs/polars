@@ -249,7 +249,11 @@ where
         let arr = PlPrimitiveArray::new(
             vals.into(),
             len,
-            Some(create_validity(len, null_count, options.nulls_last)),
+            Some(PlBitmap::from_bitmap(create_validity(
+                len,
+                null_count,
+                options.nulls_last,
+            ))),
         );
         let mut new_ca = ChunkedArray::with_chunk(ca.name().clone(), arr);
         let s = if options.descending {
@@ -444,8 +448,14 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         });
 
         // SAFETY: the views are the ones this array was taken apart into, reordered.
-        let array =
-            unsafe { PlBinaryViewArray::new_unchecked(views.into(), buffers, length, validity) };
+        let array = unsafe {
+            PlBinaryViewArray::new_unchecked(
+                views.into(),
+                buffers,
+                length,
+                validity.map(PlBitmap::from_bitmap),
+            )
+        };
 
         let mut out = Self::with_chunk_like(self, array);
 
@@ -559,7 +569,9 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
                         values.into(),
                         offsets.into(),
                         len,
-                        Some(create_validity(len, null_count, true)),
+                        Some(PlBitmap::from_bitmap(create_validity(
+                            len, null_count, true,
+                        ))),
                     )
                 };
                 ChunkedArray::with_chunk(self.name().clone(), arr)
@@ -579,7 +591,9 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
                         values.into(),
                         offsets.into(),
                         len,
-                        Some(create_validity(len, null_count, false)),
+                        Some(PlBitmap::from_bitmap(create_validity(
+                            len, null_count, false,
+                        ))),
                     )
                 };
                 ChunkedArray::with_chunk(self.name().clone(), arr)
@@ -642,7 +656,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
             argsort(partitioned_part);
             IdxCa::with_chunk(
                 self.name().clone(),
-                PlPrimitiveArray::new(idx.into(), length, validity),
+                PlPrimitiveArray::new(idx.into(), length, validity.map(PlBitmap::from_bitmap)),
             )
         }
     }
@@ -783,7 +797,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             Some(PlBooleanArray::new(
                 bitmap.freeze(),
                 length,
-                validity.map(|v| v.freeze()),
+                (validity.map(|v| v.freeze())).map(PlBitmap::from_bitmap),
             )),
         );
         ca.set_sorted_flag(if options.descending {

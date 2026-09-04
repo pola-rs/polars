@@ -1,4 +1,5 @@
 use arrow::bitmap::Bitmap;
+use polars_array::PlBitmap;
 use polars_buffer::Buffer;
 use polars_core::prelude::{
     Column, DataType, PlBinaryArray, PlBinaryViewArray, PlFixedSizeBinaryArray, PlPrimitiveArray,
@@ -66,7 +67,7 @@ impl PreComputedKeys {
                                 bytes.try_transmute().unwrap(),
                                 width,
                                 length,
-                                value.is_none().then(|| Bitmap::new_zeroed(1)),
+                                (value.is_none().then(|| Bitmap::new_zeroed(1))).map(PlBitmap::from_bitmap),
                             )
                         },
                         None => {
@@ -75,7 +76,7 @@ impl PreComputedKeys {
                                 flat.values().clone().try_transmute().unwrap(),
                                 width,
                                 length,
-                                flat.validity().cloned(),
+                                flat.validity().cloned().map(PlBitmap::from_bitmap),
                             )
                         },
                     }

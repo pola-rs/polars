@@ -124,7 +124,7 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
                         // Every element is true, which one shared bit stands for; the mask is
                         // the one the chunk already carried.
                         PlBooleanArray::new_scalar(true, arr.len())
-                            .with_validity_broadcast(arr.validity().map(|v| v.to_flat_or_scalar()))
+                            .with_validity(arr.validity().map(PlBitmap::from))
                             .into_boxed()
                     })
                     .collect(),
@@ -154,7 +154,11 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
     // One bit was pushed per element, and `rechunk_validity` hands back one bit per element too.
     let values = out.freeze();
     let length = values.len();
-    let arr = PlBooleanArray::new(values, length, ca.rechunk_validity());
+    let arr = PlBooleanArray::new(
+        values,
+        length,
+        ca.rechunk_validity().map(PlBitmap::from_bitmap),
+    );
     BooleanChunked::with_chunk_like(ca, arr)
 }
 
@@ -172,7 +176,7 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
                         // Every element is false, which one shared bit stands for; the mask is
                         // the one the chunk already carried.
                         PlBooleanArray::new_scalar(false, arr.len())
-                            .with_validity_broadcast(arr.validity().map(|v| v.to_flat_or_scalar()))
+                            .with_validity(arr.validity().map(PlBitmap::from))
                             .into_boxed()
                     })
                     .collect(),
@@ -202,7 +206,11 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
     // One bit was pushed per element, and `rechunk_validity` hands back one bit per element too.
     let values = out.freeze();
     let length = values.len();
-    let arr = PlBooleanArray::new(values, length, ca.rechunk_validity());
+    let arr = PlBooleanArray::new(
+        values,
+        length,
+        ca.rechunk_validity().map(PlBitmap::from_bitmap),
+    );
     BooleanChunked::with_chunk_like(ca, arr)
 }
 

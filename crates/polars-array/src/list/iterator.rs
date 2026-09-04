@@ -579,10 +579,10 @@ unsafe impl TrustedLen for PlListIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-
     use arrow::bitmap::Bitmap;
     use polars_buffer::Buffer;
 
+    use crate::bitmap::PlBitmap;
     use crate::iterator_tests::assert_iterates;
     use crate::{PlArray, PlListArray, PlPrimitiveArray};
 
@@ -654,7 +654,9 @@ mod tests {
     /// A mask of mixed bits, which is read by position alongside the elements the offsets cut out.
     #[test]
     fn mixed_validity() {
-        let array = flat_array().with_validity(Some(Bitmap::from_iter([true, false, true])));
+        let array = flat_array().with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
+            true, false, true,
+        ]))));
 
         assert_iterates(array.values_iter(), &elements());
         assert_iterates(
@@ -670,7 +672,7 @@ mod tests {
     /// An array whose elements are all null, which the walk never reaches the values for.
     #[test]
     fn all_null() {
-        let array = flat_array().with_validity(Some(Bitmap::new_zeroed(3)));
+        let array = flat_array().with_validity(Some(PlBitmap::from_bitmap(Bitmap::new_zeroed(3))));
 
         assert_iterates(array.values_iter(), &elements());
         assert_iterates(array.iter(), &[None, None, None]);

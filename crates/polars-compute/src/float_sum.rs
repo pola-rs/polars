@@ -321,6 +321,7 @@ where
 #[cfg(test)]
 mod tests {
     use arrow::bitmap::Bitmap;
+    use polars_array::PlBitmap;
 
     use super::*;
 
@@ -333,9 +334,9 @@ mod tests {
                 let mask: Bitmap = (0..length).map(|i| i < valid).collect();
                 for validity in [None, Some(&mask)] {
                     let scalar = PlPrimitiveArray::new_scalar(0.5f64, length)
-                        .with_validity_broadcast(validity.cloned());
+                        .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
                     let flat = PlPrimitiveArray::from_vec(vec![0.5f64; length])
-                        .with_validity_broadcast(validity.cloned());
+                        .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
 
                     let count = validity.map_or(length, |_| valid);
                     assert_eq!(sum_arr_as_f64(&scalar), sum_arr_as_f64(&flat));

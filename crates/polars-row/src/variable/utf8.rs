@@ -13,7 +13,7 @@ use std::mem::MaybeUninit;
 use arrow::bitmap::BitmapBuilder;
 use arrow::types::NativeType;
 use polars_array::builder::StaticArrayBuilder;
-use polars_array::{PlPrimitiveArray, PlUtf8ViewArray, PlUtf8ViewArrayBuilder};
+use polars_array::{PlBitmap, PlPrimitiveArray, PlUtf8ViewArray, PlUtf8ViewArrayBuilder};
 use polars_dtype::categorical::{CatNative, CategoricalMapping};
 
 use crate::row::RowEncodingOptions;
@@ -129,7 +129,9 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> PlUtf8V
         array.push_value(unsafe { std::str::from_utf8_unchecked(&scratch) });
     }
 
-    array.freeze().with_validity(validity.into_opt_validity())
+    array
+        .freeze()
+        .with_validity(validity.into_opt_validity().map(PlBitmap::from_bitmap))
 }
 
 /// The same as decode_str but inserts it into the given mapping, translating
@@ -195,5 +197,6 @@ pub unsafe fn decode_str_as_cat<T: NativeType + CatNative>(
         out.push(T::from_cat(mapping.insert_cat(s).unwrap()));
     }
 
-    PlPrimitiveArray::from_vec(out).with_validity(validity.into_opt_validity())
+    PlPrimitiveArray::from_vec(out)
+        .with_validity(validity.into_opt_validity().map(PlBitmap::from_bitmap))
 }

@@ -7,7 +7,7 @@
 use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
-use polars_array::{ArrayRepr, PlBitmapRef, PlBooleanArray};
+use polars_array::{ArrayRepr, PlBitmap, PlBitmapRef, PlBooleanArray};
 
 use super::{GenericUniqueKernel, RangedUniqueKernel};
 
@@ -108,7 +108,11 @@ impl RangedUniqueKernel for BooleanUniqueKernelState {
 
     fn finalize_unique(self) -> Self::Array {
         let (values, validity) = Self::seen_to_bitmaps(self.seen);
-        PlBooleanArray::new(values.clone(), values.len(), validity)
+        PlBooleanArray::new(
+            values.clone(),
+            values.len(),
+            validity.map(PlBitmap::from_bitmap),
+        )
     }
 
     fn finalize_n_unique(&self) -> usize {
@@ -172,18 +176,19 @@ mod tests {
             // Under a mask that is unset everywhere the chunk holds nothing but nulls.
             let all_null = scalar
                 .clone()
-                .with_validity_broadcast(Some(Bitmap::new_with_value(false, 1)));
+                .with_validity(Some(PlBitmap::new_scalar(false, scalar.len())));
             assert_eq!(unique(&all_null), PlBooleanArray::from_iter([None]));
 
             // Under one that is set everywhere it holds what it held before.
             let none_null = scalar
                 .clone()
-                .with_validity_broadcast(Some(Bitmap::new_with_value(true, 1)));
+                .with_validity(Some(PlBitmap::new_scalar(true, scalar.len())));
             assert_eq!(unique(&none_null), PlBooleanArray::from_vec(vec![bit]));
 
             // A mask laid out one bit per element leaves both the value and a null behind.
-            let some_null =
-                scalar.with_validity(Some((0..100).map(|i| i % 2 == 0).collect::<Bitmap>()));
+            let some_null = scalar.with_validity(Some(PlBitmap::from_bitmap(
+                (0..100).map(|i| i % 2 == 0).collect::<Bitmap>(),
+            )));
             assert_eq!(
                 unique(&some_null),
                 PlBooleanArray::from_iter([Some(bit), None]),

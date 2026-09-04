@@ -323,7 +323,8 @@ pub trait ListNameSpaceImpl: AsList {
         });
 
         // `rechunk_validity` hands back a flat mask, one bit per element, like the lengths.
-        let arr = PlPrimitiveArray::from_vec(lengths).with_validity(ca_validity);
+        let arr = PlPrimitiveArray::from_vec(lengths)
+            .with_validity(ca_validity.map(PlBitmap::from_bitmap));
         IdxCa::with_chunk(ca.name().clone(), arr)
     }
 

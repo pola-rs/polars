@@ -133,11 +133,7 @@ fn nan_mask<T: NativeType + IsFloat>(
         },
     };
 
-    PlBooleanArray::from_pl_bitmap(values).with_validity_broadcast(
-        array
-            .validity()
-            .map(|validity| validity.to_flat_or_scalar()),
-    )
+    PlBooleanArray::from_pl_bitmap(values).with_validity(array.validity().map(PlBitmap::from))
 }
 
 #[cfg(test)]

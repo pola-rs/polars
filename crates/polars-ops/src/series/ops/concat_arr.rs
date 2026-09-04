@@ -1,5 +1,5 @@
 use arrow::compute::utils::combine_validities_and;
-use polars_array::PlFixedSizeListArray;
+use polars_array::{PlBitmap, PlFixedSizeListArray};
 use polars_compute::horizontal_flatten::horizontal_flatten;
 use polars_core::prelude::{ArrayChunked, Column, DataType, IntoColumn, StaticArray};
 use polars_core::series::Series;
@@ -100,7 +100,12 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
         // Fast-path for all scalars
         let inner_arr = horizontal_flatten(&arrays, &widths, 1);
 
-        let arr = PlFixedSizeListArray::new(inner_arr, width, 1, outer_validity);
+        let arr = PlFixedSizeListArray::new(
+            inner_arr,
+            width,
+            1,
+            outer_validity.map(PlBitmap::from_bitmap),
+        );
 
         // The chunk carries no inner type, so the array is built with its dtype directly.
         let out = unsafe {
@@ -121,7 +126,12 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
             horizontal_flatten(&arrays, &widths, output_height)
         };
 
-        let arr = PlFixedSizeListArray::new(inner_arr, width, output_height, outer_validity);
+        let arr = PlFixedSizeListArray::new(
+            inner_arr,
+            width,
+            output_height,
+            outer_validity.map(PlBitmap::from_bitmap),
+        );
 
         // The chunk carries no inner type, so the array is built with its dtype directly.
         let out = unsafe {

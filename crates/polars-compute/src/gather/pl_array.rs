@@ -59,9 +59,7 @@ pub unsafe fn take_unchecked(
 
         return match validity {
             None => gathered,
-            Some(validity) => {
-                gathered.with_validity_broadcast(Some(validity.into_flat_or_scalar()))
-            },
+            Some(validity) => gathered.with_validity(Some(validity)),
         };
     }
 
@@ -103,7 +101,7 @@ fn and_validity(array: Box<dyn PlArray>, mask: Option<PlBitmapRef<'_>>) -> Box<d
     };
 
     let validity = combine_validities_and(array.validity(), Some(mask));
-    array.with_validity_broadcast(validity.map(PlBitmap::into_flat_or_scalar))
+    array.with_validity(validity)
 }
 
 #[cfg(test)]

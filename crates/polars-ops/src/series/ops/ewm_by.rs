@@ -222,7 +222,7 @@ where
     let mut arr = PlPrimitiveArray::from_vec(out);
     if (times.null_count() > 0) || (values.null_count() > 0) {
         let validity = binary_concatenate_validities(times, values);
-        arr = arr.with_validity_typed(validity);
+        arr = arr.with_validity_typed(validity.map(PlBitmap::from_bitmap));
     }
     ChunkedArray::with_chunk(values.name().clone(), arr)
 }

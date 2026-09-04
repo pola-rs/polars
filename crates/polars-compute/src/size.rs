@@ -2,9 +2,9 @@
 
 use arrow::with_match_primitive_type_full;
 use polars_array::{
-    ArrayRepr, PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmapRef, PlBooleanArray,
-    PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray, PlPrimitiveArray, PlStructArray,
-    PlUtf8ViewArray,
+    ArrayRepr, PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBitmapRef,
+    PlBooleanArray, PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray, PlPrimitiveArray,
+    PlStructArray, PlUtf8ViewArray,
 };
 
 /// The length in bytes of every element, read off the views.
@@ -18,11 +18,7 @@ pub fn binary_size_bytes(array: &PlBinaryViewArray) -> PlPrimitiveArray<u32> {
         },
     };
 
-    lengths.with_validity_broadcast(
-        array
-            .validity()
-            .map(|validity| validity.to_flat_or_scalar()),
-    )
+    lengths.with_validity(array.validity().map(PlBitmap::from))
 }
 
 /// The bytes a validity mask takes, which is none where there is no mask.
@@ -190,8 +186,9 @@ mod tests {
         );
 
         // A scalar view under a mask that holds one bit per element stays scalar.
-        let masked = PlBinaryViewArray::new_scalar(b"ab", 3)
-            .with_validity_broadcast(Some(Bitmap::from_iter([true, false, true])));
+        let masked = PlBinaryViewArray::new_scalar(b"ab", 3).with_validity(Some(
+            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true])),
+        ));
         assert_eq!(
             binary_size_bytes(&masked),
             PlPrimitiveArray::from_iter([Some(2u32), None, Some(2)]),
@@ -218,7 +215,7 @@ mod tests {
 
         // A mask of a single bit costs the one byte that bit is stored in.
         let masked = PlPrimitiveArray::new_scalar(7i64, LENGTH)
-            .with_validity_broadcast(Some(Bitmap::new_with_value(true, 1)));
+            .with_validity(Some(PlBitmap::new_scalar(true, LENGTH)));
         assert_eq!(estimated_bytes_size(&masked), size_of::<i64>() + 1);
 
         // Nulls are a length and nothing else.

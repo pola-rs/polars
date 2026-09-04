@@ -29,7 +29,7 @@ impl Int64Chunked {
                     None => chunk,
                     Some(validity) => {
                         null_count += validity.unset_bits();
-                        chunk.with_validity(Some(validity.clone()))
+                        chunk.with_validity(Some(PlBitmap::from_bitmap(validity.clone())))
                     },
                 }
             })

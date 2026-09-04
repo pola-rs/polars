@@ -249,7 +249,11 @@ pub(super) fn numeric_transpose<T: PolarsNumericType>(
             };
 
             let length = values.len();
-            let arr = PlPrimitiveArray::<T::Native>::new(values.into(), length, validity);
+            let arr = PlPrimitiveArray::<T::Native>::new(
+                values.into(),
+                length,
+                validity.map(PlBitmap::from_bitmap),
+            );
             ChunkedArray::<T>::with_chunk(name.clone(), arr).into_column()
         });
     RAYON.install(|| cols_t.par_extend(par_iter));

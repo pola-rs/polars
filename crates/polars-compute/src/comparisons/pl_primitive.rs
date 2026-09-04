@@ -278,9 +278,13 @@ mod tests {
             out.push(
                 values
                     .clone()
-                    .with_validity_broadcast(Some(Bitmap::new_with_value(valid, 1))),
+                    .with_validity(Some(PlBitmap::new_scalar(valid, length))),
             );
-            out.push(values.with_validity(Some(Bitmap::new_with_value(valid, length))));
+            out.push(
+                values.with_validity(Some(PlBitmap::from_bitmap(Bitmap::new_with_value(
+                    valid, length,
+                )))),
+            );
         }
 
         out
@@ -407,8 +411,9 @@ mod tests {
         repeated(all_null.tot_ne_missing_kernel_broadcast(&7), true);
 
         // A repeated answer against a written-out mask is the mask, which stays flat.
-        let flat_mask = PlPrimitiveArray::from_vec(vec![1i32, 1, 1])
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
+        let flat_mask = PlPrimitiveArray::from_vec(vec![1i32, 1, 1]).with_validity(Some(
+            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true])),
+        ));
         let ones_3 = PlPrimitiveArray::new_scalar(1i32, 3);
 
         let eq = ones_3.tot_eq_missing_kernel(&flat_mask);
@@ -422,8 +427,9 @@ mod tests {
     #[test]
     fn a_mask_repeating_one_bit_is_read_without_being_written_out() {
         // A side that is null throughout answers from the other side's mask alone.
-        let flat_mask = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
+        let flat_mask = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]).with_validity(Some(
+            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true])),
+        ));
         let null_3 = PlPrimitiveArray::<i32>::new_full_null(3);
 
         assert!(null_3.validity_is_scalar());
@@ -451,7 +457,7 @@ mod tests {
 
         // A repeated mask over flat values does not force those values to be written out either.
         let values = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
-            .with_validity_broadcast(Some(Bitmap::new_with_value(true, 1)));
+            .with_validity(Some(PlBitmap::new_scalar(true, 3)));
         assert!(values.values_are_flat() && values.validity_is_scalar());
         assert_eq!(
             values

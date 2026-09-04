@@ -1,7 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use arrow::compute::utils::combine_validities_and;
 use arrow::types::NativeType;
-use polars_array::{Flat, PlPrimitiveArray};
+use polars_array::{Flat, PlBitmap, PlPrimitiveArray};
 
 /// The array a kernel reads: flat, so its every buffer holds one slot per element.
 type PArr<T> = Flat<PlPrimitiveArray<T>>;
@@ -71,7 +71,7 @@ where
         ptr_apply_unary_kernel(arr.values().as_ptr(), out.as_mut_ptr(), len, op);
         out.set_len(len);
     }
-    PlPrimitiveArray::from_vec(out).with_validity(arr.take_validity())
+    PlPrimitiveArray::from_vec(out).with_validity(arr.take_validity().map(PlBitmap::from_bitmap))
 }
 
 /// Apply a binary function to all the values (regardless of nullability)
@@ -103,7 +103,10 @@ where
                 // SAFETY: checked same size & alignment L/O, NativeType is always Pod.
                 ptr_apply_binary_kernel(lp, rp, lp as *mut O, len, op);
             }
-            return lhs.transmute::<O>().into_array().with_validity(validity);
+            return lhs
+                .transmute::<O>()
+                .into_array()
+                .with_validity(validity.map(PlBitmap::from_bitmap));
         }
     }
     if size_of::<R>() == size_of::<O>() && align_of::<R>() == align_of::<O>() {
@@ -114,7 +117,10 @@ where
                 // SAFETY: checked same size & alignment R/O, NativeType is always Pod.
                 ptr_apply_binary_kernel(lp, rp, rp as *mut O, len, op);
             }
-            return rhs.transmute::<O>().into_array().with_validity(validity);
+            return rhs
+                .transmute::<O>()
+                .into_array()
+                .with_validity(validity.map(PlBitmap::from_bitmap));
         }
     }
 
@@ -126,5 +132,5 @@ where
         ptr_apply_binary_kernel(lp, rp, out.as_mut_ptr(), len, op);
         out.set_len(len);
     }
-    PlPrimitiveArray::from_vec(out).with_validity(validity)
+    PlPrimitiveArray::from_vec(out).with_validity(validity.map(PlBitmap::from_bitmap))
 }

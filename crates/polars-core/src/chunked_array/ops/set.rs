@@ -171,7 +171,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
         };
 
         let length = self.len();
-        let arr = PlBooleanArray::new(values.into(), length, validity);
+        let arr = PlBooleanArray::new(values.into(), length, validity.map(PlBitmap::from_bitmap));
         Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
     }
 

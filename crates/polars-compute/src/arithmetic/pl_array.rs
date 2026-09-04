@@ -19,7 +19,6 @@
 //!   already took. So `a * [1, 2, 3]` multiplies by `a` without writing `a` out first, and
 //!   strength reduction and the other tricks those kernels play apply to a repeated chunk too.
 
-use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
 use polars_array::bitmap::combine_validities_and;
 use polars_array::{PlBitmap, PlPrimitiveArray};
@@ -89,7 +88,7 @@ fn repeat<O: NativeType>(out: POut<O>, length: usize, validity: Option<PlBitmap>
 
     match out.scalar_value().flatten() {
         None => POut::new_full_null(length),
-        Some(value) => POut::new_scalar(value, length).with_validity_broadcast(bitmap(validity)),
+        Some(value) => POut::new_scalar(value, length).with_validity(validity),
     }
 }
 
@@ -103,13 +102,7 @@ fn fold_in<O: NativeType>(out: POut<O>, validity: Option<PlBitmap>) -> POut<O> {
     };
 
     let combined = combine_validities_and(out.validity(), Some(validity.as_ref()));
-    out.with_validity_broadcast(bitmap(combined))
-}
-
-/// The backing bitmap of a mask, which is flat or scalar for the elements it covers and so is
-/// exactly what an array takes as its own mask.
-fn bitmap(validity: Option<PlBitmap>) -> Option<Bitmap> {
-    validity.map(|validity| validity.into_inner().0)
+    out.with_validity(combined)
 }
 
 /// Applies `flat`, an elementwise kernel over the flat representation, to `arr`.
@@ -192,26 +185,29 @@ mod tests {
     /// `length` copies of `value` under `validity`, in both representations.
     fn repeated(
         value: i32,
-        validity: Option<&Bitmap>,
+        validity: Option<&PlBitmap>,
         length: usize,
     ) -> [PlPrimitiveArray<i32>; 2] {
-        let scalar =
-            PlPrimitiveArray::new_scalar(value, length).with_validity_broadcast(validity.cloned());
-        let flat = PlPrimitiveArray::from_vec(vec![value; length])
-            .with_validity_broadcast(validity.cloned());
+        let scalar = PlPrimitiveArray::new_scalar(value, length).with_validity(validity.cloned());
+        let flat = PlPrimitiveArray::from_vec(vec![value; length]).with_validity(validity.cloned());
 
         assert_eq!(scalar, flat);
         [scalar, flat]
     }
 
     /// The masks a chunk of `length` elements can carry, the scalar ones included.
-    fn masks(length: usize) -> Vec<Option<Bitmap>> {
+    fn masks(length: usize) -> Vec<Option<PlBitmap>> {
+        // The first two repeat a single bit over every element; the rest hold one bit each.
         let mut masks = vec![
             None,
-            Some(Bitmap::new_with_value(true, 1)),
-            Some(Bitmap::new_with_value(false, 1)),
+            Some(PlBitmap::new_scalar(true, length)),
+            Some(PlBitmap::new_scalar(false, length)),
         ];
-        masks.extend((0..=length).map(|valid| Some((0..length).map(|i| i < valid).collect())));
+        masks.extend((0..=length).map(|valid| {
+            Some(PlBitmap::from_bitmap(
+                (0..length).map(|i| i < valid).collect(),
+            ))
+        }));
         masks
     }
 
@@ -243,7 +239,7 @@ mod tests {
         let values: PlPrimitiveArray<i32> = PlPrimitiveArray::from_vec(vec![-4, -1, 0, 3, 7]);
 
         for validity in masks(length) {
-            let values = values.clone().with_validity_broadcast(validity.clone());
+            let values = values.clone().with_validity(validity.clone());
             let [scalar, flat] = repeated(3, validity.as_ref(), length);
 
             for (name, op) in [
@@ -297,7 +293,7 @@ mod tests {
     /// throughout without the values ever being read.
     #[test]
     fn a_mask_of_one_unset_bit_answers_with_nulls_throughout() {
-        let none = Some(Bitmap::new_with_value(false, 1));
+        let none = Some(PlBitmap::new_scalar(false, 32));
         let [scalar, flat] = repeated(7, none.as_ref(), 32);
         let values = PlPrimitiveArray::from_vec((0..32).collect::<Vec<i32>>());
 
@@ -340,8 +336,9 @@ mod tests {
     fn a_repeated_float_operand_keeps_the_mask_of_the_elements_that_read_it() {
         let mask: Bitmap = [true, false, true, true].into_iter().collect();
         let values = PlPrimitiveArray::from_vec(vec![1.0f64, 2.0, 6.0, 8.0])
-            .with_validity(Some(mask.clone()));
-        let repeated = PlPrimitiveArray::new_scalar(2.0f64, 4).with_validity(Some(mask));
+            .with_validity(Some(PlBitmap::from_bitmap(mask.clone())));
+        let repeated = PlPrimitiveArray::new_scalar(2.0f64, 4)
+            .with_validity(Some(PlBitmap::from_bitmap(mask)));
 
         let quotient = ArithmeticKernel::true_div(values.clone(), repeated.clone());
         assert_eq!(

@@ -4,6 +4,7 @@ use arrow::bitmap::{BitmapBuilder, OptBitmapBuilder};
 use polars_utils::IdxSize;
 
 use super::PlBooleanArray;
+use crate::bitmap::PlBitmap;
 use crate::builder::{
     ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
     opt_gather_extend_validity, subslice_extend_each_repeated_validity, subslice_extend_validity,
@@ -89,7 +90,7 @@ impl StaticArrayBuilder for PlBooleanArrayBuilder {
 
     fn freeze(self) -> PlBooleanArray {
         let length = self.values.len();
-        let validity = self.validity.into_opt_validity();
+        let validity = self.validity.into_opt_validity().map(PlBitmap::from_bitmap);
         // SAFETY: the values hold one bit per element, and so does the mask that was built
         // alongside them.
         unsafe { PlBooleanArray::new_unchecked(self.values.freeze(), length, validity) }
@@ -101,7 +102,11 @@ impl StaticArrayBuilder for PlBooleanArrayBuilder {
         let length = values.len();
         // SAFETY: as in `freeze`.
         unsafe {
-            PlBooleanArray::new_unchecked(values.freeze(), length, validity.into_opt_validity())
+            PlBooleanArray::new_unchecked(
+                values.freeze(),
+                length,
+                validity.into_opt_validity().map(PlBitmap::from_bitmap),
+            )
         }
     }
 
@@ -203,7 +208,6 @@ impl StaticArrayBuilder for PlBooleanArrayBuilder {
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
 
     use super::*;
 
@@ -270,7 +274,7 @@ mod tests {
     #[test]
     fn scalar_values_are_read_through_the_broadcast() {
         let array = PlBooleanArray::new_scalar(true, 1_000_000_000)
-            .with_validity_broadcast(Some(Bitmap::from_iter([true])));
+            .with_validity(Some(PlBitmap::new_scalar(true, 1_000_000_000)));
 
         let mut builder = PlBooleanArrayBuilder::new();
         builder.subslice_extend(&array, 999_999_998, 2, ShareStrategy::Always);

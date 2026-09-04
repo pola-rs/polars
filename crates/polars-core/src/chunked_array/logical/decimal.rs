@@ -164,7 +164,8 @@ impl DecimalChunked {
                             }
                         })
                         .collect();
-                    arr.clone().with_validity_typed(Some(new_valid))
+                    arr.clone()
+                        .with_validity_typed(Some(PlBitmap::from_bitmap(new_valid)))
                 })
             }
         } else {

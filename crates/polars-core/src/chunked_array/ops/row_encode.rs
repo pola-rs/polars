@@ -60,7 +60,9 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
             .collect::<Vec<_>>();
 
         let validity = combine_validities_and_many(&validities);
-        Ok(rows.into_array().with_validity(validity))
+        Ok(rows
+            .into_array()
+            .with_validity(validity.map(PlBitmap::from_bitmap)))
     });
     let chunks = RAYON.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
@@ -252,7 +254,7 @@ pub fn _get_rows_encoded_ca(
             .map(|c| c.as_materialized_series().rechunk_validity())
             .collect_vec();
         let combined = combine_validities_and_many(&validities);
-        rows_arr.set_validity(combined);
+        rows_arr.set_validity(combined.map(PlBitmap::from_bitmap));
     }
     Ok(BinaryOffsetChunked::with_chunk(name, rows_arr))
 }
@@ -270,7 +272,7 @@ pub fn _get_rows_encoded_arr(
             .map(|c| c.as_materialized_series().rechunk_validity())
             .collect_vec();
         let combined = combine_validities_and_many(&validities);
-        rows_arr.set_validity(combined);
+        rows_arr.set_validity(combined.map(PlBitmap::from_bitmap));
     }
     // TODO(polars-array): `StructChunked::get_row_encoded_array` still hands an Arrow array to
     // `polars-core`'s own hashing and to `polars-expr`; the crossing is a buffer handover.

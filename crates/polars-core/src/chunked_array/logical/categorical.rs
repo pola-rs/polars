@@ -102,7 +102,10 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
 
                 if arr.null_count() != validity.unset_bits() {
                     invariants_violated = true;
-                    arr.set_validity(core::mem::take(&mut validity).into_opt_validity());
+                    arr.set_validity(
+                        (core::mem::take(&mut validity).into_opt_validity())
+                            .map(PlBitmap::from_bitmap),
+                    );
                 } else {
                     validity.clear();
                 }
@@ -196,7 +199,7 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
         }
 
         let arr = <T::PolarsPhysical as PolarsDataType>::Array::from_vec(cat_ids)
-            .with_validity(validity.into_opt_validity());
+            .with_validity(validity.into_opt_validity().map(PlBitmap::from_bitmap));
         let phys = ChunkedArray::<T::PolarsPhysical>::with_chunk(name, arr);
         Ok(unsafe { Self::from_cats_and_dtype_unchecked(phys, dtype) })
     }

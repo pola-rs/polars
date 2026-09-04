@@ -544,11 +544,12 @@ mod tests {
         let values = vec![1i32, 2, 3];
 
         let all_valid = PlPrimitiveArray::from_vec(values.clone())
-            .with_validity(Some(Bitmap::new_with_value(true, 3)));
+            .with_validity(Some(PlBitmap::from_bitmap(Bitmap::new_with_value(true, 3))));
         assert_iterates(all_valid.iter(), &[Some(1), Some(2), Some(3)]);
 
-        let all_null = PlPrimitiveArray::from_vec(values)
-            .with_validity(Some(Bitmap::new_with_value(false, 3)));
+        let all_null = PlPrimitiveArray::from_vec(values).with_validity(Some(
+            PlBitmap::from_bitmap(Bitmap::new_with_value(false, 3)),
+        ));
         assert_iterates(all_null.iter(), &[None, None, None]);
     }
 

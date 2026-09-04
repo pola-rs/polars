@@ -8,6 +8,7 @@ use polars_utils::aliases::PlHashMap;
 
 use super::PlBinaryViewArray;
 use super::buffers::copy_value;
+use crate::bitmap::PlBitmap;
 use crate::builder::{
     ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
     opt_gather_extend_validity, subslice_extend_each_repeated_validity, subslice_extend_validity,
@@ -227,7 +228,7 @@ impl StaticArrayBuilder for PlBinaryViewArrayBuilder {
                 Buffer::from(self.views),
                 Buffer::from(self.buffers),
                 length,
-                self.validity.into_opt_validity(),
+                self.validity.into_opt_validity().map(PlBitmap::from_bitmap),
             )
         }
     }
@@ -246,7 +247,7 @@ impl StaticArrayBuilder for PlBinaryViewArrayBuilder {
                 Buffer::from(views),
                 Buffer::from(buffers),
                 length,
-                validity.into_opt_validity(),
+                validity.into_opt_validity().map(PlBitmap::from_bitmap),
             )
         }
     }

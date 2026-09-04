@@ -49,7 +49,8 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
             }
         }
 
-        let arr = PlPrimitiveArray::from_vec(cats).with_validity(validity.map(|v| v.freeze()));
+        let arr = PlPrimitiveArray::from_vec(cats)
+            .with_validity((validity.map(|v| v.freeze())).map(PlBitmap::from_bitmap));
         let cats = ChunkedArray::with_chunk(self.name().clone(), arr);
 
         // SAFETY: we only reordered the indexes so we are still in bounds.

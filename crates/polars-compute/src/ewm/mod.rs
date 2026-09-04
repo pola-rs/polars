@@ -54,7 +54,7 @@ use assert_allclose;
 #[cfg(test)]
 mod tests {
     use arrow::bitmap::Bitmap;
-    use polars_array::{PlArray, PlPrimitiveArray};
+    use polars_array::{PlArray, PlBitmap, PlPrimitiveArray};
 
     use super::{EwmCovState, EwmMeanState, EwmStateUpdate, EwmStdState, EwmSumState, EwmVarState};
 
@@ -105,10 +105,10 @@ mod tests {
         validity: Option<&Bitmap>,
         length: usize,
     ) -> [PlPrimitiveArray<f64>; 2] {
-        let scalar =
-            PlPrimitiveArray::new_scalar(value, length).with_validity_broadcast(validity.cloned());
+        let scalar = PlPrimitiveArray::new_scalar(value, length)
+            .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
         let flat = PlPrimitiveArray::from_vec(vec![value; length])
-            .with_validity_broadcast(validity.cloned());
+            .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
         assert_eq!(scalar, flat);
         [scalar, flat]
     }

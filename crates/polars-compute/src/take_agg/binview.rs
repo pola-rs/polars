@@ -174,6 +174,8 @@ pub unsafe fn take_agg_bin_iter_unchecked_no_null_arg<
 
 #[cfg(test)]
 mod tests {
+    use polars_array::PlBitmap;
+
     use super::*;
 
     const LENGTH: usize = 6;
@@ -190,9 +192,10 @@ mod tests {
     fn scalar_and_flat(value: &[u8], mask: Option<[bool; LENGTH]>) -> [PlBinaryViewArray; 2] {
         let validity: Option<arrow::bitmap::Bitmap> = mask.map(|mask| mask.into_iter().collect());
         [
-            PlBinaryViewArray::new_scalar(value, LENGTH).with_validity(validity.clone()),
+            PlBinaryViewArray::new_scalar(value, LENGTH)
+                .with_validity(validity.clone().map(PlBitmap::from_bitmap)),
             PlBinaryViewArray::from_values_iter(std::iter::repeat_n(value, LENGTH))
-                .with_validity(validity),
+                .with_validity(validity.map(PlBitmap::from_bitmap)),
         ]
     }
 

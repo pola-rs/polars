@@ -636,6 +636,7 @@ mod tests {
     use polars_buffer::Buffer;
 
     use super::*;
+    use crate::bitmap::PlBitmap;
     use crate::{
         PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray, PlNullArray,
         PlPrimitiveArray, PlStructArray,
@@ -646,15 +647,16 @@ mod tests {
         let validity = Bitmap::from_iter([true, false, true]);
         vec![
             Box::new(
-                PlPrimitiveArray::from_vec(vec![1i32, 2, 3]).with_validity(Some(validity.clone())),
+                PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
+                    .with_validity(Some(PlBitmap::from_bitmap(validity.clone()))),
             ),
             Box::new(
                 PlBooleanArray::from_vec(vec![true, false, true])
-                    .with_validity(Some(validity.clone())),
+                    .with_validity(Some(PlBitmap::from_bitmap(validity.clone()))),
             ),
             Box::new(
                 PlBinaryArray::from_values_iter([b"foo".as_slice(), b"", b"bar"])
-                    .with_validity(Some(validity.clone())),
+                    .with_validity(Some(PlBitmap::from_bitmap(validity.clone()))),
             ),
             Box::new(
                 PlBinaryViewArray::from_values_iter([
@@ -662,30 +664,30 @@ mod tests {
                     b"bar",
                     b"a value that is too long to inline",
                 ])
-                .with_validity(Some(validity.clone())),
+                .with_validity(Some(PlBitmap::from_bitmap(validity.clone()))),
             ),
             Box::new(
                 PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4, 5, 6], 2)
-                    .with_validity(Some(validity.clone())),
+                    .with_validity(Some(PlBitmap::from_bitmap(validity.clone()))),
             ),
             Box::new(PlStructArray::new(
                 vec![Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3]))],
                 3,
-                Some(validity.clone()),
+                Some(PlBitmap::from_bitmap(validity.clone())),
             )),
             Box::new(
                 PlListArray::from_offsets(
                     Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
                     Buffer::from(vec![0u64, 1, 2, 3]),
                 )
-                .with_validity(Some(validity.clone())),
+                .with_validity(Some(PlBitmap::from_bitmap(validity.clone()))),
             ),
             Box::new(
                 PlFixedSizeListArray::from_values(
                     Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4, 5, 6])),
                     2,
                 )
-                .with_validity(Some(validity)),
+                .with_validity(Some(PlBitmap::from_bitmap(validity))),
             ),
             Box::new(PlNullArray::new(3)),
         ]

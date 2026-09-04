@@ -12,7 +12,7 @@ use std::mem::MaybeUninit;
 
 use arrow::bitmap::BitmapBuilder;
 use polars_array::builder::StaticArrayBuilder;
-use polars_array::{PlBinaryViewArray, PlBinaryViewArrayBuilder};
+use polars_array::{PlBinaryViewArray, PlBinaryViewArrayBuilder, PlBitmap};
 use polars_utils::slice::Slice2Uninit;
 
 use crate::row::RowEncodingOptions;
@@ -144,5 +144,7 @@ pub unsafe fn decode_variable_no_order(
         *row = unsafe { row.get_unchecked(length..) };
     }
 
-    array.freeze().with_validity(validity.into_opt_validity())
+    array
+        .freeze()
+        .with_validity(validity.into_opt_validity().map(PlBitmap::from_bitmap))
 }

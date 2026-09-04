@@ -30,10 +30,10 @@ where
         let iter = self.downcast_iter().map(|arr| {
             if arr.null_count() == 0 {
                 let out: U::Array = arr.values_iter().map(&mut op).collect_arr();
-                out.with_validity_broadcast_typed(arr.validity().map(|v| v.to_flat_or_scalar()))
+                out.with_validity_typed(arr.validity().map(PlBitmap::from))
             } else {
                 let out: U::Array = arr.iter().map(|opt| opt.map(&mut op)).collect_arr();
-                out.with_validity_broadcast_typed(arr.validity().map(|v| v.to_flat_or_scalar()))
+                out.with_validity_typed(arr.validity().map(PlBitmap::from))
             }
         });
 
@@ -53,13 +53,13 @@ where
         let iter = self.downcast_iter().map(|arr| {
             let arr = if arr.null_count() == 0 {
                 let out: U::Array = arr.values_iter().map(&mut op).try_collect_arr()?;
-                out.with_validity_broadcast_typed(arr.validity().map(|v| v.to_flat_or_scalar()))
+                out.with_validity_typed(arr.validity().map(PlBitmap::from))
             } else {
                 let out: U::Array = arr
                     .iter()
                     .map(|opt| opt.map(&mut op).transpose())
                     .try_collect_arr()?;
-                out.with_validity_broadcast_typed(arr.validity().map(|v| v.to_flat_or_scalar()))
+                out.with_validity_typed(arr.validity().map(PlBitmap::from))
             };
             Ok(arr)
         });
@@ -132,9 +132,8 @@ where
                 .downcast_ref::<PlPrimitiveArray<S::Native>>()
                 .unwrap();
             if let Some(value) = typed.scalar_values() {
-                let validity = typed.validity().map(|v| v.to_flat_or_scalar());
-                return PlPrimitiveArray::new_scalar(f(value), typed.len())
-                    .with_validity_broadcast(validity);
+                let validity = typed.validity().map(PlBitmap::from);
+                return PlPrimitiveArray::new_scalar(f(value), typed.len()).with_validity(validity);
             }
         }
 
@@ -256,7 +255,7 @@ where
                 .zip(ca.as_array().iter_validities())
                 .map(|(slice, validity)| {
                     let arr: T::Array = slice.iter().copied().map(f).collect_arr();
-                    arr.with_validity_broadcast_typed(validity.map(|v| v.to_flat_or_scalar()))
+                    arr.with_validity_typed(validity.map(PlBitmap::from))
                 });
         ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }
@@ -305,7 +304,7 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
                 .downcast_iter()
                 .map(|arr| {
                     PlBooleanArray::new_scalar(value, arr.len())
-                        .with_validity_broadcast(arr.validity().map(|v| v.to_flat_or_scalar()))
+                        .with_validity(arr.validity().map(PlBitmap::from))
                 })
                 .collect::<Vec<_>>();
             Self::from_chunk_iter(self.name().clone(), chunks)
@@ -352,7 +351,7 @@ impl StringChunked {
         let chunks = self.downcast_iter().map(|arr| {
             let iter = arr.values_iter().map(&mut f);
             let new = PlUtf8ViewArray::arr_from_iter(iter);
-            new.with_validity_broadcast(arr.validity().map(|v| v.to_flat_or_scalar()))
+            new.with_validity(arr.validity().map(PlBitmap::from))
         });
         StringChunked::from_chunk_iter(self.name().clone(), chunks)
     }
@@ -366,7 +365,7 @@ impl BinaryChunked {
         let chunks = self.downcast_iter().map(|arr| {
             let iter = arr.values_iter().map(&mut f);
             let new = PlBinaryViewArray::arr_from_iter(iter);
-            new.with_validity_broadcast(arr.validity().map(|v| v.to_flat_or_scalar()))
+            new.with_validity(arr.validity().map(PlBitmap::from))
         });
         BinaryChunked::from_chunk_iter(self.name().clone(), chunks)
     }

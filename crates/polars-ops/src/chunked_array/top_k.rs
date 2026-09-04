@@ -62,7 +62,7 @@ fn top_k_bool_impl(
     let values = bm.freeze();
     // One bit was pushed per element, and `first_n_valid_mask` holds one per element as well.
     let length = values.len();
-    let arr = PlBooleanArray::new(values, length, validity);
+    let arr = PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
     ChunkedArray::with_chunk_like(ca, arr)
 }
 
@@ -98,7 +98,7 @@ where
     vec.resize(out_len, T::Native::default());
     let validity = first_n_valid_mask(non_null_count, out_len);
 
-    let arr = PlPrimitiveArray::from_vec(vec).with_validity(validity);
+    let arr = PlPrimitiveArray::from_vec(vec).with_validity(validity.map(PlBitmap::from_bitmap));
     ChunkedArray::with_chunk_like(ca, arr)
 }
 
@@ -144,7 +144,14 @@ fn top_k_binary_impl(
 
     // SAFETY: the views were taken from `buffers` and only reordered, and there is one per
     // element, as there is one validity bit per element.
-    let arr = unsafe { PlBinaryViewArray::new_unchecked(views.into(), buffers, out_len, validity) };
+    let arr = unsafe {
+        PlBinaryViewArray::new_unchecked(
+            views.into(),
+            buffers,
+            out_len,
+            validity.map(PlBitmap::from_bitmap),
+        )
+    };
     ChunkedArray::with_chunk_like(ca, arr)
 }
 

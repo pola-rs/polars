@@ -4,6 +4,7 @@ use arrow::bitmap::OptBitmapBuilder;
 use polars_utils::IdxSize;
 
 use super::PlFixedSizeListArray;
+use crate::bitmap::PlBitmap;
 use crate::builder::{
     PlArrayBuilder, ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
     opt_gather_extend_validity, subslice_extend_each_repeated_validity, subslice_extend_validity,
@@ -96,7 +97,7 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlFixedSizeListArrayBuilder<B> {
 
     fn freeze(self) -> PlFixedSizeListArray {
         let (width, length) = (self.width, self.length);
-        let validity = self.validity.into_opt_validity();
+        let validity = self.validity.into_opt_validity().map(PlBitmap::from_bitmap);
         // SAFETY: every element appended the width of values it covers to the child, so the values
         // hold the width of every element laid end to end, and the mask holds one bit per element.
         unsafe {
@@ -113,7 +114,7 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlFixedSizeListArrayBuilder<B> {
                 self.values.freeze_reset(),
                 self.width,
                 length,
-                validity.into_opt_validity(),
+                validity.into_opt_validity().map(PlBitmap::from_bitmap),
             )
         }
     }
@@ -247,6 +248,7 @@ mod tests {
     use arrow::bitmap::Bitmap;
 
     use super::PlFixedSizeListArrayBuilder;
+    use crate::bitmap::PlBitmap;
     use crate::builder::{ShareStrategy, StaticArrayBuilder, builder_like};
     use crate::{PlFixedSizeListArray, PlPrimitiveArray};
 
@@ -256,7 +258,9 @@ mod tests {
             Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4, 5, 6])),
             2,
         )
-        .with_validity(Some(Bitmap::from_iter([true, false, true])))
+        .with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
+            true, false, true,
+        ]))))
     }
 
     /// The elements of a fixed size list array, as the values of the lists they cover.

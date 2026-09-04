@@ -591,7 +591,7 @@ impl<T: PolarsCategoricalType> Reducer for CatMinReducer<T> {
         m: Option<Bitmap>,
         dtype: &DataType,
     ) -> PolarsResult<Series> {
-        let cat_ids = PlPrimitiveArray::from_vec(v).with_validity(m);
+        let cat_ids = PlPrimitiveArray::from_vec(v).with_validity(m.map(PlBitmap::from_bitmap));
         let cat_ids = ChunkedArray::from(cat_ids);
         unsafe {
             Ok(
@@ -658,7 +658,7 @@ impl<T: PolarsCategoricalType> Reducer for CatMaxReducer<T> {
         m: Option<Bitmap>,
         dtype: &DataType,
     ) -> PolarsResult<Series> {
-        let cat_ids = PlPrimitiveArray::from_vec(v).with_validity(m);
+        let cat_ids = PlPrimitiveArray::from_vec(v).with_validity(m.map(PlBitmap::from_bitmap));
         let cat_ids = ChunkedArray::from(cat_ids);
         unsafe {
             Ok(

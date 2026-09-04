@@ -176,7 +176,7 @@ fn elements_of<T: NativeType>(array: &dyn PlArray) -> Vec<Option<T>> {
 #[cfg(test)]
 fn flat_chunk<T: NativeType>(
     values: Vec<T>,
-    validity: Option<Bitmap>,
+    validity: Option<polars_array::PlBitmap>,
 ) -> Flat<PlPrimitiveArray<T>> {
     PlPrimitiveArray::from_vec(values)
         .with_validity(validity)

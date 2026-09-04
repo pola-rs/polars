@@ -4,14 +4,13 @@ use std::any::Any;
 use std::borrow::Cow;
 
 use arrow::array::View;
-use arrow::bitmap::Bitmap;
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_err};
 
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::binview::PlBinaryViewArray;
-use crate::bitmap::PlBitmapRef;
+use crate::bitmap::{PlBitmap, PlBitmapRef};
 use crate::broadcast::ArrayRepr;
 use crate::flat::Flat;
 
@@ -156,18 +155,14 @@ impl PlUtf8ViewArray {
         unsafe { PlUtf8ViewValuesIter::new(self.0.broadcast_values_iter(length)) }
     }
 
-    /// Returns this array with its validity mask replaced by a flat one.
+    /// Returns this array with its validity mask replaced, keeping the representation it is in.
+    ///
+    /// # Panics
+    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
     #[inline]
     #[must_use]
-    pub fn with_validity(self, validity: Option<Bitmap>) -> Self {
+    pub fn with_validity(self, validity: Option<PlBitmap>) -> Self {
         Self(self.0.with_validity(validity))
-    }
-
-    /// Returns this array with its validity mask replaced by one that broadcasts over it.
-    #[inline]
-    #[must_use]
-    pub fn with_validity_broadcast(self, validity: Option<Bitmap>) -> Self {
-        Self(self.0.with_validity_broadcast(validity))
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
@@ -267,7 +262,7 @@ impl PlUtf8ViewArray {
         // back as it was, which is what keeps a null element null.
         let length = self.0.len();
         if self.0.views_are_scalar() && length > 1 {
-            let validity = self.0.validity().map(|v| v.to_flat_or_scalar());
+            let validity = self.0.validity().map(PlBitmap::from);
             // The mask is dropped first so that the one element is read as a value whatever the
             // mask says of it, which is what the written-out path does as well.
             // SAFETY: the elements were valid UTF-8, and dropping the mask and slicing leaves
@@ -279,13 +274,12 @@ impl PlUtf8ViewArray {
             // SAFETY: as above.
             let mapped = unsafe { single.apply_views(update_view) };
 
-            return mapped
-                .new_from_index(0, length)
-                .with_validity_broadcast(validity);
+            return mapped.new_from_index(0, length).with_validity(validity);
         }
 
         let flat = self.0.to_flat();
         let (views, buffers, validity) = flat.into_owned().into_inner();
+        let validity = validity.map(PlBitmap::from_bitmap);
 
         let views: Vec<View> = views
             .as_slice()
@@ -419,13 +413,8 @@ impl PlArray for PlUtf8ViewArray {
     }
 
     #[inline]
-    fn set_validity(&mut self, validity: Option<Bitmap>) {
+    fn set_validity(&mut self, validity: Option<PlBitmap>) {
         self.0.set_validity(validity);
-    }
-
-    #[inline]
-    fn set_validity_broadcast(&mut self, validity: Option<Bitmap>) {
-        self.0.set_validity_broadcast(validity);
     }
 
     #[inline]
@@ -454,6 +443,8 @@ impl PlArray for PlUtf8ViewArray {
 
 #[cfg(test)]
 mod tests {
+    use arrow::bitmap::Bitmap;
+
     use super::*;
     /// A value of more than [`View::MAX_INLINE_SIZE`] bytes, which no view inlines.
     const LONG: &str = "a value that is too long to inline";
@@ -530,8 +521,9 @@ mod tests {
         assert_eq!(out.scalar_value(), Some(Some(&LONG[..20])));
 
         // A mask over the scalar views is kept, element for element.
-        let arr = PlUtf8ViewArray::new_scalar(LONG, 4)
-            .with_validity(Some(Bitmap::from_iter([true, false, true, false])));
+        let arr = PlUtf8ViewArray::new_scalar(LONG, 4).with_validity(Some(PlBitmap::from_bitmap(
+            Bitmap::from_iter([true, false, true, false]),
+        )));
         let mut calls = 0;
         let out = head(&arr, 20, &mut calls);
 

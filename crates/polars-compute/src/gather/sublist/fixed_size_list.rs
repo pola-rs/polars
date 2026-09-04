@@ -8,7 +8,7 @@
 
 use arrow::legacy::index::IndexToUsize;
 use polars_array::bitmap::combine_validities_and;
-use polars_array::{PlArray, PlBitmap, PlFixedSizeListArray, PlPrimitiveArray};
+use polars_array::{PlArray, PlFixedSizeListArray, PlPrimitiveArray};
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::IdxSize;
 
@@ -97,7 +97,7 @@ pub fn sub_fixed_size_list_get(
         }
 
         let validity = combine_validities_and(out.validity(), Some(validity));
-        return Ok(out.with_validity_broadcast(validity.map(PlBitmap::into_flat_or_scalar)));
+        return Ok(out.with_validity(validity));
     }
 
     let width = arr.width();

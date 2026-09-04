@@ -82,7 +82,8 @@ where
 
                 // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
-                let result = PlBooleanArray::new(values, length, validity);
+                let result =
+                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             },
         }
@@ -104,7 +105,8 @@ where
 
                 // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
-                let result = PlBooleanArray::new(values, length, validity);
+                let result =
+                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             } else {
                 let mut builder = BitmapBuilder::with_capacity(ca_in.len());
@@ -129,7 +131,8 @@ where
 
                 // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
-                let result = PlBooleanArray::new(values, length, validity);
+                let result =
+                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             }
         }
@@ -174,7 +177,8 @@ where
 
                 // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
-                let result = PlBooleanArray::new(values, length, validity);
+                let result =
+                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             },
         }
@@ -196,7 +200,8 @@ where
 
                 // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
-                let result = PlBooleanArray::new(values, length, validity);
+                let result =
+                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             } else {
                 let mut builder = BitmapBuilder::with_capacity(ca_in.len());
@@ -222,7 +227,8 @@ where
 
                 // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
-                let result = PlBooleanArray::new(values, length, validity);
+                let result =
+                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             }
         }

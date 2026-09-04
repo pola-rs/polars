@@ -95,6 +95,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use polars_array::PlBitmap;
     use polars_utils::min_max::MaxIgnoreNan;
 
     use super::*;
@@ -105,7 +106,9 @@ mod test {
         // 1, None, -1, 4
         flat_chunk(
             vec![1.0, 0.0, -1.0, 4.0],
-            Some(Bitmap::from(&[true, false, true, true])),
+            Some(PlBitmap::from_bitmap(Bitmap::from(&[
+                true, false, true, true,
+            ]))),
         )
     }
 
@@ -113,7 +116,9 @@ mod test {
     fn test_rolling_sum_nulls() {
         let arr = &flat_chunk(
             vec![1.0f64, 2.0, 3.0, 4.0],
-            Some(Bitmap::from(&[true, false, true, true])),
+            Some(PlBitmap::from_bitmap(Bitmap::from(&[
+                true, false, true, true,
+            ]))),
         );
 
         let out = rolling_sum(arr, 2, 2, false, None, None);
@@ -187,7 +192,9 @@ mod test {
     fn test_rolling_max_no_nulls() {
         let arr = &flat_chunk(
             vec![1.0f64, 2.0, 3.0, 4.0],
-            Some(Bitmap::from(&[true, true, true, true])),
+            Some(PlBitmap::from_bitmap(Bitmap::from(&[
+                true, true, true, true,
+            ]))),
         );
         let out = rolling_max(arr, 4, 1, false, None, None);
         let out = elements_of::<f64>(&*out);
@@ -203,7 +210,9 @@ mod test {
 
         let arr = &flat_chunk(
             vec![4.0f64, 3.0, 2.0, 1.0],
-            Some(Bitmap::from(&[true, true, true, true])),
+            Some(PlBitmap::from_bitmap(Bitmap::from(&[
+                true, true, true, true,
+            ]))),
         );
         let out = rolling_max(arr, 2, 1, false, None, None);
         let out = elements_of::<f64>(&*out);
@@ -221,7 +230,7 @@ mod test {
         let window_size = 3;
         let min_periods = 3;
 
-        let arr = flat_chunk(vals, Some(validity));
+        let arr = flat_chunk(vals, Some(PlBitmap::from_bitmap(validity)));
 
         let out = rolling_apply_agg_window::<MinMaxWindow<i32, MaxIgnoreNan>, _, _, _>(
             arr.as_slice(),

@@ -115,6 +115,7 @@ impl Flat<PlFixedSizeBinaryArray> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bitmap::PlBitmap;
 
     #[test]
     fn to_flat_writes_the_elements_out() {
@@ -138,8 +139,9 @@ mod tests {
 
     #[test]
     fn as_flat_borrows_an_already_flat_array() {
-        let arr = PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 2)
-            .with_validity(Some(Bitmap::from_iter([true, false])));
+        let arr = PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 2).with_validity(Some(
+            PlBitmap::from_bitmap(Bitmap::from_iter([true, false])),
+        ));
         let flat = arr.as_flat().expect("the array is flat");
 
         assert_eq!(flat.as_slice(), [1, 2, 3, 4]);
@@ -155,7 +157,7 @@ mod tests {
         );
         assert!(
             PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 2)
-                .with_validity_broadcast(Some(Bitmap::new_zeroed(1)))
+                .with_validity(Some(PlBitmap::new_scalar(false, 2)))
                 .as_flat()
                 .is_none()
         );
@@ -170,8 +172,10 @@ mod tests {
 
     #[test]
     fn elements_are_read_without_a_broadcast() {
-        let arr = PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4, 5, 6], 2)
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
+        let arr =
+            PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4, 5, 6], 2).with_validity(Some(
+                PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true])),
+            ));
         let flat = arr.to_flat();
 
         assert_eq!(flat.value(0), [1, 2]);

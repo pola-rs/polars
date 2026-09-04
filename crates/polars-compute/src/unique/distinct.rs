@@ -949,7 +949,7 @@ impl AmortizedUnique for BinaryUnique {
 
 #[cfg(test)]
 mod tests {
-    use polars_array::PlNullArray;
+    use polars_array::{PlBitmap, PlNullArray};
 
     use super::*;
 
@@ -998,9 +998,9 @@ mod tests {
                 let mask: Bitmap = (0..length).map(|i| i < valid).collect();
                 for validity in [None, Some(&mask)] {
                     let scalar = PlPrimitiveArray::new_scalar(7i32, length)
-                        .with_validity_broadcast(validity.cloned());
+                        .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
                     let flat = PlPrimitiveArray::from_vec(vec![7i32; length])
-                        .with_validity_broadcast(validity.cloned());
+                        .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
                     assert_eq!(scalar, flat);
 
                     // The one is answered without a hashset, the other through one. An empty
@@ -1032,7 +1032,7 @@ mod tests {
 
         // As does a values buffer laid out one per element under a mask that marks nothing.
         let masked = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
-            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
+            .with_validity(Some(PlBitmap::new_scalar(false, 3)));
         assert_eq!(unique_of(&masked), (vec![0], 1));
 
         // A chunk of the null type holds nothing else either, there being no value under it.
@@ -1053,7 +1053,7 @@ mod tests {
         assert_eq!(unique_of(&arr), (vec![0, 1, 2], 3));
 
         let all_valid = PlPrimitiveArray::from_vec(vec![3i32, -1, 3])
-            .with_validity_broadcast(Some(Bitmap::new_with_value(true, 1)));
+            .with_validity(Some(PlBitmap::new_scalar(true, 3)));
         assert!(!all_valid.has_nulls());
         assert_eq!(unique_of(&all_valid), (vec![0, 1], 2));
     }

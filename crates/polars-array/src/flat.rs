@@ -2,9 +2,8 @@
 
 use std::ops::Deref;
 
-use arrow::bitmap::Bitmap;
-
 use crate::array::PlArray;
+use crate::bitmap::PlBitmap;
 
 /// An array whose backing buffers all hold one slot per element.
 #[repr(transparent)]
@@ -49,10 +48,16 @@ impl<T: PlArray> Flat<T> {
 
     /// Replaces the validity mask with a flat one.
     ///
+    /// Unlike [`PlArray::set_validity`], which takes a mask in either representation, this one
+    /// insists on a flat mask: a scalar one would leave the array no longer flat.
+    ///
     /// # Panics
-    /// Panics if `validity` does not have exactly [`len`](PlArray::len) bits.
-    pub fn set_validity(&mut self, validity: Option<Bitmap>) {
-        // The flat requirement is the one `PlArray::set_validity` itself imposes.
+    /// Panics unless `validity` is flat and covers exactly [`len`](PlArray::len) elements.
+    pub fn set_validity(&mut self, validity: Option<PlBitmap>) {
+        assert!(
+            validity.as_ref().is_none_or(PlBitmap::is_flat),
+            "a flat array takes a flat validity mask, not one that repeats a single bit",
+        );
         self.0.set_validity(validity);
     }
 
@@ -61,7 +66,7 @@ impl<T: PlArray> Flat<T> {
     /// # Panics
     /// Panics under the conditions [`Self::set_validity`] panics.
     #[must_use]
-    pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
+    pub fn with_validity(mut self, validity: Option<PlBitmap>) -> Self {
         self.set_validity(validity);
         self
     }
@@ -187,7 +192,9 @@ impl<T: std::fmt::Debug> std::fmt::Debug for Flat<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use arrow::bitmap::Bitmap;
+
+    use crate::bitmap::PlBitmap;
     use crate::{PlBooleanArray, PlPrimitiveArray};
 
     #[test]
@@ -216,7 +223,9 @@ mod tests {
             .to_flat()
             .into_owned();
 
-        let with_nulls = flat.with_validity(Some(Bitmap::from_iter([true, false, true])));
+        let with_nulls = flat.with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
+            true, false, true,
+        ]))));
         assert!(with_nulls.is_flat());
         assert_eq!(with_nulls.null_count(), 1);
         assert!(with_nulls.without_validity().validity().is_none());

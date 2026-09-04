@@ -164,6 +164,7 @@ impl PartialEq<Flat<PlBinaryViewArray>> for PlBinaryViewArray {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bitmap::PlBitmap;
 
     /// A value of more than [`View::MAX_INLINE_SIZE`] bytes, which no view inlines.
     const LONG: &[u8] = b"a value that is too long to inline";
@@ -208,7 +209,7 @@ mod tests {
         assert!(PlBinaryViewArray::new_scalar(b"foo", 3).as_flat().is_none());
         assert!(
             PlBinaryViewArray::from_values_iter([b"foo".as_slice(), b"bar", b"baz"])
-                .with_validity_broadcast(Some(Bitmap::new_zeroed(1)))
+                .with_validity(Some(PlBitmap::new_scalar(false, 3)))
                 .as_flat()
                 .is_none()
         );

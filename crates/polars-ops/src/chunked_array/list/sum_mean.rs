@@ -37,7 +37,8 @@ where
     let values = values.to_flat();
     let out = PlPrimitiveArray::from_vec(sum_between_offsets::<_, S>(values.as_slice(), offsets));
     // One sum per element, and `validity` holds one bit per element as well.
-    out.with_validity(validity.cloned()).into_boxed()
+    out.with_validity(validity.cloned().map(PlBitmap::from_bitmap))
+        .into_boxed()
 }
 
 pub(super) fn sum_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
@@ -192,7 +193,8 @@ where
     let out = mean_between_offsets::<_, S>(values.as_slice(), offsets);
     // Collecting leaves `out` flat, so its mask holds one bit per element like the other one.
     let new_validity = combine_validities_and(out.as_flat().unwrap().validity(), validity);
-    out.with_validity(new_validity).into_boxed()
+    out.with_validity(new_validity.map(PlBitmap::from_bitmap))
+        .into_boxed()
 }
 
 pub(super) fn mean_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {

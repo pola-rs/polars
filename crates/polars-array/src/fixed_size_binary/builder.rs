@@ -5,6 +5,7 @@ use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 
 use super::PlFixedSizeBinaryArray;
+use crate::bitmap::PlBitmap;
 use crate::builder::{
     ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
     opt_gather_extend_validity, subslice_extend_each_repeated_validity, subslice_extend_validity,
@@ -133,7 +134,7 @@ impl StaticArrayBuilder for PlFixedSizeBinaryArrayBuilder {
 
     fn freeze(self) -> PlFixedSizeBinaryArray {
         let (width, length) = (self.width, self.length);
-        let validity = self.validity.into_opt_validity();
+        let validity = self.validity.into_opt_validity().map(PlBitmap::from_bitmap);
         // SAFETY: every element appended the width of bytes it covers, so the values hold the
         // width of every element laid end to end, and the mask holds one bit per element.
         unsafe {
@@ -156,7 +157,7 @@ impl StaticArrayBuilder for PlFixedSizeBinaryArrayBuilder {
                 Buffer::from(values),
                 self.width,
                 length,
-                validity.into_opt_validity(),
+                validity.into_opt_validity().map(PlBitmap::from_bitmap),
             )
         }
     }
@@ -277,8 +278,9 @@ mod tests {
 
     /// Three elements of two bytes, of which the middle one is null.
     fn array() -> PlFixedSizeBinaryArray {
-        PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4, 5, 6], 2)
-            .with_validity(Some(Bitmap::from_iter([true, false, true])))
+        PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4, 5, 6], 2).with_validity(Some(
+            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true])),
+        ))
     }
 
     /// The optional elements of a fixed size binary array, as their bytes.

@@ -45,7 +45,7 @@ fn repeat_chunk(arr: &dyn PlArray, by: &PlPrimitiveArray<IdxSize>) -> PlListArra
         PlArrayBuilder::freeze(values),
         Buffer::from(offsets),
         by.len(),
-        validity.into_opt_validity(),
+        validity.into_opt_validity().map(PlBitmap::from_bitmap),
     )
 }
 
@@ -89,7 +89,7 @@ fn repeat_by_null(ca: &NullChunked, by: &IdxCa) -> PolarsResult<ListChunked> {
         PlNullArray::new(offset as usize).into_boxed(),
         Buffer::from(offsets),
         by.len(),
-        validity.into_opt_validity(),
+        validity.into_opt_validity().map(PlBitmap::from_bitmap),
     );
 
     Ok(unsafe {

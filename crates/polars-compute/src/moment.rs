@@ -855,6 +855,7 @@ where
 #[cfg(test)]
 mod tests {
     use arrow::bitmap::Bitmap;
+    use polars_array::PlBitmap;
 
     use super::*;
 
@@ -864,10 +865,10 @@ mod tests {
         validity: Option<&Bitmap>,
         length: usize,
     ) -> [PlPrimitiveArray<f64>; 2] {
-        let scalar =
-            PlPrimitiveArray::new_scalar(value, length).with_validity_broadcast(validity.cloned());
+        let scalar = PlPrimitiveArray::new_scalar(value, length)
+            .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
         let flat = PlPrimitiveArray::from_vec(vec![value; length])
-            .with_validity_broadcast(validity.cloned());
+            .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
         [scalar, flat]
     }
 
@@ -985,9 +986,9 @@ mod tests {
     fn a_pair_weighs_where_both_sides_are_non_null() {
         let length = 8;
         let x = PlPrimitiveArray::new_scalar(3.0, length)
-            .with_validity_broadcast(Some((0..length).map(|i| i < 6).collect()));
+            .with_validity(Some((0..length).map(|i| i < 6).collect()));
         let y = PlPrimitiveArray::new_scalar(5.0, length)
-            .with_validity_broadcast(Some((0..length).map(|i| i >= 2).collect()));
+            .with_validity(Some((0..length).map(|i| i >= 2).collect()));
 
         // Elements 2 through 5 are non-null on both sides.
         assert_eq!(cov(&x, &y).weight(), 4.0);

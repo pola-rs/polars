@@ -12,7 +12,7 @@
 use std::mem::MaybeUninit;
 
 use arrow::bitmap::Bitmap;
-use polars_array::PlBooleanArray;
+use polars_array::{PlBitmap, PlBooleanArray};
 
 use crate::row::RowEncodingOptions;
 
@@ -60,5 +60,5 @@ pub(crate) unsafe fn decode_bool(rows: &mut [&[u8]], opt: RowEncodingOptions) ->
         *row = row.get_unchecked(1..);
         v
     }));
-    PlBooleanArray::new(values, rows.len(), Some(validity))
+    PlBooleanArray::new(values, rows.len(), Some(PlBitmap::from_bitmap(validity)))
 }

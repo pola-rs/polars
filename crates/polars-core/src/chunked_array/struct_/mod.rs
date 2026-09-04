@@ -363,7 +363,7 @@ impl StructChunked {
                 {
                     // SAFETY: only null_count adjusted, recalculated afterwards.
                     for (new, this) in unsafe { ca.downcast_iter_mut() }.zip(self.downcast_iter()) {
-                        new.set_validity_broadcast(this.validity().map(|v| v.to_flat_or_scalar()))
+                        new.set_validity(this.validity().map(PlBitmap::from))
                     }
                 } else {
                     let mut slf_validity = self.rechunk_validity().unwrap();
@@ -371,7 +371,10 @@ impl StructChunked {
                     for new in unsafe { ca.downcast_iter_mut() } {
                         let this_validity;
                         (this_validity, slf_validity) = slf_validity.split_at(new.len());
-                        new.set_validity((this_validity.unset_bits() > 0).then_some(this_validity));
+                        new.set_validity(
+                            (this_validity.unset_bits() > 0)
+                                .then_some(PlBitmap::from_bitmap(this_validity)),
+                        );
                     }
                 }
                 ca.compute_len();
@@ -430,7 +433,7 @@ impl StructChunked {
         unsafe {
             for (a, b) in self.downcast_iter_mut().zip(other.downcast_iter()) {
                 let new = polars_array::bitmap::combine_validities_and(a.validity(), b.validity());
-                a.set_validity_broadcast(new.map(PlBitmap::into_flat_or_scalar))
+                a.set_validity(new)
             }
         }
 
@@ -461,7 +464,7 @@ impl StructChunked {
         assert_eq!(self.chunks().len(), 1);
         unsafe {
             let arr = self.chunks_mut().iter_mut().next().unwrap();
-            *arr = arr.with_validity(validity);
+            *arr = arr.with_validity(validity.map(PlBitmap::from_bitmap));
         }
         self.compute_len();
         self.propagate_nulls_mut();

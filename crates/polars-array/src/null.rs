@@ -6,7 +6,7 @@ use polars_utils::IdxSize;
 
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
-use crate::bitmap::PlBitmapRef;
+use crate::bitmap::{PlBitmap, PlBitmapRef};
 use crate::broadcast::empty_bitmap;
 use crate::builder::{ShareStrategy, StaticArrayBuilder, assert_subslice};
 use crate::flat::Flat;
@@ -283,11 +283,7 @@ impl PlArray for PlNullArray {
 
     /// Does nothing: an array of nothing but nulls has no element a mask could make valid.
     #[inline]
-    fn set_validity(&mut self, _validity: Option<Bitmap>) {}
-
-    /// Does nothing, exactly as [`Self::set_validity`] does.
-    #[inline]
-    fn set_validity_broadcast(&mut self, _validity: Option<Bitmap>) {}
+    fn set_validity(&mut self, _validity: Option<PlBitmap>) {}
 
     #[inline]
     unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Box<dyn PlArray> {

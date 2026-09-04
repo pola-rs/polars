@@ -5,6 +5,7 @@ use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 
 use super::PlBinaryArray;
+use crate::bitmap::PlBitmap;
 use crate::builder::{
     ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
     opt_gather_extend_validity, subslice_extend_each_repeated_validity, subslice_extend_validity,
@@ -140,7 +141,7 @@ impl StaticArrayBuilder for PlBinaryArrayBuilder {
 
     fn freeze(self) -> PlBinaryArray {
         let length = self.offsets.len() - 1;
-        let validity = self.validity.into_opt_validity();
+        let validity = self.validity.into_opt_validity().map(PlBitmap::from_bitmap);
         // SAFETY: the offsets hold the start of every element plus the end of the last, they are
         // pushed in non-decreasing order, and they reach exactly the bytes appended alongside them.
         unsafe {
@@ -164,7 +165,7 @@ impl StaticArrayBuilder for PlBinaryArrayBuilder {
                 Buffer::from(values),
                 Buffer::from(offsets),
                 length,
-                validity.into_opt_validity(),
+                validity.into_opt_validity().map(PlBitmap::from_bitmap),
             )
         }
     }
@@ -287,8 +288,9 @@ mod tests {
 
     /// The three byte strings `foo`, null and `bar`.
     fn array() -> PlBinaryArray {
-        PlBinaryArray::from_values_iter([b"foo".as_slice(), b"xxx", b"bar"])
-            .with_validity(Some(Bitmap::from_iter([true, false, true])))
+        PlBinaryArray::from_values_iter([b"foo".as_slice(), b"xxx", b"bar"]).with_validity(Some(
+            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true])),
+        ))
     }
 
     /// The optional elements of a binary array, as their bytes.

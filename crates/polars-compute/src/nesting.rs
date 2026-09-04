@@ -42,16 +42,14 @@ pub(crate) unsafe fn list_with_values(
     array: &PlListArray,
     values: Box<dyn PlArray>,
 ) -> PlListArray {
-    // The offsets and the mask are the ones `array` is backed by, in the representation it is in;
-    // cloning them out of a clone of it copies nothing.
+    // The offsets and the mask are the ones `array` is backed by, in the representation each of
+    // them is in; cloning them out of a clone of it copies nothing.
     let offsets_are_flat = array.offsets_are_flat();
-    let (_, offsets, length, validity) = array.clone().into_inner();
+    let validity = array.validity().map(PlBitmap::from);
+    let (_, offsets, length, _) = array.clone().into_inner();
 
-    // The constructor is picked on the offsets, which is the axis it decides — but it constrains
-    // the mask as well, and the two representations are independent: a scalar mask over flat
-    // offsets, and a flat mask over scalar ones, are both arrays this crate hands out. So each
-    // constructor is handed no mask at all, and the mask goes back on through the setter that
-    // takes it in either representation.
+    // The constructor is picked on the offsets, which is now the only axis it decides: a mask
+    // carries its own representation, so it goes back on afterwards whichever one it is in.
     let out = unsafe {
         if offsets_are_flat {
             PlListArray::new_unchecked(values, offsets, length, None)
@@ -60,7 +58,7 @@ pub(crate) unsafe fn list_with_values(
         }
     };
 
-    out.with_validity_broadcast(validity)
+    out.with_validity(validity)
 }
 
 /// Rebuilds `array` around `values`, which stand for the same values the old ones did.
@@ -72,10 +70,10 @@ pub(crate) unsafe fn fsl_with_values(
     values: Box<dyn PlArray>,
 ) -> PlFixedSizeListArray {
     let values_are_flat = array.values_are_flat();
-    let (_, width, length, validity) = array.clone().into_inner();
+    let validity = array.validity().map(PlBitmap::from);
+    let (_, width, length, _) = array.clone().into_inner();
 
-    // As in `list_with_values`: the values and the mask are in representations of their own, so
-    // the mask goes back on after the constructor the values pick.
+    // As in `list_with_values`: the constructor decides the values, the mask decides itself.
     let out = unsafe {
         if values_are_flat {
             PlFixedSizeListArray::new_unchecked(values, width, length, None)
@@ -84,13 +82,13 @@ pub(crate) unsafe fn fsl_with_values(
         }
     };
 
-    out.with_validity_broadcast(validity)
+    out.with_validity(validity)
 }
 
 /// Rebuilds `array` around `fields`, which stand for the same elements the old ones did.
 ///
-/// Unlike the two above, this one branches on the mask itself: a struct has no values buffer of its
-/// own, so the mask is its only representation, and both constructors ask the same of the fields.
+/// Unlike the two above this one has nothing to branch on at all: a struct has no values buffer of
+/// its own, so the mask was its only representation — and the mask now carries that itself.
 ///
 /// # Safety
 /// Every field must hold exactly `array.len()` elements.
@@ -98,16 +96,9 @@ pub(crate) unsafe fn struct_with_fields(
     array: &PlStructArray,
     fields: Vec<Box<dyn PlArray>>,
 ) -> PlStructArray {
-    let validity_is_scalar = array.validity_is_scalar();
-    let (_, length, validity) = array.clone().into_inner();
+    let validity = array.validity().map(PlBitmap::from);
 
-    unsafe {
-        if validity_is_scalar {
-            PlStructArray::new_broadcast_unchecked(fields, length, validity)
-        } else {
-            PlStructArray::new_unchecked(fields, length, validity)
-        }
-    }
+    unsafe { PlStructArray::new_unchecked(fields, array.len(), validity) }
 }
 
 /// Returns `array` with its validity mask replaced by `validity`, which keeps the representation it
@@ -122,7 +113,7 @@ pub(crate) fn with_pl_validity(array: &dyn PlArray, validity: PlBitmap) -> Box<d
         "a validity mask covers exactly the elements of the array it is set on",
     );
 
-    array.with_validity_broadcast(Some(validity.into_flat_or_scalar()))
+    array.with_validity(Some(validity))
 }
 
 #[cfg(test)]
@@ -141,8 +132,9 @@ mod tests {
     /// constrain both axes at once, and picking one on the offsets alone gets the mask wrong.
     #[test]
     fn list_with_values_keeps_a_flat_mask_over_scalar_offsets() {
-        let array = PlListArray::new_scalar(values(vec![1, 2]), 4)
-            .with_validity_broadcast(Some(Bitmap::from_iter([true, false, true, false])));
+        let array = PlListArray::new_scalar(values(vec![1, 2]), 4).with_validity(Some(
+            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true, false])),
+        ));
         assert!(!array.offsets_are_flat());
         assert!(array.validity().unwrap().is_flat());
 
@@ -158,7 +150,7 @@ mod tests {
     #[test]
     fn list_with_values_keeps_a_scalar_mask_over_flat_offsets() {
         let array = PlListArray::from_offsets(values(vec![1, 2]), vec![0u64, 1, 2].into())
-            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
+            .with_validity(Some(PlBitmap::new_scalar(false, 2)));
         assert!(array.offsets_are_flat());
         assert!(array.validity().unwrap().is_scalar());
 
@@ -173,8 +165,9 @@ mod tests {
     /// independent of one another.
     #[test]
     fn fsl_with_values_keeps_a_flat_mask_over_scalar_values() {
-        let array = PlFixedSizeListArray::new_scalar(values(vec![1, 2]), 4)
-            .with_validity_broadcast(Some(Bitmap::from_iter([true, false, true, false])));
+        let array = PlFixedSizeListArray::new_scalar(values(vec![1, 2]), 4).with_validity(Some(
+            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true, false])),
+        ));
         assert!(!array.values_are_flat());
         assert!(array.validity().unwrap().is_flat());
 
@@ -190,7 +183,7 @@ mod tests {
     #[test]
     fn fsl_with_values_keeps_a_scalar_mask_over_flat_values() {
         let array = PlFixedSizeListArray::from_values(values(vec![1, 2, 3, 4]), 2)
-            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
+            .with_validity(Some(PlBitmap::new_scalar(false, 2)));
         assert!(array.values_are_flat());
         assert!(array.validity().unwrap().is_scalar());
 

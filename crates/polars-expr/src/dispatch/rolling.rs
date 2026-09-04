@@ -1,6 +1,7 @@
 use std::ops::BitAnd;
 
 use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
+use polars_array::PlBitmap;
 use polars_core::error::PolarsResult;
 #[cfg(feature = "cov")]
 use polars_core::error::polars_bail;
@@ -179,9 +180,9 @@ pub(super) fn rolling_corr_cov(
             // a single shared bit stays one.
             let valids_bitmap = valids_bitmap.to_flat_or_scalar();
             let xarr = &mut x.chunks_mut()[0];
-            *xarr = xarr.with_validity_broadcast(Some(valids_bitmap.clone()));
+            *xarr = xarr.with_validity(Some(PlBitmap::from_bitmap(valids_bitmap.clone())));
             let yarr = &mut y.chunks_mut()[0];
-            *yarr = yarr.with_validity_broadcast(Some(valids_bitmap.clone()));
+            *yarr = yarr.with_validity(Some(PlBitmap::from_bitmap(valids_bitmap.clone())));
             x.compute_len();
             y.compute_len();
         }

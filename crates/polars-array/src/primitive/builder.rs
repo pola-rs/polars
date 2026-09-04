@@ -6,6 +6,7 @@ use polars_utils::IdxSize;
 
 use super::PlPrimitiveArray;
 use super::bytes::{self, Bytes};
+use crate::bitmap::PlBitmap;
 use crate::builder::{
     ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
     opt_gather_extend_validity, subslice_extend_each_repeated_validity, subslice_extend_validity,
@@ -101,7 +102,7 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
             PlPrimitiveArray::new_unchecked(
                 bytes::buffer_from_byte_vec::<T>(self.values),
                 length,
-                self.validity.into_opt_validity(),
+                self.validity.into_opt_validity().map(PlBitmap::from_bitmap),
             )
         }
     }
@@ -115,7 +116,7 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
             PlPrimitiveArray::new_unchecked(
                 bytes::buffer_from_byte_vec::<T>(values),
                 length,
-                validity.into_opt_validity(),
+                validity.into_opt_validity().map(PlBitmap::from_bitmap),
             )
         }
     }
@@ -193,7 +194,6 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
 
     use super::*;
 
@@ -266,7 +266,7 @@ mod tests {
     #[test]
     fn scalar_values_are_read_through_the_broadcast() {
         let array = PlPrimitiveArray::new_scalar(7i32, 1_000_000_000)
-            .with_validity_broadcast(Some(Bitmap::from_iter([true])));
+            .with_validity(Some(PlBitmap::new_scalar(true, 1_000_000_000)));
 
         let mut builder = PlPrimitiveArrayBuilder::<i32>::with_capacity(8);
         builder.subslice_extend(&array, 999_999_998, 2, ShareStrategy::Always);

@@ -159,6 +159,7 @@ impl Flat<PlBinaryArray> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bitmap::PlBitmap;
 
     #[test]
     fn buffers_are_handed_out_as_they_are() {
@@ -183,8 +184,10 @@ mod tests {
 
     #[test]
     fn elements_are_read_without_a_broadcast() {
-        let arr = PlBinaryArray::from_values_iter([b"foo".as_slice(), b"", b"bar"])
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
+        let arr =
+            PlBinaryArray::from_values_iter([b"foo".as_slice(), b"", b"bar"]).with_validity(Some(
+                PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true])),
+            ));
         let flat = arr.to_flat();
 
         assert_eq!(flat.value_range(0), 0..3);

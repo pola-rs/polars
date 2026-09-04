@@ -1,8 +1,8 @@
 use std::convert::identity;
 
-use arrow::bitmap::{Bitmap, binary_fold};
+use arrow::bitmap::binary_fold;
 use arrow::types::NativeType;
-use polars_array::{ArrayRepr, PlBooleanArray, PlPrimitiveArray};
+use polars_array::{ArrayRepr, PlBitmap, PlBooleanArray, PlPrimitiveArray};
 use polars_utils::float16::pf16;
 
 use crate::boolean::{all, any, flat_validity};
@@ -36,7 +36,7 @@ fn count_values<T, I, F>(
     scalar_value: Option<T>,
     values: I,
     length: usize,
-    validity: Option<Bitmap>,
+    validity: Option<PlBitmap>,
     op: F,
 ) -> PlPrimitiveArray<u32>
 where
@@ -47,7 +47,7 @@ where
         Some(value) => PlPrimitiveArray::new_scalar(op(value), length),
         None => PlPrimitiveArray::from_vec(values.map(op).collect()),
     }
-    .with_validity_broadcast(validity)
+    .with_validity(validity)
 }
 
 /// The value every element of `arr` reads and the number of its elements that are not null, if
@@ -81,7 +81,7 @@ macro_rules! count_bits {
             arr.scalar_values(),
             arr.values_iter(),
             arr.len(),
-            arr.validity().map(|validity| validity.to_flat_or_scalar()),
+            arr.validity().map(PlBitmap::from),
             |v| $to_bits(v).$count(),
         )
     }};
@@ -215,7 +215,7 @@ impl BitwiseKernel for PlBooleanArray {
             self.scalar_values(),
             self.values_iter(),
             self.len(),
-            self.validity().map(|validity| validity.to_flat_or_scalar()),
+            self.validity().map(PlBitmap::from),
             u32::from,
         )
     }
@@ -226,7 +226,7 @@ impl BitwiseKernel for PlBooleanArray {
             self.scalar_values(),
             self.values_iter(),
             self.len(),
-            self.validity().map(|validity| validity.to_flat_or_scalar()),
+            self.validity().map(PlBitmap::from),
             |v| u32::from(!v),
         )
     }
@@ -313,10 +313,10 @@ mod tests {
 
     /// `length` copies of [`VALUE`], marked by `validity`, in both representations.
     fn repeated(validity: Option<&Bitmap>, length: usize) -> [PlPrimitiveArray<u8>; 2] {
-        let scalar =
-            PlPrimitiveArray::new_scalar(VALUE, length).with_validity_broadcast(validity.cloned());
+        let scalar = PlPrimitiveArray::new_scalar(VALUE, length)
+            .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
         let flat = PlPrimitiveArray::from_vec(vec![VALUE; length])
-            .with_validity_broadcast(validity.cloned());
+            .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
         assert_eq!(scalar, flat);
         [scalar, flat]
     }
@@ -388,9 +388,9 @@ mod tests {
                 let mask: Bitmap = (0..length).map(|i| i < valid).collect();
                 for value in [false, true] {
                     let scalar = PlBooleanArray::new_scalar(value, length)
-                        .with_validity_broadcast(Some(mask.clone()));
+                        .with_validity(Some(PlBitmap::from_bitmap(mask.clone())));
                     let flat = PlBooleanArray::from_values(Bitmap::new_with_value(value, length))
-                        .with_validity_broadcast(Some(mask.clone()));
+                        .with_validity(Some(PlBitmap::from_bitmap(mask.clone())));
 
                     assert_eq!(scalar.reduce_and(), flat.reduce_and());
                     assert_eq!(scalar.reduce_or(), flat.reduce_or());

@@ -5,6 +5,7 @@ use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 
 use super::PlListArray;
+use crate::bitmap::PlBitmap;
 use crate::broadcast::ArrayRepr;
 use crate::builder::{
     PlArrayBuilder, ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
@@ -123,7 +124,7 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlListArrayBuilder<B> {
 
     fn freeze(self) -> PlListArray {
         let length = self.offsets.len() - 1;
-        let validity = self.validity.into_opt_validity();
+        let validity = self.validity.into_opt_validity().map(PlBitmap::from_bitmap);
         // SAFETY: the offsets hold the start of every element plus the end of the last, they are
         // pushed in non-decreasing order, and they reach exactly the values appended to the child.
         unsafe {
@@ -146,7 +147,7 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlListArrayBuilder<B> {
                 self.values.freeze_reset(),
                 Buffer::from(offsets),
                 length,
-                validity.into_opt_validity(),
+                validity.into_opt_validity().map(PlBitmap::from_bitmap),
             )
         }
     }
@@ -272,6 +273,7 @@ mod tests {
     use polars_buffer::Buffer;
 
     use super::PlListArrayBuilder;
+    use crate::bitmap::PlBitmap;
     use crate::builder::{ShareStrategy, StaticArrayBuilder, builder_like};
     use crate::{PlListArray, PlPrimitiveArray};
 
@@ -281,7 +283,9 @@ mod tests {
             Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4, 5])),
             Buffer::from(vec![0u64, 2, 2, 5]),
         )
-        .with_validity(Some(Bitmap::from_iter([true, false, true])))
+        .with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
+            true, false, true,
+        ]))))
     }
 
     /// The elements of a list array, as the values of the lists they cover.

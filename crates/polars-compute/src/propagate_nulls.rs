@@ -281,7 +281,6 @@ fn set_bits_in(validity: Option<PlBitmapRef<'_>>, range: Range<usize>) -> usize 
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
     use polars_array::PlPrimitiveArray;
     use polars_array::arrow::import::from_arrow;
     use polars_buffer::Buffer;
@@ -297,7 +296,7 @@ mod tests {
     #[test]
     fn a_fully_null_repeated_list_pushes_one_bit_down() {
         let array = PlListArray::new_scalar(primitives(1..4), 1_000)
-            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
+            .with_validity(Some(PlBitmap::new_scalar(false, 1_000)));
 
         let propagated = propagate_nulls_list(&array).unwrap();
 

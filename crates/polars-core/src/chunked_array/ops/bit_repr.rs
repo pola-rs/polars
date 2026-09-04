@@ -28,7 +28,7 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
                 None,
             ),
         };
-        out.with_validity_broadcast(array.validity().map(|v| v.to_flat_or_scalar()))
+        out.with_validity(array.validity().map(PlBitmap::from))
     });
 
     ChunkedArray::from_chunk_iter(ca.name().clone(), chunks)

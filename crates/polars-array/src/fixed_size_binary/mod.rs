@@ -7,11 +7,11 @@ use polars_error::{PolarsResult, polars_ensure};
 
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
-use crate::bitmap::{PlBitmapRef, validity_eq};
+use crate::bitmap::{PlBitmap, PlBitmapRef, validity_eq};
 use crate::broadcast::{
-    ArrayRepr, assert_broadcastable, is_flat_buffer_len, is_flat_fixed_size_values_len,
-    is_scalar_buffer_len, is_scalar_fixed_size_values_len, is_valid_buffer_len, normalize_buffer,
-    normalize_validity, scalar_buffer_len, slice_fixed_size_buffer, slice_validity,
+    ArrayRepr, assert_broadcastable, is_flat_fixed_size_values_len,
+    is_scalar_fixed_size_values_len, normalize_buffer, scalar_buffer_len, slice_fixed_size_buffer,
+    slice_validity, try_validity_covering, validity_covering, validity_covering_unchecked,
 };
 use crate::flat::Flat;
 
@@ -44,8 +44,9 @@ impl PlFixedSizeBinaryArray {
         values: Buffer<u8>,
         width: usize,
         length: usize,
-        validity: Option<Bitmap>,
+        validity: Option<PlBitmap>,
     ) -> PolarsResult<Self> {
+        let validity = try_validity_covering(validity, length)?;
         polars_ensure!(
             is_flat_fixed_size_values_len(values.len(), width, length),
             ComputeError:
@@ -53,15 +54,6 @@ impl PlFixedSizeBinaryArray {
              and width {}: it needs the width of every element laid end to end",
             values.len(), length, width,
         );
-
-        if let Some(validity) = validity.as_ref() {
-            polars_ensure!(
-                is_flat_buffer_len(validity.len(), length),
-                ComputeError:
-                "validity mask of length {} is not flat for an array of length {}",
-                validity.len(), length,
-            );
-        }
 
         Ok(Self {
             values,
@@ -76,7 +68,12 @@ impl PlFixedSizeBinaryArray {
     /// # Panics
     /// Panics under the conditions [`Self::try_new`] errors.
     #[inline]
-    pub fn new(values: Buffer<u8>, width: usize, length: usize, validity: Option<Bitmap>) -> Self {
+    pub fn new(
+        values: Buffer<u8>,
+        width: usize,
+        length: usize,
+        validity: Option<PlBitmap>,
+    ) -> Self {
         Self::try_new(values, width, length, validity).unwrap()
     }
 
@@ -84,21 +81,18 @@ impl PlFixedSizeBinaryArray {
     /// them.
     ///
     /// # Safety
-    /// `values` must hold exactly `length * width` bytes, and `validity` exactly `length` bits.
+    /// `values` must hold exactly `length * width` bytes, and `validity` must cover exactly
+    /// `length` elements, in either representation.
     #[inline]
     pub unsafe fn new_unchecked(
         values: Buffer<u8>,
         width: usize,
         length: usize,
-        validity: Option<Bitmap>,
+        validity: Option<PlBitmap>,
     ) -> Self {
+        let validity = validity_covering_unchecked(validity, length);
         if cfg!(debug_assertions) {
             assert!(is_flat_fixed_size_values_len(values.len(), width, length));
-            assert!(
-                validity
-                    .as_ref()
-                    .is_none_or(|v| is_flat_buffer_len(v.len(), length))
-            );
         }
 
         Self {
@@ -120,8 +114,9 @@ impl PlFixedSizeBinaryArray {
         values: Buffer<u8>,
         width: usize,
         length: usize,
-        validity: Option<Bitmap>,
+        validity: Option<PlBitmap>,
     ) -> PolarsResult<Self> {
+        let validity = try_validity_covering(validity, length)?;
         polars_ensure!(
             is_scalar_fixed_size_values_len(values.len(), width, length),
             ComputeError:
@@ -130,21 +125,11 @@ impl PlFixedSizeBinaryArray {
             values.len(), length, width,
         );
 
-        if let Some(validity) = validity.as_ref() {
-            polars_ensure!(
-                is_scalar_buffer_len(validity.len(), length),
-                ComputeError:
-                "validity mask of length {} is not the single bit the {} elements of a broadcast \
-                 array share",
-                validity.len(), length,
-            );
-        }
-
         Ok(Self {
             values: normalize_buffer(values, length),
             width,
             length,
-            validity: normalize_validity(validity, length),
+            validity,
         })
     }
 
@@ -158,7 +143,7 @@ impl PlFixedSizeBinaryArray {
         values: Buffer<u8>,
         width: usize,
         length: usize,
-        validity: Option<Bitmap>,
+        validity: Option<PlBitmap>,
     ) -> Self {
         Self::try_new_broadcast(values, width, length, validity).unwrap()
     }
@@ -174,22 +159,18 @@ impl PlFixedSizeBinaryArray {
         values: Buffer<u8>,
         width: usize,
         length: usize,
-        validity: Option<Bitmap>,
+        validity: Option<PlBitmap>,
     ) -> Self {
+        let validity = validity_covering_unchecked(validity, length);
         if cfg!(debug_assertions) {
             assert!(is_scalar_fixed_size_values_len(values.len(), width, length));
-            assert!(
-                validity
-                    .as_ref()
-                    .is_none_or(|v| is_scalar_buffer_len(v.len(), length))
-            );
         }
 
         Self {
             values: normalize_buffer(values, length),
             width,
             length,
-            validity: normalize_validity(validity, length),
+            validity,
         }
     }
 
@@ -546,56 +527,26 @@ impl PlFixedSizeBinaryArray {
         PlFixedSizeBinaryValuesIter::new(self.values.as_slice(), self.width, length)
     }
 
-    /// Returns this array with its validity mask replaced by a flat one.
+    /// Returns this array with its validity mask replaced.
+    ///
+    /// The mask keeps whichever representation it is in: one that stands for a single bit shared
+    /// by every element is not written out one bit per element to be set.
     ///
     /// # Panics
-    /// Panics if `validity` does not hold one bit per element.
+    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
     #[must_use]
-    pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
+    pub fn with_validity(mut self, validity: Option<PlBitmap>) -> Self {
         self.set_validity(validity);
         self
     }
 
-    /// Replaces the validity mask with a flat one.
+    /// Replaces the validity mask, which keeps the representation it is in.
     ///
     /// # Panics
-    /// Panics if `validity` does not hold one bit per element.
-    pub fn set_validity(&mut self, validity: Option<Bitmap>) {
-        if let Some(validity) = validity.as_ref() {
-            assert!(
-                is_flat_buffer_len(validity.len(), self.length),
-                "validity mask of length {} is not flat for an array of length {}",
-                validity.len(),
-                self.length,
-            );
-        }
-        self.validity = validity;
-    }
-
-    /// Returns this array with its validity mask replaced by one that broadcasts over it.
-    ///
-    /// # Panics
-    /// Panics if `validity` is neither flat nor scalar for this array's length.
-    #[must_use]
-    pub fn with_validity_broadcast(mut self, validity: Option<Bitmap>) -> Self {
-        self.set_validity_broadcast(validity);
-        self
-    }
-
-    /// Replaces the validity mask with one that broadcasts over this array.
-    ///
-    /// # Panics
-    /// Panics if `validity` is neither flat nor scalar for this array's length.
-    pub fn set_validity_broadcast(&mut self, validity: Option<Bitmap>) {
-        if let Some(validity) = validity.as_ref() {
-            assert!(
-                is_valid_buffer_len(validity.len(), self.length),
-                "validity mask of length {} is neither flat nor scalar for an array of length {}",
-                validity.len(),
-                self.length,
-            );
-        }
-        self.validity = normalize_validity(validity, self.length);
+    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
+    pub fn set_validity(&mut self, validity: Option<PlBitmap>) {
+        let length = self.len();
+        self.validity = validity_covering(validity, length);
     }
 
     /// Drops the validity mask, making every element valid.
@@ -703,7 +654,7 @@ impl PlFixedSizeBinaryArray {
 
         let validity = self
             .validity()
-            .map(|validity| validity.to_flat().into_owned());
+            .map(|validity| PlBitmap::from_bitmap(validity.to_flat().into_owned()));
 
         let values = if self.values_are_flat() {
             self.values.clone()
@@ -856,13 +807,8 @@ impl PlArray for PlFixedSizeBinaryArray {
     }
 
     #[inline]
-    fn set_validity(&mut self, validity: Option<Bitmap>) {
+    fn set_validity(&mut self, validity: Option<PlBitmap>) {
         self.set_validity(validity)
-    }
-
-    #[inline]
-    fn set_validity_broadcast(&mut self, validity: Option<Bitmap>) {
-        self.set_validity_broadcast(validity)
     }
 
     #[inline]
@@ -955,7 +901,9 @@ mod tests {
             values(),
             2,
             3,
-            Some(Bitmap::from_iter([true, false, true])),
+            Some(PlBitmap::from_bitmap(Bitmap::from_iter([
+                true, false, true,
+            ]))),
         )
         .sliced(1, 2);
 
@@ -983,7 +931,7 @@ mod tests {
             Buffer::from(vec![1u8, 2]),
             2,
             0,
-            Some(Bitmap::new_zeroed(1)),
+            Some(PlBitmap::new_scalar(false, 0)),
         );
 
         assert!(arr.is_empty());

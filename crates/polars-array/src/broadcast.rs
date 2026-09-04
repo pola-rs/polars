@@ -15,9 +15,11 @@
 
 use arrow::bitmap::Bitmap;
 use polars_buffer::Buffer;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::slice_broadcast_iter::SliceBroadcastIter;
 
 use crate::array::PlArray;
+use crate::bitmap::PlBitmap;
 
 /// Which representation a backing buffer is in, along with what it holds.
 ///
@@ -257,11 +259,66 @@ pub(crate) fn normalize_bitmap_ref(bitmap: &Bitmap, length: usize) -> &Bitmap {
     }
 }
 
-/// The validity mask an array of `length` elements stores for `validity`, which is flat or scalar
-/// for it, as [`normalize_bitmap`].
+/// The bitmap an array of `length` elements stores for the mask `validity`.
+///
+/// A [`PlBitmap`] is flat or scalar *for its own length* by construction, and normalized against
+/// it, so covering the array is the whole of what is left for a validity mask to be: an array has
+/// nothing else to check and nothing left to normalize. That is what lets one entry point take a
+/// mask in either representation where two were needed before — the representation travels inside
+/// the mask rather than in the choice of constructor.
+///
+/// # Errors
+/// This function errors unless `validity` covers exactly `length` elements.
 #[inline]
-pub(crate) fn normalize_validity(validity: Option<Bitmap>, length: usize) -> Option<Bitmap> {
-    validity.map(|validity| normalize_bitmap(validity, length))
+pub(crate) fn try_validity_covering(
+    validity: Option<PlBitmap>,
+    length: usize,
+) -> PolarsResult<Option<Bitmap>> {
+    if let Some(validity) = validity.as_ref() {
+        polars_ensure!(
+            validity.len() == length,
+            ComputeError:
+            "validity mask of {} elements does not cover an array of length {}",
+            validity.len(), length,
+        );
+    }
+
+    Ok(validity.map(PlBitmap::into_flat_or_scalar))
+}
+
+/// As [`try_validity_covering`], panicking instead.
+///
+/// # Panics
+/// Panics unless `validity` covers exactly `length` elements.
+#[inline]
+pub(crate) fn validity_covering(validity: Option<PlBitmap>, length: usize) -> Option<Bitmap> {
+    if let Some(validity) = validity.as_ref() {
+        assert_eq!(
+            validity.len(),
+            length,
+            "validity mask of {} elements does not cover an array of length {}",
+            validity.len(),
+            length,
+        );
+    }
+
+    validity.map(PlBitmap::into_flat_or_scalar)
+}
+
+/// As [`validity_covering`], checked only when debug assertions are on.
+///
+/// # Safety
+/// `validity` must cover exactly `length` elements.
+#[inline]
+pub(crate) fn validity_covering_unchecked(
+    validity: Option<PlBitmap>,
+    length: usize,
+) -> Option<Bitmap> {
+    if cfg!(debug_assertions) {
+        assert!(validity.as_ref().is_none_or(|v| v.len() == length));
+    }
+
+    validity.map(PlBitmap::into_flat_or_scalar)
 }
 
 /// The offsets a list or binary array of `length` elements stores for `offsets`, which are flat or
@@ -506,12 +563,6 @@ mod tests {
         assert!(normalize_bitmap(Bitmap::new_zeroed(1), 0).is_empty());
         assert!(normalize_bitmap_ref(&Bitmap::new_zeroed(1), 0).is_empty());
         assert_eq!(
-            normalize_validity(Some(Bitmap::new_zeroed(1)), 5)
-                .unwrap()
-                .len(),
-            1
-        );
-        assert_eq!(
             normalize_offsets(Buffer::from(vec![2u64, 5]), 0).as_slice(),
             [2]
         );
@@ -519,5 +570,47 @@ mod tests {
             normalize_offsets(Buffer::from(vec![2u64, 5]), 3).as_slice(),
             [2, 5]
         );
+    }
+
+    /// A mask covers an array when its own length is the array's, whichever representation it is
+    /// in — which is the whole of what a constructor has left to check, and what lets one entry
+    /// point take both where two were needed before.
+    #[test]
+    fn a_mask_covers_an_array_in_either_representation() {
+        let flat = PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true]));
+        let scalar = PlBitmap::new_scalar(true, 3);
+        assert!(flat.is_flat() && scalar.is_scalar());
+
+        // Both are handed back as the bitmap the array stores, in the representation they came in:
+        // the scalar one keeps its single bit rather than being written out three times over.
+        assert_eq!(validity_covering(Some(flat), 3).unwrap().len(), 3);
+        assert_eq!(validity_covering(Some(scalar), 3).unwrap().len(), 1);
+        assert!(validity_covering(None, 3).is_none());
+    }
+
+    /// The trap the old two-entry-point API left open: a single bit is a mask over *one* element,
+    /// and only a mask that says so itself covers an array of more.
+    #[test]
+    fn a_single_bit_does_not_cover_more_than_one_element() {
+        let one_bit = || PlBitmap::from_bitmap(Bitmap::new_zeroed(1));
+
+        assert!(try_validity_covering(Some(one_bit()), 1).is_ok());
+        assert!(try_validity_covering(Some(one_bit()), 5).is_err());
+        // Said as a mask over five elements, the very same bit does cover them.
+        assert!(try_validity_covering(Some(PlBitmap::new_scalar(false, 5)), 5).is_ok());
+    }
+
+    /// An array of no elements is flat, so a mask over it keeps no slot either.
+    #[test]
+    fn a_mask_over_no_elements_keeps_no_slot() {
+        let empty = validity_covering(Some(PlBitmap::new_scalar(false, 0)), 0);
+        assert!(empty.unwrap().is_empty());
+        assert!(try_validity_covering(Some(PlBitmap::new_scalar(false, 0)), 1).is_err());
+    }
+
+    #[test]
+    #[should_panic(expected = "does not cover an array of length 2")]
+    fn a_mask_that_does_not_cover_the_array_panics() {
+        validity_covering(Some(PlBitmap::new_scalar(true, 3)), 2);
     }
 }

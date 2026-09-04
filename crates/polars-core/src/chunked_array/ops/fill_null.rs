@@ -173,7 +173,8 @@ where
     bm.extend_constant(ca.len() - num_start_nulls, true);
     ChunkedArray::from_chunk_iter_like(
         ca,
-        [T::Array::arr_from_zeroable_iter(values).with_validity_typed(bm.into_opt_validity())],
+        [T::Array::arr_from_zeroable_iter(values)
+            .with_validity_typed(bm.into_opt_validity().map(PlBitmap::from_bitmap))],
     )
 }
 
@@ -204,7 +205,8 @@ where
     bm.extend_constant(num_end_nulls, false);
     ChunkedArray::from_chunk_iter_like(
         ca,
-        [T::Array::arr_from_zeroable_iter(values).with_validity_typed(bm.into_opt_validity())],
+        [T::Array::arr_from_zeroable_iter(values)
+            .with_validity_typed(bm.into_opt_validity().map(PlBitmap::from_bitmap))],
     )
 }
 

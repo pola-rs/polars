@@ -1108,7 +1108,7 @@ impl Not for &BooleanChunked {
         // repeats a value stays `O(1)`.
         let chunks = self.downcast_iter().map(|arr| {
             PlBooleanArray::from_pl_bitmap(PlBitmap::new_broadcast(invert(arr.values()), arr.len()))
-                .with_validity_broadcast(arr.validity().map(|v| v.to_flat_or_scalar()))
+                .with_validity(arr.validity().map(PlBitmap::from))
         });
         ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }

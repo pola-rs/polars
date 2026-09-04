@@ -7,7 +7,7 @@
 use std::mem::MaybeUninit;
 
 use arrow::bitmap::BitmapBuilder;
-use polars_array::{ArrayRepr, PlPrimitiveArray};
+use polars_array::{ArrayRepr, PlBitmap, PlPrimitiveArray};
 use polars_utils::slice::Slice2Uninit;
 
 use crate::row::RowEncodingOptions;
@@ -244,5 +244,9 @@ pub unsafe fn decode(
         }));
     });
 
-    PlPrimitiveArray::new(values.into(), rows.len(), validity.into_opt_validity())
+    PlPrimitiveArray::new(
+        values.into(),
+        rows.len(),
+        validity.into_opt_validity().map(PlBitmap::from_bitmap),
+    )
 }

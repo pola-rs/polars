@@ -70,8 +70,7 @@ fn combine_validities_chunked<T: PolarsDataType>(
                 bm = PlBitmap::new_broadcast(invert(bm.as_ref()), length);
             }
             let validity = combine_validities_and(a.validity(), Some(bm.as_ref()));
-            a.clone()
-                .with_validity_broadcast_typed(validity.map(PlBitmap::into_flat_or_scalar))
+            a.clone().with_validity_typed(validity)
         });
     ChunkedArray::from_chunk_iter_like(ca, chunks)
 }
@@ -503,7 +502,8 @@ impl ChunkZip<StructType> for StructChunked {
                 let chunks = unsafe { out.chunks_mut() };
 
                 if num_chunks == 1 {
-                    chunks[0] = chunks[0].with_validity(Some(rechunked_validity));
+                    chunks[0] =
+                        chunks[0].with_validity(Some(PlBitmap::from_bitmap(rechunked_validity)));
                 } else {
                     for chunk in chunks {
                         let chunk_len = chunk.len();
@@ -513,7 +513,8 @@ impl ChunkZip<StructType> for StructChunked {
                         (chunk_validity, rechunked_validity) =
                             unsafe { rechunked_validity.split_at_unchecked(chunk_len) };
                         *chunk = chunk.with_validity(
-                            (chunk_validity.unset_bits() > 0).then_some(chunk_validity),
+                            (chunk_validity.unset_bits() > 0)
+                                .then_some(PlBitmap::from_bitmap(chunk_validity)),
                         );
                     }
                 }

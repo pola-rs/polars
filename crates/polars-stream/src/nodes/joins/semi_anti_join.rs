@@ -302,7 +302,7 @@ impl ProbeState {
                     );
                     let mut arr = PlBooleanArray::from(builder.freeze());
                     if !params.nulls_equal {
-                        arr.set_validity(hash_keys.validity());
+                        arr.set_validity(hash_keys.validity().map(PlBitmap::from_bitmap));
                     }
                     let s = BooleanChunked::with_chunk(df[0].name().clone(), arr).into_series();
                     DataFrame::new_unchecked(s.len(), vec![Column::from(s)])

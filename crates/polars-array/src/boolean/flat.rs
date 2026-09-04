@@ -152,6 +152,7 @@ impl PartialEq<Flat<PlBooleanArray>> for PlBooleanArray {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bitmap::PlBitmap;
 
     #[test]
     fn to_flat_materializes_scalars() {
@@ -188,7 +189,7 @@ mod tests {
         assert!(PlBooleanArray::new_scalar(true, 3).as_flat().is_none());
         assert!(
             PlBooleanArray::from_vec(vec![true, false, true])
-                .with_validity_broadcast(Some(Bitmap::new_zeroed(1)))
+                .with_validity(Some(PlBitmap::new_scalar(false, 3)))
                 .as_flat()
                 .is_none()
         );

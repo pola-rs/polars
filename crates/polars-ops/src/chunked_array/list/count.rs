@@ -64,7 +64,8 @@ pub(super) fn count_boolean_bits(ca: &ListChunked) -> IdxCa {
         let mask = mask.to_flat();
         let out = count_bits_set_by_offsets(mask.values(), arr.offsets().as_slice());
         // One count per element, and the mask of the array holds one bit per element as well.
-        PlPrimitiveArray::from_vec(out).with_validity(arr.validity().cloned())
+        PlPrimitiveArray::from_vec(out)
+            .with_validity(arr.validity().cloned().map(PlBitmap::from_bitmap))
     });
     IdxCa::from_chunk_iter(ca.name().clone(), chunks)
 }

@@ -203,10 +203,10 @@ unsafe impl<T: NativeType> TrustedLen for PlPrimitiveIter<'_, T> {}
 
 #[cfg(test)]
 mod tests {
-
     use arrow::bitmap::Bitmap;
 
     use crate::PlPrimitiveArray;
+    use crate::bitmap::PlBitmap;
     use crate::iterator_tests::assert_iterates;
 
     #[test]
@@ -242,8 +242,9 @@ mod tests {
     /// fold from walking the values as the slice they are: it is read by position alongside them.
     #[test]
     fn mixed_validity() {
-        let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4])
-            .with_validity(Some(Bitmap::from_iter([true, false, true, true])));
+        let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4]).with_validity(Some(
+            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true, true])),
+        ));
 
         assert_iterates(array.values_iter(), &[1, 2, 3, 4]);
         assert_iterates(array.iter(), &[Some(1), None, Some(3), Some(4)]);
@@ -254,7 +255,9 @@ mod tests {
     #[test]
     fn a_sliced_mask_is_read_from_its_own_front() {
         let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4, 5])
-            .with_validity(Some(Bitmap::from_iter([true, true, false, true, false])))
+            .with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
+                true, true, false, true, false,
+            ]))))
             .sliced(2, 3);
 
         assert_iterates(array.values_iter(), &[3, 4, 5]);

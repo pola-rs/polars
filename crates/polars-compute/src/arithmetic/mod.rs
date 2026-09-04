@@ -2,7 +2,7 @@ use std::any::TypeId;
 
 use arrow::bitmap::BitmapBuilder;
 use arrow::types::NativeType;
-use polars_array::{Flat, PlPrimitiveArray};
+use polars_array::{Flat, PlBitmap, PlPrimitiveArray};
 
 use self::pl_array::{binary, unary};
 
@@ -186,7 +186,11 @@ fn prim_checked_mul_scalar<I: NativeType + CheckedMul + WrappingMul>(
     }
 
     if out.len() == array.len() {
-        return POut::<I>::new(out.into(), array.len(), array.validity().cloned());
+        return POut::<I>::new(
+            out.into(),
+            array.len(),
+            array.validity().cloned().map(PlBitmap::from_bitmap),
+        );
     }
 
     let mut validity = BitmapBuilder::with_capacity(array.len());
@@ -209,5 +213,9 @@ fn prim_checked_mul_scalar<I: NativeType + CheckedMul + WrappingMul>(
         Some(arr_validity) => arrow::bitmap::and(&validity, arr_validity),
     };
 
-    POut::<I>::new(out.into(), array.len(), Some(validity))
+    POut::<I>::new(
+        out.into(),
+        array.len(),
+        Some(PlBitmap::from_bitmap(validity)),
+    )
 }

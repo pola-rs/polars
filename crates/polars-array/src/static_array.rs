@@ -2,7 +2,6 @@
 
 use std::borrow::Cow;
 
-use arrow::bitmap::Bitmap;
 use arrow::trusted_len::TrustedLen;
 use arrow::types::NativeType;
 use bytemuck::Zeroable;
@@ -10,7 +9,7 @@ use bytemuck::Zeroable;
 use crate::array::PlArray;
 use crate::binary::{PlBinaryIter, PlBinaryValuesIter};
 use crate::binview::{PlBinaryViewIter, PlBinaryViewValuesIter};
-use crate::bitmap::{PlBitmapIter, PlBitmapRef, ValidityFold, ValidityIter};
+use crate::bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef, ValidityFold, ValidityIter};
 use crate::boolean::PlBooleanIter;
 use crate::broadcast::assert_broadcastable;
 use crate::builder::StaticArrayBuilder;
@@ -112,19 +111,12 @@ pub trait StaticArray: PlArray + Clone {
     /// Panics if `self.len()` is neither `length` nor one.
     fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_>;
 
-    /// Returns this array with its validity mask replaced by a flat one.
+    /// Returns this array with its validity mask replaced, keeping its representation.
     ///
     /// # Panics
-    /// Panics if `validity` does not hold one bit per element.
+    /// Panics unless `validity` covers exactly [`len`](PlArray::len) elements.
     #[must_use]
-    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self;
-
-    /// Returns this array with its validity mask replaced by one that broadcasts over it.
-    ///
-    /// # Panics
-    /// Panics if `validity` is neither flat nor scalar for this array's length.
-    #[must_use]
-    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self;
+    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self;
 
     /// Returns an array of `length` copies of the element at `index`.
     ///
@@ -195,13 +187,8 @@ impl<T: NativeType> StaticArray for PlPrimitiveArray<T> {
     }
 
     #[inline]
-    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
         self.with_validity(validity)
-    }
-
-    #[inline]
-    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
-        self.with_validity_broadcast(validity)
     }
 
     #[inline]
@@ -258,13 +245,8 @@ impl StaticArray for PlBooleanArray {
     }
 
     #[inline]
-    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
         self.with_validity(validity)
-    }
-
-    #[inline]
-    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
-        self.with_validity_broadcast(validity)
     }
 
     #[inline]
@@ -321,13 +303,8 @@ impl StaticArray for PlBinaryArray {
     }
 
     #[inline]
-    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
         self.with_validity(validity)
-    }
-
-    #[inline]
-    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
-        self.with_validity_broadcast(validity)
     }
 
     #[inline]
@@ -384,13 +361,8 @@ impl StaticArray for PlBinaryViewArray {
     }
 
     #[inline]
-    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
         self.with_validity(validity)
-    }
-
-    #[inline]
-    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
-        self.with_validity_broadcast(validity)
     }
 
     #[inline]
@@ -448,13 +420,8 @@ impl StaticArray for PlUtf8ViewArray {
     }
 
     #[inline]
-    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
         self.with_validity(validity)
-    }
-
-    #[inline]
-    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
-        self.with_validity_broadcast(validity)
     }
 
     #[inline]
@@ -511,13 +478,8 @@ impl StaticArray for PlFixedSizeBinaryArray {
     }
 
     #[inline]
-    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
         self.with_validity(validity)
-    }
-
-    #[inline]
-    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
-        self.with_validity_broadcast(validity)
     }
 
     #[inline]
@@ -574,13 +536,8 @@ impl StaticArray for PlListArray {
     }
 
     #[inline]
-    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
         self.with_validity(validity)
-    }
-
-    #[inline]
-    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
-        self.with_validity_broadcast(validity)
     }
 
     #[inline]
@@ -637,13 +594,8 @@ impl StaticArray for PlFixedSizeListArray {
     }
 
     #[inline]
-    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
         self.with_validity(validity)
-    }
-
-    #[inline]
-    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
-        self.with_validity_broadcast(validity)
     }
 
     #[inline]
@@ -696,13 +648,8 @@ impl StaticArray for PlStructArray {
     }
 
     #[inline]
-    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
         self.with_validity(validity)
-    }
-
-    #[inline]
-    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
-        self.with_validity_broadcast(validity)
     }
 
     #[inline]
@@ -757,13 +704,7 @@ impl StaticArray for PlNullArray {
     /// Returns this array unchanged: an array of nothing but nulls has no element a mask could make
     /// valid, exactly as [`PlArray::set_validity`] documents.
     #[inline]
-    fn with_validity_typed(self, _validity: Option<Bitmap>) -> Self {
-        self
-    }
-
-    /// Returns this array unchanged, exactly as [`Self::with_validity_typed`] does.
-    #[inline]
-    fn with_validity_broadcast_typed(self, _validity: Option<Bitmap>) -> Self {
+    fn with_validity_typed(self, _validity: Option<PlBitmap>) -> Self {
         self
     }
 
@@ -914,8 +855,10 @@ unsafe impl TrustedLen for PlUnitIter<'_> {}
 
 #[cfg(test)]
 mod tests {
+    use arrow::bitmap::Bitmap;
 
     use super::*;
+    use crate::bitmap::PlBitmap;
     use crate::iterator_tests::assert_iterates;
 
     /// The iterator of an array whose elements carry no value of their own, in both representations
@@ -926,8 +869,13 @@ mod tests {
         #[test]
         fn a_struct_under_a_flat_mask() {
             let field = Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3]));
-            let array =
-                PlStructArray::new(vec![field], 3, Some(Bitmap::from_iter([true, false, true])));
+            let array = PlStructArray::new(
+                vec![field],
+                3,
+                Some(PlBitmap::from_bitmap(Bitmap::from_iter([
+                    true, false, true,
+                ]))),
+            );
 
             assert_iterates(array.iter(), &[Some(()), None, Some(())]);
         }
@@ -939,8 +887,11 @@ mod tests {
             let array = PlStructArray::new(vec![field.clone()], 3, None);
             assert_iterates(array.iter(), &[Some(()); 3]);
 
-            let all_null =
-                PlStructArray::new(vec![field], 3, Some(Bitmap::new_with_value(false, 3)));
+            let all_null = PlStructArray::new(
+                vec![field],
+                3,
+                Some(PlBitmap::from_bitmap(Bitmap::new_with_value(false, 3))),
+            );
             assert_iterates(all_null.iter(), &[None; 3]);
         }
 
@@ -993,7 +944,7 @@ mod tests {
 
         let nulled: PlPrimitiveArray<i32> = array
             .clone()
-            .with_validity_broadcast_typed(Some(Bitmap::new_zeroed(1)));
+            .with_validity_typed(Some(PlBitmap::new_scalar(false, 3)));
         assert_eq!(nulled.null_count(), 3);
 
         let repeated: PlPrimitiveArray<i32> = array.new_from_index_typed(2, 4);

@@ -85,7 +85,7 @@ where
         .zip(rhs_arr.values_iter())
         .map(|(x, y)| is_close_scalar(x.as_(), y.as_(), abs_tol, rel_tol, nans_equal));
     let result: PlBooleanArray = element_iter.collect_arr();
-    result.with_validity_typed(validity)
+    result.with_validity_typed(validity.map(PlBitmap::from_bitmap))
 }
 
 fn is_close_kernel_unary<T>(
@@ -103,7 +103,7 @@ where
         .values_iter()
         .map(|x| is_close_scalar(x.as_(), value, abs_tol, rel_tol, nans_equal));
     let result: PlBooleanArray = element_iter.collect_arr();
-    result.with_validity_typed(validity)
+    result.with_validity_typed(validity.map(PlBitmap::from_bitmap))
 }
 
 /* ---------------------------------------- SCALAR LOGIC --------------------------------------- */

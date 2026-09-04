@@ -8,11 +8,11 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
-use crate::bitmap::PlBitmapRef;
+use crate::bitmap::{PlBitmap, PlBitmapRef};
 use crate::broadcast::{
     ArrayRepr, assert_broadcastable, broadcast_index, is_flat_buffer_len, is_scalar_buffer_len,
-    is_valid_buffer_len, normalize_buffer, normalize_validity, scalar_buffer_len, slice_buffer,
-    slice_validity,
+    normalize_buffer, scalar_buffer_len, slice_buffer, slice_validity, try_validity_covering,
+    validity_covering, validity_covering_unchecked,
 };
 use crate::flat::Flat;
 
@@ -40,29 +40,22 @@ impl PlBinaryViewArray {
     /// Creates a flat [`PlBinaryViewArray`] out of its internal components.
     ///
     /// # Errors
-    /// This function errors if `views` or `validity` does not hold exactly `length` slots, or if a
+    /// This function errors if `views` does not hold exactly `length` slots, if `validity` does not
+    /// cover exactly `length` elements, or if a
     /// view does not read bytes that `buffers` holds.
     pub fn try_new(
         views: Buffer<View>,
         buffers: Buffer<Buffer<u8>>,
         length: usize,
-        validity: Option<Bitmap>,
+        validity: Option<PlBitmap>,
     ) -> PolarsResult<Self> {
+        let validity = try_validity_covering(validity, length)?;
         polars_ensure!(
             is_flat_buffer_len(views.len(), length),
             ComputeError:
             "views buffer of length {} is not flat for an array of length {}",
             views.len(), length,
         );
-
-        if let Some(validity) = validity.as_ref() {
-            polars_ensure!(
-                is_flat_buffer_len(validity.len(), length),
-                ComputeError:
-                "validity mask of length {} is not flat for an array of length {}",
-                validity.len(), length,
-            );
-        }
 
         validate_views(&views, &buffers)?;
 
@@ -83,7 +76,7 @@ impl PlBinaryViewArray {
         views: Buffer<View>,
         buffers: Buffer<Buffer<u8>>,
         length: usize,
-        validity: Option<Bitmap>,
+        validity: Option<PlBitmap>,
     ) -> Self {
         Self::try_new(views, buffers, length, validity).unwrap()
     }
@@ -91,22 +84,19 @@ impl PlBinaryViewArray {
     /// Creates a flat [`PlBinaryViewArray`] out of its internal components without validating them.
     ///
     /// # Safety
-    /// `views` and `validity` must each hold exactly `length` slots, and every view must read bytes
+    /// `views` must hold exactly `length` slots, `validity` must cover exactly `length` elements in
+    /// either representation, and every view must read bytes
     /// that `buffers` holds.
     #[inline]
     pub unsafe fn new_unchecked(
         views: Buffer<View>,
         buffers: Buffer<Buffer<u8>>,
         length: usize,
-        validity: Option<Bitmap>,
+        validity: Option<PlBitmap>,
     ) -> Self {
+        let validity = validity_covering_unchecked(validity, length);
         if cfg!(debug_assertions) {
             assert!(is_flat_buffer_len(views.len(), length));
-            assert!(
-                validity
-                    .as_ref()
-                    .is_none_or(|v| is_flat_buffer_len(v.len(), length))
-            );
             validate_views(&views, &buffers).unwrap();
         }
 
@@ -121,14 +111,16 @@ impl PlBinaryViewArray {
     /// Creates a scalar [`PlBinaryViewArray`] of `length` elements out of its internal components.
     ///
     /// # Errors
-    /// This function errors if `views` or `validity` is not scalar for `length`, per
+    /// This function errors if `views` is not scalar for `length`, per
+    /// [`is_scalar_buffer_len`], or if `validity` does not cover exactly `length` elements, per
     /// [`is_scalar_buffer_len`], or if the view does not read bytes that `buffers` holds.
     pub fn try_new_broadcast(
         views: Buffer<View>,
         buffers: Buffer<Buffer<u8>>,
         length: usize,
-        validity: Option<Bitmap>,
+        validity: Option<PlBitmap>,
     ) -> PolarsResult<Self> {
+        let validity = try_validity_covering(validity, length)?;
         polars_ensure!(
             is_scalar_buffer_len(views.len(), length),
             ComputeError:
@@ -137,23 +129,13 @@ impl PlBinaryViewArray {
             views.len(), length,
         );
 
-        if let Some(validity) = validity.as_ref() {
-            polars_ensure!(
-                is_scalar_buffer_len(validity.len(), length),
-                ComputeError:
-                "validity mask of length {} is not the single bit the {} elements of a broadcast \
-                 array share",
-                validity.len(), length,
-            );
-        }
-
         validate_views(&views, &buffers)?;
 
         Ok(Self {
             views: normalize_buffer(views, length),
             buffers,
             length,
-            validity: normalize_validity(validity, length),
+            validity,
         })
     }
 
@@ -166,7 +148,7 @@ impl PlBinaryViewArray {
         views: Buffer<View>,
         buffers: Buffer<Buffer<u8>>,
         length: usize,
-        validity: Option<Bitmap>,
+        validity: Option<PlBitmap>,
     ) -> Self {
         Self::try_new_broadcast(views, buffers, length, validity).unwrap()
     }
@@ -175,22 +157,19 @@ impl PlBinaryViewArray {
     /// without validating them.
     ///
     /// # Safety
-    /// `views` and `validity` must each be scalar for `length`, per [`is_scalar_buffer_len`], and
+    /// `views` must be scalar for `length`, per [`is_scalar_buffer_len`], `validity` must cover
+    /// exactly `length` elements in either representation, and
     /// every view must read bytes that `buffers` holds.
     #[inline]
     pub unsafe fn new_broadcast_unchecked(
         views: Buffer<View>,
         buffers: Buffer<Buffer<u8>>,
         length: usize,
-        validity: Option<Bitmap>,
+        validity: Option<PlBitmap>,
     ) -> Self {
+        let validity = validity_covering_unchecked(validity, length);
         if cfg!(debug_assertions) {
             assert!(is_scalar_buffer_len(views.len(), length));
-            assert!(
-                validity
-                    .as_ref()
-                    .is_none_or(|v| is_scalar_buffer_len(v.len(), length))
-            );
             validate_views(&views, &buffers).unwrap();
         }
 
@@ -198,7 +177,7 @@ impl PlBinaryViewArray {
             views: normalize_buffer(views, length),
             buffers,
             length,
-            validity: normalize_validity(validity, length),
+            validity,
         }
     }
 
@@ -562,56 +541,26 @@ impl PlBinaryViewArray {
         PlBinaryViewValuesIter::new(&self.views, &self.buffers, length)
     }
 
-    /// Returns this array with its validity mask replaced by a flat one.
+    /// Returns this array with its validity mask replaced.
+    ///
+    /// The mask keeps whichever representation it is in: one that stands for a single bit shared
+    /// by every element is not written out one bit per element to be set.
     ///
     /// # Panics
-    /// Panics if `validity` does not hold one bit per element.
+    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
     #[must_use]
-    pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
+    pub fn with_validity(mut self, validity: Option<PlBitmap>) -> Self {
         self.set_validity(validity);
         self
     }
 
-    /// Replaces the validity mask with a flat one.
+    /// Replaces the validity mask, which keeps the representation it is in.
     ///
     /// # Panics
-    /// Panics if `validity` does not hold one bit per element.
-    pub fn set_validity(&mut self, validity: Option<Bitmap>) {
-        if let Some(validity) = validity.as_ref() {
-            assert!(
-                is_flat_buffer_len(validity.len(), self.length),
-                "validity mask of length {} is not flat for an array of length {}",
-                validity.len(),
-                self.length,
-            );
-        }
-        self.validity = validity;
-    }
-
-    /// Returns this array with its validity mask replaced by one that broadcasts over it.
-    ///
-    /// # Panics
-    /// Panics if `validity` is neither flat nor scalar for this array's length.
-    #[must_use]
-    pub fn with_validity_broadcast(mut self, validity: Option<Bitmap>) -> Self {
-        self.set_validity_broadcast(validity);
-        self
-    }
-
-    /// Replaces the validity mask with one that broadcasts over this array.
-    ///
-    /// # Panics
-    /// Panics if `validity` is neither flat nor scalar for this array's length.
-    pub fn set_validity_broadcast(&mut self, validity: Option<Bitmap>) {
-        if let Some(validity) = validity.as_ref() {
-            assert!(
-                is_valid_buffer_len(validity.len(), self.length),
-                "validity mask of length {} is neither flat nor scalar for an array of length {}",
-                validity.len(),
-                self.length,
-            );
-        }
-        self.validity = normalize_validity(validity, self.length);
+    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
+    pub fn set_validity(&mut self, validity: Option<PlBitmap>) {
+        let length = self.len();
+        self.validity = validity_covering(validity, length);
     }
 
     /// Drops the validity mask, making every element valid.
@@ -842,7 +791,7 @@ impl<V: AsRef<[u8]>> FromIterator<Option<V>> for PlBinaryViewArray {
                 Buffer::from(views),
                 collect_buffers(buffers),
                 length,
-                validity.into_opt_validity(),
+                validity.into_opt_validity().map(PlBitmap::from_bitmap),
             )
         }
     }
@@ -947,13 +896,8 @@ impl PlArray for PlBinaryViewArray {
     }
 
     #[inline]
-    fn set_validity(&mut self, validity: Option<Bitmap>) {
+    fn set_validity(&mut self, validity: Option<PlBitmap>) {
         self.set_validity(validity)
-    }
-
-    #[inline]
-    fn set_validity_broadcast(&mut self, validity: Option<Bitmap>) {
-        self.set_validity_broadcast(validity)
     }
 
     #[inline]
@@ -1056,7 +1000,7 @@ mod tests {
             Buffer::zeroed(1),
             Buffer::new(),
             0,
-            Some(Bitmap::new_zeroed(1)),
+            Some(PlBitmap::new_scalar(false, 0)),
         );
 
         assert!(arr.is_empty());

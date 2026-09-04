@@ -13,6 +13,7 @@ use arrow::types::{NativeType, Offset, days_ms, i256, months_days_ns};
 use polars_buffer::Buffer;
 use polars_utils::float16::pf16;
 
+use crate::bitmap::PlBitmap;
 use crate::{
     PlArray, PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray,
     PlFixedSizeListArray, PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray,
@@ -75,7 +76,7 @@ pub fn boolean_from_arrow(array: &BooleanArray) -> PlBooleanArray {
         PlBooleanArray::new_unchecked(
             array.values().clone(),
             array.len(),
-            array.validity().cloned(),
+            array.validity().cloned().map(PlBitmap::from_bitmap),
         )
     }
 }
@@ -88,7 +89,7 @@ pub fn primitive_from_arrow<T: NativeType>(array: &PrimitiveArray<T>) -> PlPrimi
         PlPrimitiveArray::new_unchecked(
             array.values().clone(),
             array.len(),
-            array.validity().cloned(),
+            array.validity().cloned().map(PlBitmap::from_bitmap),
         )
     }
 }
@@ -102,7 +103,7 @@ pub fn binary_from_arrow<O: Offset>(array: &BinaryArray<O>) -> PlBinaryArray {
             array.values().clone(),
             offsets_from_arrow(array.offsets()),
             array.len(),
-            array.validity().cloned(),
+            array.validity().cloned().map(PlBitmap::from_bitmap),
         )
     }
 }
@@ -116,7 +117,7 @@ pub fn utf8_from_arrow<O: Offset>(array: &Utf8Array<O>) -> PlBinaryArray {
             array.values().clone(),
             offsets_from_arrow(array.offsets()),
             array.len(),
-            array.validity().cloned(),
+            array.validity().cloned().map(PlBitmap::from_bitmap),
         )
     }
 }
@@ -133,7 +134,7 @@ pub fn binary_view_from_arrow<T: ViewType + ?Sized>(
             array.views().clone(),
             array.data_buffers().clone(),
             array.len(),
-            array.validity().cloned(),
+            array.validity().cloned().map(PlBitmap::from_bitmap),
         )
     }
 }
@@ -154,7 +155,7 @@ pub fn fixed_size_binary_from_arrow(array: &FixedSizeBinaryArray) -> PlFixedSize
             array.values().clone(),
             array.size(),
             array.len(),
-            array.validity().cloned(),
+            array.validity().cloned().map(PlBitmap::from_bitmap),
         )
     }
 }
@@ -173,7 +174,7 @@ pub fn list_from_arrow<O: Offset>(array: &ListArray<O>) -> PlListArray {
             values,
             offsets_from_arrow(array.offsets()),
             array.len(),
-            array.validity().cloned(),
+            array.validity().cloned().map(PlBitmap::from_bitmap),
         )
     }
 }
@@ -193,7 +194,7 @@ pub fn fixed_size_list_from_arrow(array: &FixedSizeListArray) -> PlFixedSizeList
             values,
             array.size(),
             array.len(),
-            array.validity().cloned(),
+            array.validity().cloned().map(PlBitmap::from_bitmap),
         )
     }
 }
@@ -212,7 +213,13 @@ pub fn struct_from_arrow(array: &StructArray) -> PlStructArray {
 
     // SAFETY: every field of an Arrow struct array has as many elements as the array, and its
     // validity mask one bit per element; importing a field preserves that.
-    unsafe { PlStructArray::new_unchecked(fields, array.len(), array.validity().cloned()) }
+    unsafe {
+        PlStructArray::new_unchecked(
+            fields,
+            array.len(),
+            array.validity().cloned().map(PlBitmap::from_bitmap),
+        )
+    }
 }
 
 /// Imports Arrow offsets as the 64-bit offsets a [`PlBinaryArray`] and a [`PlListArray`] hold.
