@@ -39,7 +39,7 @@ pub fn columns_to_iter_recursive(
                 let array = array
                     .into_iter()
                     .map(|array| create_list(field.dtype().clone(), &mut nested, array))
-                    .collect();
+                    .collect::<ParquetResult<Vec<_>>>()?;
                 Ok((nested, array, ptm))
             },
             ArrowDataType::FixedSizeList(inner, width) => {
@@ -54,7 +54,7 @@ pub fn columns_to_iter_recursive(
                 let array = array
                     .into_iter()
                     .map(|array| create_list(field.dtype().clone(), &mut nested, array))
-                    .collect();
+                    .collect::<ParquetResult<Vec<_>>>()?;
                 Ok((nested, array, ptm))
             },
             ArrowDataType::Struct(fields) => {
@@ -145,7 +145,7 @@ pub fn columns_to_iter_recursive(
                 let array = array
                     .into_iter()
                     .map(|array| create_map(field.dtype().clone(), &mut nested, array))
-                    .collect();
+                    .collect::<ParquetResult<Vec<_>>>()?;
                 Ok((nested, array, ptm))
             },
 

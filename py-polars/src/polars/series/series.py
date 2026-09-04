@@ -111,6 +111,7 @@ from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
 from polars.series.ext import ExtensionNameSpace
 from polars.series.list import ListNameSpace
+from polars.series.map import MapNameSpace
 from polars.series.plotting import SeriesPlot
 from polars.series.string import StringNameSpace
 from polars.series.struct import StructNameSpace
@@ -283,6 +284,7 @@ class Series(metaclass=_Meta):
         "dt",
         "ext",
         "list",
+        "map",
         "plot",
         "str",
         "struct",
@@ -428,6 +430,11 @@ class Series(metaclass=_Meta):
     def struct(self) -> StructNameSpace:
         """Create an object namespace of all struct related methods."""
         return StructNameSpace(self)
+
+    @property
+    def map(self) -> MapNameSpace:
+        """Create an object namespace of all map related methods."""
+        return MapNameSpace(self)
 
     @property
     def ext(self) -> ExtensionNameSpace:

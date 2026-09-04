@@ -532,7 +532,9 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
             dtype,
             allow_extra_fields_in_struct,
         )?)),
-        adt => unimplemented!("Deserialization from JSON not implemented for {adt:?}"),
+        adt => polars_bail!(
+            ComputeError: "deserialization from JSON is not implemented for `{adt:?}`"
+        ),
     }
 }
 

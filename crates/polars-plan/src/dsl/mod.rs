@@ -25,6 +25,8 @@ mod from;
 pub mod function_expr;
 pub mod functions;
 mod list;
+#[cfg(feature = "dtype-map")]
+mod map;
 mod match_to_schema;
 #[cfg(feature = "meta")]
 mod meta;
@@ -62,6 +64,8 @@ pub use extension::*;
 pub use function_expr::*;
 pub use join::JoinCondition;
 pub use list::*;
+#[cfg(feature = "dtype-map")]
+pub use map::*;
 pub use match_to_schema::*;
 #[cfg(feature = "meta")]
 pub use meta::*;
@@ -1680,6 +1684,14 @@ impl Expr {
     #[cfg(feature = "dtype-extension")]
     pub fn ext(self) -> extension::ExtensionNameSpace {
         extension::ExtensionNameSpace(self)
+    }
+
+    /// Get the [`map::MapNameSpace`].
+    ///
+    /// Named `map_` because [`Expr::map`] is the elementwise UDF entry point.
+    #[cfg(feature = "dtype-map")]
+    pub fn map_(self) -> map::MapNameSpace {
+        map::MapNameSpace(self)
     }
 
     /// Get the [`struct_::StructNameSpace`].

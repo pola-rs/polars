@@ -105,6 +105,7 @@ dtype-f16 = ["polars-core/dtype-f16"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
 dtype-extension = ["polars-core/dtype-extension"]
+dtype-map = ["polars-core/dtype-map"]
 object = ["polars-core/object"]
 dtype-datetime = [
   "polars-core/dtype-datetime",

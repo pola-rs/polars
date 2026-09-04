@@ -211,6 +211,13 @@ impl ListNameSpace {
         self.0.map_unary(ListFunction::ToStruct(names))
     }
 
+    #[cfg(feature = "dtype-map")]
+    #[allow(clippy::wrong_self_convention)]
+    /// Convert this `List` of `Struct {key, value}` entries to a `Map`.
+    pub fn to_map(self) -> Expr {
+        self.0.map_unary(ListFunction::ToMap)
+    }
+
     #[cfg(feature = "is_in")]
     /// Check if the list array contain an element
     pub fn contains<E: Into<Expr>>(self, other: E, nulls_equal: bool) -> Expr {

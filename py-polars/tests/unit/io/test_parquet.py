@@ -1352,18 +1352,11 @@ def test_parquet_pyarrow_map() -> None:
     pq.write_table(table, f)
 
     expected = pl.DataFrame(
-        {
-            "x": [
-                {"key": 0, "value": 5},
-                {"key": 1, "value": 10},
-                {"key": 2, "value": 19},
-                {"key": 3, "value": 96},
-            ]
-        },
-        schema={"x": pl.Struct({"key": pl.Int32, "value": pl.Int32})},
+        {"x": [{0: 5, 1: 10, 2: 19, 3: 96}]},
+        schema={"x": pl.Map(pl.Int32, pl.Int32)},
     )
     f.seek(0)
-    assert_frame_equal(pl.read_parquet(f).explode(["x"]), expected)
+    assert_frame_equal(pl.read_parquet(f), expected)
 
     # Test for https://github.com/pola-rs/polars/issues/21317
     # Specifying schema/missing_columns
@@ -1372,11 +1365,51 @@ def test_parquet_pyarrow_map() -> None:
         assert_frame_equal(
             pl.read_parquet(
                 f,
-                schema={"x": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Int32}))},
+                schema={"x": pl.Map(pl.Int32, pl.Int32)},
                 missing_columns=missing_columns,  # type: ignore[arg-type]
-            ).explode(["x"]),
+            ),
             expected,
         )
+
+
+def test_parquet_map_duplicate_keys() -> None:
+    # Parquet allows duplicate keys and defines the recovery as first position, last
+    # value. `Map` requires unique keys, so the reader has to repair the entries -
+    # including for maps nested inside other columns.
+    entries = [(1, "a"), (2, "b"), (1, "c")]
+
+    table = pa.table(
+        {"i": [0, 1], "x": [entries, []], "y": [{"m": entries}, {"m": []}]},
+        schema=pa.schema(
+            [
+                ("i", pa.int32()),
+                ("x", pa.map_(pa.int32(), pa.string())),
+                ("y", pa.struct([("m", pa.map_(pa.int32(), pa.string()))])),
+            ]
+        ),
+    )
+
+    f = io.BytesIO()
+    pq.write_table(table, f)
+
+    deduped = {1: "c", 2: "b"}
+    expected = pl.DataFrame(
+        {"i": [0, 1], "x": [deduped, {}], "y": [{"m": deduped}, {"m": {}}]},
+        schema={
+            "i": pl.Int32,
+            "x": pl.Map(pl.Int32, pl.String),
+            "y": pl.Struct({"m": pl.Map(pl.Int32, pl.String)}),
+        },
+    )
+
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), expected)
+
+    # Hits the prefiltered decoding path for the map columns.
+    f.seek(0)
+    assert_frame_equal(
+        pl.scan_parquet(f).filter(pl.col("i") == 0).collect(), expected.head(1)
+    )
 
 
 @pytest.mark.parametrize(
@@ -4335,44 +4368,18 @@ def test_read_parquet_legacy_nested_maps_27159(io_files_path: Path) -> None:
     expected = pl.DataFrame(
         {
             "a": [
-                [
-                    {
-                        "key": "a",
-                        "value": [
-                            {"key": 1, "value": True},
-                            {"key": 2, "value": False},
-                        ],
-                    }
-                ],
-                [{"key": "b", "value": [{"key": 1, "value": True}]}],
-                [{"key": "c", "value": None}],
-                [{"key": "d", "value": []}],
-                [{"key": "e", "value": [{"key": 1, "value": True}]}],
-                [
-                    {
-                        "key": "f",
-                        "value": [
-                            {"key": 3, "value": True},
-                            {"key": 4, "value": False},
-                            {"key": 5, "value": True},
-                        ],
-                    }
-                ],
+                {"a": {1: True, 2: False}},
+                {"b": {1: True}},
+                {"c": None},
+                {"d": {}},
+                {"e": {1: True}},
+                {"f": {3: True, 4: False, 5: True}},
             ],
             "b": [1, 1, 1, 1, 1, 1],
             "c": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         },
         schema={
-            "a": pl.List(
-                pl.Struct(
-                    {
-                        "key": pl.String,
-                        "value": pl.List(
-                            pl.Struct({"key": pl.Int32, "value": pl.Boolean})
-                        ),
-                    }
-                )
-            ),
+            "a": pl.Map(pl.String, pl.Map(pl.Int32, pl.Boolean)),
             "b": pl.Int32,
             "c": pl.Float64,
         },
