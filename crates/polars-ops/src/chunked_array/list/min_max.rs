@@ -7,10 +7,15 @@ use polars_core::with_match_physical_numeric_polars_type;
 
 use crate::chunked_array::list::namespace::has_inner_nulls;
 
-fn min_between_offsets<T>(values: &[T], offset: &[u64]) -> PlPrimitiveArray<T>
+/// Reduces the elements of `values` that each of the ranges `offset` marks off to one element.
+///
+/// A row is sliced off `values` rather than read out of it, which is `O(1)` and keeps the row in
+/// whatever representation the values are in: a values buffer that repeats a single value hands
+/// every row that one value, and no run is ever written out.
+fn min_between_offsets<T>(values: &PlPrimitiveArray<T>, offset: &[u64]) -> PlPrimitiveArray<T>
 where
     T: NativeType,
-    [T]: for<'a> MinMaxKernel<Scalar<'a> = T>,
+    PlPrimitiveArray<T>: for<'a> MinMaxKernel<Scalar<'a> = T>,
 {
     let mut running_offset = offset[0];
 
@@ -23,8 +28,10 @@ where
                 return None;
             }
 
-            let slice = unsafe { values.get_unchecked(current_offset as usize..*end as usize) };
-            slice.min_ignore_nan_kernel()
+            let row = values
+                .clone()
+                .sliced(current_offset as usize, (*end - current_offset) as usize);
+            row.min_ignore_nan_kernel()
         })
         .collect()
 }
@@ -36,13 +43,10 @@ fn dispatch_min<T>(
 ) -> PlPrimitiveArray<T>
 where
     T: NativeType,
-    [T]: for<'a> MinMaxKernel<Scalar<'a> = T>,
+    PlPrimitiveArray<T>: for<'a> MinMaxKernel<Scalar<'a> = T>,
 {
     let values = arr.as_any().downcast_ref::<PlPrimitiveArray<T>>().unwrap();
-    // TODO(polars-array-scalar): the kernel reads the values as a slice, so a scalar values
-    // buffer is written out here instead of the one value it stands for being reduced once.
-    let values = values.to_flat();
-    let out = min_between_offsets(values.as_slice(), offsets);
+    let out = min_between_offsets(values, offsets);
     // Collecting leaves `out` flat, so its mask holds one bit per element like the other one.
     let new_validity = combine_validities_and(out.as_flat().unwrap().validity(), validity);
     out.with_validity(new_validity)
@@ -112,10 +116,15 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
     }
 }
 
-fn max_between_offsets<T>(values: &[T], offset: &[u64]) -> PlPrimitiveArray<T>
+/// Reduces the elements of `values` that each of the ranges `offset` marks off to one element.
+///
+/// A row is sliced off `values` rather than read out of it, which is `O(1)` and keeps the row in
+/// whatever representation the values are in: a values buffer that repeats a single value hands
+/// every row that one value, and no run is ever written out.
+fn max_between_offsets<T>(values: &PlPrimitiveArray<T>, offset: &[u64]) -> PlPrimitiveArray<T>
 where
     T: NativeType,
-    [T]: for<'a> MinMaxKernel<Scalar<'a> = T>,
+    PlPrimitiveArray<T>: for<'a> MinMaxKernel<Scalar<'a> = T>,
 {
     let mut running_offset = offset[0];
 
@@ -128,8 +137,10 @@ where
                 return None;
             }
 
-            let slice = unsafe { values.get_unchecked(current_offset as usize..*end as usize) };
-            slice.max_ignore_nan_kernel()
+            let row = values
+                .clone()
+                .sliced(current_offset as usize, (*end - current_offset) as usize);
+            row.max_ignore_nan_kernel()
         })
         .collect()
 }
@@ -141,12 +152,10 @@ fn dispatch_max<T>(
 ) -> PlPrimitiveArray<T>
 where
     T: NativeType,
-    [T]: for<'a> MinMaxKernel<Scalar<'a> = T>,
+    PlPrimitiveArray<T>: for<'a> MinMaxKernel<Scalar<'a> = T>,
 {
     let values = arr.as_any().downcast_ref::<PlPrimitiveArray<T>>().unwrap();
-    // TODO(polars-array-scalar): as in `dispatch_min`, a scalar values buffer is written out here.
-    let values = values.to_flat();
-    let out = max_between_offsets(values.as_slice(), offsets);
+    let out = max_between_offsets(values, offsets);
     // Collecting leaves `out` flat, so its mask holds one bit per element like the other one.
     let new_validity = combine_validities_and(out.as_flat().unwrap().validity(), validity);
     out.with_validity(new_validity)
@@ -213,5 +222,50 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
     match ca.inner_dtype() {
         dt if dt.is_primitive_numeric() => Ok(max_list_numerical(ca, dt)),
         _ => inner(ca),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The rows of a values buffer that repeats a single value are each that one value, however
+    /// the offsets carve them up: every row is sliced off in `O(1)` and reduces to the value,
+    /// and a row of no elements at all reduces to a null.
+    #[test]
+    fn a_repeated_value_is_reduced_row_by_row() {
+        let values = PlPrimitiveArray::new_scalar(7i32, 6);
+        let offsets = [0u64, 3, 3, 6];
+
+        assert_eq!(
+            dispatch_min::<i32>(&values, &offsets, None),
+            PlPrimitiveArray::from_iter([Some(7i32), None, Some(7)]),
+        );
+        assert_eq!(
+            dispatch_max::<i32>(&values, &offsets, None),
+            PlPrimitiveArray::from_iter([Some(7i32), None, Some(7)]),
+        );
+    }
+
+    /// A row of a values buffer laid out one slot per element is reduced over the range the
+    /// offsets mark off, and a null row of the outer array stays null.
+    #[test]
+    fn every_row_is_reduced_between_its_offsets() {
+        let values = PlPrimitiveArray::from_vec(vec![3i32, -1, 9, 4, 8, 2]);
+        let offsets = [0u64, 3, 6];
+        let validity: Bitmap = [true, false].into_iter().collect();
+
+        assert_eq!(
+            dispatch_min::<i32>(&values, &offsets, None),
+            PlPrimitiveArray::from_vec(vec![-1i32, 2]),
+        );
+        assert_eq!(
+            dispatch_max::<i32>(&values, &offsets, None),
+            PlPrimitiveArray::from_vec(vec![9i32, 8]),
+        );
+        assert_eq!(
+            dispatch_max::<i32>(&values, &offsets, Some(&validity)),
+            PlPrimitiveArray::from_iter([Some(9i32), None]),
+        );
     }
 }

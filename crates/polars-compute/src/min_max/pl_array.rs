@@ -1,12 +1,12 @@
 //! The min/max kernels over the arrays of `polars-array`.
 //!
-//! A chunk that is entirely stored in the scalar representation is its own extremum: the one
-//! element every element of it repeats is read once, in `O(1)`, whether the caller asks for the
-//! minimum or the maximum.
+//! A chunk that repeats a single value is its own extremum: the one value every element of it
+//! holds is read once, in `O(1)`, whether the caller asks for the minimum or the maximum. Neither
+//! the run nor a validity mask that repeats one bit is ever written out one slot per element to
+//! reach a kernel — see [`reduce_flat`].
 
-use arrow::array::PrimitiveArray;
+use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
-use polars_array::arrow::bridge::ToArrow;
 use polars_array::{
     PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlPrimitiveArray, PlUtf8ViewArray,
     StaticArray,
@@ -57,75 +57,121 @@ where
     }
 }
 
-fn min_max_ignore_nan<T: MinMax>((cur_min, cur_max): (T, T), (min, max): (T, T)) -> (T, T) {
+/// What is left of a primitive chunk for a kernel to reduce.
+enum Values<'a, T> {
+    /// The one value every element of the chunk holds, at least one of which is not null. It is
+    /// its own extremum, so no kernel ever sees it.
+    Repeated(T),
+    /// The values, one per element, and the mask that says which of them are there at all.
+    Flat(&'a [T], Option<&'a Bitmap>),
+}
+
+/// What `arr` leaves for a kernel to reduce, or `None` where it leaves nothing: a chunk of no
+/// elements, or one whose every element is null, has no extremum.
+///
+/// Neither of the two buffers is written out one slot per element to get here. A values buffer
+/// that holds a single slot is handed back as the [`Values::Repeated`] value it stands for,
+/// however the validity mask is stored; and a mask that holds a single bit is either set — in
+/// which case it marks nothing and is dropped — or unset, in which case there was no element left
+/// to reduce and the null count above has already answered.
+fn values_of<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Option<Values<'_, T>> {
+    // A chunk with nothing but nulls in it, an empty one included, has no extremum.
+    if arr.null_count() == arr.len() {
+        return None;
+    }
+
+    // Every element is the one value the buffer holds, and at least one element is not null, so
+    // that value is both the minimum and the maximum — read here in `O(1)`.
+    if let Some(value) = arr.scalar_values() {
+        return Some(Values::Repeated(value));
+    }
+
+    let values = arr
+        .flat_values()
+        .expect("a values buffer that is not scalar holds one slot per element");
+
+    let validity = match arr.validity() {
+        // A mask that is set everywhere marks nothing, and one that is unset everywhere left no
+        // element to reduce, which the null count has already answered.
+        None => None,
+        Some(validity) if validity.is_scalar() => None,
+        Some(validity) => Some(
+            validity
+                .flat_bitmap()
+                .expect("a mask that is not scalar holds one bit per element"),
+        ),
+    };
+
+    Some(Values::Flat(values.as_slice(), validity))
+}
+
+/// Reduces `arr` to its extremum, folding the elements it lays out one per slot with `flat` and
+/// reading the one value it repeats, where that is all it holds, through `repeated`.
+pub(super) fn reduce_flat<T, R, F, G>(arr: &PlPrimitiveArray<T>, repeated: F, flat: G) -> Option<R>
+where
+    T: NativeType,
+    F: FnOnce(T) -> R,
+    G: FnOnce(&[T], Option<&Bitmap>) -> Option<R>,
+{
+    match values_of(arr)? {
+        Values::Repeated(value) => Some(repeated(value)),
+        Values::Flat(values, validity) => flat(values, validity),
+    }
+}
+
+/// Folds the elements of `values` that `validity` marks as being there with `f`.
+pub(super) fn fold_flat<T: Copy, F>(values: &[T], validity: Option<&Bitmap>, f: F) -> Option<T>
+where
+    F: Fn(T, T) -> T,
+{
+    match validity {
+        None => values.iter().copied().reduce(f),
+        Some(validity) => values
+            .iter()
+            .zip(validity.iter())
+            .filter_map(|(value, valid)| valid.then_some(*value))
+            .reduce(f),
+    }
+}
+
+/// As [`fold_flat`], folding the minimum and the maximum in one pass.
+pub(super) fn fold_flat_min_max<T: Copy, F>(
+    values: &[T],
+    validity: Option<&Bitmap>,
+    f: F,
+) -> Option<(T, T)>
+where
+    F: Fn((T, T), (T, T)) -> (T, T),
+{
+    let pair = |value: T| (value, value);
+    match validity {
+        None => values.iter().copied().map(pair).reduce(f),
+        Some(validity) => values
+            .iter()
+            .zip(validity.iter())
+            .filter_map(|(value, valid)| valid.then_some(pair(*value)))
+            .reduce(f),
+    }
+}
+
+pub(super) fn min_max_ignore_nan<T: MinMax>(
+    (cur_min, cur_max): (T, T),
+    (min, max): (T, T),
+) -> (T, T) {
     (
         MinMax::min_ignore_nan(cur_min, min),
         MinMax::max_ignore_nan(cur_max, max),
     )
 }
 
-fn min_max_propagate_nan<T: MinMax>((cur_min, cur_max): (T, T), (min, max): (T, T)) -> (T, T) {
+pub(super) fn min_max_propagate_nan<T: MinMax>(
+    (cur_min, cur_max): (T, T),
+    (min, max): (T, T),
+) -> (T, T) {
     (
         MinMax::min_propagate_nan(cur_min, min),
         MinMax::max_propagate_nan(cur_max, max),
     )
-}
-
-/// The values of `arr` laid out one per element, for the Arrow kernel to read.
-fn to_flat_arrow<T: NativeType>(arr: &PlPrimitiveArray<T>) -> PrimitiveArray<T> {
-    PlPrimitiveArray::to_arrow(&arr.to_flat())
-}
-
-/// A chunk that repeats a single value answers in `O(1)`; anything else crosses over to the Arrow
-/// kernel, which is the vectorized one — see `simd`.
-impl<T> MinMaxKernel for PlPrimitiveArray<T>
-where
-    T: NativeType + MinMax,
-    PrimitiveArray<T>: for<'a> MinMaxKernel<Scalar<'a> = T>,
-{
-    type Scalar<'a> = T;
-
-    fn min_ignore_nan_kernel(&self) -> Option<T> {
-        match self.scalar_value() {
-            Some(value) => value,
-            None => to_flat_arrow(self).min_ignore_nan_kernel(),
-        }
-    }
-
-    fn max_ignore_nan_kernel(&self) -> Option<T> {
-        match self.scalar_value() {
-            Some(value) => value,
-            None => to_flat_arrow(self).max_ignore_nan_kernel(),
-        }
-    }
-
-    fn min_max_ignore_nan_kernel(&self) -> Option<(T, T)> {
-        match self.scalar_value() {
-            Some(value) => value.map(|value| (value, value)),
-            None => to_flat_arrow(self).min_max_ignore_nan_kernel(),
-        }
-    }
-
-    fn min_propagate_nan_kernel(&self) -> Option<T> {
-        match self.scalar_value() {
-            Some(value) => value,
-            None => to_flat_arrow(self).min_propagate_nan_kernel(),
-        }
-    }
-
-    fn max_propagate_nan_kernel(&self) -> Option<T> {
-        match self.scalar_value() {
-            Some(value) => value,
-            None => to_flat_arrow(self).max_propagate_nan_kernel(),
-        }
-    }
-
-    fn min_max_propagate_nan_kernel(&self) -> Option<(T, T)> {
-        match self.scalar_value() {
-            Some(value) => value.map(|value| (value, value)),
-            None => to_flat_arrow(self).min_max_propagate_nan_kernel(),
-        }
-    }
 }
 
 /// `false` orders before `true`, so the minimum is the conjunction of the non-null values and the
@@ -275,6 +321,108 @@ mod tests {
             is_nan(scalar.max_propagate_nan_kernel()),
             is_nan(flat.max_propagate_nan_kernel()),
         );
+    }
+
+    /// The two mixed representations reach the kernels without either buffer being written out,
+    /// and read exactly as the chunk that holds the same elements one slot per element
+    /// throughout: a repeated value under a mask laid out one bit per element, and values laid
+    /// out one per element under a mask that repeats one bit.
+    #[test]
+    fn a_mixed_representation_reads_like_a_flat_one() {
+        for length in [1, 3, 8, 17, 64, 65] {
+            // A repeated value under a flat mask. The value is its own extremum however many of
+            // the elements it marks are left, so long as one of them is.
+            for valid in 0..=length {
+                let mask: Bitmap = (0..length).map(|i| i < valid).collect();
+                let repeated =
+                    PlPrimitiveArray::new_scalar(7i32, length).with_validity(Some(mask.clone()));
+                let flat = PlPrimitiveArray::from_vec(vec![7i32; length]).with_validity(Some(mask));
+
+                assert!(repeated.values_are_scalar());
+                assert_eq!(repeated, flat);
+                assert_eq!(
+                    repeated.min_max_ignore_nan_kernel(),
+                    flat.min_max_ignore_nan_kernel(),
+                    "{length} copies of 7, {valid} of them valid",
+                );
+                assert_eq!(
+                    repeated.min_max_propagate_nan_kernel(),
+                    flat.min_max_propagate_nan_kernel(),
+                );
+            }
+
+            // Values laid out one per element under a mask that repeats one bit, which either
+            // marks nothing or leaves no element to reduce at all.
+            for bit in [false, true] {
+                let values: Vec<i32> = (0..length as i32).rev().collect();
+                let one_bit = PlPrimitiveArray::from_vec(values.clone())
+                    .with_validity_broadcast(Some(Bitmap::new_with_value(bit, 1)));
+                let flat = PlPrimitiveArray::from_vec(values)
+                    .with_validity(Some(Bitmap::new_with_value(bit, length)));
+
+                assert!(one_bit.validity_is_scalar());
+                assert_eq!(one_bit, flat);
+                assert_eq!(
+                    one_bit.min_ignore_nan_kernel(),
+                    flat.min_ignore_nan_kernel(),
+                    "{length} values under a repeated {bit}",
+                );
+                assert_eq!(
+                    one_bit.max_ignore_nan_kernel(),
+                    flat.max_ignore_nan_kernel()
+                );
+                assert_eq!(
+                    one_bit.min_max_ignore_nan_kernel(),
+                    flat.min_max_ignore_nan_kernel(),
+                );
+            }
+        }
+    }
+
+    /// As above, over floats, whose kernels part ways over a NaN: a mask that repeats one bit
+    /// leaves the NaN to be folded away or carried out just as a flat one does.
+    #[test]
+    fn a_mixed_representation_reads_the_same_over_nan() {
+        let values = vec![2.5f64, f64::NAN, -1.0, 4.0, f64::NAN, 0.0, 7.5];
+
+        for bit in [false, true] {
+            let one_bit = PlPrimitiveArray::from_vec(values.clone())
+                .with_validity_broadcast(Some(Bitmap::new_with_value(bit, 1)));
+            let flat = PlPrimitiveArray::from_vec(values.clone())
+                .with_validity(Some(Bitmap::new_with_value(bit, values.len())));
+
+            assert!(one_bit.validity_is_scalar());
+            let is_nan = |value: Option<f64>| value.map(f64::is_nan);
+            assert_eq!(
+                one_bit.min_ignore_nan_kernel(),
+                flat.min_ignore_nan_kernel(),
+                "a repeated {bit} over {values:?}",
+            );
+            assert_eq!(
+                one_bit.max_ignore_nan_kernel(),
+                flat.max_ignore_nan_kernel()
+            );
+            assert_eq!(
+                is_nan(one_bit.min_propagate_nan_kernel()),
+                is_nan(flat.min_propagate_nan_kernel()),
+            );
+            assert_eq!(
+                is_nan(one_bit.max_propagate_nan_kernel()),
+                is_nan(flat.max_propagate_nan_kernel()),
+            );
+        }
+
+        // A repeated NaN under a flat mask is the one value there is, whichever kernel asks.
+        let repeated = PlPrimitiveArray::new_scalar(f64::NAN, 4)
+            .with_validity(Some([true, false, true, false].into_iter().collect()));
+        assert!(repeated.min_ignore_nan_kernel().is_some_and(f64::is_nan));
+        assert!(repeated.max_propagate_nan_kernel().is_some_and(f64::is_nan));
+
+        // And one that marks nothing leaves no element at all.
+        let all_null = PlPrimitiveArray::new_scalar(f64::NAN, 4)
+            .with_validity_broadcast(Some(Bitmap::new_with_value(false, 1)));
+        assert_eq!(all_null.min_ignore_nan_kernel(), None);
+        assert_eq!(all_null.max_propagate_nan_kernel(), None);
     }
 
     /// A chunk laid out one value per element folds its non-null values as it always has.

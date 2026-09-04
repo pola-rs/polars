@@ -2,75 +2,98 @@ use arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8Array, Utf8ViewArray,
 };
 use arrow::types::{NativeType, Offset};
-use polars_array::PlBooleanArray;
 use polars_array::arrow::bridge::ToArrow;
+use polars_array::{PlBooleanArray, PlPrimitiveArray};
 use polars_utils::min_max::MinMax;
 
 use super::MinMaxKernel;
+use super::pl_array::{
+    fold_flat, fold_flat_min_max, min_max_ignore_nan, min_max_propagate_nan, reduce_flat,
+};
 
-fn min_max_ignore_nan<T: NativeType>((cur_min, cur_max): (T, T), (min, max): (T, T)) -> (T, T) {
-    (
-        MinMax::min_ignore_nan(cur_min, min),
-        MinMax::max_ignore_nan(cur_max, max),
-    )
-}
+/// The primitive types no vectorized kernel reduces — see `simd` for the ones that do. A chunk
+/// that repeats one value is read as that value, in `O(1)`; anything else is folded one element at
+/// a time.
+impl<T: NativeType + MinMax + super::NotSimdPrimitive> MinMaxKernel for PlPrimitiveArray<T> {
+    type Scalar<'a> = T;
 
-fn min_max_propagate_nan<T: NativeType>((cur_min, cur_max): (T, T), (min, max): (T, T)) -> (T, T) {
-    (
-        MinMax::min_propagate_nan(cur_min, min),
-        MinMax::max_propagate_nan(cur_max, max),
-    )
-}
+    fn min_ignore_nan_kernel(&self) -> Option<T> {
+        reduce_flat(
+            self,
+            |value| value,
+            |values, validity| fold_flat(values, validity, MinMax::min_ignore_nan),
+        )
+    }
 
-fn reduce_vals<T, F>(v: &PrimitiveArray<T>, f: F) -> Option<T>
-where
-    T: NativeType,
-    F: Fn(T, T) -> T,
-{
-    if v.null_count() == 0 {
-        v.values_iter().copied().reduce(f)
-    } else {
-        v.non_null_values_iter().reduce(f)
+    fn max_ignore_nan_kernel(&self) -> Option<T> {
+        reduce_flat(
+            self,
+            |value| value,
+            |values, validity| fold_flat(values, validity, MinMax::max_ignore_nan),
+        )
+    }
+
+    fn min_max_ignore_nan_kernel(&self) -> Option<(T, T)> {
+        reduce_flat(
+            self,
+            |value| (value, value),
+            |values, validity| fold_flat_min_max(values, validity, min_max_ignore_nan),
+        )
+    }
+
+    fn min_propagate_nan_kernel(&self) -> Option<T> {
+        reduce_flat(
+            self,
+            |value| value,
+            |values, validity| fold_flat(values, validity, MinMax::min_propagate_nan),
+        )
+    }
+
+    fn max_propagate_nan_kernel(&self) -> Option<T> {
+        reduce_flat(
+            self,
+            |value| value,
+            |values, validity| fold_flat(values, validity, MinMax::max_propagate_nan),
+        )
+    }
+
+    fn min_max_propagate_nan_kernel(&self) -> Option<(T, T)> {
+        reduce_flat(
+            self,
+            |value| (value, value),
+            |values, validity| fold_flat_min_max(values, validity, min_max_propagate_nan),
+        )
     }
 }
 
-fn reduce_tuple_vals<T, F>(v: &PrimitiveArray<T>, f: F) -> Option<(T, T)>
-where
-    T: NativeType,
-    F: Fn((T, T), (T, T)) -> (T, T),
-{
-    if v.null_count() == 0 {
-        v.values_iter().copied().map(|v| (v, v)).reduce(f)
-    } else {
-        v.non_null_values_iter().map(|v| (v, v)).reduce(f)
-    }
-}
-
+/// An Arrow chunk holds one slot per element throughout, which is one of the two layouts the
+/// kernel above reads: its buffers are handed over as they are, and it is that kernel that
+/// reduces them.
 impl<T: NativeType + MinMax + super::NotSimdPrimitive> MinMaxKernel for PrimitiveArray<T> {
     type Scalar<'a> = T;
 
-    fn min_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-        reduce_vals(self, MinMax::min_ignore_nan)
+    fn min_ignore_nan_kernel(&self) -> Option<T> {
+        PlPrimitiveArray::from_arrow(self).min_ignore_nan_kernel()
     }
 
-    fn max_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-        reduce_vals(self, MinMax::max_ignore_nan)
+    fn max_ignore_nan_kernel(&self) -> Option<T> {
+        PlPrimitiveArray::from_arrow(self).max_ignore_nan_kernel()
     }
 
-    fn min_max_ignore_nan_kernel(&self) -> Option<(Self::Scalar<'_>, Self::Scalar<'_>)> {
-        reduce_tuple_vals(self, min_max_ignore_nan)
+    fn min_max_ignore_nan_kernel(&self) -> Option<(T, T)> {
+        PlPrimitiveArray::from_arrow(self).min_max_ignore_nan_kernel()
     }
 
-    fn min_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-        reduce_vals(self, MinMax::min_propagate_nan)
+    fn min_propagate_nan_kernel(&self) -> Option<T> {
+        PlPrimitiveArray::from_arrow(self).min_propagate_nan_kernel()
     }
 
-    fn max_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-        reduce_vals(self, MinMax::max_propagate_nan)
+    fn max_propagate_nan_kernel(&self) -> Option<T> {
+        PlPrimitiveArray::from_arrow(self).max_propagate_nan_kernel()
     }
 
-    fn min_max_propagate_nan_kernel(&self) -> Option<(Self::Scalar<'_>, Self::Scalar<'_>)> {
-        reduce_tuple_vals(self, min_max_propagate_nan)
+    fn min_max_propagate_nan_kernel(&self) -> Option<(T, T)> {
+        PlPrimitiveArray::from_arrow(self).min_max_propagate_nan_kernel()
     }
 }
 
