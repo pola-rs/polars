@@ -1604,7 +1604,7 @@ class Expr(metaclass=_Meta):
         """
         Get an array with the cumulative sum computed at every element.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -1668,7 +1668,7 @@ class Expr(metaclass=_Meta):
         """
         Get an array with the cumulative product computed at every element.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -1705,7 +1705,7 @@ class Expr(metaclass=_Meta):
         """
         Get an array with the cumulative min computed at every element.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -1736,7 +1736,7 @@ class Expr(metaclass=_Meta):
         """
         Get an array with the cumulative max computed at every element.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -1795,7 +1795,7 @@ class Expr(metaclass=_Meta):
         """
         Return the cumulative count of the non-null values in the column.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
