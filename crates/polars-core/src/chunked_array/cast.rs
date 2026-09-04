@@ -45,19 +45,36 @@ impl From<CastOptions> for CastOptionsImpl {
     }
 }
 
-/// Casts the chunks of a [`ChunkedArray`] to `dtype`, through the Arrow cast kernel. Crossing to
-/// Arrow and back is `O(1)`, so what the cast costs is the cast itself.
+/// Casts the chunks of a [`ChunkedArray`] to `dtype`, through the Arrow cast kernel — a cast is
+/// dispatched on a pair of Arrow types, which a chunk does not carry.
+///
+/// Crossing to Arrow and back is a handover of the backing buffers, so what the cast costs is the
+/// cast itself; and a chunk that repeats one value is not written out to cross over at all, its
+/// one value being cast once instead. See [`polars_compute::cast::cast_chunk`].
 pub(crate) fn cast_chunks(
     chunks: &[PlArrayRef],
     dtype: &DataType,
     options: CastOptions,
 ) -> PolarsResult<Vec<PlArrayRef>> {
-    let arrow_chunks: Vec<ArrayRef> = chunks
+    let check_nulls = matches!(options, CastOptions::Strict);
+    let arrow_dtype = dtype.try_to_arrow(CompatLevel::newest())?;
+    let cast_options = options.into();
+
+    chunks
         .iter()
-        .map(|chunk| polars_array::arrow::export::to_arrow(&**chunk))
-        .collect();
-    let cast = cast_arrow_chunks(&arrow_chunks, dtype, options)?;
-    Ok(crate::chunked_array::from::import_arrow_chunks(cast))
+        .map(|chunk| {
+            let out = polars_compute::cast::cast_chunk(&**chunk, &arrow_dtype, cast_options)?;
+            if check_nulls && chunk.null_count() != out.null_count() {
+                // A cast that dropped an element is reported over the Arrow arrays, which is
+                // where the failing values are read back out of — and only once it has failed.
+                handle_array_casting_failures(
+                    &*polars_array::arrow::export::to_arrow(&**chunk),
+                    &*polars_array::arrow::export::to_arrow(&*out),
+                )?;
+            }
+            Ok(out)
+        })
+        .collect()
 }
 
 /// Casts Arrow chunks to `dtype`, which is what the boundaries where data arrives as Arrow use.

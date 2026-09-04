@@ -1,4 +1,11 @@
 //! Defines different casting operators such as [`cast`] or [`primitive_to_binary`].
+//!
+//! These kernels are dispatched on a *pair* of [`ArrowDataType`]s, which is what a cast is: the
+//! arrays of `polars-array` carry no type of their own, so this is the one module here that stays
+//! over the Arrow arrays, and most of what reaches it — the Parquet and IPC readers and writers,
+//! the JSON deserializer, the Arrow export — is Arrow on both sides anyway. What a chunk of
+//! `polars-array` crosses over through is [`cast_chunk`], which hands the buffers over as they are
+//! and reads a chunk that repeats one value in `O(1)`.
 
 mod binary_to;
 mod binview_to;
@@ -26,11 +33,39 @@ use arrow::offset::{Offset, Offsets};
 use binview_to::{binview_to_dictionary, utf8view_to_dictionary, view_to_binary};
 pub use binview_to::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use dictionary_to::*;
+use polars_array::PlArray;
+use polars_array::arrow::{export, import};
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::IdxSize;
 use polars_utils::float16::pf16;
 pub use primitive_to::*;
 pub use utf8_to::*;
+
+/// Casts `array` to `to_type`, reading a chunk that holds one value over and over as that one
+/// value.
+///
+/// The cast itself is [`cast`], which is dispatched on the pair of Arrow types a chunk does not
+/// carry. Crossing over to Arrow and back is a handover of the backing buffers for a chunk that
+/// lays one slot out per element, so what the cast costs is the cast. A chunk that repeats one
+/// value is the exception — writing it out to cross over would cost one slot per element — so its
+/// one value is cast on its own and the answer repeated, which is `O(1)` and leaves the answer
+/// repeating one value in turn.
+pub fn cast_chunk(
+    array: &dyn PlArray,
+    to_type: &ArrowDataType,
+    options: CastOptionsImpl,
+) -> PolarsResult<Box<dyn PlArray>> {
+    // Every element of such a chunk is the same one, so what a cast answers for one of them is
+    // what it answers for all of them — a cast reads one element at a time.
+    if array.is_scalar() && array.len() > 1 {
+        let element = export::to_arrow(&*array.sliced(0, 1));
+        let cast = cast(&*element, to_type, options)?;
+        return Ok(import::from_arrow(&*cast).new_from_index(0, array.len()));
+    }
+
+    let cast = cast(&*export::to_arrow(array), to_type, options)?;
+    Ok(import::from_arrow(&*cast))
+}
 
 /// options defining how Cast kernels behave
 #[derive(Clone, Copy, Debug, Default)]
