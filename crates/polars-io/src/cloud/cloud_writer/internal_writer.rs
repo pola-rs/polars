@@ -22,7 +22,9 @@ pub(super) struct InternalCloudWriter {
 }
 
 pub(super) enum InternalCloudWriterState {
-    NotStarted,
+    /// Writer has not initialized a multipart session yet.
+    /// May hold the buffered initial payload for single direct `PUT`.
+    NotStarted(Option<PutPayload>),
     Started(StartedState),
     Finished,
 }
@@ -38,44 +40,48 @@ pub(super) struct StartedState {
 
 impl InternalCloudWriter {
     pub(super) async fn start(&mut self) -> PolarsResult<()> {
-        if let WriterState::NotStarted = &self.state {
-            let path_ref = &self.path;
-            let multipart = PlMultipartUpload::new(
-                self.store
-                    .exec_with_rebuild_retry_on_err(|s| async move {
-                        s.put_multipart_opts(path_ref, object_store::PutMultipartOptions::default())
-                            .await
-                    })
-                    .await?,
-                self.store.error_context(),
-            );
+        Ok(())
+    }
 
-            let (error_capture, error_handle) = ErrorCapture::new();
+    /// Internal helper that actually initializes the S3 multipart upload session.
+    async fn start_multipart(&mut self) -> PolarsResult<()> {
+        match &self.state {
+            WriterState::Finished => {
+                panic!("Cannot start multipart on a finished InternalCloudWriter")
+            },
+            WriterState::Started(_) => return Ok(()),
+            WriterState::NotStarted(_) => {},
+        }
 
-            self.state = WriterState::Started(StartedState {
+        let path_ref = &self.path;
+        let multipart = PlMultipartUpload::new(
+            self.store
+                .exec_with_rebuild_retry_on_err(|s| async move {
+                    s.put_multipart_opts(path_ref, object_store::PutMultipartOptions::default())
+                        .await
+                })
+                .await?,
+            self.store.error_context(),
+        );
+
+        let (error_capture, error_handle) = ErrorCapture::new();
+
+        let old_state = std::mem::replace(
+            &mut self.state,
+            WriterState::Started(StartedState {
                 multipart,
                 tasks: FuturesUnordered::new(),
                 error_handle,
                 error_capture,
-            });
+            }),
+        );
+
+        // If there was a buffered first payload, upload it as the first multipart chunk
+        if let WriterState::NotStarted(Some(first_payload)) = old_state {
+            self.put_into_started(first_payload).await?;
         }
 
         Ok(())
-    }
-
-    async fn get_or_init_started_state(&mut self) -> PolarsResult<&mut StartedState> {
-        loop {
-            match &self.state {
-                WriterState::Started(_) => {
-                    let WriterState::Started(state) = &mut self.state else {
-                        unreachable!()
-                    };
-                    return Ok(state);
-                },
-                WriterState::NotStarted => self.start().await?,
-                WriterState::Finished => panic!(),
-            }
-        }
     }
 
     /// Takes `self.state`, replacing with it `Finished`. Returns `None` if `self.state` is not
@@ -93,11 +99,14 @@ impl InternalCloudWriter {
         Some(state)
     }
 
-    pub(super) async fn put(&mut self, payload: PutPayload) -> PolarsResult<()> {
+    /// Dispatches a payload directly when `self.state` is guaranteed to be `Started`.
+    async fn put_into_started(&mut self, payload: PutPayload) -> PolarsResult<()> {
+        let WriterState::Started(state) = &mut self.state else {
+            panic!("Expected Started state");
+        };
+
         let io_metrics = self.io_metrics.clone();
         let max_concurrency = self.max_concurrency.get();
-
-        let state = self.get_or_init_started_state().await?;
 
         if state.error_handle.has_errored() {
             let state = self.take_started_state().unwrap();
@@ -122,25 +131,168 @@ impl InternalCloudWriter {
         Ok(())
     }
 
+    pub(super) async fn put(&mut self, payload: PutPayload) -> PolarsResult<()> {
+        match &mut self.state {
+            WriterState::NotStarted(first_put) => {
+                if first_put.is_none() {
+                    self.state = WriterState::NotStarted(Some(payload));
+                    Ok(())
+                } else {
+                    self.start_multipart().await?;
+                    self.put_into_started(payload).await
+                }
+            },
+            WriterState::Started(_) => self.put_into_started(payload).await,
+            WriterState::Finished => panic!("Cannot put on finished InternalCloudWriter"),
+        }
+    }
+
     pub(super) async fn finish(&mut self) -> PolarsResult<()> {
-        let Some(StartedState {
-            mut multipart,
-            tasks,
-            error_handle,
-            error_capture,
-        }) = self.take_started_state()
-        else {
-            return Ok(());
+        let state = std::mem::replace(&mut self.state, WriterState::Finished);
+
+        match state {
+            WriterState::NotStarted(None) => Ok(()),
+            WriterState::NotStarted(Some(payload)) => {
+                let path_ref = &self.path;
+                let io_metrics = self.io_metrics.clone();
+                let num_bytes = payload.content_length() as u64;
+
+                let upload_fut = self.store.exec_with_rebuild_retry_on_err(|s| {
+                    let payload = payload.clone();
+                    async move {
+                        s.put_opts(path_ref, payload, object_store::PutOptions::default())
+                            .await
+                    }
+                });
+
+                io_metrics.record_bytes_tx(num_bytes, upload_fut).await?;
+                Ok(())
+            },
+            WriterState::Started(StartedState {
+                mut multipart,
+                tasks,
+                error_handle,
+                error_capture,
+            }) => {
+                drop(error_capture);
+                error_handle.join().await?;
+
+                for handle in tasks {
+                    handle.await.unwrap();
+                }
+
+                multipart.finish().await?;
+                Ok(())
+            },
+            WriterState::Finished => Ok(()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroUsize;
+
+    use object_store::PutPayload;
+    use object_store::path::Path;
+
+    use super::*;
+    use crate::cloud::object_store_setup::build_object_store;
+
+    fn make_test_url(file_path: &std::path::Path) -> String {
+        let path_str = file_path.to_str().unwrap().replace('\\', "/");
+        if path_str.starts_with('/') {
+            format!("file://{}", path_str)
+        } else {
+            format!("file:///{}", path_str)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_single_put_buffering() -> PolarsResult<()> {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("test_single_put.txt");
+        let url_str = make_test_url(&file_path);
+
+        let (_, polars_store) = build_object_store(url_str.as_str().into(), None, false).await?;
+
+        let path = Path::from(file_path.to_str().unwrap().replace('\\', "/"));
+
+        let mut writer = InternalCloudWriter {
+            store: polars_store,
+            path: path.clone(),
+            max_concurrency: NonZeroUsize::new(2).unwrap(),
+            io_metrics: OptIOMetrics(None),
+            state: InternalCloudWriterState::NotStarted(None),
         };
 
-        drop(error_capture);
-        error_handle.join().await?;
+        let payload = PutPayload::from("hello single put");
+        writer.put(payload).await?;
 
-        for handle in tasks {
-            handle.await.unwrap();
-        }
+        // Before finish(), state should be NotStarted(Some(_))
+        assert!(matches!(
+            writer.state,
+            InternalCloudWriterState::NotStarted(Some(_))
+        ));
 
-        multipart.finish().await?;
+        writer.finish().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_transition_to_multipart() -> PolarsResult<()> {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("test_multipart.txt");
+        let url_str = make_test_url(&file_path);
+
+        let (_, polars_store) = build_object_store(url_str.as_str().into(), None, false).await?;
+
+        let path = Path::from(file_path.to_str().unwrap().replace('\\', "/"));
+
+        let mut writer = InternalCloudWriter {
+            store: polars_store,
+            path: path.clone(),
+            max_concurrency: NonZeroUsize::new(2).unwrap(),
+            io_metrics: OptIOMetrics(None),
+            state: InternalCloudWriterState::NotStarted(None),
+        };
+
+        // First put -> NotStarted(Some(_)) state
+        writer.put(PutPayload::from("chunk 1")).await?;
+        assert!(matches!(
+            writer.state,
+            InternalCloudWriterState::NotStarted(Some(_))
+        ));
+
+        // Second put -> Should escalate to Started state
+        writer.put(PutPayload::from("chunk 2")).await?;
+        assert!(matches!(writer.state, InternalCloudWriterState::Started(_)));
+
+        writer.finish().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_empty_finish() -> PolarsResult<()> {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("test_empty.txt");
+        let url_str = make_test_url(&file_path);
+
+        let (_, polars_store) = build_object_store(url_str.as_str().into(), None, false).await?;
+
+        let path = Path::from(file_path.to_str().unwrap().replace('\\', "/"));
+
+        let mut writer = InternalCloudWriter {
+            store: polars_store,
+            path: path.clone(),
+            max_concurrency: NonZeroUsize::new(2).unwrap(),
+            io_metrics: OptIOMetrics(None),
+            state: InternalCloudWriterState::NotStarted(None),
+        };
+
+        // Calling finish immediately without putting data should return Ok(())
+        writer.finish().await?;
+        assert!(matches!(writer.state, InternalCloudWriterState::Finished));
 
         Ok(())
     }
