@@ -14,6 +14,9 @@
 //!   are what the kernels over a chunk cross over to once it is known to lay one slot out per
 //!   element, and are also what the Parquet reader and writer reach directly. They read one slot
 //!   per element throughout.
+//!
+//! [`set`] and [`take_agg`] are the exceptions to the module layout: neither has an Arrow leaf,
+//! because they replace `arrow::legacy::kernels::{set, take_agg}` outright.
 
 use arrow::types::NativeType;
 
@@ -46,8 +49,10 @@ pub mod nan;
 mod nesting;
 pub mod propagate_nulls;
 pub mod rolling;
+pub mod set;
 pub mod size;
 pub mod sum;
+pub mod take_agg;
 pub mod trim_lists_to_normalized_offsets;
 pub mod unique;
 
