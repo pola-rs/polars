@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import operator
 import os
 from collections import defaultdict
 from collections.abc import (
@@ -1073,24 +1074,37 @@ class DataFrame:
         op: ComparisonOperator,
     ) -> DataFrame:
         """Compare a DataFrame with a non-DataFrame object."""
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         warn_null_comparison(other)
+        compare: Callable[[Expr, Any], Expr]
         if op == "eq":
-            return self.select(F.all() == other)
+            compare = operator.eq
         elif op == "neq":
-            return self.select(F.all() != other)
+            compare = operator.ne
         elif op == "gt":
-            return self.select(F.all() > other)
+            compare = operator.gt
         elif op == "lt":
-            return self.select(F.all() < other)
+            compare = operator.lt
         elif op == "gt_eq":
-            return self.select(F.all() >= other)
+            compare = operator.ge
         elif op == "lt_eq":
-            return self.select(F.all() <= other)
+            compare = operator.le
         else:
             msg = f"unexpected comparison operator {op!r}"
             raise ValueError(msg)
 
+        return (
+            self.lazy()
+            ._height_preserving_select(lambda expr: compare(expr, other))
+            ._collect_eager(optimizations=QueryOptFlags._eager())
+        )
+
     def _div(self, other: Any, *, floordiv: bool) -> DataFrame:
+        if self.width == 0:
+            # No columns to divide; the result is the input frame as-is.
+            return self.clone()
+
         if isinstance(other, pl.Series):
             if floordiv:
                 return self.select(F.all() // lit(other))
@@ -5194,7 +5208,11 @@ class DataFrame:
         │ a   ┆ 1   │
         └─────┴─────┘
         """
-        return self.select(F.col("*").reverse())
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
+        return (
+            self.lazy().reverse()._collect_eager(optimizations=QueryOptFlags._eager())
+        )
 
     def rename(
         self, mapping: Mapping[str, str] | Callable[[str], str], *, strict: bool = True
@@ -10347,6 +10365,12 @@ class DataFrame:
         │ 1   ┆ x   │
         └─────┴─────┘
         """
+        if self.width == 0:
+            # With no columns every row is identical to every other row.
+            return pl.Series("", [self.height > 1], dtype=Boolean).new_from_index(
+                0, self.height
+            )
+
         return wrap_s(self._df.is_duplicated())
 
     def is_unique(self) -> Series:
@@ -10384,6 +10408,12 @@ class DataFrame:
         │ 3   ┆ z   │
         └─────┴─────┘
         """
+        if self.width == 0:
+            # With no columns every row is identical to every other row.
+            return pl.Series("", [self.height <= 1], dtype=Boolean).new_from_index(
+                0, self.height
+            )
+
         return wrap_s(self._df.is_unique())
 
     def lazy(self) -> LazyFrame:
@@ -11139,6 +11169,8 @@ class DataFrame:
         │ 6   ┆ 20.0 ┆ 0   │
         └─────┴──────┴─────┘
         """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
         exprs = []
         for name, dt in self.schema.items():
             if dt.is_numeric() or isinstance(dt, Boolean):
@@ -11146,7 +11178,11 @@ class DataFrame:
             else:
                 exprs.append(F.lit(None).alias(name))
 
-        return self.select(exprs)
+        return (
+            self.lazy()
+            ._aggregate_select(exprs)
+            ._collect_eager(optimizations=QueryOptFlags._eager())
+        )
 
     def quantile(
         self, quantile: float, interpolation: QuantileMethod = "nearest"
@@ -11265,6 +11301,10 @@ class DataFrame:
         │ 1     ┆ 1     ┆ b   │
         └───────┴───────┴─────┘
         """
+        if self.width == 0:
+            # No columns to encode; the result is the input frame as-is.
+            return self.clone()
+
         if columns is not None:
             columns = _expand_selectors(self, columns)
         return self._from_pydf(
@@ -11473,6 +11513,11 @@ class DataFrame:
         ... )
         3
         """
+        if subset is None and self.width == 0:
+            # With no columns all rows are identical, so there is a single
+            # distinct row for any non-empty frame.
+            return min(self.height, 1)
+
         if isinstance(subset, str):
             expr = F.col(subset)
         elif isinstance(subset, pl.Expr):
@@ -12372,7 +12417,13 @@ class DataFrame:
         │ 10.0 ┆ null ┆ 9.0      │
         └──────┴──────┴──────────┘
         """
-        return self.select(F.col("*").interpolate())
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
+        return (
+            self.lazy()
+            .interpolate()
+            ._collect_eager(optimizations=QueryOptFlags._eager())
+        )
 
     def is_empty(self) -> bool:
         """
