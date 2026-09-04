@@ -1550,6 +1550,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Sort the LazyFrame by the given columns.
 
         .. engine-support:: in-memory, partially-distributed
+            :partially-distributed: Distributed when every expression in by is
+                elementwise; a non-elementwise one is evaluated on a single node.
 
         Parameters
         ----------
@@ -4808,6 +4810,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Start a group by operation.
 
         .. engine-support:: in-memory, partially-streaming, partially-distributed
+            :partially-distributed: Distributed when maintain_order=False and every
+                key is an elementwise expression; otherwise it runs on a single node.
 
         Parameters
         ----------
@@ -4971,6 +4975,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         "calendar month", "calendar quarter", and "calendar year".
 
         .. engine-support:: in-memory, partially-streaming, partially-distributed
+            :partially-distributed: Partitions over group_by; without it all rows
+                form a single group and the operation runs on a single node.
 
         .. versionchanged:: 0.20.14
             The `by` parameter was renamed `group_by`.
@@ -5093,6 +5099,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         datapoint. See the `start_by` argument description for details.
 
         .. engine-support:: in-memory, partially-streaming, partially-distributed
+            :partially-distributed: Partitions over group_by; without it all rows
+                form a single group and the operation runs on a single node.
 
         .. warning::
             The index column must be sorted in ascending order. If `group_by` is passed, then
@@ -5446,6 +5454,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         The default is "backward".
 
         .. engine-support:: in-memory, partially-streaming, partially-distributed
+            :partially-distributed: Partitions over by (or by_left/by_right);
+                without those the right frame is broadcast to every worker.
 
         Parameters
         ----------
@@ -5830,6 +5840,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Add a join operation to the Logical Plan.
 
         .. engine-support:: in-memory, streaming, partially-distributed
+            :partially-distributed: Distributed when maintain_order="none" (the
+                default) and every join key is an elementwise expression.
 
         .. versionchanged:: 1.24
             The `join_nulls` parameter was renamed `nulls_equal`.
@@ -6138,6 +6150,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Perform a join based on one or multiple (in)equality predicates.
 
         .. engine-support:: in-memory, partially-streaming, partially-distributed
+            :partially-distributed: There is no join key to partition on, so one of
+                the two frames is broadcast to every worker in full, whatever the
+                predicates.
 
         .. note::
             The row order of the input DataFrames is not preserved.
@@ -6275,6 +6290,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Selects rows from this LazyFrame at the given indices.
 
         .. engine-support:: in-memory, streaming, partially-distributed
+            :partially-distributed: Only the indices are partitioned; the frame
+                being gathered from is broadcast to every worker in full.
 
         .. warning::
             This functionality is experimental. It may be
@@ -7134,6 +7151,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Fill null values using the specified value or strategy.
 
         .. engine-support:: in-memory, streaming, partially-distributed
+            :partially-distributed: Distributed for value, and for strategy "zero"
+                and "one". The "forward", "backward", "mean", "min" and "max"
+                strategies run on a single node.
 
         Parameters
         ----------
