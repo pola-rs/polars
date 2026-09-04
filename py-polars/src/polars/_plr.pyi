@@ -2466,6 +2466,19 @@ class PyArrowCStreamReader:
     def schema(self) -> dict[str, Any]: ...
     def next_batch(self, with_columns: pylist[str] | None) -> PyDataFrame | None: ...
 
+class IcebergBatchIterator:
+    def __iter__(self) -> IcebergBatchIterator: ...
+    def __next__(self) -> PyDataFrame: ...
+
+def _scan_iceberg_rust(
+    metadata_location: str,
+    kms_client: Any,
+    snapshot_id: int | None,
+    columns: pylist[str] | None,
+    n_rows: int | None,
+    batch_size: int | None,
+) -> IcebergBatchIterator: ...
+
 # catalog
 class PyCatalogClient:
     @staticmethod
