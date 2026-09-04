@@ -1,3 +1,10 @@
+//! Estimating how many distinct values an array holds.
+//!
+//! This is the one kernel here the Parquet writer reaches on its own — it decides from the
+//! estimate whether a column is worth dictionary encoding — and nothing on the `polars-array`
+//! side asks for it, so it stays over the Arrow arrays the writer already holds rather than
+//! crossing over and back for every column it writes.
+
 use arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeBinaryArray, PrimitiveArray,
     Utf8Array, Utf8ViewArray,
