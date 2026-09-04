@@ -190,6 +190,37 @@ def test_map_map_elements_receives_dict() -> None:
     assert out.to_list() == [2, 1]
 
 
+def test_map_map_elements_returns_dict() -> None:
+    s = pl.Series("x", [1, 2])
+    assert_series_equal(
+        s.map_elements(lambda i: {"a": i}, return_dtype=MAP),
+        pl.Series("x", [{"a": 1}, {"a": 2}], dtype=MAP),
+    )
+
+    # As for construction, the return dtype has to reach the conversion at every depth.
+    nested = pl.Map(pl.Int64, pl.Map(pl.Int64, pl.String))
+    out = s.map_elements(lambda i: {i: {2: "x"}}, return_dtype=nested)
+    assert out.dtype == nested
+    assert out.to_list() == [{1: {2: "x"}}, {2: {2: "x"}}]
+
+    out = s.map_elements(lambda i: [{"a": i}], return_dtype=pl.List(MAP))
+    assert out.to_list() == [[{"a": 1}], [{"a": 2}]]
+
+
+def test_map_map_elements_returns_dict_in_expression() -> None:
+    df = pl.DataFrame({"x": [1, 2]})
+    out = df.select(pl.col("x").map_elements(lambda i: {"a": i}, return_dtype=MAP))
+    assert_series_equal(out["x"], pl.Series("x", [{"a": 1}, {"a": 2}], dtype=MAP))
+
+
+def test_map_map_rows_returns_dict() -> None:
+    df = pl.DataFrame({"x": [1, 2]})
+    out = df.map_rows(lambda row: {"a": row[0]}, return_dtype=MAP)
+    assert_series_equal(
+        out.to_series(), pl.Series("map", [{"a": 1}, {"a": 2}], dtype=MAP)
+    )
+
+
 @pytest.mark.parametrize(
     ("key_dtype", "key"),
     [
@@ -1128,3 +1159,57 @@ def test_map_inequality_comparison_names_the_map_dtype() -> None:
     s = pl.Series("m", [{"a": 1}], dtype=MAP)
     with pytest.raises(InvalidOperationError, match=r"dtype: map\[str, i64\]"):
         pl.select(pl.lit(s) < pl.lit(s))
+
+
+def test_map_sort_by_multiple_keys() -> None:
+    s = pl.Series("m", [{"b": 2}, {"a": 1}, {"a": 1}], dtype=MAP)
+    df = pl.DataFrame({"m": s, "x": [1, 2, 3], "y": [3, 4, 2]})
+
+    # A Map has no ordering to compare row by row, so a multi-key sort goes through the
+    # row encoding and must agree with `DataFrame.sort`.
+    assert df.sort("m", "y")["x"].to_list() == [3, 2, 1]
+    assert df.select(pl.col("x").sort_by("m", "y"))["x"].to_list() == [3, 2, 1]
+    assert df.select(pl.col("x").sort_by("y", "m"))["x"].to_list() == [3, 1, 2]
+    assert df.select(pl.col("x").sort_by("m", "y", descending=[True, False]))[
+        "x"
+    ].to_list() == [1, 3, 2]
+
+
+def test_map_sort_by_multiple_keys_in_group_by() -> None:
+    s = pl.Series("m", [{"b": 2}, {"a": 1}, {"a": 1}], dtype=MAP)
+    df = pl.DataFrame({"g": [1, 1, 1], "m": s, "x": [1, 2, 3], "y": [3, 4, 2]})
+    out = df.group_by("g").agg(pl.col("x").sort_by("m", "y"))
+    assert out["x"].to_list() == [[3, 2, 1]]
+
+
+def test_map_to_numpy_and_rows() -> None:
+    s = pl.Series("m", [{"a": 1}, None], dtype=MAP)
+    assert s.to_numpy().tolist() == [{"a": 1}, None]
+    assert s.to_frame().to_numpy().tolist() == [[{"a": 1}], [None]]
+    assert s.to_frame().rows() == [({"a": 1},), (None,)]
+    assert s.to_frame().row(0) == ({"a": 1},)
+    assert s.to_frame().to_dicts() == [{"m": {"a": 1}}, {"m": None}]
+
+
+@pytest.mark.parametrize(
+    "convert",
+    [
+        lambda s: s.to_list(),
+        lambda s: s.to_numpy(),
+        lambda s: s.to_frame().to_numpy(),
+        lambda s: pl.select(pl.lit(s).implode()).to_series().to_numpy(),
+        lambda s: pl.select(pl.struct(pl.lit(s))).to_series().to_numpy(),
+        lambda s: s.to_frame().rows(),
+        lambda s: s.to_frame().row(0),
+        lambda s: s.to_frame().to_dicts(),
+    ],
+)
+def test_map_nested_key_conversion_is_an_error_not_a_panic(
+    convert: Callable[[pl.Series], Any],
+) -> None:
+    entries = pl.Series("m", [[{"key": [1, 2], "value": "x"}]])
+    s = entries.cast(pl.Map(pl.List(pl.Int64), pl.String))
+    # A nested key is not hashable, so it has no Python dict equivalent. That is a
+    # supported error case, so it must not turn into a panic.
+    with pytest.raises(TypeError, match="not hashable"):
+        convert(s)
