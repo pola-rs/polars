@@ -62,7 +62,7 @@ autolabeler:
       - '/\bsql\b|sql_expr|sqlcontext/i'
   - label: A-dtype-categorical
     title:
-      - '/categorical|categories|category/i'
+      - '/categorical|categories/i'
   - label: A-dtype-decimal
     title:
       - '/decimal/i'
@@ -71,7 +71,7 @@ autolabeler:
       - '/\bObject\b/'
   - label: A-dtype-struct
     title:
-      - '/\bstruct\b/i'
+      - '/\b(as_|to_)?struct\b/i'
   - label: A-gpu
     title:
       - '/\bgpu\b/i'
