@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import warnings
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -20,9 +19,7 @@ from polars._utils.various import (
     qualified_type_name,
 )
 from polars._utils.wrap import wrap_expr
-from polars._warnings import find_stacklevel
 from polars.datatypes import Date, Datetime, Int64, Time, parse_into_datatype_expr
-from polars.exceptions import ChronoFormatWarning
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -64,8 +61,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         format
-            Format to use for conversion. Refer to the `chrono crate documentation
-            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Format to use for conversion. Refer to the `jiff crate documentation
+            <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d"`.
             If set to None (default), the format is inferred from the data.
         strict
@@ -92,7 +89,6 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
                 2020-03-01
         ]
         """
-        _validate_format_argument(format)
         return wrap_expr(self._pyexpr.str_to_date(format, strict, exact, cache))
 
     def to_datetime(
@@ -114,8 +110,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         format
-            Format to use for conversion. Refer to the `chrono crate documentation
-            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Format to use for conversion. Refer to the `jiff crate documentation
+            <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
         time_unit : {None, 'us', 'ns', 'ms'}
@@ -165,7 +161,6 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
                 2020-01-01 02:00:00 UTC
         ]
         """
-        _validate_format_argument(format)
         if not isinstance(ambiguous, pl.Expr):
             ambiguous = F.lit(ambiguous)
         return wrap_expr(
@@ -195,8 +190,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         format
-            Format to use for conversion. Refer to the `chrono crate documentation
-            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Format to use for conversion. Refer to the `jiff crate documentation
+            <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
             for the full specification. Example: `"%H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
         strict
@@ -216,7 +211,6 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
                 03:00:00
         ]
         """
-        _validate_format_argument(format)
         return wrap_expr(self._pyexpr.str_to_time(format, strict, cache))
 
     def strptime(
@@ -239,8 +233,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         dtype
             The data type to convert into. Can be either Date, Datetime, or Time.
         format
-            Format to use for conversion. Refer to the `chrono crate documentation
-            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Format to use for conversion. Refer to the `jiff crate documentation
+            <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
         strict
@@ -297,7 +291,9 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         ...         pl.col("date").str.strptime(pl.Date, "%F", strict=False),
         ...         pl.col("date").str.strptime(pl.Date, "%F %T", strict=False),
         ...         pl.col("date").str.strptime(pl.Date, "%D", strict=False),
-        ...         pl.col("date").str.strptime(pl.Date, "%c", strict=False),
+        ...         pl.col("date").str.strptime(
+        ...             pl.Date, "%a %b %e %H:%M:%S %Y", strict=False
+        ...         ),
         ...     )
         ... ).to_series()
         shape: (4,)
@@ -3182,30 +3178,3 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
                 version="2.0",
             )
             return getattr_fallback(self, super(), name)
-
-
-def _validate_format_argument(format: str | None) -> None:
-    if format is None:
-        return
-
-    arg_info_list = [
-        (
-            ".%f",
-            " This pattern should not be used to parse values after a decimal point."
-            " Use `%.f` instead.",
-        ),
-        (
-            "%f",
-            " This pattern should not be used to parse microseconds."
-            " Instead, use e.g. `%3f` for decimal fraction of a second with a fixed length of 3.",
-        ),
-    ]
-
-    for arg_info in arg_info_list:
-        if arg_info[0] in format:
-            message = (
-                f"Detected the pattern `{arg_info[0]}` in the chrono format string."
-                f"{arg_info[1]}"
-                " See the full specification: https://docs.rs/chrono/latest/chrono/format/strftime"
-            )
-            warnings.warn(message, ChronoFormatWarning, stacklevel=find_stacklevel())

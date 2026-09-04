@@ -1,7 +1,9 @@
 use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "temporal")]
-use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
+use jiff::SignedDuration;
+#[cfg(feature = "temporal")]
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime};
 use polars_core::CHEAP_SERIES_HASH_LIMIT;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
@@ -562,10 +564,13 @@ impl Literal for Null {
 #[cfg(feature = "dtype-datetime")]
 impl Literal for NaiveDateTime {
     fn lit(self) -> Expr {
+        let ts = jiff::tz::TimeZone::UTC
+            .to_timestamp(self)
+            .expect("datetime out-of-range");
         if polars_time::in_nanoseconds_window(&self) {
             Expr::Literal(
                 Scalar::new_datetime(
-                    self.and_utc().timestamp_nanos_opt().unwrap(),
+                    i64::try_from(ts.as_nanosecond()).unwrap(),
                     TimeUnit::Nanoseconds,
                     None,
                 )
@@ -573,26 +578,24 @@ impl Literal for NaiveDateTime {
             )
         } else {
             Expr::Literal(
-                Scalar::new_datetime(
-                    self.and_utc().timestamp_micros(),
-                    TimeUnit::Microseconds,
-                    None,
-                )
-                .into(),
+                Scalar::new_datetime(ts.as_microsecond(), TimeUnit::Microseconds, None).into(),
             )
         }
     }
 }
 
 #[cfg(feature = "dtype-duration")]
-impl Literal for ChronoDuration {
+impl Literal for SignedDuration {
     fn lit(self) -> Expr {
-        if let Some(value) = self.num_nanoseconds() {
+        if let Ok(value) = i64::try_from(self.as_nanos()) {
             Expr::Literal(Scalar::new_duration(value, TimeUnit::Nanoseconds).into())
         } else {
             Expr::Literal(
-                Scalar::new_duration(self.num_microseconds().unwrap(), TimeUnit::Microseconds)
-                    .into(),
+                Scalar::new_duration(
+                    i64::try_from(self.as_micros()).unwrap(),
+                    TimeUnit::Microseconds,
+                )
+                .into(),
             )
         }
     }
@@ -619,7 +622,7 @@ impl Literal for Duration {
 #[cfg(feature = "dtype-datetime")]
 impl Literal for NaiveDate {
     fn lit(self) -> Expr {
-        self.and_hms_opt(0, 0, 0).unwrap().lit()
+        self.to_datetime(jiff::civil::Time::midnight()).lit()
     }
 }
 

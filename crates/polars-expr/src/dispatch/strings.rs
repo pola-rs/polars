@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_core::prelude::*;
-use polars_core::utils::{CustomIterTools, handle_casting_failures};
+use polars_core::utils::{CustomIterTools, handle_casting_failures_with_hint};
 #[cfg(feature = "regex")]
 use polars_ops::chunked_array::strings::split_regex_helper;
 use polars_ops::prelude::{BinaryNameSpaceImpl, StringNameSpaceImpl};
@@ -475,6 +475,18 @@ fn finish_strptime(
     dtype: &DataType,
     options: &StrptimeOptions,
 ) -> PolarsResult<Column> {
+    finish_strptime_with_hint(out, input, dtype, options, None)
+}
+
+/// Like [`finish_strptime`], but lets the caller attach extra, situation-specific
+/// advice (e.g. a format-string fix) on top of the usual generic hints.
+fn finish_strptime_with_hint(
+    out: PolarsResult<Column>,
+    input: &Column,
+    dtype: &DataType,
+    options: &StrptimeOptions,
+    extra_hint: Option<&str>,
+) -> PolarsResult<Column> {
     let out = match out {
         Err(_) if !options.strict && options.format.is_none() => {
             Column::full_null(input.name().clone(), input.len(), dtype)
@@ -483,7 +495,11 @@ fn finish_strptime(
     };
 
     if options.strict && input.null_count() != out.null_count() {
-        handle_casting_failures(input.as_materialized_series(), out.as_materialized_series())?;
+        handle_casting_failures_with_hint(
+            input.as_materialized_series(),
+            out.as_materialized_series(),
+            extra_hint,
+        )?;
     }
     Ok(out)
 }
@@ -499,6 +515,39 @@ fn to_date(s: &Column, options: &StrptimeOptions) -> PolarsResult<Column> {
     .map(|ca| ca.into_column());
 
     finish_strptime(out, s, &DataType::Date, options)
+}
+
+#[cfg(all(feature = "regex", feature = "dtype-datetime", feature = "timezones"))]
+polars_utils::regex_cache::cached_regex! {
+    // A trailing numeric UTC offset with no colon, e.g. "+0100", "+010000".
+    static NO_COLON_OFFSET_RE = r#"[+-]\d{4}(\d{2})?['"]?$"#;
+    // A trailing numeric UTC offset with colons, e.g. "+01:00", "+01:00:00".
+    static COLON_OFFSET_RE = r#"[+-]\d{2}:\d{2}(:\d{2})?['"]?$"#;
+}
+
+/// jiff's `%z`-family directives each require an exact colon style
+/// (`%z`/`%#z` reject a colon, `%:z`/`%::z`/`%:::z` require one). When a
+/// value that failed to parse looks like it has an offset in the *other*
+/// style than what `fmt` asked for, surface a targeted hint instead of
+/// leaving the user to guess.
+#[cfg(all(feature = "regex", feature = "dtype-datetime", feature = "timezones"))]
+fn colon_style_mismatch_hint(fmt: &str, failing_value: &str) -> Option<String> {
+    let fmt_wants_no_colon = fmt.contains("%z") || fmt.contains("%#z");
+    let fmt_wants_colon = fmt.contains("%:z") || fmt.contains("%::z") || fmt.contains("%:::z");
+
+    if fmt_wants_no_colon && !fmt_wants_colon && COLON_OFFSET_RE.is_match(failing_value) {
+        Some(format!(
+            "hint: '{failing_value}' has a colon-separated UTC offset (e.g. '+01:00'), but \
+            the format uses `%z`/`%#z`, which require no colon (e.g. '+0100'). Try `%:z` instead."
+        ))
+    } else if fmt_wants_colon && NO_COLON_OFFSET_RE.is_match(failing_value) {
+        Some(format!(
+            "hint: '{failing_value}' has a UTC offset with no colon (e.g. '+0100'), but the \
+            format uses a colon-separated directive. Try `%z` or `%#z` instead."
+        ))
+    } else {
+        None
+    }
 }
 
 #[cfg(feature = "dtype-datetime")]
@@ -547,8 +596,28 @@ fn to_datetime(
     }
     .map(|ca| ca.into_column());
 
+    #[cfg(all(feature = "regex", feature = "timezones"))]
+    let extra_hint = if options.strict {
+        options.format.as_deref().and_then(|fmt| {
+            out.as_ref().ok().and_then(|out| {
+                datetime_strings
+                    .iter()
+                    .zip(out.as_materialized_series().iter())
+                    .find_map(|(val, out_val)| {
+                        (val.is_some() && out_val.is_null())
+                            .then(|| colon_style_mismatch_hint(fmt, val?))
+                            .flatten()
+                    })
+            })
+        })
+    } else {
+        None
+    };
+    #[cfg(not(all(feature = "regex", feature = "timezones")))]
+    let extra_hint: Option<String> = None;
+
     let dtype = DataType::Datetime(*time_unit, time_zone.cloned());
-    finish_strptime(out, &s[0], &dtype, options)
+    finish_strptime_with_hint(out, &s[0], &dtype, options, extra_hint.as_deref())
 }
 
 #[cfg(feature = "dtype-time")]

@@ -3085,17 +3085,17 @@ class DataFrame:
             Number of rows that will be processed per thread.
         datetime_format
             A format string, with the specifiers defined by the
-            `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            `jiff <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
             Rust crate. If no format specified, the default fractional-second
             precision is inferred from the maximum timeunit found in the frame's
             Datetime cols (if any).
         date_format
             A format string, with the specifiers defined by the
-            `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            `jiff <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
             Rust crate.
         time_format
             A format string, with the specifiers defined by the
-            `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            `jiff <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
             Rust crate.
         float_scientific
             Whether to use scientific form always (true), never (false), or
