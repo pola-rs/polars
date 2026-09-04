@@ -22,6 +22,10 @@ pub use duration::*;
 mod extension;
 #[cfg(feature = "dtype-extension")]
 pub use extension::*;
+#[cfg(feature = "dtype-map")]
+mod map;
+#[cfg(feature = "dtype-map")]
+pub use map::*;
 #[cfg(feature = "dtype-time")]
 mod time;
 use std::marker::PhantomData;

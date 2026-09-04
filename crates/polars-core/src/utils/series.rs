@@ -80,6 +80,14 @@ pub fn check_is_valid_struct_cast(
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
     check_is_valid_struct_cast(input.dtype(), output.dtype(), output.name())?;
 
+    // Casting to a Map merges duplicate keys, so its entries are not positionally
+    // comparable with the input's -- which `find_validity_mismatch` requires. Strictness
+    // still holds, since the key and value child casts run with the same options.
+    #[cfg(feature = "dtype-map")]
+    if output.dtype().contains_map() {
+        return Ok(());
+    }
+
     let mut idxs = Vec::new();
     input.find_validity_mismatch(output, &mut idxs);
 

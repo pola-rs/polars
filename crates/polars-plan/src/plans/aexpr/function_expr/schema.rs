@@ -29,6 +29,8 @@ impl IRFunctionExpr {
             #[cfg(feature = "dtype-extension")]
             Extension(func) => func.get_field(mapper),
             ListExpr(func) => func.get_field(mapper),
+            #[cfg(feature = "dtype-map")]
+            MapExpr(func) => func.get_field(mapper),
             #[cfg(feature = "strings")]
             StringExpr(s) => s.get_field(mapper),
             #[cfg(feature = "dtype-struct")]
@@ -75,8 +77,30 @@ impl IRFunctionExpr {
                     );
                     mapper.pow_dtype()
                 },
-                // `sqrt`/`cbrt` map non-numeric inputs to Float64 at runtime.
-                IRPowFunction::Sqrt | IRPowFunction::Cbrt => mapper.map_to_float_dtype(),
+                IRPowFunction::Sqrt => mapper
+                    .ensure_satisfies(
+                        |_, dtype| {
+                            dtype.is_numeric()
+                                || dtype.is_bool()
+                                || dtype.is_string()
+                                || dtype.is_null()
+                                || dtype.is_temporal()
+                        },
+                        "sqrt",
+                    )?
+                    .map_to_float_dtype(),
+                IRPowFunction::Cbrt => mapper
+                    .ensure_satisfies(
+                        |_, dtype| {
+                            dtype.is_numeric()
+                                || dtype.is_bool()
+                                || dtype.is_string()
+                                || dtype.is_null()
+                                || dtype.is_temporal()
+                        },
+                        "cbrt",
+                    )?
+                    .map_to_float_dtype(),
             },
             Coalesce => mapper.map_to_supertype(),
             #[cfg(feature = "row_hash")]

@@ -92,6 +92,9 @@ pub enum AnyValue<'a> {
     EnumOwned(CatSize, Arc<CategoricalMapping>),
     /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
+    /// One row of a map, as its `Struct {key, value}` entries series.
+    #[cfg(feature = "dtype-map")]
+    Map(Series),
     #[cfg(feature = "dtype-array")]
     Array(Series, usize),
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
@@ -217,6 +220,11 @@ impl AnyValue<'static> {
                     .collect(),
                 fields.clone(),
             ))),
+            #[cfg(feature = "dtype-map")]
+            DT::Map(_, _) => AV::Map(Series::new_empty(
+                PlSmallStr::EMPTY,
+                &dtype.map_entries_dtype().unwrap(),
+            )),
             #[cfg(feature = "dtype-extension")]
             DT::Extension(_typ, storage) => {
                 AnyValue::default_value(storage, numeric_to_one, num_list_values)
@@ -270,6 +278,16 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-categorical")]
             Enum(_, _) | EnumOwned(_, _) => unimplemented!("can not get dtype of Enum AnyValue"),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
+            #[cfg(feature = "dtype-map")]
+            Map(s) => {
+                let DataType::Struct(fields) = s.dtype() else {
+                    unimplemented!("Map AnyValue payload must be a Struct")
+                };
+                DataType::Map(
+                    Box::new(fields[0].dtype().clone()),
+                    Box::new(fields[1].dtype().clone()),
+                )
+            },
             #[cfg(feature = "dtype-array")]
             Array(s, size) => DataType::Array(Box::new(s.dtype().clone()), *size),
             #[cfg(feature = "dtype-struct")]
@@ -399,10 +417,14 @@ impl<'a> AnyValue<'a> {
         matches!(self, AnyValue::Null)
     }
 
+    /// Checks if all values in this `AnyValue` are null.
     pub fn is_nested_null(&self) -> bool {
         match self {
             AnyValue::Null => true,
             AnyValue::List(s) => s.null_count() == s.len(),
+            // As soon as the map is non-empty, the key (and its dtype) are non-null.
+            #[cfg(feature = "dtype-map")]
+            AnyValue::Map(s) => s.is_empty(),
             #[cfg(feature = "dtype-array")]
             AnyValue::Array(s, _) => s.null_count() == s.len(),
             #[cfg(feature = "dtype-struct")]
@@ -744,6 +766,8 @@ impl<'a> AnyValue<'a> {
                 }
             },
             Self::List(series) => Self::List(series.to_physical_repr().into_owned()),
+            #[cfg(feature = "dtype-map")]
+            Self::Map(series) => Self::List(series.to_physical_repr().into_owned()),
 
             #[cfg(feature = "dtype-array")]
             Self::Array(series, width) => {
@@ -826,6 +850,12 @@ impl AnyValue<'_> {
     pub fn hash_impl<H: Hasher>(&self, state: &mut H, cheap: bool) {
         use AnyValue::*;
 
+        let hash_series = |v: &Series, state: &mut H| {
+            if !cheap || v.len() < CHEAP_SERIES_HASH_LIMIT {
+                Wrap(v.clone()).hash(state)
+            }
+        };
+
         // Hash discriminant, not distinguishing between owned/non-owned.
         match self {
             #[cfg(feature = "dtype-struct")]
@@ -854,16 +884,12 @@ impl AnyValue<'_> {
             Binary(v) => v.hash(state),
             BinaryOwned(v) => v.as_slice().hash(state),
             Boolean(v) => v.hash(state),
-            List(v) => {
-                if !cheap || v.len() < CHEAP_SERIES_HASH_LIMIT {
-                    Hash::hash(&Wrap(v.clone()), state)
-                }
-            },
+            List(v) => hash_series(v, state),
+            #[cfg(feature = "dtype-map")]
+            Map(v) => hash_series(v, state),
             #[cfg(feature = "dtype-array")]
             Array(v, width) => {
-                if !cheap || v.len() < CHEAP_SERIES_HASH_LIMIT {
-                    Hash::hash(&Wrap(v.clone()), state)
-                }
+                hash_series(v, state);
                 width.hash(state)
             },
             #[cfg(feature = "dtype-date")]
@@ -1109,6 +1135,8 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-time")]
             Time(v) => Time(v),
             List(v) => List(v),
+            #[cfg(feature = "dtype-map")]
+            Map(v) => Map(v),
             #[cfg(feature = "dtype-array")]
             Array(s, size) => Array(s, size),
             String(v) => StringOwned(PlSmallStr::from_str(v)),
@@ -1263,6 +1291,8 @@ impl AnyValue<'_> {
                 *l == *r && *tul == *tur && tzl == tzr
             },
             (List(l), List(r)) => l == r,
+            #[cfg(feature = "dtype-map")]
+            (Map(l), Map(r)) => l == r,
             #[cfg(feature = "dtype-categorical")]
             (Categorical(cat_l, map_l), Categorical(cat_r, map_r)) => {
                 if !Arc::ptr_eq(map_l, map_r) {
@@ -1444,6 +1474,10 @@ impl PartialOrd for AnyValue<'_> {
             },
             (List(_), List(_)) => {
                 unimplemented!("ordering for List dtype is not supported")
+            },
+            #[cfg(feature = "dtype-map")]
+            (Map(_), Map(_)) => {
+                unimplemented!("ordering for Map dtype is not supported")
             },
             #[cfg(feature = "dtype-array")]
             (Array(..), Array(..)) => {

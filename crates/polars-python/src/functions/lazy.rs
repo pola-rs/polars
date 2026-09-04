@@ -514,7 +514,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
             ))
         };
 
-        let av = py_object_to_any_value(value, true, allow_object).map_err(|_| raise())?;
+        let av = py_object_to_any_value(value, true, allow_object, None).map_err(|_| raise())?;
         match av {
             #[cfg(feature = "object")]
             AnyValue::ObjectOwned(_) => {

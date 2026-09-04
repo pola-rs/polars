@@ -1,13 +1,21 @@
 use std::ops::Range;
+#[cfg(target_os = "linux")]
+use std::os::fd::AsRawFd;
 use std::path::Path;
 use std::sync::Arc;
 
+use dio_align::DioAlign;
+use futures::{StreamExt, TryStreamExt};
 use polars_buffer::Buffer;
+use polars_config::FileAdvice;
 use polars_core::prelude::PlHashMap;
-use polars_error::{PolarsResult, feature_gated};
+use polars_core::runtime::ASYNC;
+use polars_error::{PolarsResult, feature_gated, polars_bail, polars_err};
+use polars_utils::aliases::InitHashMaps;
 use polars_utils::io::_limit_path_len_io_err;
 use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
+use tokio::sync::Semaphore;
 
 use crate::cloud::concurrency_config::{ConcurrencyStrategy, FetchConfig};
 use crate::cloud::options::CloudOptions;
@@ -15,8 +23,11 @@ use crate::cloud::options::CloudOptions;
 use crate::cloud::{
     CloudLocation, ObjectStorePath, PolarsObjectStore, build_object_store, object_path_from_str,
 };
-use crate::metrics::IOMetrics;
+use crate::metrics::{IOMetrics, OptIOMetrics};
 
+pub mod dio_align;
+#[cfg(target_os = "linux")]
+mod direct_io;
 #[allow(async_fn_in_trait)]
 pub trait ByteSource: Send + Sync {
     async fn get_size(&self) -> PolarsResult<usize>;
@@ -70,6 +81,362 @@ impl ByteSource for BufferByteSource {
             .iter()
             .map(|x| (x.start, self.0.clone().sliced(x.clone())))
             .collect())
+    }
+}
+
+/// Byte source backed by a `File`.
+pub struct FileByteSource {
+    file: Arc<std::fs::File>,
+    // Alignment for O_DIRECT, if supported.
+    o_direct_align: Option<DioAlign>,
+    // Manage concurrency.
+    concurrency: usize,
+    permits: Arc<Semaphore>,
+    // File size.
+    size: u64,
+    io_metrics: OptIOMetrics,
+}
+
+#[derive(Clone)]
+pub struct FileReadContext {
+    pub enable_o_direct: bool,
+    pub concurrency: usize,
+    pub permits: Arc<Semaphore>,
+    /// Ignored when direct I/O is active: there is no page cache to advise.
+    pub advice: FileAdvice,
+}
+
+impl std::fmt::Debug for FileReadContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FileReadContext")
+            .field("available_permits", &self.permits.available_permits())
+            .field("enable_odirect", &self.enable_o_direct)
+            .field("concurrency", &self.concurrency)
+            .field("advice", &self.advice)
+            .finish()
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn _fadvise(file: &std::fs::File, advice: FileAdvice) {
+    let advice = match advice {
+        // The OS default is already POSIX_FADV_NORMAL.
+        FileAdvice::Normal => return,
+        FileAdvice::Sequential => libc::POSIX_FADV_SEQUENTIAL,
+        FileAdvice::Random => libc::POSIX_FADV_RANDOM,
+        FileAdvice::WillNeed => libc::POSIX_FADV_WILLNEED,
+    };
+
+    unsafe {
+        libc::posix_fadvise(file.as_raw_fd(), 0, 0, advice);
+    }
+}
+
+#[cfg(unix)]
+pub(crate) fn pread_exact(
+    file: &std::fs::File,
+    buf: &mut [u8],
+    offset: u64,
+) -> std::io::Result<()> {
+    use std::os::unix::fs::FileExt;
+    file.read_exact_at(buf, offset)
+}
+
+#[cfg(windows)]
+fn pread_exact(file: &std::fs::File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
+    use std::os::windows::fs::FileExt;
+    let mut filled = 0;
+    while filled < buf.len() {
+        match file.seek_read(&mut buf[filled..], offset + filled as u64)? {
+            0 => return Err(std::io::ErrorKind::UnexpectedEof.into()),
+            n => filled += n,
+        }
+    }
+    Ok(())
+}
+
+fn read_buffered(file: &std::fs::File, offset: u64, len: usize) -> PolarsResult<Buffer<u8>> {
+    let mut buf = vec![0u8; len];
+    pread_exact(file, &mut buf, offset)?;
+    Ok(Buffer::from(buf))
+}
+
+/// Read `len` bytes at `offset`, through direct I/O when `align` says the file
+/// supports it and through the page cache otherwise.
+#[cfg(target_os = "linux")]
+fn read_at(
+    file: &std::fs::File,
+    align: Option<DioAlign>,
+    offset: u64,
+    len: usize,
+    size: u64,
+) -> PolarsResult<Buffer<u8>> {
+    match align {
+        Some(align) => direct_io::read_aligned(file, align, offset, len, size),
+        None => read_buffered(file, offset, len),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn read_at(
+    file: &std::fs::File,
+    _align: Option<DioAlign>,
+    offset: u64,
+    len: usize,
+    _size: u64,
+) -> PolarsResult<Buffer<u8>> {
+    read_buffered(file, offset, len)
+}
+
+impl FileByteSource {
+    async fn try_new_from_path(
+        path: PlRefPath,
+        read_context: FileReadContext,
+        io_metrics: Option<Arc<IOMetrics>>,
+    ) -> PolarsResult<Self> {
+        // The open path is `open`, `fcntl`, `statx` and `fstat` - all blocking.
+        ASYNC
+            .spawn_blocking(move || Self::open_blocking(path, read_context, io_metrics))
+            .await
+            .expect("blocking task panicked")
+    }
+
+    fn open_blocking(
+        path: PlRefPath,
+        read_context: FileReadContext,
+        io_metrics: Option<Arc<IOMetrics>>,
+    ) -> PolarsResult<Self> {
+        let path = path.as_std_path();
+        let enable_o_direct = read_context.enable_o_direct;
+
+        let file = {
+            #[cfg(target_os = "linux")]
+            let f = if enable_o_direct {
+                direct_io::open_o_direct(path).or_else(|e| match e.raw_os_error() {
+                    // The filesystem does not support O_DIRECT.
+                    Some(libc::EINVAL) => std::fs::File::open(path),
+                    _ => Err(e),
+                })
+            } else {
+                std::fs::File::open(path)
+            };
+            #[cfg(not(target_os = "linux"))]
+            let f = std::fs::File::open(path);
+
+            f.map_err(|e| _limit_path_len_io_err(path, e))?
+        };
+
+        let file = Arc::new(file);
+
+        #[cfg(target_os = "linux")]
+        let o_direct_align =
+            direct_io::probe_or_disable(&file).map_err(|e| _limit_path_len_io_err(path, e))?;
+
+        #[cfg(not(target_os = "linux"))]
+        let o_direct_align: Option<DioAlign> = None;
+
+        #[cfg(target_os = "linux")]
+        if o_direct_align.is_none() {
+            // Inert under O_DIRECT: there is no page cache to advise.
+            _fadvise(&file, read_context.advice);
+        }
+
+        let concurrency = read_context.concurrency;
+        let permits = read_context.permits;
+
+        let size = file
+            .metadata()
+            .map_err(|e| _limit_path_len_io_err(path, e))?
+            .len();
+
+        if polars_config::config().verbose() {
+            let name = if polars_config::config().verbose_sensitive() {
+                path.display().to_string()
+            } else {
+                "<file>".to_string()
+            };
+            match (enable_o_direct, o_direct_align) {
+                (true, Some(a)) => eprintln!(
+                    "[FileByteSource]: {name}: direct IO active, \
+                        alignment offset: {}, memory: {}",
+                    a.offset, a.memory
+                ),
+                (true, None) => eprintln!(
+                    "[FileByteSource]: {name}: direct IO requested but not active, \
+                        using buffered reads"
+                ),
+                (false, _) => {},
+            }
+        }
+
+        Ok(FileByteSource {
+            file,
+            o_direct_align,
+            concurrency,
+            permits,
+            size,
+            io_metrics: OptIOMetrics(io_metrics),
+        })
+    }
+
+    pub fn try_new_from_std(
+        file: std::fs::File,
+        read_context: FileReadContext,
+        io_metrics: Option<Arc<IOMetrics>>,
+    ) -> PolarsResult<Self> {
+        let size = file.metadata()?.len();
+
+        #[cfg(target_os = "linux")]
+        let o_direct_align = direct_io::probe_or_disable(&file)?;
+
+        #[cfg(not(target_os = "linux"))]
+        let o_direct_align: Option<DioAlign> = None;
+
+        #[cfg(target_os = "linux")]
+        if o_direct_align.is_none() {
+            _fadvise(&file, read_context.advice);
+        }
+
+        let concurrency = read_context.concurrency;
+        let permits = read_context.permits;
+
+        // For verbose logging only. We cannot enable since the file_handle was handed to us.
+        let enable_o_direct = read_context.enable_o_direct;
+
+        if polars_config::config().verbose() {
+            match (enable_o_direct, o_direct_align) {
+                (true, Some(a)) => eprintln!(
+                    "[FileByteSource]: direct IO active, alignment offset: {}, memory: {}",
+                    a.offset, a.memory
+                ),
+                (true, None) => eprintln!(
+                    "[FileByteSource]: direct IO requested but not active, using buffered reads",
+                ),
+                (false, _) => {},
+            }
+        }
+
+        Ok(Self {
+            file: Arc::new(file),
+            o_direct_align,
+            concurrency,
+            permits,
+            size,
+            io_metrics: OptIOMetrics(io_metrics),
+        })
+    }
+
+    pub fn set_io_metrics(&mut self, io_metrics: Option<Arc<IOMetrics>>) -> &mut Self {
+        self.io_metrics = OptIOMetrics(io_metrics);
+        self
+    }
+
+    pub fn io_metrics(&self) -> &OptIOMetrics {
+        &self.io_metrics
+    }
+}
+
+impl ByteSource for FileByteSource {
+    async fn get_size(&self) -> PolarsResult<usize> {
+        usize::try_from(self.size)
+            .map_err(|_| polars_err!(ComputeError: "file size {} does not fit in usize", self.size))
+    }
+
+    async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
+        assert!(range.end as u64 <= self.size);
+
+        let file = self.file.clone();
+        let offset = range.start as u64;
+        let len = range.len();
+        let size = self.size;
+        let o_direct = self.o_direct_align;
+
+        let permit = self.permits.clone().acquire_owned().await.unwrap();
+
+        self.io_metrics()
+            .record_io_read(len as u64, async move {
+                ASYNC
+                    .spawn_blocking(move || {
+                        let _permit = permit;
+                        read_at(&file, o_direct, offset, len, size)
+                    })
+                    .await
+            })
+            .await
+            .expect("blocking task panicked")
+    }
+
+    async fn get_ranges(
+        &self,
+        ranges: &mut [Range<usize>],
+    ) -> PolarsResult<PlHashMap<usize, Buffer<u8>>> {
+        if let [range] = ranges {
+            let mut out = PlHashMap::with_capacity(1);
+            out.insert(range.start, self.get_range(range.clone()).await?);
+            return Ok(out);
+        }
+
+        ranges.sort_unstable_by_key(|r| r.start);
+
+        let mut spans: Vec<Range<usize>> = Vec::with_capacity(ranges.len());
+
+        // Threshold for coalescing. Note, individual ranges may exceed MAX_SPAN.
+        const MAX_SPAN: usize = 8 << 20;
+        // Tolerate small gaps. We match typical page size for now; this could be tuned.
+        const MAX_GAP: usize = 4096;
+
+        for r in ranges.iter() {
+            match spans.last_mut() {
+                Some(last)
+                    if r.start.saturating_sub(last.end) <= MAX_GAP
+                        && r.end.saturating_sub(last.start) <= MAX_SPAN =>
+                {
+                    last.end = last.end.max(r.end)
+                },
+                _ => spans.push(r.clone()),
+            }
+        }
+
+        let mut fetched: Vec<(Range<usize>, Buffer<u8>)> = futures::stream::iter(spans)
+            .map(|span| async move {
+                let buf = self.get_range(span.clone()).await?;
+                PolarsResult::Ok((span, buf))
+            })
+            .buffer_unordered(self.concurrency)
+            .try_collect()
+            .await?;
+
+        // Slice out of the containing span into the original ranges.
+        fetched.sort_unstable_by_key(|(s, _)| s.start);
+
+        if let Some(w) = ranges.windows(2).find(|w| w[0].start == w[1].start) {
+            polars_bail!(
+                ComputeError:
+                "duplicate range start {} in read request ({:?} and {:?})",
+                w[0].start, w[0], w[1]
+            );
+        }
+
+        let mut out = PlHashMap::with_capacity(ranges.len());
+        for r in ranges.iter() {
+            // No span available.
+            if r.is_empty() {
+                out.insert(r.start, Buffer::new());
+                continue;
+            }
+
+            // Spans are sorted by start and each range lies within one, so the
+            // containing span is the last one starting at or before `r.start`.
+            let idx = fetched.partition_point(|(s, _)| s.start <= r.start);
+            let (span, buf) = &fetched[idx - 1];
+            debug_assert!(span.start <= r.start && r.end <= span.end);
+
+            let off = r.start - span.start;
+            out.insert(r.start, buf.clone().sliced(off..off + r.len()));
+        }
+
+        debug_assert_eq!(out.len(), ranges.len());
+        Ok(out)
     }
 }
 
@@ -138,6 +505,7 @@ impl ByteSource for ObjectStoreByteSource {
 /// Dynamic dispatch to async functions.
 pub enum DynByteSource {
     Buffer(BufferByteSource),
+    File(FileByteSource),
     #[cfg(feature = "cloud")]
     Cloud(ObjectStoreByteSource),
 }
@@ -146,6 +514,7 @@ impl DynByteSource {
     pub fn variant_name(&self) -> &str {
         match self {
             Self::Buffer(_) => "Buffer",
+            Self::File(_) => "File",
             #[cfg(feature = "cloud")]
             Self::Cloud(_) => "Cloud",
         }
@@ -154,6 +523,7 @@ impl DynByteSource {
     pub fn is_cloud(&self) -> bool {
         match self {
             Self::Buffer(_) => false,
+            Self::File(_) => false,
             #[cfg(feature = "cloud")]
             Self::Cloud(_) => true,
         }
@@ -162,6 +532,7 @@ impl DynByteSource {
     pub fn chunk_size(&self) -> Option<usize> {
         match self {
             Self::Buffer(_) => None,
+            Self::File(_) => None,
             #[cfg(feature = "cloud")]
             Self::Cloud(source) => Some(source.config.chunk_size),
         }
@@ -170,6 +541,8 @@ impl DynByteSource {
     pub fn concurrency_strategy(&self) -> Option<ConcurrencyStrategy> {
         match self {
             Self::Buffer(_) => None,
+            // Concurrency is handled directly inside FileByteSource.
+            Self::File(_) => None,
             #[cfg(feature = "cloud")]
             Self::Cloud(source) => Some(source.concurrency_strategy()),
         }
@@ -186,6 +559,7 @@ impl ByteSource for DynByteSource {
     async fn get_size(&self) -> PolarsResult<usize> {
         match self {
             Self::Buffer(v) => v.get_size().await,
+            Self::File(v) => v.get_size().await,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v.get_size().await,
         }
@@ -194,6 +568,7 @@ impl ByteSource for DynByteSource {
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
         match self {
             Self::Buffer(v) => v.get_range(range).await,
+            Self::File(v) => v.get_range(range).await,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v.get_range(range).await,
         }
@@ -205,6 +580,7 @@ impl ByteSource for DynByteSource {
     ) -> PolarsResult<PlHashMap<usize, Buffer<u8>>> {
         match self {
             Self::Buffer(v) => v.get_ranges(ranges).await,
+            Self::File(v) => v.get_ranges(ranges).await,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v.get_ranges(ranges).await,
         }
@@ -214,6 +590,12 @@ impl ByteSource for DynByteSource {
 impl From<BufferByteSource> for DynByteSource {
     fn from(value: BufferByteSource) -> Self {
         Self::Buffer(value)
+    }
+}
+
+impl From<FileByteSource> for DynByteSource {
+    fn from(value: FileByteSource) -> Self {
+        Self::File(value)
     }
 }
 
@@ -233,6 +615,8 @@ impl From<Buffer<u8>> for DynByteSource {
 #[derive(Clone, Debug)]
 pub enum DynByteSourceBuilder {
     Mmap,
+    /// Use std::fs::File positional read (pread).
+    FilePread(FileReadContext),
     /// Supports both cloud and local files, requires cloud feature.
     ObjectStore(FetchConfig),
 }
@@ -244,9 +628,14 @@ impl DynByteSourceBuilder {
         cloud_options: Option<&CloudOptions>,
         io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<DynByteSource> {
-        Ok(match *self {
+        Ok(match self {
             Self::Mmap => {
                 BufferByteSource::try_new_mmap_from_path(path.as_std_path(), cloud_options)
+                    .await?
+                    .into()
+            },
+            Self::FilePread(read_context) => {
+                FileByteSource::try_new_from_path(path, read_context.clone(), io_metrics)
                     .await?
                     .into()
             },
@@ -255,7 +644,7 @@ impl DynByteSourceBuilder {
                     path,
                     cloud_options,
                     io_metrics,
-                    fetch_config,
+                    *fetch_config,
                 )
                 .await?
                 .into()
@@ -266,6 +655,7 @@ impl DynByteSourceBuilder {
     pub fn chunk_size(&self) -> Option<usize> {
         match self {
             Self::Mmap => None,
+            Self::FilePread(_) => None,
             Self::ObjectStore(fetch_config) => Some(fetch_config.chunk_size),
         }
     }
@@ -273,7 +663,85 @@ impl DynByteSourceBuilder {
     pub fn concurrency_strategy(&self) -> Option<&ConcurrencyStrategy> {
         match self {
             Self::Mmap => None,
+            Self::FilePread(_) => None,
             Self::ObjectStore(fetch_config) => Some(&fetch_config.strategy),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MIB: usize = 1 << 20;
+
+    /// A file source over `len` bytes of `(i % 251)`, plus those bytes.
+    fn source(dir: &std::path::Path, len: usize) -> (FileByteSource, Vec<u8>) {
+        let path = dir.join("f.bin");
+        let contents: Vec<u8> = (0..len).map(|i| (i % 251) as u8).collect();
+        std::fs::write(&path, &contents).unwrap();
+
+        let read_context = FileReadContext {
+            enable_o_direct: false,
+            concurrency: 4,
+            permits: Arc::new(Semaphore::new(4)),
+            advice: FileAdvice::Normal,
+        };
+        let source = FileByteSource::try_new_from_std(
+            std::fs::File::open(&path).unwrap(),
+            read_context,
+            None,
+        )
+        .unwrap();
+        (source, contents)
+    }
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn get_ranges_resolves_every_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let (source, contents) = source(dir.path(), 17 * MIB);
+        let rt = runtime();
+
+        let cases: [(&str, &[Range<usize>]); 6] = [
+            ("disjoint", &[0..100, 500..600, 900..1000]),
+            ("unsorted", &[900..1000, 0..100, 500..600]),
+            ("partial overlap", &[0..100, 50..150]),
+            ("contained", &[0..200, 50..100]),
+            // A zero-length column chunk is declarable in file metadata.
+            ("empty range at a span end", &[0..100, 100..100]),
+            // Spans become [0..4096, 5M..14M, 13M..16M]: the last two overlap,
+            // and both contain 13.5M, but only the third covers 16M.
+            (
+                "overlapping spans",
+                &[
+                    0..4096,
+                    5_000_000..14_000_000,
+                    13_000_000..13_500_000,
+                    13_500_000..16_000_000,
+                ],
+            ),
+        ];
+
+        for (name, ranges) in cases {
+            let mut ranges = ranges.to_vec();
+            let expect = ranges.clone();
+            let out = rt.block_on(source.get_ranges(&mut ranges)).unwrap();
+
+            assert_eq!(out.len(), expect.len(), "{name}");
+            for r in &expect {
+                let got = out
+                    .get(&r.start)
+                    .unwrap_or_else(|| panic!("{name}: {r:?} missing"));
+                assert_eq!(got.as_ref(), &contents[r.clone()], "{name}: {r:?}");
+            }
         }
     }
 }

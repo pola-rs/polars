@@ -94,6 +94,28 @@ def test_collect_schema_sqrt_cbrt_returns_float_27565(fn: str) -> None:
         assert lf.collect_schema()["result"] == pl.Float64
 
 
+@pytest.mark.parametrize("fn", ["sqrt", "cbrt"])
+@pytest.mark.parametrize(
+    ("dtype", "value"),
+    [
+        (pl.Binary, b"1"),
+        (pl.List(pl.Int64), [1]),
+        (pl.Array(pl.Int64, 1), [1]),
+        (pl.Struct({"x": pl.Int64}), {"x": 1}),
+        (pl.Categorical, "a"),
+        (pl.Map(pl.String, pl.Int64), {"a": 1}),
+    ],
+)
+def test_collect_schema_sqrt_cbrt_rejects_unsupported_dtype_27565(
+    fn: str, dtype: pl.DataType, value: object
+) -> None:
+    lf = pl.LazyFrame({"a": [value]}, schema={"a": dtype}).select(
+        result=getattr(pl.col("a"), fn)()
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=fn):
+        lf.collect_schema()
+
+
 def test_collect_schema_trig_rejects_string_27565() -> None:
     lf = pl.LazyFrame({"a": [None]}, schema={"a": pl.String}).select(
         result=pl.col("a").sin()

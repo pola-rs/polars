@@ -367,7 +367,9 @@ impl ArrowDataType {
             ),
             Dictionary(keys, _, _) => (*keys).into(),
             Union(_) => unimplemented!(),
-            Map(_, _) => unimplemented!(),
+            // Polars stores a Map as its entries, with `i64` offsets. This has to agree with
+            // `DataType::Map::to_physical`, which reaches the same place through `LargeList`.
+            Map(entries, _) => entries.dtype.underlying_physical_type().to_large_list(true),
             Extension(ext) => ext.inner.underlying_physical_type(),
         }
     }
@@ -417,7 +419,13 @@ impl ArrowDataType {
                 Dictionary(*keys, Box::new(values.to_storage_recursive()), *is_ordered)
             },
             Union(_) => unimplemented!(),
-            Map(_, _) => unimplemented!(),
+            Map(entries, keys_sorted) => Map(
+                Box::new(Field {
+                    dtype: entries.dtype.to_storage_recursive(),
+                    ..*entries.clone()
+                }),
+                *keys_sorted,
+            ),
             _ => self.clone(),
         }
     }

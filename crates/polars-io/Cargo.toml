@@ -27,7 +27,6 @@ blake3 = { workspace = true, optional = true }
 bytes = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
-# kdn TODO CHECK
 crossbeam-queue = { workspace = true }
 fast-float2 = { workspace = true, optional = true }
 fastrand = { workspace = true, optional = true }
@@ -36,6 +35,7 @@ futures = { workspace = true, optional = true }
 glob = { version = "0.3" }
 hashbrown = { workspace = true }
 itoa = { workspace = true, optional = true }
+libc = { workspace = true }
 memchr = { workspace = true }
 memmap = { workspace = true }
 num-traits = { workspace = true }
@@ -105,6 +105,7 @@ dtype-f16 = ["polars-core/dtype-f16"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
 dtype-extension = ["polars-core/dtype-extension"]
+dtype-map = ["polars-core/dtype-map"]
 object = ["polars-core/object"]
 dtype-datetime = [
   "polars-core/dtype-datetime",
