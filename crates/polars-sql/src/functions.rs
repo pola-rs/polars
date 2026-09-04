@@ -28,7 +28,8 @@ use sqlparser::tokenizer::Span;
 
 use crate::SQLContext;
 use crate::sql_expr::{
-    adjust_one_indexed_param, parse_extract_date_part, parse_sql_array, parse_sql_expr,
+    adjust_one_indexed_param, order_by_sort_options, parse_extract_date_part, parse_sql_array,
+    parse_sql_expr,
 };
 
 pub(crate) struct SQLFunctionVisitor<'a> {
@@ -1773,13 +1774,13 @@ impl SQLFunctionVisitor<'_> {
                         polars_bail!(SQLSyntax: "{} requires an OVER clause with ORDER BY", func_name)
                     },
                 };
-                let (order_exprs, all_desc) =
+                let (order_exprs, sort_opts) =
                     self.parse_order_by_in_window(&window_spec.order_by)?;
                 let rank_expr = if order_exprs.len() == 1 {
                     order_exprs[0].clone().rank(
                         RankOptions {
                             method: rank_method,
-                            descending: all_desc,
+                            descending: sort_opts.descending,
                         },
                         None,
                     )
@@ -1787,7 +1788,7 @@ impl SQLFunctionVisitor<'_> {
                     as_struct(order_exprs).rank(
                         RankOptions {
                             method: rank_method,
-                            descending: all_desc,
+                            descending: sort_opts.descending,
                         },
                         None,
                     )
@@ -1958,8 +1959,7 @@ impl SQLFunctionVisitor<'_> {
         self.validate_window_frame(window_frame)?;
 
         if !order_by.is_empty() {
-            // Extract ORDER BY exprs and sort direction
-            let (order_by_exprs, all_desc) = self.parse_order_by_in_window(order_by)?;
+            let (order_by_exprs, sort_opts) = self.parse_order_by_in_window(order_by)?;
 
             // Get the base expr/column
             let args = extract_args(self.func)?;
@@ -1983,7 +1983,6 @@ impl SQLFunctionVisitor<'_> {
             // Apply cumulative function; the forward-fill ensures we match SQL semantics
             let cumulative_expr = cumulative_fn(base_expr, false)
                 .fill_null_with_strategy(FillNullStrategy::Forward(None));
-            let sort_opts = SortOptions::default().with_order_descending(all_desc);
             cumulative_expr.over_with_options(
                 partition_by_exprs,
                 Some((order_by_exprs, sort_opts)),
@@ -2364,7 +2363,7 @@ impl SQLFunctionVisitor<'_> {
                 match args.as_slice() {
                     _ if is_count_star => {
                         // COUNT(*) / COUNT(1) with ORDER BY -> map to `int_range`
-                        let (order_by_exprs, all_desc) =
+                        let (order_by_exprs, sort_opts) =
                             self.parse_order_by_in_window(&spec.order_by)?;
                         let partition_by_exprs = if spec.partition_by.is_empty() {
                             None
@@ -2376,7 +2375,6 @@ impl SQLFunctionVisitor<'_> {
                                     .collect::<PolarsResult<Vec<_>>>()?,
                             )
                         };
-                        let sort_opts = SortOptions::default().with_order_descending(all_desc);
                         let row_number = int_range(lit(0), len(), 1, DataType::Int64).add(lit(1)); // SQL is 1-indexed
 
                         return row_number.over_with_options(
@@ -2510,14 +2508,13 @@ impl SQLFunctionVisitor<'_> {
         let mut nulls_last = Vec::with_capacity(order_by.len());
 
         for ob in order_by {
-            // Note: if not specified 'NULLS FIRST' is default for DESC, 'NULLS LAST' otherwise
-            // https://www.postgresql.org/docs/current/queries-order.html. Also: ORDER BY exprs
-            // share their length with the (possibly filtered) base, so they have to go through
-            // `parse_sql_arg` to apply any active FILTER.
-            let desc_order = !ob.options.asc.unwrap_or(true);
+            // Note: ORDER BY exprs share their length with the (possibly filtered) base,
+            // so they have to go through `parse_sql_arg` to apply any active FILTER.
             by.push(self.parse_sql_arg(&ob.expr)?);
-            nulls_last.push(!ob.options.nulls_first.unwrap_or(desc_order));
-            descending.push(desc_order);
+
+            let options = order_by_sort_options(&ob.options);
+            nulls_last.push(options.nulls_last);
+            descending.push(options.descending);
         }
         Ok(expr.sort_by(
             by,
@@ -2535,42 +2532,41 @@ impl SQLFunctionVisitor<'_> {
     ) -> PolarsResult<Expr> {
         // If ORDER BY references the base expression, use .sort() directly
         if order_by.len() == 1 && order_by[0].expr == *base_sql_expr {
-            let desc_order = !order_by[0].options.asc.unwrap_or(true);
-            let nulls_last = !order_by[0].options.nulls_first.unwrap_or(desc_order);
-            return Ok(expr.sort(
-                SortOptions::default()
-                    .with_order_descending(desc_order)
-                    .with_nulls_last(nulls_last),
-            ));
+            return Ok(expr.sort(order_by_sort_options(&order_by[0].options)));
         }
         // Otherwise, fall back to `sort_by` (may need to handle further edge-cases later)
         self.apply_order_by(expr, order_by)
     }
 
-    /// Parse ORDER BY (in OVER clause), validating uniform direction.
+    /// Parse ORDER BY (in OVER clause), validating that all keys sort alike.
     fn parse_order_by_in_window(
         &mut self,
         order_by: &[OrderByExpr],
-    ) -> PolarsResult<(Vec<Expr>, bool)> {
-        if order_by.is_empty() {
-            return Ok((Vec::new(), false));
-        }
-        // Parse expressions and validate uniform direction
-        let all_ascending = order_by[0].options.asc.unwrap_or(true);
+    ) -> PolarsResult<(Vec<Expr>, SortOptions)> {
+        let Some(first) = order_by.first() else {
+            return Ok((Vec::new(), SortOptions::default()));
+        };
+        // TODO: per-key sort options are not currently supported; we need to
+        //  enhance `over_with_options` to take SortMultipleOptions
+        let sort_options = order_by_sort_options(&first.options);
         let mut exprs = Vec::with_capacity(order_by.len());
         for o in order_by {
-            if all_ascending != o.options.asc.unwrap_or(true) {
-                // TODO: mixed sort directions are not currently supported; we
-                //  need to enhance `over_with_options` to take SortMultipleOptions
+            let options = order_by_sort_options(&o.options);
+            if options.descending != sort_options.descending {
                 polars_bail!(
                     SQLSyntax:
                     "OVER does not (yet) support mixed asc/desc directions for ORDER BY"
                 )
             }
-            let expr = parse_sql_expr(&o.expr, self.ctx, self.active_schema)?;
-            exprs.push(expr);
+            if options.nulls_last != sort_options.nulls_last {
+                polars_bail!(
+                    SQLSyntax:
+                    "OVER does not (yet) support mixed NULLS FIRST/LAST ordering for ORDER BY"
+                )
+            }
+            exprs.push(parse_sql_expr(&o.expr, self.ctx, self.active_schema)?);
         }
-        Ok((exprs, !all_ascending))
+        Ok((exprs, sort_options))
     }
 
     fn apply_window_spec(
@@ -2598,8 +2594,7 @@ impl SQLFunctionVisitor<'_> {
         let order_by = if window_spec.order_by.is_empty() {
             None
         } else {
-            let (order_exprs, all_desc) = self.parse_order_by_in_window(&window_spec.order_by)?;
-            let sort_opts = SortOptions::default().with_order_descending(all_desc);
+            let (order_exprs, sort_opts) = self.parse_order_by_in_window(&window_spec.order_by)?;
             Some((order_exprs, sort_opts))
         };
 
