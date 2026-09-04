@@ -1271,13 +1271,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
-              back to ``"in-memory"`` if unset (this default may change in
-              a future release).
-            * ``"in-memory"``: use the in-memory engine, this is the default engine.
+              back to ``"streaming"`` if unset.
+            * ``"in-memory"``: use the in-memory engine.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control (e.g. device selection on multi-GPU systems).
@@ -1417,13 +1415,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
-              back to ``"in-memory"`` if unset (this default may change in
-              a future release).
-            * ``"in-memory"``: use the in-memory engine, this is the default engine.
+              back to ``"streaming"`` if unset.
+            * ``"in-memory"``: use the in-memory engine.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control (e.g. device selection on multi-GPU systems).
@@ -2048,11 +2044,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable. Otherwise
               defaults to the streaming engine.
-            * ``"in-memory"``: use the in-memory engine, this is the default engine.
+            * ``"in-memory"``: use the in-memory engine.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control (e.g. device selection on multi-GPU systems).
@@ -2236,11 +2231,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable. Otherwise
               defaults to the streaming engine..
-            * ``"in-memory"``: use the in-memory engine, this is the default engine.
+            * ``"in-memory"``: use the in-memory engine.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control (e.g. device selection on multi-GPU
@@ -2548,12 +2542,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
               back to ``"streaming"`` if unset.
-            * ``"in-memory"``: use the in-memory engine before writing,
-              this is the default engine.
+            * ``"in-memory"``: use the in-memory engine before writing.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control.
@@ -2718,12 +2710,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
               back to ``"streaming"`` if unset.
-            * ``"in-memory"``: use the in-memory engine before writing,
-              this is the default engine.
+            * ``"in-memory"``: use the in-memory engine before writing.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control.
@@ -3212,12 +3202,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
               back to ``"streaming"`` if unset.
-            * ``"in-memory"``: use the in-memory engine before writing,
-              this is the default engine.
+            * ``"in-memory"``: use the in-memory engine before writing.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: not currently supported for this sink.
 
             If the selected engine cannot run the query, Polars falls back to
@@ -3543,12 +3531,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
               back to ``"streaming"`` if unset.
-            * ``"in-memory"``: use the in-memory engine before writing,
-              this is the default engine.
+            * ``"in-memory"``: use the in-memory engine before writing.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control.
@@ -3779,12 +3765,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
               back to ``"streaming"`` if unset.
-            * ``"in-memory"``: use the in-memory engine before writing,
-              this is the default engine.
+            * ``"in-memory"``: use the in-memory engine before writing.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control.
@@ -3913,12 +3897,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
               back to ``"streaming"`` if unset.
-            * ``"in-memory"``: use the in-memory engine before writing,
-              this is the default engine.
+            * ``"in-memory"``: use the in-memory engine before writing.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control.
@@ -3990,12 +3972,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
               back to ``"streaming"`` if unset.
-            * ``"in-memory"``: use the in-memory engine before writing,
-              this is the default engine.
+            * ``"in-memory"``: use the in-memory engine before writing.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control.

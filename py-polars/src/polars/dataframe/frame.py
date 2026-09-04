@@ -2923,8 +2923,7 @@ class DataFrame:
         else:
             target = file
 
-        engine: EngineType = "in-memory"
-
+        from polars.lazyframe.engine_config import _eager_engine
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         self.lazy().sink_ndjson(
@@ -2933,7 +2932,7 @@ class DataFrame:
             compression_level=compression_level,
             check_extension=check_extension,
             optimizations=QueryOptFlags._eager(),
-            engine=engine,
+            engine=_eager_engine(),
         )
 
         if should_return_buffer:
@@ -3166,8 +3165,7 @@ class DataFrame:
         else:
             target = file
 
-        engine: EngineType = "in-memory"
-
+        from polars.lazyframe.engine_config import _eager_engine
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         self.lazy().sink_csv(
@@ -3192,7 +3190,7 @@ class DataFrame:
             storage_options=storage_options,
             credential_provider=credential_provider,
             optimizations=QueryOptFlags._eager(),
-            engine=engine,
+            engine=_eager_engine(),
         )
 
         if should_return_buffer:
