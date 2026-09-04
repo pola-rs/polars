@@ -1,5 +1,6 @@
 use arrow::compute::concatenate::concatenate_validities;
 use polars_core::prelude::*;
+use polars_core::with_match_physical_integer_polars_type;
 
 use crate::series::{SearchSortedSide, search_sorted};
 
@@ -25,6 +26,138 @@ fn bins_from_breaks(s: &Series, breaks: &Series, right_closed: bool) -> PolarsRe
     Ok(search_sorted(breaks, s, side, false)?
         .with_name(s.name().clone())
         .with_validity(concatenate_validities(s.chunks())))
+}
+
+/// Measure and apply an offset in the unsigned domain so full-width signed spans do not
+/// overflow.
+trait BinWidth: Copy {
+    /// `self - min`, non-negative because `self` is the column's max.
+    fn span_from(self, min: Self) -> u128;
+    /// `self + offset`, where `offset` lies within the span and so cannot overflow, nor
+    /// lose anything on the way back down to this width.
+    fn offset_by(self, offset: u128) -> Self;
+}
+
+macro_rules! impl_bin_width {
+    (signed: $($t:ty),* $(,)?) => {
+        $(
+            impl BinWidth for $t {
+                fn span_from(self, min: Self) -> u128 {
+                    self.cast_unsigned().wrapping_sub(min.cast_unsigned()).into()
+                }
+                fn offset_by(self, offset: u128) -> Self {
+                    self.cast_unsigned().wrapping_add(offset as _).cast_signed()
+                }
+            }
+        )*
+    };
+    (unsigned: $($t:ty),* $(,)?) => {
+        $(
+            impl BinWidth for $t {
+                fn span_from(self, min: Self) -> u128 {
+                    self.wrapping_sub(min).into()
+                }
+                fn offset_by(self, offset: u128) -> Self {
+                    self.wrapping_add(offset as _)
+                }
+            }
+        )*
+    };
+}
+
+impl_bin_width!(signed: i8, i16, i32, i64, i128);
+impl_bin_width!(unsigned: u8, u16, u32, u64, u128);
+
+/// Offsets from `min` of the `n_bins - 1` thresholds of equal-width bins over a span.
+///
+/// The exact breakpoint `i * span / n_bins` need not be an integer. For left-closed bins
+/// the equivalent threshold is its ceiling; for right-closed bins it is its floor. So
+/// carry the division as a quotient plus a running remainder: `offset` is the floor and
+/// `error` is the numerator of the fraction still owed, which is non-zero exactly when
+/// the ceiling is one higher.
+fn uniform_threshold_offsets(
+    span: u128,
+    n_bins: usize,
+    right_closed: bool,
+) -> impl Iterator<Item = u128> {
+    let n = n_bins as u128;
+    let (step, remainder) = (span / n, span % n);
+    let mut offset = 0;
+    let mut error = 0;
+
+    (1..n_bins).map(move |_| {
+        offset += step;
+        error += remainder;
+        if error >= n {
+            offset += 1;
+            error -= n;
+        }
+
+        let round_up = !right_closed && error != 0;
+        offset + u128::from(round_up)
+    })
+}
+
+/// Representable thresholds for equal-width bins over `[min, max]`, in `N`'s own width.
+fn uniform_integer_thresholds<N: BinWidth>(
+    min: N,
+    max: N,
+    n_bins: usize,
+    right_closed: bool,
+) -> Vec<N> {
+    uniform_threshold_offsets(max.span_from(min), n_bins, right_closed)
+        .map(|offset| min.offset_by(offset))
+        .collect()
+}
+
+/// Equal-width breakpoints `min + (i + 1)/n_bins * (max - min)` for `0 <= i < n_bins - 1`,
+/// in the input dtype, or `None` when the column has no usable `min`/`max`.
+///
+/// Floats go through `f64` and are narrowed back afterwards; integers and `Decimal` (via
+/// its `Int128` physical) use [`uniform_integer_thresholds`].
+fn uniform_interval_breaks(
+    s: &Series,
+    n_bins: usize,
+    right_closed: bool,
+) -> PolarsResult<Option<Series>> {
+    let n_breaks = n_bins - 1;
+    let dtype = s.dtype();
+
+    if dtype.is_float() {
+        let f = s.cast(&DataType::Float64)?;
+        let Some((min, max)) = f.f64()?.min_max() else {
+            return Ok(None);
+        };
+        let breaks: Vec<f64> = (1..=n_breaks)
+            .map(|i| {
+                let t = i as f64 / n_bins as f64;
+                min * (1.0 - t) + max * t
+            })
+            .collect();
+        return Float64Chunked::from_vec(s.name().clone(), breaks)
+            .into_series()
+            .cast(dtype)
+            .map(Some);
+    }
+
+    let phys = s.to_physical_repr();
+    let phys: &Series = phys.as_ref();
+    let breaks = with_match_physical_integer_polars_type!(phys.dtype(), |$T| {
+        let ca: &ChunkedArray<$T> = phys.as_ref().as_ref();
+        let Some((min, max)) = ca.min_max() else {
+            return Ok(None);
+        };
+        ChunkedArray::<$T>::from_vec(
+            s.name().clone(),
+            uniform_integer_thresholds(min, max, n_bins, right_closed),
+        )
+        .into_series()
+    });
+
+    // Reattach the logical dtype: a no-op for plain integers, and restores the precision
+    // and scale for `Decimal`, whose breakpoints were computed on its i128 mantissas.
+    // SAFETY: the values came out of the column's own physical range.
+    unsafe { breaks.from_physical_unchecked(dtype) }.map(Some)
 }
 
 /// Turn a column of bin indices into the final output.
