@@ -1,3 +1,4 @@
+use polars_array::ArrayRepr;
 use polars_buffer::Buffer;
 use polars_error::feature_gated;
 
@@ -15,21 +16,17 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
     let chunks = ca.downcast_iter().map(|array| {
         let length = array.len();
         // The values are handed over as they are, so a scalar chunk stays one value.
-        let out = if let Some(buf) = array.flat_values() {
-            PlPrimitiveArray::new(
+        let out = match array.values_repr() {
+            ArrayRepr::Flat(buf) => PlPrimitiveArray::new(
                 Buffer::try_transmute::<U::Native>(buf.clone()).unwrap(),
                 length,
                 None,
-            )
-        } else if let Some(value) = array.scalar_values() {
-            PlPrimitiveArray::new_broadcast(
+            ),
+            ArrayRepr::Scalar(value) => PlPrimitiveArray::new_broadcast(
                 Buffer::try_transmute::<U::Native>(Buffer::from(vec![value])).unwrap(),
                 length,
                 None,
-            )
-        } else {
-            // An empty array over a scalar buffer has no value to share.
-            PlPrimitiveArray::new_empty()
+            ),
         };
         out.with_validity_broadcast(array.validity().map(|v| v.to_flat_or_scalar()))
     });
@@ -256,5 +253,30 @@ impl Float64Chunked {
         let out = f(&s);
         let out = out.u64().unwrap();
         out._reinterpret_float().into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::prelude::*;
+    use crate::series::BitRepr;
+
+    /// An empty chunk is flat over an empty buffer, and a scalar chunk over a single slot: both
+    /// are reinterpreted through the buffer they hold, with no third case to fall through to.
+    #[test]
+    fn reinterpreting_empty_and_scalar_chunks() {
+        let empty = Int64Chunked::from_slice(PlSmallStr::from_static("a"), &[]);
+        let BitRepr::U64(out) = empty.to_bit_repr() else {
+            panic!("an i64 reinterprets as a u64")
+        };
+        assert_eq!(out.len(), 0);
+
+        let scalar = Int64Chunked::full(PlSmallStr::from_static("a"), -1, 5);
+        let BitRepr::U64(out) = scalar.to_bit_repr() else {
+            panic!("an i64 reinterprets as a u64")
+        };
+        assert_eq!(out.len(), 5);
+        assert_eq!(out.get(0), Some(u64::MAX));
+        assert!(out.downcast_iter().all(|arr| arr.values_are_scalar()));
     }
 }

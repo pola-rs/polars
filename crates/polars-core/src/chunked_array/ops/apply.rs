@@ -213,29 +213,22 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
         // SAFETY, we do no t change the lengths
         unsafe {
             self.downcast_iter_mut().for_each(|arr| {
-                // Each chunk is mapped in whatever representation it is in: a scalar values
-                // buffer holds one value standing for every element, which stays a single value.
-                if let Some(values) = arr.flat_values_mut() {
-                    match values.get_mut_slice() {
-                        Some(slice) => slice.iter_mut().for_each(|v| *v = f(*v)),
-                        // The buffer is shared with another array, so it cannot be written over.
-                        None => {
-                            *values = values
-                                .as_slice()
-                                .iter()
-                                .copied()
-                                .map(f)
-                                .collect::<Vec<_>>()
-                                .into()
-                        },
-                    }
-                } else {
-                    let value = arr
-                        .scalar_values()
-                        .expect("values buffer should be one of flat or scalar");
-                    let validity = arr.validity().map(|v| v.to_flat_or_scalar());
-                    *arr = PlPrimitiveArray::new_scalar(f(value), arr.len())
-                        .with_validity_broadcast(validity);
+                // Each chunk is mapped in whatever representation it is in: mapping the slots a
+                // buffer holds leaves it in that representation, so a scalar values buffer has
+                // its one value mapped once and it still stands for every element.
+                let values = arr.values_repr_mut().into_inner();
+                match values.get_mut_slice() {
+                    Some(slice) => slice.iter_mut().for_each(|v| *v = f(*v)),
+                    // The buffer is shared with another array, so it cannot be written over.
+                    None => {
+                        *values = values
+                            .as_slice()
+                            .iter()
+                            .copied()
+                            .map(f)
+                            .collect::<Vec<_>>()
+                            .into()
+                    },
                 }
             })
         };

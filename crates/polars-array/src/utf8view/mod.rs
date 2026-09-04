@@ -12,6 +12,7 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::binview::PlBinaryViewArray;
 use crate::bitmap::PlBitmapRef;
+use crate::broadcast::ArrayRepr;
 use crate::flat::Flat;
 
 mod builder;
@@ -200,10 +201,35 @@ impl PlUtf8ViewArray {
         self.0.total_bytes_len()
     }
 
+    /// Which representation the backing views buffer is in — see
+    /// [`PlBinaryViewArray::views_repr`].
+    #[inline]
+    pub fn views_repr(&self) -> ArrayRepr<&Buffer<View>, View> {
+        self.0.views_repr()
+    }
+
     /// The views of this array, which index its data buffers.
     #[inline]
     pub fn flat_views(&self) -> Option<&Buffer<View>> {
         self.0.flat_views()
+    }
+
+    /// The view every element of this array reads, if the views buffer holds a single slot.
+    #[inline]
+    pub fn scalar_views(&self) -> Option<View> {
+        self.0.scalar_views()
+    }
+
+    /// Whether the views buffer holds a single view shared by every element.
+    #[inline]
+    pub fn views_are_scalar(&self) -> bool {
+        self.0.views_are_scalar()
+    }
+
+    /// Whether the views buffer holds one slot per element.
+    #[inline]
+    pub fn views_are_flat(&self) -> bool {
+        self.0.views_are_flat()
     }
 
     /// The data buffers the views of this array point into.

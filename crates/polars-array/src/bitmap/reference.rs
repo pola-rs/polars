@@ -5,7 +5,7 @@ use polars_error::{PolarsResult, polars_ensure};
 
 use crate::bitmap::PlBitmapIter;
 use crate::broadcast::{
-    assert_broadcastable, broadcast_index, is_flat_buffer_len, is_valid_buffer_len,
+    ArrayRepr, assert_broadcastable, broadcast_index, is_flat_buffer_len, is_valid_buffer_len,
     normalize_bitmap_ref,
 };
 
@@ -106,10 +106,21 @@ impl<'a> PlBitmapRef<'a> {
         self.length == 0
     }
 
+    /// Which representation the backing bitmap is in, along with what it holds.
+    #[inline]
+    pub fn repr(&self) -> ArrayRepr<&'a Bitmap, bool> {
+        if self.is_scalar() {
+            // SAFETY: the bitmap holds a single bit, so bit 0 is in bounds.
+            ArrayRepr::Scalar(unsafe { self.bitmap.get_bit_unchecked(0) })
+        } else {
+            ArrayRepr::Flat(self.bitmap)
+        }
+    }
+
     /// The backing bitmap, if it holds one bit per element.
     #[inline]
     pub fn flat_bitmap(&self) -> Option<&'a Bitmap> {
-        self.is_flat().then_some(self.bitmap)
+        self.repr().flat()
     }
 
     /// Returns the backing bitmap and the logical length of this mask.
@@ -119,9 +130,12 @@ impl<'a> PlBitmapRef<'a> {
     }
 
     /// Whether the backing bitmap holds a single bit shared by every element.
+    ///
+    /// A mask over no elements holds no such bit: it keeps the empty bitmap in place of the one
+    /// bit a scalar bitmap would, and is flat.
     #[inline]
     pub fn is_scalar(&self) -> bool {
-        self.bitmap.len() == 1
+        self.bitmap.len() == 1 && self.length > 0
     }
 
     /// Whether the backing bitmap holds one bit per element.
@@ -133,7 +147,7 @@ impl<'a> PlBitmapRef<'a> {
     /// The bit shared by every element, if the backing bitmap holds a single bit.
     #[inline]
     pub fn scalar_value(&self) -> Option<bool> {
-        (self.bitmap.len() == 1 && self.length > 0).then(|| self.bitmap.get_bit(0))
+        self.repr().scalar()
     }
 
     /// Returns the bit at `i`.

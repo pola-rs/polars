@@ -29,7 +29,7 @@ use polars_array::{
 use polars_utils::IdxSize;
 
 use crate::cast::CastOptionsImpl;
-use crate::nesting::{covered_range, downcast, fsl_values};
+use crate::nesting::{covered_range, downcast};
 
 /// Appends the indices of the elements `left` and `right` disagree about being null.
 ///
@@ -175,8 +175,8 @@ fn find_validity_mismatch_fsl_fsl(
     let right = right.to_flat();
 
     find_validity_mismatch_nested(
-        fsl_values(left.as_array()),
-        fsl_values(right.as_array()),
+        left.as_array().values(),
+        right.as_array().values(),
         width,
         idxs,
     )
@@ -222,7 +222,7 @@ fn find_validity_mismatch_list_fsl(
 
         find_validity_mismatch_nested(
             left.as_array().values(),
-            fsl_values(right),
+            right.values(),
             right.width(),
             idxs,
         );
@@ -246,5 +246,5 @@ fn find_validity_mismatch_list_fsl(
     .unwrap();
     let left = from_arrow(left.values().as_ref());
 
-    find_validity_mismatch_nested(&*left, fsl_values(right), right.width(), idxs)
+    find_validity_mismatch_nested(&*left, right.values(), right.width(), idxs)
 }

@@ -22,11 +22,12 @@ use arrow::bitmap::BitmapBuilder;
 use arrow::bitmap::bitmask::BitMask;
 use polars_array::bitmap::combine_validities_and;
 use polars_array::{
-    PlArray, PlArrayType, PlBitmap, PlBitmapRef, PlFixedSizeListArray, PlListArray, PlStructArray,
+    ArrayRepr, PlArray, PlArrayType, PlBitmap, PlBitmapRef, PlFixedSizeListArray, PlListArray,
+    PlStructArray,
 };
 
 use crate::nesting::{
-    covered_range, downcast, fsl_values, fsl_with_values, list_with_values, struct_with_fields,
+    covered_range, downcast, fsl_with_values, list_with_values, struct_with_fields,
     with_pl_validity,
 };
 
@@ -108,7 +109,7 @@ pub fn propagate_nulls_list(array: &PlListArray) -> Option<PlListArray> {
 
 /// Pushes the nulls of `array` down onto the values its null elements cover.
 pub fn propagate_nulls_fsl(array: &PlFixedSizeListArray) -> Option<PlFixedSizeListArray> {
-    let values = fsl_values(array);
+    let values = array.values();
 
     let Some(validity) = nulls(array.validity()) else {
         let values = propagate_nulls(values)?;
@@ -255,34 +256,26 @@ fn extend_from_validity(mask: &mut BitmapBuilder, validity: Option<PlBitmapRef<'
         .checked_sub(offset)
         .expect("the ranges a null is pushed down onto are ordered and do not overlap");
 
-    match validity.map(|validity| (validity, validity.scalar_value())) {
+    match validity.map(|validity| validity.repr()) {
         // Nothing to read: an absent mask says every value is valid, and a single bit says the same
         // of every value in turn.
         None => mask.extend_constant(length, true),
-        Some((_, Some(value))) => mask.extend_constant(length, value),
-        Some((validity, None)) => mask.subslice_extend_from_bitmap(
-            validity
-                .flat_bitmap()
-                .expect("a mask that is not scalar is flat"),
-            offset,
-            length,
-        ),
+        Some(ArrayRepr::Scalar(value)) => mask.extend_constant(length, value),
+        Some(ArrayRepr::Flat(validity)) => {
+            mask.subslice_extend_from_bitmap(validity, offset, length)
+        },
     }
 }
 
 /// The number of values in `range` that `validity` says are not null.
 fn set_bits_in(validity: Option<PlBitmapRef<'_>>, range: Range<usize>) -> usize {
-    match validity.map(|validity| (validity, validity.scalar_value())) {
+    match validity.map(|validity| validity.repr()) {
         None => range.len(),
         // A single bit says the same of every value, so there is nothing to count.
-        Some((_, Some(value))) => range.len() * usize::from(value),
-        Some((validity, None)) => BitMask::from_bitmap(
-            validity
-                .flat_bitmap()
-                .expect("a mask that is not scalar is flat"),
-        )
-        .sliced(range.start, range.len())
-        .set_bits(),
+        Some(ArrayRepr::Scalar(value)) => range.len() * usize::from(value),
+        Some(ArrayRepr::Flat(validity)) => BitMask::from_bitmap(validity)
+            .sliced(range.start, range.len())
+            .set_bits(),
     }
 }
 

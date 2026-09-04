@@ -5,25 +5,8 @@ use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
 use either::Either;
 use num_traits::ToPrimitive;
-use polars_array::PlPrimitiveArray;
+use polars_array::{ArrayRepr, PlPrimitiveArray};
 use polars_utils::IdxSize;
-
-/// The value every index gathers, where the values buffer holds a single slot.
-///
-/// A buffer of one slot is what an array of one element holds too, and reading it as the value it
-/// repeats is right either way.
-#[inline]
-pub(super) fn repeated_value<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Option<T> {
-    arr.scalar_values()
-}
-
-/// The values buffer of `arr`, which holds one slot per element because it is not scalar.
-#[inline]
-pub(super) fn flat_values<T: NativeType>(arr: &PlPrimitiveArray<T>) -> &[T] {
-    arr.flat_values()
-        .expect("a values buffer that is not scalar holds one slot per element")
-        .as_slice()
-}
 
 /// The mask of `arr` as one bit per element, or [`None`] where every element is null.
 ///
@@ -50,18 +33,15 @@ pub unsafe fn take_agg_no_null_primitive_iter_unchecked<
 ) -> impl Iterator<Item = T> {
     debug_assert!(arr.null_count() == 0);
 
-    match repeated_value(arr) {
+    match arr.values_repr() {
         // Every index gathers the one value the buffer holds, so it is read once here rather than
         // through the buffer once per index.
-        Some(value) => Either::Left(indices.into_iter().map(move |_| value)),
-        None => {
-            let values = flat_values(arr);
-            Either::Right(
-                indices
-                    .into_iter()
-                    .map(|idx| unsafe { *values.get_unchecked(idx) }),
-            )
-        },
+        ArrayRepr::Scalar(value) => Either::Left(indices.into_iter().map(move |_| value)),
+        ArrayRepr::Flat(values) => Either::Right(
+            indices
+                .into_iter()
+                .map(|idx| unsafe { *values.get_unchecked(idx) }),
+        ),
     }
 }
 
@@ -79,22 +59,19 @@ pub unsafe fn take_agg_primitive_iter_unchecked<T: NativeType, I: IntoIterator<I
         return Either::Left(std::iter::empty());
     };
 
-    match repeated_value(arr) {
-        Some(value) => Either::Right(Either::Left(
+    match arr.values_repr() {
+        ArrayRepr::Scalar(value) => Either::Right(Either::Left(
             indices
                 .into_iter()
                 .filter(move |&idx| unsafe { validity.get_bit_unchecked(idx) })
                 .map(move |_| value),
         )),
-        None => {
-            let values = flat_values(arr);
-            Either::Right(Either::Right(
-                indices
-                    .into_iter()
-                    .filter(|&idx| unsafe { validity.get_bit_unchecked(idx) })
-                    .map(|idx| unsafe { *values.get_unchecked(idx) }),
-            ))
-        },
+        ArrayRepr::Flat(values) => Either::Right(Either::Right(
+            indices
+                .into_iter()
+                .filter(|&idx| unsafe { validity.get_bit_unchecked(idx) })
+                .map(|idx| unsafe { *values.get_unchecked(idx) }),
+        )),
     }
 }
 
@@ -122,17 +99,15 @@ pub unsafe fn take_agg_primitive_iter_unchecked_count_nulls<
         return None;
     };
 
-    let repeated = repeated_value(arr);
-    let values = repeated.is_none().then(|| flat_values(arr));
+    let values = arr.values_repr();
 
     let mut null_count = 0 as IdxSize;
     let out = indices.into_iter().fold(init, |acc, idx| {
         if unsafe { validity.get_bit_unchecked(idx) } {
-            // One of the two is there, per `repeated_value`.
-            let value = match (repeated, values) {
-                (Some(value), _) => value,
-                (None, Some(values)) => unsafe { *values.get_unchecked(idx) },
-                (None, None) => unreachable!("the values of an array are flat or scalar"),
+            let value = match values {
+                // Every index gathers the one value the buffer holds.
+                ArrayRepr::Scalar(value) => value,
+                ArrayRepr::Flat(values) => unsafe { *values.get_unchecked(idx) },
             };
             f(acc, value)
         } else {

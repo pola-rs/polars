@@ -4,7 +4,8 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{PolarsResult, polars_ensure};
 
 use crate::broadcast::{
-    is_flat_buffer_len, is_valid_buffer_len, normalize_bitmap, scalar_buffer_len, slice_bitmap,
+    ArrayRepr, is_flat_buffer_len, is_valid_buffer_len, normalize_bitmap, scalar_buffer_len,
+    slice_bitmap,
 };
 
 mod iterator;
@@ -139,10 +140,17 @@ impl PlBitmap {
         self.length == 0
     }
 
+    /// Which representation the backing bitmap is in, along with what it holds.
+    #[inline]
+    pub fn repr(&self) -> ArrayRepr<&Bitmap, bool> {
+        // The reference borrows the bitmap this mask owns, so its `Flat` arm outlives it.
+        self.as_ref().repr()
+    }
+
     /// The backing bitmap, if it holds one bit per element.
     #[inline]
     pub fn flat_bitmap(&self) -> Option<&Bitmap> {
-        self.is_flat().then_some(&self.bitmap)
+        self.repr().flat()
     }
 
     /// Borrows this mask as a [`PlBitmapRef`].
@@ -159,9 +167,12 @@ impl PlBitmap {
     }
 
     /// Whether the backing bitmap holds a single bit shared by every element.
+    ///
+    /// A mask over no elements holds no such bit: it keeps the empty bitmap in place of the one
+    /// bit a scalar bitmap would, and is flat.
     #[inline]
     pub fn is_scalar(&self) -> bool {
-        self.bitmap.len() == 1
+        self.bitmap.len() == 1 && self.length > 0
     }
 
     /// Whether the backing bitmap holds one bit per element.
@@ -173,7 +184,7 @@ impl PlBitmap {
     /// The bit shared by every element, if the backing bitmap holds a single bit.
     #[inline]
     pub fn scalar_value(&self) -> Option<bool> {
-        self.as_ref().scalar_value()
+        self.repr().scalar()
     }
 
     /// Returns the bit at `i`.

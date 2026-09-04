@@ -1,3 +1,4 @@
+use polars_array::ArrayRepr;
 use polars_compute::min_max::MinMaxKernel;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -25,26 +26,31 @@ where
     F1: Fn(&[T]) -> Option<S>,
     F2: Fn(&PlPrimitiveArray<T>) -> Option<S>,
 {
-    // Every row is the same `width` copies of the one value, and so reduces to it — as does the
-    // answer, which repeats a single value in turn.
-    if let Some(value) = values.scalar_values().filter(|_| !values.has_nulls()) {
-        let reduced = slice_agg(&[value]).expect("a row of one value reduces to that value");
-        return PlPrimitiveArray::new_scalar(reduced, values.len() / width);
+    // Without a null anywhere the rows are read straight out of the values buffer, in whichever
+    // representation it is in.
+    if !values.has_nulls() {
+        return match values.values_repr() {
+            // Every row is the same `width` copies of the one value, and so reduces to it — as
+            // does the answer, which repeats a single value in turn.
+            ArrayRepr::Scalar(value) => {
+                let reduced =
+                    slice_agg(&[value]).expect("a row of one value reduces to that value");
+                PlPrimitiveArray::new_scalar(reduced, values.len() / width)
+            },
+            // The rows are runs of the values buffer, which the kernel that reads a slice reduces
+            // without a validity mask to consult.
+            ArrayRepr::Flat(flat) => flat
+                .as_slice()
+                .chunks_exact(width)
+                .map(|sl| slice_agg(sl).unwrap())
+                .collect_arr(),
+        };
     }
 
-    match values.flat_values().filter(|_| !values.has_nulls()) {
-        // Without a null anywhere, the rows are runs of the values buffer, which the kernel that
-        // reads a slice reduces without a validity mask to consult.
-        Some(flat) => flat
-            .as_slice()
-            .chunks_exact(width)
-            .map(|sl| slice_agg(sl).unwrap())
-            .collect_arr(),
-        None => (0..values.len())
-            .step_by(width)
-            .map(|start| arr_agg(&values.clone().sliced(start, width)))
-            .collect_arr(),
-    }
+    (0..values.len())
+        .step_by(width)
+        .map(|start| arr_agg(&values.clone().sliced(start, width)))
+        .collect_arr()
 }
 
 pub(super) enum AggType {

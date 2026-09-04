@@ -8,9 +8,9 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
 use crate::broadcast::{
-    assert_broadcastable, is_flat_buffer_len, is_flat_fixed_size_values_len, is_scalar_buffer_len,
-    is_scalar_fixed_size_values_len, is_valid_buffer_len, normalize_validity, normalize_values,
-    scalar_buffer_len, slice_fixed_size_values, slice_validity,
+    ArrayRepr, assert_broadcastable, is_flat_buffer_len, is_flat_fixed_size_values_len,
+    is_scalar_buffer_len, is_scalar_fixed_size_values_len, is_valid_buffer_len, normalize_validity,
+    normalize_values, scalar_buffer_len, slice_fixed_size_values, slice_validity,
 };
 use crate::concatenate::concatenate_repeated;
 use crate::flat::Flat;
@@ -294,17 +294,32 @@ impl PlFixedSizeListArray {
         &*self.values
     }
 
+    /// Which representation the backing values array is in.
+    ///
+    /// Both arms hold the values array itself, which is read the same way either way: a caller
+    /// that does not care which representation it is in wants [`Self::values`] instead. The two
+    /// differ in what the array holds — the `length * width` values of every element laid end to
+    /// end, against the `width` values of the one element every element of this array reads.
+    #[inline]
+    pub fn values_repr(&self) -> ArrayRepr<&dyn PlArray> {
+        if self.values_are_scalar() {
+            ArrayRepr::Scalar(&*self.values)
+        } else {
+            ArrayRepr::Flat(&*self.values)
+        }
+    }
+
     /// The values array the lists are taken over, if it holds the values of every element, laid end
     /// to end.
     #[inline]
     pub fn flat_values(&self) -> Option<&dyn PlArray> {
-        self.values_are_flat().then_some(&*self.values)
+        self.values_repr().flat()
     }
 
     /// The list every element of this array reads, if the values hold a single element.
     #[inline]
     pub fn scalar_values(&self) -> Option<&dyn PlArray> {
-        self.values_are_scalar().then_some(&*self.values)
+        self.values_repr().scalar()
     }
 
     /// Consumes this array into its internal components.

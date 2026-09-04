@@ -221,11 +221,8 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlFixedSizeListArrayBuilder<B> {
         self.assert_width(other);
         self.values.reserve(idxs.len() * self.width);
 
-        // The values are either flat or scalar, and the ranges below index them either way.
-        let values = other
-            .flat_values()
-            .or_else(|| other.scalar_values())
-            .expect("the values of a fixed size list array are either flat or scalar");
+        // The ranges below index the values in either representation.
+        let values = other.values();
 
         for idx in idxs {
             let idx = *idx as usize;

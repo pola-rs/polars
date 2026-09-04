@@ -2,7 +2,7 @@
 
 use arrow::with_match_primitive_type_full;
 use polars_array::{
-    PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmapRef, PlBooleanArray,
+    ArrayRepr, PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmapRef, PlBooleanArray,
     PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray, PlPrimitiveArray, PlStructArray,
     PlUtf8ViewArray,
 };
@@ -11,16 +11,11 @@ use polars_array::{
 pub fn binary_size_bytes(array: &PlBinaryViewArray) -> PlPrimitiveArray<u32> {
     // A scalar views buffer holds the one view every element reads: its length is measured once
     // and repeated in turn, in `O(1)` memory.
-    let lengths = match array.scalar_views() {
-        Some(view) => PlPrimitiveArray::new_scalar(view.length, array.len()),
-        None => PlPrimitiveArray::from_vec(
-            array
-                .flat_views()
-                .expect("a views buffer that is not scalar is flat")
-                .iter()
-                .map(|view| view.length)
-                .collect(),
-        ),
+    let lengths = match array.views_repr() {
+        ArrayRepr::Scalar(view) => PlPrimitiveArray::new_scalar(view.length, array.len()),
+        ArrayRepr::Flat(views) => {
+            PlPrimitiveArray::from_vec(views.iter().map(|view| view.length).collect())
+        },
     };
 
     lengths.with_validity_broadcast(
@@ -61,11 +56,9 @@ fn downcast<A: PlArray>(array: &dyn PlArray) -> &A {
 /// would overestimate what this array costs and spill data that did not need spilling. A views
 /// buffer of a single slot covers its bytes once, however many elements read it.
 fn viewed_bytes(array: &PlBinaryViewArray) -> usize {
-    match array.scalar_views() {
-        Some(view) => view.length as usize,
-        None => array.flat_views().map_or(0, |views| {
-            views.iter().map(|view| view.length as usize).sum()
-        }),
+    match array.views_repr() {
+        ArrayRepr::Scalar(view) => view.length as usize,
+        ArrayRepr::Flat(views) => views.iter().map(|view| view.length as usize).sum(),
     }
 }
 
@@ -125,9 +118,11 @@ pub fn estimated_bytes_size(array: &dyn PlArray) -> usize {
         A::Utf8View => viewed_bytes(downcast::<PlUtf8ViewArray>(array).as_binview()),
         A::FixedSizeBinary => {
             let array = downcast::<PlFixedSizeBinaryArray>(array);
-            let bytes = match array.scalar_values() {
-                Some(values) => values.len(),
-                None => array.flat_values().map_or(0, |values| values.len()),
+            let bytes = match array.values_repr() {
+                // The bytes of the one element every element reads.
+                ArrayRepr::Scalar(value) => value.len(),
+                // The bytes of every element, laid end to end.
+                ArrayRepr::Flat(values) => values.len(),
             };
             bytes + validity_size(array.validity())
         },

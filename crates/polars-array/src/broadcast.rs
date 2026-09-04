@@ -19,6 +19,61 @@ use polars_utils::slice_broadcast_iter::SliceBroadcastIter;
 
 use crate::array::PlArray;
 
+/// Which representation a backing buffer is in, along with what it holds.
+///
+/// Every buffer of every array of this crate is in one of these two, and no other: the
+/// `is_valid_*_len` predicates of this module admit no third length, and the `normalize_*`
+/// functions keep an array of no elements from holding the single slot a scalar buffer would.
+/// A `_repr` accessor therefore resolves a buffer *totally*, where the `flat_*` and `scalar_*`
+/// accessors it is spelled in terms of each leave the caller to rule the other one out.
+///
+/// A buffer of a single slot for an array of a single element is both flat and scalar. Such a
+/// buffer resolves to [`Scalar`](ArrayRepr::Scalar), so that matching `Scalar` is exactly what the
+/// `scalar_*` accessor answers `Some` to, and the `Flat` arm is only ever reached where the
+/// scalar one genuinely cannot stand in for it.
+///
+/// The two arms hold the same type where the buffer's two representations are read the same way —
+/// [`PlFixedSizeListArray::values_repr`](crate::PlFixedSizeListArray::values_repr) is the one such
+/// case — which is what the `S = F` default is for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ArrayRepr<F, S = F> {
+    /// The buffer holds one slot per element.
+    Flat(F),
+    /// The buffer holds the single slot every element of the array reads.
+    Scalar(S),
+}
+
+impl<F, S> ArrayRepr<F, S> {
+    /// What the [`Flat`](ArrayRepr::Flat) arm holds, or `None` if the buffer is scalar.
+    #[inline]
+    pub fn flat(self) -> Option<F> {
+        match self {
+            Self::Flat(flat) => Some(flat),
+            Self::Scalar(_) => None,
+        }
+    }
+
+    /// What the [`Scalar`](ArrayRepr::Scalar) arm holds, or `None` if the buffer is flat.
+    #[inline]
+    pub fn scalar(self) -> Option<S> {
+        match self {
+            Self::Flat(_) => None,
+            Self::Scalar(scalar) => Some(scalar),
+        }
+    }
+}
+
+impl<T> ArrayRepr<T> {
+    /// What either arm holds, where the two hold the same type and the caller does not care which
+    /// representation the buffer is in.
+    #[inline]
+    pub fn into_inner(self) -> T {
+        match self {
+            Self::Flat(inner) | Self::Scalar(inner) => inner,
+        }
+    }
+}
+
 /// Iterates the slots a backing buffer holds for an array of `length` elements, in order.
 ///
 /// # Panics

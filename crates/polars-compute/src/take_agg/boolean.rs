@@ -6,14 +6,7 @@
 //! every index gather that one value, so the walk has nothing to compare and the first index that
 //! gathers anything at all is the answer.
 
-use polars_array::PlBooleanArray;
-
-/// The values bitmap of `arr`, which holds one bit per element because it is not scalar.
-#[inline]
-fn flat_values(arr: &PlBooleanArray) -> &arrow::bitmap::Bitmap {
-    arr.flat_values()
-        .expect("a values bitmap that is not scalar holds one bit per element")
-}
+use polars_array::{ArrayRepr, PlBooleanArray};
 
 /// The position in `indices` of the first index that gathers `extreme`, or of the first that
 /// gathers a non-null value at all.
@@ -38,15 +31,14 @@ unsafe fn take_arg_bool_nulls<I: IntoIterator<Item = usize>>(
         return None;
     }
 
-    match arr.scalar_values() {
+    match arr.values_repr() {
         // Every index gathers the same value, so no index is more extreme than the first one that
         // gathers anything: whether that value is the extreme one or only stands in for it, the
         // answer is the same position.
-        Some(_) => indices
+        ArrayRepr::Scalar(_) => indices
             .into_iter()
             .position(|idx| unsafe { validity.get_unchecked(idx) }),
-        None => {
-            let values = flat_values(arr);
+        ArrayRepr::Flat(values) => {
             let mut first_non_null_pos = None;
 
             for (pos, idx) in indices.into_iter().enumerate() {
@@ -79,11 +71,11 @@ unsafe fn take_arg_bool_no_nulls<I: IntoIterator<Item = usize>>(
 
     // Every index gathers the same value, so position zero is both the first index that gathers
     // the extremum and the fallback for when none does.
-    if arr.scalar_values().is_some() {
-        return Some(0);
-    }
+    let values = match arr.values_repr() {
+        ArrayRepr::Scalar(_) => return Some(0),
+        ArrayRepr::Flat(values) => values,
+    };
 
-    let values = flat_values(arr);
     indices
         .into_iter()
         .position(|idx| unsafe { values.get_bit_unchecked(idx) } == extreme)

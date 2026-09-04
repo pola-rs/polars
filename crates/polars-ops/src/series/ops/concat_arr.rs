@@ -57,12 +57,8 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
                     // what the flatten kernel broadcasts over the output: the row is not written
                     // out once per row of the column to reach it.
                     let chunk = arr.downcast_as_array();
-                    let values = chunk
-                        .flat_values()
-                        .or_else(|| chunk.scalar_values())
-                        .expect("the values of a fixed size list array are flat or scalar");
 
-                    (values.to_boxed(), *width, rows)
+                    (chunk.values().to_boxed(), *width, rows)
                 },
                 dtype => {
                     debug_assert_eq!(dtype, inner_dtype);

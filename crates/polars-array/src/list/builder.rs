@@ -5,6 +5,7 @@ use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 
 use super::PlListArray;
+use crate::broadcast::ArrayRepr;
 use crate::builder::{
     PlArrayBuilder, ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
     opt_gather_extend_validity, subslice_extend_each_repeated_validity, subslice_extend_validity,
@@ -64,15 +65,14 @@ impl<B: PlArrayBuilder> PlListArrayBuilder<B> {
         length: usize,
         share: ShareStrategy,
     ) {
-        let Some(offsets) = other.flat_offsets() else {
-            // The offsets are not flat, so every element covers the same range — which is appended
-            // once per element. An empty array holds no range for the subslice to cover, but the
-            // subslice it admits covers no element either.
-            if let Some(range) = other.scalar_offsets() {
+        let offsets = match other.offsets_repr() {
+            // Every element covers the same range, which is appended once per element.
+            ArrayRepr::Scalar(range) => {
+                let width = range.end - range.start;
                 self.values.subslice_extend_repeated(
                     other.values(),
-                    range.start,
-                    range.len(),
+                    range.start as usize,
+                    width as usize,
                     length,
                     share,
                 );
@@ -80,11 +80,12 @@ impl<B: PlArrayBuilder> PlListArrayBuilder<B> {
                 let mut offset = self.last_offset();
                 self.offsets.reserve(length);
                 for _ in 0..length {
-                    offset += range.len() as u64;
+                    offset += width;
                     self.offsets.push(offset);
                 }
-            }
-            return;
+                return;
+            },
+            ArrayRepr::Flat(offsets) => offsets,
         };
 
         let (first, last) = (offsets[start], offsets[start + length]);

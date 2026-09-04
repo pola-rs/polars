@@ -10,7 +10,7 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
 use crate::broadcast::{
-    assert_broadcastable, broadcast_index, is_flat_buffer_len, is_scalar_buffer_len,
+    ArrayRepr, assert_broadcastable, broadcast_index, is_flat_buffer_len, is_scalar_buffer_len,
     is_valid_buffer_len, normalize_buffer, normalize_validity, scalar_buffer_len, slice_buffer,
     slice_validity,
 };
@@ -293,16 +293,26 @@ impl PlBinaryViewArray {
         self.length == 0
     }
 
+    /// Which representation the backing views buffer is in, along with what it holds.
+    #[inline]
+    pub fn views_repr(&self) -> ArrayRepr<&Buffer<View>, View> {
+        if self.views_are_scalar() {
+            ArrayRepr::Scalar(self.views[0])
+        } else {
+            ArrayRepr::Flat(&self.views)
+        }
+    }
+
     /// The backing views buffer, if it holds one slot per element.
     #[inline]
     pub fn flat_views(&self) -> Option<&Buffer<View>> {
-        self.views_are_flat().then_some(&self.views)
+        self.views_repr().flat()
     }
 
     /// The view every element of this array reads, if the views buffer holds a single slot.
     #[inline]
     pub fn scalar_views(&self) -> Option<View> {
-        (self.views_are_scalar() && self.length > 0).then(|| self.views[0])
+        self.views_repr().scalar()
     }
 
     /// The buffers the views that do not inline their bytes point into.
@@ -321,9 +331,12 @@ impl PlBinaryViewArray {
     }
 
     /// Whether the views buffer holds a single view shared by every element.
+    ///
+    /// An array of no elements holds no such view: it keeps the empty buffer in place of the one
+    /// slot a scalar buffer would, and is flat.
     #[inline]
     pub fn views_are_scalar(&self) -> bool {
-        self.views.len() == 1
+        self.views.len() == 1 && self.length > 0
     }
 
     /// Whether the views buffer holds one slot per element.

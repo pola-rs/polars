@@ -9,7 +9,7 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
 use crate::broadcast::{
-    assert_broadcastable, broadcast_index, is_flat_buffer_len, is_scalar_buffer_len,
+    ArrayRepr, assert_broadcastable, broadcast_index, is_flat_buffer_len, is_scalar_buffer_len,
     is_valid_buffer_len, normalize_buffer, normalize_validity, scalar_buffer_len, slice_buffer,
     slice_validity,
 };
@@ -244,22 +244,46 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         self.length == 0
     }
 
+    /// Which representation the backing values buffer is in, along with what it holds.
+    #[inline]
+    pub fn values_repr(&self) -> ArrayRepr<&Buffer<T>, T> {
+        if self.values_are_scalar() {
+            ArrayRepr::Scalar(self.values[0])
+        } else {
+            ArrayRepr::Flat(&self.values)
+        }
+    }
+
+    /// Which representation the backing values buffer is in, along with the buffer itself.
+    ///
+    /// Writing over the slots a buffer holds leaves it in the representation it is in, so both
+    /// arms hand back the whole buffer: a caller that maps every slot maps a scalar buffer's
+    /// single value once, and it still stands for every element.
+    #[inline]
+    pub fn values_repr_mut(&mut self) -> ArrayRepr<&mut Buffer<T>> {
+        if self.values_are_scalar() {
+            ArrayRepr::Scalar(&mut self.values)
+        } else {
+            ArrayRepr::Flat(&mut self.values)
+        }
+    }
+
     /// The backing values buffer, if it holds one slot per element.
     #[inline]
     pub fn flat_values(&self) -> Option<&Buffer<T>> {
-        self.values_are_flat().then_some(&self.values)
+        self.values_repr().flat()
     }
 
     /// The values buffer, if this array holds one slot per element and nothing else shares it.
     #[inline]
     pub fn flat_values_mut(&mut self) -> Option<&mut Buffer<T>> {
-        self.values_are_flat().then_some(&mut self.values)
+        self.values_repr_mut().flat()
     }
 
     /// The value every element of this array reads, if the values buffer holds a single slot.
     #[inline]
     pub fn scalar_values(&self) -> Option<T> {
-        (self.values_are_scalar() && self.length > 0).then(|| self.values[0])
+        self.values_repr().scalar()
     }
 
     /// The validity mask, if any element may be null.
@@ -272,9 +296,12 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// Whether the values buffer holds a single value shared by every element.
+    ///
+    /// An array of no elements holds no such value: it keeps the empty buffer in place of the one
+    /// slot a scalar buffer would, and is flat.
     #[inline]
     pub fn values_are_scalar(&self) -> bool {
-        self.values.len() == 1
+        self.values.len() == 1 && self.length > 0
     }
 
     /// Whether the values buffer holds one slot per element.

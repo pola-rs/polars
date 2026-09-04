@@ -3,9 +3,9 @@
 
 use arrow::types::NativeType;
 use num_traits::ToPrimitive;
-use polars_array::PlPrimitiveArray;
+use polars_array::{ArrayRepr, PlPrimitiveArray};
 
-use super::primitive::{flat_validity, flat_values, repeated_value};
+use super::primitive::flat_validity;
 
 /// Numerical stable online variance aggregation.
 ///
@@ -64,13 +64,12 @@ where
     // Every index gathers the same value where the buffer holds a single slot, so the variance is
     // over that one value repeated — which is what a flat chunk of it would give as well. It is
     // not `0.0` in general: `ddof` still decides whether there are enough values at all.
-    match repeated_value(arr) {
-        Some(value) => {
+    match arr.values_repr() {
+        ArrayRepr::Scalar(value) => {
             let value = unsafe { value.to_f64().unwrap_unchecked() };
             online_variance(indices.into_iter().map(|_| value), ddof)
         },
-        None => {
-            let values = flat_values(arr);
+        ArrayRepr::Flat(values) => {
             let iter = indices.into_iter().map(|idx| unsafe {
                 let value = *values.get_unchecked(idx);
                 value.to_f64().unwrap_unchecked()
@@ -98,15 +97,14 @@ where
     // Every element is null, so no index gathers a value and there is no variance.
     let validity = flat_validity(arr)?;
 
-    match repeated_value(arr) {
-        Some(value) => {
+    match arr.values_repr() {
+        ArrayRepr::Scalar(value) => {
             let iter = indices.into_iter().filter_map(|idx| {
                 unsafe { validity.get_bit_unchecked(idx) }.then(|| value.to_f64())?
             });
             online_variance(iter, ddof)
         },
-        None => {
-            let values = flat_values(arr);
+        ArrayRepr::Flat(values) => {
             let iter = indices.into_iter().flat_map(|idx| unsafe {
                 if validity.get_bit_unchecked(idx) {
                     let value = *values.get_unchecked(idx);

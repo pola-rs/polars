@@ -1,12 +1,5 @@
 use arrow::bitmap::{Bitmap, binary_fold, quaternary, ternary};
-use polars_array::{Flat, PlBooleanArray};
-
-/// The values buffer of `arr`, which holds one bit per element where it does not hold a single
-/// bit shared by every one of them.
-pub(crate) fn flat_values(arr: &PlBooleanArray) -> &Bitmap {
-    arr.flat_values()
-        .expect("a values buffer that is not scalar is flat")
-}
+use polars_array::{ArrayRepr, Flat, PlBooleanArray};
 
 /// The validity mask of `arr`, if it holds one bit per element.
 ///
@@ -26,11 +19,11 @@ pub fn any(arr: &PlBooleanArray) -> Option<bool> {
 
     // Every element reads the one bit a scalar values buffer holds, and at least one of them is
     // non-null: that bit is the answer, and no buffer is walked at all.
-    if let Some(value) = arr.scalar_values() {
-        return Some(value);
-    }
+    let values = match arr.values_repr() {
+        ArrayRepr::Scalar(value) => return Some(value),
+        ArrayRepr::Flat(values) => values,
+    };
 
-    let values = flat_values(arr);
     match flat_validity(arr) {
         Some(validity) => Some(values.intersects_with(validity)),
         // Either there is no mask, or it marks every element valid: the check above has caught
@@ -48,11 +41,11 @@ pub fn all(arr: &PlBooleanArray) -> Option<bool> {
     }
 
     // As in `any`: the one bit every element shares is the answer.
-    if let Some(value) = arr.scalar_values() {
-        return Some(value);
-    }
+    let values = match arr.values_repr() {
+        ArrayRepr::Scalar(value) => return Some(value),
+        ArrayRepr::Flat(values) => values,
+    };
 
-    let values = flat_values(arr);
     match flat_validity(arr) {
         Some(validity) => {
             let false_found = binary_fold(
@@ -72,9 +65,9 @@ pub fn all(arr: &PlBooleanArray) -> Option<bool> {
 pub fn not(arr: &PlBooleanArray) -> PlBooleanArray {
     // Inverting the backing bitmap keeps the representation: the single bit a scalar values
     // buffer holds inverts in `O(1)` and still stands for every element.
-    let inverted = match arr.scalar_values() {
-        Some(value) => PlBooleanArray::new_scalar(!value, arr.len()),
-        None => PlBooleanArray::from_values(!flat_values(arr)),
+    let inverted = match arr.values_repr() {
+        ArrayRepr::Scalar(value) => PlBooleanArray::new_scalar(!value, arr.len()),
+        ArrayRepr::Flat(values) => PlBooleanArray::from_values(!values),
     };
 
     inverted.with_validity_broadcast(arr.validity().map(|validity| validity.to_flat_or_scalar()))

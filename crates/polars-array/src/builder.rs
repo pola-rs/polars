@@ -437,14 +437,10 @@ pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
                 .as_any()
                 .downcast_ref::<PlFixedSizeListArray>()
                 .unwrap();
-            // The values are either flat or scalar, and hold the values the elements are made
-            // of either way — which is all a builder for them is taken from.
-            let values = array
-                .flat_values()
-                .or_else(|| array.scalar_values())
-                .expect("the values of a fixed size list array are either flat or scalar");
+            // The values hold the values the elements are made of in either representation,
+            // which is all a builder for them is taken from.
             Box::new(PlFixedSizeListArrayBuilder::new(
-                builder_like(values),
+                builder_like(array.values()),
                 array.width(),
             ))
         },
@@ -500,12 +496,8 @@ pub fn full_null_like(array: &dyn PlArray, length: usize) -> Box<dyn PlArray> {
                 .unwrap();
             // An element of a null list is as wide as any other, so the one element the values
             // stand for is as many nulls as the array is wide.
-            let values = array
-                .flat_values()
-                .or_else(|| array.scalar_values())
-                .expect("the values of a fixed size list array are either flat or scalar");
             Box::new(PlFixedSizeListArray::new_full_null(
-                full_null_like(values, array.width()),
+                full_null_like(array.values(), array.width()),
                 length,
             ))
         },

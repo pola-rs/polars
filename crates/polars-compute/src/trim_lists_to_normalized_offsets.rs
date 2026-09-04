@@ -14,7 +14,7 @@
 use polars_array::{PlArray, PlArrayType, PlFixedSizeListArray, PlListArray, PlStructArray};
 use polars_buffer::Buffer;
 
-use crate::nesting::{covered_range, downcast, fsl_values, fsl_with_values, struct_with_fields};
+use crate::nesting::{covered_range, downcast, fsl_with_values, struct_with_fields};
 
 /// Trims the lists of `array` down to the values its elements cover, recursively.
 ///
@@ -84,7 +84,7 @@ pub fn trim_lists_to_normalized_offsets_list(array: &PlListArray) -> Option<PlLi
 pub fn trim_lists_to_normalized_offsets_fsl(
     array: &PlFixedSizeListArray,
 ) -> Option<PlFixedSizeListArray> {
-    let values = trim_lists_to_normalized_offsets(fsl_values(array))?;
+    let values = trim_lists_to_normalized_offsets(array.values())?;
 
     // SAFETY: the trimmed values are as many as the ones they replace, so they are cut into the
     // same elements of the same width.
@@ -182,7 +182,7 @@ mod tests {
 
         let field = trimmed.field(0).as_any();
         let field = field.downcast_ref::<PlFixedSizeListArray>().unwrap();
-        let values = fsl_values(field).as_any();
+        let values = field.values().as_any();
         let values = values.downcast_ref::<PlListArray>().unwrap();
 
         assert_eq!(values.values().len(), 3);

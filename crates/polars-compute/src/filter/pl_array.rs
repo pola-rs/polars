@@ -7,7 +7,7 @@
 
 use polars_array::arrow::bridge::with_arrow_chunk;
 use polars_array::bitmap::combine_validities_and;
-use polars_array::{PlArray, PlBitmap, PlBitmapRef, PlBooleanArray};
+use polars_array::{ArrayRepr, PlArray, PlBitmap, PlBitmapRef, PlBooleanArray};
 
 use super::boolean::filter_boolean_kernel;
 use super::dyn_array::filter_arrow_with_bitmap;
@@ -81,18 +81,12 @@ pub fn filter_with_bitmap(array: &dyn PlArray, mask: PlBitmapRef<'_>) -> Box<dyn
 
 /// Keeps the bits of `values` at which `mask` is set. `kept` is the number of bits `mask` keeps.
 fn filter_pl_bitmap(values: PlBitmapRef<'_>, mask: PlBitmapRef<'_>, kept: usize) -> PlBitmap {
-    match values.scalar_value() {
+    match values.repr() {
         // One bit says the same of every element, and so of however many of them survive.
-        Some(value) => PlBitmap::new_scalar(value, kept),
-        None => PlBitmap::new(
-            filter_boolean_kernel(
-                values
-                    .flat_bitmap()
-                    .expect("a mask that is not scalar is flat"),
-                &mask.to_flat(),
-            ),
-            kept,
-        ),
+        ArrayRepr::Scalar(value) => PlBitmap::new_scalar(value, kept),
+        ArrayRepr::Flat(values) => {
+            PlBitmap::new(filter_boolean_kernel(values, &mask.to_flat()), kept)
+        },
     }
 }
 

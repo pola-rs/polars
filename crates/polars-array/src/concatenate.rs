@@ -11,6 +11,7 @@ use polars_utils::slice_broadcast_iter::SliceBroadcastIter;
 
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
+use crate::broadcast::ArrayRepr;
 use crate::{
     PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray, PlFixedSizeListArray,
     PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray, PlUtf8ViewArray,
@@ -876,29 +877,37 @@ fn concatenate_list_impl<S>(
             // No element of the array is reachable, but its values are still what the type of its
             // lists is taken from, which every array has to agree on.
             values.push(array.values().sliced(0, 0));
-        } else if let Some(array_offsets) = array.flat_offsets() {
-            let (first, last) = (array_offsets[0], array_offsets[array.len()]);
-            values.push(
-                array
-                    .values()
-                    .sliced(first as usize, (last - first) as usize),
-            );
-            offsets.extend(
-                array_offsets[1..]
-                    .iter()
-                    .map(|offset| end + (offset - first)),
-            );
-            end += last - first;
-        } else if let Some(range) = array.scalar_offsets() {
+            continue;
+        }
+
+        match array.offsets_repr() {
+            ArrayRepr::Flat(array_offsets) => {
+                let (first, last) = (array_offsets[0], array_offsets[array.len()]);
+                values.push(
+                    array
+                        .values()
+                        .sliced(first as usize, (last - first) as usize),
+                );
+                offsets.extend(
+                    array_offsets[1..]
+                        .iter()
+                        .map(|offset| end + (offset - first)),
+                );
+                end += last - first;
+            },
             // Every element of the array covers the same range, which the result writes out once
             // per element: concatenating the element with copies of itself is what repeats it, and
             // that keeps the values scalar when the element is itself a single repeated value.
-            let element = array.values().sliced(range.start, range.len());
-            values.push(concatenate_repeated(&*element, array.len())?);
+            ArrayRepr::Scalar(range) => {
+                let value_length = range.end - range.start;
+                let element = array
+                    .values()
+                    .sliced(range.start as usize, value_length as usize);
+                values.push(concatenate_repeated(&*element, array.len())?);
 
-            let value_length = range.len() as u64;
-            offsets.extend((1..=array.len() as u64).map(|i| end + i * value_length));
-            end += value_length * array.len() as u64;
+                offsets.extend((1..=array.len() as u64).map(|i| end + i * value_length));
+                end += value_length * array.len() as u64;
+            },
         }
     }
 

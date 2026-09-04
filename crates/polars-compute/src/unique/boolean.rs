@@ -7,7 +7,7 @@
 use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
-use polars_array::{PlBitmapRef, PlBooleanArray};
+use polars_array::{ArrayRepr, PlBitmapRef, PlBooleanArray};
 
 use super::{GenericUniqueKernel, RangedUniqueKernel};
 
@@ -64,27 +64,23 @@ fn num_valid_trues(values: PlBitmapRef<'_>, validity: Option<PlBitmapRef<'_>>) -
         return values.set_bits();
     };
 
-    match (values.scalar_value(), validity.scalar_value()) {
+    match (values.repr(), validity.repr()) {
         // One bit on either side says the same of every element, so the count is all of them or
         // none — and where only one side repeats a set bit, the other side's count is the answer.
-        (Some(value), Some(valid)) => {
+        (ArrayRepr::Scalar(value), ArrayRepr::Scalar(valid)) => {
             if value && valid {
                 values.len()
             } else {
                 0
             }
         },
-        (Some(false), None) | (None, Some(false)) => 0,
-        (Some(true), None) => validity.set_bits(),
-        (None, Some(true)) => values.set_bits(),
-        (None, None) => values
-            .flat_bitmap()
-            .expect("a mask that is not scalar is flat")
-            .num_intersections_with(
-                validity
-                    .flat_bitmap()
-                    .expect("a mask that is not scalar is flat"),
-            ),
+        (ArrayRepr::Scalar(false), ArrayRepr::Flat(_))
+        | (ArrayRepr::Flat(_), ArrayRepr::Scalar(false)) => 0,
+        (ArrayRepr::Scalar(true), ArrayRepr::Flat(_)) => validity.set_bits(),
+        (ArrayRepr::Flat(_), ArrayRepr::Scalar(true)) => values.set_bits(),
+        (ArrayRepr::Flat(values), ArrayRepr::Flat(validity)) => {
+            values.num_intersections_with(validity)
+        },
     }
 }
 

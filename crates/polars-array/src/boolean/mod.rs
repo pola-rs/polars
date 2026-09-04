@@ -7,7 +7,7 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
 use crate::broadcast::{
-    is_flat_buffer_len, is_scalar_buffer_len, is_valid_buffer_len, normalize_bitmap,
+    ArrayRepr, is_flat_buffer_len, is_scalar_buffer_len, is_valid_buffer_len, normalize_bitmap,
     normalize_validity, scalar_buffer_len, slice_bitmap, slice_validity,
 };
 use crate::flat::Flat;
@@ -244,16 +244,27 @@ impl PlBooleanArray {
         unsafe { PlBitmapRef::new_broadcast_unchecked(&self.values, self.length) }
     }
 
+    /// Which representation the backing values bitmap is in, along with what it holds.
+    #[inline]
+    pub fn values_repr(&self) -> ArrayRepr<&Bitmap, bool> {
+        if self.values_are_scalar() {
+            // SAFETY: the bitmap holds a single bit, so bit 0 is in bounds.
+            ArrayRepr::Scalar(unsafe { self.values.get_bit_unchecked(0) })
+        } else {
+            ArrayRepr::Flat(&self.values)
+        }
+    }
+
     /// The backing values bitmap, if it holds one bit per element.
     #[inline]
     pub fn flat_values(&self) -> Option<&Bitmap> {
-        self.values_are_flat().then_some(&self.values)
+        self.values_repr().flat()
     }
 
     /// The value every element of this array reads, if the values bitmap holds a single bit.
     #[inline]
     pub fn scalar_values(&self) -> Option<bool> {
-        self.values().scalar_value()
+        self.values_repr().scalar()
     }
 
     /// The validity mask, if any element may be null.
@@ -266,9 +277,12 @@ impl PlBooleanArray {
     }
 
     /// Whether the values bitmap holds a single bit shared by every element.
+    ///
+    /// An array of no elements holds no such bit: it keeps the empty bitmap in place of the one
+    /// bit a scalar bitmap would, and is flat.
     #[inline]
     pub fn values_are_scalar(&self) -> bool {
-        self.values.len() == 1
+        self.values.len() == 1 && self.length > 0
     }
 
     /// Whether the values bitmap holds one bit per element.

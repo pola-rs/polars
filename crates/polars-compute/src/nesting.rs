@@ -18,14 +18,6 @@ pub(crate) fn downcast<A: PlArray>(array: &dyn PlArray) -> &A {
         .expect("the array type of a chunk names the array it is")
 }
 
-/// The values array of `array`, in whichever representation it is in.
-pub(crate) fn fsl_values(array: &PlFixedSizeListArray) -> &dyn PlArray {
-    array
-        .flat_values()
-        .or_else(|| array.scalar_values())
-        .expect("the values of a fixed size list array are flat or scalar")
-}
-
 /// The range of `array.values()` the elements of `array` cover, taken together.
 ///
 /// The offsets are non-decreasing and the range of one element ends where the next one starts, so

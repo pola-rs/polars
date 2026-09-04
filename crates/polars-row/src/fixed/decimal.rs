@@ -7,7 +7,7 @@
 use std::mem::MaybeUninit;
 
 use arrow::bitmap::BitmapBuilder;
-use polars_array::PlPrimitiveArray;
+use polars_array::{ArrayRepr, PlPrimitiveArray};
 use polars_utils::slice::Slice2Uninit;
 
 use crate::row::RowEncodingOptions;
@@ -54,12 +54,12 @@ pub unsafe fn encode(
         return unsafe { encode_iter(buffer, input.iter(), opt, offsets, precision) };
     }
 
-    match (input.flat_values(), input.scalar_values()) {
-        (Some(values), _) => unsafe {
+    match input.values_repr() {
+        ArrayRepr::Flat(values) => unsafe {
             encode_slice(buffer, values.as_slice(), opt, offsets, precision)
         },
         // Every row holds the same value, so it is encoded once and copied into each of them.
-        (None, Some(value)) => unsafe {
+        ArrayRepr::Scalar(value) => unsafe {
             encode_iter(
                 buffer,
                 std::iter::repeat_n(Some(value), offsets.len()),
@@ -68,7 +68,6 @@ pub unsafe fn encode(
                 precision,
             )
         },
-        (None, None) => unreachable!("the values of an array are flat or scalar"),
     }
 }
 

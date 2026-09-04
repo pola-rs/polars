@@ -10,8 +10,10 @@ use polars_utils::IdxSize;
 /// The bytes every index gathers, where the views buffer holds a single view.
 #[inline]
 fn repeated_value(arr: &PlBinaryViewArray) -> Option<&[u8]> {
-    // SAFETY: the array is not empty, so element zero is in bounds.
-    (arr.views_are_scalar() && !arr.is_empty()).then(|| unsafe { arr.value_unchecked(0) })
+    // SAFETY: a scalar views buffer is only held by a non-empty array, so element zero is in
+    // bounds.
+    arr.views_are_scalar()
+        .then(|| unsafe { arr.value_unchecked(0) })
 }
 
 /// Folds the non-null values `indices` gather with `f`.

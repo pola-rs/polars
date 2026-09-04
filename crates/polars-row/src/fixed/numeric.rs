@@ -4,7 +4,7 @@ use std::mem::MaybeUninit;
 
 use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
-use polars_array::PlPrimitiveArray;
+use polars_array::{ArrayRepr, PlPrimitiveArray};
 use polars_utils::float16::pf16;
 use polars_utils::slice::*;
 use polars_utils::total_ord::{canonical_f16, canonical_f32, canonical_f64};
@@ -161,13 +161,14 @@ pub unsafe fn encode<T: NativeType + FixedLengthEncoding>(
         return crate::fixed::numeric::encode_iter(buffer, arr.iter(), opt, offsets);
     }
 
-    match (arr.flat_values(), arr.scalar_values()) {
-        (Some(values), _) => {
+    match arr.values_repr() {
+        ArrayRepr::Flat(values) => {
             crate::fixed::numeric::encode_slice(buffer, values.as_slice(), opt, offsets)
         },
         // Every row holds the same value, so it is encoded once and copied into each of them.
-        (None, Some(value)) => crate::fixed::numeric::encode_repeated(buffer, value, opt, offsets),
-        (None, None) => unreachable!("the values of an array are flat or scalar"),
+        ArrayRepr::Scalar(value) => {
+            crate::fixed::numeric::encode_repeated(buffer, value, opt, offsets)
+        },
     }
 }
 

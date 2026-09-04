@@ -8,7 +8,7 @@
 use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
 use polars_array::{
-    PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlPrimitiveArray, PlUtf8ViewArray,
+    ArrayRepr, PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlPrimitiveArray, PlUtf8ViewArray,
     StaticArray,
 };
 use polars_utils::min_max::MinMax;
@@ -82,25 +82,15 @@ fn values_of<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Option<Values<'_, T>> 
 
     // Every element is the one value the buffer holds, and at least one element is not null, so
     // that value is both the minimum and the maximum — read here in `O(1)`.
-    if let Some(value) = arr.scalar_values() {
-        return Some(Values::Repeated(value));
-    }
-
-    let values = arr
-        .flat_values()
-        .expect("a values buffer that is not scalar holds one slot per element");
-
-    let validity = match arr.validity() {
-        // A mask that is set everywhere marks nothing, and one that is unset everywhere left no
-        // element to reduce, which the null count has already answered.
-        None => None,
-        Some(validity) if validity.is_scalar() => None,
-        Some(validity) => Some(
-            validity
-                .flat_bitmap()
-                .expect("a mask that is not scalar holds one bit per element"),
-        ),
+    let values = match arr.values_repr() {
+        ArrayRepr::Scalar(value) => return Some(Values::Repeated(value)),
+        ArrayRepr::Flat(values) => values,
     };
+
+    // A mask that is set everywhere marks nothing, and one that is unset everywhere left no
+    // element to reduce, which the null count has already answered — so a scalar mask says
+    // nothing either way, and an absent one says nothing at all.
+    let validity = arr.validity().and_then(|validity| validity.repr().flat());
 
     Some(Values::Flat(values.as_slice(), validity))
 }

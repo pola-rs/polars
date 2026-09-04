@@ -2,10 +2,10 @@ use std::convert::identity;
 
 use arrow::bitmap::{Bitmap, binary_fold};
 use arrow::types::NativeType;
-use polars_array::{PlBooleanArray, PlPrimitiveArray};
+use polars_array::{ArrayRepr, PlBooleanArray, PlPrimitiveArray};
 use polars_utils::float16::pf16;
 
-use crate::boolean::{all, any, flat_validity, flat_values};
+use crate::boolean::{all, any, flat_validity};
 
 pub trait BitwiseKernel {
     type Scalar;
@@ -271,7 +271,13 @@ impl BitwiseKernel for PlBooleanArray {
             return None;
         }
 
-        let values = flat_values(self);
+        // A scalar bitmap is what the two checks above have already answered for: either it
+        // cancels to a parity, or every element under it is null.
+        let values = match self.values_repr() {
+            ArrayRepr::Flat(values) => values,
+            ArrayRepr::Scalar(_) => return None,
+        };
+
         match flat_validity(self) {
             Some(validity) => {
                 let nonnull_parity =

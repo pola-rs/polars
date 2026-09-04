@@ -17,10 +17,9 @@ use crate::series::ArgAgg;
 
 pub fn has_inner_nulls(ca: &ArrayChunked) -> bool {
     for arr in ca.downcast_iter() {
-        // The values are either flat or scalar; either way they are what the elements read, so a
-        // null among them is a null inside an element. An empty array has neither.
-        let values = arr.flat_values().or_else(|| arr.scalar_values());
-        if values.is_some_and(|values| values.null_count() > 0) {
+        // The values are what the elements read in either representation, so a null among them is
+        // a null inside an element.
+        if arr.values().null_count() > 0 {
             return true;
         }
     }
