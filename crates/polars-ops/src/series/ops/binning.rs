@@ -29,6 +29,27 @@ fn bins_from_breaks(s: &Series, breaks: &Series, right_closed: bool) -> PolarsRe
         .with_validity(concatenate_validities(s.chunks())))
 }
 
+/// Assign every element the number of cut `positions` at or below its rank -- its 0-based
+/// position within the non-null values in sorted order -- and null wherever `s` is null.
+///
+/// `positions` is non-decreasing, so it is walked in step with the ranks rather than
+/// searched per element.
+fn bins_from_rank_cuts(s: &Series, sort_idx: &IdxCa, positions: &[IdxSize]) -> IdxCa {
+    let mut out = vec![0 as IdxSize; s.len()];
+    let mut rank: IdxSize = 0;
+    let mut bin = 0;
+    for arr in sort_idx.downcast_iter() {
+        for i in arr.values_iter() {
+            while bin < positions.len() && positions[bin] <= rank {
+                bin += 1;
+            }
+            out[*i as usize] = bin as IdxSize;
+            rank += 1;
+        }
+    }
+    IdxCa::from_vec_validity(s.name().clone(), out, concatenate_validities(s.chunks()))
+}
+
 /// Gather the value at each given position within the non-null values in sorted order.
 ///
 /// Positions at or past the non-null count yield null, as required by a trailing empty bin.
@@ -206,6 +227,25 @@ fn quantile_break_positions_uniform(non_null_len: usize, n_bins: usize) -> Vec<I
         .collect()
 }
 
+/// Cut positions for `n_bins` bins of near-equal size.
+///
+/// Bin `i` receives `k + 1` elements while `i < len % n_bins` and `k` afterwards, so the
+/// earlier bins are the larger ones: 14 elements over 4 bins gives 4 + 4 + 3 + 3.
+fn rank_cut_positions_uniform(non_null_len: usize, n_bins: usize) -> Vec<IdxSize> {
+    let k = non_null_len / n_bins;
+    let r = non_null_len % n_bins;
+    (1..n_bins).map(|i| (i * k + i.min(r)) as IdxSize).collect()
+}
+
+/// Cut positions for explicit cumulative fractions: `round(f * len)`, rounding half away
+/// from zero so that, as in [`rank_cut_positions_uniform`], earlier bins are the larger.
+fn rank_cut_positions_fractions(non_null_len: usize, fractions: &[f64]) -> Vec<IdxSize> {
+    fractions
+        .iter()
+        .map(|f| (f * non_null_len as f64).round() as IdxSize)
+        .collect()
+}
+
 /// Turn a column of bin indices into the final output.
 ///
 /// Without labels the bins are returned as `UInt32`, with labels as an `Enum` over them.
@@ -345,41 +385,78 @@ pub fn bin_quantiles(
         spec.n_bins(),
         labels,
         include_intervals,
-        right_closed,
+        Some(right_closed),
     )
 }
 
-/// Shared tail of the position-derived forms: sort the non-null values once, gather the
-/// boundary values sitting at the given positions, and bin against them.
+pub fn bin_ranks(
+    s: &Series,
+    spec: &FractionSpec,
+    labels: Option<&[PlSmallStr]>,
+    include_intervals: bool,
+) -> PolarsResult<Series> {
+    let non_null_len = s.len() - s.null_count();
+    let positions = match spec {
+        FractionSpec::Explicit(fractions) => rank_cut_positions_fractions(non_null_len, fractions),
+        FractionSpec::Count(n_bins) => rank_cut_positions_uniform(non_null_len, n_bins.get()),
+    };
+    bin_at_positions(
+        s,
+        &positions,
+        spec.n_bins(),
+        labels,
+        include_intervals,
+        None,
+    )
+}
+
+/// Shared tail of the four position-derived forms.
+///
+/// `right_closed` is `Some` for quantile binning, which assigns bins by comparing values
+/// against the gathered breakpoints, and `None` for rank binning, which instead compares
+/// each row's ordinal rank against the cut positions. The rank form therefore splits ties
+/// across adjacent bins, which is the whole point of it -- and never needs the boundary
+/// values unless they are actually reported.
 fn bin_at_positions(
     s: &Series,
     positions: &[IdxSize],
     n_bins: usize,
     labels: Option<&[PlSmallStr]>,
     include_intervals: bool,
-    right_closed: bool,
+    right_closed: Option<bool>,
 ) -> PolarsResult<Series> {
     let non_null_len = s.len() - s.null_count();
     if non_null_len == 0 {
         return empty_bins(s, n_bins, labels, include_intervals);
     }
 
+    // Rank binning may split ties, so the stable sort preserves their input order.
     let sort_idx = s
         .arg_sort(SortOptions {
             descending: false,
             nulls_last: true,
+            maintain_order: true,
             ..Default::default()
         })
         .slice(0, non_null_len);
 
-    let breaks = gather_at_sorted_positions(s, &sort_idx, positions)?;
-    let bin_idx = bins_from_breaks(s, &breaks, right_closed)?;
+    // `finish_bins` reads `Some` as "emit the struct", so each arm keeps the boundaries
+    // only when they are actually reported -- the value-based path needs them to bin at
+    // all, the rank-based one only to report them.
+    let (bin_idx, breaks) = match right_closed {
+        Some(right_closed) => {
+            let breaks = gather_at_sorted_positions(s, &sort_idx, positions)?;
+            let bin_idx = bins_from_breaks(s, &breaks, right_closed)?;
+            (bin_idx, include_intervals.then_some(breaks))
+        },
+        None => {
+            let bin_idx = bins_from_rank_cuts(s, &sort_idx, positions);
+            let breaks = include_intervals
+                .then(|| gather_at_sorted_positions(s, &sort_idx, positions))
+                .transpose()?;
+            (bin_idx, breaks)
+        },
+    };
 
-    finish_bins(
-        s.name().clone(),
-        &bin_idx,
-        n_bins,
-        include_intervals.then_some(&breaks),
-        labels,
-    )
+    finish_bins(s.name().clone(), &bin_idx, n_bins, breaks.as_ref(), labels)
 }
