@@ -20,7 +20,7 @@ mod flat;
 mod iterator;
 
 pub use builder::PlBinaryArrayBuilder;
-pub use iterator::{PlBinaryIter, PlBinaryValuesIter};
+pub use iterator::{PlBinaryIter, PlBinaryValues, PlBinaryValuesIter};
 
 /// An immutable, cheaply cloneable sequence of `length` optional byte strings over one values
 /// buffer.
