@@ -6,9 +6,8 @@
 
 use std::mem::MaybeUninit;
 
-use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::BitmapBuilder;
-use arrow::datatypes::ArrowDataType;
+use polars_array::PlPrimitiveArray;
 use polars_utils::slice::Slice2Uninit;
 
 use crate::row::RowEncodingOptions;
@@ -40,25 +39,36 @@ fn len_from_num_bits(num_bits: usize) -> usize {
     (num_bits + 2).div_ceil(8)
 }
 
+/// Writes one row per element of `input`.
+///
+/// A values buffer that stands for a value repeated over every element is read as the one value it
+/// holds, without writing it out: only the rows are written.
 pub unsafe fn encode(
     buffer: &mut [MaybeUninit<u8>],
-    input: &PrimitiveArray<i128>,
+    input: &PlPrimitiveArray<i128>,
     opt: RowEncodingOptions,
     offsets: &mut [usize],
     precision: usize,
 ) {
-    if input.null_count() == 0 {
-        unsafe { encode_slice(buffer, input.values(), opt, offsets, precision) }
-    } else {
-        unsafe {
+    if input.null_count() != 0 {
+        return unsafe { encode_iter(buffer, input.iter(), opt, offsets, precision) };
+    }
+
+    match (input.flat_values(), input.scalar_values()) {
+        (Some(values), _) => unsafe {
+            encode_slice(buffer, values.as_slice(), opt, offsets, precision)
+        },
+        // Every row holds the same value, so it is encoded once and copied into each of them.
+        (None, Some(value)) => unsafe {
             encode_iter(
                 buffer,
-                input.iter().map(|v| v.copied()),
+                std::iter::repeat_n(Some(value), offsets.len()),
                 opt,
                 offsets,
                 precision,
             )
-        }
+        },
+        (None, None) => unreachable!("the values of an array are flat or scalar"),
     }
 }
 
@@ -155,12 +165,11 @@ pub unsafe fn decode(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
     precision: usize,
-) -> PrimitiveArray<i128> {
+) -> PlPrimitiveArray<i128> {
     let num_bits = num_bits_from_precision(precision);
     // If the output will not fit in less bytes, just use the normal i128 decoding kernel.
     if num_bits >= 127 {
-        let (_, values, validity) = super::numeric::decode_primitive(rows, opt).into_inner();
-        return PrimitiveArray::new(ArrowDataType::Int128, values, validity);
+        return super::numeric::decode_primitive(rows, opt);
     }
 
     let mut values = Vec::with_capacity(rows.len());
@@ -203,7 +212,7 @@ pub unsafe fn decode(
     });
 
     if values.len() == rows.len() {
-        return PrimitiveArray::new(ArrowDataType::Int128, values.into(), None);
+        return PlPrimitiveArray::new(values.into(), rows.len(), None);
     }
 
     let mut validity = BitmapBuilder::with_capacity(rows.len());
@@ -236,9 +245,5 @@ pub unsafe fn decode(
         }));
     });
 
-    PrimitiveArray::new(
-        ArrowDataType::Int128,
-        values.into(),
-        validity.into_opt_validity(),
-    )
+    PlPrimitiveArray::new(values.into(), rows.len(), validity.into_opt_validity())
 }

@@ -10,8 +10,9 @@
 /// After the sentinel value (and possible length), the data is then given.
 use std::mem::MaybeUninit;
 
-use arrow::array::{BinaryViewArray, MutableBinaryViewArray};
 use arrow::bitmap::BitmapBuilder;
+use polars_array::builder::StaticArrayBuilder;
+use polars_array::{PlBinaryViewArray, PlBinaryViewArrayBuilder};
 use polars_utils::slice::Slice2Uninit;
 
 use crate::row::RowEncodingOptions;
@@ -85,11 +86,11 @@ pub unsafe fn encode_variable_no_order<'a, I: Iterator<Item = Option<&'a [u8]>>>
 pub unsafe fn decode_variable_no_order(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
-) -> BinaryViewArray {
+) -> PlBinaryViewArray {
     debug_assert!(opt.contains(RowEncodingOptions::NO_ORDER));
 
     let num_rows = rows.len();
-    let mut array = MutableBinaryViewArray::<[u8]>::with_capacity(num_rows);
+    let mut array = PlBinaryViewArrayBuilder::with_capacity(num_rows);
     let mut validity = BitmapBuilder::new();
 
     for row in rows.iter_mut() {
@@ -99,7 +100,9 @@ pub unsafe fn decode_variable_no_order(
             validity.reserve(num_rows);
             validity.extend_constant(array.len(), true);
             validity.push(false);
-            array.push_value_ignore_validity("");
+            // A value is pushed for the null so that the views line up with the mask that
+            // replaces the builder's own below.
+            array.push_value(b"");
             break;
         }
 
@@ -111,12 +114,12 @@ pub unsafe fn decode_variable_no_order(
             length as usize
         };
 
-        array.push_value_ignore_validity(unsafe { row.get_unchecked(..length) });
+        array.push_value(unsafe { row.get_unchecked(..length) });
         *row = unsafe { row.get_unchecked(length..) };
     }
 
     if validity.is_empty() {
-        return array.into();
+        return array.freeze();
     }
 
     for row in rows[array.len()..].iter_mut() {
@@ -125,7 +128,7 @@ pub unsafe fn decode_variable_no_order(
 
         validity.push(sentinel != 0xFF);
         if sentinel == 0xFF {
-            array.push_value_ignore_validity("");
+            array.push_value(b"");
             continue;
         }
 
@@ -137,10 +140,9 @@ pub unsafe fn decode_variable_no_order(
             length as usize
         };
 
-        array.push_value_ignore_validity(unsafe { row.get_unchecked(..length) });
+        array.push_value(unsafe { row.get_unchecked(..length) });
         *row = unsafe { row.get_unchecked(length..) };
     }
 
-    let array = array.freeze();
-    array.with_validity(validity.into_opt_validity())
+    array.freeze().with_validity(validity.into_opt_validity())
 }

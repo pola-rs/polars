@@ -1,8 +1,7 @@
 use std::borrow::Cow;
 
 use arrow::compute::utils::combine_validities_and_many;
-use polars_array::arrow::bridge::chunk_to_arrow;
-use polars_array::arrow::{export, import};
+use polars_array::arrow::export::binary_to_arrow_large_binary;
 use polars_row::{RowEncodingContext, RowEncodingOptions, RowsEncoded, convert_columns};
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
@@ -22,7 +21,7 @@ pub fn encode_rows_vertical_par_unordered(by: &[Column]) -> PolarsResult<BinaryO
             .map(|s| s.slice(offset as i64, len))
             .collect::<Vec<_>>();
         let rows = _get_rows_encoded_unordered(&sliced)?;
-        Ok(<PlBinaryArray as ToArrow>::from_arrow(&rows.into_array()))
+        Ok(rows.into_array())
     });
     let chunks = RAYON.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
@@ -61,7 +60,7 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
             .collect::<Vec<_>>();
 
         let validity = combine_validities_and_many(&validities);
-        Ok(<PlBinaryArray as ToArrow>::from_arrow(&rows.into_array()).with_validity(validity))
+        Ok(rows.into_array().with_validity(validity))
     });
     let chunks = RAYON.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
@@ -172,7 +171,7 @@ pub fn encode_rows_unordered(by: &[Column]) -> PolarsResult<BinaryOffsetChunked>
     let rows = _get_rows_encoded_unordered(by)?;
     Ok(BinaryOffsetChunked::with_chunk(
         PlSmallStr::EMPTY,
-        <PlBinaryArray as ToArrow>::from_arrow(&rows.into_array()),
+        rows.into_array(),
     ))
 }
 
@@ -193,8 +192,7 @@ pub fn _get_rows_encoded_unordered(by: &[Column]) -> PolarsResult<RowsEncoded> {
             .map_or(Cow::Borrowed(by), Cow::Owned);
         let by = by.propagate_nulls().map_or(by, Cow::Owned);
         let by = by.as_materialized_series();
-        // The row encoder is written against the Arrow arrays, so the chunk crosses over.
-        let arr = export::to_arrow(&*by.to_physical_repr().rechunk().chunks()[0]);
+        let arr = by.to_physical_repr().rechunk().chunks()[0].clone();
         let opt = RowEncodingOptions::new_unsorted();
         let ctxt = get_row_encoding_context(by.dtype());
 
@@ -229,8 +227,7 @@ pub fn _get_rows_encoded(
             .map_or(Cow::Borrowed(by), Cow::Owned);
         let by = by.propagate_nulls().map_or(by, Cow::Owned);
         let by = by.as_materialized_series();
-        // The row encoder is written against the Arrow arrays, so the chunk crosses over.
-        let arr = export::to_arrow(&*by.to_physical_repr().rechunk().chunks()[0]);
+        let arr = by.to_physical_repr().rechunk().chunks()[0].clone();
         let opt = RowEncodingOptions::new_sorted(*desc, *null_last);
         let ctxt = get_row_encoding_context(by.dtype());
 
@@ -257,10 +254,7 @@ pub fn _get_rows_encoded_ca(
         let combined = combine_validities_and_many(&validities);
         rows_arr.set_validity(combined);
     }
-    Ok(BinaryOffsetChunked::with_chunk(
-        name,
-        <PlBinaryArray as ToArrow>::from_arrow(&rows_arr),
-    ))
+    Ok(BinaryOffsetChunked::with_chunk(name, rows_arr))
 }
 
 pub fn _get_rows_encoded_arr(
@@ -278,19 +272,17 @@ pub fn _get_rows_encoded_arr(
         let combined = combine_validities_and_many(&validities);
         rows_arr.set_validity(combined);
     }
-    Ok(rows_arr)
+    // TODO(polars-array): `StructChunked::get_row_encoded_array` still hands an Arrow array to
+    // `polars-core`'s own hashing and to `polars-expr`; the crossing is a buffer handover.
+    Ok(binary_to_arrow_large_binary(&rows_arr))
 }
 
 pub fn _get_rows_encoded_ca_unordered(
     name: PlSmallStr,
     by: &[Column],
 ) -> PolarsResult<BinaryOffsetChunked> {
-    _get_rows_encoded_unordered(by).map(|rows| {
-        BinaryOffsetChunked::with_chunk(
-            name,
-            <PlBinaryArray as ToArrow>::from_arrow(&rows.into_array()),
-        )
-    })
+    _get_rows_encoded_unordered(by)
+        .map(|rows| BinaryOffsetChunked::with_chunk(name, rows.into_array()))
 }
 
 #[cfg(feature = "dtype-struct")]
@@ -309,31 +301,16 @@ pub fn row_encoding_decode(
         })
         .collect::<(Vec<_>, Vec<_>)>();
 
-    let struct_arrow_dtype = ArrowDataType::Struct(
-        fields
-            .iter()
-            .map(|v| v.to_physical().to_arrow(CompatLevel::newest()))
-            .collect(),
-    );
-
-    // The decoder is written against the Arrow arrays, and the rows it hands back borrow from
-    // them, which is why they are all crossed over first.
-    let arrows = ca.downcast_iter().map(chunk_to_arrow).collect::<Vec<_>>();
     let mut rows = Vec::new();
-    let chunks = arrows
-        .iter()
+    let chunks = ca
+        .downcast_iter()
         .map(|array| {
             let decoded_arrays = unsafe {
                 polars_row::decode::decode_rows_from_binary(array, opts, &ctxts, &dtypes, &mut rows)
             };
             assert_eq!(decoded_arrays.len(), fields.len());
 
-            import::from_arrow(&StructArray::new(
-                struct_arrow_dtype.clone(),
-                array.len(),
-                decoded_arrays,
-                None,
-            ))
+            Box::new(PlStructArray::new(decoded_arrays, array.len(), None)) as PlArrayRef
         })
         .collect::<Vec<_>>();
 

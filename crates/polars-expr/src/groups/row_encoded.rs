@@ -52,7 +52,15 @@ impl RowEncodedHashGrouper {
             .iter()
             .zip(key_columns)
             .map(|((name, dt), col)| {
-                let s = Series::try_from((name.clone(), col)).unwrap();
+                // The decoded chunk carries no dtype of its own, so it is read back as the
+                // physical type the decode was asked for.
+                let s = unsafe {
+                    Series::from_chunks_and_dtype_unchecked(
+                        name.clone(),
+                        vec![col],
+                        &dt.to_physical(),
+                    )
+                };
                 unsafe { s.from_physical_unchecked(dt) }
                     .unwrap()
                     .into_column()

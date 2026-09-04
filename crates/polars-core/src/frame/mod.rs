@@ -3,7 +3,6 @@
 use std::borrow::Cow;
 
 use arrow::datatypes::ArrowSchemaRef;
-use polars_row::ArrayRef;
 use polars_utils::UnitVec;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;

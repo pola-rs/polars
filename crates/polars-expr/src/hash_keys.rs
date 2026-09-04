@@ -5,6 +5,7 @@ use arrow::array::{Array, BinaryArray, BinaryViewArray, PrimitiveArray, UInt64Ar
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and_many;
 use polars_array::arrow::bridge::chunk_to_arrow;
+use polars_array::arrow::export::binary_to_arrow_large_binary;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType, *};
@@ -136,9 +137,12 @@ impl HashKeys {
                 .values_iter()
                 .map(|k| random_state.hash_one(k))
                 .collect();
+            // TODO(polars-array): `RowEncodedKeys` is read as an Arrow array throughout this crate
+            // and `polars-stream`; the crossing hands the buffers over as they are.
+            let keys = binary_to_arrow_large_binary(&keys_encoded);
             Self::RowEncoded(RowEncodedKeys {
                 hashes: PrimitiveArray::from_vec(hashes),
-                keys: keys_encoded,
+                keys,
             })
         } else if first_col_variant == HashKeysVariant::Binview {
             let keys = if let Ok(ca_str) = df[0].str() {

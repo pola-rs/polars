@@ -12,7 +12,9 @@ description = "Core of the Polars DataFrame library"
 polars-array = { workspace = true }
 polars-async = { workspace = true }
 polars-buffer = { workspace = true }
-polars-compute = { workspace = true, features = ["gather"] }
+# `cast` is what `chunked_array/cast.rs`, `series/from.rs` and `series/arrow_export` reach for
+# unconditionally; it used to arrive through `polars-row`, which no longer depends on this crate.
+polars-compute = { workspace = true, features = ["cast", "gather"] }
 polars-config = { workspace = true }
 polars-dtype = { workspace = true }
 polars-error = { workspace = true }
