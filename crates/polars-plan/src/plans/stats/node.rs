@@ -301,6 +301,13 @@ impl NodeStats {
         self.distinct_count_key(key.output_name_inner().get()?)
     }
 
+    /// Values `key` could hold, from its integer range. An upper bound on its
+    /// distinct count, for a plain column of a scan that carried min/max.
+    fn int_domain(&self, key: &ExprIR) -> Option<f64> {
+        let domain = self.column(key.output_name_inner().get()?)?.int_domain()?;
+        Some(domain.clamp(MIN_CARDINALITY, self.unfiltered))
+    }
+
     /// Distinct combinations of `keys`, or `None` unless every one is known.
     ///
     /// The product assumes the keys are independent, which is an upper bound; the
@@ -476,6 +483,7 @@ fn single_key_column(keys: &[&PlSmallStr], rows: f64) -> Option<Arc<ScanColumnSt
             distinct: Card::approx(rows as u64),
             null_count: Card::Unknown,
             avg_byte_width: None,
+            int_range: None,
         },
     );
     Some(Arc::new(map))
@@ -612,9 +620,30 @@ pub fn key_domain(
         right.distinct_count(right_key),
     ) {
         (Some(l), Some(r)) => l.max(r),
-        _ => left.unfiltered.min(right.unfiltered),
+        // Both the uniqueness assumption and an integer range bound the domain from
+        // above, so the tighter one is the better estimate.
+        _ => {
+            let rows = left.unfiltered.min(right.unfiltered);
+            match key_int_domain(left, left_key, right, right_key) {
+                Some(range) => rows.min(range),
+                None => rows,
+            }
+        },
     };
     domain.max(MIN_CARDINALITY)
+}
+
+/// Domain implied by the integer ranges of the keys, from whichever sides have one.
+fn key_int_domain(
+    left: &NodeStats,
+    left_key: &ExprIR,
+    right: &NodeStats,
+    right_key: &ExprIR,
+) -> Option<f64> {
+    match (left.int_domain(left_key), right.int_domain(right_key)) {
+        (Some(l), Some(r)) => Some(l.max(r)),
+        (l, r) => l.or(r),
+    }
 }
 
 #[cfg(test)]

@@ -577,6 +577,10 @@ fn parquet_column_stats(
         distinct: Option<u64>,
         /// The column is nested, so leaf null counts are not the root's.
         nested: bool,
+        /// Inclusive integer range folded over the chunks read so far.
+        int_range: Option<(i64, i64)>,
+        /// Set once any chunk gave no integer range, so the fold is not the column's.
+        int_range_unknown: bool,
     }
 
     let resolved_rows: u64 = metadata.iter().map(|m| m.num_rows as u64).sum();
@@ -602,7 +606,11 @@ fn parquet_column_stats(
     let mut acc: PlHashMap<PlSmallStr, Acc> = PlHashMap::default();
     let mut sampled_rows: u64 = 0;
 
-    for rg in metadata.iter().flat_map(|m| &m.row_groups).step_by(stride) {
+    for (footer_buf, rg) in metadata
+        .iter()
+        .flat_map(|m| m.row_groups.iter().map(move |rg| (&m.footer_buf, rg)))
+        .step_by(stride)
+    {
         sampled_rows += rg.num_rows() as u64;
 
         for chunk in rg.parquet_columns() {
@@ -634,6 +642,18 @@ fn parquet_column_stats(
             {
                 a.distinct = Some(a.distinct.unwrap_or(0).max(d as u64));
             }
+
+            if !a.int_range_unknown {
+                match chunk_int_range(chunk, footer_buf) {
+                    Some((min, max)) => {
+                        a.int_range = Some(match a.int_range {
+                            Some((lo, hi)) => (lo.min(min), hi.max(max)),
+                            None => (min, max),
+                        });
+                    },
+                    None => a.int_range_unknown = true,
+                }
+            }
         }
     }
 
@@ -660,10 +680,51 @@ fn parquet_column_stats(
                     Card::Exact(a.nulls)
                 },
                 avg_byte_width: Some(a.uncompressed as f32 / sampled_rows as f32),
+                // A sampled or partial read only saw some of the values, so its
+                // range does not bound the column's.
+                int_range: if a.int_range_unknown || a.nested || sampled || !complete {
+                    None
+                } else {
+                    a.int_range
+                },
             };
             (name, stats)
         })
         .collect()
+}
+
+/// Inclusive integer range of one column chunk, or `None` if it is not a signed
+/// integer column or carries no usable min/max.
+///
+/// An unsigned column is stored as `Int32`/`Int64` too, but its bounds are ordered
+/// as unsigned, so reading them as signed can invert the range.
+#[cfg(feature = "parquet")]
+fn chunk_int_range(
+    chunk: &polars_parquet::parquet::metadata::ColumnChunkMetadata,
+    footer_buf: &[u8],
+) -> Option<(i64, i64)> {
+    use polars_parquet::parquet::schema::types::{IntegerType, PhysicalType, PrimitiveLogicalType};
+    use polars_parquet::parquet::statistics::Statistics;
+
+    if !matches!(
+        chunk.physical_type(),
+        PhysicalType::Int32 | PhysicalType::Int64
+    ) {
+        return None;
+    }
+    if matches!(
+        chunk.descriptor().descriptor.primitive_type.logical_type,
+        Some(PrimitiveLogicalType::Integer(
+            IntegerType::UInt8 | IntegerType::UInt16 | IntegerType::UInt32 | IntegerType::UInt64
+        ))
+    ) {
+        return None;
+    }
+    match chunk.statistics(footer_buf)?.ok()? {
+        Statistics::Int32(s) => Some((s.min_value? as i64, s.max_value? as i64)),
+        Statistics::Int64(s) => Some((s.min_value?, s.max_value?)),
+        _ => None,
+    }
 }
 
 /// Minimum sample so a scan still extrapolates from enough files; below this,

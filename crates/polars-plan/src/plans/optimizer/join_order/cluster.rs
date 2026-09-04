@@ -18,8 +18,8 @@ use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 
 use crate::plans::{
-    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, OutputName, ProjectionOptions,
-    aexpr_to_leaf_names_iter, node_stats,
+    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, MintermIter, NodeStats, OutputName,
+    ProjectionOptions, aexpr_to_leaf_names_iter, node_stats,
 };
 use crate::prelude::{JoinArgs, JoinType, MaintainOrderJoin};
 use crate::utils::rename_columns;
@@ -71,6 +71,10 @@ pub(super) struct Cluster {
     /// Options used for every rebuilt join. [`same_settings`] guarantees all joins
     /// in the cluster agree on everything but their keys.
     pub(super) options: Arc<JoinOptionsIR>,
+    /// Conjuncts that sat between the cluster's joins, in the root namespace. The
+    /// joins are all inner, so these commute with them and are re-applied as soon as
+    /// the chain has the columns they read.
+    pub(super) residuals: Vec<ExprIR>,
 }
 
 impl Cluster {
@@ -131,6 +135,12 @@ struct RawLeaf {
     renames: Arc<Renames>,
 }
 
+/// One conjunct found between two joins, with the renames carrying it to the root.
+struct RawResidual {
+    predicate: ExprIR,
+    renames: Arc<Renames>,
+}
+
 /// A key pair as written, together with the leaves either side of its join.
 ///
 /// A key expression is resolved by name against its own input, so the sides have to
@@ -160,6 +170,7 @@ pub(super) fn extract(
 
     let mut raw_leaves = Vec::new();
     let mut raw_keys = Vec::new();
+    let mut raw_residuals = Vec::new();
     collect(
         root,
         ir_arena,
@@ -168,6 +179,7 @@ pub(super) fn extract(
         &Arc::new(Renames::default()),
         &mut raw_leaves,
         &mut raw_keys,
+        &mut raw_residuals,
     );
 
     if raw_leaves.len() < MIN_LEAVES {
@@ -235,6 +247,15 @@ pub(super) fn extract(
         if !column_names_are_unambiguous(&schemas, &coalesced) {
             return None;
         }
+        // A residual reads columns by name, and which leaf a name came from is not
+        // tracked here, so one naming a renamed column cannot be carried across.
+        let renamed_away = |raw: &RawResidual| {
+            aexpr_to_leaf_names_iter(raw.predicate.node(), expr_arena)
+                .any(|name| renames.iter().any(|r| r.contains_key(name.as_str())))
+        };
+        if raw_residuals.iter().any(renamed_away) {
+            return None;
+        }
     }
 
     // Every leaf needs an estimate. Ordering on partial information would order by
@@ -250,12 +271,18 @@ pub(super) fn extract(
         });
     }
 
+    let residuals = raw_residuals
+        .iter()
+        .map(|raw| normalize_key(&raw.predicate, &raw.renames, expr_arena))
+        .collect();
+
     Some(Cluster {
         leaves,
         edges,
         output_schema,
         restore,
         options,
+        residuals,
     })
 }
 
@@ -346,10 +373,35 @@ fn collect(
     renames: &Arc<Renames>,
     leaves: &mut Vec<RawLeaf>,
     key_pairs: &mut Vec<RawKey>,
+    residuals: &mut Vec<RawResidual>,
 ) {
     // Column projections commonly sit between joins. They preserve rows, so look past
     // them for the join underneath; otherwise almost every join is its own cluster.
     let (peeled, peeled_renames) = peel_projections(node, ir_arena, expr_arena, renames);
+
+    // A predicate over two of the relations cannot be pushed below their join, so it
+    // sits between the joins. Peel it off and carry it, otherwise the cluster ends
+    // here and everything below is one leaf, keys and all. Each conjunct travels on
+    // its own so it can be re-applied as soon as its own columns are available.
+    if let IR::Filter { input, predicate } = ir_arena.get(peeled) {
+        residuals.extend(
+            MintermIter::new(predicate.node(), expr_arena).map(|node| RawResidual {
+                predicate: ExprIR::from_node(node, expr_arena),
+                renames: peeled_renames.clone(),
+            }),
+        );
+        collect(
+            *input,
+            ir_arena,
+            expr_arena,
+            root_options,
+            &peeled_renames,
+            leaves,
+            key_pairs,
+            residuals,
+        );
+        return;
+    }
 
     match ir_arena.get(peeled) {
         IR::Join {
@@ -369,6 +421,7 @@ fn collect(
                 &peeled_renames,
                 leaves,
                 key_pairs,
+                residuals,
             );
             let mid = leaves.len();
             collect(
@@ -379,6 +432,7 @@ fn collect(
                 &peeled_renames,
                 leaves,
                 key_pairs,
+                residuals,
             );
             let end = leaves.len();
 

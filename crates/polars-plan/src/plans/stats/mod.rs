@@ -100,6 +100,20 @@ pub struct ScanColumnStats {
     pub null_count: Card,
     /// Average width of one value in the source, in bytes.
     pub avg_byte_width: Option<f32>,
+    /// Inclusive value range of an integer column. Only set when every chunk of the
+    /// column was read and carried a min and a max, so the bound holds for the whole
+    /// column. Bounds the distinct count from above.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub int_range: Option<(i64, i64)>,
+}
+
+impl ScanColumnStats {
+    /// Values the column could hold, from its integer range. An upper bound on the
+    /// distinct count, saturating rather than overflowing on a full-width range.
+    pub fn int_domain(&self) -> Option<f64> {
+        let (min, max) = self.int_range?;
+        (max >= min).then(|| (max as i128 - min as i128 + 1) as f64)
+    }
 }
 
 // We don't index
