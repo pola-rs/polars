@@ -312,6 +312,41 @@ def test_arr_dot_nulls() -> None:
     )
 
 
+def test_arr_dot_inner_nulls_without_outer_validity() -> None:
+    lhs = pl.Series(
+        "a",
+        [[1.0, None, 3.0], [None, 2.0, None]],
+        dtype=pl.Array(pl.Float64, 3),
+    )
+    rhs = pl.Series(
+        "b",
+        [[4.0, 5.0, None], [3.0, None, 4.0]],
+        dtype=pl.Array(pl.Float64, 3),
+    )
+
+    assert_series_equal(
+        lhs.arr.dot(rhs),
+        pl.Series("a", [4.0, 0.0], dtype=pl.Float64),
+    )
+
+    query = pl.Series(
+        "b",
+        [[4.0, None, 6.0]],
+        dtype=pl.Array(pl.Float64, 3),
+    )
+    expected = pl.Series("a", [22.0, 0.0], dtype=pl.Float64)
+    assert_series_equal(lhs.arr.dot(query), expected)
+    assert_series_equal(query.arr.dot(lhs), expected.rename("b"))
+
+
+def test_arr_dot_zero_width_without_outer_validity() -> None:
+    zero_width = pl.Series("a", [[], []], dtype=pl.Array(pl.Float64, 0))
+    assert_series_equal(
+        zero_width.arr.dot(zero_width),
+        pl.Series("a", [0.0, 0.0], dtype=pl.Float64),
+    )
+
+
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
 def test_arr_dot_special_floating_values(dtype: pl.DataType) -> None:
     lhs = pl.Series(
