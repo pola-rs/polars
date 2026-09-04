@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use arrow::array::BooleanArray;
 use arrow::bitmap::BitmapBuilder;
+use polars_async::executor;
 use polars_core::prelude::*;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::Schema;
@@ -14,7 +15,6 @@ use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::sparse_init_vec::SparseInitVec;
 
-use crate::async_executor;
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
 
@@ -41,6 +41,7 @@ struct SemiAntiJoinParams {
     left_is_build: bool,
     left_key_selectors: Vec<StreamExpr>,
     right_key_selectors: Vec<StreamExpr>,
+    output_schema: Arc<Schema>,
     nulls_equal: bool,
     is_anti: bool,
     return_bool: bool,
@@ -56,6 +57,7 @@ pub struct SemiAntiJoinNode {
 impl SemiAntiJoinNode {
     pub fn new(
         unique_key_schema: Arc<Schema>,
+        output_schema: Arc<Schema>,
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
         args: JoinArgs,
@@ -73,6 +75,7 @@ impl SemiAntiJoinNode {
                 left_is_build,
                 left_key_selectors,
                 right_key_selectors,
+                output_schema,
                 random_state: PlRandomState::default(),
                 nulls_equal: args.nulls_equal,
                 return_bool,
@@ -136,13 +139,9 @@ impl BuildState {
         };
 
         while let Ok(morsel) = recv.recv().await {
-            let hash_keys = select_keys(
-                morsel.df(),
-                key_selectors,
-                params,
-                &state.in_memory_exec_state,
-            )
-            .await?;
+            let df = morsel.df().await;
+            let hash_keys =
+                select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
 
             hash_keys.gen_idxs_per_partition(
                 &partitioner,
@@ -176,7 +175,7 @@ impl BuildState {
         let groupers: SparseInitVec<Box<dyn Grouper>> =
             SparseInitVec::with_capacity(num_partitions);
 
-        async_executor::task_scope(|s| {
+        executor::task_scope(|s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_keys_per_local_builder = Arc::new(keys_per_local_builder);
@@ -248,7 +247,7 @@ impl BuildState {
             drop(arc_keys_per_local_builder);
             drop(key_drop_q_send);
 
-            ASYNC.block_on(async move {
+            ASYNC.block_in_place_on(async move {
                 for handle in join_handles {
                     handle.await;
                 }
@@ -283,7 +282,8 @@ impl ProbeState {
         };
 
         while let Ok(morsel) = recv.recv().await {
-            let (df, in_seq, src_token, wait_token) = morsel.into_inner();
+            let (sf, in_seq, src_token, wait_token) = morsel.into_inner();
+            let df = sf.into_df().await;
             if df.height() == 0 {
                 continue;
             }
@@ -319,10 +319,11 @@ impl ProbeState {
                     if probe_match.is_empty() {
                         continue;
                     }
-                    df.take_slice_unchecked(&probe_match)
+                    df.select(params.output_schema.iter_names())?
+                        .take_slice_unchecked(&probe_match)
                 };
 
-                let mut morsel = Morsel::new(out_df, in_seq, src_token.clone());
+                let mut morsel = Morsel::new_unregistered(out_df, in_seq, src_token.clone());
                 if let Some(token) = wait_token {
                     morsel.set_consume_token(token);
                 }

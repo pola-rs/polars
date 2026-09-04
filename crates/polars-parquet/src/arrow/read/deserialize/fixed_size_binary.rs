@@ -17,6 +17,7 @@ use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::encoding::{Encoding, hybrid_rle};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{DataPage, DictPage, split_buffer};
+use crate::read::PredicateFilter;
 use crate::read::deserialize::dictionary_encoded::constrain_page_validity;
 use crate::read::deserialize::utils::{self, Decoded};
 use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
@@ -542,6 +543,22 @@ impl Decoder for BinaryDecoder {
             target.into_bytes_buffer(),
             None,
         ))
+    }
+
+    fn evaluate_dict_predicate(
+        &self,
+        _dict: &Self::Dict,
+        _predicate: &PredicateFilter,
+    ) -> ParquetResult<Bitmap> {
+        // Dispatch to this codepath disabled from crates/polars-stream/src/nodes/io_sources/parquet/init.rs
+        //
+        // This would panic attempting to create a polars DataType::Binary Series from a
+        // dyn Array of type ArrowDataType::FixedSizeBinary(_) (via Series::from_chunk_and_dtype
+        // in predicate.evaluate_mut()).
+        //
+        // TODO: Performant fix would involve refactoring this (BinaryDecoder) to also store Views
+        // in the intermediate state, and only when a predicate is being applied on this column.
+        unimplemented!("parquet: fixed-size binary prefilter");
     }
 
     fn evaluate_predicate(

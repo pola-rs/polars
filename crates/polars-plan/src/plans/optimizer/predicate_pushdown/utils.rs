@@ -1,12 +1,20 @@
 use polars_core::prelude::*;
+use polars_utils::aliases::ScratchIndexSet;
 use polars_utils::idx_vec::UnitVec;
+use polars_utils::itertools::Itertools;
 use polars_utils::unitvec;
 
 use super::keys::*;
-use crate::plans::visitor::{
-    AExprArena, AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker,
-};
+use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
 use crate::prelude::*;
+
+/// Scratch state for [`insert_predicate_dedup`], held for the duration of a pushdown pass.
+#[derive(Default)]
+pub(super) struct PredicateDedupState {
+    canonical_exprs: CanonicalExprMap,
+    min_terms: ScratchIndexSet<CanonicalExprId>,
+}
+
 fn combine_by_and(left: Node, right: Node, arena: &mut Arena<AExpr>) -> Node {
     arena.add(AExpr::BinaryExpr {
         left,
@@ -15,45 +23,44 @@ fn combine_by_and(left: Node, right: Node, arena: &mut Arena<AExpr>) -> Node {
     })
 }
 
-/// Inserts a predicate into the map, with some basic de-duplication.
+/// Inserts a predicate into the map, de-duplicating against what is already there.
 ///
 /// The map is keyed in a way that may cause some predicates to fall into the same bucket. In that
-/// case the predicate is AND'ed with the existing node in that bucket.
+/// case the predicate is AND'ed with the existing node in that bucket, skipping the min-terms that
+/// the existing node already contains.
 pub(super) fn insert_predicate_dedup(
-    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     predicate: &ExprIR,
     expr_arena: &mut Arena<AExpr>,
+    dedup: &mut PredicateDedupState,
 ) {
     let name = predicate_to_key(predicate.node(), expr_arena);
-
-    let mut new_min_terms = unitvec![];
 
     acc_predicates
         .entry(name)
         .and_modify(|existing_predicate| {
-            let mut out_node = existing_predicate.node();
+            let PredicateDedupState {
+                canonical_exprs,
+                min_terms,
+            } = dedup;
 
-            new_min_terms.clear();
+            let existing_min_terms = min_terms.get();
+            existing_min_terms.extend(
+                MintermIter::new(existing_predicate.node(), expr_arena)
+                    .map(|min_term| canonical_exprs.resolve(min_term, expr_arena)),
+            );
+
+            let mut new_min_terms: UnitVec<Node> = unitvec![];
             new_min_terms.extend(MintermIter::new(predicate.node(), expr_arena));
 
-            // Limit the number of existing min-terms that we check against so that we have linear-time performance.
-            // Without this limit the loop below will be quadratic. The side effect is that we may not perfectly
-            // identify duplicates when there are large amounts of filter expressions.
-            const CHECK_LIMIT: usize = 32;
-
-            'next_new_min_term: for new_predicate in new_min_terms {
-                let new_min_term_eq_wrap = AExprArena::new(new_predicate, expr_arena);
-
-                if MintermIter::new(existing_predicate.node(), expr_arena)
-                    .take(CHECK_LIMIT)
-                    .any(|existing_min_term| {
-                        new_min_term_eq_wrap == AExprArena::new(existing_min_term, expr_arena)
-                    })
-                {
-                    continue 'next_new_min_term;
+            let mut out_node = existing_predicate.node();
+            for new_min_term in new_min_terms {
+                let id = canonical_exprs.resolve(new_min_term, expr_arena);
+                if existing_min_terms.contains(&id) {
+                    continue;
                 }
 
-                out_node = combine_by_and(new_predicate, out_node, expr_arena);
+                out_node = combine_by_and(new_min_term, out_node, expr_arena);
             }
 
             existing_predicate.set_node(out_node)
@@ -61,7 +68,7 @@ pub(super) fn insert_predicate_dedup(
         .or_insert_with(|| predicate.clone());
 }
 
-pub(super) fn temporary_unique_key(acc_predicates: &PlHashMap<PlSmallStr, ExprIR>) -> PlSmallStr {
+pub(super) fn temporary_unique_key(acc_predicates: &PlIndexMap<PlSmallStr, ExprIR>) -> PlSmallStr {
     // TODO: Don't heap allocate during construction.
     let mut out_key = '\u{1D17A}'.to_string();
     let mut existing_keys = acc_predicates.keys();
@@ -73,44 +80,70 @@ pub(super) fn temporary_unique_key(acc_predicates: &PlHashMap<PlSmallStr, ExprIR
     PlSmallStr::from_string(out_key)
 }
 
-pub(super) fn combine_predicates<I>(iter: I, arena: &mut Arena<AExpr>) -> ExprIR
+pub(super) fn combine_predicates<I>(iter: I, expr_arena: &mut Arena<AExpr>) -> Option<ExprIR>
 where
-    I: Iterator<Item = ExprIR>,
+    I: IntoIterator<Item = ExprIR>,
 {
-    let mut single_pred = None;
+    // Order the predicates so that CSE can hit them.
+    let mut exprs = iter.into_iter().collect_vec();
+    exprs.sort_by(|a, b| a.output_name().cmp(b.output_name()));
+    let mut iter = exprs.iter();
+    let mut out = iter.next()?.node();
+
     for e in iter {
-        single_pred = match single_pred {
-            None => Some(e.node()),
-            Some(left) => Some(arena.add(AExpr::BinaryExpr {
-                left,
-                op: Operator::And,
-                right: e.node(),
-            })),
-        };
+        out = expr_arena.add(AExpr::BinaryExpr {
+            left: out,
+            op: Operator::And,
+            right: e.node(),
+        });
     }
-    single_pred
-        .map(|node| ExprIR::from_node(node, arena))
-        .expect("an empty iterator was passed")
+
+    Some(ExprIR::from_node(out, expr_arena))
 }
 
-pub(super) fn predicate_at_scan(
-    acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
-    predicate: Option<ExprIR>,
+/// Removes the min-terms containing a dynamic predicate from every accumulated predicate,
+/// dropping the entries that end up empty.
+///
+/// Dynamic predicates are pruning hints - the operator that inserted them still applies the
+/// actual semantics - so removing them only widens the predicate. Note that min-term
+/// granularity matters here: a dynamic predicate is keyed on the column it filters, so it can
+/// share a bucket with a user predicate on that same column.
+#[cfg(feature = "python")]
+pub(super) fn remove_dynamic_pred_minterms(
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
-) -> Option<ExprIR> {
-    if !acc_predicates.is_empty() {
-        let mut new_predicate = combine_predicates(acc_predicates.into_values(), expr_arena);
-        if let Some(pred) = predicate {
-            new_predicate.set_node(combine_by_and(
-                new_predicate.node(),
-                pred.node(),
-                expr_arena,
-            ));
-        }
-        Some(new_predicate)
-    } else {
-        None
+) {
+    fn contains_dynamic_pred(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+        has_aexpr(node, expr_arena, |e| {
+            matches!(
+                e,
+                AExpr::Function {
+                    function: IRFunctionExpr::DynamicPred { .. },
+                    ..
+                }
+            )
+        })
     }
+
+    acc_predicates.retain(|_, predicate| {
+        if !contains_dynamic_pred(predicate.node(), expr_arena) {
+            return true;
+        }
+
+        let min_terms = MintermIter::new(predicate.node(), expr_arena)
+            .filter(|node| !contains_dynamic_pred(*node, expr_arena))
+            .collect::<UnitVec<_>>();
+
+        let Some(node) = min_terms
+            .into_iter()
+            .reduce(|left, right| combine_by_and(left, right, expr_arena))
+        else {
+            return false;
+        };
+
+        predicate.set_node(node);
+        true
+    });
 }
 
 /// Evaluates a condition on the column name inputs of every predicate, where if
@@ -118,7 +151,7 @@ pub(super) fn predicate_at_scan(
 /// transferred to local.
 pub(super) fn transfer_to_local_by_name<F>(
     expr_arena: &Arena<AExpr>,
-    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     mut condition: F,
 ) -> Vec<ExprIR>
 where
@@ -137,7 +170,7 @@ where
     }
     let mut local_predicates = Vec::with_capacity(remove_keys.len());
     for key in remove_keys {
-        if let Some(pred) = acc_predicates.remove(&*key) {
+        if let Some(pred) = acc_predicates.swap_remove(&*key) {
             local_predicates.push(pred)
         }
     }
@@ -178,12 +211,12 @@ pub fn pushdown_eligibility(
     // Predicates that need to be checked (key, expr_ir)
     new_predicates: &[(&PlSmallStr, ExprIR)],
     // Note: These predicates have already passed checks.
-    acc_predicates: &PlHashMap<PlSmallStr, ExprIR>,
+    acc_predicates: &PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut UnitVec<Node>,
     maintain_errors: bool,
     input_ir: &IR,
-) -> PolarsResult<(PushdownEligibility, PlHashMap<PlSmallStr, PlSmallStr>)> {
+) -> PolarsResult<(PushdownEligibility, PlIndexMap<PlSmallStr, PlSmallStr>)> {
     scratch.clear();
     let ae_nodes_stack = scratch;
 
@@ -192,20 +225,20 @@ pub fn pushdown_eligibility(
     let mut col_to_alias_map = alias_to_col_map.clone();
 
     let mut modified_projection_columns =
-        PlHashSet::<PlSmallStr>::with_capacity(projection_nodes.len());
+        PlIndexSet::<PlSmallStr>::with_capacity(projection_nodes.len());
     let mut has_window = false;
-    let mut common_window_inputs = PlHashSet::<PlSmallStr>::new();
+    let mut common_window_inputs = PlIndexSet::<PlSmallStr>::new();
 
     // Important: Names inserted into any data structure by this function are
     // all non-aliased.
     // This function returns false if pushdown cannot be performed.
     let process_projection_or_predicate = |ae_nodes_stack: &mut UnitVec<Node>,
                                            has_window: &mut bool,
-                                           common_window_inputs: &mut PlHashSet<PlSmallStr>|
+                                           common_window_inputs: &mut PlIndexSet<PlSmallStr>|
      -> ExprPushdownGroup {
         debug_assert_eq!(ae_nodes_stack.len(), 1);
 
-        let mut partition_by_names = PlHashSet::<PlSmallStr>::new();
+        let mut partition_by_names = PlIndexSet::<PlSmallStr>::new();
         let mut expr_pushdown_eligibility = ExprPushdownGroup::Pushable;
 
         while let Some(node) = ae_nodes_stack.pop() {
@@ -239,7 +272,7 @@ pub fn pushdown_eligibility(
                     }
 
                     if !*has_window {
-                        for name in partition_by_names.drain() {
+                        for name in partition_by_names.drain(..) {
                             common_window_inputs.insert(name);
                         }
 
@@ -300,7 +333,7 @@ pub fn pushdown_eligibility(
 
     if has_window && !col_to_alias_map.is_empty() {
         // Rename to aliased names.
-        let mut new = PlHashSet::<PlSmallStr>::with_capacity(2 * common_window_inputs.len());
+        let mut new = PlIndexSet::<PlSmallStr>::with_capacity(2 * common_window_inputs.len());
 
         for key in common_window_inputs.into_iter() {
             if let Some(aliased) = col_to_alias_map.get(&key) {
@@ -343,7 +376,7 @@ pub fn pushdown_eligibility(
     // Note: has_window is constant.
     let can_use_column = |col: &str| {
         if has_window {
-            common_window_inputs.contains(col)
+            common_window_inputs.contains(col) && !modified_projection_columns.contains(col)
         } else {
             !modified_projection_columns.contains(col)
         }
@@ -473,7 +506,7 @@ pub(crate) fn ir_removes_rows(ir: &IR) -> bool {
 pub(super) fn map_column_references(
     expr: &mut ExprIR,
     expr_arena: &mut Arena<AExpr>,
-    rename_map: &PlHashMap<PlSmallStr, PlSmallStr>,
+    rename_map: &PlIndexMap<PlSmallStr, PlSmallStr>,
 ) {
     if rename_map.is_empty() {
         return;
@@ -483,7 +516,7 @@ pub(super) fn map_column_references(
         .rewrite(
             &mut MapColumnReferences {
                 rename_map,
-                column_nodes: PlHashMap::with_capacity(rename_map.len()),
+                column_nodes: PlIndexMap::with_capacity(rename_map.len()),
             },
             expr_arena,
         )
@@ -493,8 +526,8 @@ pub(super) fn map_column_references(
     *expr = ExprIR::from_node(node, expr_arena);
 
     struct MapColumnReferences<'a> {
-        rename_map: &'a PlHashMap<PlSmallStr, PlSmallStr>,
-        column_nodes: PlHashMap<&'a str, Node>,
+        rename_map: &'a PlIndexMap<PlSmallStr, PlSmallStr>,
+        column_nodes: PlIndexMap<&'a str, Node>,
     }
 
     impl RewritingVisitor for MapColumnReferences<'_> {

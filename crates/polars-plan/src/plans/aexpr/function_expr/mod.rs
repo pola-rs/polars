@@ -124,7 +124,7 @@ pub enum IRFunctionExpr {
     NullCount,
     Pow(IRPowFunction),
     #[cfg(feature = "row_hash")]
-    Hash(u64, u64, u64, u64),
+    Hash(u64),
     #[cfg(feature = "arg_where")]
     ArgWhere,
     #[cfg(feature = "index_of")]
@@ -154,7 +154,6 @@ pub enum IRFunctionExpr {
         function_by: IRRollingFunctionBy,
         options: RollingOptionsDynamicWindow,
     },
-    Rechunk,
     ShiftAndFill,
     Shift,
     DropNans,
@@ -195,6 +194,7 @@ pub enum IRFunctionExpr {
         has_min: bool,
         has_max: bool,
     },
+    AsList,
     #[cfg(feature = "dtype-struct")]
     AsStruct,
     #[cfg(feature = "top_k")]
@@ -368,6 +368,14 @@ pub enum IRFunctionExpr {
         half_life: Duration,
     },
     #[cfg(feature = "ewma")]
+    EwmSum {
+        options: EWMOptions,
+    },
+    #[cfg(feature = "ewma_by")]
+    EwmSumBy {
+        half_life: Duration,
+    },
+    #[cfg(feature = "ewma")]
     EwmStd {
         options: EWMOptions,
     },
@@ -501,7 +509,7 @@ impl Hash for IRFunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill | Rechunk | MinBy | MaxBy => {},
+            | ArgMax | Product | Shift | ShiftAndFill | MinBy | MaxBy => {},
             ArgSort {
                 descending,
                 nulls_last,
@@ -524,12 +532,13 @@ impl Hash for IRFunctionExpr {
             ArgWhere => {},
             #[cfg(feature = "trigonometry")]
             Atan2 => {},
+            AsList => {},
             #[cfg(feature = "dtype-struct")]
             AsStruct => {},
             #[cfg(feature = "sign")]
             Sign => {},
             #[cfg(feature = "row_hash")]
-            Hash(a, b, c, d) => (a, b, c, d).hash(state),
+            Hash(seed) => seed.hash(state),
             FillNull => {},
             #[cfg(feature = "rolling_window")]
             RollingExpr { function, options } => {
@@ -666,6 +675,10 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "ewma_by")]
             EwmMeanBy { half_life } => (half_life).hash(state),
             #[cfg(feature = "ewma")]
+            EwmSum { options } => options.hash(state),
+            #[cfg(feature = "ewma_by")]
+            EwmSumBy { half_life } => (half_life).hash(state),
+            #[cfg(feature = "ewma")]
             EwmStd { options } => options.hash(state),
             #[cfg(feature = "ewma")]
             EwmVar { options } => options.hash(state),
@@ -739,7 +752,7 @@ impl Display for IRFunctionExpr {
             NullCount => "null_count",
             Pow(func) => return write!(f, "{func}"),
             #[cfg(feature = "row_hash")]
-            Hash(_, _, _, _) => "hash",
+            Hash(_) => "hash",
             #[cfg(feature = "arg_where")]
             ArgWhere => "arg_where",
             #[cfg(feature = "index_of")]
@@ -759,7 +772,6 @@ impl Display for IRFunctionExpr {
             RollingExpr { function, .. } => return write!(f, "{function}"),
             #[cfg(feature = "rolling_window_by")]
             RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
-            Rechunk => "rechunk",
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
@@ -793,6 +805,7 @@ impl Display for IRFunctionExpr {
                 (true, false) => "clip_min",
                 _ => unreachable!(),
             },
+            AsList => "as_list",
             #[cfg(feature = "dtype-struct")]
             AsStruct => "as_struct",
             #[cfg(feature = "top_k")]
@@ -900,6 +913,10 @@ impl Display for IRFunctionExpr {
             EwmMean { .. } => "ewm_mean",
             #[cfg(feature = "ewma_by")]
             EwmMeanBy { .. } => "ewm_mean_by",
+            #[cfg(feature = "ewma")]
+            EwmSum { .. } => "ewm_sum",
+            #[cfg(feature = "ewma_by")]
+            EwmSumBy { .. } => "ewm_sum_by",
             #[cfg(feature = "ewma")]
             EwmStd { .. } => "ewm_std",
             #[cfg(feature = "ewma")]
@@ -1040,7 +1057,7 @@ impl IRFunctionExpr {
             F::Hist { .. } => FunctionOptions::groupwise(),
             F::NullCount => FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING),
             #[cfg(feature = "row_hash")]
-            F::Hash(_, _, _, _) => FunctionOptions::elementwise(),
+            F::Hash(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "arg_where")]
             F::ArgWhere => FunctionOptions::groupwise(),
             #[cfg(feature = "index_of")]
@@ -1066,7 +1083,6 @@ impl IRFunctionExpr {
             F::RollingExpr { .. } => FunctionOptions::length_preserving(),
             #[cfg(feature = "rolling_window_by")]
             F::RollingExprBy { .. } => FunctionOptions::length_preserving(),
-            F::Rechunk => FunctionOptions::length_preserving(),
             F::ShiftAndFill => FunctionOptions::length_preserving(),
             F::Shift => FunctionOptions::length_preserving(),
             F::DropNans => {
@@ -1116,6 +1132,8 @@ impl IRFunctionExpr {
             },
             #[cfg(feature = "round_series")]
             F::Clip { .. } => FunctionOptions::elementwise(),
+            F::AsList => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
             #[cfg(feature = "dtype-struct")]
             F::AsStruct => FunctionOptions::elementwise().with_flags(|f| {
                 f | FunctionFlags::PASS_NAME_TO_APPLY | FunctionFlags::INPUT_WILDCARD_EXPANSION
@@ -1246,11 +1264,11 @@ impl IRFunctionExpr {
                     f
                 }),
             #[cfg(feature = "ewma")]
-            F::EwmMean { .. } | F::EwmStd { .. } | F::EwmVar { .. } => {
+            F::EwmMean { .. } | F::EwmStd { .. } | F::EwmVar { .. } | F::EwmSum { .. } => {
                 FunctionOptions::length_preserving()
             },
             #[cfg(feature = "ewma_by")]
-            F::EwmMeanBy { .. } => FunctionOptions::length_preserving(),
+            F::EwmMeanBy { .. } | F::EwmSumBy { .. } => FunctionOptions::length_preserving(),
             #[cfg(feature = "replace")]
             F::Replace => FunctionOptions::elementwise(),
             #[cfg(feature = "replace")]

@@ -1,3 +1,4 @@
+pub mod df_with_offset;
 pub mod error_capture;
 pub mod exclude_keys_projection;
 pub mod file_provider;
@@ -15,3 +16,4 @@ pub mod partitioner_pipeline;
 pub mod sink_morsel;
 pub mod sinked_path_info_list;
 pub mod size;
+pub mod writable;

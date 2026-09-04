@@ -1,7 +1,7 @@
 use arrow::legacy::kernels::sort_partition::{
     create_clean_partitions, partition_to_groups, partition_to_groups_amortized_varsize,
 };
-use polars_error::signals::try_raise_keyboard_interrupt;
+use polars_error::abort::try_raise_polars_abort;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
@@ -185,7 +185,7 @@ where
                 BitRepr::U128(ca) => num_groups_proxy(&ca, multithreaded, sorted),
             },
         };
-        try_raise_keyboard_interrupt();
+        try_raise_polars_abort();
         Ok(out)
     }
 }
@@ -245,7 +245,7 @@ impl IntoGroupsType for BinaryChunked {
         } else {
             group_by(bh[0].iter(), sorted)
         };
-        try_raise_keyboard_interrupt();
+        try_raise_polars_abort();
         Ok(out)
     }
 }
@@ -363,6 +363,6 @@ where
     T: PolarsObject,
 {
     fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
-        Ok(group_by(self.into_iter(), sorted))
+        Ok(group_by(self.iter(), sorted))
     }
 }

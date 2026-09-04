@@ -32,6 +32,7 @@ impl LazyFrame {
             node: Some(node),
             dsl: Arc::new(self.logical_plan.clone()),
             version: lp_arena.version(),
+            opt_flags: Some(OptFlags::schema_only()),
         };
         Ok(schema)
     }
@@ -62,6 +63,7 @@ impl LazyFrame {
                     node: Some(node),
                     dsl: Arc::new(self.logical_plan.clone()),
                     version: lp_arena.version(),
+                    opt_flags: Some(OptFlags::schema_only()),
                 };
                 *cached_arenas = Some(CachedArena {
                     lp_arena,
@@ -100,6 +102,7 @@ impl LazyFrame {
                             node: Some(node),
                             dsl: Arc::new(self.logical_plan.clone()),
                             version: arenas.lp_arena.version(),
+                            opt_flags: Some(OptFlags::schema_only()),
                         };
                         Ok(schema)
                     },

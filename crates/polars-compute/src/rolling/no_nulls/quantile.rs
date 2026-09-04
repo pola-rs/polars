@@ -138,7 +138,7 @@ where
     };
     match weights {
         None => {
-            if !center {
+            if !center && window_size != 0 {
                 let params = params.as_ref().unwrap();
                 let RollingFnParams::Quantile(params) = params else {
                     unreachable!("expected Quantile params");

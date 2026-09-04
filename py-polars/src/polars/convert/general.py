@@ -21,14 +21,14 @@ from polars._utils.construction.dataframe import (
     sequence_to_pydf,
 )
 from polars._utils.construction.series import arrow_to_pyseries, pandas_to_pyseries
-from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
-    issue_deprecation_warning,
+from polars._utils.expired import (
+    RemovedParameter,
+    RenamedParameter,
+    removed_parameters,
 )
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.various import (
     _cast_repr_strings_with_schema,
-    issue_warning,
     qualified_type_name,
 )
 from polars._utils.wrap import wrap_df, wrap_s
@@ -49,7 +49,6 @@ if TYPE_CHECKING:
         SchemaDefinition,
         SchemaDict,
     )
-    from polars.interchange.protocol import SupportsInterchange
 
 
 def from_dict(
@@ -470,7 +469,7 @@ def from_arrow(
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
-    rechunk: bool = True,
+    rechunk: bool = False,
 ) -> DataFrame | Series:
     """
     Create a DataFrame or Series from an Arrow Table or Array.
@@ -493,9 +492,13 @@ def from_arrow(
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
 
-        If you supply a list of column names that does not match the names in the
-        underlying data, the names given here will overwrite them. The number
-        of names given in the schema should match the underlying data dimensions.
+        Schema entries are applied positionally, following the order of the
+        Python dictionary. The provided schema takes precedence over the schema
+        of the underlying Arrow data. As such, if the provided schema names do
+        not match the underlying Arrow data, the column names of the Arrow data
+        will be discarded in favor of the names set in this argument.
+        The number of names given in the schema must match the underlying data
+        dimensions.
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the schema param will be overridden.
@@ -538,12 +541,27 @@ def from_arrow(
     ]
     """  # noqa: W505
     if is_pycapsule(data) and not _check_for_pyarrow(data):
-        return pycapsule_to_frame(
-            data,
-            schema=schema,
-            schema_overrides=schema_overrides,
-            rechunk=rechunk,
+        unsupported_parameter = (
+            "schema"
+            if schema is not None
+            else "schema_overrides"
+            if schema_overrides is not None
+            else None
         )
+
+        if unsupported_parameter:
+            msg = (
+                f"`{unsupported_parameter}` parameter has no effect when using "
+                "`from_arrow(<ArrowStreamExportable>)`"
+            )
+            raise TypeError(msg)
+
+        ret = pl.Series(data)
+
+        if rechunk:
+            ret = ret.rechunk()
+
+        return ret
 
     elif isinstance(data, (pa.Table, pa.RecordBatch)):
         return wrap_df(
@@ -789,13 +807,17 @@ def _extract_table(data: str) -> tuple[str, TableRepr] | None:
     return None
 
 
-@deprecate_renamed_parameter("tbl", "data", version="0.20.17")
+@removed_parameters(
+    RenamedParameter(
+        name="tbl",
+        new_name="data",
+        deprecated_in="0.20.17",
+        removed_in="2.0",
+    ),
+)
 def from_repr(data: str) -> DataFrame | Series:
     """
     Construct a Polars DataFrame or Series from its string representation.
-
-    .. versionchanged:: 0.20.17
-        The `tbl` parameter was renamed to `data`.
 
     Parameters
     ----------
@@ -1088,30 +1110,27 @@ def _from_series_repr(m: re.Match[str]) -> Series:
         ).to_series()
 
 
+@removed_parameters(
+    RemovedParameter(name="allow_copy", deprecated_in="1.23.0", removed_in="2.0.0")
+)
 def from_dataframe(
-    df: SupportsInterchange | ArrowArrayExportable | ArrowStreamExportable,
+    df: ArrowArrayExportable | ArrowStreamExportable,
     *,
-    allow_copy: bool | None = None,
     rechunk: bool = True,
 ) -> DataFrame:
     """
     Build a Polars DataFrame from any dataframe supporting the PyCapsule Interface.
 
-    .. versionchanged:: 1.23.0
+    .. versionchanged:: 2.0
 
-       `from_dataframe` uses the PyCapsule Interface instead of the Dataframe
-       Interchange Protocol for conversion, only using the latter as a fallback.
+        `from_dataframe` used to fall back to the Interchange Protocol, but this
+        functionality has been removed. The `allow_copy` parameter was removed
+        along with it.
 
     Parameters
     ----------
     df
         Object supporting the dataframe PyCapsule Interface.
-    allow_copy
-        Allow memory to be copied to perform the conversion. If set to False, may cause
-        conversions that are not zero-copy to fail.
-
-        .. deprecated: 1.23.0
-            `allow_copy` is deprecated and will be removed in a future version.
     rechunk : bool, default True
         Make sure that all data is in contiguous memory.
 
@@ -1119,10 +1138,8 @@ def from_dataframe(
     -----
     - Details on the PyCapsule Interface:
       https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html.
-    - Details on the Python dataframe interchange protocol:
-      https://data-apis.org/dataframe-protocol/latest/index.html.
       Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is
-      a more efficient method of conversion.
+      a more efficient method of conversion and is recommended when possible.
 
     Examples
     --------
@@ -1141,25 +1158,8 @@ def from_dataframe(
     │ 2   ┆ 4.0 ┆ y   │
     └─────┴─────┴─────┘
     """
-    if allow_copy is not None:
-        issue_deprecation_warning(
-            "`allow_copy` is deprecated and will be removed in a future version.",
-            version="1.23",
-        )
-    else:
-        allow_copy = True
-    if is_pycapsule(df):
-        try:
-            return pycapsule_to_frame(df, rechunk=rechunk)
-        except Exception as exc:
-            issue_warning(
-                f"Failed to convert dataframe using PyCapsule Interface with exception: {exc!r}.\n"
-                "Falling back to Dataframe Interchange Protocol, which is known to be less robust.",
-                UserWarning,
-            )
-    from polars.interchange.from_dataframe import from_dataframe
+    if not is_pycapsule(df):
+        msg = f"expected object supporting the PyCapsule Interface, got {qualified_type_name(df)!r}"
+        raise TypeError(msg)
 
-    result = from_dataframe(df, allow_copy=allow_copy)  # type: ignore[arg-type]
-    if rechunk:
-        return result.rechunk()
-    return result
+    return pycapsule_to_frame(df, rechunk=rechunk)

@@ -309,7 +309,7 @@ in the Polars repository. Please adhere to the following guidelines:
     - Explicitly state that you yourself have reviewed *all* changes in your pull request, and believe
       that they are relevant and correct.
     - Not try to solve an issue marked as "good first issue".
-    - Adhere to the rest of our [AI policy](/AI_POLICY.md).
+    - Adhere to the rest of our [AI policy](https://github.com/pola-rs/polars/blob/main/AI_POLICY.md).
   If you fail either requirement the maintainer may simply close your pull request.
 <!-- dprint-ignore-end -->
 
@@ -332,7 +332,8 @@ AI. These cost us a lot of time (and regularly simply don't work), while the aut
 any effort, so for first-time contributors there are some more rules:
 
 - You must post a screenshot of you successfully running the test suite (`make test`), locally on
-  your machine (not the CI).
+  your machine (not the CI). The screenshot must show your terminal window borders clearly, it must
+  not be cropped to only show text.
 - You may not have more than one open PR at a time.
 
 ## Contributing to documentation

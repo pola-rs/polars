@@ -4,7 +4,6 @@ use num_traits::AsPrimitive;
 use parking_lot::Mutex;
 use polars_core::config;
 use polars_core::prelude::PlRandomState;
-use polars_core::runtime::RAYON;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_expr::groups::new_hash_grouper;
@@ -14,9 +13,10 @@ use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_mem_engine::scan_predicate::create_scan_predicate;
 use polars_plan::dsl::{
-    FileSinkOptions, JoinOptionsIR, PartitionStrategyIR, PartitionedSinkOptionsIR, ScanSources,
+    FileSinkOptions, PartitionStrategyIR, PartitionedSinkOptionsIR, ScanSources,
 };
 use polars_plan::plans::expr_ir::ExprIR;
+use polars_plan::plans::options::JoinOptionsIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, IR, IRAggExpr};
 use polars_plan::prelude::FunctionFlags;
 use polars_utils::arena::{Arena, Node};
@@ -79,8 +79,7 @@ pub fn physical_plan_to_graph(
     phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {
-    // Get the number of threads from the rayon thread-pool as that respects our config.
-    let num_pipelines = RAYON.current_num_threads();
+    let num_pipelines = polars_config::config().max_threads();
     let mut ctx = GraphConversionContext {
         phys_sm,
         expr_arena,
@@ -203,12 +202,23 @@ fn to_graph_rec<'a>(
             }
         },
 
-        Filter { predicate, input } => {
+        Filter {
+            predicate,
+            input,
+            projection,
+        } => {
             let input_schema = input.output_schema(ctx.phys_sm);
             let phys_predicate_expr = create_stream_expr(predicate, ctx, input_schema)?;
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
-                nodes::filter::FilterNode::new(phys_predicate_expr),
+                nodes::filter::FilterNode::new(
+                    phys_predicate_expr,
+                    projection.as_ref().map(|(x, _)| {
+                        x.iter()
+                            .map(|name| input_schema.index_of(name).unwrap())
+                            .collect()
+                    }),
+                ),
                 [(input_key, input.port)],
             )
         },
@@ -551,6 +561,7 @@ fn to_graph_rec<'a>(
             input,
             dtype,
             options,
+            input_name,
             ambiguous_is_raise,
         } => {
             let input_key = to_graph_rec(input.node, ctx)?;
@@ -558,6 +569,7 @@ fn to_graph_rec<'a>(
                 nodes::strptime_infer::StrptimeInferNode::new(
                     dtype.clone(),
                     options.clone(),
+                    input_name.clone(),
                     *ambiguous_is_raise,
                 ),
                 [(input_key, input.port)],
@@ -767,6 +779,19 @@ fn to_graph_rec<'a>(
             )
         },
 
+        IsSorted {
+            input,
+            descending,
+            nulls_last,
+            output_name,
+        } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::is_sorted::IsSortedNode::new(*descending, *nulls_last, output_name.clone()),
+                [(input_key, input.port)],
+            )
+        },
+
         OrderedUnion { inputs } => {
             let input_keys = inputs
                 .iter()
@@ -826,6 +851,7 @@ fn to_graph_rec<'a>(
             predicate,
             predicate_file_skip_applied,
             hive_parts,
+            extra_columns_policy,
             missing_columns_policy,
             cast_columns_policy,
             include_file_paths,
@@ -867,6 +893,7 @@ fn to_graph_rec<'a>(
             let pre_slice = pre_slice.clone();
             let hive_parts = hive_parts.map(Arc::new);
             let include_file_paths = include_file_paths.clone();
+            let extra_columns_policy = *extra_columns_policy;
             let missing_columns_policy = *missing_columns_policy;
             let forbid_extra_columns = forbid_extra_columns.clone();
             let cast_columns_policy = cast_columns_policy.clone();
@@ -889,6 +916,7 @@ fn to_graph_rec<'a>(
                     predicate_file_skip_applied,
                     hive_parts,
                     include_file_paths,
+                    extra_columns_policy,
                     missing_columns_policy,
                     forbid_extra_columns,
                     cast_columns_policy,
@@ -1066,8 +1094,6 @@ fn to_graph_rec<'a>(
         InMemoryJoin {
             input_left,
             input_right,
-            left_on,
-            right_on,
             args,
             options,
         } => {
@@ -1087,8 +1113,6 @@ fn to_graph_rec<'a>(
                 input_left: left_node,
                 input_right: right_node,
                 schema: node.output_schema(0).clone(),
-                left_on: left_on.clone(),
-                right_on: right_on.clone(),
                 options: Arc::new(JoinOptionsIR {
                     allow_parallel: true,
                     force_parallel: false,
@@ -1138,6 +1162,7 @@ fn to_graph_rec<'a>(
             output_bool: _,
         } => {
             let args = args.clone();
+            let output_schema = node.output_schema(0).clone();
             let left_input_key = to_graph_rec(input_left.node, ctx)?;
             let right_input_key = to_graph_rec(input_right.node, ctx)?;
             let left_input_schema = input_left.output_schema(ctx.phys_sm).clone();
@@ -1148,13 +1173,13 @@ fn to_graph_rec<'a>(
             let right_key_schema =
                 compute_output_schema(&right_input_schema, right_on, ctx.expr_arena)?;
 
-            // We want to make sure here that the key types match otherwise we get out garbage out
+            // We want to make sure here that the key types match, otherwise we get garbage out
             // since the hashes will be calculated differently.
             polars_ensure!(
                 left_on.len() == right_on.len() &&
                 left_on.iter().zip(right_on.iter()).all(|(l, r)| {
-                    let l_dtype = left_key_schema.get(l.output_name()).unwrap();
-                    let r_dtype = right_key_schema.get(r.output_name()).unwrap();
+                    let l_dtype = l.dtype(&left_input_schema, ctx.expr_arena).unwrap();
+                    let r_dtype = r.dtype(&right_input_schema, ctx.expr_arena).unwrap();
                     l_dtype == r_dtype
                 }),
                 SchemaMismatch: "join received different key types on left and right side"
@@ -1183,13 +1208,14 @@ fn to_graph_rec<'a>(
                 .try_collect_vec()?;
 
             let unique_key_schema =
-                compute_output_schema(&right_input_schema, &unique_left_on, ctx.expr_arena)?;
+                compute_output_schema(&left_input_schema, &unique_left_on, ctx.expr_arena)?;
 
             match node.kind {
                 #[cfg(feature = "semi_anti_join")]
                 SemiAntiJoin { output_bool, .. } => ctx.graph.add_node(
                     nodes::joins::semi_anti_join::SemiAntiJoinNode::new(
                         unique_key_schema,
+                        output_schema,
                         left_key_selectors,
                         right_key_selectors,
                         args,
@@ -1208,6 +1234,7 @@ fn to_graph_rec<'a>(
                         left_key_schema,
                         right_key_schema,
                         unique_key_schema,
+                        output_schema,
                         left_key_selectors,
                         right_key_selectors,
                         args,
@@ -1452,7 +1479,13 @@ fn to_graph_rec<'a>(
 
                             let mut could_serialize_predicate = true;
                             let predicate = match &options.predicate {
-                                PythonPredicate::PyArrow(s) => s.into_bound_py_any(py).unwrap(),
+                                PythonPredicate::PyArrow(pred) => {
+                                    if pred.has_residual {
+                                        // Ensure the engine post-applies the residual predicate.
+                                        could_serialize_predicate = false;
+                                    }
+                                    pred.pyarrow_predicate.bind(py).clone()
+                                },
                                 PythonPredicate::None => None::<()>.into_bound_py_any(py).unwrap(),
                                 PythonPredicate::Polars(_) => {
                                     assert!(pl_predicate.is_some(), "should be set");
@@ -1533,7 +1566,7 @@ fn to_graph_rec<'a>(
                 },
             };
 
-            use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy};
+            use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy};
 
             use crate::nodes::io_sources::batch::builder::BatchFnReaderBuilder;
             use crate::nodes::io_sources::batch::{BatchFnReader, GetBatchState};
@@ -1567,6 +1600,7 @@ fn to_graph_rec<'a>(
             let predicate_file_skip_applied = None;
             let hive_parts = None;
             let include_file_paths = None;
+            let extra_columns_policy = ExtraColumnsPolicy::Raise;
             let missing_columns_policy = MissingColumnsPolicy::Raise;
             let forbid_extra_columns = None;
             let cast_columns_policy = CastColumnsPolicy::ERROR_ON_MISMATCH;
@@ -1588,6 +1622,7 @@ fn to_graph_rec<'a>(
                     predicate_file_skip_applied,
                     hive_parts,
                     include_file_paths,
+                    extra_columns_policy,
                     missing_columns_policy,
                     forbid_extra_columns,
                     cast_columns_policy,
@@ -1606,10 +1641,12 @@ fn to_graph_rec<'a>(
 
         #[cfg(feature = "ewma")]
         ewm_variant @ EwmMean { input, options }
+        | ewm_variant @ EwmSum { input, options }
         | ewm_variant @ EwmVar { input, options }
         | ewm_variant @ EwmStd { input, options } => {
             use nodes::ewm::EwmNode;
             use polars_compute::ewm::mean::EwmMeanState;
+            use polars_compute::ewm::sum::EwmSumState;
             use polars_compute::ewm::{EwmCovState, EwmStateUpdate, EwmStdState, EwmVarState};
             use polars_core::with_match_physical_float_type;
 
@@ -1623,6 +1660,17 @@ fn to_graph_rec<'a>(
                         let state: EwmMeanState<$T> = EwmMeanState::new(
                             AsPrimitive::<$T>::as_(options.alpha),
                             options.adjust,
+                            options.min_periods,
+                            options.ignore_nulls,
+                        );
+
+                        Box::new(state)
+                    })
+                },
+                EwmSum { .. } => {
+                    with_match_physical_float_type!(dtype, |$T| {
+                        let state: EwmSumState<$T> = EwmSumState::new(
+                            AsPrimitive::<$T>::as_(options.alpha),
                             options.min_periods,
                             options.ignore_nulls,
                         );
@@ -1649,6 +1697,7 @@ fn to_graph_rec<'a>(
 
             let name = match ewm_variant {
                 EwmMean { .. } => "ewm-mean",
+                EwmSum { .. } => "ewm-sum",
                 EwmVar { .. } => "ewm-var",
                 EwmStd { .. } => "ewm-std",
                 _ => unreachable!(),

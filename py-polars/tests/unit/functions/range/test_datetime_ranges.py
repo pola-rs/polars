@@ -231,7 +231,8 @@ def test_datetime_ranges_schema_upcasts_to_datetime(
         eager=True,
     ).alias("datetime")
     assert_series_equal(
-        result_single, expected["datetime_range"].explode().rename("datetime")
+        result_single,
+        expected["datetime_range"].explode().rename("datetime"),
     )
 
 

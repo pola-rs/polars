@@ -190,3 +190,38 @@ def test_truncate_invalid_duration(dtype: PolarsTemporalType) -> None:
         match="expected a valid unit to follow integer in the duration string '2'",
     ):
         df.select(pl.col("t").dt.truncate(every=pl.col("every")))
+
+
+def test_truncate_empty_22835() -> None:
+    # Test with Datetime
+    df = pl.DataFrame(
+        schema=[("timestamp", pl.Datetime), ("truncate_interval", pl.Utf8)]
+    )
+    result = df.with_columns(
+        pl.col("timestamp").dt.truncate(pl.col("truncate_interval"))
+    )
+    assert result.shape == (0, 2)
+    assert result.schema == {
+        "timestamp": pl.Datetime("us"),
+        "truncate_interval": pl.Utf8,
+    }
+
+    # Test with Date
+    df = pl.DataFrame(schema=[("date", pl.Date), ("truncate_interval", pl.Utf8)])
+    result = df.with_columns(pl.col("date").dt.truncate(pl.col("truncate_interval")))
+    assert result.shape == (0, 2)
+    assert result.schema == {"date": pl.Date, "truncate_interval": pl.Utf8}
+
+
+def test_round_empty_22835() -> None:
+    # Test with Datetime
+    df = pl.DataFrame(schema=[("timestamp", pl.Datetime), ("round_interval", pl.Utf8)])
+    result = df.with_columns(pl.col("timestamp").dt.round(pl.col("round_interval")))
+    assert result.shape == (0, 2)
+    assert result.schema == {"timestamp": pl.Datetime("us"), "round_interval": pl.Utf8}
+
+    # Test with Date
+    df = pl.DataFrame(schema=[("date", pl.Date), ("round_interval", pl.Utf8)])
+    result = df.with_columns(pl.col("date").dt.round(pl.col("round_interval")))
+    assert result.shape == (0, 2)
+    assert result.schema == {"date": pl.Date, "round_interval": pl.Utf8}

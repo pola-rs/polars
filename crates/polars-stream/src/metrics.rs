@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use polars_async::executor::TaskMetrics;
 pub use polars_io::metrics::{IOMetrics, OptIOMetrics};
 use slotmap::{SecondaryMap, SlotMap};
 
 use crate::LogicalPipe;
-use crate::async_executor::TaskMetrics;
 use crate::graph::{GraphNodeKey, LogicalPipeKey};
 use crate::pipe::PipeMetrics;
 

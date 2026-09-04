@@ -31,6 +31,18 @@ impl ArrayNameSpace {
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Sum))
     }
 
+    /// Compute the row-wise dot product with another equal-width array expression.
+    ///
+    /// Both arrays are cast to a common supertype, which must be an integer,
+    /// `Float32`, or `Float64`. `Int8`, `UInt8`, `Int16`, and `UInt16` produce
+    /// `Int64`; other supported types retain the common type. Integer multiplication
+    /// and accumulation use wrapping arithmetic. Pairs containing an inner null do
+    /// not contribute to the sum. An outer null row produces a null.
+    pub fn dot(self, other: Expr) -> Expr {
+        self.0
+            .map_binary(FunctionExpr::ArrayExpr(ArrayFunction::Dot), other)
+    }
+
     /// Compute the std of the items in every subarray.
     pub fn std(self, ddof: u8) -> Expr {
         self.0
@@ -55,23 +67,6 @@ impl ArrayNameSpace {
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Median))
     }
 
-    /// Keep only the unique values in every sub-array.
-    pub fn unique(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Unique(false)))
-    }
-
-    /// Keep only the unique values in every sub-array.
-    pub fn unique_stable(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Unique(true)))
-    }
-
-    pub fn n_unique(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::NUnique))
-    }
-
     /// Cast the Array column to List column with the same inner data type.
     pub fn to_list(self) -> Expr {
         self.0
@@ -83,16 +78,17 @@ impl ArrayNameSpace {
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Sort(options)))
     }
 
-    pub fn reverse(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Reverse))
-    }
-
+    /// Retrieve an index of a minimal value in every sub-array.
+    ///
+    /// In the case of a tie, this may return the index of any of the minimum values.
     pub fn arg_min(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::ArgMin))
     }
 
+    /// Retrieve the index of the maximal value in every sub-array.
+    ///
+    /// In the case of a tie, this may return the index of any of the maximum values.
     pub fn arg_max(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::ArgMax))
@@ -135,8 +131,8 @@ impl ArrayNameSpace {
     }
 
     #[cfg(feature = "array_to_struct")]
-    pub fn to_struct(self, name_generator: Option<DslNameGenerator>) -> Expr {
-        self.0.map_unary(ArrayFunction::ToStruct(name_generator))
+    pub fn to_struct(self, fields: Option<polars_buffer::Buffer<PlSmallStr>>) -> Expr {
+        self.0.map_unary(ArrayFunction::ToStruct { fields })
     }
 
     /// Slice every subarray.

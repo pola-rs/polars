@@ -15,7 +15,7 @@ pub enum ListFunction {
     Sample {
         is_fraction: bool,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     },
     Slice,
@@ -43,9 +43,6 @@ pub enum ListFunction {
         null_behavior: NullBehavior,
     },
     Sort(SortOptions),
-    Reverse,
-    Unique(bool),
-    NUnique,
     #[cfg(feature = "list_sets")]
     SetOperation(SetOperation),
     Join(bool),
@@ -95,15 +92,6 @@ impl Display for ListFunction {
             Diff { .. } => "diff",
             Length => "length",
             Sort(_) => "sort",
-            Reverse => "reverse",
-            Unique(is_stable) => {
-                if *is_stable {
-                    "unique_stable"
-                } else {
-                    "unique"
-                }
-            },
-            NUnique => "n_unique",
             #[cfg(feature = "list_sets")]
             SetOperation(s) => return write!(f, "list.{s}"),
             Join(_) => "join",

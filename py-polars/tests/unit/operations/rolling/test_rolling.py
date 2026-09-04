@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import re
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -13,7 +14,11 @@ from numpy import nan
 
 import polars as pl
 from polars._utils.convert import parse_as_duration_string
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import (
+    ArgumentRemovedError,
+    ComputeError,
+    InvalidOperationError,
+)
 from polars.meta.index_type import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
@@ -744,7 +749,7 @@ def test_rolling_cov_corr() -> None:
         pl.rolling_corr("x", "y", window_size=3).alias("corr"),
     ).to_dict(as_series=False)
     assert res["cov"][2:] == pytest.approx([0.0, 0.0, 5.333333333333336])
-    assert res["corr"][2:] == pytest.approx([nan, 0.0, 0.9176629354822473], nan_ok=True)
+    assert res["corr"][2:] == pytest.approx([nan, nan, 0.9176629354822473], nan_ok=True)
     assert res["cov"][:2] == [None] * 2
     assert res["corr"][:2] == [None] * 2
 
@@ -760,12 +765,8 @@ def test_rolling_cov_corr_nulls() -> None:
         }
     )
 
-    val_1 = df1.select(
-        pl.rolling_corr("a", "lag_a", window_size=10, min_samples=5, ddof=1)
-    )
-    val_2 = df2.select(
-        pl.rolling_corr("a", "lag_a", window_size=10, min_samples=5, ddof=1)
-    )
+    val_1 = df1.select(pl.rolling_corr("a", "lag_a", window_size=10, min_samples=5))
+    val_2 = df2.select(pl.rolling_corr("a", "lag_a", window_size=10, min_samples=5))
 
     df1_expected = pl.DataFrame({"a": [None, None, None, None, 0.62204709]})
     df2_expected = pl.DataFrame({"a": [None, None, None, None, None, 0.62204709]})
@@ -773,12 +774,8 @@ def test_rolling_cov_corr_nulls() -> None:
     assert_frame_equal(val_1, df1_expected, abs_tol=0.0000001)
     assert_frame_equal(val_2, df2_expected, abs_tol=0.0000001)
 
-    val_1 = df1.select(
-        pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5, ddof=1)
-    )
-    val_2 = df2.select(
-        pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5, ddof=1)
-    )
+    val_1 = df1.select(pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5))
+    val_2 = df2.select(pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5))
 
     df1_expected = pl.DataFrame({"a": [None, None, None, None, 0.009445]})
     df2_expected = pl.DataFrame({"a": [None, None, None, None, None, 0.009445]})
@@ -1442,11 +1439,8 @@ def test_rolling_aggs(
             )
         )
         expected_dict["ts"].append(ts)
-        if window.is_empty():
-            expected_dict["value"].append(None)
-        else:
-            value = getattr(window["value"], aggregation)()
-            expected_dict["value"].append(value)
+        value = getattr(window["value"], aggregation)()
+        expected_dict["value"].append(value)
     expected = pl.DataFrame(expected_dict).select(
         pl.col("ts").cast(pl.Datetime(time_unit)),
         pl.col("value").cast(result["value"].dtype),
@@ -2418,18 +2412,6 @@ def test_rolling_corr_ddof_invariant_27013() -> None:
     r1 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5))["x"][-1]
     assert r1 == pytest.approx(1.0)
 
-    with pytest.warns(DeprecationWarning, match="ddof"):
-        r0 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5, ddof=0))[
-            "x"
-        ][-1]
-    with pytest.warns(DeprecationWarning, match="ddof"):
-        r2 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5, ddof=2))[
-            "x"
-        ][-1]
-
-    assert r0 == pytest.approx(1.0)
-    assert r2 == pytest.approx(1.0)
-
 
 def test_rolling_streaming_ensures_sorted_27231(plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "2")
@@ -2440,3 +2422,65 @@ def test_rolling_streaming_ensures_sorted_27231(plmonkeypatch: PlMonkeyPatch) ->
         match="argument in operation 'rolling' is not sorted",
     ):
         q.collect(engine="streaming")
+
+
+def test_rolling_rank_min_samples_28102() -> None:
+    s = pl.Series("a", [None, 1.0, 2.0, 3.0, 4.0])
+    out = s.rolling_rank(
+        window_size=3,
+        method="max",
+        min_samples=3,
+    )
+    assert_series_equal(
+        out, pl.Series("a", [None, None, None, 3, 3], dtype=pl.get_index_type())
+    )
+
+
+def test_min_periods_removed() -> None:
+    msg = "It was renamed to 'min_samples'."
+    s = pl.Series("a", [1.0, 2.0, 3.0])
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.cumulative_eval(pl.element().sum(), min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_min(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_max(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_mean(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_sum(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_std(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_var(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_map(lambda x: x.sum(), 2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_median(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_quantile(0.5, window_size=2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.ewm_mean(com=1, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.ewm_std(com=1, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.ewm_var(com=1, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.rolling_cov("a", "b", window_size=2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.rolling_corr("a", "b", window_size=2, min_periods=1)  # type: ignore[call-arg]

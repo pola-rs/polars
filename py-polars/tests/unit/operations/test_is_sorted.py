@@ -1,12 +1,16 @@
 from datetime import date
 from typing import Any
 
+import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
 import pytest
+from hypothesis import given
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
+from polars.testing.parametric.strategies import dataframes, series
 
 
 def is_sorted_any(s: pl.Series) -> bool:
@@ -263,7 +267,7 @@ def test_sorted_flag_singletons(value: Any) -> None:
     assert pl.DataFrame({"x": [value]})["x"].flags["SORTED_ASC"] is True
 
 
-def test_is_sorted() -> None:
+def test_series_is_sorted() -> None:
     assert not pl.Series([1, 2, 5, None, 2, None]).is_sorted()
     assert pl.Series([1, 2, 4, None, None]).is_sorted(nulls_last=True)
     assert pl.Series([None, None, 1, 2, 4]).is_sorted(nulls_last=False)
@@ -285,6 +289,37 @@ def test_is_sorted() -> None:
     assert not pl.Series([5, 2, 1, 10, 1, -1, None, None]).is_sorted(
         descending=True, nulls_last=True
     )
+
+
+@given(s=series(), descending=st.booleans(), nulls_last=st.booleans())
+def test_series_is_sorted_parametric(
+    s: pl.Series, descending: bool, nulls_last: bool
+) -> None:
+    s = s.sort(descending=descending, nulls_last=nulls_last)
+    s = pl.Series(s.to_list(), dtype=s.dtype)  # Remove the sorted flags
+    assert s.is_sorted(descending=descending, nulls_last=nulls_last)
+    if s.drop_nulls().n_unique() > 1:
+        assert not s.is_sorted(descending=not descending, nulls_last=nulls_last)
+    if s.n_unique() > 1 and s.null_count() > 0:
+        assert not s.is_sorted(descending=descending, nulls_last=not nulls_last)
+
+
+@given(data=st.data())
+def test_dataframe_is_sorted_parametric(data: st.DataObject) -> None:
+    n = data.draw(st.integers(min_value=1, max_value=10))
+    descending = data.draw(st.lists(st.booleans(), min_size=n, max_size=n))
+    nulls_last = data.draw(st.lists(st.booleans(), min_size=n, max_size=n))
+    df = data.draw(
+        dataframes(min_cols=n, max_cols=n, excluded_dtypes={pl.Int128, pl.UInt128})
+    )
+    df_sorted = df.sort(by=df.columns, descending=descending, nulls_last=nulls_last)
+    assert df_sorted.is_sorted(
+        by=df.columns, descending=descending, nulls_last=nulls_last
+    )
+    if not df.equals(df_sorted):
+        assert not (
+            df.is_sorted(by=df.columns, descending=descending, nulls_last=nulls_last)
+        )
 
 
 def test_sorted_flag() -> None:
@@ -447,3 +482,60 @@ def test_is_sorted_time() -> None:
     s = pl.Series("a", [1, 1]).sort(descending=True).cast(pl.Time)
     assert s.flags["SORTED_DESC"]
     assert not s.flags["SORTED_ASC"]
+
+
+def test_is_sorted_boolean_long_all_false() -> None:
+    s = pl.Series("all_false_monotone", [False] * 137)
+    assert s.is_sorted()
+
+
+def test_is_sorted_boolean_false_true_transition_descending_large() -> None:
+    values = [False, False] + [True] * (137 - 2)
+    assert not pl.Series(values).is_sorted(descending=True)
+
+
+def test_is_sorted_boolean_singleton_short_circuit() -> None:
+    s = pl.Series("b", [True])
+    assert s.len() == 1
+    assert s.dtype == pl.Boolean
+    assert s.is_sorted()
+
+
+def test_is_sorted_boolean_empty_ca_short_circuits() -> None:
+    for descending in False, True:
+        assert pl.Series([], dtype=pl.Boolean).is_sorted(descending=descending)
+    assert pl.Series([False]).is_sorted()
+    assert pl.Series([True]).is_sorted(descending=True)
+
+
+def test_is_sorted_boolean_three_values_orders() -> None:
+    s = pl.Series("boolean_test", [False, True, True])
+    assert s.dtype == pl.Boolean
+    assert s.len() == 3
+    assert s.is_sorted()
+    assert not s.is_sorted(descending=True)
+
+
+def test_is_sorted_binary_asc_desc() -> None:
+    s = pl.Series(
+        "binary_test",
+        [b"\x01", b"\x02\x02", b"\x03\x03\x03"],
+        dtype=pl.Binary,
+    )
+    assert s.dtype == pl.Binary
+    assert s.len() == 3
+    assert s.is_sorted()
+    assert not s.is_sorted(descending=True)
+
+
+def test_is_sorted_list_pairwise_fallback_error() -> None:
+    # List dtype falls through to row-wise comparison; but
+    # `<`/`<=` for lists are unsupported, so this raises an error.
+    s = pl.Series("_", [[1], [2], [3]])
+    assert isinstance(s.dtype, pl.List)
+
+    with pytest.raises(InvalidOperationError) as exc:
+        s.is_sorted()
+    msg = str(exc.value).lower()
+    assert "<=" in msg
+    assert "list" in msg

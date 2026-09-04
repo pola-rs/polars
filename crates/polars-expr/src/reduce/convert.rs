@@ -1,4 +1,3 @@
-// use polars_core::error::feature_gated;
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
@@ -15,6 +14,7 @@ use crate::reduce::count::{CountReduce, NullCountReduce};
 use crate::reduce::cov::{new_cov_reduction, new_pearson_corr_reduction};
 use crate::reduce::first_last::{new_first_reduction, new_item_reduction, new_last_reduction};
 use crate::reduce::first_last_nonnull::{new_first_nonnull_reduction, new_last_nonnull_reduction};
+use crate::reduce::has_nulls::HasNullsReduce;
 use crate::reduce::implode::new_unordered_implode_reduction;
 use crate::reduce::is_empty::IsEmptyReduce;
 use crate::reduce::mean::new_mean_reduction;
@@ -22,7 +22,7 @@ use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
 use crate::reduce::min_max_by::{new_max_by_reduction, new_min_by_reduction};
 #[cfg(feature = "moment")]
 use crate::reduce::skew_kurtosis::{new_kurtosis_reduction, new_skew_reduction};
-use crate::reduce::sum::new_sum_reduction;
+use crate::reduce::sum::{IdxTypeCheckedSumReducer, new_sum_reduction};
 use crate::reduce::var_std::new_var_std_reduction;
 
 /// Converts a node into a reduction + its associated selector expression.
@@ -80,7 +80,6 @@ pub fn into_reduction(
             IRAggExpr::Median(_) => todo!(),
             IRAggExpr::NUnique(_) => todo!(),
             IRAggExpr::Implode { .. } => todo!(),
-            IRAggExpr::AggGroups(_) => todo!(),
         },
         AExpr::Len => {
             if let Some(first_column) = schema.iter_names().next() {
@@ -89,7 +88,7 @@ pub fn into_reduction(
 
                 (out, expr)
             } else {
-                // Support len aggregation on 0-width morsels.
+                // Support len aggregation on 0-width morsels, used by `scan_*().select(len())`.
                 // Notes:
                 // * We do this instead of projecting a scalar, because scalar literals don't
                 //   project to the height of the DataFrame (in the PhysicalExpr impl).
@@ -101,7 +100,8 @@ pub fn into_reduction(
                     "not implemented: len() of groups with no columns"
                 );
 
-                let out: Box<dyn GroupedReduction> = new_sum_reduction(DataType::IDX_DTYPE)?;
+                let out: Box<dyn GroupedReduction> =
+                    Box::new(IdxTypeCheckedSumReducer::new_grouped_reduction());
                 let expr = expr_arena.add(AExpr::Len);
 
                 (out, expr)
@@ -165,6 +165,7 @@ pub fn into_reduction(
                     let is_empty = Box::new(IsEmptyReduce::new(*ignore_nulls)) as Box<_>;
                     (is_empty, input)
                 },
+                IRBooleanFunction::HasNulls => (Box::new(HasNullsReduce::new()) as Box<_>, input),
                 _ => unreachable!(),
             }
         },

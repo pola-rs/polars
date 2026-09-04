@@ -17,13 +17,16 @@ mod flatten_merge_sorted;
 mod flatten_union;
 #[cfg(feature = "fused")]
 mod fused;
+mod join_build_side;
+mod join_order;
 mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
 mod expand_datasets;
 #[cfg(feature = "python")]
-pub use expand_datasets::ExpandedPythonScan;
+pub use expand_datasets::{ExpandedPythonScan, PyScanResolveThreadPool};
 mod collapse_sort;
 pub mod deep_copy;
+mod filter_constraint;
 mod ir_traversal;
 mod parquet_metadata_prune;
 mod predicate_pushdown;
@@ -36,8 +39,6 @@ mod sortedness;
 mod stack_opt;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
-#[cfg(feature = "cse")]
-pub use cse::NaiveExprMerger;
 use delay_rechunk::DelayRechunk;
 pub use expand_datasets::ExpandedDataset;
 use polars_core::config::verbose;
@@ -69,8 +70,12 @@ pub trait Optimize {
 // arbitrary constant to reduce reallocation.
 const HASHMAP_SIZE: usize = 16;
 
-pub(crate) fn init_hashmap<K, V>(max_len: Option<usize>) -> PlHashMap<K, V> {
-    PlHashMap::with_capacity(std::cmp::min(max_len.unwrap_or(HASHMAP_SIZE), HASHMAP_SIZE))
+pub(crate) fn init_hashmap<K, V>(max_len: Option<usize>) -> PlIndexMap<K, V> {
+    PlIndexMap::with_capacity(std::cmp::min(max_len.unwrap_or(HASHMAP_SIZE), HASHMAP_SIZE))
+}
+
+pub(crate) fn init_indexmap<K, V>(max_len: Option<usize>) -> PlIndexMap<K, V> {
+    PlIndexMap::with_capacity(std::cmp::min(max_len.unwrap_or(HASHMAP_SIZE), HASHMAP_SIZE))
 }
 
 pub(crate) fn pushdown_maintain_errors() -> bool {
@@ -78,8 +83,8 @@ pub(crate) fn pushdown_maintain_errors() -> bool {
 }
 
 pub fn optimize(
-    logical_plan: DslPlan,
-    mut opt_flags: OptFlags,
+    mut root: Node,
+    opt_flags: OptFlags,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
@@ -95,15 +100,6 @@ pub fn optimize(
     // Gradually fill the rules passed to the optimizer
     let opt = StackOptimizer {};
     let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
-
-    // Unset CSE
-    // This can be turned on again during ir-conversion.
-    #[allow(clippy::eq_op)]
-    #[cfg(feature = "cse")]
-    if opt_flags.contains(OptFlags::EAGER) {
-        opt_flags &= !(OptFlags::COMM_SUBEXPR_ELIM | OptFlags::COMM_SUBEXPR_ELIM);
-    }
-    let mut root = to_alp(logical_plan, expr_arena, ir_arena, &mut opt_flags)?;
 
     #[allow(unused_assignments)]
     let mut comm_subplan_elim = false;
@@ -148,14 +144,17 @@ pub fn optimize(
             let members = get_or_init_members!();
             if (members.has_sink_multiple || members.has_joins_or_unions)
                 && members.has_duplicate_scans()
-                && !members.has_cache
             {
                 if verbose {
                     eprintln!("found multiple sources; run comm_subplan_elim")
                 }
 
-                run_set_cache_states =
-                    cse::cspe::common_subplan_elimination(root, ir_arena, expr_arena);
+                run_set_cache_states = cse::cspe::common_subplan_elimination(
+                    root,
+                    ir_arena,
+                    expr_arena,
+                    polars_config::config().allow_nested_cspe(),
+                );
             }
         });
     };
@@ -174,8 +173,11 @@ pub fn optimize(
     // Should be run before projection pushdown.
     // This allows columns only needed for filters to be dropped early.
     if opt_flags.predicate_pushdown() {
-        let mut predicate_pushdown_opt =
-            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
+        let mut predicate_pushdown_opt = PredicatePushDown::new(
+            pushdown_maintain_errors,
+            opt_flags.streaming(),
+            opt_flags.partition_hive(),
+        );
         let ir = ir_arena.take(root);
         let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
         ir_arena.replace(root, ir);
@@ -190,7 +192,9 @@ pub fn optimize(
             scratch,
             verbose,
             pushdown_maintain_errors,
-            opt_flags.new_streaming(),
+            opt_flags.streaming(),
+            opt_flags.partition_hive(),
+            opt_flags.row_estimate(),
         )?;
     }
 
@@ -203,6 +207,12 @@ pub fn optimize(
             ir_arena,
             root,
         )?;
+    }
+
+    // Needs the filters that predicate pushdown places on the scans, and must come
+    // before projection pushdown so projections follow the final join order.
+    if opt_flags.join_order() && get_or_init_members!().has_joins_or_unions {
+        root = join_order::join_order(root, ir_arena, expr_arena)?;
     }
 
     if opt_flags.projection_pushdown() {
@@ -222,7 +232,16 @@ pub fn optimize(
     // This optimization removes branches, so we must do it when type coercion
     // is completed.
     if opt_flags.simplify_expr() {
-        rules.push(Box::new(SimplifyBooleanRule {}));
+        // FilterConstraintRule turns an impossible filter like `a > 5 AND a < 3`
+        // into `false`. It runs before SimplifyBooleanRule so that, in the same
+        // pass, SimplifyBooleanRule can use that `false` to collapse the whole
+        // filter into an empty scan.
+        rules.push(Box::new(filter_constraint::FilterConstraintRule {
+            maintain_errors: pushdown_maintain_errors,
+        }));
+        rules.push(Box::new(SimplifyBooleanRule {
+            maintain_errors: pushdown_maintain_errors,
+        }));
     }
 
     if !opt_flags.eager() {
@@ -240,15 +259,20 @@ pub fn optimize(
         ir_arena.replace(root, ir);
     }
 
+    // Needs the final join order and the pushed-down projections.
+    if opt_flags.contains(OptFlags::ROW_ESTIMATE) && get_or_init_members!().has_joins_or_unions {
+        join_build_side::set_join_build_sides(root, ir_arena, expr_arena);
+    }
+
     if opt_flags.cluster_with_columns() && get_or_init_members!().with_columns_count > 1 {
         cluster_with_columns::optimize(root, ir_arena, expr_arena)
     }
 
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
-    if comm_subexpr_elim && !get_or_init_members!().has_ext_context {
+    if comm_subexpr_elim {
         let mut optimizer = CommonSubExprOptimizer::new(
-            opt_flags.contains(OptFlags::NEW_STREAMING) | opt_flags.contains(OptFlags::GPU),
+            opt_flags.contains(OptFlags::STREAMING) | opt_flags.contains(OptFlags::GPU),
         );
         let ir_node = IRNode::new_mutate(root);
 

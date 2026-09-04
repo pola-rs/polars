@@ -1,6 +1,6 @@
 use polars_error::polars_warn;
 
-use crate::{Engine, SpillFormat, SpillPolicy};
+use crate::{Engine, ResolveMode, SpillFormat};
 
 pub fn parse_bool(var: &str, val: &str) -> Option<bool> {
     match val.trim_ascii() {
@@ -29,6 +29,21 @@ pub fn parse_f64(var: &str, val: &str) -> Option<f64> {
     ret
 }
 
+pub fn parse_f64_with_limits(var: &str, val: &str, lo: f64, hi: f64) -> Option<f64> {
+    let ret = val.trim_ascii().parse::<f64>().ok();
+    if let Some(val) = ret {
+        if val < lo || val > hi {
+            polars_warn!(
+                "out-of-bounds value '{val}' found while parsing option '{var}', must be in [{lo}, {hi}]"
+            );
+        }
+    } else {
+        polars_warn!("illegal value '{val}' found while parsing option '{var}'");
+    }
+
+    ret
+}
+
 pub fn parse_engine(var: &str, val: &str) -> Option<Engine> {
     match val.trim_ascii().parse::<Engine>() {
         Ok(x) => Some(x),
@@ -39,8 +54,8 @@ pub fn parse_engine(var: &str, val: &str) -> Option<Engine> {
     }
 }
 
-pub fn parse_spill_policy(var: &str, val: &str) -> Option<SpillPolicy> {
-    match val.trim_ascii().parse::<SpillPolicy>() {
+pub fn parse_spill_format(var: &str, val: &str) -> Option<SpillFormat> {
+    match val.trim_ascii().parse::<SpillFormat>() {
         Ok(x) => Some(x),
         Err(e) => {
             polars_warn!("illegal value '{val}' found while parsing option '{var}' ({e})");
@@ -49,8 +64,8 @@ pub fn parse_spill_policy(var: &str, val: &str) -> Option<SpillPolicy> {
     }
 }
 
-pub fn parse_spill_format(var: &str, val: &str) -> Option<SpillFormat> {
-    match val.trim_ascii().parse::<SpillFormat>() {
+pub fn parse_resolve_mode(var: &str, val: &str) -> Option<ResolveMode> {
+    match val.trim_ascii().parse::<ResolveMode>() {
         Ok(x) => Some(x),
         Err(e) => {
             polars_warn!("illegal value '{val}' found while parsing option '{var}' ({e})");

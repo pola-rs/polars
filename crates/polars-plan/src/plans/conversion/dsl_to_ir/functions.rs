@@ -35,15 +35,13 @@ pub(super) fn convert_functions(
                 A::Min => IA::Min,
                 A::Max => IA::Max,
                 A::Sum => IA::Sum,
+                A::Dot => IA::Dot,
                 A::ToList => IA::ToList,
-                A::Unique(stable) => IA::Unique(stable),
-                A::NUnique => IA::NUnique,
                 A::Std(v) => IA::Std(v),
                 A::Var(v) => IA::Var(v),
                 A::Mean => IA::Mean,
                 A::Median => IA::Median,
                 A::Sort(sort_options) => IA::Sort(sort_options),
-                A::Reverse => IA::Reverse,
                 A::ArgMin => IA::ArgMin,
                 A::ArgMax => IA::ArgMax,
                 A::Get(v) => IA::Get(v),
@@ -57,7 +55,38 @@ pub(super) fn convert_functions(
                 A::Concat => IA::Concat,
                 A::Slice(offset, length) => IA::Slice(offset, length),
                 #[cfg(feature = "array_to_struct")]
-                A::ToStruct(ng) => IA::ToStruct(ng),
+                A::ToStruct { fields } => {
+                    let input_dtype = e
+                        .first()
+                        .ok_or_else(|| polars_err!(ComputeError: "no input to arr.to_struct()"))?
+                        .dtype(ctx.schema, ctx.arena)?;
+                    let DataType::Array(_, width) = input_dtype else {
+                        polars_bail!(
+                            InvalidOperation:
+                            "expected Array datatype for array operation, got: {input_dtype:?}",
+                        )
+                    };
+
+                    let width = *width;
+
+                    let fields = if let Some(fields) = fields {
+                        let fields_len = fields.len();
+                        polars_ensure!(
+                            fields_len == width,
+                            ComputeError:
+                            "arr.to_struct() number of field names provided ({fields_len})
+                            does not match width of input ({width})."
+                        );
+
+                        fields
+                    } else {
+                        (0..width)
+                            .map(|i| format_pl_smallstr!("field_{i}"))
+                            .collect()
+                    };
+
+                    IA::ToStruct { fields }
+                },
             })
         },
         F::BinaryExpr(binary_function) => {
@@ -102,7 +131,6 @@ pub(super) fn convert_functions(
             use CategoricalFunction as C;
             use IRCategoricalFunction as IC;
             I::Categorical(match categorical_function {
-                C::GetCategories => IC::GetCategories,
                 #[cfg(feature = "strings")]
                 C::LenBytes => IC::LenBytes,
                 #[cfg(feature = "strings")]
@@ -113,6 +141,8 @@ pub(super) fn convert_functions(
                 C::EndsWith(v) => IC::EndsWith(v),
                 #[cfg(feature = "strings")]
                 C::Slice(s, e) => IC::Slice(s, e),
+                C::To(dt, strict) => IC::To(dt.into_datatype(ctx.schema)?, strict),
+                C::Physical => IC::Physical,
             })
         },
         #[cfg(feature = "dtype-extension")]
@@ -173,9 +203,6 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "diff")]
                 L::Diff { n, null_behavior } => IL::Diff { n, null_behavior },
                 L::Sort(sort_options) => IL::Sort(sort_options),
-                L::Reverse => IL::Reverse,
-                L::Unique(v) => IL::Unique(v),
-                L::NUnique => IL::NUnique,
                 #[cfg(feature = "list_sets")]
                 L::SetOperation(set_operation) => IL::SetOperation(set_operation),
                 L::Join(v) => IL::Join(v),
@@ -343,6 +370,7 @@ pub(super) fn convert_functions(
             I::StructExpr(match struct_function {
                 S::FieldByName(pl_small_str) => IS::FieldByName(pl_small_str),
                 S::RenameFields(pl_small_strs) => IS::RenameFields(pl_small_strs),
+                S::Drop(pl_small_strs, strict) => IS::DropFields(pl_small_strs, strict),
                 S::PrefixFields(pl_small_str) => IS::PrefixFields(pl_small_str),
                 S::SuffixFields(pl_small_str) => IS::SuffixFields(pl_small_str),
                 S::SelectFields(_) => unreachable!("handled by expression expansion"),
@@ -370,7 +398,6 @@ pub(super) fn convert_functions(
                 T::OrdinalDay => IT::OrdinalDay,
                 T::Time => IT::Time,
                 T::Date => IT::Date,
-                T::Datetime => IT::Datetime,
                 #[cfg(feature = "dtype-duration")]
                 T::Duration(time_unit) => IT::Duration(time_unit),
                 T::Hour => IT::Hour,
@@ -395,7 +422,6 @@ pub(super) fn convert_functions(
                 T::TotalNanoseconds { fractional } => IT::TotalNanoseconds { fractional },
                 T::ToString(v) => IT::ToString(v),
                 T::CastTimeUnit(time_unit) => IT::CastTimeUnit(time_unit),
-                T::WithTimeUnit(time_unit) => IT::WithTimeUnit(time_unit),
                 #[cfg(feature = "timezones")]
                 T::ConvertTimeZone(time_zone) => IT::ConvertTimeZone(time_zone),
                 T::TimeStamp(time_unit) => IT::TimeStamp(time_unit),
@@ -445,6 +471,7 @@ pub(super) fn convert_functions(
                 B::Any { ignore_nulls } => IB::Any { ignore_nulls },
                 B::All { ignore_nulls } => IB::All { ignore_nulls },
                 B::IsEmpty { ignore_nulls } => IB::IsEmpty { ignore_nulls },
+                B::HasNulls => IB::HasNulls,
                 B::IsNull => IB::IsNull,
                 B::IsNotNull => IB::IsNotNull,
                 B::IsFinite => IB::IsFinite,
@@ -472,6 +499,13 @@ pub(super) fn convert_functions(
                     abs_tol,
                     rel_tol,
                     nans_equal,
+                },
+                B::IsSorted {
+                    descending,
+                    nulls_last,
+                } => IB::IsSorted {
+                    descending,
+                    nulls_last,
                 },
                 B::AllHorizontal => {
                     let Some(fst) = e.first() else {
@@ -567,7 +601,7 @@ pub(super) fn convert_functions(
             PowFunction::Cbrt => IRPowFunction::Cbrt,
         }),
         #[cfg(feature = "row_hash")]
-        F::Hash(s0, s1, s2, s3) => I::Hash(s0, s1, s2, s3),
+        F::Hash(seed) => I::Hash(seed),
         #[cfg(feature = "arg_where")]
         F::ArgWhere => I::ArgWhere,
         #[cfg(feature = "index_of")]
@@ -769,7 +803,6 @@ pub(super) fn convert_functions(
                 options,
             }
         },
-        F::Rechunk => I::Rechunk,
         F::Append { upcast } => {
             if upcast {
                 let dtypes = [
@@ -840,6 +873,7 @@ pub(super) fn convert_functions(
         },
         #[cfg(feature = "round_series")]
         F::Clip { has_min, has_max } => I::Clip { has_min, has_max },
+        F::AsList => I::AsList,
         #[cfg(feature = "dtype-struct")]
         F::AsStruct => I::AsStruct,
         #[cfg(feature = "top_k")]
@@ -1052,6 +1086,10 @@ pub(super) fn convert_functions(
         F::EwmMean { options } => I::EwmMean { options },
         #[cfg(feature = "ewma_by")]
         F::EwmMeanBy { half_life } => I::EwmMeanBy { half_life },
+        #[cfg(feature = "ewma")]
+        F::EwmSum { options } => I::EwmSum { options },
+        #[cfg(feature = "ewma_by")]
+        F::EwmSumBy { half_life } => I::EwmSumBy { half_life },
         #[cfg(feature = "ewma")]
         F::EwmStd { options } => I::EwmStd { options },
         #[cfg(feature = "ewma")]

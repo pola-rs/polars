@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
+from polars._dependencies import _check_for_numpy
+from polars._dependencies import numpy as np
 from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from polars import Expr
     from polars._typing import IntoExpr, IntoExprColumn
 
@@ -25,6 +25,8 @@ class ExprArrayNameSpace:
     def len(self) -> Expr:
         """
         Return the number of elements in each array.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -54,6 +56,8 @@ class ExprArrayNameSpace:
     ) -> Expr:
         """
         Slice every subarray.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -105,6 +109,8 @@ class ExprArrayNameSpace:
         """
         Get the first `n` elements of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         n
@@ -149,6 +155,8 @@ class ExprArrayNameSpace:
     def tail(self, n: int | str | Expr = 5, *, as_array: bool = False) -> Expr:
         """
         Slice the last `n` values of every sublist.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -196,6 +204,8 @@ class ExprArrayNameSpace:
         """
         Compute the min values of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -218,6 +228,8 @@ class ExprArrayNameSpace:
     def max(self) -> Expr:
         """
         Compute the max values of the sub-arrays.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -242,6 +254,8 @@ class ExprArrayNameSpace:
         """
         Compute the sum values of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -261,9 +275,119 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_sum())
 
+    def dot(self, other: IntoExpr | Sequence[Any]) -> Expr:
+        """
+        Compute row-wise dot product with another Array expression.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Both inputs must contain equal-width arrays. Their inner data types are cast
+        to a common supertype, which must be an integer, ``Float32``, or ``Float64``.
+        An input with one row is broadcast against the other input.
+        If either input Array is null for a row, the result for that row is null.
+
+        Parameters
+        ----------
+        other
+            Array expression or query vector to compute dot product with.
+            A Python sequence or one-dimensional NumPy array is treated as a
+            one-row Array query. A one-row Series is also broadcast.
+
+        Notes
+        -----
+        Elements are paired by position.
+
+        Pairs where either element is null do not contribute to the sum. If a
+        non-null row has no pairs where both elements are valid, the result is zero.
+
+        Integer operations use wrapping arithmetic. Each pair is multiplied in the
+        common inner data type before the product is converted to the ``arr.sum``
+        accumulator type. Therefore, an ``Int64`` output does not prevent
+        multiplication from overflowing in ``Int8``, ``UInt8``, ``Int16``, or
+        ``UInt16``. Accumulation may also wrap in the output type. To avoid wrapping,
+        cast both Array inputs to a type that can represent each product and the final
+        sum before calling ``dot``.
+
+        NaN and infinity follow floating-point multiplication and addition
+        semantics. Floating-point results are not guaranteed to be bitwise identical
+        to mathematically equivalent expressions that use a different reduction path.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1.0, 2.0], [3.0, 4.0]],
+        ...         "b": [[5.0, 6.0], [7.0, 8.0]],
+        ...     },
+        ...     schema={
+        ...         "a": pl.Array(pl.Float64, 2),
+        ...         "b": pl.Array(pl.Float64, 2),
+        ...     },
+        ... )
+        >>> df.select(pl.col("a").arr.dot("b"))
+        shape: (2, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 17.0 │
+        │ 53.0 │
+        └──────┘
+
+        A Python sequence can be used as a broadcast query.
+
+        >>> query = [2.0, 3.0]
+        >>> df.select(pl.col("a").arr.dot(query))
+        shape: (2, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 8.0  │
+        │ 18.0 │
+        └──────┘
+
+        Integer multiplication can wrap before accumulator promotion.
+
+        >>> a = pl.Series("a", [[100, 100]], dtype=pl.Array(pl.Int8, 2))
+        >>> b = pl.Series("b", [[2, 2]], dtype=pl.Array(pl.Int8, 2))
+        >>> a.arr.dot(b)
+        shape: (1,)
+        Series: 'a' [i64]
+        [
+            -112
+        ]
+
+        Cast both inputs before ``dot`` to perform multiplication and accumulation in
+        a type that can represent the result.
+
+        >>> wide = pl.Array(pl.Int64, 2)
+        >>> a.cast(wide).arr.dot(b.cast(wide))
+        shape: (1,)
+        Series: 'a' [i64]
+        [
+            400
+        ]
+        """
+        if isinstance(other, Sequence) and not isinstance(other, (str, bytes)):
+            other = list(other)
+            other = F.lit(other).list.to_array(len(other))
+        elif _check_for_numpy(other) and isinstance(other, np.ndarray):
+            if other.ndim != 1:
+                msg = "arr.dot query vector must be one-dimensional"
+                raise ValueError(msg)
+            other = F.lit(other).implode().list.to_array(other.size)
+
+        other_pyexpr = parse_into_expression(other)
+        return wrap_expr(self._pyexpr.arr_dot(other_pyexpr))
+
     def std(self, ddof: int = 1) -> Expr:
         """
         Compute the std of the values of the sub-arrays.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -288,6 +412,8 @@ class ExprArrayNameSpace:
         """
         Compute the var of the values of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -310,6 +436,8 @@ class ExprArrayNameSpace:
     def mean(self) -> Expr:
         """
         Compute the mean of the values of the sub-arrays.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -334,6 +462,8 @@ class ExprArrayNameSpace:
         """
         Compute the median of the values of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -355,7 +485,9 @@ class ExprArrayNameSpace:
 
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
-        Get the unique/distinct values in the array.
+        Get the unique/distinct values in every sub-array.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -366,25 +498,30 @@ class ExprArrayNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [[1, 1, 2]],
+        ...         "a": [[1, 1, 2], [1, 3, 3]],
         ...     },
         ...     schema={"a": pl.Array(pl.Int64, 3)},
         ... )
         >>> df.select(pl.col("a").arr.unique())
-        shape: (1, 1)
+        shape: (2, 1)
         ┌───────────┐
         │ a         │
         │ ---       │
         │ list[i64] │
         ╞═══════════╡
         │ [1, 2]    │
+        │ [1, 3]    │
         └───────────┘
         """
-        return wrap_expr(self._pyexpr.arr_unique(maintain_order))
+        return self.eval(
+            F.element().unique(maintain_order=maintain_order), as_list=True
+        )
 
     def n_unique(self) -> Expr:
         """
         Count the number of unique values in every sub-arrays.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -405,11 +542,13 @@ class ExprArrayNameSpace:
         │ [2, 3, 4]     ┆ 3        │
         └───────────────┴──────────┘
         """
-        return wrap_expr(self._pyexpr.arr_n_unique())
+        return self.agg(F.element().n_unique())
 
     def to_list(self) -> Expr:
         """
         Convert an Array column into a List column with the same inner data type.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -438,6 +577,8 @@ class ExprArrayNameSpace:
     def any(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether any boolean value is true for every subarray.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -484,6 +625,8 @@ class ExprArrayNameSpace:
         """
         Evaluate whether all boolean values are true for every subarray.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         ignore_nulls
@@ -527,7 +670,9 @@ class ExprArrayNameSpace:
 
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
-        Sort the arrays in this column.
+        Sort every sub-array.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -569,7 +714,9 @@ class ExprArrayNameSpace:
 
     def reverse(self) -> Expr:
         """
-        Reverse the arrays in this column.
+        Reverse the sub-arrays in this column.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -590,11 +737,17 @@ class ExprArrayNameSpace:
         │ [9, 1, 2]     ┆ [2, 1, 9]     │
         └───────────────┴───────────────┘
         """
-        return wrap_expr(self._pyexpr.arr_reverse())
+        return self.eval(F.element().reverse())
 
     def arg_min(self) -> Expr:
         """
-        Retrieve the index of the minimal value in every sub-array.
+        Retrieve an index of a minimal value in every sub-array.
+
+        When multiple values are equal to the minimum, this function may arbitrarily
+        return the index of any of the minimum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -625,7 +778,13 @@ class ExprArrayNameSpace:
 
     def arg_max(self) -> Expr:
         """
-        Retrieve the index of the maximum value in every sub-array.
+        Retrieve an index of a maximum value in every sub-array.
+
+        When multiple values are equal to the maximum, this function may arbitrarily
+        return the index of any of the maximum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -662,6 +821,8 @@ class ExprArrayNameSpace:
         and index `-1` would return the last item of every sublist
         if an index is out of bounds, it will return a `None`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         index
@@ -696,6 +857,8 @@ class ExprArrayNameSpace:
         """
         Get the first value of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -719,6 +882,8 @@ class ExprArrayNameSpace:
     def last(self) -> Expr:
         """
         Get the last value of the sub-arrays.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -745,6 +910,8 @@ class ExprArrayNameSpace:
         Join all string items in a sub-array and place a separator between them.
 
         This errors if inner type of array `!= String`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -784,9 +951,11 @@ class ExprArrayNameSpace:
         separator_pyexpr = parse_into_expression(separator, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_join(separator_pyexpr, ignore_nulls))
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
+    def explode(self, *, empty_as_null: bool = False, keep_nulls: bool = True) -> Expr:
         """
         Returns a column with a separate row for every array element.
+
+        .. engine-support:: in-memory, streaming, partially-distributed
 
         Parameters
         ----------
@@ -805,7 +974,7 @@ class ExprArrayNameSpace:
         >>> df = pl.DataFrame(
         ...     {"a": [[1, 2, 3], [4, 5, 6]]}, schema={"a": pl.Array(pl.Int64, 3)}
         ... )
-        >>> df.select(pl.col("a").arr.explode())
+        >>> df.select(pl.col("a").arr.explode(empty_as_null=False))
         shape: (6, 1)
         ┌─────┐
         │ a   │
@@ -827,6 +996,8 @@ class ExprArrayNameSpace:
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """
         Check if sub-arrays contain the given item.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -865,6 +1036,8 @@ class ExprArrayNameSpace:
         """
         Count how often the value produced by `element` occurs.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         element
@@ -890,67 +1063,108 @@ class ExprArrayNameSpace:
         element_pyexpr = parse_into_expression(element, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_count_matches(element_pyexpr))
 
-    def to_struct(
-        self, fields: Sequence[str] | Callable[[int], str] | None = None
-    ) -> Expr:
+    def to_struct(self, fields: Sequence[str] | None = None) -> Expr:
         """
         Convert the Series of type `Array` to a Series of type `Struct`.
 
         Parameters
         ----------
         fields
-            If the name and number of the desired fields is known in advance
-            a list of field names can be given, which will be assigned by index.
-            Otherwise, to dynamically assign field names, a custom function can be
-            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
+            Field names to use for the output. The number of names given must
+            match the width of the input array. If unset, the fields will be
+            named as "field_0", "field_1" .. "field_n".
 
         Examples
         --------
-        Convert array to struct with default field name assignment:
-
         >>> df = pl.DataFrame(
-        ...     {"n": [[0, 1, 2], [3, 4, 5]]}, schema={"n": pl.Array(pl.Int8, 3)}
+        ...     {
+        ...         "c": pl.Series(
+        ...             [
+        ...                 [1, 0, 0],
+        ...                 [0, 1, 0],
+        ...                 [0, 0, 1],
+        ...                 [None, None, None],
+        ...                 None,
+        ...             ],
+        ...             dtype=pl.Array(pl.Int64, 3),
+        ...         )
+        ...     }
         ... )
-        >>> df.with_columns(struct=pl.col("n").arr.to_struct())
-        shape: (2, 2)
-        ┌──────────────┬───────────┐
-        │ n            ┆ struct    │
-        │ ---          ┆ ---       │
-        │ array[i8, 3] ┆ struct[3] │
-        ╞══════════════╪═══════════╡
-        │ [0, 1, 2]    ┆ {0,1,2}   │
-        │ [3, 4, 5]    ┆ {3,4,5}   │
-        └──────────────┴───────────┘
+        >>> print(result := df.with_columns(c_struct=pl.col("c").arr.to_struct()))
+        shape: (5, 2)
+        ┌────────────────────┬──────────────────┐
+        │ c                  ┆ c_struct         │
+        │ ---                ┆ ---              │
+        │ array[i64, 3]      ┆ struct[3]        │
+        ╞════════════════════╪══════════════════╡
+        │ [1, 0, 0]          ┆ {1,0,0}          │
+        │ [0, 1, 0]          ┆ {0,1,0}          │
+        │ [0, 0, 1]          ┆ {0,0,1}          │
+        │ [null, null, null] ┆ {null,null,null} │
+        │ null               ┆ null             │
+        └────────────────────┴──────────────────┘
+        >>> print(result["c_struct"].struct.unnest())
+        shape: (5, 3)
+        ┌─────────┬─────────┬─────────┐
+        │ field_0 ┆ field_1 ┆ field_2 │
+        │ ---     ┆ ---     ┆ ---     │
+        │ i64     ┆ i64     ┆ i64     │
+        ╞═════════╪═════════╪═════════╡
+        │ 1       ┆ 0       ┆ 0       │
+        │ 0       ┆ 1       ┆ 0       │
+        │ 0       ┆ 0       ┆ 1       │
+        │ null    ┆ null    ┆ null    │
+        │ null    ┆ null    ┆ null    │
+        └─────────┴─────────┴─────────┘
 
-        Convert array to struct with field name assignment by function/index:
+        Convert to struct with custom field names:
 
-        >>> df = pl.DataFrame(
-        ...     {"n": [[0, 1, 2], [3, 4, 5]]}, schema={"n": pl.Array(pl.Int8, 3)}
+        >>> print(
+        ...     result := df.with_columns(
+        ...         c_struct=pl.col("c").arr.to_struct(["x", "y", "z"]),
+        ...     )
         ... )
-        >>> df.select(pl.col("n").arr.to_struct(fields=lambda idx: f"n{idx}")).rows(
-        ...     named=True
-        ... )
-        [{'n': {'n0': 0, 'n1': 1, 'n2': 2}}, {'n': {'n0': 3, 'n1': 4, 'n2': 5}}]
-
-        Convert array to struct with field name assignment by
-        index from a list of names:
-
-        >>> df.select(pl.col("n").arr.to_struct(fields=["c1", "c2", "c3"])).rows(
-        ...     named=True
-        ... )
-        [{'n': {'c1': 0, 'c2': 1, 'c3': 2}}, {'n': {'c1': 3, 'c2': 4, 'c3': 5}}]
+        shape: (5, 2)
+        ┌────────────────────┬──────────────────┐
+        │ c                  ┆ c_struct         │
+        │ ---                ┆ ---              │
+        │ array[i64, 3]      ┆ struct[3]        │
+        ╞════════════════════╪══════════════════╡
+        │ [1, 0, 0]          ┆ {1,0,0}          │
+        │ [0, 1, 0]          ┆ {0,1,0}          │
+        │ [0, 0, 1]          ┆ {0,0,1}          │
+        │ [null, null, null] ┆ {null,null,null} │
+        │ null               ┆ null             │
+        └────────────────────┴──────────────────┘
+        >>> print(result["c_struct"].struct.unnest())
+        shape: (5, 3)
+        ┌──────┬──────┬──────┐
+        │ x    ┆ y    ┆ z    │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ i64  │
+        ╞══════╪══════╪══════╡
+        │ 1    ┆ 0    ┆ 0    │
+        │ 0    ┆ 1    ┆ 0    │
+        │ 0    ┆ 0    ┆ 1    │
+        │ null ┆ null ┆ null │
+        │ null ┆ null ┆ null │
+        └──────┴──────┴──────┘
         """
-        if isinstance(fields, Sequence):
-            field_names = list(fields)
-            pyexpr = self._pyexpr.arr_to_struct(None)
-            return wrap_expr(pyexpr).struct.rename_fields(field_names)
-        else:
-            pyexpr = self._pyexpr.arr_to_struct(fields)
-            return wrap_expr(pyexpr)
+        if isinstance(fields, str):
+            msg = (
+                "arr.to_struct() got a str instead of a list. "
+                f"hint: pass ['{fields}'] instead of '{fields}'"
+            )
+            raise TypeError(msg)
+
+        pyexpr = self._pyexpr.arr_to_struct(fields)
+        return wrap_expr(pyexpr)
 
     def shift(self, n: int | IntoExprColumn = 1) -> Expr:
         """
         Shift array values by the given number of indices.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1001,6 +1215,8 @@ class ExprArrayNameSpace:
         """
         Run any polars expression against the arrays' elements.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         expr
@@ -1034,6 +1250,8 @@ class ExprArrayNameSpace:
     def agg(self, expr: Expr) -> Expr:
         """
         Run any polars aggregation expression against the arrays' elements.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------

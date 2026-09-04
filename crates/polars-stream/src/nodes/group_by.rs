@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_async::executor;
 use polars_core::prelude::{IntoColumn, PlHashSet, PlRandomState};
 use polars_core::runtime::{ASYNC, RAYON};
 use polars_core::schema::Schema;
@@ -13,14 +14,13 @@ use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::reuse_vec::reuse_vec;
 use polars_utils::sparse_init_vec::SparseInitVec;
+use polars_utils::vec::reuse_vec;
 use polars_utils::{IdxSize, UnitVec};
 use rayon::prelude::*;
 use tokio::sync::mpsc::{Receiver, channel};
 
 use super::compute_node_prelude::*;
-use crate::async_executor;
 use crate::expression::StreamExpr;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::in_memory_source::InMemorySourceNode;
@@ -161,7 +161,7 @@ impl GroupBySinkState {
                 while let Some((input_idx, morsel)) = recv.recv().await {
                     // Compute hot group indices from key.
                     let seq = morsel.seq().to_u64();
-                    let mut df = morsel.into_df();
+                    let mut df = morsel.into_df().await;
                     let mut key_columns = Vec::new();
                     for selector in &key_selectors_per_input[input_idx] {
                         let s = selector.evaluate(&df, &state.in_memory_exec_state).await?;
@@ -306,7 +306,7 @@ impl GroupBySinkState {
         let grouped_reductions_template = &self.grouped_reductions;
         let grouped_reduction_cols = &self.grouped_reduction_cols;
 
-        async_executor::task_scope(|s| {
+        executor::task_scope(|s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_morsels_per_local = Arc::new(morsels_per_local);
@@ -475,7 +475,7 @@ impl GroupBySinkState {
             drop(arc_pre_aggs_per_local);
             drop(drop_q_send);
 
-            ASYNC.block_on(async move {
+            ASYNC.block_in_place_on(async move {
                 for handle in join_handles {
                     handle.await?;
                 }
@@ -526,7 +526,7 @@ pub struct GroupByNode {
     num_inputs: usize,
     num_pipelines: usize,
     output_schema: Arc<Schema>,
-    spill_ctx: Arc<MostRecentSpillContext>,
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl GroupByNode {
@@ -592,7 +592,7 @@ impl GroupByNode {
             num_inputs,
             num_pipelines,
             output_schema,
-            spill_ctx: MostRecentSpillContext::new(),
+            spill_ctx: MostRecentSpillContext::new("group-by".into()),
         }
     }
 }

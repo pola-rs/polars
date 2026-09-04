@@ -110,6 +110,51 @@ def test_ewm_mean_leading_nulls() -> None:
     ).to_list() == [None, None, 1.0, 1.0]
 
 
+def test_ewm_sum() -> None:
+    s = pl.Series([1, 2, 3, 4, 5])
+    expected = pl.Series([1.0, 2.5, 4.25, 6.125, 8.0625])
+    assert_series_equal(s.ewm_sum(alpha=0.5), expected)
+
+    s = pl.Series([2, 5, 3])
+    expected = pl.Series([2.0, 6.0, 6.0])
+    assert_series_equal(s.ewm_sum(alpha=0.5, ignore_nulls=True), expected)
+    assert_series_equal(s.ewm_sum(alpha=0.5, ignore_nulls=False), expected)
+
+    expected = pl.Series([None, 6.0, 6.0])
+    assert_series_equal(
+        s.ewm_sum(alpha=0.5, min_samples=2, ignore_nulls=True), expected
+    )
+
+    s = pl.Series([None, None, 5.0, 7.0, None, 2.0, 1.0, 4.0])
+    expected = pl.Series(
+        [
+            None,
+            None,
+            5.0,
+            9.5,
+            None,
+            4.375,
+            3.1875,
+            5.59375,
+        ],
+    )
+    assert_series_equal(s.ewm_sum(alpha=0.5, ignore_nulls=False), expected)
+
+    expected = pl.Series(
+        [
+            None,
+            None,
+            5.0,
+            9.5,
+            None,
+            6.75,
+            4.375,
+            6.1875,
+        ],
+    )
+    assert_series_equal(s.ewm_sum(alpha=0.5, ignore_nulls=True), expected)
+
+
 def test_ewm_mean_min_samples() -> None:
     series = pl.Series([1.0, None, None, None])
 
@@ -153,8 +198,8 @@ def test_ewm_std_var() -> None:
 
     var = series.ewm_var(alpha=0.5, ignore_nulls=False)
     std = series.ewm_std(alpha=0.5, ignore_nulls=False)
-    expected = pl.Series("a", [0.0, 4.5, 1.9285714285714288])
-    assert np.allclose(var, std**2, rtol=1e-16)
+    expected = pl.Series("a", [None, 4.5, 1.9285714285714288])
+    assert np.allclose(var, std**2, rtol=1e-16, equal_nan=True)
     assert_series_equal(var, expected)
 
 
@@ -163,13 +208,13 @@ def test_ewm_std_var_with_nulls() -> None:
 
     var = series.ewm_var(alpha=0.5, ignore_nulls=True)
     std = series.ewm_std(alpha=0.5, ignore_nulls=True)
-    expected = pl.Series("a", [0.0, 4.5, None, 1.9285714285714288])
+    expected = pl.Series("a", [None, 4.5, None, 1.9285714285714288])
     assert_series_equal(var, expected)
     assert_series_equal(std**2, expected)
 
     var = series.ewm_var(alpha=0.5, ignore_nulls=False)
     std = series.ewm_std(alpha=0.5, ignore_nulls=False)
-    expected = pl.Series("a", [0.0, 4.5, None, 1.7307692307692308])
+    expected = pl.Series("a", [None, 4.5, None, 1.7307692307692308])
     assert_series_equal(var, expected)
     assert_series_equal(std**2, expected)
 
@@ -226,7 +271,9 @@ def test_ewm_with_multiple_chunks() -> None:
     ewm_std = df1.with_columns(
         pl.all().ewm_std(com=20, ignore_nulls=False).name.prefix("ewm_"),
     )
-    assert ewm_std.null_count().sum_horizontal()[0] == 4
+    # 2 nulls per column: the leading null from diff, plus the first valid
+    # value which is a single observation so unbiased std is undefined (null)
+    assert ewm_std.null_count().sum_horizontal()[0] == 6
 
 
 def alpha_guard(**decay_param: float) -> bool:
@@ -301,6 +348,14 @@ def test_ewm_methods(
                 ewm_mean_pl = ewm_mean_pl.fill_null(strategy="forward")
 
             assert_series_equal(ewm_mean_pl, ewm_mean_pd, abs_tol=1e-07)
+
+            if adjust:
+                ewm_sum_params = {k: v for k, v in pl_params.items() if k != "adjust"}
+                ewm_sum_pl = s.ewm_sum(**ewm_sum_params).fill_nan(None)
+                ewm_sum_pd = pl.Series(p.ewm(**pd_params).sum())
+                if ignore_nulls:
+                    ewm_sum_pl = ewm_sum_pl.fill_null(strategy="forward")
+                assert_series_equal(ewm_sum_pl, ewm_sum_pd, abs_tol=1e-07)
 
             # std:
             ewm_std_pl = s.ewm_std(bias=bias, **pl_params).fill_nan(None)

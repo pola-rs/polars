@@ -2,6 +2,8 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use futures::StreamExt;
+use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
+use polars_async::primitives::connector::{self};
 use polars_core::prelude::PlHashMap;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
@@ -11,8 +13,6 @@ use polars_plan::dsl::PredicateFileSkip;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
-use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
-use crate::async_primitives::connector::{self};
 use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sources::multi_scan::components::bridge::{BridgeRecvPort, BridgeState};
 use crate::nodes::io_sources::multi_scan::components::row_deletions::{
@@ -61,18 +61,17 @@ pub fn initialize_multi_scan_pipeline(
 
     let (bridge_handle, bridge_recv_port_tx, phase_channel_tx) = spawn_bridge(bridge_state.clone());
 
-    let task_handle =
-        AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
-            finish_initialize_multi_scan_pipeline(
-                config,
-                bridge_recv_port_tx,
-                execution_state,
-                io_metrics,
-            )
-            .await?;
-            bridge_handle.await;
-            Ok(())
-        }));
+    let task_handle = AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+        finish_initialize_multi_scan_pipeline(
+            config,
+            bridge_recv_port_tx,
+            execution_state,
+            io_metrics,
+        )
+        .await?;
+        bridge_handle.await;
+        Ok(())
+    }));
 
     InitializedPipelineState {
         task_handle,
@@ -238,6 +237,7 @@ async fn finish_initialize_multi_scan_pipeline(
         Arc::new(row_deletions);
 
     let cast_columns_policy = config.cast_columns_policy.clone();
+    let extra_columns_policy = config.extra_columns_policy;
     let missing_columns_policy = config.missing_columns_policy;
     let include_file_paths = config.include_file_paths.clone();
 
@@ -259,7 +259,7 @@ async fn finish_initialize_multi_scan_pipeline(
             "[MultiScanTaskInit]: \
             scan_source_idx: {}, \
             extra_ops: {:?}",
-            scan_source_idx, &extra_ops,
+            scan_source_idx, extra_ops,
         )
     }
 
@@ -305,7 +305,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 (range: {:?}, filtered out: {})",
                 n_readers_init,
                 config.sources.len(),
-                &range,
+                range,
                 n_filtered,
             )
         }
@@ -351,7 +351,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 let maybe_initialized = initialized_readers.pop_front();
                 let scan_source = sources.get(scan_source_idx).unwrap().into_owned();
 
-                AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
+                AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
                     let (scan_source, reader, n_rows_in_file) = async {
                         if verbose {
                             eprintln!("[MultiScan]: Initialize source {scan_source_idx}");
@@ -411,10 +411,21 @@ async fn finish_initialize_multi_scan_pipeline(
     let max_concurrent_scans = config.max_concurrent_scans();
     let disable_morsel_split = config.disable_morsel_split;
 
+    // Share the last-morsel split budget across files in the scan: divide it by the number
+    // of files that can be in flight at once, so the total morsel count at end-of-file
+    // boundaries stays bounded by `num_pipelines`.
+    let n_effective_sources = sources.len().saturating_sub(
+        skip_files_mask
+            .as_ref()
+            .map_or(0, |m| m.num_skipped_files()),
+    );
+    let last_morsel_pipelines =
+        num_pipelines.div_ceil(n_effective_sources.min(max_concurrent_scans).max(1));
+
     let (started_reader_tx, started_reader_rx) =
         tokio::sync::mpsc::channel(max_concurrent_scans.max(2) - 1);
 
-    let reader_starter_handle = AbortOnDropHandle::new(async_executor::spawn(
+    let reader_starter_handle = AbortOnDropHandle::new(executor::spawn(
         TaskPriority::Low,
         ReaderStarter {
             reader_capabilities,
@@ -431,10 +442,13 @@ async fn finish_initialize_multi_scan_pipeline(
                 reader_capabilities,
                 file_projection_builder,
                 cast_columns_policy,
+                extra_columns_policy,
                 missing_columns_policy,
                 forbid_extra_columns: config.forbid_extra_columns.clone(),
                 num_pipelines,
+                max_concurrent_scans,
                 disable_morsel_split,
+                last_morsel_pipelines,
                 verbose,
             },
             verbose,
@@ -442,7 +456,7 @@ async fn finish_initialize_multi_scan_pipeline(
         .run(),
     ));
 
-    let attach_to_bridge_handle = AbortOnDropHandle::new(async_executor::spawn(
+    let attach_to_bridge_handle = AbortOnDropHandle::new(executor::spawn(
         TaskPriority::Low,
         AttachReaderToBridge {
             started_reader_rx,

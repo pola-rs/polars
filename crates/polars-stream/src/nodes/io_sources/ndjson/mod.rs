@@ -9,6 +9,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use line_batch_processor::{LineBatchProcessor, LineBatchProcessorOutputPort};
 use negative_slice_pass::MorselStreamReverser;
+use polars_async::executor::{AbortOnDropHandle, spawn};
+use polars_async::primitives::distributor_channel::distributor_channel;
+use polars_async::primitives::linearizer::Linearizer;
+use polars_async::primitives::oneshot_channel;
+use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_io::cloud::CloudOptions;
@@ -26,11 +31,6 @@ use row_index_limit_pass::ApplyRowIndexOrLimit;
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
 use super::multi_scan::reader_interface::{BeginReadArgs, FileReader, FileReaderCallbacks};
 use super::shared::chunk_data_fetch::ChunkDataFetcher;
-use crate::async_executor::{AbortOnDropHandle, spawn};
-use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::linearizer::Linearizer;
-use crate::async_primitives::oneshot_channel;
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::multi_scan::reader_interface::Projection;
@@ -169,6 +169,7 @@ impl FileReader for NDJsonFileReader {
 
             num_pipelines,
             disable_morsel_split: _,
+            last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,
@@ -178,9 +179,11 @@ impl FileReader for NDJsonFileReader {
 
             predicate: None,
             cast_columns_policy: _,
+            extra_columns_policy: _,
+            missing_columns_policy: _,
         } = args
         else {
-            panic!("unsupported args: {:?}", &args)
+            panic!("unsupported args: {:?}", args)
         };
 
         let is_empty_slice = pre_slice.as_ref().is_some_and(|x| x.len() == 0);
@@ -246,12 +249,16 @@ impl FileReader for NDJsonFileReader {
                 global_slice: {:?}, \
                 row_index: {:?}, \
                 is_negative_slice: {}, \
-                use_async_prefetch: {}",
+                use_async_prefetch: {}, \
+                concurrency_strategy: {:?}, \
+                chunk_size: {:?}",
                 schema.len(),
-                &global_slice,
-                &row_index,
+                global_slice,
+                row_index,
                 is_negative_slice,
-                use_async_prefetch
+                use_async_prefetch,
+                self.byte_source_builder.concurrency_strategy(),
+                self.byte_source_builder.chunk_size()
             );
         }
 
@@ -413,6 +420,7 @@ impl FileReader for NDJsonFileReader {
         // transparent decompression), into one unified reader source.
         let reader_source = if use_async_prefetch {
             // Prepare parameters for Prefetch task.
+            // TODO REFACTOR: use get_streaming_chunk_size()
             const DEFAULT_NDJSON_CHUNK_SIZE: usize = 32 * 1024 * 1024;
             let memory_prefetch_func = get_memory_prefetch_func(verbose);
             let chunk_size = std::env::var("POLARS_NDJSON_CHUNK_SIZE")

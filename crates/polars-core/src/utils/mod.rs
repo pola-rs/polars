@@ -39,6 +39,18 @@ pub fn _set_partition_size() -> usize {
     RAYON.current_num_threads()
 }
 
+/// Iterate `items` in parallel with the number of rayon tasks bounded by the thread count.
+///
+/// Use this when the length of `items` grows with the data. A worker adds a stack frame per
+/// stolen job, so an unbounded number of tasks can overflow a worker stack.
+pub fn par_iter_bounded<T: Sync>(items: &[T]) -> rayon::iter::MinLen<rayon::slice::Iter<'_, T>> {
+    const TASKS_PER_THREAD: usize = 8;
+    let min_len = items
+        .len()
+        .div_ceil(_set_partition_size() * TASKS_PER_THREAD);
+    items.par_iter().with_min_len(min_len.max(1))
+}
+
 /// Just a wrapper structure which is useful for certain impl specializations.
 ///
 /// This is for instance use to implement

@@ -84,7 +84,7 @@ def test_concat_arr_broadcast() -> None:
         pl.Series([[1, 1], [2, 1], [3, 1]], dtype=pl.Array(pl.Int64, 2)),
     )
 
-    with pytest.raises(ShapeError, match=r"length of column.*did not match"):
+    with pytest.raises(ShapeError, match=r"incompatible lengths 2 and 3"):
         assert_series_equal(
             pl.select(
                 pl.concat_arr(pl.Series([1, 3, 5]), pl.Series([1, 1]))
@@ -96,19 +96,14 @@ def test_concat_arr_broadcast() -> None:
         pl.select(
             pl.concat_arr(
                 pl.Series(
-                    [{"x": [1], "y": [2]}, {"x": [3], "y": None}],
+                    [{"x": [1]}, {"x": [3]}],
                     dtype=pl.Struct({"x": pl.Array(pl.Int64, 1)}),
                 ),
-                pl.lit(
-                    {"x": [9], "y": [11]}, dtype=pl.Struct({"x": pl.Array(pl.Int64, 1)})
-                ),
+                pl.lit({"x": [9]}, dtype=pl.Struct({"x": pl.Array(pl.Int64, 1)})),
             )
         ).to_series(),
         pl.Series(
-            [
-                [{"x": [1], "y": [2]}, {"x": [9], "y": [11]}],
-                [{"x": [3], "y": [4]}, {"x": [9], "y": [11]}],
-            ],
+            [[{"x": [1]}, {"x": [9]}], [{"x": [3]}, {"x": [9]}]],
             dtype=pl.Array(pl.Struct({"x": pl.Array(pl.Int64, 1)}), 2),
         ),
     )

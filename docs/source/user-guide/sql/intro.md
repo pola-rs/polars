@@ -61,8 +61,8 @@ Dataframes with:
 SQL queries are always executed in lazy mode to take advantage of the full set of query planning
 optimizations, so we have two options to collect the result:
 
-- Set the parameter `eager_execution` to True in `SQLContext`; this ensures that Polars
-  automatically collects the LazyFrame results from `execute` calls.
+- Set the parameter `eager` to True in `SQLContext`; this ensures that Polars automatically collects
+  the LazyFrame results from `execute` calls.
 - Set the parameter `eager` to True when executing a query with `execute`, or explicitly collect the
   result using `collect`.
 
@@ -82,7 +82,7 @@ SQL queries can be executed just as easily from multiple sources. In the example
 - a NDJSON file (loaded lazily)
 - a Pandas DataFrame
 
-And join them together using SQL. Lazy reading allows to only load the necessary rows and columns
+And join them together using SQL. Lazy reading lets you only load the necessary rows and columns
 from the files.
 
 In the same way, it's possible to register cloud datalakes (S3, Azure Data Lake). A PyArrow dataset
@@ -115,8 +115,8 @@ For example, here is a non-exhaustive list of some of the supported functionalit
 - Write Common Table Expressions (CTE's) such as: `WITH tablename AS`
 - Explain a query: `EXPLAIN SELECT ...`
 - List registered tables: `SHOW TABLES`
-- Drop a table: `DROP TABLE tablename`
-- Truncate a table: `TRUNCATE TABLE tablename`
+- Drop a table: `DROP TABLE [IF EXISTS] tablename`
+- Truncate a table: `TRUNCATE TABLE [IF EXISTS] tablename`
 
 The following are some features that are not yet supported:
 

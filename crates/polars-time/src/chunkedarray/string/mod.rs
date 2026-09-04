@@ -50,23 +50,6 @@ where
         .copied()
 }
 
-#[cfg(feature = "dtype-datetime")]
-fn sniff_fmt_datetime(val: &str) -> PolarsResult<&'static str> {
-    datetime_pattern(val, NaiveDateTime::parse_from_str)
-        .or_else(|| datetime_pattern(val, NaiveDate::parse_from_str))
-        .ok_or_else(|| polars_err!(parse_fmt_idk = "datetime"))
-}
-
-#[cfg(feature = "dtype-date")]
-fn sniff_fmt_date(val: &str) -> PolarsResult<&'static str> {
-    date_pattern(val, NaiveDate::parse_from_str).ok_or_else(|| polars_err!(parse_fmt_idk = "date"))
-}
-
-#[cfg(feature = "dtype-time")]
-fn sniff_fmt_time(val: &str) -> PolarsResult<&'static str> {
-    time_pattern(val, NaiveTime::parse_from_str).ok_or_else(|| polars_err!(parse_fmt_idk = "time"))
-}
-
 pub trait StringMethods: AsString {
     #[cfg(feature = "dtype-time")]
     /// Parsing string values and return a [`TimeChunked`]
@@ -75,14 +58,16 @@ pub trait StringMethods: AsString {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => {
-                let Some(idx) = string_ca.first_non_null() else {
+                if string_ca.null_count() == string_ca.len() {
                     return Ok(
                         Int64Chunked::full_null(string_ca.name().clone(), string_ca.len())
                             .into_time(),
                     );
-                };
-                let val = string_ca.get(idx).expect("should not be null");
-                sniff_fmt_time(val)?
+                }
+                infer::infer_from_values(string_ca, |val| {
+                    time_pattern(val, NaiveTime::parse_from_str)
+                })
+                .ok_or_else(|| polars_err!(parse_fmt_idk = "time"))?
             },
         };
         let use_cache = use_cache && string_ca.len() > 50;
@@ -107,14 +92,16 @@ pub trait StringMethods: AsString {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => {
-                let Some(idx) = string_ca.first_non_null() else {
+                if string_ca.null_count() == string_ca.len() {
                     return Ok(
                         Int32Chunked::full_null(string_ca.name().clone(), string_ca.len())
                             .into_date(),
                     );
-                };
-                let val = string_ca.get(idx).expect("should not be null");
-                sniff_fmt_date(val)?
+                }
+                infer::infer_from_values(string_ca, |val| {
+                    date_pattern(val, NaiveDate::parse_from_str)
+                })
+                .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?
             },
         };
         let ca = unary_elementwise(string_ca, |opt_s| {
@@ -154,14 +141,17 @@ pub trait StringMethods: AsString {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => {
-                let Some(idx) = string_ca.first_non_null() else {
+                if string_ca.null_count() == string_ca.len() {
                     return Ok(
                         Int64Chunked::full_null(string_ca.name().clone(), string_ca.len())
                             .into_datetime(tu, tz.cloned()),
                     );
-                };
-                let val = string_ca.get(idx).expect("should not be null");
-                sniff_fmt_datetime(val)?
+                }
+                infer::infer_from_values(string_ca, |val| {
+                    datetime_pattern(val, NaiveDateTime::parse_from_str)
+                        .or_else(|| datetime_pattern(val, NaiveDate::parse_from_str))
+                })
+                .ok_or_else(|| polars_err!(parse_fmt_idk = "datetime"))?
             },
         };
 
@@ -225,12 +215,11 @@ pub trait StringMethods: AsString {
         let fmt = strptime::compile_fmt(fmt)?;
 
         // We can use the fast parser.
-        let ca = if let Some(fmt_len) = strptime::fmt_len(fmt.as_bytes()) {
+        let ca = if strptime::fast_parser_supported(fmt.as_bytes()) {
             let mut strptime_cache = StrpTimeState::default();
             let mut convert = LruCachedFunc::new(
                 |s: &str| {
-                    // SAFETY: fmt_len is correct, it was computed with this `fmt` str.
-                    match unsafe { strptime_cache.parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
+                    match strptime_cache.parse(s.as_bytes(), fmt.as_bytes()) {
                         // Fallback to chrono.
                         None => NaiveDate::parse_from_str(s, &fmt).ok(),
                         Some(ndt) => Some(ndt.date()),
@@ -305,17 +294,12 @@ pub trait StringMethods: AsString {
                 TimeUnit::Microseconds => infer::transform_datetime_us,
                 TimeUnit::Milliseconds => infer::transform_datetime_ms,
             };
-            // We can use the fast parser.
-            let ca = if let Some(fmt_len) = self::strptime::fmt_len(fmt.as_bytes()) {
+            let ca = if strptime::fast_parser_supported(fmt.as_bytes()) {
                 let mut strptime_cache = StrpTimeState::default();
                 let mut convert = LruCachedFunc::new(
-                    |s: &str| {
-                        // SAFETY: fmt_len is correct, it was computed with this `fmt` str.
-                        match unsafe { strptime_cache.parse(s.as_bytes(), fmt.as_bytes(), fmt_len) }
-                        {
-                            None => transform(s, &fmt),
-                            Some(ndt) => Some(func(ndt)),
-                        }
+                    |s: &str| match strptime_cache.parse(s.as_bytes(), fmt.as_bytes()) {
+                        None => transform(s, &fmt),
+                        Some(ndt) => Some(func(ndt)),
                     },
                     (string_ca.len() as f64).sqrt() as usize,
                 );

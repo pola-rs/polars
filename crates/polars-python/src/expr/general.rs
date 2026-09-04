@@ -251,9 +251,6 @@ impl PyExpr {
         self.inner.clone().rle_id().into()
     }
 
-    fn agg_groups(&self) -> Self {
-        self.inner.clone().agg_groups().into()
-    }
     fn count(&self) -> Self {
         self.inner.clone().count().into()
     }
@@ -454,6 +451,10 @@ impl PyExpr {
             .into()
     }
 
+    fn is_sorted(&self, descending: Option<bool>, nulls_last: Option<bool>) -> Self {
+        self.inner.clone().is_sorted(descending, nulls_last).into()
+    }
+
     #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self) -> Self {
         self.inner.clone().approx_n_unique().into()
@@ -487,10 +488,6 @@ impl PyExpr {
 
     fn append(&self, other: Self, upcast: bool) -> Self {
         self.inner.clone().append(other.inner, upcast).into()
-    }
-
-    fn rechunk(&self) -> Self {
-        self.inner.clone().rechunk().into()
     }
 
     fn round(&self, decimals: u32, mode: Wrap<RoundMode>) -> Self {
@@ -801,7 +798,13 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (n, with_replacement, shuffle, seed))]
-    fn sample_n(&self, n: Self, with_replacement: bool, shuffle: bool, seed: Option<u64>) -> Self {
+    fn sample_n(
+        &self,
+        n: Self,
+        with_replacement: bool,
+        shuffle: Option<bool>,
+        seed: Option<u64>,
+    ) -> Self {
         self.inner
             .clone()
             .sample_n(n.inner, with_replacement, shuffle, seed)
@@ -813,7 +816,7 @@ impl PyExpr {
         &self,
         frac: Self,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> Self {
         self.inner
@@ -832,6 +835,16 @@ impl PyExpr {
         };
         self.inner.clone().ewm_mean(options).into()
     }
+    fn ewm_sum(&self, alpha: f64, min_periods: usize, ignore_nulls: bool) -> Self {
+        let options = EWMOptions {
+            alpha,
+            bias: false,
+            min_periods,
+            ignore_nulls,
+            ..Default::default()
+        };
+        self.inner.clone().ewm_sum(options).into()
+    }
     fn ewm_mean_by(&self, times: PyExpr, half_life: &str) -> PyResult<Self> {
         let half_life = Duration::try_parse(half_life).map_err(PyPolarsErr::from)?;
         Ok(self
@@ -839,6 +852,10 @@ impl PyExpr {
             .clone()
             .ewm_mean_by(times.inner, half_life)
             .into())
+    }
+    fn ewm_sum_by(&self, times: PyExpr, half_life: &str) -> PyResult<Self> {
+        let half_life = Duration::try_parse(half_life).map_err(PyPolarsErr::from)?;
+        Ok(self.inner.clone().ewm_sum_by(times.inner, half_life).into())
     }
 
     fn ewm_std(
@@ -892,6 +909,10 @@ impl PyExpr {
         self.inner.clone().is_empty(ignore_nulls).into()
     }
 
+    fn has_nulls(&self) -> Self {
+        self.inner.clone().has_nulls().into()
+    }
+
     fn log(&self, base: PyExpr) -> Self {
         self.inner.clone().log(base.inner).into()
     }
@@ -907,8 +928,8 @@ impl PyExpr {
     fn entropy(&self, base: f64, normalize: bool) -> Self {
         self.inner.clone().entropy(base, normalize).into()
     }
-    fn hash(&self, seed: u64, seed_1: u64, seed_2: u64, seed_3: u64) -> Self {
-        self.inner.clone().hash(seed, seed_1, seed_2, seed_3).into()
+    fn hash(&self, seed: u64) -> Self {
+        self.inner.clone().hash(seed).into()
     }
     fn set_sorted_flag(&self, descending: bool, nulls_last: bool) -> Self {
         let sortedness = AExprSorted::default()

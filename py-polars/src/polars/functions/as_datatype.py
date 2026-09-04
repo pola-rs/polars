@@ -91,7 +91,7 @@ def datetime_(
     ...         pl.col("hour"),
     ...         pl.col("minute"),
     ...         time_zone="Australia/Sydney",
-    ...     )
+    ...     ).alias("datetime")
     ... )
     shape: (3, 5)
     ┌───────┬─────┬──────┬────────┬────────────────────────────────┐
@@ -500,6 +500,58 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
     return wrap_expr(plr.concat_list(exprs))
 
 
+def list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
+    """
+    Collect columns into a list column, treating each expression's value as one element.
+
+    Unlike :func:`concat_list`, list-typed inputs are not extended — each input's value
+    becomes a single element of the output list. This means ``List(T)`` inputs produce
+    ``List(List(T))`` output.
+
+    Parameters
+    ----------
+    exprs
+        Columns to collect into a list. Accepts expression input. Strings are parsed
+        as column names, other non-expression inputs are parsed as literals.
+    *more_exprs
+        Additional columns, specified as positional arguments.
+
+    Examples
+    --------
+    Wrap scalar columns into a list (same as ``concat_list`` for scalars):
+
+    >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    >>> df.with_columns(a_b=pl.list("a", "b"))
+    shape: (3, 3)
+    ┌─────┬─────┬───────────┐
+    │ a   ┆ b   ┆ a_b      │
+    │ --- ┆ --- ┆ ---       │
+    │ i64 ┆ i64 ┆ list[i64] │
+    ╞═════╪═════╪═══════════╡
+    │ 1   ┆ 4   ┆ [1, 4]    │
+    │ 2   ┆ 5   ┆ [2, 5]    │
+    │ 3   ┆ 6   ┆ [3, 6]    │
+    └─────┴─────┴───────────┘
+
+    Collect list columns into a list-of-lists (unlike ``concat_list``, which extends):
+
+    >>> df = pl.DataFrame({"a": [[1, 2], [3], [4, 5]], "b": [[6], [7, 8], [9]]})
+    >>> df.with_columns(a_b=pl.list("a", "b"))
+    shape: (3, 3)
+    ┌───────────┬───────────┬─────────────────┐
+    │ a         ┆ b         ┆ a_b             │
+    │ ---       ┆ ---       ┆ ---             │
+    │ list[i64] ┆ list[i64] ┆ list[list[i64]] │
+    ╞═══════════╪═══════════╪═════════════════╡
+    │ [1, 2]    ┆ [6]       ┆ [[1, 2], [6]]   │
+    │ [3]       ┆ [7, 8]    ┆ [[3], [7, 8]]   │
+    │ [4, 5]    ┆ [9]       ┆ [[4, 5], [9]]   │
+    └───────────┴───────────┴─────────────────┘
+    """
+    exprs = parse_into_list_of_expressions(exprs, *more_exprs)
+    return wrap_expr(plr.list(exprs))
+
+
 def concat_arr(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     """
     Horizontally concatenate columns into a single array column.
@@ -718,7 +770,7 @@ def struct(
         if not exprs and not named_exprs:
             # no columns or expressions provided; create one from schema keys
             expr = wrap_expr(
-                plr.as_struct(parse_into_list_of_expressions(list(schema.keys())))
+                plr.as_struct(parse_into_list_of_expressions([*schema.keys()]))
             )
         else:
             expr = wrap_expr(plr.as_struct(pyexprs))

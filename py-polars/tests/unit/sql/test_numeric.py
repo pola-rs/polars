@@ -210,3 +210,13 @@ def test_stddev_variance() -> None:
                 }
             ),
         )
+
+
+def test_int_div_true_division() -> None:
+    df = pl.DataFrame({"num": [1], "denum": [3]})
+    with pl.SQLContext(df=df, eager=True) as ctx:
+        result = ctx.execute("SELECT num / denum AS div FROM df")
+        assert_frame_equal(
+            result,
+            pl.DataFrame({"div": [1 / 3]}),
+        )

@@ -2,6 +2,30 @@ use polars_core::prelude::*;
 
 use crate::prelude::*;
 
+/// Resolve a single `dt.replace` component (e.g. year, month, ...):
+/// 1. No value was supplied (None)       --> Use existing component from the original array.
+/// 2. Value was supplied and is a Scalar --> Create full Series of value.
+/// 3. Value was supplied and is a Series --> Update all elements with the non-null values.
+fn resolve_component<T>(
+    component: &ChunkedArray<T>,
+    existing: impl FnOnce() -> ChunkedArray<T>,
+    n: usize,
+) -> PolarsResult<ChunkedArray<T>>
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: ChunkZip<T>,
+{
+    if component.len() == 1 {
+        if let Some(value) = component.get(0) {
+            Ok(ChunkedArray::<T>::full(PlSmallStr::EMPTY, value, n))
+        } else {
+            Ok(existing())
+        }
+    } else {
+        component.zip_with(&component.is_not_null(), &existing())
+    }
+}
+
 /// Replace specific time component of a `DatetimeChunked` with a specified value.
 #[cfg(feature = "dtype-datetime")]
 #[allow(clippy::too_many_arguments)]
@@ -55,73 +79,13 @@ pub fn replace_datetime(
         );
     }
 
-    // For each argument, we must check if:
-    // 1. No value was supplied (None)       --> Use existing year from Series
-    // 2. Value was supplied and is a Scalar --> Create full Series of value
-    // 3. Value was supplied and is Series   --> Update all elements with the non-null values
-    let year = if year.len() == 1 {
-        if let Some(value) = year.get(0) {
-            &Int32Chunked::full(PlSmallStr::EMPTY, value, n)
-        } else {
-            &ca.year()
-        }
-    } else {
-        &year.zip_with(&year.is_not_null(), &ca.year())?
-    };
-    let month = if month.len() == 1 {
-        if let Some(value) = month.get(0) {
-            &Int8Chunked::full(PlSmallStr::EMPTY, value, n)
-        } else {
-            &ca.month()
-        }
-    } else {
-        &month.zip_with(&month.is_not_null(), &ca.month())?
-    };
-    let day = if day.len() == 1 {
-        if let Some(value) = day.get(0) {
-            &Int8Chunked::full(PlSmallStr::EMPTY, value, n)
-        } else {
-            &ca.day()
-        }
-    } else {
-        &day.zip_with(&day.is_not_null(), &ca.day())?
-    };
-    let hour = if hour.len() == 1 {
-        if let Some(value) = hour.get(0) {
-            &Int8Chunked::full(PlSmallStr::EMPTY, value, n)
-        } else {
-            &ca.hour()
-        }
-    } else {
-        &hour.zip_with(&hour.is_not_null(), &ca.hour())?
-    };
-    let minute = if minute.len() == 1 {
-        if let Some(value) = minute.get(0) {
-            &Int8Chunked::full(PlSmallStr::EMPTY, value, n)
-        } else {
-            &ca.minute()
-        }
-    } else {
-        &minute.zip_with(&minute.is_not_null(), &ca.minute())?
-    };
-    let second = if second.len() == 1 {
-        if let Some(value) = second.get(0) {
-            &Int8Chunked::full(PlSmallStr::EMPTY, value, n)
-        } else {
-            &ca.second()
-        }
-    } else {
-        &second.zip_with(&second.is_not_null(), &ca.second())?
-    };
-    let nanosecond = if nanosecond.len() == 1 {
-        if let Some(value) = nanosecond.get(0) {
-            &Int32Chunked::full(PlSmallStr::EMPTY, value, n)
-        } else {
-            &ca.nanosecond()
-        }
-    } else {
-        &nanosecond.zip_with(&nanosecond.is_not_null(), &ca.nanosecond())?
-    };
+    let year = &resolve_component(year, || ca.year(), n)?;
+    let month = &resolve_component(month, || ca.month(), n)?;
+    let day = &resolve_component(day, || ca.day(), n)?;
+    let hour = &resolve_component(hour, || ca.hour(), n)?;
+    let minute = &resolve_component(minute, || ca.minute(), n)?;
+    let second = &resolve_component(second, || ca.second(), n)?;
+    let nanosecond = &resolve_component(nanosecond, || ca.nanosecond(), n)?;
 
     let mut out = DatetimeChunked::new_from_parts(
         year,
@@ -137,9 +101,11 @@ pub fn replace_datetime(
         ca.name().clone(),
     )?;
 
-    // Ensure nulls are propagated.
+    // Ensure nulls are propagated. A component can only end up null when `ca` is null at that
+    // position, so `out`'s nulls are always a subset of `ca`'s.
     if ca.has_nulls() {
-        out.physical_mut().merge_validities(ca.physical().chunks());
+        out.physical_mut()
+            .set_validity(ca.physical().rechunk_validity());
     }
 
     Ok(out)
@@ -155,38 +121,16 @@ pub fn replace_date(
 ) -> PolarsResult<DateChunked> {
     let n = ca.len();
 
-    let year = if year.len() == 1 {
-        if let Some(value) = year.get(0) {
-            &Int32Chunked::full("".into(), value, n)
-        } else {
-            &ca.year()
-        }
-    } else {
-        &year.zip_with(&year.is_not_null(), &ca.year())?
-    };
-    let month = if month.len() == 1 {
-        if let Some(value) = month.get(0) {
-            &Int8Chunked::full("".into(), value, n)
-        } else {
-            &ca.month()
-        }
-    } else {
-        &month.zip_with(&month.is_not_null(), &ca.month())?
-    };
-    let day = if day.len() == 1 {
-        if let Some(value) = day.get(0) {
-            &Int8Chunked::full("".into(), value, n)
-        } else {
-            &ca.day()
-        }
-    } else {
-        &day.zip_with(&day.is_not_null(), &ca.day())?
-    };
+    let year = &resolve_component(year, || ca.year(), n)?;
+    let month = &resolve_component(month, || ca.month(), n)?;
+    let day = &resolve_component(day, || ca.day(), n)?;
     let mut out = DateChunked::new_from_parts(year, month, day, ca.name().clone())?;
 
-    // Ensure nulls are propagated.
+    // Ensure nulls are propagated. A component can only end up null when `ca` is null at that
+    // position, so `out`'s nulls are always a subset of `ca`'s.
     if ca.has_nulls() {
-        out.physical_mut().merge_validities(ca.physical().chunks());
+        out.physical_mut()
+            .set_validity(ca.physical().rechunk_validity());
     }
 
     Ok(out)

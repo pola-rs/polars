@@ -13,12 +13,13 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from polars._typing import PolarsDataType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -667,6 +668,25 @@ def test_decimal_arithmetic_schema_int() -> None:
     assert_series_equal((1 * s), pl.Series("literal", [1.0], dtype=pl.Decimal(38, 6)))
 
 
+@pytest.mark.parametrize(
+    "int_dtype",
+    [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt32],
+)
+def test_decimal_truediv_int_schema_29105(int_dtype: PolarsDataType) -> None:
+    lf = pl.LazyFrame({"i": [1]}, schema={"i": int_dtype}).with_columns(
+        d=pl.lit(1).cast(pl.Decimal(18, 4))
+    )
+
+    for expr, name in (
+        (pl.col("i") / pl.col("d"), "i"),
+        (pl.col("d") / pl.col("i"), "d"),
+    ):
+        q = lf.select(expr)
+        schema = q.collect_schema()
+        assert schema == q.collect().schema
+        assert schema[name] == pl.Decimal(38, 4)
+
+
 def test_decimal_horizontal_20482() -> None:
     b = pl.LazyFrame(
         {
@@ -944,3 +964,14 @@ def test_decimal_sum_widens_precision_27576(
         pl.Decimal(precision=38, scale=2)
     )
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_decimal_sum_overflow_28585(
+    engine: Literal["streaming", "in-memory"],
+) -> None:
+    s = pl.Series("d", [D(10**38 - 1)] * 2, dtype=pl.Decimal(38, 0))
+    with pytest.raises(ComputeError, match="overflow in decimal addition in sum"):
+        s.sum()
+    with pytest.raises(ComputeError, match="overflow in decimal addition in sum"):
+        s.to_frame().lazy().select(pl.col("d").sum()).collect(engine=engine)

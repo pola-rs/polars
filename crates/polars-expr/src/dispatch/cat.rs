@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
-use polars_core::error::PolarsResult;
-use polars_core::prelude::{
-    ChunkTakeUnchecked, ChunkedArray, Column, FalseT, IDX_DTYPE, IntoColumn, PolarsPhysicalType,
-    StringChunked,
-};
+use polars_core::datatypes::DataType;
+use polars_core::error::{PolarsResult, polars_ensure};
+use polars_core::prelude::*;
 use polars_core::series::Series;
 use polars_ops::prelude::BinaryNameSpaceImpl;
 #[cfg(feature = "strings")]
@@ -15,7 +13,6 @@ use polars_plan::plans::IRCategoricalFunction;
 pub fn function_expr_to_udf(func: IRCategoricalFunction) -> SpecialEq<Arc<dyn ColumnsUdf>> {
     use IRCategoricalFunction::*;
     match func {
-        GetCategories => map!(get_categories),
         #[cfg(feature = "strings")]
         LenBytes => map!(len_bytes),
         #[cfg(feature = "strings")]
@@ -26,13 +23,9 @@ pub fn function_expr_to_udf(func: IRCategoricalFunction) -> SpecialEq<Arc<dyn Co
         EndsWith(suffix) => map!(ends_with, suffix.as_str()),
         #[cfg(feature = "strings")]
         Slice(offset, length) => map!(slice, offset, length),
+        To(dtype, strict) => map!(cat_to, &dtype, strict),
+        Physical => map!(cat_physical),
     }
-}
-
-fn get_categories(s: &Column) -> PolarsResult<Column> {
-    let mapping = s.dtype().cat_mapping()?;
-    let ca = unsafe { StringChunked::from_chunks(s.name().clone(), vec![mapping.to_arrow(true)]) };
-    Ok(ca.into_column())
 }
 
 // Determine mapping between categories and underlying physical. For local, this is just 0..n.
@@ -98,4 +91,13 @@ fn slice(c: &Column, offset: i64, length: Option<usize>) -> PolarsResult<Column>
     // SAFETY: physical idx array is valid.
     let out = unsafe { result.take_unchecked(phys.idx().unwrap()) };
     Ok(out.into_column())
+}
+
+fn cat_to(s: &Column, dtype: &DataType, strict: bool) -> PolarsResult<Column> {
+    s.try_apply_unary_elementwise(|s| Series::from_cats_and_dtype(s, dtype, strict))
+}
+
+fn cat_physical(s: &Column) -> PolarsResult<Column> {
+    polars_ensure!(s.dtype().is_categorical() || s.dtype().is_enum(), SchemaMismatch: "cannot call `.cat.physical` on a column which isn't a Categorical or Enum type ({})", s.dtype());
+    Ok(s.apply_unary_elementwise(|s| s.to_physical_repr().into_owned()))
 }

@@ -605,3 +605,79 @@ def test_window_frame_validation() -> None:
         ),
     ):
         df.sql(query)
+
+
+@pytest.mark.parametrize(
+    "window_expr",
+    [
+        "AVG(SUM(value)) OVER (PARTITION BY category)",
+        "SUM(SUM(value)) OVER (PARTITION BY category)",
+        "MAX(SUM(value)) OVER (PARTITION BY category)",
+        "AVG(COUNT(value)) OVER (PARTITION BY category)",
+        "RANK() OVER (PARTITION BY category ORDER BY SUM(value) DESC)",
+        "ROW_NUMBER() OVER (ORDER BY SUM(value) DESC)",
+    ],
+)
+def test_window_over_aggregate(window_expr: str) -> None:
+    # window functions are evaluated *after* GROUP BY, on the aggregated rows
+    lf = pl.LazyFrame(
+        {
+            "category": ["A", "A", "A", "B", "B", "C"],
+            "grp": ["x", "y", "z", "x", "y", "x"],
+            "value": [10, 20, 30, 40, 50, 60],
+        }
+    )
+    assert_sql_matches(
+        {"df": lf},
+        query=f"""
+            SELECT category, grp, SUM(value) AS total, {window_expr} AS win
+            FROM df
+            GROUP BY category, grp
+            ORDER BY category, grp
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_window_over_aggregate_partition_by_subset() -> None:
+    # the aggregate feeding the window is not itself in the SELECT list
+    lf = pl.LazyFrame(
+        {
+            "category": ["A", "A", "B", "B"],
+            "grp": ["x", "y", "x", "y"],
+            "value": [10, 20, 30, 40],
+        }
+    )
+    assert_sql_matches(
+        {"df": lf},
+        query="""
+            SELECT category, grp,
+                   SUM(value) - AVG(SUM(value)) OVER (PARTITION BY category) AS delta
+            FROM df
+            GROUP BY category, grp
+            ORDER BY category, grp
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_window_over_aggregate_having() -> None:
+    lf = pl.LazyFrame(
+        {
+            "category": ["A", "A", "B", "B", "C"],
+            "grp": ["x", "y", "x", "y", "x"],
+            "value": [10, 20, 30, 40, 50],
+        }
+    )
+    assert_sql_matches(
+        {"df": lf},
+        query="""
+            SELECT category, grp, SUM(value) AS total,
+                   AVG(SUM(value)) OVER (PARTITION BY category) AS avg_total
+            FROM df
+            GROUP BY category, grp
+            HAVING SUM(value) > 15
+            ORDER BY category, grp
+        """,
+        compare_with="duckdb",
+    )

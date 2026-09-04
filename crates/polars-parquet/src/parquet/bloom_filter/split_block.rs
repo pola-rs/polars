@@ -24,24 +24,16 @@ fn new_mask(x: u32) -> [u32; 8] {
 /// loads a block from the bitset to the stack
 #[inline]
 fn load_block(bitset: &[u8]) -> [u32; 8] {
-    let mut a = [0u32; 8];
-    let bitset = bitset.chunks_exact(4).take(8);
-    for (a, chunk) in a.iter_mut().zip(bitset) {
-        *a = u32::from_le_bytes(chunk.try_into().unwrap())
-    }
-    a
+    let chunks = bitset.as_chunks::<4>().0;
+    std::array::from_fn(|i| u32::from_le_bytes(chunks[i]))
 }
 
 /// assigns a block from the stack to `bitset`
 #[inline]
-fn unload_block(block: [u32; 8], bitset: &mut [u8]) {
-    let bitset = bitset.chunks_exact_mut(4).take(8);
-    for (a, chunk) in block.iter().zip(bitset) {
-        let a = a.to_le_bytes();
-        chunk[0] = a[0];
-        chunk[1] = a[1];
-        chunk[2] = a[2];
-        chunk[3] = a[3];
+fn store_block(block: [u32; 8], bitset: &mut [u8]) {
+    let chunks = bitset.as_chunks_mut::<4>().0;
+    for (i, x) in block.iter().enumerate() {
+        chunks[i] = x.to_le_bytes();
     }
 }
 
@@ -75,6 +67,6 @@ pub fn insert(bitset: &mut [u8], hash: u64) {
         block_mask[i] |= mask[i];
 
         let mut_slice = &mut bitset[block_index * 32..(block_index + 1) * 32];
-        unload_block(block_mask, mut_slice)
+        store_block(block_mask, mut_slice)
     }
 }

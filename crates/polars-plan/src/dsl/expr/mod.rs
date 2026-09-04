@@ -6,10 +6,11 @@ use std::hash::{Hash, Hasher};
 pub use anonymous::*;
 use bytes::Bytes;
 pub use datatype_fn::*;
-use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
+#[cfg(feature = "serde")]
+use polars_error::to_compute_err;
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -49,41 +50,9 @@ pub enum AggExpr {
         input: Arc<Expr>,
         include_nulls: bool,
     },
-    // TODO: remove on next DSL break, deprecated in favor of FunctionExpr::Quantile.
-    Quantile {
-        expr: Arc<Expr>,
-        quantile: Arc<Expr>,
-        method: QuantileMethod,
-    },
     Sum(Arc<Expr>),
-    AggGroups(Arc<Expr>),
     Std(Arc<Expr>, u8),
     Var(Arc<Expr>, u8),
-}
-
-impl AsRef<Expr> for AggExpr {
-    fn as_ref(&self) -> &Expr {
-        use AggExpr::*;
-        match self {
-            Min { input, .. } => input,
-            Max { input, .. } => input,
-            Median(e) => e,
-            NUnique(e) => e,
-            First(e) => e,
-            FirstNonNull(e) => e,
-            Last(e) => e,
-            LastNonNull(e) => e,
-            Item { input, .. } => input,
-            Mean(e) => e,
-            Implode { input, .. } => input,
-            Count { input, .. } => input,
-            Quantile { expr, .. } => expr,
-            Sum(e) => e,
-            AggGroups(e) => e,
-            Std(e, _) => e,
-            Var(e, _) => e,
-        }
-    }
 }
 
 /// Expressions that can be used in various contexts.
@@ -465,6 +434,35 @@ pub enum Excluded {
     Dtype(DataType),
 }
 
+#[cfg(feature = "serde")]
+impl Expr {
+    /// Serialize with the self-describing (forward compatible) format.
+    pub fn serialize_binary_into(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
+        polars_utils::pl_serialize::serialize_into_writer::<_, _, true>(writer, self)
+    }
+
+    pub fn deserialize_binary_from(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
+        polars_utils::pl_serialize::deserialize_from_reader::<_, _, true>(reader)
+    }
+
+    /// Serialize with the compact format, not portable.
+    pub fn serialize_compact_into(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
+        polars_utils::pl_serialize::serialize_into_writer::<_, _, false>(writer, self)
+    }
+
+    pub fn deserialize_compact_from(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
+        polars_utils::pl_serialize::deserialize_from_reader::<_, _, false>(reader)
+    }
+
+    pub fn serialize_json_into(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
+        serde_json::to_writer(writer, self).map_err(to_compute_err)
+    }
+
+    pub fn deserialize_json_from_str(json: &str) -> PolarsResult<Self> {
+        serde_json::from_str(json).map_err(to_compute_err)
+    }
+}
+
 impl Expr {
     /// Get Field result of the expression. The schema is the input data.
     pub fn to_field(&self, schema: &Schema) -> PolarsResult<Field> {
@@ -780,6 +778,16 @@ impl Operator {
         )
     }
 
+    /// Comparisons that unconditionally propagate nulls: a null operand gives a
+    /// null result. Excludes the validity variants (`EqValidity` /
+    /// `NotEqValidity`), which treat null as a regular value.
+    pub fn is_null_propagating_comparison(&self) -> bool {
+        matches!(
+            self,
+            Self::Eq | Self::NotEq | Self::Lt | Self::LtEq | Self::Gt | Self::GtEq
+        )
+    }
+
     pub fn is_bitwise(&self) -> bool {
         matches!(self, Self::And | Self::Or | Self::Xor)
     }
@@ -788,28 +796,60 @@ impl Operator {
         self.is_comparison() || self.is_bitwise()
     }
 
-    pub fn swap_operands(self) -> Self {
+    /// The operator such that `b op.swap_operands() a` is equivalent to
+    /// `a op b`; `None` for non-commutative arithmetic, where no such operator
+    /// exists (swapping requires rewriting an operand: `a - b == -b + a`).
+    pub fn swap_operands(self) -> Option<Self> {
+        Some(match self {
+            Self::Eq => Self::Eq,
+            Self::NotEq => Self::NotEq,
+            Self::EqValidity => Self::EqValidity,
+            Self::NotEqValidity => Self::NotEqValidity,
+            Self::Lt => Self::Gt,
+            Self::Gt => Self::Lt,
+            Self::LtEq => Self::GtEq,
+            Self::GtEq => Self::LtEq,
+            Self::Plus => Self::Plus,
+            Self::Multiply => Self::Multiply,
+            Self::And => Self::And,
+            Self::Or => Self::Or,
+            Self::Xor => Self::Xor,
+            Self::LogicalAnd => Self::LogicalAnd,
+            Self::LogicalOr => Self::LogicalOr,
+            Self::Minus
+            | Self::RustDivide
+            | Self::TrueDivide
+            | Self::FloorDivide
+            | Self::Modulus => return None,
+        })
+    }
+
+    /// The complementary comparison, such that `!(a op b)` is equivalent to
+    /// `a op.negate() b`; `None` for non-comparison operators. Exact because
+    /// nulls stay null under negation (Kleene logic) and Polars orders floats
+    /// totally, unlike IEEE (where `!(a < b)` does not imply `a >= b` for NaN).
+    pub fn negate(self) -> Option<Self> {
         match self {
-            Operator::Eq => Operator::Eq,
-            Operator::Gt => Operator::Lt,
-            Operator::GtEq => Operator::LtEq,
-            Operator::LtEq => Operator::GtEq,
-            Operator::Or => Operator::Or,
-            Operator::LogicalAnd => Operator::LogicalAnd,
-            Operator::LogicalOr => Operator::LogicalOr,
-            Operator::Xor => Operator::Xor,
-            Operator::NotEq => Operator::NotEq,
-            Operator::EqValidity => Operator::EqValidity,
-            Operator::NotEqValidity => Operator::NotEqValidity,
-            // Operator::Divide requires modifying the right operand: left / right == 1/right * left
-            Operator::RustDivide => unimplemented!(),
-            Operator::Multiply => Operator::Multiply,
-            Operator::And => Operator::And,
-            Operator::Plus => Operator::Plus,
-            // Operator::Minus requires modifying the right operand: left - right == -right + left
-            Operator::Minus => unimplemented!(),
-            Operator::Lt => Operator::Gt,
-            _ => unimplemented!(),
+            Self::Eq => Some(Self::NotEq),
+            Self::NotEq => Some(Self::Eq),
+            Self::Lt => Some(Self::GtEq),
+            Self::LtEq => Some(Self::Gt),
+            Self::Gt => Some(Self::LtEq),
+            Self::GtEq => Some(Self::Lt),
+            Self::EqValidity => Some(Self::NotEqValidity),
+            Self::NotEqValidity => Some(Self::EqValidity),
+            Self::And
+            | Self::Or
+            | Self::Xor
+            | Self::LogicalAnd
+            | Self::LogicalOr
+            | Self::Plus
+            | Self::Minus
+            | Self::Multiply
+            | Self::RustDivide
+            | Self::TrueDivide
+            | Self::FloorDivide
+            | Self::Modulus => None,
         }
     }
 

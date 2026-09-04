@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 import typing
 from collections import OrderedDict
@@ -22,6 +23,7 @@ from polars._plr import PySeries
 from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import (
+    AttributeRemovedError,
     ColumnNotFoundError,
     ComputeError,
     DuplicateError,
@@ -56,6 +58,29 @@ class MappingObject(Mapping[str, Any]):  # noqa: D101
 
     def __len__(self) -> int:
         return len(self._data)
+
+
+@pytest.mark.parametrize(
+    ("name", "match"),
+    [
+        (
+            "__dataframe__",
+            "the dataframe interchange protocol is not supported anymore. Consider using `to_arrow` or `to_pandas` instead.",
+        ),
+        ("approx_n_unique", "use `select(pl.all().approx_n_unique())` instead."),
+        (
+            "melt",
+            "use `DataFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
+        ),
+        (
+            "with_row_count",
+            "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'.",
+        ),
+    ],
+)
+def test_removed_methods(name: str, match: str) -> None:
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        getattr(pl.DataFrame(), name)
 
 
 def test_version() -> None:
@@ -1798,18 +1823,18 @@ def test_reproducible_hash_with_seeds() -> None:
     the same seeds.
     """
     df = pl.DataFrame({"s": [1234, None, 5678]})
-    seeds = (11, 22, 33, 44)
+    seed = 42
     expected = pl.Series(
         "s",
-        [7829205897147972687, 10151361788274345728, 17508017346787321581],
+        [17009557467372503927, 1704163803583719673, 1546285934846828044],
         dtype=pl.UInt64,
     )
-    result = df.hash_rows(*seeds)
-    assert_series_equal(expected, result, check_names=False, check_exact=True)
-    result = df["s"].hash(*seeds)
-    assert_series_equal(expected, result, check_names=False, check_exact=True)
-    result = df.select([pl.col("s").hash(*seeds)])["s"]
-    assert_series_equal(expected, result, check_names=False, check_exact=True)
+    result = df.hash_rows(seed)
+    assert_series_equal(result, expected, check_names=False, check_exact=True)
+    result = df["s"].hash(seed)
+    assert_series_equal(result, expected, check_names=False, check_exact=True)
+    result = df.select([pl.col("s").hash(seed)])["s"]
+    assert_series_equal(result, expected, check_names=False, check_exact=True)
 
 
 @pytest.mark.slow
@@ -1833,7 +1858,6 @@ def test_hash_collision_multiple_columns_equal_values_15390(e: pl.Expr) -> None:
         assert max_bucket_size == 1
 
 
-@pytest.mark.may_fail_auto_streaming  # Python objects not yet supported in row encoding
 @pytest.mark.may_fail_cloud
 def test_hashing_on_python_objects() -> None:
     # see if we can do a group_by, drop_duplicates on a DataFrame with objects.
@@ -2017,18 +2041,6 @@ def test_with_row_index_bad_offset_lazy() -> None:
         lf.with_row_index(offset=2**64)
 
 
-def test_with_row_count_deprecated() -> None:
-    df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 2.0]})
-
-    with pytest.deprecated_call():
-        out = df.with_row_count()
-    assert out["row_nr"].to_list() == [0, 1, 2]
-
-    with pytest.deprecated_call():
-        out = df.lazy().with_row_count().collect()
-    assert out["row_nr"].to_list() == [0, 1, 2]
-
-
 @pytest.mark.may_fail_cloud
 def test_filter_with_all_expansion() -> None:
     df = pl.DataFrame(
@@ -2042,8 +2054,6 @@ def test_filter_with_all_expansion() -> None:
     assert out.shape == (2, 3)
 
 
-# TODO: investigate this discrepancy in auto streaming
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud
 def test_extension() -> None:
     class Foo:
@@ -2070,24 +2080,16 @@ def test_extension() -> None:
     rc = sys.getrefcount(foos[0])
     assert rc == base_count
 
+    # Aggregating objects into a list raises, as nested objects
+    # are not supported
     df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
     rc = sys.getrefcount(foos[0])
     assert rc == base_count + 1
 
-    out = df.group_by("groups", maintain_order=True).agg(pl.col("a").alias("a"))
-    rc = sys.getrefcount(foos[0])
-    assert rc == base_count + 2
-    s = out["a"].list.explode()
-    rc = sys.getrefcount(foos[0])
-    assert rc == base_count + 3
-    del s
-    rc = sys.getrefcount(foos[0])
-    assert rc == base_count + 2
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="nested objects"):
+        df.group_by("groups", maintain_order=True).agg(pl.col("a").alias("a"))
 
-    assert out["a"].list.explode().to_list() == foos
-    rc = sys.getrefcount(foos[0])
-    assert rc == base_count + 2
-    del out
+    # The failed query must not leak references
     rc = sys.getrefcount(foos[0])
     assert rc == base_count + 1
     del df
@@ -2434,14 +2436,14 @@ def test_explode_empty() -> None:
         .group_by("x", maintain_order=True)
         .agg(pl.col("y").gather([]))
     )
-    assert df.explode("y").to_dict(as_series=False) == {
+    assert df.explode("y", empty_as_null=True).to_dict(as_series=False) == {
         "x": ["a", "b"],
         "y": [None, None],
     }
 
     df = pl.DataFrame({"x": ["1", "2", "4"], "y": [["a", "b", "c"], ["d"], []]})
     assert_frame_equal(
-        df.explode("y"),
+        df.explode("y", empty_as_null=True),
         pl.DataFrame({"x": ["1", "1", "1", "2", "4"], "y": ["a", "b", "c", "d", None]}),
     )
 
@@ -2451,7 +2453,7 @@ def test_explode_empty() -> None:
             "numbers": [[]],
         }
     )
-    assert df.explode("numbers").to_dict(as_series=False) == {
+    assert df.explode("numbers", empty_as_null=True).to_dict(as_series=False) == {
         "letters": ["a"],
         "numbers": [None],
     }
@@ -3211,16 +3213,6 @@ def test_flags() -> None:
     }
 
 
-def test_interchange() -> None:
-    df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
-    dfi = df.__dataframe__()
-
-    # Testing some random properties to make sure conversion happened correctly
-    assert dfi.num_rows() == 2
-    assert dfi.get_column(0).dtype[1] == 64
-    assert dfi.get_column_by_name("c").get_buffers()["data"][0].bufsize == 6
-
-
 def test_from_dicts_undeclared_column_dtype() -> None:
     data = [{"a": 1, "b": 2}]
     result = pl.from_dicts(data, schema=["x"])
@@ -3379,3 +3371,18 @@ def test_transpose_mixed_list_and_non_list_columns_no_panic_26538() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.transpose()
+
+
+# shuffle=True and shuffle=None both rely on rand::seq::index::sample's
+# unspecified order, so they produce the same behavior here
+@pytest.mark.parametrize("shuffle", [False, None, True])
+def test_df_sample_reworked_shuffle_23557(shuffle: bool | None) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3, 4]})
+
+    result = df.sample(n=2, shuffle=shuffle, seed=0)["x"].to_list()
+
+    if shuffle is False:
+        assert result == [1, 2]
+    else:
+        assert len(result) == 2
+        assert set(result).issubset({1, 2, 3, 4})

@@ -4,8 +4,10 @@ use std::sync::Arc;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{BooleanChunked, Column, DataType, IntoColumn, NamedFrom};
 use polars_core::runtime::RAYON;
+use polars_ops::prelude::SeriesMethods;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRBooleanFunction;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::TotalOrdWrap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -16,6 +18,7 @@ pub fn function_expr_to_udf(func: IRBooleanFunction) -> SpecialEq<Arc<dyn Column
         Any { ignore_nulls } => map!(any, ignore_nulls),
         All { ignore_nulls } => map!(all, ignore_nulls),
         IsEmpty { ignore_nulls } => map!(is_empty, ignore_nulls),
+        HasNulls => map!(has_nulls),
         IsNull => map!(is_null),
         IsNotNull => map!(is_not_null),
         IsFinite => map!(is_finite),
@@ -40,6 +43,10 @@ pub fn function_expr_to_udf(func: IRBooleanFunction) -> SpecialEq<Arc<dyn Column
             rel_tol,
             nans_equal,
         } => wrap!(is_close, abs_tol, rel_tol, nans_equal),
+        IsSorted {
+            descending,
+            nulls_last,
+        } => map!(is_sorted, descending, nulls_last),
         Not => map!(not),
         AllHorizontal => map_as_slice!(all_horizontal),
         AnyHorizontal => map_as_slice!(any_horizontal),
@@ -71,6 +78,10 @@ fn is_empty(s: &Column, ignore_nulls: bool) -> PolarsResult<Column> {
         s.is_empty()
     };
     Ok(Column::new(s.name().clone(), [out]))
+}
+
+fn has_nulls(s: &Column) -> PolarsResult<Column> {
+    Ok(Column::new(s.name().clone(), [s.has_nulls()]))
 }
 
 fn is_null(s: &Column) -> PolarsResult<Column> {
@@ -135,12 +146,14 @@ fn is_between(s: &[Column], closed: polars_ops::series::ClosedInterval) -> Polar
 fn is_in(s: &mut [Column], nulls_equal: bool) -> PolarsResult<Column> {
     let left = &s[0];
     let other = &s[1];
-    polars_ops::prelude::is_in(
-        left.as_materialized_series(),
-        other.as_materialized_series(),
-        nulls_equal,
-    )
-    .map(IntoColumn::into_column)
+    // Don't blow up the haystack in case of scalar.
+    let haystack = other.as_materialized_series_maintain_scalar();
+
+    let out = polars_ops::prelude::is_in(left.as_materialized_series(), &haystack, nulls_equal)?
+        .into_column();
+
+    // In case of scalar, broadcast back to original length
+    out.broadcast_owned_to(broadcast_len([left, other])?)
 }
 
 #[cfg(feature = "is_close")]
@@ -160,6 +173,16 @@ fn is_close(
         nans_equal,
     )
     .map(IntoColumn::into_column)
+}
+
+fn is_sorted(
+    s: &Column,
+    descending: Option<bool>,
+    nulls_last: Option<bool>,
+) -> PolarsResult<Column> {
+    let series = s.as_materialized_series();
+    let result = series.is_sorted_any(descending, nulls_last)?;
+    Ok(Column::new(s.name().clone(), [result]))
 }
 
 fn not(s: &Column) -> PolarsResult<Column> {

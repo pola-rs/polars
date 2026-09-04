@@ -1,10 +1,13 @@
 mod builder;
+mod canonical;
+mod determinism;
 mod equality;
 mod evaluate;
+pub(crate) mod filter_constraint;
 mod function_expr;
-#[cfg(feature = "cse")]
 mod hash;
 mod minterm_iter;
+pub(crate) mod or_factoring;
 pub mod predicates;
 mod scalar;
 mod schema;
@@ -12,15 +15,18 @@ mod traverse;
 
 use std::hash::{Hash, Hasher};
 
+pub use canonical::{CanonicalExprId, CanonicalExprMap, CanonicalExprMapWithArena};
+pub use determinism::{
+    is_inherently_nondeterministic, is_inherently_nondeterministic_excluding_udfs_top_level,
+    is_inherently_nondeterministic_top_level,
+};
 pub use function_expr::*;
-#[cfg(feature = "cse")]
-pub(super) use hash::traverse_and_hash_aexpr;
 pub use minterm_iter::MintermIter;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
-pub use scalar::{is_length_preserving_ae, is_scalar_ae};
+pub use scalar::{is_known_length_ae, is_length_preserving_ae, is_scalar_ae};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
 pub mod projection_height;
@@ -68,7 +74,6 @@ pub enum IRAggExpr {
     },
     Std(Node, u8),
     Var(Node, u8),
-    AggGroups(Node),
 }
 
 impl Hash for IRAggExpr {
@@ -89,33 +94,6 @@ impl Hash for IRAggExpr {
                 include_nulls,
             } => include_nulls.hash(state),
             _ => {},
-        }
-    }
-}
-
-impl IRAggExpr {
-    pub(super) fn equal_nodes(&self, other: &IRAggExpr) -> bool {
-        use IRAggExpr::*;
-        match (self, other) {
-            (
-                Min {
-                    propagate_nans: l, ..
-                },
-                Min {
-                    propagate_nans: r, ..
-                },
-            ) => l == r,
-            (
-                Max {
-                    propagate_nans: l, ..
-                },
-                Max {
-                    propagate_nans: r, ..
-                },
-            ) => l == r,
-            (Std(_, l), Std(_, r)) => l == r,
-            (Var(_, l), Var(_, r)) => l == r,
-            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
         }
     }
 }
@@ -160,7 +138,6 @@ impl From<IRAggExpr> for GroupByMethod {
             } => GroupByMethod::Count { include_nulls },
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
-            AggGroups(_) => GroupByMethod::Groups,
         }
     }
 }

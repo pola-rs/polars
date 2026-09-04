@@ -157,7 +157,13 @@ impl DslBuilder {
     }
 
     pub fn drop(self, columns: Selector) -> Self {
-        self.project(vec![Expr::Selector(!columns)], ProjectionOptions::default())
+        self.project(
+            vec![Expr::Selector(!columns)],
+            ProjectionOptions {
+                maintain_dataframe_height: true,
+                ..Default::default()
+            },
+        )
     }
 
     pub fn project(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
@@ -234,14 +240,6 @@ impl DslBuilder {
         DslPlan::PipeWithSchema {
             input: Arc::from(input),
             callback,
-        }
-        .into()
-    }
-
-    pub fn with_context(self, contexts: Vec<DslPlan>) -> Self {
-        DslPlan::ExtContext {
-            input: Arc::new(self.0),
-            contexts,
         }
         .into()
     }
@@ -399,16 +397,24 @@ impl DslBuilder {
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
         options: Arc<JoinOptions>,
-    ) -> Self {
-        DslPlan::Join {
+    ) -> PolarsResult<Self> {
+        polars_ensure!(
+            left_on.len() == right_on.len(),
+            InvalidOperation:
+                "the number of columns given as join key (left: {}, right:{}) should be equal",
+                left_on.len(),
+                right_on.len()
+        );
+
+        Ok(DslPlan::Join {
             input_left: Arc::new(self.0),
             input_right: Arc::new(other),
-            left_on,
-            right_on,
-            predicates: Default::default(),
+            condition: JoinCondition::Equi {
+                on: left_on.into_iter().zip(right_on).collect(),
+            },
             options,
         }
-        .into()
+        .into())
     }
 
     pub fn gather(self, idxs: DslPlan, null_on_oob: bool) -> Self {
@@ -443,7 +449,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
+                streamable: optimizations.contains(OptFlags::STREAMING),
                 validate_output,
             }),
         }
@@ -469,7 +475,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
+                streamable: optimizations.contains(OptFlags::STREAMING),
                 fmt_str: name,
             }),
         }

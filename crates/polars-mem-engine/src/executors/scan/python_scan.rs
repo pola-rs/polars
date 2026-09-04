@@ -72,7 +72,13 @@ impl Executor for PythonScanExec {
                 let mut could_serialize_predicate = true;
 
                 let predicate = match &self.options.predicate {
-                    PythonPredicate::PyArrow(s) => s.into_bound_py_any(py).unwrap(),
+                    PythonPredicate::PyArrow(pred) => {
+                        if pred.has_residual {
+                            // Ensure the engine post-applies the residual predicate.
+                            could_serialize_predicate = false;
+                        }
+                        pred.pyarrow_predicate.bind(py).clone()
+                    },
                     PythonPredicate::None => None::<()>.into_bound_py_any(py).unwrap(),
                     PythonPredicate::Polars(_) => {
                         assert!(self.predicate.is_some(), "should be set");
@@ -89,24 +95,8 @@ impl Executor for PythonScanExec {
 
                 match self.options.python_source {
                     PythonScanSource::Cuda => {
-                        let args = (
-                            with_columns,
-                            predicate,
-                            n_rows,
-                            // If this boolean is true, callback should return
-                            // a dataframe and list of timings [(start, end,
-                            // name)]
-                            state.has_node_timer(),
-                        );
-                        let result = python_scan_function.call1(args)?;
-                        let df = if state.has_node_timer() {
-                            let df = result.get_item(0);
-                            let timing_info: Vec<(u64, u64, String)> = result.get_item(1)?.extract()?;
-                            state.record_raw_timings(&timing_info);
-                            df?
-                        } else {
-                            result
-                        };
+                        let args = (with_columns, predicate, n_rows);
+                        let df = python_scan_function.call1(args)?;
                         self.finish_df(py, df, state)
                     },
                     PythonScanSource::IOPlugin | PythonScanSource::Pyarrow => {

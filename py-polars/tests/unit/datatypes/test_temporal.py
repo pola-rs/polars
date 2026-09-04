@@ -417,18 +417,9 @@ def test_to_list() -> None:
 
 
 def test_rows() -> None:
-    s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
-    with pytest.deprecated_call(match=r"`dt\.with_time_unit` is deprecated"):
-        s1 = (
-            pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]])
-            .cast(pl.Datetime)
-            .dt.with_time_unit("ns")
-        )
-    df = pl.DataFrame([s0, s1])
-
+    df = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date).to_frame()
     rows = df.rows()
     assert rows[0][0] == date(2308, 4, 2)
-    assert rows[0][1] == datetime(1970, 1, 1, 0, 2, 3, 543000)
 
 
 @pytest.mark.parametrize(
@@ -507,7 +498,7 @@ def test_explode_date() -> None:
         out = (
             df.group_by("b", maintain_order=True)
             .agg([pl.col("a"), pl.col("c").pct_change()])
-            .explode(["a", "c"])
+            .explode(["a", "c"], empty_as_null=True)
         )
         assert out.shape == (4, 3)
         assert out.rows() == [
@@ -1677,7 +1668,7 @@ def test_ambiguous_expressions() -> None:
             "minute",
             time_zone="Europe/London",
             ambiguous=pl.col("ambiguous"),
-        )
+        ).alias("datetime")
     )["datetime"]
     expected = pl.DataFrame(
         {"datetime": [1603584000000000, 1603587600000000]},
@@ -2526,3 +2517,24 @@ def test_timezone_ignore_error(
         match="unable to parse time zone: 'non-existent'",
     ):
         pl.DataFrame(tbl)
+
+
+def test_string_to_temporal_cast_unsupported() -> None:
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"^casting from string to datetime is not supported\.",
+    ):
+        pl.Series(["2022-08-30T10:30:45"]).cast(pl.Datetime("us"))
+
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"^casting from string to datetime is not supported\.",
+    ):
+        pl.Series(["2022-08-30T10:30:45+00:00"]).cast(
+            pl.Datetime("us", "Europe/Amsterdam")
+        )
+
+    with pytest.raises(
+        InvalidOperationError, match=r"^casting from string to date is not supported\."
+    ):
+        pl.Series(["2022-08-30"]).cast(pl.Date)

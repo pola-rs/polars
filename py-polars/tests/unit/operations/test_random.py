@@ -31,11 +31,12 @@ def test_sample_expr() -> None:
     ).to_series()
 
     assert out.shape == (10,)
-    assert out.to_list() == out.sort().to_list()
     assert out.unique().shape == (10,)
     assert set(out).issubset(set(a))
 
-    out = pl.select(pl.lit(a).sample(n=10, with_replacement=False, seed=1)).to_series()
+    out = pl.select(
+        pl.lit(a).sample(n=10, with_replacement=False, shuffle=False, seed=1)
+    ).to_series()
     assert out.shape == (10,)
     assert out.to_list() == out.sort().to_list()
     assert out.unique().shape == (10,)
@@ -73,17 +74,19 @@ def test_sample_n_expr() -> None:
         }
     )
 
-    out_df = df.sample(pl.Series([3]), seed=0)
+    out_df = df.sample(pl.Series([3]), shuffle=False, seed=0)
     expected_df = pl.DataFrame({"group": [1, 1, 2], "val": [2, 3, 1]})
     assert_frame_equal(out_df, expected_df)
 
     agg_df = df.group_by("group", maintain_order=True).agg(
-        pl.col("val").sample(pl.col("val").max(), seed=0)
+        pl.col("val").sample(pl.col("val").max(), shuffle=False, seed=0)
     )
     expected_df = pl.DataFrame({"group": [1, 2], "val": [[1, 2, 3], [2, 1]]})
     assert_frame_equal(agg_df, expected_df)
 
-    select_df = df.select(pl.col("val").sample(pl.col("val").max(), seed=0))
+    select_df = df.select(
+        pl.col("val").sample(pl.col("val").max(), shuffle=False, seed=0)
+    )
     expected_df = pl.DataFrame({"val": [2, 3, 1]})
     assert_frame_equal(select_df, expected_df)
 
@@ -152,4 +155,15 @@ def test_sample_no_shuffle_preserves_order_23557() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4]})
     for seed in range(10):
         result = df.sample(n=3, shuffle=False, seed=seed).get_column("a").to_list()
+        assert result == sorted(result)
+
+
+def test_sample_no_shuffle_with_replacement_preserves_order_23557() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4]})
+    for seed in range(10):
+        result = (
+            df.sample(n=3, shuffle=False, with_replacement=True, seed=seed)
+            .get_column("a")
+            .to_list()
+        )
         assert result == sorted(result)

@@ -1,12 +1,12 @@
 use std::cmp::Reverse;
 
+use polars_async::primitives::distributor_channel;
+use polars_async::primitives::linearizer::Inserter;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_utils::priority::Priority;
 
 use super::chunk_reader::ChunkReader;
-use crate::async_primitives::distributor_channel;
-use crate::async_primitives::linearizer::Inserter;
 use crate::morsel::SourceToken;
 use crate::nodes::MorselSeq;
 use crate::nodes::compute_node_prelude::*;
@@ -130,7 +130,7 @@ impl LineBatchProcessorOutputPort {
         let result = async {
             match self {
                 Direct { tx, source_token } => {
-                    let morsel = Morsel::new(df, morsel_seq, source_token.clone());
+                    let morsel = Morsel::new_unregistered(df, morsel_seq, source_token.clone());
                     tx.send_morsel(morsel).await.map_err(|_| ())?;
                     Ok(())
                 },

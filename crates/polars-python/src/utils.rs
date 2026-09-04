@@ -3,15 +3,16 @@ use std::panic::AssertUnwindSafe;
 use polars::frame::DataFrame;
 use polars::series::IntoSeries;
 use polars_error::PolarsResult;
-use polars_error::signals::{KeyboardInterrupt, catch_keyboard_interrupt};
+use polars_error::abort::{QueryAborted, catch_polars_abort};
 use pyo3::exceptions::PyKeyboardInterrupt;
 use pyo3::marker::Ungil;
+use pyo3::types::PyAnyMethods;
 use pyo3::{PyErr, PyResult, Python};
 
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::series::PySeries;
-use crate::timeout::{cancel_polars_timeout, schedule_polars_timeout};
+use crate::timeout::{is_timeout_enabled, schedule_polars_timeout};
 
 /// Calls method on downcasted ChunkedArray for all possible publicly exposed Polars dtypes.
 #[macro_export]
@@ -123,6 +124,13 @@ pub trait EnterPolarsExt {
     }
 }
 
+fn get_traceback(py: Python<'_>) -> PyResult<String> {
+    let tb = py.import(pyo3::intern!(py, "traceback"))?;
+    let format_stack = tb.getattr("format_stack")?;
+    let lines: Vec<String> = format_stack.call0()?.extract()?;
+    Ok(lines.join("\n"))
+}
+
 impl EnterPolarsExt for Python<'_> {
     fn enter_polars<T, E, F>(self, f: F) -> PyResult<T>
     where
@@ -130,13 +138,19 @@ impl EnterPolarsExt for Python<'_> {
         T: Ungil + Send,
         E: Ungil + Send + Into<PyPolarsErr>,
     {
-        let timeout = schedule_polars_timeout();
-        let ret = self.detach(|| catch_keyboard_interrupt(AssertUnwindSafe(f)));
-        cancel_polars_timeout(timeout);
+        let _timeout_guard = is_timeout_enabled().then(|| {
+            std::hint::cold_path();
+            schedule_polars_timeout(get_traceback(self).ok())
+        });
+        let ret = self.detach(|| catch_polars_abort(AssertUnwindSafe(f)));
         match ret {
             Ok(Ok(ret)) => Ok(ret),
             Ok(Err(err)) => Err(PyErr::from(err.into())),
-            Err(KeyboardInterrupt) => Err(PyKeyboardInterrupt::new_err("")),
+            Err(QueryAborted::KeyboardInterrupt) => Err(PyKeyboardInterrupt::new_err("")),
+            Err(QueryAborted::OocOutOfDisk) => Err(PyPolarsErr::Other(
+                "query aborted, raise POLARS_OOC_DISK_BUDGET_MB".to_string(),
+            )
+            .into()),
         }
     }
 }

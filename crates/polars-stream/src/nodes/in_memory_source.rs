@@ -1,8 +1,9 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use polars_async::primitives::wait_group::WaitGroup;
+
 use super::compute_node_prelude::*;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{MorselSeq, SourceToken, get_ideal_morsel_size};
 
 #[derive(Debug)]
@@ -107,7 +108,7 @@ impl ComputeNode for InMemorySourceNode {
                     }
 
                     let morsel_seq = MorselSeq::new(seq).offset_by(slf.seq_offset);
-                    let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
+                    let mut morsel = Morsel::new_unregistered(df, morsel_seq, source_token.clone());
                     morsel.set_consume_token(wait_group.token());
                     if send.send(morsel).await.is_err() {
                         break;

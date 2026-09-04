@@ -1,5 +1,4 @@
-mod async_executor;
-mod async_primitives;
+#![recursion_limit = "256"]
 mod dispatch;
 mod skeleton;
 
@@ -15,10 +14,18 @@ pub use graph::{GraphNodeKey, LogicalPipe, LogicalPipeKey};
 pub use skeleton::StreamingQuery;
 mod metrics;
 pub use metrics::{GraphMetrics, NodeMetrics};
+mod observer_metrics;
+pub use observer_metrics::StreamingQueryMetricsSnapshotter;
+pub use polars_observer::{
+    QueryMetricsSnapshotter, QueryObserver, QueryObserverFactory, new_query_observer,
+    register_query_observer_factory,
+};
 mod morsel;
 mod nodes;
 mod physical_plan;
-pub use physical_plan::{NodeStyle, PhysNode, PhysNodeKey, PhysNodeKind, ZipBehavior};
+pub use physical_plan::{
+    NodeStyle, PhysNode, PhysNodeKey, PhysNodeKind, ZipBehavior, physical_plan_to_description,
+};
 mod pipe;
 mod utils;
 

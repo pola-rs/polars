@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -7,7 +8,12 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ColumnNotFoundError, SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import (
+    ArgumentRemovedError,
+    ColumnNotFoundError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.testing import assert_frame_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
@@ -185,8 +191,8 @@ def test_distinct() -> None:
         """,
     )
     assert res2.to_dict(as_series=False) == {
-        "two_a": [2, 2, 4, 6],
-        "half_b": [1, 0, 2, 3],
+        "two_a": [2, 2, 2, 4, 4, 6],
+        "half_b": [1.5, 1.0, 0.5, 2.5, 2.0, 3.0],
     }
 
     # test unregistration
@@ -274,7 +280,7 @@ def test_nested_subquery_table_leakage() -> None:
         SQLInterfaceError,
         match="relation 'derived' was not found",
     ):
-        ctx.execute("SELECT * FROM derived")
+        ctx.execute("SELECT * FROM derived").collect()
 
 
 def test_register_context() -> None:
@@ -338,7 +344,7 @@ def test_sql_on_compatible_frame_types() -> None:
 
     # don't register all compatible objects
     with pytest.raises(SQLInterfaceError, match="relation 'dfp' was not found"):
-        pl.SQLContext(register_globals=True).execute("SELECT * FROM dfp")
+        pl.SQLContext(register_globals=True).execute("SELECT * FROM dfp").collect()
 
 
 def test_nested_cte_column_aliasing() -> None:
@@ -412,7 +418,7 @@ def test_read_csv(tmp_path: Path) -> None:
         SQLSyntaxError,
         match="`read_csv` expects a single file path; found 3 arguments",
     ):
-        pl.sql("SELECT * FROM read_csv('a','b','c')")
+        pl.sql("SELECT * FROM read_csv('a','b','c')").collect()
 
 
 def test_global_variable_inference_17398() -> None:
@@ -523,9 +529,14 @@ def test_select_output_heights_20058_21084(filter_expr: str, order_expr: str) ->
 
 
 def test_select_explode_height_filter_order_by() -> None:
-    # Note: `unnest()` from SQL equates to `pl.Dataframe.explode()
-    # The ordering is applied after the explosion/unnest.
-    # `
+    # Note: `UNNEST()` in SQL equates to `pl.DataFrame.explode()`.
+    # The ordering is applied after the explode/unnest, at the dataframe level.
+
+    # Note: This test was updated due to https://github.com/pola-rs/polars/issues/27976.
+    # `ORDER BY` uses an unstable sort (matching the SQL standard), so the
+    # order of rows within a tied `sort_key` group is not guaranteed. Each tied
+    # `sort_key` group is therefore checked as an unordered set within its
+    # expected slice.
     df = pl.DataFrame(
         {
             "list_long": [[1, 2, 3], [4, 5, 6]],
@@ -536,39 +547,43 @@ def test_select_explode_height_filter_order_by() -> None:
     )
 
     # Unnest/explode is applied at the dataframe level, sort is applied afterward
-    assert_frame_equal(
-        df.sql("SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key"),
-        pl.Series("list", [4, 5, 6, 1, 2, 3]).to_frame(),
-    )
+    result = df.sql("SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key")[
+        "list"
+    ]
+    assert result.len() == 6
+    assert set(result[0:3].to_list()) == {4, 5, 6}
+    assert set(result[3:6].to_list()) == {1, 2, 3}
 
     # No NULLS: since order is applied after explode on the dataframe level
-    assert_frame_equal(
-        df.sql(
-            "SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key NULLS FIRST"
-        ),
-        pl.Series("list", [4, 5, 6, 1, 2, 3]).to_frame(),
-    )
+    result = df.sql(
+        "SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key NULLS FIRST"
+    )["list"]
+    assert result.len() == 6
+    assert set(result[0:3].to_list()) == {4, 5, 6}
+    assert set(result[3:6].to_list()) == {1, 2, 3}
 
     # Literals are broadcasted to output height of UNNEST:
-    assert_frame_equal(
-        df.sql("SELECT UNNEST(list_long) as list, 1 as x FROM self ORDER BY sort_key"),
-        pl.select(pl.Series("list", [4, 5, 6, 1, 2, 3]), x=1),
+    result_df = df.sql(
+        "SELECT UNNEST(list_long) as list, 1 as x FROM self ORDER BY sort_key"
     )
+    assert result_df.height == 6
+    assert set(result_df["list"][0:3].to_list()) == {4, 5, 6}
+    assert set(result_df["list"][3:6].to_list()) == {1, 2, 3}
+    assert result_df["x"].to_list() == [1] * 6
 
     # Note: Filter applies before projections in SQL
-    assert_frame_equal(
-        df.sql(
-            "SELECT UNNEST(list_long) as list FROM self WHERE filter_mask ORDER BY sort_key"
-        ),
-        pl.Series("list", [4, 5, 6]).to_frame(),
-    )
+    result = df.sql(
+        "SELECT UNNEST(list_long) as list FROM self WHERE filter_mask ORDER BY sort_key"
+    )["list"]
+    assert result.len() == 3
+    assert set(result.to_list()) == {4, 5, 6}
 
-    assert_frame_equal(
-        df.sql(
-            "SELECT UNNEST(list_long) as list FROM self WHERE filter_mask_all_true ORDER BY sort_key"
-        ),
-        pl.Series("list", [4, 5, 6, 1, 2, 3]).to_frame(),
-    )
+    result = df.sql(
+        "SELECT UNNEST(list_long) as list FROM self WHERE filter_mask_all_true ORDER BY sort_key"
+    )["list"]
+    assert result.len() == 6
+    assert set(result[0:3].to_list()) == {4, 5, 6}
+    assert set(result[3:6].to_list()) == {1, 2, 3}
 
 
 @pytest.mark.parametrize(
@@ -604,7 +619,7 @@ def test_count_partition_22665(query: str, result: list[Any]) -> None:
         }
     )
     out = df.sql(query).select("b")
-    expected = pl.DataFrame({"b": result}).cast({"b": pl.get_index_type()})
+    expected = pl.DataFrame({"b": result}).cast({"b": pl.Int64})
     assert_frame_equal(out, expected)
 
 
@@ -633,4 +648,10 @@ def test_unsupported_select_clauses(query: str) -> None:
             match=r"not.*supported",
         ),
     ):
-        ctx.execute(query)
+        ctx.execute(query).collect()
+
+
+def test_sql_context_eager_execution_removed() -> None:
+    msg = "It was renamed to 'eager'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.SQLContext(eager_execution=True)  # type: ignore[call-arg]

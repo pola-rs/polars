@@ -1,0 +1,6 @@
+disallowed-types = [
+  { path = "std::collections::HashMap", reason = "use deterministic PlIndexMap" },
+  { path = "polars_utils::aliases::PlHashMap", reason = "use deterministic PlIndexMap" },
+  { path = "std::collections::HashSet", reason = "use deterministic PlIndexSet" },
+  { path = "polars_utils::aliases::PlHashSet", reason = "use deterministic PlIndexSet" },
+]

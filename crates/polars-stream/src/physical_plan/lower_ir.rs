@@ -3,9 +3,9 @@ use std::sync::Arc;
 use arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
 use arrow::datatypes::ArrowDataType;
 use parking_lot::Mutex;
+use polars_async::executor::ALLOW_RAYON_THREADS;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet};
-use polars_core::runtime::ALLOW_RAYON_THREADS;
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::series::Series;
@@ -22,6 +22,7 @@ use polars_plan::dsl::{CallbackSinkType, ExtraColumnsPolicy, FileScanIR, SinkTyp
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive};
 use polars_plan::prelude::*;
+use polars_utils::aliases::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
@@ -108,6 +109,7 @@ pub fn build_filter_stream(
     let filter = PhysNodeKind::Filter {
         input: trans_input,
         predicate: trans_cols_and_predicate.last().unwrap().clone(),
+        projection: None,
     };
 
     let post_filter = phys_sm.insert(PhysNode::new(filter_schema, filter));
@@ -190,6 +192,7 @@ pub fn lower_ir(
 
     let ir_node = ir_arena.get(node);
     let output_schema = IR::schema_with_cache(node, ir_arena, schema_cache);
+
     let node_kind = match ir_node {
         IR::SimpleProjection { input, columns } => {
             disable_morsel_split.get_or_insert(true);
@@ -207,10 +210,12 @@ pub fn lower_ir(
         IR::Select { input, expr, .. } => {
             let selectors = expr.clone();
 
-            if selectors
-                .iter()
-                .all(|e| matches!(expr_arena.get(e.node()), AExpr::Len | AExpr::Column(_)))
-            {
+            if selectors.iter().all(|e| {
+                matches!(
+                    expr_arena.get(e.node()),
+                    AExpr::Len | AExpr::Column(_) | AExpr::Eval { .. } | AExpr::StructField(_)
+                )
+            }) {
                 disable_morsel_split.get_or_insert(true);
             }
 
@@ -287,6 +292,7 @@ pub fn lower_ir(
                 maintain_order,
                 chunk_size,
             }) => {
+                disable_morsel_split.get_or_insert(true);
                 let function = function.clone();
                 let maintain_order = *maintain_order;
                 let chunk_size = *chunk_size;
@@ -300,6 +306,10 @@ pub fn lower_ir(
             },
 
             SinkTypeIR::File(options) => {
+                // Defer to the chunk-aware morsel splitting strategy in morsel_resize_pipeline.
+                // This cannot currently be done by the InMemorySource as the morsel splitting
+                // is done against a configured TargetSinkMorselSize.
+                disable_morsel_split.get_or_insert(true);
                 let options = options.clone();
                 let input = lower_ir!(*input)?;
                 PhysNodeKind::FileSink { input, options }
@@ -348,36 +358,43 @@ pub fn lower_ir(
 
             left_schema.ensure_is_exact_match(right_schema).unwrap();
 
-            let key_dtype = left_schema.try_get(key.as_str())?.clone();
+            let key_dtypes = key
+                .iter()
+                .map(|k| left_schema.try_get(k.as_str()).cloned())
+                .try_collect_vec()?;
 
             let key_name = unique_column_name();
             use polars_plan::plans::{AExprBuilder, RowEncodingVariant};
 
+            // The merge order is decided on a single trailing key column. With a
+            // single non-nested key we can use it directly, otherwise we row
+            // encode all key columns into one ordered binary column so the
+            // lexicographic order over all keys is respected.
+            let needs_row_encode = key.len() > 1 || key_dtypes.iter().any(|dt| dt.is_nested());
+
             // Add the key column as the last column for both inputs.
             for s in [&mut phys_left, &mut phys_right] {
-                let key_dtype = key_dtype.clone();
-                let mut expr = AExprBuilder::col(key.clone(), expr_arena);
-                if key_dtype.is_nested() {
-                    expr = AExprBuilder::row_encode(
-                        vec![expr.expr_ir(key_name.clone())],
-                        vec![key_dtype],
+                let key_expr = if needs_row_encode {
+                    let exprs = key
+                        .iter()
+                        .map(|k| AExprBuilder::col(k.clone(), expr_arena).expr_ir(k.clone()))
+                        .collect();
+                    AExprBuilder::row_encode(
+                        exprs,
+                        key_dtypes.clone(),
                         RowEncodingVariant::Ordered {
                             descending: None,
                             nulls_last: None,
                             broadcast_nulls: None,
                         },
                         expr_arena,
-                    );
-                }
+                    )
+                    .expr_ir(key_name.clone())
+                } else {
+                    AExprBuilder::col(key[0].clone(), expr_arena).expr_ir(key_name.clone())
+                };
 
-                *s = build_hstack_stream(
-                    *s,
-                    &[expr.expr_ir(key_name.clone())],
-                    expr_arena,
-                    phys_sm,
-                    expr_cache,
-                    ctx,
-                )?;
+                *s = build_hstack_stream(*s, &[key_expr], expr_arena, phys_sm, expr_cache, ctx)?;
             }
 
             PhysNodeKind::MergeSorted {
@@ -668,7 +685,7 @@ pub fn lower_ir(
                 if config::verbose() {
                     eprintln!(
                         "lower_ir: scan IR lowered as 0-width InMemorySource with height {} ({:?})",
-                        num_rows, &row_counter
+                        num_rows, row_counter
                     )
                 }
 
@@ -737,13 +754,16 @@ pub fn lower_ir(
                     #[cfg(feature = "parquet")]
                     FileScanIR::Parquet {
                         options,
-                        metadata: first_metadata,
+                        // The streaming reader reads per-file footers at scan
+                        // time; it only takes source 0's footer as its
+                        // initial hint.
+                        metadata_per_source,
+                        bytes_per_source: _,
                     } => Arc::new(
                         crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
                             options: Arc::new(options.clone()),
-                            first_metadata: first_metadata.clone(),
-                            prefetch_limit: RelaxedCell::new_usize(0),
-                            prefetch_semaphore: std::sync::OnceLock::new(),
+                            first_metadata: metadata_per_source.first_metadata().cloned(),
+                            pipeline_budget: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
                             io_metrics: std::sync::OnceLock::new(),
                         },
@@ -756,8 +776,7 @@ pub fn lower_ir(
                     } => Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
                         options: Arc::new(options.clone()),
                         first_metadata: first_metadata.clone(),
-                        prefetch_limit: RelaxedCell::new_usize(0),
-                        prefetch_semaphore: std::sync::OnceLock::new(),
+                        pipeline_budget: std::sync::OnceLock::new(),
                         shared_prefetch_wait_group_slot: Default::default(),
                         io_metrics: std::sync::OnceLock::new(),
                     }) as _,
@@ -811,7 +830,16 @@ pub fn lower_ir(
 
                     FileScanIR::ExpandedPaths { name: _ } => unreachable!(),
 
-                    FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
+                    FileScanIR::Anonymous { .. } => {
+                        return lower_subtree_to_inmem_engine(
+                            node,
+                            output_schema,
+                            ir_arena,
+                            expr_arena,
+                            phys_sm,
+                            ctx,
+                        );
+                    },
                 };
 
                 {
@@ -847,6 +875,8 @@ pub fn lower_ir(
                     let extra_columns_policy = match &*scan_type {
                         #[cfg(feature = "parquet")]
                         FileScanIR::Parquet { .. } => unified_scan_args.extra_columns_policy,
+                        #[cfg(feature = "csv")]
+                        FileScanIR::Csv { .. } => unified_scan_args.extra_columns_policy,
 
                         _ => {
                             if unified_scan_args.projection.is_some() {
@@ -883,6 +913,7 @@ pub fn lower_ir(
                         predicate_file_skip_applied,
                         hive_parts,
                         cast_columns_policy: unified_scan_args.cast_columns_policy,
+                        extra_columns_policy: unified_scan_args.extra_columns_policy,
                         missing_columns_policy: unified_scan_args.missing_columns_policy,
                         forbid_extra_columns,
                         include_file_paths: unified_scan_args.include_file_paths,
@@ -1017,8 +1048,6 @@ pub fn lower_ir(
             input_left,
             input_right,
             schema: _,
-            left_on,
-            right_on,
             options,
         } => {
             #[cfg(feature = "iejoin")]
@@ -1028,8 +1057,7 @@ pub fn lower_ir(
             let (mut input_left, mut input_right) = (*input_left, *input_right);
             let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);
             let input_right_schema = IR::schema_with_cache(input_right, ir_arena, schema_cache);
-            let left_on = left_on.clone();
-            let right_on = right_on.clone();
+            let (left_on, right_on) = options.options.key_vecs();
             let get_expr_name = |e: &ExprIR| e.output_name().clone();
             let left_on_names = left_on.iter().map(get_expr_name).collect_vec();
             let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
@@ -1175,11 +1203,16 @@ pub fn lower_ir(
             #[cfg(not(feature = "asof_join"))]
             let use_streaming_asof_join = false;
 
+            // A non-equality match condition is only handled natively by the range-join
+            // node; anything else falls back to the in-memory engine.
+            let match_condition_supported = options.is_pure_equi() || args.how.is_range();
+
             if (args.how.is_equi()
                 || args.how.is_semi_anti()
                 || args.how.is_cross()
                 || use_streaming_asof_join
                 || args.how.is_range())
+                && match_condition_supported
                 && !args.validation.needs_checks()
             {
                 // When lowering the expressions for the keys we need to ensure we keep around the
@@ -1271,7 +1304,11 @@ pub fn lower_ir(
                     _ if args.how.is_range() => {
                         use crate::nodes::joins::range_join::left_is_point;
 
-                        let Some(JoinTypeOptionsIR::IEJoin(range_options)) = options else {
+                        let JoinTypeOptionsIR::Range {
+                            ie_options: range_options,
+                            ..
+                        } = options
+                        else {
                             unreachable!()
                         };
 
@@ -1366,8 +1403,6 @@ pub fn lower_ir(
                 PhysNodeKind::InMemoryJoin {
                     input_left: phys_left,
                     input_right: phys_right,
-                    left_on,
-                    right_on,
                     args,
                     options,
                 }
@@ -1614,7 +1649,6 @@ pub fn lower_ir(
 
             return Ok(stream);
         },
-        IR::ExtContext { .. } => todo!(),
         IR::UnoptimizedDispatch {
             inputs,
             arg_map,
@@ -1640,7 +1674,8 @@ pub fn lower_ir(
                 } => {
                     if trans_inputs.len() == 1 {
                         // Single input, can directly dispatch through a select.
-                        let expr_input = arg_map.arg_selectors(&trans_schemas, expr_arena);
+                        let expr_input =
+                            arg_map.arg_selectors(&trans_schemas, expr_arena).collect();
                         let expr = ExprIR::from_node(
                             expr_arena.add(AExpr::Function {
                                 input: expr_input,
@@ -1678,7 +1713,8 @@ pub fn lower_ir(
                             },
                         ));
 
-                        let expr_input = arg_map.arg_selectors(&trans_schemas, expr_arena);
+                        let expr_input =
+                            arg_map.arg_selectors(&trans_schemas, expr_arena).collect();
                         let expr = ExprIR::from_node(
                             expr_arena.add(AExpr::Function {
                                 input: expr_input,
@@ -1729,6 +1765,30 @@ pub fn lower_ir(
                         arg_map: Some(arg_map),
                         output_name,
                         format_str,
+                    }
+                },
+
+                UnoptimizedOperation::DynamicSlice { output_name } => {
+                    let (input_name, dtype) = {
+                        let (input_idx, col_idx, _) = arg_map.iter().next().unwrap();
+                        trans_schemas[input_idx].get_at_index(col_idx).unwrap()
+                    };
+                    let slice = {
+                        let &[input, offset, length] = trans_inputs.as_array().unwrap();
+                        phys_sm.insert(PhysNode::new(
+                            Arc::new(Schema::from_iter([(input_name.clone(), dtype.clone())])),
+                            PhysNodeKind::DynamicSlice {
+                                input,
+                                offset,
+                                length,
+                            },
+                        ))
+                    };
+
+                    // Rename the output
+                    PhysNodeKind::SimpleProjection {
+                        input: PhysStream::first(slice),
+                        columns: PlIndexMap::from_iter([(output_name.clone(), input_name.clone())]),
                     }
                 },
             }
@@ -1823,4 +1883,57 @@ fn append_sorted_key_column(
         (phys_input, None)
     };
     Ok((phys_output, key_exprs, key_col_name))
+}
+
+/// Lowers the IR tree rooted at `ir_node` to the in-memory engine.
+fn lower_subtree_to_inmem_engine(
+    ir_node: Node,
+    ir_node_output_schema: Arc<Schema>,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    ctx: StreamingLowerIRContext<'_>,
+) -> PolarsResult<PhysStream> {
+    let mem_engine_executor = create_physical_plan(
+        ir_node,
+        ir_arena,
+        expr_arena,
+        Some(crate::dispatch::build_streaming_query_executor),
+    )?;
+
+    let input = phys_sm.insert(PhysNode::new(
+        Arc::new(Default::default()),
+        PhysNodeKind::InMemorySource {
+            df: Arc::new(DataFrame::empty_with_height(1)),
+            disable_morsel_split: true,
+        },
+    ));
+
+    let format_str = ctx.prepare_visualization.then(|| {
+        format!(
+            "{}",
+            IRPlanRef {
+                lp_top: ir_node,
+                lp_arena: ir_arena,
+                expr_arena,
+            }
+            .display()
+        )
+    });
+
+    let exec = parking_lot::Mutex::new(Some(mem_engine_executor));
+
+    Ok(PhysStream::first(phys_sm.insert(PhysNode::new(
+        ir_node_output_schema,
+        PhysNodeKind::InMemoryMap {
+            input: PhysStream::first(input),
+            map: Arc::new(move |_| {
+                exec.lock()
+                    .take()
+                    .unwrap()
+                    .execute(&mut ExecutionState::new())
+            }),
+            format_str,
+        },
+    ))))
 }

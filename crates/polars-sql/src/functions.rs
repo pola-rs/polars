@@ -2,7 +2,7 @@ use std::ops::{Add, Sub};
 
 use polars_core::chunked_array::ops::{FillNullStrategy, SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
-    DataType, ExplodeOptions, PolarsResult, QuantileMethod, Schema, TimeUnit, polars_bail,
+    DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit, polars_bail,
     polars_err,
 };
 use polars_lazy::dsl::Expr;
@@ -27,7 +27,9 @@ use sqlparser::ast::{
 use sqlparser::tokenizer::Span;
 
 use crate::SQLContext;
-use crate::sql_expr::{adjust_one_indexed_param, parse_extract_date_part, parse_sql_expr};
+use crate::sql_expr::{
+    adjust_one_indexed_param, parse_extract_date_part, parse_sql_array, parse_sql_expr,
+};
 
 pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) func: &'a SQLFunction,
@@ -646,6 +648,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT SUM(col1) FROM df;
     /// ```
     Sum,
+    /// SQL 'total' function.
+    /// Returns the sum of all the elements in the grouping; unlike `SUM`,
+    /// empty or all-null input returns zero rather than `NULL`.
+    /// ```sql
+    /// SELECT TOTAL(col1) FROM df;
+    /// ```
+    Total,
     /// SQL 'variance' function.
     /// Returns the variance of all the elements in the grouping.
     /// ```sql
@@ -723,6 +732,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT ARRAY_CONTAINS(col1, 'foo') FROM df;
     /// ```
     ArrayContains,
+    /// SQL 'array_inner_product' function (also known as `array_dot_product`).
+    /// Returns the inner product of two fixed-size arrays.
+    /// ```sql
+    /// SELECT ARRAY_INNER_PRODUCT(col1, col2) FROM df;
+    /// ```
+    ArrayInnerProduct,
     /// SQL 'unnest' function.
     /// Unnest/explodes an array column into multiple rows.
     /// ```sql
@@ -802,7 +817,9 @@ impl PolarsSQLFunctions {
             "acos",
             "acosd",
             "array_contains",
+            "array_dot_product",
             "array_get",
+            "array_inner_product",
             "array_length",
             "array_lower",
             "array_mean",
@@ -907,6 +924,7 @@ impl PolarsSQLFunctions {
             "sum",
             "tan",
             "tand",
+            "total",
             "unnest",
             "upper",
             "var",
@@ -1041,6 +1059,7 @@ impl PolarsSQLFunctions {
             "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
             "string_agg" | "listagg" | "group_concat" => Self::StringAgg,
             "sum" => Self::Sum,
+            "total" => Self::Total,
             "var" | "variance" | "var_samp" => Self::Variance,
 
             // ----
@@ -1048,6 +1067,7 @@ impl PolarsSQLFunctions {
             // ----
             "array_agg" => Self::ArrayAgg,
             "array_contains" => Self::ArrayContains,
+            "array_dot_product" | "array_inner_product" => Self::ArrayInnerProduct,
             "array_get" => Self::ArrayGet,
             "array_length" => Self::ArrayLength,
             "array_lower" => Self::ArrayMin,
@@ -1598,14 +1618,14 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // Aggregate functions
             // ----
-            Avg => self.visit_unary(Expr::mean),
-            Corr => self.visit_binary(polars_lazy::dsl::pearson_corr),
+            Avg => self.visit_avg(),
+            Corr => self.visit_binary(sql_corr),
             Count => self.visit_count(),
             CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
             CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
             First => self.visit_unary(Expr::first),
             Last => self.visit_unary(Expr::last),
-            Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
+            Max => self.visit_min_max(Expr::max, Expr::cum_max),
             Median => self.visit_unary(Expr::median),
             QuantileCont | QuantileDisc => {
                 let (fname, method) = if matches!(function_name, QuantileCont) {
@@ -1638,10 +1658,11 @@ impl SQLFunctionVisitor<'_> {
                     _ => polars_bail!(SQLSyntax: "{} expects 2 arguments (found {})", fname, args.len()),
                 }
             },
-            Min => self.visit_unary_with_opt_cumulative(Expr::min, Expr::cum_min),
+            Min => self.visit_min_max(Expr::min, Expr::cum_min),
             StdDev => self.visit_unary(|e| e.std(1)),
             StringAgg => self.visit_string_agg(),
-            Sum => self.visit_unary_with_opt_cumulative(Expr::sum, Expr::cum_sum),
+            Sum => self.visit_sum(),
+            Total => self.visit_total(),
             Variance => self.visit_unary(|e| e.var(1)),
 
             // ----
@@ -1649,6 +1670,7 @@ impl SQLFunctionVisitor<'_> {
             // ----
             ArrayAgg => self.visit_arr_agg(),
             ArrayContains => self.visit_binary::<Expr>(|e, s| e.list().contains(s, true)),
+            ArrayInnerProduct => self.visit_array_inner_product(),
             ArrayGet => {
                 // note: SQL is 1-indexed, not 0-indexed
                 self.visit_binary(|e, idx: Expr| {
@@ -1660,10 +1682,10 @@ impl SQLFunctionVisitor<'_> {
             ArrayMax => self.visit_unary(|e| e.list().max()),
             ArrayMean => self.visit_unary(|e| e.list().mean()),
             ArrayMin => self.visit_unary(|e| e.list().min()),
-            ArrayReverse => self.visit_unary(|e| e.list().reverse()),
+            ArrayReverse => self.visit_unary(|e| e.list().eval(element().reverse())),
             ArraySum => self.visit_unary(|e| e.list().sum()),
             ArrayToString => self.visit_arr_to_string(),
-            ArrayUnique => self.visit_unary(|e| e.list().unique_stable()),
+            ArrayUnique => self.visit_unary(|e| e.list().eval(element().unique_stable())),
             Explode => self.visit_unary(|e| {
                 e.explode(ExplodeOptions {
                     empty_as_null: true,
@@ -1978,10 +2000,38 @@ impl SQLFunctionVisitor<'_> {
     /// active `FILTER (WHERE …)` clause from the surrounding call.
     fn parse_sql_arg(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
         let parsed = parse_sql_expr(expr, self.ctx, self.active_schema)?;
-        Ok(match &self.filter {
-            Some(pred) => parsed.filter(pred.clone()),
-            None => parsed,
-        })
+        Ok(self.apply_filter(parsed))
+    }
+
+    fn apply_filter(&self, expr: Expr) -> Expr {
+        match &self.filter {
+            Some(pred) => expr.filter(pred.clone()),
+            None => expr,
+        }
+    }
+
+    fn parse_array_inner_product_arg(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        // Keep ordinary SQL arrays List-backed. Only direct literals in this
+        // function become scalar Arrays so native arr.dot can broadcast them.
+        let array_expr = match expr {
+            SQLExpr::Array(_) => expr,
+            SQLExpr::Nested(inner) => return self.parse_array_inner_product_arg(inner),
+            _ => return self.parse_sql_arg(expr),
+        };
+        let values = parse_sql_array(array_expr, self.ctx)?;
+        let width = values.len();
+        Ok(self.apply_filter(lit(Scalar::new_array(values, width))))
+    }
+
+    fn visit_array_inner_product(&mut self) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        match args.as_slice() {
+            [FunctionArgExpr::Expr(lhs), FunctionArgExpr::Expr(rhs)] => Ok(self
+                .parse_array_inner_product_arg(lhs)?
+                .arr()
+                .dot(self.parse_array_inner_product_arg(rhs)?)),
+            _ => self.not_supported_error(),
+        }
     }
 
     fn visit_unary(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
@@ -2182,10 +2232,24 @@ impl SQLFunctionVisitor<'_> {
             [
                 FunctionArgExpr::Expr(sql_expr),
                 FunctionArgExpr::Expr(sep_sql_expr),
-            ] => (
-                sql_expr,
-                parse_sql_expr(sep_sql_expr, self.ctx, self.active_schema)?,
-            ),
+            ] => {
+                // `GROUP_CONCAT` (SQLite) disallows DISTINCT together with a separator
+                // argument; the standard `STRING_AGG`/`LISTAGG` forms allow it.
+                let is_group_concat = self
+                    .func
+                    .name
+                    .0
+                    .first()
+                    .and_then(|part| part.as_ident())
+                    .is_some_and(|ident| ident.value.eq_ignore_ascii_case("group_concat"));
+                if is_distinct && is_group_concat {
+                    polars_bail!(SQLSyntax: "DISTINCT is only supported with a single argument in '{}'", self.func.name)
+                }
+                (
+                    sql_expr,
+                    parse_sql_expr(sep_sql_expr, self.ctx, self.active_schema)?,
+                )
+            },
             _ => polars_bail!(
                 SQLSyntax: "STRING_AGG expects 1-2 arguments (found {})",
                 args.len()
@@ -2194,11 +2258,16 @@ impl SQLFunctionVisitor<'_> {
         let base = self.parse_sql_arg(sql_expr)?;
         let base =
             self.apply_aggregate_clauses(base, is_distinct, &clauses, sql_expr, "STRING_AGG")?;
-        Ok(base
+        let joined = base
+            .clone()
             .cast(DataType::String)
             .implode(true)
             .list()
-            .join(separator, true))
+            .join(separator, true);
+
+        Ok(when(base.clone().null_count().lt(base.len()))
+            .then(joined)
+            .otherwise(lit(LiteralValue::untyped_null())))
     }
 
     fn visit_arr_to_string(&mut self) -> PolarsResult<Expr> {
@@ -2230,6 +2299,47 @@ impl SQLFunctionVisitor<'_> {
             }),
             _ => {
                 polars_bail!(SQLSyntax: "ARRAY_TO_STRING expects 2-3 arguments (found {})", args.len())
+            },
+        }
+    }
+
+    fn visit_avg(&mut self) -> PolarsResult<Expr> {
+        let (args, is_distinct) = extract_args_distinct(self.func)?;
+        let mut arg = match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
+            [FunctionArgExpr::Wildcard] => {
+                self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
+            },
+            _ => return self.not_supported_error(),
+        };
+        if is_distinct {
+            arg = arg.unique();
+        }
+        self.apply_window_spec(arg.mean(), &self.func.over)
+    }
+
+    /// Like `visit_unary_with_opt_cumulative`, but also accepts a DISTINCT modifier, which is a
+    /// no-op for MIN/MAX.
+    fn visit_min_max(
+        &mut self,
+        f: impl Fn(Expr) -> Expr,
+        cumulative_fn: impl Fn(Expr, bool) -> Expr,
+    ) -> PolarsResult<Expr> {
+        match self.func.over.as_ref() {
+            Some(window_type) => {
+                let spec = self.resolve_window_spec(window_type)?;
+                self.apply_cumulative_window(f, cumulative_fn, &spec)
+            },
+            None => {
+                let (args, _) = extract_args_distinct(self.func)?;
+                let e = match args.as_slice() {
+                    [FunctionArgExpr::Expr(sql_expr)] => f(self.parse_sql_arg(sql_expr)?),
+                    [FunctionArgExpr::Wildcard] => {
+                        f(self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?)
+                    },
+                    _ => return self.not_supported_error(),
+                };
+                self.apply_window_spec(e, &self.func.over)
             },
         }
     }
@@ -2277,10 +2387,12 @@ impl SQLFunctionVisitor<'_> {
                     },
                     [FunctionArgExpr::Expr(_)] => {
                         // COUNT(column) with ORDER BY -> use cum_count
-                        return self.visit_unary_with_opt_cumulative(
-                            |e| e.count(),
-                            |e, reverse| e.cum_count(reverse),
-                        );
+                        return self
+                            .visit_unary_with_opt_cumulative(
+                                |e| e.count(),
+                                |e, reverse| e.cum_count(reverse),
+                            )
+                            .map(|e| e.cast(DataType::Int64));
                     },
                     _ => {},
                 }
@@ -2310,7 +2422,86 @@ impl SQLFunctionVisitor<'_> {
             },
             _ => self.not_supported_error()?,
         };
-        self.apply_window_spec(count_expr, &self.func.over)
+        self.apply_window_spec(count_expr.cast(DataType::Int64), &self.func.over)
+    }
+
+    fn visit_sum(&mut self) -> PolarsResult<Expr> {
+        match self.func.over.as_ref() {
+            Some(window_type) => {
+                let spec = self.resolve_window_spec(window_type)?;
+                if spec.order_by.is_empty() {
+                    // Non-cumulative windowed SUM: broadcast the null-guarded aggregate.
+                    // SQL requires NULL, not 0, for an empty or all-null input.
+                    let args = extract_args(self.func)?;
+                    let arg = match args.as_slice() {
+                        [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
+                        [FunctionArgExpr::Wildcard] => {
+                            self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
+                        },
+                        _ => return self.not_supported_error(),
+                    };
+                    let total = arg.clone().sum();
+                    let non_empty = arg.count().gt(lit(0));
+                    let guarded = when(non_empty)
+                        .then(total)
+                        .otherwise(Expr::Literal(LiteralValue::untyped_null()));
+                    self.apply_window_spec(guarded, &self.func.over)
+                } else {
+                    self.apply_cumulative_window(Expr::sum, Expr::cum_sum, &spec)
+                }
+            },
+            None => {
+                let (args, is_distinct) = extract_args_distinct(self.func)?;
+                let mut arg = match args.as_slice() {
+                    [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
+                    [FunctionArgExpr::Wildcard] => {
+                        self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
+                    },
+                    _ => return self.not_supported_error(),
+                };
+                if is_distinct {
+                    // Also bypasses the literal fast path, no longer matching a literal
+                    // once wrapped.
+                    arg = arg.unique();
+                }
+                let (total, non_empty) = match &arg {
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(_))) => {
+                        ((arg * len()).cast(DataType::Int64), len().gt(lit(0)))
+                    },
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_))) => {
+                        (arg * len(), len().gt(lit(0)))
+                    },
+                    _ => (arg.clone().sum(), arg.count().gt(lit(0))),
+                };
+                Ok(when(non_empty)
+                    .then(total)
+                    .otherwise(Expr::Literal(LiteralValue::untyped_null())))
+            },
+        }
+    }
+
+    fn visit_total(&mut self) -> PolarsResult<Expr> {
+        match self.func.over.as_ref() {
+            Some(window_type) => {
+                let spec = self.resolve_window_spec(window_type)?;
+                self.apply_cumulative_window(Expr::sum, Expr::cum_sum, &spec)
+                    .map(|e| e.cast(DataType::Float64))
+            },
+            None => {
+                let (args, is_distinct) = extract_args_distinct(self.func)?;
+                let mut arg = match args.as_slice() {
+                    [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
+                    [FunctionArgExpr::Wildcard] => {
+                        self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
+                    },
+                    _ => return self.not_supported_error(),
+                };
+                if is_distinct {
+                    arg = arg.unique();
+                }
+                Ok(arg.sum().cast(DataType::Float64))
+            },
+        }
     }
 
     fn apply_order_by(&mut self, expr: Expr, order_by: &[OrderByExpr]) -> PolarsResult<Expr> {
@@ -2427,6 +2618,20 @@ impl SQLFunctionVisitor<'_> {
             self.func.to_string()
         );
     }
+}
+
+/// SQL semantics require `NULL` when there are no complete (eg: both non-null)
+/// pairs to correlate, whereas Polars' native `pearson_corr` returns `NaN`.
+fn sql_corr(a: Expr, b: Expr) -> Expr {
+    let has_corr_pairs = a
+        .clone()
+        .is_not_null()
+        .and(b.clone().is_not_null())
+        .any(true);
+
+    when(has_corr_pairs)
+        .then(polars_lazy::dsl::pearson_corr(a, b))
+        .otherwise(lit(LiteralValue::untyped_null()))
 }
 
 /// Returns true if the SQL expression is a non-null literal value (e.g. `1`, `'hello'`, `TRUE`).

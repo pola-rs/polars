@@ -50,49 +50,44 @@ where
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    RAYON.install(|| {
-        (0..n_partitions)
-            .into_par_iter()
-            .map(|partition_no| {
-                let hashes_and_keys = &hashes_and_keys;
-                let mut hash_tbl: PlHashMap<T::TotalOrdItem, (bool, IdxVec)> =
-                    PlHashMap::with_hasher(build_hasher.clone());
+    par_map_collect(n_partitions, &|partition_no| {
+        let hashes_and_keys = &hashes_and_keys;
+        let mut hash_tbl: PlHashMap<T::TotalOrdItem, (bool, IdxVec)> =
+            PlHashMap::with_hasher(build_hasher.clone());
 
-                let mut offset = 0;
-                for hashes_and_keys in hashes_and_keys {
-                    let len = hashes_and_keys.len();
-                    hashes_and_keys
-                        .iter()
-                        .enumerate()
-                        .for_each(|(idx, (h, k))| {
-                            let k = k.to_total_ord();
-                            let idx = idx as IdxSize;
-                            // partition hashes by thread no.
-                            // So only a part of the hashes go to this hashmap
-                            if partition_no == hash_to_partition(*h, n_partitions) {
-                                let idx = idx + offset;
-                                let entry = hash_tbl
-                                    .raw_entry_mut()
-                                    // uses the key to check equality to find and entry
-                                    .from_key_hashed_nocheck(*h, &k);
+        let mut offset = 0;
+        for hashes_and_keys in hashes_and_keys {
+            let len = hashes_and_keys.len();
+            hashes_and_keys
+                .iter()
+                .enumerate()
+                .for_each(|(idx, (h, k))| {
+                    let k = k.to_total_ord();
+                    let idx = idx as IdxSize;
+                    // partition hashes by thread no.
+                    // So only a part of the hashes go to this hashmap
+                    if partition_no == hash_to_partition(*h, n_partitions) {
+                        let idx = idx + offset;
+                        let entry = hash_tbl
+                            .raw_entry_mut()
+                            // uses the key to check equality to find and entry
+                            .from_key_hashed_nocheck(*h, &k);
 
-                                match entry {
-                                    RawEntryMut::Vacant(entry) => {
-                                        entry.insert_hashed_nocheck(*h, k, (false, unitvec![idx]));
-                                    },
-                                    RawEntryMut::Occupied(mut entry) => {
-                                        let (_k, v) = entry.get_key_value_mut();
-                                        v.1.push(idx);
-                                    },
-                                }
-                            }
-                        });
+                        match entry {
+                            RawEntryMut::Vacant(entry) => {
+                                entry.insert_hashed_nocheck(*h, k, (false, unitvec![idx]));
+                            },
+                            RawEntryMut::Occupied(mut entry) => {
+                                let (_k, v) = entry.get_key_value_mut();
+                                v.1.push(idx);
+                            },
+                        }
+                    }
+                });
 
-                    offset += len as IdxSize;
-                }
-                hash_tbl
-            })
-            .collect()
+            offset += len as IdxSize;
+        }
+        hash_tbl
     })
 }
 
@@ -233,7 +228,7 @@ where
         create_hash_and_keys_threaded_vectorized(probe, Some(random_state.clone()));
 
     let n_tables = hash_tbls.len();
-    try_raise_keyboard_interrupt();
+    try_raise_polars_abort();
 
     // probe the hash table.
     // Note: indexes from b that are not matched will be None, Some(idx_b)

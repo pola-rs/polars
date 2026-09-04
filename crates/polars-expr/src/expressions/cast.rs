@@ -57,7 +57,7 @@ impl PhysicalExpr for CastExpr {
             AggState::NotAggregated(_) => {
                 if match self.options {
                     CastOptions::NonStrict | CastOptions::Overflowing => true,
-                    CastOptions::Strict => ac.original_len,
+                    CastOptions::Strict => ac.original_groups,
                 } {
                     // before we flatten, make sure that groups are updated
                     ac.groups();
@@ -90,7 +90,7 @@ impl PhysicalExpr for CastExpr {
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema).map(|mut fld| {
-            fld.coerce(self.dtype.clone());
+            fld.set_dtype(self.dtype.clone());
             fld
         })
     }

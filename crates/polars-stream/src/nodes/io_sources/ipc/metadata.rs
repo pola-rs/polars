@@ -10,8 +10,8 @@ pub async fn read_ipc_metadata_bytes(
     verbose: bool,
 ) -> PolarsResult<(Buffer<u8>, Option<Buffer<u8>>)> {
     const FOOTER_HEADER_SIZE: usize = 10;
-    const ARROW_MAGIC_V1: [u8; 4] = [b'F', b'E', b'A', b'1'];
-    const ARROW_MAGIC_V2: [u8; 6] = [b'A', b'R', b'R', b'O', b'W', b'1'];
+    const ARROW_MAGIC_V1: [u8; 4] = *b"FEA1";
+    const ARROW_MAGIC_V2: [u8; 6] = *b"ARROW1";
 
     let file_size = byte_source.get_size().await?;
 

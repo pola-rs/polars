@@ -1,6 +1,9 @@
 use std::cmp::Ordering;
 use std::ops::RangeBounds;
 
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::primitives::distributor_channel::{self, distributor_channel};
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
@@ -11,9 +14,6 @@ use polars_utils::sort::reorder_cmp;
 use rayon::slice::ParallelSliceMut;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::distributor_channel::{self, distributor_channel};
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
@@ -407,7 +407,7 @@ async fn find_mergeable_task(
                         .await;
                     return Ok(());
                 };
-                build_unmerged.push_df(m.into_df());
+                build_unmerged.push_df(m.into_df().await);
             },
             Err(NeedMore::Probe | NeedMore::Both) if recv_probe.is_some() => {
                 let Ok(m) = recv_probe.as_mut().unwrap().recv().await else {
@@ -416,7 +416,7 @@ async fn find_mergeable_task(
                         .await;
                     return Ok(());
                 };
-                probe_unmerged.push_df(m.into_df());
+                probe_unmerged.push_df(m.into_df().await);
             },
             Err(other) => {
                 unreachable!("unexpected NeedMore value: {other:?}");
@@ -510,7 +510,7 @@ async fn compute_join_and_send(
             &params.output_schema,
         )?;
         if df.height() > 0 {
-            let mut morsel = Morsel::new(df, seq, source_token.clone());
+            let mut morsel = Morsel::new_unregistered(df, seq, source_token.clone());
             morsel.set_consume_token(wait_group.token());
             if send.send(morsel).await.is_err() {
                 return Ok(());
@@ -534,7 +534,7 @@ async fn compute_join_and_send(
         )?;
         if df_unmatched.height() > 0 {
             if params.args.maintain_order == MaintainOrderJoin::None {
-                let mut morsel = Morsel::new(df_unmatched, seq, source_token.clone());
+                let mut morsel = Morsel::new_unregistered(df_unmatched, seq, source_token.clone());
                 morsel.set_consume_token(wait_group.token());
                 if send.send(morsel).await.is_err() {
                     return Ok(());

@@ -1,7 +1,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use polars_core::prelude::{InitHashMaps, PlHashSet};
+use polars_core::prelude::{InitHashMaps, PlIndexSet};
 use polars_core::schema::Schema;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
@@ -77,7 +77,7 @@ impl<'a> IRDotDisplay<'a> {
         f: &mut fmt::Formatter<'_>,
         parent: Option<DotNode>,
         last: &mut usize,
-        visited_caches: &mut PlHashSet<UniqueId>,
+        visited_caches: &mut PlIndexSet<UniqueId>,
     ) -> std::fmt::Result {
         use fmt::Write;
 
@@ -102,12 +102,16 @@ impl<'a> IRDotDisplay<'a> {
 
         use IR::*;
         match root {
-            Union { inputs, .. } => {
+            Union {
+                inputs, options, ..
+            } => {
                 for input in inputs {
                     recurse!(*input);
                 }
 
-                write_label(f, id, |f| f.write_str("UNION"))?;
+                write_label(f, id, |f| {
+                    write!(f, "UNION[maintain_order: {0}]", options.maintain_order)
+                })?;
             },
             HConcat { inputs, .. } => {
                 for input in inputs {
@@ -139,7 +143,9 @@ impl<'a> IRDotDisplay<'a> {
             PythonScan { options } => {
                 let predicate = match &options.predicate {
                     PythonPredicate::Polars(e) => format!("{}", self.display_expr(e)),
-                    PythonPredicate::PyArrow(s) => s.clone(),
+                    PythonPredicate::PyArrow(p) => {
+                        format!("predicate: {:?}, has_residual: {}", p, p.has_residual)
+                    },
                     PythonPredicate::None => "none".to_string(),
                 };
                 let with_columns = NumColumns(options.with_columns.as_ref().map(|s| s.as_ref()));
@@ -257,20 +263,20 @@ impl<'a> IRDotDisplay<'a> {
             Join {
                 input_left,
                 input_right,
-                left_on,
-                right_on,
                 options,
                 ..
             } => {
                 recurse!(*input_left);
                 recurse!(*input_right);
 
+                let (left_keys, right_keys) = options.options.key_vecs();
+
                 write_label(f, id, |f| {
                     write!(f, "JOIN {}", options.args.how)?;
 
-                    if !left_on.is_empty() {
-                        let left_on = self.display_exprs(left_on);
-                        let right_on = self.display_exprs(right_on);
+                    if !left_keys.is_empty() {
+                        let left_on = self.display_exprs(&left_keys);
+                        let right_on = self.display_exprs(&right_keys);
                         write!(f, "\nleft: {left_on};\nright: {right_on}")?
                     }
                     Ok(())
@@ -290,10 +296,6 @@ impl<'a> IRDotDisplay<'a> {
             } => {
                 recurse!(*input);
                 write_label(f, id, |f| write!(f, "{function}"))?;
-            },
-            ExtContext { input, .. } => {
-                recurse!(*input);
-                write_label(f, id, |f| f.write_str("EXTERNAL_CONTEXT"))?;
             },
             Sink { input, payload, .. } => {
                 recurse!(*input);
@@ -334,10 +336,15 @@ impl<'a> IRDotDisplay<'a> {
                 recurse!(*input_left);
                 recurse!(*input_right);
 
+                let key = key
+                    .iter()
+                    .map(|k| format!("'{k}'"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 write_label(f, id, |f| {
                     write!(
                         f,
-                        "MERGE_SORTED[maintain_order: {maintain_order}] ON '{key}'",
+                        "MERGE_SORTED[maintain_order: {maintain_order}] ON [{key}]",
                     )
                 })?;
             },
@@ -462,7 +469,7 @@ impl fmt::Display for IRDotDisplay<'_> {
         writeln!(f, "{INDENT}node [fontname=\"Monospace\", shape=\"box\"]")?;
 
         let mut last = 0;
-        let mut visited_caches = PlHashSet::new();
+        let mut visited_caches = PlIndexSet::new();
         self._format(f, None, &mut last, &mut visited_caches)?;
 
         writeln!(f, "}}")?;
