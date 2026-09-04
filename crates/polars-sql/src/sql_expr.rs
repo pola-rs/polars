@@ -21,8 +21,8 @@ use polars_utils::unique_column_name;
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
     AccessExpr, BinaryOperator as SQLBinaryOperator, CastFormat, CastKind, DataType as SQLDataType,
-    DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident, Interval, Query as Subquery,
-    SelectItem, Subscript, TimezoneInfo, TrimWhereField, TypedString,
+    DateTimeField, Expr as SQLExpr, Function as SQLFunction, Ident, Interval, OrderByOptions,
+    Query as Subquery, SelectItem, Subscript, TimezoneInfo, TrimWhereField, TypedString,
     UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan,
 };
 use sqlparser::dialect::GenericDialect;
@@ -44,6 +44,17 @@ use crate::types::{
 /// Convert a Display-able error to PolarsError::SQLInterface
 pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
     PolarsError::SQLInterface(err.to_string().into())
+}
+
+/// Sort options for a single `ORDER BY` key.
+///
+/// If not given, 'NULLS FIRST' is the default for DESC and 'NULLS LAST' otherwise;
+/// see <https://www.postgresql.org/docs/current/queries-order.html>.
+pub(crate) fn order_by_sort_options(options: &OrderByOptions) -> SortOptions {
+    let descending = !options.asc.unwrap_or(true);
+    SortOptions::default()
+        .with_order_descending(descending)
+        .with_nulls_last(!options.nulls_first.unwrap_or(descending))
 }
 
 /// Represents a boolean-typed NULL literal (aka: SQL "UNKNOWN" truth value).

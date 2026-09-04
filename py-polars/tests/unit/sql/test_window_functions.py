@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError
+from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -681,3 +681,80 @@ def test_window_over_aggregate_having() -> None:
         """,
         compare_with="duckdb",
     )
+
+
+@pytest.mark.parametrize(
+    "order_by",
+    [
+        "a ASC NULLS LAST",
+        "a ASC NULLS FIRST",
+        "a DESC NULLS LAST",
+        "a DESC NULLS FIRST",
+    ],
+)
+def test_window_order_by_nulls_placement(order_by: str) -> None:
+    lf = pl.LazyFrame({"a": [30.0, 40.0, 10.0, None, 20.0, 50.0]})
+    assert_sql_matches(
+        {"df": lf},
+        query=f"""
+            SELECT a,
+                   ROW_NUMBER() OVER (ORDER BY {order_by}) AS rn,
+                   COUNT(*) OVER (ORDER BY {order_by}) AS cnt,
+                   SUM(a) OVER (ORDER BY {order_by}) AS total
+            FROM df
+            ORDER BY rn
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_window_order_by_nulls_placement_partitioned() -> None:
+    lf = pl.LazyFrame(
+        {
+            "grp": ["x", "x", "x", "y", "y", "y"],
+            "a": [20.0, None, 10.0, None, 40.0, 30.0],
+        }
+    )
+    assert_sql_matches(
+        {"df": lf},
+        query="""
+            SELECT grp, a,
+                   ROW_NUMBER() OVER (PARTITION BY grp ORDER BY a NULLS LAST) AS rn
+            FROM df
+            ORDER BY grp, rn
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_window_order_by_nulls_default_placement() -> None:
+    # unless stated otherwise, nulls sort last on ASC and first on DESC
+    df = pl.DataFrame({"a": [30.0, 10.0, None, 20.0]})
+    with pl.SQLContext(df=df, eager=True) as ctx:
+        res = ctx.execute(
+            """
+            SELECT a,
+                   ROW_NUMBER() OVER (ORDER BY a) AS asc_rn,
+                   ROW_NUMBER() OVER (ORDER BY a DESC) AS desc_rn
+            FROM df
+            """
+        )
+    assert res.to_dict(as_series=False) == {
+        "a": [30.0, 10.0, None, 20.0],
+        "asc_rn": [3, 1, 4, 2],
+        "desc_rn": [2, 4, 1, 3],
+    }
+
+
+def test_window_order_by_mixed_nulls_placement_error() -> None:
+    df = pl.DataFrame({"a": [1.0, None], "b": [2, 1]})
+    with (
+        pl.SQLContext(df=df, eager=True) as ctx,
+        pytest.raises(
+            SQLSyntaxError,
+            match=r"does not .*support mixed NULLS FIRST/LAST",
+        ),
+    ):
+        ctx.execute(
+            "SELECT ROW_NUMBER() OVER (ORDER BY a NULLS LAST, b NULLS FIRST) FROM df"
+        )
