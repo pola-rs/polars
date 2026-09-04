@@ -15,6 +15,8 @@ mod datetime;
 #[cfg(feature = "dtype-extension")]
 mod extension;
 mod list;
+#[cfg(feature = "dtype-map")]
+mod map;
 mod pow;
 #[cfg(feature = "random")]
 mod random;
@@ -58,6 +60,8 @@ pub use self::cat::CategoricalFunction;
 pub use self::datetime::TemporalFunction;
 #[cfg(feature = "dtype-extension")]
 pub use self::extension::ExtensionFunction;
+#[cfg(feature = "dtype-map")]
+pub use self::map::MapFunction;
 pub use self::pow::PowFunction;
 #[cfg(feature = "range")]
 pub use self::range::{DateRangeArgs, RangeFunction};
@@ -86,6 +90,8 @@ pub enum FunctionExpr {
     #[cfg(feature = "dtype-extension")]
     Extension(ExtensionFunction),
     ListExpr(ListFunction),
+    #[cfg(feature = "dtype-map")]
+    MapExpr(MapFunction),
     #[cfg(feature = "strings")]
     StringExpr(StringFunction),
     #[cfg(feature = "dtype-struct")]
@@ -408,6 +414,8 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "dtype-extension")]
             Extension(f) => f.hash(state),
             ListExpr(f) => f.hash(state),
+            #[cfg(feature = "dtype-map")]
+            MapExpr(f) => f.hash(state),
             #[cfg(feature = "strings")]
             StringExpr(f) => f.hash(state),
             #[cfg(feature = "dtype-struct")]
@@ -717,6 +725,8 @@ impl Display for FunctionExpr {
             #[cfg(feature = "dtype-extension")]
             Extension(func) => return write!(f, "{func}"),
             ListExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "dtype-map")]
+            MapExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "strings")]
             StringExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-struct")]

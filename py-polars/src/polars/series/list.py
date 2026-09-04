@@ -930,6 +930,27 @@ class ListNameSpace(_NamespaceSuggestMixin):
         ]
         """
 
+    def to_map(self) -> Series:
+        """
+        Convert the `List` of `Struct` entries to a `Map`.
+
+        The input must be a `List` of `Struct` with exactly two fields named `key`
+        and `value`. Keys must not be null; duplicate keys within a row are resolved
+        by keeping the first position and the last value.
+
+        The inverse of :meth:`Series.map.entries`.
+
+        Examples
+        --------
+        >>> s = pl.Series([[{"key": "a", "value": 1}, {"key": "b", "value": 2}]])
+        >>> s.list.to_map()
+        shape: (1,)
+        Series: '' [map[str, i64]]
+        [
+                {"a": 1, "b": 2}
+        ]
+        """
+
     def to_struct(self, fields: Sequence[str]) -> Series:
         """
         Convert the series of type `List` to a series of type `Struct`.

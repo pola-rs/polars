@@ -174,6 +174,9 @@ if TYPE_CHECKING:
 
 _COLLECT_BATCHES_POOL = ThreadPoolExecutor(thread_name_prefix="pl_col_batch_")
 
+# Name of the placeholder column used by `LazyFrame._with_height_column()`.
+_HEIGHT_COLUMN = "__POLARS_INTERNAL_HEIGHT_COLUMN"
+
 
 class LazyFrame:
     """
@@ -377,6 +380,32 @@ class LazyFrame:
         self = cls.__new__(cls)
         self._ldf = ldf
         return self
+
+    def _with_height_column(self) -> LazyFrame:
+        """Add a private dummy column that preserves the input height."""
+        return self.with_columns(F.lit({}, dtype=Struct({})).alias(_HEIGHT_COLUMN))
+
+    def _drop_height_column(self) -> LazyFrame:
+        """Drop the dummy column added by `_with_height_column()`."""
+        return self.drop(_HEIGHT_COLUMN)
+
+    def _height_preserving(self, op: Callable[[LazyFrame], LazyFrame]) -> LazyFrame:
+        """Apply `op` with a height-carrying dummy column attached."""
+        return op(self._with_height_column())._drop_height_column()
+
+    def _aggregate_select(self, exprs: Sequence[Expr]) -> LazyFrame:
+        """`select()` of aggregation expressions, ensures result is height 1."""
+        return self.select(
+            F.lit({}, dtype=Struct({})).alias(_HEIGHT_COLUMN), *exprs
+        ).drop(_HEIGHT_COLUMN)
+
+    def _height_preserving_select(self, into_expr: Callable[[Expr], Expr]) -> LazyFrame:
+        """`select()` over all columns, retaining the height of a 0-width input."""
+        return self._height_preserving(
+            lambda lf: lf.select(
+                F.col(_HEIGHT_COLUMN), into_expr(F.exclude(_HEIGHT_COLUMN))
+            )
+        )
 
     def __getstate__(self) -> bytes:
         return self.serialize()
@@ -1271,13 +1300,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
-              back to ``"in-memory"`` if unset (this default may change in
-              a future release).
-            * ``"in-memory"``: use the in-memory engine, this is the default engine.
+              back to ``"streaming"`` if unset.
+            * ``"in-memory"``: use the in-memory engine.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control (e.g. device selection on multi-GPU systems).
@@ -1417,13 +1444,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
-              back to ``"in-memory"`` if unset (this default may change in
-              a future release).
-            * ``"in-memory"``: use the in-memory engine, this is the default engine.
+              back to ``"streaming"`` if unset.
+            * ``"in-memory"``: use the in-memory engine.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control (e.g. device selection on multi-GPU systems).
@@ -1468,7 +1493,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if plan_stage == "ir":
             dot = _ldf.to_dot(optimized)
         elif plan_stage == "physical":
-            if engine_.plan_engine == "streaming":
+            if engine_.plan_engine == "streaming" or engine_.plan_engine == "auto":
                 dot = _ldf.to_dot_streaming_phys(optimized)
             else:
                 dot = _ldf.to_dot(optimized)
@@ -2037,6 +2062,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         By default, all query optimizations are enabled. Individual optimizations may
         be disabled through the `optimizations` parameter.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         engine
@@ -2048,11 +2075,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable. Otherwise
               defaults to the streaming engine.
-            * ``"in-memory"``: use the in-memory engine, this is the default engine.
+            * ``"in-memory"``: use the in-memory engine.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control (e.g. device selection on multi-GPU systems).
@@ -2236,11 +2262,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable. Otherwise
               defaults to the streaming engine..
-            * ``"in-memory"``: use the in-memory engine, this is the default engine.
+            * ``"in-memory"``: use the in-memory engine.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control (e.g. device selection on multi-GPU
@@ -2548,12 +2573,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
               back to ``"streaming"`` if unset.
-            * ``"in-memory"``: use the in-memory engine before writing,
-              this is the default engine.
+            * ``"in-memory"``: use the in-memory engine before writing.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control.
@@ -2718,12 +2741,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
               back to ``"streaming"`` if unset.
-            * ``"in-memory"``: use the in-memory engine before writing,
-              this is the default engine.
+            * ``"in-memory"``: use the in-memory engine before writing.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control.
@@ -2958,6 +2979,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | polars.io.iceberg.IcebergCatalogConfig
         | None = None,
         storage_options: StorageOptionsDict | None = None,
+        compression: ParquetCompression = "zstd",
+        compression_level: int | None = None,
+        row_group_size: int | None = None,
+        maintain_order: bool = True,
         engine: EngineType = "auto",
     ) -> pl.DataFrame:
         """
@@ -2998,6 +3023,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             For cloud storages, this may include configurations for authentication etc.
 
             More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
+        compression
+            Parquet compression codec.
+        compression_level
+            Compression level to use. Higher compression levels usually reduce file
+            size at the expense of write throughput.
+        row_group_size
+            Row group size in number of rows.
+        maintain_order
+            Maintain the input row order in the written files. Setting this to
+            `False` can improve throughput.
         engine
             Engine used to produce rows for the local `pyiceberg` writer.
 
@@ -3005,6 +3040,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         -------
         DataFrame
             Contains the new metadata path.
+
+        Notes
+        -----
+        Partitioned writes support identity, year, month, day, hour, and truncate
+        transforms. Truncation is supported for integer, long, string, and binary
+        source columns, including fields nested within structs. Top-level partition
+        source columns must use an Iceberg metrics mode that records lower and upper
+        bounds (``full`` or ``truncate``). Bucket, void, and decimal truncation are
+        not supported.
+
+        ``mode="overwrite"`` replaces all table data; dynamic partition overwrite
+        is not supported. ``schema_mode="overwrite"`` is not supported for
+        partitioned tables. Tables with sort orders or custom location providers
+        are also not supported.
         """
         from polars.io.iceberg._sink import IcebergSinkState
 
@@ -3015,6 +3064,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             snapshot_properties=snapshot_properties,
             catalog=catalog,
             storage_options=storage_options,
+            compression=compression,
+            compression_level=compression_level,
+            row_group_size=row_group_size,
+            maintain_order=maintain_order,
         )
 
         sink_state.attach_sink(self).collect(engine=engine)
@@ -3180,12 +3233,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
               back to ``"streaming"`` if unset.
-            * ``"in-memory"``: use the in-memory engine before writing,
-              this is the default engine.
+            * ``"in-memory"``: use the in-memory engine before writing.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: not currently supported for this sink.
 
             If the selected engine cannot run the query, Polars falls back to
@@ -3511,12 +3562,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
               back to ``"streaming"`` if unset.
-            * ``"in-memory"``: use the in-memory engine before writing,
-              this is the default engine.
+            * ``"in-memory"``: use the in-memory engine before writing.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control.
@@ -3747,12 +3796,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
               back to ``"streaming"`` if unset.
-            * ``"in-memory"``: use the in-memory engine before writing,
-              this is the default engine.
+            * ``"in-memory"``: use the in-memory engine before writing.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control.
@@ -3881,12 +3928,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
               back to ``"streaming"`` if unset.
-            * ``"in-memory"``: use the in-memory engine before writing,
-              this is the default engine.
+            * ``"in-memory"``: use the in-memory engine before writing.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control.
@@ -3958,12 +4003,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
               or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
               back to ``"streaming"`` if unset.
-            * ``"in-memory"``: use the in-memory engine before writing,
-              this is the default engine.
+            * ``"in-memory"``: use the in-memory engine before writing.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
-              outperforming the in-memory engine. This will soon become
-              the default engine of Polars.
+              outperforming the in-memory engine.
             * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
               ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
               fine-grained control.
@@ -6641,7 +6684,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ a   ┆ 1   │
         └─────┴─────┘
         """
-        return self._from_pyldf(self._ldf.reverse())
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.reverse()))
 
     def shift(
         self, n: int | IntoExprColumn = 1, *, fill_value: IntoExpr | None = None
@@ -6718,12 +6761,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 100 ┆ 100 │
         └─────┴─────┘
         """
-        if fill_value is not None:
-            fill_value_py = parse_into_expression(fill_value, str_as_lit=True)
-        else:
-            fill_value_py = None
-        n_py = parse_into_expression(n)
-        return self._from_pyldf(self._ldf.shift(n_py, fill_value_py))
+        # Equivalent to `LazyFrame::shift()` in Rust, which is itself a
+        # `select()` of shifted columns - built here so that the height-carrying
+        # placeholder column is left out of `fill_value`, which need not have a
+        # dtype the placeholder can hold.
+        return self._height_preserving_select(
+            lambda expr: expr.shift(n, fill_value=fill_value)
+        )
 
     def slice(self, offset: int, length: int | None = None) -> LazyFrame:
         """
@@ -7074,12 +7118,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 8   │
         └─────┴─────┘
         """
-        return (
-            self.with_columns(
-                F.lit({}, dtype=Struct({})).alias("__POLARS_INTERNAL_HEIGHT_COLUMN")
-            )
-            .select(F.col("*").gather_every(n, offset))
-            .drop("__POLARS_INTERNAL_HEIGHT_COLUMN")
+        return self._height_preserving(
+            lambda lf: lf.select(F.col("*").gather_every(n, offset))
         )
 
     def fill_null(
@@ -7222,7 +7262,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     F.col([*dtypes, Null]).fill_null(value, strategy, limit)
                 )
 
-        return self.select(F.all().fill_null(value, strategy, limit))
+        return self._height_preserving_select(
+            lambda expr: expr.fill_null(value, strategy, limit)
+        )
 
     def fill_nan(self, value: int | float | Expr | None) -> LazyFrame:
         """
@@ -7309,7 +7351,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1.118034 ┆ 0.433013 │
         └──────────┴──────────┘
         """
-        return self._from_pyldf(self._ldf.std(ddof))
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.std(ddof)))
 
     def var(self, ddof: int = 1) -> LazyFrame:
         """
@@ -7351,7 +7393,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1.25 ┆ 0.1875 │
         └──────┴────────┘
         """
-        return self._from_pyldf(self._ldf.var(ddof))
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.var(ddof)))
 
     def max(self) -> LazyFrame:
         """
@@ -7377,7 +7419,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 2   │
         └─────┴─────┘
         """
-        return self._from_pyldf(self._ldf.max())
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.max()))
 
     def min(self) -> LazyFrame:
         """
@@ -7403,7 +7445,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 1   │
         └─────┴─────┘
         """
-        return self._from_pyldf(self._ldf.min())
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.min()))
 
     def sum(self) -> LazyFrame:
         """
@@ -7429,7 +7471,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 10  ┆ 5   │
         └─────┴─────┘
         """
-        return self._from_pyldf(self._ldf.sum())
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.sum()))
 
     def mean(self) -> LazyFrame:
         """
@@ -7455,7 +7497,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2.5 ┆ 1.25 │
         └─────┴──────┘
         """
-        return self._from_pyldf(self._ldf.mean())
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.mean()))
 
     def median(self) -> LazyFrame:
         """
@@ -7481,7 +7523,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2.5 ┆ 1.0 │
         └─────┴─────┘
         """
-        return self._from_pyldf(self._ldf.median())
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.median()))
 
     def null_count(self) -> LazyFrame:
         """
@@ -7508,7 +7550,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 1   ┆ 0   │
         └─────┴─────┴─────┘
         """
-        return self._from_pyldf(self._ldf.null_count())
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.null_count()))
 
     def quantile(
         self,
@@ -7546,7 +7588,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
         """  # noqa: W505
         quantile_py = parse_into_expression(quantile)
-        return self._from_pyldf(self._ldf.quantile(quantile_py, interpolation))
+        return self._height_preserving(
+            lambda lf: lf._from_pyldf(lf._ldf.quantile(quantile_py, interpolation))
+        )
 
     def explode(
         self,
@@ -8402,7 +8446,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 10.0 ┆ null ┆ 9.0      │
         └──────┴──────┴──────────┘
         """
-        return self.select(F.col("*").interpolate())
+        return self._height_preserving_select(lambda expr: expr.interpolate())
 
     def unnest(
         self,
@@ -8934,7 +8978,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 3   ┆ 0   │
         └─────┴─────┴─────┘
         """
-        return self._from_pyldf(self._ldf.count())
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.count()))
 
     @unstable()
     def remote(

@@ -1,11 +1,6 @@
 #[cfg(feature = "allocator")]
 pub mod allocator;
 
-// Since Python Polars cannot share its version into here and we need to be able to build this
-// package correctly without `py-polars`, we need to mirror the version here.
-// example: 1.35.0-beta.1
-pub static PYPOLARS_VERSION: &str = "2.0.0-rc.1";
-
 // We allow multiple features to be set simultaneously so checking with all-features
 // is possible. In the case multiple are set or none at all, we set the repr to "unknown".
 #[cfg(all(feature = "rtcompat", not(any(feature = "rt32", feature = "rt64"))))]
@@ -477,8 +472,9 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
 
     // Build info
-    m.add("__version__", PYPOLARS_VERSION)?;
+    m.add("__version__", crate::PYPOLARS_VERSION)?;
     m.add("RUNTIME_REPR", RUNTIME_REPR)?;
+    m.add("_BUILD_COMMIT", crate::PYPOLARS_BUILD_COMMIT)?;
 
     // Plugins
     #[cfg(feature = "ffi_plugin")]

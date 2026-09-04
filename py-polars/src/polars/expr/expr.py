@@ -65,6 +65,7 @@ from polars.expr.categorical import ExprCatNameSpace
 from polars.expr.datetime import ExprDateTimeNameSpace
 from polars.expr.ext import ExprExtensionNameSpace
 from polars.expr.list import ExprListNameSpace
+from polars.expr.map import ExprMapNameSpace
 from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.name import ExprNameNameSpace
 from polars.expr.string import ExprStringNameSpace
@@ -170,6 +171,7 @@ class Expr(metaclass=_Meta):
         "dt",
         "ext",
         "list",
+        "map",
         "meta",
         "name",
         "str",
@@ -307,6 +309,15 @@ class Expr(metaclass=_Meta):
         └─────┘
         """
         return ExprStructNameSpace(self)
+
+    @property
+    def map(self) -> ExprMapNameSpace:
+        """
+        Create an object namespace of all map related expressions.
+
+        See the individual method pages for full details.
+        """
+        return ExprMapNameSpace(self)
 
     @property
     def ext(self) -> ExprExtensionNameSpace:
@@ -1593,7 +1604,7 @@ class Expr(metaclass=_Meta):
         """
         Get an array with the cumulative sum computed at every element.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -1657,7 +1668,7 @@ class Expr(metaclass=_Meta):
         """
         Get an array with the cumulative product computed at every element.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -1694,7 +1705,7 @@ class Expr(metaclass=_Meta):
         """
         Get an array with the cumulative min computed at every element.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -1725,7 +1736,7 @@ class Expr(metaclass=_Meta):
         """
         Get an array with the cumulative max computed at every element.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -1784,7 +1795,7 @@ class Expr(metaclass=_Meta):
         """
         Return the cumulative count of the non-null values in the column.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -6913,8 +6924,7 @@ class Expr(metaclass=_Meta):
         This operation is only allowed for numeric types of the same size.
         For lower bits numbers, you can safely use the cast operation.
 
-        Either `signed` or `dtype` can be specified.
-        Defaults to `signed=True` otherwise.
+        Exactly one of `signed` or `dtype` must be specified.
 
         .. engine-support:: in-memory, streaming, distributed
 
@@ -10861,9 +10871,9 @@ class Expr(metaclass=_Meta):
         │ --- │
         │ i64 │
         ╞═════╡
-        │ 3   │
-        │ 3   │
         │ 1   │
+        │ 3   │
+        │ 3   │
         └─────┘
         """
         if n is not None and fraction is not None:

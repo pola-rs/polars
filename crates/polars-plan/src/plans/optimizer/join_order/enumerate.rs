@@ -6,7 +6,7 @@
 use polars_utils::pl_str::PlSmallStr;
 
 use super::cluster::Cluster;
-use super::stats::{join_cardinality, key_domain};
+use crate::plans::{composite_key_domain, join_cardinality, key_domain};
 
 /// Greedy left-deep ordering of a cluster's leaves.
 ///
@@ -78,7 +78,9 @@ fn key_domain_product(cluster: &Cluster, is_placed: &[bool], candidate: usize) -
     for bridge in cluster.bridging(is_placed, candidate) {
         let domain = key_domain(
             &cluster.leaves[bridge.placed_leaf].stats,
+            bridge.placed_key,
             &cluster.leaves[candidate].stats,
+            bridge.candidate_key,
         );
         let name = bridge.candidate_key.output_name_inner().get();
 
@@ -91,7 +93,14 @@ fn key_domain_product(cluster: &Cluster, is_placed: &[bool], candidate: usize) -
         }
     }
 
-    (!per_key.is_empty()).then(|| per_key.iter().map(|(_, domain)| domain).product())
+    // The largest relation the composite key is read from, which bounds the product.
+    let max_rows = cluster
+        .bridging(is_placed, candidate)
+        .map(|bridge| cluster.leaves[bridge.placed_leaf].stats.unfiltered)
+        .fold(cluster.leaves[candidate].stats.unfiltered, f64::max);
+
+    (!per_key.is_empty())
+        .then(|| composite_key_domain(per_key.iter().map(|(_, domain)| *domain), max_rows))
 }
 
 #[cfg(test)]
@@ -100,9 +109,8 @@ mod tests {
     use polars_utils::arena::{Arena, Node};
 
     use super::super::cluster::{Edge, Leaf};
-    use super::super::stats::LeafStats;
     use super::*;
-    use crate::plans::{ExprIR, JoinOptionsIR, JoinTypeOptionsIR};
+    use crate::plans::{ExprIR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats};
     use crate::prelude::JoinArgs;
 
     fn dummy_options() -> std::sync::Arc<JoinOptionsIR> {
@@ -120,10 +128,7 @@ mod tests {
         Leaf {
             node: Node(node),
             schema: schema.into(),
-            stats: LeafStats {
-                filtered: rows,
-                unfiltered: rows,
-            },
+            stats: NodeStats::of_rows(rows),
         }
     }
 
@@ -162,6 +167,7 @@ mod tests {
             leaves,
             edges,
             output_schema: Schema::default().into(),
+            restore: Vec::new(),
             options: dummy_options(),
         };
 

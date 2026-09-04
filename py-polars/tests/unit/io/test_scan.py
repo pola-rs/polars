@@ -11,6 +11,7 @@ from math import ceil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
@@ -1577,6 +1578,8 @@ def test_scan_sink_metrics_multiple_phases(
 
     df.write_parquet(path, row_group_size=1)
     expected_read_amount_bytes = 44000
+    metadata = pq.read_metadata(tmp_path / "a")
+    created_by_size = len(metadata.created_by.encode("utf-8"))
 
     capfd.readouterr()
     pl.scan_parquet(path).collect()
@@ -1625,7 +1628,7 @@ def test_scan_sink_metrics_multiple_phases(
             {
                 "io_total_bytes_requested": [f"{expected_read_amount_bytes}", "0"],
                 "io_total_bytes_received": [f"{expected_read_amount_bytes}", "0"],
-                "io_total_bytes_sent": ["0", "137260"],
+                "io_total_bytes_sent": ["0", f"{137254 + created_by_size}"],
                 "node_name": ["multi-scan[parquet]", "io-sink[single-file[parquet]]"],
             }
         ),

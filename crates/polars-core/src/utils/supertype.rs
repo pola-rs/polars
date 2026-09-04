@@ -430,6 +430,19 @@ pub fn get_supertype_with_options(
                 let st = get_supertype(inner_left, inner_right)?;
                 Some(Array(Box::new(st), *width_left))
             }
+            #[cfg(feature = "dtype-map")]
+            (Map(key_left, value_left), Map(key_right, value_right)) => {
+                // We forbid casting the key type, as it might collapse distinct keys into one.
+                if key_left != key_right
+                    && !key_left.is_nested_null()
+                    && !key_right.is_nested_null()
+                {
+                    return None;
+                }
+                let key = get_supertype(key_left, key_right)?;
+                let value = get_supertype(value_left, value_right)?;
+                Some(Map(Box::new(key), Box::new(value)))
+            }
             (List(inner), other) | (other, List(inner)) if options.allow_implode_list() => {
                 let st = get_supertype(inner, other)?;
                 Some(List(Box::new(st)))

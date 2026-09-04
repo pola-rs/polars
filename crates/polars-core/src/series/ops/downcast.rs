@@ -198,6 +198,12 @@ impl Series {
         try_unpack_chunked!(self, DataType::Extension(_, _) => ExtensionChunked)
     }
 
+    /// Unpack to [`MapChunked`] of dtype [`DataType::Map`].
+    #[cfg(feature = "dtype-map")]
+    pub fn try_map(&self) -> Option<&MapChunked> {
+        try_unpack_chunked!(self, DataType::Map(_, _) => MapChunked)
+    }
+
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Struct`]
     #[cfg(feature = "dtype-struct")]
     pub fn try_struct(&self) -> Option<&StructChunked> {
@@ -430,6 +436,13 @@ impl Series {
     pub fn ext(&self) -> PolarsResult<&ExtensionChunked> {
         self.try_ext()
             .ok_or_else(|| unpack_chunked_err!(self => "Extension"))
+    }
+
+    /// Unpack to [`MapChunked`] of dtype [`DataType::Map`].
+    #[cfg(feature = "dtype-map")]
+    pub fn map(&self) -> PolarsResult<&MapChunked> {
+        self.try_map()
+            .ok_or_else(|| unpack_chunked_err!(self => "Map"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Null`]

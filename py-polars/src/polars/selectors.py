@@ -77,6 +77,7 @@ __all__ = [
     "is_selector",
     "last",
     "list",
+    "map",
     "matches",
     "nested",
     "numeric",
@@ -378,6 +379,8 @@ class Selector(Expr):
                     selectors += [array()]
                 elif dt is pldt.Struct:
                     selectors += [struct()]
+                elif dt is pldt.Map:
+                    selectors += [map()]
                 elif dt is pldt.Decimal:
                     selectors += [decimal()]
                 else:
@@ -1582,6 +1585,63 @@ def struct() -> Selector:
     └─────┴─────┘
     """
     return Selector._from_pyselector(PySelector.struct_())
+
+
+@unstable()
+def map() -> Selector:
+    """
+    Select all map columns.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    list : Select all list columns.
+    struct : Select all struct columns.
+    nested : Select all nested columns.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": pl.Series(
+    ...             [{"a": 1}, {"b": 2}], dtype=pl.Map(pl.String, pl.Int64)
+    ...         ),
+    ...         "bar": [123, 456],
+    ...     },
+    ... )
+
+    Select all map columns:
+
+    >>> df.select(cs.map())
+    shape: (2, 1)
+    ┌───────────────┐
+    │ foo           │
+    │ ---           │
+    │ map[str, i64] │
+    ╞═══════════════╡
+    │ {"a": 1}      │
+    │ {"b": 2}      │
+    └───────────────┘
+
+    Select all columns *except* for those that are maps:
+
+    >>> df.select(~cs.map())
+    shape: (2, 1)
+    ┌─────┐
+    │ bar │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 123 │
+    │ 456 │
+    └─────┘
+    """
+    return Selector._from_pyselector(PySelector.map())
 
 
 @unstable()

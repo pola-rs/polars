@@ -138,6 +138,9 @@ pub enum DataType {
     Enum(Arc<FrozenCategories>, Arc<CategoricalMapping>),
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
+    /// A map from keys to values, keys are unique and non-null.
+    #[cfg(feature = "dtype-map")]
+    Map(Box<DataType>, Box<DataType>),
     #[cfg(feature = "dtype-extension")]
     Extension(ExtensionTypeInstance, Box<DataType>),
     // some logical types we cannot know statically, e.g. Datetime
@@ -179,6 +182,8 @@ impl PartialEq for DataType {
                 (Array(left_inner, left_width), Array(right_inner, right_width)) => {
                     left_width == right_width && left_inner == right_inner
                 },
+                #[cfg(feature = "dtype-map")]
+                (Map(key_l, value_l), Map(key_r, value_r)) => key_l == key_r && value_l == value_r,
                 #[cfg(feature = "dtype-extension")]
                 (Extension(ext_l, storage_l), Extension(ext_r, storage_r)) => {
                     ext_l == ext_r && storage_l == storage_r
@@ -226,6 +231,10 @@ impl DataType {
             Self::Array(inner_dtype, size) => {
                 let formatted_dtype = inner_dtype.pretty_format();
                 format!("array[{}, {}]", formatted_dtype, size)
+            },
+            #[cfg(feature = "dtype-map")]
+            Self::Map(key, value) => {
+                format!("map[{}, {}]", key.pretty_format(), value.pretty_format())
             },
             _ => {
                 format!("{}", self)
@@ -276,6 +285,8 @@ impl DataType {
             DataType::Array(inner, _) => inner.is_known(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => fields.iter().all(|fld| fld.dtype.is_known()),
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(key, value) => key.is_known() && value.is_known(),
             DataType::Unknown(_) => false,
             _ => true,
         }
@@ -314,6 +325,11 @@ impl DataType {
                         ))
                     })
                     .try_collect_vec()?,
+            )),
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(key, value) => Ok(DataType::Map(
+                Box::new(key.materialize_unknown(allow_unknown)?),
+                Box::new(value.materialize_unknown(allow_unknown)?),
             )),
             _ => Ok(self),
         }
@@ -419,6 +435,8 @@ impl DataType {
                     .collect();
                 Struct(new_fields)
             },
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => Map(Box::new(key.map_leaves(f)), Box::new(value.map_leaves(f))),
             #[cfg(feature = "dtype-extension")]
             Extension(ext, storage) => Extension(ext, Box::new(storage.map_leaves(f))),
             _ => f(self),
@@ -464,6 +482,19 @@ impl DataType {
             },
 
             (D::List(from), D::List(to)) => from.can_cast_to(to)?,
+            #[cfg(feature = "dtype-map")]
+            (D::Map(from_key, from_value), D::Map(to_key, to_value)) => {
+                // Same key rule as `MapChunked::cast_with_options`.
+                from_key.matches_schema_type(to_key).is_ok() && from_value.can_cast_to(to_value)?
+            },
+            #[cfg(feature = "dtype-map")]
+            (from @ D::Map(_, _), D::List(to)) => {
+                from.map_entries_dtype().unwrap().can_cast_to(to)?
+            },
+            #[cfg(feature = "dtype-map")]
+            (D::List(from), to @ D::Map(_, _)) => {
+                from.can_cast_to(&to.map_entries_dtype().unwrap())?
+            },
             #[cfg(feature = "dtype-array")]
             (D::Array(from, l_width), D::Array(to, r_width)) => {
                 l_width == r_width && from.can_cast_to(to)?
@@ -522,10 +553,44 @@ impl DataType {
                     .collect();
                 Struct(new_fields)
             },
+            #[cfg(feature = "dtype-map")]
+            Map(_, _) => self.map_storage_dtype().unwrap().to_physical(),
             #[cfg(feature = "dtype-extension")]
             Extension(_, storage) => storage.to_physical(),
             _ => self.clone(),
         }
+    }
+
+    /// Bytes one value of this type takes, or `None` when that depends on the
+    /// value.
+    #[must_use]
+    pub fn byte_width(&self) -> Option<f64> {
+        use DataType::*;
+        Some(match self {
+            Null => 0.0,
+            Boolean => 1.0 / 8.0,
+            Int8 | UInt8 => 1.0,
+            Int16 | UInt16 | Float16 => 2.0,
+            Int32 | UInt32 | Float32 | Date => 4.0,
+            Int64 | UInt64 | Float64 | Datetime(_, _) | Duration(_) | Time => 8.0,
+            Int128 | UInt128 => 16.0,
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => 16.0,
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(cats, _) => cats.physical().dtype().byte_width()?,
+            #[cfg(feature = "dtype-categorical")]
+            Enum(fcats, _) => fcats.physical().dtype().byte_width()?,
+            #[cfg(feature = "dtype-array")]
+            Array(inner, width) => inner.byte_width()? * (*width as f64),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields
+                .iter()
+                .map(|f| f.dtype().byte_width())
+                .sum::<Option<f64>>()?,
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.byte_width()?,
+            _ => return None,
+        })
     }
 
     #[must_use]
@@ -597,6 +662,8 @@ impl DataType {
             DataType::Array(_, _) => true,
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(_) => true,
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(_, _) => true,
             #[cfg(feature = "dtype-extension")]
             DataType::Extension(_, storage) => storage.is_nested(),
             _ => false,
@@ -610,6 +677,18 @@ impl DataType {
             matches!(self, DataType::Struct(_))
         }
         #[cfg(not(feature = "dtype-struct"))]
+        {
+            false
+        }
+    }
+
+    /// Check if this [`DataType`] is a map
+    pub fn is_map(&self) -> bool {
+        #[cfg(feature = "dtype-map")]
+        {
+            matches!(self, DataType::Map(_, _))
+        }
+        #[cfg(not(feature = "dtype-map"))]
         {
             false
         }
@@ -654,6 +733,10 @@ impl DataType {
             Array(inner, _) => inner.contains_views(),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => fields.iter().any(|field| field.dtype.contains_views()),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => key.contains_views() || value.contains_views(),
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.contains_views(),
             _ => false,
         }
     }
@@ -670,6 +753,10 @@ impl DataType {
             Struct(fields) => fields
                 .iter()
                 .any(|field| field.dtype.contains_categoricals()),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => key.contains_categoricals() || value.contains_categoricals(),
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.contains_categoricals(),
             _ => false,
         }
     }
@@ -684,6 +771,10 @@ impl DataType {
             Array(inner, _) => inner.contains_enums(),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => fields.iter().any(|field| field.dtype.contains_enums()),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => key.contains_enums() || value.contains_enums(),
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.contains_enums(),
             _ => false,
         }
     }
@@ -698,6 +789,26 @@ impl DataType {
             Array(inner, _) => inner.contains_objects(),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => fields.iter().any(|field| field.dtype.contains_objects()),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => key.contains_objects() || value.contains_objects(),
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.contains_objects(),
+            _ => false,
+        }
+    }
+
+    pub fn contains_map(&self) -> bool {
+        use DataType as D;
+        match self {
+            #[cfg(feature = "dtype-map")]
+            D::Map(_, _) => true,
+            D::List(inner) => inner.contains_map(),
+            #[cfg(feature = "dtype-array")]
+            D::Array(inner, _) => inner.contains_map(),
+            #[cfg(feature = "dtype-struct")]
+            D::Struct(fields) => fields.iter().any(|field| field.dtype.contains_map()),
+            #[cfg(feature = "dtype-extension")]
+            D::Extension(_, storage) => storage.contains_map(),
             _ => false,
         }
     }
@@ -712,6 +823,12 @@ impl DataType {
             D::Struct(fields) => fields
                 .iter()
                 .any(|field| field.dtype.contains_list_recursive()),
+            // The storage of a Map is a list, so its offsets need the same
+            // normalization a `List` needs.
+            #[cfg(feature = "dtype-map")]
+            D::Map(_, _) => true,
+            #[cfg(feature = "dtype-extension")]
+            D::Extension(_, storage) => storage.contains_list_recursive(),
             _ => false,
         }
     }
@@ -725,6 +842,10 @@ impl DataType {
             D::Array(inner, _) => inner.contains_unknown(),
             #[cfg(feature = "dtype-struct")]
             D::Struct(fields) => fields.iter().any(|field| field.dtype.contains_unknown()),
+            #[cfg(feature = "dtype-map")]
+            D::Map(key, value) => key.contains_unknown() || value.contains_unknown(),
+            #[cfg(feature = "dtype-extension")]
+            D::Extension(_, storage) => storage.contains_unknown(),
             _ => false,
         }
     }
@@ -742,6 +863,12 @@ impl DataType {
             D::Struct(fields) => fields
                 .iter()
                 .any(|field| field.dtype.contains_dtype_recursive(dtype)),
+            #[cfg(feature = "dtype-map")]
+            D::Map(key, value) => {
+                key.contains_dtype_recursive(dtype) || value.contains_dtype_recursive(dtype)
+            },
+            #[cfg(feature = "dtype-extension")]
+            D::Extension(_, storage) => storage.contains_dtype_recursive(dtype),
             _ => false,
         }
     }
@@ -839,6 +966,140 @@ impl DataType {
         {
             false
         }
+    }
+
+    /// Return the key and value dtypes of a `Map`, or `None` for any other dtype.
+    #[cfg(feature = "dtype-map")]
+    pub fn as_map(&self) -> Option<(&DataType, &DataType)> {
+        match self {
+            DataType::Map(key, value) => Some((key, value)),
+            _ => None,
+        }
+    }
+
+    /// The canonical struct dtype of a `Map` entry.
+    #[cfg(feature = "dtype-map")]
+    fn map_entries(key: DataType, value: DataType) -> DataType {
+        DataType::Struct(vec![
+            Field::new(MAP_KEY_NAME, key),
+            Field::new(MAP_VALUE_NAME, value),
+        ])
+    }
+
+    /// The `Struct {key, value}` entries dtype of this `Map`. Returns `None` for any
+    /// other dtype.
+    #[cfg(feature = "dtype-map")]
+    pub fn map_entries_dtype(&self) -> Option<DataType> {
+        self.as_map()
+            .map(|(key, value)| DataType::map_entries(key.clone(), value.clone()))
+    }
+
+    /// Returns the dtype of the [`Series`] used internally to store this `Map`:
+    /// `List(Struct {key, value})`. Returns `None` for any other dtype.
+    ///
+    /// This is intentionally separate from [`DataType::to_storage`]. Adding `Map`
+    /// there would imply also unwrapping it in [`Series::to_storage`]. Python
+    /// `map_elements` calls the latter, so each map row would reach the UDF as a
+    /// `List(Struct)` value instead of a `dict`.
+    #[cfg(feature = "dtype-map")]
+    pub fn map_storage_dtype(&self) -> Option<DataType> {
+        self.map_entries_dtype()
+            .map(|entries| DataType::List(Box::new(entries)))
+    }
+
+    #[cfg(feature = "dtype-map")]
+    fn map_from_key_value(key: &DataType, value: &DataType) -> PolarsResult<DataType> {
+        key.ensure_valid_map_key()?;
+        value.ensure_valid_map_value()?;
+        Ok(DataType::Map(
+            Box::new(key.clone()),
+            Box::new(value.clone()),
+        ))
+    }
+
+    /// The `Map` dtype whose entries are `self`, or `None` if `self` cannot be Map entries.
+    ///
+    /// Positional, should only be called by Arrow/Parquet readers.
+    #[cfg(feature = "dtype-map")]
+    pub(crate) fn map_from_positional_entries_dtype(&self) -> Option<DataType> {
+        let DataType::Struct(fields) = self else {
+            return None;
+        };
+        let [key, value] = fields.as_slice() else {
+            return None;
+        };
+        DataType::map_from_key_value(key.dtype(), value.dtype()).ok()
+    }
+
+    /// The `Map` dtype whose entries are `self`, matching the `key` and `value` fields by name.
+    #[cfg(feature = "dtype-map")]
+    pub fn map_from_named_entries_dtype(&self) -> PolarsResult<DataType> {
+        crate::chunked_array::logical::ensure_map_entries_dtype(self)?;
+        let DataType::Struct(fields) = self else {
+            unreachable!("map entries are a struct")
+        };
+        let dtype_of = |name: &PlSmallStr| {
+            fields
+                .iter()
+                .find(|f| f.name() == name)
+                .expect("entry fields checked above")
+                .dtype()
+        };
+
+        DataType::map_from_key_value(dtype_of(&MAP_KEY_NAME), dtype_of(&MAP_VALUE_NAME))
+    }
+
+    /// Whether this dtype may be used as the key dtype of a `Map`.
+    #[cfg(feature = "dtype-map")]
+    pub fn is_valid_map_key(&self) -> bool {
+        self.ensure_valid_map_key().is_ok()
+    }
+
+    #[cfg(feature = "dtype-map")]
+    pub fn ensure_valid_map_key(&self) -> PolarsResult<()> {
+        // A top-level Null cannot supply a non-null key; nested nulls are fine.
+        polars_ensure!(
+            !matches!(self, DataType::Null),
+            InvalidOperation: "`{self}` cannot be used as a Map key dtype"
+        );
+        // Neither is supported by the row encoder.
+        polars_ensure!(
+            !self.contains_objects(),
+            InvalidOperation: "`{self}` cannot be used as a Map key dtype: objects cannot be row-encoded"
+        );
+        polars_ensure!(
+            !self.contains_unknown(),
+            InvalidOperation: "`{self}` cannot be used as a Map key dtype: it is not materialized"
+        );
+
+        Ok(())
+    }
+
+    /// Whether this dtype may be used as the value dtype of a `Map`.
+    #[cfg(feature = "dtype-map")]
+    pub fn is_valid_map_value(&self) -> bool {
+        self.ensure_valid_map_value().is_ok()
+    }
+
+    #[cfg(feature = "dtype-map")]
+    pub fn ensure_valid_map_value(&self) -> PolarsResult<()> {
+        // Map values are a `Struct` field, and a struct cannot hold objects.
+        polars_ensure!(
+            !self.contains_objects(),
+            InvalidOperation: "`{self}` cannot be used as a Map value dtype: objects cannot be nested"
+        );
+
+        Ok(())
+    }
+
+    /// Validate the key and value dtypes of a `Map`. Errors for any other dtype.
+    #[cfg(feature = "dtype-map")]
+    pub fn ensure_valid_map_dtype(&self) -> PolarsResult<()> {
+        let DataType::Map(key, value) = self else {
+            polars_bail!(InvalidOperation: "`{self}` is not a Map dtype");
+        };
+        key.ensure_valid_map_key()?;
+        value.ensure_valid_map_value()
     }
 
     pub fn is_extension(&self) -> bool {
@@ -1050,6 +1311,17 @@ impl DataType {
                 Ok(ArrowDataType::Struct(fields))
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
+            #[cfg(feature = "dtype-map")]
+            Map(_, _) => {
+                let entries = self.map_entries_dtype().unwrap();
+                let mut field = entries.to_arrow_field(MAP_ENTRIES_NAME, compat_level);
+                // Neither the entries field nor the key field may be nullable.
+                field.is_nullable = false;
+                if let ArrowDataType::Struct(fields) = &mut field.dtype {
+                    fields[0].is_nullable = false;
+                }
+                Ok(ArrowDataType::Map(Box::new(field), false))
+            },
             #[cfg(feature = "dtype-extension")]
             Extension(typ, inner) => Ok(ArrowDataType::Extension(Box::new(
                 arrow::datatypes::ExtensionType {
@@ -1081,6 +1353,10 @@ impl DataType {
             Array(field, _) => field.is_nested_null(),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => fields.iter().all(|fld| fld.dtype.is_nested_null()),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => key.is_nested_null() && value.is_nested_null(),
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.is_nested_null(),
             _ => false,
         }
     }
@@ -1090,13 +1366,18 @@ impl DataType {
     /// Allows (nested) Null types in this type to match any type in the schema,
     /// but not vice versa. In such a case Ok(true) is returned, because a cast
     /// is necessary. If no cast is necessary Ok(false) is returned, and an
-    /// error is returned if the types are incompatible.
+    /// error is returned if the types, container shapes, or Struct field names
+    /// are incompatible.
     pub fn matches_schema_type(&self, schema_type: &DataType) -> PolarsResult<bool> {
         match (self, schema_type) {
             (DataType::List(l), DataType::List(r)) => l.matches_schema_type(r),
             #[cfg(feature = "dtype-array")]
             (DataType::Array(l, sl), DataType::Array(r, sr)) => {
-                Ok(l.matches_schema_type(r)? && sl == sr)
+                polars_ensure!(
+                    sl == sr,
+                    SchemaMismatch: "array widths differ: {sl} vs {sr}"
+                );
+                l.matches_schema_type(r)
             },
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(l), DataType::Struct(r)) => {
@@ -1105,9 +1386,20 @@ impl DataType {
                 }
                 let mut must_cast = false;
                 for (l, r) in l.iter().zip(r.iter()) {
+                    polars_ensure!(
+                        l.name() == r.name(),
+                        SchemaMismatch: "struct field names differ: `{}` vs `{}`",
+                        l.name(), r.name(),
+                    );
                     must_cast |= l.dtype.matches_schema_type(&r.dtype)?;
                 }
                 Ok(must_cast)
+            },
+            #[cfg(feature = "dtype-map")]
+            (DataType::Map(lk, lv), DataType::Map(rk, rv)) => {
+                let key_cast = lk.matches_schema_type(rk)?;
+                let value_cast = lv.matches_schema_type(rv)?;
+                Ok(key_cast || value_cast)
             },
             (DataType::Null, DataType::Null) => Ok(false),
             #[cfg(feature = "dtype-decimal")]
@@ -1250,6 +1542,8 @@ impl Display for DataType {
             DataType::Enum(_, _) => "enum",
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(key, value) => return write!(f, "map[{key}, {value}]"),
             #[cfg(feature = "dtype-extension")]
             DataType::Extension(typ, _) => return write!(f, "ext[{}]", typ.0.dyn_display()),
             DataType::Unknown(kind) => match kind {
@@ -1334,6 +1628,8 @@ impl std::fmt::Debug for DataType {
             #[cfg(feature = "object")]
             Object(_) => write!(f, "Object"),
             Null => write!(f, "Null"),
+            #[cfg(feature = "dtype-map")]
+            Map(key, value) => write!(f, "Map({key:?}, {value:?})"),
             #[cfg(feature = "dtype-extension")]
             Extension(typ, inner) => write!(f, "Extension({}, {inner:?})", typ.0.dyn_debug()),
             Unknown(kind) => write!(f, "Unknown({kind:?})"),
@@ -1367,6 +1663,11 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
                 Ok(Field::new(l.name().clone(), merged))
             }).collect::<PolarsResult<Vec<_>>>()?;
             Struct(fields)
+        },
+        #[cfg(feature = "dtype-map")]
+        (Map(key_l, value_l), Map(key_r, value_r)) => {
+            polars_ensure!(key_l == key_r, ComputeError: "cannot combine maps with different key types ({key_l} != {key_r})");
+            Map(key_l.clone(), Box::new(merge_dtypes(value_l, value_r)?))
         },
         #[cfg(feature = "dtype-array")]
         (Array(inner_l, width_l), Array(inner_r, width_r)) => {
@@ -1406,6 +1707,14 @@ fn collect_nested_types(
             for field in fields {
                 collect_nested_types(field.dtype(), result, include_compound_types);
             }
+        },
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(key, value) => {
+            if include_compound_types {
+                result.insert(dtype.clone());
+            }
+            collect_nested_types(key, result, include_compound_types);
+            collect_nested_types(value, result, include_compound_types);
         },
         _ => {
             result.insert(dtype.clone());
@@ -1556,6 +1865,30 @@ impl<'d, 'f> DtypeVisitor<'d, 'f> {
                     } else {
                         assert_eq!(new_fields.len(), fields.len());
                         Cow::Owned(DataType::Struct(new_fields))
+                    }
+                },
+                _ => unreachable!(),
+            },
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(..) => match dtype {
+                Cow::Owned(DataType::Map(mut key, mut value)) => {
+                    self.visit_ref_mut(key.as_mut())?;
+                    self.visit_ref_mut(value.as_mut())?;
+                    Cow::Owned(DataType::Map(key, value))
+                },
+                Cow::Borrowed(DataType::Map(key, value)) => {
+                    let new_key = self.visit_rec(Cow::Borrowed(key.as_ref()))?;
+                    let new_value = self.visit_rec(Cow::Borrowed(value.as_ref()))?;
+
+                    if std::ptr::eq(new_key.as_ref(), key.as_ref())
+                        && std::ptr::eq(new_value.as_ref(), value.as_ref())
+                    {
+                        dtype
+                    } else {
+                        Cow::Owned(DataType::Map(
+                            Box::new(new_key.into_owned()),
+                            Box::new(new_value.into_owned()),
+                        ))
                     }
                 },
                 _ => unreachable!(),
