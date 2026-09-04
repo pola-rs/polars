@@ -1,7 +1,6 @@
 use std::hash::BuildHasher;
 
 use arrow::bitmap::utils::get_bit_unchecked;
-use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::hashing::{_boost_hash_combine, folded_multiply};
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
@@ -207,9 +206,8 @@ impl VecHash for StringChunked {
     }
 }
 
-// used in polars-pipe
-pub fn _hash_binary_array(
-    arr: &BinaryArray<i64>,
+fn hash_binary_array(
+    arr: &PlBinaryArray,
     random_state: PlSeedableRandomStateQuality,
     buf: &mut Vec<u64>,
 ) {
@@ -218,7 +216,7 @@ pub fn _hash_binary_array(
         // use the null_hash as seed to get a hash determined by `random_state` that is passed
         buf.extend(arr.values_iter().map(|v| xxh3_64_with_seed(v, null_h)))
     } else {
-        buf.extend(arr.into_iter().map(|opt_v| match opt_v {
+        buf.extend(arr.iter().map(|opt_v| match opt_v {
             Some(v) => xxh3_64_with_seed(v, null_h),
             None => null_h,
         }))
@@ -226,7 +224,7 @@ pub fn _hash_binary_array(
 }
 
 fn hash_binview_array(
-    arr: &BinaryViewArray,
+    arr: &PlBinaryViewArray,
     random_state: PlSeedableRandomStateQuality,
     buf: &mut Vec<u64>,
 ) {
@@ -235,7 +233,7 @@ fn hash_binview_array(
         // use the null_hash as seed to get a hash determined by `random_state` that is passed
         buf.extend(arr.values_iter().map(|v| xxh3_64_with_seed(v, null_h)))
     } else {
-        buf.extend(arr.into_iter().map(|opt_v| match opt_v {
+        buf.extend(arr.iter().map(|opt_v| match opt_v {
             Some(v) => xxh3_64_with_seed(v, null_h),
             None => null_h,
         }))
@@ -251,7 +249,7 @@ impl VecHash for BinaryChunked {
         buf.clear();
         buf.reserve(self.len());
         self.downcast_iter()
-            .for_each(|arr| hash_binview_array(&chunk_to_arrow(arr), random_state.clone(), buf));
+            .for_each(|arr| hash_binview_array(arr, random_state.clone(), buf));
         Ok(())
     }
 
@@ -304,7 +302,7 @@ impl VecHash for BinaryOffsetChunked {
         buf.clear();
         buf.reserve(self.len());
         self.downcast_iter()
-            .for_each(|arr| _hash_binary_array(&chunk_to_arrow(arr), random_state.clone(), buf));
+            .for_each(|arr| hash_binary_array(arr, random_state.clone(), buf));
         Ok(())
     }
 

@@ -9,12 +9,10 @@ use std::borrow::Cow;
 
 pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::legacy::kernels::take_agg::*;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
-use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::rolling::no_nulls::{
     MaxWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
 };
@@ -25,6 +23,7 @@ use polars_compute::rolling::{
     RollingQuantileParams, RollingVarParams, SumWindow, quantile_filter, rolling_argmax_by,
     rolling_argmin_by,
 };
+use polars_compute::take_agg::*;
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::float::IsFloat;
 #[cfg(feature = "dtype-f16")]
@@ -513,10 +512,7 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
-                // TODO(polars-array-scalar): the kernels below are the Arrow ones, so a scalar
-                // chunk is written out by the crossing over to Arrow.
-                let chunk = ca.downcast_iter().next().unwrap();
-                let arr = chunk_to_arrow(chunk);
+                let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx::<T, _>(groups, |(first, idx)| {
                     debug_assert!(idx.len() <= arr.len());
@@ -524,12 +520,12 @@ where
                         None
                     } else if idx.len() == 1 {
                         // SAFETY: the group's index is in bounds of this array.
-                        chunk.get_unchecked(first as usize)
+                        arr.get_unchecked(first as usize)
                     } else if no_nulls {
-                        take_agg_no_null_primitive_iter_unchecked(&arr, idx2usize(idx))
+                        take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
                             .reduce(|a, b| a.min_ignore_nan(b))
                     } else {
-                        take_agg_primitive_iter_unchecked(&arr, idx2usize(idx))
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
                             .reduce(|a, b| a.min_ignore_nan(b))
                     }
                 })
@@ -702,10 +698,7 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
-                // TODO(polars-array-scalar): the kernels below are the Arrow ones, so a scalar
-                // chunk is written out by the crossing over to Arrow.
-                let chunk = ca.downcast_iter().next().unwrap();
-                let arr = chunk_to_arrow(chunk);
+                let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx::<T, _>(groups, |(first, idx)| {
                     debug_assert!(idx.len() <= arr.len());
@@ -713,12 +706,12 @@ where
                         None
                     } else if idx.len() == 1 {
                         // SAFETY: the group's index is in bounds of this array.
-                        chunk.get_unchecked(first as usize)
+                        arr.get_unchecked(first as usize)
                     } else if no_nulls {
-                        take_agg_no_null_primitive_iter_unchecked(&arr, idx2usize(idx))
+                        take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
                             .reduce(|a, b| a.max_ignore_nan(b))
                     } else {
-                        take_agg_primitive_iter_unchecked(&arr, idx2usize(idx))
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
                             .reduce(|a, b| a.max_ignore_nan(b))
                     }
                 })
@@ -876,10 +869,7 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
-                // TODO(polars-array-scalar): the kernels below are the Arrow ones, so a scalar
-                // chunk is written out by the crossing over to Arrow.
-                let chunk = ca.downcast_iter().next().unwrap();
-                let arr = chunk_to_arrow(chunk);
+                let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx_no_null::<T, _>(groups, |(first, idx)| {
                     debug_assert!(idx.len() <= self.len());
@@ -887,24 +877,23 @@ where
                         T::Native::zero()
                     } else if idx.len() == 1 {
                         // SAFETY: the group's index is in bounds of this array.
-                        chunk
-                            .get_unchecked(first as usize)
+                        arr.get_unchecked(first as usize)
                             .unwrap_or(T::Native::zero())
                     } else if no_nulls {
                         if T::Native::is_float() {
-                            take_agg_no_null_primitive_iter_unchecked(&arr, idx2usize(idx))
+                            take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
                                 .fold(KahanSum::default(), |k, x| k + x)
                                 .sum()
                         } else {
-                            take_agg_no_null_primitive_iter_unchecked(&arr, idx2usize(idx))
+                            take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
                                 .fold(T::Native::zero(), |a, b| a + b)
                         }
                     } else if T::Native::is_float() {
-                        take_agg_primitive_iter_unchecked(&arr, idx2usize(idx))
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
                             .fold(KahanSum::default(), |k, x| k + x)
                             .sum()
                     } else {
-                        take_agg_primitive_iter_unchecked(&arr, idx2usize(idx))
+                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
                             .fold(T::Native::zero(), |a, b| a + b)
                     }
                 })
@@ -967,10 +956,7 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
-                // TODO(polars-array-scalar): the kernels below are the Arrow ones, so a scalar
-                // chunk is written out by the crossing over to Arrow.
-                let chunk = ca.downcast_iter().next().unwrap();
-                let arr = chunk_to_arrow(chunk);
+                let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx::<T, _>(groups, |(first, idx)| {
                     // this can fail due to a bug in lazy code.
@@ -983,12 +969,11 @@ where
                         None
                     } else if idx.len() == 1 {
                         // SAFETY: the group's index is in bounds of this array.
-                        chunk
-                            .get_unchecked(first as usize)
+                        arr.get_unchecked(first as usize)
                             .map(|sum| sum.to_f64().unwrap())
                     } else if no_nulls {
                         Some(
-                            take_agg_no_null_primitive_iter_unchecked(&arr, idx2usize(idx))
+                            take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
                                 .fold(KahanSum::default(), |a, b| {
                                     a + b.to_f64().unwrap_unchecked()
                                 })
@@ -997,7 +982,7 @@ where
                         )
                     } else {
                         take_agg_primitive_iter_unchecked_count_nulls(
-                            &arr,
+                            arr,
                             idx2usize(idx),
                             KahanSum::default(),
                             |a, b| a + b.to_f64().unwrap_unchecked(),
@@ -1058,10 +1043,7 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca = ca.rechunk();
-                // TODO(polars-array-scalar): the kernels below are the Arrow ones, so a scalar
-                // chunk is written out by the crossing over to Arrow.
-                let chunk = ca.downcast_iter().next().unwrap();
-                let arr = chunk_to_arrow(chunk);
+                let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<T, _>(groups, |idx| {
                     debug_assert!(idx.len() <= ca.len());
@@ -1069,9 +1051,9 @@ where
                         return None;
                     }
                     let out = if no_nulls {
-                        take_var_no_null_primitive_iter_unchecked(&arr, idx2usize(idx), ddof)
+                        take_var_no_null_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
                     } else {
-                        take_var_nulls_primitive_iter_unchecked(&arr, idx2usize(idx), ddof)
+                        take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
                     };
                     out.map(|flt| NumCast::from(flt).unwrap())
                 })
@@ -1138,10 +1120,7 @@ where
         let ca = &self.0.rechunk();
         match groups {
             GroupsType::Idx(groups) => {
-                // TODO(polars-array-scalar): the kernels below are the Arrow ones, so a scalar
-                // chunk is written out by the crossing over to Arrow.
-                let chunk = ca.downcast_iter().next().unwrap();
-                let arr = chunk_to_arrow(chunk);
+                let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<T, _>(groups, |idx| {
                     debug_assert!(idx.len() <= ca.len());
@@ -1149,9 +1128,9 @@ where
                         return None;
                     }
                     let out = if no_nulls {
-                        take_var_no_null_primitive_iter_unchecked(&arr, idx2usize(idx), ddof)
+                        take_var_no_null_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
                     } else {
-                        take_var_nulls_primitive_iter_unchecked(&arr, idx2usize(idx), ddof)
+                        take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
                     };
                     out.map(|flt| NumCast::from(flt.sqrt()).unwrap())
                 })
@@ -1267,10 +1246,7 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
-                // TODO(polars-array-scalar): the kernels below are the Arrow ones, so a scalar
-                // chunk is written out by the crossing over to Arrow.
-                let chunk = ca.downcast_get(0).unwrap();
-                let arr = chunk_to_arrow(chunk);
+                let arr = ca.downcast_get(0).unwrap();
                 _agg_helper_idx::<Float64Type, _>(groups, |(first, idx)| {
                     // this can fail due to a bug in lazy code.
                     // here users can create filters in aggregations
@@ -1285,14 +1261,14 @@ where
                     } else {
                         match (self.has_nulls(), self.chunks.len()) {
                             (false, 1) => Some(
-                                take_agg_no_null_primitive_iter_unchecked(&arr, idx2usize(idx))
+                                take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
                                     .fold(KahanSum::default(), |a, b| a + b.to_f64().unwrap())
                                     .sum()
                                     / idx.len() as f64,
                             ),
                             (_, 1) => {
                                 take_agg_primitive_iter_unchecked_count_nulls(
-                                    &arr,
+                                    arr,
                                     idx2usize(idx),
                                     KahanSum::default(),
                                     |a, b| a + b.to_f64().unwrap(),
@@ -1341,10 +1317,7 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca_self = self.rechunk();
-                // TODO(polars-array-scalar): the kernels below are the Arrow ones, so a scalar
-                // chunk is written out by the crossing over to Arrow.
-                let chunk = ca_self.downcast_iter().next().unwrap();
-                let arr = chunk_to_arrow(chunk);
+                let arr = ca_self.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
                     debug_assert!(idx.len() <= arr.len());
@@ -1352,9 +1325,9 @@ where
                         return None;
                     }
                     if no_nulls {
-                        take_var_no_null_primitive_iter_unchecked(&arr, idx2usize(idx), ddof)
+                        take_var_no_null_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
                     } else {
-                        take_var_nulls_primitive_iter_unchecked(&arr, idx2usize(idx), ddof)
+                        take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
                     }
                 })
             },
@@ -1394,10 +1367,7 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca_self = self.rechunk();
-                // TODO(polars-array-scalar): the kernels below are the Arrow ones, so a scalar
-                // chunk is written out by the crossing over to Arrow.
-                let chunk = ca_self.downcast_iter().next().unwrap();
-                let arr = chunk_to_arrow(chunk);
+                let arr = ca_self.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
                     debug_assert!(idx.len() <= self.len());
@@ -1405,9 +1375,9 @@ where
                         return None;
                     }
                     let out = if no_nulls {
-                        take_var_no_null_primitive_iter_unchecked(&arr, idx2usize(idx), ddof)
+                        take_var_no_null_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
                     } else {
-                        take_var_nulls_primitive_iter_unchecked(&arr, idx2usize(idx), ddof)
+                        take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
                     };
                     out.map(|v| v.sqrt())
                 })

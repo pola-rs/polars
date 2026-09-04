@@ -1,7 +1,6 @@
-use arrow::legacy::kernels::set::set_at_nulls;
 use num_traits::Float;
-use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::nan::{is_nan, is_not_nan};
+use polars_compute::set::set_at_nulls;
 use polars_utils::float16::pf16;
 use polars_utils::total_ord::{canonical_f16, canonical_f32, canonical_f64};
 
@@ -29,10 +28,9 @@ where
     #[must_use]
     /// Convert missing values to `NaN` values.
     pub fn none_to_nan(&self) -> Self {
-        // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
         let chunks = self
             .downcast_iter()
-            .map(|arr| ToArrow::from_arrow(&set_at_nulls(&chunk_to_arrow(arr), T::Native::nan())));
+            .map(|arr| set_at_nulls(arr, T::Native::nan()));
         ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }
 }

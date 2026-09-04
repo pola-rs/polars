@@ -1,6 +1,5 @@
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::legacy::kernels::set::{scatter_single_non_null, set_with_mask};
-use polars_array::arrow::bridge::chunk_to_arrow;
+use polars_compute::set::{scatter_single_non_null, set_with_mask};
 
 use crate::prelude::*;
 use crate::utils::align_chunks_binary;
@@ -61,18 +60,9 @@ where
             if let Some(value) = value {
                 // Fast path uses kernel.
                 if self.chunks.len() == 1 {
-                    // The kernel is the Arrow one, so the chunk crosses over and the result
-                    // crosses back — see `polars_array::arrow::bridge`.
-                    let arr = scatter_single_non_null(
-                        &chunk_to_arrow(self.downcast_iter().next().unwrap()),
-                        idx,
-                        value,
-                        T::get_static_dtype().to_arrow(CompatLevel::newest()),
-                    )?;
-                    return Ok(Self::with_chunk(
-                        self.name().clone(),
-                        ToArrow::from_arrow(&arr),
-                    ));
+                    let arr =
+                        scatter_single_non_null(self.downcast_iter().next().unwrap(), idx, value)?;
+                    return Ok(Self::with_chunk(self.name().clone(), arr));
                 }
                 // Other fast path. Slightly slower as it does not do a memcpy.
                 else {
@@ -111,7 +101,7 @@ where
     fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> PolarsResult<Self> {
         check_bounds!(self, mask);
 
-        // Fast path uses the kernel in polars-arrow.
+        // Fast path uses the kernel in polars-compute.
         if let (Some(value), false) = (value, mask.has_nulls()) {
             let (left, mask) = align_chunks_binary(self, mask);
 
@@ -119,17 +109,7 @@ where
             let chunks = left
                 .downcast_iter()
                 .zip(mask.downcast_iter())
-                .map(|(arr, mask)| {
-                    // The kernel is the Arrow one, so both chunks cross over and the result
-                    // crosses back — see `polars_array::arrow::bridge`.
-                    let out = set_with_mask(
-                        &chunk_to_arrow(arr),
-                        &chunk_to_arrow(mask),
-                        value,
-                        T::get_static_dtype().to_arrow(CompatLevel::newest()),
-                    );
-                    <T::Array as ToArrow>::from_arrow(&out)
-                });
+                .map(|(arr, mask)| set_with_mask(arr, mask, value));
             Ok(ChunkedArray::from_chunk_iter(self.name().clone(), chunks))
         } else {
             let mask = mask.rechunk();

@@ -100,29 +100,25 @@ where
         match self.is_sorted_flag() {
             IsSorted::Ascending | IsSorted::Descending => {
                 if self.null_count() > 0 {
-                    let mut arr = MutablePrimitiveArray::with_capacity(self.len());
+                    let mut iter = self.iter();
+                    let arr: T::Array = match iter.next() {
+                        None => T::Array::new_empty(),
+                        Some(first) => {
+                            // The elements are sorted, so an element is unique exactly where it
+                            // differs from the one before it.
+                            let mut last = first.to_total_ord();
+                            std::iter::once(first)
+                                .chain(iter.filter(move |opt_val| {
+                                    let opt_val_tot_ord = opt_val.to_total_ord();
+                                    let out = opt_val_tot_ord != last;
+                                    last = opt_val_tot_ord;
+                                    out
+                                }))
+                                .collect_arr()
+                        },
+                    };
 
-                    if !self.is_empty() {
-                        let mut iter = self.iter();
-                        let last = iter.next().unwrap();
-                        arr.push(last);
-                        let mut last = last.to_total_ord();
-
-                        let to_extend = iter.filter(|opt_val| {
-                            let opt_val_tot_ord = opt_val.to_total_ord();
-                            let out = opt_val_tot_ord != last;
-                            last = opt_val_tot_ord;
-                            out
-                        });
-
-                        arr.extend(to_extend);
-                    }
-
-                    let arr: PrimitiveArray<T::Native> = arr.into();
-                    Ok(ChunkedArray::with_chunk(
-                        self.name().clone(),
-                        ToArrow::from_arrow(&arr),
-                    ))
+                    Ok(ChunkedArray::with_chunk(self.name().clone(), arr))
                 } else {
                     let mask = self.not_equal_missing(&self.shift(1));
                     self.filter(&mask)

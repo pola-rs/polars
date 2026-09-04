@@ -1338,21 +1338,13 @@ pub(crate) mod test {
         let before = arr
             .chunks()
             .iter()
-            .map(|arr| {
-                arrow::compute::aggregate::estimated_bytes_size(
-                    &*polars_array::arrow::export::to_arrow(&**arr),
-                )
-            })
+            .map(|arr| polars_compute::size::estimated_bytes_size(&**arr))
             .sum::<usize>();
         arr.shrink_to_fit();
         let after = arr
             .chunks()
             .iter()
-            .map(|arr| {
-                arrow::compute::aggregate::estimated_bytes_size(
-                    &*polars_array::arrow::export::to_arrow(&**arr),
-                )
-            })
+            .map(|arr| polars_compute::size::estimated_bytes_size(&**arr))
             .sum::<usize>();
         assert!(before > after);
     }

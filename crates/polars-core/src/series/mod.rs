@@ -34,10 +34,10 @@ use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
-use arrow::compute::aggregate::estimated_bytes_size;
 pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
+use polars_compute::size::estimated_bytes_size;
 use polars_error::feature_gated;
 use polars_utils::broadcast::BroadcastLength;
 use polars_utils::float::IsFloat;
@@ -1088,8 +1088,7 @@ impl Series {
         size += self
             .chunks()
             .iter()
-            // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
-            .map(|arr| estimated_bytes_size(&*polars_array::arrow::export::to_arrow(&**arr)))
+            .map(|arr| estimated_bytes_size(&**arr))
             .sum::<usize>();
 
         size

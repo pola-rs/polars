@@ -475,27 +475,19 @@ fn any_values_to_binary_offset(
     values: &[AnyValue],
     strict: bool,
 ) -> PolarsResult<BinaryOffsetChunked> {
-    let mut builder = MutableBinaryArray::<i64>::new();
-    for av in values {
-        match av {
-            AnyValue::Binary(s) => builder.push(Some(*s)),
-            AnyValue::BinaryOwned(s) => builder.push(Some(&**s)),
-            AnyValue::Null => builder.push_null(),
-            av => {
-                if strict {
-                    return Err(invalid_value_error(&DataType::Binary, av));
-                } else {
-                    builder.push_null();
-                };
-            },
-        }
-    }
-    // The builder is the Arrow one, so the array crosses over — see `polars_array::arrow::bridge`.
-    let arr: BinaryArray<i64> = builder.into();
-    Ok(BinaryOffsetChunked::with_chunk(
-        Default::default(),
-        ToArrow::from_arrow(&arr),
-    ))
+    let arr: PlBinaryArray = values
+        .iter()
+        .map(|av| match av {
+            AnyValue::Binary(s) => Ok(Some(*s)),
+            AnyValue::BinaryOwned(s) => Ok(Some(&**s)),
+            AnyValue::Null => Ok(None),
+            av if strict => Err(invalid_value_error(&DataType::Binary, av)),
+            // A value of another type is not binary, so it reads as a missing one.
+            _ => Ok(None),
+        })
+        .try_collect_arr()?;
+
+    Ok(BinaryOffsetChunked::with_chunk(Default::default(), arr))
 }
 
 #[cfg(feature = "dtype-date")]

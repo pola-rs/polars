@@ -1,7 +1,7 @@
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::legacy::kernels::set::set_at_nulls;
 use bytemuck::Zeroable;
 use num_traits::{NumCast, One, Zero};
+use polars_compute::set::set_at_nulls;
 use polars_utils::itertools::Itertools;
 
 use crate::prelude::*;
@@ -405,7 +405,8 @@ where
     T: PolarsNumericType,
 {
     fn fill_null_with_values(&self, value: T::Native) -> PolarsResult<Self> {
-        Ok(self.apply_kernel(&|arr| Box::new(set_at_nulls(arr, value))))
+        let chunks = self.downcast_iter().map(|arr| set_at_nulls(arr, value));
+        Ok(ChunkedArray::from_chunk_iter(self.name().clone(), chunks))
     }
 }
 
