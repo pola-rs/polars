@@ -10,9 +10,9 @@
 //! mask of one bit per element wherever it has a null under it at all. Neither buffer is written
 //! out on the way in.
 
+use arrow::array::View;
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
-use arrow::array::View;
 use arrow::types::NativeType;
 use polars_array::{
     PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmapRef, PlBooleanArray,
@@ -976,7 +976,10 @@ mod tests {
         // SAFETY: as above.
         let n_by_index = unsafe { state.n_unique_idx(values, &all) };
         let n_by_slice = state.n_unique_slice(values, 0, length);
-        assert_eq!(n_by_index, n_by_slice, "the two counts over {values:?} disagree");
+        assert_eq!(
+            n_by_index, n_by_slice,
+            "the two counts over {values:?} disagree"
+        );
         assert_eq!(
             n_by_slice,
             by_slice.len() as IdxSize,
@@ -1036,7 +1039,10 @@ mod tests {
         assert_eq!(unique_of(&PlNullArray::new(4)), (vec![0], 1));
 
         // An empty chunk holds no element at all.
-        assert_eq!(unique_of(&PlPrimitiveArray::<i32>::new_empty()), (vec![], 0));
+        assert_eq!(
+            unique_of(&PlPrimitiveArray::<i32>::new_empty()),
+            (vec![], 0)
+        );
     }
 
     /// A chunk that lays its values out one per element is walked through a hashset, as it always
@@ -1062,7 +1068,12 @@ mod tests {
         assert!(repeats_one_value(&repeated));
         assert_eq!(unique_of(&repeated), (vec![0], 1));
 
-        let views = PlBinaryViewArray::from_iter([Some(&b"fig"[..]), None, Some(&b"fig"[..]), Some(&b"pear"[..])]);
+        let views = PlBinaryViewArray::from_iter([
+            Some(&b"fig"[..]),
+            None,
+            Some(&b"fig"[..]),
+            Some(&b"pear"[..]),
+        ]);
         assert_eq!(unique_of(&views), (vec![0, 1, 3], 3));
 
         let repeated = PlBinaryViewArray::new_scalar(b"fig", 64);
@@ -1090,8 +1101,9 @@ mod tests {
         assert_eq!(state.n_unique_slice(&arr, 0, 0), 0);
 
         // And a repeated one, where the mask cuts the run either side of where it changes.
-        let repeated = PlPrimitiveArray::new_scalar(7i32, 6)
-            .with_validity(Some([true, true, false, false, true, true].into_iter().collect()));
+        let repeated = PlPrimitiveArray::new_scalar(7i32, 6).with_validity(Some(
+            [true, true, false, false, true, true].into_iter().collect(),
+        ));
         let mut state = amortized_unique_like(&repeated);
 
         let mut idxs = UnitVec::new();

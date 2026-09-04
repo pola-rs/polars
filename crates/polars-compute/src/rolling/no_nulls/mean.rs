@@ -10,7 +10,7 @@ pub fn rolling_mean<T>(
     center: bool,
     weights: Option<&[f64]>,
     _params: Option<RollingFnParams>,
-) -> PolarsResult<ArrayRef>
+) -> PolarsResult<Box<dyn PlArray>>
 where
     T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
 {

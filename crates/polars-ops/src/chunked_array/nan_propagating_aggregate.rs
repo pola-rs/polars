@@ -2,7 +2,7 @@
 use arrow::legacy::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
 };
-use polars_array::arrow::bridge::{chunk_from_arrow, chunk_to_arrow};
+use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::rolling;
 use polars_compute::rolling::no_nulls::{MaxWindow, MinWindow};
 use polars_core::frame::group_by::aggregations::{
@@ -122,8 +122,7 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                         _,
                     >(values, validity, offset_iter, None),
                 };
-                ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, chunk_from_arrow(&arr))
-                    .into_series()
+                ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);
@@ -197,8 +196,7 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                         _,
                     >(values, validity, offset_iter, None),
                 };
-                ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, chunk_from_arrow(&arr))
-                    .into_series()
+                ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);

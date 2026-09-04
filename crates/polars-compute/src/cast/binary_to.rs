@@ -2,6 +2,7 @@ use arrow::array::*;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::{Offset, Offsets};
 use arrow::types::NativeType;
+#[cfg(feature = "dtype-f16")]
 use num_traits::AsPrimitive;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;

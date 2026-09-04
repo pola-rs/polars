@@ -1,7 +1,5 @@
 use std::fmt::Debug;
 
-use arrow::array::PrimitiveArray;
-use arrow::datatypes::ArrowDataType;
 use arrow::legacy::error::PolarsResult;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;
@@ -54,7 +52,7 @@ pub(super) fn rolling_apply_agg_window<Agg, T, O, Fo>(
     min_periods: usize,
     det_offsets_fn: Fo,
     params: Option<RollingFnParams>,
-) -> PolarsResult<ArrayRef>
+) -> PolarsResult<Box<dyn PlArray>>
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
     Agg: RollingAggWindowNoNulls<T, O>,
@@ -75,7 +73,7 @@ where
             agg_window.get_agg(idx)
         }
     });
-    let arr = PrimitiveArray::from_trusted_len_iter(out);
+    let arr: PlPrimitiveArray<O> = out.collect_arr_trusted();
     Ok(Box::new(arr))
 }
 
@@ -87,7 +85,7 @@ pub(super) fn rolling_apply_weights<T, Fo, Fa>(
     aggregator: Fa,
     weights: &[T],
     centered: bool,
-) -> PolarsResult<ArrayRef>
+) -> PolarsResult<Box<dyn PlArray>>
 where
     T: NativeType + num_traits::Zero + std::ops::Div<Output = T> + Copy,
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
@@ -122,11 +120,9 @@ where
         .collect_trusted::<Vec<T>>();
 
     let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
-    Ok(Box::new(PrimitiveArray::new(
-        ArrowDataType::from(T::PRIMITIVE),
-        out.into(),
-        validity.map(|b| b.into()),
-    )))
+    Ok(Box::new(
+        PlPrimitiveArray::from_vec(out).with_validity(validity.map(|b| b.into())),
+    ))
 }
 
 fn compute_var_weights<T>(vals: &[T], weights: &[T]) -> T

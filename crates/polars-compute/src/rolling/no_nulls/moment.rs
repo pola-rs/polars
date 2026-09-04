@@ -12,7 +12,7 @@ pub fn rolling_var<T>(
     center: bool,
     weights: Option<&[f64]>,
     params: Option<RollingFnParams>,
-) -> PolarsResult<ArrayRef>
+) -> PolarsResult<Box<dyn PlArray>>
 where
     T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
 {
@@ -57,7 +57,7 @@ pub fn rolling_skew<T>(
     min_periods: usize,
     center: bool,
     params: Option<RollingFnParams>,
-) -> PolarsResult<ArrayRef>
+) -> PolarsResult<Box<dyn PlArray>>
 where
     T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
 {
@@ -80,7 +80,7 @@ pub fn rolling_kurtosis<T>(
     min_periods: usize,
     center: bool,
     params: Option<RollingFnParams>,
-) -> PolarsResult<ArrayRef>
+) -> PolarsResult<Box<dyn PlArray>>
 where
     T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
 {
@@ -106,19 +106,16 @@ mod test {
         let values = &[1.0f64, 5.0, 3.0, 4.0];
 
         let out = rolling_var(values, 2, 2, false, None, None).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[None, Some(8.0), Some(2.0), Some(0.5)]);
 
         let testpars = Some(RollingFnParams::Var(RollingVarParams { ddof: 0 }));
         let out = rolling_var(values, 2, 2, false, None, testpars).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[None, Some(4.0), Some(1.0), Some(0.25)]);
 
         let out = rolling_var(values, 2, 1, false, None, None).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         // we cannot compare nans, so we compare the string values
         assert_eq!(
             format!("{:?}", out.as_slice()),
@@ -127,8 +124,7 @@ mod test {
         // test nan handling.
         let values = &[-10.0, 2.0, 3.0, f64::nan(), 5.0, 6.0, 7.0];
         let out = rolling_var(values, 3, 3, false, None, None).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         // we cannot compare nans, so we compare the string values
         assert_eq!(
             format!("{:?}", out.as_slice()),

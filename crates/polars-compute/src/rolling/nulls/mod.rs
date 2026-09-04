@@ -50,7 +50,7 @@ pub(super) fn rolling_apply_agg_window<Agg, T, Out, Fo>(
     min_periods: usize,
     det_offsets_fn: Fo,
     params: Option<RollingFnParams>,
-) -> ArrayRef
+) -> Box<dyn PlArray>
 where
     Agg: RollingAggWindowNulls<T, Out>,
     T: NativeType,
@@ -90,65 +90,50 @@ where
         })
         .collect_trusted::<Vec<_>>();
 
-    Box::new(PrimitiveArray::new(
-        Out::PRIMITIVE.into(),
-        out.into(),
-        Some(validity.into()),
-    ))
+    Box::new(PlPrimitiveArray::from_vec(out).with_validity(Some(validity.into())))
 }
 
 #[cfg(test)]
 mod test {
-    use arrow::array::{Array, Int32Array};
-    use arrow::datatypes::ArrowDataType;
-    use polars_buffer::Buffer;
     use polars_utils::min_max::MaxIgnoreNan;
 
     use super::*;
+    use crate::rolling::flat_chunk;
     use crate::rolling::min_max::MinMaxWindow;
 
-    fn get_null_arr() -> PrimitiveArray<f64> {
+    fn get_null_arr() -> Flat<PlPrimitiveArray<f64>> {
         // 1, None, -1, 4
-        let buf = Buffer::from(vec![1.0, 0.0, -1.0, 4.0]);
-        PrimitiveArray::new(
-            ArrowDataType::Float64,
-            buf,
+        flat_chunk(
+            vec![1.0, 0.0, -1.0, 4.0],
             Some(Bitmap::from(&[true, false, true, true])),
         )
     }
 
     #[test]
     fn test_rolling_sum_nulls() {
-        let buf = Buffer::from(vec![1.0, 2.0, 3.0, 4.0]);
-        let arr = &PrimitiveArray::new(
-            ArrowDataType::Float64,
-            buf,
+        let arr = &flat_chunk(
+            vec![1.0f64, 2.0, 3.0, 4.0],
             Some(Bitmap::from(&[true, false, true, true])),
         );
 
         let out = rolling_sum(arr, 2, 2, false, None, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[None, None, None, Some(7.0)]);
 
         let out = rolling_sum(arr, 2, 1, false, None, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(3.0), Some(7.0)]);
 
         let out = rolling_sum(arr, 4, 1, false, None, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(4.0), Some(8.0)]);
 
         let out = rolling_sum(arr, 4, 1, true, None, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(1.0), Some(4.0), Some(8.0), Some(7.0)]);
 
         let out = rolling_sum(arr, 4, 4, true, None, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[None, None, None, None]);
     }
 
@@ -158,18 +143,15 @@ mod test {
         let arr = &arr;
 
         let out = rolling_mean(arr, 2, 2, false, None, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[None, None, None, Some(1.5)]);
 
         let out = rolling_mean(arr, 2, 1, false, None, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(-1.0), Some(1.5)]);
 
         let out = rolling_mean(arr, 4, 1, false, None, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(0.0), Some(4.0 / 3.0)]);
     }
 
@@ -179,26 +161,22 @@ mod test {
         let arr = &arr;
 
         let out = rolling_var(arr, 3, 1, false, None, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
 
         assert_eq!(out, &[None, None, Some(2.0), Some(12.5)]);
 
         let testpars = Some(RollingFnParams::Var(RollingVarParams { ddof: 0 }));
         let out = rolling_var(arr, 3, 1, false, None, testpars);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
 
         assert_eq!(out, &[Some(0.0), Some(0.0), Some(1.0), Some(6.25)]);
 
         let out = rolling_var(arr, 4, 1, false, None, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[None, None, Some(2.0), Some(6.333333333333334)]);
 
         let out = rolling_var(arr, 4, 1, false, None, testpars);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(
             out,
             &[Some(0.), Some(0.0), Some(1.0), Some(4.222222222222222)]
@@ -207,42 +185,32 @@ mod test {
 
     #[test]
     fn test_rolling_max_no_nulls() {
-        let buf = Buffer::from(vec![1.0, 2.0, 3.0, 4.0]);
-        let arr = &PrimitiveArray::new(
-            ArrowDataType::Float64,
-            buf,
+        let arr = &flat_chunk(
+            vec![1.0f64, 2.0, 3.0, 4.0],
             Some(Bitmap::from(&[true, true, true, true])),
         );
         let out = rolling_max(arr, 4, 1, false, None, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(1.0), Some(2.0), Some(3.0), Some(4.0)]);
 
         let out = rolling_max(arr, 2, 2, false, None, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[None, Some(2.0), Some(3.0), Some(4.0)]);
 
         let out = rolling_max(arr, 4, 4, false, None, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[None, None, None, Some(4.0)]);
 
-        let buf = Buffer::from(vec![4.0, 3.0, 2.0, 1.0]);
-        let arr = &PrimitiveArray::new(
-            ArrowDataType::Float64,
-            buf,
+        let arr = &flat_chunk(
+            vec![4.0f64, 3.0, 2.0, 1.0],
             Some(Bitmap::from(&[true, true, true, true])),
         );
         let out = rolling_max(arr, 2, 1, false, None, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(4.0), Some(4.0), Some(3.0), Some(2.0)]);
 
-        let out =
-            super::no_nulls::rolling_max(arr.values().as_slice(), 2, 1, false, None, None).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = super::no_nulls::rolling_max(arr.as_slice(), 2, 1, false, None, None).unwrap();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(4.0), Some(4.0), Some(3.0), Some(2.0)]);
     }
 
@@ -253,21 +221,20 @@ mod test {
         let window_size = 3;
         let min_periods = 3;
 
-        let arr = Int32Array::new(ArrowDataType::Int32, vals.into(), Some(validity));
+        let arr = flat_chunk(vals, Some(validity));
 
         let out = rolling_apply_agg_window::<MinMaxWindow<i32, MaxIgnoreNan>, _, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
+            arr.as_slice(),
+            arr.validity().unwrap(),
             window_size,
             min_periods,
             det_offsets,
             None,
         );
-        let arr = out.as_any().downcast_ref::<Int32Array>().unwrap();
-        assert_eq!(arr.null_count(), 2);
+        assert_eq!(out.null_count(), 2);
         assert_eq!(
-            &arr.values().as_slice()[2..],
-            &[3, 10, 10, 10, 10, 10, 9, 8, 7, 6, 5, 4, 3]
+            &elements_of::<i32>(&*out)[2..],
+            &[3, 10, 10, 10, 10, 10, 9, 8, 7, 6, 5, 4, 3].map(Some),
         );
     }
 }

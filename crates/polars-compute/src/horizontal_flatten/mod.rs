@@ -143,7 +143,16 @@ mod tests {
 
         assert_eq!(
             elements_of::<i32>(&*out),
-            [Some(1), Some(2), Some(-1), Some(-2), Some(3), Some(4), Some(-1), Some(-2)],
+            [
+                Some(1),
+                Some(2),
+                Some(-1),
+                Some(-2),
+                Some(3),
+                Some(4),
+                Some(-1),
+                Some(-2)
+            ],
         );
     }
 
@@ -156,13 +165,24 @@ mod tests {
         let flat = PlPrimitiveArray::from_vec(vec![7i32; 2]);
 
         for array in [scalar.clone(), flat] {
-            let arrays: Vec<Box<dyn PlArray>> =
-                vec![Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4])), Box::new(array)];
+            let arrays: Vec<Box<dyn PlArray>> = vec![
+                Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4])),
+                Box::new(array),
+            ];
 
             let out = horizontal_flatten(&arrays, &[2, 2], 2);
             assert_eq!(
                 elements_of::<i32>(&*out),
-                [Some(1), Some(2), Some(7), Some(7), Some(3), Some(4), Some(7), Some(7)],
+                [
+                    Some(1),
+                    Some(2),
+                    Some(7),
+                    Some(7),
+                    Some(3),
+                    Some(4),
+                    Some(7),
+                    Some(7)
+                ],
             );
         }
 
@@ -187,7 +207,10 @@ mod tests {
             ))
         };
 
-        let arrays = vec![row([1, 2, 3], ["a", "b", "c"]), row([4, 5, 6], ["d", "e", "f"])];
+        let arrays = vec![
+            row([1, 2, 3], ["a", "b", "c"]),
+            row([4, 5, 6], ["d", "e", "f"]),
+        ];
         let out = horizontal_flatten(&arrays, &[1, 1], 3);
 
         let out = out
@@ -195,7 +218,10 @@ mod tests {
             .downcast_ref::<PlStructArray>()
             .expect("a struct array is flattened into one");
         assert_eq!(out.len(), 6);
-        assert_eq!(elements_of::<i32>(&*out.fields()[0]), [1, 4, 2, 5, 3, 6].map(Some));
+        assert_eq!(
+            elements_of::<i32>(&*out.fields()[0]),
+            [1, 4, 2, 5, 3, 6].map(Some)
+        );
     }
 
     /// No output row is no output at all, however wide the arrays are.

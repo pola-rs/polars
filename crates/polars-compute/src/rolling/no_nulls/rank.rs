@@ -108,7 +108,7 @@ pub fn rolling_rank<T>(
     center: bool,
     weights: Option<&[f64]>,
     params: Option<RollingFnParams>,
-) -> PolarsResult<ArrayRef>
+) -> PolarsResult<Box<dyn PlArray>>
 where
     T: NativeType + num_traits::Num,
 {

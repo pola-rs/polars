@@ -116,7 +116,7 @@ pub fn rolling_quantile<T>(
     center: bool,
     weights: Option<&[f64]>,
     params: Option<RollingFnParams>,
-) -> PolarsResult<ArrayRef>
+) -> PolarsResult<Box<dyn PlArray>>
 where
     T: NativeType
         + IsFloat
@@ -151,11 +151,9 @@ where
                     params.prob,
                 );
                 let validity = create_validity(min_periods, values.len(), window_size, offset_fn);
-                return Ok(Box::new(PrimitiveArray::new(
-                    T::PRIMITIVE.into(),
-                    out.into(),
-                    validity.map(|b| b.into()),
-                )));
+                return Ok(Box::new(
+                    PlPrimitiveArray::from_vec(out).with_validity(validity.map(|b| b.into())),
+                ));
             }
 
             rolling_apply_agg_window::<QuantileWindow<_>, _, _, _>(
@@ -244,7 +242,7 @@ fn rolling_apply_weighted_quantile<T, Fo>(
     det_offsets_fn: Fo,
     weights: &[f64],
     wsum: f64,
-) -> ArrayRef
+) -> Box<dyn PlArray>
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
     T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero,
@@ -271,11 +269,7 @@ where
         .collect_trusted::<Vec<T>>();
 
     let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
-    Box::new(PrimitiveArray::new(
-        T::PRIMITIVE.into(),
-        out.into(),
-        validity.map(|b| b.into()),
-    ))
+    Box::new(PlPrimitiveArray::from_vec(out).with_validity(validity.map(|b| b.into())))
 }
 
 #[cfg(test)]
@@ -290,28 +284,23 @@ mod test {
             method: Linear,
         }));
         let out = rolling_quantile(values, 2, 2, false, None, med_pars).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[None, Some(1.5), Some(2.5), Some(3.5)]);
 
         let out = rolling_quantile(values, 2, 1, false, None, med_pars).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(1.0), Some(1.5), Some(2.5), Some(3.5)]);
 
         let out = rolling_quantile(values, 4, 1, false, None, med_pars).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(1.0), Some(1.5), Some(2.0), Some(2.5)]);
 
         let out = rolling_quantile(values, 4, 1, true, None, med_pars).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(1.5), Some(2.0), Some(2.5), Some(3.0)]);
 
         let out = rolling_quantile(values, 4, 4, true, None, med_pars).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[None, None, Some(2.5), None]);
     }
 
@@ -334,11 +323,9 @@ mod test {
                 method,
             }));
             let out1 = rolling_min(values, 2, 2, false, None, None).unwrap();
-            let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-            let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+            let out1 = elements_of::<f64>(&*out1);
             let out2 = rolling_quantile(values, 2, 2, false, None, min_pars).unwrap();
-            let out2 = out2.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-            let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+            let out2 = elements_of::<f64>(&*out2);
             assert_eq!(out1, out2);
 
             let max_pars = Some(RollingFnParams::Quantile(RollingQuantileParams {
@@ -346,11 +333,9 @@ mod test {
                 method,
             }));
             let out1 = rolling_max(values, 2, 2, false, None, None).unwrap();
-            let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-            let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+            let out1 = elements_of::<f64>(&*out1);
             let out2 = rolling_quantile(values, 2, 2, false, None, max_pars).unwrap();
-            let out2 = out2.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-            let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+            let out2 = elements_of::<f64>(&*out2);
             assert_eq!(out1, out2);
         }
     }

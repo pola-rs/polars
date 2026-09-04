@@ -105,13 +105,13 @@ pub type RankWindowDense<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyDense>;
 pub type RankWindowRandom<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyRandom>;
 
 pub fn rolling_rank<T>(
-    arr: &PrimitiveArray<T>,
+    arr: &Flat<PlPrimitiveArray<T>>,
     window_size: usize,
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
     params: Option<RollingFnParams>,
-) -> ArrayRef
+) -> Box<dyn PlArray>
 where
     T: NativeType,
 {
@@ -129,40 +129,40 @@ where
 
     match method {
         RollingRankMethod::Average => rolling_apply_agg_window::<RankWindowAvg<T>, _, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
+            arr.as_slice(),
+            arr.validity().unwrap(),
             window_size,
             min_periods,
             offset_fn,
             params,
         ),
         RollingRankMethod::Min => rolling_apply_agg_window::<RankWindowMin<T>, _, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
+            arr.as_slice(),
+            arr.validity().unwrap(),
             window_size,
             min_periods,
             offset_fn,
             params,
         ),
         RollingRankMethod::Max => rolling_apply_agg_window::<RankWindowMax<T>, _, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
+            arr.as_slice(),
+            arr.validity().unwrap(),
             window_size,
             min_periods,
             offset_fn,
             params,
         ),
         RollingRankMethod::Dense => rolling_apply_agg_window::<RankWindowDense<T>, _, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
+            arr.as_slice(),
+            arr.validity().unwrap(),
             window_size,
             min_periods,
             offset_fn,
             params,
         ),
         RollingRankMethod::Random => rolling_apply_agg_window::<RankWindowRandom<T>, _, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
+            arr.as_slice(),
+            arr.validity().unwrap(),
             window_size,
             min_periods,
             offset_fn,

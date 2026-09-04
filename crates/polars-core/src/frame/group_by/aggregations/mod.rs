@@ -100,7 +100,7 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
         }
     });
 
-    IdxCa::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr))
+    IdxCa::with_chunk(PlSmallStr::EMPTY, arr)
 }
 
 // Use an aggregation window that maintains the state
@@ -109,7 +109,7 @@ pub fn _rolling_apply_agg_window_nulls<Agg, T, O, Out>(
     validity: &Bitmap,
     offsets: O,
     params: Option<RollingFnParams>,
-) -> PrimitiveArray<Out>
+) -> PlPrimitiveArray<Out>
 where
     O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
     Agg: RollingAggWindowNulls<T, Out>,
@@ -144,7 +144,7 @@ where
         })
         .collect_trusted::<Vec<_>>();
 
-    PrimitiveArray::new(Out::PRIMITIVE.into(), out.into(), Some(validity.into()))
+    PlPrimitiveArray::from_vec(out).with_validity(Some(validity.into()))
 }
 
 // Use an aggregation window that maintains the state.
@@ -152,7 +152,7 @@ pub fn _rolling_apply_agg_window_no_nulls<Agg, T, O, Out>(
     values: &[T],
     offsets: O,
     params: Option<RollingFnParams>,
-) -> PrimitiveArray<Out>
+) -> PlPrimitiveArray<Out>
 where
     // items (offset, len) -> so offsets are offset, offset + len
     Agg: RollingAggWindowNoNulls<T, Out>,
@@ -172,7 +172,7 @@ where
             unsafe { agg_window.update(start as usize, end as usize) };
             agg_window.get_agg(idx)
         })
-        .collect::<PrimitiveArray<Out>>()
+        .collect::<PlPrimitiveArray<Out>>()
 }
 
 pub fn _slice_from_offsets<T>(ca: &ChunkedArray<T>, first: IdxSize, len: IdxSize) -> ChunkedArray<T>
@@ -373,8 +373,7 @@ where
                 };
                 // The rolling kernels works on the dtype, this is not yet the
                 // float output type we need.
-                ChunkedArray::<K>::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr))
-                    .into_series()
+                ChunkedArray::<K>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
             } else {
                 _agg_helper_slice::<K, _>(groups, |[first, len]| {
                     debug_assert!(first + len <= ca.len() as IdxSize);
@@ -559,7 +558,7 @@ where
                             )
                         },
                     };
-                    Self::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr)).into_series()
+                    Self::with_chunk(PlSmallStr::EMPTY, arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -665,8 +664,7 @@ where
                         },
                     };
 
-                    IdxCa::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&idx_arr))
-                        .into_series()
+                    IdxCa::with_chunk(PlSmallStr::EMPTY, idx_arr).into_series()
                 } else {
                     _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -749,7 +747,7 @@ where
                             )
                         },
                     };
-                    Self::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr)).into_series()
+                    Self::with_chunk(PlSmallStr::EMPTY, arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -856,8 +854,7 @@ where
                             )
                         },
                     };
-                    IdxCa::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&idx_arr))
-                        .into_series()
+                    IdxCa::with_chunk(PlSmallStr::EMPTY, idx_arr).into_series()
                 } else {
                     _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -937,7 +934,7 @@ where
                             >(values, validity, offset_iter, None)
                         },
                     };
-                    Self::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr)).into_series()
+                    Self::with_chunk(PlSmallStr::EMPTY, arr).into_series()
                 } else {
                     _agg_helper_slice_no_null::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -1035,8 +1032,7 @@ where
                             )
                         },
                     };
-                    ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr))
-                        .into_series()
+                    ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -1112,8 +1108,7 @@ where
                             Some(RollingFnParams::Var(RollingVarParams { ddof })),
                         ),
                     };
-                    ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr))
-                        .into_series()
+                    ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -1194,8 +1189,7 @@ where
                         ),
                     };
 
-                    let mut ca =
-                        ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr));
+                    let mut ca = ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr);
                     ca.apply_mut(|v| v.powf(NumCast::from(0.5).unwrap()));
                     ca.into_series()
                 } else {

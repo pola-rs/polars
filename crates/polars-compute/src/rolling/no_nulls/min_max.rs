@@ -28,7 +28,7 @@ macro_rules! rolling_minmax_func {
             center: bool,
             weights: Option<&[f64]>,
             _params: Option<RollingFnParams>,
-        ) -> PolarsResult<ArrayRef>
+        ) -> PolarsResult<Box<dyn PlArray>>
         where
             T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T> + Num,
         {
@@ -80,33 +80,27 @@ mod test {
         let values = &[1.0f64, 5.0, 3.0, 4.0];
 
         let out = rolling_min(values, 2, 2, false, None, None).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[None, Some(1.0), Some(3.0), Some(3.0)]);
         let out = rolling_max(values, 2, 2, false, None, None).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[None, Some(5.0), Some(5.0), Some(4.0)]);
 
         let out = rolling_min(values, 2, 1, false, None, None).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(3.0), Some(3.0)]);
         let out = rolling_max(values, 2, 1, false, None, None).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(1.0), Some(5.0), Some(5.0), Some(4.0)]);
 
         let out = rolling_max(values, 3, 1, false, None, None).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(1.0), Some(5.0), Some(5.0), Some(5.0)]);
 
         // test nan handling.
         let values = &[1.0, 2.0, 3.0, f64::nan(), 5.0, 6.0, 7.0];
         let out = rolling_min(values, 3, 3, false, None, None).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         // we cannot compare nans, so we compare the string values
         assert_eq!(
             format!("{:?}", out.as_slice()),
@@ -125,8 +119,7 @@ mod test {
         );
 
         let out = rolling_max(values, 3, 3, false, None, None).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(
             format!("{:?}", out.as_slice()),
             format!(

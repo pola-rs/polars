@@ -1,6 +1,6 @@
-use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
+use polars_array::{ArrayCollectIterExt, PlPrimitiveArray};
 use polars_utils::IdxSize;
 use polars_utils::min_max::{MaxPropagateNan, MinMaxPolicy, MinPropagateNan};
 
@@ -21,12 +21,12 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
     starts: &[IdxSize],
     ends: &[IdxSize],
     min_periods: usize,
-) -> PrimitiveArray<IdxSize> {
+) -> PlPrimitiveArray<IdxSize> {
     assert_eq!(starts.len(), ends.len());
     let n = starts.len();
 
     if n == 0 || by.is_empty() {
-        return PrimitiveArray::new_null(IdxSize::PRIMITIVE.into(), n);
+        return PlPrimitiveArray::new_full_null(n);
     }
 
     let first_start = starts[0] as usize;
@@ -58,7 +58,7 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
                     .map(|rel_idx| start as IdxSize + rel_idx)
             });
 
-            PrimitiveArray::from_trusted_len_iter(iter)
+            iter.collect_arr_trusted()
         },
         Some(validity) => {
             let mut window = <ArgMinMaxWindow<'_, B, P> as RollingAggWindowNulls<B, IdxSize>>::new(
@@ -89,7 +89,7 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
                     .map(|rel_idx| start as IdxSize + rel_idx)
             });
 
-            PrimitiveArray::from_trusted_len_iter(iter)
+            iter.collect_arr_trusted()
         },
     }
 }
@@ -100,7 +100,7 @@ pub fn rolling_argmin_by<B: NativeType>(
     starts: &[IdxSize],
     ends: &[IdxSize],
     min_periods: usize,
-) -> PrimitiveArray<IdxSize> {
+) -> PlPrimitiveArray<IdxSize> {
     rolling_arg_extremum_by::<B, MinPropagateNan>(by, validity, starts, ends, min_periods)
 }
 
@@ -110,6 +110,6 @@ pub fn rolling_argmax_by<B: NativeType>(
     starts: &[IdxSize],
     ends: &[IdxSize],
     min_periods: usize,
-) -> PrimitiveArray<IdxSize> {
+) -> PlPrimitiveArray<IdxSize> {
     rolling_arg_extremum_by::<B, MaxPropagateNan>(by, validity, starts, ends, min_periods)
 }

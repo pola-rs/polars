@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 
+use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 #[cfg(feature = "dtype-f16")]
 use num_traits::real::Real;
-use polars_array::arrow::export;
+use polars_array::{Flat, PlArrayType, PlPrimitiveArray};
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
 use polars_compute::rolling::{MeanWindow, SumWindow, no_nulls, nulls};
@@ -27,15 +28,15 @@ fn rolling_agg<T>(
         bool,
         Option<&[f64]>,
         Option<RollingFnParams>,
-    ) -> PolarsResult<ArrayRef>,
+    ) -> PolarsResult<PlArrayRef>,
     rolling_agg_fn_nulls: &dyn Fn(
-        &PrimitiveArray<T::Native>,
+        &Flat<PlPrimitiveArray<T::Native>>,
         usize,
         usize,
         bool,
         Option<&[f64]>,
         Option<RollingFnParams>,
-    ) -> ArrayRef,
+    ) -> PlArrayRef,
 ) -> PolarsResult<Series>
 where
     T: PolarsNumericType,
@@ -60,7 +61,7 @@ where
             options.fn_params,
         )?,
         _ => rolling_agg_fn_nulls(
-            &export::primitive_to_arrow_primitive(arr),
+            arr,
             options.window_size,
             options.min_periods,
             options.center,
@@ -68,7 +69,25 @@ where
             options.fn_params,
         ),
     };
-    Series::try_from((ca.name().clone(), arr))
+    Ok(series_of(ca.name().clone(), arr))
+}
+
+/// The column a rolling kernel's answer is.
+///
+/// The kernels answer in the element type of the column they were given, except `rolling_rank`,
+/// which answers in the type its method ranks in — so the chunk itself is what says what the
+/// column holds.
+#[cfg(any(feature = "rolling_window", feature = "rolling_window_by"))]
+fn series_of(name: PlSmallStr, chunk: PlArrayRef) -> Series {
+    let dtype = match chunk.array_type() {
+        PlArrayType::Primitive(primitive) => {
+            DataType::from_arrow_dtype(&ArrowDataType::from(primitive))
+        },
+        array_type => unreachable!("a rolling kernel answered in a {array_type:?} chunk"),
+    };
+
+    // SAFETY: the chunk is a primitive one of exactly the type just read off it.
+    unsafe { Series::from_chunks_and_dtype_unchecked(name, vec![chunk], &dtype) }
 }
 
 #[cfg(feature = "rolling_window_by")]
@@ -182,7 +201,7 @@ where
 
     // We explicitly branch here because we want to compile different versions based on the no_nulls
     // or nulls kernel.
-    let out: ArrayRef = if ca.null_count() == 0 {
+    let out: PlArrayRef = if ca.null_count() == 0 {
         let mut agg_window =
             RollingAggWindowNoNullsWrapper(NoNullsAgg::new(values, 0, 0, options.fn_params, None));
 
@@ -223,7 +242,7 @@ where
         )?
     };
 
-    Series::try_from((ca.name().clone(), out))
+    Ok(series_of(ca.name().clone(), out))
 }
 
 pub trait SeriesOpsTime: AsSeries {
