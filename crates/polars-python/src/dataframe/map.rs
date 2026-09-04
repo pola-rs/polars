@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
 use super::*;
+use crate::conversion::any_value::py_object_to_any_value;
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
 #[cfg(feature = "object")]
@@ -53,8 +54,10 @@ impl PyDataFrame {
                 return Ok((PySeries::from(s).into_py_any(py)?, false));
             }
 
+            // The output dtype has to reach the conversion, as some Python values are
+            // ambiguous without it: a dict is a `Struct` unless it says it is a `Map`.
             let avs = lambda_result_iter
-                .map(|res| res?.extract::<Wrap<AnyValue>>().map(|w| w.0))
+                .map(|res| py_object_to_any_value(&res?, true, true, Some(&output_type.0)))
                 .collect::<PyResult<Vec<AnyValue>>>()?;
             let s = Series::from_any_values_and_dtype(
                 PlSmallStr::from_static("map"),
