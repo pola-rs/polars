@@ -1,7 +1,6 @@
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
-use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::gather::sublist::list::{index_is_oob, sublist_get};
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "diff")]
@@ -334,21 +333,13 @@ pub trait ListNameSpaceImpl: AsList {
     /// if an index is out of bounds, it will return a `None`.
     fn lst_get(&self, idx: i64, null_on_oob: bool) -> PolarsResult<Series> {
         let ca = self.as_list();
-        // TODO(polars-array-scalar): both kernels are Arrow ones, so a scalar chunk is written
-        // out here rather than the one list it stands for being indexed once.
-        if !null_on_oob
-            && ca
-                .downcast_iter()
-                .any(|arr| index_is_oob(&chunk_to_arrow(arr), idx))
-        {
+        if !null_on_oob && ca.downcast_iter().any(|arr| index_is_oob(arr, idx)) {
             polars_bail!(ComputeError: "get index is out of bounds");
         }
 
         let chunks = ca
             .downcast_iter()
-            .map(|arr| {
-                polars_array::arrow::import::from_arrow(&*sublist_get(&chunk_to_arrow(arr), idx))
-            })
+            .map(|arr| sublist_get(arr, idx))
             .collect::<Vec<_>>();
 
         // SAFETY: every element in list has dtype equal to its inner type

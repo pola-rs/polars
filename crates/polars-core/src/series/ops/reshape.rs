@@ -74,15 +74,11 @@ impl Series {
     /// Wrap each element of this Series in a single-element list.
     /// A Series `[1, 2, 3]` becomes `[[1], [2], [3]]`.
     pub fn to_unit_list(&self) -> ListChunked {
-        // The kernel is the Arrow one, so each chunk crosses over and the result crosses back.
         // The chunks carry no logical type, so the inner dtype is this series'.
         let chunks = self
             .chunks()
             .iter()
-            .map(|arr| {
-                <PlListArray as ToArrow>::from_arrow(&array_to_unit_list(export::to_arrow(&**arr)))
-                    .into_boxed()
-            })
+            .map(|arr| array_to_unit_list(arr.to_boxed()).into_boxed())
             .collect();
         let mut ca = unsafe {
             ListChunked::from_chunks_and_dtype_unchecked(

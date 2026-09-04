@@ -285,6 +285,15 @@ impl PlFixedSizeListArray {
         self.width
     }
 
+    /// The values array the lists are taken over.
+    ///
+    /// Which range of it an element covers depends on the representation the values are in, which
+    /// [`Self::value_range`] resolves.
+    #[inline]
+    pub fn values(&self) -> &dyn PlArray {
+        &*self.values
+    }
+
     /// The values array the lists are taken over, if it holds the values of every element, laid end
     /// to end.
     #[inline]

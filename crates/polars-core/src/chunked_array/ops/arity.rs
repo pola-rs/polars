@@ -4,18 +4,11 @@ use std::error::Error;
 use polars_array::bitmap::combine_validities_and;
 use polars_array::builder::StaticArrayBuilder;
 use polars_array::{Flat, PlArray, PlBitmap, PlBitmapRef, PlUtf8ViewArrayBuilder, StaticArray};
-
-use crate::prelude::PlArrayRef;
-
-/// An Arrow array, which is what the kernels that hand a [`Series`] back produce: the `DataType`
-/// of the result is read off the Arrow data type when the chunks are imported.
-type ArrowArrayRef = arrow::array::ArrayRef;
-use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter};
-use crate::prelude::{ChunkedArray, PolarsDataType, Series, StringChunked};
+use crate::prelude::{ChunkedArray, PlArrayRef, PolarsDataType, StringChunked};
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned, align_chunks_ternary};
 
 /// Returns `ret` masked off wherever either input has a null, on top of its own mask. A scalar
@@ -816,56 +809,6 @@ where
     ca.retain_flags_from(lhs.as_ref(), retain_flags);
 
     ca
-}
-
-pub fn try_unary_to_series<T, F>(ca: &ChunkedArray<T>, op: F) -> PolarsResult<Series>
-where
-    T: PolarsDataType,
-    F: FnMut(&T::Array) -> PolarsResult<ArrowArrayRef>,
-{
-    let chunks = ca
-        .downcast_iter()
-        .map(op)
-        .collect::<PolarsResult<Vec<_>>>()?;
-    Series::try_from((ca.name().clone(), chunks))
-}
-
-pub fn binary_to_series<T, U, F>(
-    lhs: &ChunkedArray<T>,
-    rhs: &ChunkedArray<U>,
-    mut op: F,
-) -> PolarsResult<Series>
-where
-    T: PolarsDataType,
-    U: PolarsDataType,
-    F: FnMut(&T::Array, &U::Array) -> ArrowArrayRef,
-{
-    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
-    let chunks = lhs
-        .downcast_iter()
-        .zip(rhs.downcast_iter())
-        .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
-        .collect::<Vec<_>>();
-    Series::try_from((lhs.name().clone(), chunks))
-}
-
-pub fn try_binary_to_series<T, U, F>(
-    lhs: &ChunkedArray<T>,
-    rhs: &ChunkedArray<U>,
-    mut op: F,
-) -> PolarsResult<Series>
-where
-    T: PolarsDataType,
-    U: PolarsDataType,
-    F: FnMut(&T::Array, &U::Array) -> PolarsResult<ArrowArrayRef>,
-{
-    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
-    let chunks = lhs
-        .downcast_iter()
-        .zip(rhs.downcast_iter())
-        .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
-        .collect::<PolarsResult<Vec<_>>>()?;
-    Series::try_from((lhs.name().clone(), chunks))
 }
 
 /// Applies a kernel that produces `ArrayRef` of the same type.
