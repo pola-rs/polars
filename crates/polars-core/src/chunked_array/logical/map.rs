@@ -146,17 +146,28 @@ impl MapChunked {
     }
 
     /// Replace the value child, keeping the keys and the entry layout.
-    pub fn with_values(&self, values: &Series) -> Self {
-        let storage = self.storage.list().unwrap();
-        let (keys, _) = unpack_map_entries(&storage.get_inner());
-        let storage = repack_map_storage(storage, &keys, values).into_series();
-
+    ///
+    /// Errors if `values` cannot be a Map value, e.g. because it holds objects.
+    pub fn with_values(&self, values: &Series) -> PolarsResult<Self> {
         let dtype = DataType::Map(
             Box::new(self.key_dtype().clone()),
             Box::new(values.dtype().clone()),
         );
+        dtype.ensure_valid_map_dtype()?;
 
-        unsafe { Self::from_storage_unchecked(dtype, storage) }
+        let storage = self.storage.list().unwrap();
+        let (keys, _) = unpack_map_entries(&storage.get_inner());
+        polars_ensure!(
+            values.len() == keys.len(),
+            ShapeMismatch:
+            "Map values must have one element per entry: expected {}, got {}",
+            keys.len(),
+            values.len(),
+        );
+        let storage = repack_map_storage(storage, &keys, values).into_series();
+
+        // SAFETY: the keys and the entry layout are untouched, and the dtype is checked.
+        Ok(unsafe { Self::from_storage_unchecked(dtype, storage) })
     }
 
     /// Propagate nulls within entry children without changing row or entry validity.

@@ -84,7 +84,7 @@ impl ColumnTransform {
 
                 input._to_new_from_backing(
                     map_ca
-                        .with_values(values.as_materialized_series())
+                        .with_values(values.as_materialized_series())?
                         .into_series(),
                 )
             },
