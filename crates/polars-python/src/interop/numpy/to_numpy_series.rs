@@ -49,7 +49,7 @@ pub(super) fn series_to_numpy(
     if s.is_empty() {
         // Take this path to ensure a writable array.
         // This does not actually copy data for an empty Series.
-        return Ok(series_to_numpy_with_copy(py, s, true));
+        return series_to_numpy_with_copy(py, s, true);
     }
     if let Some((mut arr, writable_flag)) = try_series_to_numpy_view(py, s, false, allow_copy) {
         if writable && !writable_flag {
@@ -69,7 +69,7 @@ pub(super) fn series_to_numpy(
         ));
     }
 
-    Ok(series_to_numpy_with_copy(py, s, writable))
+    series_to_numpy_with_copy(py, s, writable)
 }
 
 /// Create a NumPy view of the given Series.
@@ -185,16 +185,16 @@ fn array_series_to_numpy_view(py: Python<'_>, s: &Series, writable: bool) -> Py<
 /// Convert a Series to a NumPy ndarray, copying data in the process.
 ///
 /// This method will cast integers to floats so that `null = np.nan`.
-fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> Py<PyAny> {
+fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> PyResult<Py<PyAny>> {
     use DataType::*;
-    match s.dtype() {
+    Ok(match s.dtype() {
         Int8 => numeric_series_to_numpy::<Int8Type, f32>(py, s),
         Int16 => numeric_series_to_numpy::<Int16Type, f32>(py, s),
         Int32 => numeric_series_to_numpy::<Int32Type, f64>(py, s),
         Int64 => numeric_series_to_numpy::<Int64Type, f64>(py, s),
         Int128 => {
             let s = s.cast(&DataType::Float64).unwrap();
-            series_to_numpy(py, &s, writable, true).unwrap()
+            series_to_numpy(py, &s, writable, true)?
         },
         UInt8 => numeric_series_to_numpy::<UInt8Type, f32>(py, s),
         UInt16 => numeric_series_to_numpy::<UInt16Type, f32>(py, s),
@@ -202,7 +202,7 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> Py<P
         UInt64 => numeric_series_to_numpy::<UInt64Type, f64>(py, s),
         UInt128 => {
             let s = s.cast(&DataType::Float64).unwrap();
-            series_to_numpy(py, &s, writable, true).unwrap()
+            series_to_numpy(py, &s, writable, true)?
         },
         Float16 => numeric_series_to_numpy::<Float16Type, pf16>(py, s),
         Float32 => numeric_series_to_numpy::<Float32Type, f32>(py, s),
@@ -266,12 +266,12 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> Py<P
                 .map(|v| v.into_py_any(py).unwrap());
             PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
-        List(_) => list_series_to_numpy(py, s, writable),
-        Array(_, _) => array_series_to_numpy(py, s, writable),
+        List(_) => list_series_to_numpy(py, s, writable)?,
+        Array(_, _) => array_series_to_numpy(py, s, writable)?,
         Struct(_) => {
             let ca = s.struct_().unwrap();
             let df = ca.clone().unnest();
-            df_to_numpy(py, &df, IndexOrder::Fortran, writable, true).unwrap()
+            df_to_numpy(py, &df, IndexOrder::Fortran, writable, true)?
         },
         #[cfg(feature = "object")]
         Object(_) => {
@@ -292,12 +292,13 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> Py<P
             let ca = s.map().unwrap();
             let values = ca
                 .any_value_iter()
-                .map(|av| Wrap(av).into_py_any(py).unwrap());
-            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+                .map(|av| Wrap(av).into_py_any(py))
+                .collect::<PyResult<Vec<_>>>()?;
+            PyArray1::from_iter(py, values).into_py_any(py)?
         },
-        Extension(_, _) => series_to_numpy_with_copy(py, s.ext().unwrap().storage(), writable),
+        Extension(_, _) => series_to_numpy_with_copy(py, s.ext().unwrap().storage(), writable)?,
         Unknown(_) | BinaryOffset => unreachable!(),
-    }
+    })
 }
 
 /// Convert numeric types to f32 or f64 with NaN representing a null value.
@@ -377,25 +378,28 @@ where
         .into_py_any(py)
         .unwrap()
 }
-fn list_series_to_numpy(py: Python<'_>, s: &Series, writable: bool) -> Py<PyAny> {
+fn list_series_to_numpy(py: Python<'_>, s: &Series, writable: bool) -> PyResult<Py<PyAny>> {
     let ca = s.list().unwrap();
 
-    let iter = ca.amortized_iter().map(|opt_s| match opt_s {
-        None => py.None(),
-        Some(s) => series_to_numpy(py, s.as_ref(), writable, true).unwrap(),
-    });
-    PyArray1::from_iter(py, iter).into_py_any(py).unwrap()
+    let values = ca
+        .amortized_iter()
+        .map(|opt_s| match opt_s {
+            None => Ok(py.None()),
+            Some(s) => series_to_numpy(py, s.as_ref(), writable, true),
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    PyArray1::from_iter(py, values).into_py_any(py)
 }
 
 /// Convert arrays by flattening first, converting the flat Series, and then reshaping.
-fn array_series_to_numpy(py: Python<'_>, s: &Series, writable: bool) -> Py<PyAny> {
+fn array_series_to_numpy(py: Python<'_>, s: &Series, writable: bool) -> PyResult<Py<PyAny>> {
     let ca = s.array().unwrap();
     let s_inner = ca.get_inner();
-    let np_array_flat = series_to_numpy_with_copy(py, &s_inner, writable);
+    let np_array_flat = series_to_numpy_with_copy(py, &s_inner, writable)?;
 
     // Reshape to the original shape.
     let DataType::Array(_, width) = s.dtype() else {
         unreachable!()
     };
-    reshape_numpy_array(py, np_array_flat, ca.len(), *width).unwrap()
+    Ok(reshape_numpy_array(py, np_array_flat, ca.len(), *width).unwrap())
 }
