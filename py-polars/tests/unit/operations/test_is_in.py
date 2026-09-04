@@ -167,11 +167,11 @@ def test_is_in_null_prop() -> None:
         is None
     )
     assert pl.Series([{"a": None}, None], dtype=pl.Struct({"a": pl.Float32})).is_in(
-        pl.Series([{"a": 42}], dtype=pl.Struct({"a": pl.Float32}))
+        pl.Series([{"a": 42}], dtype=pl.Struct({"a": pl.Float32}), strict=False)
     ).to_list() == [False, None]
 
     assert pl.Series([{"a": None}, None], dtype=pl.Struct({"a": pl.Boolean})).is_in(
-        pl.Series([{"a": 42}], dtype=pl.Struct({"a": pl.Boolean}))
+        pl.Series([{"a": 42}], dtype=pl.Struct({"a": pl.Boolean}), strict=False)
     ).to_list() == [False, None]
 
 

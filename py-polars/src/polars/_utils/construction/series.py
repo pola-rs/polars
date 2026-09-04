@@ -226,6 +226,7 @@ def sequence_to_pyseries(
             data=data,
             schema=struct_schema,
             orient="row",
+            strict=strict,
         ).to_struct(name, invalid)
 
     if python_dtype is None:

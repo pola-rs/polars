@@ -13,16 +13,17 @@ use crate::utils::EnterPolarsExt;
 #[pymethods]
 impl PyDataFrame {
     #[staticmethod]
-    #[pyo3(signature = (data, schema=None, infer_schema_length=None))]
+    #[pyo3(signature = (data, schema=None, strict=true, infer_schema_length=None))]
     pub fn from_rows(
         py: Python<'_>,
         data: Vec<Wrap<Row>>,
         schema: Option<Wrap<Schema>>,
+        strict: bool,
         infer_schema_length: Option<usize>,
     ) -> PyResult<Self> {
         let data = vec_extract_wrapped(data);
         let schema = schema.map(|wrap| wrap.0);
-        py.enter_polars(move || finish_from_rows(data, schema, None, infer_schema_length))
+        py.enter_polars(move || finish_from_rows(data, schema, None, strict, infer_schema_length))
     }
 
     #[staticmethod]
@@ -76,7 +77,7 @@ impl PyDataFrame {
             ))
         });
         py.enter_polars(move || {
-            finish_from_rows(rows, schema, schema_overrides, infer_schema_length)
+            finish_from_rows(rows, schema, schema_overrides, strict, infer_schema_length)
         })
     }
 
@@ -95,17 +96,29 @@ fn finish_from_rows(
     rows: Vec<Row>,
     schema: Option<Schema>,
     schema_overrides: Option<Schema>,
+    strict: bool,
     infer_schema_length: Option<usize>,
 ) -> PyResult<PyDataFrame> {
-    let schema = if let Some(mut schema) = schema {
+    // Only validate caller-specified dtypes strictly; inferred dtypes are coerced.
+    let (schema, strict_columns) = if let Some(mut schema) = schema {
         resolve_schema_overrides(&mut schema, schema_overrides);
+        let strict_columns: Vec<bool> =
+            schema.iter_values().map(|dtype| dtype.is_known()).collect();
         update_schema_from_rows(&mut schema, &rows, infer_schema_length)?;
-        schema
+        (schema, strict_columns)
     } else {
-        rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?
+        let schema =
+            rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?;
+        let strict_columns = vec![false; schema.len()];
+        (schema, strict_columns)
     };
 
-    let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsErr::from)?;
+    let df = if strict {
+        DataFrame::from_rows_and_schema_strict(&rows, &schema, Some(&strict_columns))
+    } else {
+        DataFrame::from_rows_and_schema(&rows, &schema)
+    }
+    .map_err(PyPolarsErr::from)?;
     Ok(df.into())
 }
 

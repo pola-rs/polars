@@ -3,14 +3,18 @@ from __future__ import annotations
 import enum
 import sys
 from collections import OrderedDict
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars.exceptions import DataOrientationWarning, InvalidOperationError
+from polars.exceptions import (
+    DataOrientationWarning,
+    InvalidOperationError,
+    SchemaError,
+)
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -116,6 +120,86 @@ def test_df_init_strict() -> None:
     df = pl.DataFrame(data, schema=schema, strict=False)
     assert df["a"].to_list() == [1, 2, 3]
     assert df["a"].dtype == pl.Int8
+
+
+def test_df_init_rows_strict_enum() -> None:
+    data = [{"id": 10, "status": "draft"}, {"id": 10, "status": "archived"}]
+    enum_dtype = pl.Enum(["draft", "published"])
+
+    with pytest.raises(SchemaError, match="archived"):
+        pl.DataFrame(data, schema={"id": pl.Int64, "status": enum_dtype})
+
+    with pytest.raises(SchemaError, match="archived"):
+        pl.DataFrame(
+            data,
+            schema={"id": pl.Int64, "status": None},
+            schema_overrides={"status": enum_dtype},
+        )
+
+    with pytest.raises(SchemaError, match="archived"):
+        pl.DataFrame(data, schema_overrides={"status": enum_dtype})
+
+    with pytest.raises(InvalidOperationError, match="archived"):
+        pl.DataFrame(
+            [(10, "draft"), (10, "archived")],
+            schema={"id": pl.Int64, "status": enum_dtype},
+            orient="row",
+        )
+
+    result = pl.DataFrame(
+        data,
+        schema={"id": pl.Int64, "status": enum_dtype},
+        strict=False,
+    )
+    assert result.to_dict(as_series=False) == {
+        "id": [10, 10],
+        "status": ["draft", None],
+    }
+
+
+def test_df_init_rows_strict_inferred_columns_coerce() -> None:
+    result = pl.DataFrame([{"a": 1}, {"a": 2.5}])
+    assert result["a"].to_list() == [1.0, 2.5]
+    assert result["a"].dtype == pl.Float64
+
+    result = pl.DataFrame([("x", 1), ("y", 2.5)], orient="row")
+    assert result.to_series(1).to_list() == [1.0, 2.5]
+
+    result = pl.DataFrame(
+        [{"a": 1, "b": 1}, {"a": 2.5, "b": 2}],
+        schema={"a": None, "b": pl.Int64},
+    )
+    assert result["a"].to_list() == [1.0, 2.5]
+    assert result["b"].dtype == pl.Int64
+
+    with pytest.raises(SchemaError, match="Float64"):
+        pl.DataFrame(
+            [{"a": 1, "b": 1}, {"a": 2.5, "b": 2.5}],
+            schema={"a": None, "b": pl.Int64},
+        )
+
+
+def test_df_init_chunked_generator_inferred_schema_coerces() -> None:
+    def gen() -> Iterator[dict[str, Any]]:
+        yield from ({"x": i} for i in range(1000))
+        yield {"x": 2.5}
+
+    result = pl.DataFrame(gen())
+    assert result.height == 1001
+    assert result["x"].dtype == pl.Int64
+
+
+def test_df_init_rows_strict_numeric() -> None:
+    data = [{"a": 10.1}, {"a": 10.2}]
+
+    with pytest.raises(SchemaError, match="Float64"):
+        pl.DataFrame(data, schema={"a": pl.Int64})
+
+    with pytest.raises(SchemaError, match="Float64"):
+        pl.DataFrame([(10.1,), (10.2,)], schema={"a": pl.Int64}, orient="row")
+
+    result = pl.DataFrame(data, schema={"a": pl.Int64}, strict=False)
+    assert result.to_dict(as_series=False) == {"a": [10, 10]}
 
 
 def test_df_init_from_series_strict() -> None:

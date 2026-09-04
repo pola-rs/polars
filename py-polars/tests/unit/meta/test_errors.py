@@ -515,8 +515,8 @@ def test_invalid_group_by_arg() -> None:
 
 def test_overflow_msg() -> None:
     with pytest.raises(
-        ComputeError,
-        match=r"could not append value: 2147483648 of type: i64 to the builder",
+        SchemaError,
+        match=r"unexpected value while building Series of type Int32.*2147483648",
     ):
         pl.DataFrame([[2**31]], [("a", pl.Int32)], orient="row")
 

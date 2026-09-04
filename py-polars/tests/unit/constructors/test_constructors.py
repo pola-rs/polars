@@ -242,6 +242,7 @@ def test_init_structured_objects() -> None:
             df = DF(
                 data=trades,
                 schema_overrides={"timestamp": pl.Datetime("ms"), "size": pl.Int32},
+                strict=False,
             )
             assert df.schema == {
                 "timestamp": pl.Datetime("ms"),
@@ -259,6 +260,7 @@ def test_init_structured_objects() -> None:
                 ("pc", pl.Float64),
                 ("sz", pl.UInt16),
             ],
+            strict=False,
         )
         assert df.schema == {
             "ts": pl.Datetime("ms"),
@@ -528,6 +530,7 @@ def test_init_ndarray() -> None:
         data=[[1, 2.0, "a"], [None, None, None]],
         schema=[("x", pl.Boolean), ("y", pl.Int32), "z"],
         orient="row",
+        strict=False,
     )
     assert df.rows() == [(True, 2, "a"), (None, None, None)]
     assert df.schema == {"x": pl.Boolean, "y": pl.Int32, "z": pl.String}
@@ -901,7 +904,10 @@ def test_init_seq_of_seq() -> None:
     assert_frame_equal(df, expected)
 
     df = pl.DataFrame(
-        ((1, 2), (3, 4)), schema=(("a", pl.Float32), ("b", pl.Float32)), orient="row"
+        ((1, 2), (3, 4)),
+        schema=(("a", pl.Float32), ("b", pl.Float32)),
+        orient="row",
+        strict=False,
     )
     assert df.schema == {"a": pl.Float32, "b": pl.Float32}
     assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]

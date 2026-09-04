@@ -13,7 +13,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -139,10 +139,16 @@ def test_decimal_convert_to_float_by_schema() -> None:
 
 def test_df_constructor_convert_decimal_to_float_9873() -> None:
     result = pl.DataFrame(
-        [[D("45.0000")], [D("45.0000")]], schema={"a": pl.Float64}, orient="row"
+        [[D("45.0000")], [D("45.0000")]],
+        schema={"a": pl.Float64},
+        orient="row",
+        strict=False,
     )
     expected = pl.DataFrame({"a": [45.0, 45.0]})
     assert_frame_equal(result, expected)
+
+    with pytest.raises(SchemaError, match="Float64"):
+        pl.DataFrame([[D("45.0000")]], schema={"a": pl.Float64}, orient="row")
 
 
 def test_decimal_cast() -> None:

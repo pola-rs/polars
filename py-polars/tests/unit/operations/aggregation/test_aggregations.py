@@ -1279,7 +1279,7 @@ def test_first_last_nested(
     first_value: Any,
     last_value: Any,
 ) -> None:
-    s = pl.Series([first_value, last_value], dtype=dtype)
+    s = pl.Series([first_value, last_value], dtype=dtype, strict=False)
     if null_endpoints:
         # Test the case where the first/last value is null
         null = pl.Series([None], dtype=dtype)
@@ -1294,6 +1294,7 @@ def test_first_last_nested(
             "a": pl.Series(
                 [None if null_endpoints and not ignore_nulls else first_value],
                 dtype=dtype,
+                strict=False,
             )
         }
     )
@@ -1306,6 +1307,7 @@ def test_first_last_nested(
             "a": pl.Series(
                 [None if null_endpoints and not ignore_nulls else last_value],
                 dtype=dtype,
+                strict=False,
             ),
         }
     )

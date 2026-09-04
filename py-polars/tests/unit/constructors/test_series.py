@@ -45,6 +45,14 @@ def test_series_mixed_dtypes_object() -> None:
     assert s[1] == b"foo"
 
 
+def test_series_struct_strict_false() -> None:
+    dtype = pl.Struct({"a": pl.Float16})
+    result = pl.Series([{"a": 1.0}], dtype=dtype, strict=False)
+
+    assert result.dtype == dtype
+    assert result.to_list() == [{"a": 1.0}]
+
+
 # https://github.com/pola-rs/polars/issues/15139
 @pytest.mark.parametrize("dtype", [pl.List(pl.Int64), None])
 def test_sequence_of_series_with_dtype(dtype: PolarsDataType | None) -> None:

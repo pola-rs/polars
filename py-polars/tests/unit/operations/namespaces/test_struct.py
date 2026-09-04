@@ -159,6 +159,7 @@ def test_json_encode_decimal_25881() -> None:
     s = pl.Series(
         [{"a": 1.23}, {"a": 4.56}, {"a": None}, {"a": 30.13}],
         dtype=pl.Struct({"a": pl.Decimal(4, 2)}),
+        strict=False,
     )
     result = s.struct.json_encode()
     expected = pl.Series(

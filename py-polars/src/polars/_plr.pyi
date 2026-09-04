@@ -701,6 +701,7 @@ class PyDataFrame:
     def from_rows(
         data: Sequence[PySeries],
         schema: Any | None,
+        strict: bool,
         infer_schema_length: int | None,
     ) -> PyDataFrame: ...
     @staticmethod

@@ -2304,6 +2304,7 @@ def test_json_decode_decimal_25789() -> None:
     expected = pl.Series(
         [{"a": 1.23}, {"a": 4.56}, {"a": None}, {"a": 30.13}],
         dtype=pl.Struct({"a": pl.Decimal(4, 2)}),
+        strict=False,
     )
     assert_series_equal(result, expected)
 

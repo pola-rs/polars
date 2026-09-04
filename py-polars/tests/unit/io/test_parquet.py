@@ -2206,7 +2206,7 @@ def test_decimal_precision_nested_roundtrip(
         decimal_dtype = pl.Decimal(precision=precision)
         values, dtype = nesting(decimal_dtype)
 
-    df = pl.Series("a", values, dtype).to_frame()
+    df = pl.Series("a", values, dtype, strict=False).to_frame()
 
     test_round_trip(df)
 

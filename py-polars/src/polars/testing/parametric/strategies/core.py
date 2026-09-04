@@ -207,7 +207,7 @@ def series(  # noqa: D417
             )
         )
 
-    s = Series(name=name, values=values, dtype=dtype)
+    s = Series(name=name, values=values, dtype=dtype, strict=False)
 
     # Apply masking out of values
     if do_mask_out:
