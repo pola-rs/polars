@@ -132,17 +132,13 @@ fn _fadvise(file: &std::fs::File, advice: FileAdvice) {
     }
 }
 
-#[cfg(unix)]
-pub(crate) fn pread_exact(
-    file: &std::fs::File,
-    buf: &mut [u8],
-    offset: u64,
-) -> std::io::Result<()> {
+#[cfg(all(unix, not(feature = "nightly")))]
+fn pread_exact(file: &std::fs::File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
     use std::os::unix::fs::FileExt;
     file.read_exact_at(buf, offset)
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, not(feature = "nightly")))]
 fn pread_exact(file: &std::fs::File, buf: &mut [u8], offset: u64) -> std::io::Result<()> {
     use std::os::windows::fs::FileExt;
     let mut filled = 0;
@@ -155,6 +151,61 @@ fn pread_exact(file: &std::fs::File, buf: &mut [u8], offset: u64) -> std::io::Re
     Ok(())
 }
 
+/// `pread_exact` into uninitialized memory, so that `read_buffered` does not
+/// have to zero the buffer the read is about to overwrite anyway.
+#[cfg(all(feature = "nightly", unix))]
+fn pread_exact_uninit(
+    file: &std::fs::File,
+    buf: std::io::BorrowedCursor<'_, u8>,
+    offset: u64,
+) -> std::io::Result<()> {
+    use std::os::unix::fs::FileExt;
+    file.read_buf_exact_at(buf, offset)
+}
+
+#[cfg(all(feature = "nightly", windows))]
+fn pread_exact_uninit(
+    file: &std::fs::File,
+    mut buf: std::io::BorrowedCursor<'_, u8>,
+    mut offset: u64,
+) -> std::io::Result<()> {
+    use std::os::windows::fs::FileExt;
+    // `seek_read_buf` is the short-read variant; loop it to fill the cursor.
+    while buf.capacity() > 0 {
+        let written = buf.written();
+        file.seek_read_buf(buf.reborrow(), offset)?;
+        match buf.written() - written {
+            0 => return Err(std::io::ErrorKind::UnexpectedEof.into()),
+            n => offset += n as u64,
+        }
+    }
+    Ok(())
+}
+
+/// Read `len` bytes at `offset` through the page cache.
+///
+/// Under `nightly` the destination is left uninitialized and filled by the read
+/// itself; on stable it must be zeroed first, which memsets the whole range
+/// before the kernel overwrites it.
+#[cfg(feature = "nightly")]
+fn read_buffered(file: &std::fs::File, offset: u64, len: usize) -> PolarsResult<Buffer<u8>> {
+    let mut v: Vec<u8> = Vec::with_capacity(len);
+
+    let filled = {
+        let mut buf = std::io::BorrowedBuf::from(&mut v.spare_capacity_mut()[..len]);
+        pread_exact_uninit(file, buf.unfilled(), offset)?;
+        buf.len()
+    };
+
+    debug_assert_eq!(filled, len);
+    // Safety: `pread_exact_uninit` filled the cursor, so the first `filled`
+    // bytes of the allocation are initialized.
+    unsafe { v.set_len(filled) };
+
+    Ok(Buffer::from(v))
+}
+
+#[cfg(not(feature = "nightly"))]
 fn read_buffered(file: &std::fs::File, offset: u64, len: usize) -> PolarsResult<Buffer<u8>> {
     let mut buf = vec![0u8; len];
     pread_exact(file, &mut buf, offset)?;
