@@ -301,11 +301,8 @@ where
 
 /// Adds up every non-null element of `arr`, accumulating into `f32`.
 ///
-/// TODO(polars-array-scalar): a chunk that repeats a single value is written out one value per
-/// element here. Its sum is that value taken as many times as the chunk has non-null elements,
-/// but the pairwise summation below does not arrive at that product: it is a fixed tree of
-/// roundings that no closed form reproduces, so answering in `O(1)` would change the result
-/// rather than reach the same one sooner.
+/// TODO(polars-array-scalar): Fixed-size stack array strategy for init, can then reduce
+/// initial alloc size.
 pub fn sum_arr_as_f32<T>(arr: &PlPrimitiveArray<T>) -> f32
 where
     T: NativeType + FloatSum<f32>,
