@@ -1233,7 +1233,7 @@ def test_map_null_row_keeping_its_entries() -> None:
         [pa.py_buffer(bytes([0b10])), arr.buffers()[1]],
         children=[arr.values],
     )
-    s = pl.from_arrow(pa.table({"m": arr}))["m"]
+    s = pl.from_arrow(pa.table({"m": arr}))["m"]  # type: ignore[index]
     assert s.dtype == pl.Map(pl.Decimal(10, 2), pl.Int64)
     assert s.to_arrow().offsets.to_pylist() == [0, 1, 2]
     assert s.to_list() == [None, {Decimal("2.50"): 2}]
