@@ -68,7 +68,7 @@ impl Series {
     ///
     /// The caller must ensure that the given `dtype`'s physical type matches all the `ArrayRef` dtypes.
     ///
-    /// Value-level invariants must also hold. In particular, [`DataType::Map`] requires
+    /// Value-level invariants must also hold. In particular, `DataType::Map` requires
     /// a valid Map dtype and non-null entries with unique, non-null keys.
     pub unsafe fn from_chunks_and_dtype_unchecked(
         name: PlSmallStr,
