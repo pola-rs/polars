@@ -4599,3 +4599,142 @@ def test_parquet_created_by_field(df: pl.DataFrame, lazy: bool) -> None:
     assert match.group(1) == "Polars (python)"
     assert match.group(2) == pl.__version__
     assert match.group(3) == get_polars_build_commit()
+
+
+def _write_df_mixed_offset(
+    path: Path, n_rows: int, row_group_size: int
+) -> pl.DataFrame:
+    # Mix of fixed- and variable-width columns, so column chunks
+    # land at offsets that are not multiples of the block size.
+    df = pl.select(
+        a=pl.int_range(0, n_rows, dtype=pl.Int64),
+        b=pl.int_range(0, n_rows, dtype=pl.Int32),
+        # Variable-length values push subsequent chunks off any alignment.
+        c=pl.format("row-{}", pl.int_range(0, n_rows)),
+    )
+    df.write_parquet(path, row_group_size=row_group_size)
+    return df
+
+
+@pytest.mark.write_disk
+def test_o_direct_read_roundtrip(tmp_path: Path, plmonkeypatch: PlMonkeyPatch) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "aligned.parquet"
+    expect = _write_df_mixed_offset(path, n_rows=10_000, row_group_size=1024)
+
+    plmonkeypatch.setenv("POLARS_DIRECT_IO", "1")
+    assert_frame_equal(pl.scan_parquet(path).collect(), expect)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("n_rows", [1, 2, 1023, 1024, 1025, 4096, 4097])
+def test_o_direct_eof_tail(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, n_rows: int
+) -> None:
+    # Arbitrary offset, so the aligned span runs past EOF.
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / f"eof_{n_rows}.parquet"
+    expect = _write_df_mixed_offset(
+        path, n_rows=n_rows, row_group_size=max(n_rows // 2, 1)
+    )
+
+    plmonkeypatch.setenv("POLARS_DIRECT_IO", "1")
+    assert_frame_equal(pl.scan_parquet(path).collect(), expect)
+
+
+@pytest.mark.write_disk
+def test_o_direct_multi_file(tmp_path: Path, plmonkeypatch: PlMonkeyPatch) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    frames = [
+        _write_df_mixed_offset(tmp_path / f"part_{i}.parquet", 500 + i * 37, 128)
+        for i in range(8)
+    ]
+    expect = pl.concat(frames)
+
+    plmonkeypatch.setenv("POLARS_DIRECT_IO", "1")
+    got = pl.scan_parquet(tmp_path / "part_*.parquet").collect()
+    assert_frame_equal(got, expect)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "projection",
+    [
+        ["a"],
+        ["c"],
+        ["a", "c"],
+        ["c", "a"],
+        ["a", "b", "c"],
+        ["a", "c", "b"],
+        ["c", "b", "a"],
+    ],
+)
+def test_o_direct_projection(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, projection: list[str]
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "projected.parquet"
+    expect = _write_df_mixed_offset(path, n_rows=5_000, row_group_size=512)
+
+    plmonkeypatch.setenv("POLARS_DIRECT_IO", "1")
+    got = pl.scan_parquet(path).select(projection).collect()
+    assert_frame_equal(got, expect.select(projection))
+
+
+@pytest.mark.write_disk
+def test_o_direct_matches_buffered(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "compare.parquet"
+    _write_df_mixed_offset(
+        path, n_rows=20_000, row_group_size=997
+    )  # prime, to avoid tidy offsets
+
+    plmonkeypatch.setenv("POLARS_DIRECT_IO", "0")
+    buffered = pl.scan_parquet(path).collect()
+
+    plmonkeypatch.setenv("POLARS_DIRECT_IO", "1")
+    direct = pl.scan_parquet(path).collect()
+
+    assert_frame_equal(direct, buffered)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "advice",
+    ["normal", "sequential", "random", "willneed", "foo_blah"],
+)
+def test_file_posix_fadv(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, advice: str
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / f"fadv_{advice or 'empty'}.parquet"
+    expect = _write_df_mixed_offset(path, n_rows=10_000, row_group_size=997)
+
+    plmonkeypatch.setenv("POLARS_FILE_POSIX_FADV", advice)
+    assert_frame_equal(pl.scan_parquet(path).collect(), expect)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("direct_io", ["0", "1"])
+def test_scan_parquet_from_file_handle(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, direct_io: str
+) -> None:
+    # An open file object takes a different route than a path. The reader is
+    # handed a descriptor it did not open, so it cannot add O_DIRECT to it --
+    # POLARS_DIRECT_IO=1 must degrade to buffered reads and still be correct,
+    # rather than failing.
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "handle.parquet"
+    expect = _write_df_mixed_offset(path, n_rows=20_000, row_group_size=997)
+
+    plmonkeypatch.setenv("POLARS_DIRECT_IO", direct_io)
+    with path.open("rb") as f:
+        assert_frame_equal(pl.scan_parquet(f).collect(), expect)
+
+    # Trigger coalescing path
+    with path.open("rb") as f:
+        assert_frame_equal(
+            pl.scan_parquet(f).select("a", "c").collect(), expect.select("a", "c")
+        )
