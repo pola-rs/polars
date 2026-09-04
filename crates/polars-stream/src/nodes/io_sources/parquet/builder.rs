@@ -7,9 +7,8 @@ use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency::get_request_budget;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
-use polars_io::utils::byte_source::{DynByteSourceBuilder, FileReadContext};
+use polars_io::utils::byte_source::{self, DynByteSourceBuilder, FileReadContext};
 use polars_plan::dsl::ScanSource;
-use tokio::sync::Semaphore;
 
 use super::super::shared::pipeline_budget::PipelineBudget;
 use super::{FileReader, ParquetFileReader};
@@ -160,12 +159,10 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                         );
                     }
 
-                    let permits = Arc::new(Semaphore::new(concurrency));
-
                     FileReadContext {
                         enable_o_direct,
                         concurrency,
-                        permits,
+                        permits: byte_source::global_read_permits(),
                         advice: fadv,
                     }
                 });
