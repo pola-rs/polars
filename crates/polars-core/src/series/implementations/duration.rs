@@ -1,9 +1,6 @@
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
-use crate::chunked_array::comparison::*;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::*;
 
 unsafe impl IntoSeries for DurationChunked {
@@ -35,10 +32,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
 
     fn _get_flags(&self) -> StatisticsFlags {
         self.0.physical().get_flags()
-    }
-
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        self.0.physical().equal_element(idx_self, idx_other, other)
     }
 
     #[cfg(feature = "zip_with")]
@@ -108,30 +101,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         self.0
             .physical()
             .agg_sum(groups)
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
-    #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_std(&self, groups: &GroupsType, ddof: u8) -> Series {
-        self.0
-            .physical()
-            .agg_std(groups, ddof)
-            // cast f64 back to physical type
-            .cast(&DataType::Int64)
-            .unwrap()
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
-    #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_var(&self, groups: &GroupsType, ddof: u8) -> Series {
-        self.0
-            .physical()
-            .agg_var(groups, ddof)
-            // cast f64 back to physical type
-            .cast(&DataType::Int64)
-            .unwrap()
             .into_duration(self.0.time_unit())
             .into_series()
     }
@@ -328,14 +297,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.physical().median()
     }
 
-    fn std(&self, ddof: u8) -> Option<f64> {
-        self.0.physical().std(ddof)
-    }
-
-    fn var(&self, ddof: u8) -> Option<f64> {
-        self.0.physical().var(ddof)
-    }
-
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         let mut other = other.to_physical_repr().into_owned();
@@ -486,6 +447,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.physical().n_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         ChunkUnique::unique_id(self.0.physical())
     }
@@ -534,19 +496,11 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         let v = sc.value().as_duration(self.0.time_unit());
         Ok(Scalar::new(self.dtype().clone(), v))
     }
+
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().min_reduce();
         let v = sc.value().as_duration(self.0.time_unit());
         Ok(Scalar::new(self.dtype().clone(), v))
-    }
-    fn std_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
-        let sc = self.0.physical().std_reduce(ddof);
-        let to = self.dtype().to_physical();
-        let v = sc.value().cast(&to);
-        Ok(Scalar::new(
-            self.dtype().clone(),
-            v.as_duration(self.0.time_unit()),
-        ))
     }
 
     fn mean_reduce(&self) -> PolarsResult<Scalar> {

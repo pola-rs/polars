@@ -14,7 +14,7 @@ impl StringChunked {
     pub fn to_decimal_infer(&self, infer_length: usize) -> PolarsResult<Series> {
         let mut scale = 0;
         let mut prec_past_scale = 0;
-        let mut iter = self.into_iter();
+        let mut iter = self.iter();
         let mut valid_count = 0;
         while let Some(Some(v)) = iter.next() {
             let mut bytes = v.as_bytes();

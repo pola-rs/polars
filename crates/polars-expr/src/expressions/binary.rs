@@ -2,6 +2,7 @@ use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 #[cfg(feature = "round_series")]
 use polars_ops::prelude::floor_div_series;
+use recursive::recursive;
 
 use super::*;
 use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
@@ -229,6 +230,7 @@ impl PhysicalExpr for BinaryExpr {
         Some(&self.expr)
     }
 
+    #[recursive]
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         // Window functions may set a global state that determine their output
         // state, so we don't let them run in parallel as they race
@@ -264,6 +266,7 @@ impl PhysicalExpr for BinaryExpr {
     }
 
     #[allow(clippy::ptr_arg)]
+    #[recursive]
     fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,

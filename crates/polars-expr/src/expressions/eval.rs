@@ -140,9 +140,7 @@ impl EvalExpr {
             let mut column = self.evaluation.evaluate(&df, &state)?;
 
             // Since `lit` is marked as elementwise, this may lead to problems.
-            if column.len() == 1 && flattened_len != 1 {
-                column = column.new_from_index(0, flattened_len);
-            }
+            column.broadcast_in_place_to(flattened_len)?;
 
             if !is_agg || !self.evaluation_is_scalar {
                 column = ca
@@ -210,8 +208,8 @@ impl EvalExpr {
                 output_groups
                     .iter()
                     .zip(offsets.offset_and_length_iter())
-                    .all(|([start, len], (original_start, original_len))| {
-                        (*start == original_start as IdxSize) & (*len == original_len as IdxSize)
+                    .all(|([start, len], (original_start, original_groups))| {
+                        (*start == original_start as IdxSize) & (*len == original_groups as IdxSize)
                     })
             };
 
@@ -315,9 +313,7 @@ impl EvalExpr {
             state.element = Arc::new(Some((flattened, None)));
 
             let mut column = self.evaluation.evaluate(&df, &state)?;
-            if column.len() == 1 && flattened_len != 1 {
-                column = column.new_from_index(0, flattened_len);
-            }
+            column.broadcast_in_place_to(flattened_len)?;
             assert_eq!(column.len(), ca.len() * ca.width());
 
             let dtype = column.dtype().clone();

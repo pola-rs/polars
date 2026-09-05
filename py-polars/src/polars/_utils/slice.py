@@ -32,7 +32,7 @@ class PolarsSlice:
     @staticmethod
     def _as_original(lazy: LazyFrame, original: FrameOrSeries) -> FrameOrSeries:
         """Return lazy variant back to its original type."""
-        frame = lazy.collect()
+        frame = lazy._collect_eager()
         return frame if isinstance(original, pl.DataFrame) else frame.to_series()
 
     @staticmethod

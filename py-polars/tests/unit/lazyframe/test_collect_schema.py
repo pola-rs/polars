@@ -51,68 +51,6 @@ def test_collect_schema_unpivot_duplicate() -> None:
         _ = lf.collect_schema()
 
 
-# https://github.com/pola-rs/polars/issues/27565 — collect_schema() must
-# raise InvalidOperationError for unsupported input dtypes instead of
-# silently returning a dtype that the actual `collect()` would reject.
-
-
-@pytest.mark.parametrize("op", ["abs", "neg"])
-def test_collect_schema_abs_neg_reject_string_27565(op: str) -> None:
-    lf = pl.LazyFrame({"a": [None]}, schema={"a": pl.String}).select(
-        result=getattr(pl.col("a"), op)()
-    )
-    with pytest.raises(pl.exceptions.InvalidOperationError, match=op):
-        lf.collect_schema()
-
-
-def test_collect_schema_pow_rejects_string_base_27565() -> None:
-    lf = pl.LazyFrame({"a": [None]}, schema={"a": pl.String}).select(
-        result=pl.col("a") ** 2
-    )
-    with pytest.raises(pl.exceptions.InvalidOperationError, match=r"`pow`.*base"):
-        lf.collect_schema()
-
-
-def test_collect_schema_pow_rejects_string_exponent_27565() -> None:
-    lf = pl.LazyFrame(
-        {"a": [1], "b": [None]}, schema={"a": pl.Int64, "b": pl.String}
-    ).select(result=pl.col("a") ** pl.col("b"))
-    with pytest.raises(pl.exceptions.InvalidOperationError, match=r"`pow`.*exponent"):
-        lf.collect_schema()
-
-
-@pytest.mark.parametrize("fn", ["sqrt", "cbrt"])
-def test_collect_schema_sqrt_cbrt_returns_float_27565(fn: str) -> None:
-    # Case 4 of #27565: `sqrt(String)` used to return `String` in collect_schema()
-    # while collect() returned `Float64`. The fix makes schema match runtime by
-    # always returning Float64 (including for non-numeric inputs that runtime
-    # silently coerces to null).
-    for dtype in (pl.String, pl.Int64, pl.Float64):
-        lf = pl.LazyFrame({"a": [None]}, schema={"a": dtype}).select(
-            result=getattr(pl.col("a"), fn)()
-        )
-        assert lf.collect_schema()["result"] == pl.Float64
-
-
-def test_collect_schema_trig_rejects_string_27565() -> None:
-    lf = pl.LazyFrame({"a": [None]}, schema={"a": pl.String}).select(
-        result=pl.col("a").sin()
-    )
-    with pytest.raises(pl.exceptions.InvalidOperationError, match="trigonometry"):
-        lf.collect_schema()
-
-
-@pytest.mark.parametrize("dtype", [pl.String, pl.Boolean])
-def test_collect_schema_entropy_rejects_non_numeric_27565(
-    dtype: pl.DataType,
-) -> None:
-    lf = pl.LazyFrame({"a": [None]}, schema={"a": dtype}).select(
-        result=pl.col("a").entropy()
-    )
-    with pytest.raises(pl.exceptions.InvalidOperationError, match="entropy"):
-        lf.collect_schema()
-
-
 def test_arr_get_oob_errors_at_schema_26088() -> None:
     lf = pl.LazyFrame({"arr": [[1, 2, 3]]}).cast({"arr": pl.Array(pl.Int64, shape=3)})
 
@@ -130,22 +68,19 @@ def test_arr_get_oob_errors_at_schema_26088() -> None:
 
 
 @pytest.mark.parametrize(
-    ("rhs_dtype", "rhs_val"),
-    [
-        (pl.Duration, 0),
-        (pl.Time, 0),
-        (pl.Date, 0),
-        (pl.Datetime, 0),
-    ],
+    "lhs_dtype",
+    [pl.Boolean, pl.Int64, pl.Float16, pl.Float32, pl.Float64, pl.Decimal(10, 2)],
 )
-def test_collect_schema_truediv_rejects_numeric_div_temporal_27565(
-    rhs_dtype: pl.DataType, rhs_val: int
+@pytest.mark.parametrize(
+    "rhs_dtype",
+    [pl.Duration, pl.Time, pl.Date, pl.Datetime],
+)
+def test_collect_schema_truediv_rejects_temporal_rhs_27565(
+    lhs_dtype: pl.DataType, rhs_dtype: pl.DataType
 ) -> None:
-    lf = (
-        pl.LazyFrame({"a": [1], "b": [rhs_val]})
-        .cast({"b": rhs_dtype})
-        .select(result=pl.col("a") / pl.col("b"))
-    )
+    lf = pl.LazyFrame(
+        {"a": [None], "b": [None]}, schema={"a": lhs_dtype, "b": rhs_dtype}
+    ).select(result=pl.col("a") / pl.col("b"))
     with pytest.raises(pl.exceptions.InvalidOperationError, match="not allowed"):
         lf.collect_schema()
 

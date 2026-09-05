@@ -203,9 +203,10 @@ pub(super) fn sqrt(base: &Column) -> PolarsResult<Column> {
             let ca = base.f64().unwrap();
             sqrt_on_floats(ca)
         },
-        _ => {
-            let base = base.cast(&DataType::Float64)?;
-            sqrt(&base)
+        dt => {
+            let casted = base.cast(&DataType::Float64)?;
+            polars_ensure!(casted.dtype() == &DataType::Float64, opq = sqrt, dt);
+            sqrt(&casted)
         },
     }
 }
@@ -234,9 +235,10 @@ pub(super) fn cbrt(base: &Column) -> PolarsResult<Column> {
             let ca = base.f64().unwrap();
             cbrt_on_floats(ca)
         },
-        _ => {
-            let base = base.cast(&DataType::Float64)?;
-            cbrt(&base)
+        dt => {
+            let casted = base.cast(&DataType::Float64)?;
+            polars_ensure!(casted.dtype() == &DataType::Float64, opq = cbrt, dt);
+            cbrt(&casted)
         },
     }
 }

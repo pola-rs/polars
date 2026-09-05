@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from inspect import iscoroutinefunction
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from polars._dependencies import import_optional
+from polars._utils.various import parse_version
 from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Coroutine, Iterable
+    from collections.abc import Coroutine, Iterable, Iterator
 
     import pyarrow as pa
 
@@ -149,3 +151,44 @@ class SurrealDBCursorProxy:
         result = self._cached_result[:size]
         del self._cached_result[:size]
         return result
+
+
+class OracleCursorProxy:
+    """Cursor proxy for `python-oracledb` connections."""
+
+    minimum_version: ClassVar[str] = "3.4.0"
+
+    def __init__(self, connection: Any) -> None:
+        self.connection = connection
+        self.execute_options: dict[str, Any] = {}
+        self.query: str | None = None
+
+    @classmethod
+    def supports_arrow(cls, connection: Any) -> bool:
+        """Check if the given connection can serve Arrow data through this proxy."""
+        fetch_df_all = getattr(connection, "fetch_df_all", None)
+        if fetch_df_all is None or iscoroutinefunction(fetch_df_all):
+            return False
+
+        oracledb = import_optional("oracledb")
+        return parse_version(oracledb.__version__) >= parse_version(cls.minimum_version)
+
+    def close(self) -> None:
+        """Close the cursor."""
+        # no-op; never close a user's connection
+
+    def execute(self, query: str, **execute_options: Any) -> Self:
+        """Execute a query (n/a: store query for the fetch* methods)."""
+        self.execute_options = execute_options
+        self.query = query
+        return self
+
+    def fetch_df_all(self) -> Any:
+        """Fetch all rows as a single Arrow-capable dataframe object."""
+        return self.connection.fetch_df_all(self.query, **self.execute_options)
+
+    def fetch_df_batches(self, size: int) -> Iterator[Any]:
+        """Fetch rows in batches, yielding Arrow-capable dataframe objects."""
+        return self.connection.fetch_df_batches(
+            self.query, size=size, **self.execute_options
+        )

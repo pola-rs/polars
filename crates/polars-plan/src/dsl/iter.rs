@@ -19,6 +19,7 @@ impl DslPlan {
                 scratch.extend(inputs)
             },
             PipeWithSchema { input, .. } => scratch.extend(input.iter()),
+            SQL { relations, .. } => scratch.extend(relations.iter().map(|(_, plan)| plan)),
             Join {
                 input_left,
                 input_right,
@@ -30,10 +31,6 @@ impl DslPlan {
             Gather { input, idxs, .. } => {
                 scratch.push(input);
                 scratch.push(idxs);
-            },
-            ExtContext { input, contexts } => {
-                scratch.push(input);
-                scratch.extend(contexts);
             },
             IR { dsl, .. } => scratch.push(dsl),
             Scan { .. } | DataFrameScan { .. } => (),

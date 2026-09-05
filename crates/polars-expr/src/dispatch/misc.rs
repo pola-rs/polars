@@ -4,6 +4,7 @@ use polars_core::prelude::*;
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
 use polars_core::series::ops::NullBehavior;
+use polars_ops::prelude::ListNameSpaceImpl;
 #[cfg(feature = "interpolate")]
 use polars_ops::series::InterpolationMethod;
 #[cfg(feature = "rank")]
@@ -155,10 +156,6 @@ pub(super) fn mean_horizontal(s: &mut [Column], ignore_nulls: bool) -> PolarsRes
 
 pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
     Ok(s.drop_nulls())
-}
-
-pub fn rechunk(s: &Column) -> PolarsResult<Column> {
-    Ok(s.rechunk())
 }
 
 pub fn quantile(s: &[Column], method: QuantileMethod) -> PolarsResult<Column> {
@@ -384,16 +381,7 @@ pub(super) fn extend_constant(s: &[Column]) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "row_hash")]
-pub(super) fn row_hash(c: &Column, k0: u64, k1: u64, k2: u64, k3: u64) -> PolarsResult<Column> {
-    use std::hash::BuildHasher;
-
-    use polars_utils::aliases::{
-        PlFixedStateQuality, PlSeedableRandomStateQuality, SeedableFromU64SeedExt,
-    };
-
-    // TODO: don't expose all these seeds.
-    let seed = PlFixedStateQuality::default().hash_one((k0, k1, k2, k3));
-
+pub(super) fn row_hash(c: &Column, seed: u64) -> PolarsResult<Column> {
     // @scalar-opt
     Ok(c.as_materialized_series()
         .hash(PlSeedableRandomStateQuality::seed_from_u64(seed))
@@ -679,6 +667,16 @@ pub fn as_struct(cols: &[Column]) -> PolarsResult<Column> {
     Ok(StructChunked::from_columns(fst.name().clone(), length, cols)?.into_column())
 }
 
+pub fn as_list(s: &mut [Column]) -> PolarsResult<Column> {
+    let first = s[0].to_unit_list();
+    let other: Vec<Column> = s[1..].iter().map(Column::to_unit_list).collect();
+
+    first
+        .list()?
+        .lst_concat(&other)
+        .map(IntoColumn::into_column)
+}
+
 #[cfg(feature = "log")]
 pub(super) fn entropy(s: &Column, base: f64, normalize: bool) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
@@ -704,14 +702,14 @@ pub(super) fn log(columns: &[Column]) -> PolarsResult<Column> {
 pub(super) fn log1p(s: &Column) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
-    Ok(s.as_materialized_series().log1p().into())
+    Ok(s.as_materialized_series().log1p()?.into())
 }
 
 #[cfg(feature = "log")]
 pub(super) fn exp(s: &Column) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
-    Ok(s.as_materialized_series().exp().into())
+    Ok(s.as_materialized_series().exp()?.into())
 }
 
 pub(super) fn unique(s: &Column, stable: bool) -> PolarsResult<Column> {
@@ -947,6 +945,11 @@ pub(super) fn ewm_mean(
 }
 
 #[cfg(feature = "ewma")]
+pub(super) fn ewm_sum(s: &Column, options: polars_ops::series::EWMOptions) -> PolarsResult<Column> {
+    polars_ops::prelude::ewm_sum(s.as_materialized_series(), options).map(Column::from)
+}
+
+#[cfg(feature = "ewma")]
 pub(super) fn ewm_std(s: &Column, options: polars_ops::series::EWMOptions) -> PolarsResult<Column> {
     polars_ops::prelude::ewm_std(s.as_materialized_series(), options).map(Column::from)
 }
@@ -974,6 +977,31 @@ pub(super) fn ewm_mean_by(s: &[Column], half_life: polars_time::Duration) -> Pol
         .as_materialized_series()
         .is_sorted(Default::default())?;
     polars_ops::prelude::ewm_mean_by(
+        values.as_materialized_series(),
+        times.as_materialized_series(),
+        half_life,
+        times_is_sorted,
+    )
+    .map(Column::from)
+}
+
+#[cfg(feature = "ewma_by")]
+pub(super) fn ewm_sum_by(s: &[Column], half_life: polars_time::Duration) -> PolarsResult<Column> {
+    use polars_ops::series::SeriesMethods;
+
+    let time_zone = match s[1].dtype() {
+        DataType::Datetime(_, Some(time_zone)) => Some(time_zone),
+        _ => None,
+    };
+    polars_ensure!(!half_life.negative(), InvalidOperation: "half_life cannot be negative");
+    polars_time::prelude::ensure_is_constant_duration(half_life, time_zone, "half_life")?;
+    let half_life = half_life.duration_ns();
+    let values = &s[0];
+    let times = &s[1];
+    let times_is_sorted = times
+        .as_materialized_series()
+        .is_sorted(Default::default())?;
+    polars_ops::prelude::ewm_sum_by(
         values.as_materialized_series(),
         times.as_materialized_series(),
         half_life,

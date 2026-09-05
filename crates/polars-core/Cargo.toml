@@ -9,6 +9,7 @@ repository = { workspace = true }
 description = "Core of the Polars DataFrame library"
 
 [dependencies]
+polars-async = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true, features = ["gather"] }
 polars-config = { workspace = true }
@@ -34,7 +35,7 @@ itoa = { workspace = true }
 ndarray = { workspace = true, optional = true }
 num-traits = { workspace = true }
 proptest = { workspace = true, optional = true }
-rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
+rand = { workspace = true, optional = true, features = ["std"] }
 rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true, optional = true }
@@ -70,6 +71,7 @@ proptest = ["dep:proptest", "dtype-u8", "dtype-u16", "dtype-i8", "dtype-i16", "d
 random = ["rand", "rand_distr"]
 algorithm_group_by = []
 default = ["algorithm_group_by"]
+numa = ["polars-async/numa"]
 lazy = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
@@ -128,6 +130,7 @@ dtype-i16 = []
 dtype-i128 = ["polars-compute/dtype-i128"]
 dtype-decimal = ["arrow/dtype-decimal", "polars-compute/cast", "polars-compute/dtype-decimal", "dtype-i128"]
 dtype-extension = ["polars-dtype/dtype-extension"]
+dtype-map = ["dtype-struct"]
 dtype-u8 = []
 dtype-u16 = []
 dtype-u128 = ["polars-compute/dtype-u128"]
@@ -136,7 +139,7 @@ dtype-categorical = ["polars-dtype/dtype-categorical"]
 dtype-struct = []
 
 # scale to terabytes?
-bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
+bigidx = ["arrow/bigidx", "polars-utils/bigidx", "dtype-i128"]
 python = ["polars-error/python"]
 
 serde = [

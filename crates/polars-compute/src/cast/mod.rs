@@ -23,17 +23,13 @@ use arrow::array::*;
 use arrow::datatypes::*;
 use arrow::match_integer_type;
 use arrow::offset::{Offset, Offsets};
-use binview_to::{
-    binview_to_dictionary, utf8view_to_date32_dyn, utf8view_to_dictionary,
-    utf8view_to_naive_timestamp_dyn, view_to_binary,
-};
+use binview_to::{binview_to_dictionary, utf8view_to_dictionary, view_to_binary};
 pub use binview_to::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use dictionary_to::*;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::IdxSize;
 use polars_utils::float16::pf16;
 pub use primitive_to::*;
-use temporal::utf8view_to_timestamp;
 pub use utf8_to::*;
 
 /// options defining how Cast kernels behave
@@ -257,14 +253,18 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
 
     let mut all_views_inline = true;
 
-    // In a View for BinaryViewArray, both length and offset are u32.
-    #[cfg(not(test))]
-    const MAX_BUF_SIZE: usize = u32::MAX as usize;
-
-    // This allows us to test some invariants without using 4GB of RAM; see mod
-    // tests below.
-    #[cfg(test)]
-    const MAX_BUF_SIZE: usize = 15;
+    const MAX_BUF_SIZE: usize = if cfg!(test) {
+        // This allows us to test some invariants without using 4GB of RAM; see mod
+        // tests below.
+        27
+    } else {
+        BINVIEW_MAX_ROW_BYTE_LEN
+    };
+    const SPLIT_BUF_SIZE: usize = if cfg!(test) {
+        26
+    } else {
+        BINVIEW_ARROW_BUFFER_LEN_LIMIT
+    };
 
     for index in 0..list.len() {
         // Check if there's a null instead of a list:
@@ -303,7 +303,7 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
             }
         }
 
-        if end - previous_buf_lengths > MAX_BUF_SIZE {
+        if end - previous_buf_lengths > SPLIT_BUF_SIZE {
             // View offsets must fit in u32 (or smaller value when running Rust
             // tests), and we've determined the end of the next view will be
             // past that.
@@ -496,35 +496,20 @@ pub fn cast(
             Ok(cast_large_to_list(array.as_any().downcast_ref().unwrap(), to_type).boxed())
         },
 
-        (_, List(to)) => {
-            // cast primitive to list's primitive
-            let values = cast(array, &to.dtype, options)?;
-            // create offsets, where if array.len() = 2, we have [0,1,2]
-            let offsets = (0..=array.len() as i32).collect::<Vec<_>>();
-            // SAFETY: offsets _are_ monotonically increasing
-            let offsets = unsafe { Offsets::new_unchecked(offsets) };
-
-            let list_array = ListArray::<i32>::new(to_type.clone(), offsets.into(), values, None);
-
-            Ok(Box::new(list_array))
+        (_, List(_)) => {
+            polars_bail!(
+                InvalidOperation:
+                "casting from {from_type:?} to list type is not supported\n\
+                Hint: Use pl.list(expr) to turn the {from_type:?} column into a column of single-element lists."
+            );
         },
 
-        (_, LargeList(to)) if from_type != &LargeBinary => {
-            // cast primitive to list's primitive
-            let values = cast(array, &to.dtype, options)?;
-            // create offsets, where if array.len() = 2, we have [0,1,2]
-            let offsets = (0..=array.len() as i64).collect::<Vec<_>>();
-            // SAFETY: offsets _are_ monotonically increasing
-            let offsets = unsafe { Offsets::new_unchecked(offsets) };
-
-            let list_array = ListArray::<i64>::new(
-                to_type.clone(),
-                offsets.into(),
-                values,
-                array.validity().cloned(),
+        (_, LargeList(_)) if from_type != &LargeBinary => {
+            polars_bail!(
+                InvalidOperation:
+                "casting from {from_type:?} to list type is not supported\n\
+                Hint: Use pl.list(expr) to turn the {from_type:?} column into a column of single-element lists."
             );
-
-            Ok(Box::new(list_array))
         },
 
         (Utf8View, _) => {
@@ -549,17 +534,27 @@ pub fn cast(
                 Float16 => utf8view_to_primitive_dyn::<pf16>(arr, to_type, options),
                 Float32 => utf8view_to_primitive_dyn::<f32>(arr, to_type, options),
                 Float64 => utf8view_to_primitive_dyn::<f64>(arr, to_type, options),
-                Timestamp(time_unit, None) => {
-                    utf8view_to_naive_timestamp_dyn(array, time_unit.to_owned())
+                Timestamp(_, None) => {
+                    polars_bail!(
+                        InvalidOperation:
+                        "casting from string to datetime is not supported.\n\
+                        It was removed in Polars 2.0. Use `str.to_datetime()` instead."
+                    );
                 },
-                Timestamp(time_unit, Some(time_zone)) => utf8view_to_timestamp(
-                    array.as_any().downcast_ref().unwrap(),
-                    RFC3339,
-                    time_zone.clone(),
-                    time_unit.to_owned(),
-                )
-                .map(|arr| arr.boxed()),
-                Date32 => utf8view_to_date32_dyn(array),
+                Timestamp(_, Some(time_zone)) => {
+                    polars_bail!(
+                        InvalidOperation:
+                        "casting from string to datetime is not supported.\n\
+                        It was removed in Polars 2.0. Use `str.to_datetime(..., \"time_zone={time_zone}\")` instead."
+                    );
+                },
+                Date32 => {
+                    polars_bail!(
+                        InvalidOperation:
+                        "casting from string to date is not supported.\n\
+                        It was removed in Polars 2.0. Use `str.to_date()` instead."
+                    );
+                },
                 #[cfg(feature = "dtype-decimal")]
                 Decimal(precision, scale) => {
                     Ok(binview_to_decimal(&arr.to_binview(), *precision, *scale).to_boxed())
@@ -1149,10 +1144,10 @@ mod tests {
     fn cast_list_uint8_to_binary_across_buffer_max_size() {
         let dtype =
             ArrowDataType::List(Box::new(Field::new("".into(), ArrowDataType::UInt8, true)));
-        let values = PrimitiveArray::from_slice((0u8..20).collect::<Vec<_>>()).boxed();
+        let values = PrimitiveArray::from_slice((0u8..53).collect::<Vec<_>>()).boxed();
         let list_u8 = ListArray::try_new(
             dtype,
-            unsafe { OffsetsBuffer::new_unchecked(vec![0, 13, 18, 20].into()) },
+            unsafe { OffsetsBuffer::new_unchecked(vec![0, 13, 26, 39, 53].into()) },
             values,
             None,
         )
@@ -1172,8 +1167,9 @@ mod tests {
                 .collect::<Vec<Vec<u8>>>(),
             vec![
                 vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-                vec![13, 14, 15, 16, 17],
-                vec![18, 19]
+                vec![13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25],
+                vec![26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38],
+                vec![39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52],
             ]
         );
         // max offset of 15 so we need to split:
@@ -1183,7 +1179,7 @@ mod tests {
                 .iter()
                 .map(|buf| buf.len())
                 .collect::<Vec<_>>(),
-            vec![13, 7]
+            vec![26, 13, 14]
         );
     }
 
@@ -1192,12 +1188,12 @@ mod tests {
     /// smaller, so a list of size 16 should cause an error.
     #[test]
     fn cast_list_uint8_to_binary_errors_too_large_list() {
-        let values = PrimitiveArray::from_slice(vec![0u8; 16]);
+        let values = PrimitiveArray::from_slice(vec![0u8; 28]);
         let dtype =
             ArrowDataType::List(Box::new(Field::new("".into(), ArrowDataType::UInt8, true)));
         let list_u8 = ListArray::new(
             dtype,
-            OffsetsBuffer::one_with_length(16),
+            OffsetsBuffer::one_with_length(28),
             values.boxed(),
             None,
         );
@@ -1211,7 +1207,7 @@ mod tests {
         assert!(matches!(
             err,
             PolarsError::InvalidOperation(msg)
-                if msg.as_ref() == "when casting to BinaryView, list lengths must be <= 15"
+                if msg.as_ref() == "when casting to BinaryView, list lengths must be <= 27"
         ));
     }
 

@@ -27,12 +27,15 @@ blake3 = { workspace = true, optional = true }
 bytes = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
+crossbeam-queue = { workspace = true }
 fast-float2 = { workspace = true, optional = true }
+fastrand = { workspace = true, optional = true }
 flate2 = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 glob = { version = "0.3" }
 hashbrown = { workspace = true }
 itoa = { workspace = true, optional = true }
+libc = { workspace = true }
 memchr = { workspace = true }
 memmap = { workspace = true }
 num-traits = { workspace = true }
@@ -40,29 +43,30 @@ object_store = { workspace = true, optional = true }
 parking_lot = { workspace = true, optional = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
-reqwest = { workspace = true, optional = true, features = ["json"] }
+reqwest = { workspace = true, optional = true, features = ["json", "query"] }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { version = "1", optional = true }
 simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }
-strum = { workspace = true, optional = true }
-strum_macros = { workspace = true, optional = true }
+strum = { workspace = true }
+strum_macros = { workspace = true }
 tokio = { workspace = true }
 zmij = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-fs4 = { version = "0.13", features = ["sync"], optional = true }
+fs4 = { version = "1.1", features = ["sync"], optional = true }
 home = "0.5.4"
 
 [dev-dependencies]
 tempfile = "3"
 
 [features]
-catalog = ["cloud", "serde", "reqwest", "futures", "strum", "strum_macros", "chrono"]
+catalog = ["cloud", "serde", "reqwest", "futures", "chrono"]
 default = ["decompress"]
 # support for arrows json parsing
 json = [
@@ -75,6 +79,7 @@ json = [
 scan_lines = []
 serde = [
   "dep:serde",
+  "serde_json",
   "polars-buffer/serde",
   "polars-config/serde",
   "polars-core/serde-lazy",
@@ -100,6 +105,7 @@ dtype-f16 = ["polars-core/dtype-f16"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
 dtype-extension = ["polars-core/dtype-extension"]
+dtype-map = ["polars-core/dtype-map"]
 object = ["polars-core/object"]
 dtype-datetime = [
   "polars-core/dtype-datetime",
@@ -135,8 +141,11 @@ cloud = [
   "serde_json",
   "serde",
   "file_cache",
+  "rand",
   "reqwest",
   "http",
+  "fastrand",
+  "chrono",
 ]
 file_cache = ["async", "dep:blake3", "dep:fs4", "dep:parking_lot", "serde_json", "cloud"]
 aws = ["object_store/aws", "cloud", "reqwest"]

@@ -4,8 +4,9 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::trusted_len::TrustMyLength;
 use num_traits::{Num, NumCast};
 use polars_compute::rolling::QuantileMethod;
-use polars_error::PolarsResult;
+use polars_error::{PolarsContext, PolarsResult};
 use polars_utils::aliases::PlSeedableRandomStateQuality;
+use polars_utils::broadcast::{BroadcastLength, broadcast_len};
 use polars_utils::index::check_bounds;
 use polars_utils::pl_str::PlSmallStr;
 pub use scalar::ScalarColumn;
@@ -243,6 +244,15 @@ impl Column {
         match self {
             Column::Series(s) => Some(s),
             _ => None,
+        }
+    }
+
+    /// Get the [`ScalarColumn`] as [`Series`] if it was already materialized.
+    #[inline]
+    pub fn lazy_as_materialized_series(&self) -> Option<&Series> {
+        match self {
+            Column::Series(s) => Some(s),
+            Column::Scalar(s) => s.lazy_as_materialized_series(),
         }
     }
     #[inline]
@@ -522,6 +532,37 @@ impl Column {
         }
     }
 
+    /// Returns a column with the given length.
+    ///
+    /// Errors if this column's length is not 1 and also not equal to the requested length.
+    pub fn broadcast_to(&self, length: usize) -> PolarsResult<Cow<'_, Self>> {
+        let len = self.len();
+        if len == length {
+            Ok(Cow::Borrowed(self))
+        } else if len == 1 {
+            Ok(Cow::Owned(self.new_from_index(0, length)))
+        } else {
+            polars_bail!(
+                ShapeMismatch: "can't broadcast Series '{}' of length {len} to length {length}",
+                self.name()
+            );
+        }
+    }
+
+    /// See broadcast_to.
+    pub fn broadcast_in_place_to(&mut self, length: usize) -> PolarsResult<()> {
+        if let Cow::Owned(new) = self.broadcast_to(length)? {
+            *self = new;
+        }
+        Ok(())
+    }
+
+    /// See broadcast_to.
+    pub fn broadcast_owned_to(mut self, length: usize) -> PolarsResult<Self> {
+        self.broadcast_in_place_to(length)?;
+        Ok(self)
+    }
+
     #[inline]
     pub fn has_nulls(&self) -> bool {
         match self {
@@ -588,9 +629,29 @@ impl Column {
     }
 
     pub fn split_at(&self, offset: i64) -> (Column, Column) {
-        // @scalar-opt
-        let (l, r) = self.as_materialized_series().split_at(offset);
-        (l.into(), r.into())
+        match self {
+            Column::Scalar(c) => {
+                let len = c.len();
+                let offset = if offset < 0 {
+                    let offset_abs = usize::try_from(offset.strict_abs())
+                        .expect("offset exceeds usize limits")
+                        .min(len);
+                    len - offset_abs
+                } else {
+                    usize::try_from(offset)
+                        .expect("offset exceeds usize limits")
+                        .min(len)
+                };
+                (
+                    Column::Scalar(c.resize(offset)),
+                    Column::Scalar(c.resize(len - offset)),
+                )
+            },
+            Column::Series(_) => {
+                let (l, r) = self.as_materialized_series().split_at(offset);
+                (l.into(), r.into())
+            },
+        }
     }
 
     #[inline]
@@ -1259,6 +1320,28 @@ impl Column {
         self.as_materialized_series().shift(periods).into()
     }
 
+    pub fn with_validity(&self, validity: Option<Bitmap>) -> Column {
+        match self {
+            Column::Series(s) => Column::from(s.with_validity(validity)),
+            Column::Scalar(s) => match validity {
+                Some(v) => Column::from(s.as_materialized_series().with_validity(Some(v))),
+                None => Column::Scalar(s.clone()),
+            },
+        }
+    }
+
+    pub fn mask(&self, validity: &Bitmap) -> Column {
+        if validity.len() == 1 {
+            if validity.get_bit(0) {
+                self.clone()
+            } else {
+                Self::full_null(self.name().clone(), self.len(), self.dtype())
+            }
+        } else {
+            Column::from(self.as_materialized_series().mask(validity))
+        }
+    }
+
     #[cfg(feature = "zip_with")]
     pub fn zip_with(&self, mask: &BooleanChunked, other: &Self) -> PolarsResult<Self> {
         // @scalar-opt
@@ -1286,10 +1369,13 @@ impl Column {
         }
     }
 
-    /// Packs every element into a list.
-    pub fn as_list(&self) -> ListChunked {
+    /// Packs every element into a single-element list.
+    pub fn to_unit_list(&self) -> Column {
         // @scalar-opt
-        self.as_materialized_series().as_list()
+        match self {
+            Column::Series(s) => s.to_unit_list().into_column(),
+            Column::Scalar(s) => s.to_unit_list().into_column(),
+        }
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
@@ -1380,7 +1466,7 @@ impl Column {
         &self,
         frac: f64,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         self.as_materialized_series()
@@ -1393,7 +1479,7 @@ impl Column {
         &self,
         n: usize,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         self.as_materialized_series()
@@ -1723,21 +1809,9 @@ impl Column {
         other: &Self,
         op: impl Fn(&Series, &Series) -> PolarsResult<Series>,
     ) -> PolarsResult<Column> {
-        fn output_length(a: &Column, b: &Column) -> PolarsResult<usize> {
-            match (a.len(), b.len()) {
-                // broadcasting
-                (1, o) | (o, 1) => Ok(o),
-                // equal
-                (a, b) if a == b => Ok(a),
-                // unequal
-                (a, b) => {
-                    polars_bail!(InvalidOperation: "cannot do a binary operation on columns of different lengths: got {} and {}", a, b)
-                },
-            }
-        }
-
         // Here we rely on the underlying broadcast operations.
-        let length = output_length(self, other)?;
+        let length = broadcast_len([self, other])
+            .context("cannot do a binary operation on columns of different lengths")?;
         match (self, other) {
             (Column::Series(lhs), Column::Series(rhs)) => op(lhs, rhs).map(Column::from),
             (Column::Series(lhs), Column::Scalar(rhs)) => {
@@ -1810,6 +1884,8 @@ impl Column {
     pub fn n_chunks(&self) -> usize {
         match self {
             Column::Series(s) => s.n_chunks(),
+            // A materialized scalar column can hold more than one chunk, and those
+            // chunks still have to take part in alignment.
             Column::Scalar(s) => s.lazy_as_materialized_series().map_or(1, |x| x.n_chunks()),
         }
     }
@@ -1904,6 +1980,16 @@ impl IntoColumn for Column {
     #[inline(always)]
     fn into_column(self) -> Column {
         self
+    }
+}
+
+impl BroadcastLength for Column {
+    fn _broadcast_len(&self) -> usize {
+        self.len()
+    }
+
+    fn _column_name(&self) -> Option<&str> {
+        Some(self.name())
     }
 }
 

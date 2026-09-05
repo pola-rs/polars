@@ -107,9 +107,23 @@ impl Series {
             },
             _ => {
                 let logical_type = self.dtype();
+
                 let s = self.to_physical_repr();
                 use DataType::*;
                 let out = match s.dtype() {
+                    #[cfg(feature = "dtype-categorical")]
+                    _ if (logical_type.is_categorical() || logical_type.is_enum())
+                        && (!matches!(
+                            strategy,
+                            FillNullStrategy::Forward(_) | FillNullStrategy::Backward(_)
+                        )) =>
+                    {
+                        with_match_categorical_physical_type!(logical_type.cat_physical().unwrap(), |$C| {
+                            let ca = self.cat::<$C>().unwrap();
+                            fill_null_cat(ca, strategy)
+                        })
+                    },
+
                     Boolean => fill_null_bool(s.bool().unwrap(), strategy),
                     String => {
                         let s = unsafe { s.cast_unchecked(&Binary)? };
@@ -136,19 +150,18 @@ impl Series {
     }
 }
 
-fn fill_forward_numeric<'a, T, I>(ca: &'a ChunkedArray<T>) -> ChunkedArray<T>
+fn fill_forward_numeric<'a, T>(ca: &'a ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsDataType,
-    &'a ChunkedArray<T>: IntoIterator<IntoIter = I>,
-    I: TrustedLen + Iterator<Item = Option<T::Physical<'a>>>,
     T::ZeroablePhysical<'a>: Copy,
 {
     // Compute values.
+    let mut last = T::ZeroablePhysical::zeroed();
     let values: Vec<T::ZeroablePhysical<'a>> = ca
-        .into_iter()
-        .scan(T::ZeroablePhysical::zeroed(), |prev, v| {
-            *prev = v.map(|v| v.into()).unwrap_or(*prev);
-            Some(*prev)
+        .iter()
+        .map(|v| {
+            last = v.map(|v| v.into()).unwrap_or(last);
+            last
         })
         .collect_trusted();
 
@@ -166,20 +179,19 @@ where
     )
 }
 
-fn fill_backward_numeric<'a, T, I>(ca: &'a ChunkedArray<T>) -> ChunkedArray<T>
+fn fill_backward_numeric<'a, T>(ca: &'a ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsDataType,
-    &'a ChunkedArray<T>: IntoIterator<IntoIter = I>,
-    I: TrustedLen + Iterator<Item = Option<T::Physical<'a>>> + DoubleEndedIterator,
     T::ZeroablePhysical<'a>: Copy,
 {
     // Compute values.
+    let mut last = T::ZeroablePhysical::zeroed();
     let values: Vec<T::ZeroablePhysical<'a>> = ca
-        .into_iter()
+        .iter()
         .rev()
-        .scan(T::ZeroablePhysical::zeroed(), |prev, v| {
-            *prev = v.map(|v| v.into()).unwrap_or(*prev);
-            Some(*prev)
+        .map(|v| {
+            last = v.map(|v| v.into()).unwrap_or(last);
+            last
         })
         .collect_reversed();
 
@@ -336,6 +348,29 @@ fn fill_backward_gather_limit(s: &Series, limit: IdxSize) -> PolarsResult<Series
                 .collect_reversed()
         }
     })
+}
+
+#[cfg(feature = "dtype-categorical")]
+fn fill_null_cat<T: PolarsCategoricalType>(
+    ca: &CategoricalChunked<T>,
+    strategy: FillNullStrategy,
+) -> PolarsResult<Series>
+where
+    ChunkedArray<T::PolarsPhysical>: ChunkAgg<T::Native>,
+{
+    let cat = match strategy {
+        FillNullStrategy::Max => ca.max_categorical(),
+        FillNullStrategy::Min => ca.min_categorical(),
+        FillNullStrategy::Forward(_) => unreachable!(),
+        FillNullStrategy::Backward(_) => unreachable!(),
+        strat => {
+            polars_bail!(InvalidOperation: "fill-null strategy {:?} not supported for datatype {}", strat, ca.dtype)
+        },
+    }.ok_or_else(err_fill_null)?;
+    Ok(ca
+        .physical()
+        .fill_null_with_values(T::Native::from_cat(cat))?
+        .into_series())
 }
 
 fn fill_null_bool(ca: &BooleanChunked, strategy: FillNullStrategy) -> PolarsResult<Series> {

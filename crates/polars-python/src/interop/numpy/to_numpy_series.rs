@@ -12,8 +12,8 @@ use super::utils::{
     create_borrowed_np_array, dtype_supports_view, polars_dtype_to_np_temporal_dtype,
     reshape_numpy_array, series_contains_null,
 };
-use crate::conversion::ObjectValue;
 use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
+use crate::conversion::{ObjectValue, Wrap};
 use crate::interned;
 use crate::series::PySeries;
 
@@ -287,6 +287,14 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> Py<P
             let values = std::iter::repeat_n(f32::NAN, n);
             PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
+        Map(_, _) => {
+            // No numpy dtype for a map, so fall back to an object array of dicts.
+            let ca = s.map().unwrap();
+            let values = ca
+                .any_value_iter()
+                .map(|av| Wrap(av).into_py_any(py).unwrap());
+            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+        },
         Extension(_, _) => series_to_numpy_with_copy(py, s.ext().unwrap().storage(), writable),
         Unknown(_) | BinaryOffset => unreachable!(),
     }
@@ -319,7 +327,7 @@ where
 fn boolean_series_to_numpy(py: Python<'_>, s: &Series) -> Py<PyAny> {
     let ca = s.bool().unwrap();
     if s.null_count() == 0 {
-        let values = ca.into_no_null_iter();
+        let values = ca.no_null_iter();
         PyArray1::<bool>::from_iter(py, values)
             .into_py_any(py)
             .unwrap()

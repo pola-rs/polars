@@ -53,10 +53,7 @@ macro_rules! push_expr {
                     Item { input, .. } => $push($c, input),
                     Implode { input, .. } => $push($c, input),
                     Count { input, .. } => $push($c, input),
-                    // TODO: shouldn't quantile push the quantile expr as well?
-                    Quantile { expr, .. } => $push($c, expr),
                     Sum(e) => $push($c, e),
-                    AggGroups(e) => $push($c, e),
                     Std(e, _) => $push($c, e),
                     Var(e, _) => $push($c, e),
                 }

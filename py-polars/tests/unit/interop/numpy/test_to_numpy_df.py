@@ -20,15 +20,15 @@ if TYPE_CHECKING:
 
 
 def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
+    """Assert that `arr` points at the values buffer of `s`."""
     if s.len() == 0:
         return
-    s_ptr = s._get_buffers()["values"]._get_buffer_info()[0]
+    s_ptr = s.to_arrow().buffers()[1].address
     arr_ptr = arr.__array_interface__["data"][0]
     assert s_ptr == arr_ptr
 
 
 @pytest.mark.may_fail_cloud
-@pytest.mark.may_fail_auto_streaming
 @given(
     s=series(
         min_size=6,
@@ -175,7 +175,7 @@ def test_to_numpy_zero_copy_path_writable() -> None:
     x[:, 1] = 2.0
     df = pl.DataFrame(x)
     x = df.to_numpy(writable=True)
-    assert x.flags["WRITEABLE"]
+    assert x.flags.writeable
 
 
 def test_df_to_numpy_structured_not_zero_copy() -> None:

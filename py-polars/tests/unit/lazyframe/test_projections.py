@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 
 
@@ -115,7 +116,7 @@ def test_hconcat_projection_pushdown_length_maintained() -> None:
     # the length of the result, even though no columns are used.
     lf1 = pl.LazyFrame({"a": [0, 1], "b": [2, 3]})
     lf2 = pl.LazyFrame({"c": [4, 5, 6, 7], "d": [8, 9, 10, 11]})
-    query = pl.concat([lf1, lf2], how="horizontal").select(["a"])
+    query = pl.concat([lf1, lf2], how="horizontal_extend").select(["a"])
 
     explanation = query.explain()
     assert "1/2 COLUMNS" in explanation
@@ -125,7 +126,6 @@ def test_hconcat_projection_pushdown_length_maintained() -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud
 def test_unnest_columns_available() -> None:
     df = pl.DataFrame(
@@ -143,7 +143,7 @@ def test_unnest_columns_available() -> None:
     q = df.with_columns(
         pl.col("genres")
         .str.split("|")
-        .list.to_struct(upper_bound=4, fields=lambda i: f"genre{i + 1}")
+        .list.to_struct(["genre1", "genre2", "genre3", "genre4"])
     ).unnest("genres")
 
     out = q.collect()
@@ -825,7 +825,7 @@ def test_projection_pushdown_removes_row_index() -> None:
 def test_projection_pushdown_select_len() -> None:
     lf = pl.LazyFrame({"a": [0, 1, 2]})
 
-    a_add1 = '(col("a")) + (1)'
+    a_add1 = 'col("a") + 1'
     assert a_add1 in lf.select(pl.col("a") + 1).explain()
     q = lf.select(pl.col("a") + 1).select(pl.len())
 
@@ -836,13 +836,13 @@ def test_projection_pushdown_select_len() -> None:
     assert q.collect().item() == 1
 
 
-def test_projection_pushdown_nonstrict_hconcat_select_len() -> None:
+def test_projection_pushdown_horizontal_extend_select_len() -> None:
     q = pl.concat(
         [
             pl.LazyFrame({"a": [0, 1, 2]}),
             pl.LazyFrame({"b": [0, 1, 2, 3, 4]}),
         ],
-        how="horizontal",
+        how="horizontal_extend",
     ).select(pl.len())
     plan = q.explain()
 
@@ -864,7 +864,7 @@ def test_projection_pushdown_non_projected_sort_column() -> None:
 def test_projection_pushdown_filter_len_to_sum() -> None:
     q = pl.LazyFrame({"a": [0, 1, 2]}).tail(2).filter(pl.col("a") < 2).select(pl.len())
     plan = q.explain()
-    assert '(col("a")) < (2)].sum()' in plan
+    assert 'col("a") < 2).sum()' in plan
 
     assert_frame_equal(
         q.collect(),
@@ -879,12 +879,50 @@ def test_projection_pushdown_filter_len_to_sum() -> None:
     )
     plan = q.explain()
     assert 'PROJECT["a"] 1/2 COLUMNS' in plan
-    assert '(col("a")) < (2)].sum()' in plan
+    assert 'col("a") < 2).sum()' in plan
 
     assert_frame_equal(
         q.collect(),
         pl.DataFrame({"b": 1}, schema={"b": pl.get_index_type()}),
     )
+
+
+@pytest.mark.parametrize("union_fn", [pl.concat, pl.union])
+def test_projection_pushdown_union_len_pushdown_28657(
+    union_fn: Callable[..., pl.LazyFrame],
+) -> None:
+    lf = union_fn(
+        [
+            pl.LazyFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+            .with_columns(pl.col("a").cast(pl.Float64))
+            .lazy(),
+            pl.LazyFrame({"a": [1.0, 2.0, 3.0], "b": [4, 5, 6]}),
+        ],
+    ).filter(pl.col("b") > 1)
+
+    q = lf.select(pl.len())
+    plan = q.explain()
+    assert plan.count('(col("b") > 1).sum()') == 2
+    assert "len()" not in plan
+    assert "WITH_COLUMNS" not in plan
+
+    assert q.collect().item() == 5
+
+    lf = (
+        pl.Series([{}], dtype=pl.Struct({}))
+        .new_from_index(0, (1 << (64 if pl.get_index_type() == pl.UInt64 else 32)) - 2)
+        .to_frame()
+        .lazy()
+    )
+
+    q = union_fn([lf, lf]).select(pl.len())
+    plan = q.explain()
+
+    assert plan.index("len()") > plan.index("UNION")
+    assert plan.count("len()") == 2
+
+    with pytest.raises(InvalidOperationError, match=r"conversion.*failed"):
+        q.collect()
 
 
 @pytest.mark.parametrize(
@@ -927,3 +965,16 @@ def test_projection_pushdown_fastcount_27534(
 
     assert_frame_equal(lf.select(pl.len()).collect(), df.select(pl.len()))
     assert_frame_equal(lf.collect(), df)
+
+
+def test_projection_pushdown_select_non_column_height_27807() -> None:
+    q = (
+        pl.LazyFrame()
+        .select(
+            x=pl.Series([1, 2, 3]),
+            y=pl.lit(10, dtype=pl.Int64),
+        )
+        .select("y")
+    )
+
+    assert_frame_equal(q.collect(), pl.Series("y", [10, 10, 10]).to_frame())

@@ -93,6 +93,17 @@ finds.
 
 ## Modifying strings
 
+### Concatenating strings
+
+String expressions can be concatenated horizontally using the `+` operator, which is equivalent to
+:meth:`Expr.add <polars.Expr.add>`.
+
+{{code_block('user-guide/expressions/strings', 'concat', [])}}
+
+```python exec="on" result="text" session="expressions/strings"
+--8<-- "python/user-guide/expressions/strings.py:concat"
+```
+
 ### Case conversion
 
 Converting the casing of a string is a common operation and Polars supports it out of the box with

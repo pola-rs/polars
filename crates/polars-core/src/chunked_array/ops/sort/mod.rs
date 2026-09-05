@@ -681,7 +681,11 @@ impl ChunkSort<StructType> for StructChunked {
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
         let bin = self.get_row_encoded(options).unwrap();
-        bin.arg_sort(Default::default())
+        bin.arg_sort(SortOptions {
+            maintain_order: options.maintain_order,
+            multithreaded: options.multithreaded,
+            ..Default::default()
+        })
     }
 }
 
@@ -713,7 +717,11 @@ impl ChunkSort<ListType> for ListChunked {
             false,
         )
         .unwrap();
-        bin.arg_sort(Default::default())
+        bin.arg_sort(SortOptions {
+            maintain_order: options.maintain_order,
+            multithreaded: options.multithreaded,
+            ..Default::default()
+        })
     }
 }
 

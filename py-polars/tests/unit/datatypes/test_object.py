@@ -80,7 +80,6 @@ def test_nullable_object_13538() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming  # dtype is not set
 @pytest.mark.may_fail_cloud  # reason: eager
 def test_nullable_object_17936() -> None:
     class Custom:
@@ -293,3 +292,20 @@ def test_allow_object_after_cache_26182() -> None:
         (
             pl.DataFrame({"a": [2]}).rolling(index_column="a", period="2i").agg(str)  # type: ignore[arg-type]
         )
+
+
+def test_group_by_agg_object_raises_28182() -> None:
+    df = pl.DataFrame({"group": ["a", "a", "b"], "obj": [object(), object(), object()]})
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="nested objects"):
+        df.group_by("group").agg(pl.col("obj"))
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="nested objects"):
+        df.lazy().group_by("group").agg(pl.col("obj")).collect()
+
+
+def test_implode_object_raises() -> None:
+    df = pl.DataFrame({"obj": [object(), object()]})
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="nested objects"):
+        df.select(pl.col("obj").implode())

@@ -636,7 +636,6 @@ def test_agg_filter_over_empty_df_13610() -> None:
 
 
 @pytest.mark.may_fail_cloud  # reason: output order is defined for this in cloud
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.slow
 def test_agg_empty_sum_after_filter_14734() -> None:
     f = (
@@ -1085,10 +1084,6 @@ def test_agg_invalid_same_engines_behavior(
     if isinstance(df.schema["a"], pl.Struct) and op in {"any", "all"}:
         # TODO: Remove this exception when #24509 is resolved
         pytest.skip("polars/#24509")
-
-    if isinstance(df.schema["a"], pl.Duration) and op in {"std", "var"}:
-        # TODO: Remove this exception when std & var are implemented for Duration
-        pytest.skip(f"'{op}' aggregation not yet implemented for Duration")
 
     inmemory_result, inmemory_error = None, None
     streaming_result, streaming_error = None, None

@@ -85,6 +85,138 @@ def test_array_literals() -> None:
         )
 
 
+@pytest.mark.parametrize("function_name", ["ARRAY_INNER_PRODUCT", "ARRAY_DOT_PRODUCT"])
+def test_array_inner_product(function_name: str) -> None:
+    df = pl.DataFrame(
+        {
+            "lhs": [[1, 2, 3], [1, None, 3], None, [None, None, None]],
+            "rhs": [
+                [4.0, 5.0, 6.0],
+                [4.0, 5.0, None],
+                [1.0, 2.0, 3.0],
+                [None, None, None],
+            ],
+        },
+        schema={
+            "lhs": pl.Array(pl.Int32, 3),
+            "rhs": pl.Array(pl.Float32, 3),
+        },
+    )
+
+    result = df.sql(f"SELECT {function_name}(lhs, rhs) AS dot FROM self")
+    expected = df.select(pl.col("lhs").arr.dot("rhs").alias("dot"))
+
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("literal", "literal_on_left"),
+    [
+        ("[4.0, 5.0, 6.0]", False),
+        ("ARRAY[4.0, 5.0, 6.0]", True),
+        ("([4.0, 5.0, 6.0])", False),
+    ],
+)
+def test_array_inner_product_literal(literal: str, literal_on_left: bool) -> None:
+    df = pl.DataFrame(
+        {"arr": [[1, 2, 3], [4, 5, 6], None]},
+        schema={"arr": pl.Array(pl.Int32, 3)},
+    )
+    arguments = f"{literal}, arr" if literal_on_left else f"arr, {literal}"
+
+    result = df.sql(f"SELECT ARRAY_INNER_PRODUCT({arguments}) AS dot FROM self")
+    literal_expr = pl.lit([4.0, 5.0, 6.0], dtype=pl.Array(pl.Float64, 3))
+    expected = df.select(
+        (
+            literal_expr.arr.dot("arr")
+            if literal_on_left
+            else pl.col("arr").arr.dot(literal_expr)
+        ).alias("dot")
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_array_inner_product_null_literal() -> None:
+    df = pl.DataFrame(
+        {"values": [[1, 2, 3], [4, None, 6], None]},
+        schema={"values": pl.Array(pl.Int32, 3)},
+    )
+
+    result = df.sql(
+        "SELECT ARRAY_INNER_PRODUCT(values, [NULL, NULL, NULL]) AS dot FROM self"
+    )
+
+    assert_frame_equal(
+        result,
+        pl.DataFrame({"dot": [0, 0, None]}, schema={"dot": pl.Int32}),
+    )
+
+
+def test_array_inner_product_literal_inherits_projection_height() -> None:
+    df = pl.DataFrame({"row": [1, 2, 3]})
+
+    result = df.sql("SELECT ARRAY_INNER_PRODUCT([1, 2], ARRAY[3, 4]) AS dot FROM self")
+
+    assert_frame_equal(result, pl.DataFrame({"dot": [11, 11, 11]}))
+
+
+def test_array_inner_product_non_array_receiver() -> None:
+    df = pl.DataFrame({"lhs": [[1, 2]]})
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="expected Array datatype",
+    ):
+        df.sql("SELECT ARRAY_INNER_PRODUCT(lhs, [3, 4]) FROM self")
+
+
+def test_array_inner_product_uses_native_array_dot_plan() -> None:
+    df = pl.DataFrame(
+        {
+            "lhs": [[1, 2]],
+            "rhs": [[3, 4]],
+        },
+        schema={
+            "lhs": pl.Array(pl.Int64, 2),
+            "rhs": pl.Array(pl.Int64, 2),
+        },
+    )
+
+    with pl.SQLContext(df=df) as ctx:
+        plan = ctx.execute(
+            "SELECT ARRAY_INNER_PRODUCT(lhs, rhs) AS dot FROM df"
+        ).explain(optimized=False)
+
+    assert ".arr.dot([" in plan
+    assert ").arr.sum()" not in plan
+    assert " * " not in plan
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    ["lhs", "lhs, rhs, lhs"],
+)
+def test_array_inner_product_arity(arguments: str) -> None:
+    df = pl.DataFrame(
+        {"lhs": [[1, 2]], "rhs": [[3, 4]]},
+        schema={"lhs": pl.Array(pl.Int64, 2), "rhs": pl.Array(pl.Int64, 2)},
+    )
+
+    with pytest.raises(SQLInterfaceError, match="no function matches"):
+        df.sql(f"SELECT ARRAY_INNER_PRODUCT({arguments}) FROM self")
+
+
+def test_array_inner_product_unequal_widths() -> None:
+    df = pl.DataFrame(
+        {"lhs": [[1, 2]], "rhs": [[3, 4, 5]]},
+        schema={"lhs": pl.Array(pl.Int64, 2), "rhs": pl.Array(pl.Int64, 3)},
+    )
+
+    with pytest.raises(pl.exceptions.ShapeError, match="equal array widths"):
+        df.sql("SELECT ARRAY_INNER_PRODUCT(lhs, rhs) FROM self")
+
+
 @pytest.mark.parametrize(
     ("array_index", "expected"),
     [
@@ -225,4 +357,4 @@ def test_array_typed_literals_mixed_error() -> None:
         SQLInterfaceError,
         match="expected consistent dtypes",
     ):
-        pl.sql("SELECT ARRAY[DATE '2024-01-01', TIME '12:00:00']")
+        pl.sql("SELECT ARRAY[DATE '2024-01-01', TIME '12:00:00']").collect()

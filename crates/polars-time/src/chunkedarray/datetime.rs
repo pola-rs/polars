@@ -224,13 +224,13 @@ pub trait DatetimeMethods: AsDatetime {
         name: PlSmallStr,
     ) -> PolarsResult<DatetimeChunked> {
         let ca: Int64Chunked = year
-            .into_iter()
-            .zip(month)
-            .zip(day)
-            .zip(hour)
-            .zip(minute)
-            .zip(second)
-            .zip(nanosecond)
+            .iter()
+            .zip(month.iter())
+            .zip(day.iter())
+            .zip(hour.iter())
+            .zip(minute.iter())
+            .zip(second.iter())
+            .zip(nanosecond.iter())
             .map(|((((((y, m), d), h), mnt), s), ns)| {
                 if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(ns)) =
                     (y, m, d, h, mnt, s, ns)

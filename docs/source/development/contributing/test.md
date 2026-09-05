@@ -13,7 +13,8 @@ parametric tests, benchmark tests, and doctests.
 
 Note that this test suite is indirectly responsible for testing Rust Polars as well. The Rust test
 suite is kept small to reduce compilation times. A lot of the Rust functionality is tested here
-instead.
+instead. If you add tests, prefer adding tests here. _Only_ add Rust tests if the functionality
+cannot be tested using the Python API.
 
 ## Unit tests
 
@@ -117,9 +118,6 @@ design or not interesting to check.
 The `benchmark` folder contains code for running various benchmark tests. The aim of this part of
 the test suite is to spot performance regressions in the code, and to verify that Polars
 functionality works as expected when run on a release build or at a larger scale.
-
-Polars uses [CodSpeed](https://codspeed.io/pola-rs/polars) for tracking the performance of the
-benchmark tests.
 
 ### Generating data
 

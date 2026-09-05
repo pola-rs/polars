@@ -77,7 +77,7 @@ pub fn evaluate_count_on_ac<'a>(
             },
             AggState::AggregatedList(s) => {
                 let ca = s.list()?;
-                ca.into_iter()
+                ca.series_iter()
                     .map(|opt_s| opt_s.map(|s| s.len() as IdxSize - s.null_count() as IdxSize))
                     .collect::<IdxCa>()
                     .into_column()

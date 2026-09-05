@@ -76,6 +76,8 @@ pub enum IcebergColumnType {
     List(Box<IcebergColumn>),
     /// (values, width)
     FixedSizeList(Box<IcebergColumn>, usize),
+    /// (keys, values)
+    Map(Box<IcebergColumn>, Box<IcebergColumn>),
     Struct(IcebergSchema),
 }
 
@@ -91,6 +93,12 @@ impl IcebergColumnType {
                     DataType::Array(Box::new(inner.type_.to_polars_dtype()), *width)
                 })
             },
+            Map(key, value) => feature_gated!("dtype-map", {
+                DataType::Map(
+                    Box::new(key.type_.to_polars_dtype()),
+                    Box::new(value.type_.to_polars_dtype()),
+                )
+            }),
             Struct(fields) => feature_gated!("dtype-struct", {
                 DataType::Struct(
                     fields
@@ -106,7 +114,7 @@ impl IcebergColumnType {
         use IcebergColumnType::*;
 
         match self {
-            List(_) | FixedSizeList(..) | Struct(_) => true,
+            List(_) | FixedSizeList(..) | Map(..) | Struct(_) => true,
             Primitive { .. } => false,
         }
     }
@@ -149,21 +157,52 @@ fn arrow_field_to_iceberg_column_rec(
 
     let name = field.name.clone();
 
-    let type_ = match &field.dtype {
-        ADT::List(field) | ADT::LargeList(field) | ADT::Map(field, _) => {
-            // The `field` directly under the `Map` type does not contain a physical ID, so we add one in here.
-            // Note that this branch also catches `(Large)List` as the `Map` columns get loaded as that type
-            // from Parquet (currently unsure if this is intended).
-            let field_id_override = field
-                .metadata
-                .as_ref()
-                .is_none_or(|x| !x.contains_key(PARQUET_FIELD_ID_KEY))
-                .then_some(LIST_ELEMENT_DEFAULT_ID);
+    let list_column_type = |field: &ArrowField| -> PolarsResult<IcebergColumnType> {
+        let field_id_override = field
+            .metadata
+            .as_ref()
+            .is_none_or(|x| !x.contains_key(PARQUET_FIELD_ID_KEY))
+            .then_some(LIST_ELEMENT_DEFAULT_ID);
 
-            IcebergColumnType::List(Box::new(arrow_field_to_iceberg_column_rec(
-                field,
-                field_id_override,
-            )?))
+        Ok(IcebergColumnType::List(Box::new(
+            arrow_field_to_iceberg_column_rec(field, field_id_override)?,
+        )))
+    };
+
+    let type_ = match &field.dtype {
+        ADT::List(field) | ADT::LargeList(field) => list_column_type(field)?,
+
+        ADT::Map(entries, _) => {
+            #[cfg(feature = "dtype-map")]
+            {
+                // The `entries` field itself carries no physical ID - the IDs sit on the `key` and
+                // `value` fields underneath it.
+                let ADT::Struct(entry_fields) = &entries.dtype else {
+                    polars_bail!(
+                        ComputeError:
+                        "IcebergSchema: expected struct under arrow map type, got: {:?}",
+                        &entries.dtype,
+                    )
+                };
+
+                let [key, value] = entry_fields.as_slice() else {
+                    polars_bail!(
+                        ComputeError:
+                        "IcebergSchema: expected 2 fields under arrow map type, got: {}",
+                        entry_fields.len(),
+                    )
+                };
+
+                IcebergColumnType::Map(
+                    Box::new(arrow_field_to_iceberg_column_rec(key, None)?),
+                    Box::new(arrow_field_to_iceberg_column_rec(value, None)?),
+                )
+            }
+            #[cfg(not(feature = "dtype-map"))]
+            {
+                // Without the `Map` dtype these columns load as `List(Struct { key, value })`.
+                list_column_type(entries)?
+            }
         },
 
         #[cfg(feature = "dtype-array")]
@@ -181,8 +220,11 @@ fn arrow_field_to_iceberg_column_rec(
             if let ADT::Dictionary(_key_type, value_type, _is_ordered) = dtype
                 && !value_type.is_nested()
             {
-                let dtype =
-                    DataType::from_arrow_field(&ArrowField::new(name.clone(), dtype.clone(), true));
+                let mut new_field = ArrowField::new(name.clone(), dtype.clone(), true);
+                if let Some(metadata) = field.metadata.as_ref() {
+                    new_field = new_field.with_metadata((**metadata).clone());
+                }
+                let dtype = DataType::from_arrow_field(&new_field);
 
                 IcebergColumnType::Primitive { dtype }
             } else if let ADT::Extension(ext_type) = dtype

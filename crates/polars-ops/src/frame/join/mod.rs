@@ -51,6 +51,11 @@ use rayon::prelude::*;
 use self::cross_join::fused_cross_filter;
 use super::IntoDf;
 
+/// Reduces monomorphization: rayon plumbing is instantiated per `R`, not per closure.
+pub(crate) fn par_map_collect<R: Send>(n: usize, f: &(dyn Fn(usize) -> R + Sync)) -> Vec<R> {
+    RAYON.install(|| (0..n).into_par_iter().map(f).collect())
+}
+
 pub trait DataFrameJoinOps: IntoDf {
     /// Generic join method. Can be used to join on multiple columns.
     ///
@@ -134,18 +139,31 @@ pub trait DataFrameJoinOps: IntoDf {
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
 
+        // Backstop: a non-equality match condition combined with a join type whose
+        // implementation does not yet track unmatched rows must not silently produce
+        // inner-join results.
+        polars_ensure!(
+            args.how.supports_non_equi_options(&options),
+            InvalidOperation:
+            "'{}' join is not supported with non-equi join conditions",
+            args.how,
+        );
+
+        #[cfg(feature = "cross_join")]
+        if let Some(JoinTypeOptions::Cross(cross_options)) = &options {
+            assert!(args.slice.is_none());
+            return fused_cross_filter(
+                left_df,
+                other,
+                args.suffix.clone(),
+                cross_options,
+                args.maintain_order,
+                args.how.emits_unmatched_left(),
+                &args.how,
+            );
+        }
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = args.how {
-            if let Some(JoinTypeOptions::Cross(cross_options)) = &options {
-                assert!(args.slice.is_none());
-                return fused_cross_filter(
-                    left_df,
-                    other,
-                    args.suffix.clone(),
-                    cross_options,
-                    args.maintain_order,
-                );
-            }
             return left_df.cross_join(other, args.suffix.clone(), args.slice, args.maintain_order);
         }
 
@@ -228,10 +246,7 @@ pub trait DataFrameJoinOps: IntoDf {
         };
 
         #[cfg(feature = "iejoin")]
-        if let JoinType::IEJoin = args.how {
-            let Some(JoinTypeOptions::IEJoin(options)) = options else {
-                unreachable!()
-            };
+        if let Some(JoinTypeOptions::IEJoin(ie_options)) = options {
             let func = if RAYON.current_num_threads() > 1
                 && !left_df.shape_has_zero()
                 && !other.shape_has_zero()
@@ -240,14 +255,22 @@ pub trait DataFrameJoinOps: IntoDf {
             } else {
                 iejoin::iejoin
             };
+            let emit_unmatched = if args.how.emits_unmatched_left() {
+                iejoin::EmitUnmatched::Left
+            } else if args.how.emits_unmatched_right() {
+                iejoin::EmitUnmatched::Right
+            } else {
+                iejoin::EmitUnmatched::None
+            };
             return func(
                 left_df,
                 other,
                 selected_left,
                 selected_right,
-                &options,
+                &ie_options,
                 args.suffix,
                 args.slice,
+                emit_unmatched,
             );
         }
 
@@ -559,7 +582,14 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         let mut join_tuples_left = &*join_tuples_left;
         let mut join_tuples_right = &*join_tuples_right;
 
-        if let Some((offset, len)) = args.slice {
+        let already_left_sorted = sorted
+            && matches!(
+                args.maintain_order,
+                MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
+            );
+        let need_sort = args.maintain_order != MaintainOrderJoin::None && !already_left_sorted;
+
+        if !need_sort && let Some((offset, len)) = args.slice {
             join_tuples_left = slice_slice(join_tuples_left, offset, len);
             join_tuples_right = slice_slice(join_tuples_right, offset, len);
         }
@@ -576,53 +606,52 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         }
         let right = unsafe { IdxCa::mmap_slice("b".into(), join_tuples_right) };
 
-        let already_left_sorted = sorted
-            && matches!(
+        try_raise_polars_abort();
+
+        let (df_left, df_right) = if need_sort {
+            let mut df = unsafe {
+                DataFrame::new_unchecked_infer_height(vec![
+                    left.into_series().into(),
+                    right.into_series().into(),
+                ])
+            };
+
+            let columns = match args.maintain_order {
+                MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => vec!["a"],
+                MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => vec!["b"],
+                _ => unreachable!(),
+            };
+
+            let options = SortMultipleOptions::new()
+                .with_order_descending(false)
+                .with_maintain_order(true);
+
+            df.sort_in_place(columns, options)?;
+
+            if let Some((offset, len)) = args.slice {
+                df = df.slice(offset, len);
+            }
+
+            let [mut a, b]: [Column; 2] = df.into_columns().try_into().unwrap();
+            if matches!(
                 args.maintain_order,
                 MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
-            );
-        try_raise_keyboard_interrupt();
-        let (df_left, df_right) =
-            if args.maintain_order != MaintainOrderJoin::None && !already_left_sorted {
-                let mut df = unsafe {
-                    DataFrame::new_unchecked_infer_height(vec![
-                        left.into_series().into(),
-                        right.into_series().into(),
-                    ])
-                };
+            ) {
+                a.set_sorted_flag(IsSorted::Ascending);
+            }
 
-                let columns = match args.maintain_order {
-                    MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => vec!["a"],
-                    MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => vec!["b"],
-                    _ => unreachable!(),
-                };
-
-                let options = SortMultipleOptions::new()
-                    .with_order_descending(false)
-                    .with_maintain_order(true);
-
-                df.sort_in_place(columns, options)?;
-
-                let [mut a, b]: [Column; 2] = df.into_columns().try_into().unwrap();
-                if matches!(
-                    args.maintain_order,
-                    MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
-                ) {
-                    a.set_sorted_flag(IsSorted::Ascending);
-                }
-
-                RAYON.join(
-                    // SAFETY: join indices are known to be in bounds
-                    || unsafe { left_df.take_unchecked(a.idx().unwrap()) },
-                    || unsafe { other.take_unchecked(b.idx().unwrap()) },
-                )
-            } else {
-                RAYON.join(
-                    // SAFETY: join indices are known to be in bounds
-                    || unsafe { left_df.take_unchecked(left.into_series().idx().unwrap()) },
-                    || unsafe { other.take_unchecked(right.into_series().idx().unwrap()) },
-                )
-            };
+            RAYON.join(
+                // SAFETY: join indices are known to be in bounds
+                || unsafe { left_df.take_unchecked(a.idx().unwrap()) },
+                || unsafe { other.take_unchecked(b.idx().unwrap()) },
+            )
+        } else {
+            RAYON.join(
+                // SAFETY: join indices are known to be in bounds
+                || unsafe { left_df.take_unchecked(left.into_series().idx().unwrap()) },
+                || unsafe { other.take_unchecked(right.into_series().idx().unwrap()) },
+            )
+        };
 
         _finish_join(df_left, df_right, args.suffix)
     }

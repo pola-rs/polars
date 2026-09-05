@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use arrow::array::builder::ShareStrategy;
+use polars_async::executor;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
@@ -25,8 +27,6 @@ use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
 
 use super::{BufferedStream, LOPSIDED_SAMPLE_FACTOR};
-use crate::async_executor;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::expression::StreamExpr;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
@@ -77,6 +77,7 @@ fn compute_payload_selector(
     other: &Schema,
     this_key_schema: &Schema,
     other_key_schema: &Schema,
+    output_schema: &Schema,
     is_left: bool,
     args: &JoinArgs,
 ) -> PolarsResult<Vec<Option<PlSmallStr>>> {
@@ -105,10 +106,11 @@ fn compute_payload_selector(
                         Some(c.clone())
                     } else if args.how == JoinType::Full {
                         // We must keep the right-hand side keycols around for
-                        // coalescing.
+                        // coalescing. Note that this bypasses the filter below because of the
+                        // early return.
                         let key_idx = this_key_schema.index_of(c).unwrap();
                         let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL_{key_idx}");
-                        Some(name)
+                        return Ok(Some(name));
                     } else {
                         None
                     }
@@ -117,6 +119,8 @@ fn compute_payload_selector(
                 } else {
                     break 'create_and_return_selector;
                 };
+
+                let selector = selector.filter(|name| output_schema.contains(name.as_str()));
 
                 return Ok(selector);
             }
@@ -220,11 +224,11 @@ fn estimate_cardinality(
     let mut total_height = 0;
     let mut to_process_end = 0;
     while to_process_end < morsels.len() && total_height < sample_limit {
-        total_height += morsels[to_process_end].df().height();
+        total_height += morsels[to_process_end].height();
         to_process_end += 1;
     }
     let last_morsel_idx = to_process_end - 1;
-    let last_morsel_len = morsels[last_morsel_idx].df().height();
+    let last_morsel_len = morsels[last_morsel_idx].height();
     let last_morsel_slice = last_morsel_len - total_height.saturating_sub(sample_limit);
 
     RAYON.install(|| {
@@ -235,11 +239,12 @@ fn estimate_cardinality(
                 CardinalitySketch::new,
                 |mut sketch, (morsel_idx, morsel)| {
                     let sliced;
+                    let pin_df = morsel.df_blocking();
                     let df = if morsel_idx == last_morsel_idx {
-                        sliced = morsel.df().slice(0, last_morsel_slice);
+                        sliced = pin_df.slice(0, last_morsel_slice);
                         &sliced
                     } else {
-                        morsel.df()
+                        &*pin_df
                     };
                     let hash_keys =
                         ASYNC.block_on(select_keys(df, key_selectors, params, state))?;
@@ -258,8 +263,8 @@ fn estimate_size_per_row(morsels: &[Morsel]) -> f64 {
     let mut total_size = 0;
     let mut total_height = 0;
     for m in morsels {
-        total_size += m.df().estimated_size();
-        total_height += m.df().height();
+        total_size += m.df_blocking().estimated_size();
+        total_height += m.height();
     }
     total_size as f64 / total_height as f64
 }
@@ -282,7 +287,7 @@ impl SampleState {
         join_sample_limit: usize,
     ) -> PolarsResult<()> {
         while let Ok(mut morsel) = recv.recv().await {
-            *len += morsel.df().height();
+            *len += morsel.height();
             if *len >= join_sample_limit
                 || *len
                     >= other_final_len
@@ -381,10 +386,16 @@ impl SampleState {
 
         // Transition to building state.
         params.left_is_build = Some(left_is_build);
-        let mut sampled_build_morsels =
-            BufferedStream::new(core::mem::take(&mut self.left), MorselSeq::default());
-        let mut sampled_probe_morsels =
-            BufferedStream::new(core::mem::take(&mut self.right), MorselSeq::default());
+        let mut sampled_build_morsels = BufferedStream::new(
+            "equi-join-left-sample".into(),
+            core::mem::take(&mut self.left),
+            MorselSeq::default(),
+        );
+        let mut sampled_probe_morsels = BufferedStream::new(
+            "equi-join-right-sample".into(),
+            core::mem::take(&mut self.right),
+            MorselSeq::default(),
+        );
         if !left_is_build {
             core::mem::swap(&mut sampled_build_morsels, &mut sampled_probe_morsels);
         }
@@ -398,7 +409,7 @@ impl SampleState {
 
         // Simulate the sample build morsels flowing into the build side.
         if !sampled_build_morsels.is_empty() {
-            crate::async_executor::task_scope(|scope| {
+            executor::task_scope(|scope| {
                 let mut join_handles = Vec::new();
                 let receivers = sampled_build_morsels
                     .reinsert(state.num_pipelines, None, scope, &mut join_handles)
@@ -418,7 +429,7 @@ impl SampleState {
                     ));
                 }
 
-                ASYNC.block_on(async move {
+                ASYNC.block_in_place_on(async move {
                     for handle in join_handles {
                         handle.await?;
                     }
@@ -493,14 +504,10 @@ impl BuildState {
         while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload. We must rechunk the payload for
             // later gathers.
-            let hash_keys = select_keys(
-                morsel.df(),
-                key_selectors,
-                params,
-                &state.in_memory_exec_state,
-            )
-            .await?;
-            let mut payload = select_payload(morsel.df().clone(), payload_selector);
+            let df = morsel.df().await;
+            let hash_keys =
+                select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
+            let mut payload = select_payload(df.clone(), payload_selector);
             payload.rechunk_mut();
 
             hash_keys.gen_idxs_per_partition(
@@ -641,7 +648,7 @@ impl BuildState {
         let local_builders = &self.local_builders;
         let probe_tables: SparseInitVec<ProbeTable> = SparseInitVec::with_capacity(num_partitions);
 
-        async_executor::task_scope(|s| {
+        executor::task_scope(|s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_morsels_per_local_builder = Arc::new(morsels_per_local_builder);
@@ -738,7 +745,7 @@ impl BuildState {
             drop(arc_morsels_per_local_builder);
             drop(morsel_drop_q_send);
 
-            ASYNC.block_on(async move {
+            ASYNC.block_in_place_on(async move {
                 for handle in join_handles {
                     handle.await;
                 }
@@ -814,7 +821,8 @@ impl ProbeState {
 
         while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload.
-            let (df, in_seq, src_token, wait_token) = morsel.into_inner();
+            let (sf, in_seq, src_token, wait_token) = morsel.into_inner();
+            let df = sf.into_df().await;
 
             let df_height = df.height();
             if df_height == 0 {
@@ -852,7 +860,7 @@ impl ProbeState {
                             MorselSeq::new(unordered_morsel_seq.fetch_add(1, Ordering::Relaxed))
                         };
                         max_seq = out_seq;
-                        Morsel::new(out_df, out_seq, src_token.clone())
+                        Morsel::new_unregistered(out_df, out_seq, src_token.clone())
                     };
 
                 if params.preserve_order_probe {
@@ -1161,7 +1169,8 @@ impl EmitUnmatchedState {
                 let out_df = postprocess_join(out_df, params);
 
                 // Send and wait until consume token is consumed.
-                let mut morsel = Morsel::new(out_df, self.morsel_seq, source_token.clone());
+                let mut morsel =
+                    Morsel::new_unregistered(out_df, self.morsel_seq, source_token.clone());
                 self.morsel_seq = self.morsel_seq.successor();
                 morsel.set_consume_token(wait_group.token());
                 if send.send(morsel).await.is_err() {
@@ -1195,7 +1204,7 @@ pub struct EquiJoinNode {
     state: EquiJoinState,
     params: EquiJoinParams,
     table: Box<dyn IdxTable>,
-    spill_ctx: Arc<MostRecentSpillContext>,
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl EquiJoinNode {
@@ -1206,6 +1215,7 @@ impl EquiJoinNode {
         left_key_schema: Arc<Schema>,
         right_key_schema: Arc<Schema>,
         unique_key_schema: Arc<Schema>,
+        output_schema: Arc<Schema>,
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
         args: JoinArgs,
@@ -1252,6 +1262,7 @@ impl EquiJoinNode {
             &right_input_schema,
             &left_key_schema,
             &right_key_schema,
+            &output_schema,
             true,
             &args,
         )?;
@@ -1260,6 +1271,7 @@ impl EquiJoinNode {
             &left_input_schema,
             &right_key_schema,
             &left_key_schema,
+            &output_schema,
             false,
             &args,
         )?;
@@ -1296,7 +1308,7 @@ impl EquiJoinNode {
                 sample_limit,
             },
             table: new_idx_table(unique_key_schema),
-            spill_ctx: MostRecentSpillContext::new(),
+            spill_ctx: MostRecentSpillContext::new("equi-join".into()),
         })
     }
 }

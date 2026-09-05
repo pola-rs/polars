@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use polars_async::primitives::wait_group::WaitToken;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_ca_unordered;
 use polars_core::prelude::{BinaryOffsetChunked, Column, IntoGroupsType};
@@ -8,7 +9,6 @@ use polars_expr::hash_keys::{HashKeysVariant, hash_keys_variant_for_dtype};
 use polars_expr::state::ExecutionState;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::async_primitives::wait_group::WaitToken;
 use crate::expression::StreamExpr;
 use crate::morsel::Morsel;
 use crate::nodes::io_sinks::components::exclude_keys_projection::ExcludeKeysProjection;
@@ -41,7 +41,8 @@ impl Partitioner {
         morsel: Morsel,
         in_memory_exec_state: &ExecutionState,
     ) -> PolarsResult<PartitionedDataFrames> {
-        let (df, _, _, input_wait_token) = morsel.into_inner();
+        let (sf, _, _, input_wait_token) = morsel.into_inner();
+        let df = sf.into_df().await;
         let input_size = RowCountAndSize::new_from_df(&df);
         let partitions_vec = match self {
             Self::FileSize => vec![Partition {

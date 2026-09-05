@@ -1,6 +1,7 @@
 use std::cmp;
 use std::num::NonZeroUsize;
 
+use polars_async::primitives::distributor_channel;
 use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
@@ -9,7 +10,6 @@ use polars_io::utils::stream_buf_reader::ReaderSource;
 use polars_utils::mem::prefetch::prefetch_l2;
 
 use super::line_batch_processor::LineBatch;
-use crate::async_primitives::distributor_channel;
 use crate::utils::tokio_handle_ext;
 
 const LF: u8 = b'\n';
@@ -80,7 +80,6 @@ impl LineBatchDistributor {
 
         let read_loop_handle =
             tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn_blocking(move || {
-                let handle = tokio::runtime::Handle::current();
                 if verbose {
                     eprintln!("[NDJsonFileReader]: Start line batch distributor async");
                 }
@@ -99,7 +98,7 @@ impl LineBatchDistributor {
 
                 while let Some(batch) = producer.next_batch()? {
                     // Effectively, this is `blocking_send`.
-                    if handle.block_on(line_batch_tx.send(batch)).is_err() {
+                    if ASYNC.block_on(line_batch_tx.send(batch)).is_err() {
                         break;
                     }
                 }

@@ -14,11 +14,13 @@ chrono = { workspace = true }
 futures = { workspace = true, optional = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
+polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-expr = { workspace = true }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
 polars-mem-engine = { workspace = true }
+polars-observer = { workspace = true }
 polars-ops = { workspace = true, features = ["chunked_ids"] }
 polars-plan = { workspace = true }
 polars-stream = { workspace = true, optional = true }
@@ -42,7 +44,7 @@ version_check = { workspace = true }
 [features]
 catalog = ["polars-io/catalog"]
 nightly = ["polars-core/nightly", "polars-expr/nightly"]
-new_streaming = ["polars-stream"]
+streaming = ["polars-stream"]
 parquet = [
   "polars-io/parquet",
   "polars-plan/parquet",
@@ -81,6 +83,7 @@ temporal = [
   "dtype-duration",
   "polars-plan/temporal",
   "polars-expr/temporal",
+  "polars-stream?/temporal",
 ]
 # debugging purposes
 fmt = ["polars-core/fmt", "polars-plan/fmt"]
@@ -98,6 +101,7 @@ dtype-full = [
   "dtype-i16",
   "dtype-i128",
   "dtype-i8",
+  "dtype-map",
   "dtype-struct",
   "dtype-time",
   "dtype-u16",
@@ -165,6 +169,11 @@ dtype-i128 = [
   "polars-stream?/dtype-i128",
 ]
 dtype-i8 = ["polars-plan/dtype-i8", "polars-expr/dtype-i8", "polars-mem-engine/dtype-i8", "polars-stream?/dtype-i8"]
+dtype-map = [
+  "polars-plan/dtype-map",
+  "polars-stream?/dtype-map",
+  "polars-expr/dtype-map",
+]
 dtype-struct = [
   "polars-plan/dtype-struct",
   "polars-ops/dtype-struct",

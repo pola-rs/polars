@@ -570,32 +570,38 @@ def test_merge_join_exprs() -> None:
         left_on="key",
         right_on=pl.concat_str(pl.col("key"), ignore_nulls=False),
         how="full",
-        maintain_order="none",
+        maintain_order="left_right",
     )
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     assert "merge-join" in dot, "merge-join not used in plan"
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
+@pytest.mark.parametrize("df_level_hint", [False, True])
 @pytest.mark.parametrize("left_descending", [False, True])
 @pytest.mark.parametrize("right_descending", [False, True])
-@pytest.mark.parametrize("left_nulls_last", [False, True, None])
-@pytest.mark.parametrize("right_nulls_last", [False, True, None])
+@pytest.mark.parametrize("left_nulls_last", [False, True])
+@pytest.mark.parametrize("right_nulls_last", [False, True])
 def test_merge_join_applicable(
+    df_level_hint: bool,
     left_descending: bool,
     right_descending: bool,
-    left_nulls_last: bool | None,
-    right_nulls_last: bool | None,
+    left_nulls_last: bool,
+    right_nulls_last: bool,
 ) -> None:
-    def make_set_sorted_lf(descending: bool, nulls_last: bool | None) -> pl.LazyFrame:
+    def make_set_sorted_lf(
+        df_level_hint: bool, descending: bool, nulls_last: bool
+    ) -> pl.LazyFrame:
         lf = pl.LazyFrame({"key": [1]})
-        if nulls_last is None:
-            return lf.with_columns(pl.col("key").set_sorted(descending=descending))
-        else:
+        if df_level_hint:
             return lf.set_sorted("key", descending=descending, nulls_last=nulls_last)
+        else:
+            return lf.with_columns(
+                pl.col("key").set_sorted(descending=descending, nulls_last=nulls_last)
+            )
 
-    left = make_set_sorted_lf(left_descending, left_nulls_last)
-    right = make_set_sorted_lf(right_descending, right_nulls_last)
+    left = make_set_sorted_lf(df_level_hint, left_descending, left_nulls_last)
+    right = make_set_sorted_lf(df_level_hint, right_descending, right_nulls_last)
     q = left.join(right, on="key", how="full", maintain_order="left_right")
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     if (
@@ -635,7 +641,7 @@ def test_merge_join_applicable(
 )
 @pytest.mark.parametrize("n_groups", [0, 1, 2])
 @given(data=st.data())
-@settings(max_examples=10)
+@settings(max_examples=20)
 def test_streaming_asof_join(
     data: st.DataObject,
     strategy: AsofJoinStrategy,

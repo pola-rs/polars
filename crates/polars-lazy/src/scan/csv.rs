@@ -1,4 +1,7 @@
 #[cfg(feature = "csv")]
+use std::num::NonZeroUsize;
+
+#[cfg(feature = "csv")]
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
@@ -22,6 +25,7 @@ pub struct LazyCsvReader {
     read_options: CsvReadOptions,
     cloud_options: Option<CloudOptions>,
     include_file_paths: Option<PlSmallStr>,
+    extra_columns_policy: ExtraColumnsPolicy,
     missing_columns_policy: Option<MissingColumnsPolicy>,
 }
 
@@ -48,6 +52,7 @@ impl LazyCsvReader {
             read_options: Default::default(),
             cloud_options: Default::default(),
             include_file_paths: None,
+            extra_columns_policy: ExtraColumnsPolicy::Raise,
             missing_columns_policy: None,
         }
     }
@@ -94,6 +99,12 @@ impl LazyCsvReader {
         self
     }
 
+    #[must_use]
+    pub fn with_infer_schema_files(mut self, infer_schema_files: NonZeroUsize) -> Self {
+        self.read_options.infer_schema_files = infer_schema_files;
+        self
+    }
+
     /// Continue with next batch when a ParserError is encountered.
     #[must_use]
     pub fn with_ignore_errors(mut self, ignore: bool) -> Self {
@@ -124,11 +135,27 @@ impl LazyCsvReader {
         self
     }
 
+    #[must_use]
+    pub fn with_column_names_overwrite(
+        mut self,
+        column_names_overwrite: Buffer<PlSmallStr>,
+    ) -> Self {
+        self.read_options.column_names_overwrite = Some(column_names_overwrite);
+        self
+    }
+
     /// Overwrite the schema with the dtypes in this given Schema. The given schema may be a subset
     /// of the total schema.
     #[must_use]
     pub fn with_dtype_overwrite(mut self, schema: Option<SchemaRef>) -> Self {
         self.read_options.schema_overwrite = schema;
+        self
+    }
+
+    /// Overwrite dtypes by position.
+    #[must_use]
+    pub fn with_dtype_overwrite_by_position(mut self, dtypes: Option<Arc<Vec<DataType>>>) -> Self {
+        self.read_options.dtype_overwrite = dtypes;
         self
     }
 
@@ -241,6 +268,7 @@ impl LazyCsvReader {
         self
     }
 
+    #[must_use]
     pub fn with_cloud_options(mut self, cloud_options: Option<CloudOptions>) -> Self {
         self.cloud_options = cloud_options;
         self
@@ -272,6 +300,8 @@ impl LazyCsvReader {
             let (inferred_schema, _) = read_until_start_and_infer_schema(
                 &self.read_options,
                 None,
+                self.extra_columns_policy == ExtraColumnsPolicy::Ignore,
+                self.missing_columns_policy.unwrap_or_default() == MissingColumnsPolicy::Insert,
                 decompressed_size_hint,
                 None,
                 &mut reader,
@@ -298,7 +328,7 @@ impl LazyCsvReader {
                     polars_bail!(ComputeError: "no paths specified for this reader");
                 };
 
-                let file = polars_utils::open_file(path.as_std_path())?;
+                let file = polars_utils::io::open_file(path.as_std_path())?;
                 let mmap = MMapSemaphore::new_from_file(&file)?;
                 infer_schema(Buffer::from_owner(mmap))?
             },
@@ -322,6 +352,10 @@ impl LazyCsvReader {
         self.read_options.n_threads = n_threads;
         let mut schema = f(schema)?;
 
+        self.read_options = self
+            .read_options
+            .with_column_names_overwrite(Buffer::from_iter(schema.iter_names_cloned()));
+
         // the dtypes set may be for the new names, so update again
         if let Some(overwrite_schema) = &self.read_options.schema_overwrite {
             for (name, dtype) in overwrite_schema.iter() {
@@ -332,8 +366,15 @@ impl LazyCsvReader {
         Ok(self.with_schema(Some(Arc::new(schema))))
     }
 
+    #[must_use]
     pub fn with_include_file_paths(mut self, include_file_paths: Option<PlSmallStr>) -> Self {
         self.include_file_paths = include_file_paths;
+        self
+    }
+
+    #[must_use]
+    pub fn with_extra_columns_policy(mut self, policy: ExtraColumnsPolicy) -> Self {
+        self.extra_columns_policy = policy;
         self
     }
 
@@ -351,6 +392,7 @@ impl LazyFileListReader for LazyCsvReader {
         let row_index = self.row_index().cloned();
         let pre_slice = self.n_rows().map(|len| Slice::Positive { offset: 0, len });
 
+        let extra_columns_policy = self.extra_columns_policy;
         let missing_columns_policy = self.missing_columns_policy.unwrap_or_default();
 
         let lf: LazyFrame = DslBuilder::scan_csv(
@@ -371,7 +413,7 @@ impl LazyFileListReader for LazyCsvReader {
                 pre_slice,
                 cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
                 missing_columns_policy,
-                extra_columns_policy: ExtraColumnsPolicy::Raise,
+                extra_columns_policy,
                 include_file_paths: self.include_file_paths,
                 deletion_files: None,
                 table_statistics: None,

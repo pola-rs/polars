@@ -1,11 +1,11 @@
 use std::num::NonZeroUsize;
 
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_core::frame::DataFrame;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_plan::prelude::PlanCallback;
 
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::nodes::ComputeNode;
@@ -60,7 +60,7 @@ impl ComputeNode for CallbackSinkNode {
 
                 assert!(
                     self.chunk_size
-                        .is_some_and(|chunk_size| self.buffer.height() <= chunk_size.into())
+                        .is_some_and(|chunk_size| self.buffer.height() <= chunk_size.get())
                 );
                 state.spawn_subphase_task(async move {
                     ASYNC
@@ -96,15 +96,15 @@ impl ComputeNode for CallbackSinkNode {
             while !self.is_done
                 && let Ok(m) = recv.recv().await
             {
-                let (df, _, _, consume_token) = m.into_inner();
+                let (sf, _, _, consume_token) = m.into_inner();
 
                 // @NOTE: This also performs schema validation.
-                self.buffer.vstack_mut_owned(df)?;
+                self.buffer.vstack_mut_owned(sf.into_df().await)?;
 
                 while self.buffer.height() > 0
                     && self
                         .chunk_size
-                        .is_none_or(|chunk_size| self.buffer.height() >= chunk_size.into())
+                        .is_none_or(|chunk_size| self.buffer.height() >= chunk_size.get())
                 {
                     let chunk_size = self.chunk_size.map_or(usize::MAX, Into::into);
 

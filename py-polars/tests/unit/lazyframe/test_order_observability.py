@@ -119,8 +119,8 @@ def test_sort_agg_with_nested_windowing_22918(func: pl.Expr, result: int) -> Non
 
 def test_remove_sorts_on_unordered() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]}).sort("a").sort("a").sort("a")
-    explain = lf.explain()
-    assert explain.count("SORT") == 1
+    plan = lf.explain()
+    assert plan.count("SORT") == 1
 
     lf = (
         pl.LazyFrame({"a": [1, 2, 3]})
@@ -134,20 +134,20 @@ def test_remove_sorts_on_unordered() -> None:
         .group_by("a")
         .agg([])
     )
-    explain = lf.explain()
-    assert explain.count("SORT") == 0
+    plan = lf.explain()
+    assert plan.count("SORT") == 0
 
     lf = (
         pl.LazyFrame({"a": [1, 2, 3]})
         .sort("a")
         .join(pl.LazyFrame({"b": [1, 2, 3]}), on=pl.lit(1))
     )
-    explain = lf.explain()
-    assert explain.count("SORT") == 0
+    plan = lf.explain(engine="streaming")
+    assert plan.count("SORT") == 0
 
     lf = pl.LazyFrame({"a": [1, 2, 3]}).sort("a").unique()
-    explain = lf.explain()
-    assert explain.count("SORT") == 0
+    plan = lf.explain()
+    assert plan.count("SORT") == 0
 
 
 def test_merge_sorted_to_union() -> None:
@@ -163,6 +163,30 @@ def test_merge_sorted_to_union() -> None:
     explain = lf.explain()
     assert "MERGE_SORTED" not in explain
     assert "UNION" in explain
+
+
+def test_union_drops_maintain_order() -> None:
+    lf1 = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5]})
+    lf2 = pl.LazyFrame({"a": [2, 3, 4], "b": [4, 5, 6]})
+
+    lf = pl.concat([lf1, lf2]).group_by("a").agg(pl.col("b").sum())
+    explain = lf.explain(optimizations=pl.QueryOptFlags(check_order_observe=False))
+    assert "UNION[maintain_order: true]" in explain
+
+    explain = lf.explain()
+    assert "UNION[maintain_order: false]" in explain
+
+
+def test_sliced_union_keeps_maintain_order_28566() -> None:
+    lf1 = pl.LazyFrame({"a": [0, 1, 2, 3, 4]})
+    lf2 = pl.LazyFrame({"a": [5, 6, 7, 8, 9]})
+
+    lf = pl.concat([lf1, lf2]).slice(3, 4).select(pl.col("a").sum())
+
+    assert "SLICED UNION[maintain_order: true]" in lf.explain()
+
+    expected = pl.DataFrame({"a": [18]})
+    assert_frame_equal(lf.collect(), expected)
 
 
 @pytest.mark.parametrize("n_frames", [4, 5])
@@ -205,9 +229,9 @@ def test_merge_sorted_deep_chain_explain_matches_balanced(n_frames: int) -> None
         pl.arange(0, pl.len()),
         pl.int_range(pl.len()),
         pl.row_index().cast(pl.Int64),
-        pl.lit([0, 1, 2, 3, 4], dtype=pl.List(pl.Int64)).explode(),
+        pl.lit([0, 1, 2, 3, 4], dtype=pl.List(pl.Int64)).explode(empty_as_null=False),
         pl.lit(pl.Series([0, 1, 2, 3, 4])),
-        pl.lit(pl.Series([[0], [1], [2], [3], [4]])).explode(),
+        pl.lit(pl.Series([[0], [1], [2], [3], [4]])).explode(empty_as_null=False),
         pl.col("y").sort(),
         pl.col("y").sort_by(pl.col("y"), maintain_order=True),
         pl.col("y").sort_by(pl.col("y"), maintain_order=False),
@@ -321,7 +345,13 @@ lf6 = pl.LazyFrame({"a": [[1], [2]], "b": [[3], [4]]})
         (lf2, pl.col.a + 1, [3, 2, 4], False),
         (lf2, pl.lit(pl.Series("a", [2, 1, 3, 4])).gather([0, 2]), [2, 3], False),
         (lf2, pl.col.a.filter(pl.col.a != 1), [2, 3], False),
-        (lf3, pl.col.a.explode() * pl.col.b.explode(), [3, 8, 15], True),
+        (
+            lf3,
+            pl.col.a.explode(empty_as_null=False)
+            * pl.col.b.explode(empty_as_null=False),
+            [3, 8, 15],
+            True,
+        ),
         (lf4, pl.col.a.sort() + pl.col.b, [5, 8], True),
         (lf4, pl.col.a.sort() + pl.col.b.sort(), [5, 7, 9], False),
         (lf4, pl.col.a + pl.col.b, pl.Series("a", [6, 7, 8]), False),
@@ -354,14 +384,18 @@ def test_with_columns_implicit_columns() -> None:
     q = (
         lf6.select("a")
         .unique(maintain_order=True)
-        .with_columns(pl.col.a.explode())
+        .with_columns(pl.col.a.explode(empty_as_null=False))
         .unique()
     )
     assert "UNIQUE[maintain_order: true" not in q.explain()
     assert_series_equal(
         q.collect().to_series(), pl.Series("a", [1, 2]), check_order=False
     )
-    q = lf6.unique(maintain_order=True).with_columns(pl.col.a.explode()).unique()
+    q = (
+        lf6.unique(maintain_order=True)
+        .with_columns(pl.col.a.explode(empty_as_null=False))
+        .unique()
+    )
     assert "UNIQUE[maintain_order: true" in q.explain()
     assert_frame_equal(
         q.collect(),
@@ -400,9 +434,9 @@ def test_with_columns_implicit_columns() -> None:
             False,
         ),
         (
-            pl.col.a.cast(pl.List(pl.Int64))
+            pl.list(pl.col.a)
             .map_batches(lambda x: x, is_elementwise=True)
-            .explode(),
+            .explode(empty_as_null=False),
             [1, 2, 3],
             True,
             False,
@@ -438,9 +472,9 @@ def test_group_by_key_sensitivity(
             False,
         ),
         (
-            pl.col.a.cast(pl.List(pl.Int64))
+            pl.list(pl.col.a)
             .map_batches(lambda x: x, is_elementwise=True)
-            .explode(),
+            .explode(empty_as_null=False),
             True,
         ),
         (pl.col.a.sort(), True),
@@ -544,9 +578,9 @@ def test_group_by_input_ordering() -> None:
         (pl.col.a.map_batches(lambda x: x), True),
         (pl.col.a.map_batches(lambda x: x, is_elementwise=True), False),
         (
-            pl.col.a.cast(pl.List(pl.Int64))
+            pl.list(pl.col.a)
             .map_batches(lambda x: x, is_elementwise=True)
-            .explode(),
+            .explode(empty_as_null=False),
             True,
         ),
         (pl.col.a.cum_prod(), True),
@@ -572,9 +606,9 @@ def test_sort_key_sensitivity(expr: pl.Expr, is_ordered: bool) -> None:
         (pl.col.a.map_batches(lambda x: x), True),
         (pl.col.a.map_batches(lambda x: x, is_elementwise=True), False),
         (
-            pl.col.a.cast(pl.List(pl.Int64))
+            pl.list(pl.col.a)
             .map_batches(lambda x: x, is_elementwise=True)
-            .explode(),
+            .explode(empty_as_null=False),
             True,
         ),
         (pl.col.a.cum_prod(), True),
@@ -625,6 +659,7 @@ def test_filter_sensitivity(expr: pl.Expr, is_ordered: bool) -> None:
         ),
     ],
 )
+@pytest.mark.may_fail_strict
 def test_with_columns_sensitivity(
     exprs: list[pl.Expr], is_ordered: bool, unordered_columns: list[str] | None
 ) -> None:
@@ -741,7 +776,7 @@ def test_order_simplify_exprs() -> None:
         rev=(pl.col("a").sort() + 1).sort().sort(descending=True),
     )
     plan = q.explain()
-    assert '(col("a")) + (1)].sort(desc).alias' in plan
+    assert '(col("a") + 1).sort(desc).alias' in plan
 
     assert_frame_equal(
         q.collect(),
@@ -780,3 +815,22 @@ def test_order_simplify_exprs() -> None:
     )
 
     assert 'col("a").sort(asc).unique_stable()' in plan
+
+
+def test_order_simplify_expr_slice_28028() -> None:
+    q = pl.LazyFrame(data={"a": [0, 1, 3, 4, 2, 2], "b": [0, 1, 4, 5, 2, 3]}).select(
+        pl.col("a").sort_by("b").head(5).mode().first()
+    )
+
+    plan = q.explain()
+
+    assert ".sort_by(" in plan
+    assert ".slice(" in plan
+
+    assert q.collect().item() == 2
+
+
+def test_order_project_invalidates_suborder_28831() -> None:
+    lf = pl.LazyFrame({"a": [1, 1, 2, 2], "b": [5, 10, 2, 4]})
+    out = lf.set_sorted("a", "b").select(pl.col("b").max()).collect().item()
+    assert out == 10

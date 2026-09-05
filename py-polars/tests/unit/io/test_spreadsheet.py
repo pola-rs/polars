@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import warnings
 from collections import OrderedDict
 from datetime import date, datetime, time
@@ -13,6 +14,7 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import (
+    ArgumentRemovedError,
     NoDataError,
     ParameterCollisionError,
 )
@@ -503,7 +505,6 @@ def test_read_invalid_worksheet(
         (pl.read_ods, "path_ods_mixed", {}),
     ],
 )
-@pytest.mark.may_fail_auto_streaming
 def test_read_mixed_dtype_columns(
     read_spreadsheet: Callable[..., dict[str, pl.DataFrame]],
     source: str,
@@ -828,9 +829,14 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
             ({}, True)
             if write_params.get("include_header", True)
             else (
-                {"new_columns": ["dtm", "str", "val"]}
-                if engine == "xlsx2csv"
-                else {"column_names": ["dtm", "str", "val"]},
+                {
+                    "new_columns" if engine == "xlsx2csv" else "column_names": [
+                        "dtm",
+                        "str",
+                        "val",
+                        "_",
+                    ],
+                },
                 False,
             )
         )
@@ -844,13 +850,17 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
         _wb = df.write_excel(workbook=xls, worksheet="data", **write_params)
 
         # ...and read it back again:
-        xldf = pl.read_excel(
-            xls,
-            sheet_name="data",
-            engine=engine,
-            read_options=read_options,
-            has_header=has_header,
-        )[:3].select(df.columns[:3])
+        xldf = (
+            pl.read_excel(
+                xls,
+                sheet_name="data",
+                engine=engine,
+                read_options=read_options,
+                has_header=has_header,
+            )
+            .head(3)
+            .select("dtm", "str", "val")
+        )
 
         if engine == "xlsx2csv":
             xldf = xldf.with_columns(pl.col("dtm").str.strptime(pl.Date, fmt_strptime))
@@ -1039,7 +1049,7 @@ def test_excel_read_no_headers(engine: ExcelSpreadsheetEngine) -> None:
     df.write_excel(xls, worksheet="data", include_header=False)
 
     xldf = pl.read_excel(xls, engine=engine, has_header=False)
-    expected = xldf.rename({"column_1": "colx", "column_2": "coly", "column_3": "colz"})
+    expected = xldf.rename({"column_0": "colx", "column_1": "coly", "column_2": "colz"})
     assert_frame_equal(df, expected)
 
 
@@ -1336,7 +1346,6 @@ def test_excel_mixed_calamine_float_data(io_files_path: Path) -> None:
 
 
 @pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
-@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch, _read_spreadsheet_xlsx2csv needs to be changed not to call `_reorder_columns` on the df
 def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(
         {
@@ -1499,3 +1508,13 @@ def test_spreadsheet_no_resource_warning(
         warnings.simplefilter("error", ResourceWarning)
         read_spreadsheet(spreadsheet_path, **params)
         read_spreadsheet(spreadsheet_path, sheet_id=0, **params)
+
+
+def test_read_excel_renamed_options_removed() -> None:
+    msg = "It was renamed to 'engine_options'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.read_excel(BytesIO(), xlsx2csv_options={})  # type: ignore[call-overload]
+
+    msg = "It was renamed to 'read_options'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.read_excel(BytesIO(), read_csv_options={})  # type: ignore[call-overload]

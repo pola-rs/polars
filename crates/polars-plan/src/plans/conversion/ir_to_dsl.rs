@@ -167,10 +167,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Var(Arc::new(exp), ddof).into()
             },
-            IRAggExpr::AggGroups(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::AggGroups(Arc::new(exp)).into()
-            },
             IRAggExpr::Count {
                 input,
                 include_nulls,
@@ -309,15 +305,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::Min => A::Min,
                 IA::Max => A::Max,
                 IA::Sum => A::Sum,
+                IA::Dot => A::Dot,
                 IA::ToList => A::ToList,
-                IA::Unique(v) => A::Unique(v),
-                IA::NUnique => A::NUnique,
                 IA::Std(v) => A::Std(v),
                 IA::Var(v) => A::Var(v),
                 IA::Mean => A::Mean,
                 IA::Median => A::Median,
                 IA::Sort(v) => A::Sort(v),
-                IA::Reverse => A::Reverse,
                 IA::ArgMin => A::ArgMin,
                 IA::ArgMax => A::ArgMax,
                 IA::Get(v) => A::Get(v),
@@ -330,7 +324,9 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::Slice(offset, length) => A::Slice(offset, length),
                 IA::Explode(options) => A::Explode(options),
                 #[cfg(feature = "array_to_struct")]
-                IA::ToStruct(ng) => A::ToStruct(ng),
+                IA::ToStruct { fields } => A::ToStruct {
+                    fields: Some(fields),
+                },
             })
         },
         IF::BinaryExpr(f) => {
@@ -362,7 +358,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             use CategoricalFunction as C;
             use IRCategoricalFunction as IC;
             F::Categorical(match f {
-                IC::GetCategories => C::GetCategories,
                 #[cfg(feature = "strings")]
                 IC::LenBytes => C::LenBytes,
                 #[cfg(feature = "strings")]
@@ -373,6 +368,16 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IC::EndsWith(v) => C::EndsWith(v),
                 #[cfg(feature = "strings")]
                 IC::Slice(s, l) => C::Slice(s, l),
+                IC::To(dt, strict) => C::To(DataTypeExpr::Literal(dt), strict),
+                IC::Physical => C::Physical,
+            })
+        },
+        #[cfg(feature = "dtype-map")]
+        IF::MapExpr(f) => {
+            use IRMapFunction as IM;
+            use MapFunction as M;
+            F::MapExpr(match f {
+                IM::Entries => M::Entries,
             })
         },
         #[cfg(feature = "dtype-extension")]
@@ -427,9 +432,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "diff")]
                 IL::Diff { n, null_behavior } => L::Diff { n, null_behavior },
                 IL::Sort(sort_options) => L::Sort(sort_options),
-                IL::Reverse => L::Reverse,
-                IL::Unique(v) => L::Unique(v),
-                IL::NUnique => L::NUnique,
                 #[cfg(feature = "list_sets")]
                 IL::SetOperation(set_operation) => L::SetOperation(set_operation),
                 IL::Join(v) => L::Join(v),
@@ -437,6 +439,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IL::ToArray(v) => L::ToArray(v),
                 #[cfg(feature = "list_to_struct")]
                 IL::ToStruct(list_to_struct_args) => L::ToStruct(list_to_struct_args),
+                #[cfg(feature = "dtype-map")]
+                IL::ToMap => L::ToMap,
             })
         },
         #[cfg(feature = "strings")]
@@ -570,6 +574,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             F::StructExpr(match f {
                 IB::FieldByName(pl_small_str) => B::FieldByName(pl_small_str),
                 IB::RenameFields(pl_small_strs) => B::RenameFields(pl_small_strs),
+                IB::DropFields(pl_small_strs, strict) => B::Drop(pl_small_strs, strict),
                 IB::PrefixFields(pl_small_str) => B::PrefixFields(pl_small_str),
                 IB::SuffixFields(pl_small_str) => B::SuffixFields(pl_small_str),
                 #[cfg(feature = "json")]
@@ -596,7 +601,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::OrdinalDay => B::OrdinalDay,
                 IB::Time => B::Time,
                 IB::Date => B::Date,
-                IB::Datetime => B::Datetime,
                 #[cfg(feature = "dtype-duration")]
                 IB::Duration(time_unit) => B::Duration(time_unit),
                 IB::Hour => B::Hour,
@@ -621,7 +625,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::TotalNanoseconds { fractional } => B::TotalNanoseconds { fractional },
                 IB::ToString(v) => B::ToString(v),
                 IB::CastTimeUnit(time_unit) => B::CastTimeUnit(time_unit),
-                IB::WithTimeUnit(time_unit) => B::WithTimeUnit(time_unit),
                 #[cfg(feature = "timezones")]
                 IB::ConvertTimeZone(time_zone) => B::ConvertTimeZone(time_zone),
                 IB::TimeStamp(time_unit) => B::TimeStamp(time_unit),
@@ -675,6 +678,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::Any { ignore_nulls } => B::Any { ignore_nulls },
                 IB::All { ignore_nulls } => B::All { ignore_nulls },
                 IB::IsEmpty { ignore_nulls } => B::IsEmpty { ignore_nulls },
+                IB::HasNulls => B::HasNulls,
                 IB::IsNull => B::IsNull,
                 IB::IsNotNull => B::IsNotNull,
                 IB::IsFinite => B::IsFinite,
@@ -702,6 +706,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     abs_tol,
                     rel_tol,
                     nans_equal,
+                },
+                IB::IsSorted {
+                    descending,
+                    nulls_last,
+                } => B::IsSorted {
+                    descending,
+                    nulls_last,
                 },
                 IB::AllHorizontal => B::AllHorizontal,
                 IB::AnyHorizontal => B::AnyHorizontal,
@@ -742,7 +753,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             })
         },
         #[cfg(feature = "row_hash")]
-        IF::Hash(s0, s1, s2, s3) => F::Hash(s0, s1, s2, s3),
+        IF::Hash(seed) => F::Hash(seed),
         #[cfg(feature = "arg_where")]
         IF::ArgWhere => F::ArgWhere,
         #[cfg(feature = "index_of")]
@@ -903,7 +914,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 options,
             }
         },
-        IF::Rechunk => F::Rechunk,
         IF::ShiftAndFill => F::ShiftAndFill,
         IF::Shift => F::Shift,
         IF::DropNans => F::DropNans,
@@ -937,6 +947,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Repeat => F::Repeat,
         #[cfg(feature = "round_series")]
         IF::Clip { has_min, has_max } => F::Clip { has_min, has_max },
+        IF::AsList => F::AsList,
         #[cfg(feature = "dtype-struct")]
         IF::AsStruct => F::AsStruct,
         #[cfg(feature = "top_k")]
@@ -1143,6 +1154,10 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::EwmMean { options } => F::EwmMean { options },
         #[cfg(feature = "ewma_by")]
         IF::EwmMeanBy { half_life } => F::EwmMeanBy { half_life },
+        #[cfg(feature = "ewma")]
+        IF::EwmSum { options } => F::EwmSum { options },
+        #[cfg(feature = "ewma_by")]
+        IF::EwmSumBy { half_life } => F::EwmSumBy { half_life },
         #[cfg(feature = "ewma")]
         IF::EwmStd { options } => F::EwmStd { options },
         #[cfg(feature = "ewma")]

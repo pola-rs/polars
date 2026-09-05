@@ -131,6 +131,7 @@ pub enum DataTypeSelector {
     List(Option<Arc<DataTypeSelector>>),
     Array(Option<Arc<DataTypeSelector>>, Option<usize>),
     Struct,
+    Map,
 
     Decimal,
     Numeric,
@@ -172,7 +173,7 @@ pub enum Selector {
 
 fn dtype_selector(
     schema: &Schema,
-    ignored_columns: &PlHashSet<PlSmallStr>,
+    ignored_columns: &PlIndexSet<PlSmallStr>,
     f: impl Fn(&DataType) -> bool,
 ) -> PlIndexSet<PlSmallStr> {
     PlIndexSet::from_iter(
@@ -192,7 +193,7 @@ impl Selector {
     pub fn into_columns(
         &self,
         schema: &Schema,
-        ignored_columns: &PlHashSet<PlSmallStr>,
+        ignored_columns: &PlIndexSet<PlSmallStr>,
     ) -> PolarsResult<PlIndexSet<PlSmallStr>> {
         let out = match self {
             Self::Union(lhs, rhs) => {
@@ -393,6 +394,7 @@ impl DataTypeSelector {
             Self::List(inner_dts) => list_matches(inner_dts.as_deref(), dtype),
             Self::Array(inner_dts, swidth) => array_matches(inner_dts.as_deref(), *swidth, dtype),
             Self::Struct => dtype.is_struct(),
+            Self::Map => dtype.is_map(),
             Self::Decimal => dtype.is_decimal(),
             Self::Numeric => dtype.is_numeric(),
             Self::Temporal => dtype.is_temporal(),
@@ -406,7 +408,7 @@ impl DataTypeSelector {
     fn into_columns(
         &self,
         schema: &Schema,
-        ignored_columns: &PlHashSet<PlSmallStr>,
+        ignored_columns: &PlIndexSet<PlSmallStr>,
     ) -> PolarsResult<PlIndexSet<PlSmallStr>> {
         Ok(match self {
             Self::Union(lhs, rhs) => {
@@ -446,7 +448,7 @@ impl DataTypeSelector {
                 .collect(),
             Self::Empty => Default::default(),
             Self::AnyOf(dtypes) => {
-                let dtypes = PlHashSet::from_iter(dtypes.iter().cloned());
+                let dtypes = PlIndexSet::from_iter(dtypes.iter().cloned());
                 dtype_selector(schema, ignored_columns, |dtype| dtypes.contains(dtype))
             },
             Self::Integer => dtype_selector(schema, ignored_columns, |dtype| dtype.is_integer()),
@@ -469,6 +471,7 @@ impl DataTypeSelector {
                 array_matches(inner_dts.as_deref(), *swidth, dtype)
             }),
             Self::Struct => dtype_selector(schema, ignored_columns, |dtype| dtype.is_struct()),
+            Self::Map => dtype_selector(schema, ignored_columns, |dtype| dtype.is_map()),
             Self::Decimal => dtype_selector(schema, ignored_columns, |dtype| dtype.is_decimal()),
             Self::Numeric => dtype_selector(schema, ignored_columns, |dtype| dtype.is_numeric()),
             Self::Temporal => dtype_selector(schema, ignored_columns, |dtype| dtype.is_temporal()),
@@ -713,6 +716,7 @@ impl fmt::Display for DataTypeSelector {
                 f.write_str(")")
             },
             Self::Struct => f.write_str("cs.struct()"),
+            Self::Map => f.write_str("cs.map()"),
 
             Self::Numeric => f.write_str("cs.numeric()"),
             Self::Decimal => f.write_str("cs.decimal()"),

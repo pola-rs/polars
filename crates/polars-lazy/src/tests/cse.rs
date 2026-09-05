@@ -38,6 +38,9 @@ fn test_cse_self_joins() -> PolarsResult<()> {
 
 #[test]
 fn test_cse_unions() -> PolarsResult<()> {
+    unsafe { std::env::set_var("POLARS_ALLOW_NESTED_CSPE", "1") };
+    polars_config::config().reload_env_var("POLARS_ALLOW_NESTED_CSPE");
+
     let lf = scan_foods_ipc();
 
     let lf1 = lf.clone().with_column(col("category").str().to_uppercase());
@@ -198,7 +201,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
         &[col("a"), col("b")],
         &[col("a"), col("b")],
         JoinType::Left.into(),
-    );
+    )?;
 
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = c.optimize(&mut lp_arena, &mut expr_arena).unwrap();
@@ -227,6 +230,9 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "semi_anti_join")]
 fn test_cache_with_partial_projection() -> PolarsResult<()> {
+    unsafe { std::env::set_var("POLARS_ALLOW_NESTED_CSPE", "1") };
+    polars_config::config().reload_env_var("POLARS_ALLOW_NESTED_CSPE");
+
     let lf1 = df![
         "id" => ["a"],
         "x" => [1],
@@ -245,19 +251,19 @@ fn test_cache_with_partial_projection() -> PolarsResult<()> {
             [col("id")],
             [col("id")],
             JoinType::Semi.into(),
-        )
+        )?
         .join(
             lf1.clone().filter(col("x").neq(lit(8))),
             [col("id")],
             [col("id")],
             JoinType::Semi.into(),
-        )
+        )?
         .join(
             lf1.filter(col("x").neq(lit(8))),
             [col("id")],
             [col("id")],
             JoinType::Semi.into(),
-        );
+        )?;
 
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
@@ -320,7 +326,7 @@ fn test_cse_columns_projections() -> PolarsResult<()> {
         [col("A"), col("C")],
         [col("A"), col("C")],
         JoinType::Left.into(),
-    );
+    )?;
 
     let out = q.collect()?;
 

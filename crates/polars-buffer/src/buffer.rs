@@ -366,7 +366,7 @@ struct Aligned([u8; 4096]);
 // refcount it.
 const GLOBAL_ZERO_SIZE: usize = 8 * 1024 * 1024;
 static GLOBAL_ZEROES: LazyLock<SharedStorage<Aligned>> = LazyLock::new(|| {
-    assert!(GLOBAL_ZERO_SIZE.is_multiple_of(size_of::<Aligned>()));
+    const { assert!(GLOBAL_ZERO_SIZE.is_multiple_of(size_of::<Aligned>())) };
     let chunks = GLOBAL_ZERO_SIZE / size_of::<Aligned>();
     let v = vec![Aligned([0; _]); chunks];
     let mut ss = SharedStorage::from_vec(v);
@@ -452,6 +452,22 @@ mod _serde_impl {
         {
             <Vec<T> as Deserialize>::deserialize(deserializer).map(Buffer::from)
         }
+    }
+}
+
+#[cfg(feature = "schemars")]
+impl<T: schemars::JsonSchema> schemars::JsonSchema for Buffer<T> {
+    fn inline_schema() -> bool {
+        Vec::<T>::inline_schema()
+    }
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        Vec::<T>::schema_name()
+    }
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        Vec::<T>::schema_id()
+    }
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        Vec::<T>::json_schema(generator)
     }
 }
 

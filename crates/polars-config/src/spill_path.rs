@@ -24,6 +24,6 @@ pub fn default_ooc_spill_dir() -> PathBuf {
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     let (base, user_var) = (std::env::temp_dir(), "USER");
 
-    let user = std::env::var(user_var).unwrap_or_else(|_| "polars".to_string());
-    base.join(format!("polars-{user}/spill"))
+    let user = std::env::var(user_var).unwrap_or_else(|_| "unknown".to_string());
+    base.join(format!("polars-{user}")).join("spill")
 }

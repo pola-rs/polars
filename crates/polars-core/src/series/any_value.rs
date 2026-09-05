@@ -97,11 +97,21 @@ impl Series {
         dtype: &DataType,
         strict: bool,
     ) -> PolarsResult<Self> {
+        Self::from_any_values_and_dtype_unnamed(values, dtype, strict)
+            .with_context(|| format!("while constructing Series '{name}'"))
+            .map(|s| s.with_name(name))
+    }
+
+    fn from_any_values_and_dtype_unnamed(
+        values: &[AnyValue],
+        dtype: &DataType,
+        strict: bool,
+    ) -> PolarsResult<Self> {
         if values.is_empty() {
-            return Ok(Self::new_empty(name, dtype));
+            return Ok(Self::new_empty(PlSmallStr::EMPTY, dtype));
         }
 
-        let mut s = match dtype {
+        Ok(match dtype {
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => any_values_to_integer::<Int8Type>(values, strict)?.into_series(),
             #[cfg(feature = "dtype-i16")]
@@ -146,9 +156,30 @@ impl Series {
             DataType::Decimal(precision, scale) => {
                 any_values_to_decimal(values, *precision, *scale, strict)?.into_series()
             },
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(_, _) => {
+                let entries_dtype = dtype.map_entries_dtype().unwrap();
+                let entries = values
+                    .iter()
+                    .map(|av| match av {
+                        AnyValue::Map(entries) => Ok(AnyValue::List(entries.clone())),
+                        // An empty list of entries carries no field information.
+                        AnyValue::List(entries) if entries.dtype().is_nested_null() => {
+                            Ok(AnyValue::List(entries.clone()))
+                        },
+                        AnyValue::List(entries) => {
+                            ensure_map_entries_dtype(entries.dtype())?;
+                            Ok(AnyValue::List(entries.clone()))
+                        },
+                        av => Ok(av.clone()),
+                    })
+                    .collect::<PolarsResult<Vec<AnyValue>>>()?;
+                let storage = any_values_to_list(&entries, &entries_dtype, strict)?.into_series();
+                MapChunked::try_from_storage(dtype.clone(), storage)?.into_series()
+            },
             #[cfg(feature = "dtype-extension")]
             DataType::Extension(typ, storage) => {
-                Series::from_any_values_and_dtype(name.clone(), values, storage, strict)?
+                Series::from_any_values_and_dtype_unnamed(values, storage, strict)?
                     .into_extension(typ.clone())
             },
             DataType::List(inner) => any_values_to_list(values, inner, strict)?.into_series(),
@@ -167,9 +198,7 @@ impl Series {
                     "constructing a Series with data type {dt:?} from AnyValues is not supported"
                 )
             },
-        };
-        s.rename(name);
-        Ok(s)
+        })
     }
 }
 

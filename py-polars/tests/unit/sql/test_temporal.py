@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import InvalidOperationError, SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 def test_date_func() -> None:
@@ -215,7 +216,7 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
         ("dt::datetime = '1960-01-07 00:00'", [2]),
         ("dt::datetime = '1960-01-07 00:00:00'", [2]),
         ("dtm BETWEEN '2020-12-30 10:30:44' AND '2023-01-01 00:00'", [2]),
-        ("dt IN ('1960-01-07','2077-01-01','2222-02-22')", [1, 2]),
+        ("dt IN (DATE '1960-01-07', DATE '2077-01-01' , DATE '2222-02-22')", [1, 2]),
         (
             "dtm = '2024-01-07 01:02:03.123456000' OR dtm = '2020-12-30 10:30:45.987654'",
             [0, 2],
@@ -403,9 +404,9 @@ def test_temporal_typed_literals() -> None:
         """
         SELECT
           -- typed literals
-          DATE '2020-12-30' AS dt,
-          TIME '00:01:02' AS tm1,
-          TIME '23:59:59.123456' AS tm2,
+          DATE('2020-12-30') AS dt,
+          TIME('00:01:02') AS tm1,
+          TIME('23:59:59.123456') AS tm2,
           TIMESTAMP '1930-01-01 12:30:00' AS dtm1,
           TIMESTAMP '2077-04-27T23:45:30.123456' AS dtm2,
           -- arrays of typed literals
@@ -482,3 +483,93 @@ def test_timestamp_time_unit_errors() -> None:
             match="sql parser error: Expected: literal int, found: - ",
         ):
             ctx.execute("SELECT ts::timestamp(-3) FROM frame_data")
+
+
+def test_typed_temporal_literal_comparison() -> None:
+    df = pl.DataFrame(
+        {
+            "d": [date(2019, 6, 1), date(2020, 1, 1), date(2021, 1, 1)],
+            "ts": [
+                datetime(2019, 6, 1, 12),
+                datetime(2020, 1, 1, 8),
+                datetime(2021, 1, 1, 0),
+            ],
+        }
+    )
+    for query in (
+        "SELECT d FROM self WHERE d > DATE '2019-12-31' ORDER BY d",
+        "SELECT d FROM self WHERE d BETWEEN DATE '2019-01-01' AND DATE '2020-06-01' ORDER BY d",
+        "SELECT ts FROM self WHERE ts > TIMESTAMP '2019-12-31 00:00:00' ORDER BY ts",
+    ):
+        assert_sql_matches(df, query=query, compare_with="duckdb")
+
+
+@pytest.mark.parametrize(
+    ("literal", "expected"),
+    [
+        ("DATE '2020-02-29'", date(2020, 2, 29)),
+        ("TIME '12:30:05'", time(12, 30, 5)),
+        ("TIMESTAMP '2020-01-01 08:00:00'", datetime(2020, 1, 1, 8)),
+    ],
+)
+def test_typed_temporal_literal(literal: str, expected: Any) -> None:
+    df = pl.DataFrame({"a": [1]})
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        assert ctx.execute(f"SELECT {literal} AS x FROM tbl").item() == expected
+
+
+@pytest.mark.parametrize(
+    ("precision", "time_unit"),
+    [(3, "ms"), (6, "us"), (9, "ns")],
+)
+def test_typed_timestamp_literal_precision(precision: int, time_unit: str) -> None:
+    # the declared precision selects the time unit
+    df = pl.DataFrame({"a": [1]})
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        res = ctx.execute(
+            f"SELECT TIMESTAMP({precision}) '2020-01-01 08:00:00.123' AS x FROM tbl"
+        )
+    assert res.schema["x"] == pl.Datetime(time_unit)  # type: ignore[arg-type]
+
+
+def test_date_plus_integer_days() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [date(2020, 1, 1), date(2020, 2, 28), date(2021, 2, 28)],
+            "n": [5, 2, 2],
+        }
+    )
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              dt + 5 AS plus_lit,
+              5 + dt AS lit_plus,
+              dt - 5 AS minus_lit,
+              dt + n AS plus_col,
+              dt - n AS minus_col
+            FROM tbl
+            """
+        )
+    assert res.to_dict(as_series=False) == {
+        "plus_lit": [date(2020, 1, 6), date(2020, 3, 4), date(2021, 3, 5)],
+        "lit_plus": [date(2020, 1, 6), date(2020, 3, 4), date(2021, 3, 5)],
+        "minus_lit": [date(2019, 12, 27), date(2020, 2, 23), date(2021, 2, 23)],
+        "plus_col": [date(2020, 1, 6), date(2020, 3, 1), date(2021, 3, 2)],
+        "minus_col": [date(2019, 12, 27), date(2020, 2, 26), date(2021, 2, 26)],
+    }
+
+
+def test_date_integer_arithmetic_in_filter() -> None:
+    df = pl.DataFrame({"dt": [date(2020, 1, 1), date(2020, 1, 8), date(2020, 1, 15)]})
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        res = ctx.execute("SELECT dt FROM tbl WHERE dt > DATE '2020-01-01' + 7")
+    assert res.to_series().to_list() == [date(2020, 1, 15)]
+
+
+def test_date_arithmetic_leaves_other_dtypes_alone() -> None:
+    df = pl.DataFrame({"a": [1, 2], "dt": [date(2020, 1, 1), date(2020, 3, 5)]})
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        res = ctx.execute("SELECT a + 5 AS x, dt - dt AS y FROM tbl")
+    assert res.schema["x"] == pl.Int64
+    assert res.schema["y"] == pl.Duration("us")

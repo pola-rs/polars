@@ -5,26 +5,23 @@ from collections.abc import Collection, Sequence
 from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
-from polars import exceptions
 from polars import functions as F
+from polars._utils.expired import RemovedParameter, removed_parameters
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
-from polars._utils.various import issue_warning
+from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from polars import Expr, Series
     from polars._typing import (
         IntoExpr,
         IntoExprColumn,
-        ListToStructWidthStrategy,
         NullBehavior,
     )
 
 
-class ExprListNameSpace:
+class ExprListNameSpace(_NamespaceSuggestMixin):
     """Namespace for list related expressions."""
 
     _accessor = "list"
@@ -33,11 +30,40 @@ class ExprListNameSpace:
         self._pyexpr = expr._pyexpr
 
     def __getitem__(self, item: int) -> Expr:
+        """
+        Get the value by index in the sublists.
+
+        This is syntactic sugar for :meth:`Expr.list.get`.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        item
+            Index to return per sublist. Index ``0`` returns the first item, and
+            index ``-1`` returns the last item.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [[3, 2, 1], [4, 5, 6]]})
+        >>> df.with_columns(get=pl.col("a").list[0])
+        shape: (2, 2)
+        ┌───────────┬─────┐
+        │ a         ┆ get │
+        │ ---       ┆ --- │
+        │ list[i64] ┆ i64 │
+        ╞═══════════╪═════╡
+        │ [3, 2, 1] ┆ 3   │
+        │ [4, 5, 6] ┆ 4   │
+        └───────────┴─────┘
+        """
         return self.get(item)
 
     def all(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether all boolean values in a list are true.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -75,6 +101,8 @@ class ExprListNameSpace:
     def any(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether any boolean value in a list is true.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -115,6 +143,8 @@ class ExprListNameSpace:
 
         Null values count towards the total.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -139,6 +169,8 @@ class ExprListNameSpace:
     def drop_nulls(self) -> Expr:
         """
         Drop all null values in the list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         The original order of the remaining elements is preserved.
 
@@ -165,11 +197,13 @@ class ExprListNameSpace:
         *,
         fraction: float | IntoExprColumn | None = None,
         with_replacement: bool = False,
-        shuffle: bool = False,
+        shuffle: bool | None = None,
         seed: int | None = None,
     ) -> Expr:
         """
         Sample from this list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -181,7 +215,12 @@ class ExprListNameSpace:
         with_replacement
             Allow values to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            Determines the order of the sampled values.
+            If True, sampled values are explicitly shuffled.
+            If False, the relative order of the sampled values is preserved.
+            (i.e. they appear in the same order as the original input list).
+            If None (default), no ordering guarantee; uses the most performant
+            algorithm.
         seed
             Seed for the random number generator. If set to None (default), a
             random seed is generated for each sample operation.
@@ -189,7 +228,11 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1, 2, 3], [4, 5]], "n": [2, 1]})
-        >>> df.with_columns(sample=pl.col("values").list.sample(n=pl.col("n"), seed=1))
+        >>> df.with_columns(
+        ...     sample=pl.col("values").list.sample(
+        ...         n=pl.col("n"), shuffle=False, seed=1
+        ...     )
+        ... )
         shape: (2, 3)
         ┌───────────┬─────┬───────────┐
         │ values    ┆ n   ┆ sample    │
@@ -223,6 +266,8 @@ class ExprListNameSpace:
         """
         Sum all the lists in the array.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Notes
         -----
         If there are no non-null elements in a row, the output is `0`.
@@ -247,6 +292,8 @@ class ExprListNameSpace:
         """
         Compute the max value of the lists in the array.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
@@ -266,6 +313,8 @@ class ExprListNameSpace:
     def min(self) -> Expr:
         """
         Compute the min value of the lists in the array.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -287,6 +336,8 @@ class ExprListNameSpace:
         """
         Compute the mean value of the lists in the array.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
@@ -307,6 +358,8 @@ class ExprListNameSpace:
         """
         Compute the median value of the lists in the array.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[-1, 0, 1], [1, 10]]})
@@ -326,6 +379,8 @@ class ExprListNameSpace:
     def std(self, ddof: int = 1) -> Expr:
         """
         Compute the std value of the lists in the array.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -354,6 +409,8 @@ class ExprListNameSpace:
         """
         Compute the var value of the lists in the array.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         ddof
@@ -380,6 +437,8 @@ class ExprListNameSpace:
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
         Sort the lists in this column.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -422,6 +481,8 @@ class ExprListNameSpace:
         """
         Reverse the arrays in the list.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -440,11 +501,13 @@ class ExprListNameSpace:
         │ [9, 1, 2] ┆ [2, 1, 9] │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_reverse())
+        return self.eval(F.element().reverse())
 
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
-        Get the unique/distinct values in the list.
+        Get the unique/distinct values in every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -468,11 +531,13 @@ class ExprListNameSpace:
         │ [1, 1, 2] ┆ [1, 2]    │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_unique(maintain_order))
+        return self.eval(F.element().unique(maintain_order=maintain_order))
 
     def n_unique(self) -> Expr:
         """
-        Count the number of unique values in every sub-lists.
+        Count the number of unique values in every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -492,11 +557,13 @@ class ExprListNameSpace:
         │ [2, 3, 4] ┆ 3        │
         └───────────┴──────────┘
         """
-        return wrap_expr(self._pyexpr.list_n_unique())
+        return self.agg(F.element().n_unique())
 
     def concat(self, other: list[Expr | str] | Expr | str | Series | list[Any]) -> Expr:
         """
         Concat the arrays in a Series dtype List in linear time.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -540,7 +607,9 @@ class ExprListNameSpace:
         null_on_oob: bool = False,
     ) -> Expr:
         """
-        Get the value by index in the sublists.
+        Get the value by index in every sublist.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         So index `0` would return the first item of every sublist
         and index `-1` would return the last item of every sublist
@@ -581,7 +650,9 @@ class ExprListNameSpace:
         null_on_oob: bool = False,
     ) -> Expr:
         """
-        Take sublists by multiple indices.
+        Take sub-lists by multiple indices.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         The indices may be defined in a single column, or by sublists in another
         column of dtype `List`.
@@ -620,7 +691,9 @@ class ExprListNameSpace:
         offset: int | IntoExprColumn = 0,
     ) -> Expr:
         """
-        Take every n-th value start from offset in sublists.
+        Take every n-th value start from offset in every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -660,7 +733,9 @@ class ExprListNameSpace:
 
     def first(self) -> Expr:
         """
-        Get the first value of the sublists.
+        Get the first value of every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -681,7 +756,9 @@ class ExprListNameSpace:
 
     def last(self) -> Expr:
         """
-        Get the last value of the sublists.
+        Get the last value of every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -703,7 +780,9 @@ class ExprListNameSpace:
     @unstable()
     def item(self, *, allow_empty: bool = False) -> Expr:
         """
-        Get the single value of the sublists.
+        Get the single value of the sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         This errors if the sublist length is not exactly one.
 
@@ -753,7 +832,9 @@ class ExprListNameSpace:
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """
-        Check if sublists contain the given item.
+        Check if sub-lists contain the given item.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -787,9 +868,11 @@ class ExprListNameSpace:
 
     def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Expr:
         """
-        Join all string items in a sublist and place a separator between them.
+        Join all string items in a sub-list and place a separator between them.
 
         This errors if inner type of list `!= String`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -839,7 +922,13 @@ class ExprListNameSpace:
 
     def arg_min(self) -> Expr:
         """
-        Retrieve the index of the minimal value in every sublist.
+        Retrieve an index of a minimal value in every sublist.
+
+        When multiple values are equal to the minimum, this function may arbitrarily
+        return the index of any of the minimum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -869,7 +958,13 @@ class ExprListNameSpace:
 
     def arg_max(self) -> Expr:
         """
-        Retrieve the index of the maximum value in every sublist.
+        Retrieve the index of the maximum value in every sub-list.
+
+        When multiple values are equal to the maximum, this function may arbitrarily
+        return the index of any of the maximum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -899,7 +994,9 @@ class ExprListNameSpace:
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
         """
-        Calculate the first discrete difference between shifted items of every sublist.
+        Calculate the first discrete difference between shifted items of every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -948,7 +1045,9 @@ class ExprListNameSpace:
 
     def shift(self, n: int | IntoExprColumn = 1) -> Expr:
         """
-        Shift list values by the given number of indices.
+        Shift every sub-lists values by the given number of indices.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -997,7 +1096,9 @@ class ExprListNameSpace:
         self, offset: int | str | Expr, length: int | str | Expr | None = None
     ) -> Expr:
         """
-        Slice every sublist.
+        Slice every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1038,7 +1139,9 @@ class ExprListNameSpace:
 
     def head(self, n: int | str | Expr = 5) -> Expr:
         """
-        Slice the first `n` values of every sublist.
+        Slice the first `n` values of every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1063,7 +1166,9 @@ class ExprListNameSpace:
 
     def tail(self, n: int | str | Expr = 5) -> Expr:
         """
-        Slice the last `n` values of every sublist.
+        Slice the last `n` values of every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1087,9 +1192,11 @@ class ExprListNameSpace:
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(self._pyexpr.list_tail(n_pyexpr))
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
+    def explode(self, *, empty_as_null: bool = False, keep_nulls: bool = True) -> Expr:
         """
-        Returns a column with a separate row for every list element.
+        Returns a column with a separate row for every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1133,6 +1240,8 @@ class ExprListNameSpace:
         """
         Count how often the value produced by `element` occurs.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         element
@@ -1161,6 +1270,8 @@ class ExprListNameSpace:
     def to_array(self, width: int) -> Expr:
         """
         Convert a List column into an Array column with the same inner data type.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1191,88 +1302,123 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_to_array(width))
 
-    def to_struct(
-        self,
-        n_field_strategy: ListToStructWidthStrategy | None = None,
-        fields: Sequence[str] | Callable[[int], str] | None = None,
-        upper_bound: int | None = None,
-    ) -> Expr:
+    @removed_parameters(
+        RemovedParameter(
+            name="n_field_strategy",
+            deprecated_in="1.20.0",
+            removed_in="2.0",
+            hint="Pass the field names explicitly via `fields`.",
+        ),
+        RemovedParameter(
+            name="upper_bound",
+            removed_in="2.0",
+            hint='Pass the field names explicitly via `fields` instead, e.g. `fields=[f"field_{i}" for i in range(upper_bound)]`.',
+        ),
+    )
+    def to_struct(self, fields: Sequence[str]) -> Expr:
         """
         Convert the Series of type `List` to a Series of type `Struct`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
-        n_field_strategy : {'first_non_null', 'max_width'}
-            Deprecated and ignored.
         fields
-            If the name and number of the desired fields is known in advance
-            a list of field names can be given, which will be assigned by index.
-            Otherwise, to dynamically assign field names, a custom function can be
-            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
-        upper_bound
-            A polars expression needs to be able to evaluate the output datatype at all
-            times, so the caller must provide an upper bound of the number of struct
-            fields that will be created if `fields` is not a sequence of field names.
-
-            .. versionchanged:: 1.33.0
-                The `n_field_strategy` parameter is ignored and deprecated. The `fields`
-                needs to be a sequence of field names or the upper bound is regarded as
-                ground truth.
+            Field names to use for the output. The number of names determines how
+            many fields will be in the output.
 
         Examples
         --------
-        Convert list to struct with default field name assignment:
-
-        >>> df = pl.DataFrame({"n": [[0, 1], [0, 1, 2]]})
-        >>> df.with_columns(
-        ...     struct=pl.col("n").list.to_struct(upper_bound=2)
-        ... )  # doctest: +SKIP
-        shape: (2, 2)
-        ┌───────────┬───────────┐
-        │ n         ┆ struct    │
-        │ ---       ┆ ---       │
-        │ list[i64] ┆ struct[2] │ # <- struct with 2 fields
-        ╞═══════════╪═══════════╡
-        │ [0, 1]    ┆ {0,1}     │ # OK
-        │ [0, 1, 2] ┆ {0,1}     │ # NOT OK - last value missing
-        └───────────┴───────────┘
-
-        Convert list to struct with field name assignment by function/index:
-
-        >>> df = pl.DataFrame({"n": [[0, 1], [2, 3]]})
-        >>> df.select(
-        ...     pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}", upper_bound=2)
-        ... ).rows(named=True)  # doctest: +SKIP
-        [{'n': {'n0': 0, 'n1': 1}}, {'n': {'n0': 2, 'n1': 3}}]
-
-        Convert list to struct with field name assignment by index from a list of names:
-
-        >>> df.select(pl.col("n").list.to_struct(fields=["one", "two"])).rows(
-        ...     named=True
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "c": pl.Series(
+        ...             [
+        ...                 [1],
+        ...                 [0, 1],
+        ...                 [1, 0, 1],
+        ...                 [],
+        ...                 [None, 1],
+        ...                 None,
+        ...             ],
+        ...         )
+        ...     }
         ... )
-        [{'n': {'one': 0, 'two': 1}}, {'n': {'one': 2, 'two': 3}}]
+        >>> print(
+        ...     result := df.with_columns(
+        ...         c_struct=pl.col("c").list.to_struct(["x", "y"]),
+        ...     )
+        ... )
+        shape: (6, 2)
+        ┌───────────┬─────────────┐
+        │ c         ┆ c_struct    │
+        │ ---       ┆ ---         │
+        │ list[i64] ┆ struct[2]   │
+        ╞═══════════╪═════════════╡
+        │ [1]       ┆ {1,null}    │
+        │ [0, 1]    ┆ {0,1}       │
+        │ [1, 0, 1] ┆ {1,0}       │
+        │ []        ┆ {null,null} │
+        │ [null, 1] ┆ {null,1}    │
+        │ null      ┆ null        │
+        └───────────┴─────────────┘
+        >>> print(result["c_struct"].struct.unnest())
+        shape: (6, 2)
+        ┌──────┬──────┐
+        │ x    ┆ y    │
+        │ ---  ┆ ---  │
+        │ i64  ┆ i64  │
+        ╞══════╪══════╡
+        │ 1    ┆ null │
+        │ 0    ┆ 1    │
+        │ 1    ┆ 0    │
+        │ null ┆ null │
+        │ null ┆ 1    │
+        │ null ┆ null │
+        └──────┴──────┘
         """
-        if n_field_strategy is not None:
-            issue_warning(
-                "`Expr.list.to_struct` with `n_field_strategy` is deprecated and has no effect on execution.",
-                DeprecationWarning,
+        if isinstance(fields, str):
+            msg = (
+                "list.to_struct() got a str instead of a list. "
+                f"hint: pass ['{fields}'] instead of '{fields}'"
             )
-
-        if not isinstance(fields, Sequence):
-            if upper_bound is None:
-                msg = "`Expr.list.to_struct` requires either `fields` to be a sequence or `upper_bound` to be set.\n\nThis used to be allowed but produced unpredictable results."
-                raise exceptions.InvalidOperationError(msg)
-
-            if fields is None:
-                fields = [f"field_{i}" for i in range(upper_bound)]
-            else:
-                fields = [fields(i) for i in range(upper_bound)]
+            raise TypeError(msg)
 
         return wrap_expr(self._pyexpr.list_to_struct(fields))
 
+    def to_map(self) -> Expr:
+        """
+        Convert the `List` of `Struct` entries to a `Map`.
+
+        The input must be a `List` of `Struct` with exactly two fields named `key`
+        and `value`. Keys must not be null; duplicate keys within a row are resolved
+        by keeping the first position and the last value.
+
+        The inverse of :meth:`Expr.map.entries`.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"m": [[{"key": "a", "value": 1}, {"key": "b", "value": 2}]]}
+        ... )
+        >>> df.select(pl.col("m").list.to_map())
+        shape: (1, 1)
+        ┌──────────────────┐
+        │ m                │
+        │ ---              │
+        │ map[str, i64]    │
+        ╞══════════════════╡
+        │ {"a": 1, "b": 2} │
+        └──────────────────┘
+        """
+        return wrap_expr(self._pyexpr.list_to_map())
+
     def eval(self, expr: Expr, *, parallel: bool = False) -> Expr:
         """
-        Run any polars expression against the lists' elements.
+        Run any polars expression against every lists' elements.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1312,6 +1458,8 @@ class ExprListNameSpace:
     def agg(self, expr: Expr) -> Expr:
         """
         Run any polars aggregation expression against the lists' elements.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1355,6 +1503,8 @@ class ExprListNameSpace:
         """
         Filter elements in each list by a boolean expression.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         predicate
@@ -1384,6 +1534,8 @@ class ExprListNameSpace:
     def set_union(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET UNION between the elements in this list and the elements of `other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1424,6 +1576,8 @@ class ExprListNameSpace:
     def set_difference(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1467,6 +1621,8 @@ class ExprListNameSpace:
         """
         Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         other
@@ -1504,6 +1660,8 @@ class ExprListNameSpace:
     def set_symmetric_difference(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------

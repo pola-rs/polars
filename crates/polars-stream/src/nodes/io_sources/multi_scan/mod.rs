@@ -7,15 +7,15 @@ pub mod reader_interface;
 use std::sync::{Arc, Mutex};
 
 use pipeline::initialization::initialize_multi_scan_pipeline;
+use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
+use polars_async::primitives::connector;
+use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::metrics::IOMetrics;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
-use crate::async_primitives::connector;
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::metrics::NodeMetricsRegistrator;
@@ -75,8 +75,10 @@ impl ComputeNode for MultiScan {
         } else {
             // Refresh first - in case there is an error we end here instead of ending when we go
             // into spawn.
-            async_executor::task_scope(|s| {
-                ASYNC.block_on(s.spawn_task(TaskPriority::High, self.state.refresh(self.verbose)))
+            executor::task_scope(|s| {
+                ASYNC.block_in_place_on(
+                    s.spawn_task(TaskPriority::High, self.state.refresh(self.verbose)),
+                )
             })?;
 
             match self.state {
@@ -90,11 +92,11 @@ impl ComputeNode for MultiScan {
 
     fn spawn<'env, 's>(
         &'env mut self,
-        scope: &'s crate::async_executor::TaskScope<'s, 'env>,
+        scope: &'s executor::TaskScope<'s, 'env>,
         recv_ports: &mut [Option<crate::pipe::RecvPort<'_>>],
         send_ports: &mut [Option<crate::pipe::SendPort<'_>>],
         state: &'s StreamingExecutionState,
-        join_handles: &mut Vec<crate::async_executor::JoinHandle<polars_error::PolarsResult<()>>>,
+        join_handles: &mut Vec<executor::JoinHandle<polars_error::PolarsResult<()>>>,
     ) {
         assert!(recv_ports.is_empty() && send_ports.len() == 1);
 
@@ -125,7 +127,7 @@ impl ComputeNode for MultiScan {
                     wait_group,
                     ..
                 } => {
-                    use crate::async_primitives::connector::SendError;
+                    use polars_async::primitives::connector::SendError;
 
                     match phase_channel_tx.try_send((phase_morsel_tx, wait_group.token())) {
                         Ok(_) => wait_group.wait().await,
@@ -243,36 +245,39 @@ impl MultiScanState {
         let slf = match slf {
             Uninitialized { .. } | Finished => slf,
 
-            #[expect(clippy::blocks_in_conditions)]
             Initialized {
                 phase_channel_tx,
                 wait_group,
                 bridge_state,
                 task_handle,
                 io_metrics,
-            } => match { *bridge_state.lock().unwrap() } {
-                BridgeState::NotYetStarted | BridgeState::Running => Initialized {
-                    phase_channel_tx,
-                    wait_group,
-                    bridge_state,
-                    task_handle,
-                    io_metrics,
-                },
+            } => {
+                // Separate variable to avoid borrowing bridge_state for entire match.
+                let state = *bridge_state.lock().unwrap();
+                match state {
+                    BridgeState::NotYetStarted | BridgeState::Running => Initialized {
+                        phase_channel_tx,
+                        wait_group,
+                        bridge_state,
+                        task_handle,
+                        io_metrics,
+                    },
 
-                // Never the case: holding `phase_channel_tx` guarantees this.
-                BridgeState::Stopped(StopReason::ComputeNodeDisconnected) => unreachable!(),
+                    // Never the case: holding `phase_channel_tx` guarantees this.
+                    BridgeState::Stopped(StopReason::ComputeNodeDisconnected) => unreachable!(),
 
-                // If we are disconnected from the reader side, it could mean an error. Joining on
-                // the handle should catch this.
-                BridgeState::Stopped(StopReason::ReadersDisconnected) => {
-                    if verbose {
-                        eprintln!("[MultiScanState]: Readers disconnected")
-                    }
+                    // If we are disconnected from the reader side, it could mean an error. Joining on
+                    // the handle should catch this.
+                    BridgeState::Stopped(StopReason::ReadersDisconnected) => {
+                        if verbose {
+                            eprintln!("[MultiScanState]: Readers disconnected")
+                        }
 
-                    *self = Finished;
-                    task_handle.await?;
-                    Finished
-                },
+                        *self = Finished;
+                        task_handle.await?;
+                        Finished
+                    },
+                }
             },
         };
 

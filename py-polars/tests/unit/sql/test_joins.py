@@ -7,7 +7,12 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import (
+    ColumnNotFoundError,
+    InvalidOperationError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -367,49 +372,240 @@ def test_join_misc_16255() -> None:
 
 
 @pytest.mark.parametrize(
-    "constraint", ["tbl.a != tbl.b", "tbl.a > tbl.b", "a >= b", "a < b", "b <= a"]
+    "constraint",
+    [
+        # single non-equi operators (resolved via `join_where`)
+        "orders.amount > thresholds.min_amount",
+        "orders.amount >= thresholds.min_amount",
+        "orders.amount < thresholds.min_amount",
+        "orders.amount <= thresholds.min_amount",
+        "orders.amount != thresholds.min_amount",
+        # range condition (two inequalities)
+        "orders.amount > thresholds.min_amount AND orders.amount < 60",
+        # mixed equi + non-equi
+        "orders.region = thresholds.region AND orders.amount > thresholds.min_amount",
+    ],
 )
 def test_non_equi_joins(constraint: str) -> None:
-    # no support (yet) for non equi-joins in polars joins
-    # TODO: integrate awareness of new IEJoin
-    with (
-        pytest.raises(
-            SQLInterfaceError,
-            match=r"only equi-join constraints \(combined with 'AND'\) are currently supported",
-        ),
-        pl.SQLContext({"tbl": pl.DataFrame({"a": [1, 2, 3], "b": [4, 3, 2]})}) as ctx,
+    frames = {
+        "orders": pl.DataFrame({"region": [1, 1, 2, 2], "amount": [10, 40, 20, 50]}),
+        "thresholds": pl.DataFrame({"region": [1, 2], "min_amount": [25, 25]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=f"""
+            SELECT orders.amount, thresholds.min_amount
+            FROM orders INNER JOIN thresholds ON {constraint}
+        """,
+        compare_with=("sqlite", "duckdb"),
+        check_dtypes=False,
+        check_row_order=False,
+    )
+
+
+def test_non_equi_left_join() -> None:
+    # https://github.com/pola-rs/polars/issues/28875
+    ctx = pl.SQLContext(
+        v=pl.LazyFrame({"key": ["A", "B", "C"], "lo": [0, 0, 0], "hi": [10, 10, 10]}),
+        s=pl.LazyFrame({"key": ["A", "A", "B"], "t": [5, 7, 50]}),
+    )
+    got = ctx.execute(
+        """
+        SELECT v.key AS key, s.t AS t
+        FROM v LEFT JOIN s
+          ON s.key = v.key AND s.t > v.lo AND s.t <= v.hi
+        """
+    ).collect()
+    assert sorted(got.iter_rows(), key=str) == [
+        ("A", 5),
+        ("A", 7),
+        ("B", None),
+        ("C", None),
+    ]
+
+
+def test_non_equi_left_join_null_keys() -> None:
+    # Rows with a null join-key value can never satisfy an inequality predicate and
+    # must be null-extended, not silently dropped.
+    ctx = pl.SQLContext(
+        v=pl.LazyFrame({"lo": [0, None, 5]}),
+        s=pl.LazyFrame({"t": [1, 2, 3]}),
+    )
+    got = ctx.execute("SELECT v.lo, s.t FROM v LEFT JOIN s ON s.t > v.lo").collect()
+    assert sorted(got.iter_rows(), key=str) == [
+        (0, 1),
+        (0, 2),
+        (0, 3),
+        (5, None),
+        (None, None),
+    ]
+
+
+def test_non_equi_right_join_pure() -> None:
+    # A pure (no equality key) non-equi RIGHT JOIN is implemented by flipping the
+    # inputs, so verify the flip preserves column naming/order and null-extension.
+    ctx = pl.SQLContext(
+        v=pl.LazyFrame({"lo": [0, 5]}),
+        s=pl.LazyFrame({"t": [1, 6]}),
+    )
+    got = ctx.execute("SELECT v.lo, s.t FROM v RIGHT JOIN s ON s.t > v.lo").collect()
+    assert sorted(got.iter_rows(), key=str) == [
+        (0, 1),
+        (0, 6),
+        (5, 6),
+    ]
+
+
+@pytest.mark.parametrize(
+    "join_type",
+    ["RIGHT", "FULL", "LEFT SEMI", "LEFT ANTI"],
+)
+def test_non_equi_outer_joins_unsupported(join_type: str) -> None:
+    # A non-equi ON clause routes through `join_where`. LEFT is implemented
+    # (see test_non_equi_left_join above); the others are not yet.
+    # See https://github.com/pola-rs/polars/issues/28875
+    ctx = pl.SQLContext(
+        v=pl.LazyFrame({"key": ["A", "B", "C"], "lo": [0, 0, 0], "hi": [10, 10, 10]}),
+        s=pl.LazyFrame({"key": ["A", "A", "B"], "t": [5, 7, 50]}),
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match="join is not supported with non-equi join conditions",
     ):
         ctx.execute(
             f"""
-            SELECT *
-            FROM tbl
-            LEFT JOIN tbl ON {constraint}  -- not an equi-join
+            SELECT v.key AS key
+            FROM v {join_type} JOIN s
+              ON s.key = v.key AND s.t > v.lo AND s.t <= v.hi
             """
-        )
+        ).collect()
 
 
-def test_implicit_joins() -> None:
-    # no support for this yet; ensure we catch it
-    with (
-        pytest.raises(
-            SQLInterfaceError,
-            match=r"not currently supported .* use explicit JOIN syntax instead",
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        # two-table equi-join (comma syntax with the join key in WHERE)
+        (
+            "SELECT df1.a, df1.b, df3.c FROM df1, df3 WHERE df1.a = df3.a",
+            {"a": [2, 3], "b": [3, 4], "c": [3, 4]},
         ),
-        pl.SQLContext(
+        # two-table join with an additional residual (non-join) filter
+        (
+            "SELECT df1.a, df3.c FROM df1, df3 WHERE df1.a = df3.a AND df1.b > 3",
+            {"a": [3], "c": [4]},
+        ),
+        # implicit join with a non-equi bridging condition (no equi key)
+        (
+            "SELECT df1.a, df3.c FROM df1, df3 WHERE df1.a < df3.a",
+            {"a": [1, 1, 1, 2, 2, 3], "c": [3, 4, 8, 4, 8, 8]},
+        ),
+        # three tables, each bridged back to the base table
+        (
+            """
+            SELECT df1.a, df1.b, df3.c
+            FROM df1, df2, df3
+            WHERE df1.a = df2.a AND df1.b = df2.b
+              AND df3.a = df1.a AND df3.b = df1.b
+            """,
+            {"a": [2, 3], "b": [3, 4], "c": [3, 4]},
+        ),
+        # three tables bridged via an *intermediate* table (df2.x = df3.x),
+        # not the base table; exercises chained-join key resolution
+        (
+            """
+            SELECT df1.a, df3.c
+            FROM df1, df2, df3
+            WHERE df1.a = df2.a AND df2.b = df3.b
+            """,
+            {"a": [2, 3], "c": [3, 4]},
+        ),
+        # bridging table listed *after* the relation it connects: df3 has no predicate
+        # against df1, only against df2, which comes later in the FROM clause.
+        (
+            """
+            SELECT df1.a, df3.c
+            FROM df1, df3, df2
+            WHERE df1.a = df2.a AND df2.b = df3.b
+            """,
+            {"a": [2, 3], "c": [3, 4]},
+        ),
+        # no bridging predicate at all => cross join (cartesian product)
+        (
+            "SELECT df1.a, df3.c FROM df1, df3",
             {
-                "tbl": pl.DataFrame(
-                    {"a": [1, 2, 3], "b": [4, 3, 2], "c": ["x", "y", "z"]}
-                )
-            }
-        ) as ctx,
-    ):
-        ctx.execute(
-            """
-            SELECT t1.*
-            FROM tbl AS t1, tbl AS t2
-            WHERE t1.a = t2.b
-            """
-        )
+                "a": [1, 1, 1, 2, 2, 2, 3, 3, 3],
+                "c": [3, 4, 8, 3, 4, 8, 3, 4, 8],
+            },
+        ),
+        # unqualified column on one side of the join predicate
+        (
+            "SELECT df1.a, df3.c FROM df1, df3 WHERE df1.a = c",
+            {"a": [3], "c": [3]},
+        ),
+        # unqualified column on the other side of the comparison
+        (
+            "SELECT df1.a, df3.c FROM df1, df3 WHERE c = df1.a",
+            {"a": [3], "c": [3]},
+        ),
+    ],
+)
+def test_implicit_joins(query: str, expected: dict[str, Any]) -> None:
+    frames = {
+        "df1": pl.DataFrame({"a": [1, 2, 3], "b": [2, 3, 4]}),
+        "df2": pl.DataFrame({"a": [2, 3, 9], "b": [3, 4, 9]}),
+        "df3": pl.DataFrame({"a": [2, 3, 8], "b": [3, 4, 8], "c": [3, 4, 8]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with=("sqlite", "duckdb"),
+        expected=expected,
+        check_dtypes=False,
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "from_clause",
+    [
+        "df1, df2, df3",  # already connected in source order
+        "df1, df3, df2",  # df3 only reaches df1 through df2, which is listed later
+        "df3, df1, df2",  # base table is the one needing an intermediary
+    ],
+)
+def test_implicit_joins_avoid_cartesian_product(from_clause: str) -> None:
+    # every permutation here is fully connected by the WHERE predicates
+    ctx = pl.SQLContext(
+        df1=pl.DataFrame({"a": [1, 2, 3], "b": [2, 3, 4]}),
+        df2=pl.DataFrame({"a": [2, 3, 9], "b": [3, 4, 9]}),
+        df3=pl.DataFrame({"a": [2, 3, 8], "b": [3, 4, 8], "c": [3, 4, 8]}),
+    )
+    query = f"""
+        SELECT df1.a, df3.c
+        FROM {from_clause}
+        WHERE df1.a = df2.a AND df2.b = df3.b
+    """
+    assert "CROSS JOIN" not in ctx.execute(query).explain()
+
+    result = ctx.execute(query).collect().sort("a")
+    assert result.to_dict(as_series=False) == {"a": [2, 3], "c": [3, 4]}
+
+
+def test_implicit_self_join() -> None:
+    # same table referenced twice via aliases in a comma join
+    frames = {"t": pl.DataFrame({"id": [1, 2, 3], "val": [10, 20, 30]})}
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT a.id, a.val AS val_a, b.val AS val_b
+            FROM t AS a, t AS b
+            WHERE a.id = b.id
+        """,
+        compare_with=("sqlite", "duckdb"),
+        expected={"id": [1, 2, 3], "val_a": [10, 20, 30], "val_b": [10, 20, 30]},
+        check_dtypes=False,
+        check_row_order=False,
+    )
 
 
 @pytest.mark.parametrize(
@@ -616,10 +812,10 @@ def test_natural_joins_01() -> None:
 
     # misc errors
     with pytest.raises(SQLSyntaxError, match=r"did you mean COLUMNS\(\*\)\?"):
-        pl.sql("SELECT * FROM df1 NATURAL JOIN df2 WHERE COLUMNS('*') >= 5")
+        pl.sql("SELECT * FROM df1 NATURAL JOIN df2 WHERE COLUMNS('*') >= 5").collect()
 
     with pytest.raises(SQLSyntaxError, match=r"COLUMNS expects a regex"):
-        pl.sql("SELECT COLUMNS(1234) FROM df1 NATURAL JOIN df2")
+        pl.sql("SELECT COLUMNS(1234) FROM df1 NATURAL JOIN df2").collect()
 
 
 @pytest.mark.parametrize(
@@ -738,6 +934,50 @@ def test_nested_join(join_clause: str) -> None:
         ]
 
 
+def test_join_derived_table_isolated_state() -> None:
+    # ref: https://github.com/pola-rs/polars/issues/24268
+    df1 = pl.DataFrame({"IDT": ["1"], "INFO1": ["my_info1"]})
+    df2 = pl.DataFrame({"IDT": ["1"], "INFO2": ["my_info2"], "INFO3": ["my_info3"]})
+    assert_sql_matches(
+        frames={"df1": df1, "df2": df2},
+        query="""
+            SELECT df1.*, t2.INFO2, t3.INFO3
+            FROM df1
+                LEFT JOIN (SELECT IDT, INFO2 FROM df2) t2 ON df1.IDT = t2.IDT
+                LEFT JOIN (SELECT IDT, INFO3 FROM df2) t3 ON df1.IDT = t3.IDT
+        """,
+        compare_with="sqlite",
+        expected={
+            "IDT": ["1"],
+            "INFO1": ["my_info1"],
+            "INFO2": ["my_info2"],
+            "INFO3": ["my_info3"],
+        },
+        check_dtypes=False,
+        check_row_order=False,
+    )
+
+
+def test_join_nested_isolated_state() -> None:
+    # ref: https://github.com/pola-rs/polars/issues/24268
+    base = pl.DataFrame({"id": [1, 2], "info": ["a", "b"]})
+    tbl1 = pl.DataFrame({"id": [1, 2], "val": [10, 20]})
+    tbl2 = pl.DataFrame({"id": [1, 2], "val": [30, 40]})
+
+    res = pl.SQLContext(base=base, tbl1=tbl1, tbl2=tbl2).execute(
+        """
+        SELECT base.id, val
+        FROM base
+        JOIN (tbl1 JOIN tbl2 ON tbl1.id = tbl2.id) AS nested
+        ON base.id = tbl1.id
+        ORDER BY base.id
+        """,
+        eager=True,
+    )
+    # `val` unambiguously resolves to tbl1's column (tbl2's is suffixed to "val:tbl2")
+    assert_frame_equal(res, pl.DataFrame({"id": [1, 2], "val": [10, 20]}))
+
+
 def test_miscellaneous_cte_join_aliasing() -> None:
     ctx = pl.SQLContext()
     res = ctx.execute(
@@ -753,6 +993,26 @@ def test_miscellaneous_cte_join_aliasing() -> None:
         (2, 1),
         (2, 2),
     ]
+
+
+def test_cte_join_no_leak_ambiguity_27981() -> None:
+    # the join inside the CTE body must not leak alias state into the
+    # outer query; unqualified "key" should resolve to the CTE column
+    left = pl.DataFrame({"key": [1, 2], "value": ["a", "b"]})
+    right = pl.DataFrame({"key": [2, 3]})
+
+    query = """
+        WITH join_results AS (
+            SELECT left.key AS key, value
+            FROM left
+            FULL JOIN right ON left.key = right.key
+        )
+        SELECT {col} FROM join_results ORDER BY key
+    """
+    expected = {"key": [1, 2, None]}
+    for col in ("key", "join_results.key"):
+        res = pl.sql(query.format(col=col), eager=True)
+        assert res.to_dict(as_series=False) == expected
 
 
 def test_nested_joins_17381() -> None:
@@ -777,6 +1037,41 @@ def test_nested_joins_17381() -> None:
     assert set(res["id"]) == {"one", "two"}
 
 
+def test_parenthesized_join_relation_29153() -> None:
+    # ref: https://github.com/pola-rs/polars/issues/29153
+    # bare parens around a join don't introduce a new scope, so the
+    # relation aliases they declare remain visible to the SELECT
+    frames = {
+        "lft": pl.DataFrame({"a": [1, 2, 3], "bob": [4, 5, 6]}),
+        "rgt": pl.DataFrame({"a": [1, 2, 3], "co": [4, 5, 7]}),
+        "other": pl.DataFrame({"co": [4, 5, 7], "z": ["x", "y", "z"]}),
+    }
+    for from_clause in (
+        "(lft AS lhs LEFT JOIN rgt AS rhs ON lhs.bob = rhs.co)",
+        "lft AS lhs LEFT JOIN rgt AS rhs ON lhs.bob = rhs.co",
+    ):
+        assert_sql_matches(
+            frames=frames,
+            query=f"""
+                SELECT lhs.a, lhs.bob, rhs.a AS a_right
+                FROM {from_clause}
+                ORDER BY lhs.a
+            """,
+            compare_with="sqlite",
+        )
+
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT lhs.a, rhs.co, t.z
+            FROM (lft AS lhs INNER JOIN rgt AS rhs ON lhs.bob = rhs.co)
+            INNER JOIN other AS t ON rhs.co = t.co
+            ORDER BY lhs.a
+        """,
+        compare_with="sqlite",
+    )
+
+
 def test_unnamed_nested_join_relation() -> None:
     df = pl.DataFrame({"a": 1})
 
@@ -791,7 +1086,7 @@ def test_unnamed_nested_join_relation() -> None:
             JOIN (right JOIN right ON right.a = right.a)
             ON left.a = right.a
             """
-        )
+        ).collect()
 
 
 def test_nulls_equal_19624() -> None:
@@ -817,32 +1112,132 @@ def test_nulls_equal_19624() -> None:
     assert_frame_equal(res_df, expected_df)
 
 
-def test_join_on_literal_string_comparison() -> None:
-    df1 = pl.DataFrame(
-        {
-            "name": ["alice", "bob", "adam", "charlie"],
-            "role": ["admin", "user", "admin", "user"],
-        }
+@pytest.mark.parametrize("join_type", ["INNER", "LEFT"])
+@pytest.mark.parametrize(
+    ("extra_condition", "filtered_side"),
+    [
+        # left-table column = constant (and reversed / unqualified)
+        ("df1.role = 'admin'", "left"),
+        ("'admin' = df1.role", "left"),
+        ("role = 'admin'", "left"),
+        # right-table column = constant (and reversed / unqualified)
+        # ref: https://github.com/pola-rs/polars/issues/28641
+        ("df2.dept = 'IT'", "right"),
+        ("'IT' = df2.dept", "right"),
+        ("dept = 'IT'", "right"),
+        # the constant operand needn't be a bare literal
+        ("df2.dept = UPPER('it')", "right"),
+        ("UPPER('it') = df2.dept", "right"),
+    ],
+)
+def test_join_on_literal_string_comparison(
+    join_type: str, extra_condition: str, filtered_side: str
+) -> None:
+    frames = {
+        "df1": pl.DataFrame(
+            {
+                "name": ["alice", "bob", "adam", "charlie"],
+                "role": ["admin", "user", "admin", "user"],
+            }
+        ),
+        "df2": pl.DataFrame(
+            {
+                "name": ["alice", "bob", "charlie", "adam"],
+                "dept": ["IT", "HR", "IT", "SEC"],
+            }
+        ),
+    }
+    # the outer join cases are what distinguish a correctly-placed join key from a
+    # post-join filter: a row that fails the constant comparison must still be
+    # emitted (null-extended) rather than dropped
+    expected_rows: dict[tuple[str, str], list[tuple[str, str, str | None]]] = {
+        ("left", "INNER"): [("adam", "admin", "SEC"), ("alice", "admin", "IT")],
+        ("left", "LEFT"): [
+            ("adam", "admin", "SEC"),
+            ("alice", "admin", "IT"),
+            ("bob", "user", None),
+            ("charlie", "user", None),
+        ],
+        ("right", "INNER"): [("alice", "admin", "IT"), ("charlie", "user", "IT")],
+        ("right", "LEFT"): [
+            ("adam", "admin", None),
+            ("alice", "admin", "IT"),
+            ("bob", "user", None),
+            ("charlie", "user", "IT"),
+        ],
+    }
+
+    assert_sql_matches(
+        frames,
+        query=f"""
+            SELECT df1.name, df1.role, df2.dept
+            FROM df1
+            {join_type} JOIN df2 ON df1.name = df2.name AND {extra_condition}
+            ORDER BY df1.name
+        """,
+        compare_with="sqlite",
+        expected=pl.DataFrame(
+            data=expected_rows[filtered_side, join_type],
+            schema={"name": str, "role": str, "dept": str},
+            orient="row",
+        ),
     )
-    df2 = pl.DataFrame(
-        {
-            "name": ["alice", "bob", "charlie", "adam"],
-            "dept": ["IT", "HR", "IT", "SEC"],
-        }
+
+
+@pytest.mark.parametrize("join_type", ["INNER", "LEFT"])
+@pytest.mark.parametrize(
+    "extra_condition",
+    [
+        "df1.flag = 'y'",
+        "'y' = df1.flag",
+        "df2.flag = 'y'",
+        "'y' = df2.flag",
+    ],
+)
+def test_join_on_literal_comparison_ambiguous_column(
+    join_type: str, extra_condition: str
+) -> None:
+    # "flag" exists in both frames and isn't part of the equi-join condition, so the
+    # table qualifier (and not the operand order) has to decide which side it filters
+    frames = {
+        "df1": pl.DataFrame({"id": [1, 2, 3], "flag": ["y", "n", "y"]}),
+        "df2": pl.DataFrame({"id": [1, 2, 3], "flag": ["n", "y", "n"]}),
+    }
+    assert_sql_matches(
+        frames,
+        query=f"""
+            SELECT df1.id, df1.flag AS flag1, df2.flag AS flag2
+            FROM df1
+            {join_type} JOIN df2 ON df1.id = df2.id AND {extra_condition}
+            ORDER BY df1.id
+        """,
+        compare_with="sqlite",
     )
-    query = """
-        SELECT df1.name, df1.role, df2.dept
-        FROM df1
-        INNER JOIN df2 ON df1.name = df2.name AND df1.role = 'admin'
-        ORDER BY df1.name
-    """
-    df_expected = pl.DataFrame(
-        data=[("adam", "admin", "SEC"), ("alice", "admin", "IT")],
-        schema={"name": str, "role": str, "dept": str},
-        orient="row",
-    )
-    res = pl.sql(query, eager=True)
-    assert_frame_equal(res, df_expected)
+
+
+@pytest.mark.parametrize(
+    ("extra_condition", "exc", "err"),
+    [
+        ("nope = 'x'", ColumnNotFoundError, 'unable to find column "nope"'),
+        (
+            "df2.nope = 'x'",
+            SQLInterfaceError,
+            "no column named 'nope' found in table 'df2'",
+        ),
+    ],
+)
+def test_join_on_literal_comparison_unknown_column(
+    extra_condition: str, exc: type[Exception], err: str
+) -> None:
+    # a constant comparison against an unresolvable column must still surface as an
+    # error, rather than being silently reassigned to the other side of the join
+    frames = {
+        "df1": pl.DataFrame({"id": [1, 2]}),
+        "df2": pl.DataFrame({"id": [1], "value": ["x"]}),
+    }
+    query = f"SELECT * FROM df1 LEFT JOIN df2 ON df1.id = df2.id AND {extra_condition}"
+    with pytest.raises(exc, match=err):
+        pl.SQLContext(frames).execute(query).collect()
 
 
 @pytest.mark.parametrize(
@@ -1208,7 +1603,7 @@ def test_unsupported_join_conditions(join_condition: str, expected_error: str) -
     df2 = pl.DataFrame({"id": [2, 3, 4], "val": [20, 30, 40]})
 
     with pytest.raises(SQLInterfaceError, match=expected_error):
-        pl.sql(f"SELECT * FROM df1 INNER JOIN df2 ON {join_condition}")
+        pl.sql(f"SELECT * FROM df1 INNER JOIN df2 ON {join_condition}").collect()
 
 
 def test_ambiguous_column_detection_in_joins() -> None:
@@ -1370,4 +1765,189 @@ def test_qualified_wildcard_combinations(query: str, expected: dict[str, Any]) -
         left=pl.DataFrame(expected),
         right=pl.sql(query).collect(),
         check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("join_clause", "on_expr", "expected"),
+    [
+        ("INNER JOIN", "1 IS NOT NULL", {"a": [1, 1, 2, 2], "b": [10, 20, 10, 20]}),
+        ("INNER JOIN", "NULL IS NOT NULL", {"a": [], "b": []}),
+        (
+            "LEFT OUTER JOIN",
+            "1 IS NOT NULL",
+            {"a": [1, 1, 2, 2], "b": [10, 20, 10, 20]},
+        ),
+        (
+            "LEFT OUTER JOIN",
+            "NULL IS NOT NULL",
+            {"a": [1, 2], "b": [None, None]},
+        ),
+    ],
+)
+def test_join_on_constant_predicate(
+    join_clause: str, on_expr: str, expected: dict[str, Any]
+) -> None:
+    df1 = pl.DataFrame({"a": [1, 2]})
+    df2 = pl.DataFrame({"b": [10, 20]})
+
+    query = f"""
+        SELECT * FROM df1 {join_clause} df2 ON {on_expr}
+        ORDER BY ALL
+    """
+    res = pl.sql(query, eager=True)
+    expected_df = pl.DataFrame(expected, schema={"a": pl.Int64, "b": pl.Int64})
+    assert_frame_equal(res, expected_df, check_row_order=False)
+
+
+@pytest.mark.parametrize("join_type", ["JOIN", "LEFT JOIN"])
+@pytest.mark.parametrize(
+    "constraint",
+    [
+        "(df1.a = df2.a)",
+        "(df1.a = df2.a AND df1.b = df2.b)",
+        "((df1.a = df2.a) AND (df1.b = df2.b))",
+        "(((df1.a = df2.a)))",
+        "(df1.a = df2.a) AND (df1.b = df2.b)",
+        "(df1.a = df2.a AND df1.b < df2.b)",
+    ],
+)
+def test_join_on_parenthesized_constraint(constraint: str, join_type: str) -> None:
+    frames = {
+        "df1": pl.DataFrame({"a": [1, 2, 3], "b": [2, 3, 4]}),
+        "df2": pl.DataFrame({"a": [2, 3, 9], "b": [3, 9, 9]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=f"""
+            SELECT df1.a AS a1, df1.b AS b1, df2.a AS a2, df2.b AS b2
+            FROM df1 {join_type} df2 ON {constraint}
+        """,
+        compare_with=("sqlite", "duckdb"),
+        check_dtypes=False,
+        check_row_order=False,
+    )
+
+
+def test_join_on_invalid_expr() -> None:
+    frames = {
+        "df1": pl.DataFrame({"a": [1, 2, 3]}),
+        "df2": pl.DataFrame({"a": [2, 3, 9]}),
+    }
+    with pytest.raises(
+        SQLInterfaceError, match="unsupported join constraint expression"
+    ):
+        pl.SQLContext(frames, eager=True).execute(
+            "SELECT * FROM df1 JOIN df2 ON (df1.a)"
+        )
+
+
+@pytest.fixture
+def sales_frame() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            "cid": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
+            "yr": [2001, 2002, 2001, 2002] * 3,
+            "kind": ["s", "s", "w", "w"] * 3,
+            "amt": [10.0, 30.0, 5.0, 25.0, 20.0, 10.0, 8.0, 9.0, 4.0, 40.0, 7.0, 14.0],
+        }
+    )
+
+
+_YEAR_TOTAL_CTE = """
+    WITH yt AS (
+        SELECT cid, yr, kind, SUM(amt) AS total FROM self GROUP BY cid, yr, kind
+    )
+"""
+
+
+def test_join_non_equi_case_predicate(sales_frame: pl.LazyFrame) -> None:
+    # a self-joined CTE suffixes its repeated column names; the alias that
+    # resolution adds for them must not reach the join predicate
+    assert_sql_matches(
+        sales_frame,
+        query=f"""{_YEAR_TOTAL_CTE}
+            SELECT a.cid, b.total AS b_total, d.total AS d_total
+            FROM yt a, yt b, yt c, yt d
+            WHERE b.cid = a.cid AND c.cid = a.cid AND d.cid = a.cid
+              AND a.kind = 's' AND b.kind = 's' AND c.kind = 'w' AND d.kind = 'w'
+              AND a.yr = 2001 AND b.yr = 2002 AND c.yr = 2001 AND d.yr = 2002
+              AND a.total > 0 AND c.total > 0
+              AND CASE WHEN c.total > 0 THEN d.total / c.total ELSE NULL END
+                > CASE WHEN a.total > 0 THEN b.total / a.total ELSE NULL END
+            ORDER BY a.cid
+        """,
+        compare_with="sqlite",
+    )
+
+
+def test_join_predicate_spanning_later_relation(sales_frame: pl.LazyFrame) -> None:
+    # the predicate names `d`, which is joined after `c`
+    assert_sql_matches(
+        sales_frame,
+        query=f"""{_YEAR_TOTAL_CTE}
+            SELECT a.cid, c.total AS c_total, d.total AS d_total
+            FROM yt a, yt c, yt d
+            WHERE c.cid = a.cid AND d.cid = a.cid
+              AND a.kind = 's' AND c.kind = 'w' AND d.kind = 'w'
+              AND a.yr = 2001 AND c.yr = 2001 AND d.yr = 2002
+              AND d.total > c.total
+            ORDER BY a.cid, c_total, d_total
+        """,
+        compare_with="sqlite",
+    )
+
+
+def test_join_non_equi_nested_alias_in_equi_key(sales_frame: pl.LazyFrame) -> None:
+    assert_sql_matches(
+        sales_frame,
+        query=f"""{_YEAR_TOTAL_CTE}
+            SELECT a.cid FROM yt a, yt b
+            WHERE a.cid + 0 = b.cid + 0 AND a.kind = 's' AND b.kind = 'w'
+            ORDER BY a.cid
+        """,
+        compare_with="sqlite",
+    )
+
+
+def test_join_predicate_operand_spanning_both_sides() -> None:
+    # `(ws2.w)/ws1.w` names two relations that a join puts on opposite sides,
+    # so the condition stays a filter rather than becoming a join predicate
+    frames = {
+        "ss_src": pl.DataFrame(
+            {
+                "k": ["A", "A", "A", "B", "B", "B"],
+                "q": [1, 2, 3] * 2,
+                "v": [10.0, 8.0, 20.0, 10.0, 30.0, 40.0],
+            }
+        ),
+        "ws_src": pl.DataFrame(
+            {
+                "k": ["A", "A", "A", "B", "B", "B"],
+                "q": [1, 2, 3] * 2,
+                "v": [10.0, 5.0, 50.0, 10.0, 40.0, 80.0],
+            }
+        ),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            WITH ss AS (SELECT k, q, SUM(v) AS s FROM ss_src GROUP BY k, q),
+                 ws AS (SELECT k, q, SUM(v) AS w FROM ws_src GROUP BY k, q)
+            SELECT ss1.k,
+                   ws2.w / ws1.w AS web_q1_q2, ss2.s / ss1.s AS store_q1_q2,
+                   ws3.w / ws2.w AS web_q2_q3, ss3.s / ss2.s AS store_q2_q3
+            FROM ss ss1, ss ss2, ss ss3, ws ws1, ws ws2, ws ws3
+            WHERE ss1.q = 1 AND ss1.k = ss2.k AND ss2.q = 2
+              AND ss2.k = ss3.k AND ss3.q = 3
+              AND ss1.k = ws1.k AND ws1.q = 1
+              AND ws1.k = ws2.k AND ws2.q = 2
+              AND ws1.k = ws3.k AND ws3.q = 3
+              AND CASE WHEN ws1.w > 0 THEN ws2.w / ws1.w ELSE NULL END
+                > CASE WHEN ss1.s > 0 THEN ss2.s / ss1.s ELSE NULL END
+              AND CASE WHEN ws2.w > 0 THEN ws3.w / ws2.w ELSE NULL END
+                > CASE WHEN ss2.s > 0 THEN ss3.s / ss2.s ELSE NULL END
+            ORDER BY ss1.k
+        """,
+        compare_with="sqlite",
     )

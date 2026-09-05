@@ -1,5 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 //! DataFrame module.
+use std::borrow::Cow;
+
 use arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
 use polars_utils::UnitVec;
@@ -21,7 +23,6 @@ mod arithmetic;
 pub mod builder;
 mod chunks;
 pub use chunks::chunk_df_for_writing;
-mod broadcast;
 pub mod column;
 mod dataframe;
 mod filter;
@@ -268,7 +269,7 @@ impl DataFrame {
         debug_assert!(
             self.get_column_index(&name).is_none(),
             "with_row_index_mut(): column with name {} already exists",
-            &name
+            name
         );
 
         let offset = offset.unwrap_or(0);
@@ -316,17 +317,18 @@ impl DataFrame {
     pub fn should_rechunk(&self) -> bool {
         // Fast check. It is also needed for correctness, as code below doesn't check if the number
         // of chunks is equal.
-        if !self
-            .columns()
-            .iter()
-            .filter_map(|c| c.as_series().map(|s| s.n_chunks()))
-            .all_equal()
-        {
+        if !self.columns().iter().map(Column::n_chunks).all_equal() {
             return true;
         }
 
-        // From here we check chunk lengths.
-        let mut chunk_lengths = self.materialized_column_iter().map(|s| s.chunk_lengths());
+        // From here we check chunk lengths. Skipping the columns without chunks is
+        // safe because the counts are equal: either every count is 1, or there is
+        // no such column left.
+        let mut chunk_lengths = self
+            .columns()
+            .iter()
+            .filter_map(Column::lazy_as_materialized_series)
+            .map(|s| s.chunk_lengths());
         match chunk_lengths.next() {
             None => false,
             Some(first_column_chunk_lengths) => {
@@ -626,9 +628,8 @@ impl DataFrame {
             .zip(other.columns())
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
                 ensure_can_extend(&*left, right)?;
-                left.append(right).map_err(|e| {
-                    e.context(format!("failed to vstack column '{}'", right.name()).into())
-                })?;
+                left.append(right)
+                    .with_context(|| format!("failed to vstack column '{}'", right.name()))?;
                 Ok(())
             })?;
 
@@ -659,9 +660,8 @@ impl DataFrame {
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
                 ensure_can_extend(&*left, &right)?;
                 let right_name = right.name().clone();
-                left.append_owned(right).map_err(|e| {
-                    e.context(format!("failed to vstack column '{right_name}'").into())
-                })?;
+                left.append_owned(right)
+                    .with_context(|| format!("failed to vstack column '{right_name}'"))?;
                 Ok(())
             })?;
 
@@ -684,9 +684,7 @@ impl DataFrame {
             .zip(other.columns())
             .for_each(|(left, right)| {
                 left.append(right)
-                    .map_err(|e| {
-                        e.context(format!("failed to vstack column '{}'", right.name()).into())
-                    })
+                    .with_context(|| format!("failed to vstack column '{}'", right.name()))
                     .expect("should not fail");
             });
 
@@ -745,9 +743,8 @@ impl DataFrame {
             .zip(other.columns())
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
                 ensure_can_extend(&*left, right)?;
-                left.extend(right).map_err(|e| {
-                    e.context(format!("failed to extend column '{}'", right.name()).into())
-                })?;
+                left.extend(right)
+                    .with_context(|| format!("failed to extend column '{}'", right.name()))?;
                 Ok(())
             })?;
 
@@ -895,10 +892,6 @@ impl DataFrame {
         index: usize,
         column: Column,
     ) -> PolarsResult<&mut Self> {
-        if self.shape() == (0, 0) {
-            unsafe { self.set_height(column.len()) };
-        }
-
         polars_ensure!(
             column.len() == self.height(),
             ShapeMismatch:
@@ -926,19 +919,7 @@ impl DataFrame {
     /// Add a new column to this [`DataFrame`] or replace an existing one. Broadcasts unit-length
     /// columns.
     pub fn with_column(&mut self, mut column: Column) -> PolarsResult<&mut Self> {
-        if self.shape() == (0, 0) {
-            unsafe { self.set_height(column.len()) };
-        }
-
-        if column.len() != self.height() && column.len() == 1 {
-            column = column.new_from_index(0, self.height());
-        }
-
-        polars_ensure!(
-            column.len() == self.height(),
-            ShapeMismatch: "unable to add a column of length {} to a DataFrame of height {}",
-            column.len(), self.height(),
-        );
+        column.broadcast_in_place_to(self.height())?;
 
         if let Some(i) = self.get_column_index(column.name()) {
             *unsafe { self.columns_mut() }.get_mut(i).unwrap() = column
@@ -985,20 +966,7 @@ impl DataFrame {
         mut column: Column,
         output_schema: &Schema,
     ) -> PolarsResult<&mut Self> {
-        if self.shape() == (0, 0) {
-            unsafe { self.set_height(column.len()) };
-        }
-
-        if column.len() != self.height() && column.len() == 1 {
-            column = column.new_from_index(0, self.height());
-        }
-
-        polars_ensure!(
-            column.len() == self.height(),
-            ShapeMismatch:
-            "unable to add a column of length {} to a DataFrame of height {}",
-            column.len(), self.height(),
-        );
+        column.broadcast_in_place_to(self.height())?;
 
         let i = output_schema
             .index_of(column.name())
@@ -1011,7 +979,7 @@ impl DataFrame {
             unsafe { self.columns_mut() }.push(column)
         } else {
             // Unordered column insertion is not handled.
-            panic!()
+            panic!("{:?}, {}", output_schema, column.name());
         }
 
         Ok(self)
@@ -1176,7 +1144,22 @@ impl DataFrame {
                 Ok(self.clear())
             }
         } else {
-            let new_columns: Vec<Column> = self.try_apply_columns_par(|s| s.filter(mask))?;
+            // Rechunk when not all chunks are aligned. This avoid O(n*m) overhead,
+            // where n = number of chunks, and m = number of columns.
+            let all_chunks_aligned = !self.should_rechunk()
+                && self
+                    .materialized_column_iter()
+                    .next()
+                    .is_some_and(|s| s.chunk_lengths().eq(mask.chunk_lengths()));
+
+            let mask = if all_chunks_aligned {
+                Cow::Borrowed(mask)
+            } else {
+                mask.rechunk()
+            };
+
+            let new_columns: Vec<Column> =
+                self.try_apply_columns_par(|s| s.filter(mask.as_ref()))?;
             let out = unsafe {
                 DataFrame::new_unchecked(new_columns[0].len(), new_columns).with_schema_from(self)
             };
@@ -1196,7 +1179,19 @@ impl DataFrame {
                 Ok(self.clear())
             }
         } else {
-            let new_columns: Vec<Column> = self.try_apply_columns(|s| s.filter(mask))?;
+            let all_chunks_aligned = !self.should_rechunk()
+                && self
+                    .materialized_column_iter()
+                    .next()
+                    .is_some_and(|s| s.chunk_lengths().eq(mask.chunk_lengths()));
+
+            let mask = if all_chunks_aligned {
+                Cow::Borrowed(mask)
+            } else {
+                mask.rechunk()
+            };
+
+            let new_columns: Vec<Column> = self.try_apply_columns(|s| s.filter(mask.as_ref()))?;
             let out = unsafe {
                 DataFrame::new_unchecked(new_columns[0].len(), new_columns).with_schema_from(self)
             };
@@ -1370,36 +1365,35 @@ impl DataFrame {
     }
 
     pub fn rename_many<'a>(
-        &mut self,
+        mut self,
         renames: impl Iterator<Item = (&'a str, PlSmallStr)>,
-    ) -> PolarsResult<&mut Self> {
-        let mut schema_arc = self.schema().clone();
-        let schema = Arc::make_mut(&mut schema_arc);
+    ) -> PolarsResult<Self> {
+        let schema = self.schema().clone();
 
         for (from, to) in renames {
             if from == to.as_str() {
                 continue;
             }
 
-            polars_ensure!(
-                !schema.contains(&to),
-                Duplicate: "column rename attempted with already existing name \"{to}\""
-            );
+            let idx = schema
+                .index_of(from)
+                .ok_or_else(|| polars_err!(col_not_found = from))?;
 
-            match schema.get_full(from) {
-                None => polars_bail!(col_not_found = from),
-                Some((idx, _, _)) => {
-                    let (n, _) = schema.get_at_index_mut(idx).unwrap();
-                    *n = to.clone();
-                    unsafe { self.columns_mut() }
-                        .get_mut(idx)
-                        .unwrap()
-                        .rename(to);
-                },
-            }
+            unsafe { self.columns_mut() }
+                .get_mut(idx)
+                .unwrap()
+                .rename(to);
         }
 
-        unsafe { self.set_schema(schema_arc) };
+        // Check for duplicates.
+        let schema = Schema::from_iter_check_duplicates(
+            self.columns()
+                .iter()
+                .map(|c| c.name().clone())
+                .zip_eq(schema.iter_values().cloned()),
+        )?;
+
+        unsafe { self.set_schema(Arc::new(schema)) };
 
         Ok(self)
     }
@@ -1719,7 +1713,7 @@ impl DataFrame {
     /// fn str_to_len(str_val: &Column) -> Column {
     ///     str_val.str()
     ///         .unwrap()
-    ///         .into_iter()
+    ///         .iter()
     ///         .map(|opt_name: Option<&str>| {
     ///             opt_name.map(|name: &str| name.len() as u32)
     ///          })
@@ -1803,20 +1797,10 @@ impl DataFrame {
             )
         })?;
 
-        let mut new_col = f(col).into_column();
-
-        if new_col.len() != df_height && new_col.len() == 1 {
-            new_col = new_col.new_from_index(0, df_height);
-        }
-
-        polars_ensure!(
-            new_col.len() == df_height,
-            ShapeMismatch:
-            "apply_at_idx: resulting Series has length {} while the DataFrame has height {}",
-            new_col.len(), df_height
-        );
-
-        new_col = new_col.with_name(col.name().clone());
+        let new_col = f(col)
+            .into_column()
+            .with_name(col.name().clone())
+            .broadcast_owned_to(df_height)?;
         let col_before = std::mem::replace(col, new_col);
 
         if col.dtype() == col_before.dtype() {

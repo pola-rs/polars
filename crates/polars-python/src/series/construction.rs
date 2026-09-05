@@ -235,10 +235,11 @@ fn convert_to_avs(
     values: &Bound<'_, PyAny>,
     strict: bool,
     allow_object: bool,
+    dtype: Option<&DataType>,
 ) -> PyResult<Vec<AnyValue<'static>>> {
     values
         .try_iter()?
-        .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, allow_object))
+        .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, allow_object, dtype))
         .collect()
 }
 
@@ -248,7 +249,7 @@ impl PySeries {
     fn new_from_any_values(name: &str, values: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
         let any_values_result = values
             .try_iter()?
-            .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, true))
+            .map(|v| py_object_to_any_value(&(v?).as_borrowed(), strict, true, None))
             .collect::<PyResult<Vec<AnyValue>>>();
 
         let result = any_values_result.and_then(|avs| {
@@ -281,7 +282,7 @@ impl PySeries {
         dtype: Wrap<DataType>,
         strict: bool,
     ) -> PyResult<Self> {
-        let avs = convert_to_avs(values, strict, false)?;
+        let avs = convert_to_avs(values, strict, false, Some(&dtype.0))?;
         let s = Series::from_any_values_and_dtype(name.into(), avs.as_slice(), &dtype.0, strict)
             .map_err(|e| {
                 PyTypeError::new_err(format!(
@@ -383,22 +384,21 @@ impl PySeries {
     fn from_arrow(name: &str, array: &Bound<PyAny>) -> PyResult<Self> {
         let arr = array_to_rust(array)?;
 
-        match arr.dtype() {
-            ArrowDataType::LargeList(_) => {
-                let array = arr.as_any().downcast_ref::<LargeListArray>().unwrap();
-                let fast_explode = array.offsets().as_slice().windows(2).all(|w| w[0] != w[1]);
+        // Compute first. The physical conversion retains offsets so the flag remains valid.
+        let fast_explode = arr
+            .as_any()
+            .downcast_ref::<LargeListArray>()
+            .is_some_and(|a| a.offsets().as_slice().windows(2).all(|w| w[0] != w[1]));
 
-                let mut out = ListChunked::with_chunk(name.into(), array.clone());
-                if fast_explode {
-                    out.set_fast_explode()
-                }
-                Ok(out.into_series().into())
-            },
-            _ => {
-                let series: Series =
-                    Series::try_new(name.into(), arr).map_err(PyPolarsErr::from)?;
-                Ok(series.into())
-            },
+        // Normal conversion handling nested types recursively.
+        let mut series: Series = Series::try_new(name.into(), arr).map_err(PyPolarsErr::from)?;
+
+        if fast_explode && series.dtype().is_list() {
+            let mut ca = series.list().map_err(PyPolarsErr::from)?.clone();
+            ca.set_fast_explode();
+            series = ca.into_series();
         }
+
+        Ok(series.into())
     }
 }

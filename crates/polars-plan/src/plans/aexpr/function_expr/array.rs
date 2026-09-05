@@ -1,6 +1,9 @@
-use polars_core::utils::slice_offsets;
-use polars_ops::chunked_array::array::*;
+#[cfg(feature = "array_to_struct")]
+use polars_buffer::Buffer;
+use polars_core::utils::{slice_offsets, try_get_supertype};
+use polars_ops::chunked_array::array::is_supported_array_dot_dtype;
 
+use super::schema::function_sum_output_dtype;
 use super::*;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
@@ -10,15 +13,13 @@ pub enum IRArrayFunction {
     Min,
     Max,
     Sum,
+    Dot,
     ToList,
-    Unique(bool),
-    NUnique,
     Std(u8),
     Var(u8),
     Mean,
     Median,
     Sort(SortOptions),
-    Reverse,
     ArgMin,
     ArgMax,
     Get(bool),
@@ -34,7 +35,9 @@ pub enum IRArrayFunction {
     Concat,
     Slice(i64, i64),
     #[cfg(feature = "array_to_struct")]
-    ToStruct(Option<DslNameGenerator>),
+    ToStruct {
+        fields: Buffer<PlSmallStr>,
+    },
 }
 
 impl<'a> FieldsMapper<'a> {
@@ -69,19 +72,51 @@ impl IRArrayFunction {
                 .ensure_is_array()?
                 .map_to_list_and_array_inner_dtype(),
             Sum => mapper.ensure_is_array()?.nested_sum_type(),
+            Dot => {
+                let args = mapper.args();
+                polars_ensure!(
+                    args.len() == 2,
+                    InvalidOperation: "arr.dot expects two arguments, got {}", args.len()
+                );
+
+                let (lhs_inner, lhs_width) = match args[0].dtype() {
+                    DataType::Array(inner, width) => (inner.as_ref(), *width),
+                    dtype => polars_bail!(
+                        InvalidOperation:
+                        "expected Array datatype for array operation, got: {dtype:?}"
+                    ),
+                };
+                let (rhs_inner, rhs_width) = match args[1].dtype() {
+                    DataType::Array(inner, width) => (inner.as_ref(), *width),
+                    dtype => polars_bail!(
+                        InvalidOperation:
+                        "arr.dot expects Array inputs, got {dtype}"
+                    ),
+                };
+
+                polars_ensure!(
+                    lhs_width == rhs_width,
+                    ShapeMismatch:
+                    "arr.dot requires equal array widths, got {lhs_width} and {rhs_width}"
+                );
+                let inner_dtype = try_get_supertype(lhs_inner, rhs_inner)?;
+                polars_ensure!(
+                    is_supported_array_dot_dtype(&inner_dtype),
+                    InvalidOperation:
+                    "arr.dot does not support input dtypes {} and {} with supertype {inner_dtype}",
+                    args[0].dtype(), args[1].dtype()
+                );
+
+                mapper.with_dtype(function_sum_output_dtype(&inner_dtype))
+            },
             ToList => mapper
                 .ensure_is_array()?
                 .try_map_dtype(map_array_dtype_to_list_dtype),
-            Unique(_) => mapper
-                .ensure_is_array()?
-                .try_map_dtype(map_array_dtype_to_list_dtype),
-            NUnique => mapper.ensure_is_array()?.with_dtype(IDX_DTYPE),
-            Std(_) => mapper.ensure_is_array()?.moment_dtype(),
-            Var(_) => mapper.ensure_is_array()?.var_dtype(),
+            Std(_) => mapper.ensure_is_array()?.var_dtype("std"),
+            Var(_) => mapper.ensure_is_array()?.var_dtype("var"),
             Mean => mapper.ensure_is_array()?.moment_dtype(),
             Median => mapper.ensure_is_array()?.moment_dtype(),
             Sort(_) => mapper.ensure_is_array()?.with_same_dtype(),
-            Reverse => mapper.ensure_is_array()?.with_same_dtype(),
             ArgMin | ArgMax => mapper.ensure_is_array()?.with_dtype(IDX_DTYPE),
             Get(_) => mapper
                 .ensure_is_array()?
@@ -97,21 +132,17 @@ impl IRArrayFunction {
                 .ensure_is_array()?
                 .try_map_dtype(map_to_array_fixed_length(offset, length)),
             #[cfg(feature = "array_to_struct")]
-            ToStruct(name_generator) => mapper.ensure_is_array()?.try_map_dtype(|dtype| {
-                let DataType::Array(inner, width) = dtype else {
+            ToStruct { fields } => mapper.ensure_is_array()?.try_map_dtype(|dtype| {
+                let DataType::Array(inner, _) = dtype else {
                     polars_bail!(InvalidOperation: "expected Array type, got: {dtype}")
                 };
 
-                (0..*width)
-                    .map(|i| {
-                        let name = match name_generator {
-                            None => arr_default_struct_name_gen(i),
-                            Some(ng) => PlSmallStr::from_string(ng.call(i)?),
-                        };
-                        Ok(Field::new(name, inner.as_ref().clone()))
-                    })
-                    .collect::<PolarsResult<Vec<Field>>>()
-                    .map(DataType::Struct)
+                Ok(DataType::Struct(
+                    fields
+                        .iter()
+                        .map(|name| Field::new(name.clone(), inner.as_ref().clone()))
+                        .collect(),
+                ))
             }),
         }
     }
@@ -125,19 +156,18 @@ impl IRArrayFunction {
             A::CountMatches => FunctionOptions::elementwise(),
             A::Concat => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
+            A::Dot => FunctionOptions::elementwise()
+                .with_casting_rules(CastingRules::cast_to_supertypes()),
             A::Length
             | A::Min
             | A::Max
             | A::Sum
             | A::ToList
-            | A::Unique(_)
-            | A::NUnique
             | A::Std(_)
             | A::Var(_)
             | A::Mean
             | A::Median
             | A::Sort(_)
-            | A::Reverse
             | A::ArgMin
             | A::ArgMax
             | A::Get(_)
@@ -146,7 +176,7 @@ impl IRArrayFunction {
             | A::Slice(_, _) => FunctionOptions::elementwise(),
             A::Explode { .. } => FunctionOptions::row_separable(),
             #[cfg(feature = "array_to_struct")]
-            A::ToStruct(_) => FunctionOptions::elementwise(),
+            A::ToStruct { fields: _ } => FunctionOptions::elementwise(),
         }
     }
 }
@@ -189,15 +219,13 @@ impl Display for IRArrayFunction {
             Min => "min",
             Max => "max",
             Sum => "sum",
+            Dot => "dot",
             ToList => "to_list",
-            Unique(_) => "unique",
-            NUnique => "n_unique",
             Std(_) => "std",
             Var(_) => "var",
             Mean => "mean",
             Median => "median",
             Sort(_) => "sort",
-            Reverse => "reverse",
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             Get(_) => "get",
@@ -210,7 +238,7 @@ impl Display for IRArrayFunction {
             Slice(_, _) => "slice",
             Explode { .. } => "explode",
             #[cfg(feature = "array_to_struct")]
-            ToStruct(_) => "to_struct",
+            ToStruct { fields: _ } => "to_struct",
         };
         write!(f, "arr.{name}")
     }

@@ -1,16 +1,16 @@
+use polars_async::executor::{self, TaskPriority};
+use polars_async::primitives::connector;
 use polars_core::frame::DataFrame;
 use polars_error::{PolarsResult, polars_bail};
 use polars_io::prelude::CsvSerializer;
 
-use crate::async_executor::{self, TaskPriority};
-use crate::async_primitives::connector;
 use crate::nodes::io_sinks::components::par_utils::rechunk_par;
 use crate::nodes::io_sinks::components::sink_morsel::{SinkMorsel, SinkMorselPermit};
 
 pub struct MorselSerializerPipeline {
     pub morsel_rx: connector::Receiver<SinkMorsel>,
     pub filled_serializer_tx: tokio::sync::mpsc::Sender<(
-        async_executor::AbortOnDropHandle<PolarsResult<MorselSerializer>>,
+        executor::AbortOnDropHandle<PolarsResult<MorselSerializer>>,
         SinkMorselPermit,
     )>,
     pub reuse_serializer_rx: tokio::sync::mpsc::Receiver<MorselSerializer>,
@@ -51,7 +51,7 @@ impl MorselSerializerPipeline {
 
             let (df, morsel_permit) = morsel.into_inner();
 
-            let handle = async_executor::AbortOnDropHandle::new(async_executor::spawn(
+            let handle = executor::AbortOnDropHandle::new(executor::spawn(
                 TaskPriority::High,
                 morsel_serializer.serialize_morsel(df),
             ));

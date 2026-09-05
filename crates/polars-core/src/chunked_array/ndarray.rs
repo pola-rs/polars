@@ -39,7 +39,7 @@ impl ListChunked {
         );
 
         // first iteration determine the size
-        let mut iter = self.into_no_null_iter();
+        let mut iter = self.no_null_series_iter();
         let series = iter
             .next()
             .ok_or_else(|| polars_err!(NoData: "unable to create ndarray of empty ListChunked"))?;

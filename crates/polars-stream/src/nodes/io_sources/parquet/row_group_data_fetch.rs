@@ -42,6 +42,46 @@ pub(super) struct RowGroupDataFetcher {
 }
 
 impl RowGroupDataFetcher {
+    /// Returns the projected byte size of the next row group to be fetched, without advancing
+    /// state or spawning any I/O. Returns None if there are no more row groups.
+    pub(super) fn peek_next_bytes(&self) -> Option<u64> {
+        // Walk forward from current position to find the next unmasked row group
+        let mut slice_start = self.row_group_slice.start;
+        let mut mask_offset = 0;
+
+        while slice_start < self.row_group_slice.end {
+            // Check mask
+            if let Some(mask) = &self.row_group_mask {
+                if mask.get_bit(mask_offset) {
+                    // masked out, skip
+                    slice_start += 1;
+                    mask_offset += 1;
+                    continue;
+                }
+            }
+
+            let row_group_metadata = &self.metadata.row_groups[slice_start];
+
+            let n_bytes = match self.byte_source.as_ref() {
+                DynByteSource::Buffer(_) => 0, // in-memory, no budget needed
+                _ if !self.is_full_projection => get_row_group_byte_ranges_for_projection(
+                    row_group_metadata,
+                    &mut self.projection.iter().map(|x| &x.arrow_field().name),
+                )
+                .map(|r| r.len() as u64)
+                .sum(),
+                _ => row_group_metadata
+                    .byte_ranges_iter()
+                    .map(|x| x.end - x.start)
+                    .sum(),
+            };
+
+            return Some(n_bytes);
+        }
+
+        None
+    }
+
     pub(super) async fn next(
         &mut self,
     ) -> Option<PolarsResult<tokio_handle_ext::AbortOnDropHandle<PolarsResult<RowGroupData>>>> {
@@ -86,8 +126,8 @@ impl RowGroupDataFetcher {
 
             let handle = ASYNC.spawn(async move {
                 let row_group_metadata = &metadata.row_groups[idx];
-                let fetched_bytes =
-                    if let DynByteSource::Buffer(mem_slice) = current_byte_source.as_ref() {
+                let fetched_bytes = match current_byte_source.as_ref() {
+                    DynByteSource::Buffer(mem_slice) => {
                         // Skip byte range calculation for `no_prefetch`.
                         if memory_prefetch_func as usize
                             != polars_utils::mem::prefetch::no_prefetch as *const () as usize
@@ -117,39 +157,65 @@ impl RowGroupDataFetcher {
                             offset: 0,
                             buffer: mem_slice,
                         }
-                    } else if !is_full_projection {
-                        let mut ranges = get_row_group_byte_ranges_for_projection(
-                            row_group_metadata,
-                            &mut projection.iter().map(|x| &x.arrow_field().name),
-                        )
-                        .collect::<Vec<_>>();
+                    },
+                    DynByteSource::File(source) => {
+                        let mut ranges = if !is_full_projection {
+                            get_row_group_byte_ranges_for_projection(
+                                row_group_metadata,
+                                &mut projection.iter().map(|x| &x.arrow_field().name),
+                            )
+                            .collect::<Vec<_>>()
+                        } else {
+                            row_group_metadata
+                                .byte_ranges_iter()
+                                .map(|x| x.start as usize..x.end as usize)
+                                .collect::<Vec<_>>()
+                        };
 
                         let n_ranges = ranges.len();
 
-                        let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
+                        let bytes_map = source.get_ranges(&mut ranges).await?;
 
                         assert_eq!(bytes_map.len(), n_ranges);
 
                         FetchedBytes::BytesMap(bytes_map)
-                    } else {
-                        // We still prefer `get_ranges()` over a single `get_range()` for downloading
-                        // the entire row group, as it can have less memory-copying. A single `get_range()`
-                        // would naively concatenate the memory blocks of the entire row group, while
-                        // `get_ranges()` can skip concatenation since the downloaded blocks are
-                        // aligned to the columns.
-                        let mut ranges = row_group_metadata
-                            .byte_ranges_iter()
-                            .map(|x| x.start as usize..x.end as usize)
+                    },
+                    DynByteSource::Cloud(_) => {
+                        if !is_full_projection {
+                            let mut ranges = get_row_group_byte_ranges_for_projection(
+                                row_group_metadata,
+                                &mut projection.iter().map(|x| &x.arrow_field().name),
+                            )
                             .collect::<Vec<_>>();
 
-                        let n_ranges = ranges.len();
+                            let n_ranges = ranges.len();
 
-                        let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
+                            let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
 
-                        assert_eq!(bytes_map.len(), n_ranges);
+                            assert_eq!(bytes_map.len(), n_ranges);
 
-                        FetchedBytes::BytesMap(bytes_map)
-                    };
+                            FetchedBytes::BytesMap(bytes_map)
+                        } else {
+                            // We still prefer `get_ranges()` over a single `get_range()` for downloading
+                            // the entire row group, as it can have less memory-copying. A single `get_range()`
+                            // would naively concatenate the memory blocks of the entire row group, while
+                            // `get_ranges()` can skip concatenation since the downloaded blocks are
+                            // aligned to the columns.
+                            let mut ranges = row_group_metadata
+                                .byte_ranges_iter()
+                                .map(|x| x.start as usize..x.end as usize)
+                                .collect::<Vec<_>>();
+
+                            let n_ranges = ranges.len();
+
+                            let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
+
+                            assert_eq!(bytes_map.len(), n_ranges);
+
+                            FetchedBytes::BytesMap(bytes_map)
+                        }
+                    },
+                };
 
                 PolarsResult::Ok(RowGroupData {
                     fetched_bytes,

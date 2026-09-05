@@ -62,7 +62,7 @@ impl DataFrame {
                 let columns = self
                     .materialized_column_iter()
                     // first cast to supertype before casting to physical to ensure units are correct
-                    .map(|s| s.cast(dtype)?.cast(&phys_dtype))
+                    .map(|s| Ok(s.cast(dtype)?.to_physical_repr().into_owned()))
                     .collect::<PolarsResult<Vec<_>>>()?;
 
                 // this is very expensive. A lot of cache misses here.
@@ -125,10 +125,7 @@ impl DataFrame {
                     let new_names = self.column(name.as_str()).and_then(|x| x.str())?;
                     polars_ensure!(new_names.null_count() == 0, ComputeError: "Column with new names can't have null values");
                     df = Cow::Owned(self.drop(name.as_str())?);
-                    new_names
-                        .into_no_null_iter()
-                        .map(PlSmallStr::from_str)
-                        .collect()
+                    new_names.no_null_iter().map(PlSmallStr::from_str).collect()
                 },
                 Either::Right(names) => {
                     polars_ensure!(names.len() == self.height(), ShapeMismatch: "Length of new column names must be the same as the row count");
@@ -141,11 +138,7 @@ impl DataFrame {
             // wasting time transposing
             polars_ensure!(names_out.iter().all(|a| a.as_str() != cn), Duplicate: "{} is already in output column names", cn)
         }
-        polars_ensure!(
-            df.height() != 0 && df.width() != 0,
-            NoData: "unable to transpose an empty DataFrame"
-        );
-        let dtype = df.get_supertype().unwrap()?;
+        let dtype = df.get_supertype().unwrap_or(Ok(DataType::Null))?;
         df.transpose_from_dtype(&dtype, keep_names_as.map(PlSmallStr::from_str), &names_out)
     }
 }

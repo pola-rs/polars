@@ -1,6 +1,7 @@
 import io
 import pickle
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -188,6 +189,7 @@ def test_credential_provider_aws_import_error_with_requested_profile(
         q.collect()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 @pytest.mark.write_disk
 def test_credential_provider_aws_endpoint_url_scan_no_parameters(
@@ -222,6 +224,7 @@ endpoint_url = http://localhost:333
     assert "[CredentialProviderAWS]: Loaded endpoint_url: http://localhost:333" in lines
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 @pytest.mark.write_disk
 def test_credential_provider_aws_endpoint_url_serde(
@@ -256,6 +259,7 @@ endpoint_url = http://localhost:777
         q.collect()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 @pytest.mark.write_disk
 def test_credential_provider_aws_endpoint_url_with_storage_options(
@@ -301,6 +305,7 @@ endpoint_url = http://localhost:333
     assert "[CredentialProviderAWS]: Loaded endpoint_url: http://localhost:333" in lines
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.parametrize(
     "storage_options",
     [
@@ -357,6 +362,7 @@ aws_secret_access_key=Z
     plmonkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(creds_file_path))
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 def test_credential_provider_python_builder_cache(
     plmonkeypatch: PlMonkeyPatch,
@@ -429,14 +435,16 @@ def test_credential_provider_python_builder_cache(
         with pytest.raises(OSError):
             get_q().collect()
 
-        # Note: Increments by 2 due to Rust-side object store rebuilding.
+        # Note: Increments by 1
+        # +0 due to Rust-side object store cache-hit on build
+        # +1 due to Rust-side object store rebuilding on error
 
-        assert provider_init.call_count == 4
+        assert provider_init.call_count == 3
 
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert provider_init.call_count == 6
+        assert provider_init.call_count == 4
 
     with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
@@ -617,11 +625,12 @@ credential_process = "{sys.executable}" -c "from pathlib import Path; print(Path
         "updated_credentials",
     ),
     [
-        (
+        pytest.param(
             pl.CredentialProviderAWS,
             "s3://.../...",
             {"aws_access_key_id": "initial", "aws_secret_access_key": "initial"},
             {"aws_access_key_id": "updated", "aws_secret_access_key": "updated"},
+            marks=pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961"),
         ),
         (
             pl.CredentialProviderAzure,
@@ -772,6 +781,7 @@ def test_credential_provider_init_from_partition_target(
     )
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 def test_cache_user_credential_provider(plmonkeypatch: PlMonkeyPatch) -> None:
     user_provider = Mock(
@@ -793,11 +803,13 @@ def test_cache_user_credential_provider(plmonkeypatch: PlMonkeyPatch) -> None:
     with pytest.raises(OSError, match="http://localhost:333"):
         get_q().collect()
 
+    # 1x build (Rust object_store cache_miss) + 1x rebuild on error
     assert user_provider.call_count == 2
 
     with pytest.raises(OSError, match="http://localhost:333"):
         get_q().collect()
 
+    # 0x build (Rust object_store cache_hit) + 1x rebuild on error
     assert user_provider.call_count == 3
 
     plmonkeypatch.setenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", "0")
@@ -805,9 +817,11 @@ def test_cache_user_credential_provider(plmonkeypatch: PlMonkeyPatch) -> None:
     with pytest.raises(OSError, match="http://localhost:333"):
         get_q().collect()
 
-    assert user_provider.call_count == 5
+    # 0x build (Rust object_store cache_hit) + 1x rebuild on error
+    assert user_provider.call_count == 4
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 def test_credential_provider_global_config(plmonkeypatch: PlMonkeyPatch) -> None:
     import polars as pl
@@ -882,3 +896,41 @@ def test_credential_provider_global_config(plmonkeypatch: PlMonkeyPatch) -> None
 
     with pytest.raises(OSError, match="http://localhost:333"):
         get_q().collect()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
+@pytest.mark.slow
+def test_cache_user_credential_provider_pickle(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    plmonkeypatch.setenv("AWS_ACCESS_KEY_ID", "...")
+    plmonkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "...")
+    plmonkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+
+    prefix = uuid.uuid4()
+
+    q = pl.scan_parquet(
+        f"s3://{prefix}/...",
+        storage_options={
+            "aws_endpoint_url": "http://localhost:333",
+        },
+        credential_provider="auto",
+    )
+
+    capfd.readouterr()
+
+    with pytest.raises(OSError, match="http://localhost:333"):
+        q.collect()
+    capture = capfd.readouterr().err
+    assert capture.count("build object-store") == 2  # build + rebuild
+
+    q = pickle.loads(pickle.dumps(q))
+
+    capfd.readouterr()
+    with pytest.raises(OSError, match="http://localhost:333"):
+        q.collect()
+    capture = capfd.readouterr().err
+    assert capture.count("build object-store") == 1  # rebuild only

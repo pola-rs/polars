@@ -220,6 +220,10 @@ impl<W: Write> BatchedWriter<W> {
         self.writer.write_encoded_dictionaries(encoded_dictionaries)
     }
 
+    pub fn set_custom_metadata(&mut self, custom_metadata: Vec<(String, String)>) {
+        self.writer.set_custom_metadata(custom_metadata)
+    }
+
     /// Writes the footer of the IPC file.
     pub fn finish(&mut self) -> PolarsResult<()> {
         self.writer.finish()?;

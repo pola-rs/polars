@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use arrow::array::*;
 use arrow::bitmap::Bitmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
 use polars_compute::gather::sublist::list::array_to_unit_list;
@@ -10,17 +9,6 @@ use polars_utils::format_tuple;
 use crate::chunked_array::builder::get_list_builder;
 use crate::datatypes::{DataType, ListChunked};
 use crate::prelude::{IntoSeries, Series, *};
-
-fn reshape_fast_path(name: PlSmallStr, s: &Series) -> Series {
-    let mut ca = ListChunked::from_chunk_iter(
-        name,
-        s.chunks().iter().map(|arr| array_to_unit_list(arr.clone())),
-    );
-
-    ca.set_inner_dtype(s.dtype().clone());
-    ca.set_fast_explode();
-    ca.into_series()
-}
 
 impl Series {
     /// Recurse nested types until we are at the leaf array.
@@ -69,6 +57,20 @@ impl Series {
         }
 
         (offsets, validities)
+    }
+
+    /// Wrap each element of this Series in a single-element list.
+    /// A Series `[1, 2, 3]` becomes `[[1], [2], [3]]`.
+    pub fn to_unit_list(&self) -> ListChunked {
+        let mut ca = ListChunked::from_chunk_iter(
+            self.name().clone(),
+            self.chunks()
+                .iter()
+                .map(|arr| array_to_unit_list(arr.clone())),
+        );
+        ca.set_inner_dtype(self.dtype().clone());
+        ca.set_fast_explode();
+        ca
     }
 
     /// Convert the values of this Series to a ListChunked with a length of 1,
@@ -256,8 +258,7 @@ impl Series {
 
                 if s_ref.is_empty() {
                     if rows.get_or_infer(0) == 0 && cols.get_or_infer(0) <= 1 {
-                        let s = reshape_fast_path(s.name().clone(), s_ref);
-                        return Ok(s);
+                        return Ok(s_ref.to_unit_list().into_series());
                     } else {
                         polars_bail!(InvalidOperation: "cannot reshape len 0 into shape {}", format_tuple!(dimensions))
                     }
@@ -280,8 +281,7 @@ impl Series {
 
                 // Fast path, we can create a unit list so we only allocate offsets.
                 if rows as usize == s_ref.len() && cols == 1 {
-                    let s = reshape_fast_path(s.name().clone(), s_ref);
-                    return Ok(s);
+                    return Ok(s_ref.to_unit_list().into_series());
                 }
 
                 polars_ensure!(

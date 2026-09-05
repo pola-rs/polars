@@ -1,6 +1,10 @@
 use std::fmt;
 
+#[cfg(feature = "array_to_struct")]
+use polars_buffer::Buffer;
 use polars_core::prelude::{ExplodeOptions, SortOptions};
+#[cfg(feature = "array_to_struct")]
+use polars_utils::pl_str::PlSmallStr;
 
 use super::FunctionExpr;
 
@@ -13,15 +17,13 @@ pub enum ArrayFunction {
     Min,
     Max,
     Sum,
+    Dot,
     ToList,
-    Unique(bool),
-    NUnique,
     Std(u8),
     Var(u8),
     Mean,
     Median,
     Sort(SortOptions),
-    Reverse,
     ArgMin,
     ArgMax,
     Get(bool),
@@ -36,7 +38,9 @@ pub enum ArrayFunction {
     Explode(ExplodeOptions),
     Concat,
     #[cfg(feature = "array_to_struct")]
-    ToStruct(Option<super::DslNameGenerator>),
+    ToStruct {
+        fields: Option<Buffer<PlSmallStr>>,
+    },
 }
 
 impl fmt::Display for ArrayFunction {
@@ -49,15 +53,13 @@ impl fmt::Display for ArrayFunction {
             Min => "min",
             Max => "max",
             Sum => "sum",
+            Dot => "dot",
             ToList => "to_list",
-            Unique(_) => "unique",
-            NUnique => "n_unique",
             Std(_) => "std",
             Var(_) => "var",
             Mean => "mean",
             Median => "median",
             Sort(_) => "sort",
-            Reverse => "reverse",
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             Get(_) => "get",
@@ -69,7 +71,7 @@ impl fmt::Display for ArrayFunction {
             Shift => "shift",
             Explode { .. } => "explode",
             #[cfg(feature = "array_to_struct")]
-            ToStruct(_) => "to_struct",
+            ToStruct { fields: _ } => "to_struct",
         };
         write!(f, "arr.{name}")
     }

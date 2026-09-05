@@ -23,20 +23,15 @@ where
 
     let lhs_buf = lhs.values().as_slice();
     let rhs_buf = rhs.values().as_slice();
-    let lhs_chunks = lhs_buf.chunks_exact(N);
-    let rhs_chunks = rhs_buf.chunks_exact(N);
-    let lhs_rest = lhs_chunks.remainder();
-    let rhs_rest = rhs_chunks.remainder();
+    let (lhs_chunks, lhs_rest) = lhs_buf.as_chunks::<N>();
+    let (rhs_chunks, rhs_rest) = rhs_buf.as_chunks::<N>();
 
     let num_masks = n.div_ceil(N);
     let mut v: Vec<u8> = Vec::with_capacity(num_masks * size_of::<M>());
     let mut p = v.as_mut_ptr() as *mut M;
-    for (l, r) in lhs_chunks.zip(rhs_chunks) {
+    for (l, r) in lhs_chunks.iter().zip(rhs_chunks) {
         unsafe {
-            let mask = f(
-                l.try_into().unwrap_unchecked(),
-                r.try_into().unwrap_unchecked(),
-            );
+            let mask = f(l, r);
             p.write_unaligned(mask);
             p = p.wrapping_add(1);
         }
@@ -68,15 +63,13 @@ where
     let n = arg.len();
 
     let arg_buf = arg.values().as_slice();
-    let arg_chunks = arg_buf.chunks_exact(N);
-    let arg_rest = arg_chunks.remainder();
-
+    let (arg_chunks, arg_rest) = arg_buf.as_chunks::<N>();
     let num_masks = n.div_ceil(N);
     let mut v: Vec<u8> = Vec::with_capacity(num_masks * size_of::<M>());
     let mut p = v.as_mut_ptr() as *mut M;
     for a in arg_chunks {
         unsafe {
-            let mask = f(a.try_into().unwrap_unchecked());
+            let mask = f(a);
             p.write_unaligned(mask);
             p = p.wrapping_add(1);
         }

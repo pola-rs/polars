@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Coroutine, Sequence
+from collections.abc import Coroutine, Iterable, Sequence
 from contextlib import suppress
 from inspect import Parameter, signature
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, cast
 
 from polars import functions as F
 from polars._utils.various import parse_version, qualified_type_name
-from polars.convert import from_arrow
 from polars.datatypes import N_INFER_DEFAULT
 from polars.exceptions import (
     DuplicateError,
@@ -16,13 +15,17 @@ from polars.exceptions import (
     UnsuitableSQLError,
 )
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
-from polars.io.database._cursor_proxies import ODBCCursorProxy, SurrealDBCursorProxy
+from polars.io.database._cursor_proxies import (
+    ODBCCursorProxy,
+    OracleCursorProxy,
+    SurrealDBCursorProxy,
+)
 from polars.io.database._inference import dtype_from_cursor_description
 from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Iterator
     from types import TracebackType
 
     import pyarrow as pa
@@ -86,6 +89,13 @@ class ConnectionExecutor:
         )
         if self.driver_name == "surrealdb":
             connection = SurrealDBCursorProxy(client=connection)
+        elif (
+            # note: only the proxy can serve Arrow data (see `_arrow_registry`)
+            self.driver_name == "oracledb"
+            and OracleCursorProxy.supports_arrow(connection)
+        ):
+            connection = OracleCursorProxy(connection)
+            self.driver_name = "oracledb_proxy"
 
         self.cursor = self._normalise_cursor(connection)
         self.result: Any = None
@@ -156,7 +166,12 @@ class ConnectionExecutor:
         fetch_batches = driver_properties["fetch_batches"]
         if not iter_batches or fetch_batches is None:
             fetch_method = driver_properties["fetch_all"]
-            yield getattr(self.result, fetch_method)()
+            res = getattr(self.result, fetch_method)()
+
+            if isinstance(res, Iterable):
+                yield from res
+            else:
+                yield res
         else:
             size = [batch_size] if driver_properties["exact_batch_size"] else []
             repeat_batch_calls = driver_properties["repeat_batch_calls"]
@@ -238,7 +253,7 @@ class ConnectionExecutor:
                 frames = (
                     self._apply_overrides(batch, (schema_overrides or {}))
                     if isinstance(batch, DataFrame)
-                    else from_arrow(batch, schema_overrides=schema_overrides)
+                    else DataFrame(batch)
                     for batch in self._fetch_arrow(
                         driver_properties,
                         iter_batches=iter_batches,
@@ -438,7 +453,9 @@ class ConnectionExecutor:
 
         elif hasattr(conn, "cursor"):
             # connection has a dedicated cursor; prefer over direct execute
-            cursor = cursor() if callable(cursor := conn.cursor) else cursor
+            cursor = (
+                cast("Cursor", cursor()) if callable(cursor := conn.cursor) else cursor
+            )
             self.can_close_cursor = True
             return cursor
 
@@ -451,6 +468,20 @@ class ConnectionExecutor:
             "'execute' or 'cursor' method"
         )
         raise TypeError(msg)
+
+    def _oracle_arrow_proxy(self) -> OracleCursorProxy | None:
+        """Return an Arrow proxy for a SQLAlchemy "python-oracledb" connection."""
+        if not self._is_alchemy_async(self.cursor):
+            driver_name = getattr(getattr(self.cursor, "engine", None), "driver", None)
+            if driver_name == "oracledb" and OracleCursorProxy.supports_arrow(
+                # note: proxy the established DBAPI connection so the query
+                # is executed in the caller's own session/transaction
+                raw_conn := getattr(
+                    getattr(self.cursor, "connection", None), "driver_connection", None
+                )
+            ):
+                return OracleCursorProxy(raw_conn)
+        return None
 
     async def _sqlalchemy_async_execute(self, query: TextClause, **options: Any) -> Any:
         """Execute a query using an async SQLAlchemy connection."""
@@ -528,6 +559,18 @@ class ConnectionExecutor:
         options = options or {}
 
         if self._is_alchemy_object(self.cursor):
+            # note: the Arrow "fetch_df_*" methods take raw SQL, so the Oracle fast-path
+            # is only available for string queries; anything else must be compiled first
+            if (
+                isinstance(query, str)
+                and (oracle_proxy := self._oracle_arrow_proxy()) is not None
+            ):
+                # note: `self.cursor` is deliberately left as the SQLAlchemy connection,
+                # so that it remains open (and closeable) for the proxy's lifetime
+                self.driver_name = "oracledb_proxy"
+                self.result = oracle_proxy.execute(query, **options)
+                return self
+
             cursor_execute, options, query = self._sqlalchemy_setup(query, options)
         else:
             cursor_execute = self.cursor.execute
@@ -593,13 +636,8 @@ class ConnectionExecutor:
             )
             if frame is not None:
                 if defer_cursor_close:
-                    frame = (
-                        df
-                        for df in CloseAfterFrameIter(
-                            frame,
-                            cursor=self.result,
-                        )
-                    )
+                    frame_cursor = CloseAfterFrameIter(frame, cursor=self.cursor)
+                    frame = (df for df in frame_cursor)
                 return frame
 
         msg = (

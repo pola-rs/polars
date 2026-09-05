@@ -1,10 +1,10 @@
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_compute::ewm::EwmStateUpdate;
 use polars_core::prelude::IntoColumn;
 use polars_core::series::Series;
 use polars_error::PolarsResult;
 
 use super::ComputeNode;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::pipe::{RecvPort, SendPort};
@@ -52,7 +52,7 @@ impl ComputeNode for EwmNode {
 
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(mut morsel) = recv.recv().await {
-                let df = morsel.df_mut();
+                let mut df = morsel.df_mut().await;
 
                 debug_assert_eq!(df.width(), 1);
 
@@ -68,6 +68,7 @@ impl ComputeNode for EwmNode {
                     )
                     .into_column()
                 }
+                drop(df);
 
                 if send.send(morsel).await.is_err() {
                     break;

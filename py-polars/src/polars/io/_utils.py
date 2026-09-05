@@ -21,7 +21,24 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from contextlib import AbstractContextManager as ContextManager
 
-    from polars._typing import StorageOptionsDict
+    from polars._typing import PolarsDataType, StorageOptionsDict
+
+
+def null_count_dtype(dtype: PolarsDataType) -> PolarsDataType:
+    """Statistics-frame dtype for a column's ``null_count``.
+
+    Scalar (and non-struct nested) columns carry a single row-level null count (the
+    index type). Struct columns carry a *per-field* null count mirroring the column
+    shape (each leaf replaced by the index type), so the skip-batch predicate can prune
+    on an individual struct field via ``col("<c>_nc").struct.field(..)``.
+    """
+    import polars as pl
+
+    if isinstance(dtype, pl.Struct):
+        return pl.Struct(
+            {field.name: null_count_dtype(field.dtype) for field in dtype.fields}
+        )
+    return pl.get_index_type()
 
 
 def parse_columns_arg(

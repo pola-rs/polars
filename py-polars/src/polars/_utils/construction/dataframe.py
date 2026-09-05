@@ -9,6 +9,7 @@ from operator import itemgetter
 from typing import (
     TYPE_CHECKING,
     Any,
+    cast,
 )
 
 import polars._reexport as pl
@@ -19,7 +20,6 @@ from polars._dependencies import (
     _PYARROW_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
-    dataclasses,
 )
 from polars._dependencies import numpy as np
 from polars._dependencies import pandas as pd
@@ -27,6 +27,7 @@ from polars._dependencies import pyarrow as pa
 from polars._utils.construction.utils import (
     contains_nested,
     get_first_non_none,
+    is_dataclass_instance,
     is_namedtuple,
     is_pydantic_model,
     is_simple_numpy_backed_pandas_series,
@@ -37,9 +38,9 @@ from polars._utils.construction.utils import (
 from polars._utils.various import (
     _is_generator,
     arrlen,
-    issue_warning,
     parse_version,
 )
+from polars._warnings import issue_warning
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Categorical,
@@ -64,6 +65,8 @@ if TYPE_CHECKING:
     from polars import DataFrame, Series
     from polars._plr import PySeries
     from polars._typing import (
+        ArrayLike,
+        NonNestedLiteral,
         Orientation,
         PolarsDataType,
         SchemaDefinition,
@@ -74,7 +77,7 @@ _MIN_NUMPY_SIZE_FOR_MULTITHREADING = 1000
 
 
 def dict_to_pydf(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    data: Mapping[str, ArrayLike | NonNestedLiteral | None],
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
@@ -332,7 +335,7 @@ def _post_apply_columns(
 
 
 def _expand_dict_values(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    data: Mapping[str, ArrayLike | NonNestedLiteral | None],
     *,
     schema_overrides: SchemaDict | None = None,
     strict: bool = True,
@@ -380,6 +383,7 @@ def _expand_dict_values(
                     updated_data[name] = s
 
                 elif arrlen(val) is not None or _is_generator(val):
+                    val = cast("Iterable[Any]", val)  # help type-checkers
                     updated_data[name] = pl.Series(
                         name=name,
                         values=val,
@@ -387,8 +391,8 @@ def _expand_dict_values(
                         strict=strict,
                         nan_to_null=nan_to_null,
                     )
-                elif val is None or isinstance(  # type: ignore[redundant-expr]
-                    val, (int, float, str, bool, date, datetime, time, timedelta)
+                elif val is None or isinstance(
+                    val, (int, float, str, bytes, bool, date, datetime, time, timedelta)
                 ):
                     updated_data[name] = F.repeat(
                         val, array_len, dtype=dtype, eager=True
@@ -400,8 +404,12 @@ def _expand_dict_values(
 
         elif all((arrlen(val) == 0) for val in data.values()):
             for name, val in data.items():
+                val = cast("Iterable[Any]", val)  # help type-checkers
                 updated_data[name] = pl.Series(
-                    name, values=val, dtype=dtypes.get(name), strict=strict
+                    name,
+                    values=val,
+                    dtype=dtypes.get(name),
+                    strict=strict,
                 )
 
         elif all((arrlen(val) is None) for val in data.values()):
@@ -418,19 +426,17 @@ def _expand_dict_values(
 
 
 def _expand_dict_data(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    data: Mapping[str, ArrayLike | NonNestedLiteral | None],
     dtypes: SchemaDict,
     *,
     strict: bool = True,
-) -> Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series]:
+) -> Mapping[str, ArrayLike | NonNestedLiteral | None]:
     """
     Expand any unsized generators/iterators.
 
     (Note that `range` is sized, and will take a fast-path on Series init).
     """
-    expanded_data: dict[
-        str, Sequence[object] | Mapping[str, Sequence[object]] | Series
-    ] = {}
+    expanded_data: dict[str, ArrayLike | NonNestedLiteral | None] = {}
     for name, val in data.items():
         expanded_data[name] = (
             pl.Series(name, val, dtypes.get(name), strict=strict)
@@ -438,6 +444,9 @@ def _expand_dict_data(
             else val
         )
     return expanded_data
+
+
+_resolved_sequence_handlers: dict[type, Callable[..., PyDataFrame]] = {}
 
 
 def sequence_to_pydf(
@@ -454,8 +463,12 @@ def sequence_to_pydf(
     if not data:
         return dict_to_pydf({}, schema=schema, schema_overrides=schema_overrides)
 
-    return _sequence_to_pydf_dispatcher(
-        get_first_non_none(data),
+    first_element = get_first_non_none(data)
+    to_pydf = _resolved_sequence_handlers.get(
+        type(first_element), _sequence_to_pydf_dispatcher
+    )
+    return to_pydf(
+        first_element,
         data=data,
         schema=schema,
         schema_overrides=schema_overrides,
@@ -481,25 +494,19 @@ def _sequence_to_pydf_dispatcher(
     # note: ONLY python-native data should participate in singledispatch registration
     # via top-level decorators, otherwise we have to import the associated module.
     # third-party libraries (such as numpy/pandas) should be identified inline (below)
-    # and THEN registered for dispatch (here) so as not to break lazy-loading behaviour.
+    # and THEN memoized (here) so as not to break lazy-loading behaviour.
 
-    common_params: dict[str, Any] = {
-        "data": data,
-        "schema": schema,
-        "schema_overrides": schema_overrides,
-        "strict": strict,
-        "orient": orient,
-        "infer_schema_length": infer_schema_length,
-        "nan_to_null": nan_to_null,
-    }
     to_pydf: Callable[..., PyDataFrame]
-    register_with_singledispatch = True
+    memo_key = type(first_element)
+    memoize = True
 
     if isinstance(first_element, Generator):
         to_pydf = _sequence_of_sequence_to_pydf
         data = [list(row) for row in data]
         first_element = data[0]
-        register_with_singledispatch = False
+        # note: rows were materialised, so resolution
+        # belongs to the call rather than to the type
+        memoize = False
 
     elif isinstance(first_element, pl.Series):
         to_pydf = _sequence_of_series_to_pydf
@@ -512,7 +519,7 @@ def _sequence_to_pydf_dispatcher(
     ):
         to_pydf = _sequence_of_pandas_to_pydf
 
-    elif dataclasses.is_dataclass(first_element):
+    elif is_dataclass_instance(first_element):
         to_pydf = _sequence_of_dataclasses_to_pydf
 
     elif is_pydantic_model(first_element):
@@ -526,11 +533,19 @@ def _sequence_to_pydf_dispatcher(
     else:
         to_pydf = _sequence_of_elements_to_pydf
 
-    if register_with_singledispatch:
-        _sequence_to_pydf_dispatcher.register(type(first_element), to_pydf)
+    if memoize:
+        _resolved_sequence_handlers[memo_key] = to_pydf
 
-    common_params["first_element"] = first_element
-    return to_pydf(**common_params)
+    return to_pydf(
+        first_element,
+        data=data,
+        schema=schema,
+        schema_overrides=schema_overrides,
+        strict=strict,
+        orient=orient,
+        infer_schema_length=infer_schema_length,
+        nan_to_null=nan_to_null,
+    )
 
 
 @_sequence_to_pydf_dispatcher.register(list)
@@ -692,7 +707,7 @@ def _sequence_of_tuple_to_pydf(
 @_sequence_to_pydf_dispatcher.register(Mapping)
 @_sequence_to_pydf_dispatcher.register(dict)
 def _sequence_of_dict_to_pydf(
-    first_element: dict[str, Any],  # noqa: ARG001
+    first_element: Mapping[str, Any],  # noqa: ARG001
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     *,
@@ -939,7 +954,7 @@ def _establish_dataclass_or_model_schema(
         elif not unpack_nested and (tp.base_type() in (Unknown, Struct)):
             unpack_nested = contains_nested(
                 getattr(first_element, col, None),
-                is_pydantic_model if model_fields else dataclasses.is_dataclass,  # type: ignore[arg-type]
+                is_pydantic_model if model_fields else is_dataclass_instance,
             )
 
     if model_fields and len(model_fields) == len(overrides):

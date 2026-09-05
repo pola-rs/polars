@@ -8,10 +8,7 @@ from typing import IO, TYPE_CHECKING, Any
 import polars.functions as F
 from polars import concat as plconcat
 from polars._dependencies import import_optional
-from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
-    issue_deprecation_warning,
-)
+from polars._utils.expired import RemovedParameter, RenamedParameter, removed_parameters
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
     is_int_sequence,
@@ -21,6 +18,7 @@ from polars._utils.wrap import wrap_ldf
 from polars.convert import from_arrow
 from polars.io._utils import (
     get_sources,
+    parse_row_index_args,
     prepare_file_arg,
 )
 from polars.io.cloud.credential_provider._builder import (
@@ -50,8 +48,40 @@ if TYPE_CHECKING:
     from polars.io.scan_options import ScanCastOptions
 
 
-@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
-@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@removed_parameters(
+    RenamedParameter(
+        name="row_count_name",
+        new_name="row_index_name",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+    RenamedParameter(
+        name="row_count_offset",
+        new_name="row_index_offset",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+    RemovedParameter(
+        name="rechunk",
+        removed_in="2.0",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
+    ),
+    RenamedParameter(
+        name="allow_missing_columns",
+        new_name="missing_columns",
+        deprecated_in="1.30.0",
+        removed_in="2.0",
+        hint="Pass one of `('insert', 'raise')`; `allow_missing_columns=True` corresponds to `missing_columns='insert'`.",
+    ),
+)
+@removed_parameters(
+    RemovedParameter(
+        name="retries",
+        deprecated_in="1.37.1",
+        removed_in="2.0",
+        hint='Pass {"max_retries": n} via `storage_options` instead.',
+    ),
+)
 def read_parquet(
     source: FileSource,
     *,
@@ -66,17 +96,14 @@ def read_parquet(
     schema: SchemaDict | None = None,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
-    rechunk: bool = False,
     low_memory: bool = False,
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int | None = None,
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
     include_file_paths: str | None = None,
     missing_columns: Literal["insert", "raise"] = "raise",
-    allow_missing_columns: bool | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
@@ -138,9 +165,6 @@ def read_parquet(
             at any point without it being considered a breaking change.
     try_parse_hive_dates
         Whether to try parsing hive values as date/datetime types.
-    rechunk
-        Make sure that all columns are contiguous in memory by
-        aggregating the chunks into a single array.
     low_memory
         Reduce memory pressure at the expense of performance.
     storage_options
@@ -165,11 +189,6 @@ def read_parquet(
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-    retries
-        Number of retries if accessing a cloud instance fails.
-
-        .. deprecated:: 1.37.1
-            Pass {"max_retries": n} via `storage_options` instead.
     use_pyarrow
         Use PyArrow instead of the Rust-native Parquet reader. The PyArrow reader is
         more stable.
@@ -189,17 +208,6 @@ def read_parquet(
         * `insert`: Inserts the missing columns using NULLs as the row values.
         * `raise`: Raises an error.
 
-    allow_missing_columns
-        When reading a list of parquet files, if a column existing in the first
-        file cannot be found in subsequent files, the default behavior is to
-        raise an error. However, if `allow_missing_columns` is set to
-        `True`, a full-NULL column is returned instead of erroring for the files
-        that do not contain the column.
-
-        .. deprecated:: 1.30.0
-            Use the parameter `missing_columns` instead and pass one of
-            `('insert', 'raise')`.
-
     Returns
     -------
     DataFrame
@@ -217,6 +225,10 @@ def read_parquet(
     with `LazyFrame` s.
 
     """
+    row_index = parse_row_index_args(row_index_name, row_index_offset)
+    del row_index_name
+    del row_index_offset
+
     if schema is not None:
         msg = "the `schema` parameter of `read_parquet` is considered unstable."
         issue_unstable_warning(msg)
@@ -242,43 +254,35 @@ def read_parquet(
                 "\n\nHint: Pass `pyarrow_options` instead with a 'partitioning' entry."
             )
             raise TypeError(msg)
-        return _read_parquet_with_pyarrow(
+
+        df = _read_parquet_with_pyarrow(
             source,
             columns=columns,
             storage_options=storage_options,
             pyarrow_options=pyarrow_options,
             memory_map=memory_map,
-            rechunk=rechunk,
         )
 
-    if allow_missing_columns is not None:
-        issue_deprecation_warning(
-            "the parameter `allow_missing_columns` for `read_parquet` is deprecated. "
-            "Use the parameter `missing_columns` instead and pass one of "
-            "`('insert', 'raise')`.",
-            version="1.30.0",
-        )
+        if row_index is not None:
+            name, offset = row_index
+            df = df.with_row_index(name, offset)
 
-        missing_columns = "insert" if allow_missing_columns else "raise"
+        return df
 
     # For other inputs, defer to `scan_parquet`
     lf = scan_parquet(
         source,
         n_rows=n_rows,
-        row_index_name=row_index_name,
-        row_index_offset=row_index_offset,
         parallel=parallel,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
         schema=schema,
         hive_schema=hive_schema,
         try_parse_hive_dates=try_parse_hive_dates,
-        rechunk=rechunk,
         low_memory=low_memory,
         cache=False,
         storage_options=storage_options,
         credential_provider=credential_provider,
-        retries=retries,
         glob=glob,
         include_file_paths=include_file_paths,
         missing_columns=missing_columns,
@@ -290,7 +294,11 @@ def read_parquet(
         else:
             lf = lf.select(columns)
 
-    return lf.collect()
+    if row_index is not None:
+        name, offset = row_index
+        lf = lf.with_row_index(name, offset)
+
+    return lf._collect_eager()
 
 
 def _read_parquet_with_pyarrow(
@@ -307,7 +315,6 @@ def _read_parquet_with_pyarrow(
     storage_options: StorageOptionsDict | None = None,
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
-    rechunk: bool = True,
 ) -> DataFrame:
     pyarrow_parquet = import_optional(
         "pyarrow.parquet",
@@ -327,7 +334,7 @@ def _read_parquet_with_pyarrow(
 
     results: list[DataFrame] = []
     for source in sources:
-        with prepare_file_arg(
+        with prepare_file_arg(  # pyrefly: ignore[no-matching-overload]
             source,  # type: ignore[arg-type]
             use_pyarrow=True,
             storage_options=storage_options,
@@ -351,7 +358,7 @@ def _read_parquet_with_pyarrow(
                 columns=resolved_columns,
                 **pyarrow_options,
             )
-        result = from_arrow(pa_table, rechunk=rechunk)
+        result = from_arrow(pa_table)
         results.append(result)  # type: ignore[arg-type]
 
     if len(results) == 1:
@@ -388,11 +395,18 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     return scan_parquet(source).collect_schema()
 
 
+@removed_parameters(
+    RemovedParameter(
+        name="retries",
+        deprecated_in="1.37.1",
+        removed_in="2.0",
+        hint='Pass {"max_retries": n} via `storage_options` instead.',
+    ),
+)
 def read_parquet_metadata(
     source: str | Path | IO[bytes] | bytes,
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int | None = None,
 ) -> dict[str, str]:
     """
     Get file-level custom metadata of a Parquet file without reading data.
@@ -430,11 +444,6 @@ def read_parquet_metadata(
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-    retries
-        Number of retries if accessing a cloud instance fails.
-
-        .. deprecated:: 1.37.1
-            Pass {"max_retries": n} via `storage_options` instead.
 
     Returns
     -------
@@ -443,12 +452,6 @@ def read_parquet_metadata(
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
-
-    if retries is not None:
-        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
-        issue_deprecation_warning(msg)
-        storage_options = storage_options or {}
-        storage_options["max_retries"] = retries
 
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_parquet"
@@ -462,8 +465,40 @@ def read_parquet_metadata(
     )
 
 
-@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
-@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@removed_parameters(
+    RenamedParameter(
+        name="row_count_name",
+        new_name="row_index_name",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+    RenamedParameter(
+        name="row_count_offset",
+        new_name="row_index_offset",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+    RemovedParameter(
+        name="rechunk",
+        removed_in="2.0",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
+    ),
+    RenamedParameter(
+        name="allow_missing_columns",
+        new_name="missing_columns",
+        deprecated_in="1.30.0",
+        removed_in="2.0",
+        hint="Pass one of `('insert', 'raise')`; `allow_missing_columns=True` corresponds to `missing_columns='insert'`.",
+    ),
+)
+@removed_parameters(
+    RemovedParameter(
+        name="retries",
+        deprecated_in="1.37.1",
+        removed_in="2.0",
+        hint='Pass {"max_retries": n} via `storage_options` instead.',
+    ),
+)
 def scan_parquet(
     source: FileSource,
     *,
@@ -478,15 +513,12 @@ def scan_parquet(
     schema: SchemaDict | None = None,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
-    rechunk: bool = False,
     low_memory: bool = False,
     cache: bool = True,
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int | None = None,
     include_file_paths: str | None = None,
     missing_columns: Literal["insert", "raise"] = "raise",
-    allow_missing_columns: bool | None = None,
     extra_columns: Literal["ignore", "raise"] = "raise",
     cast_options: ScanCastOptions | None = None,
     _column_mapping: ColumnMapping | None = None,
@@ -501,12 +533,7 @@ def scan_parquet(
     This function allows the query optimizer to push down predicates and projections to
     the scan level, typically increasing performance and reducing memory overhead.
 
-    .. versionchanged:: 0.20.4
-        * The `row_count_name` parameter was renamed `row_index_name`.
-        * The `row_count_offset` parameter was renamed `row_index_offset`.
-
-    .. versionchanged:: 1.30.0
-        * The `allow_missing_columns` is deprecated in favor of `missing_columns`.
+    .. engine-support:: in-memory, streaming, distributed
 
     Parameters
     ----------
@@ -571,9 +598,6 @@ def scan_parquet(
             at any point without it being considered a breaking change.
     try_parse_hive_dates
         Whether to try parsing hive values as date/datetime types.
-    rechunk
-        In case of reading multiple files via a glob pattern rechunk the final DataFrame
-        into contiguous memory chunks.
     low_memory
         Reduce memory pressure at the expense of performance.
     cache
@@ -600,11 +624,6 @@ def scan_parquet(
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-    retries
-        Number of retries if accessing a cloud instance fails.
-
-        .. deprecated:: 1.37.1
-            Pass {"max_retries": n} via `storage_options` instead.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     missing_columns
@@ -613,17 +632,6 @@ def scan_parquet(
 
         * `insert`: Inserts the missing columns using NULLs as the row values.
         * `raise`: Raises an error.
-
-    allow_missing_columns
-        When reading a list of parquet files, if a column existing in the first
-        file cannot be found in subsequent files, the default behavior is to
-        raise an error. However, if `allow_missing_columns` is set to
-        `True`, a full-NULL column is returned instead of erroring for the files
-        that do not contain the column.
-
-        .. deprecated:: 1.30.0
-            Use the parameter `missing_columns` instead and pass one of
-            `('insert', 'raise')`.
     extra_columns
         Configuration for behavior when extra columns outside of the
         defined schema are encountered in the data:
@@ -677,22 +685,6 @@ def scan_parquet(
         msg = "The `hidden_file_prefix` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
 
-    if allow_missing_columns is not None:
-        issue_deprecation_warning(
-            "the parameter `allow_missing_columns` for `scan_parquet` is deprecated. "
-            "Use the parameter `missing_columns` instead and pass one of "
-            "`('insert', 'raise')`.",
-            version="1.30.0",
-        )
-
-        missing_columns = "insert" if allow_missing_columns else "raise"
-
-    if retries is not None:
-        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
-        issue_deprecation_warning(msg)
-        storage_options = storage_options or {}
-        storage_options["max_retries"] = retries
-
     sources = get_sources(source)
 
     credential_provider_builder = _init_credential_provider_builder(
@@ -727,7 +719,7 @@ def scan_parquet(
             hive_partitioning=hive_partitioning,
             hive_schema=hive_schema,
             try_parse_hive_dates=try_parse_hive_dates,
-            rechunk=rechunk,
+            rechunk=False,
             cache=cache,
             storage_options=storage_options,
             credential_provider=credential_provider_builder,

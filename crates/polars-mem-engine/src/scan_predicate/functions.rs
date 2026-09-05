@@ -9,18 +9,19 @@ use polars_core::schema::Schema;
 use polars_error::polars_warn;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::default_values::{
-    DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
-};
+use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldValues};
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    FileScanIR, Operator, PredicateFileSkip, ScanSources, TableStatistics, UnifiedScanArgs,
+    Operator, PredicateFileSkip, ScanSources, TableStatistics, UnifiedScanArgs,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_plan::plans::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate};
+use polars_plan::plans::predicates::{
+    aexpr_to_column_predicates, aexpr_to_skip_batch_predicate, null_count_dtype,
+};
 use polars_plan::plans::{AExpr, ExprIRDisplay, FileInfo, IR, MintermIter};
 use polars_plan::utils::aexpr_to_leaf_names_iter;
+use polars_utils::aliases::PlIndexMapHashable;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
@@ -136,7 +137,7 @@ pub fn create_scan_predicate(
 
                 skip_batch_schema.insert(format_pl_smallstr!("{col}_min"), dtype.clone());
                 skip_batch_schema.insert(format_pl_smallstr!("{col}_max"), dtype.clone());
-                skip_batch_schema.insert(format_pl_smallstr!("{col}_nc"), IDX_DTYPE);
+                skip_batch_schema.insert(format_pl_smallstr!("{col}_nc"), null_count_dtype(dtype));
             }
 
             skip_batch_predicate = Some(create_physical_expr(
@@ -408,7 +409,7 @@ pub fn apply_scan_predicate_to_scan_ir(
         *predicate_file_skip_applied = Some(predicate_file_skip);
 
         if skip_files_mask.num_skipped_files() > 0 {
-            filter_scan_ir(scan_ir, skip_files_mask.non_skipped_files_idx_iter())
+            filter_scan_ir(scan_ir, skip_files_mask.non_skipped_files_idx_iter(), false)
         }
     }
 
@@ -422,7 +423,7 @@ pub fn apply_scan_predicate_to_scan_ir(
 ///
 /// # Panics
 /// Panics if `scan_ir` is not `IR::Scan`.
-pub fn filter_scan_ir<I>(scan_ir: &mut IR, selected_path_indices: I)
+pub fn filter_scan_ir<I>(scan_ir: &mut IR, selected_path_indices: I, allow_pre_slice: bool)
 where
     I: Iterator<Item = usize> + Clone,
 {
@@ -432,7 +433,7 @@ where
             FileInfo {
                 schema: _,
                 reader_schema,
-                row_estimation,
+                stats,
             },
         hive_parts,
         predicate: _,
@@ -468,9 +469,8 @@ where
         projection: _,
         column_mapping: _,
         default_values,
-        // Ensure these are None.
-        row_index: None,
-        pre_slice: None,
+        row_index,
+        pre_slice,
         cast_columns_policy: _,
         missing_columns_policy: _,
         extra_columns_policy: _,
@@ -478,54 +478,26 @@ where
         deletion_files,
         table_statistics,
         row_count,
-    } = unified_scan_args.as_mut()
-    else {
-        panic!("{unified_scan_args:?}")
-    };
+    } = unified_scan_args.as_mut();
 
+    // Ensure these are None.
+    assert!(row_index.is_none(), "{unified_scan_args:?}");
+    // In cloud this is allowed.
+    assert!(
+        pre_slice.is_none() | allow_pre_slice,
+        "{unified_scan_args:?}"
+    );
+
+    // Reconcile pre-decoded state with the filter: clear what's stale,
+    // gather what survives.
     *row_count = None;
 
-    if selected_path_indices.clone().next() != Some(0) {
+    let first_surviving_idx = selected_path_indices.clone().next();
+    let first_file_dropped = first_surviving_idx != Some(0);
+    if first_file_dropped {
         *reader_schema = None;
-
-        // Ensure the metadata is unset, otherwise it may incorrectly be used at
-        // scan. This is especially important for Parquet as it requires the
-        // correct `is_nullable` in the arrow field.
-        match scan_type.as_mut() {
-            #[cfg(feature = "parquet")]
-            FileScanIR::Parquet {
-                options: _,
-                metadata,
-            } => *metadata = None,
-
-            #[cfg(feature = "ipc")]
-            FileScanIR::Ipc {
-                options: _,
-                metadata,
-            } => *metadata = None,
-
-            #[cfg(feature = "csv")]
-            FileScanIR::Csv { options: _ } => {},
-
-            #[cfg(feature = "json")]
-            FileScanIR::NDJson { options: _ } => {},
-
-            #[cfg(feature = "python")]
-            FileScanIR::PythonDataset {
-                dataset_object: _,
-                cached_ir,
-            } => *cached_ir.lock().unwrap() = None,
-
-            #[cfg(feature = "scan_lines")]
-            FileScanIR::Lines { name: _ } => {},
-            FileScanIR::ExpandedPaths { name: _ } => {},
-
-            FileScanIR::Anonymous {
-                options: _,
-                function: _,
-            } => {},
-        }
     }
+    scan_type.gather_after_filter(first_file_dropped, selected_path_indices.clone());
 
     let selected_path_indices_idxsize = LazyCell::new(|| {
         selected_path_indices
@@ -535,19 +507,21 @@ where
     });
 
     *deletion_files = deletion_files.take().and_then(|x| match x {
-        DeletionFilesList::IcebergPositionDelete(deletions) => {
+        DeletionFilesList::Iceberg(deletions) => {
             let mut out = None;
 
             for (out_idx, source_idx) in selected_path_indices.clone().enumerate() {
                 if let Some(v) = deletions.get(&source_idx) {
                     out.get_or_insert_with(|| {
-                        PlIndexMap::with_capacity(selected_path_indices.size_hint().0 - out_idx)
+                        PlIndexMap::with_capacity(
+                            selected_path_indices.size_hint().0.saturating_sub(out_idx),
+                        )
                     })
                     .insert(out_idx, v.clone());
                 }
             }
 
-            out.map(|x| DeletionFilesList::IcebergPositionDelete(Arc::new(x)))
+            out.map(|x| DeletionFilesList::Iceberg(Arc::new(x)))
         },
         // No-op - Delta takes scan paths at the execution stage.
         #[cfg(feature = "python")]
@@ -566,13 +540,13 @@ where
 
     let original_sources_len = sources.len();
     *sources = sources.gather(selected_path_indices.clone()).unwrap();
-    *row_estimation = (
-        None,
-        row_estimation
-            .1
-            .div_ceil(original_sources_len)
-            .saturating_mul(sources.len()),
-    );
+    stats.rows = stats
+        .rows
+        .map(|rows| {
+            rows.div_ceil(original_sources_len as u64)
+                .saturating_mul(sources.len() as u64)
+        })
+        .demote_default();
 
     *hive_parts = hive_parts.as_ref().map(|hp| {
         let df = hp.df();
@@ -586,11 +560,18 @@ where
 
     *default_values = default_values.as_ref().map(|x| match x {
         DefaultFieldValues::Iceberg(v) => {
-            let mut out = PlIndexMap::with_capacity(v.len());
-            let mut gather_indices = PlHashMap::with_capacity(v.len());
+            let IcebergDefaultFieldValues {
+                identity_transformed_partition_fields,
+                initial_defaults,
+            } = v.as_ref();
 
-            for (k, v) in v.iter() {
-                out.insert(
+            let mut new_identity_transformed_partition_fields =
+                PlIndexMap::with_capacity(identity_transformed_partition_fields.len());
+            let mut gather_indices =
+                PlHashMap::with_capacity(identity_transformed_partition_fields.len());
+
+            for (k, v) in identity_transformed_partition_fields.iter() {
+                new_identity_transformed_partition_fields.insert(
                     *k,
                     v.as_ref().map_err(Clone::clone).map(|partition_values| {
                         if !gather_indices.contains_key(&partition_values.len()) {
@@ -615,7 +596,12 @@ where
                 );
             }
 
-            DefaultFieldValues::Iceberg(Arc::new(IcebergIdentityTransformedPartitionFields(out)))
+            DefaultFieldValues::Iceberg(Arc::new(IcebergDefaultFieldValues {
+                identity_transformed_partition_fields: PlIndexMapHashable(
+                    new_identity_transformed_partition_fields,
+                ),
+                initial_defaults: initial_defaults.clone(),
+            }))
         },
     });
 }

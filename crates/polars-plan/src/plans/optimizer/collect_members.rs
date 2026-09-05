@@ -1,25 +1,26 @@
-use std::hash::BuildHasher;
-
+#[cfg(feature = "cse")]
+use super::cse::{CanonicalIRId, CanonicalIRMap};
 use super::*;
 
-// Utility to cheaply check if we have duplicate sources.
-// This may have false positives.
+// Tracks canonical source identities to check if we have duplicate sources.
 #[cfg(feature = "cse")]
 #[derive(Default)]
 struct UniqueScans {
-    ids: PlHashSet<u64>,
+    ids: PlIndexSet<CanonicalIRId>,
     count: usize,
 }
 
 #[cfg(feature = "cse")]
 impl UniqueScans {
-    fn insert(&mut self, node: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) {
-        let alp_node = IRNode::new(node);
-        self.ids.insert(
-            self.ids
-                .hasher()
-                .hash_one(alp_node.hashable_and_cmp(lp_arena, expr_arena)),
-        );
+    fn insert(
+        &mut self,
+        node: Node,
+        lp_arena: &Arena<IR>,
+        expr_arena: &Arena<AExpr>,
+        canonical_ir_map: &mut CanonicalIRMap,
+    ) {
+        self.ids
+            .insert(canonical_ir_map.resolve(node, lp_arena, expr_arena));
         self.count += 1;
     }
 }
@@ -27,8 +28,6 @@ impl UniqueScans {
 pub(super) struct MemberCollector {
     pub(crate) has_joins_or_unions: bool,
     pub(crate) has_sink_multiple: bool,
-    pub(crate) has_cache: bool,
-    pub(crate) has_ext_context: bool,
     pub(crate) has_filter_with_join_input: bool,
     pub(crate) has_distinct: bool,
     pub(crate) has_sort: bool,
@@ -44,8 +43,6 @@ impl MemberCollector {
         Self {
             has_joins_or_unions: false,
             has_sink_multiple: false,
-            has_cache: false,
-            has_ext_context: false,
             has_filter_with_join_input: false,
             has_distinct: false,
             has_sort: false,
@@ -57,6 +54,9 @@ impl MemberCollector {
         }
     }
     pub(super) fn collect(&mut self, root: Node, lp_arena: &Arena<IR>, _expr_arena: &Arena<AExpr>) {
+        #[cfg(feature = "cse")]
+        let mut canonical_ir_map = CanonicalIRMap::new();
+
         use IR::*;
         for (_node, alp) in lp_arena.iter(root) {
             match alp {
@@ -74,11 +74,10 @@ impl MemberCollector {
                 Sort { .. } => {
                     self.has_sort = true;
                 },
-                Cache { .. } => self.has_cache = true,
-                ExtContext { .. } => self.has_ext_context = true,
                 #[cfg(feature = "cse")]
                 Scan { .. } => {
-                    self.scans.insert(_node, lp_arena, _expr_arena);
+                    self.scans
+                        .insert(_node, lp_arena, _expr_arena, &mut canonical_ir_map);
                 },
                 HStack { .. } => {
                     self.with_columns_count += 1;
@@ -88,11 +87,13 @@ impl MemberCollector {
                 },
                 #[cfg(feature = "cse")]
                 DataFrameScan { .. } => {
-                    self.scans.insert(_node, lp_arena, _expr_arena);
+                    self.scans
+                        .insert(_node, lp_arena, _expr_arena, &mut canonical_ir_map);
                 },
                 #[cfg(all(feature = "cse", feature = "python"))]
                 PythonScan { .. } => {
-                    self.scans.insert(_node, lp_arena, _expr_arena);
+                    self.scans
+                        .insert(_node, lp_arena, _expr_arena, &mut canonical_ir_map);
                 },
                 MapFunction {
                     function: FunctionIR::Hint(_),

@@ -12,17 +12,13 @@ from typing import (
 
 import polars._reexport as pl
 import polars._utils.construction as plc
-from polars._dependencies import (
-    _PYARROW_AVAILABLE,
-    _check_for_numpy,
-    dataclasses,
-)
+from polars._dependencies import _PYARROW_AVAILABLE, _check_for_numpy
 from polars._dependencies import numpy as np
-from polars._dependencies import pandas as pd
 from polars._dependencies import pyarrow as pa
 from polars._utils.construction.dataframe import _sequence_of_dict_to_pydf
 from polars._utils.construction.utils import (
     get_first_non_none,
+    is_dataclass_instance,
     is_namedtuple,
     is_pydantic_model,
     is_simple_numpy_backed_pandas_series,
@@ -43,6 +39,7 @@ from polars.datatypes import (
     Duration,
     Enum,
     List,
+    Map,
     Null,
     Object,
     String,
@@ -111,7 +108,7 @@ def sequence_to_pyseries(
     value = get_first_non_none(values)
     if value is not None:
         if (
-            dataclasses.is_dataclass(value)
+            is_dataclass_instance(value)
             or is_pydantic_model(value)
             or is_namedtuple(value.__class__)
             or is_sqlalchemy_row(value)
@@ -194,6 +191,16 @@ def sequence_to_pyseries(
                 raise TypeError(msg)
 
         return pyseries
+
+    elif isinstance(dtype, Map):
+        # A dict is otherwise inferred as a Struct, so the Map dtype has to drive this.
+        return PySeries.new_from_any_values_and_dtype(
+            name, values, dtype, strict=strict
+        )
+
+    elif dtype == Map:
+        msg = "Map requires a key and a value type, e.g. `pl.Map(pl.String, pl.Int64)`"
+        raise TypeError(msg)
 
     elif dtype == Struct:
         # This is very bad. Goes via rows? And needs to do outer nullability separate.
@@ -503,7 +510,12 @@ def numpy_to_pyseries(
     nan_to_null: bool = False,
 ) -> PySeries:
     """Construct a PySeries from a numpy array."""
-    values = np.ascontiguousarray(values)
+    if not values.dtype.isnative:
+        # Only native byte order is supported, so swap to a native-order copy.
+        values = values.astype(values.dtype.newbyteorder("="))
+    # Require aligned, C-contiguous, >=1d; an unaligned view would otherwise panic.
+    values = np.atleast_1d(values)
+    values = np.require(values, requirements=["A", "C"])
 
     if values.ndim == 1:
         values, dtype = numpy_values_and_dtype(values)

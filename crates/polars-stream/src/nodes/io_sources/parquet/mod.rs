@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use async_trait::async_trait;
+use polars_async::executor::{self};
+use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::prelude::ArrowSchema;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
@@ -21,8 +23,7 @@ use super::multi_scan::reader_interface::output::{FileReaderOutputRecv, FileRead
 use super::multi_scan::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks, calc_row_position_after_slice,
 };
-use crate::async_executor::{self};
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use super::shared::pipeline_budget::PipelineBudget;
 use crate::metrics::OptIOMetrics;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
@@ -56,10 +57,9 @@ pub struct ParquetFileReader {
 }
 
 struct RowGroupPrefetchSync {
-    prefetch_limit: usize,
-    prefetch_semaphore: Arc<tokio::sync::Semaphore>,
+    /// Pipeline throttling, by count and by memory.
+    pipeline_budget: PipelineBudget,
     shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
-
     /// Waits for the previous reader to finish spawning prefetches.
     prev_all_spawned: Option<WaitGroup>,
     /// Dropped once the current reader has finished spawning prefetches.
@@ -177,8 +177,11 @@ impl FileReader for ParquetFileReader {
             pre_slice,
             predicate: None,
             cast_columns_policy: _,
+            extra_columns_policy: _,
+            missing_columns_policy: _,
             num_pipelines: _,
             disable_morsel_split: true,
+            last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx: _,
@@ -205,8 +208,11 @@ impl FileReader for ParquetFileReader {
             pre_slice: pre_slice_arg,
             predicate,
             cast_columns_policy,
+            extra_columns_policy: _,
+            missing_columns_policy: _,
             num_pipelines,
             disable_morsel_split,
+            last_morsel_pipelines,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,
@@ -253,7 +259,7 @@ impl FileReader for ParquetFileReader {
 
             return Ok((
                 rx,
-                async_executor::spawn(TaskPriority::Low, std::future::ready(Ok(()))),
+                executor::spawn(TaskPriority::Low, std::future::ready(Ok(()))),
             ));
         }
 
@@ -282,7 +288,7 @@ impl FileReader for ParquetFileReader {
                 file_schema.len(),
                 pre_slice_arg,
                 normalized_pre_slice,
-                &row_index,
+                row_index,
                 predicate.as_ref().map(|_| "<predicate>"),
             )
         }
@@ -290,9 +296,9 @@ impl FileReader for ParquetFileReader {
         if let Some(single_morsel_height) = single_morsel_height {
             let (mut tx, rx) = FileReaderOutputSend::new_serial();
 
-            let handle = async_executor::spawn(TaskPriority::Low, async move {
+            let handle = executor::spawn(TaskPriority::Low, async move {
                 let _ = tx
-                    .send_morsel(Morsel::new(
+                    .send_morsel(Morsel::new_unregistered(
                         DataFrame::empty_with_height(single_morsel_height),
                         MorselSeq::default(),
                         SourceToken::default(),
@@ -309,7 +315,8 @@ impl FileReader for ParquetFileReader {
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
         let row_group_prefetch_size = self
             .row_group_prefetch_sync
-            .prefetch_limit
+            .pipeline_budget
+            .count_limit()
             .min(file_metadata.row_groups.len())
             .max(1);
 
@@ -337,11 +344,13 @@ impl FileReader for ParquetFileReader {
                 num_pipelines,
                 row_group_prefetch_size,
                 target_values_per_thread,
+                last_morsel_pipelines,
             },
             verbose,
             memory_prefetch_func,
             row_index,
-            rg_prefetch_semaphore: Arc::clone(&self.row_group_prefetch_sync.prefetch_semaphore),
+
+            pipeline_budget: self.row_group_prefetch_sync.pipeline_budget.clone(),
             rg_prefetch_prev_all_spawned: Option::take(
                 &mut self.row_group_prefetch_sync.prev_all_spawned,
             ),
@@ -354,7 +363,7 @@ impl FileReader for ParquetFileReader {
 
         Ok((
             output_recv,
-            async_executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
+            executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
         ))
     }
 
@@ -434,7 +443,7 @@ struct ParquetReadImpl {
     memory_prefetch_func: fn(&[u8]) -> (),
     row_index: Option<RowIndex>,
 
-    rg_prefetch_semaphore: Arc<tokio::sync::Semaphore>,
+    pipeline_budget: PipelineBudget,
     rg_prefetch_prev_all_spawned: Option<WaitGroup>,
     rg_prefetch_current_all_spawned: Option<WaitToken>,
     disable_morsel_split: bool,
@@ -448,12 +457,15 @@ struct Config {
     /// Minimum number of values for a parallel spawned task to process to amortize
     /// parallelism overhead.
     target_values_per_thread: usize,
+    /// Minimum number of pieces to split this file's last morsel into. Precomputed by the
+    /// multi-scan layer to share the parallelism budget across files.
+    last_morsel_pipelines: usize,
 }
 
 impl ParquetReadImpl {
     fn run(mut self) -> AsyncTaskData {
         if self.verbose {
-            eprintln!("[ParquetFileReader]: {:?}", &self.config);
+            eprintln!("[ParquetFileReader]: {:?}", self.config);
         }
 
         self.init_morsel_distributor()

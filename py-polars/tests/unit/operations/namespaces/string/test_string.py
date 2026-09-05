@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, time
 from typing import Any
 
@@ -8,6 +9,7 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import (
+    AttributeRemovedError,
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
@@ -60,6 +62,28 @@ def test_str_slice_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
     with pytest.raises(ShapeError):
         df.select(pl.col("num").str.slice(pl.Series([1, 2])))
+
+
+@pytest.mark.parametrize("descending", [False, True])
+def test_str_slice_sorted_flag(descending: bool) -> None:
+    s = pl.Series("a", ["xb", "ya", "zc"]).sort(descending=descending)
+    flag = "SORTED_DESC" if descending else "SORTED_ASC"
+    kept = ["z", "y", "x"] if descending else ["x", "y", "z"]
+    assert s.flags[flag]
+
+    # prefix -> order preserved, flag kept (in whichever direction it was set)
+    for prefix in (s.str.head(1), s.str.slice(0, 1)):
+        assert prefix.to_list() == kept
+        assert prefix.flags[flag]
+        assert prefix.min() == "x"
+        assert prefix.max() == "z"
+
+    # non-prefix -> order not preserved, flag cleared in both directions
+    for sliced in (s.str.slice(1), s.str.tail(1)):
+        assert not sliced.flags["SORTED_ASC"]
+        assert not sliced.flags["SORTED_DESC"]
+        assert sliced.min() == "a"
+        assert sliced.max() == "c"
 
 
 @pytest.mark.parametrize(
@@ -1120,9 +1144,9 @@ def test_contains_expr() -> None:
         (["me"], False, True),
         (["Me"], False, False),
         (["Me"], True, True),
-        (pl.Series(["me", "they"]), False, True),
-        (pl.Series(["Me", "they"]), False, False),
-        (pl.Series(["Me", "they"]), True, True),
+        (pl.Series([["me", "they"]]), False, True),
+        (pl.Series([["Me", "they"]]), False, False),
+        (pl.Series([["Me", "they"]]), True, True),
         (["me", "they"], False, True),
         (["Me", "they"], False, False),
         (["Me", "they"], True, True),
@@ -1158,6 +1182,13 @@ def test_contains_any(
             )
         )
     )
+
+
+def test_contains_any_flat_dtype_invalid() -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+    msg = "`str.contains_any` with a flat string datatype is invalid. Use `implode` to wrap the string value into a list."
+    with pytest.raises(InvalidOperationError, match=re.escape(msg)):
+        df.select(pl.col("text").str.contains_any(pl.Series(["me", "they"])))
 
 
 def test_replace() -> None:
@@ -1337,24 +1368,29 @@ def test_replace_expressions() -> None:
 @pytest.mark.parametrize(
     ("pattern", "replacement", "case_insensitive", "leftmost", "expected"),
     [
-        (["say"], "", False, False, "Tell me what you want"),
+        (["say"], [""], False, False, "Tell me what you want"),
         (["me"], ["them"], False, False, "Tell them what you want"),
         (["who"], ["them"], False, False, "Tell me what you want"),
-        (["me", "you"], "it", False, False, "Tell it what it want"),
-        (["Me", "you"], "it", False, False, "Tell me what it want"),
         (["me", "you"], ["it"], False, False, "Tell it what it want"),
+        (["Me", "you"], ["it"], False, False, "Tell me what it want"),
         (["me", "you"], ["you", "me"], False, False, "Tell you what me want"),
-        (["me", "You", "them"], "it", False, False, "Tell it what you want"),
-        (["Me", "you"], "it", True, False, "Tell it what it want"),
+        (["me", "You", "them"], ["it"], False, False, "Tell it what you want"),
+        (["Me", "you"], ["it"], True, False, "Tell it what it want"),
         (["me", "YOU"], ["you", "me"], True, False, "Tell you what me want"),
         (
-            pl.Series(["me", "YOU"]),
+            pl.Series([["me", "YOU"]]),
             ["you", "me"],
             False,
             False,
             "Tell you what you want",
         ),
-        (pl.Series(["me", "YOU"]), ["you", "me"], True, False, "Tell you what me want"),
+        (
+            pl.Series([["me", "YOU"]]),
+            ["you", "me"],
+            True,
+            False,
+            "Tell you what me want",
+        ),
         (
             ["Tell me", "Tell"],
             ["Don't tell", "Text"],
@@ -1403,6 +1439,24 @@ def test_replace_many(
     assert expected == val, val
 
 
+def test_replace_many_flat_dtype_invalid() -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+    msg = "`str.replace_many` with a flat str datatype as pattern is invalid. Use `implode` to wrap the string value into a list."
+    with pytest.raises(InvalidOperationError, match=re.escape(msg)):
+        df.select(
+            pl.col("text").str.replace_many(
+                pl.Series(["me", "they"]), pl.Series([["it"]])
+            )
+        )
+    msg = "`str.replace_many` with a flat str datatype as replacement is invalid. Use `implode` to wrap the string value into a list."
+    with pytest.raises(InvalidOperationError, match=re.escape(msg)):
+        df.select(
+            pl.col("text").str.replace_many(
+                pl.Series([["me", "they"]]), pl.Series(["it"])
+            )
+        )
+
+
 def test_replace_many_groupby() -> None:
     df = pl.DataFrame(
         {
@@ -1410,7 +1464,9 @@ def test_replace_many_groupby() -> None:
             "g": [0, 0, 0, 1, 1, 1, 2, 2, 2],
         }
     )
-    out = df.group_by("g").agg(pl.col.x.str.replace_many(pl.col.x.head(2), ""))
+    out = df.group_by("g").agg(
+        pl.col.x.str.replace_many(pl.col.x.head(2).implode(), pl.Series([[""]]))
+    )
     expected = pl.DataFrame(
         {
             "g": [0, 1, 2],
@@ -1479,7 +1535,7 @@ def test_replace_many_invalid_inputs() -> None:
         df.select(pl.col("text").str.replace_many(["me"]))
 
     with pytest.raises(
-        InvalidOperationError,
+        ShapeError,
         match="expected the same amount of patterns as replacement strings",
     ):
         df.select(pl.col("text").str.replace_many(["a"], ["b", "c"]))
@@ -1493,7 +1549,7 @@ def test_replace_many_invalid_inputs() -> None:
         df.select(pl.col("text").str.replace_many(["me"]))
 
     with pytest.raises(
-        InvalidOperationError,
+        ShapeError,
         match="expected the same amount of patterns as replacement strings",
     ):
         s.str.replace_many(["a"], ["b", "c"])
@@ -2395,3 +2451,15 @@ def test_str_split_regex_scalar_string_expr() -> None:
     )
 
     assert_frame_equal(out, expected)
+
+
+def test_str_concat_removed() -> None:
+    s = pl.Series(["1", None, "2", None])
+    with pytest.raises(
+        AttributeRemovedError, match=re.escape("use `str.join` instead")
+    ):
+        s.str.concat()  # type: ignore[attr-defined]
+    with pytest.raises(
+        AttributeRemovedError, match=re.escape("use `str.join` instead")
+    ):
+        s.to_frame().select(pl.all().str.concat())  # type: ignore[attr-defined]

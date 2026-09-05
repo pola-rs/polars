@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use polars_async::executor::TaskPriority;
+use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IntoColumn};
 use polars_core::series::Series;
@@ -10,14 +12,13 @@ use polars_io::predicates::{
     ColumnPredicateExpr, ColumnPredicates, ScanIOPredicate, SpecializedColumnPredicate,
 };
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
+use polars_io::prelude::_internal::canonicalize_parquet_maps;
 use polars_io::prelude::try_set_sorted_flag;
 use polars_parquet::read::{Filter, PredicateFilter, PrimitiveLogicalType};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, UnitVec};
 
 use super::row_group_data_fetch::RowGroupData;
-use crate::async_executor::TaskPriority;
-use crate::async_primitives::opt_spawned_future::parallelize_first_to_local;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
 /// Turns row group data into DataFrames.
@@ -278,6 +279,7 @@ fn decode_column(
     }
 
     let mut series = Series::try_from((arrow_field, arrays))?;
+    canonicalize_parquet_maps(&mut series)?;
 
     if let Some(col_idxs) = row_group_data
         .row_group_metadata
@@ -372,6 +374,7 @@ fn decode_column_in_filter(
             let p = ColumnPredicateExpr::new(
                 arrow_field.name.clone(),
                 DataType::from_arrow_field(arrow_field),
+                arrow_field.dtype.clone(),
                 column_predicate.clone(),
                 specialized.clone(),
             );
@@ -686,11 +689,14 @@ fn decode_column_prefiltered(
         }
     }
 
-    let series = if !prefilter {
+    let mut series = if !prefilter {
         series.filter(mask)?
     } else {
         series
     };
+
+    // Done after the filter so that discarded rows cost nothing.
+    canonicalize_parquet_maps(&mut series)?;
 
     assert_eq!(series.len(), expected_num_rows);
 

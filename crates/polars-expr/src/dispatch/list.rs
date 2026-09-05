@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
-use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
-use polars_core::prelude::{
-    ChunkExpandAtIndex, Column, DataType, IDX_DTYPE, IntoColumn, ListChunked, SortOptions,
-};
+use polars_core::error::{PolarsContext, PolarsResult, polars_bail, polars_ensure};
+use polars_core::prelude::{Column, DataType, IDX_DTYPE, IntoColumn, ListChunked, SortOptions};
 use polars_core::utils::CustomIterTools;
 use polars_ops::prelude::{ListNameSpaceImpl, slice_broadcast_list};
 use polars_plan::dsl::{ColumnsUdf, ReshapeDimension, SpecialEq};
 use polars_plan::plans::IRListFunction;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 
 pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUdf>> {
@@ -53,16 +52,15 @@ pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "diff")]
         Diff { n, null_behavior } => map!(diff, n, null_behavior),
         Sort(options) => map!(sort, options),
-        Reverse => map!(reverse),
-        Unique(is_stable) => map!(unique, is_stable),
         #[cfg(feature = "list_sets")]
         SetOperation(s) => map_as_slice!(set_operation, s),
         Join(ignore_nulls) => map_as_slice!(join, ignore_nulls),
         #[cfg(feature = "dtype-array")]
         ToArray(width) => map!(to_array, width),
-        NUnique => map!(n_unique),
         #[cfg(feature = "list_to_struct")]
         ToStruct(names) => map!(to_struct, &names),
+        #[cfg(feature = "dtype-map")]
+        ToMap => map!(to_map),
     }
 }
 
@@ -73,13 +71,13 @@ pub(super) fn contains(args: &mut [Column], nulls_equal: bool) -> PolarsResult<C
     polars_ensure!(matches!(list.dtype(), DataType::List(_)),
         SchemaMismatch: "invalid series dtype: expected `List`, got `{}`", list.dtype(),
     );
-    let mut ca = polars_ops::prelude::is_in(
-        item.as_materialized_series(),
-        list.as_materialized_series(),
-        nulls_equal,
-    )?;
+    // Don't blow up the haystack in case of scalar.
+    let haystack = list.as_materialized_series_maintain_scalar();
+    let mut ca = polars_ops::prelude::is_in(item.as_materialized_series(), &haystack, nulls_equal)?;
     ca.rename(list.name().clone());
-    Ok(ca.into_column())
+    // In case of scalar, broadcast back to original length
+    ca.into_column()
+        .broadcast_owned_to(broadcast_len([list, item])?)
 }
 
 #[cfg(feature = "list_drop_nulls")]
@@ -92,7 +90,7 @@ pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
 pub(super) fn sample_n(
     s: &[Column],
     with_replacement: bool,
-    shuffle: bool,
+    shuffle: Option<bool>,
     seed: Option<u64>,
 ) -> PolarsResult<Column> {
     let list = s[0].list()?;
@@ -105,7 +103,7 @@ pub(super) fn sample_n(
 pub(super) fn sample_fraction(
     s: &[Column],
     with_replacement: bool,
-    shuffle: bool,
+    shuffle: Option<bool>,
     seed: Option<u64>,
 ) -> PolarsResult<Column> {
     let list = s[0].list()?;
@@ -180,7 +178,7 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
 
             list_ca
                 .amortized_iter()
-                .zip(length_ca)
+                .zip(length_ca.iter())
                 .map(|(opt_s, opt_length)| match (opt_s, opt_length) {
                     (Some(s), Some(length)) => Some(s.as_ref().slice(offset, length as usize)),
                     _ => None,
@@ -198,7 +196,7 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
             let offset_ca = offset_ca.i64().unwrap();
             list_ca
                 .amortized_iter()
-                .zip(offset_ca)
+                .zip(offset_ca.iter())
                 .map(|(opt_s, opt_offset)| match (opt_s, opt_offset) {
                     (Some(s), Some(offset)) => Some(s.as_ref().slice(offset, length_slice)),
                     _ => None,
@@ -217,8 +215,8 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
 
             list_ca
                 .amortized_iter()
-                .zip(offset_ca)
-                .zip(length_ca)
+                .zip(offset_ca.iter())
+                .zip(length_ca.iter())
                 .map(
                     |((opt_s, opt_offset), opt_length)| match (opt_s, opt_offset, opt_length) {
                         (Some(s), Some(offset), Some(length)) => {
@@ -235,11 +233,12 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
 }
 
 pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Column> {
+    let broadcast_len = broadcast_len(s.iter()).context("list concat")?;
     let mut first = std::mem::take(&mut s[0]);
     let other = &s[1..];
 
     // TODO! don't auto cast here, but implode beforehand.
-    let mut first_ca = match first.try_list() {
+    let first_ca = match first.try_list() {
         Some(ca) => ca,
         None => {
             first = first
@@ -248,15 +247,8 @@ pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Column> {
             first.list().unwrap()
         },
     }
-    .clone();
-
-    if first_ca.len() == 1 && !other.is_empty() {
-        let max_len = other.iter().map(|s| s.len()).max().unwrap();
-        if max_len != 1 {
-            first_ca = first_ca.new_from_index(0, max_len)
-        }
-    }
-
+    .clone()
+    .broadcast_owned_to(broadcast_len)?;
     first_ca.lst_concat(other).map(IntoColumn::into_column)
 }
 
@@ -363,18 +355,6 @@ pub(super) fn sort(s: &Column, options: SortOptions) -> PolarsResult<Column> {
     Ok(s.list()?.lst_sort(options)?.into_column())
 }
 
-pub(super) fn reverse(s: &Column) -> PolarsResult<Column> {
-    Ok(s.list()?.lst_reverse().into_column())
-}
-
-pub(super) fn unique(s: &Column, is_stable: bool) -> PolarsResult<Column> {
-    if is_stable {
-        Ok(s.list()?.lst_unique_stable()?.into_column())
-    } else {
-        Ok(s.list()?.lst_unique()?.into_column())
-    }
-}
-
 #[cfg(feature = "list_sets")]
 pub(super) fn set_operation(
     s: &[Column],
@@ -425,13 +405,15 @@ pub(super) fn to_array(s: &Column, width: usize) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "list_to_struct")]
-pub(super) fn to_struct(s: &Column, names: &Arc<[PlSmallStr]>) -> PolarsResult<Column> {
+pub(super) fn to_struct(s: &Column, fields: &[PlSmallStr]) -> PolarsResult<Column> {
     use polars_ops::prelude::ToStruct;
-
-    let args = polars_ops::prelude::ListToStructArgs::FixedWidth(names.clone());
-    Ok(s.list()?.to_struct(&args)?.into_column())
+    Ok(s.list()?.to_struct(fields)?.into_column())
 }
 
-pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
-    Ok(s.list()?.lst_n_unique()?.into_column())
+#[cfg(feature = "dtype-map")]
+fn to_map(c: &Column) -> PolarsResult<Column> {
+    let DataType::List(entries) = c.dtype() else {
+        polars_bail!(InvalidOperation: "`list.to_map` requires a List dtype, got `{}`", c.dtype())
+    };
+    c.cast(&entries.map_from_named_entries_dtype()?)
 }

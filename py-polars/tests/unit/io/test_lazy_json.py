@@ -132,7 +132,7 @@ def test_predicate_pushdown_ndjson(io_files_path: Path) -> None:
     explain = df.explain()
 
     assert "FILTER" not in explain
-    assert """SELECTION: [(col("calories")) > (80)]""" in explain
+    assert """SELECTION: col("calories") > 80""" in explain
 
     assert_frame_equal(df.collect(optimizations=pl.QueryOptFlags.none()), df.collect())
 
@@ -379,7 +379,7 @@ def test_scan_ndjson_progressive_infer_schema_length(
 
     n_rows = 60_000
     df = (
-        pl.DataFrame()
+        pl.DataFrame(height=n_rows)
         .with_columns(pl.int_range(n_rows).alias("a"))
         .with_columns(pl.col.a.cast(pl.String).alias("b"))
     )

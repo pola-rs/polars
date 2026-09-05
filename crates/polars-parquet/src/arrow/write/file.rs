@@ -2,6 +2,9 @@ use std::io::Write;
 
 use arrow::datatypes::ArrowSchema;
 use polars_error::{PolarsError, PolarsResult};
+use polars_utils::version::{
+    get_polars_lib_build_commit, get_polars_lib_name, get_polars_lib_version,
+};
 
 use super::schema::schema_to_metadata_key;
 use super::{ThriftFileMetadata, WriteOptions, to_parquet_schema};
@@ -31,6 +34,10 @@ impl<W: Write> FileWriter<W> {
     pub fn schema(&self) -> &ArrowSchema {
         &self.schema
     }
+
+    pub fn metadata(&self) -> Option<&ThriftFileMetadata> {
+        self.writer.metadata()
+    }
 }
 
 impl<W: Write> FileWriter<W> {
@@ -43,7 +50,12 @@ impl<W: Write> FileWriter<W> {
         parquet_schema: SchemaDescriptor,
         options: WriteOptions,
     ) -> Self {
-        let created_by = Some("Polars".to_string());
+        let created_by = Some(format!(
+            "{} version {} (build {})",
+            get_polars_lib_name(),
+            get_polars_lib_version(),
+            get_polars_lib_build_commit()
+        ));
 
         Self {
             writer: crate::parquet::write::FileWriter::new(
