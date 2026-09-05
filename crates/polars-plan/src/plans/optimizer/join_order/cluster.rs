@@ -168,19 +168,21 @@ pub(super) fn extract(
     }
     let options = options.clone();
 
-    let mut raw_leaves = Vec::new();
-    let mut raw_keys = Vec::new();
-    let mut raw_residuals = Vec::new();
-    collect(
-        root,
+    let mut collector = Collector {
         ir_arena,
         expr_arena,
-        &options,
-        &Arc::new(Renames::default()),
-        &mut raw_leaves,
-        &mut raw_keys,
-        &mut raw_residuals,
-    );
+        root_options: &options,
+        leaves: Vec::new(),
+        key_pairs: Vec::new(),
+        residuals: Vec::new(),
+    };
+    collector.collect(root, &Arc::new(Renames::default()));
+    let Collector {
+        leaves: raw_leaves,
+        key_pairs: raw_keys,
+        residuals: raw_residuals,
+        ..
+    } = collector;
 
     if raw_leaves.len() < MIN_LEAVES {
         return None;
@@ -364,95 +366,75 @@ fn restore_exprs(
 /// A join configured differently from the root becomes a leaf instead of being folded
 /// in. Rebuilt joins inherit the root's settings, so folding in a join that disagreed
 /// on, say, `nulls_equal` would change its meaning.
-#[recursive]
-fn collect(
-    node: Node,
-    ir_arena: &Arena<IR>,
-    expr_arena: &Arena<AExpr>,
-    root_options: &JoinOptionsIR,
-    renames: &Arc<Renames>,
-    leaves: &mut Vec<RawLeaf>,
-    key_pairs: &mut Vec<RawKey>,
-    residuals: &mut Vec<RawResidual>,
-) {
-    // Column projections commonly sit between joins. They preserve rows, so look past
-    // them for the join underneath; otherwise almost every join is its own cluster.
-    let (peeled, peeled_renames) = peel_projections(node, ir_arena, expr_arena, renames);
+struct Collector<'a> {
+    ir_arena: &'a Arena<IR>,
+    expr_arena: &'a Arena<AExpr>,
+    root_options: &'a JoinOptionsIR,
+    leaves: Vec<RawLeaf>,
+    key_pairs: Vec<RawKey>,
+    residuals: Vec<RawResidual>,
+}
 
-    // A predicate over two of the relations cannot be pushed below their join, so it
-    // sits between the joins. Peel it off and carry it, otherwise the cluster ends
-    // here and everything below is one leaf, keys and all. Each conjunct travels on
-    // its own so it can be re-applied as soon as its own columns are available.
-    if let IR::Filter { input, predicate } = ir_arena.get(peeled) {
-        residuals.extend(
-            MintermIter::new(predicate.node(), expr_arena).map(|node| RawResidual {
-                predicate: ExprIR::from_node(node, expr_arena),
-                renames: peeled_renames.clone(),
-            }),
-        );
-        collect(
-            *input,
-            ir_arena,
-            expr_arena,
-            root_options,
-            &peeled_renames,
-            leaves,
-            key_pairs,
-            residuals,
-        );
-        return;
-    }
+impl Collector<'_> {
+    #[recursive]
+    fn collect(&mut self, node: Node, renames: &Arc<Renames>) {
+        // Column projections commonly sit between joins. They preserve rows, so look
+        // past them for the join underneath; otherwise almost every join is its own
+        // cluster.
+        let (peeled, peeled_renames) =
+            peel_projections(node, self.ir_arena, self.expr_arena, renames);
 
-    match ir_arena.get(peeled) {
-        IR::Join {
-            input_left,
-            input_right,
-            options,
-            ..
-        } if reorderable(options) && same_settings(options, root_options) => {
-            // Each side's leaves land in one contiguous run, which is the range the
-            // keys of that side resolve against.
-            let start = leaves.len();
-            collect(
-                *input_left,
-                ir_arena,
-                expr_arena,
-                root_options,
-                &peeled_renames,
-                leaves,
-                key_pairs,
-                residuals,
-            );
-            let mid = leaves.len();
-            collect(
-                *input_right,
-                ir_arena,
-                expr_arena,
-                root_options,
-                &peeled_renames,
-                leaves,
-                key_pairs,
-                residuals,
-            );
-            let end = leaves.len();
-
-            if let Some(on) = options.options.key_pairs() {
-                key_pairs.extend(on.iter().map(|(left_key, right_key)| RawKey {
-                    left_key: left_key.clone(),
-                    right_key: right_key.clone(),
-                    left_leaves: start..mid,
-                    right_leaves: mid..end,
+        // A predicate over two of the relations cannot be pushed below their join, so
+        // it sits between the joins. Peel it off and carry it, otherwise the cluster
+        // ends here and everything below is one leaf, keys and all. Each conjunct
+        // travels on its own so it can be re-applied as soon as its own columns are
+        // available.
+        if let IR::Filter { input, predicate } = self.ir_arena.get(peeled) {
+            let expr_arena = self.expr_arena;
+            self.residuals.extend(
+                MintermIter::new(predicate.node(), expr_arena).map(|node| RawResidual {
+                    predicate: ExprIR::from_node(node, expr_arena),
                     renames: peeled_renames.clone(),
-                }));
-            }
-        },
-        // Keep the unpeeled node, and with it the renames as they stood above it: a
-        // projection on a leaf still narrows it, and its own renames are already
-        // part of its schema.
-        _ => leaves.push(RawLeaf {
-            node,
-            renames: renames.clone(),
-        }),
+                }),
+            );
+            self.collect(*input, &peeled_renames);
+            return;
+        }
+
+        match self.ir_arena.get(peeled) {
+            IR::Join {
+                input_left,
+                input_right,
+                options,
+                ..
+            } if reorderable(options) && same_settings(options, self.root_options) => {
+                // Each side's leaves land in one contiguous run, which is the range the
+                // keys of that side resolve against.
+                let start = self.leaves.len();
+                self.collect(*input_left, &peeled_renames);
+                let mid = self.leaves.len();
+                self.collect(*input_right, &peeled_renames);
+                let end = self.leaves.len();
+
+                if let Some(on) = options.options.key_pairs() {
+                    self.key_pairs
+                        .extend(on.iter().map(|(left_key, right_key)| RawKey {
+                            left_key: left_key.clone(),
+                            right_key: right_key.clone(),
+                            left_leaves: start..mid,
+                            right_leaves: mid..end,
+                            renames: peeled_renames.clone(),
+                        }));
+                }
+            },
+            // Keep the unpeeled node, and with it the renames as they stood above it: a
+            // projection on a leaf still narrows it, and its own renames are already
+            // part of its schema.
+            _ => self.leaves.push(RawLeaf {
+                node,
+                renames: renames.clone(),
+            }),
+        }
     }
 }
 

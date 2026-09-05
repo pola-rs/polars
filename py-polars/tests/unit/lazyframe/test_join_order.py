@@ -697,20 +697,22 @@ def fanout_frames(
     )
     inv = pl.DataFrame(
         {
-            "i_item": pl.Series(
-                [(i % 100) * spread for i in range(3000)], dtype=dtype
-            ),
+            "i_item": pl.Series([(i % 100) * spread for i in range(3000)], dtype=dtype),
             "i_wh": [i % 30 for i in range(3000)],
         }
     )
-    wh = pl.DataFrame({"w_key": list(range(30)), "w_name": [f"w{i}" for i in range(30)]})
+    wh = pl.DataFrame(
+        {"w_key": list(range(30)), "w_name": [f"w{i}" for i in range(30)]}
+    )
     return write_scans(tmp_path, sales=sales, inv=inv, wh=wh)
 
 
 def fanout_query(frames: dict[str, pl.LazyFrame]) -> pl.LazyFrame:
-    return frames["sales"].join(
-        frames["inv"], left_on="s_item", right_on="i_item", coalesce=False
-    ).join(frames["wh"], left_on="i_wh", right_on="w_key", coalesce=False)
+    return (
+        frames["sales"]
+        .join(frames["inv"], left_on="s_item", right_on="i_item", coalesce=False)
+        .join(frames["wh"], left_on="i_wh", right_on="w_key", coalesce=False)
+    )
 
 
 @pytest.mark.parametrize("dtype", [pl.Int32, pl.Int64, pl.UInt32, pl.UInt64])
