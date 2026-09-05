@@ -10,7 +10,7 @@ use polars_utils::itertools::Itertools;
 
 use crate::chunked_array::ChunkedArray;
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::ops::row_encode::{_get_rows_encoded_arr, _get_rows_encoded_ca};
+use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca;
 use crate::prelude::*;
 use crate::series::Series;
 use crate::utils::Container;
@@ -381,11 +381,6 @@ impl StructChunked {
             }
             ca
         })
-    }
-
-    pub fn get_row_encoded_array(&self, options: SortOptions) -> PolarsResult<BinaryArray<i64>> {
-        let c = self.clone().into_column();
-        _get_rows_encoded_arr(&[c], &[options.descending], &[options.nulls_last], false)
     }
 
     pub fn get_row_encoded(&self, options: SortOptions) -> PolarsResult<BinaryOffsetChunked> {

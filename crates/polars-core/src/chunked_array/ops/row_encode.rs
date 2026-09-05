@@ -259,26 +259,6 @@ pub fn _get_rows_encoded_ca(
     Ok(BinaryOffsetChunked::with_chunk(name, rows_arr))
 }
 
-pub fn _get_rows_encoded_arr(
-    by: &[Column],
-    descending: &[bool],
-    nulls_last: &[bool],
-    broadcast_nulls: bool,
-) -> PolarsResult<BinaryArray<i64>> {
-    let mut rows_arr = _get_rows_encoded(by, descending, nulls_last)?.into_array();
-    if broadcast_nulls {
-        let validities = by
-            .iter()
-            .map(|c| c.as_materialized_series().rechunk_validity())
-            .collect_vec();
-        let combined = combine_validities_and_many(&validities);
-        rows_arr.set_validity(combined.map(PlBitmap::from_bitmap));
-    }
-    // TODO(polars-array): `StructChunked::get_row_encoded_array` still hands an Arrow array to
-    // `polars-core`'s own hashing and to `polars-expr`; the crossing is a buffer handover.
-    Ok(binary_to_arrow_large_binary(&rows_arr))
-}
-
 pub fn _get_rows_encoded_ca_unordered(
     name: PlSmallStr,
     by: &[Column],
