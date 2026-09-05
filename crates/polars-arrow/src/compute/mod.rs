@@ -22,7 +22,4 @@ pub mod bitwise;
 pub mod concatenate;
 #[cfg(feature = "dtype-decimal")]
 pub mod decimal;
-#[cfg(feature = "compute_temporal")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compute_temporal")))]
-pub mod temporal;
 pub mod utils;

@@ -19,6 +19,8 @@ use super::*;
 trait PolarsIso {
     fn week(&self) -> i8;
     fn iso_year(&self) -> i32;
+    /// The day of the week as Monday = 1 through Sunday = 7.
+    fn weekday_number(&self) -> i8;
 }
 
 impl PolarsIso for NaiveDateTime {
@@ -28,6 +30,9 @@ impl PolarsIso for NaiveDateTime {
     fn iso_year(&self) -> i32 {
         self.iso_week().year()
     }
+    fn weekday_number(&self) -> i8 {
+        self.weekday().number_from_monday().try_into().unwrap()
+    }
 }
 
 impl PolarsIso for NaiveDate {
@@ -36,6 +41,9 @@ impl PolarsIso for NaiveDate {
     }
     fn iso_year(&self) -> i32 {
         self.iso_week().year()
+    }
+    fn weekday_number(&self) -> i8 {
+        self.weekday().number_from_monday().try_into().unwrap()
     }
 }
 
@@ -216,5 +224,99 @@ to_calendar_value!(
     days_in_month(dt.year(), dt.month() as u8),
     timestamp_ms_to_datetime_opt,
     i64,
+    i8
+);
+
+/// Defines the same extraction over each of the three timestamp units a datetime column can be in.
+macro_rules! datetime_units {
+    ($ns: ident, $us: ident, $ms: ident, $chrono_method: ident, $primitive_out: ty) => {
+        #[cfg(feature = "dtype-datetime")]
+        to_temporal_unit!(
+            $ns,
+            $chrono_method,
+            timestamp_ns_to_datetime_opt,
+            i64,
+            $primitive_out
+        );
+        #[cfg(feature = "dtype-datetime")]
+        to_temporal_unit!(
+            $us,
+            $chrono_method,
+            timestamp_us_to_datetime_opt,
+            i64,
+            $primitive_out
+        );
+        #[cfg(feature = "dtype-datetime")]
+        to_temporal_unit!(
+            $ms,
+            $chrono_method,
+            timestamp_ms_to_datetime_opt,
+            i64,
+            $primitive_out
+        );
+    };
+}
+
+datetime_units!(
+    datetime_to_year_ns,
+    datetime_to_year_us,
+    datetime_to_year_ms,
+    year,
+    i32
+);
+datetime_units!(
+    datetime_to_month_ns,
+    datetime_to_month_us,
+    datetime_to_month_ms,
+    month,
+    i8
+);
+datetime_units!(
+    datetime_to_day_ns,
+    datetime_to_day_us,
+    datetime_to_day_ms,
+    day,
+    i8
+);
+datetime_units!(
+    datetime_to_hour_ns,
+    datetime_to_hour_us,
+    datetime_to_hour_ms,
+    hour,
+    i8
+);
+datetime_units!(
+    datetime_to_minute_ns,
+    datetime_to_minute_us,
+    datetime_to_minute_ms,
+    minute,
+    i8
+);
+datetime_units!(
+    datetime_to_second_ns,
+    datetime_to_second_us,
+    datetime_to_second_ms,
+    second,
+    i8
+);
+datetime_units!(
+    datetime_to_nanosecond_ns,
+    datetime_to_nanosecond_us,
+    datetime_to_nanosecond_ms,
+    nanosecond,
+    i32
+);
+datetime_units!(
+    datetime_to_weekday_ns,
+    datetime_to_weekday_us,
+    datetime_to_weekday_ms,
+    weekday_number,
+    i8
+);
+datetime_units!(
+    datetime_to_iso_week_ns,
+    datetime_to_iso_week_us,
+    datetime_to_iso_week_ms,
+    week,
     i8
 );
