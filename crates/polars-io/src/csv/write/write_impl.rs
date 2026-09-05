@@ -1,8 +1,7 @@
 mod serializer;
 
-use arrow::array::{Array, NullArray};
 use arrow::legacy::time_zone::Tz;
-use polars_array::arrow::export;
+use polars_array::PlNullArray;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_error::polars_ensure;
@@ -154,13 +153,8 @@ impl CsvSerializer {
         let options = Arc::clone(&self.options);
         let options = options.as_ref();
 
-        // The serializers borrow their Arrow array, so the converted chunks are held here for as
-        // long as the serializers live. Declared before `serializers_vec` so that it outlives it.
-        let arrow_chunks = Self::to_arrow_chunks(df.columns());
-
         let mut serializers_vec = reuse_vec(std::mem::take(&mut self.serializers));
-        let serializers =
-            self.build_serializers(df.columns(), &arrow_chunks, &mut serializers_vec)?;
+        let serializers = self.build_serializers(df.columns(), &mut serializers_vec)?;
 
         for _ in 0..df.height() {
             serializers[0].serialize(buffer, options);
@@ -177,32 +171,20 @@ impl CsvSerializer {
         Ok(())
     }
 
-    /// Hands each column's single chunk to the Arrow array the serializers are written against.
-    ///
     /// # Panics
     /// Panics if a column has >1 chunk.
-    fn to_arrow_chunks(columns: &[Column]) -> Vec<Box<dyn Array>> {
-        columns
-            .iter()
-            .map(|c| {
-                assert_eq!(c.n_chunks(), 1);
-                export::to_arrow(c.as_materialized_series().chunks()[0].as_ref())
-            })
-            .collect()
-    }
-
     fn build_serializers<'a, 'b>(
         &'a mut self,
         columns: &'a [Column],
-        arrow_chunks: &'a [Box<dyn Array>],
         serializers: &'b mut Vec<Box<ColumnSerializer<'a>>>,
     ) -> PolarsResult<&'b mut [Box<ColumnSerializer<'a>>]> {
         serializers.clear();
         serializers.reserve(columns.len());
 
         for (i, c) in columns.iter().enumerate() {
+            assert_eq!(c.n_chunks(), 1);
             serializers.push(serializer_for(
-                arrow_chunks[i].as_ref(),
+                c.as_materialized_series().chunks()[0].as_ref(),
                 Arc::as_ref(&self.options),
                 c.dtype(),
                 self.datetime_formats[i].as_str(),
@@ -277,7 +259,7 @@ pub fn csv_header(names: &[&str], options: &SerializeOptions) -> PolarsResult<Ve
     let mut header = Vec::new();
 
     // A hack, but it works for this case.
-    let fake_arr = NullArray::new(ArrowDataType::Null, 0);
+    let fake_arr = PlNullArray::new(0);
     let mut names_serializer = string_serializer(
         |iter: &mut std::slice::Iter<&str>| iter.next().copied(),
         options,
