@@ -16,7 +16,6 @@ use recursive::recursive;
 use super::{Card, DEFAULT_REL_ERR, ScanColumnStats, ScanColumnStatsMap, leaf_row_count};
 use crate::plans::{
     AExpr, ExprIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR, MintermIter,
-    into_column,
 };
 use crate::prelude::{JoinType, Operator};
 
@@ -394,7 +393,7 @@ fn passed_through_columns(
 ) -> Option<Arc<ScanColumnStatsMap>> {
     let mut kept = ScanColumnStatsMap::default();
     for e in exprs {
-        let source = into_column(e.node(), expr_arena)?;
+        let source = e.as_column(expr_arena)?;
         if let Some(stats) = inner.column(source) {
             kept.insert(e.output_name().clone(), stats.clone());
         }
@@ -411,8 +410,7 @@ fn shadowed_columns(
 ) -> Option<Arc<ScanColumnStatsMap>> {
     let columns = inner.columns.as_ref()?;
     let overwrites = |e: &ExprIR| {
-        into_column(e.node(), expr_arena) != Some(e.output_name())
-            && columns.contains_key(e.output_name())
+        e.as_column(expr_arena) != Some(e.output_name()) && columns.contains_key(e.output_name())
     };
     if !exprs.iter().any(overwrites) {
         return Some(Arc::clone(columns));
@@ -538,7 +536,7 @@ fn conjunct_selectivity(
             let [arg] = input.as_slice() else {
                 return None;
             };
-            (into_column(arg.node(), expr_arena)?, function)
+            (arg.as_column(expr_arena)?, function)
         },
         // Pushing an equi-join key into one of its sides leaves `x == x` behind. That
         // is a null check on the key, not the arbitrary comparison it looks like.
@@ -547,8 +545,8 @@ fn conjunct_selectivity(
             op: Operator::Eq,
             right,
         } => {
-            let name = into_column(*left, expr_arena)?;
-            if name != into_column(*right, expr_arena)? {
+            let name = expr_arena.get(*left).as_column()?;
+            if name != expr_arena.get(*right).as_column()? {
                 return None;
             }
             (name, &IRBooleanFunction::IsNotNull)
