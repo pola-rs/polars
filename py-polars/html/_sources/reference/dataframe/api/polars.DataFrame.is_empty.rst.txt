@@ -1,0 +1,6 @@
+﻿polars.DataFrame.is\_empty
+==========================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.is_empty

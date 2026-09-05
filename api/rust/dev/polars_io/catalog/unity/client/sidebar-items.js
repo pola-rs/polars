@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["CatalogClient","CatalogClientBuilder","ListCatalogs","ListSchemas","ListTables"]};

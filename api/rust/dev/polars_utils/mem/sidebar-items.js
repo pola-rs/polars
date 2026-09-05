@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["prefetch"],"static":["PAGE_SIZE"]};

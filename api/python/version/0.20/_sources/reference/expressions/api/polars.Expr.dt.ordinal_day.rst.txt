@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.ordinal_day
+==========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.ordinal_day

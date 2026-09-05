@@ -1,0 +1,6 @@
+﻿polars.Series.str.extract
+=========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.str.extract

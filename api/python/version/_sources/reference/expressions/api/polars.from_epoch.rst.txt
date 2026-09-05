@@ -1,0 +1,6 @@
+﻿polars.from\_epoch
+==================
+
+.. currentmodule:: polars
+
+.. autofunction:: from_epoch

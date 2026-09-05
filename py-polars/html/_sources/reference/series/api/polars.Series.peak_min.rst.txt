@@ -1,0 +1,6 @@
+﻿polars.Series.peak\_min
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.peak_min

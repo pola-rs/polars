@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["FileProviderReturn","FileProviderType","IcebergPathProviderLayout"],"struct":["FileProviderArgs","HivePathProvider","IcebergPathProvider"],"type":["FileProviderFunction"]};

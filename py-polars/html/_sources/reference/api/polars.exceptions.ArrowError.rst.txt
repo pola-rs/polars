@@ -1,0 +1,6 @@
+﻿polars.exceptions.ArrowError
+============================
+
+.. currentmodule:: polars.exceptions
+
+.. autoexception:: ArrowError

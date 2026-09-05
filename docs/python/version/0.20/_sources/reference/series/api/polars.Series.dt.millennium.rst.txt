@@ -1,0 +1,6 @@
+﻿polars.Series.dt.millennium
+===========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.dt.millennium

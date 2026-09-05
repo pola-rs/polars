@@ -1,0 +1,6 @@
+﻿polars.Expr.map.entries
+=======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.map.entries

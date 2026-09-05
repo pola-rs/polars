@@ -1,0 +1,37 @@
+﻿polars.Binary
+=============
+
+.. currentmodule:: polars
+
+.. autoclass:: Binary
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Binary.__init__
+      ~Binary.base_type
+      ~Binary.is_
+      ~Binary.is_float
+      ~Binary.is_integer
+      ~Binary.is_not
+      ~Binary.is_numeric
+      ~Binary.is_signed_integer
+      ~Binary.is_temporal
+      ~Binary.is_unsigned_integer
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Binary.is_nested
+   
+   

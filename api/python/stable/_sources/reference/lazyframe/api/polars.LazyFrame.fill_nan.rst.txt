@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.fill\_nan
+==========================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.fill_nan

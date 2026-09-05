@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PrefilterMaskSetting"],"fn":["calc_prefilter_cost","canonicalize_parquet_maps","ensure_matching_dtypes_if_found","to_deserializer"]};

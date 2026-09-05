@@ -1,0 +1,6 @@
+﻿polars.Expr.meta.is_scalar
+==========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.meta.is_scalar

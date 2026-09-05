@@ -1,0 +1,6 @@
+﻿polars.Series.map\_elements
+===========================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.map_elements

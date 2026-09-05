@@ -1,0 +1,176 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-io/src/utils/byte_source/dio_align.rs`."><title>dio_align.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="polars_io" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (0dfb098f3 2026-08-31)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js" ><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1><div class="sub-heading">polars_io/utils/byte_source/</div>dio_align.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! O_DIRECT alignment discovery.
+<a href=#2 id=2 data-nosnippet>2</a>//!
+<a href=#3 id=3 data-nosnippet>3</a>//! `O_DIRECT` requires the file offset, the transfer length, and the buffer
+<a href=#4 id=4 data-nosnippet>4</a>//! address to be aligned.
+<a href=#5 id=5 data-nosnippet>5</a>//!
+<a href=#6 id=6 data-nosnippet>6</a>//! Sources, in order of accuracy:
+<a href=#7 id=7 data-nosnippet>7</a>//!  1. `statx(STATX_DIOALIGN)` (Linux 6.1+) - authoritative, per-file, and
+<a href=#8 id=8 data-nosnippet>8</a>//!     distinguishes memory alignment from offset/length alignment. It can
+<a href=#9 id=9 data-nosnippet>9</a>//!     also say *definitively* that a file does not support direct I/O.
+<a href=#10 id=10 data-nosnippet>10</a>//!  2. `/sys/dev/block/&lt;major&gt;:&lt;minor&gt;/queue/logical_block_size` - the device
+<a href=#11 id=11 data-nosnippet>11</a>//!     sector size. Right for most filesystems, but misses cases where the
+<a href=#12 id=12 data-nosnippet>12</a>//!     filesystem imposes something stricter.
+<a href=#13 id=13 data-nosnippet>13</a>//!
+<a href=#14 id=14 data-nosnippet>14</a>//! When neither can answer, the alignment stays unknown and the caller reads
+<a href=#15 id=15 data-nosnippet>15</a>//! through the page cache.
+<a href=#16 id=16 data-nosnippet>16</a>
+<a href=#17 id=17 data-nosnippet>17</a></span><span class="attr">#[cfg(target_os = <span class="string">"linux"</span>)]
+<a href=#18 id=18 data-nosnippet>18</a></span><span class="kw">use </span>std::os::fd::AsRawFd;
+<a href=#19 id=19 data-nosnippet>19</a>
+<a href=#20 id=20 data-nosnippet>20</a><span class="doccomment">/// Substituted for a reported value that cannot be an alignment.
+<a href=#21 id=21 data-nosnippet>21</a></span><span class="attr">#[cfg(target_os = <span class="string">"linux"</span>)]
+<a href=#22 id=22 data-nosnippet>22</a></span><span class="kw">const </span>FALLBACK_ALIGN: usize = <span class="number">4096</span>;
+<a href=#23 id=23 data-nosnippet>23</a>
+<a href=#24 id=24 data-nosnippet>24</a><span class="doccomment">/// Floor for the buffer alignment, applied even when the kernel reports less.
+<a href=#25 id=25 data-nosnippet>25</a>///
+<a href=#26 id=26 data-nosnippet>26</a>/// `statx` can report a memory alignment below the sector size (ext4 reports 4),
+<a href=#27 id=27 data-nosnippet>27</a>/// and the other two probes infer the alignment rather than being told it.
+<a href=#28 id=28 data-nosnippet>28</a></span><span class="attr">#[cfg(target_os = <span class="string">"linux"</span>)]
+<a href=#29 id=29 data-nosnippet>29</a></span><span class="kw">const </span>MIN_MEM_ALIGN: usize = <span class="number">512</span>;
+<a href=#30 id=30 data-nosnippet>30</a>
+<a href=#31 id=31 data-nosnippet>31</a><span class="attr">#[derive(Debug, Clone, Copy)]
+<a href=#32 id=32 data-nosnippet>32</a></span><span class="kw">pub struct </span>DioAlign {
+<a href=#33 id=33 data-nosnippet>33</a>    <span class="doccomment">/// Alignment required for the file offset and the transfer length.
+<a href=#34 id=34 data-nosnippet>34</a>    </span><span class="kw">pub </span>offset: usize,
+<a href=#35 id=35 data-nosnippet>35</a>    <span class="doccomment">/// Alignment required for the buffer address.
+<a href=#36 id=36 data-nosnippet>36</a>    /// Invariant: no less than `MIN_MEM_ALIGN`.
+<a href=#37 id=37 data-nosnippet>37</a>    </span><span class="kw">pub </span>memory: usize,
+<a href=#38 id=38 data-nosnippet>38</a>}
+<a href=#39 id=39 data-nosnippet>39</a>
+<a href=#40 id=40 data-nosnippet>40</a><span class="doccomment">/// What `statx` was able to tell us.
+<a href=#41 id=41 data-nosnippet>41</a></span><span class="attr">#[cfg(target_os = <span class="string">"linux"</span>)]
+<a href=#42 id=42 data-nosnippet>42</a>#[derive(Debug, Clone)]
+<a href=#43 id=43 data-nosnippet>43</a></span><span class="kw">enum </span>StatxAlign {
+<a href=#44 id=44 data-nosnippet>44</a>    <span class="doccomment">/// The kernel reported concrete alignments.
+<a href=#45 id=45 data-nosnippet>45</a>    </span>Known(DioAlign),
+<a href=#46 id=46 data-nosnippet>46</a>    <span class="doccomment">/// The kernel reported zero: this file does not support direct I/O.
+<a href=#47 id=47 data-nosnippet>47</a>    /// Distinct from `Unknown` - here we must not guess.
+<a href=#48 id=48 data-nosnippet>48</a>    </span>Unsupported,
+<a href=#49 id=49 data-nosnippet>49</a>    <span class="doccomment">/// The syscall failed or the mask is unavailable (kernel &lt; 6.1).
+<a href=#50 id=50 data-nosnippet>50</a>    </span>Unknown,
+<a href=#51 id=51 data-nosnippet>51</a>}
+<a href=#52 id=52 data-nosnippet>52</a>
+<a href=#53 id=53 data-nosnippet>53</a><span class="kw">impl </span>DioAlign {
+<a href=#54 id=54 data-nosnippet>54</a>    <span class="doccomment">/// Round `offset` down and `end` up to the offset alignment.
+<a href=#55 id=55 data-nosnippet>55</a>    ///
+<a href=#56 id=56 data-nosnippet>56</a>    /// Returns `(lo, hi, pad)` where `pad` is how far into the aligned span the
+<a href=#57 id=57 data-nosnippet>57</a>    /// caller's data begins. Note `hi` is deliberately *not* clamped to the
+<a href=#58 id=58 data-nosnippet>58</a>    /// file size: the length must stay aligned, so a read at EOF is expected to
+<a href=#59 id=59 data-nosnippet>59</a>    /// come up short and the caller must handle the tail.
+<a href=#60 id=60 data-nosnippet>60</a>    </span><span class="kw">pub fn </span>span(<span class="kw-2">&amp;</span><span class="self">self</span>, offset: u64, len: usize) -&gt; (u64, u64, usize) {
+<a href=#61 id=61 data-nosnippet>61</a>        <span class="macro">debug_assert!</span>(<span class="self">self</span>.offset &gt; <span class="number">0</span>);
+<a href=#62 id=62 data-nosnippet>62</a>
+<a href=#63 id=63 data-nosnippet>63</a>        <span class="kw">let </span>a = <span class="self">self</span>.offset <span class="kw">as </span>u64;
+<a href=#64 id=64 data-nosnippet>64</a>        <span class="kw">let </span>lo = offset &amp; !(a - <span class="number">1</span>);
+<a href=#65 id=65 data-nosnippet>65</a>        <span class="kw">let </span>hi = (offset + len <span class="kw">as </span>u64).next_multiple_of(a);
+<a href=#66 id=66 data-nosnippet>66</a>        (lo, hi, (offset - lo) <span class="kw">as </span>usize)
+<a href=#67 id=67 data-nosnippet>67</a>    }
+<a href=#68 id=68 data-nosnippet>68</a>
+<a href=#69 id=69 data-nosnippet>69</a>    <span class="doccomment">/// Query the alignment `O_DIRECT` requires for this file.
+<a href=#70 id=70 data-nosnippet>70</a>    ///
+<a href=#71 id=71 data-nosnippet>71</a>    /// `None` means direct I/O is not supported here and the caller should use
+<a href=#72 id=72 data-nosnippet>72</a>    /// buffered reads.
+<a href=#73 id=73 data-nosnippet>73</a>    </span><span class="attr">#[cfg(target_os = <span class="string">"linux"</span>)]
+<a href=#74 id=74 data-nosnippet>74</a>    </span><span class="kw">pub fn </span>probe(file: <span class="kw-2">&amp;</span>std::fs::File) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="self">Self</span>&gt; {
+<a href=#75 id=75 data-nosnippet>75</a>        <span class="kw">match </span>statx_dioalign(file) {
+<a href=#76 id=76 data-nosnippet>76</a>            StatxAlign::Unsupported =&gt; <span class="prelude-val">None</span>,
+<a href=#77 id=77 data-nosnippet>77</a>            StatxAlign::Known(a) =&gt; <span class="prelude-val">Some</span>(<span class="self">Self</span>::new(a.offset, a.memory)),
+<a href=#78 id=78 data-nosnippet>78</a>            StatxAlign::Unknown =&gt; {
+<a href=#79 id=79 data-nosnippet>79</a>                sysfs_logical_block_size(file).map(|a| <span class="self">Self</span>::new(a.offset, a.memory))
+<a href=#80 id=80 data-nosnippet>80</a>            },
+<a href=#81 id=81 data-nosnippet>81</a>        }
+<a href=#82 id=82 data-nosnippet>82</a>    }
+<a href=#83 id=83 data-nosnippet>83</a>
+<a href=#84 id=84 data-nosnippet>84</a>    <span class="attr">#[cfg(not(target_os = <span class="string">"linux"</span>))]
+<a href=#85 id=85 data-nosnippet>85</a>    </span><span class="kw">pub fn </span>probe(_file: <span class="kw-2">&amp;</span>std::fs::File) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="self">Self</span>&gt; {
+<a href=#86 id=86 data-nosnippet>86</a>        <span class="prelude-val">None
+<a href=#87 id=87 data-nosnippet>87</a>    </span>}
+<a href=#88 id=88 data-nosnippet>88</a>
+<a href=#89 id=89 data-nosnippet>89</a>    <span class="doccomment">/// Satisfy type invariants.
+<a href=#90 id=90 data-nosnippet>90</a>    </span><span class="attr">#[cfg(target_os = <span class="string">"linux"</span>)]
+<a href=#91 id=91 data-nosnippet>91</a>    </span><span class="kw">fn </span>new(offset: usize, memory: usize) -&gt; <span class="self">Self </span>{
+<a href=#92 id=92 data-nosnippet>92</a>        <span class="self">Self </span>{
+<a href=#93 id=93 data-nosnippet>93</a>            offset: normalize(offset),
+<a href=#94 id=94 data-nosnippet>94</a>            memory: normalize(memory).max(MIN_MEM_ALIGN),
+<a href=#95 id=95 data-nosnippet>95</a>        }
+<a href=#96 id=96 data-nosnippet>96</a>    }
+<a href=#97 id=97 data-nosnippet>97</a>}
+<a href=#98 id=98 data-nosnippet>98</a>
+<a href=#99 id=99 data-nosnippet>99</a><span class="attr">#[cfg(target_os = <span class="string">"linux"</span>)]
+<a href=#100 id=100 data-nosnippet>100</a></span><span class="kw">fn </span>normalize(v: usize) -&gt; usize {
+<a href=#101 id=101 data-nosnippet>101</a>    <span class="kw">if </span>v == <span class="number">0 </span>|| !v.is_power_of_two() {
+<a href=#102 id=102 data-nosnippet>102</a>        FALLBACK_ALIGN
+<a href=#103 id=103 data-nosnippet>103</a>    } <span class="kw">else </span>{
+<a href=#104 id=104 data-nosnippet>104</a>        v
+<a href=#105 id=105 data-nosnippet>105</a>    }
+<a href=#106 id=106 data-nosnippet>106</a>}
+<a href=#107 id=107 data-nosnippet>107</a>
+<a href=#108 id=108 data-nosnippet>108</a><span class="attr">#[cfg(target_os = <span class="string">"linux"</span>)]
+<a href=#109 id=109 data-nosnippet>109</a></span><span class="kw">fn </span>statx_dioalign(file: <span class="kw-2">&amp;</span>std::fs::File) -&gt; StatxAlign {
+<a href=#110 id=110 data-nosnippet>110</a>    <span class="kw">let </span><span class="kw-2">mut </span>stx: libc::statx = <span class="kw">unsafe </span>{ std::mem::zeroed() };
+<a href=#111 id=111 data-nosnippet>111</a>    <span class="kw">let </span>rc = <span class="kw">unsafe </span>{
+<a href=#112 id=112 data-nosnippet>112</a>        libc::statx(
+<a href=#113 id=113 data-nosnippet>113</a>            file.as_raw_fd(),
+<a href=#114 id=114 data-nosnippet>114</a>            <span class="string">c""</span>.as_ptr(),
+<a href=#115 id=115 data-nosnippet>115</a>            libc::AT_EMPTY_PATH,
+<a href=#116 id=116 data-nosnippet>116</a>            libc::STATX_DIOALIGN,
+<a href=#117 id=117 data-nosnippet>117</a>            <span class="kw-2">&amp;mut </span>stx,
+<a href=#118 id=118 data-nosnippet>118</a>        )
+<a href=#119 id=119 data-nosnippet>119</a>    };
+<a href=#120 id=120 data-nosnippet>120</a>    <span class="kw">if </span>rc != <span class="number">0 </span>|| stx.stx_mask &amp; libc::STATX_DIOALIGN == <span class="number">0 </span>{
+<a href=#121 id=121 data-nosnippet>121</a>        <span class="kw">return </span>StatxAlign::Unknown;
+<a href=#122 id=122 data-nosnippet>122</a>    }
+<a href=#123 id=123 data-nosnippet>123</a>
+<a href=#124 id=124 data-nosnippet>124</a>    <span class="kw">let </span>offset = stx.stx_dio_offset_align <span class="kw">as </span>usize;
+<a href=#125 id=125 data-nosnippet>125</a>    <span class="kw">let </span>memory = stx.stx_dio_mem_align <span class="kw">as </span>usize;
+<a href=#126 id=126 data-nosnippet>126</a>
+<a href=#127 id=127 data-nosnippet>127</a>    <span class="kw">if </span>offset == <span class="number">0 </span>|| memory == <span class="number">0 </span>{
+<a href=#128 id=128 data-nosnippet>128</a>        StatxAlign::Unsupported
+<a href=#129 id=129 data-nosnippet>129</a>    } <span class="kw">else </span>{
+<a href=#130 id=130 data-nosnippet>130</a>        StatxAlign::Known(DioAlign { offset, memory })
+<a href=#131 id=131 data-nosnippet>131</a>    }
+<a href=#132 id=132 data-nosnippet>132</a>}
+<a href=#133 id=133 data-nosnippet>133</a>
+<a href=#134 id=134 data-nosnippet>134</a><span class="doccomment">/// `/sys/dev/block/&lt;major&gt;:&lt;minor&gt;/queue/logical_block_size`.
+<a href=#135 id=135 data-nosnippet>135</a>///
+<a href=#136 id=136 data-nosnippet>136</a>/// Keyed by device number, so this needs no device-name lookup. Used when the
+<a href=#137 id=137 data-nosnippet>137</a>/// kernel predates `STATX_DIOALIGN`.
+<a href=#138 id=138 data-nosnippet>138</a></span><span class="attr">#[cfg(target_os = <span class="string">"linux"</span>)]
+<a href=#139 id=139 data-nosnippet>139</a></span><span class="kw">fn </span>sysfs_logical_block_size(file: <span class="kw-2">&amp;</span>std::fs::File) -&gt; <span class="prelude-ty">Option</span>&lt;DioAlign&gt; {
+<a href=#140 id=140 data-nosnippet>140</a>    <span class="kw">use </span>std::os::unix::fs::MetadataExt;
+<a href=#141 id=141 data-nosnippet>141</a>
+<a href=#142 id=142 data-nosnippet>142</a>    <span class="kw">let </span>dev = file.metadata().ok()<span class="question-mark">?</span>.dev();
+<a href=#143 id=143 data-nosnippet>143</a>    <span class="kw">let </span>(major, minor) = (libc::major(dev), libc::minor(dev));
+<a href=#144 id=144 data-nosnippet>144</a>    <span class="kw">let </span>path = <span class="macro">format!</span>(<span class="string">"/sys/dev/block/{major}:{minor}/queue/logical_block_size"</span>);
+<a href=#145 id=145 data-nosnippet>145</a>    <span class="kw">let </span>v: usize = std::fs::read_to_string(path).ok()<span class="question-mark">?</span>.trim().parse().ok()<span class="question-mark">?</span>;
+<a href=#146 id=146 data-nosnippet>146</a>
+<a href=#147 id=147 data-nosnippet>147</a>    <span class="comment">// The device sector size constrains offset and length. Buffer alignment is
+<a href=#148 id=148 data-nosnippet>148</a>    // not reported here, so assume the same per historical behavior.
+<a href=#149 id=149 data-nosnippet>149</a>    </span><span class="prelude-val">Some</span>(DioAlign {
+<a href=#150 id=150 data-nosnippet>150</a>        offset: v,
+<a href=#151 id=151 data-nosnippet>151</a>        memory: v,
+<a href=#152 id=152 data-nosnippet>152</a>    })
+<a href=#153 id=153 data-nosnippet>153</a>}
+<a href=#154 id=154 data-nosnippet>154</a>
+<a href=#155 id=155 data-nosnippet>155</a><span class="attr">#[cfg(test)]
+<a href=#156 id=156 data-nosnippet>156</a></span><span class="kw">mod </span>tests {
+<a href=#157 id=157 data-nosnippet>157</a>    <span class="kw">use super</span>::<span class="kw-2">*</span>;
+<a href=#158 id=158 data-nosnippet>158</a>
+<a href=#159 id=159 data-nosnippet>159</a>    <span class="attr">#[test]
+<a href=#160 id=160 data-nosnippet>160</a>    </span><span class="kw">fn </span>span_invariants() {
+<a href=#161 id=161 data-nosnippet>161</a>        <span class="kw">for </span>align <span class="kw">in </span>[<span class="number">512usize</span>, <span class="number">4096</span>] {
+<a href=#162 id=162 data-nosnippet>162</a>            <span class="kw">let </span>a = DioAlign {
+<a href=#163 id=163 data-nosnippet>163</a>                offset: align,
+<a href=#164 id=164 data-nosnippet>164</a>                memory: align,
+<a href=#165 id=165 data-nosnippet>165</a>            };
+<a href=#166 id=166 data-nosnippet>166</a>            <span class="kw">for </span>(off, len) <span class="kw">in </span>[(<span class="number">206959u64</span>, <span class="number">206955usize</span>), (<span class="number">4095</span>, <span class="number">2</span>), (<span class="number">0</span>, <span class="number">1</span>), (<span class="number">0</span>, align)] {
+<a href=#167 id=167 data-nosnippet>167</a>                <span class="kw">let </span>(lo, hi, pad) = a.span(off, len);
+<a href=#168 id=168 data-nosnippet>168</a>                <span class="macro">assert_eq!</span>(lo <span class="kw">as </span>usize % align, <span class="number">0</span>, <span class="string">"lo unaligned"</span>);
+<a href=#169 id=169 data-nosnippet>169</a>                <span class="macro">assert_eq!</span>((hi - lo) <span class="kw">as </span>usize % align, <span class="number">0</span>, <span class="string">"span unaligned"</span>);
+<a href=#170 id=170 data-nosnippet>170</a>                <span class="macro">assert!</span>(hi &gt;= off + len <span class="kw">as </span>u64, <span class="string">"span does not cover the range"</span>);
+<a href=#171 id=171 data-nosnippet>171</a>                <span class="macro">assert!</span>(pad + len &lt;= (hi - lo) <span class="kw">as </span>usize, <span class="string">"pad + len exceeds span"</span>);
+<a href=#172 id=172 data-nosnippet>172</a>            }
+<a href=#173 id=173 data-nosnippet>173</a>        }
+<a href=#174 id=174 data-nosnippet>174</a>    }
+<a href=#175 id=175 data-nosnippet>175</a>}
+</code></pre></div></section></main></body></html>

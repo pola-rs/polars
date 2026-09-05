@@ -1,0 +1,6 @@
+﻿polars.Expr.is\_not\_null
+=========================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.is_not_null
