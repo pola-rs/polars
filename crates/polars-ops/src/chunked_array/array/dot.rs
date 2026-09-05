@@ -1,8 +1,9 @@
-use arrow::array::PrimitiveArray;
 use arrow::bitmap::BitmapBuilder;
 use arrow::types::NativeType;
 use num_traits::Zero;
 use polars_compute::arithmetic::pl_num::PlNumArithmetic;
+use polars_array::PlPrimitiveArray;
+use polars_array::bitmap::PlBitmap;
 use polars_compute::sum::WrappingAdd;
 use polars_core::prelude::*;
 
@@ -30,6 +31,9 @@ fn dot_primitive<T>(
 where
     T: NativeType + PlNumArithmetic + SumCast,
     T::Sum: WrappingAdd,
+    // Every `SumCast` impl sums into a type that stands for itself; saying so lets the chunk of
+    // sums be read as a `ChunkedArray` of that type.
+    <T::Sum as NumericNative>::PolarsType: PolarsNumericType<Native = T::Sum>,
 {
     let lhs = lhs.rechunk();
     let rhs = rhs.rechunk();
@@ -104,9 +108,19 @@ where
         output.push(value);
     }
 
-    let output =
-        PrimitiveArray::from_data_default(output.into(), output_validity.into_opt_validity());
-    Series::try_from((lhs.name().clone(), vec![Box::new(output) as ArrayRef]))
+    let output = PlPrimitiveArray::from_vec(output).with_validity(
+        output_validity
+            .into_opt_validity()
+            .map(PlBitmap::from_bitmap),
+    );
+    // The sum of a `T` is a `T::Sum`, and that is the type of the chunk just built.
+    Ok(
+        ChunkedArray::<<T::Sum as NumericNative>::PolarsType>::with_chunk(
+            lhs.name().clone(),
+            output,
+        )
+        .into_series(),
+    )
 }
 
 fn array_dot_kernel(dtype: &DataType) -> Option<ArrayDotKernel> {

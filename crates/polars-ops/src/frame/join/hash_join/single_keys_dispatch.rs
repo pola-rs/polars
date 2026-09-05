@@ -1,4 +1,3 @@
-use arrow::array::PrimitiveArray;
 use polars_core::chunked_array::ops::row_encode::{
     encode_rows_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
 };
@@ -361,7 +360,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
         other: &Series,
         validate: JoinValidation,
         nulls_equal: bool,
-    ) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)> {
+    ) -> PolarsResult<(PlPrimitiveArray<IdxSize>, PlPrimitiveArray<IdxSize>)> {
         let s_self = self.as_series();
         let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
         validate.validate_probe(&lhs, &rhs, true, nulls_equal)?;
@@ -652,7 +651,7 @@ fn hash_join_outer<T>(
     other: &ChunkedArray<T>,
     validate: JoinValidation,
     nulls_equal: bool,
-) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)>
+) -> PolarsResult<(PlPrimitiveArray<IdxSize>, PlPrimitiveArray<IdxSize>)>
 where
     T: PolarsNumericType,
     T::Native: TotalHash + TotalEq + ToTotalOrd,
