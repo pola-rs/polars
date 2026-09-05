@@ -47,6 +47,7 @@ pub struct ParquetFileReader {
     config: Arc<ParquetOptions>,
     /// Set by the builder if we have metadata left over from DSL conversion.
     metadata: Option<Arc<FileMetadata>>,
+    file_size: Option<usize>,
     byte_source_builder: DynByteSourceBuilder,
     row_group_prefetch_sync: RowGroupPrefetchSync,
     io_metrics: OptIOMetrics,
@@ -87,6 +88,7 @@ impl FileReader for ParquetFileReader {
         let byte_source_builder = self.byte_source_builder.clone();
         let cloud_options = self.cloud_options.clone();
         let io_metrics = self.io_metrics.clone();
+        let file_size = self.file_size;
 
         let byte_source = ASYNC
             .spawn(async move {
@@ -112,7 +114,12 @@ impl FileReader for ParquetFileReader {
 
                 ASYNC
                     .spawn(async move {
-                        metadata_utils::read_parquet_metadata_bytes(&byte_source, verbose).await
+                        metadata_utils::read_parquet_metadata_bytes(
+                            &byte_source,
+                            file_size,
+                            verbose,
+                        )
+                        .await
                     })
                     .await
                     .unwrap()?

@@ -758,11 +758,12 @@ pub fn lower_ir(
                         // time; it only takes source 0's footer as its
                         // initial hint.
                         metadata_per_source,
-                        bytes_per_source: _,
+                        bytes_per_source,
                     } => Arc::new(
                         crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
                             options: Arc::new(options.clone()),
                             first_metadata: metadata_per_source.first_metadata().cloned(),
+                            bytes_per_source: bytes_per_source.clone(),
                             pipeline_budget: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
                             file_read_context: std::sync::OnceLock::new(),

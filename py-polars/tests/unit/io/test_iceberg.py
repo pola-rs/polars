@@ -3440,7 +3440,6 @@ def test_scan_iceberg_fast_count(tmp_path: Path, reader_override: Any) -> None:
         .item()
         == 3
     )
-
     assert (
         pl.scan_iceberg(
             tbl, reader_override=reader_override, use_metadata_statistics=True
@@ -3530,6 +3529,23 @@ def test_scan_iceberg_fast_count(tmp_path: Path, reader_override: Any) -> None:
         .item()
         == 5
     )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_passes_source_sizes(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+    )
+    expected = pl.DataFrame({"a": [1, 2, 3]})
+    tbl.append(expected.to_arrow())
+
+    scan_data = new_iceberg_scan_resolver(tbl)._to_dataset_scan_impl()
+    assert isinstance(scan_data, _NativeIcebergScanData)
+    assert scan_data.source_sizes == [
+        task.file.file_size_in_bytes for task in tbl.scan().plan_files()
+    ]
+    assert_frame_equal(scan_data.to_lazyframe().collect(), expected)
 
 
 def test_scan_iceberg_idxsize_limit() -> None:

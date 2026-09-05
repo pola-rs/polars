@@ -381,6 +381,7 @@ class IcebergScanResolver:
         }
 
         sources = []
+        source_sizes = []
         missing_field_defaults = IdentityTransformedPartitionValuesBuilder(
             tbl,
             projected_iceberg_schema,
@@ -478,6 +479,7 @@ class IcebergScanResolver:
                 sources.append(
                     _normalize_windows_iceberg_file_uri(file_info.file.file_path)
                 )
+                source_sizes.append(file_info.file.file_size_in_bytes)
 
             if verbose:
                 elapsed = perf_counter() - start_time
@@ -520,6 +522,7 @@ class IcebergScanResolver:
 
             return _NativeIcebergScanData(
                 sources=sources,
+                source_sizes=source_sizes,
                 projected_iceberg_schema=projected_iceberg_schema,
                 column_mapping=column_mapping,
                 default_values=(identity_transformed_values, initial_defaults),
@@ -582,6 +585,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     """Resolved parameters for a native Iceberg scan."""
 
     sources: list[str]
+    source_sizes: list[int]
     projected_iceberg_schema: pyiceberg.schema.Schema
     column_mapping: pa.Schema
     default_values: tuple[dict[int, pl.Series | str], dict[int, pl.Series]]
@@ -603,6 +607,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
 
         return scan_parquet(
             self.sources,
+            glob=False,
             cast_options=ScanCastOptions._default_iceberg(),
             missing_columns="insert",
             extra_columns="ignore",
@@ -615,6 +620,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
             ),
             _table_statistics=self.min_max_statistics,
             _row_count=self.row_count,
+            _source_sizes=self.source_sizes,
         )
 
 

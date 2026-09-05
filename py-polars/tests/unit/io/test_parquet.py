@@ -4513,6 +4513,39 @@ def test_resolve_metadata_sampled_byte_weighted(
     assert lf.collect().height == rows[0] + rows[2]
 
 
+@pytest.mark.write_disk
+def test_parquet_known_source_sizes(tmp_path: Path) -> None:
+    path = tmp_path / "data.parquet"
+    expected = pl.DataFrame({"a": [1, 2, 3]})
+    expected.write_parquet(path)
+
+    assert_frame_equal(
+        pl.scan_parquet(
+            path,
+            schema=expected.schema,
+            glob=False,
+            _source_sizes=[path.stat().st_size],
+        ).collect(),
+        expected,
+    )
+
+    with pytest.raises(pl.exceptions.ComputeError, match="parquet magic bytes"):
+        pl.scan_parquet(
+            path,
+            schema=expected.schema,
+            glob=False,
+            _source_sizes=[8],
+        ).collect()
+
+    with pytest.raises(pl.exceptions.ShapeError, match="number of source sizes"):
+        pl.scan_parquet(
+            path,
+            schema=expected.schema,
+            glob=False,
+            _source_sizes=[],
+        ).collect()
+
+
 def test_parquet_prefilter_fixed_size_binary_27781() -> None:
     val = b"0x004521bdf6bf838e71c0b977678adae368c3ac5d5c665cef09cbd61a9d591d3f"
 

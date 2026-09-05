@@ -53,14 +53,14 @@ pub(super) async fn dsl_to_ir(
 
         let sources_before_expansion = &sources;
 
-        let mut bytes_per_source: Option<Arc<[u64]>> = None;
+        let mut bytes_per_source = unified_scan_args.source_sizes.clone();
         let sources = match &*scan_type {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { .. } => {
                 let (sources, bytes) = sources
                     .expand_paths_with_hive_update(unified_scan_args)
                     .await?;
-                bytes_per_source = bytes;
+                bytes_per_source = bytes.map(Buffer::from_owner).or(bytes_per_source);
                 sources
             },
             #[cfg(feature = "ipc")]
@@ -85,6 +85,16 @@ pub(super) async fn dsl_to_ir(
             FileScanDsl::ExpandedPaths { .. } => sources.expand_paths(unified_scan_args).await?,
             FileScanDsl::Anonymous { .. } => sources.clone(),
         };
+
+        if let Some(sizes) = &bytes_per_source {
+            polars_ensure!(
+                sizes.len() == sources.len(),
+                ShapeMismatch:
+                "number of source sizes ({}) does not match number of scan sources ({})",
+                sizes.len(),
+                sources.len(),
+            );
+        }
 
         // For cloud we must deduplicate files. Serialization/deserialization leads to Arc's losing there
         // sharing.
@@ -1373,7 +1383,7 @@ impl SourcesToFileInfo {
         sources: &ScanSources,
         sources_before_expansion: &ScanSources,
         // Per-source byte sizes from path expansion, aligned with `sources`.
-        bytes_per_source: Option<Arc<[u64]>>,
+        bytes_per_source: Option<Buffer<u64>>,
         unified_scan_args: &mut UnifiedScanArgs,
         #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<
             LazyLock<PyScanResolveThreadPool>,
@@ -1660,7 +1670,7 @@ impl SourcesToFileInfo {
         scan_type: &FileScanDsl,
         sources: &ScanSources,
         sources_before_expansion: &ScanSources,
-        bytes_per_source: Option<Arc<[u64]>>,
+        bytes_per_source: Option<Buffer<u64>>,
         unified_scan_args: &mut UnifiedScanArgs,
         #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<
             LazyLock<PyScanResolveThreadPool>,
