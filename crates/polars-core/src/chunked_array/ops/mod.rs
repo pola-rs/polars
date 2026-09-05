@@ -670,18 +670,6 @@ pub trait ChunkZip<T: PolarsDataType> {
     ) -> PolarsResult<ChunkedArray<T>>;
 }
 
-/// Apply kernels on the arrow array chunks in a ChunkedArray.
-pub trait ChunkApplyKernel<A: Array> {
-    /// Apply kernel and return result as a new ChunkedArray.
-    #[must_use]
-    fn apply_kernel(&self, f: &dyn Fn(&A) -> ArrayRef) -> Self;
-
-    /// Apply a kernel that outputs an array of different type.
-    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&A) -> ArrayRef) -> ChunkedArray<S>
-    where
-        S: PolarsDataType;
-}
-
 #[cfg(feature = "is_first_distinct")]
 /// Mask the first unique values as `true`
 pub trait IsFirstDistinct<T: PolarsDataType> {

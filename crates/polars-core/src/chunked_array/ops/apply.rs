@@ -2,8 +2,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::borrow::Cow;
 
-use polars_array::arrow::bridge::chunk_to_arrow;
-use polars_array::arrow::import;
 use polars_buffer::Buffer;
 
 use crate::chunked_array::arity::{unary_elementwise, unary_elementwise_values};
@@ -435,67 +433,6 @@ impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
     }
 }
 
-impl ChunkApplyKernel<BooleanArray> for BooleanChunked {
-    fn apply_kernel(&self, f: &dyn Fn(&BooleanArray) -> ArrayRef) -> Self {
-        self.apply_kernel_cast(f)
-    }
-
-    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&BooleanArray) -> ArrayRef) -> ChunkedArray<S>
-    where
-        S: PolarsDataType,
-    {
-        let chunks = apply_arrow_kernel(self, f);
-        unsafe { ChunkedArray::<S>::from_chunks(self.name().clone(), chunks) }
-    }
-}
-
-impl<T> ChunkApplyKernel<PrimitiveArray<T::Native>> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    fn apply_kernel(&self, f: &dyn Fn(&PrimitiveArray<T::Native>) -> ArrayRef) -> Self {
-        self.apply_kernel_cast(&f)
-    }
-    fn apply_kernel_cast<S>(
-        &self,
-        f: &dyn Fn(&PrimitiveArray<T::Native>) -> ArrayRef,
-    ) -> ChunkedArray<S>
-    where
-        S: PolarsDataType,
-    {
-        let chunks = apply_arrow_kernel(self, f);
-        unsafe { ChunkedArray::from_chunks(self.name().clone(), chunks) }
-    }
-}
-
-impl ChunkApplyKernel<Utf8ViewArray> for StringChunked {
-    fn apply_kernel(&self, f: &dyn Fn(&Utf8ViewArray) -> ArrayRef) -> Self {
-        self.apply_kernel_cast(&f)
-    }
-
-    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&Utf8ViewArray) -> ArrayRef) -> ChunkedArray<S>
-    where
-        S: PolarsDataType,
-    {
-        let chunks = apply_arrow_kernel(self, f);
-        unsafe { ChunkedArray::from_chunks(self.name().clone(), chunks) }
-    }
-}
-
-impl ChunkApplyKernel<BinaryViewArray> for BinaryChunked {
-    fn apply_kernel(&self, f: &dyn Fn(&BinaryViewArray) -> ArrayRef) -> Self {
-        self.apply_kernel_cast(&f)
-    }
-
-    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&BinaryViewArray) -> ArrayRef) -> ChunkedArray<S>
-    where
-        S: PolarsDataType,
-    {
-        let chunks = apply_arrow_kernel(self, f);
-        unsafe { ChunkedArray::from_chunks(self.name().clone(), chunks) }
-    }
-}
-
 impl<'a> ChunkApply<'a, Series> for ListChunked {
     type FuncRet = Series;
 
@@ -618,18 +555,4 @@ impl StringChunked {
         }
         out
     }
-}
-
-/// Runs an Arrow kernel over every chunk of `ca`, handing the results back as chunks. A chunk in
-/// the [`scalar`](polars_array::broadcast) representation is written out by the crossing.
-fn apply_arrow_kernel<T: PolarsDataType>(
-    ca: &ChunkedArray<T>,
-    f: &dyn Fn(&<T::Array as ToArrow>::Arrow) -> ArrayRef,
-) -> Vec<PlArrayRef>
-where
-    T::Array: ToArrow,
-{
-    ca.downcast_iter()
-        .map(|arr| import::from_arrow(&*f(&chunk_to_arrow(arr))))
-        .collect()
 }

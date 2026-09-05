@@ -2,6 +2,7 @@ use arrow::array::{Array, PrimitiveArray};
 use arrow::compute::temporal;
 use polars_array::arrow::bridge::{chunk_from_arrow, chunk_to_arrow};
 use polars_compute::cast::{CastOptionsImpl, cast};
+use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 #[cfg(feature = "timezones")]
 use polars_ops::chunked_array::datetime::replace_time_zone;
@@ -60,7 +61,7 @@ pub trait DatetimeMethods: AsDatetime {
             .expect("Removing time zone is infallible"),
             _ => ca,
         };
-        ca_local.physical().apply_kernel_cast::<BooleanType>(&f)
+        unary_elementwise(ca_local.physical(), |opt| opt.and_then(f))
     }
 
     fn iso_year(&self) -> Int32Chunked {
@@ -81,7 +82,7 @@ pub trait DatetimeMethods: AsDatetime {
             .expect("Removing time zone is infallible"),
             _ => ca,
         };
-        ca_local.physical().apply_kernel_cast::<Int32Type>(&f)
+        unary_elementwise(ca_local.physical(), |opt| opt.and_then(f))
     }
 
     /// Extract quarter from underlying NaiveDateTime representation.
@@ -119,7 +120,7 @@ pub trait DatetimeMethods: AsDatetime {
             .expect("Removing time zone is infallible"),
             _ => ca,
         };
-        ca_local.physical().apply_kernel_cast::<Int8Type>(&f)
+        unary_elementwise(ca_local.physical(), |opt| opt.and_then(f))
     }
 
     /// Extract ISO weekday from underlying NaiveDateTime representation.
@@ -188,7 +189,7 @@ pub trait DatetimeMethods: AsDatetime {
             .expect("Removing time zone is infallible"),
             _ => ca,
         };
-        ca_local.physical().apply_kernel_cast::<Int16Type>(&f)
+        unary_elementwise(ca_local.physical(), |opt| opt.and_then(f))
     }
 
     fn parse_from_str_slice(

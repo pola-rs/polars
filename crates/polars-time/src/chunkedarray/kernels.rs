@@ -1,6 +1,10 @@
-//! macros that define kernels for extracting
-//! `week`, `weekday`, `year`, `hour` etc. from primitive arrays.
-use arrow::array::{BooleanArray, PrimitiveArray};
+//! macros that define the extraction of `week`, `weekday`, `year`, `hour` etc. from one value.
+//!
+//! Each of these is a function of a single physical value, applied over a column by
+//! [`unary_elementwise`](polars_core::prelude::arity::unary_elementwise). They used to be array
+//! kernels, taking and building an Arrow array of their own; nothing about what they compute
+//! needed the array, and reading one value at a time is what lets the caller decide how the
+//! column is walked.
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time_opt;
 use arrow::temporal_conversions::{
@@ -38,30 +42,17 @@ impl PolarsIso for NaiveDate {
 macro_rules! to_temporal_unit {
     ($name: ident, $chrono_method: ident, $to_datetime_fn: expr,
     $primitive_in: ty,
-    $primitive_out: ty,
-    $dtype_out:expr) => {
-        pub(crate) fn $name(arr: &PrimitiveArray<$primitive_in>) -> ArrayRef {
-            Box::new(PrimitiveArray::<$primitive_out>::from_trusted_len_iter(
-                arr.iter().map(|opt_value| {
-                    opt_value.and_then(|&value| {
-                        $to_datetime_fn(value).map(|dt| dt.$chrono_method() as $primitive_out)
-                    })
-                }),
-            )) as ArrayRef
+    $primitive_out: ty) => {
+        pub(crate) fn $name(value: $primitive_in) -> Option<$primitive_out> {
+            $to_datetime_fn(value).map(|dt| dt.$chrono_method() as $primitive_out)
         }
     };
 }
 
 macro_rules! to_boolean_temporal_unit {
     ($name: ident, $chrono_method: ident, $boolean_method: ident, $to_datetime_fn: expr, $dtype_in: ty) => {
-        pub(crate) fn $name(arr: &PrimitiveArray<$dtype_in>) -> ArrayRef {
-            Box::new(BooleanArray::from_trusted_len_iter(arr.iter().map(
-                |opt_value| {
-                    opt_value.and_then(|&value| {
-                        $to_datetime_fn(value).map(|dt| $boolean_method(dt.$chrono_method()))
-                    })
-                },
-            )))
+        pub(crate) fn $name(value: $dtype_in) -> Option<bool> {
+            $to_datetime_fn(value).map(|dt| $boolean_method(dt.$chrono_method()))
         }
     };
 }
@@ -69,48 +60,20 @@ macro_rules! to_boolean_temporal_unit {
 macro_rules! to_calendar_value {
     ($name: ident, $dt: ident, $expr: expr, $to_datetime_fn: expr,
     $primitive_in: ty,
-    $primitive_out: ty,
-    $dtype_out:expr) => {
-        pub(crate) fn $name(arr: &PrimitiveArray<$primitive_in>) -> ArrayRef {
-            Box::new(PrimitiveArray::<$primitive_out>::from_trusted_len_iter(
-                arr.iter().map(|opt_value| {
-                    opt_value.and_then(|&value| {
-                        $to_datetime_fn(value).map(|$dt| $expr as $primitive_out)
-                    })
-                }),
-            )) as ArrayRef
+    $primitive_out: ty) => {
+        pub(crate) fn $name(value: $primitive_in) -> Option<$primitive_out> {
+            $to_datetime_fn(value).map(|$dt| $expr as $primitive_out)
         }
     };
 }
 
 // Dates
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(
-    date_to_iso_week,
-    week,
-    date32_to_datetime_opt,
-    i32,
-    i8,
-    ArrowDataType::Int8
-);
+to_temporal_unit!(date_to_iso_week, week, date32_to_datetime_opt, i32, i8);
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(
-    date_to_iso_year,
-    iso_year,
-    date32_to_datetime_opt,
-    i32,
-    i32,
-    ArrowDataType::Int32
-);
+to_temporal_unit!(date_to_iso_year, iso_year, date32_to_datetime_opt, i32, i32);
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(
-    date_to_year,
-    year,
-    date32_to_datetime_opt,
-    i32,
-    i32,
-    ArrowDataType::Int32
-);
+to_temporal_unit!(date_to_year, year, date32_to_datetime_opt, i32, i32);
 #[cfg(feature = "dtype-date")]
 to_boolean_temporal_unit!(
     date_to_is_leap_year,
@@ -120,32 +83,11 @@ to_boolean_temporal_unit!(
     i32
 );
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(
-    date_to_month,
-    month,
-    date32_to_datetime_opt,
-    i32,
-    i8,
-    ArrowDataType::Int8
-);
+to_temporal_unit!(date_to_month, month, date32_to_datetime_opt, i32, i8);
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(
-    date_to_day,
-    day,
-    date32_to_datetime_opt,
-    i32,
-    i8,
-    ArrowDataType::Int8
-);
+to_temporal_unit!(date_to_day, day, date32_to_datetime_opt, i32, i8);
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(
-    date_to_ordinal,
-    ordinal,
-    date32_to_datetime_opt,
-    i32,
-    i16,
-    ArrowDataType::Int16
-);
+to_temporal_unit!(date_to_ordinal, ordinal, date32_to_datetime_opt, i32, i16);
 #[cfg(feature = "dtype-date")]
 to_calendar_value!(
     date_to_days_in_month,
@@ -153,46 +95,23 @@ to_calendar_value!(
     days_in_month(dt.year(), dt.month() as u8),
     date32_to_datetime_opt,
     i32,
-    i8,
-    ArrowDataType::Int8
+    i8
 );
 
 // Times
 #[cfg(feature = "dtype-time")]
-to_temporal_unit!(
-    time_to_hour,
-    hour,
-    time64ns_to_time_opt,
-    i64,
-    i8,
-    ArrowDataType::Int8
-);
+to_temporal_unit!(time_to_hour, hour, time64ns_to_time_opt, i64, i8);
 #[cfg(feature = "dtype-time")]
-to_temporal_unit!(
-    time_to_minute,
-    minute,
-    time64ns_to_time_opt,
-    i64,
-    i8,
-    ArrowDataType::Int8
-);
+to_temporal_unit!(time_to_minute, minute, time64ns_to_time_opt, i64, i8);
 #[cfg(feature = "dtype-time")]
-to_temporal_unit!(
-    time_to_second,
-    second,
-    time64ns_to_time_opt,
-    i64,
-    i8,
-    ArrowDataType::Int8
-);
+to_temporal_unit!(time_to_second, second, time64ns_to_time_opt, i64, i8);
 #[cfg(feature = "dtype-time")]
 to_temporal_unit!(
     time_to_nanosecond,
     nanosecond,
     time64ns_to_time_opt,
     i64,
-    i32,
-    ArrowDataType::Int32
+    i32
 );
 
 #[cfg(feature = "dtype-datetime")]
@@ -201,8 +120,7 @@ to_temporal_unit!(
     ordinal,
     timestamp_ns_to_datetime_opt,
     i64,
-    i16,
-    ArrowDataType::Int16
+    i16
 );
 
 #[cfg(feature = "dtype-datetime")]
@@ -211,8 +129,7 @@ to_temporal_unit!(
     ordinal,
     timestamp_ms_to_datetime_opt,
     i64,
-    i16,
-    ArrowDataType::Int16
+    i16
 );
 #[cfg(feature = "dtype-datetime")]
 to_temporal_unit!(
@@ -220,8 +137,7 @@ to_temporal_unit!(
     ordinal,
     timestamp_us_to_datetime_opt,
     i64,
-    i16,
-    ArrowDataType::Int16
+    i16
 );
 
 #[cfg(feature = "dtype-datetime")]
@@ -230,8 +146,7 @@ to_temporal_unit!(
     iso_year,
     timestamp_ns_to_datetime_opt,
     i64,
-    i32,
-    ArrowDataType::Int32
+    i32
 );
 
 #[cfg(feature = "dtype-datetime")]
@@ -240,8 +155,7 @@ to_temporal_unit!(
     iso_year,
     timestamp_us_to_datetime_opt,
     i64,
-    i32,
-    ArrowDataType::Int32
+    i32
 );
 
 #[cfg(feature = "dtype-datetime")]
@@ -250,8 +164,7 @@ to_temporal_unit!(
     iso_year,
     timestamp_ms_to_datetime_opt,
     i64,
-    i32,
-    ArrowDataType::Int32
+    i32
 );
 #[cfg(feature = "dtype-datetime")]
 to_boolean_temporal_unit!(
@@ -285,8 +198,7 @@ to_calendar_value!(
     days_in_month(dt.year(), dt.month() as u8),
     timestamp_ns_to_datetime_opt,
     i64,
-    i8,
-    ArrowDataType::Int8
+    i8
 );
 #[cfg(feature = "dtype-datetime")]
 to_calendar_value!(
@@ -295,8 +207,7 @@ to_calendar_value!(
     days_in_month(dt.year(), dt.month() as u8),
     timestamp_us_to_datetime_opt,
     i64,
-    i8,
-    ArrowDataType::Int8
+    i8
 );
 #[cfg(feature = "dtype-datetime")]
 to_calendar_value!(
@@ -305,6 +216,5 @@ to_calendar_value!(
     days_in_month(dt.year(), dt.month() as u8),
     timestamp_ms_to_datetime_opt,
     i64,
-    i8,
-    ArrowDataType::Int8
+    i8
 );

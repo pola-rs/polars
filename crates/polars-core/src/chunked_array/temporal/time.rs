@@ -2,6 +2,8 @@ use std::fmt::Write;
 
 use arrow::temporal_conversions::{NANOSECONDS, time64ns_to_time};
 use chrono::Timelike;
+use polars_array::PlUtf8ViewArrayBuilder;
+use polars_array::builder::StaticArrayBuilder;
 
 use super::*;
 use crate::prelude::*;
@@ -21,29 +23,31 @@ impl TimeChunked {
     /// Convert from Time into String with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn to_string(&self, format: &str) -> StringChunked {
-        let mut ca: StringChunked = self.physical().apply_kernel_cast(&|arr| {
-            let mut buf = String::new();
-            let format = if format == "iso" || format == "iso:strict" {
-                "%T%.9f"
-            } else {
-                format
-            };
-            let mut mutarr = MutablePlString::with_capacity(arr.len());
+        let format = if format == "iso" || format == "iso:strict" {
+            "%T%.9f"
+        } else {
+            format
+        };
 
-            for opt in arr.into_iter() {
+        // One buffer is formatted into and appended per element, rather than one `String` being
+        // allocated per element and thrown away.
+        let mut buf = String::new();
+        let chunks = self.physical().downcast_iter().map(|arr| {
+            let mut builder = PlUtf8ViewArrayBuilder::with_capacity(arr.len());
+            for opt in arr.iter() {
                 match opt {
-                    None => mutarr.push_null(),
+                    None => builder.push_null(),
                     Some(v) => {
                         buf.clear();
-                        let timefmt = time64ns_to_time(*v).format(format);
+                        let timefmt = time64ns_to_time(v).format(format);
                         write!(buf, "{timefmt}").unwrap();
-                        mutarr.push_value(&buf)
+                        builder.push_value(&buf)
                     },
                 }
             }
-
-            mutarr.freeze().boxed()
+            builder.freeze()
         });
+        let mut ca = StringChunked::from_chunk_iter(PlSmallStr::EMPTY, chunks);
 
         ca.rename(self.name().clone());
         ca
