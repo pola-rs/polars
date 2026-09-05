@@ -45,6 +45,16 @@ impl Series {
             );
         }
 
+        // Map invariants are not captured by the physical dtype.
+        #[cfg(feature = "dtype-map")]
+        if let DataType::Map(_, _) = dtype {
+            let storage_dtype = dtype.map_storage_dtype().unwrap();
+            // SAFETY: the physical types match, checked above.
+            let storage =
+                unsafe { Self::from_chunks_and_dtype_unchecked(name, vec![chunk], &storage_dtype) };
+            return Ok(MapChunked::try_from_storage(dtype.clone(), storage)?.into_series());
+        }
+
         // SAFETY: We check that the datatype matches.
         let series = unsafe { Self::from_chunks_and_dtype_unchecked(name, vec![chunk], dtype) };
         Ok(series)
@@ -57,6 +67,9 @@ impl Series {
     /// # Safety
     ///
     /// The caller must ensure that the given `dtype`'s physical type matches all the `ArrayRef` dtypes.
+    ///
+    /// Value-level invariants must also hold. In particular, `DataType::Map` requires
+    /// a valid Map dtype and non-null entries with unique, non-null keys.
     pub unsafe fn from_chunks_and_dtype_unchecked(
         name: PlSmallStr,
         chunks: Vec<ArrayRef>,

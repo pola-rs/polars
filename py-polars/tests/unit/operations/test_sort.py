@@ -1420,3 +1420,27 @@ def test_sort_scalar_broadcast_in_memory_28387() -> None:
 def test_sort_maintain_order_nested_keys_28586(key: pl.Series) -> None:
     df = pl.DataFrame({"k": key, "r": range(key.len())})
     assert_frame_equal(df.sort("k", maintain_order=True), df.sort(["k", "r"]))
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        pl.Series("k", [[2], [1], [1]], dtype=pl.List(pl.Int64)),
+        pl.Series("k", [[2, 0], [1, 0], [1, 0]], dtype=pl.Array(pl.Int64, 2)),
+        pl.Series("k", [{"a": 2}, {"a": 1}, {"a": 1}]),
+    ],
+)
+def test_sort_by_multiple_nested_keys(key: pl.Series) -> None:
+    # Nested keys have no row-by-row ordering, so `sort_by` has to take the row-encoded
+    # path that `DataFrame.sort` takes, rather than erroring or panicking.
+    df = pl.DataFrame({"k": key, "x": [1, 2, 3], "y": [3, 4, 2]})
+
+    assert df.sort("k", "y")["x"].to_list() == [3, 2, 1]
+    assert df.select(pl.col("x").sort_by("k", "y"))["x"].to_list() == [3, 2, 1]
+    assert df.select(pl.col("x").sort_by("y", "k"))["x"].to_list() == [3, 1, 2]
+    assert df.select(pl.col("x").sort_by("k", "y", descending=[True, False]))[
+        "x"
+    ].to_list() == [1, 3, 2]
+
+    grouped = df.with_columns(g=1).group_by("g").agg(pl.col("x").sort_by("k", "y"))
+    assert grouped["x"].to_list() == [[3, 2, 1]]

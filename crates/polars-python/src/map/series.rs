@@ -3,6 +3,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyNone, PyTuple};
 
 use super::*;
+use crate::conversion::any_value::py_object_to_any_value;
 use crate::error::PyPolarsErr;
 use crate::prelude::ObjectValue;
 use crate::{PySeries, Wrap};
@@ -24,12 +25,16 @@ pub trait ApplyLambdaGeneric<'py> {
     ) -> PyResult<Series>;
 }
 
+/// Call `lambda` on every row and convert its return values to [`AnyValue`]s.
+///
+/// `dtype` is the requested output dtype, used e.g. to disambiguate between `Struct` and `Map`.
 fn call_and_collect_anyvalues<'py, T, I>(
     py: Python<'py>,
     lambda: &Bound<'py, PyAny>,
     len: usize,
     iter: I,
     skip_nulls: bool,
+    dtype: Option<&DataType>,
 ) -> PyResult<Vec<AnyValue<'static>>>
 where
     T: IntoPyObject<'py>,
@@ -46,12 +51,7 @@ where
             Some(val) => PyTuple::new(py, [val])?,
         };
         let out = lambda.call1(arg)?;
-        let av: Option<Wrap<AnyValue>> = if out.is_none() {
-            Ok(None)
-        } else {
-            out.extract().map(Some)
-        }?;
-        avs.push(av.map(|w| w.0).unwrap_or(AnyValue::Null));
+        avs.push(py_object_to_any_value(&out, true, true, dtype)?);
     }
     Ok(avs)
 }
@@ -68,7 +68,8 @@ macro_rules! impl_apply_lambda_generic {
                 skip_nulls: bool,
             ) -> PyResult<Series> {
                 let $ca = self;
-                let avs = call_and_collect_anyvalues(py, lambda, self.len(), $rows, skip_nulls)?;
+                let avs =
+                    call_and_collect_anyvalues(py, lambda, self.len(), $rows, skip_nulls, None)?;
                 Ok(Series::from_any_values(self.name().clone(), &avs, true)
                     .map_err(PyPolarsErr::from)?)
             }
@@ -81,7 +82,14 @@ macro_rules! impl_apply_lambda_generic {
                 skip_nulls: bool,
             ) -> PyResult<Series> {
                 let $ca = self;
-                let avs = call_and_collect_anyvalues(py, lambda, self.len(), $rows, skip_nulls)?;
+                let avs = call_and_collect_anyvalues(
+                    py,
+                    lambda,
+                    self.len(),
+                    $rows,
+                    skip_nulls,
+                    Some(datatype),
+                )?;
                 Ok(
                     Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true)
                         .map_err(PyPolarsErr::from)?,
