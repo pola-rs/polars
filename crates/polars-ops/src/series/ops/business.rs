@@ -1,8 +1,9 @@
-use arrow::array::{PrimitiveArray, StaticArray as _};
+use std::borrow::Cow;
+
 use arrow::bitmap::Bitmap;
 #[cfg(feature = "dtype-date")]
 use chrono::DateTime;
-use polars_array::arrow::bridge::chunk_to_arrow;
+use polars_array::{Flat, PlBitmapRef, PlListArray, PlPrimitiveArray};
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-date")]
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
@@ -71,12 +72,12 @@ pub fn business_day_count(
     let start_dates = start_dates.physical().rechunk();
     let end_dates = end_dates.physical().rechunk();
 
-    // TODO(polars-array-scalar): the dates and the holidays are read through Arrow arrays, so a
-    // scalar chunk is written out here rather than the one date it stands for being counted once.
-    let start_dates: PrimitiveArray<i32> = chunk_to_arrow(start_dates.downcast_as_array());
-    let end_dates: PrimitiveArray<i32> = chunk_to_arrow(end_dates.downcast_as_array());
+    let start_dates = start_dates.downcast_as_array();
+    let end_dates = end_dates.downcast_as_array();
     let holidays = holidays.rechunk();
-    let holidays_list: LargeListArray = chunk_to_arrow(holidays.list()?.downcast_as_array());
+    // The holidays of one row are read as a slice, so the offsets and the values behind them are
+    // written out where they do not already hold one slot per element.
+    let holidays_list = holidays.list()?.downcast_as_array().to_flat();
     let mut holidays_getter = HolidayListsGetter::new(&holidays_list, week_mask);
 
     let n_business_days_in_week_mask = week_mask.iter().filter(|&x| *x).count() as i32;
@@ -240,12 +241,12 @@ pub fn add_business_days(
     }
 
     let holidays = holidays.rechunk();
-    // TODO(polars-array-scalar): as above, scalar chunks are written out here.
-    let holidays_list: LargeListArray = chunk_to_arrow(holidays.list()?.downcast_as_array());
+    // As above: the holidays of one row are read as a slice.
+    let holidays_list = holidays.list()?.downcast_as_array().to_flat();
     let mut holidays_getter = HolidayListsGetter::new(&holidays_list, week_mask);
 
     let start_dates = start_dates.physical().rechunk();
-    let start_dates: PrimitiveArray<i32> = chunk_to_arrow(start_dates.downcast_as_array());
+    let start_dates = start_dates.downcast_as_array();
 
     let n_business_days_in_week_mask = week_mask.iter().filter(|&x| *x).count() as i32;
 
@@ -270,7 +271,7 @@ pub fn add_business_days(
         })
     } else {
         let n = n.rechunk();
-        let n: PrimitiveArray<i32> = chunk_to_arrow(n.downcast_as_array());
+        let n = n.downcast_as_array();
 
         assert!(start_dates.len() >= 1 && n.len() >= 1 && holidays_list.len() >= 1);
 
@@ -407,14 +408,13 @@ pub fn is_business_day(
     }
 
     let holidays = holidays.rechunk();
-    // TODO(polars-array-scalar): as above, a scalar chunk is written out here.
-    let holidays_list: LargeListArray = chunk_to_arrow(holidays.list()?.downcast_as_array());
+    // As above: the holidays of one row are read as a slice.
+    let holidays_list = holidays.list()?.downcast_as_array().to_flat();
     let mut holidays_getter = HolidayListsGetter::new(&holidays_list, week_mask);
 
     let dates = dates.date()?;
     let dates = dates.physical().rechunk();
-    // TODO(polars-array-scalar): as above, a scalar chunk is written out here.
-    let dates: PrimitiveArray<i32> = chunk_to_arrow(dates.downcast_as_array());
+    let dates = dates.downcast_as_array();
 
     assert!(dates.len() >= 1 && !holidays.is_empty());
 
@@ -528,25 +528,33 @@ fn ensure_holidays_dtype(holidays_dtype: &DataType) -> PolarsResult<()> {
 }
 
 struct HolidayListsGetter<'a> {
-    holidays_list: &'a LargeListArray,
-    holidays_list_values: &'a [i32],
-    holidays_list_values_validity: Option<&'a Bitmap>,
+    /// The start of every row plus the end of the last, one slot per row.
+    offsets: &'a [u64],
+    length: usize,
+    validity: Option<PlBitmapRef<'a>>,
+    /// The holidays of every row laid end to end, which the offsets cut into rows.
+    values: Cow<'a, Flat<PlPrimitiveArray<i32>>>,
     week_mask: [bool; 7],
     current_row_values: Vec<i32>,
     null_seen_in_values: bool,
 }
 
 impl<'a> HolidayListsGetter<'a> {
-    fn new(holidays_list: &'a LargeListArray, week_mask: [bool; 7]) -> Self {
-        let holidays_list_values: &PrimitiveArray<i32> =
-            holidays_list.values().as_any().downcast_ref().unwrap();
-        let holidays_list_values_validity = holidays_list_values.validity();
-        let holidays_list_values: &[i32] = holidays_list_values.values().as_slice();
+    fn new(holidays_list: &'a Flat<PlListArray>, week_mask: [bool; 7]) -> Self {
+        let values = holidays_list
+            .values()
+            .as_any()
+            .downcast_ref::<PlPrimitiveArray<i32>>()
+            .unwrap()
+            // A row is read as a slice, so values that repeat one date are written out. The rows
+            // themselves need no writing out: `Flat` is what says the offsets hold one per row.
+            .to_flat();
 
         Self {
-            holidays_list,
-            holidays_list_values,
-            holidays_list_values_validity,
+            offsets: holidays_list.offsets().as_slice(),
+            length: holidays_list.len(),
+            validity: holidays_list.as_array().validity(),
+            values,
             week_mask,
             current_row_values: vec![],
             null_seen_in_values: false,
@@ -557,27 +565,27 @@ impl<'a> HolidayListsGetter<'a> {
     ///
     /// Note, the `Option` of the return represents validity, not iterator exhaustion.
     fn holidays_at_idx_last_ret_on_oob(&mut self, idx: usize) -> Option<&[i32]> {
-        if idx >= self.holidays_list.len() {
+        if idx >= self.length {
             return Some(&self.current_row_values);
         }
 
         if self
-            .holidays_list
-            .validity()
-            .is_some_and(|m| unsafe { !m.get_bit_unchecked(idx) })
+            .validity
+            .is_some_and(|m| unsafe { !m.get_unchecked(idx) })
         {
             return None;
         }
 
-        let (start, end) = self.holidays_list.offsets().start_end(idx);
+        let (start, end) = (self.offsets[idx] as usize, self.offsets[idx + 1] as usize);
 
         self.current_row_values.clear();
         self.current_row_values
-            .extend_from_slice(&self.holidays_list_values[start..end]);
+            .extend_from_slice(&self.values.as_slice()[start..end]);
         normalize_holidays(&mut self.current_row_values, &self.week_mask);
 
         let null_in_values = self
-            .holidays_list_values_validity
+            .values
+            .validity()
             .is_some_and(|m| m.null_count_range(start, end - start) > 0);
 
         self.null_seen_in_values |= null_in_values;
