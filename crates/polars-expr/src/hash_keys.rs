@@ -1,11 +1,12 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::hash::BuildHasher;
 
-use arrow::array::{Array, BinaryArray, BinaryViewArray, PrimitiveArray, UInt64Array};
+use arrow::array::{Array, BinaryViewArray, PrimitiveArray, UInt64Array};
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and_many;
 use polars_array::arrow::bridge::chunk_to_arrow;
-use polars_array::arrow::export::binary_to_arrow_large_binary;
+use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
+use polars_array::{PlBinaryArray, PlBinaryArrayBuilder, PlPrimitiveArray, PlPrimitiveArrayBuilder};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType, *};
@@ -137,12 +138,9 @@ impl HashKeys {
                 .values_iter()
                 .map(|k| random_state.hash_one(k))
                 .collect();
-            // TODO(polars-array): `RowEncodedKeys` is read as an Arrow array throughout this crate
-            // and `polars-stream`; the crossing hands the buffers over as they are.
-            let keys = binary_to_arrow_large_binary(&keys_encoded);
             Self::RowEncoded(RowEncodedKeys {
-                hashes: PrimitiveArray::from_vec(hashes),
-                keys,
+                hashes: PlPrimitiveArray::from_vec(hashes),
+                keys: keys_encoded,
             })
         } else if first_col_variant == HashKeysVariant::Binview {
             let keys = if let Ok(ca_str) = df[0].str() {
@@ -192,7 +190,7 @@ impl HashKeys {
 
     pub fn validity(&self) -> Option<Bitmap> {
         match self {
-            HashKeys::RowEncoded(s) => s.keys.validity().cloned(),
+            HashKeys::RowEncoded(s) => s.keys.validity().map(|v| v.to_flat().into_owned()),
             HashKeys::Single(s) => s.keys.chunks()[0]
                 .validity()
                 .map(|v| v.to_flat().into_owned()),
@@ -341,13 +339,15 @@ impl HashKeys {
 
 #[derive(Clone, Debug)]
 pub struct RowEncodedKeys {
-    pub hashes: UInt64Array, // Always non-null, we use the validity of keys.
-    pub keys: BinaryArray<i64>,
+    pub hashes: PlPrimitiveArray<u64>, // Always non-null, we use the validity of keys.
+    pub keys: PlBinaryArray,
 }
 
 impl RowEncodedKeys {
     pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
-        for_each_hash_prehashed(self.hashes.values().as_slice(), self.keys.validity(), f);
+        let hashes = self.hashes.to_flat();
+        let validity = self.keys.validity().map(|v| v.to_flat().into_owned());
+        for_each_hash_prehashed(hashes.as_slice(), validity.as_ref(), f);
     }
 
     /// # Safety
@@ -357,24 +357,24 @@ impl RowEncodedKeys {
         subset: &[IdxSize],
         f: F,
     ) {
-        for_each_hash_subset_prehashed(
-            self.hashes.values().as_slice(),
-            self.keys.validity(),
-            subset,
-            f,
-        );
+        let hashes = self.hashes.to_flat();
+        let validity = self.keys.validity().map(|v| v.to_flat().into_owned());
+        for_each_hash_subset_prehashed(hashes.as_slice(), validity.as_ref(), subset, f);
     }
 
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
-        let idx_arr = arrow::ffi::mmap::slice(idxs);
+        // A gather picks the elements out again, so the values are compacted rather than shared.
+        let mut hashes = PlPrimitiveArrayBuilder::<u64>::with_capacity(idxs.len());
+        let mut keys = PlBinaryArrayBuilder::with_capacity(idxs.len());
+        unsafe {
+            hashes.gather_extend(&self.hashes, idxs, ShareStrategy::Never);
+            keys.gather_extend(&self.keys, idxs, ShareStrategy::Never);
+        }
         Self {
-            hashes: polars_compute::gather::primitive::take_primitive_unchecked(
-                &self.hashes,
-                &idx_arr,
-            ),
-            keys: polars_compute::gather::binary::take_unchecked(&self.keys, &idx_arr),
+            hashes: hashes.freeze(),
+            keys: keys.freeze(),
         }
     }
 }
