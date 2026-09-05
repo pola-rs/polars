@@ -813,9 +813,7 @@ impl ArrayFromIterDtype<Box<dyn Array>> for FixedSizeListArray {
             let inner = dtype
                 .inner_dtype()
                 .expect("expected nested type in ListArray collect");
-            builder
-                .finish(Some(&inner.underlying_physical_type()))
-                .unwrap()
+            builder.finish(&inner.underlying_physical_type()).unwrap()
         }
         #[cfg(not(feature = "dtype-array"))]
         panic!("activate 'dtype-array'")
@@ -852,9 +850,7 @@ impl ArrayFromIterDtype<Option<Box<dyn Array>>> for FixedSizeListArray {
             let inner = dtype
                 .inner_dtype()
                 .expect("expected nested type in ListArray collect");
-            builder
-                .finish(Some(&inner.underlying_physical_type()))
-                .unwrap()
+            builder.finish(&inner.underlying_physical_type()).unwrap()
         }
         #[cfg(not(feature = "dtype-array"))]
         panic!("activate 'dtype-array'")
