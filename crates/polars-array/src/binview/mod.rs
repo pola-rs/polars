@@ -288,6 +288,23 @@ impl PlBinaryViewArray {
         self.views_repr().flat()
     }
 
+    /// The backing views buffer, if it holds one slot per element.
+    ///
+    /// # Safety
+    /// Every view left in the buffer must still read bytes that [`data_buffers`](Self::data_buffers)
+    /// holds, and the buffer must be left as long as it was found: a view is an index into the
+    /// buffers, so nothing else checks it again once the array is built.
+    #[inline]
+    pub unsafe fn flat_views_mut(&mut self) -> Option<&mut Buffer<View>> {
+        if self.views_are_scalar() {
+            // A single view stands for every element; there is nothing laid out per element to
+            // write into.
+            None
+        } else {
+            Some(&mut self.views)
+        }
+    }
+
     /// The view every element of this array reads, if the views buffer holds a single slot.
     #[inline]
     pub fn scalar_views(&self) -> Option<View> {
@@ -298,6 +315,17 @@ impl PlBinaryViewArray {
     #[inline(always)]
     pub const fn data_buffers(&self) -> &Buffer<Buffer<u8>> {
         &self.buffers
+    }
+
+    /// The buffers the views that do not inline their bytes point into.
+    ///
+    /// # Safety
+    /// Every view of this array must still read bytes the buffers hold once they are written. A
+    /// buffer may be appended without reading the views, since that leaves every existing index
+    /// pointing where it did; removing or reordering one does not.
+    #[inline]
+    pub unsafe fn data_buffers_mut(&mut self) -> &mut Buffer<Buffer<u8>> {
+        &mut self.buffers
     }
 
     /// The validity mask, if any element may be null.

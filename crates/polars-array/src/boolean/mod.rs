@@ -245,6 +245,24 @@ impl PlBooleanArray {
         self.values_repr().flat()
     }
 
+    /// The backing values bitmap, if it holds one bit per element.
+    ///
+    /// A [`Bitmap`] is shared rather than written into, so writing over the bits means taking the
+    /// one here out, [`make_mut`](Bitmap::make_mut)ing it and putting the result back — which is
+    /// what makes this the values half of the array's copy-on-write, and why it hands back the
+    /// slot rather than the bits. Whatever is put back has to hold as many bits as it took out,
+    /// or the array stops covering its own length.
+    #[inline]
+    pub fn flat_values_mut(&mut self) -> Option<&mut Bitmap> {
+        if self.values_are_scalar() {
+            // A single bit stands for every element; there is nothing laid out per element to
+            // write into.
+            None
+        } else {
+            Some(&mut self.values)
+        }
+    }
+
     /// The value every element of this array reads, if the values bitmap holds a single bit.
     #[inline]
     pub fn scalar_values(&self) -> Option<bool> {
