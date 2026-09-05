@@ -318,12 +318,10 @@ impl TryFrom<SerializableScalar> for Scalar {
                 physical,
             } => Self::new_categorical(value.as_str(), name, namespace, physical)?,
             #[cfg(feature = "dtype-categorical")]
-            S::Enum { value, categories } => Self::new_enum(
-                value,
-                &polars_array::arrow::bridge::chunk_to_arrow(
-                    categories.str()?.rechunk().downcast_as_array(),
-                ),
-            )?,
+            S::Enum { value, categories } => {
+                let categories = categories.str()?.rechunk();
+                Self::new_enum(value, categories.downcast_as_array())?
+            },
             #[cfg(feature = "dtype-struct")]
             S::Struct(scs) => {
                 let (avs, fields) = scs
