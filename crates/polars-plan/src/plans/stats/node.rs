@@ -904,6 +904,34 @@ mod tests {
         );
     }
 
+    /// A value range narrower than a known distinct count must not shrink the
+    /// domain below it.
+    #[test]
+    fn a_one_sided_distinct_count_survives_the_range_fallback() {
+        // 100 values wide, but nothing says how many of them the fact table holds.
+        let fact = leaf(1_000_000.0, 1_000_000.0).with_column(
+            "k",
+            ScanColumnStats {
+                int_range: Some((0, 99)),
+                ..Default::default()
+            },
+        );
+        let dim = leaf_with_ndv(800.0, 800.0, "k", 500);
+
+        // The dimension holds 500 distinct keys, so the domain is at least that,
+        // however narrow the range on the other side is.
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &dim, Some(&key("k"))),
+            500.0
+        );
+        // Without a distinct count anywhere, the range is all there is to go on.
+        let opaque = leaf(800.0, 800.0);
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &opaque, Some(&key("k"))),
+            100.0
+        );
+    }
+
     /// A known distinct count replaces the interpolation between one group and one
     /// group per row.
     #[test]
