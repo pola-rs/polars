@@ -497,10 +497,10 @@ pub fn drop_nulls<'a>(
     let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
     ac.groups();
     let predicate = ac.flat_naive().as_ref().clone();
-    let predicate = predicate.rechunk_to_arrow(CompatLevel::newest());
+    // Only the mask is wanted, which the series answers without its values being rechunked into
+    // an Arrow array to read it off.
     let predicate = predicate
-        .validity()
-        .cloned()
+        .rechunk_validity()
         .unwrap_or(Bitmap::new_with_value(true, 1));
     drop_items(ac, &predicate)
 }
