@@ -127,8 +127,15 @@ pub(super) fn node_stats_with_cache(
                 return None;
             }
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
+            // A computed key holds neither the values nor the distinct count of the
+            // column it is named after, so only a key reading one column contributes.
+            let sources: Option<Vec<&PlSmallStr>> = keys
+                .iter()
+                .map(|k| into_column(k.node(), expr_arena))
+                .collect();
+            let ndv = sources.and_then(|sources| inner.key_distinct_count_product(&sources));
             let names: Vec<&PlSmallStr> = keys.iter().map(|k| k.output_name()).collect();
-            Some(one_row_per_group(inner, &names, options.slice))
+            Some(one_row_per_group(inner, &names, ndv, options.slice))
         },
         IR::Distinct { input, options } => {
             let input_schema;
@@ -140,7 +147,8 @@ pub(super) fn node_stats_with_cache(
                 },
             };
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
-            Some(one_row_per_group(inner, &names, options.slice))
+            let ndv = inner.key_distinct_count_product(&names);
+            Some(one_row_per_group(inner, &names, ndv, options.slice))
         },
         IR::Filter { input, predicate } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
@@ -449,14 +457,17 @@ fn keeps_height(expr: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
 /// Estimates for a node emitting one row per distinct combination of `keys`,
 /// optionally sliced.
 ///
+/// `keys` names the output columns, and `ndv` is the distinct combinations they hold
+/// if that is known.
+///
 /// The output columns are the keys, each holding as many distinct values as the
 /// node has rows.
 fn one_row_per_group(
     inner: NodeStats,
     keys: &[&PlSmallStr],
+    ndv: Option<f64>,
     slice: Option<(i64, usize)>,
 ) -> NodeStats {
-    let ndv = inner.key_distinct_count_product(keys);
     let mut groups = NodeStats {
         filtered: n_groups(inner.filtered, keys.len(), ndv),
         unfiltered: n_groups(inner.unfiltered, keys.len(), ndv),

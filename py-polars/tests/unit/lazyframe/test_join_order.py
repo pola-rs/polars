@@ -799,3 +799,60 @@ def test_computed_join_key_does_not_borrow_a_column_range(tmp_path: Path) -> Non
     )
 
     assert scan_order(lf.explain(optimizations=ON)) == ["sales", "inv", "wh"]
+
+
+def regrouped_frames(tmp_path: Path) -> dict[str, pl.LazyFrame]:
+    """A relation to group twice, and two dimensions chained off it.
+
+    The dimensions are sized between the two group counts, so which relation
+    anchors the chain depends on which of them the second group-by is given.
+    """
+    big = pl.DataFrame(
+        {"k": [i % 400 for i in range(10_000)], "v": list(range(10_000))}
+    )
+    dim_a = pl.DataFrame({"a_key": list(range(50)), "a_b": [i % 60 for i in range(50)]})
+    dim_b = pl.DataFrame(
+        {"b_key": list(range(60)), "b_name": [f"b{i}" for i in range(60)]}
+    )
+    return write_scans(tmp_path, big=big, dim_a=dim_a, dim_b=dim_b)
+
+
+def regrouped_query(frames: dict[str, pl.LazyFrame], key: pl.Expr) -> pl.LazyFrame:
+    """`big` grouped on `k`, grouped again on `key`, then chained to the dimensions.
+
+    The first group-by is what gives `k` a distinct count; the second is the one
+    whose key may be computed.
+    """
+    return (
+        frames["big"]
+        .group_by("k")
+        .agg(pl.col("v").sum())
+        .group_by(key)
+        .agg(pl.col("v").sum().alias("sv"))
+        .join(frames["dim_a"], left_on="k", right_on="a_key", coalesce=False)
+        .join(frames["dim_b"], left_on="a_b", right_on="b_key", coalesce=False)
+    )
+
+
+def test_computed_group_key_does_not_borrow_a_column_distinct_count(
+    tmp_path: Path,
+) -> None:
+    frames = regrouped_frames(tmp_path)
+
+    # `k % 2` is named after `k` but holds neither its values nor its distinct
+    # count, so the group count is estimated without one and drops below both
+    # dimensions.
+    assert_reordered(
+        regrouped_query(frames, pl.col("k") % 2),
+        ["big", "dim_a", "dim_b"],
+        ["dim_b", "dim_a", "big"],
+    )
+
+
+def test_plain_group_key_keeps_its_column_distinct_count(tmp_path: Path) -> None:
+    frames = regrouped_frames(tmp_path)
+
+    # Grouping on `k` itself does hold `k`'s distinct count, which is above both
+    # dimensions, so the group-by anchors the chain.
+    lf = regrouped_query(frames, pl.col("k"))
+    assert scan_order(lf.explain(optimizations=ON)) == ["big", "dim_a", "dim_b"]
