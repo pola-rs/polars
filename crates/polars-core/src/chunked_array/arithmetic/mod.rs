@@ -5,10 +5,8 @@ mod numeric;
 
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use arrow::compute::utils::combine_validities_and;
 use num_traits::{Num, NumCast, ToPrimitive};
 pub use numeric::ArithmeticChunked;
-use polars_array::arrow::bridge::{chunk_from_arrow, flat_to_arrow};
 
 use crate::prelude::arity::unary_elementwise_values;
 use crate::prelude::*;
@@ -45,10 +43,10 @@ impl Add<&str> for &StringChunked {
     }
 }
 
-fn concat_binview(a: &BinaryViewArray, b: &BinaryViewArray) -> BinaryViewArray {
-    let validity = combine_validities_and(a.validity(), b.validity());
+fn concat_binview(a: &PlBinaryViewArray, b: &PlBinaryViewArray) -> PlBinaryViewArray {
+    let validity = polars_array::bitmap::combine_validities_and(a.validity(), b.validity());
 
-    let mut mutable = MutableBinaryViewArray::with_capacity(a.len());
+    let mut mutable = polars_array::PlBinaryViewArrayBuilder::with_capacity(a.len());
 
     let mut scratch = vec![];
     for (a, b) in a.values_iter().zip(b.values_iter()) {
@@ -96,12 +94,12 @@ impl Add for &BinaryChunked {
             };
         }
 
-        // The kernel is the Arrow one, so both chunks cross over and the result crosses back —
-        // see `polars_array::arrow::bridge`.
+        // TODO(polars-array-scalar): the values are concatenated one pair at a time, so a scalar
+        // chunk is written out rather than the one pair it stands for being concatenated once.
         arity::binary_elementwise_kernel_flat(
             self,
             rhs,
-            |l, r| chunk_from_arrow(&concat_binview(&flat_to_arrow(l), &flat_to_arrow(r))),
+            |l, r| concat_binview(l, r),
             self.name().clone(),
         )
     }
