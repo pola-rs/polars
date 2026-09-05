@@ -21,3 +21,25 @@ impl Display for IRCorrelationMethod {
         write!(f, "{s}_correlation")
     }
 }
+
+#[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Copy, Clone, PartialEq, Debug, Hash, Eq)]
+pub enum IRRegressionFunction {
+    Slope,
+    Intercept,
+    R2,
+    Count,
+}
+
+impl Display for IRRegressionFunction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use IRRegressionFunction::*;
+        let s = match self {
+            Slope => "slope",
+            Intercept => "intercept",
+            R2 => "r2",
+            Count => "count",
+        };
+        write!(f, "regr_{s}")
+    }
+}

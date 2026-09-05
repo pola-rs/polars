@@ -1050,6 +1050,246 @@ def cov(
         return wrap_expr(plr.cov(a_pyexpr, b_pyexpr, ddof))
 
 
+def _regr(
+    function_name: str,
+    y: IntoExpr,
+    x: IntoExpr,
+    *,
+    eager: bool = False,
+) -> Expr | Series:
+    if eager:
+        if not (isinstance(y, pl.Series) or isinstance(x, pl.Series)):
+            msg = (
+                f"expected at least one Series in {function_name!r} inputs"
+                " if 'eager=True'"
+            )
+            raise ValueError(msg)
+
+        frame = pl.DataFrame([e for e in (y, x) if isinstance(e, pl.Series)])
+        exprs = ((e.name if isinstance(e, pl.Series) else e) for e in (y, x))
+        return frame.select(_regr(function_name, *exprs, eager=False)).to_series()
+    else:
+        y_pyexpr = parse_into_expression(y)
+        x_pyexpr = parse_into_expression(x)
+        return wrap_expr(getattr(plr, function_name)(y_pyexpr, x_pyexpr))
+
+
+@overload
+def regr_slope(y: IntoExpr, x: IntoExpr, *, eager: Literal[False] = ...) -> Expr: ...
+
+
+@overload
+def regr_slope(y: IntoExpr, x: IntoExpr, *, eager: Literal[True]) -> Series: ...
+
+
+def regr_slope(
+    y: IntoExpr,
+    x: IntoExpr,
+    *,
+    eager: bool = False,
+) -> Expr | Series:
+    """
+    Compute the slope of the least-squares linear regression of `y` on `x`.
+
+    Rows where either value is null are ignored. Returns null if `x` has zero
+    variance or there are no valid rows.
+
+    The argument order follows the SQL standard (e.g. PostgreSQL's
+    `regr_slope`): the dependent variable `y` comes first.
+
+    Parameters
+    ----------
+    y
+        Column name or Expression for the dependent variable.
+    x
+        Column name or Expression for the independent variable.
+    eager
+        Evaluate immediately and return a `Series`; this requires that at least one
+        of the given arguments is a `Series`. If set to `False` (default), return
+        an expression instead.
+
+    See Also
+    --------
+    regr_intercept, regr_r2, regr_count
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5], "y": [2, 4, 5, 4, 5]})
+    >>> df.select(pl.regr_slope("y", "x"))
+    shape: (1, 1)
+    ┌─────┐
+    │ y   │
+    │ --- │
+    │ f64 │
+    ╞═════╡
+    │ 0.6 │
+    └─────┘
+    """
+    return _regr("regr_slope", y, x, eager=eager)
+
+
+@overload
+def regr_intercept(
+    y: IntoExpr, x: IntoExpr, *, eager: Literal[False] = ...
+) -> Expr: ...
+
+
+@overload
+def regr_intercept(y: IntoExpr, x: IntoExpr, *, eager: Literal[True]) -> Series: ...
+
+
+def regr_intercept(
+    y: IntoExpr,
+    x: IntoExpr,
+    *,
+    eager: bool = False,
+) -> Expr | Series:
+    """
+    Compute the intercept of the least-squares linear regression of `y` on `x`.
+
+    Rows where either value is null are ignored. Returns null if `x` has zero
+    variance or there are no valid rows.
+
+    The argument order follows the SQL standard (e.g. PostgreSQL's
+    `regr_intercept`): the dependent variable `y` comes first.
+
+    Parameters
+    ----------
+    y
+        Column name or Expression for the dependent variable.
+    x
+        Column name or Expression for the independent variable.
+    eager
+        Evaluate immediately and return a `Series`; this requires that at least one
+        of the given arguments is a `Series`. If set to `False` (default), return
+        an expression instead.
+
+    See Also
+    --------
+    regr_slope, regr_r2, regr_count
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5], "y": [2, 4, 5, 4, 5]})
+    >>> df.select(pl.regr_intercept("y", "x"))
+    shape: (1, 1)
+    ┌─────┐
+    │ y   │
+    │ --- │
+    │ f64 │
+    ╞═════╡
+    │ 2.2 │
+    └─────┘
+    """
+    return _regr("regr_intercept", y, x, eager=eager)
+
+
+@overload
+def regr_r2(y: IntoExpr, x: IntoExpr, *, eager: Literal[False] = ...) -> Expr: ...
+
+
+@overload
+def regr_r2(y: IntoExpr, x: IntoExpr, *, eager: Literal[True]) -> Series: ...
+
+
+def regr_r2(
+    y: IntoExpr,
+    x: IntoExpr,
+    *,
+    eager: bool = False,
+) -> Expr | Series:
+    """
+    Compute the coefficient of determination of the linear regression of `y` on `x`.
+
+    This is the square of the Pearson correlation coefficient. Rows where either
+    value is null are ignored. Returns null if `x` has zero variance, and 1 if
+    only `y` has zero variance.
+
+    The argument order follows the SQL standard (e.g. PostgreSQL's `regr_r2`):
+    the dependent variable `y` comes first.
+
+    Parameters
+    ----------
+    y
+        Column name or Expression for the dependent variable.
+    x
+        Column name or Expression for the independent variable.
+    eager
+        Evaluate immediately and return a `Series`; this requires that at least one
+        of the given arguments is a `Series`. If set to `False` (default), return
+        an expression instead.
+
+    See Also
+    --------
+    regr_slope, regr_intercept, regr_count
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5], "y": [2, 4, 5, 4, 5]})
+    >>> df.select(pl.regr_r2("y", "x"))
+    shape: (1, 1)
+    ┌─────┐
+    │ y   │
+    │ --- │
+    │ f64 │
+    ╞═════╡
+    │ 0.6 │
+    └─────┘
+    """
+    return _regr("regr_r2", y, x, eager=eager)
+
+
+@overload
+def regr_count(y: IntoExpr, x: IntoExpr, *, eager: Literal[False] = ...) -> Expr: ...
+
+
+@overload
+def regr_count(y: IntoExpr, x: IntoExpr, *, eager: Literal[True]) -> Series: ...
+
+
+def regr_count(
+    y: IntoExpr,
+    x: IntoExpr,
+    *,
+    eager: bool = False,
+) -> Expr | Series:
+    """
+    Count the number of rows where both `y` and `x` are non-null.
+
+    The argument order follows the SQL standard (e.g. PostgreSQL's
+    `regr_count`): the dependent variable `y` comes first.
+
+    Parameters
+    ----------
+    y
+        Column name or Expression for the dependent variable.
+    x
+        Column name or Expression for the independent variable.
+    eager
+        Evaluate immediately and return a `Series`; this requires that at least one
+        of the given arguments is a `Series`. If set to `False` (default), return
+        an expression instead.
+
+    See Also
+    --------
+    regr_slope, regr_intercept, regr_r2
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"x": [1, 2, None, 4, 5], "y": [2, 4, 5, None, 5]})
+    >>> df.select(pl.regr_count("y", "x"))
+    shape: (1, 1)
+    ┌─────┐
+    │ y   │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 3   │
+    └─────┘
+    """
+    return _regr("regr_count", y, x, eager=eager)
+
+
 class _map_batches_wrapper:
     def __init__(
         self,

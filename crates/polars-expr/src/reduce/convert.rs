@@ -11,7 +11,7 @@ use crate::reduce::bitwise::{
 };
 use crate::reduce::count::{CountReduce, NullCountReduce};
 #[cfg(feature = "cov")]
-use crate::reduce::cov::{new_cov_reduction, new_pearson_corr_reduction};
+use crate::reduce::cov::{new_cov_reduction, new_pearson_corr_reduction, new_regression_reduction};
 use crate::reduce::first_last::{new_first_reduction, new_item_reduction, new_last_reduction};
 use crate::reduce::first_last_nonnull::{new_first_nonnull_reduction, new_last_nonnull_reduction};
 use crate::reduce::has_nulls::HasNullsReduce;
@@ -265,6 +265,21 @@ pub fn into_reduction(
                 IRCorrelationMethod::Pearson => new_pearson_corr_reduction(dtype_x, dtype_y)?,
                 _ => unreachable!(),
             };
+            return Ok((gr, vec![input_x, input_y]));
+        },
+
+        #[cfg(feature = "cov")]
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::Regression { function },
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 2);
+            // The expression input order follows the SQL convention [y, x],
+            // while the reduction expects [x, y].
+            let input_y = inner_exprs[0].node();
+            let input_x = inner_exprs[1].node();
+            let gr = new_regression_reduction(get_dt(input_x)?, get_dt(input_y)?, *function)?;
             return Ok((gr, vec![input_x, input_y]));
         },
 

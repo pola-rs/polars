@@ -31,6 +31,39 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, propagate_nans: bool) -> Expr {
     a.map_binary(function, b)
 }
 
+fn regr(y: Expr, x: Expr, function: RegressionFunction) -> Expr {
+    y.map_binary(FunctionExpr::Regression { function }, x)
+}
+
+/// Compute the slope of the least-squares linear regression of `y` on `x`.
+///
+/// Follows the SQL standard argument order: the dependent variable `y` comes first.
+pub fn regr_slope(y: Expr, x: Expr) -> Expr {
+    regr(y, x, RegressionFunction::Slope)
+}
+
+/// Compute the intercept of the least-squares linear regression of `y` on `x`.
+///
+/// Follows the SQL standard argument order: the dependent variable `y` comes first.
+pub fn regr_intercept(y: Expr, x: Expr) -> Expr {
+    regr(y, x, RegressionFunction::Intercept)
+}
+
+/// Compute the coefficient of determination of the least-squares linear regression
+/// of `y` on `x`.
+///
+/// Follows the SQL standard argument order: the dependent variable `y` comes first.
+pub fn regr_r2(y: Expr, x: Expr) -> Expr {
+    regr(y, x, RegressionFunction::R2)
+}
+
+/// Count the number of rows where both `y` and `x` are non-null.
+///
+/// Follows the SQL standard argument order: the dependent variable `y` comes first.
+pub fn regr_count(y: Expr, x: Expr) -> Expr {
+    regr(y, x, RegressionFunction::Count)
+}
+
 #[cfg(all(feature = "rolling_window", feature = "cov"))]
 fn dispatch_corr_cov(x: Expr, y: Expr, options: RollingCovOptions, is_corr: bool) -> Expr {
     // see: https://github.com/pandas-dev/pandas/blob/v1.5.1/pandas/core/window/rolling.py#L1780-L1804

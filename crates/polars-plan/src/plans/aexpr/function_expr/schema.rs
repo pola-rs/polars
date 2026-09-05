@@ -306,6 +306,11 @@ impl IRFunctionExpr {
             ConcatExpr { .. } => mapper.map_to_supertype(),
             #[cfg(feature = "cov")]
             Correlation { .. } => mapper.map_to_float_dtype(),
+            #[cfg(feature = "cov")]
+            Regression { function } => match function {
+                IRRegressionFunction::Count => mapper.with_dtype(IDX_DTYPE),
+                _ => mapper.with_dtype(DataType::Float64),
+            },
             #[cfg(feature = "peaks")]
             PeakMin | PeakMax => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "cutqcut")]
