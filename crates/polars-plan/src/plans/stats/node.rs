@@ -126,8 +126,21 @@ pub(super) fn node_stats_with_cache(
                 return None;
             }
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
+            // A computed key holds neither the values nor the distinct count of the
+            // column it is named after, so only a key reading one column contributes.
+            let ndv = keys
+                .iter()
+                .map(|k| into_column(k.node(), expr_arena))
+                .collect::<Option<Vec<_>>>()
+                .and_then(|mut sources| {
+                    // Several keys reading one column split it no finer than one of
+                    // them does, so it must be counted once.
+                    sources.sort_unstable();
+                    sources.dedup();
+                    inner.key_distinct_count_product(&sources)
+                });
             let names: Vec<&PlSmallStr> = keys.iter().map(|k| k.output_name()).collect();
-            Some(one_row_per_group(inner, &names, options.slice))
+            Some(one_row_per_group(inner, &names, ndv, options.slice))
         },
         IR::Distinct { input, options } => {
             let input_schema;
@@ -139,7 +152,8 @@ pub(super) fn node_stats_with_cache(
                 },
             };
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
-            Some(one_row_per_group(inner, &names, options.slice))
+            let ndv = inner.key_distinct_count_product(&names);
+            Some(one_row_per_group(inner, &names, ndv, options.slice))
         },
         IR::Filter { input, predicate } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
@@ -198,8 +212,14 @@ pub(super) fn node_stats_with_cache(
             let right = node_stats_with_cache(*input_right, ir_arena, expr_arena, cache)?;
 
             let key_domains = composite_key_domain(
-                on.iter()
-                    .map(|(left_key, right_key)| key_domain(&left, left_key, &right, right_key)),
+                on.iter().map(|(left_key, right_key)| {
+                    key_domain(
+                        &left,
+                        left_key.plain_column(expr_arena),
+                        &right,
+                        right_key.plain_column(expr_arena),
+                    )
+                }),
                 left.unfiltered.max(right.unfiltered),
             );
             let how = &options.args.how;
@@ -295,9 +315,11 @@ impl NodeStats {
         Some((distinct as f64).clamp(MIN_CARDINALITY, self.unfiltered))
     }
 
-    /// Distinct values in `key`, when it is a plain column with a known NDV.
-    fn distinct_count(&self, key: &ExprIR) -> Option<f64> {
-        self.distinct_count_key(key.output_name_inner().get()?)
+    /// Values `name` could hold, from its integer range. Estimates its distinct
+    /// count from above, for a column of a scan that carried min/max.
+    fn int_domain(&self, name: &str) -> Option<f64> {
+        let domain = self.column(name)?.int_domain()?;
+        Some(domain.clamp(MIN_CARDINALITY, self.unfiltered))
     }
 
     /// Distinct combinations of `keys`, or `None` unless every one is known.
@@ -439,14 +461,17 @@ fn keeps_height(expr: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
 /// Estimates for a node emitting one row per distinct combination of `keys`,
 /// optionally sliced.
 ///
+/// `keys` names the output columns, and `ndv` is the distinct combinations they hold
+/// if that is known.
+///
 /// The output columns are the keys, each holding as many distinct values as the
 /// node has rows.
 fn one_row_per_group(
     inner: NodeStats,
     keys: &[&PlSmallStr],
+    ndv: Option<f64>,
     slice: Option<(i64, usize)>,
 ) -> NodeStats {
-    let ndv = inner.key_distinct_count_product(keys);
     let mut groups = NodeStats {
         filtered: n_groups(inner.filtered, keys.len(), ndv),
         unfiltered: n_groups(inner.unfiltered, keys.len(), ndv),
@@ -474,6 +499,7 @@ fn single_key_column(keys: &[&PlSmallStr], rows: f64) -> Option<Arc<ScanColumnSt
             distinct: Card::approx(rows as u64),
             null_count: Card::Unknown,
             avg_byte_width: None,
+            int_range: None,
         },
     );
     Some(Arc::new(map))
@@ -601,18 +627,42 @@ pub fn composite_key_domain(parts: impl Iterator<Item = f64>, max_rows: f64) -> 
 /// unique side, so the smaller relation is assumed to hold the key uniquely.
 pub fn key_domain(
     left: &NodeStats,
-    left_key: &ExprIR,
+    left_key: Option<&PlSmallStr>,
     right: &NodeStats,
-    right_key: &ExprIR,
+    right_key: Option<&PlSmallStr>,
 ) -> f64 {
-    let domain = match (
-        left.distinct_count(left_key),
-        right.distinct_count(right_key),
-    ) {
+    let left_ndv = left_key.and_then(|name| left.distinct_count_key(name));
+    let right_ndv = right_key.and_then(|name| right.distinct_count_key(name));
+    let domain = match (left_ndv, right_ndv) {
         (Some(l), Some(r)) => l.max(r),
-        _ => left.unfiltered.min(right.unfiltered),
+        // The uniqueness assumption and the integer range each estimate the domain
+        // from above, so the tighter one wins. One side's known distinct count is a
+        // lower bound either way, since every value it holds is in the domain.
+        _ => {
+            let rows = left.unfiltered.min(right.unfiltered);
+            let estimate = key_int_domain(left, left_key, right, right_key)
+                .map_or(rows, |range| rows.min(range));
+            left_ndv
+                .or(right_ndv)
+                .map_or(estimate, |ndv| estimate.max(ndv))
+        },
     };
     domain.max(MIN_CARDINALITY)
+}
+
+/// Domain implied by the integer ranges of the keys, from whichever sides have one.
+fn key_int_domain(
+    left: &NodeStats,
+    left_key: Option<&PlSmallStr>,
+    right: &NodeStats,
+    right_key: Option<&PlSmallStr>,
+) -> Option<f64> {
+    let left_domain = left_key.and_then(|name| left.int_domain(name));
+    let right_domain = right_key.and_then(|name| right.int_domain(name));
+    match (left_domain, right_domain) {
+        (Some(l), Some(r)) => Some(l.max(r)),
+        (l, r) => l.or(r),
+    }
 }
 
 #[cfg(test)]
@@ -648,11 +698,8 @@ mod tests {
         )
     }
 
-    fn key(name: &str) -> ExprIR {
-        ExprIR::new(
-            Node::default(),
-            crate::plans::OutputName::ColumnLhs(PlSmallStr::from_str(name)),
-        )
+    fn key(name: &str) -> PlSmallStr {
+        PlSmallStr::from_str(name)
     }
 
     /// Joining a heavily filtered dimension must shrink the fact table so that it
@@ -668,17 +715,17 @@ mod tests {
         let with_date = join_cardinality(
             inventory.filtered,
             date_dim.filtered,
-            key_domain(&inventory, &key("k"), &date_dim, &key("k")),
+            key_domain(&inventory, Some(&key("k")), &date_dim, Some(&key("k"))),
         );
         let with_item = join_cardinality(
             inventory.filtered,
             item.filtered,
-            key_domain(&inventory, &key("k"), &item, &key("k")),
+            key_domain(&inventory, Some(&key("k")), &item, Some(&key("k"))),
         );
         let with_warehouse = join_cardinality(
             inventory.filtered,
             warehouse.filtered,
-            key_domain(&inventory, &key("k"), &warehouse, &key("k")),
+            key_domain(&inventory, Some(&key("k")), &warehouse, Some(&key("k"))),
         );
 
         // 11.7M * 60 / 73049
@@ -704,7 +751,7 @@ mod tests {
         let out = join_cardinality(
             acc,
             item.filtered,
-            key_domain(&inventory, &key("k"), &item, &key("k")),
+            key_domain(&inventory, Some(&key("k")), &item, Some(&key("k"))),
         );
         assert!((out - acc).abs() < 1.0, "got {out}");
     }
@@ -812,7 +859,7 @@ mod tests {
         let out = join_cardinality(
             inventory.filtered,
             head.filtered,
-            key_domain(&inventory, &key("k"), &head, &key("k")),
+            key_domain(&inventory, Some(&key("k")), &head, Some(&key("k"))),
         );
         // 11.7M * 10 / 73049. Dividing by the ten rows left would reproduce the
         // fact table whole.
@@ -827,10 +874,16 @@ mod tests {
         let fact = leaf_with_ndv(1_000_000.0, 1_000_000.0, "k", 500);
         let dim = leaf_with_ndv(800.0, 800.0, "k", 800);
 
-        assert_eq!(key_domain(&fact, &key("k"), &dim, &key("k")), 800.0);
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &dim, Some(&key("k"))),
+            800.0
+        );
         // Without them the smaller relation is assumed to hold the key uniquely.
         let opaque = leaf(800.0, 800.0);
-        assert_eq!(key_domain(&fact, &key("k"), &opaque, &key("k")), 800.0);
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &opaque, Some(&key("k"))),
+            800.0
+        );
     }
 
     /// A distinct count that is only a rough bound must not steer the domain.
@@ -849,7 +902,38 @@ mod tests {
 
         let fact = leaf_with_ndv(1_000_000.0, 1_000_000.0, "k", 500);
         // The rough count of 4 would otherwise dominate as the max.
-        assert_eq!(key_domain(&fact, &key("k"), &dim, &key("k")), 800.0);
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &dim, Some(&key("k"))),
+            800.0
+        );
+    }
+
+    /// A value range narrower than a known distinct count must not shrink the
+    /// domain below it.
+    #[test]
+    fn a_one_sided_distinct_count_survives_the_range_fallback() {
+        // 100 values wide, but nothing says how many of them the fact table holds.
+        let fact = leaf(1_000_000.0, 1_000_000.0).with_column(
+            "k",
+            ScanColumnStats {
+                int_range: Some((0, 99)),
+                ..Default::default()
+            },
+        );
+        let dim = leaf_with_ndv(800.0, 800.0, "k", 500);
+
+        // The dimension holds 500 distinct keys, so the domain is at least that,
+        // however narrow the range on the other side is.
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &dim, Some(&key("k"))),
+            500.0
+        );
+        // Without a distinct count anywhere, the range is all there is to go on.
+        let opaque = leaf(800.0, 800.0);
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &opaque, Some(&key("k"))),
+            100.0
+        );
     }
 
     /// A known distinct count replaces the interpolation between one group and one
