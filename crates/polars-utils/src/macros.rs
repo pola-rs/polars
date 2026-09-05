@@ -17,24 +17,23 @@ macro_rules! no_call_const {
 // Same as OSS except for the feature gates.
 #[macro_export]
 macro_rules! with_match_physical_numeric_polars_type {(
-    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+    $key_type:expr, impl<$T:ident> $($body:tt)*
 ) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use $crate::datatypes::DataType::*;
     match $key_type {
-        Int8 => __with_ty__! { Int8Type },
-        Int16 => __with_ty__! { Int16Type },
-        Int32 => __with_ty__! { Int32Type },
-        Int64 => __with_ty__! { Int64Type },
-        Int128 => __with_ty__! { Int128Type },
-        UInt8 => __with_ty__! { UInt8Type },
-        UInt16 => __with_ty__! { UInt16Type },
-        UInt32 => __with_ty__! { UInt32Type },
-        UInt64 => __with_ty__! { UInt64Type },
-        UInt128 => __with_ty__! { UInt128Type },
-        Float16 => __with_ty__! { Float16Type },
-        Float32 => __with_ty__! { Float32Type },
-        Float64 => __with_ty__! { Float64Type },
+        Int8 => { type $T = Int8Type; $($body)* },
+        Int16 => { type $T = Int16Type; $($body)* },
+        Int32 => { type $T = Int32Type; $($body)* },
+        Int64 => { type $T = Int64Type; $($body)* },
+        Int128 => { type $T = Int128Type; $($body)* },
+        UInt8 => { type $T = UInt8Type; $($body)* },
+        UInt16 => { type $T = UInt16Type; $($body)* },
+        UInt32 => { type $T = UInt32Type; $($body)* },
+        UInt64 => { type $T = UInt64Type; $($body)* },
+        UInt128 => { type $T = UInt128Type; $($body)* },
+        Float16 => { type $T = Float16Type; $($body)* },
+        Float32 => { type $T = Float32Type; $($body)* },
+        Float64 => { type $T = Float64Type; $($body)* },
         dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}

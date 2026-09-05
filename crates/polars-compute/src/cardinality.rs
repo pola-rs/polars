@@ -42,26 +42,23 @@ pub fn estimate_cardinality(array: &dyn Array) -> usize {
             cardinality
         },
 
-        PT::Primitive(primitive_type) => with_match_primitive_type_full!(primitive_type, |$T| {
-             let mut hll = HyperLogLog::new();
+        PT::Primitive(primitive_type) => with_match_primitive_type_full!(primitive_type, impl<T> {
+            let mut hll = HyperLogLog::new();
 
-             let array = array
-                 .as_any()
-                 .downcast_ref::<PrimitiveArray<$T>>()
-                 .unwrap();
+            let array = array.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
 
-             if array.has_nulls() {
-                 for v in array.iter() {
-                     let v = v.copied().unwrap_or_default();
-                     hll.add(&v.to_total_ord());
-                 }
-             } else {
-                 for v in array.values_iter() {
-                     hll.add(&v.to_total_ord());
-                 }
-             }
+            if array.has_nulls() {
+                for v in array.iter() {
+                    let v = v.copied().unwrap_or_default();
+                    hll.add(&v.to_total_ord());
+                }
+            } else {
+                for v in array.values_iter() {
+                    hll.add(&v.to_total_ord());
+                }
+            }
 
-             hll.count()
+            hll.count()
         }),
         PT::FixedSizeBinary => {
             let mut hll = HyperLogLog::new();

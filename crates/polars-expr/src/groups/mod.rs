@@ -77,8 +77,8 @@ pub fn new_hash_grouper(key_schema: Arc<Schema>) -> Box<dyn Grouper> {
         let (_name, dt) = key_schema.get_at_index(0).unwrap();
         match dt {
             dt if dt.is_primitive_numeric() | dt.is_temporal() => {
-                with_match_physical_numeric_polars_type!(dt.to_physical(), |$T| {
-                    Box::new(single_key::SingleKeyHashGrouper::<$T>::new())
+                with_match_physical_numeric_polars_type!(dt.to_physical(), impl<T> {
+                    Box::new(single_key::SingleKeyHashGrouper::<T>::new())
                 })
             },
 
@@ -88,8 +88,10 @@ pub fn new_hash_grouper(key_schema: Arc<Schema>) -> Box<dyn Grouper> {
             },
             #[cfg(feature = "dtype-categorical")]
             dt @ (DataType::Enum(_, _) | DataType::Categorical(_, _)) => {
-                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
-                    Box::new(single_key::SingleKeyHashGrouper::<<$C as PolarsCategoricalType>::PolarsPhysical>::new())
+                with_match_categorical_physical_type!(dt.cat_physical().unwrap(), impl<C> {
+                    Box::new(single_key::SingleKeyHashGrouper::<
+                        <C as PolarsCategoricalType>::PolarsPhysical,
+                    >::new())
                 })
             },
 

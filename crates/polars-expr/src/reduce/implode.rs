@@ -24,8 +24,11 @@ pub fn new_unordered_implode_reduction(dtype: DataType) -> Box<dyn GroupedReduct
             || dtype.is_categorical()
             || dtype.is_enum() =>
         {
-            with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VGR::new(dtype, NumUnorderedImplodeReducer::<$T>(PhantomData)))
+            with_match_physical_numeric_polars_type!(dtype.to_physical(), impl<T> {
+                Box::new(VGR::new(
+                    dtype,
+                    NumUnorderedImplodeReducer::<T>(PhantomData),
+                ))
             })
         },
         String | Binary => Box::new(VGR::new(dtype, BinaryUnorderedImplodeReducer)),

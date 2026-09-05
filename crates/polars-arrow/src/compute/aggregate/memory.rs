@@ -53,13 +53,10 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
             let array = array.as_any().downcast_ref::<DaysMsArray>().unwrap();
             array.values().len() * size_of::<i32>() * 2 + validity_size(array.validity())
         },
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
-            let array = array
-                .as_any()
-                .downcast_ref::<PrimitiveArray<$T>>()
-                .unwrap();
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, impl<T> {
+            let array = array.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
 
-            array.values().len() * size_of::<$T>() + validity_size(array.validity())
+            array.values().len() * size_of::<T>() + validity_size(array.validity())
         }),
         Binary => dyn_binary!(array, BinaryArray<i32>, i32),
         FixedSizeBinary => {
@@ -128,11 +125,8 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
                 .sum::<usize>();
             types + offsets + fields
         },
-        Dictionary(key_type) => match_integer_type!(key_type, |$T| {
-            let array = array
-                .as_any()
-                .downcast_ref::<DictionaryArray<$T>>()
-                .unwrap();
+        Dictionary(key_type) => match_integer_type!(key_type, impl<T> {
+            let array = array.as_any().downcast_ref::<DictionaryArray<T>>().unwrap();
             estimated_bytes_size(array.keys()) + estimated_bytes_size(array.values().as_ref())
         }),
         Utf8View => binview_size::<str>(array.as_any().downcast_ref().unwrap()),

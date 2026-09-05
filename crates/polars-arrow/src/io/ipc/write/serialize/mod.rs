@@ -58,9 +58,16 @@ pub fn write(
             is_little_endian,
             compression,
         ),
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, impl<T> {
             let array = array.as_any().downcast_ref().unwrap();
-            write_primitive::<$T>(array, buffers, arrow_data, offset, is_little_endian, compression)
+            write_primitive::<T>(
+                array,
+                buffers,
+                arrow_data,
+                offset,
+                is_little_endian,
+                compression,
+            )
         }),
         Binary => write_binary::<i32>(
             array.as_any().downcast_ref().unwrap(),
@@ -138,17 +145,17 @@ pub fn write(
             is_little_endian,
             compression,
         ),
-        Dictionary(key_type) => match_integer_type!(key_type, |$T| {
-            let array: &DictionaryArray<$T> = array.as_any().downcast_ref().unwrap();
-            let keys_array: &PrimitiveArray<$T> = array.keys().as_any().downcast_ref().unwrap();
+        Dictionary(key_type) => match_integer_type!(key_type, impl<T> {
+            let array: &DictionaryArray<T> = array.as_any().downcast_ref().unwrap();
+            let keys_array: &PrimitiveArray<T> = array.keys().as_any().downcast_ref().unwrap();
 
-            write_primitive::<$T>(
+            write_primitive::<T>(
                 keys_array,
                 buffers,
                 arrow_data,
                 offset,
                 is_little_endian,
-                compression
+                compression,
             )
         }),
         Union => {

@@ -1,25 +1,24 @@
 macro_rules! with_match_physical_numpy_polars_type {(
-    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+    $key_type:expr, impl<$T:ident> $($body:tt)*
 ) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use polars_core::datatypes::DataType as D;
     match $key_type {
         #[cfg(feature = "dtype-i8")]
-        D::Int8 => __with_ty__! { Int8Type },
+        D::Int8 => { type $T = Int8Type; $($body)* },
         #[cfg(feature = "dtype-i16")]
-        D::Int16 => __with_ty__! { Int16Type },
-        D::Int32 => __with_ty__! { Int32Type },
-        D::Int64 => __with_ty__! { Int64Type },
+        D::Int16 => { type $T = Int16Type; $($body)* },
+        D::Int32 => { type $T = Int32Type; $($body)* },
+        D::Int64 => { type $T = Int64Type; $($body)* },
         #[cfg(feature = "dtype-u8")]
-        D::UInt8 => __with_ty__! { UInt8Type },
+        D::UInt8 => { type $T = UInt8Type; $($body)* },
         #[cfg(feature = "dtype-u16")]
-        D::UInt16 => __with_ty__! { UInt16Type },
-        D::UInt32 => __with_ty__! { UInt32Type },
-        D::UInt64 => __with_ty__! { UInt64Type },
+        D::UInt16 => { type $T = UInt16Type; $($body)* },
+        D::UInt32 => { type $T = UInt32Type; $($body)* },
+        D::UInt64 => { type $T = UInt64Type; $($body)* },
         #[cfg(feature = "dtype-f16")]
-        D::Float16 => __with_ty__! { Float16Type },
-        D::Float32 => __with_ty__! { Float32Type },
-        D::Float64 => __with_ty__! { Float64Type },
+        D::Float16 => { type $T = Float16Type; $($body)* },
+        D::Float32 => { type $T = Float32Type; $($body)* },
+        D::Float64 => { type $T = Float64Type; $($body)* },
         dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}

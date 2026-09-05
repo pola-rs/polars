@@ -57,19 +57,21 @@ pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
         max.to_physical_repr(),
     );
 
-    with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-        let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-        let min: &ChunkedArray<$T> = min.as_ref().as_ref().as_ref();
-        let max: &ChunkedArray<$T> = max.as_ref().as_ref().as_ref();
+    with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
+        let ca: &ChunkedArray<T> = s.as_ref().as_ref().as_ref();
+        let min: &ChunkedArray<T> = min.as_ref().as_ref().as_ref();
+        let max: &ChunkedArray<T> = max.as_ref().as_ref().as_ref();
         let out = clip_helper_both_bounds(ca, min, max).into_series();
         match original_type {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 let phys = out.i128()?.as_ref().clone();
-                Ok(phys.into_decimal_unchecked(*precision, *scale).into_series())
+                Ok(phys
+                    .into_decimal_unchecked(*precision, *scale)
+                    .into_series())
             },
             dt if dt.is_logical() => out.cast(original_type),
-            _ => Ok(out)
+            _ => Ok(out),
         }
     })
 }
@@ -92,18 +94,20 @@ pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
 
     let (s, max) = (s.to_physical_repr(), max.to_physical_repr());
 
-    with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-        let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-        let max: &ChunkedArray<$T> = max.as_ref().as_ref().as_ref();
+    with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
+        let ca: &ChunkedArray<T> = s.as_ref().as_ref().as_ref();
+        let max: &ChunkedArray<T> = max.as_ref().as_ref().as_ref();
         let out = clip_helper_single_bound(ca, max, clamp_max).into_series();
         match original_type {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 let phys = out.i128()?.as_ref().clone();
-                Ok(phys.into_decimal_unchecked(*precision, *scale).into_series())
+                Ok(phys
+                    .into_decimal_unchecked(*precision, *scale)
+                    .into_series())
             },
             dt if dt.is_logical() => out.cast(original_type),
-            _ => Ok(out)
+            _ => Ok(out),
         }
     })
 }
@@ -126,18 +130,20 @@ pub fn clip_min(s: &Series, min: &Series) -> PolarsResult<Series> {
 
     let (s, min) = (s.to_physical_repr(), min.to_physical_repr());
 
-    with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-        let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-        let min: &ChunkedArray<$T> = min.as_ref().as_ref().as_ref();
+    with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
+        let ca: &ChunkedArray<T> = s.as_ref().as_ref().as_ref();
+        let min: &ChunkedArray<T> = min.as_ref().as_ref().as_ref();
         let out = clip_helper_single_bound(ca, min, clamp_min).into_series();
         match original_type {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 let phys = out.i128()?.as_ref().clone();
-                Ok(phys.into_decimal_unchecked(*precision, *scale).into_series())
+                Ok(phys
+                    .into_decimal_unchecked(*precision, *scale)
+                    .into_series())
             },
             dt if dt.is_logical() => out.cast(original_type),
-            _ => Ok(out)
+            _ => Ok(out),
         }
     })
 }

@@ -18,13 +18,16 @@ pub fn new_var_std_reduction(
     Ok(match dtype {
         Boolean => Box::new(VGR::new(dtype, BoolVarStdReducer { is_std, ddof })),
         _ if dtype.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VGR::new(dtype, VarStdReducer::<$T> {
-                    is_std,
-                    ddof,
-                    needs_cast: false,
-                    _phantom: PhantomData,
-                }))
+            with_match_physical_numeric_polars_type!(dtype.to_physical(), impl<T> {
+                Box::new(VGR::new(
+                    dtype,
+                    VarStdReducer::<T> {
+                        is_std,
+                        ddof,
+                        needs_cast: false,
+                        _phantom: PhantomData,
+                    },
+                ))
             })
         },
         #[cfg(feature = "dtype-decimal")]

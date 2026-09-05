@@ -45,8 +45,8 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
     match s.dtype().to_physical() {
         dt if dt.is_float() => {
             let s_physical = s.to_physical_repr();
-            with_match_physical_float_polars_type!(s_physical.dtype(), |$T| {
-                let ca: &ChunkedArray<$T> = s_physical.as_ref().as_ref().as_ref();
+            with_match_physical_float_polars_type!(s_physical.dtype(), impl<T> {
+                let ca: &ChunkedArray<T> = s_physical.as_ref().as_ref().as_ref();
                 Ok(unique_counts_helper(ca.iter()).into_series())
             })
         },

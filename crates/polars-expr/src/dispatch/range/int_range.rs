@@ -18,10 +18,10 @@ pub(super) fn int_range(s: &[Column], step: i64, dtype: DataType) -> PolarsResul
     assert_eq!(start.dtype(), &dtype);
     assert_eq!(end.dtype(), &dtype);
 
-    with_match_physical_integer_polars_type!(dtype, |$T| {
-        let start_v = get_first_series_value::<$T>(start)?;
-        let end_v = get_first_series_value::<$T>(end)?;
-        new_int_range::<$T>(start_v, end_v, step, name.clone()).map(Column::from)
+    with_match_physical_integer_polars_type!(dtype, impl<T> {
+        let start_v = get_first_series_value::<T>(start)?;
+        let end_v = get_first_series_value::<T>(end)?;
+        new_int_range::<T>(start_v, end_v, step, name.clone()).map(Column::from)
     })
 }
 

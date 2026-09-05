@@ -73,14 +73,14 @@ pub(super) fn array_dispatch(
     width: usize,
     agg_type: AggType,
 ) -> Series {
-    let chunks: Vec<ArrayRef> = with_match_physical_numeric_polars_type!(values.dtype(), |$T| {
-        let ca: &ChunkedArray<$T> = values.as_ref().as_ref().as_ref();
-        ca.downcast_iter().map(|arr| {
-            match agg_type {
+    let chunks: Vec<ArrayRef> = with_match_physical_numeric_polars_type!(values.dtype(), impl<T> {
+        let ca: &ChunkedArray<T> = values.as_ref().as_ref();
+        ca.downcast_iter()
+            .map(|arr| match agg_type {
                 AggType::Min => Box::new(agg_min(arr, width)) as ArrayRef,
                 AggType::Max => Box::new(agg_max(arr, width)) as ArrayRef,
-            }
-        }).collect()
+            })
+            .collect()
     });
     Series::try_from((name, chunks)).unwrap()
 }

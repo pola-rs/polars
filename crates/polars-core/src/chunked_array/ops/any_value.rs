@@ -83,8 +83,8 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         },
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(cats, mapping) => {
-            with_match_categorical_physical_type!(cats.physical(), |$C| {
-                type A = <$C as PolarsDataType>::Array;
+            with_match_categorical_physical_type!(cats.physical(), impl<C> {
+                type A = <C as PolarsDataType>::Array;
                 let arr = &*(arr as *const dyn Array as *const A);
                 let cat_id = arr.value_unchecked(idx).as_cat();
                 AnyValue::Categorical(cat_id, mapping)
@@ -92,8 +92,8 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         },
         #[cfg(feature = "dtype-categorical")]
         DataType::Enum(fcats, mapping) => {
-            with_match_categorical_physical_type!(fcats.physical(), |$C| {
-                type A = <$C as PolarsDataType>::Array;
+            with_match_categorical_physical_type!(fcats.physical(), impl<C> {
+                type A = <C as PolarsDataType>::Array;
                 let arr = &*(arr as *const dyn Array as *const A);
                 let cat_id = arr.value_unchecked(idx).as_cat();
                 AnyValue::Enum(cat_id, mapping)

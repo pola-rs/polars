@@ -533,8 +533,8 @@ fn get_array<T: AsRef<[u8]> + Send + Sync + 'static>(
     match dtype.to_physical_type() {
         Null => mmap_null(data, &node, block_offset, buffers),
         Boolean => mmap_boolean(data, &node, block_offset, buffers),
-        Primitive(p) => with_match_primitive_type_full!(p, |$T| {
-            mmap_primitive::<$T, _>(data, &node, block_offset, buffers)
+        Primitive(p) => with_match_primitive_type_full!(p, impl<T> {
+            mmap_primitive::<T, _>(data, &node, block_offset, buffers)
         }),
         Utf8 | Binary => mmap_binary::<i32, _>(data, &node, block_offset, buffers),
         Utf8View | BinaryView => {
@@ -586,8 +586,8 @@ fn get_array<T: AsRef<[u8]> + Send + Sync + 'static>(
             variadic_buffer_counts,
             buffers,
         ),
-        Dictionary(key_type) => match_integer_type!(key_type, |$T| {
-            mmap_dict::<$T, _>(
+        Dictionary(key_type) => match_integer_type!(key_type, impl<T> {
+            mmap_dict::<T, _>(
                 data,
                 &node,
                 block_offset,

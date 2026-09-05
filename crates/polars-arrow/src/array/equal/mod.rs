@@ -217,10 +217,10 @@ pub fn equal(lhs: &dyn Array, rhs: &dyn Array) -> bool {
             let rhs = rhs.as_any().downcast_ref().unwrap();
             boolean::equal(lhs, rhs)
         },
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, impl<T> {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();
-            primitive::equal::<$T>(lhs, rhs)
+            primitive::equal::<T>(lhs, rhs)
         }),
         Utf8 => {
             let lhs = lhs.as_any().downcast_ref().unwrap();
@@ -258,10 +258,10 @@ pub fn equal(lhs: &dyn Array, rhs: &dyn Array) -> bool {
             struct_::equal(lhs, rhs)
         },
         Dictionary(key_type) => {
-            match_integer_type!(key_type, |$T| {
+            match_integer_type!(key_type, impl<T> {
                 let lhs = lhs.as_any().downcast_ref().unwrap();
                 let rhs = rhs.as_any().downcast_ref().unwrap();
-                dictionary::equal::<$T>(lhs, rhs)
+                dictionary::equal::<T>(lhs, rhs)
             })
         },
         FixedSizeBinary => {

@@ -88,14 +88,14 @@ impl NumericOp {
         let lhs = lhs.rechunk();
         let rhs = rhs.rechunk();
 
-        with_match_physical_numeric_polars_type!(lhs.dtype(), |$T| {
-            let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
-            let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+        with_match_physical_numeric_polars_type!(lhs.dtype(), impl<T> {
+            let lhs: &ChunkedArray<T> = lhs.as_ref().as_ref();
+            let rhs: &ChunkedArray<T> = rhs.as_ref().as_ref();
 
             let lhs = lhs.downcast_get(0).unwrap();
             let rhs = rhs.downcast_get(0).unwrap();
 
-            Box::new(self.apply_arithmetic_kernel::<$T>(lhs.clone(), rhs.clone()))
+            Box::new(self.apply_arithmetic_kernel::<T>(lhs.clone(), rhs.clone()))
         })
     }
 

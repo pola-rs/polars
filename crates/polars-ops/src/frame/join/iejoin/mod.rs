@@ -638,8 +638,8 @@ fn iejoin_tuples(
     let l2_order = l2_order.rechunk();
     let l2_order = l2_order.downcast_as_array().values().as_slice();
 
-    let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(x.dtype(), |$T| {
-         ie_join_impl_t::<$T>(
+    let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(x.dtype(), impl<T> {
+        ie_join_impl_t::<T>(
             slice,
             l1_order,
             l2_order,
@@ -647,7 +647,7 @@ fn iejoin_tuples(
             op2,
             x,
             y_ordered_by_x,
-            left_height
+            left_height,
         )
     })?;
 
@@ -748,9 +748,9 @@ fn piecewise_merge_join_tuples(
         .as_ref()
         .map(|order| order.downcast_get(0).unwrap().values().as_slice());
 
-    let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(left_ordered.dtype(), |$T| {
+    let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(left_ordered.dtype(), impl<T> {
         match op {
-            InequalityOperator::Lt => piecewise_merge_join_impl_t::<$T, _>(
+            InequalityOperator::Lt => piecewise_merge_join_impl_t::<T, _>(
                 slice,
                 left_order,
                 right_order,
@@ -758,7 +758,7 @@ fn piecewise_merge_join_tuples(
                 right_ordered,
                 |l, r| l.tot_lt(r),
             ),
-            InequalityOperator::LtEq => piecewise_merge_join_impl_t::<$T, _>(
+            InequalityOperator::LtEq => piecewise_merge_join_impl_t::<T, _>(
                 slice,
                 left_order,
                 right_order,
@@ -766,7 +766,7 @@ fn piecewise_merge_join_tuples(
                 right_ordered,
                 |l, r| l.tot_le(r),
             ),
-            InequalityOperator::Gt => piecewise_merge_join_impl_t::<$T, _>(
+            InequalityOperator::Gt => piecewise_merge_join_impl_t::<T, _>(
                 slice,
                 left_order,
                 right_order,
@@ -774,7 +774,7 @@ fn piecewise_merge_join_tuples(
                 right_ordered,
                 |l, r| l.tot_gt(r),
             ),
-            InequalityOperator::GtEq => piecewise_merge_join_impl_t::<$T, _>(
+            InequalityOperator::GtEq => piecewise_merge_join_impl_t::<T, _>(
                 slice,
                 left_order,
                 right_order,
