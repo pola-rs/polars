@@ -129,11 +129,11 @@ pub(super) fn node_stats_with_cache(
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             // A computed key holds neither the values nor the distinct count of the
             // column it is named after, so only a key reading one column contributes.
-            let sources: Option<Vec<&PlSmallStr>> = keys
+            let ndv = keys
                 .iter()
                 .map(|k| into_column(k.node(), expr_arena))
-                .collect();
-            let ndv = sources.and_then(|sources| inner.key_distinct_count_product(&sources));
+                .collect::<Option<Vec<_>>>()
+                .and_then(|sources| inner.key_distinct_count_product(&sources));
             let names: Vec<&PlSmallStr> = keys.iter().map(|k| k.output_name()).collect();
             Some(one_row_per_group(inner, &names, ndv, options.slice))
         },

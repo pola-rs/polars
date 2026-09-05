@@ -853,6 +853,9 @@ def test_plain_group_key_keeps_its_column_distinct_count(tmp_path: Path) -> None
     frames = regrouped_frames(tmp_path)
 
     # Grouping on `k` itself does hold `k`'s distinct count, which is above both
-    # dimensions, so the group-by anchors the chain.
-    lf = regrouped_query(frames, pl.col("k"))
-    assert scan_order(lf.explain(optimizations=ON)) == ["big", "dim_a", "dim_b"]
+    # dimensions, so the group-by still anchors the chain.
+    assert_reordered(
+        regrouped_query(frames, pl.col("k")),
+        ["big", "dim_a", "dim_b"],
+        ["big", "dim_a", "dim_b"],
+    )
