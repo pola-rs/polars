@@ -1,5 +1,4 @@
 use arrow::bitmap::Bitmap;
-use polars_array::arrow::export;
 
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::array::array_values;
@@ -110,8 +109,7 @@ impl ChunkReverse for ArrayChunked {
         }
         let ca = self.rechunk();
         let arr = ca.downcast_as_array();
-        // The builder is the Arrow one, so the values cross over — see `polars_array::arrow::bridge`.
-        let values = export::to_arrow(&*array_values(arr));
+        let values = array_values(arr);
         let values = &*values;
 
         let mut builder =

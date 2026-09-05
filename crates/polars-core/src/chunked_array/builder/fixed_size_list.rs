@@ -1,10 +1,13 @@
 use arrow::types::NativeType;
+use polars_array::builder::{ShareStrategy, StaticArrayBuilder, builder_like};
+use polars_array::{PlFixedSizeListArrayBuilder, PlPrimitiveArrayBuilder};
 use polars_utils::pl_str::PlSmallStr;
 
+use crate::chunked_array::new_empty_chunk;
 use crate::prelude::*;
 
 pub(crate) struct FixedSizeListNumericBuilder<T: NativeType> {
-    inner: Option<MutableFixedSizeListArray<MutablePrimitiveArray<T>>>,
+    inner: Option<PlFixedSizeListArrayBuilder<PlPrimitiveArrayBuilder<T>>>,
     width: usize,
     name: PlSmallStr,
     logical_dtype: DataType,
@@ -20,8 +23,8 @@ impl<T: NativeType> FixedSizeListNumericBuilder<T> {
         capacity: usize,
         logical_dtype: DataType,
     ) -> Self {
-        let mp = MutablePrimitiveArray::<T>::with_capacity(capacity * width);
-        let inner = Some(MutableFixedSizeListArray::new(mp, width));
+        let values = PlPrimitiveArrayBuilder::<T>::with_capacity(capacity * width);
+        let inner = Some(PlFixedSizeListArrayBuilder::new(values, width));
         Self {
             inner,
             width,
@@ -36,7 +39,7 @@ pub trait FixedSizeListBuilder {
     ///
     /// `arr` must have at least `(offset + 1) * width` valid elements of the
     /// builder's expected inner type
-    unsafe fn push_unchecked(&mut self, arr: &dyn Array, offset: usize);
+    unsafe fn push_unchecked(&mut self, arr: &dyn PlArray, offset: usize);
     /// # Safety
     ///
     /// The builder must have been properly initialized
@@ -46,47 +49,35 @@ pub trait FixedSizeListBuilder {
 
 impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
     #[inline]
-    unsafe fn push_unchecked(&mut self, arr: &dyn Array, offset: usize) {
-        let start = offset * self.width;
-        let end = start + self.width;
+    unsafe fn push_unchecked(&mut self, arr: &dyn PlArray, offset: usize) {
+        let width = self.width;
         let arr = arr
             .as_any()
-            .downcast_ref::<PrimitiveArray<T>>()
+            .downcast_ref::<PlPrimitiveArray<T>>()
             .unwrap_unchecked();
         let inner = self.inner.as_mut().unwrap_unchecked();
 
-        let values = arr.values().as_slice();
-        let validity = arr.validity();
-        if let Some(validity) = validity {
-            let iter = (start..end).map(|i| {
-                if validity.get_bit_unchecked(i) {
-                    Some(*values.get_unchecked(i))
-                } else {
-                    None
-                }
-            });
-            inner.push_unchecked(Some(iter))
-        } else {
-            let iter = (start..end).map(|i| Some(*values.get_unchecked(i)));
-            inner.push_unchecked(Some(iter))
-        }
+        // The element is appended as a subslice rather than a value at a time, which leaves the
+        // chunk it is read out of in whatever representation it is in.
+        inner
+            .values_mut()
+            .subslice_extend(arr, offset * width, width, ShareStrategy::Always);
+        inner.finish_row();
     }
 
     #[inline]
     unsafe fn push_null(&mut self) {
         let inner = self.inner.as_mut().unwrap_unchecked();
-        inner.push_null()
+        inner.extend_nulls(1)
     }
 
     fn finish(&mut self) -> ArrayChunked {
-        let arr: FixedSizeListArray = self.inner.take().unwrap().into();
-        // The builder is the Arrow one, so the result crosses back — see `polars_array::arrow::bridge`.
-        let arr = <PlFixedSizeListArray as ToArrow>::from_arrow(&arr);
+        let arr = self.inner.take().unwrap().freeze();
         // SAFETY: physical type matches the logical
         unsafe {
             ChunkedArray::from_chunks_and_dtype(
                 self.name.clone(),
-                vec![arr.into_boxed()],
+                vec![Box::new(arr)],
                 DataType::Array(Box::new(self.logical_dtype.clone()), self.width),
             )
         }
@@ -94,7 +85,8 @@ impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
 }
 
 pub(crate) struct AnonymousOwnedFixedSizeListBuilder {
-    inner: fixed_size_list::AnonymousBuilder,
+    inner: PlFixedSizeListArrayBuilder,
+    width: usize,
     name: PlSmallStr,
     inner_dtype: DataType,
 }
@@ -106,9 +98,13 @@ impl AnonymousOwnedFixedSizeListBuilder {
         capacity: usize,
         inner_dtype: DataType,
     ) -> Self {
-        let inner = fixed_size_list::AnonymousBuilder::new(capacity, width);
+        // A builder is shaped like the array it builds, and the shape of the values is what the
+        // physical inner type says — which is why an empty chunk of it is enough to ask for one.
+        let values = builder_like(&*new_empty_chunk(&inner_dtype));
+        let inner = PlFixedSizeListArrayBuilder::with_capacity(values, width, capacity);
         Self {
             inner,
+            width,
             name,
             inner_dtype,
         }
@@ -117,29 +113,31 @@ impl AnonymousOwnedFixedSizeListBuilder {
 
 impl FixedSizeListBuilder for AnonymousOwnedFixedSizeListBuilder {
     #[inline]
-    unsafe fn push_unchecked(&mut self, arr: &dyn Array, offset: usize) {
-        let arr = arr.sliced_unchecked(offset * self.inner.width, self.inner.width);
-        self.inner.push(arr)
+    unsafe fn push_unchecked(&mut self, arr: &dyn PlArray, offset: usize) {
+        self.inner.values_mut().subslice_extend(
+            arr,
+            offset * self.width,
+            self.width,
+            ShareStrategy::Always,
+        );
+        self.inner.finish_row();
     }
 
     #[inline]
     unsafe fn push_null(&mut self) {
-        self.inner.push_null()
+        self.inner.extend_nulls(1)
     }
 
     fn finish(&mut self) -> ArrayChunked {
-        let arr = std::mem::take(&mut self.inner)
-            .finish(&self.inner_dtype.to_arrow(CompatLevel::newest()))
-            .unwrap();
-        // The builder is the Arrow one, so the result crosses back, and the dtype it carried
-        // becomes the one the `ChunkedArray` gets — a chunk has none of its own.
-        let dtype = DataType::from_arrow_dtype(arr.dtype());
-        let arr = <PlFixedSizeListArray as ToArrow>::from_arrow(&arr);
+        let arr = self.inner.freeze_reset();
+        // The dtype is the logical one this was asked for. It used to be read back off the Arrow
+        // dtype the builder had been handed, which is the same thing for every type that survives
+        // the round trip and less than the truth for the ones that do not.
         unsafe {
             ChunkedArray::from_chunks_and_dtype_unchecked(
                 self.name.clone(),
-                vec![arr.into_boxed()],
-                dtype,
+                vec![Box::new(arr)],
+                DataType::Array(Box::new(self.inner_dtype.clone()), self.width),
             )
         }
     }

@@ -1,5 +1,4 @@
 use arrow::bitmap::BitmapBuilder;
-use polars_array::arrow::export;
 use polars_array::builder::{PlArrayBuilder, ShareStrategy, builder_like};
 use polars_core::chunked_array::builder::fixed_size_list::get_fixed_size_list_builder;
 use polars_core::utils::slice_offsets;
@@ -251,10 +250,7 @@ fn shift_broadcast_array(
                     } else {
                         shifted
                     };
-                    // TODO(polars-array-scalar): the builder is an Arrow one, so a scalar chunk
-                    // is written out here rather than the one element it stands for being pushed.
-                    let arr = export::to_arrow(shifted.chunks()[0].as_ref());
-                    builder.push_unchecked(&*arr, 0);
+                    builder.push_unchecked(shifted.chunks()[0].as_ref(), 0);
                 },
                 None => builder.push_null(),
             }
