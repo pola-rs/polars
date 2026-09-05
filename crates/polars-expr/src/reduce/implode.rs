@@ -1,11 +1,11 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::marker::PhantomData;
 
-use arrow::array::{
-    BinaryViewArray, ListArray, MutableBinaryViewArray, MutableBooleanArray, MutablePrimitiveArray,
+use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
+use polars_array::{
+    PlBinaryViewArrayBuilder, PlBooleanArray, PlBooleanArrayBuilder, PlListArrayBuilder,
+    PlPrimitiveArrayBuilder,
 };
-use arrow::offset::Offsets;
-use arrow::pushable::Pushable;
 use polars_core::chunked_array::builder::AnonymousOwnedListBuilder;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::UnitVec;
@@ -86,30 +86,23 @@ impl<T: PolarsNumericType> Reducer for NumUnorderedImplodeReducer<T> {
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
         let total_len = v.iter().map(|l| l.values.len() + l.null_count).sum();
-        let mut out = MutablePrimitiveArray::with_capacity(total_len);
-        let mut offsets = Offsets::<i64>::with_capacity(v.len());
+        let mut builder = PlListArrayBuilder::with_capacity(
+            PlPrimitiveArrayBuilder::<T::Native>::with_capacity(total_len),
+            v.len(),
+        );
         for list in v.into_iter() {
-            offsets
-                .try_push(list.values.len() + list.null_count)
-                .unwrap();
-            out.extend_values(list.values.into_iter());
-            out.extend_null(list.null_count);
+            let values = builder.values_mut();
+            values.push_values(list.values.into_iter());
+            values.extend_nulls(list.null_count);
+            builder.finish_row();
         }
 
-        let values = out.freeze();
-        let list_dtype = DataType::List(Box::new(dtype.clone()));
-        let phys_list_dtype = DataType::List(Box::new(dtype.to_physical()));
-        let arr = ListArray::new(
-            phys_list_dtype.to_arrow(CompatLevel::newest()),
-            offsets.freeze(),
-            values.boxed(),
-            None,
-        );
         // The chunk carries no inner type, so the list is built with its logical type directly.
+        let list_dtype = DataType::List(Box::new(dtype.clone()));
         let ca = unsafe {
             ListChunked::from_chunks_and_dtype(
                 PlSmallStr::EMPTY,
-                vec![<PlListArray as ToArrow>::from_arrow(&arr).into_boxed()],
+                vec![Box::new(builder.freeze())],
                 list_dtype,
             )
         };
@@ -162,29 +155,25 @@ impl Reducer for BinaryUnorderedImplodeReducer {
     ) -> PolarsResult<Series> {
         assert!(m.is_none()); // This should only be used with VecGroupedReduction.
         let total_len = v.iter().map(|l| l.values.len() + l.null_count).sum();
-        let mut out = MutableBinaryViewArray::with_capacity(total_len);
-        let mut offsets = Offsets::<i64>::with_capacity(v.len());
+        let mut builder = PlListArrayBuilder::with_capacity(
+            PlBinaryViewArrayBuilder::with_capacity(total_len),
+            v.len(),
+        );
         for list in v.into_iter() {
-            offsets
-                .try_push(list.values.len() + list.null_count)
-                .unwrap();
-            out.extend_values(list.values.into_iter());
-            out.extend_null(list.null_count);
+            let values = builder.values_mut();
+            for value in list.values {
+                values.push_value(&value);
+            }
+            values.extend_nulls(list.null_count);
+            builder.finish_row();
         }
 
-        let values: BinaryViewArray = out.freeze();
-        let arrow_dtype = ArrowDataType::LargeList(Box::new(ArrowField::new(
-            PlSmallStr::EMPTY,
-            ArrowDataType::BinaryView,
-            true,
-        )));
-        let arr = ListArray::new(arrow_dtype, offsets.freeze(), values.boxed(), None);
         // The chunk carries no inner type, so the list is built as the binary list it is and
         // cast to the requested type from there.
         let ca = unsafe {
             ListChunked::from_chunks_and_dtype(
                 PlSmallStr::EMPTY,
-                vec![<PlListArray as ToArrow>::from_arrow(&arr).into_boxed()],
+                vec![Box::new(builder.freeze())],
                 DataType::List(Box::new(DataType::Binary)),
             )
         };
@@ -243,30 +232,32 @@ impl Reducer for BoolUnorderedImplodeReducer {
             .iter()
             .map(|l| l.true_count + l.false_count + l.null_count)
             .sum();
-        let mut out = MutableBooleanArray::with_capacity(total_len);
-        let mut offsets = Offsets::<i64>::with_capacity(v.len());
+        let mut builder = PlListArrayBuilder::with_capacity(
+            PlBooleanArrayBuilder::with_capacity(total_len),
+            v.len(),
+        );
         for list in v.into_iter() {
-            offsets
-                .try_push(list.true_count + list.false_count + list.null_count)
-                .unwrap();
-            out.extend_constant(list.true_count, Some(true));
-            out.extend_constant(list.false_count, Some(false));
-            out.extend_null(list.null_count);
+            let values = builder.values_mut();
+            // A run of one value is appended as the one value standing for its whole length,
+            // rather than a bit at a time.
+            values.extend(
+                &PlBooleanArray::new_scalar(true, list.true_count),
+                ShareStrategy::Always,
+            );
+            values.extend(
+                &PlBooleanArray::new_scalar(false, list.false_count),
+                ShareStrategy::Always,
+            );
+            values.extend_nulls(list.null_count);
+            builder.finish_row();
         }
 
-        let values = out.freeze();
-        let list_dtype = DataType::List(Box::new(dtype.clone()));
-        let arr = ListArray::new(
-            list_dtype.to_arrow(CompatLevel::newest()),
-            offsets.freeze(),
-            values.boxed(),
-            None,
-        );
         // The chunk carries no inner type, so the list is built with its type directly.
+        let list_dtype = DataType::List(Box::new(dtype.clone()));
         let ca = unsafe {
             ListChunked::from_chunks_and_dtype(
                 PlSmallStr::EMPTY,
-                vec![<PlListArray as ToArrow>::from_arrow(&arr).into_boxed()],
+                vec![Box::new(builder.freeze())],
                 list_dtype,
             )
         };

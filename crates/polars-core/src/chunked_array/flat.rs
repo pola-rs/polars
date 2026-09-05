@@ -137,9 +137,11 @@ impl<T: PolarsNumericType> FlatNumericChunkedArray<T> for Flat<ChunkedArray<T>> 
         // SAFETY: the values are only written over, so the length, the null count and the flags
         // this array carries all stay correct.
         let arr = unsafe { ca.downcast_iter_mut().next().unwrap() };
-        arr.flat_values_mut()
-            .expect("a chunk of a flat ChunkedArray is flat")
-            .get_mut_slice()
+        // `flat_values_mut` is no use here: an array of a *single* element reads as scalar
+        // whichever way it was built, since its values buffer holds one slot either way, and it
+        // answers `None` for one. Both arms of the representation hand back the same buffer, and
+        // this array is flat, so that buffer holds one slot per element whichever arm it is in.
+        arr.values_repr_mut().into_inner().get_mut_slice()
     }
 
     fn data_views(&self) -> impl DoubleEndedIterator<Item = &[T::Native]> {
@@ -150,6 +152,20 @@ impl<T: PolarsNumericType> FlatNumericChunkedArray<T> for Flat<ChunkedArray<T>> 
 #[cfg(test)]
 mod test {
     use super::*;
+
+    /// An array of one element is in both representations at once — one slot per element *is* one
+    /// slot standing for every element — and asking whether it is scalar says yes.
+    #[test]
+    fn a_one_element_chunk_is_still_written_into() {
+        let mut ca = Int32Chunked::from_vec(PlSmallStr::EMPTY, vec![7]);
+        assert!(ca.is_flat());
+
+        // SAFETY: just checked, and adding to the values leaves the chunk flat.
+        for value in unsafe { Flat::new_mut(&mut ca) }.cont_slice_mut().unwrap() {
+            *value += 1;
+        }
+        assert_eq!(ca.get(0), Some(8));
+    }
 
     #[test]
     fn a_scalar_chunk_is_written_out_by_to_flat() {

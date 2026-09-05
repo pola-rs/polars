@@ -663,6 +663,17 @@ pub fn cast(
             _ => from_to_binview(array, from_type, to_type)
                 .map(|arr| unsafe { arr.to_utf8view_unchecked() }.boxed()),
         },
+        (LargeUtf8, _) => match to_type {
+            // The Parquet dictionary writer encodes a large string page as the bytes it holds.
+            LargeBinary => Ok(utf8_to::utf8_to_binary::<i64>(
+                array.as_any().downcast_ref().unwrap(),
+                to_type.clone(),
+            )
+            .boxed()),
+            _ => polars_bail!(InvalidOperation:
+                "casting from {from_type:?} to {to_type:?} not supported",
+            ),
+        },
         (LargeBinary, _) => match to_type {
             UInt8 => binary_to_primitive_dyn::<i64, u8>(array, to_type, options),
             UInt16 => binary_to_primitive_dyn::<i64, u16>(array, to_type, options),

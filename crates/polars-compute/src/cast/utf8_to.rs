@@ -31,6 +31,20 @@ pub fn utf8_to_dictionary<O: Offset, K: DictionaryKey>(
     Ok(array.into())
 }
 
+/// Reads the bytes of a UTF-8 array as the bytes they are.
+///
+/// This is `O(1)`: the offsets, the bytes and the validity are the same on both sides, and all
+/// that changes is that nothing downstream may assume the bytes are valid UTF-8 any more.
+pub fn utf8_to_binary<O: Offset>(from: &Utf8Array<O>, to_dtype: ArrowDataType) -> BinaryArray<O> {
+    // SAFETY: erasure of an invariant is always safe
+    BinaryArray::<O>::new(
+        to_dtype,
+        from.offsets().clone(),
+        from.values().clone(),
+        from.validity().cloned(),
+    )
+}
+
 const ARROW_MAX_OFFSET: u32 = if cfg!(test) {
     // Used to test buffer splitting.
     i8::MAX as u32
