@@ -67,48 +67,6 @@ impl Parse for f64 {
     }
 }
 
-/// Conversion of binary
-pub fn binary_to_large_binary(
-    from: &BinaryArray<i32>,
-    to_dtype: ArrowDataType,
-) -> BinaryArray<i64> {
-    let values = from.values().clone();
-    BinaryArray::<i64>::new(
-        to_dtype,
-        from.offsets().into(),
-        values,
-        from.validity().cloned(),
-    )
-}
-
-/// Conversion of binary
-pub fn binary_large_to_binary(
-    from: &BinaryArray<i64>,
-    to_dtype: ArrowDataType,
-) -> PolarsResult<BinaryArray<i32>> {
-    let values = from.values().clone();
-    let offsets = from.offsets().try_into()?;
-    Ok(BinaryArray::<i32>::new(
-        to_dtype,
-        offsets,
-        values,
-        from.validity().cloned(),
-    ))
-}
-
-/// Conversion to utf8
-pub fn binary_to_utf8<O: Offset>(
-    from: &BinaryArray<O>,
-    to_dtype: ArrowDataType,
-) -> PolarsResult<Utf8Array<O>> {
-    Utf8Array::<O>::try_new(
-        to_dtype,
-        from.offsets().clone(),
-        from.values().clone(),
-        from.validity().cloned(),
-    )
-}
-
 /// Casts a [`BinaryArray`] to a [`PrimitiveArray`], making any uncastable value a Null.
 pub(super) fn binary_to_primitive<O: Offset, T>(
     from: &BinaryArray<O>,
@@ -136,32 +94,6 @@ where
     } else {
         Ok(Box::new(binary_to_primitive::<O, T>(from, to)))
     }
-}
-
-/// Cast [`BinaryArray`] to [`DictionaryArray`], also known as packing.
-/// # Errors
-/// This function errors if the maximum key is smaller than the number of distinct elements
-/// in the array.
-pub fn binary_to_dictionary<O: Offset, K: DictionaryKey>(
-    from: &BinaryArray<O>,
-    ordered: bool,
-) -> PolarsResult<DictionaryArray<K>> {
-    let mut array = MutableDictionaryArray::<K, MutableBinaryArray<O>>::empty_with_value_dtype(
-        from.dtype().clone(),
-        ordered,
-    );
-    array.reserve(from.len());
-    array.try_extend(from.iter())?;
-
-    Ok(array.into())
-}
-
-pub(super) fn binary_to_dictionary_dyn<O: Offset, K: DictionaryKey>(
-    from: &dyn Array,
-    ordered: bool,
-) -> PolarsResult<Box<dyn Array>> {
-    let values = from.as_any().downcast_ref().unwrap();
-    binary_to_dictionary::<O, K>(values, ordered).map(|x| Box::new(x) as Box<dyn Array>)
 }
 
 fn fixed_size_to_offsets<O: Offset>(values_len: usize, fixed_size: usize) -> Offsets<O> {
