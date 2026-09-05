@@ -1,9 +1,8 @@
+use polars_array::{PlBinaryArray, PlPrimitiveArray};
 use polars_buffer::Buffer;
 use polars_utils::vec::PushUnchecked;
 
 use super::*;
-use polars_array::{PlBinaryArray, PlPrimitiveArray};
-
 use crate::hash_keys::RowEncodedKeys;
 use crate::hot_groups::fixed_index_table::FixedIndexTable;
 

@@ -1,8 +1,9 @@
-use arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
+use arrow::array::{Array, View};
 use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_array::bitmap::PlBitmap;
+use polars_array::{PlBinaryViewArray, PlUtf8ViewArray};
 use polars_buffer::Buffer;
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
-use polars_core::chunked_array::from::import_arrow_chunks;
 
 use super::*;
 use crate::hash_keys::HashKeys;
@@ -63,8 +64,9 @@ impl BinviewHashGrouper {
     }
 
     /// # Safety
-    /// The views must be valid for the given buffers.
-    unsafe fn finalize_keys<V: ViewType + ?Sized>(
+    /// The views must be valid for the given buffers, and `dtype` must be the one the keys were
+    /// gathered as — `Binary` or `String`, which is what decides the chunk's type.
+    unsafe fn finalize_keys(
         &self,
         schema: &Schema,
         views: Buffer<View>,
@@ -72,20 +74,20 @@ impl BinviewHashGrouper {
         validity: Option<Bitmap>,
     ) -> DataFrame {
         let (name, dtype) = schema.get_at_index(0).unwrap();
+        let length = views.len();
         unsafe {
-            let arrow_dtype = dtype.to_arrow(CompatLevel::newest());
-            let keys = BinaryViewArrayGeneric::<V>::new_unchecked_unknown_md(
-                arrow_dtype,
+            let keys = PlBinaryViewArray::new_unchecked(
                 views,
                 buffers,
-                validity,
-                None,
+                length,
+                validity.map(PlBitmap::from_bitmap),
             );
-            let s = Series::from_chunks_and_dtype_unchecked(
-                name.clone(),
-                import_arrow_chunks(vec![Box::new(keys)]),
-                dtype,
-            );
+            // A `String` chunk is the same views and buffers, read as text.
+            let keys: PlArrayRef = match dtype {
+                DataType::String => Box::new(PlUtf8ViewArray::from_binview_unchecked(keys)),
+                _ => Box::new(keys),
+            };
+            let s = Series::from_chunks_and_dtype_unchecked(name.clone(), vec![keys], dtype);
             DataFrame::new_unchecked(s.len(), vec![Column::from(s)])
         }
     }
@@ -187,8 +189,9 @@ impl Grouper for BinviewHashGrouper {
         unsafe {
             let (_name, dt) = schema.get_at_index(0).unwrap();
             match dt {
-                DataType::Binary => self.finalize_keys::<[u8]>(schema, views, buffers, validity),
-                DataType::String => self.finalize_keys::<str>(schema, views, buffers, validity),
+                DataType::Binary | DataType::String => {
+                    self.finalize_keys(schema, views, buffers, validity)
+                },
                 _ => unreachable!(),
             }
         }
@@ -276,5 +279,56 @@ impl Grouper for BinviewHashGrouper {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_core::prelude::{Column, DataType, Field, PlRandomState};
+
+    use super::*;
+
+    /// The keys come back out as the dtype they went in as: the views and buffers are the same
+    /// either way, so only the chunk wrapped around them says whether they read as text.
+    fn round_trip(values: Column, dtype: DataType) -> Column {
+        let df = DataFrame::new(values.len(), vec![values]).unwrap();
+        let keys = HashKeys::from_df(&df, PlRandomState::default(), false, false);
+
+        let mut grouper = BinviewHashGrouper::new();
+        let subset: Vec<IdxSize> = (0..df.height() as IdxSize).collect();
+        unsafe { grouper.insert_keys_subset(&keys, &subset, None) };
+
+        let schema = Schema::from_iter([Field::new("k".into(), dtype)]);
+        let out = grouper.get_keys_in_group_order(&schema);
+        out.columns()[0].clone()
+    }
+
+    #[test]
+    fn string_keys_come_back_as_strings() {
+        let out = round_trip(
+            Column::new("k".into(), ["alpha", "b", "alpha", "ccc"]),
+            DataType::String,
+        );
+
+        assert_eq!(out.dtype(), &DataType::String);
+        // Reading them as text is what would fail if the chunk were left as binary.
+        let ca = out.str().unwrap();
+        let mut got: Vec<&str> = ca.iter().flatten().collect();
+        got.sort_unstable();
+        assert_eq!(got, ["alpha", "b", "ccc"]);
+    }
+
+    #[test]
+    fn binary_keys_come_back_as_binary() {
+        let out = round_trip(
+            Column::new("k".into(), [b"alpha".as_slice(), b"b", b"alpha", b"ccc"]),
+            DataType::Binary,
+        );
+
+        assert_eq!(out.dtype(), &DataType::Binary);
+        let ca = out.binary().unwrap();
+        let mut got: Vec<&[u8]> = ca.iter().flatten().collect();
+        got.sort_unstable();
+        assert_eq!(got, [b"alpha".as_slice(), b"b", b"ccc"]);
     }
 }
