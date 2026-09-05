@@ -201,6 +201,10 @@ opt-level = "s"
 inherits = "release"
 debug = false
 
+[profile.fast-release]
+inherits = "release"
+lto = false
+
 [profile.debug-release]
 inherits = "release"
 debug = true
