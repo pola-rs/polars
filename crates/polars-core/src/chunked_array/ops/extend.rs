@@ -1,10 +1,24 @@
 use arrow::Either;
-use polars_array::arrow::bridge::chunk_to_arrow;
+use polars_array::PlBooleanArrayBuilder;
+use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
 use polars_array::concatenate::concatenate;
 
 use crate::prelude::append::update_sorted_flag_before_append;
 use crate::prelude::*;
 use crate::series::IsSorted;
+
+/// Takes the single chunk in `chunks` out, leaving no chunk behind.
+///
+/// The chunk is moved out of the box rather than cloned out of it, so that the array that comes
+/// back holds the only reference to its buffers.
+fn take_chunk<A: StaticArray + Default>(chunks: &mut Vec<PlArrayRef>) -> A {
+    let mut chunk = chunks.pop().expect("a chunked array holds at least one chunk");
+    let arr = chunk
+        .as_any_mut()
+        .downcast_mut::<A>()
+        .expect("the chunk of a typed chunked array has that type");
+    std::mem::take(arr)
+}
 
 fn extend_immutable(
     immutable: &dyn PlArray,
@@ -49,48 +63,25 @@ where
             self.rechunk_mut();
             return Ok(());
         }
-        // Depending on the state of the underlying arrow array we
-        // might be able to get a `MutablePrimitiveArray`
-        //
-        // This is only possible if the reference count of the array and its buffers are 1
-        // So the logic below is needed to keep the reference count 1 if it is
 
-        // First we must obtain an owned version of the array. Writing into the values in place
-        // asks for the Arrow array that shares them.
-        let arr = chunk_to_arrow(self.downcast_iter().next().unwrap());
+        // Take the chunk out of `self` before reaching for a builder: whether the values
+        // allocation can be reused rather than copied turns on this being the only reference
+        // left to it, so the array cannot stay reachable through `self.chunks`.
+        let arr = take_chunk::<PlPrimitiveArray<T::Native>>(&mut self.chunks);
 
-        // now we drop our owned ArrayRefs so that
-        // decrements 1
-        {
-            self.chunks.clear();
-        }
-
-        use Either::*;
-
-        if arr.values().is_sliced() {
-            let immutable: T::Array = ToArrow::from_arrow(&arr);
-            extend_immutable(&immutable, &mut self.chunks, &other.chunks);
-        } else {
-            match arr.into_mut() {
-                Left(immutable) => {
-                    let immutable: T::Array = ToArrow::from_arrow(&immutable);
-                    extend_immutable(&immutable, &mut self.chunks, &other.chunks);
-                },
-                Right(mut mutable) => {
-                    for arr in other.downcast_iter() {
-                        match arr.null_count() {
-                            0 => {
-                                let flat = arr.to_flat();
-                                mutable.extend_from_slice(flat.as_slice())
-                            },
-                            _ => mutable.extend_trusted_len(arr.iter()),
-                        }
-                    }
-                    let arr: PrimitiveArray<T::Native> = mutable.into();
-                    self.chunks
-                        .push(<T::Array as ToArrow>::from_arrow(&arr).into_boxed())
-                },
-            }
+        match arr.into_builder() {
+            Either::Right(mut builder) => {
+                // One growth for everything appended, rather than one per chunk of `other`.
+                builder.reserve(other.len());
+                for arr in other.downcast_iter() {
+                    builder.subslice_extend(arr, 0, arr.len(), ShareStrategy::Never);
+                }
+                self.chunks.push(builder.freeze().into_boxed());
+            },
+            // The values are shared, sliced or scalar, so there is nothing to append into.
+            Either::Left(immutable) => {
+                extend_immutable(&immutable, &mut self.chunks, &other.chunks)
+            },
         }
         self.compute_len();
         Ok(())
@@ -131,32 +122,19 @@ impl BooleanChunked {
             self.rechunk_mut();
             return Ok(());
         }
-        // The bits are written into in place where this is the only reference to them, which
-        // asks for the Arrow array that shares them — see `polars_array::arrow::bridge`.
-        let arr = chunk_to_arrow(self.downcast_iter().next().unwrap());
 
-        // now we drop our owned ArrayRefs so that
-        // decrements 1
-        {
-            self.chunks.clear();
+        // A boolean array holds one *bit* per element, so its values are copied into the builder
+        // rather than reclaimed the way `PlPrimitiveArray::into_builder` reclaims a values buffer:
+        // the copy is an eighth of a byte per element, and appending in bulk below more than pays
+        // for it.
+        let arr = take_chunk::<PlBooleanArray>(&mut self.chunks);
+
+        let mut builder = PlBooleanArrayBuilder::with_capacity(arr.len() + other.len());
+        builder.subslice_extend(&arr, 0, arr.len(), ShareStrategy::Never);
+        for arr in other.downcast_iter() {
+            builder.subslice_extend(arr, 0, arr.len(), ShareStrategy::Never);
         }
-
-        use Either::*;
-
-        match arr.into_mut() {
-            Left(immutable) => {
-                let immutable: PlBooleanArray = ToArrow::from_arrow(&immutable);
-                extend_immutable(&immutable, &mut self.chunks, &other.chunks);
-            },
-            Right(mut mutable) => {
-                for arr in other.downcast_iter() {
-                    mutable.extend_trusted_len(arr.iter())
-                }
-                let arr: BooleanArray = mutable.into();
-                self.chunks
-                    .push(<PlBooleanArray as ToArrow>::from_arrow(&arr).into_boxed())
-            },
-        }
+        self.chunks.push(builder.freeze().into_boxed());
         self.compute_len();
         self.set_sorted_flag(IsSorted::Not);
         Ok(())
@@ -207,6 +185,34 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    /// What makes `extend` worth having over `append`: the values go into the allocation that is
+    /// already there, and the result is still a single chunk.
+    #[test]
+    fn extend_appends_into_the_existing_allocation() {
+        let values_ptr = |ca: &Int32Chunked| {
+            ca.downcast_iter()
+                .next()
+                .unwrap()
+                .flat_values()
+                .unwrap()
+                .as_slice()
+                .as_ptr()
+        };
+
+        // Room to grow, so that appending has somewhere to go without moving what is there.
+        let mut values = Vec::with_capacity(64);
+        values.extend([1, 2, 3]);
+        let mut ca = Int32Chunked::from_vec(PlSmallStr::from_static("a"), values);
+        let before = values_ptr(&ca);
+
+        ca.extend(&Int32Chunked::new(PlSmallStr::from_static("a"), &[4, 5]))
+            .unwrap();
+
+        assert_eq!(ca.chunks().len(), 1);
+        assert_eq!(values_ptr(&ca), before);
+        assert_eq!(ca.into_no_null_iter().collect::<Vec<_>>(), [1, 2, 3, 4, 5]);
+    }
 
     #[test]
     #[allow(clippy::redundant_clone)]
@@ -264,3 +270,4 @@ mod test {
         Ok(())
     }
 }
+

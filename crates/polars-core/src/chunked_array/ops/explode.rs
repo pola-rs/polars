@@ -1,6 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use arrow::bitmap::utils::set_bit_unchecked;
 use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
 
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
@@ -205,29 +206,21 @@ impl ExplodeByOffsets for BooleanChunked {
             let o = o as usize;
             if options.empty_as_null && o == last {
                 if start != last {
-                    let vals = arr.clone().sliced(start, last - start);
-
-                    if vals.null_count() == 0 {
-                        builder
-                            .array_builder
-                            .extend_trusted_len_values(vals.values_iter())
-                    } else {
-                        builder.array_builder.extend_trusted_len(vals.into_iter());
-                    }
+                    builder.array_builder.subslice_extend(
+                        arr,
+                        start,
+                        last - start,
+                        ShareStrategy::Never,
+                    );
                 }
                 builder.append_null();
                 start = o;
             }
             last = o;
         }
-        let vals = arr.clone().sliced(start, last - start);
-        if vals.null_count() == 0 {
-            builder
-                .array_builder
-                .extend_trusted_len_values(vals.values_iter())
-        } else {
-            builder.array_builder.extend_trusted_len(vals.into_iter());
-        }
+        builder
+            .array_builder
+            .subslice_extend(arr, start, last - start, ShareStrategy::Never);
         builder.finish().into()
     }
 }

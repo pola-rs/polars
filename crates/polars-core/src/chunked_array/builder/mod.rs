@@ -40,8 +40,6 @@ pub trait ChunkedBuilder<N, T: PolarsDataType> {
     }
 
     fn finish(self) -> ChunkedArray<T>;
-
-    fn shrink_to_fit(&mut self);
 }
 
 // Used in polars/src/chunked_array/apply.rs:24 to collect from aligned vecs and null bitmaps

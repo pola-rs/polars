@@ -1,8 +1,10 @@
+use polars_array::PlBooleanArrayBuilder;
+
 use super::*;
 
 #[derive(Clone)]
 pub struct BooleanChunkedBuilder {
-    pub(crate) array_builder: MutableBooleanArray,
+    pub(crate) array_builder: PlBooleanArrayBuilder,
     pub(crate) field: Field,
 }
 
@@ -19,21 +21,16 @@ impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {
         self.array_builder.push_null();
     }
 
-    fn finish(mut self) -> BooleanChunked {
-        // The builder is the Arrow one, so the array crosses over — see `polars_array::arrow::bridge`.
-        let arr = polars_array::arrow::import::from_arrow(&*self.array_builder.as_box());
+    fn finish(self) -> BooleanChunked {
+        let arr = self.array_builder.freeze().into_boxed();
         ChunkedArray::new_with_compute_len(Arc::new(self.field), vec![arr])
-    }
-
-    fn shrink_to_fit(&mut self) {
-        self.array_builder.shrink_to_fit()
     }
 }
 
 impl BooleanChunkedBuilder {
     pub fn new(name: PlSmallStr, capacity: usize) -> Self {
         BooleanChunkedBuilder {
-            array_builder: MutableBooleanArray::with_capacity(capacity),
+            array_builder: PlBooleanArrayBuilder::with_capacity(capacity),
             field: Field::new(name, DataType::Boolean),
         }
     }

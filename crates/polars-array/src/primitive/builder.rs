@@ -18,6 +18,7 @@ use crate::builder::{
 /// once per byte class rather than once per element type; see [`bytes`]. Nothing this builder
 /// does reads what a value means, so nothing is given up by holding them that way, and the
 /// reinterpretation back to `T` in [`freeze`](StaticArrayBuilder::freeze) is `O(1)`.
+#[derive(Clone)]
 pub struct PlPrimitiveArrayBuilder<T: NativeType> {
     values: Vec<Bytes<T>>,
     validity: OptBitmapBuilder,
@@ -37,6 +38,14 @@ impl<T: NativeType> PlPrimitiveArrayBuilder<T> {
         let mut builder = Self::new();
         builder.reserve(capacity);
         builder
+    }
+
+    /// A builder holding `values` and `validity` as the elements appended so far.
+    ///
+    /// The caller owes the same invariant the builder maintains itself: `validity`, where it is
+    /// not all-true, covers exactly as many elements as `values` holds.
+    pub(crate) fn from_parts(values: Vec<Bytes<T>>, validity: OptBitmapBuilder) -> Self {
+        Self { values, validity }
     }
 
     /// Appends `value` as an element of its own.

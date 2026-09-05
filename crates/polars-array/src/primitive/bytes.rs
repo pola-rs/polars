@@ -25,6 +25,7 @@
 //! different bytes and a `NaN` is a number equal to nothing at all, itself included. The one
 //! place this crate does compare bytes on purpose is documented where it does so.
 
+use arrow::Either;
 use arrow::types::{AlignedBytes, NativeType};
 use polars_buffer::Buffer;
 use polars_utils::IdxSize;
@@ -77,6 +78,28 @@ pub(crate) fn buffer_from_bytes<T: NativeType>(bytes: Buffer<Bytes<T>>) -> Buffe
 #[inline(always)]
 pub(crate) fn buffer_from_byte_vec<T: NativeType>(values: Vec<Bytes<T>>) -> Buffer<T> {
     buffer_from_bytes::<T>(Buffer::from(values))
+}
+
+/// The bytes of the elements in `values` as a `Vec` that owns them, which reuses the allocation
+/// rather than copying it.
+///
+/// This is the inverse of [`buffer_from_byte_vec`], and it succeeds only when the buffer can give
+/// its allocation up: when it is unsliced and nothing else holds a reference to it. Otherwise the
+/// buffer is handed back untouched, on the left.
+#[inline(always)]
+pub(crate) fn byte_vec_from_buffer<T: NativeType>(
+    values: Buffer<T>,
+) -> Either<Buffer<T>, Vec<Bytes<T>>> {
+    const { assert_same_layout::<T>() };
+    // Reinterpreting first means the `Vec` that comes back is already the builder's element type,
+    // so no `Vec` is ever transmuted.
+    match values.try_transmute::<Bytes<T>>() {
+        Ok(bytes) => match bytes.into_mut() {
+            Either::Right(values) => Either::Right(values),
+            Either::Left(bytes) => Either::Left(buffer_from_bytes::<T>(bytes)),
+        },
+        Err(values) => Either::Left(values),
+    }
 }
 
 // Everything below is what this module exists for: one copy per byte class rather than one per

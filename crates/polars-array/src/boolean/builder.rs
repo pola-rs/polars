@@ -11,6 +11,7 @@ use crate::builder::{
 };
 
 /// A builder of a [`PlBooleanArray`].
+#[derive(Clone)]
 pub struct PlBooleanArrayBuilder {
     values: BitmapBuilder,
     validity: OptBitmapBuilder,

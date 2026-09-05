@@ -1,11 +1,13 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::Either;
+use arrow::bitmap::{Bitmap, MutableBitmap, OptBitmapBuilder};
 use arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_ensure};
 
 use crate::array::PlArray;
+use crate::builder::subslice_extend_validity;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmap, PlBitmapRef};
 use crate::broadcast::{
@@ -279,6 +281,44 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     #[inline]
     pub fn scalar_values(&self) -> Option<T> {
         self.values_repr().scalar()
+    }
+
+    /// A builder that continues this array, reusing its values allocation rather than copying it.
+    ///
+    /// This is what makes appending to an array cheaper than concatenating onto it, and it is
+    /// possible only when the values are flat, unsliced, and shared with nothing else — so the
+    /// array is handed back untouched, on the left, whenever they are not. The validity mask is
+    /// copied either way: it holds one *bit* per element, so reclaiming it would save a fraction
+    /// of what reclaiming the values does, and it may be scalar, which a builder cannot hold.
+    pub fn into_builder(self) -> Either<Self, PlPrimitiveArrayBuilder<T>> {
+        if self.flat_values().is_none() {
+            // Scalar values are a single slot standing for `length` elements; there is no
+            // allocation of the right size to reclaim.
+            return Either::Left(self);
+        }
+
+        // The mask is read off the array before it is taken apart, which is also what resolves a
+        // scalar one into the flat bits a builder appends to.
+        let mut builder_validity = OptBitmapBuilder::default();
+        subslice_extend_validity(&mut builder_validity, self.validity(), 0, self.length);
+
+        let Self {
+            values,
+            length,
+            validity,
+        } = self;
+
+        match bytes::byte_vec_from_buffer(values) {
+            Either::Right(values) => {
+                Either::Right(PlPrimitiveArrayBuilder::from_parts(values, builder_validity))
+            },
+            // The buffer came back untouched, so the array it came from is rebuilt as it was.
+            Either::Left(values) => Either::Left(Self {
+                values,
+                length,
+                validity,
+            }),
+        }
     }
 
     /// The validity mask, if any element may be null.
@@ -785,6 +825,7 @@ impl<T: NativeType> PlArray for PlPrimitiveArray<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builder::StaticArrayBuilder;
 
     #[test]
     fn flat() {
@@ -854,5 +895,72 @@ mod tests {
         assert!(arr.is_flat());
         assert!(!arr.is_scalar());
         assert!(arr.validity().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_sole_flat_array_gives_its_allocation_up_to_a_builder() {
+        // Room to grow, so that appending has an allocation to append *into* — an array whose
+        // buffer is exactly full would have to be moved wherever it came from.
+        let mut values = Vec::with_capacity(8);
+        values.extend([1i32, 2, 3]);
+        let arr = PlPrimitiveArray::from_vec(values);
+        let values_ptr = arr.flat_values().unwrap().as_slice().as_ptr();
+
+        let Either::Right(mut builder) = arr.into_builder() else {
+            panic!("an unshared flat array can be appended to in place");
+        };
+        builder.push_value(4);
+        let built = builder.freeze();
+
+        // The point of the whole exercise: the values were appended to where they already were.
+        assert_eq!(built.flat_values().unwrap().as_slice().as_ptr(), values_ptr);
+        assert_eq!(
+            built.iter().collect::<Vec<_>>(),
+            [Some(1), Some(2), Some(3), Some(4)],
+        );
+    }
+
+    #[test]
+    fn a_shared_or_sliced_array_keeps_its_allocation() {
+        let arr: PlPrimitiveArray<i32> = [Some(1), Some(2)].into_iter().collect();
+        let _alive = arr.clone();
+        assert!(
+            arr.into_builder().is_left(),
+            "a buffer another array still reads cannot be written into",
+        );
+
+        let arr: PlPrimitiveArray<i32> = [Some(1), Some(2), Some(3)].into_iter().collect();
+        assert!(
+            arr.sliced(1, 2).into_builder().is_left(),
+            "a slice does not own the whole allocation it points into",
+        );
+    }
+
+    #[test]
+    fn scalar_values_have_no_allocation_to_reclaim() {
+        let arr = PlPrimitiveArray::new_scalar(7i32, 1_000_000_000);
+        assert!(arr.into_builder().is_left());
+    }
+
+    #[test]
+    fn a_reclaimed_builder_carries_the_mask_over_in_either_representation() {
+        // A flat mask is copied bit for bit.
+        let arr: PlPrimitiveArray<i32> = [Some(1), None].into_iter().collect();
+        let Either::Right(builder) = arr.into_builder() else {
+            unreachable!()
+        };
+        assert_eq!(builder.freeze().iter().collect::<Vec<_>>(), [Some(1), None]);
+
+        // A scalar mask stands for one bit per element, and appending to it resolves it.
+        let arr = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
+            .with_validity(Some(PlBitmap::new_scalar(false, 3)));
+        let Either::Right(mut builder) = arr.into_builder() else {
+            unreachable!()
+        };
+        builder.push_value(4);
+        assert_eq!(
+            builder.freeze().iter().collect::<Vec<_>>(),
+            [None, None, None, Some(4)],
+        );
     }
 }
