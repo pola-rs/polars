@@ -19,10 +19,7 @@
 //!     - trimmed to normalized offsets
 //!     - have the same number of child elements below each element (even nulls)
 
-use arrow::array::Array;
 use arrow::datatypes::ArrowDataType;
-use polars_array::arrow::bridge::chunk_to_arrow;
-use polars_array::arrow::import::from_arrow;
 use polars_array::{
     PlArray, PlArrayType, PlBitmapRef, PlFixedSizeListArray, PlListArray, PlStructArray,
 };
@@ -230,21 +227,17 @@ fn find_validity_mismatch_list_fsl(
     }
 
     // The lists of a null element hold no values of their own, so lining the two sides up value for
-    // value means filling those in — which is what the cast to a fixed width does. That kernel is
-    // the Arrow one, so the chunk crosses over; this only runs once a cast has already failed.
-    let arrow = chunk_to_arrow::<PlListArray>(left);
-    let ArrowDataType::LargeList(field) = arrow.dtype() else {
-        unreachable!("a list array of this crate crosses over as a large list");
+    // value means filling those in — which is what the cast to a fixed width does. This only runs
+    // once a cast has already failed.
+    let from_type = crate::cast::pl_array::physical_dtype(left);
+    let ArrowDataType::LargeList(field) = &from_type else {
+        unreachable!("a list array of this crate reads as a large list");
     };
+    let to_type = ArrowDataType::FixedSizeList(field.clone(), right.width());
 
-    let left = crate::cast::cast_list_to_fixed_size_list(
-        &arrow,
-        field,
-        right.width(),
-        CastOptionsImpl::default(),
-    )
-    .unwrap();
-    let left = from_arrow(left.values().as_ref());
+    let left = crate::cast::cast_chunk_from(left, &from_type, &to_type, CastOptionsImpl::default())
+        .unwrap();
+    let left: &PlFixedSizeListArray = downcast(&*left);
 
-    find_validity_mismatch_nested(&*left, right.values(), right.width(), idxs)
+    find_validity_mismatch_nested(left.values(), right.values(), right.width(), idxs)
 }

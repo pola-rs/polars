@@ -77,6 +77,45 @@ pub(crate) fn cast_chunks(
         .collect()
 }
 
+/// [`cast_chunks`] for chunks whose buffers hold the values of a *logical* type.
+///
+/// A chunk carries no type of its own, so what its buffers mean is read off the chunk's shape —
+/// which says `i128` where the caller means a decimal of a given precision and scale. Saying it
+/// instead is what lets those chunks be cast without being handed an Arrow array tagged with the
+/// logical type first.
+pub(crate) fn cast_chunks_from(
+    chunks: &[PlArrayRef],
+    from_dtype: &DataType,
+    dtype: &DataType,
+    options: CastOptions,
+) -> PolarsResult<Vec<PlArrayRef>> {
+    let check_nulls = matches!(options, CastOptions::Strict);
+    let from_arrow_dtype = from_dtype.try_to_arrow(CompatLevel::newest())?;
+    let arrow_dtype = dtype.try_to_arrow(CompatLevel::newest())?;
+    let cast_options = options.into();
+
+    chunks
+        .iter()
+        .map(|chunk| {
+            let out = polars_compute::cast::cast_chunk_from(
+                &**chunk,
+                &from_arrow_dtype,
+                &arrow_dtype,
+                cast_options,
+            )?;
+            if check_nulls && chunk.null_count() != out.null_count() {
+                // As in `cast_chunks`: the failing values are read back over the Arrow arrays,
+                // and only once the cast has failed.
+                handle_array_casting_failures(
+                    &*polars_array::arrow::export::to_arrow(&**chunk),
+                    &*polars_array::arrow::export::to_arrow(&*out),
+                )?;
+            }
+            Ok(out)
+        })
+        .collect()
+}
+
 /// Casts Arrow chunks to `dtype`, which is what the boundaries where data arrives as Arrow use.
 pub(crate) fn cast_arrow_chunks(
     chunks: &[ArrayRef],

@@ -1,14 +1,13 @@
 use std::borrow::Cow;
 
 use arrow::bitmap::Bitmap;
-use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::decimal::{
     DEC128_MAX_PREC, dec128_fits, dec128_mul, dec128_rescale, dec128_verify_prec_scale,
     i128_to_dec128,
 };
 
 use super::*;
-use crate::chunked_array::cast::cast_arrow_chunks;
+use crate::chunked_array::cast::cast_chunks_from;
 use crate::prelude::arity::{unary_elementwise, unary_kernel};
 use crate::prelude::*;
 
@@ -78,26 +77,16 @@ impl LogicalType for DecimalChunked {
             dt if dt.is_primitive_numeric()
                 | matches!(dt, DataType::String | DataType::Boolean) =>
             {
-                // Normally we don't set the Arrow logical type, but now we temporarily set it so
-                // we can re-use the compute cast kernels.
-                let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
-                // The kernels are the Arrow ones, so the chunks cross over — see `polars_array::arrow::bridge`.
-                let chunks = self
-                    .physical()
-                    .chunks
-                    .iter()
-                    .map(|arr| {
-                        chunk_to_arrow(
-                            arr.as_any()
-                                .downcast_ref::<PlPrimitiveArray<i128>>()
-                                .unwrap(),
-                        )
-                        .to(arrow_dtype.clone())
-                        .to_boxed()
-                    })
-                    .collect::<Vec<_>>();
-                let chunks = cast_arrow_chunks(&chunks, dtype, cast_options)?;
-                Series::try_from((self.name().clone(), chunks))
+                // The chunks hold `i128`s and nothing that says what they are worth, so the
+                // precision and scale are what the cast is told to read them as.
+                let chunks =
+                    cast_chunks_from(&self.physical().chunks, self.dtype(), dtype, cast_options)?;
+                // SAFETY: the chunks were just cast to `dtype`, which the arm above restricts to
+                // the types that are their own physical type.
+                debug_assert_eq!(&dtype.to_physical(), dtype);
+                Ok(unsafe {
+                    Series::from_chunks_and_dtype_unchecked(self.name().clone(), chunks, dtype)
+                })
             },
 
             dt => {
