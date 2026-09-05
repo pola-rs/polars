@@ -1,10 +1,9 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::legacy::kernels::take_agg::{
-    take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
-};
-use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_compute::rolling;
 use polars_compute::rolling::no_nulls::{MaxWindow, MinWindow};
+use polars_compute::take_agg::{
+    take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
+};
 use polars_core::frame::group_by::aggregations::{
     _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window_no_nulls,
     _rolling_apply_agg_window_nulls, _slice_from_offsets, _use_rolling_kernels,
@@ -79,12 +78,12 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                     // TODO(polars-array-scalar): the take kernels are Arrow ones, so a scalar
                     // chunk is written out rather than its one value being taken as often as asked.
                     (false, 1) => take_agg_no_null_primitive_iter_unchecked(
-                        &chunk_to_arrow(ca.downcast_iter().next().unwrap()),
+                        ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
                     )
                     .reduce(MinMax::max_propagate_nan),
                     (_, 1) => take_agg_primitive_iter_unchecked(
-                        &chunk_to_arrow(ca.downcast_iter().next().unwrap()),
+                        ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
                     )
                     .reduce(MinMax::max_propagate_nan),
@@ -153,12 +152,12 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                     // TODO(polars-array-scalar): the take kernels are Arrow ones, so a scalar
                     // chunk is written out rather than its one value being taken as often as asked.
                     (false, 1) => take_agg_no_null_primitive_iter_unchecked(
-                        &chunk_to_arrow(ca.downcast_iter().next().unwrap()),
+                        ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
                     )
                     .reduce(MinMax::min_propagate_nan),
                     (_, 1) => take_agg_primitive_iter_unchecked(
-                        &chunk_to_arrow(ca.downcast_iter().next().unwrap()),
+                        ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
                     )
                     .reduce(MinMax::min_propagate_nan),

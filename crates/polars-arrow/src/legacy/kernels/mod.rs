@@ -2,13 +2,11 @@ use std::iter::Enumerate;
 
 use crate::array::BooleanArray;
 use crate::bitmap::utils::BitChunks;
-pub mod set;
 pub mod sort_partition;
 #[cfg(feature = "performant")]
 pub mod sorted_join;
 #[cfg(feature = "strings")]
 pub mod string;
-pub mod take_agg;
 mod time;
 
 pub use time::{Ambiguous, NonExistent};
