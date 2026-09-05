@@ -1,6 +1,8 @@
 use arrow::array::ValueSize;
 #[cfg(feature = "dtype-struct")]
-use arrow::array::{MutableArray, MutableUtf8Array};
+use polars_array::PlUtf8ViewArrayBuilder;
+#[cfg(feature = "dtype-struct")]
+use polars_array::builder::StaticArrayBuilder;
 use polars_core::chunked_array::ops::arity::binary_elementwise_for_each;
 use polars_core::prelude::*;
 use polars_utils::regex_cache::compile_regex;
@@ -69,7 +71,7 @@ where
     use polars_utils::format_pl_smallstr;
 
     let mut arrs = (0..n)
-        .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
+        .map(|_| PlUtf8ViewArrayBuilder::with_capacity(ca.len()))
         .collect::<Vec<_>>();
 
     if by.len() == 1 {
@@ -85,7 +87,7 @@ where
                         let mut arr_iter = arrs.iter_mut();
                         splitn_chars(s, n, keep_remainder)
                             .zip(&mut arr_iter)
-                            .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                            .for_each(|(splitted, arr)| arr.push_value(splitted));
                         // fill the remaining with null
                         for arr in arr_iter {
                             arr.push_null()
@@ -103,7 +105,7 @@ where
                         let mut arr_iter = arrs.iter_mut();
                         op(s, by)
                             .zip(&mut arr_iter)
-                            .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                            .for_each(|(splitted, arr)| arr.push_value(splitted));
                         // fill the remaining with null
                         for arr in arr_iter {
                             arr.push_null()
@@ -123,11 +125,11 @@ where
                 if by.is_empty() {
                     splitn_chars(s, n, keep_remainder)
                         .zip(&mut arr_iter)
-                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                        .for_each(|(splitted, arr)| arr.push_value(splitted));
                 } else {
                     op(s, by)
                         .zip(&mut arr_iter)
-                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                        .for_each(|(splitted, arr)| arr.push_value(splitted));
                 };
                 // fill the remaining with null
                 for arr in arr_iter {
@@ -145,8 +147,8 @@ where
     let fields = arrs
         .into_iter()
         .enumerate()
-        .map(|(i, mut arr)| {
-            Series::try_from((format_pl_smallstr!("field_{i}"), arr.as_box())).unwrap()
+        .map(|(i, arr)| {
+            StringChunked::with_chunk(format_pl_smallstr!("field_{i}"), arr.freeze()).into_series()
         })
         .collect::<Vec<_>>();
 
@@ -389,4 +391,70 @@ pub fn split_regex_helper(
 
         _ => polars_bail!(length_mismatch = "str.split_regex", ca.len(), by.len()),
     })
+}
+
+#[cfg(all(test, feature = "dtype-struct"))]
+mod tests {
+    use super::*;
+
+    /// The fields are built one at a time and padded with nulls where a row split into fewer
+    /// pieces than there are fields, so a row shorter than `n` is the case worth pinning.
+    #[test]
+    fn splitting_into_a_struct_pads_short_rows_with_nulls() {
+        let ca = StringChunked::new("s".into(), &[Some("a,b,c"), Some("d,e"), None, Some("")]);
+        let by = StringChunked::new("by".into(), &[","]);
+
+        let out = split_to_struct(&ca, &by, 3, |s, by| s.split(by), false).unwrap();
+        let fields = out.fields_as_series();
+        assert_eq!(fields.len(), 3);
+
+        let field = |i: usize| fields[i].str().unwrap().iter().collect::<Vec<_>>();
+        assert_eq!(field(0), [Some("a"), Some("d"), None, Some("")]);
+        assert_eq!(field(1), [Some("b"), Some("e"), None, None]);
+        // Only the first row had a third piece; the rest are padded.
+        assert_eq!(field(2), [Some("c"), None, None, None]);
+    }
+
+    /// An empty separator splits per character, which is a different branch with its own padding.
+    #[test]
+    fn splitting_on_an_empty_separator_pads_short_rows_too() {
+        let ca = StringChunked::new("s".into(), &[Some("ab"), Some("c"), None]);
+        let by = StringChunked::new("by".into(), &[""]);
+
+        let out = split_to_struct(&ca, &by, 3, |s, by| s.split(by), false).unwrap();
+        let fields = out.fields_as_series();
+        let field = |i: usize| fields[i].str().unwrap().iter().collect::<Vec<_>>();
+
+        assert_eq!(field(0), [Some("a"), Some("c"), None]);
+        assert_eq!(field(1), [Some("b"), None, None]);
+        assert_eq!(field(2), [None, None, None]);
+    }
+
+    /// A separator per row takes the elementwise branch, which pads independently again.
+    #[test]
+    fn splitting_with_a_separator_per_row_pads_short_rows_too() {
+        let ca = StringChunked::new("s".into(), &[Some("a,b"), Some("c-d-e"), None]);
+        let by = StringChunked::new("by".into(), &[Some(","), Some("-"), Some(",")]);
+
+        let out = split_to_struct(&ca, &by, 3, |s, by| s.split(by), false).unwrap();
+        let fields = out.fields_as_series();
+        let field = |i: usize| fields[i].str().unwrap().iter().collect::<Vec<_>>();
+
+        assert_eq!(field(0), [Some("a"), Some("c"), None]);
+        assert_eq!(field(1), [Some("b"), Some("d"), None]);
+        assert_eq!(field(2), [None, Some("e"), None]);
+    }
+
+    /// A polars string column is view-backed, so the fields come back as `String`, not as the
+    /// offset-backed layout the builder used to produce.
+    #[test]
+    fn the_fields_are_string_columns() {
+        let ca = StringChunked::new("s".into(), &["x-y"]);
+        let by = StringChunked::new("by".into(), &["-"]);
+
+        let out = split_to_struct(&ca, &by, 2, |s, by| s.split(by), false).unwrap();
+        for field in out.fields_as_series() {
+            assert_eq!(field.dtype(), &DataType::String);
+        }
+    }
 }
