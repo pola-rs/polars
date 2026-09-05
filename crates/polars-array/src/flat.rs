@@ -7,7 +7,7 @@ use crate::bitmap::PlBitmap;
 
 /// An array whose backing buffers all hold one slot per element.
 #[repr(transparent)]
-pub struct Flat<T>(pub(crate) T);
+pub struct Flat<T>(T);
 
 impl<T: PlArray> Flat<T> {
     /// Slices this array in place to `length` elements starting at `offset`.

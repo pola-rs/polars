@@ -13,21 +13,21 @@ impl Flat<PlFixedSizeBinaryArray> {
     /// [`width`](PlFixedSizeBinaryArray::width) bytes.
     #[inline(always)]
     pub const fn values(&self) -> &Buffer<u8> {
-        &self.0.values
+        &self.as_array().values
     }
 
     /// The values as a slice of exactly [`len`](PlFixedSizeBinaryArray::len) `*`
     /// [`width`](PlFixedSizeBinaryArray::width) bytes.
     #[inline(always)]
     pub fn as_slice(&self) -> &[u8] {
-        self.0.values.as_slice()
+        self.as_array().values.as_slice()
     }
 
     /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
     /// [`len`](PlFixedSizeBinaryArray::len) bits.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
-        self.0.validity.as_ref()
+        self.as_array().validity.as_ref()
     }
 
     /// Returns the bytes of the element at `i`.
@@ -36,7 +36,7 @@ impl Flat<PlFixedSizeBinaryArray> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value(&self, i: usize) -> &[u8] {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.value_unchecked(i) }
     }
 
@@ -46,10 +46,14 @@ impl Flat<PlFixedSizeBinaryArray> {
     /// `i` must be smaller than `self.len()`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> &[u8] {
-        debug_assert!(i < self.0.length);
-        let start = i * self.0.width;
+        debug_assert!(i < self.as_array().length);
+        let start = i * self.as_array().width;
         // SAFETY: the values hold the width of every element, so the element at `i` is in bounds.
-        unsafe { self.0.values.get_unchecked(start..start + self.0.width) }
+        unsafe {
+            self.as_array()
+                .values
+                .get_unchecked(start..start + self.as_array().width)
+        }
     }
 
     /// Returns whether the element at `i` is valid (non-null).
@@ -58,7 +62,7 @@ impl Flat<PlFixedSizeBinaryArray> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_valid(&self, i: usize) -> bool {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.is_valid_unchecked(i) }
     }
 
@@ -68,7 +72,7 @@ impl Flat<PlFixedSizeBinaryArray> {
     /// `i` must be smaller than `self.len()`.
     #[inline]
     pub unsafe fn is_valid_unchecked(&self, i: usize) -> bool {
-        debug_assert!(i < self.0.length);
+        debug_assert!(i < self.as_array().length);
         // SAFETY: the mask has one bit per element, so `i` is in bounds of it too.
         self.validity()
             .is_none_or(|validity| unsafe { validity.get_bit_unchecked(i) })
@@ -98,7 +102,7 @@ impl Flat<PlFixedSizeBinaryArray> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn get(&self, i: usize) -> Option<&[u8]> {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.get_unchecked(i) }
     }
 

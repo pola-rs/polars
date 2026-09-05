@@ -675,10 +675,16 @@ impl PlFixedSizeBinaryArray {
         };
 
         // SAFETY: the values are the element every element covers, repeated once per element, and
-        // the mask is the flat counterpart of one valid for this array's length.
-        Cow::Owned(Flat(unsafe {
-            Self::new_unchecked(values, self.width, self.length, validity)
-        }))
+        // the mask is the flat counterpart of one valid for this array's length, which leaves every
+        // backing buffer holding one slot per element.
+        Cow::Owned(unsafe {
+            Flat::new(Self::new_unchecked(
+                values,
+                self.width,
+                self.length,
+                validity,
+            ))
+        })
     }
 
     /// Borrows this array as a [`Flat`] one, if its values already hold the bytes of every element
@@ -747,7 +753,7 @@ impl Eq for PlFixedSizeBinaryArray {}
 impl PartialEq<Flat<PlFixedSizeBinaryArray>> for PlFixedSizeBinaryArray {
     #[inline]
     fn eq(&self, other: &Flat<PlFixedSizeBinaryArray>) -> bool {
-        *self == other.0
+        *self == *other.as_array()
     }
 }
 

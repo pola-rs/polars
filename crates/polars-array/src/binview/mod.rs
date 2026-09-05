@@ -689,12 +689,16 @@ impl PlBinaryViewArray {
             .validity()
             .map(|validity| validity.to_flat().into_owned());
 
-        Cow::Owned(Flat(Self {
-            views,
-            buffers: self.buffers.clone(),
-            length: self.length,
-            validity,
-        }))
+        // SAFETY: the views hold one slot per element, written out above, and the mask is the
+        // flat counterpart of this array's own.
+        Cow::Owned(unsafe {
+            Flat::new(Self {
+                views,
+                buffers: self.buffers.clone(),
+                length: self.length,
+                validity,
+            })
+        })
     }
 
     /// Borrows this array as a [`Flat`] one, if its views and mask already hold one slot per

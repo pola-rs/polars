@@ -14,26 +14,26 @@ impl Flat<PlBinaryArray> {
     /// The backing offsets buffer, holding exactly [`len`](PlBinaryArray::len) `+ 1` offsets.
     #[inline(always)]
     pub const fn offsets(&self) -> &Buffer<u64> {
-        &self.0.offsets
+        &self.as_array().offsets
     }
 
     /// The backing values buffer, holding the bytes the offsets cut the elements out of.
     #[inline(always)]
     pub const fn values(&self) -> &Buffer<u8> {
-        &self.0.values
+        &self.as_array().values
     }
 
     /// The values as a slice, which the offsets cut the elements out of.
     #[inline(always)]
     pub fn as_slice(&self) -> &[u8] {
-        self.0.values.as_slice()
+        self.as_array().values.as_slice()
     }
 
     /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
     /// [`len`](PlBinaryArray::len) bits.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
-        self.0.validity.as_ref()
+        self.as_array().validity.as_ref()
     }
 
     /// Consumes this array into its internal components, whose ranges and bits are one per element.
@@ -44,7 +44,7 @@ impl Flat<PlBinaryArray> {
             offsets,
             length: _,
             validity,
-        } = self.0;
+        } = self.into_array();
 
         (values, offsets, validity)
     }
@@ -55,7 +55,7 @@ impl Flat<PlBinaryArray> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value_range(&self, i: usize) -> Range<usize> {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.value_range_unchecked(i) }
     }
 
@@ -65,12 +65,12 @@ impl Flat<PlBinaryArray> {
     /// `i` must be smaller than `self.len()`.
     #[inline]
     pub unsafe fn value_range_unchecked(&self, i: usize) -> Range<usize> {
-        debug_assert!(i < self.0.length);
+        debug_assert!(i < self.as_array().length);
         // SAFETY: the offsets hold one slot more than the starts, so `i + 1` is in bounds, and
         // every offset is at most the length of the values and therefore fits in a `usize`.
         unsafe {
-            let start = *self.0.offsets.get_unchecked(i) as usize;
-            let end = *self.0.offsets.get_unchecked(i + 1) as usize;
+            let start = *self.as_array().offsets.get_unchecked(i) as usize;
+            let end = *self.as_array().offsets.get_unchecked(i + 1) as usize;
             start..end
         }
     }
@@ -81,7 +81,7 @@ impl Flat<PlBinaryArray> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value(&self, i: usize) -> &[u8] {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.value_unchecked(i) }
     }
 
@@ -93,7 +93,7 @@ impl Flat<PlBinaryArray> {
     pub unsafe fn value_unchecked(&self, i: usize) -> &[u8] {
         let range = unsafe { self.value_range_unchecked(i) };
         // SAFETY: the offsets are ordered and bounded by the length of the values.
-        unsafe { self.0.values.get_unchecked(range) }
+        unsafe { self.as_array().values.get_unchecked(range) }
     }
 
     /// Returns whether the element at `i` is valid (non-null).
@@ -102,7 +102,7 @@ impl Flat<PlBinaryArray> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_valid(&self, i: usize) -> bool {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.is_valid_unchecked(i) }
     }
 
@@ -112,7 +112,7 @@ impl Flat<PlBinaryArray> {
     /// `i` must be smaller than `self.len()`.
     #[inline]
     pub unsafe fn is_valid_unchecked(&self, i: usize) -> bool {
-        debug_assert!(i < self.0.length);
+        debug_assert!(i < self.as_array().length);
         // SAFETY: the mask has one bit per element, so `i` is in bounds of it too.
         self.validity()
             .is_none_or(|validity| unsafe { validity.get_bit_unchecked(i) })
@@ -142,7 +142,7 @@ impl Flat<PlBinaryArray> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn get(&self, i: usize) -> Option<&[u8]> {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.get_unchecked(i) }
     }
 

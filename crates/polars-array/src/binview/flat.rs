@@ -13,14 +13,14 @@ impl Flat<PlBinaryViewArray> {
     /// The backing views buffer, holding exactly [`len`](PlBinaryViewArray::len) slots.
     #[inline(always)]
     pub const fn views(&self) -> &Buffer<View> {
-        &self.0.views
+        &self.as_array().views
     }
 
     /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
     /// [`len`](PlBinaryViewArray::len) bits.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
-        self.0.validity.as_ref()
+        self.as_array().validity.as_ref()
     }
 
     /// Returns the view of the element at `i`.
@@ -29,7 +29,7 @@ impl Flat<PlBinaryViewArray> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn view(&self, i: usize) -> View {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.view_unchecked(i) }
     }
 
@@ -39,8 +39,8 @@ impl Flat<PlBinaryViewArray> {
     /// `i` must be smaller than `self.len()`.
     #[inline]
     pub unsafe fn view_unchecked(&self, i: usize) -> View {
-        debug_assert!(i < self.0.length);
-        unsafe { *self.0.views.get_unchecked(i) }
+        debug_assert!(i < self.as_array().length);
+        unsafe { *self.as_array().views.get_unchecked(i) }
     }
 
     /// Returns the value at `i`.
@@ -49,7 +49,7 @@ impl Flat<PlBinaryViewArray> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value(&self, i: usize) -> &[u8] {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.value_unchecked(i) }
     }
 
@@ -59,13 +59,13 @@ impl Flat<PlBinaryViewArray> {
     /// `i` must be smaller than `self.len()`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> &[u8] {
-        debug_assert!(i < self.0.length);
+        debug_assert!(i < self.as_array().length);
         // SAFETY: every view reads bytes the data buffers hold, upheld by every constructor.
         unsafe {
-            self.0
+            self.as_array()
                 .views
                 .get_unchecked(i)
-                .get_slice_unchecked(self.0.buffers.as_slice())
+                .get_slice_unchecked(self.as_array().buffers.as_slice())
         }
     }
 
@@ -75,7 +75,7 @@ impl Flat<PlBinaryViewArray> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_valid(&self, i: usize) -> bool {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.is_valid_unchecked(i) }
     }
 
@@ -85,7 +85,7 @@ impl Flat<PlBinaryViewArray> {
     /// `i` must be smaller than `self.len()`.
     #[inline]
     pub unsafe fn is_valid_unchecked(&self, i: usize) -> bool {
-        debug_assert!(i < self.0.length);
+        debug_assert!(i < self.as_array().length);
         // SAFETY: the mask has one bit per element, so `i` is in bounds of it too.
         self.validity()
             .is_none_or(|validity| unsafe { validity.get_bit_unchecked(i) })
@@ -115,7 +115,7 @@ impl Flat<PlBinaryViewArray> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn get(&self, i: usize) -> Option<&[u8]> {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.get_unchecked(i) }
     }
 
@@ -136,7 +136,7 @@ impl Flat<PlBinaryViewArray> {
             buffers,
             length: _,
             validity,
-        } = self.0;
+        } = self.into_array();
 
         (views, buffers, validity)
     }
@@ -148,7 +148,7 @@ impl<'a> IntoIterator for &'a Flat<PlBinaryViewArray> {
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
+        self.as_array().iter()
     }
 }
 
@@ -157,7 +157,7 @@ impl<'a> IntoIterator for &'a Flat<PlBinaryViewArray> {
 impl PartialEq<Flat<PlBinaryViewArray>> for PlBinaryViewArray {
     #[inline]
     fn eq(&self, other: &Flat<PlBinaryViewArray>) -> bool {
-        *self == other.0
+        *self == *other.as_array()
     }
 }
 

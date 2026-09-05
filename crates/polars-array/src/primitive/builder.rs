@@ -60,6 +60,23 @@ impl<T: NativeType> PlPrimitiveArrayBuilder<T> {
         self.validity.extend_constant(1, true);
     }
 
+    /// Appends every value `values` yields, in order, none of them null.
+    ///
+    /// The mask is extended once for the whole run rather than once per value, which is the point
+    /// of appending them together: a run of values is one `extend_constant` instead of `n` of
+    /// them. The `Vec` reserves off the iterator's size hint, so a [`TrustedLen`] iterator such as
+    /// a range grows the buffer once.
+    ///
+    /// [`TrustedLen`]: arrow::trusted_len::TrustedLen
+    #[inline]
+    pub fn push_values<I: IntoIterator<Item = T>>(&mut self, values: I) {
+        let before = self.values.len();
+        self.values
+            .extend(values.into_iter().map(bytes::to_bytes::<T>));
+        self.validity
+            .extend_constant(self.values.len() - before, true);
+    }
+
     /// Appends a null.
     #[inline]
     pub fn push_null(&mut self) {
@@ -246,6 +263,56 @@ mod tests {
             built.iter().collect::<Vec<_>>(),
             [Some(3), Some(1), None, None, None],
         );
+    }
+
+    /// Appending a run has to leave the mask exactly as long as the values, whether or not a
+    /// mask has come into being yet — the two are extended by separate calls.
+    #[test]
+    fn pushing_a_run_of_values_keeps_the_mask_aligned() {
+        let mut builder = PlPrimitiveArrayBuilder::<i32>::new();
+        builder.push_values(0..4);
+        builder.push_null();
+        builder.push_values([9, 8]);
+        builder.push_value(7);
+
+        let built = builder.freeze();
+        assert_eq!(built.len(), 8);
+        assert_eq!(
+            built.iter().collect::<Vec<_>>(),
+            [
+                Some(0),
+                Some(1),
+                Some(2),
+                Some(3),
+                None,
+                Some(9),
+                Some(8),
+                Some(7),
+            ],
+        );
+    }
+
+    /// A run of values on its own never makes a mask, the same as pushing them one by one.
+    #[test]
+    fn a_run_of_values_alone_leaves_no_mask() {
+        let mut builder = PlPrimitiveArrayBuilder::<u32>::new();
+        builder.push_values(0..1_000);
+        let built = builder.freeze();
+
+        assert!(built.validity().is_none());
+        assert_eq!(built.len(), 1_000);
+        assert_eq!(built.flat_values().unwrap().as_slice()[999], 999);
+    }
+
+    /// An empty run is a no-op, including for the mask.
+    #[test]
+    fn an_empty_run_appends_nothing() {
+        let mut builder = PlPrimitiveArrayBuilder::<i64>::new();
+        builder.push_null();
+        builder.push_values(std::iter::empty());
+        builder.push_value(1);
+
+        assert_eq!(builder.freeze().iter().collect::<Vec<_>>(), [None, Some(1)],);
     }
 
     #[test]

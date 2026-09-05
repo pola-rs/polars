@@ -687,10 +687,11 @@ impl PlListArray {
         };
 
         // SAFETY: the offsets are ordered, one per element plus the end of the last, and within the
-        // values; the mask is the flat counterpart of one valid for this array's length.
-        Cow::Owned(Flat(unsafe {
-            Self::new_unchecked(values, offsets, self.length, validity)
-        }))
+        // values; the mask is the flat counterpart of one valid for this array's length. That
+        // leaves every own backing buffer holding one slot per element.
+        Cow::Owned(unsafe {
+            Flat::new(Self::new_unchecked(values, offsets, self.length, validity))
+        })
     }
 
     /// Borrows this array as a [`Flat`] one, if both of its own backing buffers already hold one
@@ -749,7 +750,7 @@ impl Eq for PlListArray {}
 impl PartialEq<Flat<PlListArray>> for PlListArray {
     #[inline]
     fn eq(&self, other: &Flat<PlListArray>) -> bool {
-        *self == other.0
+        *self == *other.as_array()
     }
 }
 

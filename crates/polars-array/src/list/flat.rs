@@ -13,14 +13,14 @@ impl Flat<PlListArray> {
     /// The backing offsets buffer, holding exactly [`len`](PlListArray::len) `+ 1` offsets.
     #[inline(always)]
     pub const fn offsets(&self) -> &Buffer<u64> {
-        &self.0.offsets
+        &self.as_array().offsets
     }
 
     /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
     /// [`len`](PlListArray::len) bits.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
-        self.0.validity.as_ref()
+        self.as_array().validity.as_ref()
     }
 
     /// Consumes this array into its internal components, whose ranges and bits are one per element.
@@ -31,7 +31,7 @@ impl Flat<PlListArray> {
             offsets,
             length: _,
             validity,
-        } = self.0;
+        } = self.into_array();
 
         (values, offsets, validity)
     }

@@ -13,14 +13,14 @@ impl Flat<PlFixedSizeListArray> {
     /// [`width`](PlFixedSizeListArray::width) values.
     #[inline]
     pub fn values(&self) -> &dyn PlArray {
-        &*self.0.values
+        &*self.as_array().values
     }
 
     /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
     /// [`len`](PlFixedSizeListArray::len) bits.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
-        self.0.validity.as_ref()
+        self.as_array().validity.as_ref()
     }
 
     /// Consumes this array into its internal components, whose values and bits are one per element.
@@ -31,7 +31,7 @@ impl Flat<PlFixedSizeListArray> {
             width,
             length: _,
             validity,
-        } = self.0;
+        } = self.into_array();
 
         (values, width, validity)
     }

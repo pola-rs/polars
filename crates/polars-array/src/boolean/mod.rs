@@ -545,13 +545,17 @@ impl PlBooleanArray {
             self.values().to_flat().into_owned()
         };
 
-        Cow::Owned(Flat(Self {
-            values,
-            length: self.length,
-            validity: self
-                .validity()
-                .map(|validity| validity.to_flat().into_owned()),
-        }))
+        // SAFETY: both bitmaps hold one bit per element: the values were written out above, and
+        // the mask is the flat counterpart of this array's own.
+        Cow::Owned(unsafe {
+            Flat::new(Self {
+                values,
+                length: self.length,
+                validity: self
+                    .validity()
+                    .map(|validity| validity.to_flat().into_owned()),
+            })
+        })
     }
 
     /// Borrows this array as a [`Flat`] one, if every backing bitmap already holds one bit per

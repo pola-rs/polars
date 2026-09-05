@@ -11,14 +11,14 @@ impl Flat<PlBooleanArray> {
     /// The values, as an ordinary [`Bitmap`] of exactly [`len`](PlBooleanArray::len) bits.
     #[inline(always)]
     pub const fn values(&self) -> &Bitmap {
-        &self.0.values
+        &self.as_array().values
     }
 
     /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
     /// [`len`](PlBooleanArray::len) bits.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
-        self.0.validity.as_ref()
+        self.as_array().validity.as_ref()
     }
 
     /// Returns the value at `i`.
@@ -27,7 +27,7 @@ impl Flat<PlBooleanArray> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value(&self, i: usize) -> bool {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.value_unchecked(i) }
     }
 
@@ -37,8 +37,8 @@ impl Flat<PlBooleanArray> {
     /// `i` must be smaller than `self.len()`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> bool {
-        debug_assert!(i < self.0.length);
-        unsafe { self.0.values.get_bit_unchecked(i) }
+        debug_assert!(i < self.as_array().length);
+        unsafe { self.as_array().values.get_bit_unchecked(i) }
     }
 
     /// Returns whether the element at `i` is valid (non-null).
@@ -47,7 +47,7 @@ impl Flat<PlBooleanArray> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_valid(&self, i: usize) -> bool {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.is_valid_unchecked(i) }
     }
 
@@ -57,7 +57,7 @@ impl Flat<PlBooleanArray> {
     /// `i` must be smaller than `self.len()`.
     #[inline]
     pub unsafe fn is_valid_unchecked(&self, i: usize) -> bool {
-        debug_assert!(i < self.0.length);
+        debug_assert!(i < self.as_array().length);
         // SAFETY: the mask has one bit per element, so `i` is in bounds of it too.
         self.validity()
             .is_none_or(|validity| unsafe { validity.get_bit_unchecked(i) })
@@ -87,7 +87,7 @@ impl Flat<PlBooleanArray> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn get(&self, i: usize) -> Option<bool> {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.get_unchecked(i) }
     }
 
@@ -103,7 +103,7 @@ impl Flat<PlBooleanArray> {
     /// Returns an iterator over the values, ignoring validity.
     #[inline]
     pub fn values_iter(&self) -> BitmapIter<'_> {
-        self.0.values.iter()
+        self.as_array().values.iter()
     }
 
     /// Returns an iterator over the optional elements.
@@ -114,7 +114,7 @@ impl Flat<PlBooleanArray> {
     /// loop from vectorizing.
     #[inline]
     pub fn iter(&self) -> PlBooleanIter<'_> {
-        self.0.iter()
+        self.as_array().iter()
     }
 
     /// Consumes this array into its backing bitmaps, which both hold one bit per element.
@@ -124,7 +124,7 @@ impl Flat<PlBooleanArray> {
             values,
             length: _,
             validity,
-        } = self.0;
+        } = self.into_array();
 
         (values, validity)
     }
@@ -145,7 +145,7 @@ impl<'a> IntoIterator for &'a Flat<PlBooleanArray> {
 impl PartialEq<Flat<PlBooleanArray>> for PlBooleanArray {
     #[inline]
     fn eq(&self, other: &Flat<PlBooleanArray>) -> bool {
-        *self == other.0
+        *self == *other.as_array()
     }
 }
 

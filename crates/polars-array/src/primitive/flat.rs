@@ -14,20 +14,20 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     /// The backing values buffer, holding exactly [`len`](PlPrimitiveArray::len) slots.
     #[inline(always)]
     pub const fn values(&self) -> &Buffer<T> {
-        &self.0.values
+        &self.as_array().values
     }
 
     /// The values as a slice of exactly [`len`](PlPrimitiveArray::len) elements.
     #[inline(always)]
     pub fn as_slice(&self) -> &[T] {
-        self.0.values.as_slice()
+        self.as_array().values.as_slice()
     }
 
     /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
     /// [`len`](PlPrimitiveArray::len) bits.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
-        self.0.validity.as_ref()
+        self.as_array().validity.as_ref()
     }
 
     /// Returns the value at `i`.
@@ -36,7 +36,7 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value(&self, i: usize) -> T {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.value_unchecked(i) }
     }
 
@@ -46,8 +46,8 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     /// `i` must be smaller than `self.len()`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> T {
-        debug_assert!(i < self.0.length);
-        unsafe { *self.0.values.get_unchecked(i) }
+        debug_assert!(i < self.as_array().length);
+        unsafe { *self.as_array().values.get_unchecked(i) }
     }
 
     /// Returns whether the element at `i` is valid (non-null).
@@ -56,7 +56,7 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_valid(&self, i: usize) -> bool {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.is_valid_unchecked(i) }
     }
 
@@ -66,7 +66,7 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     /// `i` must be smaller than `self.len()`.
     #[inline]
     pub unsafe fn is_valid_unchecked(&self, i: usize) -> bool {
-        debug_assert!(i < self.0.length);
+        debug_assert!(i < self.as_array().length);
         // SAFETY: the mask has one bit per element, so `i` is in bounds of it too.
         self.validity()
             .is_none_or(|validity| unsafe { validity.get_bit_unchecked(i) })
@@ -96,7 +96,7 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     /// Panics if `i >= self.len()`.
     #[inline]
     pub fn get(&self, i: usize) -> Option<T> {
-        assert!(i < self.0.length, "index out of bounds");
+        assert!(i < self.as_array().length, "index out of bounds");
         unsafe { self.get_unchecked(i) }
     }
 
@@ -123,19 +123,23 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     /// loop from vectorizing.
     #[inline]
     pub fn iter(&self) -> PlPrimitiveIter<'_, T> {
-        self.0.iter()
+        self.as_array().iter()
     }
 
     /// The backing values buffer as a mutable slice, if no other array shares it.
     #[inline]
     pub fn values_mut(&mut self) -> Option<&mut [T]> {
-        self.0.values.get_mut_slice()
+        // SAFETY: writing over the values leaves the buffer as many slots as it was, so the array
+        // is still flat when the borrow ends.
+        unsafe { self.as_array_mut() }.values.get_mut_slice()
     }
 
     /// Takes the validity mask out, leaving every element valid.
     #[inline]
     pub fn take_validity(&mut self) -> Option<Bitmap> {
-        self.0.validity.take()
+        // SAFETY: dropping the mask leaves every element valid, which is as flat as a mask of one
+        // bit per element.
+        unsafe { self.as_array_mut() }.validity.take()
     }
 
     /// Reinterprets the values buffer as one of `U`, keeping the validity mask.
@@ -171,7 +175,7 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
             values,
             length: _,
             validity,
-        } = self.0;
+        } = self.into_array();
 
         (values, validity)
     }
@@ -192,7 +196,7 @@ impl<'a, T: NativeType> IntoIterator for &'a Flat<PlPrimitiveArray<T>> {
 impl<T: NativeType> PartialEq<Flat<PlPrimitiveArray<T>>> for PlPrimitiveArray<T> {
     #[inline]
     fn eq(&self, other: &Flat<PlPrimitiveArray<T>>) -> bool {
-        *self == other.0
+        *self == *other.as_array()
     }
 }
 

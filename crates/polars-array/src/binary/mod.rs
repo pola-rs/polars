@@ -720,10 +720,11 @@ impl PlBinaryArray {
         };
 
         // SAFETY: the offsets are ordered, one per element plus the end of the last, and within the
-        // values; the mask is the flat counterpart of one valid for this array's length.
-        Cow::Owned(Flat(unsafe {
-            Self::new_unchecked(values, offsets, self.length, validity)
-        }))
+        // values; the mask is the flat counterpart of one valid for this array's length. That
+        // leaves the offsets and the mask holding one slot per element.
+        Cow::Owned(unsafe {
+            Flat::new(Self::new_unchecked(values, offsets, self.length, validity))
+        })
     }
 
     /// Borrows this array as a [`Flat`] one, if its offsets already hold the range of every element
@@ -821,7 +822,7 @@ impl Eq for PlBinaryArray {}
 impl PartialEq<Flat<PlBinaryArray>> for PlBinaryArray {
     #[inline]
     fn eq(&self, other: &Flat<PlBinaryArray>) -> bool {
-        *self == other.0
+        *self == *other.as_array()
     }
 }
 
