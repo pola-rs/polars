@@ -88,22 +88,19 @@ pub(super) fn date(s: &Column) -> PolarsResult<Column> {
     match s.dtype() {
         #[cfg(feature = "timezones")]
         DataType::Datetime(_, Some(_)) => {
-            let mut out = {
-                polars_ops::chunked_array::replace_time_zone(
-                    s.datetime().unwrap(),
-                    None,
-                    &StringChunked::from_iter(std::iter::once("raise")),
-                    NonExistent::Raise,
-                )?
-                .cast(&DataType::Date)?
-            };
-            // `replace_time_zone` may unset sorted flag. But, we're only taking the date
-            // part of the result, so we can safely preserve the sorted flag here. We may
-            // need to make an exception if a time zone introduces a change which involves
-            // "going back in time" and repeating a day, but we're not aware of that ever
-            // having happened.
-            out.set_sorted_flag(s.is_sorted_flag());
-            Ok(out.into())
+            // The sorted flag is inherited from `replace_time_zone`, which only preserves it
+            // for time zones that cannot reorder the local clock. Don't propagate it from `s`
+            // here: an offset change can move the local *date* backwards while UTC moves
+            // forwards (e.g. `Antarctica/Casey` 2010-03-04, +11 -> +08), which would leave a
+            // genuinely unsorted column claiming to be sorted.
+            polars_ops::chunked_array::replace_time_zone(
+                s.datetime().unwrap(),
+                None,
+                &StringChunked::from_iter(std::iter::once("raise")),
+                NonExistent::Raise,
+            )?
+            .cast(&DataType::Date)
+            .map(Column::from)
         },
         DataType::Datetime(_, _) => s
             .datetime()
@@ -279,20 +276,20 @@ pub(super) fn truncate(s: &[Column]) -> PolarsResult<Column> {
     let time_series = &s[0];
     let every = s[1].str()?;
 
-    let mut out = match time_series.dtype() {
+    // Note: `truncate` maintains the sorted flag itself, as only it knows whether the
+    // truncation it performed is order-preserving.
+    match time_series.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => time_series
+            Some(tz) => Ok(time_series
                 .datetime()?
                 .truncate(tz.parse::<Tz>().ok().as_ref(), every)?
-                .into_column(),
-            _ => time_series.datetime()?.truncate(None, every)?.into_column(),
+                .into_column()),
+            _ => Ok(time_series.datetime()?.truncate(None, every)?.into_column()),
         },
-        DataType::Date => time_series.date()?.truncate(None, every)?.into_column(),
+        DataType::Date => Ok(time_series.date()?.truncate(None, every)?.into_column()),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
-    };
-    out.set_sorted_flag(time_series.is_sorted_flag());
-    Ok(out)
+    }
 }
 
 #[cfg(feature = "offset_by")]
