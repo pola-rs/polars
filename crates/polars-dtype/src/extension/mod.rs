@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::fmt::{Debug, Display};
 use std::hash::{Hash, Hasher};
 
-use crate::datatypes::DataType;
+use crate::dtype::DataType;
 
 mod generic;
 mod registry;

@@ -132,6 +132,10 @@ pub fn register_object_builder(
     array_getter: ObjectArrayGetter,
     with_gil: WithGIL,
 ) {
+    // The type an object's values are laid out as is also needed in `polars-dtype`, which holds
+    // `DataType` but has no business knowing about builders or converters.
+    polars_dtype::object::set_object_physical_type(physical_dtype.clone());
+
     let reg = GLOBAL_OBJECT_REGISTRY.deref();
     let mut reg = reg.write().unwrap();
 
@@ -147,9 +151,7 @@ pub fn register_object_builder(
 
 #[cold]
 pub fn get_object_physical_type() -> ArrowDataType {
-    let reg = GLOBAL_OBJECT_REGISTRY.read().unwrap();
-    let reg = reg.as_ref().unwrap();
-    reg.physical_dtype.clone()
+    polars_dtype::object::get_object_physical_type()
 }
 
 pub fn get_object_builder(name: PlSmallStr, capacity: usize) -> Box<dyn AnonymousObjectBuilder> {

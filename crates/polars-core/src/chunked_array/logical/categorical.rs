@@ -19,20 +19,6 @@ pub type Categorical8Chunked = CategoricalChunked<Categorical8Type>;
 pub type Categorical16Chunked = CategoricalChunked<Categorical16Type>;
 pub type Categorical32Chunked = CategoricalChunked<Categorical32Type>;
 
-pub trait CategoricalPhysicalDtypeExt {
-    fn dtype(&self) -> DataType;
-}
-
-impl CategoricalPhysicalDtypeExt for CategoricalPhysical {
-    fn dtype(&self) -> DataType {
-        match self {
-            Self::U8 => DataType::UInt8,
-            Self::U16 => DataType::UInt16,
-            Self::U32 => DataType::UInt32,
-        }
-    }
-}
-
 impl<T: PolarsCategoricalType> CategoricalChunked<T> {
     pub fn is_enum(&self) -> bool {
         matches!(self.dtype(), DataType::Enum(_, _))

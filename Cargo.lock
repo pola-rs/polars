@@ -3291,12 +3291,19 @@ name = "polars-dtype"
 version = "0.55.1"
 dependencies = [
  "boxcar",
+ "chrono-tz",
  "hashbrown 0.17.1",
+ "itoa",
+ "num-traits",
+ "polars-array",
  "polars-arrow",
+ "polars-config",
  "polars-error",
  "polars-utils",
+ "regex",
  "schemars",
  "serde",
+ "strum_macros 0.28.0",
  "uuid",
 ]
 

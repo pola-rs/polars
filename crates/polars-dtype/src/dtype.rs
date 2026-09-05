@@ -1,23 +1,45 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
+#[cfg(feature = "dtype-categorical")]
+use std::sync::Arc;
 
+use arrow::array::LIST_VALUES_NAME;
+#[cfg(feature = "dtype-map")]
+use arrow::array::{MAP_ENTRIES_NAME, MAP_KEY_NAME, MAP_VALUE_NAME};
+#[cfg(feature = "dtype-categorical")]
+use arrow::datatypes::IntegerType;
 use arrow::datatypes::{
-    DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW, MAINTAIN_PL_TYPE,
-    Metadata, PL_KEY,
+    ArrowDataType, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW,
+    Field as ArrowField, MAINTAIN_PL_TYPE, Metadata, PL_KEY, TimeUnit as ArrowTimeUnit,
 };
 #[cfg(feature = "dtype-array")]
 use polars_utils::format_tuple;
+#[cfg(any(feature = "dtype-map", feature = "dtype-struct"))]
+use polars_error::polars_ensure;
+use polars_error::{PolarsResult, polars_bail};
+#[cfg(feature = "dtype-struct")]
 use polars_utils::itertools::Itertools;
+use polars_utils::aliases::PlHashSet;
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(any(feature = "serde-lazy", feature = "serde"))]
 use serde::{Deserialize, Serialize};
-pub use temporal::time_zone::TimeZone;
+pub use crate::temporal::time_zone::TimeZone;
 
-use super::*;
 #[cfg(feature = "object")]
-use crate::chunked_array::object::registry::get_object_physical_type;
+use crate::object::get_object_physical_type;
 #[cfg(feature = "dtype-extension")]
-pub use crate::datatypes::extension::ExtensionTypeInstance;
-use crate::utils::materialize_dyn_int;
+pub use crate::extension::ExtensionTypeInstance;
+#[cfg(feature = "dtype-categorical")]
+use crate::categorical::{
+    CategoricalMapping, CategoricalPhysical, Categories, FrozenCategories,
+    ensure_same_categories, ensure_same_frozen_categories,
+};
+use crate::dyn_int_dtype;
+#[cfg(feature = "dtype-struct")]
+use crate::field::Field;
+use crate::temporal::time_unit::TimeUnit;
 
 pub trait MetaDataExt: IntoMetadata {
     fn pl_enum_metadata(&self) -> Option<&str> {
@@ -77,7 +99,7 @@ pub enum UnknownKind {
 impl UnknownKind {
     pub fn materialize(&self) -> Option<DataType> {
         let dtype = match self {
-            UnknownKind::Int(v) => materialize_dyn_int(*v).dtype(),
+            UnknownKind::Int(v) => dyn_int_dtype(*v),
             UnknownKind::Float => DataType::Float64,
             UnknownKind::Str => DataType::String,
             UnknownKind::Any => return None,
@@ -239,28 +261,6 @@ impl DataType {
             _ => {
                 format!("{}", self)
             },
-        }
-    }
-
-    pub fn value_within_range(&self, other: AnyValue) -> bool {
-        use DataType::*;
-        match self {
-            UInt8 => other.extract::<u8>().is_some(),
-            #[cfg(feature = "dtype-u16")]
-            UInt16 => other.extract::<u16>().is_some(),
-            UInt32 => other.extract::<u32>().is_some(),
-            UInt64 => other.extract::<u64>().is_some(),
-            #[cfg(feature = "dtype-u128")]
-            UInt128 => other.extract::<u128>().is_some(),
-            #[cfg(feature = "dtype-i8")]
-            Int8 => other.extract::<i8>().is_some(),
-            #[cfg(feature = "dtype-i16")]
-            Int16 => other.extract::<i16>().is_some(),
-            Int32 => other.extract::<i32>().is_some(),
-            Int64 => other.extract::<i64>().is_some(),
-            #[cfg(feature = "dtype-i128")]
-            Int128 => other.extract::<i128>().is_some(),
-            _ => false,
         }
     }
 
@@ -595,6 +595,7 @@ impl DataType {
 
     #[must_use]
     pub fn to_storage(&self) -> DataType {
+        #[cfg(feature = "dtype-extension")]
         use DataType::*;
         match self {
             #[cfg(feature = "dtype-extension")]
@@ -1021,7 +1022,7 @@ impl DataType {
     ///
     /// Positional, should only be called by Arrow/Parquet readers.
     #[cfg(feature = "dtype-map")]
-    pub(crate) fn map_from_positional_entries_dtype(&self) -> Option<DataType> {
+    pub fn map_from_positional_entries_dtype(&self) -> Option<DataType> {
         let DataType::Struct(fields) = self else {
             return None;
         };
@@ -1034,7 +1035,7 @@ impl DataType {
     /// The `Map` dtype whose entries are `self`, matching the `key` and `value` fields by name.
     #[cfg(feature = "dtype-map")]
     pub fn map_from_named_entries_dtype(&self) -> PolarsResult<DataType> {
-        crate::chunked_array::logical::ensure_map_entries_dtype(self)?;
+        crate::ensure_map_entries_dtype(self)?;
         let DataType::Struct(fields) = self else {
             unreachable!("map entries are a struct")
         };
@@ -1171,54 +1172,6 @@ impl DataType {
         }
     }
 
-    /// Try to get the maximum value for this datatype.
-    pub fn max(&self) -> PolarsResult<Scalar> {
-        use DataType::*;
-        let v = match self {
-            Int8 => Scalar::from(i8::MAX),
-            Int16 => Scalar::from(i16::MAX),
-            Int32 => Scalar::from(i32::MAX),
-            Int64 => Scalar::from(i64::MAX),
-            Int128 => Scalar::from(i128::MAX),
-            UInt8 => Scalar::from(u8::MAX),
-            UInt16 => Scalar::from(u16::MAX),
-            UInt32 => Scalar::from(u32::MAX),
-            UInt64 => Scalar::from(u64::MAX),
-            UInt128 => Scalar::from(u128::MAX),
-            Float16 => Scalar::from(pf16::INFINITY),
-            Float32 => Scalar::from(f32::INFINITY),
-            Float64 => Scalar::from(f64::INFINITY),
-            #[cfg(feature = "dtype-time")]
-            Time => Scalar::new(Time, AnyValue::Time(NS_IN_DAY - 1)),
-            dt => polars_bail!(ComputeError: "cannot determine upper bound for dtype `{dt}`"),
-        };
-        Ok(v)
-    }
-
-    /// Try to get the minimum value for this datatype.
-    pub fn min(&self) -> PolarsResult<Scalar> {
-        use DataType::*;
-        let v = match self {
-            Int8 => Scalar::from(i8::MIN),
-            Int16 => Scalar::from(i16::MIN),
-            Int32 => Scalar::from(i32::MIN),
-            Int64 => Scalar::from(i64::MIN),
-            Int128 => Scalar::from(i128::MIN),
-            UInt8 => Scalar::from(u8::MIN),
-            UInt16 => Scalar::from(u16::MIN),
-            UInt32 => Scalar::from(u32::MIN),
-            UInt64 => Scalar::from(u64::MIN),
-            UInt128 => Scalar::from(u128::MIN),
-            Float16 => Scalar::from(pf16::NEG_INFINITY),
-            Float32 => Scalar::from(f32::NEG_INFINITY),
-            Float64 => Scalar::from(f64::NEG_INFINITY),
-            #[cfg(feature = "dtype-time")]
-            Time => Scalar::new(Time, AnyValue::Time(0)),
-            dt => polars_bail!(ComputeError: "cannot determine lower bound for dtype `{}`", dt),
-        };
-        Ok(v)
-    }
-
     /// Convert to an Arrow data type.
     #[inline]
     pub fn to_arrow(&self, compat_level: CompatLevel) -> ArrowDataType {
@@ -1336,7 +1289,7 @@ impl DataType {
                     UnknownKind::Float => ArrowDataType::Float64,
                     UnknownKind::Str => ArrowDataType::Utf8View,
                     UnknownKind::Int(v) => {
-                        return materialize_dyn_int(*v).dtype().try_to_arrow(compat_level);
+                        return dyn_int_dtype(*v).try_to_arrow(compat_level);
                     },
                 };
                 Ok(dt)
@@ -1723,7 +1676,7 @@ fn collect_nested_types(
 }
 
 pub fn unpack_dtypes(dtype: &DataType, include_compound_types: bool) -> PlHashSet<DataType> {
-    let mut result = PlHashSet::new();
+    let mut result = PlHashSet::default();
     collect_nested_types(dtype, &mut result, include_compound_types);
     result
 }
@@ -1953,7 +1906,7 @@ mod tests {
 
         let result = unpack_dtypes(&list_type, false);
 
-        let mut expected = PlHashSet::new();
+        let mut expected = PlHashSet::default();
         expected.insert(DataType::Float64);
 
         assert_eq!(result, expected)
@@ -1968,7 +1921,7 @@ mod tests {
 
         let result = unpack_dtypes(&list_type, true);
 
-        let mut expected = PlHashSet::new();
+        let mut expected = PlHashSet::default();
         expected.insert(list_type);
         expected.insert(array_type);
         expected.insert(DataType::Float64);

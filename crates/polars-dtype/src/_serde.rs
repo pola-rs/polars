@@ -4,10 +4,16 @@
 //! We could use [serde_1712](https://github.com/serde-rs/serde/issues/1712), but that gave problems caused by
 //! [rust_96956](https://github.com/rust-lang/rust/issues/96956), so we make a dummy type without static
 
-use polars_dtype::categorical::CategoricalPhysical;
+use polars_utils::pl_str::PlSmallStr;
+use serde::de::Deserializer;
+use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
 
-use super::*;
+use crate::categorical::{CategoricalPhysical, Categories, FrozenCategories};
+use crate::dtype::*;
+use crate::field::Field;
+use crate::temporal::time_unit::TimeUnit;
+use crate::temporal::time_zone::TimeZone;
 
 impl<'a> Deserialize<'a> for DataType {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
@@ -92,7 +98,7 @@ enum SerializableDataType {
     },
     #[cfg(feature = "dtype-categorical")]
     Enum {
-        strings: Series,
+        strings: crate::categories_serde::SerializableCategories,
     },
     #[cfg(feature = "dtype-decimal")]
     Decimal(usize, usize),
@@ -151,11 +157,9 @@ impl From<&DataType> for SerializableDataType {
             },
             #[cfg(feature = "dtype-categorical")]
             Enum(fcats, _) => Self::Enum {
-                strings: StringChunked::with_chunk(
-                    PlSmallStr::from_static("categories"),
-                    <PlUtf8ViewArray as ToArrow>::from_arrow(fcats.categories()),
-                )
-                .into_series(),
+                strings: crate::categories_serde::SerializableCategories(
+                    polars_array::arrow::import::utf8_view_from_arrow(fcats.categories()),
+                ),
             },
             #[cfg(feature = "dtype-decimal")]
             Decimal(precision, scale) => Self::Decimal(*precision, *scale),
@@ -220,8 +224,7 @@ impl From<SerializableDataType> for DataType {
             },
             #[cfg(feature = "dtype-categorical")]
             Enum { strings } => {
-                let ca = strings.str().unwrap();
-                let fcats = FrozenCategories::new(ca.iter().flatten()).unwrap();
+                let fcats = FrozenCategories::new(strings.0.values_iter()).unwrap();
                 let mapping = fcats.mapping().clone();
                 Self::Enum(fcats, mapping)
             },
@@ -236,7 +239,7 @@ impl From<SerializableDataType> for DataType {
                 storage,
             } => {
                 let storage = DataType::from(*storage);
-                let ext_type = crate::datatypes::extension::get_extension_type_or_generic(
+                let ext_type = crate::extension::get_extension_type_or_generic(
                     &name,
                     &storage,
                     metadata.as_deref(),

@@ -1,5 +1,7 @@
 use arrow::offset::OffsetsBuffer;
+use polars_array::PlPrimitiveArrayBuilder;
 use polars_array::arrow::{export, import};
+use polars_array::builder::StaticArrayBuilder;
 use polars_compute::gather::take_unchecked;
 
 use super::*;
@@ -132,7 +134,7 @@ impl ChunkExplode for ListChunked {
                 }
                 // Use gather
                 let mut indices =
-                    MutablePrimitiveArray::<IdxSize>::with_capacity(*offsets_buf.last() as usize);
+                    PlPrimitiveArrayBuilder::<IdxSize>::with_capacity(*offsets_buf.last() as usize);
                 let mut new_offsets = Vec::with_capacity(listarr.len() + 1);
                 let mut current_offset = 0i64;
                 let mut iter = offsets.iter();
@@ -146,7 +148,7 @@ impl ChunkExplode for ListChunked {
                         if options.empty_as_null && len == 0 {
                             indices.push_null();
                         } else {
-                            indices.extend_trusted_len_values(start..end);
+                            indices.push_values(start..end);
                         }
                         current_offset += len;
                         previous = offset;
@@ -159,7 +161,7 @@ impl ChunkExplode for ListChunked {
                 let validity = listarr.validity().unwrap();
 
                 let mut indices =
-                    MutablePrimitiveArray::<IdxSize>::with_capacity(*offsets_buf.last() as usize);
+                    PlPrimitiveArrayBuilder::<IdxSize>::with_capacity(*offsets_buf.last() as usize);
                 let mut new_offsets = Vec::with_capacity(listarr.len() + 1);
                 let mut current_offset = 0i64;
                 let mut iter = offsets.iter();
@@ -175,7 +177,7 @@ impl ChunkExplode for ListChunked {
                             if options.empty_as_null && len == 0 {
                                 indices.push_null();
                             } else {
-                                indices.extend_trusted_len_values(start..end);
+                                indices.push_values(start..end);
                             }
                             current_offset += len;
                         } else if options.keep_nulls {
@@ -188,11 +190,10 @@ impl ChunkExplode for ListChunked {
                 (indices, new_offsets)
             };
 
-            let indices: PrimitiveArray<IdxSize> = indices.into();
+            let indices = indices.freeze();
 
             // SAFETY: the indices we generate are in bounds.
-            let chunk =
-                unsafe { take_unchecked(&*values, &import::primitive_from_arrow(&indices)) };
+            let chunk = unsafe { take_unchecked(&*values, &indices) };
             // SAFETY: inner_dtype should be correct
             let s = unsafe {
                 Series::from_chunks_and_dtype_unchecked(
@@ -308,7 +309,7 @@ impl ChunkExplode for ArrayChunked {
         let values = array_values(arr);
         let width = arr.width();
 
-        let mut indices = MutablePrimitiveArray::<IdxSize>::with_capacity(
+        let mut indices = PlPrimitiveArrayBuilder::<IdxSize>::with_capacity(
             values.len() - arr.null_count() * (width - 1),
         );
         let mut offsets = Vec::with_capacity(arr.len() + 1);
@@ -319,7 +320,7 @@ impl ChunkExplode for ArrayChunked {
             if unsafe { validity.get_unchecked(i) } {
                 let start = (i * width) as IdxSize;
                 let end = start + width as IdxSize;
-                indices.extend_trusted_len_values(start..end);
+                indices.push_values(start..end);
                 current_offset += width as i64;
             } else if options.keep_nulls {
                 indices.push_null();
@@ -327,10 +328,10 @@ impl ChunkExplode for ArrayChunked {
             offsets.push(current_offset);
         });
 
-        let indices: PrimitiveArray<IdxSize> = indices.into();
+        let indices = indices.freeze();
 
         // SAFETY: the indices we generate are in bounds
-        let chunk = unsafe { take_unchecked(&*values, &import::primitive_from_arrow(&indices)) };
+        let chunk = unsafe { take_unchecked(&*values, &indices) };
         // SAFETY: monotonically increasing
         let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
 

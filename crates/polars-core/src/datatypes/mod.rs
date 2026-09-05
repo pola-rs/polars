@@ -6,24 +6,17 @@
 //! [See the AnyValue variants](enum.AnyValue.html#variants) for the data types that
 //! are currently supported.
 //!
-#[cfg(feature = "serde")]
-mod _serde;
 mod aliases;
 mod any_value;
-mod dtype;
-#[cfg(feature = "dtype-extension")]
-pub mod extension;
-mod field;
+mod dtype_ext;
 mod into_scalar;
 #[cfg(feature = "object")]
 mod static_array_collect;
-mod temporal;
 
 #[cfg(feature = "proptest")]
 pub mod proptest;
 
 use std::cmp::Ordering;
-use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
 use std::sync::Arc;
@@ -31,14 +24,11 @@ use std::sync::Arc;
 mod schema;
 pub use aliases::*;
 pub use any_value::*;
-#[cfg(feature = "dtype-categorical")]
-use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::reshape::*;
 pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::NativeType;
 use bytemuck::Zeroable;
-pub use dtype::*;
-pub use field::*;
+pub use dtype_ext::*;
 pub use into_scalar::*;
 use num_traits::{AsPrimitive, Bounded, FromPrimitive, Num, NumCast, One, Zero};
 pub use polars_array::{ArrayCollectIterExt, ArrayFromIter, StaticArray};
@@ -53,6 +43,16 @@ pub use polars_dtype::categorical::{
     CatNative, CatSize, CategoricalMapping, CategoricalPhysical, Categories, FrozenCategories,
     ensure_same_categories, ensure_same_frozen_categories,
 };
+// The data type itself lives in `polars-dtype`, below `polars-compute`, so a kernel can be
+// dispatched on it. It is re-exported here because this is where the rest of the crate — and
+// everything downstream of it — has always reached for it.
+pub use polars_dtype::dtype::*;
+pub use polars_dtype::field::*;
+pub use polars_dtype::temporal::{time_unit, time_zone};
+#[cfg(feature = "dtype-extension")]
+pub use polars_dtype::extension;
+#[cfg(feature = "dtype-map")]
+pub use polars_dtype::ensure_map_entries_dtype;
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::float::IsFloat;
 use polars_utils::float16::pf16;
@@ -62,9 +62,7 @@ use polars_utils::total_ord::TotalHash;
 pub use schema::SchemaExtPl;
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserialize, Serialize};
-#[cfg(any(feature = "serde", feature = "serde-lazy"))]
-use serde::{Deserializer, Serializer};
-pub use temporal::*;
+pub use polars_dtype::temporal::*;
 
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]

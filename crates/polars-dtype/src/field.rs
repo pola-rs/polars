@@ -1,10 +1,19 @@
-use arrow::datatypes::{IntervalUnit, Metadata};
-use polars_dtype::categorical::CategoricalPhysical;
+use std::sync::Arc;
+
+use arrow::datatypes::{
+    ArrowDataType, Field as ArrowField, IntervalUnit, Metadata,
+};
+#[cfg(feature = "dtype-categorical")]
+use crate::categorical::{Categories, CategoricalPhysical, FrozenCategories};
 use polars_error::feature_gated;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::*;
+#[cfg(any(feature = "serde", feature = "serde-lazy"))]
+use serde::{Deserialize, Serialize};
+
 use crate::config::check_allow_importing_interval_as_struct;
+use crate::dtype::*;
+use crate::temporal::time_unit::TimeUnit;
 pub static POLARS_OBJECT_EXTENSION_NAME: &str = "_POLARS_PYTHON_OBJECT";
 pub static ARROW_UUID_EXTENSION_NAME: &str = "arrow.uuid";
 
@@ -34,7 +43,7 @@ impl Field {
     /// # Example
     ///
     /// ```rust
-    /// # use polars_core::prelude::*;
+    /// # use polars_dtype::{DataType, Field};
     /// let f1 = Field::new("Fruit name".into(), DataType::String);
     /// let f2 = Field::new("Lawful".into(), DataType::Boolean);
     /// let f2 = Field::new("Departure".into(), DataType::Time);
@@ -49,7 +58,7 @@ impl Field {
     /// # Example
     ///
     /// ```rust
-    /// # use polars_core::prelude::*;
+    /// # use polars_dtype::{DataType, Field};
     /// let f = Field::new("Year".into(), DataType::Int32);
     ///
     /// assert_eq!(f.name(), "Year");
@@ -64,7 +73,7 @@ impl Field {
     /// # Example
     ///
     /// ```rust
-    /// # use polars_core::prelude::*;
+    /// # use polars_dtype::{DataType, Field};
     /// let f = Field::new("Birthday".into(), DataType::Date);
     ///
     /// assert_eq!(f.dtype(), &DataType::Date);
@@ -79,7 +88,7 @@ impl Field {
     /// # Example
     ///
     /// ```rust
-    /// # use polars_core::prelude::*;
+    /// # use polars_dtype::{DataType, Field};
     /// let mut f = Field::new("Temperature".into(), DataType::Int32);
     /// f.set_dtype(DataType::Float32);
     ///
@@ -94,7 +103,7 @@ impl Field {
     /// # Example
     ///
     /// ```rust
-    /// # use polars_core::prelude::*;
+    /// # use polars_dtype::{DataType, Field};
     /// let mut f = Field::new("Atomic number".into(), DataType::UInt32);
     /// f.set_name("Proton".into());
     ///
@@ -121,7 +130,7 @@ impl Field {
     /// # Example
     ///
     /// ```rust
-    /// # use polars_core::prelude::*;
+    /// # use polars_dtype::{CompatLevel, DataType, Field};
     /// let f = Field::new("Value".into(), DataType::Int64);
     /// let af = arrow::datatypes::Field::new("Value".into(), arrow::datatypes::ArrowDataType::Int64, true);
     ///
@@ -270,7 +279,7 @@ impl DataType {
             },
             #[cfg(feature = "dtype-extension")]
             ArrowDataType::Extension(ext) => {
-                use crate::prelude::extension::get_extension_type_or_storage;
+                use crate::extension::get_extension_type_or_storage;
                 let storage = DataType::from_arrow(&ext.inner, md);
                 match get_extension_type_or_storage(&ext.name, &storage, ext.metadata.as_deref()) {
                     Some(typ) => DataType::Extension(typ, Box::new(storage)),

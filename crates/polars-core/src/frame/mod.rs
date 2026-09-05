@@ -2129,7 +2129,7 @@ impl DataFrame {
 
         // If any of the columns is binview and we don't convert `compat_level` we allow parallelism
         // as we must allocate arrow strings/binaries.
-        let must_convert = compat_level.0 == 0;
+        let must_convert = compat_level == CompatLevel::oldest();
         let parallel = parallel
             && must_convert
             && self.width() > 1

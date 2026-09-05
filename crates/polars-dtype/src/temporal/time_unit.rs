@@ -1,4 +1,4 @@
-use crate::prelude::ArrowTimeUnit;
+use arrow::datatypes::TimeUnit as ArrowTimeUnit;
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
 #[cfg_attr(

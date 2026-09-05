@@ -205,25 +205,6 @@ impl MapChunked {
     }
 }
 
-/// Require named entry fields outside Arrow and Parquet, whose specifications define
-/// entries positionally.
-pub(crate) fn ensure_map_entries_dtype(dtype: &DataType) -> PolarsResult<()> {
-    let DataType::Struct(fields) = dtype else {
-        polars_bail!(InvalidOperation: "Map entries must be `Struct {{key, value}}`, got `{dtype}`")
-    };
-    // Spell the names out because `Struct` display abbreviates them to `struct[n]`.
-    let mut names: Vec<&PlSmallStr> = fields.iter().map(|f| f.name()).collect();
-    names.sort();
-    polars_ensure!(
-        names == [&MAP_KEY_NAME, &MAP_VALUE_NAME],
-        InvalidOperation:
-        "Map entries must be exactly two fields named `{}` and `{}`, got [{}]",
-        MAP_KEY_NAME, MAP_VALUE_NAME,
-        fields.iter().map(|f| format!("`{}`", f.name())).collect::<Vec<_>>().join(", "),
-    );
-    Ok(())
-}
-
 fn unpack_map_entries(entries: &Series) -> (Series, Series) {
     let fields = entries.struct_().unwrap().fields_as_series();
     let Ok([first, second]) = <[Series; 2]>::try_from(fields) else {

@@ -7,7 +7,8 @@ use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{ExtensionTypeFactory, ExtensionTypeInstance};
-use crate::prelude::{ARROW_UUID_EXTENSION_NAME, DataType, POLARS_OBJECT_EXTENSION_NAME};
+use crate::dtype::DataType;
+use crate::field::{ARROW_UUID_EXTENSION_NAME, POLARS_OBJECT_EXTENSION_NAME};
 
 #[repr(u8)]
 pub enum UnknownExtensionTypeBehavior {

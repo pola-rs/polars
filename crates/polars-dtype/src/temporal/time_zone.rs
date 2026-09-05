@@ -1,6 +1,9 @@
-use polars_error::{PolarsResult, polars_bail};
+#[cfg(feature = "timezones")]
+use polars_error::polars_bail;
+use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
+#[cfg(feature = "timezones")]
 use crate::config;
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -52,6 +55,8 @@ impl TimeZone {
             }));
         }
 
+        // Only the `timezones` build canonicalizes a fixed offset in place.
+        #[cfg_attr(not(feature = "timezones"), allow(unused_mut))]
         let mut canonical_tz = Self::_canonical_timezone_impl(zone_str);
 
         #[cfg(feature = "timezones")]
