@@ -202,9 +202,9 @@ pub(super) fn node_stats_with_cache(
                 on.iter().map(|(left_key, right_key)| {
                     key_domain(
                         &left,
-                        plain_column(left_key, expr_arena).as_ref(),
+                        left_key.plain_column(expr_arena),
                         &right,
-                        plain_column(right_key, expr_arena).as_ref(),
+                        right_key.plain_column(expr_arena),
                     )
                 }),
                 left.unfiltered.max(right.unfiltered),
@@ -604,15 +604,6 @@ pub fn composite_key_domain(parts: impl Iterator<Item = f64>, max_rows: f64) -> 
     parts.product::<f64>().min(max_rows).max(MIN_CARDINALITY)
 }
 
-/// The column a join key reads, or `None` if the key computes something. A computed
-/// key is named after its left-most column, whose statistics are not the expression's.
-pub fn plain_column(key: &ExprIR, expr_arena: &Arena<AExpr>) -> Option<PlSmallStr> {
-    match expr_arena.get(key.node()) {
-        AExpr::Column(name) => Some(name.clone()),
-        _ => None,
-    }
-}
-
 /// Domain size of the key joining two leaves.
 ///
 /// With distinct counts for both sides the domain is the larger of the two: every
@@ -634,14 +625,11 @@ pub fn key_domain(
         // lower bound either way, since every value it holds is in the domain.
         _ => {
             let rows = left.unfiltered.min(right.unfiltered);
-            let estimate = match key_int_domain(left, left_key, right, right_key) {
-                Some(range) => rows.min(range),
-                None => rows,
-            };
-            match left_ndv.or(right_ndv) {
-                Some(ndv) => estimate.max(ndv),
-                None => estimate,
-            }
+            let estimate = key_int_domain(left, left_key, right, right_key)
+                .map_or(rows, |range| rows.min(range));
+            left_ndv
+                .or(right_ndv)
+                .map_or(estimate, |ndv| estimate.max(ndv))
         },
     };
     domain.max(MIN_CARDINALITY)

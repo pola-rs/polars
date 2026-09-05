@@ -180,21 +180,8 @@ pub(super) fn extract(
     }
     let options = options.clone();
 
-    let mut collector = Collector {
-        ir_arena,
-        expr_arena,
-        root_options: &options,
-        leaves: Vec::new(),
-        key_pairs: Vec::new(),
-        residuals: Vec::new(),
-    };
-    collector.collect(root, &Arc::new(Renames::default()));
-    let Collector {
-        leaves: raw_leaves,
-        key_pairs: raw_keys,
-        residuals: raw_residuals,
-        ..
-    } = collector;
+    let (raw_leaves, raw_keys, raw_residuals) =
+        Collector::run(root, ir_arena, expr_arena, &options);
 
     if raw_leaves.len() < MIN_LEAVES {
         return None;
@@ -215,8 +202,8 @@ pub(super) fn extract(
         let right_key = normalize_key(&raw.right_key, &raw.renames, expr_arena);
         let left_leaf = owning_leaf(&left_key, &schemas, raw.left_leaves, expr_arena)?;
         let right_leaf = owning_leaf(&right_key, &schemas, raw.right_leaves, expr_arena)?;
-        let left_name = plain_column(&left_key, expr_arena);
-        let right_name = plain_column(&right_key, expr_arena);
+        let left_name = left_key.plain_column(expr_arena).cloned();
+        let right_name = right_key.plain_column(expr_arena).cloned();
         edges.push(Edge {
             left_leaf,
             right_leaf,
@@ -391,7 +378,26 @@ struct Collector<'a> {
     residuals: Vec<RawResidual>,
 }
 
-impl Collector<'_> {
+impl<'a> Collector<'a> {
+    /// Walk the cluster rooted at `root`, returning its leaves, keys and residuals.
+    fn run(
+        root: Node,
+        ir_arena: &'a Arena<IR>,
+        expr_arena: &'a Arena<AExpr>,
+        root_options: &'a JoinOptionsIR,
+    ) -> (Vec<RawLeaf>, Vec<RawKey>, Vec<RawResidual>) {
+        let mut collector = Self {
+            ir_arena,
+            expr_arena,
+            root_options,
+            leaves: Vec::new(),
+            key_pairs: Vec::new(),
+            residuals: Vec::new(),
+        };
+        collector.collect(root, &Arc::new(Renames::default()));
+        (collector.leaves, collector.key_pairs, collector.residuals)
+    }
+
     #[recursive]
     fn collect(&mut self, node: Node, renames: &Arc<Renames>) {
         // Column projections commonly sit between joins. They preserve rows, so look
@@ -411,16 +417,12 @@ impl Collector<'_> {
         // joins below changes which rows those are.
         if let IR::Filter { input, predicate } = self.ir_arena.get(peeled) {
             let expr_arena = self.expr_arena;
-            let minterms: Vec<Node> = MintermIter::new(predicate.node(), expr_arena).collect();
-            if minterms
-                .iter()
-                .all(|node| is_elementwise_rec(*node, expr_arena))
-            {
-                self.residuals
-                    .extend(minterms.into_iter().map(|node| RawResidual {
-                        predicate: ExprIR::from_node(node, expr_arena),
-                        renames: peeled_renames.clone(),
-                    }));
+            let conjuncts = || MintermIter::new(predicate.node(), expr_arena);
+            if conjuncts().all(|node| is_elementwise_rec(node, expr_arena)) {
+                self.residuals.extend(conjuncts().map(|node| RawResidual {
+                    predicate: ExprIR::from_node(node, expr_arena),
+                    renames: peeled_renames.clone(),
+                }));
                 self.collect(*input, &peeled_renames);
             } else {
                 self.leaves.push(RawLeaf {
@@ -592,14 +594,6 @@ fn rename_leaf(
 }
 
 /// A join key rewritten into the names the cluster root uses.
-/// The column a key reads, or `None` if the key computes something.
-fn plain_column(key: &ExprIR, expr_arena: &Arena<AExpr>) -> Option<PlSmallStr> {
-    match expr_arena.get(key.node()) {
-        AExpr::Column(name) => Some(name.clone()),
-        _ => None,
-    }
-}
-
 fn normalize_key(key: &ExprIR, renames: &Renames, expr_arena: &mut Arena<AExpr>) -> ExprIR {
     // `rename_columns` re-interns the whole expression, so only pay for it when this
     // key is one of the things being renamed.
