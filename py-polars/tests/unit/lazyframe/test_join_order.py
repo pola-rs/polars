@@ -13,6 +13,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from polars._typing import PolarsDataType
+
 ON = pl.QueryOptFlags(join_order=True)
 OFF = pl.QueryOptFlags(join_order=False)
 
@@ -680,3 +682,79 @@ def test_correlated_multi_key_join_does_not_look_free(tmp_path: Path) -> None:
     )
 
     assert_reordered(lf, ["fact", "ret", "day"], ["fact", "day", "ret"])
+
+
+def fanout_frames(
+    tmp_path: Path, dtype: PolarsDataType, spread: int
+) -> dict[str, pl.LazyFrame]:
+    """Two relations sharing 100 key values, and a dimension hanging off one of them.
+
+    `spread` scales the keys apart without changing how many there are, so a domain
+    read from the key's value range only bounds the join for a small `spread`.
+    """
+    sales = pl.DataFrame(
+        {"s_item": pl.Series([(i % 100) * spread for i in range(2000)], dtype=dtype)}
+    )
+    inv = pl.DataFrame(
+        {
+            "i_item": pl.Series(
+                [(i % 100) * spread for i in range(3000)], dtype=dtype
+            ),
+            "i_wh": [i % 30 for i in range(3000)],
+        }
+    )
+    wh = pl.DataFrame({"w_key": list(range(30)), "w_name": [f"w{i}" for i in range(30)]})
+    return write_scans(tmp_path, sales=sales, inv=inv, wh=wh)
+
+
+def fanout_query(frames: dict[str, pl.LazyFrame]) -> pl.LazyFrame:
+    return frames["sales"].join(
+        frames["inv"], left_on="s_item", right_on="i_item", coalesce=False
+    ).join(frames["wh"], left_on="i_wh", right_on="w_key", coalesce=False)
+
+
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.Int64, pl.UInt32, pl.UInt64])
+def test_key_value_range_defers_a_fan_out_join(
+    tmp_path: Path, dtype: PolarsDataType
+) -> None:
+    lf = fanout_query(fanout_frames(tmp_path, dtype, spread=1))
+
+    # 100 values shared by both sides fan out, so the dimension is folded in first.
+    assert_reordered(lf, ["sales", "inv", "wh"], ["inv", "wh", "sales"])
+
+
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.UInt32, pl.UInt64, pl.Float64])
+def test_key_value_range_wider_than_the_relation_does_not_bound_it(
+    tmp_path: Path, dtype: PolarsDataType
+) -> None:
+    lf = fanout_query(fanout_frames(tmp_path, dtype, spread=10_000_000))
+
+    assert scan_order(lf.explain(optimizations=ON)) == ["sales", "inv", "wh"]
+
+
+@pytest.mark.parametrize(
+    ("spread", "expected"),
+    [(1, ["inv", "wh", "sales"]), (10_000_000, ["sales", "inv", "wh"])],
+)
+def test_key_value_range_survives_a_partial_footer_read(
+    tmp_path: Path, spread: int, expected: list[str]
+) -> None:
+    # More files than one footer wave, so only some of their footers are read.
+    parts = tmp_path / "sales"
+    parts.mkdir()
+    n_files = 40
+    for k in range(n_files):
+        pl.DataFrame(
+            {
+                "s_item": pl.Series(
+                    [(i % 100) * spread for i in range(k, 2000, n_files)],
+                    dtype=pl.Int32,
+                )
+            }
+        ).write_parquet(parts / f"p{k:03}.parquet")
+
+    frames = fanout_frames(tmp_path, pl.Int32, spread=spread)
+    frames["sales"] = pl.scan_parquet(parts / "*.parquet")
+
+    order = scan_order(fanout_query(frames).explain(optimizations=ON))
+    assert ["sales" if n.startswith("p000") else n for n in order] == expected

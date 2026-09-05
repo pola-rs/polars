@@ -301,8 +301,8 @@ impl NodeStats {
         self.distinct_count_key(key.output_name_inner().get()?)
     }
 
-    /// Values `key` could hold, from its integer range. An upper bound on its
-    /// distinct count, for a plain column of a scan that carried min/max.
+    /// Values `key` could hold, from its integer range. Estimates its distinct
+    /// count from above, for a plain column of a scan that carried min/max.
     fn int_domain(&self, key: &ExprIR) -> Option<f64> {
         let domain = self.column(key.output_name_inner().get()?)?.int_domain()?;
         Some(domain.clamp(MIN_CARDINALITY, self.unfiltered))
@@ -620,8 +620,8 @@ pub fn key_domain(
         right.distinct_count(right_key),
     ) {
         (Some(l), Some(r)) => l.max(r),
-        // Both the uniqueness assumption and an integer range bound the domain from
-        // above, so the tighter one is the better estimate.
+        // Both the uniqueness assumption and an integer range estimate the domain
+        // from above, so the tighter one is the better estimate.
         _ => {
             let rows = left.unfiltered.min(right.unfiltered);
             match key_int_domain(left, left_key, right, right_key) {

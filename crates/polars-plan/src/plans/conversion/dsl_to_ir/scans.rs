@@ -578,9 +578,10 @@ fn parquet_column_stats(
         /// The column is nested, so leaf null counts are not the root's.
         nested: bool,
         /// Inclusive integer range folded over the chunks read so far.
-        int_range: Option<(i64, i64)>,
-        /// Set once any chunk gave no integer range, so the fold is not the column's.
-        int_range_unknown: bool,
+        int_range: Option<(i128, i128)>,
+        /// Set once a chunk we read carried no range, so an unknown share of the
+        /// column is missing from the fold.
+        int_range_incomplete: bool,
     }
 
     let resolved_rows: u64 = metadata.iter().map(|m| m.num_rows as u64).sum();
@@ -643,7 +644,7 @@ fn parquet_column_stats(
                 a.distinct = Some(a.distinct.unwrap_or(0).max(d as u64));
             }
 
-            if !a.int_range_unknown {
+            if !a.int_range_incomplete {
                 match chunk_int_range(chunk, footer_buf) {
                     Some((min, max)) => {
                         a.int_range = Some(match a.int_range {
@@ -651,7 +652,7 @@ fn parquet_column_stats(
                             None => (min, max),
                         });
                     },
-                    None => a.int_range_unknown = true,
+                    None => a.int_range_incomplete = true,
                 }
             }
         }
@@ -680,9 +681,7 @@ fn parquet_column_stats(
                     Card::Exact(a.nulls)
                 },
                 avg_byte_width: Some(a.uncompressed as f32 / sampled_rows as f32),
-                // A sampled or partial read only saw some of the values, so its
-                // range does not bound the column's.
-                int_range: if a.int_range_unknown || a.nested || sampled || !complete {
+                int_range: if a.int_range_incomplete || a.nested {
                     None
                 } else {
                     a.int_range
@@ -693,17 +692,17 @@ fn parquet_column_stats(
         .collect()
 }
 
-/// Inclusive integer range of one column chunk, or `None` if it is not a signed
-/// integer column or carries no usable min/max.
+/// Inclusive integer range of one column chunk, or `None` if it is not an integer
+/// column or carries no usable min/max.
 ///
-/// An unsigned column is stored as `Int32`/`Int64` too, but its bounds are ordered
-/// as unsigned, so reading them as signed can invert the range.
+/// An unsigned column is stored as `Int32`/`Int64` but its bounds are ordered as
+/// unsigned, so its statistics are reinterpreted through the matching unsigned type.
 #[cfg(feature = "parquet")]
 fn chunk_int_range(
     chunk: &polars_parquet::parquet::metadata::ColumnChunkMetadata,
     footer_buf: &[u8],
-) -> Option<(i64, i64)> {
-    use polars_parquet::parquet::schema::types::{IntegerType, PhysicalType, PrimitiveLogicalType};
+) -> Option<(i128, i128)> {
+    use polars_parquet::parquet::schema::types::PhysicalType;
     use polars_parquet::parquet::statistics::Statistics;
 
     if !matches!(
@@ -712,19 +711,44 @@ fn chunk_int_range(
     ) {
         return None;
     }
-    if matches!(
-        chunk.descriptor().descriptor.primitive_type.logical_type,
+    let unsigned = is_unsigned_int(&chunk.descriptor().descriptor.primitive_type);
+    match chunk.statistics(footer_buf)?.ok()? {
+        Statistics::Int32(s) if unsigned => {
+            Some((s.min_value? as u32 as i128, s.max_value? as u32 as i128))
+        },
+        Statistics::Int32(s) => Some((s.min_value? as i128, s.max_value? as i128)),
+        Statistics::Int64(s) if unsigned => {
+            Some((s.min_value? as u64 as i128, s.max_value? as u64 as i128))
+        },
+        Statistics::Int64(s) => Some((s.min_value? as i128, s.max_value? as i128)),
+        _ => None,
+    }
+}
+
+/// Whether an `Int32`/`Int64` column holds unsigned values.
+///
+/// A writer may annotate the column with either the logical or the older converted
+/// type; with neither it is signed.
+#[cfg(feature = "parquet")]
+fn is_unsigned_int(primitive_type: &polars_parquet::parquet::schema::types::PrimitiveType) -> bool {
+    use polars_parquet::parquet::schema::types::{
+        IntegerType, PrimitiveConvertedType, PrimitiveLogicalType,
+    };
+
+    matches!(
+        primitive_type.logical_type,
         Some(PrimitiveLogicalType::Integer(
             IntegerType::UInt8 | IntegerType::UInt16 | IntegerType::UInt32 | IntegerType::UInt64
         ))
-    ) {
-        return None;
-    }
-    match chunk.statistics(footer_buf)?.ok()? {
-        Statistics::Int32(s) => Some((s.min_value? as i64, s.max_value? as i64)),
-        Statistics::Int64(s) => Some((s.min_value?, s.max_value?)),
-        _ => None,
-    }
+    ) || matches!(
+        primitive_type.converted_type,
+        Some(
+            PrimitiveConvertedType::Uint8
+                | PrimitiveConvertedType::Uint16
+                | PrimitiveConvertedType::Uint32
+                | PrimitiveConvertedType::Uint64
+        )
+    )
 }
 
 /// Minimum sample so a scan still extrapolates from enough files; below this,
