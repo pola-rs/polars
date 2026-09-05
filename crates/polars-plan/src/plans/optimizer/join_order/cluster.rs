@@ -391,12 +391,13 @@ impl Collector<'_> {
         // available.
         if let IR::Filter { input, predicate } = self.ir_arena.get(peeled) {
             let expr_arena = self.expr_arena;
-            self.residuals.extend(
-                MintermIter::new(predicate.node(), expr_arena).map(|node| RawResidual {
-                    predicate: ExprIR::from_node(node, expr_arena),
-                    renames: peeled_renames.clone(),
-                }),
-            );
+            self.residuals
+                .extend(
+                    MintermIter::new(predicate.node(), expr_arena).map(|node| RawResidual {
+                        predicate: ExprIR::from_node(node, expr_arena),
+                        renames: peeled_renames.clone(),
+                    }),
+                );
             self.collect(*input, &peeled_renames);
             return;
         }
