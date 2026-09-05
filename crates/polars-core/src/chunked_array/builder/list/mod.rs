@@ -6,10 +6,14 @@ mod primitive;
 
 pub use anonymous::*;
 use arrow::legacy::array::list::AnonymousBuilder;
-use arrow::legacy::array::null::MutableNullArray;
 pub use binary::*;
 pub use boolean::*;
 pub use null::*;
+use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
+use polars_array::{
+    PlBinaryViewArrayBuilder, PlBooleanArrayBuilder, PlListArrayBuilder, PlNullArrayBuilder,
+    PlPrimitiveArrayBuilder, PlUtf8ViewArrayBuilder,
+};
 pub use primitive::*;
 
 use super::*;
@@ -34,7 +38,8 @@ pub trait ListBuilderTrait {
         unimplemented!()
     }
 
-    fn inner_array(&mut self) -> ArrayRef {
+    /// The list array built so far, leaving the builder empty.
+    fn inner_array(&mut self) -> PlArrayRef {
         unimplemented!()
     }
 
@@ -43,8 +48,7 @@ pub trait ListBuilderTrait {
     }
 
     fn finish(&mut self) -> ListChunked {
-        // The builders are the Arrow ones, so the array crosses over — see `polars_array::arrow::bridge`.
-        let arr = polars_array::arrow::import::from_arrow(&*self.inner_array());
+        let arr = self.inner_array();
 
         let mut ca = ListChunked::new_with_compute_len(Arc::new(self.field().clone()), vec![arr]);
         if self.fast_explode() {
@@ -75,10 +79,11 @@ where
     }
 }
 
-type LargePrimitiveBuilder<T> = MutableListArray<i64, MutablePrimitiveArray<T>>;
-type LargeListBinViewBuilder<T> = MutableListArray<i64, MutableBinaryViewArray<T>>;
-type LargeListBooleanBuilder = MutableListArray<i64, MutableBooleanArray>;
-type LargeListNullBuilder = MutableListArray<i64, MutableNullArray>;
+type LargePrimitiveBuilder<T> = PlListArrayBuilder<PlPrimitiveArrayBuilder<T>>;
+type LargeListStringBuilder = PlListArrayBuilder<PlUtf8ViewArrayBuilder>;
+type LargeListBinaryBuilder = PlListArrayBuilder<PlBinaryViewArrayBuilder>;
+type LargeListBooleanBuilder = PlListArrayBuilder<PlBooleanArrayBuilder>;
+type LargeListNullBuilder = PlListArrayBuilder<PlNullArrayBuilder>;
 
 pub fn get_list_builder(
     inner_type_logical: &DataType,
@@ -116,16 +121,15 @@ pub fn get_list_builder(
             list_capacity,
             Some(inner_type_logical.clone()),
         )),
+        // A decimal is its physical `i128`s plus a precision and a scale, which the logical type
+        // in the field carries; the values themselves are what any `i128` builder builds.
         #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(_, _) => Box::new(
-            ListPrimitiveChunkedBuilder::<Int128Type>::new_with_values_type(
-                name,
-                list_capacity,
-                value_capacity,
-                physical_type,
-                inner_type_logical.clone(),
-            ),
-        ),
+        DataType::Decimal(_, _) => Box::new(ListPrimitiveChunkedBuilder::<Int128Type>::new(
+            name,
+            list_capacity,
+            value_capacity,
+            inner_type_logical.clone(),
+        )),
         _ => {
             macro_rules! get_primitive_builder {
                 ($type:ty) => {{

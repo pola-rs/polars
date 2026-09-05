@@ -23,8 +23,8 @@ where
             inner_type.to_physical().is_primitive_numeric(),
             "inner type must be primitive, got {inner_type}"
         );
-        let values = MutablePrimitiveArray::<T::Native>::with_capacity(values_capacity);
-        let builder = LargePrimitiveBuilder::<T::Native>::new_with_capacity(values, capacity);
+        let values = PlPrimitiveArrayBuilder::<T::Native>::with_capacity(values_capacity);
+        let builder = LargePrimitiveBuilder::<T::Native>::with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(Box::new(inner_type)));
 
         Self {
@@ -34,31 +34,10 @@ where
         }
     }
 
-    pub fn new_with_values_type(
-        name: PlSmallStr,
-        capacity: usize,
-        values_capacity: usize,
-        values_type: DataType,
-        logical_type: DataType,
-    ) -> Self {
-        let values = MutablePrimitiveArray::<T::Native>::with_capacity_from(
-            values_capacity,
-            values_type.to_arrow(CompatLevel::newest()),
-        );
-        let builder = LargePrimitiveBuilder::<T::Native>::new_with_capacity(values, capacity);
-        let field = Field::new(name, DataType::List(Box::new(logical_type)));
-        Self {
-            builder,
-            field,
-            fast_explode: true,
-        }
-    }
-
     #[inline]
     pub fn append_slice(&mut self, items: &[T::Native]) {
-        let values = self.builder.mut_values();
-        values.extend_from_slice(items);
-        self.builder.try_push_valid().unwrap();
+        self.builder.values_mut().push_values(items.iter().copied());
+        self.builder.finish_row();
 
         if items.is_empty() {
             self.fast_explode = false;
@@ -70,7 +49,7 @@ where
         match opt_v {
             Some(items) => self.append_slice(items),
             None => {
-                self.builder.push_null();
+                self.builder.extend_nulls(1);
             },
         }
     }
@@ -80,40 +59,29 @@ where
         &mut self,
         iter: I,
     ) {
-        let values = self.builder.mut_values();
-
-        if iter.size_hint().0 == 0 {
-            self.fast_explode = false;
-        }
-        // SAFETY:
-        // trusted len, trust the type system
-        values.extend_values(iter);
-        self.builder.try_push_valid().unwrap();
+        self.append_values_iter(iter)
     }
 
     #[inline]
     pub fn append_values_iter<I: Iterator<Item = T::Native>>(&mut self, iter: I) {
-        let values = self.builder.mut_values();
-
         if iter.size_hint().0 == 0 {
             self.fast_explode = false;
         }
-        values.extend_values(iter);
-        self.builder.try_push_valid().unwrap();
+        self.builder.values_mut().push_values(iter);
+        self.builder.finish_row();
     }
 
     /// Appends from an iterator over values
     #[inline]
     pub fn append_iter<I: Iterator<Item = Option<T::Native>> + TrustedLen>(&mut self, iter: I) {
-        let values = self.builder.mut_values();
-
         if iter.size_hint().0 == 0 {
             self.fast_explode = false;
         }
-        // SAFETY:
-        // trusted len, trust the type system
-        unsafe { values.extend_trusted_len_unchecked(iter) };
-        self.builder.try_push_valid().unwrap();
+        let values = self.builder.values_mut();
+        for value in iter {
+            values.push(value);
+        }
+        self.builder.finish_row();
     }
 }
 
@@ -124,7 +92,7 @@ where
     #[inline]
     fn append_null(&mut self) {
         self.fast_explode = false;
-        self.builder.push_null();
+        self.builder.extend_nulls(1);
     }
 
     #[inline]
@@ -138,21 +106,12 @@ where
 
 Expected {}, got {}.", self.field.dtype(), s.dtype())
         })?;
-        let values = self.builder.mut_values();
-
-        ca.downcast_iter().for_each(|arr| {
-            if arr.null_count() == 0 {
-                // The values are read as a slice, so a chunk that is not laid out flat is written
-                // out first — see `StaticArray::to_flat`.
-                values.extend_from_slice(arr.to_flat().as_slice())
-            } else {
-                // SAFETY:
-                // The arrays are trusted length iterators.
-                unsafe { values.extend_trusted_len_unchecked(arr.iter()) }
-            }
-        });
-        // overflow of i64 is far beyond polars capable lengths.
-        unsafe { self.builder.try_push_valid().unwrap_unchecked() };
+        // The chunks are appended whole, which leaves each of them in whatever representation it
+        // is in rather than reading it an element at a time.
+        let values = self.builder.values_mut();
+        ca.downcast_iter()
+            .for_each(|arr| values.extend(arr, ShareStrategy::Always));
+        self.builder.finish_row();
         Ok(())
     }
 
@@ -160,8 +119,8 @@ Expected {}, got {}.", self.field.dtype(), s.dtype())
         &self.field
     }
 
-    fn inner_array(&mut self) -> ArrayRef {
-        self.builder.as_box()
+    fn inner_array(&mut self) -> PlArrayRef {
+        Box::new(self.builder.freeze_reset())
     }
 
     fn fast_explode(&self) -> bool {
