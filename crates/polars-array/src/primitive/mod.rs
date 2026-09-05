@@ -7,7 +7,6 @@ use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_ensure};
 
 use crate::array::PlArray;
-use crate::builder::subslice_extend_validity;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmap, PlBitmapRef};
 use crate::broadcast::{
@@ -15,6 +14,7 @@ use crate::broadcast::{
     normalize_buffer, scalar_buffer_len, slice_buffer, slice_validity, try_validity_covering,
     validity_covering, validity_covering_unchecked,
 };
+use crate::builder::subslice_extend_validity;
 use crate::flat::Flat;
 
 mod builder;
@@ -309,9 +309,10 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         } = self;
 
         match bytes::byte_vec_from_buffer(values) {
-            Either::Right(values) => {
-                Either::Right(PlPrimitiveArrayBuilder::from_parts(values, builder_validity))
-            },
+            Either::Right(values) => Either::Right(PlPrimitiveArrayBuilder::from_parts(
+                values,
+                builder_validity,
+            )),
             // The buffer came back untouched, so the array it came from is rebuilt as it was.
             Either::Left(values) => Either::Left(Self {
                 values,

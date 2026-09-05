@@ -12,7 +12,9 @@ use crate::series::IsSorted;
 /// The chunk is moved out of the box rather than cloned out of it, so that the array that comes
 /// back holds the only reference to its buffers.
 fn take_chunk<A: StaticArray + Default>(chunks: &mut Vec<PlArrayRef>) -> A {
-    let mut chunk = chunks.pop().expect("a chunked array holds at least one chunk");
+    let mut chunk = chunks
+        .pop()
+        .expect("a chunked array holds at least one chunk");
     let arr = chunk
         .as_any_mut()
         .downcast_mut::<A>()
@@ -270,4 +272,3 @@ mod test {
         Ok(())
     }
 }
-

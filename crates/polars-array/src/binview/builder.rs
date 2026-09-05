@@ -15,6 +15,7 @@ use crate::builder::{
 };
 
 /// A builder of a [`PlBinaryViewArray`].
+#[derive(Clone)]
 pub struct PlBinaryViewArrayBuilder {
     views: Vec<View>,
     /// The data buffers whose index is final: the ones already adopted or flushed, in order.
