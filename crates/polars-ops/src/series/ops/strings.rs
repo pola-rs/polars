@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use polars_array::builder::StaticArrayBuilder;
 use polars_array::bitmap::PlBitmap;
+use polars_array::builder::StaticArrayBuilder;
 use polars_array::{PlArray as _, PlUtf8ViewArrayBuilder, StaticArray as _};
 use polars_core::prelude::{Column, DataType, IntoColumn, StringChunked};
 use polars_core::scalar::Scalar;

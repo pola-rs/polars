@@ -1,9 +1,9 @@
 use arrow::bitmap::BitmapBuilder;
 use arrow::types::NativeType;
 use num_traits::Zero;
-use polars_compute::arithmetic::pl_num::PlNumArithmetic;
 use polars_array::PlPrimitiveArray;
 use polars_array::bitmap::PlBitmap;
+use polars_compute::arithmetic::pl_num::PlNumArithmetic;
 use polars_compute::sum::WrappingAdd;
 use polars_core::prelude::*;
 

@@ -281,3 +281,71 @@ impl ChunkedSet<bool> for &mut BooleanChunked {
         Ok(out.into_series())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn idx(idx: &[u32]) -> Vec<IdxSize> {
+        idx.iter().map(|i| *i as IdxSize).collect()
+    }
+
+    /// Writing into an array that has no mask only grows one when a null is actually set.
+    #[test]
+    fn scattering_into_a_fully_valid_primitive() {
+        let mut ca = Int32Chunked::new("a".into(), &[1, 2, 3, 4]);
+        let out = (&mut ca)
+            .scatter(&idx(&[1, 3]), [Some(20), Some(40)])
+            .unwrap();
+        assert_eq!(
+            out.i32().unwrap().iter().collect::<Vec<_>>(),
+            [Some(1), Some(20), Some(3), Some(40)],
+        );
+
+        let mut ca = Int32Chunked::new("a".into(), &[1, 2, 3, 4]);
+        let out = (&mut ca).scatter(&idx(&[0, 2]), [None, Some(30)]).unwrap();
+        assert_eq!(
+            out.i32().unwrap().iter().collect::<Vec<_>>(),
+            [None, Some(2), Some(30), Some(4)],
+        );
+    }
+
+    /// Writing into an array that already has a mask has to set bits both ways.
+    #[test]
+    fn scattering_over_an_existing_mask_sets_bits_both_ways() {
+        let mut ca = Int32Chunked::new("a".into(), &[Some(1), None, Some(3), None]);
+        let out = (&mut ca).scatter(&idx(&[1, 2]), [Some(20), None]).unwrap();
+        assert_eq!(
+            out.i32().unwrap().iter().collect::<Vec<_>>(),
+            // index 1 was null and became valid; index 2 was valid and became null.
+            [Some(1), Some(20), None, None],
+        );
+    }
+
+    #[test]
+    fn scattering_booleans_and_strings() {
+        let mut ca = BooleanChunked::new("a".into(), &[true, false, true]);
+        let out = (&mut ca)
+            .scatter(&idx(&[0, 2]), [Some(false), None])
+            .unwrap();
+        assert_eq!(
+            out.bool().unwrap().iter().collect::<Vec<_>>(),
+            [Some(false), Some(false), None],
+        );
+
+        let mut ca = StringChunked::new("a".into(), &["a", "bb", "ccc"]);
+        let out = (&mut ca).scatter(&idx(&[1]), [Some("zzzz")]).unwrap();
+        assert_eq!(
+            out.str().unwrap().iter().collect::<Vec<_>>(),
+            [Some("a"), Some("zzzz"), Some("ccc")],
+        );
+    }
+
+    /// The trait's stated invariant: a failed scatter leaves the array as it was.
+    #[test]
+    fn an_out_of_bounds_index_leaves_the_array_alone() {
+        let mut ca = Int32Chunked::new("a".into(), &[1, 2, 3]);
+        assert!((&mut ca).scatter(&idx(&[9]), [Some(90)]).is_err());
+        assert_eq!(ca.iter().collect::<Vec<_>>(), [Some(1), Some(2), Some(3)]);
+    }
+}
