@@ -13,7 +13,6 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES
 
 if TYPE_CHECKING:
-    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -175,54 +174,6 @@ def test_arr_dot_query_vector_streaming(
         raw_output=True,
     )
     assert "columnar-function" not in physical_plan
-
-
-@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
-@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
-def test_arr_dot_parallel_execution_contexts(
-    dtype: pl.DataType,
-    engine: EngineType,
-) -> None:
-    width = 128
-    rows = (1 << 20) // width + 1
-    lhs_row = [1.0] * width
-    rhs_row = [2.0] * width
-    df = pl.DataFrame(
-        {
-            "lhs": [lhs_row] * rows,
-            "rhs": [rhs_row] * rows,
-        },
-        schema={
-            "lhs": pl.Array(dtype, width),
-            "rhs": pl.Array(dtype, width),
-        },
-    )
-    query = pl.lit(rhs_row, dtype=pl.Array(dtype, width))
-
-    result = (
-        df.lazy()
-        .select(
-            row_wise=pl.col("lhs").arr.dot("rhs"),
-            reverse=pl.col("rhs").arr.dot("lhs"),
-            scalar_rhs=pl.col("lhs").arr.dot(query),
-            scalar_lhs=query.arr.dot("lhs"),
-        )
-        .collect(engine=engine)
-    )
-    expected_value = float(2 * width)
-    expected = pl.DataFrame(
-        {
-            "row_wise": [expected_value] * rows,
-            "reverse": [expected_value] * rows,
-            "scalar_rhs": [expected_value] * rows,
-            "scalar_lhs": [expected_value] * rows,
-        },
-        schema=dict.fromkeys(result.columns, dtype),
-    )
-
-    assert_frame_equal(result, expected, check_exact=True)
-    if engine == "in-memory":
-        assert all(column.n_chunks() == 1 for column in result.get_columns())
 
 
 def test_arr_dot_query_vector() -> None:

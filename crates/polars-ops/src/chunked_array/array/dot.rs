@@ -10,6 +10,8 @@ use rayon::prelude::*;
 
 // Historical crossover center; recalibrate against the all-valid baseline.
 const PARALLEL_MIN_COORDINATE_WORK: usize = 1 << 20;
+// Match the bounded task budget used by `polars_core::utils::par_iter_bounded`.
+const PARALLEL_TASKS_PER_THREAD: usize = 8;
 
 type ArrayDotKernel = fn(&ArrayChunked, &ArrayChunked, usize, bool) -> PolarsResult<Series>;
 
@@ -118,6 +120,7 @@ fn dot_outer_all_valid_parallel<T>(
     lhs_broadcast: bool,
     rhs_broadcast: bool,
     output_len: usize,
+    min_len: usize,
 ) -> Vec<T::Sum>
 where
     T: NativeType + PlNumArithmetic + SumCast,
@@ -128,6 +131,7 @@ where
     RAYON.install(|| {
         (0..output_len)
             .into_par_iter()
+            .with_min_len(min_len)
             .map(|output_idx| {
                 let lhs_idx = if lhs_broadcast { 0 } else { output_idx };
                 let rhs_idx = if rhs_broadcast { 0 } else { output_idx };
@@ -142,16 +146,15 @@ where
 }
 
 #[inline]
-fn should_parallelize(
-    allow_parallel: bool,
-    output_len: usize,
-    width: usize,
-    n_threads: usize,
-) -> bool {
-    allow_parallel
-        && n_threads > 1
-        && output_len > 1
-        && output_len.saturating_mul(width) >= PARALLEL_MIN_COORDINATE_WORK
+fn has_enough_parallel_work(output_len: usize, width: usize) -> bool {
+    output_len > 1 && output_len.saturating_mul(width) >= PARALLEL_MIN_COORDINATE_WORK
+}
+
+#[inline]
+fn parallel_min_len(output_len: usize, n_threads: usize) -> usize {
+    output_len
+        .div_ceil(n_threads.saturating_mul(PARALLEL_TASKS_PER_THREAD).max(1))
+        .max(1)
 }
 
 fn dot_primitive<T, const MAY_PARALLELIZE: bool>(
@@ -209,18 +212,22 @@ where
     // An absent outer bitmap guarantees valid output rows without scanning.
     // Child validity only filters coordinate pairs inside `DotRowReducer`.
     if lhs_array.validity().is_none() && rhs_array.validity().is_none() {
-        let parallel = if MAY_PARALLELIZE {
-            should_parallelize(
-                allow_parallel,
+        let min_parallel_len =
+            if MAY_PARALLELIZE && allow_parallel && has_enough_parallel_work(output_len, width) {
+                let n_threads = RAYON.current_num_threads();
+                (n_threads > 1 && !RAYON.current_thread_has_pending_tasks().unwrap_or(false))
+                    .then(|| parallel_min_len(output_len, n_threads))
+            } else {
+                None
+            };
+        let output = if let Some(min_len) = min_parallel_len {
+            dot_outer_all_valid_parallel(
+                &row_reducer,
+                lhs_broadcast,
+                rhs_broadcast,
                 output_len,
-                width,
-                RAYON.current_num_threads(),
+                min_len,
             )
-        } else {
-            false
-        };
-        let output = if parallel {
-            dot_outer_all_valid_parallel(&row_reducer, lhs_broadcast, rhs_broadcast, output_len)
         } else {
             dot_outer_all_valid(&row_reducer, lhs_broadcast, rhs_broadcast, output_len)
         };
@@ -335,25 +342,51 @@ pub fn array_dot_with_parallelism(
 mod tests {
     use super::*;
 
+    fn assert_parallel_matches_serial_bits<T>(lhs: &[T; 12], rhs: &[T; 12])
+    where
+        T: NativeType + PlNumArithmetic + SumCast,
+        T::Sum: WrappingAdd,
+    {
+        let reducer = DotRowReducer {
+            lhs_slice: lhs,
+            rhs_slice: rhs,
+            lhs_inner_validity: None,
+            rhs_inner_validity: None,
+            width: 3,
+        };
+
+        let output_len = lhs.len() / reducer.width;
+        let serial = dot_outer_all_valid(&reducer, false, false, output_len);
+        let parallel = dot_outer_all_valid_parallel(&reducer, false, false, output_len, 1);
+        assert_eq!(
+            bytemuck::cast_slice::<_, u8>(&serial),
+            bytemuck::cast_slice::<_, u8>(&parallel),
+        );
+    }
+
     #[test]
-    fn test_should_parallelize() {
-        assert!(!should_parallelize(false, usize::MAX, 2, 16));
-        assert!(!should_parallelize(true, 2, usize::MAX, 1));
-        assert!(!should_parallelize(true, 1, usize::MAX, 16));
-        assert!(!should_parallelize(true, usize::MAX, 0, 16));
-        assert!(!should_parallelize(
-            true,
+    fn test_has_enough_parallel_work() {
+        assert!(!has_enough_parallel_work(1, usize::MAX));
+        assert!(!has_enough_parallel_work(usize::MAX, 0));
+        assert!(!has_enough_parallel_work(
             PARALLEL_MIN_COORDINATE_WORK - 1,
             1,
-            16,
         ));
-        assert!(should_parallelize(true, PARALLEL_MIN_COORDINATE_WORK, 1, 2,));
-        assert!(should_parallelize(true, usize::MAX, 2, 2));
+        assert!(has_enough_parallel_work(PARALLEL_MIN_COORDINATE_WORK, 1,));
+        assert!(has_enough_parallel_work(usize::MAX, 2));
+    }
+
+    #[test]
+    fn test_parallel_min_len() {
+        assert_eq!(parallel_min_len(100, 0), 100);
+        assert_eq!(parallel_min_len(1, 16), 1);
+        assert_eq!(parallel_min_len(100, 2), 7);
+        assert_eq!(parallel_min_len(usize::MAX, usize::MAX), 1);
     }
 
     #[test]
     fn test_parallel_outer_matches_serial_bitwise() {
-        let lhs = [
+        let lhs_f32 = [
             1e20_f32,
             1.0,
             -1e20,
@@ -367,29 +400,14 @@ mod tests {
             2.0,
             3.0,
         ];
-        let rhs = [
+        let rhs_f32 = [
             1.0_f32, 1.0, 1.0, 1.0, -1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
         ];
-        let reducer = DotRowReducer {
-            lhs_slice: &lhs,
-            rhs_slice: &rhs,
-            lhs_inner_validity: None,
-            rhs_inner_validity: None,
-            width: 3,
-        };
+        assert_parallel_matches_serial_bits(&lhs_f32, &rhs_f32);
 
-        let serial = dot_outer_all_valid(&reducer, false, false, 4);
-        let parallel = dot_outer_all_valid_parallel(&reducer, false, false, 4);
-        assert_eq!(
-            serial
-                .iter()
-                .map(|value| value.to_bits())
-                .collect::<Vec<_>>(),
-            parallel
-                .iter()
-                .map(|value| value.to_bits())
-                .collect::<Vec<_>>(),
-        );
+        let lhs_f64 = lhs_f32.map(f64::from);
+        let rhs_f64 = rhs_f32.map(f64::from);
+        assert_parallel_matches_serial_bits(&lhs_f64, &rhs_f64);
     }
 
     #[test]
@@ -408,7 +426,7 @@ mod tests {
 
         assert_eq!(
             dot_outer_all_valid(&reducer, true, false, 2),
-            dot_outer_all_valid_parallel(&reducer, true, false, 2),
+            dot_outer_all_valid_parallel(&reducer, true, false, 2, 1),
         );
 
         let reverse_reducer = DotRowReducer {
@@ -420,7 +438,7 @@ mod tests {
         };
         assert_eq!(
             dot_outer_all_valid(&reverse_reducer, false, true, 2),
-            dot_outer_all_valid_parallel(&reverse_reducer, false, true, 2),
+            dot_outer_all_valid_parallel(&reverse_reducer, false, true, 2, 1),
         );
     }
 
@@ -435,7 +453,7 @@ mod tests {
         };
 
         assert_eq!(
-            dot_outer_all_valid_parallel(&reducer, false, false, 3),
+            dot_outer_all_valid_parallel(&reducer, false, false, 3, 1),
             vec![0.0, 0.0, 0.0],
         );
     }
