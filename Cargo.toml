@@ -26,6 +26,7 @@ repository = "https://github.com/pola-rs/polars"
 aho-corasick = "1.1"
 arboard = { version = "3.4.0", default-features = false }
 argminmax = { version = "0.6.3", default-features = false, features = ["float", "half"] }
+arrow-array = { version = "58.4.0", features = ["ffi"] }
 async-channel = { version = "2.3.1" }
 async-trait = { version = "0.1.59" }
 atoi_simd = "0.18"
@@ -61,6 +62,7 @@ half = { version = "2.7.1", features = ["num-traits"] }
 hashbrown = { version = "0.17.1", features = ["rayon", "serde"] }
 hex = "0.4.3"
 hwlocality-sys = { version = "0.7.1", features = ["vendored", "hwloc-2_12_1"] }
+iceberg = { version = "0.10.0", git = "https://github.com/apache/iceberg-rust.git", rev = "64cb19a4f798634c717773f81afeaead9ef7f757", default-features = false }
 indexmap = { version = "2.12", features = ["std", "serde"] }
 itoa = "1.0.6"
 libc = "0.2"

@@ -213,6 +213,7 @@ class IcebergScanResolver:
     use_metadata_statistics: bool
     fast_deletion_count: bool
     use_pyiceberg_filter: bool
+    kms_client: Any | None = None
 
     #
     # PythonDatasetProvider interface functions
@@ -253,7 +254,7 @@ class IcebergScanResolver:
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
         pyarrow_predicate: str | None = None,
-    ) -> _NativeIcebergScanData | _PyIcebergScanData | None:
+    ) -> _NativeIcebergScanData | _PyIcebergScanData | _RustIcebergScanData | None:
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
         import polars._utils.logging
@@ -379,6 +380,17 @@ class IcebergScanResolver:
             )
             is not None
         }
+
+        if self.kms_client is not None:
+            return _RustIcebergScanData(
+                metadata_location=tbl.metadata_location,
+                projected_iceberg_schema=projected_iceberg_schema,
+                kms_client=self.kms_client,
+                snapshot_id=snapshot_id,
+                with_columns=projection,
+                n_rows=limit,
+                snapshot_id_key=snapshot_id_key,
+            )
 
         sources = []
         missing_field_defaults = IdentityTransformedPartitionValuesBuilder(
@@ -629,6 +641,59 @@ class _PyIcebergScanData(_ResolvedScanDataBase):
 
     def to_lazyframe(self) -> pl.LazyFrame:
         return self.lf
+
+
+def _scan_iceberg_rust_impl(
+    metadata_location: str,
+    kms_client: Any,
+    snapshot_id: int | None,
+    with_columns: list[str] | None = None,
+    _predicate: bytes | None = None,
+    n_rows: int | None = None,
+    batch_size: int | None = None,
+) -> tuple[Any, bool]:
+    from polars import _plr
+    from polars._utils.wrap import wrap_df
+
+    batches = _plr._scan_iceberg_rust(
+        metadata_location,
+        kms_client,
+        snapshot_id,
+        with_columns,
+        n_rows,
+        batch_size,
+    )
+    return ((wrap_df(batch) for batch in batches), False)
+
+
+@dataclass(kw_only=True)
+class _RustIcebergScanData(_ResolvedScanDataBase):
+    metadata_location: str
+    projected_iceberg_schema: pyiceberg.schema.Schema
+    kms_client: Any
+    snapshot_id: int | None
+    with_columns: list[str] | None
+    n_rows: int | None
+    snapshot_id_key: str
+
+    def to_lazyframe(self) -> pl.LazyFrame:
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        scan_fn = partial(
+            _scan_iceberg_rust_impl,
+            self.metadata_location,
+            self.kms_client,
+            self.snapshot_id,
+            with_columns=self.with_columns,
+            n_rows=self.n_rows,
+        )
+        return pl.LazyFrame._scan_python_function(
+            schema_to_pyarrow(self.projected_iceberg_schema),
+            scan_fn,
+            pyarrow=True,
+            is_pure=True,
+            explain_name="ICEBERG-RUST",
+        )
 
 
 def _redact_dict_values(obj: Any) -> Any:
