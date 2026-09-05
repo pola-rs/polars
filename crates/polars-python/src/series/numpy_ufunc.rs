@@ -41,7 +41,9 @@ macro_rules! impl_ufuncs {
                         Ok(_) => {
                             let (name, validity) = {
                                 let s = self.series.read();
-                                (s.name().clone(), s.chunks()[0].validity().cloned())
+                                // The Arrow array below takes one flat mask over every element,
+                                // which is what `rechunk_validity` hands over.
+                                (s.name().clone(), s.rechunk_validity())
                             };
 
                             // Create a Series backed by the numpy array's buffer.

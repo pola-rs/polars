@@ -75,6 +75,28 @@ pub(super) fn series_contains_null(s: &Series) -> bool {
     }
 }
 
+/// Returns whether every chunk of the Series is flat, at any level of nesting. Of the nested
+/// types, only Array types are handled since only those are relevant for NumPy views.
+pub(super) fn series_is_flat(s: &Series) -> bool {
+    match s.dtype() {
+        dt if dt.is_primitive_numeric() => {
+            with_match_physical_numpy_polars_type!(dt, |$T| {
+                s.unpack::<$T>().unwrap().is_flat()
+            })
+        },
+        DataType::Datetime(_, _) | DataType::Duration(_) => {
+            s.to_physical_repr().i64().unwrap().is_flat()
+        },
+        DataType::Array(_, _) => {
+            // `get_inner` writes out the values of a scalar array; those values carry their own
+            // representation, which the recursion is for.
+            let ca = s.array().unwrap();
+            ca.is_flat() && series_is_flat(&ca.get_inner())
+        },
+        _ => panic!("invalid data type"),
+    }
+}
+
 /// Reshape the first dimension of a NumPy array to the given height and width.
 pub(super) fn reshape_numpy_array(
     py: Python<'_>,

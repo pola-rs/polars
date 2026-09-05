@@ -7,6 +7,8 @@ use polars_error::{PolarsResult, polars_bail};
 
 use super::*;
 
+/// The kernels read a chunk in whichever representation it is in: the value a scalar chunk
+/// repeats is counted once and the count repeated in turn. See `polars_compute::bitwise`.
 macro_rules! apply_bitwise_op {
     ($($op:ident),+ $(,)?) => {
         $(
@@ -16,7 +18,7 @@ macro_rules! apply_bitwise_op {
                     let ca: &ChunkedArray<BooleanType> = s.as_any().downcast_ref().unwrap();
                     Ok(unary_mut_values::<BooleanType, UInt32Type, _, _>(
                         ca,
-                        |a| polars_compute::bitwise::BitwiseKernel::$op(a),
+                        polars_compute::bitwise::BitwiseKernel::$op,
                     ).into_series())
                 },
                 dt if dt.is_integer() => {
@@ -24,7 +26,7 @@ macro_rules! apply_bitwise_op {
                         let ca: &ChunkedArray<$T> = s.as_any().downcast_ref().unwrap();
                         Ok(unary_mut_values::<$T, UInt32Type, _, _>(
                             ca,
-                            |a| polars_compute::bitwise::BitwiseKernel::$op(a),
+                            polars_compute::bitwise::BitwiseKernel::$op,
                         ).into_series())
                     })
                 },
@@ -33,7 +35,7 @@ macro_rules! apply_bitwise_op {
                         let ca: &ChunkedArray<$T> = s.as_any().downcast_ref().unwrap();
                         Ok(unary_mut_values::<$T, UInt32Type, _, _>(
                             ca,
-                            |a| polars_compute::bitwise::BitwiseKernel::$op(a),
+                            polars_compute::bitwise::BitwiseKernel::$op,
                         ).into_series())
                     })
                 },

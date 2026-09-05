@@ -1,11 +1,14 @@
 use std::borrow::Cow;
 
 use arrow::bitmap::Bitmap;
-use arrow::offset::{Offsets, OffsetsBuffer};
+use arrow::offset::OffsetsBuffer;
+use polars_array::arrow::export;
 use polars_compute::gather::sublist::list::array_to_unit_list;
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::format_tuple;
 
+#[cfg(feature = "dtype-array")]
+use crate::chunked_array::array::array_values;
 use crate::chunked_array::builder::get_list_builder;
 use crate::datatypes::{DataType, ListChunked};
 use crate::prelude::{IntoSeries, Series, *};
@@ -18,19 +21,18 @@ impl Series {
             #[cfg(feature = "dtype-array")]
             DataType::Array(dtype, _) => {
                 let ca = s.array().unwrap();
-                let chunks = ca
-                    .downcast_iter()
-                    .map(|arr| arr.values().clone())
-                    .collect::<Vec<_>>();
+                let chunks = ca.downcast_iter().map(array_values).collect::<Vec<_>>();
                 // Safety: guarded by the type system
                 unsafe { Series::from_chunks_and_dtype_unchecked(s.name().clone(), chunks, dtype) }
                     .get_leaf_array()
             },
             DataType::List(dtype) => {
                 let ca = s.list().unwrap();
+                // The callers pair the leaf values with offsets that are one range per element,
+                // so a scalar chunk is written out to hand over the values those ranges reach.
                 let chunks = ca
                     .downcast_iter()
-                    .map(|arr| arr.values().clone())
+                    .map(|arr| arr.to_flat().values().to_boxed())
                     .collect::<Vec<_>>();
                 // Safety: guarded by the type system
                 unsafe { Series::from_chunks_and_dtype_unchecked(s.name().clone(), chunks, dtype) }
@@ -49,11 +51,21 @@ impl Series {
 
         let mut s = self.rechunk();
 
-        while let DataType::List(_) = s.dtype() {
+        while let DataType::List(inner_dtype) = s.dtype() {
             let ca = s.list().unwrap();
-            offsets.push(ca.offsets().unwrap());
-            validities.push(ca.rechunk_validity());
-            s = ca.get_inner();
+            // The offsets are handed out one range per element, so a chunk that is not laid out
+            // flat is written out, and the next level is taken from the values it was written to.
+            let arr = ca.downcast_as_array().to_flat();
+            offsets.push(export::offsets_to_arrow(arr.offsets().clone()));
+            validities.push(arr.validity().cloned());
+            // SAFETY: the values of a list chunk are laid out the way its inner dtype says.
+            s = unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    ca.name().clone(),
+                    vec![arr.values().to_boxed()],
+                    inner_dtype,
+                )
+            };
         }
 
         (offsets, validities)
@@ -62,13 +74,19 @@ impl Series {
     /// Wrap each element of this Series in a single-element list.
     /// A Series `[1, 2, 3]` becomes `[[1], [2], [3]]`.
     pub fn to_unit_list(&self) -> ListChunked {
-        let mut ca = ListChunked::from_chunk_iter(
-            self.name().clone(),
-            self.chunks()
-                .iter()
-                .map(|arr| array_to_unit_list(arr.clone())),
-        );
-        ca.set_inner_dtype(self.dtype().clone());
+        // The chunks carry no logical type, so the inner dtype is this series'.
+        let chunks = self
+            .chunks()
+            .iter()
+            .map(|arr| array_to_unit_list(arr.to_boxed()).into_boxed())
+            .collect();
+        let mut ca = unsafe {
+            ListChunked::from_chunks_and_dtype_unchecked(
+                self.name().clone(),
+                chunks,
+                DataType::List(Box::new(self.dtype().clone())),
+            )
+        };
         ca.set_fast_explode();
         ca
     }
@@ -80,23 +98,20 @@ impl Series {
         let s = s.rechunk();
         let values = s.array_ref(0);
 
-        let offsets = vec![0i64, values.len() as i64];
+        let offsets = vec![0u64, values.len() as u64];
         let inner_type = s.dtype();
 
-        let dtype = ListArray::<i64>::default_datatype(values.dtype().clone());
-
         // SAFETY: offsets are correct.
-        let arr = unsafe {
-            ListArray::new(
-                dtype,
-                Offsets::new_unchecked(offsets).into(),
-                values.clone(),
-                None,
+        let arr = unsafe { PlListArray::new_unchecked(values.clone(), offsets.into(), 1, None) };
+
+        // The chunk carries no logical type, so the inner dtype is this series'.
+        let mut ca = unsafe {
+            ListChunked::from_chunks_and_dtype_unchecked(
+                s.name().clone(),
+                vec![arr.into_boxed()],
+                DataType::List(Box::new(inner_type.clone())),
             )
         };
-
-        let mut ca = ListChunked::with_chunk(s.name().clone(), arr);
-        unsafe { ca.to_logical(inner_type.clone()) };
         ca.set_fast_explode();
         Ok(ca)
     }
@@ -159,9 +174,11 @@ impl Series {
                 prev_arrow_dtype = prev_arrow_dtype.to_fixed_size_list(dim as usize, true);
                 prev_dtype = DataType::Array(Box::new(prev_dtype), dim as usize);
 
-                prev_array =
-                    FixedSizeListArray::new(prev_arrow_dtype.clone(), length, prev_array, None)
-                        .boxed();
+                // SAFETY: the values hold `dim` values for every element of the level above.
+                prev_array = unsafe {
+                    PlFixedSizeListArray::new_unchecked(prev_array, dim as usize, length, None)
+                }
+                .into_boxed();
             }
 
             return Ok(unsafe {
@@ -201,13 +218,12 @@ impl Series {
             prev_arrow_dtype = prev_arrow_dtype.to_fixed_size_list(dim as usize, true);
             prev_dtype = DataType::Array(Box::new(prev_dtype), dim as usize);
 
-            prev_array = FixedSizeListArray::new(
-                prev_arrow_dtype.clone(),
-                prev_array.len() / dim as usize,
-                prev_array,
-                None,
-            )
-            .boxed();
+            // SAFETY: the values hold `dim` values for every element of the level above.
+            let length = prev_array.len() / dim as usize;
+            prev_array = unsafe {
+                PlFixedSizeListArray::new_unchecked(prev_array, dim as usize, length, None)
+            }
+            .into_boxed();
         }
 
         polars_ensure!(

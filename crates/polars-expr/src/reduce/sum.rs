@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use arrow::array::PrimitiveArray;
 use num_traits::Zero;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add};
@@ -79,13 +78,15 @@ where
         if T::Native::is_float() {
             *v += ChunkAgg::sum(ca).map(Into::into).unwrap_or(Zero::zero());
         } else {
+            // TODO(polars-array-scalar): a scalar chunk's sum is its value times its length, but
+            // that shortcut needs a `Mul` bound on `Self::Value`, which `Reducer` does not have.
             for arr in ca.downcast_iter() {
                 if arr.has_nulls() {
                     for x in arr.iter() {
-                        *v += x.copied().map(Into::into).unwrap_or(Zero::zero());
+                        *v += x.map(Into::into).unwrap_or(Zero::zero());
                     }
                 } else {
-                    for x in arr.values_iter().copied() {
+                    for x in arr.values_iter() {
                         *v += x.into();
                     }
                 }
@@ -100,7 +101,7 @@ where
         dtype: &DataType,
     ) -> PolarsResult<Series> {
         assert!(m.is_none());
-        let arr = Box::new(PrimitiveArray::from_vec(v));
+        let arr = Box::new(PlPrimitiveArray::from_vec(v));
         Ok(unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 PlSmallStr::EMPTY,
@@ -172,7 +173,7 @@ impl Reducer for DecimalSumReducer {
             !v.contains(&DECIMAL_SUM_OVERFLOW),
             ComputeError: "overflow in decimal addition in sum"
         );
-        let arr = Box::new(PrimitiveArray::from_vec(v));
+        let arr = Box::new(PlPrimitiveArray::from_vec(v));
         Ok(unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 PlSmallStr::EMPTY,
@@ -232,10 +233,10 @@ impl Reducer for IdxTypeCheckedSumReducer {
         for arr in ca.downcast_iter() {
             if arr.has_nulls() {
                 for x in arr.iter() {
-                    *v += x.copied().map(idxsize_to_u64).unwrap_or(0);
+                    *v += x.map(idxsize_to_u64).unwrap_or(0);
                 }
             } else {
-                for x in arr.values_iter().copied() {
+                for x in arr.values_iter() {
                     *v += idxsize_to_u64(x);
                 }
             }
@@ -262,7 +263,7 @@ impl Reducer for IdxTypeCheckedSumReducer {
             LENGTH_LIMIT_MSG
         );
 
-        let arr = PrimitiveArray::from_vec(v);
+        let arr = PlPrimitiveArray::from_vec(v);
 
         Ok(unsafe {
             Series::from_chunks_and_dtype_unchecked(

@@ -7,14 +7,14 @@ use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 use std::sync::{Arc, LazyLock, RwLock};
 
-use arrow::array::builder::ArrayBuilder;
-use arrow::array::{Array, ArrayRef};
 use arrow::datatypes::ArrowDataType;
+use polars_array::PlArray;
+use polars_array::builder::PlArrayBuilder;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::datatypes::AnyValue;
-use crate::prelude::{ListBuilderTrait, ObjectChunked, PolarsObject};
+use crate::prelude::{ListBuilderTrait, ObjectChunked, PlArrayRef, PolarsObject};
 use crate::series::{IntoSeries, Series};
 
 /// Takes a `name` and `capacity` and constructs a new builder.
@@ -22,7 +22,7 @@ pub type BuilderConstructor =
     Box<dyn Fn(PlSmallStr, usize) -> Box<dyn AnonymousObjectBuilder> + Send + Sync>;
 pub type ObjectConverter = Arc<dyn Fn(AnyValue) -> Box<dyn Any> + Send + Sync>;
 pub type PyObjectConverter = Arc<dyn Fn(AnyValue) -> Box<dyn Any> + Send + Sync>;
-pub type ObjectArrayGetter = Arc<dyn Fn(&dyn Array, usize) -> Option<AnyValue<'_>> + Send + Sync>;
+pub type ObjectArrayGetter = Arc<dyn Fn(&dyn PlArray, usize) -> Option<AnyValue<'_>> + Send + Sync>;
 pub type WithGIL = Arc<dyn Fn(&mut dyn FnMut()) + Send + Sync>;
 
 pub struct ObjectRegistry {
@@ -50,12 +50,12 @@ static GLOBAL_OBJECT_REGISTRY: LazyLock<RwLock<Option<ObjectRegistry>>> =
 
 /// This trait can be registered, after which that global registration
 /// can be used to materialize object types
-pub trait AnonymousObjectBuilder: ArrayBuilder {
-    fn as_array_builder(self: Box<Self>) -> Box<dyn ArrayBuilder>;
+pub trait AnonymousObjectBuilder: PlArrayBuilder {
+    fn as_array_builder(self: Box<Self>) -> Box<dyn PlArrayBuilder>;
 
     /// # Safety
     /// Expect `ObjectArray<T>` arrays.
-    unsafe fn from_chunks(self: Box<Self>, chunks: Vec<ArrayRef>) -> Series;
+    unsafe fn from_chunks(self: Box<Self>, chunks: Vec<PlArrayRef>) -> Series;
 
     /// Append a `null` value.
     fn append_null(&mut self);
@@ -88,12 +88,12 @@ pub trait AnonymousObjectBuilder: ArrayBuilder {
 impl<T: PolarsObject> AnonymousObjectBuilder for ObjectChunkedBuilder<T> {
     /// # Safety
     /// Expects `ObjectArray<T>` arrays.
-    unsafe fn from_chunks(self: Box<Self>, chunks: Vec<ArrayRef>) -> Series {
+    unsafe fn from_chunks(self: Box<Self>, chunks: Vec<PlArrayRef>) -> Series {
         ObjectChunked::<T>::new_with_compute_len(Arc::new(self.field().clone()), chunks)
             .into_series()
     }
 
-    fn as_array_builder(self: Box<Self>) -> Box<dyn ArrayBuilder> {
+    fn as_array_builder(self: Box<Self>) -> Box<dyn PlArrayBuilder> {
         self
     }
 
@@ -132,6 +132,10 @@ pub fn register_object_builder(
     array_getter: ObjectArrayGetter,
     with_gil: WithGIL,
 ) {
+    // The type an object's values are laid out as is also needed in `polars-dtype`, which holds
+    // `DataType` but has no business knowing about builders or converters.
+    polars_dtype::object::set_object_physical_type(physical_dtype.clone());
+
     let reg = GLOBAL_OBJECT_REGISTRY.deref();
     let mut reg = reg.write().unwrap();
 
@@ -147,9 +151,7 @@ pub fn register_object_builder(
 
 #[cold]
 pub fn get_object_physical_type() -> ArrowDataType {
-    let reg = GLOBAL_OBJECT_REGISTRY.read().unwrap();
-    let reg = reg.as_ref().unwrap();
-    reg.physical_dtype.clone()
+    polars_dtype::object::get_object_physical_type()
 }
 
 pub fn get_object_builder(name: PlSmallStr, capacity: usize) -> Box<dyn AnonymousObjectBuilder> {

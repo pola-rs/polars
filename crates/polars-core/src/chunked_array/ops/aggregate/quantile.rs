@@ -240,7 +240,9 @@ where
 {
     fn quantile(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f64>> {
         // in case of sorted data, the sort is free, so don't take quickselect route
-        if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
+        let flat = self.as_flat();
+        let slice = flat.and_then(|ca| ca.cont_slice().ok());
+        if let (Some(slice), false) = (slice, self.is_sorted_ascending_flag()) {
             let mut owned = slice.to_vec();
             quantile_slice(&mut owned, quantile, method)
         } else {
@@ -255,7 +257,9 @@ where
         method: QuantileMethod,
     ) -> PolarsResult<Vec<Option<f64>>> {
         // in case of sorted data, the sort is free, so don't take quickselect route
-        if let (Ok(slice), false) = (self.cont_slice(), self.is_sorted_ascending_flag()) {
+        let flat = self.as_flat();
+        let slice = flat.and_then(|ca| ca.cont_slice().ok());
+        if let (Some(slice), false) = (slice, self.is_sorted_ascending_flag()) {
             let mut owned = slice.to_vec();
             quantiles_slice(&mut owned, quantiles, method)
         } else {
@@ -281,11 +285,16 @@ where
     ) -> PolarsResult<Option<f64>> {
         // in case of sorted data, the sort is free, so don't take quickselect route
         let is_sorted = self.is_sorted_ascending_flag();
-        if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
-            quantile_slice(slice, quantile, method)
-        } else {
-            self.quantile(quantile, method)
+        if !is_sorted && self.chunks().len() == 1 && self.null_count() == 0 {
+            // The values are quickselected in place, so the chunk has to be flat *here* rather
+            // than in the copy `to_flat` would hand back.
+            self.flatten_mut();
+            // SAFETY: just written out flat, and reordering values leaves a chunk flat.
+            if let Some(slice) = unsafe { Flat::new_mut(&mut self) }.cont_slice_mut() {
+                return quantile_slice(slice, quantile, method);
+            }
         }
+        self.quantile(quantile, method)
     }
 
     pub(crate) fn median_faster(self) -> Option<f64> {
@@ -298,9 +307,9 @@ macro_rules! impl_chunk_quantile_for_float_chunked {
         impl ChunkQuantile<$T> for $CA {
             fn quantile(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<$T>> {
                 // in case of sorted data, the sort is free, so don't take quickselect route
-                let out = if let (Ok(slice), false) =
-                    (self.cont_slice(), self.is_sorted_ascending_flag())
-                {
+                let flat = self.as_flat();
+                let slice = flat.and_then(|ca| ca.cont_slice().ok());
+                let out = if let (Some(slice), false) = (slice, self.is_sorted_ascending_flag()) {
                     let mut owned = slice.to_vec();
                     quantile_slice(&mut owned, quantile, method)
                 } else {
@@ -316,9 +325,9 @@ macro_rules! impl_chunk_quantile_for_float_chunked {
                 method: QuantileMethod,
             ) -> PolarsResult<Vec<Option<$T>>> {
                 // in case of sorted data, the sort is free, so don't take quickselect route
-                let out = if let (Ok(slice), false) =
-                    (self.cont_slice(), self.is_sorted_ascending_flag())
-                {
+                let flat = self.as_flat();
+                let slice = flat.and_then(|ca| ca.cont_slice().ok());
+                let out = if let (Some(slice), false) = (slice, self.is_sorted_ascending_flag()) {
                     let mut owned = slice.to_vec();
                     quantiles_slice(&mut owned, quantiles, method)
                 } else {
@@ -355,11 +364,15 @@ macro_rules! impl_float_chunked {
             ) -> PolarsResult<Option<$T>> {
                 // in case of sorted data, the sort is free, so don't take quickselect route
                 let is_sorted = self.is_sorted_ascending_flag();
-                if let (Some(slice), false) = (self.cont_slice_mut(), is_sorted) {
-                    Ok(quantile_slice(slice, quantile, method)?.map(AsPrimitive::as_))
-                } else {
-                    Ok(self.quantile(quantile, method)?.map(AsPrimitive::as_))
+                if !is_sorted && self.chunks().len() == 1 && self.null_count() == 0 {
+                    // As above: the quickselect reorders the values of the chunk itself.
+                    self.flatten_mut();
+                    // SAFETY: just written out flat, and reordering values leaves it flat.
+                    if let Some(slice) = unsafe { Flat::new_mut(&mut self) }.cont_slice_mut() {
+                        return Ok(quantile_slice(slice, quantile, method)?.map(AsPrimitive::as_));
+                    }
                 }
+                Ok(self.quantile(quantile, method)?.map(AsPrimitive::as_))
             }
 
             pub(crate) fn median_faster(self) -> Option<$T> {

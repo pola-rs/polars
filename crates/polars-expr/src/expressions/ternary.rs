@@ -1,3 +1,4 @@
+use polars_array::bitmap::combine_validities_and;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_plan::prelude::*;
@@ -122,10 +123,14 @@ impl PhysicalExpr for TernaryExpr {
         .then(|| {
             mask.rechunk_mut();
             let arr = mask.downcast_as_array();
+            // The mask keeps whichever representation it came out in, so a mask that is true or
+            // false throughout stays the single bit `Column::mask` reads as its shortcut.
             match arr.validity() {
-                Some(validity) => arr.values() & validity,
-                None => arr.values().clone(),
+                Some(validity) => combine_validities_and(Some(arr.values()), Some(validity))
+                    .expect("the values mask is always there"),
+                None => PlBitmap::from(arr.values()),
             }
+            .into_flat_or_scalar()
         });
 
         let op_truthy = || {
@@ -371,12 +376,14 @@ impl PhysicalExpr for TernaryExpr {
                 // @scalar-opt
                 // @partition-opt
                 let values = out.as_materialized_series().array_ref(0);
-                let offsets = ac_target.get_values().list().unwrap().offsets()?;
+                let target = ac_target.get_values().list().unwrap().rechunk();
+                // The offsets go on the result as they are, so a chunk that is not laid out flat
+                // is written out first.
+                let offsets = target.downcast_as_array().to_flat().offsets().clone();
                 let inner_type = out.dtype();
-                let dtype = LargeListArray::default_datatype(values.dtype().clone());
 
                 // SAFETY: offsets are correct.
-                let out = LargeListArray::new(dtype, offsets, values.clone(), None);
+                let out = PlListArray::from_offsets(values.clone(), offsets);
 
                 let mut out = ListChunked::with_chunk(truthy.name().clone(), out);
                 unsafe { out.to_logical(inner_type.clone()) };

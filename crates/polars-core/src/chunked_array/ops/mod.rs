@@ -583,19 +583,33 @@ impl ChunkExpandAtIndex<StructType> for StructChunked {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         let chunk = self.downcast_chunks().get(chunk_idx).unwrap();
         let chunk = if chunk.is_null(idx) {
-            new_null_array(chunk.dtype().clone(), length)
+            // Every element of the result is null, so the fields are nulls of the new length.
+            let fields = chunk
+                .fields()
+                .iter()
+                .map(|field| polars_array::builder::full_null_like(&**field, length))
+                .collect();
+            PlStructArray::new_full_null(fields, length).into_boxed()
         } else {
             let values = chunk
-                .values()
+                .fields()
                 .iter()
-                .map(|arr| {
-                    let s = Series::try_from((PlSmallStr::EMPTY, arr.clone())).unwrap();
+                .zip(self.struct_fields())
+                .map(|(arr, field)| {
+                    // SAFETY: the field arrays are laid out the way the struct's fields say.
+                    let s = unsafe {
+                        Series::from_chunks_and_dtype_unchecked(
+                            PlSmallStr::EMPTY,
+                            vec![arr.clone()],
+                            &field.dtype,
+                        )
+                    };
                     let s = s.new_from_index(idx, length);
                     s.chunks()[0].clone()
                 })
                 .collect::<Vec<_>>();
 
-            StructArray::new(chunk.dtype().clone(), length, values, None).boxed()
+            PlStructArray::new(values, length, None).into_boxed()
         };
 
         // SAFETY: chunks are from self.
@@ -654,18 +668,6 @@ pub trait ChunkZip<T: PolarsDataType> {
         mask: &BooleanChunked,
         other: &ChunkedArray<T>,
     ) -> PolarsResult<ChunkedArray<T>>;
-}
-
-/// Apply kernels on the arrow array chunks in a ChunkedArray.
-pub trait ChunkApplyKernel<A: Array> {
-    /// Apply kernel and return result as a new ChunkedArray.
-    #[must_use]
-    fn apply_kernel(&self, f: &dyn Fn(&A) -> ArrayRef) -> Self;
-
-    /// Apply a kernel that outputs an array of different type.
-    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&A) -> ArrayRef) -> ChunkedArray<S>
-    where
-        S: PolarsDataType;
 }
 
 #[cfg(feature = "is_first_distinct")]

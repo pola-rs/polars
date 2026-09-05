@@ -233,10 +233,10 @@ macro_rules! impl_dyn_series {
                 self.0.name()
             }
 
-            fn chunks(&self) -> &Vec<ArrayRef> {
+            fn chunks(&self) -> &Vec<PlArrayRef> {
                 self.0.chunks()
             }
-            unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+            unsafe fn chunks_mut(&mut self) -> &mut Vec<PlArrayRef> {
                 self.0.chunks_mut()
             }
             fn shrink_to_fit(&mut self) {

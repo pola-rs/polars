@@ -19,20 +19,6 @@ pub type Categorical8Chunked = CategoricalChunked<Categorical8Type>;
 pub type Categorical16Chunked = CategoricalChunked<Categorical16Type>;
 pub type Categorical32Chunked = CategoricalChunked<Categorical32Type>;
 
-pub trait CategoricalPhysicalDtypeExt {
-    fn dtype(&self) -> DataType;
-}
-
-impl CategoricalPhysicalDtypeExt for CategoricalPhysical {
-    fn dtype(&self) -> DataType {
-        match self {
-            Self::U8 => DataType::UInt8,
-            Self::U16 => DataType::UInt16,
-            Self::U32 => DataType::UInt32,
-        }
-    }
-}
-
 impl<T: PolarsCategoricalType> CategoricalChunked<T> {
     pub fn is_enum(&self) -> bool {
         matches!(self.dtype(), DataType::Enum(_, _))
@@ -102,7 +88,10 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
 
                 if arr.null_count() != validity.unset_bits() {
                     invariants_violated = true;
-                    arr.set_validity(core::mem::take(&mut validity).into_opt_validity());
+                    arr.set_validity(
+                        (core::mem::take(&mut validity).into_opt_validity())
+                            .map(PlBitmap::from_bitmap),
+                    );
                 } else {
                     validity.clear();
                 }
@@ -196,7 +185,7 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
         }
 
         let arr = <T::PolarsPhysical as PolarsDataType>::Array::from_vec(cat_ids)
-            .with_validity(validity.into_opt_validity());
+            .with_validity(validity.into_opt_validity().map(PlBitmap::from_bitmap));
         let phys = ChunkedArray::<T::PolarsPhysical>::with_chunk(name, arr);
         Ok(unsafe { Self::from_cats_and_dtype_unchecked(phys, dtype) })
     }
@@ -213,7 +202,9 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
             values_dtype,
             self.is_enum(),
         );
-        unsafe { DictionaryArray::try_new_unchecked(dtype, keys.clone(), values).unwrap() }
+        // The dictionary is an Arrow array, which the keys cross into — see `polars_array::arrow::bridge`.
+        let keys = polars_array::arrow::bridge::chunk_to_arrow(keys);
+        unsafe { DictionaryArray::try_new_unchecked(dtype, keys, values).unwrap() }
     }
 }
 

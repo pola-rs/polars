@@ -10,7 +10,6 @@ mod string;
 
 use std::sync::Arc;
 
-use arrow::array::*;
 use arrow::bitmap::Bitmap;
 pub use boolean::*;
 #[cfg(feature = "dtype-categorical")]
@@ -19,6 +18,7 @@ pub use categorical::*;
 pub(crate) use fixed_size_list::*;
 pub use list::*;
 pub use null::*;
+use polars_array::PlBinaryViewArrayBuilder;
 pub use primitive::*;
 pub use string::*;
 
@@ -40,8 +40,6 @@ pub trait ChunkedBuilder<N, T: PolarsDataType> {
     }
 
     fn finish(self) -> ChunkedArray<T>;
-
-    fn shrink_to_fit(&mut self);
 }
 
 // Used in polars/src/chunked_array/apply.rs:24 to collect from aligned vecs and null bitmaps
@@ -73,9 +71,7 @@ where
     T: PolarsNumericType,
 {
     fn from_slice(name: PlSmallStr, v: &[T::Native]) -> Self {
-        let arr =
-            PrimitiveArray::from_slice(v).to(T::get_static_dtype().to_arrow(CompatLevel::newest()));
-        ChunkedArray::with_chunk(name, arr)
+        ChunkedArray::with_chunk(name, PlPrimitiveArray::from_slice(v))
     }
 
     fn from_slice_options(name: PlSmallStr, opt_v: &[Option<T::Native>]) -> Self {
@@ -134,24 +130,30 @@ where
     S: AsRef<str>,
 {
     fn from_slice(name: PlSmallStr, v: &[S]) -> Self {
-        let arr = Utf8ViewArray::from_slice_values(v);
-        ChunkedArray::with_chunk(name, arr)
+        Self::from_iter_values(name, v.iter())
     }
 
     fn from_slice_options(name: PlSmallStr, opt_v: &[Option<S>]) -> Self {
-        let arr = Utf8ViewArray::from_slice(opt_v);
+        let arr: PlUtf8ViewArray = opt_v
+            .iter()
+            .map(|v| v.as_ref().map(S::as_ref))
+            .collect_arr();
         ChunkedArray::with_chunk(name, arr)
     }
 
     fn from_iter_options(name: PlSmallStr, it: impl Iterator<Item = Option<S>>) -> Self {
-        let arr = MutableBinaryViewArray::from_iterator(it).freeze();
-        ChunkedArray::with_chunk(name, arr)
+        // The values are owned, so each is appended while it is still alive rather than collected
+        // as a borrow of it.
+        let mut builder = PlUtf8ViewArrayBuilder::with_capacity(get_iter_capacity(&it));
+        it.for_each(|v| builder.push(v.as_ref().map(S::as_ref)));
+        ChunkedArray::with_chunk(name, builder.freeze())
     }
 
     /// Create a new ChunkedArray from an iterator.
     fn from_iter_values(name: PlSmallStr, it: impl Iterator<Item = S>) -> Self {
-        let arr = MutableBinaryViewArray::from_values_iter(it).freeze();
-        ChunkedArray::with_chunk(name, arr)
+        let mut builder = PlUtf8ViewArrayBuilder::with_capacity(get_iter_capacity(&it));
+        it.for_each(|v| builder.push_value(v.as_ref()));
+        ChunkedArray::with_chunk(name, builder.freeze())
     }
 }
 
@@ -160,24 +162,30 @@ where
     B: AsRef<[u8]>,
 {
     fn from_slice(name: PlSmallStr, v: &[B]) -> Self {
-        let arr = BinaryViewArray::from_slice_values(v);
-        ChunkedArray::with_chunk(name, arr)
+        Self::from_iter_values(name, v.iter())
     }
 
     fn from_slice_options(name: PlSmallStr, opt_v: &[Option<B>]) -> Self {
-        let arr = BinaryViewArray::from_slice(opt_v);
+        let arr: PlBinaryViewArray = opt_v
+            .iter()
+            .map(|v| v.as_ref().map(B::as_ref))
+            .collect_arr();
         ChunkedArray::with_chunk(name, arr)
     }
 
     fn from_iter_options(name: PlSmallStr, it: impl Iterator<Item = Option<B>>) -> Self {
-        let arr = MutableBinaryViewArray::from_iterator(it).freeze();
-        ChunkedArray::with_chunk(name, arr)
+        // The values are owned, so each is appended while it is still alive rather than collected
+        // as a borrow of it.
+        let mut builder = PlBinaryViewArrayBuilder::with_capacity(get_iter_capacity(&it));
+        it.for_each(|v| builder.push(v.as_ref().map(B::as_ref)));
+        ChunkedArray::with_chunk(name, builder.freeze())
     }
 
     /// Create a new ChunkedArray from an iterator.
     fn from_iter_values(name: PlSmallStr, it: impl Iterator<Item = B>) -> Self {
-        let arr = MutableBinaryViewArray::from_values_iter(it).freeze();
-        ChunkedArray::with_chunk(name, arr)
+        let mut builder = PlBinaryViewArrayBuilder::with_capacity(get_iter_capacity(&it));
+        it.for_each(|v| builder.push_value(v.as_ref()));
+        ChunkedArray::with_chunk(name, builder.freeze())
     }
 }
 

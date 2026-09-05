@@ -1,9 +1,9 @@
 /// Functionality shared between list and array arithmetic implementations.
-use arrow::array::{Array, PrimitiveArray};
-use arrow::compute::utils::combine_validities_and;
 use num_traits::Zero;
+use polars_array::PlPrimitiveArray;
+use polars_array::bitmap::combine_validities_and;
 use polars_compute::arithmetic::ArithmeticKernel;
-use polars_compute::comparisons::TotalEqKernel;
+use polars_compute::comparisons::PlTotalEqKernel;
 use polars_error::PolarsResult;
 use polars_utils::float::IsFloat;
 
@@ -57,19 +57,22 @@ impl NumericOp {
     /// the denominator is 0.
     pub(super) fn prepare_numeric_op_side_validities<T: PolarsNumericType>(
         &self,
-        lhs: &mut PrimitiveArray<T::Native>,
-        rhs: &mut PrimitiveArray<T::Native>,
+        lhs: &mut PlPrimitiveArray<T::Native>,
+        rhs: &mut PlPrimitiveArray<T::Native>,
         swapped: bool,
     ) where
-        PrimitiveArray<T::Native>: polars_compute::comparisons::TotalEqKernel<Scalar = T::Native>,
+        PlPrimitiveArray<T::Native>:
+            polars_compute::comparisons::PlTotalEqKernel<Scalar = T::Native>,
         T::Native: Zero + IsFloat,
     {
         if !T::Native::is_float() {
             match self {
                 Self::Div | Self::Rem | Self::FloorDiv => {
                     let target = if swapped { lhs } else { rhs };
+                    // A chunk that repeats one value answers this in `O(1)`, and the mask that
+                    // comes back repeats one bit in turn.
                     let ne_0 = target.tot_ne_kernel_broadcast(&T::Native::zero());
-                    let validity = combine_validities_and(target.validity(), Some(&ne_0));
+                    let validity = combine_validities_and(target.validity(), Some(ne_0.as_ref()));
                     target.set_validity(validity);
                 },
                 _ => {},
@@ -81,7 +84,7 @@ impl NumericOp {
     /// Panics if:
     /// * lhs.len() != rhs.len()
     /// * dtype is not numeric.
-    pub(super) fn apply_series(&self, lhs: &Series, rhs: &Series) -> Box<dyn Array> {
+    pub(super) fn apply_series(&self, lhs: &Series, rhs: &Series) -> PlArrayRef {
         assert_eq!(lhs.len(), rhs.len());
         debug_assert_eq!(lhs.dtype(), rhs.dtype());
 
@@ -92,18 +95,21 @@ impl NumericOp {
             let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
             let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
 
-            let lhs = lhs.downcast_get(0).unwrap();
-            let rhs = rhs.downcast_get(0).unwrap();
+            // The kernels read the chunks in whatever representation they are in, so a chunk
+            // that repeats a single value is operated on once rather than written out; the
+            // clones are a refcount bump per backing buffer.
+            let lhs = lhs.downcast_get(0).unwrap().clone();
+            let rhs = rhs.downcast_get(0).unwrap().clone();
 
-            Box::new(self.apply_arithmetic_kernel::<$T>(lhs.clone(), rhs.clone()))
+            self.apply_arithmetic_kernel::<$T>(lhs, rhs).into_boxed()
         })
     }
 
     fn apply_arithmetic_kernel<T: PolarsNumericType>(
         &self,
-        lhs: PrimitiveArray<T::Native>,
-        rhs: PrimitiveArray<T::Native>,
-    ) -> PrimitiveArray<T::Native> {
+        lhs: PlPrimitiveArray<T::Native>,
+        rhs: PlPrimitiveArray<T::Native>,
+    ) -> PlPrimitiveArray<T::Native> {
         match self {
             Self::Add => ArithmeticKernel::wrapping_add(lhs, rhs),
             Self::Sub => ArithmeticKernel::wrapping_sub(lhs, rhs),
@@ -119,10 +125,10 @@ impl NumericOp {
     /// a scalar.
     pub(super) fn apply_array_to_scalar<T: PolarsNumericType>(
         &self,
-        arr_lhs: PrimitiveArray<T::Native>,
+        arr_lhs: PlPrimitiveArray<T::Native>,
         r: T::Native,
         swapped: bool,
-    ) -> PrimitiveArray<T::Native> {
+    ) -> PlPrimitiveArray<T::Native> {
         match self {
             Self::Add => ArithmeticKernel::wrapping_add_scalar(arr_lhs, r),
             Self::Sub => {

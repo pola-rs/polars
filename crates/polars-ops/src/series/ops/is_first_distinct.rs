@@ -1,9 +1,7 @@
 use std::hash::Hash;
 
-use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::legacy::bit_util::*;
-use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_core::with_match_physical_float_polars_type;
@@ -15,10 +13,10 @@ where
     <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let mut unique = PlHashSet::new();
-    let chunks = ca.downcast_iter().map(|arr| -> BooleanArray {
+    let chunks = ca.downcast_iter().map(|arr| -> PlBooleanArray {
         arr.into_iter()
             .map(|opt_v| unique.insert(opt_v.to_total_ord()))
-            .collect_trusted()
+            .collect_arr_trusted()
     });
 
     BooleanChunked::from_chunk_iter(ca.name().clone(), chunks)
@@ -26,10 +24,10 @@ where
 
 fn is_first_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
     let mut unique = PlHashSet::new();
-    let chunks = ca.downcast_iter().map(|arr| -> BooleanArray {
+    let chunks = ca.downcast_iter().map(|arr| -> PlBooleanArray {
         arr.into_iter()
             .map(|opt_v| unique.insert(opt_v))
-            .collect_trusted()
+            .collect_arr_trusted()
     });
 
     BooleanChunked::from_chunk_iter(ca.name().clone(), chunks)
@@ -43,7 +41,10 @@ fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
         out.set(0, true);
     } else {
         let ca = ca.rechunk();
-        let arr = ca.downcast_as_array();
+        // TODO(polars-array-scalar): the search reads the bits as words, so a scalar chunk is
+        // written out here rather than the one value it stands for being looked at once.
+        let flat = ca.to_flat();
+        let arr = flat.flat_as_array();
         if ca.null_count() == 0 {
             let (true_index, false_index) =
                 find_first_true_false_no_null(arr.values().chunks::<u64>());
@@ -69,8 +70,7 @@ fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
             }
         }
     }
-    let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    BooleanChunked::with_chunk(ca.name().clone(), arr)
+    BooleanChunked::from_bitmap(ca.name().clone(), out.into())
 }
 
 fn is_first_distinct_by_groups(s: &Series) -> PolarsResult<BooleanChunked> {
@@ -84,8 +84,7 @@ fn is_first_distinct_by_groups(s: &Series) -> PolarsResult<BooleanChunked> {
         unsafe { out.set_unchecked(idx as usize, true) }
     }
 
-    let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    Ok(BooleanChunked::with_chunk(s.name().clone(), arr))
+    Ok(BooleanChunked::from_bitmap(s.name().clone(), out.into()))
 }
 
 pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {

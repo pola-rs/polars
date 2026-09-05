@@ -1,4 +1,4 @@
-use arrow::array::Array;
+use arrow::array::{Array, StaticArray as ArrowStaticArray};
 use polars_row::RowEncodingOptions;
 use polars_utils::idx_map::bytes_idx_map::{BytesIndexMap, Entry};
 use polars_utils::itertools::Itertools;
@@ -52,7 +52,15 @@ impl RowEncodedHashGrouper {
             .iter()
             .zip(key_columns)
             .map(|((name, dt), col)| {
-                let s = Series::try_from((name.clone(), col)).unwrap();
+                // The decoded chunk carries no dtype of its own, so it is read back as the
+                // physical type the decode was asked for.
+                let s = unsafe {
+                    Series::from_chunks_and_dtype_unchecked(
+                        name.clone(),
+                        vec![col],
+                        &dt.to_physical(),
+                    )
+                };
                 unsafe { s.from_physical_unchecked(dt) }
                     .unwrap()
                     .into_column()
@@ -134,11 +142,11 @@ impl Grouper for RowEncodedHashGrouper {
             if keys.keys.has_nulls() {
                 for (idx, hash) in keys.hashes.values_iter().enumerate_idx() {
                     let has_group = if let Some(key) = keys.keys.get_unchecked(idx as usize) {
-                        let p = partitioner.hash_to_partition(*hash);
+                        let p = partitioner.hash_to_partition(hash);
                         let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(p);
                         let grouper =
                             &*(dyn_grouper as *const dyn Grouper as *const RowEncodedHashGrouper);
-                        grouper.contains_key(*hash, key)
+                        grouper.contains_key(hash, key)
                     } else {
                         false
                     };
@@ -154,11 +162,11 @@ impl Grouper for RowEncodedHashGrouper {
                     .zip(keys.keys.values_iter())
                     .enumerate_idx()
                 {
-                    let p = partitioner.hash_to_partition(*hash);
+                    let p = partitioner.hash_to_partition(hash);
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const RowEncodedHashGrouper);
-                    if grouper.contains_key(*hash, key) != invert {
+                    if grouper.contains_key(hash, key) != invert {
                         probe_matches.push(idx);
                     }
                 }
@@ -185,11 +193,11 @@ impl Grouper for RowEncodedHashGrouper {
             if keys.keys.has_nulls() {
                 for (idx, hash) in keys.hashes.values_iter().enumerate_idx() {
                     let has_group = if let Some(key) = keys.keys.get_unchecked(idx as usize) {
-                        let p = partitioner.hash_to_partition(*hash);
+                        let p = partitioner.hash_to_partition(hash);
                         let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(p);
                         let grouper =
                             &*(dyn_grouper as *const dyn Grouper as *const RowEncodedHashGrouper);
-                        grouper.contains_key(*hash, key)
+                        grouper.contains_key(hash, key)
                     } else {
                         false
                     };
@@ -198,11 +206,11 @@ impl Grouper for RowEncodedHashGrouper {
                 }
             } else {
                 for (hash, key) in keys.hashes.values_iter().zip(keys.keys.values_iter()) {
-                    let p = partitioner.hash_to_partition(*hash);
+                    let p = partitioner.hash_to_partition(hash);
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const RowEncodedHashGrouper);
-                    contains_key.push(grouper.contains_key(*hash, key) != invert);
+                    contains_key.push(grouper.contains_key(hash, key) != invert);
                 }
             }
         }

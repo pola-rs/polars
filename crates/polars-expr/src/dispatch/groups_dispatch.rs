@@ -1,12 +1,14 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
+#[cfg(feature = "moment")]
+use polars_array::PlPrimitiveArray;
+#[cfg(feature = "moment")]
 use polars_compute::rolling::QuantileMethod;
-use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
+use polars_compute::unique::{AmortizedUnique, amortized_unique_like};
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
@@ -477,7 +479,7 @@ pub fn drop_nans<'a>(
         let values = ac.flat_naive();
         let mut values = values.is_nan().unwrap();
         values.rechunk_mut();
-        values.downcast_as_array().values().clone()
+        values.downcast_as_array().values().to_flat_or_scalar()
     } else {
         Bitmap::new_with_value(false, 1)
     };
@@ -495,10 +497,10 @@ pub fn drop_nulls<'a>(
     let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
     ac.groups();
     let predicate = ac.flat_naive().as_ref().clone();
-    let predicate = predicate.rechunk_to_arrow(CompatLevel::newest());
+    // Only the mask is wanted, which the series answers without its values being rechunked into
+    // an Arrow array to read it off.
     let predicate = predicate
-        .validity()
-        .cloned()
+        .rechunk_validity()
         .unwrap_or(Bitmap::new_with_value(true, 1));
     drop_items(ac, &predicate)
 }
@@ -560,7 +562,7 @@ pub fn moment_agg<'a, S: Default>(
     state: &ExecutionState,
 
     insert_one: impl Fn(&mut S, f64) + Send + Sync,
-    new_from_slice: impl Fn(&PrimitiveArray<f64>, usize, usize) -> S + Send + Sync,
+    new_from_slice: impl Fn(&PlPrimitiveArray<f64>, usize, usize) -> S + Send + Sync,
     finalize: impl Fn(S) -> Option<f64> + Send + Sync,
 ) -> PolarsResult<AggregationContext<'a>> {
     assert_eq!(inputs.len(), 1);
@@ -593,13 +595,24 @@ pub fn moment_agg<'a, S: Default>(
 
     let ca = RAYON.install(|| match &**ac.groups.as_ref() {
         GroupsType::Idx(idx) => {
+            // A group's elements lie at arbitrary positions, so the chunk is laid out one value
+            // per element once here rather than its representation being resolved at every one of
+            // them.
+            //
+            // TODO(polars-array-scalar): that writes out a chunk that repeats a single value,
+            // whose every group is that value with the weight of the group's non-null elements.
+            // Reaching it in `O(1)` per group needs a hook for a repeated value, which the states
+            // only expose to `new_from_slice` below.
+            let arr = arr.to_flat();
+            let values = arr.as_slice();
+
             if let Some(validity) = arr.validity().filter(|v| v.unset_bits() > 0) {
                 idx.into_par_iter()
                     .map(|(_, idx)| {
                         let mut state = S::default();
                         for &i in idx.iter() {
                             if unsafe { validity.get_bit_unchecked(i as usize) } {
-                                insert_one(&mut state, arr.values()[i as usize]);
+                                insert_one(&mut state, values[i as usize]);
                             }
                         }
                         finalize(state)
@@ -610,7 +623,7 @@ pub fn moment_agg<'a, S: Default>(
                     .map(|(_, idx)| {
                         let mut state = S::default();
                         for &i in idx.iter() {
-                            insert_one(&mut state, arr.values()[i as usize]);
+                            insert_one(&mut state, values[i as usize]);
                         }
                         finalize(state)
                     })
@@ -707,9 +720,12 @@ pub fn unique<'a>(
         values
     };
 
-    let values = values.rechunk_to_arrow(CompatLevel::newest());
-    let values = values.as_ref();
-    let state = amortized_unique_from_dtype(values.dtype());
+    // The state is picked from the chunk it then walks, so the representation of that chunk is
+    // resolved once here rather than once per group — and a chunk that repeats one value is not
+    // written out to be walked at all.
+    let values = values.as_materialized_series().rechunk();
+    let values = &*values.chunks()[0];
+    let state = amortized_unique_like(values);
 
     struct CloneWrapper(Box<dyn AmortizedUnique>);
     impl Clone for CloneWrapper {

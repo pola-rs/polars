@@ -1,11 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::sync::Arc;
 
-use arrow::array::{BinaryArray, BinaryViewArray};
-use arrow::datatypes::ArrowDataType;
-use arrow::ffi::mmap;
-use arrow::offset::{Offsets, OffsetsBuffer};
-use polars_compute::cast::binary_to_binview;
+use polars_array::PlBinaryArray;
+use polars_buffer::Buffer;
 use polars_dtype::categorical::CategoricalMapping;
 
 const BOOLEAN_TRUE_SENTINEL: u8 = 0x03;
@@ -135,23 +132,23 @@ pub struct RowsEncoded {
     pub(crate) offsets: Vec<usize>,
 }
 
-unsafe fn rows_to_array(buf: Vec<u8>, offsets: Vec<usize>) -> BinaryArray<i64> {
-    let offsets = if size_of::<usize>() == size_of::<i64>() {
-        assert!(
-            (*offsets.last().unwrap() as u64) < i64::MAX as u64,
-            "row encoding output overflowed"
-        );
+/// The offsets a row encoding wrote as the offsets of a [`PlBinaryArray`].
+///
+/// The cap is `i64::MAX` rather than `u64::MAX` because these offsets cross over to Arrow's
+/// `i64`-offset [`BinaryArray`](arrow::array::BinaryArray) at the boundaries of the crates that
+/// still hold one.
+fn rows_to_offsets(offsets: Vec<usize>) -> Buffer<u64> {
+    assert!(
+        (*offsets.last().unwrap() as u64) < i64::MAX as u64,
+        "row encoding output overflowed"
+    );
 
-        // SAFETY: we checked overflow and size
-        bytemuck::cast_vec::<usize, i64>(offsets)
+    if size_of::<usize>() == size_of::<u64>() {
+        // SAFETY: the sizes match, so this is a reinterpretation of the same bytes.
+        Buffer::from(bytemuck::cast_vec::<usize, u64>(offsets))
     } else {
-        offsets.into_iter().map(|v| v as i64).collect()
-    };
-
-    // SAFETY: monotonically increasing
-    let offsets = Offsets::new_unchecked(offsets);
-
-    BinaryArray::new(ArrowDataType::LargeBinary, offsets.into(), buf.into(), None)
+        offsets.into_iter().map(|v| v as u64).collect()
+    }
 }
 
 impl RowsEncoded {
@@ -169,38 +166,14 @@ impl RowsEncoded {
         }
     }
 
-    /// Borrows the buffers and returns a [`BinaryArray`].
-    ///
-    /// # Safety
-    /// The lifetime of that `BinaryArray` is tied to the lifetime of
-    /// `Self`. The caller must ensure that both stay alive for the same time.
-    pub unsafe fn borrow_array(&self) -> BinaryArray<i64> {
-        let (_, values, _) = unsafe { mmap::slice(&self.values) }.into_inner();
-        let offsets = if size_of::<usize>() == size_of::<i64>() {
-            assert!(
-                (*self.offsets.last().unwrap() as u64) < i64::MAX as u64,
-                "row encoding output overflowed"
-            );
+    /// The encoded rows as an array, in `O(1)`: the buffers are handed over as they are.
+    pub fn into_array(self) -> PlBinaryArray {
+        let length = self.offsets.len() - 1;
+        let offsets = rows_to_offsets(self.offsets);
 
-            let offsets = bytemuck::cast_slice::<usize, i64>(self.offsets.as_slice());
-            let (_, offsets, _) = unsafe { mmap::slice(offsets) }.into_inner();
-            offsets
-        } else {
-            self.offsets.iter().map(|&v| v as i64).collect()
-        };
-        let offsets = OffsetsBuffer::new_unchecked(offsets);
-
-        BinaryArray::new(ArrowDataType::LargeBinary, offsets, values, None)
-    }
-
-    /// This conversion is free.
-    pub fn into_array(self) -> BinaryArray<i64> {
-        unsafe { rows_to_array(self.values, self.offsets) }
-    }
-
-    /// This does allocate views.
-    pub fn into_binview(self) -> BinaryViewArray {
-        binary_to_binview(&self.into_array())
+        // SAFETY: the offsets a row encoding wrote are monotonically non-decreasing, hold the end
+        // of the last row, and `values` holds every byte they cover.
+        unsafe { PlBinaryArray::new_unchecked(Buffer::from(self.values), offsets, length, None) }
     }
 
     #[cfg(test)]

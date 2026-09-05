@@ -21,7 +21,7 @@ impl DatetimeChunked {
         unsafe {
             self.physical()
                 .downcast_iter()
-                .flat_map(move |iter| iter.into_iter().map(move |opt_v| opt_v.copied().map(func)))
+                .flat_map(move |iter| iter.into_iter().map(move |opt_v| opt_v.map(func)))
                 .trust_my_length(self.len())
         }
     }
@@ -223,7 +223,7 @@ mod test {
                 1_441_497_364_000_000_000,
                 1_356_048_000_000_000_000
             ],
-            dt.physical().cont_slice().unwrap()
+            dt.physical().to_flat().cont_slice().unwrap()
         );
     }
 }

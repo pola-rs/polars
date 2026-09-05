@@ -1,5 +1,4 @@
 use arrow::array::ValueSize;
-use arrow::legacy::kernels::string::*;
 #[cfg(feature = "string_encoding")]
 use base64::Engine as _;
 #[cfg(feature = "string_encoding")]
@@ -272,13 +271,14 @@ pub trait StringNameSpaceImpl: AsString {
     /// Get the length of the string values as number of chars.
     fn str_len_chars(&self) -> UInt32Chunked {
         let ca = self.as_string();
-        ca.apply_kernel_cast(&string_len_chars)
+        unary_elementwise_values(ca, |s| s.chars().count() as u32)
     }
 
     /// Get the length of the string values as number of bytes.
     fn str_len_bytes(&self) -> UInt32Chunked {
         let ca = self.as_string();
-        ca.apply_kernel_cast(&utf8view_len_bytes)
+        // The length of a view is held in the view, so this reads no bytes at all.
+        unary_elementwise_values(ca, |s| s.len() as u32)
     }
 
     /// Pad the start of the string until it reaches the given length.

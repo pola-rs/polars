@@ -5,9 +5,12 @@ use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::types::NativeType;
+use polars_array::PlPrimitiveArray;
+use polars_array::arrow::bridge::ToArrow;
 use polars_utils::min_max::MinMax;
 
 use super::MinMaxKernel;
+use super::pl_array::reduce_flat;
 
 fn scalar_reduce_min_propagate_nan<T: MinMax + Copy, const N: usize>(arr: &[T; N]) -> T {
     let it = arr.iter().copied();
@@ -145,48 +148,106 @@ where
     Some(state)
 }
 
-macro_rules! impl_min_max_kernel_int {
-    ($T:ty, $N:literal) => {
+/// The [`MinMaxKernel`] of an Arrow chunk, which holds one slot per element throughout — one of
+/// the two layouts the kernels below read. Its buffers are handed over as they are, and it is
+/// those kernels that reduce them.
+macro_rules! impl_arrow_min_max_kernel {
+    ($T:ty) => {
         impl MinMaxKernel for PrimitiveArray<$T> {
             type Scalar<'a> = $T;
 
-            fn min_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-                fold_agg_kernel::<$N, $T, _>(self.values(), self.validity(), <$T>::MAX, |a, b| {
-                    a.simd_min(b)
-                })
-                .map(|s| s.reduce_min())
+            fn min_ignore_nan_kernel(&self) -> Option<$T> {
+                PlPrimitiveArray::from_arrow(self).min_ignore_nan_kernel()
             }
 
-            fn max_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-                fold_agg_kernel::<$N, $T, _>(self.values(), self.validity(), <$T>::MIN, |a, b| {
-                    a.simd_max(b)
-                })
-                .map(|s| s.reduce_max())
+            fn max_ignore_nan_kernel(&self) -> Option<$T> {
+                PlPrimitiveArray::from_arrow(self).max_ignore_nan_kernel()
             }
 
-            fn min_max_ignore_nan_kernel(&self) -> Option<(Self::Scalar<'_>, Self::Scalar<'_>)> {
-                fold_agg_min_max_kernel::<$N, $T, _>(
-                    self.values(),
-                    self.validity(),
-                    <$T>::MAX,
-                    <$T>::MIN,
-                    |(cmin, cmax), (min, max)| (cmin.simd_min(min), cmax.simd_max(max)),
+            fn min_max_ignore_nan_kernel(&self) -> Option<($T, $T)> {
+                PlPrimitiveArray::from_arrow(self).min_max_ignore_nan_kernel()
+            }
+
+            fn min_propagate_nan_kernel(&self) -> Option<$T> {
+                PlPrimitiveArray::from_arrow(self).min_propagate_nan_kernel()
+            }
+
+            fn max_propagate_nan_kernel(&self) -> Option<$T> {
+                PlPrimitiveArray::from_arrow(self).max_propagate_nan_kernel()
+            }
+
+            fn min_max_propagate_nan_kernel(&self) -> Option<($T, $T)> {
+                PlPrimitiveArray::from_arrow(self).min_max_propagate_nan_kernel()
+            }
+        }
+    };
+}
+
+macro_rules! impl_min_max_kernel_int {
+    ($T:ty, $N:literal) => {
+        /// An integer never is NaN, so both families of kernel reduce it the same way. A chunk
+        /// that repeats one value is that value, read in `O(1)`; anything else is reduced a
+        /// vector at a time.
+        impl MinMaxKernel for PlPrimitiveArray<$T> {
+            type Scalar<'a> = $T;
+
+            fn min_ignore_nan_kernel(&self) -> Option<$T> {
+                reduce_flat(
+                    self,
+                    |value| value,
+                    |values, validity| {
+                        fold_agg_kernel::<$N, $T, _>(values, validity, <$T>::MAX, |a, b| {
+                            a.simd_min(b)
+                        })
+                        .map(|s| s.reduce_min())
+                    },
                 )
-                .map(|(min, max)| (min.reduce_min(), max.reduce_max()))
             }
 
-            fn min_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
+            fn max_ignore_nan_kernel(&self) -> Option<$T> {
+                reduce_flat(
+                    self,
+                    |value| value,
+                    |values, validity| {
+                        fold_agg_kernel::<$N, $T, _>(values, validity, <$T>::MIN, |a, b| {
+                            a.simd_max(b)
+                        })
+                        .map(|s| s.reduce_max())
+                    },
+                )
+            }
+
+            fn min_max_ignore_nan_kernel(&self) -> Option<($T, $T)> {
+                reduce_flat(
+                    self,
+                    |value| (value, value),
+                    |values, validity| {
+                        fold_agg_min_max_kernel::<$N, $T, _>(
+                            values,
+                            validity,
+                            <$T>::MAX,
+                            <$T>::MIN,
+                            |(cmin, cmax), (min, max)| (cmin.simd_min(min), cmax.simd_max(max)),
+                        )
+                        .map(|(min, max)| (min.reduce_min(), max.reduce_max()))
+                    },
+                )
+            }
+
+            fn min_propagate_nan_kernel(&self) -> Option<$T> {
                 self.min_ignore_nan_kernel()
             }
 
-            fn max_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
+            fn max_propagate_nan_kernel(&self) -> Option<$T> {
                 self.max_ignore_nan_kernel()
             }
 
-            fn min_max_propagate_nan_kernel(&self) -> Option<(Self::Scalar<'_>, Self::Scalar<'_>)> {
+            fn min_max_propagate_nan_kernel(&self) -> Option<($T, $T)> {
                 self.min_max_ignore_nan_kernel()
             }
         }
+
+        impl_arrow_min_max_kernel!($T);
 
         impl MinMaxKernel for [$T] {
             type Scalar<'a> = $T;
@@ -238,75 +299,113 @@ impl_min_max_kernel_int!(i64, 8);
 
 macro_rules! impl_min_max_kernel_float {
     ($T:ty, $N:literal) => {
-        impl MinMaxKernel for PrimitiveArray<$T> {
+        /// A float has a NaN to answer for, so the two families of kernel part ways: one folds it
+        /// away, the other carries it out. A chunk that repeats one value hands that value to
+        /// both — it is the only value there is, NaN or not.
+        impl MinMaxKernel for PlPrimitiveArray<$T> {
             type Scalar<'a> = $T;
 
-            fn min_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-                fold_agg_kernel::<$N, $T, _>(self.values(), self.validity(), <$T>::NAN, |a, b| {
-                    a.simd_min(b)
-                })
-                .map(|s| s.reduce_min())
-            }
-
-            fn max_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-                fold_agg_kernel::<$N, $T, _>(self.values(), self.validity(), <$T>::NAN, |a, b| {
-                    a.simd_max(b)
-                })
-                .map(|s| s.reduce_max())
-            }
-
-            fn min_max_ignore_nan_kernel(&self) -> Option<(Self::Scalar<'_>, Self::Scalar<'_>)> {
-                fold_agg_min_max_kernel::<$N, $T, _>(
-                    self.values(),
-                    self.validity(),
-                    <$T>::NAN,
-                    <$T>::NAN,
-                    |(cmin, cmax), (min, max)| (cmin.simd_min(min), cmax.simd_max(max)),
-                )
-                .map(|(min, max)| (min.reduce_min(), max.reduce_max()))
-            }
-
-            fn min_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-                fold_agg_kernel::<$N, $T, _>(
-                    self.values(),
-                    self.validity(),
-                    <$T>::INFINITY,
-                    |a, b| (a.simd_lt(b) | a.simd_ne(a)).select(a, b),
-                )
-                .map(|s| scalar_reduce_min_propagate_nan(s.as_array()))
-            }
-
-            fn max_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-                fold_agg_kernel::<$N, $T, _>(
-                    self.values(),
-                    self.validity(),
-                    <$T>::NEG_INFINITY,
-                    |a, b| (a.simd_gt(b) | a.simd_ne(a)).select(a, b),
-                )
-                .map(|s| scalar_reduce_max_propagate_nan(s.as_array()))
-            }
-
-            fn min_max_propagate_nan_kernel(&self) -> Option<(Self::Scalar<'_>, Self::Scalar<'_>)> {
-                fold_agg_min_max_kernel::<$N, $T, _>(
-                    self.values(),
-                    self.validity(),
-                    <$T>::INFINITY,
-                    <$T>::NEG_INFINITY,
-                    |(cmin, cmax), (min, max)| {
-                        (
-                            (cmin.simd_lt(min) | cmin.simd_ne(cmin)).select(cmin, min),
-                            (cmax.simd_gt(max) | cmax.simd_ne(cmax)).select(cmax, max),
-                        )
+            fn min_ignore_nan_kernel(&self) -> Option<$T> {
+                reduce_flat(
+                    self,
+                    |value| value,
+                    |values, validity| {
+                        fold_agg_kernel::<$N, $T, _>(values, validity, <$T>::NAN, |a, b| {
+                            a.simd_min(b)
+                        })
+                        .map(|s| s.reduce_min())
                     },
                 )
-                .map(|(min, max)| {
-                    (
-                        scalar_reduce_min_propagate_nan(min.as_array()),
-                        scalar_reduce_max_propagate_nan(max.as_array()),
-                    )
-                })
+            }
+
+            fn max_ignore_nan_kernel(&self) -> Option<$T> {
+                reduce_flat(
+                    self,
+                    |value| value,
+                    |values, validity| {
+                        fold_agg_kernel::<$N, $T, _>(values, validity, <$T>::NAN, |a, b| {
+                            a.simd_max(b)
+                        })
+                        .map(|s| s.reduce_max())
+                    },
+                )
+            }
+
+            fn min_max_ignore_nan_kernel(&self) -> Option<($T, $T)> {
+                reduce_flat(
+                    self,
+                    |value| (value, value),
+                    |values, validity| {
+                        fold_agg_min_max_kernel::<$N, $T, _>(
+                            values,
+                            validity,
+                            <$T>::NAN,
+                            <$T>::NAN,
+                            |(cmin, cmax), (min, max)| (cmin.simd_min(min), cmax.simd_max(max)),
+                        )
+                        .map(|(min, max)| (min.reduce_min(), max.reduce_max()))
+                    },
+                )
+            }
+
+            fn min_propagate_nan_kernel(&self) -> Option<$T> {
+                reduce_flat(
+                    self,
+                    |value| value,
+                    |values, validity| {
+                        fold_agg_kernel::<$N, $T, _>(values, validity, <$T>::INFINITY, |a, b| {
+                            (a.simd_lt(b) | a.simd_ne(a)).select(a, b)
+                        })
+                        .map(|s| scalar_reduce_min_propagate_nan(s.as_array()))
+                    },
+                )
+            }
+
+            fn max_propagate_nan_kernel(&self) -> Option<$T> {
+                reduce_flat(
+                    self,
+                    |value| value,
+                    |values, validity| {
+                        fold_agg_kernel::<$N, $T, _>(
+                            values,
+                            validity,
+                            <$T>::NEG_INFINITY,
+                            |a, b| (a.simd_gt(b) | a.simd_ne(a)).select(a, b),
+                        )
+                        .map(|s| scalar_reduce_max_propagate_nan(s.as_array()))
+                    },
+                )
+            }
+
+            fn min_max_propagate_nan_kernel(&self) -> Option<($T, $T)> {
+                reduce_flat(
+                    self,
+                    |value| (value, value),
+                    |values, validity| {
+                        fold_agg_min_max_kernel::<$N, $T, _>(
+                            values,
+                            validity,
+                            <$T>::INFINITY,
+                            <$T>::NEG_INFINITY,
+                            |(cmin, cmax), (min, max)| {
+                                (
+                                    (cmin.simd_lt(min) | cmin.simd_ne(cmin)).select(cmin, min),
+                                    (cmax.simd_gt(max) | cmax.simd_ne(cmax)).select(cmax, max),
+                                )
+                            },
+                        )
+                        .map(|(min, max)| {
+                            (
+                                scalar_reduce_min_propagate_nan(min.as_array()),
+                                scalar_reduce_max_propagate_nan(max.as_array()),
+                            )
+                        })
+                    },
+                )
             }
         }
+
+        impl_arrow_min_max_kernel!($T);
 
         impl MinMaxKernel for [$T] {
             type Scalar<'a> = $T;

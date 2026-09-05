@@ -1,7 +1,7 @@
 #![allow(clippy::unnecessary_cast)] // Clippy doesn't recognize that IdxSize and u64 can be different.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use arrow::array::Array;
+use arrow::array::{Array, StaticArray as ArrowStaticArray};
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::itertools::Itertools;
@@ -149,7 +149,7 @@ impl IdxTable for RowEncodedIdxTable {
         {
             let idx = self.idx_offset + i;
             if let Some(key) = key {
-                match self.idx_map.entry(*hash, key) {
+                match self.idx_map.entry(hash, key) {
                     Entry::Occupied(o) => {
                         o.into_mut().push(RelaxedCell::from(idx as u64));
                     },
@@ -220,7 +220,6 @@ impl IdxTable for RowEncodedIdxTable {
             let iter = hash_keys
                 .hashes
                 .values_iter()
-                .copied()
                 .zip(hash_keys.keys.iter())
                 .enumerate_idx()
                 .map(|(i, (h, k))| (i, h, k));
@@ -236,7 +235,6 @@ impl IdxTable for RowEncodedIdxTable {
             let iter = hash_keys
                 .hashes
                 .values_iter()
-                .copied()
                 .zip(hash_keys.keys.values_iter().map(Some))
                 .enumerate_idx()
                 .map(|(i, (h, k))| (i, h, k));

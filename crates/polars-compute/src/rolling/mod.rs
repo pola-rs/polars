@@ -15,11 +15,11 @@ use std::hash::Hash;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
 pub use arg_min_max::{ArgMaxWindow, ArgMinMaxWindow, ArgMinWindow};
-use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
 pub use mean::MeanWindow;
 use num_traits::{Bounded, Float, NumCast, One, Zero};
+use polars_array::{ArrayCollectIterExt, Flat, PlArray, PlPrimitiveArray};
 use polars_utils::float::IsFloat;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -158,4 +158,29 @@ pub enum RollingRankMethod {
     Max,
     Dense,
     Random,
+}
+
+/// The elements of a chunk a rolling kernel handed back.
+#[cfg(test)]
+fn elements_of<T: NativeType>(array: &dyn PlArray) -> Vec<Option<T>> {
+    array
+        .as_any()
+        .downcast_ref::<PlPrimitiveArray<T>>()
+        .expect("the rolling kernels hand back a primitive chunk")
+        .iter()
+        .collect()
+}
+
+/// A chunk of the elements `values` marked by `validity`, in the flat representation the kernels
+/// over a chunk with a null under it are handed.
+#[cfg(test)]
+fn flat_chunk<T: NativeType>(
+    values: Vec<T>,
+    validity: Option<polars_array::PlBitmap>,
+) -> Flat<PlPrimitiveArray<T>> {
+    PlPrimitiveArray::from_vec(values)
+        .with_validity(validity)
+        .as_flat()
+        .expect("a chunk built out of a values buffer and a flat mask is flat")
+        .clone()
 }

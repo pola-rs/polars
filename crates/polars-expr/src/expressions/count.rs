@@ -30,16 +30,8 @@ pub fn evaluate_count_on_ac<'a>(
                 let s = match list.chunks().len() {
                     1 => {
                         let arr = list.downcast_iter().next().unwrap();
-                        let offsets = arr.offsets().as_slice();
-
-                        let mut previous = 0i64;
-                        let counts: NoNull<IdxCa> = offsets[1..]
-                            .iter()
-                            .map(|&o| {
-                                let len = (o - previous) as IdxSize;
-                                previous = o;
-                                len
-                            })
+                        let counts: NoNull<IdxCa> = (0..arr.len())
+                            .map(|i| arr.value_length(i) as IdxSize)
                             .collect_trusted();
                         counts.into_inner()
                     },
@@ -100,7 +92,7 @@ pub fn evaluate_count_on_ac<'a>(
                                     let mut count = 0 as IdxSize;
                                     // Count valid values
                                     g.iter().for_each(|i| unsafe {
-                                        count += validity.get_bit_unchecked(*i as usize) as IdxSize;
+                                        count += validity.get_unchecked(*i as usize) as IdxSize;
                                     });
                                     count
                                 })

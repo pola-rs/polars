@@ -1,7 +1,6 @@
-use arrow::array::Array;
 use arrow::bitmap::bitmask::BitMask;
-use arrow::compute::concatenate::concatenate_validities;
 use bytemuck::allocation::zeroed_vec;
+use polars_array::concatenate::concatenate_validities;
 use polars_core::prelude::gather::check_bounds_ca;
 use polars_core::prelude::*;
 use polars_utils::index::check_bounds;
@@ -29,7 +28,13 @@ unsafe fn gather_skip_nulls_idx_pairs_unchecked<'a, T: PolarsDataType>(
         let arr_nonnull_len = arr.len() - arr.null_count();
         let mut arr_scan_offset = 0;
         let mut nonnull_before_offset = 0;
-        let mask = arr.validity().map(BitMask::from_bitmap).unwrap_or_default();
+        // TODO(polars-array-scalar): the null scan walks the mask bit by bit, so a scalar mask is
+        // written out here rather than its single bit being read once.
+        let validity = arr.validity().map(|v| v.to_flat().into_owned());
+        let mask = validity
+            .as_ref()
+            .map(BitMask::from_bitmap)
+            .unwrap_or_default();
 
         // Is our next nonnull_idx in this array?
         while nonnull_idx as usize - nonnull_prev_arrays < arr_nonnull_len {
@@ -70,6 +75,7 @@ pub trait ChunkGatherSkipNulls<I: ?Sized>: Sized {
 impl<T: PolarsDataType> ChunkGatherSkipNulls<[IdxSize]> for ChunkedArray<T>
 where
     ChunkedArray<T>: ChunkFilter<T> + ChunkTake<[IdxSize]>,
+    T::Array: ZeroableArrayFromIter,
 {
     fn gather_skip_nulls(&self, indices: &[IdxSize]) -> PolarsResult<Self> {
         if self.null_count() == 0 {
@@ -94,8 +100,7 @@ where
             .collect();
         let gathered =
             unsafe { gather_skip_nulls_idx_pairs_unchecked(self, index_pairs, indices.len()) };
-        let arr =
-            T::Array::from_zeroable_vec(gathered, self.dtype().to_arrow(CompatLevel::newest()));
+        let arr = T::Array::arr_from_zeroable_iter_trusted(gathered);
         Ok(ChunkedArray::from_chunk_iter_like(self, [arr]))
     }
 }
@@ -103,6 +108,7 @@ where
 impl<T: PolarsDataType> ChunkGatherSkipNulls<IdxCa> for ChunkedArray<T>
 where
     ChunkedArray<T>: ChunkFilter<T> + ChunkTake<IdxCa>,
+    T::Array: ZeroableArrayFromIter,
 {
     fn gather_skip_nulls(&self, indices: &IdxCa) -> PolarsResult<Self> {
         if self.null_count() == 0 {
@@ -125,7 +131,7 @@ where
                 .downcast_iter()
                 .flat_map(|arr| arr.values_iter())
                 .enumerate()
-                .map(|(out_idx, nonnull_idx)| (out_idx as IdxSize, *nonnull_idx))
+                .map(|(out_idx, nonnull_idx)| (out_idx as IdxSize, nonnull_idx))
                 .collect()
         } else {
             // Filter *after* the enumerate so we place the non-null gather
@@ -134,17 +140,22 @@ where
                 .downcast_iter()
                 .flat_map(|arr| arr.iter())
                 .enumerate()
-                .filter_map(|(out_idx, nonnull_idx)| Some((out_idx as IdxSize, *nonnull_idx?)))
+                .filter_map(|(out_idx, nonnull_idx)| Some((out_idx as IdxSize, nonnull_idx?)))
                 .collect()
         };
         let gathered = unsafe {
             gather_skip_nulls_idx_pairs_unchecked(self, index_pairs, indices.as_ref().len())
         };
 
-        let mut arr =
-            T::Array::from_zeroable_vec(gathered, self.dtype().to_arrow(CompatLevel::newest()));
+        let mut arr = T::Array::arr_from_zeroable_iter_trusted(gathered);
         if indices.null_count() > 0 {
-            arr = arr.with_validity_typed(concatenate_validities(indices.chunks()));
+            let chunks = indices
+                .chunks()
+                .iter()
+                .map(|chunk| &**chunk)
+                .collect::<Vec<_>>();
+            arr = arr
+                .with_validity_typed((concatenate_validities(&chunks)).map(PlBitmap::from_bitmap));
         }
         Ok(ChunkedArray::from_chunk_iter_like(self, [arr]))
     }

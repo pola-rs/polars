@@ -1,24 +1,3 @@
-use arrow::array::Array;
-
-/// Kernel to calculate the number of unique elements where the elements are already sorted.
-pub trait SortedUniqueKernel: Array {
-    /// Calculate the set of unique elements in `fst` and `others` and fold the result into one
-    /// array.
-    fn unique_fold<'a>(fst: &'a Self, others: impl Iterator<Item = &'a Self>) -> Self;
-
-    /// Calculate the set of unique elements in [`Self`] where we have no further information about
-    /// `self`.
-    fn unique(&self) -> Self;
-
-    /// Calculate the number of unique elements in [`Self`]
-    ///
-    /// A null is also considered a unique value
-    fn n_unique(&self) -> usize;
-
-    /// Calculate the number of unique non-null elements in [`Self`]
-    fn n_unique_non_null(&self) -> usize;
-}
-
 /// Optimized kernel to calculate the unique elements of an array.
 ///
 /// This kernel is a specialized for where all values are known to be in some small range of
@@ -31,7 +10,9 @@ pub trait SortedUniqueKernel: Array {
 /// `State` between many chunks and allows for different implementations for the same array (e.g. a
 /// maintain order and no maintain-order variant).
 pub trait RangedUniqueKernel {
-    type Array: Array;
+    /// The array of `polars-array` whose elements are appended to the state, and which the unique
+    /// ones come back in.
+    type Array;
 
     /// Returns whether all the values in the whole range are in the state
     fn has_seen_all(&self) -> bool;
@@ -61,11 +42,7 @@ pub trait GenericUniqueKernel {
 }
 
 mod boolean;
-mod dictionary;
 mod distinct;
-mod primitive;
 
 pub use boolean::BooleanUniqueKernelState;
-pub use dictionary::DictionaryRangedUniqueState;
-pub use distinct::{AmortizedUnique, amortized_unique_from_dtype};
-pub use primitive::PrimitiveRangedUniqueState;
+pub use distinct::{AmortizedUnique, amortized_unique_like};

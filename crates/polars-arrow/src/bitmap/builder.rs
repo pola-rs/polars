@@ -516,6 +516,7 @@ impl BitmapBuilder {
 /// A wrapper for BitmapBuilder that does not allocate until the first false is
 /// pushed. Less efficient if you know there are false values because it must
 /// check if it has allocated for each push.
+#[derive(Clone)]
 pub enum OptBitmapBuilder {
     AllTrue { bit_len: usize, bit_cap: usize },
     MayHaveFalse(BitmapBuilder),

@@ -29,6 +29,16 @@ pub enum CategoricalPhysical {
 }
 
 impl CategoricalPhysical {
+    /// The [`DataType`](crate::dtype::DataType) of the integers a categorical's values are held
+    /// as.
+    pub fn dtype(&self) -> crate::dtype::DataType {
+        match self {
+            Self::U8 => crate::dtype::DataType::UInt8,
+            Self::U16 => crate::dtype::DataType::UInt16,
+            Self::U32 => crate::dtype::DataType::UInt32,
+        }
+    }
+
     pub fn max_categories(&self) -> usize {
         // We might use T::MAX as an indicator, so the maximum number of categories is T::MAX
         // (giving T::MAX - 1 as the largest category).

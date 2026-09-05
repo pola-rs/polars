@@ -1,8 +1,10 @@
 use std::borrow::Cow;
 
+use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 #[cfg(feature = "dtype-f16")]
 use num_traits::real::Real;
+use polars_array::{Flat, PlArrayType, PlPrimitiveArray};
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
 use polars_compute::rolling::{MeanWindow, SumWindow, no_nulls, nulls};
@@ -26,15 +28,15 @@ fn rolling_agg<T>(
         bool,
         Option<&[f64]>,
         Option<RollingFnParams>,
-    ) -> PolarsResult<ArrayRef>,
+    ) -> PolarsResult<PlArrayRef>,
     rolling_agg_fn_nulls: &dyn Fn(
-        &PrimitiveArray<T::Native>,
+        &Flat<PlPrimitiveArray<T::Native>>,
         usize,
         usize,
         bool,
         Option<&[f64]>,
         Option<RollingFnParams>,
-    ) -> ArrayRef,
+    ) -> PlArrayRef,
 ) -> PolarsResult<Series>
 where
     T: PolarsNumericType,
@@ -44,11 +46,14 @@ where
         return Ok(Series::new_empty(ca.name().clone(), ca.dtype()));
     }
     let ca = ca.rechunk();
+    // TODO(polars-array-scalar): the rolling kernels read the values as a slice, so a scalar chunk
+    // is written out here rather than the single value it stands for being read once.
+    let ca = ca.to_flat();
 
-    let arr = ca.downcast_iter().next().unwrap();
+    let arr = ca.flat_as_array();
     let arr = match ca.null_count() {
         0 => rolling_agg_fn(
-            arr.values().as_slice(),
+            arr.as_slice(),
             options.window_size,
             options.min_periods,
             options.center,
@@ -64,7 +69,25 @@ where
             options.fn_params,
         ),
     };
-    Series::try_from((ca.name().clone(), arr))
+    Ok(series_of(ca.name().clone(), arr))
+}
+
+/// The column a rolling kernel's answer is.
+///
+/// The kernels answer in the element type of the column they were given, except `rolling_rank`,
+/// which answers in the type its method ranks in — so the chunk itself is what says what the
+/// column holds.
+#[cfg(any(feature = "rolling_window", feature = "rolling_window_by"))]
+fn series_of(name: PlSmallStr, chunk: PlArrayRef) -> Series {
+    let dtype = match chunk.array_type() {
+        PlArrayType::Primitive(primitive) => {
+            DataType::from_arrow_dtype(&ArrowDataType::from(primitive))
+        },
+        array_type => unreachable!("a rolling kernel answered in a {array_type:?} chunk"),
+    };
+
+    // SAFETY: the chunk is a primitive one of exactly the type just read off it.
+    unsafe { Series::from_chunks_and_dtype_unchecked(name, vec![chunk], &dtype) }
 }
 
 #[cfg(feature = "rolling_window_by")]
@@ -123,7 +146,8 @@ where
         let computed =
             rolling_agg_by::<T, Out, NoNullsAgg, NullsAgg>(&ca_filtered, &by_filtered, options)?;
 
-        let gather_arr = IdxArr::from_vec(ranks).with_validity_typed(Some(validity));
+        let gather_arr =
+            PlPrimitiveArray::from_vec(ranks).with_validity(Some(PlBitmap::from_bitmap(validity)));
         let gather_ca = IdxCa::with_chunk(PlSmallStr::EMPTY, gather_arr);
         return Ok(unsafe { computed.take_unchecked(&gather_ca) });
     }
@@ -167,13 +191,18 @@ where
         by_physical = Cow::Owned(unsafe { by_physical.take_unchecked(sorting_indices) });
     }
 
-    let by_values = by_physical.cont_slice().unwrap();
-    let arr = ca_rechunked.downcast_iter().next().unwrap();
-    let values = arr.values().as_slice();
+    // TODO(polars-array-scalar): the rolling kernels read `by`, the values and the sorting indices
+    // as slices, so scalar chunks are written out rather than read once.
+    let by_flat = by_physical.to_flat();
+    let by_values = by_flat.cont_slice().unwrap();
+    let ca_flat = ca_rechunked.to_flat();
+    let arr = ca_flat.flat_as_array();
+    let values = arr.as_slice();
+    let sorting_indices_flat = sorting_indices_opt.as_ref().map(|s| s.to_flat());
 
     // We explicitly branch here because we want to compile different versions based on the no_nulls
     // or nulls kernel.
-    let out: ArrayRef = if ca.null_count() == 0 {
+    let out: PlArrayRef = if ca.null_count() == 0 {
         let mut agg_window =
             RollingAggWindowNoNullsWrapper(NoNullsAgg::new(values, 0, 0, options.fn_params, None));
 
@@ -185,7 +214,7 @@ where
             options.min_periods,
             tu,
             tz.as_ref(),
-            sorting_indices_opt
+            sorting_indices_flat
                 .as_ref()
                 .map(|s| s.cont_slice().unwrap()),
         )?
@@ -208,13 +237,13 @@ where
             options.min_periods,
             tu,
             tz.as_ref(),
-            sorting_indices_opt
+            sorting_indices_flat
                 .as_ref()
                 .map(|s| s.cont_slice().unwrap()),
         )?
     };
 
-    Series::try_from((ca.name().clone(), out))
+    Ok(series_of(ca.name().clone(), out))
 }
 
 pub trait SeriesOpsTime: AsSeries {

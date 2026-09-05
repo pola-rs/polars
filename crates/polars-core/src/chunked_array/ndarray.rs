@@ -22,8 +22,12 @@ where
     /// If data is aligned in a single chunk and has no Null values a zero copy view is returned
     /// as an [ndarray]
     pub fn to_ndarray(&self) -> PolarsResult<ArrayView1<'_, T::Native>> {
-        let slice = self.cont_slice()?;
-        Ok(aview1(slice))
+        // A view borrows from this array, so a chunk that is not laid out flat has no slice here
+        // to point at rather than one to be written out.
+        let ca = self
+            .as_flat()
+            .ok_or_else(|| polars_err!(ComputeError: "chunked array is not contiguous"))?;
+        Ok(aview1(ca.cont_slice()?))
     }
 }
 
@@ -138,7 +142,10 @@ impl DataFrame {
                             let ca = s.unpack::<N>()?;
 
                             let mut chunk_offset = 0;
+                            // The values are read as slices, so a chunk that is not laid out flat
+                            // is written out first — see `StaticArray::to_flat`.
                             for arr in ca.downcast_iter() {
+                                let arr = arr.to_flat();
                                 let vals = arr.values();
 
                                 // SAFETY:
@@ -196,15 +203,15 @@ impl DataFrame {
                 let row_block = (TARGET_BLOCK_CELLS / num_cols.max(1)).max(MIN_ROW_BLOCK);
                 let num_blocks = height.div_ceil(row_block);
 
-                let column_chunks: Vec<Vec<&[N::Native]>> = cast_columns
+                // The values are read as slices, so the columns are written out flat first — see
+                // `chunked_array::flat`; the flat arrays are kept alive for the slices.
+                let flat_columns = cast_columns
                     .iter()
-                    .map(|s| {
-                        s.unpack::<N>()
-                            .unwrap()
-                            .downcast_iter()
-                            .map(|arr| arr.values().as_slice())
-                            .collect()
-                    })
+                    .map(|s| s.unpack::<N>().unwrap().to_flat())
+                    .collect::<Vec<_>>();
+                let column_chunks: Vec<Vec<&[N::Native]>> = flat_columns
+                    .iter()
+                    .map(|flat| flat.data_views().collect())
                     .collect();
 
                 // Cursor into one column's chunk list. Advanced only at chunk boundaries.

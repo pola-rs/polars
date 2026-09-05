@@ -15,7 +15,8 @@ impl AsRef<Series> for AmortSeries {
     }
 }
 
-pub type ArrayBox = Box<dyn Array>;
+/// An owned chunk of a [`ChunkedArray`], which is what the amortized iterators swap in and out.
+pub type ArrayBox = PlArrayRef;
 
 impl AmortSeries {
     pub fn new(container: Rc<Series>) -> Self {
@@ -38,8 +39,8 @@ impl AmortSeries {
     /// restores the state.
     /// # Safety
     /// This swaps an underlying pointer that might be hold by other cloned series.
-    pub unsafe fn swap(&mut self, array: &mut ArrayRef) {
-        let inner = self.container.array_ref(0) as *const ArrayRef as *mut ArrayRef;
+    pub unsafe fn swap(&mut self, array: &mut PlArrayRef) {
+        let inner = self.container.array_ref(0) as *const PlArrayRef as *mut PlArrayRef;
         let inner = inner.as_mut().unwrap();
         std::mem::swap(inner, array);
 
@@ -56,7 +57,7 @@ impl AmortSeries {
     /// # Safety
     /// Array must be from `Series` physical dtype.
     #[inline]
-    pub unsafe fn with_array<F, T>(&mut self, array: &mut ArrayRef, f: F) -> T
+    pub unsafe fn with_array<F, T>(&mut self, array: &mut PlArrayRef, f: F) -> T
     where
         F: Fn(&AmortSeries) -> T,
     {
@@ -73,15 +74,15 @@ impl AmortSeries {
 // type must be matching
 pub(crate) unsafe fn unstable_series_container_and_ptr(
     name: PlSmallStr,
-    inner_values: ArrayRef,
+    inner_values: PlArrayRef,
     iter_dtype: &DataType,
-) -> (Series, *mut ArrayRef) {
+) -> (Series, *mut PlArrayRef) {
     let series_container = {
         let mut s = Series::from_chunks_and_dtype_unchecked(name, vec![inner_values], iter_dtype);
         s.clear_flags();
         s
     };
 
-    let ptr = series_container.array_ref(0) as *const ArrayRef as *mut ArrayRef;
+    let ptr = series_container.array_ref(0) as *const PlArrayRef as *mut PlArrayRef;
     (series_container, ptr)
 }

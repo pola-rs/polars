@@ -1,5 +1,4 @@
-use arrow::array::{Utf8Array, ValueSize};
-use polars_compute::cast::utf8_to_utf8view;
+use arrow::array::ValueSize;
 use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 use polars_utils::broadcast::broadcast_len;
@@ -39,12 +38,10 @@ pub fn str_join(ca: &StringChunked, delimiter: &str, ignore_nulls: bool) -> Stri
         }
     });
 
-    let buf = buf.into_bytes();
     assert!(capacity >= buf.len());
-    let offsets = vec![0, buf.len() as i64];
-    let arr = unsafe { Utf8Array::from_data_unchecked_default(offsets.into(), buf.into(), None) };
-    // conversion is cheap with one value.
-    let arr = utf8_to_utf8view(&arr);
+    // The one element of the result is the whole buffer, which is what a scalar array of length
+    // one holds.
+    let arr = PlUtf8ViewArray::new_scalar(&buf, 1);
     StringChunked::with_chunk(ca.name().clone(), arr)
 }
 

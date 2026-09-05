@@ -22,7 +22,9 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
         },
         len if len == ca.len() => {
             let tmp = ca.rechunk();
-            let arr = tmp.downcast_as_array();
+            // TODO(polars-array-scalar): the ranges are read off the offsets as a slice, so scalar
+            // offsets are written out rather than the one range they share being indexed once.
+            let arr = tmp.downcast_as_array().to_flat();
             let offsets = arr.offsets().as_slice();
             let take_by = if ca.null_count() == 0 {
                 index
@@ -31,7 +33,10 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
                     .map(|(i, opt_idx)| match opt_idx {
                         Some(idx) => {
                             let (start, end) = unsafe {
-                                (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1))
+                                (
+                                    *offsets.get_unchecked(i) as i64,
+                                    *offsets.get_unchecked(i + 1) as i64,
+                                )
                             };
                             let offset = if idx >= 0 { start + idx } else { end + idx };
                             if offset >= end || offset < start || start == end {
@@ -55,7 +60,10 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
                     .map(|(i, (opt_idx, valid))| match (valid, opt_idx) {
                         (true, Some(idx)) => {
                             let (start, end) = unsafe {
-                                (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1))
+                                (
+                                    *offsets.get_unchecked(i) as i64,
+                                    *offsets.get_unchecked(i + 1) as i64,
+                                )
                             };
                             let offset = if idx >= 0 { start + idx } else { end + idx };
                             if offset >= end || offset < start || start == end {
@@ -72,7 +80,15 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
                     })
                     .collect::<Result<IdxCa, _>>()?
             };
-            let s = Series::try_from((ca.name().clone(), arr.values().clone())).unwrap();
+            // The values of a list array carry no logical type; the physical inner one is what
+            // `from_physical_unchecked` below turns back into the logical one.
+            let s = unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    ca.name().clone(),
+                    vec![arr.values().to_boxed()],
+                    &ca.inner_dtype().to_physical(),
+                )
+            };
             unsafe {
                 s.take_unchecked(&take_by)
                     .from_physical_unchecked(ca.inner_dtype())
@@ -82,7 +98,14 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
         _ if ca.len() == 1 => {
             if let Some(list) = ca.get(0) {
                 let idx = convert_and_bound_idx_ca(index, list.len(), null_on_oob)?;
-                let s = Series::try_from((ca.name().clone(), vec![list])).unwrap();
+                // As above: the element carries no logical type of its own.
+                let s = unsafe {
+                    Series::from_chunks_and_dtype_unchecked(
+                        ca.name().clone(),
+                        vec![list],
+                        &ca.inner_dtype().to_physical(),
+                    )
+                };
                 unsafe {
                     s.take_unchecked(&idx)
                         .from_physical_unchecked(ca.inner_dtype())

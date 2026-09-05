@@ -7,6 +7,10 @@ use crate::comparisons::dyn_array::array_tot_eq_missing_kernel;
 impl TotalEqKernel for StructArray {
     type Scalar = Box<dyn Array>;
 
+    fn validity_mask(&self) -> Option<&Bitmap> {
+        self.validity()
+    }
+
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
         let lhs = self;
         let rhs = other;

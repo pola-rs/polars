@@ -1,4 +1,4 @@
-use arrow::offset::OffsetsBuffer;
+use polars_buffer::Buffer;
 use polars_compute::gather::take_unchecked;
 
 use crate::chunked_array::cast::CastOptions;
@@ -205,25 +205,6 @@ impl MapChunked {
     }
 }
 
-/// Require named entry fields outside Arrow and Parquet, whose specifications define
-/// entries positionally.
-pub(crate) fn ensure_map_entries_dtype(dtype: &DataType) -> PolarsResult<()> {
-    let DataType::Struct(fields) = dtype else {
-        polars_bail!(InvalidOperation: "Map entries must be `Struct {{key, value}}`, got `{dtype}`")
-    };
-    // Spell the names out because `Struct` display abbreviates them to `struct[n]`.
-    let mut names: Vec<&PlSmallStr> = fields.iter().map(|f| f.name()).collect();
-    names.sort();
-    polars_ensure!(
-        names == [&MAP_KEY_NAME, &MAP_VALUE_NAME],
-        InvalidOperation:
-        "Map entries must be exactly two fields named `{}` and `{}`, got [{}]",
-        MAP_KEY_NAME, MAP_VALUE_NAME,
-        fields.iter().map(|f| format!("`{}`", f.name())).collect::<Vec<_>>().join(", "),
-    );
-    Ok(())
-}
-
 fn unpack_map_entries(entries: &Series) -> (Series, Series) {
     let fields = entries.struct_().unwrap().fields_as_series();
     let Ok([first, second]) = <[Series; 2]>::try_from(fields) else {
@@ -346,7 +327,7 @@ pub(crate) fn canonicalize_map_storage(storage: &Series) -> PolarsResult<Option<
     };
     let list_ca = storage.list().unwrap();
     // Allocate only after the first changed chunk.
-    let mut new_chunks: Option<Vec<ArrayRef>> = None;
+    let mut new_chunks: Option<Vec<PlArrayRef>> = None;
 
     for (i, chunk) in list_ca.downcast_iter().enumerate() {
         match canonicalize_list_chunk(chunk, key_field.dtype())? {
@@ -355,7 +336,7 @@ pub(crate) fn canonicalize_map_storage(storage: &Series) -> PolarsResult<Option<
                 .push(canonicalized),
             None => {
                 if let Some(new_chunks) = new_chunks.as_mut() {
-                    new_chunks.push(chunk.clone().boxed());
+                    new_chunks.push(chunk.clone().into_boxed());
                 }
             },
         }
@@ -367,33 +348,36 @@ pub(crate) fn canonicalize_map_storage(storage: &Series) -> PolarsResult<Option<
 }
 
 struct CanonicalMapIndices {
-    first_keys: IdxArr,
-    last_values: IdxArr,
-    offsets: OffsetsBuffer<i64>,
+    first_keys: PlPrimitiveArray<IdxSize>,
+    last_values: PlPrimitiveArray<IdxSize>,
+    offsets: Buffer<u64>,
 }
 
 /// Build take indices only when a row contains duplicate keys.
-fn canonical_map_indices(keys: &BinaryArray<i64>, offsets: &[i64]) -> Option<CanonicalMapIndices> {
+///
+/// `keys` holds one row-encoded key per entry of `arr`, laid end to end.
+fn canonical_map_indices(keys: &PlBinaryArray, arr: &PlListArray) -> Option<CanonicalMapIndices> {
     let mut seen = PlHashSet::new();
-    let has_duplicates = offsets.windows(2).any(|range| {
+    let has_duplicates = (0..arr.len()).any(|row| {
         seen.clear();
-        (range[0] as usize..range[1] as usize)
+        // SAFETY: `row` is in bounds of `arr`, and its entries are in bounds of `keys`.
+        unsafe { arr.value_range_unchecked(row) }
             .any(|i| !seen.insert(unsafe { keys.value_unchecked(i) }))
     });
     if !has_duplicates {
         return None;
     }
 
-    let n_entries = (offsets[offsets.len() - 1] - offsets[0]) as usize;
-    let mut key_idx = Vec::with_capacity(n_entries);
-    let mut value_idx = Vec::with_capacity(n_entries);
-    let mut new_offsets = Vec::with_capacity(offsets.len());
+    let mut key_idx = Vec::with_capacity(keys.len());
+    let mut value_idx = Vec::with_capacity(keys.len());
+    let mut new_offsets = Vec::with_capacity(arr.len() + 1);
     new_offsets.push(0);
 
     let mut slots = PlHashMap::new();
-    for range in offsets.windows(2) {
+    for row in 0..arr.len() {
         slots.clear();
-        for i in range[0] as usize..range[1] as usize {
+        // SAFETY: `row` is in bounds of `arr`, and its entries are in bounds of `keys`.
+        for i in unsafe { arr.value_range_unchecked(row) } {
             let key = unsafe { keys.value_unchecked(i) };
             if let Some(&slot) = slots.get(key) {
                 value_idx[slot] = i as IdxSize;
@@ -403,23 +387,23 @@ fn canonical_map_indices(keys: &BinaryArray<i64>, offsets: &[i64]) -> Option<Can
                 value_idx.push(i as IdxSize);
             }
         }
-        new_offsets.push(key_idx.len() as i64);
+        new_offsets.push(key_idx.len() as u64);
     }
 
     Some(CanonicalMapIndices {
-        first_keys: IdxArr::from_vec(key_idx),
-        last_values: IdxArr::from_vec(value_idx),
-        offsets: unsafe { OffsetsBuffer::new_unchecked(new_offsets.into()) },
+        first_keys: PlPrimitiveArray::from_vec(key_idx),
+        last_values: PlPrimitiveArray::from_vec(value_idx),
+        offsets: new_offsets.into(),
     })
 }
 
 /// Gather the deduplicated entries and rebuild the list chunk around them.
 fn gather_entries(
-    arr: &LargeListArray,
-    entries: &StructArray,
+    arr: &PlListArray,
+    entries: &PlStructArray,
     indices: CanonicalMapIndices,
-) -> ArrayRef {
-    let [key_arr, value_arr] = entries.values() else {
+) -> PlArrayRef {
+    let [key_arr, value_arr] = entries.fields() else {
         unreachable!("map entries must have two arrays")
     };
     let CanonicalMapIndices {
@@ -428,34 +412,41 @@ fn gather_entries(
         offsets,
     } = indices;
 
-    let new_entries = StructArray::new(
-        entries.dtype().clone(),
-        first_keys.len(),
-        vec![
-            unsafe { take_unchecked(key_arr.as_ref(), &first_keys) },
-            unsafe { take_unchecked(value_arr.as_ref(), &last_values) },
-        ],
-        // Entry validity is all true.
-        None,
-    );
+    let length = first_keys.len();
+    // SAFETY: both fields are gathered at one index per kept entry, so they are `length` long.
+    let new_entries = unsafe {
+        PlStructArray::new_unchecked(
+            vec![
+                take_unchecked(&**key_arr, &first_keys),
+                take_unchecked(&**value_arr, &last_values),
+            ],
+            length,
+            // Entry validity is all true.
+            None,
+        )
+    };
 
-    LargeListArray::new(
-        arr.dtype().clone(),
-        offsets,
-        new_entries.boxed(),
-        arr.validity().cloned(),
-    )
-    .boxed()
+    // SAFETY: the offsets were built by counting the entries kept for every element in turn, so
+    // they cover the gathered entries, laid end to end.
+    unsafe { PlListArray::new_unchecked(new_entries.into_boxed(), offsets, arr.len(), None) }
+        .with_validity(arr.validity().map(PlBitmap::from))
+        .into_boxed()
 }
 
 /// Returns `None` when `arr` has no duplicate keys in any row.
 fn canonicalize_list_chunk(
-    arr: &LargeListArray,
+    arr: &PlListArray,
     key_dtype: &DataType,
-) -> PolarsResult<Option<ArrayRef>> {
-    let entries = arr.values();
-    let entries = entries.as_any().downcast_ref::<StructArray>().unwrap();
-    let [key_arr, _] = entries.values() else {
+) -> PolarsResult<Option<PlArrayRef>> {
+    // The entries are read one per index below, which a scalar array has to be written out to
+    // hand over.
+    let entries = arr
+        .values()
+        .as_any()
+        .downcast_ref::<PlStructArray>()
+        .unwrap();
+    let entries = entries.to_flat();
+    let [key_arr, _] = entries.fields() else {
         unreachable!("map entries must have two arrays")
     };
 
@@ -476,9 +467,9 @@ fn canonicalize_list_chunk(
     let encoded = encode_rows_unordered(&[keys.into_column()])?;
     let encoded = encoded.downcast_iter().next().unwrap();
 
-    let Some(indices) = canonical_map_indices(encoded, arr.offsets().as_slice()) else {
+    let Some(indices) = canonical_map_indices(encoded, arr) else {
         return Ok(None);
     };
 
-    Ok(Some(gather_entries(arr, entries, indices)))
+    Ok(Some(gather_entries(arr, &entries, indices)))
 }

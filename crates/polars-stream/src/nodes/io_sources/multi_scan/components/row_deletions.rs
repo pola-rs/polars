@@ -1,18 +1,20 @@
 use std::sync::{Arc, OnceLock};
 
-#[cfg(feature = "python")]
-use arrow::array::ListArray;
-use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
 use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{BooleanChunked, ChunkAgg, DataType, NamedFrom, PlIndexMap};
+#[cfg(feature = "python")]
+use polars_core::prelude::{PlBooleanArray, PlListArray};
 use polars_core::schema::{Schema, SchemaRef};
+#[cfg(feature = "python")]
 use polars_core::series::Series;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_error::{PolarsResult, feature_gated, polars_bail, polars_err};
+#[cfg(feature = "python")]
+use polars_error::polars_err;
+use polars_error::{PolarsResult, feature_gated, polars_bail};
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};
@@ -57,7 +59,7 @@ pub enum DeletionFilesProvider {
     DeltaDeletionVector {
         provider: DeltaDeletionVectorProvider,
         selected_paths: Buffer<PlRefPath>,
-        cache: Arc<tokio::sync::OnceCell<Option<ListArray<i64>>>>,
+        cache: Arc<tokio::sync::OnceCell<Option<PlListArray>>>,
     },
 }
 
@@ -409,7 +411,7 @@ impl DeletionFilesProvider {
                                 let arr = list.value(scan_source_idx);
                                 let bool_arr = arr
                                     .as_any()
-                                    .downcast_ref::<BooleanArray>()
+                                    .downcast_ref::<PlBooleanArray>()
                                     .ok_or_else(|| {
                                         polars_err!(ComputeError:
                                             "expected boolean array in Delta deletion vector")
@@ -609,12 +611,24 @@ impl ExternalFilterMask {
         phys_slice
     }
 
+    // TODO(polars-array-scalar): the callers walk the mask bit by bit, so a scalar chunk is
+    // written out here, where one repeated bit deletes either every row or none of them.
     fn get_mask(&self) -> Bitmap {
         match self {
-            Self::Iceberg { mask } => mask.rechunk().downcast_get(0).unwrap().values().clone(),
-            Self::DeltaDeletionVector { mask } => {
-                mask.rechunk().downcast_get(0).unwrap().values().clone()
-            },
+            Self::Iceberg { mask } => mask
+                .rechunk()
+                .downcast_get(0)
+                .unwrap()
+                .values()
+                .to_flat()
+                .into_owned(),
+            Self::DeltaDeletionVector { mask } => mask
+                .rechunk()
+                .downcast_get(0)
+                .unwrap()
+                .values()
+                .to_flat()
+                .into_owned(),
         }
     }
 
@@ -642,7 +656,6 @@ fn load_iceberg_puffin_deletes(
     {
         use std::sync::LazyLock;
 
-        use arrow::array::UInt64Array;
         use polars_error::constants::LENGTH_LIMIT_MSG;
         use polars_error::polars_ensure;
         use polars_utils::index::idxsize_try_from;
@@ -685,12 +698,11 @@ fn load_iceberg_puffin_deletes(
                     ComputeError: LENGTH_LIMIT_MSG
                 );
 
-                let indices = indices.rechunk();
-                let indices: &UInt64Array = indices.chunks()[0].as_any().downcast_ref().unwrap();
+                let indices = indices.u64()?;
 
                 let mut filter_mask = MutableBitmap::from_len_set(filter_mask_len as usize);
 
-                for idx in indices.non_null_values_iter() {
+                for idx in indices.iter().flatten() {
                     let idx = usize::try_from(idx).unwrap();
                     filter_mask.set(idx, false);
                 }

@@ -1,8 +1,17 @@
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::legacy::kernels::set::{scatter_single_non_null, set_with_mask};
+use polars_compute::set::{scatter_single_non_null, set_with_mask};
 
 use crate::prelude::*;
 use crate::utils::align_chunks_binary;
+
+/// The bits of `mask` that are set and not null.
+fn true_and_valid(mask: &PlBooleanArray) -> Bitmap {
+    let mask = mask.to_flat();
+    match mask.validity() {
+        Some(validity) => mask.values() & validity,
+        None => mask.values().clone(),
+    }
+}
 
 macro_rules! impl_scatter_with {
     ($self:ident, $builder:ident, $idx:ident, $f:ident) => {{
@@ -51,19 +60,15 @@ where
             if let Some(value) = value {
                 // Fast path uses kernel.
                 if self.chunks.len() == 1 {
-                    let arr = scatter_single_non_null(
-                        self.downcast_iter().next().unwrap(),
-                        idx,
-                        value,
-                        T::get_static_dtype().to_arrow(CompatLevel::newest()),
-                    )?;
+                    let arr =
+                        scatter_single_non_null(self.downcast_iter().next().unwrap(), idx, value)?;
                     return Ok(Self::with_chunk(self.name().clone(), arr));
                 }
                 // Other fast path. Slightly slower as it does not do a memcpy.
                 else {
                     let mut av = Vec::with_capacity(self.len());
                     for chunk in self.downcast_iter() {
-                        av.extend_from_slice(chunk.values())
+                        av.extend_from_slice(chunk.to_flat().as_slice())
                     }
                     let data = av.as_mut_slice();
 
@@ -96,7 +101,7 @@ where
     fn set(&'a self, mask: &BooleanChunked, value: Option<T::Native>) -> PolarsResult<Self> {
         check_bounds!(self, mask);
 
-        // Fast path uses the kernel in polars-arrow.
+        // Fast path uses the kernel in polars-compute.
         if let (Some(value), false) = (value, mask.has_nulls()) {
             let (left, mask) = align_chunks_binary(self, mask);
 
@@ -104,19 +109,11 @@ where
             let chunks = left
                 .downcast_iter()
                 .zip(mask.downcast_iter())
-                .map(|(arr, mask)| {
-                    set_with_mask(
-                        arr,
-                        mask,
-                        value,
-                        T::get_static_dtype().to_arrow(CompatLevel::newest()),
-                    )
-                });
+                .map(|(arr, mask)| set_with_mask(arr, mask, value));
             Ok(ChunkedArray::from_chunk_iter(self.name().clone(), chunks))
         } else {
             let mask = mask.rechunk();
-            let mask = mask.downcast_as_array();
-            let mask = mask.true_and_valid();
+            let mask = true_and_valid(mask.downcast_as_array());
             let iter = mask.true_idx_iter();
             self.scatter_single(iter.map(|v| v as IdxSize), value)
         }
@@ -144,6 +141,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
         let mut validity = MutableBitmap::with_capacity(self.len());
 
         for a in self.downcast_iter() {
+            let a = a.to_flat();
             values.extend_from_bitmap(a.values());
             if let Some(v) = a.validity() {
                 validity.extend_from_bitmap(v)
@@ -172,14 +170,14 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
             None
         };
 
-        let arr = BooleanArray::from_data_default(values.into(), validity);
+        let length = self.len();
+        let arr = PlBooleanArray::new(values.into(), length, validity.map(PlBitmap::from_bitmap));
         Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<bool>) -> PolarsResult<Self> {
         let mask = mask.rechunk();
-        let mask = mask.downcast_as_array();
-        let mask = mask.true_and_valid();
+        let mask = true_and_valid(mask.downcast_as_array());
         let iter = mask.true_idx_iter();
         self.scatter_single(iter.map(|v| v as IdxSize), value)
     }

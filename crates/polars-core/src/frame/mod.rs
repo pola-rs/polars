@@ -3,7 +3,6 @@
 use std::borrow::Cow;
 
 use arrow::datatypes::ArrowSchemaRef;
-use polars_row::ArrayRef;
 use polars_utils::UnitVec;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
@@ -2130,7 +2129,7 @@ impl DataFrame {
 
         // If any of the columns is binview and we don't convert `compat_level` we allow parallelism
         // as we must allocate arrow strings/binaries.
-        let must_convert = compat_level.0 == 0;
+        let must_convert = compat_level == CompatLevel::oldest();
         let parallel = parallel
             && must_convert
             && self.width() > 1
@@ -2721,7 +2720,7 @@ impl Iterator for RecordBatchIter<'_> {
 
 pub struct PhysRecordBatchIter<'a> {
     schema: ArrowSchemaRef,
-    arr_iters: Vec<std::slice::Iter<'a, ArrayRef>>,
+    arr_iters: Vec<std::slice::Iter<'a, PlArrayRef>>,
 }
 
 impl Iterator for PhysRecordBatchIter<'_> {
@@ -2731,7 +2730,13 @@ impl Iterator for PhysRecordBatchIter<'_> {
         let arrs = self
             .arr_iters
             .iter_mut()
-            .map(|phys_iter| phys_iter.next().cloned())
+            // A record batch is made of Arrow arrays, which the chunks cross into — see
+            // `polars_array::arrow::bridge`.
+            .map(|phys_iter| {
+                phys_iter
+                    .next()
+                    .map(|arr| polars_array::arrow::export::to_arrow(&**arr))
+            })
             .collect::<Option<Vec<_>>>()?;
 
         let length = arrs.first().map_or(0, |arr| arr.len());

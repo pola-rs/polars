@@ -15,7 +15,14 @@ use std::collections::LinkedList;
 use std::sync::Mutex;
 
 use arrow::bitmap::Bitmap;
-use arrow::pushable::{NoOption, Pushable};
+// A marker trait, not an array: it is what keeps the `Ptr` impls below from overlapping the
+// `Option<Ptr>` ones, which the compiler cannot rule out on its own.
+use arrow::pushable::NoOption;
+use polars_array::builder::StaticArrayBuilder;
+use polars_array::{
+    PlBinaryViewArrayBuilder, PlBooleanArrayBuilder, PlPrimitiveArrayBuilder,
+    PlUtf8ViewArrayBuilder,
+};
 use rayon::prelude::*;
 
 use super::from_iterator::PolarsAsRef;
@@ -56,20 +63,28 @@ where
         .reduce(LinkedList::new, list_append)
 }
 
-fn collect_into_linked_list<I, P, F>(par_iter: I, identity: F) -> LinkedList<P::Freeze>
+/// Folds `par_iter` into one builder per rayon task, `push`ing each item, and freezes each of them
+/// into a chunk of its own.
+///
+/// The builders are appended to one element at a time, which is the only thing they are asked for
+/// here — hence the closure rather than a trait: what `push` means differs per builder (a
+/// primitive takes the item, a view builder takes a reference into it), and a trait over that
+/// would need one impl per builder and a marker to keep `T` from overlapping `Option<T>`.
+fn collect_into_linked_list<I, B, F, P>(par_iter: I, identity: F, push: P) -> LinkedList<B::Array>
 where
     I: IntoParallelIterator,
-    P: Pushable<I::Item> + Send + Sync,
-    F: Fn() -> P + Sync + Send,
-    P::Freeze: Send,
+    B: StaticArrayBuilder + Send,
+    F: Fn() -> B + Sync + Send,
+    P: Fn(&mut B, I::Item) + Sync + Send,
+    B::Array: Send,
 {
     let it = par_iter.into_par_iter();
-    it.fold(identity, |mut v, item| {
-        v.push(item);
-        v
+    it.fold(identity, |mut builder, item| {
+        push(&mut builder, item);
+        builder
     })
     // The freeze on this line, ensures the null count is done in parallel
-    .map(|p| as_list(p.freeze()))
+    .map(|builder| as_list(builder.freeze()))
     .reduce(LinkedList::new, list_append)
 }
 
@@ -95,21 +110,27 @@ where
     T: PolarsNumericType,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<T::Native>>>(iter: I) -> Self {
-        let chunks = collect_into_linked_list(iter, MutablePrimitiveArray::new);
+        let chunks = collect_into_linked_list(iter, PlPrimitiveArrayBuilder::new, |builder, v| {
+            builder.push(v)
+        });
         Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
     }
 }
 
 impl FromParallelIterator<bool> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = bool>>(iter: I) -> Self {
-        let chunks = collect_into_linked_list(iter, MutableBooleanArray::new);
+        let chunks = collect_into_linked_list(iter, PlBooleanArrayBuilder::new, |builder, v| {
+            builder.push_value(v)
+        });
         Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
     }
 }
 
 impl FromParallelIterator<Option<bool>> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<bool>>>(iter: I) -> Self {
-        let chunks = collect_into_linked_list(iter, MutableBooleanArray::new);
+        let chunks = collect_into_linked_list(iter, PlBooleanArrayBuilder::new, |builder, v| {
+            builder.push(v)
+        });
         Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
     }
 }
@@ -119,7 +140,9 @@ where
     Ptr: PolarsAsRef<str> + Send + Sync + NoOption,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
-        let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
+        let chunks = collect_into_linked_list(iter, PlUtf8ViewArrayBuilder::new, |builder, v| {
+            builder.push_value(v.as_ref())
+        });
         Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
     }
 }
@@ -129,7 +152,9 @@ where
     Ptr: PolarsAsRef<[u8]> + Send + Sync + NoOption,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
-        let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
+        let chunks = collect_into_linked_list(iter, PlBinaryViewArrayBuilder::new, |builder, v| {
+            builder.push_value(v.as_ref())
+        });
         Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
     }
 }
@@ -139,7 +164,9 @@ where
     Ptr: AsRef<str> + Send + Sync,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
+        let chunks = collect_into_linked_list(iter, PlUtf8ViewArrayBuilder::new, |builder, v| {
+            builder.push(v.as_ref().map(AsRef::as_ref))
+        });
         Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
     }
 }
@@ -149,7 +176,9 @@ where
     Ptr: AsRef<[u8]> + Send + Sync,
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
+        let chunks = collect_into_linked_list(iter, PlBinaryViewArrayBuilder::new, |builder, v| {
+            builder.push(v.as_ref().map(AsRef::as_ref))
+        });
         Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
     }
 }
@@ -387,7 +416,7 @@ where
     let validity = (validity.unset_bits() > 0).then_some(validity);
     BooleanChunked::with_chunk(
         PlSmallStr::EMPTY,
-        BooleanArray::new(ArrowDataType::Boolean, values, validity),
+        PlBooleanArray::new(values, len, validity.map(PlBitmap::from_bitmap)),
     )
 }
 

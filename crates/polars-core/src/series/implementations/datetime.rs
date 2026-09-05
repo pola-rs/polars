@@ -177,10 +177,10 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.name()
     }
 
-    fn chunks(&self) -> &Vec<ArrayRef> {
+    fn chunks(&self) -> &Vec<PlArrayRef> {
         self.0.physical().chunks()
     }
-    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<PlArrayRef> {
         self.0.physical_mut().chunks_mut()
     }
 

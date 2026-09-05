@@ -1,8 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::array::{Array, BinaryViewArrayGeneric, BooleanArray, PrimitiveArray, View, ViewType};
+use arrow::array::View;
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
-use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::MutableBitmap;
 use polars_core::utils::arrow::types::NativeType;
 use polars_utils::index::check_bounds;
@@ -34,18 +33,54 @@ impl PolarsOpsNumericType for Float16Type {}
 impl PolarsOpsNumericType for Float32Type {}
 impl PolarsOpsNumericType for Float64Type {}
 
+/// Writes into the values of `arr` where they can be written into, and copies them out first
+/// where they cannot — which is what Arrow's `with_values_mut` did, one level down.
+unsafe fn with_values_mut<T: NativeType, F: FnOnce(&mut [T])>(arr: &mut PlPrimitiveArray<T>, f: F) {
+    let length = arr.len();
+    let Some(values) = arr.flat_values_mut() else {
+        // A scalar chunk holds one slot standing for every element, so it is written out before
+        // anything can be written into it — as a buffer of its own, since the array still holds
+        // the one slot it was written out of. `to_flat` is no help here: an array of a *single*
+        // element reads as scalar however it was built, so writing it out leaves it reading that
+        // way too.
+        let mut owned = match arr.scalar_values() {
+            Some(value) => vec![value; length],
+            // Values that are neither flat nor scalar are no values at all.
+            None => Vec::new(),
+        };
+        f(&mut owned);
+        let validity = arr.validity().map(PlBitmap::from);
+        // SAFETY: the buffer written out holds one slot per element, and the mask is the one the
+        // array already carried.
+        *arr = unsafe { PlPrimitiveArray::new_unchecked(Buffer::from(owned), length, validity) };
+        return;
+    };
+
+    match values.get_mut_slice() {
+        Some(slice) => f(slice),
+        None => {
+            // Something else reads these values, so they are copied before being written.
+            let mut owned = values.as_slice().to_vec();
+            f(&mut owned);
+            *values = Buffer::from(owned);
+        },
+    }
+}
+
 unsafe fn scatter_primitive_impl<V, T: NativeType>(
     set_values: V,
-    arr: &mut PrimitiveArray<T>,
+    arr: &mut PlPrimitiveArray<T>,
     idx: &[IdxSize],
 ) where
     V: IntoIterator<Item = Option<T>>,
 {
     let mut values_iter = set_values.into_iter();
+    let length = arr.len();
 
-    if let Some(validity) = arr.take_validity() {
-        let mut mut_validity = validity.make_mut();
-        arr.with_values_mut(|cur_values| {
+    if let Some(validity) = arr.validity() {
+        // A scalar mask stands for one bit per element, which `to_flat` resolves.
+        let mut mut_validity = validity.to_flat().into_owned().make_mut();
+        with_values_mut(arr, |cur_values| {
             for (idx, val) in idx.iter().zip(&mut values_iter) {
                 match val {
                     Some(value) => {
@@ -56,10 +91,10 @@ unsafe fn scatter_primitive_impl<V, T: NativeType>(
                 }
             }
         });
-        arr.set_validity(mut_validity.into())
+        arr.set_validity(Some(PlBitmap::from_bitmap(mut_validity.into())))
     } else {
         let mut null_idx = vec![];
-        arr.with_values_mut(|cur_values| {
+        with_values_mut(arr, |cur_values| {
             for (idx, val) in idx.iter().zip(values_iter) {
                 match val {
                     Some(value) => *cur_values.get_unchecked_mut(*idx as usize) = value,
@@ -72,25 +107,66 @@ unsafe fn scatter_primitive_impl<V, T: NativeType>(
 
         // Only make a validity bitmap when null values are set.
         if !null_idx.is_empty() {
-            let mut validity = MutableBitmap::with_capacity(arr.len());
-            validity.extend_constant(arr.len(), true);
+            let mut validity = MutableBitmap::with_capacity(length);
+            validity.extend_constant(length, true);
             for idx in null_idx {
                 validity.set_unchecked(idx as usize, false)
             }
-            arr.set_validity(Some(validity.into()))
+            arr.set_validity(Some(PlBitmap::from_bitmap(validity.into())))
         }
     }
 }
 
-unsafe fn scatter_bool_impl<V>(set_values: V, arr: &mut BooleanArray, idx: &[IdxSize])
+/// Writes into the values of `arr` where they can be written into, and copies them out first
+/// where they cannot — the boolean counterpart of [`with_values_mut`].
+///
+/// A bitmap is shared rather than written into, so the bits are taken out of the array,
+/// made mutable, and put back: `make_mut` copies them only when something else still reads them.
+fn with_bool_values_mut<F: FnOnce(&mut MutableBitmap)>(arr: &mut PlBooleanArray, f: F) {
+    let length = arr.len();
+
+    let values = match arr.flat_values_mut() {
+        Some(values) => std::mem::take(values),
+        None => {
+            // A scalar chunk holds one bit standing for every element, so it is written out before
+            // anything can be written into it — as a bitmap of its own, for the reason given in
+            // `with_values_mut`.
+            let mut values = MutableBitmap::new();
+            if let Some(value) = arr.scalar_values() {
+                values.extend_constant(length, value);
+            }
+            f(&mut values);
+            let validity = arr.validity().map(PlBitmap::from);
+            // SAFETY: the bitmap written out holds one bit per element — `f` may only write over
+            // the bits, not add or drop any — and the mask is the one the array already carried.
+            *arr = unsafe { PlBooleanArray::new_unchecked(values.into(), length, validity) };
+            return;
+        },
+    };
+
+    let mut values = values.make_mut();
+    f(&mut values);
+    assert_eq!(
+        values.len(),
+        length,
+        "writing into the values of an array cannot change how many elements it has",
+    );
+    // The slot the values were taken out of is the one they go back into: nothing between the two
+    // reads the array.
+    *arr.flat_values_mut().unwrap() = values.into();
+}
+
+unsafe fn scatter_bool_impl<V>(set_values: V, arr: &mut PlBooleanArray, idx: &[IdxSize])
 where
     V: IntoIterator<Item = Option<bool>>,
 {
     let mut values_iter = set_values.into_iter();
+    let length = arr.len();
 
-    if let Some(validity) = arr.take_validity() {
-        let mut mut_validity = validity.make_mut();
-        arr.apply_values_mut(|cur_values| {
+    if let Some(validity) = arr.validity() {
+        // A scalar mask stands for one bit per element, which `to_flat` resolves.
+        let mut mut_validity = validity.to_flat().into_owned().make_mut();
+        with_bool_values_mut(arr, |cur_values| {
             for (idx, val) in idx.iter().zip(&mut values_iter) {
                 match val {
                     Some(value) => {
@@ -101,10 +177,10 @@ where
                 }
             }
         });
-        arr.set_validity(mut_validity.into())
+        arr.set_validity(Some(PlBitmap::from_bitmap(mut_validity.into())))
     } else {
         let mut null_idx = vec![];
-        arr.apply_values_mut(|cur_values| {
+        with_bool_values_mut(arr, |cur_values| {
             for (idx, val) in idx.iter().zip(values_iter) {
                 match val {
                     Some(value) => cur_values.set_unchecked(*idx as usize, value),
@@ -117,34 +193,78 @@ where
 
         // Only make a validity bitmap when null values are set.
         if !null_idx.is_empty() {
-            let mut validity = MutableBitmap::with_capacity(arr.len());
-            validity.extend_constant(arr.len(), true);
+            let mut validity = MutableBitmap::with_capacity(length);
+            validity.extend_constant(length, true);
             for idx in null_idx {
                 validity.set_unchecked(idx as usize, false)
             }
-            arr.set_validity(Some(validity.into()))
+            arr.set_validity(Some(PlBitmap::from_bitmap(validity.into())))
         }
     }
 }
 
-unsafe fn scatter_binview_impl<'a, V, T: ViewType + ?Sized>(
+/// Writes into the views of `arr` where they can be written into, and copies them out first where
+/// they cannot — the view counterpart of [`with_values_mut`].
+///
+/// # Safety
+/// Every view left behind must read bytes that the array's buffers hold.
+unsafe fn with_views_mut<F: FnOnce(&mut [View])>(arr: &mut PlBinaryViewArray, f: F) {
+    if arr.views_are_scalar() {
+        // A scalar chunk holds one view standing for every element, so it is written out before
+        // anything can be written into it.
+        let length = arr.len();
+        let buffers = arr.data_buffers().clone();
+        let validity = arr.validity().map(PlBitmap::from);
+
+        // Written out as a buffer of its own, for the reason given in `with_values_mut`.
+        let mut owned = match arr.scalar_views() {
+            Some(view) => vec![view; length],
+            // Views that are neither flat nor scalar are no views at all.
+            None => Vec::new(),
+        };
+        f(&mut owned);
+
+        // SAFETY: the buffer written out holds one view per element, the buffers are the ones the
+        // views were read against, and the caller owes that `f` left every view reading them.
+        *arr = unsafe {
+            PlBinaryViewArray::new_unchecked(Buffer::from(owned), buffers, length, validity)
+        };
+        return;
+    }
+
+    // SAFETY: the caller owes that `f` leaves every view reading the bytes the buffers hold.
+    let views = unsafe { arr.flat_views_mut() }.unwrap();
+    match views.get_mut_slice() {
+        Some(slice) => f(slice),
+        None => {
+            // Something else reads these views, so they are copied before being written.
+            let mut owned = views.as_slice().to_vec();
+            f(&mut owned);
+            *views = Buffer::from(owned);
+        },
+    }
+}
+
+unsafe fn scatter_binview_impl<'a, V, T>(
     set_values: V,
-    arr: &mut BinaryViewArrayGeneric<T>,
+    arr: &mut PlBinaryViewArray,
     idx: &[IdxSize],
 ) where
     V: IntoIterator<Item = Option<&'a T>>,
+    T: AsRef<[u8]> + ?Sized + 'a,
 {
     let mut values_iter = set_values.into_iter();
+    let length = arr.len();
     let buffer_offset = arr.data_buffers().len() as u32;
     let mut new_buffers = Vec::new();
 
-    if let Some(validity) = arr.take_validity() {
-        let mut mut_validity = validity.make_mut();
-        arr.with_views_mut(|views| {
+    if let Some(validity) = arr.validity() {
+        // A scalar mask stands for one bit per element, which `to_flat` resolves.
+        let mut mut_validity = validity.to_flat().into_owned().make_mut();
+        with_views_mut(arr, |views| {
             for (idx, val) in idx.iter().zip(&mut values_iter) {
                 if let Some(v) = val {
-                    let view =
-                        View::new_with_buffers(v.to_bytes(), buffer_offset, &mut new_buffers);
+                    let view = View::new_with_buffers(v.as_ref(), buffer_offset, &mut new_buffers);
                     *views.get_unchecked_mut(*idx as usize) = view;
                     mut_validity.set_unchecked(*idx as usize, true);
                 } else {
@@ -152,14 +272,13 @@ unsafe fn scatter_binview_impl<'a, V, T: ViewType + ?Sized>(
                 }
             }
         });
-        arr.set_validity(mut_validity.into())
+        arr.set_validity(Some(PlBitmap::from_bitmap(mut_validity.into())))
     } else {
         let mut null_idx = vec![];
-        arr.with_views_mut(|views| {
+        with_views_mut(arr, |views| {
             for (idx, val) in idx.iter().zip(values_iter) {
                 if let Some(v) = val {
-                    let view =
-                        View::new_with_buffers(v.to_bytes(), buffer_offset, &mut new_buffers);
+                    let view = View::new_with_buffers(v.as_ref(), buffer_offset, &mut new_buffers);
                     *views.get_unchecked_mut(*idx as usize) = view;
                 } else {
                     null_idx.push(*idx);
@@ -169,18 +288,21 @@ unsafe fn scatter_binview_impl<'a, V, T: ViewType + ?Sized>(
 
         // Only make a validity bitmap when null values are set.
         if !null_idx.is_empty() {
-            let mut validity = MutableBitmap::with_capacity(arr.len());
-            validity.extend_constant(arr.len(), true);
+            let mut validity = MutableBitmap::with_capacity(length);
+            validity.extend_constant(length, true);
             for idx in null_idx {
                 validity.set_unchecked(idx as usize, false)
             }
-            arr.set_validity(Some(validity.into()))
+            arr.set_validity(Some(PlBitmap::from_bitmap(validity.into())))
         }
     }
 
-    let mut buffers = Buffer::to_vec(core::mem::take(arr.data_buffers_mut()));
+    // The views written above index the buffers past the ones the array already held, which is
+    // what `buffer_offset` counted; appending them leaves every view that was already there
+    // reading what it read.
+    let mut buffers = Buffer::to_vec(core::mem::take(unsafe { arr.data_buffers_mut() }));
     buffers.extend(new_buffers.into_iter().map(Buffer::from));
-    *arr.data_buffers_mut() = Buffer::from(buffers);
+    *unsafe { arr.data_buffers_mut() } = Buffer::from(buffers);
 }
 
 impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T> {
@@ -190,19 +312,17 @@ impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T> {
     {
         check_bounds(idx, self.len() as IdxSize)?;
         let mut ca = std::mem::take(self);
+        ca.rechunk_mut();
+        let name = ca.name().clone();
 
-        // SAFETY: we will not modify the length and we unset the sorted flag,
-        // making sure to update the null count as well.
-        unsafe {
-            ca.rechunk_mut();
-            let arr = ca.downcast_iter_mut().next().unwrap();
-            scatter_primitive_impl(values, arr, idx);
-            let null_count = arr.null_count();
-            ca.set_sorted_flag(IsSorted::Not);
-            ca.set_null_count(null_count);
-        }
+        // TODO(polars-array-scalar): the kernel writes one slot per element, so a scalar chunk is
+        // written out on the way in rather than the one value it stands for being set once.
+        let mut arr = ca.downcast_into_iter().next().unwrap();
 
-        Ok(ca.into_series())
+        unsafe { scatter_primitive_impl(values, &mut arr, idx) };
+
+        let out = ChunkedArray::<T>::with_chunk(name, arr);
+        Ok(out.into_series())
     }
 }
 
@@ -213,17 +333,17 @@ impl<'a> ChunkedSet<&'a [u8]> for &mut BinaryChunked {
     {
         check_bounds(idx, self.len() as IdxSize)?;
         let mut ca = std::mem::take(self);
+        ca.rechunk_mut();
+        let name = ca.name().clone();
 
-        unsafe {
-            ca.rechunk_mut();
-            let arr = ca.downcast_iter_mut().next().unwrap();
-            scatter_binview_impl(values, arr, idx);
-            let null_count = arr.null_count();
-            ca.set_sorted_flag(IsSorted::Not);
-            ca.set_null_count(null_count);
-        }
+        // TODO(polars-array-scalar): the kernel writes one view per element, so a scalar chunk is
+        // written out on the way in rather than the one view it stands for being set once.
+        let mut arr = ca.downcast_into_iter().next().unwrap();
 
-        Ok(ca.into_series())
+        unsafe { scatter_binview_impl(values, &mut arr, idx) };
+
+        let out = BinaryChunked::with_chunk(name, arr);
+        Ok(out.into_series())
     }
 }
 
@@ -234,17 +354,23 @@ impl<'a> ChunkedSet<&'a str> for &mut StringChunked {
     {
         check_bounds(idx, self.len() as IdxSize)?;
         let mut ca = std::mem::take(self);
+        ca.rechunk_mut();
+        let name = ca.name().clone();
 
-        unsafe {
-            ca.rechunk_mut();
-            let arr = ca.downcast_iter_mut().next().unwrap();
-            scatter_binview_impl(values, arr, idx);
-            let null_count = arr.null_count();
-            ca.set_sorted_flag(IsSorted::Not);
-            ca.set_null_count(null_count);
-        }
+        // TODO(polars-array-scalar): the kernel writes one view per element, so a scalar chunk is
+        // written out on the way in rather than the one view it stands for being set once.
+        //
+        // The strings are scattered into the array as the bytes they are, which is why it is the
+        // binary view underneath that the kernel writes into.
+        let mut arr = ca.downcast_into_iter().next().unwrap().into_binview();
 
-        Ok(ca.into_series())
+        unsafe { scatter_binview_impl(values, &mut arr, idx) };
+
+        // SAFETY: every element left in the array is either one that was already valid UTF-8 or
+        // one of the `&str`s just written over it.
+        let arr = unsafe { PlUtf8ViewArray::from_binview_unchecked(arr) };
+        let out = StringChunked::with_chunk(name, arr);
+        Ok(out.into_series())
     }
 }
 impl ChunkedSet<bool> for &mut BooleanChunked {
@@ -254,16 +380,205 @@ impl ChunkedSet<bool> for &mut BooleanChunked {
     {
         check_bounds(idx, self.len() as IdxSize)?;
         let mut ca = std::mem::take(self);
+        ca.rechunk_mut();
+        let name = ca.name().clone();
 
-        unsafe {
-            ca.rechunk_mut();
-            let arr = ca.downcast_iter_mut().next().unwrap();
-            scatter_bool_impl(values, arr, idx);
-            let null_count = arr.null_count();
-            ca.set_sorted_flag(IsSorted::Not);
-            ca.set_null_count(null_count);
-        }
+        // TODO(polars-array-scalar): the kernel writes one bit per element, so a scalar chunk is
+        // written out on the way in rather than the one value it stands for being set once.
+        let mut arr = ca.downcast_into_iter().next().unwrap();
 
-        Ok(ca.into_series())
+        unsafe { scatter_bool_impl(values, &mut arr, idx) };
+
+        let out = BooleanChunked::with_chunk(name, arr);
+        Ok(out.into_series())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn idx(idx: &[u32]) -> Vec<IdxSize> {
+        idx.iter().map(|i| *i as IdxSize).collect()
+    }
+
+    /// Writing into an array that has no mask only grows one when a null is actually set.
+    #[test]
+    fn scattering_into_a_fully_valid_primitive() {
+        let mut ca = Int32Chunked::new("a".into(), &[1, 2, 3, 4]);
+        let out = (&mut ca)
+            .scatter(&idx(&[1, 3]), [Some(20), Some(40)])
+            .unwrap();
+        assert_eq!(
+            out.i32().unwrap().iter().collect::<Vec<_>>(),
+            [Some(1), Some(20), Some(3), Some(40)],
+        );
+
+        let mut ca = Int32Chunked::new("a".into(), &[1, 2, 3, 4]);
+        let out = (&mut ca).scatter(&idx(&[0, 2]), [None, Some(30)]).unwrap();
+        assert_eq!(
+            out.i32().unwrap().iter().collect::<Vec<_>>(),
+            [None, Some(2), Some(30), Some(4)],
+        );
+    }
+
+    /// Writing into an array that already has a mask has to set bits both ways.
+    #[test]
+    fn scattering_over_an_existing_mask_sets_bits_both_ways() {
+        let mut ca = Int32Chunked::new("a".into(), &[Some(1), None, Some(3), None]);
+        let out = (&mut ca).scatter(&idx(&[1, 2]), [Some(20), None]).unwrap();
+        assert_eq!(
+            out.i32().unwrap().iter().collect::<Vec<_>>(),
+            // index 1 was null and became valid; index 2 was valid and became null.
+            [Some(1), Some(20), None, None],
+        );
+    }
+
+    #[test]
+    fn scattering_booleans_and_strings() {
+        let mut ca = BooleanChunked::new("a".into(), &[true, false, true]);
+        let out = (&mut ca)
+            .scatter(&idx(&[0, 2]), [Some(false), None])
+            .unwrap();
+        assert_eq!(
+            out.bool().unwrap().iter().collect::<Vec<_>>(),
+            [Some(false), Some(false), None],
+        );
+
+        let mut ca = StringChunked::new("a".into(), &["a", "bb", "ccc"]);
+        let out = (&mut ca).scatter(&idx(&[1]), [Some("zzzz")]).unwrap();
+        assert_eq!(
+            out.str().unwrap().iter().collect::<Vec<_>>(),
+            [Some("a"), Some("zzzz"), Some("ccc")],
+        );
+    }
+
+    /// Scatter writes into the values that are already there — it sets a handful of slots, so
+    /// copying the whole buffer would turn an `O(idx)` write into an `O(len)` one.
+    #[test]
+    fn scattering_writes_into_the_existing_allocation() {
+        let values_ptr = |s: &Series| {
+            s.i32()
+                .unwrap()
+                .downcast_iter()
+                .next()
+                .unwrap()
+                .flat_values()
+                .unwrap()
+                .as_slice()
+                .as_ptr()
+        };
+
+        let mut ca = Int32Chunked::from_vec("a".into(), (0..64).collect());
+        let before = ca
+            .downcast_iter()
+            .next()
+            .unwrap()
+            .flat_values()
+            .unwrap()
+            .as_slice()
+            .as_ptr();
+
+        let out = (&mut ca)
+            .scatter(&idx(&[7, 40]), [Some(-7), Some(-40)])
+            .unwrap();
+
+        assert_eq!(values_ptr(&out), before);
+        assert_eq!(out.i32().unwrap().get(7), Some(-7));
+        assert_eq!(out.i32().unwrap().get(40), Some(-40));
+        assert_eq!(out.i32().unwrap().get(8), Some(8));
+    }
+
+    /// The same as above for strings: the views are written into rather than copied out, which is
+    /// what the crossing into an Arrow array used to be there to allow.
+    #[test]
+    fn scattering_strings_writes_into_the_existing_views() {
+        let mut ca = StringChunked::from_iter_values(
+            "a".into(),
+            (0..64).map(|i| format!("value number {i}")),
+        );
+        let before = ca
+            .downcast_iter()
+            .next()
+            .unwrap()
+            .flat_views()
+            .unwrap()
+            .as_slice()
+            .as_ptr();
+
+        let out = (&mut ca).scatter(&idx(&[7]), [Some("scattered")]).unwrap();
+
+        let after = out
+            .str()
+            .unwrap()
+            .downcast_iter()
+            .next()
+            .unwrap()
+            .flat_views()
+            .unwrap()
+            .as_slice()
+            .as_ptr();
+        assert_eq!(after, before);
+        assert_eq!(out.str().unwrap().get(7), Some("scattered"));
+        assert_eq!(out.str().unwrap().get(8), Some("value number 8"));
+    }
+
+    /// A scalar chunk holds one slot standing for every element, so it has to be written out
+    /// before a slot of it can be set — for every representation the kernels take.
+    #[test]
+    fn scattering_into_a_scalar_chunk() {
+        let mut ca = BooleanChunked::full("a".into(), true, 4);
+        let out = (&mut ca).scatter(&idx(&[1]), [Some(false)]).unwrap();
+        assert_eq!(
+            out.bool().unwrap().iter().collect::<Vec<_>>(),
+            [Some(true), Some(false), Some(true), Some(true)],
+        );
+
+        let mut ca = StringChunked::full("a".into(), "x", 4);
+        let out = (&mut ca).scatter(&idx(&[2]), [Some("yy")]).unwrap();
+        assert_eq!(
+            out.str().unwrap().iter().collect::<Vec<_>>(),
+            [Some("x"), Some("x"), Some("yy"), Some("x")],
+        );
+
+        let mut ca = Int32Chunked::full("a".into(), 1, 4);
+        let out = (&mut ca).scatter(&idx(&[0]), [None]).unwrap();
+        assert_eq!(
+            out.i32().unwrap().iter().collect::<Vec<_>>(),
+            [None, Some(1), Some(1), Some(1)],
+        );
+    }
+
+    /// An array of a single element reads as scalar whichever way it was built — its values
+    /// buffer holds one slot, and so does a scalar one — so the write-out path has to hold for an
+    /// array that is really flat and whose buffer the array itself still holds.
+    #[test]
+    fn scattering_into_a_one_element_chunk() {
+        let mut ca = Int32Chunked::new("a".into(), &[Some(1)]);
+        let out = (&mut ca).scatter(&idx(&[0]), [None]).unwrap();
+        assert_eq!(out.i32().unwrap().iter().collect::<Vec<_>>(), [None]);
+
+        let mut ca = Int32Chunked::new("a".into(), &[None]);
+        let out = (&mut ca).scatter(&idx(&[0]), [Some(5)]).unwrap();
+        assert_eq!(out.i32().unwrap().iter().collect::<Vec<_>>(), [Some(5)]);
+
+        let mut ca = StringChunked::new("a".into(), &[Some("a")]);
+        let out = (&mut ca).scatter(&idx(&[0]), [Some("bb")]).unwrap();
+        assert_eq!(out.str().unwrap().iter().collect::<Vec<_>>(), [Some("bb")]);
+
+        let mut ca = BooleanChunked::new("a".into(), &[true]);
+        let out = (&mut ca).scatter(&idx(&[0]), [Some(false)]).unwrap();
+        assert_eq!(
+            out.bool().unwrap().iter().collect::<Vec<_>>(),
+            [Some(false)]
+        );
+    }
+
+    /// The trait's stated invariant: a failed scatter leaves the array as it was.
+    #[test]
+    fn an_out_of_bounds_index_leaves_the_array_alone() {
+        let mut ca = Int32Chunked::new("a".into(), &[1, 2, 3]);
+        assert!((&mut ca).scatter(&idx(&[9]), [Some(90)]).is_err());
+        assert_eq!(ca.iter().collect::<Vec<_>>(), [Some(1), Some(2), Some(3)]);
     }
 }

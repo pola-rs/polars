@@ -1,6 +1,5 @@
 use std::hash::Hash;
 
-use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::*;
@@ -36,8 +35,7 @@ where
     for idx in unique_idx {
         unsafe { values.set_unchecked(idx as usize, setter) }
     }
-    let arr = BooleanArray::from_data_default(values.into(), None);
-    BooleanChunked::with_chunk(ca.name().clone(), arr)
+    BooleanChunked::from_bitmap(ca.name().clone(), values.into())
 }
 
 fn is_unique_nested(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {

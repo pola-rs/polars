@@ -7,6 +7,10 @@ use crate::comparisons::dyn_array::{array_tot_eq_missing_kernel, array_tot_ne_mi
 impl<K: DictionaryKey> TotalEqKernel for DictionaryArray<K> {
     type Scalar = Box<dyn Array>;
 
+    fn validity_mask(&self) -> Option<&Bitmap> {
+        self.validity()
+    }
+
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
         assert_eq!(self.len(), other.len());
 

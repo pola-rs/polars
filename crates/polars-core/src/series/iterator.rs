@@ -99,54 +99,28 @@ impl Series {
         let arr = &*self.chunks()[0];
 
         if phys_dtype.is_primitive_numeric() {
-            if arr.null_count() == 0 {
-                with_match_physical_numeric_type!(phys_dtype, |$T| {
-                        let arr = arr.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
-                        let values = arr.values().as_slice();
-                        Box::new(values.iter().map(|&value| AnyValue::from(value))) as Box<dyn ExactSizeIterator<Item=AnyValue<'_>> + '_>
-                })
-            } else {
-                with_match_physical_numeric_type!(phys_dtype, |$T| {
-                        let arr = arr.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
-                        Box::new(arr.iter().map(|value| {
-
-                        match value {
-                            Some(value) => AnyValue::from(*value),
-                            None => AnyValue::Null
-                        }
-
-                    })) as Box<dyn ExactSizeIterator<Item=AnyValue<'_>> + '_>
-                })
-            }
+            with_match_physical_numeric_type!(phys_dtype, |$T| {
+                let arr = arr.as_any().downcast_ref::<PlPrimitiveArray<$T>>().unwrap();
+                Box::new(arr.iter().map(|value| match value {
+                    Some(value) => AnyValue::from(value),
+                    None => AnyValue::Null,
+                })) as Box<dyn ExactSizeIterator<Item=AnyValue<'_>> + '_>
+            })
         } else {
             match dtype {
                 DataType::String => {
-                    let arr = arr.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-                    if arr.null_count() == 0 {
-                        Box::new(arr.values_iter().map(AnyValue::String))
-                            as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
-                    } else {
-                        let zipvalid = arr.iter();
-                        Box::new(zipvalid.unwrap_optional().map(|v| match v {
-                            Some(value) => AnyValue::String(value),
-                            None => AnyValue::Null,
-                        }))
-                            as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
-                    }
+                    let arr = arr.as_any().downcast_ref::<PlUtf8ViewArray>().unwrap();
+                    Box::new(arr.iter().map(|value| match value {
+                        Some(value) => AnyValue::String(value),
+                        None => AnyValue::Null,
+                    })) as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
                 },
                 DataType::Boolean => {
-                    let arr = arr.as_any().downcast_ref::<BooleanArray>().unwrap();
-                    if arr.null_count() == 0 {
-                        Box::new(arr.values_iter().map(AnyValue::Boolean))
-                            as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
-                    } else {
-                        let zipvalid = arr.iter();
-                        Box::new(zipvalid.unwrap_optional().map(|v| match v {
-                            Some(value) => AnyValue::Boolean(value),
-                            None => AnyValue::Null,
-                        }))
-                            as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
-                    }
+                    let arr = arr.as_any().downcast_ref::<PlBooleanArray>().unwrap();
+                    Box::new(arr.iter().map(|value| match value {
+                        Some(value) => AnyValue::Boolean(value),
+                        None => AnyValue::Null,
+                    })) as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
                 },
                 _ => Box::new(self.iter()),
             }
@@ -155,7 +129,7 @@ impl Series {
 }
 
 pub struct SeriesIter<'a> {
-    arrays: &'a [Box<dyn Array>],
+    arrays: &'a [PlArrayRef],
     dtype: &'a DataType,
     idx_in_cur_arr: usize,
     cur_arr_len: usize,
@@ -220,5 +194,48 @@ mod test {
         let a: Series = data.clone().into_iter().collect();
         let b = Series::new("".into(), data);
         assert_eq!(a, b);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::prelude::*;
+
+    /// `phys_iter` special-cases the numeric, string and boolean chunks, and those three arms had
+    /// no test at all — they were downcasting to Arrow arrays, which a chunk has not been for some
+    /// time, so every one of them would have panicked on the first call.
+    #[test]
+    fn phys_iter_reads_every_special_cased_chunk() {
+        let s = Series::new("a".into(), [Some(1i32), None, Some(3)]);
+        assert_eq!(
+            s.phys_iter().collect::<Vec<_>>(),
+            [AnyValue::Int32(1), AnyValue::Null, AnyValue::Int32(3)],
+        );
+
+        let s = Series::new("a".into(), [Some("x"), None]);
+        assert_eq!(
+            s.phys_iter().collect::<Vec<_>>(),
+            [AnyValue::String("x"), AnyValue::Null],
+        );
+
+        let s = Series::new("a".into(), [Some(true), None]);
+        assert_eq!(
+            s.phys_iter().collect::<Vec<_>>(),
+            [AnyValue::Boolean(true), AnyValue::Null],
+        );
+
+        // A chunk that repeats one value has no slot per element, which is the other half of what
+        // the Arrow downcast used to assume.
+        let s = Series::new_null("a".into(), 2);
+        assert_eq!(
+            s.phys_iter().collect::<Vec<_>>(),
+            [AnyValue::Null, AnyValue::Null],
+        );
+
+        let s = BooleanChunked::full("a".into(), true, 2).into_series();
+        assert_eq!(
+            s.phys_iter().collect::<Vec<_>>(),
+            [AnyValue::Boolean(true), AnyValue::Boolean(true)],
+        );
     }
 }

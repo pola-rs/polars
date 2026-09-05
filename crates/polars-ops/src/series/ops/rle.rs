@@ -78,7 +78,20 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
 
     assert!(!s_neq.has_nulls());
     for arr in s_neq.downcast_iter() {
-        let mut values = arr.values().clone();
+        // A scalar chunk stands for one bit at every element: either nothing in it differs from
+        // the element before, and the run carries on through the whole chunk, or everything does
+        // and every element opens a run of its own. Neither needs the bits written out.
+        if let Some(differs) = arr.values().scalar_value() {
+            if differs {
+                lengths.resize(lengths.len() + arr.len(), 1);
+            } else {
+                *lengths.last_mut().unwrap() += arr.len() as IdxSize;
+            }
+            continue;
+        }
+
+        // What is left holds one bit per element already, so this borrows rather than writes out.
+        let mut values = arr.values().to_flat().into_owned();
         while !values.is_empty() {
             // @NOTE: This `as IdxSize` is safe because it is less than or equal to the a ChunkedArray
             // length.

@@ -24,7 +24,7 @@ fn join_literal(
                 return None;
             }
             for arr in ca.downcast_iter() {
-                for val in arr.non_null_values_iter() {
+                for val in arr.iter().flatten() {
                     buf.write_str(val).unwrap();
                     buf.write_str(separator).unwrap();
                 }
@@ -68,7 +68,7 @@ fn join_many(
                     }
 
                     for arr in ca.downcast_iter() {
-                        for val in arr.non_null_values_iter() {
+                        for val in arr.iter().flatten() {
                             buf.write_str(val).unwrap();
                             buf.write_str(separator).unwrap();
                         }

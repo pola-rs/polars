@@ -1,7 +1,8 @@
-use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::types::NativeType;
 use num_traits::Zero;
+use polars_array::PlPrimitiveArray;
+use polars_array::bitmap::PlBitmap;
 use polars_compute::arithmetic::pl_num::PlNumArithmetic;
 use polars_compute::sum::WrappingAdd;
 use polars_core::prelude::*;
@@ -115,24 +116,31 @@ fn dot_primitive<T>(
 where
     T: NativeType + PlNumArithmetic + SumCast,
     T::Sum: WrappingAdd,
+    // Every `SumCast` impl sums into a type that stands for itself; saying so lets the chunk of
+    // sums be read as a `ChunkedArray` of that type.
+    <T::Sum as NumericNative>::PolarsType: PolarsNumericType<Native = T::Sum>,
 {
     let lhs = lhs.rechunk();
     let rhs = rhs.rechunk();
-    let lhs_array = lhs.downcast_get(0).unwrap();
-    let rhs_array = rhs.downcast_get(0).unwrap();
+    // TODO(polars-array-scalar): both sides are read as slices, so a scalar chunk is written out
+    // here rather than the single row it stands for being multiplied out once.
+    let lhs_array = lhs.downcast_get(0).unwrap().to_flat();
+    let rhs_array = rhs.downcast_get(0).unwrap().to_flat();
     let lhs_values = lhs_array
         .values()
         .as_any()
-        .downcast_ref::<PrimitiveArray<T>>()
-        .unwrap();
+        .downcast_ref::<PlPrimitiveArray<T>>()
+        .unwrap()
+        .to_flat();
     let rhs_values = rhs_array
         .values()
         .as_any()
-        .downcast_ref::<PrimitiveArray<T>>()
-        .unwrap();
+        .downcast_ref::<PlPrimitiveArray<T>>()
+        .unwrap()
+        .to_flat();
 
-    let lhs_slice = lhs_values.values().as_slice();
-    let rhs_slice = rhs_values.values().as_slice();
+    let lhs_slice = lhs_values.as_slice();
+    let rhs_slice = rhs_values.as_slice();
     let lhs_inner_validity = lhs_values.validity();
     let rhs_inner_validity = rhs_values.validity();
     let width = lhs.width();
@@ -162,8 +170,15 @@ where
     // Child validity only filters coordinate pairs inside `DotRowReducer`.
     if lhs_array.validity().is_none() && rhs_array.validity().is_none() {
         let output = dot_outer_all_valid(&row_reducer, lhs_broadcast, rhs_broadcast, output_len);
-        let output = PrimitiveArray::from_data_default(output.into(), None);
-        return Series::try_from((lhs.name().clone(), vec![Box::new(output) as ArrayRef]));
+        let output = PlPrimitiveArray::from_vec(output);
+        // The sum of a `T` is a `T::Sum`, and that is the type of the chunk just built.
+        return Ok(
+            ChunkedArray::<<T::Sum as NumericNative>::PolarsType>::with_chunk(
+                lhs.name().clone(),
+                output,
+            )
+            .into_series(),
+        );
     }
 
     let mut output = Vec::with_capacity(output_len);
@@ -189,9 +204,19 @@ where
         output.push(unsafe { row_reducer.dot_row(lhs_idx, rhs_idx) });
     }
 
-    let output =
-        PrimitiveArray::from_data_default(output.into(), output_validity.into_opt_validity());
-    Series::try_from((lhs.name().clone(), vec![Box::new(output) as ArrayRef]))
+    let output = PlPrimitiveArray::from_vec(output).with_validity(
+        output_validity
+            .into_opt_validity()
+            .map(PlBitmap::from_bitmap),
+    );
+    // The sum of a `T` is a `T::Sum`, and that is the type of the chunk just built.
+    Ok(
+        ChunkedArray::<<T::Sum as NumericNative>::PolarsType>::with_chunk(
+            lhs.name().clone(),
+            output,
+        )
+        .into_series(),
+    )
 }
 
 fn array_dot_kernel(dtype: &DataType) -> Option<ArrayDotKernel> {

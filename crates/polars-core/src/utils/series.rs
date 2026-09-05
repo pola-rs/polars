@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use polars_compute::find_validity_mismatch::find_validity_mismatch;
-use polars_compute::gather::take_unchecked;
+use polars_compute::gather::take_arrow_unchecked;
 
 use crate::prelude::*;
 use crate::series::amortized_iter::AmortSeries;
@@ -128,15 +128,23 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
 }
 
 pub fn handle_array_casting_failures(input: &dyn Array, output: &dyn Array) -> PolarsResult<()> {
+    // Both sides arrive as Arrow, which is what the boundaries this runs behind hand out; the
+    // kernel reads the arrays of `polars-array`, so they cross over. That is a handover of the
+    // backing buffers, and it only happens once a cast has already failed.
+    let (pl_input, pl_output) = (
+        polars_array::arrow::import::from_arrow(input),
+        polars_array::arrow::import::from_arrow(output),
+    );
+
     let mut idxs = Vec::new();
-    find_validity_mismatch(input, output, &mut idxs);
+    find_validity_mismatch(&*pl_input, &*pl_output, &mut idxs);
     if idxs.is_empty() {
         return Ok(());
     }
 
     let num_failures = idxs.len();
     let failures = PrimitiveArray::with_slice(&idxs[..num_failures.min(10)], |idxs| unsafe {
-        take_unchecked(input, &idxs)
+        take_arrow_unchecked(input, &idxs)
     });
 
     polars_bail!(

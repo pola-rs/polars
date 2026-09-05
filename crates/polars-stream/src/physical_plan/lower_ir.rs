@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
-use arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
-use arrow::datatypes::ArrowDataType;
 use parking_lot::Mutex;
+use polars_array::PlUtf8ViewArrayBuilder;
+use polars_array::builder::StaticArrayBuilder;
 use polars_async::executor::ALLOW_RAYON_THREADS;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
-use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet};
+use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet, StringChunked};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
-use polars_core::series::Series;
 use polars_core::{SchemaExtPl, config};
 use polars_error::{PolarsResult, polars_ensure};
 use polars_expr::dispatch::function_expr_to_udf;
@@ -723,7 +722,7 @@ pub fn lower_ir(
                         "non-string dtype for ExpandedPaths scan"
                     );
 
-                    let mut builder = MutableBinaryViewArray::with_capacity(
+                    let mut builder = PlUtf8ViewArrayBuilder::with_capacity(
                         scan_sources.len().wrapping_mul(
                             scan_sources
                                 .first()
@@ -732,13 +731,10 @@ pub fn lower_ir(
                     );
 
                     for source in scan_sources.iter() {
-                        builder.push_value_ignore_validity(source.to_include_path_name());
+                        builder.push_value(source.to_include_path_name());
                     }
 
-                    let array: Utf8ViewArray = builder.freeze_with_dtype(ArrowDataType::Utf8View);
-                    let c = Series::from_arrow(name.clone(), Box::new(array))
-                        .unwrap()
-                        .into_column();
+                    let c = StringChunked::with_chunk(name.clone(), builder.freeze()).into_column();
 
                     DataFrame::new(scan_sources.len(), vec![c]).unwrap()
                 } else {

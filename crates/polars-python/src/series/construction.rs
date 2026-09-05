@@ -99,7 +99,7 @@ impl PySeries {
         let arr = numpy_array_to_arrow(array);
         if nan_is_null {
             py.enter_polars_series(|| {
-                let validity = polars_compute::nan::is_not_nan(arr.values());
+                let validity = polars_compute::nan::is_not_nan_slice(arr.values());
                 Ok(Series::from_array(name.into(), arr.with_validity(validity)))
             })
         } else {
@@ -117,7 +117,7 @@ impl PySeries {
         let arr = numpy_array_to_arrow(array);
         if nan_is_null {
             py.enter_polars_series(|| {
-                let validity = polars_compute::nan::is_not_nan(arr.values());
+                let validity = polars_compute::nan::is_not_nan_slice(arr.values());
                 Ok(Series::from_array(name.into(), arr.with_validity(validity)))
             })
         } else {
@@ -135,7 +135,7 @@ impl PySeries {
         let arr = numpy_array_to_arrow(array);
         if nan_is_null {
             py.enter_polars_series(|| {
-                let validity = polars_compute::nan::is_not_nan(arr.values());
+                let validity = polars_compute::nan::is_not_nan_slice(arr.values());
                 Ok(Series::from_array(name.into(), arr.with_validity(validity)))
             })
         } else {

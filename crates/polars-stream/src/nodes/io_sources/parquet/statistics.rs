@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use arrow::array::{Array, MutablePrimitiveArray, PrimitiveArray, StructArray};
+use arrow::array::{Array, MutablePrimitiveArray, StructArray};
 use arrow::bitmap::Bitmap;
 use arrow::pushable::Pushable;
 use polars_async::executor::{self, TaskPriority};
@@ -365,7 +365,9 @@ fn build_row_index_statistics(
 ) -> StatisticsColumns {
     let mut offset = row_index.offset;
 
-    let null_count = PrimitiveArray::<IdxSize>::full(row_groups.len(), 0, ArrowDataType::IDX_DTYPE);
+    // A row index has no nulls, so its null count is one repeated zero: `IdxCa::full` keeps that
+    // in the scalar representation rather than writing a slot per row group.
+    let null_count = IdxCa::full(PlSmallStr::EMPTY, 0, row_groups.len()).into_column();
 
     let mut min_value = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
     let mut max_value = MutablePrimitiveArray::<IdxSize>::with_capacity(row_groups.len());
@@ -393,6 +395,6 @@ fn build_row_index_statistics(
     StatisticsColumns {
         min: Series::from_array(PlSmallStr::EMPTY, min_value.freeze()).into_column(),
         max: Series::from_array(PlSmallStr::EMPTY, max_value.freeze()).into_column(),
-        null_count: Series::from_array(PlSmallStr::EMPTY, null_count).into_column(),
+        null_count,
     }
 }

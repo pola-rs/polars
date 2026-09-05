@@ -96,7 +96,10 @@ mod inner_mod {
             let len = self.len();
             let arr = ca.downcast_as_array();
             let mut ca = ChunkedArray::<T>::from_slice(PlSmallStr::EMPTY, &[T::Native::zero()]);
-            let ptr = ca.chunks[0].as_mut() as *mut dyn Array as *mut PrimitiveArray<T::Native>;
+            let ptr = ca.chunks[0]
+                .as_any_mut()
+                .downcast_mut::<PlPrimitiveArray<T::Native>>()
+                .unwrap() as *mut PlPrimitiveArray<T::Native>;
             let mut series_container = ca.into_series();
 
             let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name().clone(), self.len());
@@ -115,7 +118,7 @@ mod inner_mod {
                     } else {
                         // SAFETY:
                         // we are in bounds
-                        let arr_window = unsafe { arr.slice_typed_unchecked(start, size) };
+                        let arr_window = unsafe { arr.clone().sliced_unchecked(start, size) };
 
                         // ensure we still meet window size criteria after removing null values
                         if size - arr_window.null_count() < options.min_periods {
@@ -182,7 +185,7 @@ mod inner_mod {
                     } else {
                         // SAFETY:
                         // we are in bounds
-                        let arr_window = unsafe { arr.slice_typed_unchecked(start, size) };
+                        let arr_window = unsafe { arr.clone().sliced_unchecked(start, size) };
 
                         // ensure we still meet window size criteria after removing null values
                         if size - arr_window.null_count() < options.min_periods {

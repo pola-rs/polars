@@ -417,7 +417,15 @@ fn check_cmp<T: NumericNative, Cmp: Fn(&T, &T) -> bool>(
 }
 
 fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOptions) -> bool {
-    if let Ok(vals) = ca.cont_slice() {
+    // A column whose only chunk repeats a single value is sorted whichever way it is read: every
+    // element compares equal to the one before it. Nulls are left to the tail of this function,
+    // which slices them off and comes back here.
+    if ca.null_count() == 0 && ca.scalar_value().is_some() {
+        return true;
+    }
+
+    let flat = ca.to_flat();
+    if let Ok(vals) = flat.cont_slice() {
         let mut previous = vals[0];
         return if options.descending {
             check_cmp(vals, |prev, c| prev.tot_ge(c), &mut previous)
@@ -432,7 +440,7 @@ fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOpt
         } else {
             T::Native::min_value()
         };
-        for arr in ca.downcast_iter() {
+        for arr in flat.flat_chunks() {
             let vals = arr.values();
             let sorted = if options.descending {
                 check_cmp(vals, |prev, c| prev.tot_ge(c), &mut previous)

@@ -1,84 +1,79 @@
-use arrow::array::{Array, PrimitiveArray};
-use arrow::compute::temporal;
-use polars_compute::cast::{CastOptionsImpl, cast};
+use std::borrow::Cow;
+
+use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 #[cfg(feature = "timezones")]
 use polars_ops::chunked_array::datetime::replace_time_zone;
 
 use super::*;
 
-fn cast_and_apply<
-    F: Fn(&dyn Array) -> PolarsResult<PrimitiveArray<T::Native>>,
-    T: PolarsNumericType,
->(
-    ca: &DatetimeChunked,
-    func: F,
-) -> ChunkedArray<T> {
-    let dtype = ca.dtype().to_arrow(CompatLevel::newest());
-    let chunks = ca.physical().downcast_iter().map(|arr| {
-        let arr = cast(
-            arr,
-            &dtype,
-            CastOptionsImpl {
-                wrapped: true,
-                partial: false,
-            },
-        )
-        .unwrap();
-        func(&*arr).unwrap()
-    });
-    ChunkedArray::from_chunk_iter(ca.name().clone(), chunks)
+/// The column read as its local wall time, so that a value can be asked what calendar date and
+/// time it names in its own time zone.
+///
+/// A column with no time zone already is its wall time and is handed back untouched. Stripping one
+/// is always well-defined — it is *adding* a time zone that has to answer for hours that occur
+/// twice or not at all — which is why this cannot fail.
+fn local(ca: &DatetimeChunked) -> Cow<'_, DatetimeChunked> {
+    match ca.dtype() {
+        #[cfg(feature = "timezones")]
+        DataType::Datetime(_, Some(_)) => Cow::Owned(
+            polars_ops::chunked_array::replace_time_zone(
+                ca,
+                None,
+                &StringChunked::new("".into(), ["raise"]),
+                NonExistent::Raise,
+            )
+            .expect("Removing time zone is infallible"),
+        ),
+        _ => Cow::Borrowed(ca),
+    }
+}
+
+/// Extracts one field of the local wall time of every element, with the timestamp unit of the
+/// column picking which of the three extractions is applied.
+macro_rules! extract {
+    ($ca:expr, $ns:ident, $us:ident, $ms:ident) => {{
+        let ca = $ca;
+        let f = match ca.time_unit() {
+            TimeUnit::Nanoseconds => $ns,
+            TimeUnit::Microseconds => $us,
+            TimeUnit::Milliseconds => $ms,
+        };
+        let ca_local = local(ca);
+        unary_elementwise(ca_local.physical(), |opt| opt.and_then(f))
+    }};
 }
 
 pub trait DatetimeMethods: AsDatetime {
     /// Extract month from underlying NaiveDateTime representation.
     /// Returns the year number in the calendar date.
     fn year(&self) -> Int32Chunked {
-        cast_and_apply(self.as_datetime(), temporal::year)
+        extract!(
+            self.as_datetime(),
+            datetime_to_year_ns,
+            datetime_to_year_us,
+            datetime_to_year_ms
+        )
     }
 
     /// Extract year from underlying NaiveDate representation.
     /// Returns whether the year is a leap year.
     fn is_leap_year(&self) -> BooleanChunked {
-        let ca = self.as_datetime();
-        let f = match ca.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_is_leap_year_ns,
-            TimeUnit::Microseconds => datetime_to_is_leap_year_us,
-            TimeUnit::Milliseconds => datetime_to_is_leap_year_ms,
-        };
-        let ca_local = match ca.dtype() {
-            #[cfg(feature = "timezones")]
-            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
-                ca,
-                None,
-                &StringChunked::new("".into(), ["raise"]),
-                NonExistent::Raise,
-            )
-            .expect("Removing time zone is infallible"),
-            _ => ca,
-        };
-        ca_local.physical().apply_kernel_cast::<BooleanType>(&f)
+        extract!(
+            self.as_datetime(),
+            datetime_to_is_leap_year_ns,
+            datetime_to_is_leap_year_us,
+            datetime_to_is_leap_year_ms
+        )
     }
 
     fn iso_year(&self) -> Int32Chunked {
-        let ca = self.as_datetime();
-        let f = match ca.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_iso_year_ns,
-            TimeUnit::Microseconds => datetime_to_iso_year_us,
-            TimeUnit::Milliseconds => datetime_to_iso_year_ms,
-        };
-        let ca_local = match ca.dtype() {
-            #[cfg(feature = "timezones")]
-            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
-                ca,
-                None,
-                &StringChunked::new("".into(), ["raise"]),
-                NonExistent::Raise,
-            )
-            .expect("Removing time zone is infallible"),
-            _ => ca,
-        };
-        ca_local.physical().apply_kernel_cast::<Int32Type>(&f)
+        extract!(
+            self.as_datetime(),
+            datetime_to_iso_year_ns,
+            datetime_to_iso_year_us,
+            datetime_to_iso_year_ms
+        )
     }
 
     /// Extract quarter from underlying NaiveDateTime representation.
@@ -93,42 +88,45 @@ pub trait DatetimeMethods: AsDatetime {
     ///
     /// The return value ranges from 1 to 12.
     fn month(&self) -> Int8Chunked {
-        cast_and_apply(self.as_datetime(), temporal::month)
+        extract!(
+            self.as_datetime(),
+            datetime_to_month_ns,
+            datetime_to_month_us,
+            datetime_to_month_ms
+        )
     }
 
     /// Returns the number of days in the month of the underlying NaiveDateTime
     /// representation.
     fn days_in_month(&self) -> Int8Chunked {
-        let ca = self.as_datetime();
-        let f = match ca.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_days_in_month_ns,
-            TimeUnit::Microseconds => datetime_to_days_in_month_us,
-            TimeUnit::Milliseconds => datetime_to_days_in_month_ms,
-        };
-        let ca_local = match ca.dtype() {
-            #[cfg(feature = "timezones")]
-            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
-                ca,
-                None,
-                &StringChunked::new("".into(), ["raise"]),
-                NonExistent::Raise,
-            )
-            .expect("Removing time zone is infallible"),
-            _ => ca,
-        };
-        ca_local.physical().apply_kernel_cast::<Int8Type>(&f)
+        extract!(
+            self.as_datetime(),
+            datetime_to_days_in_month_ns,
+            datetime_to_days_in_month_us,
+            datetime_to_days_in_month_ms
+        )
     }
 
     /// Extract ISO weekday from underlying NaiveDateTime representation.
     /// Returns the weekday number where monday = 1 and sunday = 7
     fn weekday(&self) -> Int8Chunked {
-        cast_and_apply(self.as_datetime(), temporal::weekday)
+        extract!(
+            self.as_datetime(),
+            datetime_to_weekday_ns,
+            datetime_to_weekday_us,
+            datetime_to_weekday_ms
+        )
     }
 
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
     fn week(&self) -> Int8Chunked {
-        cast_and_apply(self.as_datetime(), temporal::iso_week)
+        extract!(
+            self.as_datetime(),
+            datetime_to_iso_week_ns,
+            datetime_to_iso_week_us,
+            datetime_to_iso_week_ms
+        )
     }
 
     /// Extract day from underlying NaiveDateTime representation.
@@ -136,56 +134,69 @@ pub trait DatetimeMethods: AsDatetime {
     ///
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
     fn day(&self) -> Int8Chunked {
-        cast_and_apply(self.as_datetime(), temporal::day)
+        extract!(
+            self.as_datetime(),
+            datetime_to_day_ns,
+            datetime_to_day_us,
+            datetime_to_day_ms
+        )
     }
 
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
     fn hour(&self) -> Int8Chunked {
-        cast_and_apply(self.as_datetime(), temporal::hour)
+        extract!(
+            self.as_datetime(),
+            datetime_to_hour_ns,
+            datetime_to_hour_us,
+            datetime_to_hour_ms
+        )
     }
 
     /// Extract minute from underlying NaiveDateTime representation.
     /// Returns the minute number from 0 to 59.
     fn minute(&self) -> Int8Chunked {
-        cast_and_apply(self.as_datetime(), temporal::minute)
+        extract!(
+            self.as_datetime(),
+            datetime_to_minute_ns,
+            datetime_to_minute_us,
+            datetime_to_minute_ms
+        )
     }
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the second number from 0 to 59.
     fn second(&self) -> Int8Chunked {
-        cast_and_apply(self.as_datetime(), temporal::second)
+        extract!(
+            self.as_datetime(),
+            datetime_to_second_ns,
+            datetime_to_second_us,
+            datetime_to_second_ms
+        )
     }
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the number of nanoseconds since the whole non-leap second.
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
     fn nanosecond(&self) -> Int32Chunked {
-        cast_and_apply(self.as_datetime(), temporal::nanosecond)
+        extract!(
+            self.as_datetime(),
+            datetime_to_nanosecond_ns,
+            datetime_to_nanosecond_us,
+            datetime_to_nanosecond_ms
+        )
     }
 
     /// Returns the day of year starting from 1.
     ///
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
     fn ordinal(&self) -> Int16Chunked {
-        let ca = self.as_datetime();
-        let f = match ca.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_ordinal_ns,
-            TimeUnit::Microseconds => datetime_to_ordinal_us,
-            TimeUnit::Milliseconds => datetime_to_ordinal_ms,
-        };
-        let ca_local = match ca.dtype() {
-            #[cfg(feature = "timezones")]
-            DataType::Datetime(_, Some(_)) => &polars_ops::chunked_array::replace_time_zone(
-                ca,
-                None,
-                &StringChunked::new("".into(), ["raise"]),
-                NonExistent::Raise,
-            )
-            .expect("Removing time zone is infallible"),
-            _ => ca,
-        };
-        ca_local.physical().apply_kernel_cast::<Int16Type>(&f)
+        extract!(
+            self.as_datetime(),
+            datetime_to_ordinal_ns,
+            datetime_to_ordinal_us,
+            datetime_to_ordinal_ms
+        )
     }
 
     fn parse_from_str_slice(
@@ -322,7 +333,7 @@ mod test {
                 1_441_497_364_000_000_000,
                 1_356_048_000_000_000_000
             ],
-            dt.physical().cont_slice().unwrap()
+            dt.physical().to_flat().cont_slice().unwrap()
         );
     }
 }

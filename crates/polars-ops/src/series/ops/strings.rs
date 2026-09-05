@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use arrow::array::builder::StaticArrayBuilder;
-use arrow::array::{Array, Utf8ViewArrayBuilder};
-use arrow::datatypes::ArrowDataType;
+use polars_array::bitmap::PlBitmap;
+use polars_array::builder::StaticArrayBuilder;
+use polars_array::{PlArray as _, PlUtf8ViewArrayBuilder, StaticArray as _};
 use polars_core::prelude::{Column, DataType, IntoColumn, StringChunked};
 use polars_core::scalar::Scalar;
 use polars_error::{PolarsContext, PolarsResult};
@@ -85,7 +85,7 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
         return Ok(Column::new_scalar(output_name, sc, output_length));
     }
 
-    let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8View);
+    let mut builder = PlUtf8ViewArrayBuilder::new();
     builder.reserve(output_length);
 
     let mut arrays = cs
@@ -109,7 +109,8 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
             .as_ref()
             .is_some_and(|v| !unsafe { v.get_bit_unchecked(i) })
         {
-            unsafe { builder.push_inline_view_ignore_validity(Default::default()) };
+            // The value of a null element is undetermined, so anything at all does.
+            builder.push_value("");
 
             for (iter, arr, elem_idx) in arrays.iter_mut() {
                 *elem_idx += 1;
@@ -138,9 +139,14 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
             }
         }
 
-        builder.push_value_ignore_validity(&s);
+        builder.push_value(&s);
     }
 
-    let array = builder.freeze().with_validity(validity).to_boxed();
+    // TODO(polars-array-scalar): the rows are formatted one at a time, so a repeated row is
+    // written out once per element rather than formatted once and broadcast.
+    let array = builder
+        .freeze()
+        .with_validity(validity.map(PlBitmap::from_bitmap))
+        .into_boxed();
     Ok(unsafe { StringChunked::from_chunks(output_name, vec![array]) }.into_column())
 }

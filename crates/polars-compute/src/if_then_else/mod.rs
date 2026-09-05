@@ -10,12 +10,19 @@ use crate::NotSimdPrimitive;
 mod array;
 mod boolean;
 mod list;
+mod pl_array;
 mod scalar;
 #[cfg(feature = "simd")]
 mod simd;
 mod view;
 
-pub trait IfThenElseKernel: Sized + Array {
+pub use pl_array::IfThenElseKernel;
+
+/// The if-then-else kernel over an Arrow array, which holds one slot per element throughout.
+///
+/// [`IfThenElseKernel`] is the kernel over the arrays of `polars-array`, which reaches this one
+/// once a chunk is known to be laid out that way.
+pub trait IfThenElseArrowKernel: Sized + Array {
     type Scalar<'a>;
 
     fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self;
@@ -37,7 +44,7 @@ pub trait IfThenElseKernel: Sized + Array {
     ) -> Self;
 }
 
-impl<T: NotSimdPrimitive> IfThenElseKernel for PrimitiveArray<T> {
+impl<T: NotSimdPrimitive> IfThenElseArrowKernel for PrimitiveArray<T> {
     type Scalar<'a> = T;
 
     fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self {

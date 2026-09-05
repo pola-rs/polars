@@ -719,7 +719,7 @@ impl Column {
                     let dtype = series.dtype().clone();
                     let mut chunks = series.into_chunks();
                     assert_eq!(chunks.len(), 1);
-                    chunks[0] = chunks[0].with_validity(validity);
+                    chunks[0] = chunks[0].with_validity(validity.map(PlBitmap::from_bitmap));
                     unsafe { Series::from_chunks_and_dtype_unchecked(name, chunks, &dtype) }
                         .into_column()
                 }
@@ -804,7 +804,7 @@ impl Column {
                 // SAFETY: We perform a compute_len afterwards.
                 let chunks = unsafe { s.chunks_mut() };
                 let arr = &mut chunks[0];
-                *arr = arr.with_validity(validity.into_opt_validity());
+                *arr = arr.with_validity(validity.into_opt_validity().map(PlBitmap::from_bitmap));
                 s.compute_len();
 
                 s.into_column()
@@ -1174,8 +1174,11 @@ impl Column {
             }
 
             let mut prev_idx = end - start;
+            // The values are read as a slice, so a chunk that is not laid out flat is written out
+            // first — see `StaticArray::to_flat`.
             for chunk in arg_unique.downcast_iter() {
-                for &idx in chunk.values().as_slice().iter().rev() {
+                let chunk = chunk.to_flat();
+                for &idx in chunk.as_slice().iter().rev() {
                     values.extend(start + idx..start + prev_idx);
                     prev_idx = idx;
                 }

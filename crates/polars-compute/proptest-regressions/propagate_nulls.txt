@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 6f1d1510927803be1574e5aa6570b956cc39ccfbb97659ba4fff3e79dc4535ba # shrinks to array = StructArray[{f1: None}, {f1: None}, {f1: {f1: [], f2: 144497955569702992830524824534341999679}}, {f1: None}, {f1: {f1: None, f2: 27024231976275245456560225208324679605}}, {f1: None}, {f1: None}]

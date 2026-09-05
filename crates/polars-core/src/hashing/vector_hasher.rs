@@ -42,7 +42,7 @@ pub(crate) fn get_null_hash_value(random_state: &PlSeedableRandomStateQuality) -
 }
 
 fn insert_null_hash(
-    chunks: &[ArrayRef],
+    chunks: &[PlArrayRef],
     random_state: PlSeedableRandomStateQuality,
     buf: &mut Vec<u64>,
 ) {
@@ -52,7 +52,7 @@ fn insert_null_hash(
     let mut offset = 0;
     chunks.iter().for_each(|arr| {
         if arr.null_count() > 0 {
-            let validity = arr.validity().unwrap();
+            let validity = arr.validity().unwrap().to_flat();
             let (slice, byte_offset, _) = validity.as_slice();
             (0..validity.len())
                 .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
@@ -86,6 +86,7 @@ fn numeric_vec_hash<T>(
     #[allow(unused_unsafe)]
     #[allow(clippy::useless_transmute)]
     ca.downcast_iter().for_each(|arr| {
+        let arr = arr.to_flat();
         buf.extend(
             arr.values()
                 .as_slice()
@@ -110,6 +111,7 @@ fn numeric_vec_hash_combine<T>(
 
     let mut offset = 0;
     ca.downcast_iter().for_each(|arr| {
+        let arr = arr.to_flat();
         match arr.null_count() {
             0 => arr
                 .values()
@@ -204,9 +206,8 @@ impl VecHash for StringChunked {
     }
 }
 
-// used in polars-pipe
-pub fn _hash_binary_array(
-    arr: &BinaryArray<i64>,
+fn hash_binary_array(
+    arr: &PlBinaryArray,
     random_state: PlSeedableRandomStateQuality,
     buf: &mut Vec<u64>,
 ) {
@@ -215,7 +216,7 @@ pub fn _hash_binary_array(
         // use the null_hash as seed to get a hash determined by `random_state` that is passed
         buf.extend(arr.values_iter().map(|v| xxh3_64_with_seed(v, null_h)))
     } else {
-        buf.extend(arr.into_iter().map(|opt_v| match opt_v {
+        buf.extend(arr.iter().map(|opt_v| match opt_v {
             Some(v) => xxh3_64_with_seed(v, null_h),
             None => null_h,
         }))
@@ -223,7 +224,7 @@ pub fn _hash_binary_array(
 }
 
 fn hash_binview_array(
-    arr: &BinaryViewArray,
+    arr: &PlBinaryViewArray,
     random_state: PlSeedableRandomStateQuality,
     buf: &mut Vec<u64>,
 ) {
@@ -232,7 +233,7 @@ fn hash_binview_array(
         // use the null_hash as seed to get a hash determined by `random_state` that is passed
         buf.extend(arr.values_iter().map(|v| xxh3_64_with_seed(v, null_h)))
     } else {
-        buf.extend(arr.into_iter().map(|opt_v| match opt_v {
+        buf.extend(arr.iter().map(|opt_v| match opt_v {
             Some(v) => xxh3_64_with_seed(v, null_h),
             None => null_h,
         }))
@@ -270,7 +271,7 @@ impl VecHash for BinaryChunked {
                         *h = _boost_hash_combine(l, *h)
                     }),
                 _ => {
-                    let validity = arr.validity().unwrap();
+                    let validity = arr.validity().unwrap().to_flat();
                     let (slice, byte_offset, _) = validity.as_slice();
                     (0..validity.len())
                         .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
@@ -301,7 +302,7 @@ impl VecHash for BinaryOffsetChunked {
         buf.clear();
         buf.reserve(self.len());
         self.downcast_iter()
-            .for_each(|arr| _hash_binary_array(arr, random_state.clone(), buf));
+            .for_each(|arr| hash_binary_array(arr, random_state.clone(), buf));
         Ok(())
     }
 
@@ -323,7 +324,7 @@ impl VecHash for BinaryOffsetChunked {
                         *h = _boost_hash_combine(l, *h)
                     }),
                 _ => {
-                    let validity = arr.validity().unwrap();
+                    let validity = arr.validity().unwrap().to_flat();
                     let (slice, byte_offset, _) = validity.as_slice();
                     (0..validity.len())
                         .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
@@ -414,7 +415,7 @@ impl VecHash for BooleanChunked {
                         *h = _boost_hash_combine(l, *h)
                     }),
                 _ => {
-                    let validity = arr.validity().unwrap();
+                    let validity = arr.validity().unwrap().to_flat();
                     let (slice, byte_offset, _) = validity.as_slice();
                     (0..validity.len())
                         .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })

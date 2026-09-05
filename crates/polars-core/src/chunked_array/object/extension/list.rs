@@ -1,7 +1,6 @@
-use arrow::offset::Offsets;
+use polars_array::builder::StaticArrayBuilder;
 
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
-use crate::chunked_array::object::extension::create_extension;
 use crate::prelude::*;
 
 impl<T: PolarsObject> ObjectChunked<T> {
@@ -20,7 +19,7 @@ impl<T: PolarsObject> ObjectChunked<T> {
 
 pub(crate) struct ExtensionListBuilder<T: PolarsObject> {
     values_builder: ObjectChunkedBuilder<T>,
-    offsets: Vec<i64>,
+    offsets: Vec<u64>,
     fast_explode: bool,
 }
 
@@ -47,7 +46,7 @@ impl<T: PolarsObject> ListBuilderTrait for ExtensionListBuilder<T> {
             self.fast_explode = false;
         }
         let len_so_far = self.offsets[self.offsets.len() - 1];
-        self.offsets.push(len_so_far + arr.len() as i64);
+        self.offsets.push(len_so_far + arr.len() as u64);
         Ok(())
     }
 
@@ -58,29 +57,25 @@ impl<T: PolarsObject> ListBuilderTrait for ExtensionListBuilder<T> {
     }
 
     fn finish(&mut self) -> ListChunked {
-        let values_builder = std::mem::take(&mut self.values_builder);
+        let mut values_builder = std::mem::take(&mut self.values_builder);
         let offsets = std::mem::take(&mut self.offsets);
-        let ca = values_builder.finish();
-        let obj_arr = ca.downcast_chunks().get(0).unwrap().clone();
+        let name = values_builder.field().name().clone();
 
-        // SAFETY: this is safe because we just created the PolarsExtension
-        // meaning that the sentinel is heap allocated and the dereference of
-        // the pointer does not fail.
-        let mut pe = create_extension(obj_arr.into_iter_cloned());
-        unsafe { pe.set_to_series_fn::<T>() };
-        let extension_array = Box::new(pe.take_and_forget()) as ArrayRef;
-        let extension_dtype = extension_array.dtype();
+        // The values of a list of objects are the object array itself, which holds the values and
+        // drops them with it — there is no packing into bytes for an in-memory column.
+        let length = offsets.len() - 1;
+        let values = values_builder.freeze_reset();
+        // SAFETY: the offsets were built by appending the length of every element.
+        let arr =
+            unsafe { PlListArray::new_unchecked(Box::new(values), offsets.into(), length, None) };
 
-        let dtype = ListArray::<i64>::default_datatype(extension_dtype.clone());
-        let arr = ListArray::<i64>::new(
-            dtype,
-            // SAFETY: offsets are monotonically increasing.
-            unsafe { Offsets::new_unchecked(offsets).into() },
-            extension_array,
-            None,
-        );
-
-        let mut listarr = ListChunked::with_chunk(ca.name().clone(), arr);
+        let mut listarr = unsafe {
+            ListChunked::from_chunks_and_dtype_unchecked(
+                name,
+                vec![Box::new(arr)],
+                DataType::List(Box::new(DataType::Object(T::type_name()))),
+            )
+        };
         if self.fast_explode {
             listarr.set_fast_explode()
         }

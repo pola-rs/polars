@@ -106,7 +106,7 @@ pub trait ListNameSpaceImpl: AsList {
                 }
 
                 for arr in ca.downcast_iter() {
-                    for val in arr.non_null_values_iter() {
+                    for val in arr.iter().flatten() {
                         buf.write_str(val).unwrap();
                         buf.write_str(separator).unwrap();
                     }
@@ -145,7 +145,7 @@ pub trait ListNameSpaceImpl: AsList {
                             }
 
                             for arr in ca.downcast_iter() {
-                                for val in arr.non_null_values_iter() {
+                                for val in arr.iter().flatten() {
                                     buf.write_str(val).unwrap();
                                     buf.write_str(separator).unwrap();
                                 }
@@ -311,6 +311,9 @@ pub trait ListNameSpaceImpl: AsList {
 
         let mut lengths = Vec::with_capacity(ca.len());
         ca.downcast_iter().for_each(|arr| {
+            // TODO(polars-array-scalar): the lengths are read off the offsets as a slice, so
+            // scalar offsets are written out rather than the single length being repeated.
+            let arr = arr.to_flat();
             let offsets = arr.offsets().as_slice();
             let mut last = offsets[0];
             for o in &offsets[1..] {
@@ -319,7 +322,9 @@ pub trait ListNameSpaceImpl: AsList {
             }
         });
 
-        let arr = IdxArr::from_vec(lengths).with_validity(ca_validity);
+        // `rechunk_validity` hands back a flat mask, one bit per element, like the lengths.
+        let arr = PlPrimitiveArray::from_vec(lengths)
+            .with_validity(ca_validity.map(PlBitmap::from_bitmap));
         IdxCa::with_chunk(ca.name().clone(), arr)
     }
 
@@ -338,9 +343,10 @@ pub trait ListNameSpaceImpl: AsList {
             .map(|arr| sublist_get(arr, idx))
             .collect::<Vec<_>>();
 
-        let s = Series::try_from((ca.name().clone(), chunks)).unwrap();
         // SAFETY: every element in list has dtype equal to its inner type
-        unsafe { s.from_physical_unchecked(ca.inner_dtype()) }
+        Ok(unsafe {
+            Series::from_chunks_and_dtype_unchecked(ca.name().clone(), chunks, ca.inner_dtype())
+        })
     }
 
     #[cfg(feature = "list_gather")]

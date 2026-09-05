@@ -1,8 +1,8 @@
 use std::sync::OnceLock;
 
-use arrow::array::ListArray;
 use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
+use polars_core::prelude::PlListArray;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::python_function::PythonObject;
@@ -37,7 +37,7 @@ impl DeltaDeletionVectorProvider {
     }
 
     /// Return the deletion vector as Boolean list the selected_paths, maintaining the path order.
-    pub fn call(&self, selected_paths: Buffer<PlRefPath>) -> PolarsResult<Option<ListArray<i64>>> {
+    pub fn call(&self, selected_paths: Buffer<PlRefPath>) -> PolarsResult<Option<PlListArray>> {
         let Some(dv) =
             (delta_dv_provider_vtable().unwrap().call)(&self.callback, selected_paths.clone())?
         else {

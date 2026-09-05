@@ -1,9 +1,14 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::hash::BuildHasher;
 
-use arrow::array::{Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticArray, UInt64Array};
+use arrow::array::Array;
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and_many;
+use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
+use polars_array::{
+    PlBinaryArray, PlBinaryArrayBuilder, PlBinaryViewArray, PlBinaryViewArrayBuilder,
+    PlPrimitiveArray, PlPrimitiveArrayBuilder,
+};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType, *};
@@ -124,7 +129,7 @@ impl HashKeys {
                     .map(|c| c.as_materialized_series().rechunk_validity())
                     .collect_vec();
                 let combined = combine_validities_and_many(&validities);
-                keys_encoded.set_validity(combined);
+                keys_encoded.set_validity(combined.map(PlBitmap::from_bitmap));
             }
 
             // TODO: use vechash? Not supported yet for lists.
@@ -136,7 +141,7 @@ impl HashKeys {
                 .map(|k| random_state.hash_one(k))
                 .collect();
             Self::RowEncoded(RowEncodedKeys {
-                hashes: PrimitiveArray::from_vec(hashes),
+                hashes: PlPrimitiveArray::from_vec(hashes),
                 keys: keys_encoded,
             })
         } else if first_col_variant == HashKeysVariant::Binview {
@@ -158,7 +163,7 @@ impl HashKeys {
             };
 
             Self::Binview(BinviewKeys {
-                hashes: PrimitiveArray::from_vec(hashes),
+                hashes: PlPrimitiveArray::from_vec(hashes),
                 keys,
                 null_is_valid,
             })
@@ -183,11 +188,13 @@ impl HashKeys {
         self.len() == 0
     }
 
-    pub fn validity(&self) -> Option<&Bitmap> {
+    pub fn validity(&self) -> Option<Bitmap> {
         match self {
-            HashKeys::RowEncoded(s) => s.keys.validity(),
-            HashKeys::Single(s) => s.keys.chunks()[0].validity(),
-            HashKeys::Binview(s) => s.keys.validity(),
+            HashKeys::RowEncoded(s) => s.keys.validity().map(|v| v.to_flat().into_owned()),
+            HashKeys::Single(s) => s.keys.chunks()[0]
+                .validity()
+                .map(|v| v.to_flat().into_owned()),
+            HashKeys::Binview(s) => s.keys.validity().map(|v| v.to_flat().into_owned()),
         }
     }
 
@@ -332,13 +339,15 @@ impl HashKeys {
 
 #[derive(Clone, Debug)]
 pub struct RowEncodedKeys {
-    pub hashes: UInt64Array, // Always non-null, we use the validity of keys.
-    pub keys: BinaryArray<i64>,
+    pub hashes: PlPrimitiveArray<u64>, // Always non-null, we use the validity of keys.
+    pub keys: PlBinaryArray,
 }
 
 impl RowEncodedKeys {
     pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
-        for_each_hash_prehashed(self.hashes.values().as_slice(), self.keys.validity(), f);
+        let hashes = self.hashes.to_flat();
+        let validity = self.keys.validity().map(|v| v.to_flat().into_owned());
+        for_each_hash_prehashed(hashes.as_slice(), validity.as_ref(), f);
     }
 
     /// # Safety
@@ -348,24 +357,24 @@ impl RowEncodedKeys {
         subset: &[IdxSize],
         f: F,
     ) {
-        for_each_hash_subset_prehashed(
-            self.hashes.values().as_slice(),
-            self.keys.validity(),
-            subset,
-            f,
-        );
+        let hashes = self.hashes.to_flat();
+        let validity = self.keys.validity().map(|v| v.to_flat().into_owned());
+        for_each_hash_subset_prehashed(hashes.as_slice(), validity.as_ref(), subset, f);
     }
 
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
-        let idx_arr = arrow::ffi::mmap::slice(idxs);
+        // A gather picks the elements out again, so the values are compacted rather than shared.
+        let mut hashes = PlPrimitiveArrayBuilder::<u64>::with_capacity(idxs.len());
+        let mut keys = PlBinaryArrayBuilder::with_capacity(idxs.len());
+        unsafe {
+            hashes.gather_extend(&self.hashes, idxs, ShareStrategy::Never);
+            keys.gather_extend(&self.keys, idxs, ShareStrategy::Never);
+        }
         Self {
-            hashes: polars_compute::gather::primitive::take_primitive_unchecked(
-                &self.hashes,
-                &idx_arr,
-            ),
-            keys: polars_compute::gather::binary::take_unchecked(&self.keys, &idx_arr),
+            hashes: hashes.freeze(),
+            keys: keys.freeze(),
         }
     }
 }
@@ -411,14 +420,16 @@ impl SingleKeys {
 /// Pre-hashed binary view keys with prehashing.
 #[derive(Clone, Debug)]
 pub struct BinviewKeys {
-    pub hashes: UInt64Array,
-    pub keys: BinaryViewArray,
+    pub hashes: PlPrimitiveArray<u64>,
+    pub keys: PlBinaryViewArray,
     pub null_is_valid: bool,
 }
 
 impl BinviewKeys {
     pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
-        for_each_hash_prehashed(self.hashes.values().as_slice(), self.keys.validity(), f);
+        let hashes = self.hashes.to_flat();
+        let validity = self.keys.validity().map(|v| v.to_flat().into_owned());
+        for_each_hash_prehashed(hashes.as_slice(), validity.as_ref(), f);
     }
 
     /// # Safety
@@ -428,24 +439,24 @@ impl BinviewKeys {
         subset: &[IdxSize],
         f: F,
     ) {
-        for_each_hash_subset_prehashed(
-            self.hashes.values().as_slice(),
-            self.keys.validity(),
-            subset,
-            f,
-        );
+        let hashes = self.hashes.to_flat();
+        let validity = self.keys.validity().map(|v| v.to_flat().into_owned());
+        for_each_hash_subset_prehashed(hashes.as_slice(), validity.as_ref(), subset, f);
     }
 
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
-        let idx_arr = arrow::ffi::mmap::slice(idxs);
+        // A gather picks the elements out again, so the views are compacted rather than shared.
+        let mut hashes = PlPrimitiveArrayBuilder::<u64>::with_capacity(idxs.len());
+        let mut keys = PlBinaryViewArrayBuilder::with_capacity(idxs.len());
+        unsafe {
+            hashes.gather_extend(&self.hashes, idxs, ShareStrategy::Never);
+            keys.gather_extend(&self.keys, idxs, ShareStrategy::Never);
+        }
         Self {
-            hashes: polars_compute::gather::primitive::take_primitive_unchecked(
-                &self.hashes,
-                &idx_arr,
-            ),
-            keys: polars_compute::gather::binview::take_binview_unchecked(&self.keys, &idx_arr),
+            hashes: hashes.freeze(),
+            keys: keys.freeze(),
             null_is_valid: self.null_is_valid,
         }
     }

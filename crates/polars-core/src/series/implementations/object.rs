@@ -108,10 +108,10 @@ where
         ObjectChunked::dtype(&self.0)
     }
 
-    fn chunks(&self) -> &Vec<ArrayRef> {
+    fn chunks(&self) -> &Vec<PlArrayRef> {
         ObjectChunked::chunks(&self.0)
     }
-    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<PlArrayRef> {
         self.0.chunks_mut()
     }
 
@@ -255,6 +255,22 @@ where
 
     fn get_object(&self, index: usize) -> Option<&dyn PolarsObjectSafe> {
         ObjectChunked::<T>::get_object(&self.0, index)
+    }
+
+    fn object_values_to_arrow(&self) -> ArrayRef {
+        use crate::chunked_array::object::extension::create_extension;
+
+        // Every value is packed into the bytes the extension array carries. Object chunks do not
+        // go through the generic rechunk.
+        let ca = self.rechunk_object();
+        let values = ca.downcast_iter().next().unwrap().clone();
+        let mut extension = create_extension(values.into_iter_cloned());
+        // SAFETY: the extension was just created, so its sentinel is alive.
+        unsafe { extension.set_to_series_fn::<T>() };
+        let extension = extension.take_and_forget();
+        let mut arr = Box::new(extension) as ArrayRef;
+        *arr.dtype_mut() = ArrowDataType::FixedSizeBinary(size_of::<T>());
+        arr
     }
 
     unsafe fn get_object_chunked_unchecked(

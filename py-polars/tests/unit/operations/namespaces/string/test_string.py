@@ -1687,6 +1687,32 @@ def test_extract_groups() -> None:
     ).to_dict(as_series=False) == {"literal": [{"foo": "foo", "bar": None}]}
 
 
+def test_extract_groups_nulls() -> None:
+    s = pl.Series("s", ["ab", None, "zz"])
+    assert s.str.extract_groups("(a)(b)").to_list() == [
+        {"1": "a", "2": "b"},
+        None,
+        {"1": None, "2": None},
+    ]
+
+    assert (
+        pl.Series("s", ["ab", "ab"]).str.extract_groups("(a)(b)").to_list()
+        == [{"1": "a", "2": "b"}] * 2
+    )
+    assert pl.Series("s", [None, None], dtype=pl.String).str.extract_groups(
+        "(a)"
+    ).to_list() == [None, None]
+    assert (
+        pl.repeat(None, 3, dtype=pl.String, eager=True)
+        .str.extract_groups("(a)")
+        .to_list()
+        == [None] * 3
+    )
+    assert pl.Series("s", ["ab", None, "zz", "ab"]).slice(1, 3).str.extract_groups(
+        "(a)(b)"
+    ).to_list() == [None, {"1": None, "2": None}, {"1": "a", "2": "b"}]
+
+
 def test_starts_ends_with() -> None:
     df = pl.DataFrame(
         {

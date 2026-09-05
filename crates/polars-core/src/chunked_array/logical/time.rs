@@ -16,8 +16,9 @@ impl Int64Chunked {
             .map(|chunk| {
                 // We need to retain the PhysicalType underneath, but we should properly update the
                 // validity as that might change because Time is not valid for all values of Int64.
+                // The cast is the Arrow one, so the chunk crosses over — see `polars_array::arrow::bridge`.
                 let casted = polars_compute::cast::cast(
-                    chunk.as_ref(),
+                    &*polars_array::arrow::export::to_arrow(&*chunk),
                     &ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
                     CastOptionsImpl::default(),
                 )
@@ -28,11 +29,11 @@ impl Int64Chunked {
                     None => chunk,
                     Some(validity) => {
                         null_count += validity.unset_bits();
-                        chunk.with_validity(Some(validity.clone()))
+                        chunk.with_validity(Some(PlBitmap::from_bitmap(validity.clone())))
                     },
                 }
             })
-            .collect::<Vec<Box<dyn Array>>>();
+            .collect::<Vec<PlArrayRef>>();
 
         debug_assert!(null_count >= self.null_count);
 

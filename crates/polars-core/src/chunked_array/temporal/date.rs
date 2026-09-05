@@ -17,10 +17,7 @@ impl DateChunked {
         unsafe {
             self.physical()
                 .downcast_iter()
-                .flat_map(|iter| {
-                    iter.into_iter()
-                        .map(|opt_v| opt_v.copied().map(date32_to_date))
-                })
+                .flat_map(|iter| iter.into_iter().map(|opt_v| opt_v.map(date32_to_date)))
                 .trust_my_length(self.len())
         }
     }

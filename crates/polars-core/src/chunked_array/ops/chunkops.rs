@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::cell::Cell;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::compute::concatenate::concatenate_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;
@@ -11,11 +10,19 @@ use crate::chunked_array::flags::StatisticsFlags;
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::utils::slice_offsets;
 
+/// Concatenates the chunks of a [`ChunkedArray`] into the single chunk they hold together. They
+/// are all of the same physical type, which is what `concatenate` needs, so this cannot fail.
+pub(crate) fn concatenate_chunks(chunks: &[PlArrayRef]) -> PlArrayRef {
+    let refs: Vec<&dyn PlArray> = chunks.iter().map(|chunk| &**chunk).collect();
+    polars_array::concatenate::concatenate(&refs)
+        .expect("the chunks of a ChunkedArray are all of the same physical type")
+}
+
 pub(crate) fn split_at(
-    chunks: &[ArrayRef],
+    chunks: &[PlArrayRef],
     offset: i64,
     own_length: usize,
-) -> (Vec<ArrayRef>, Vec<ArrayRef>) {
+) -> (Vec<PlArrayRef>, Vec<PlArrayRef>) {
     let mut new_chunks_left = Vec::with_capacity(1);
     let mut new_chunks_right = Vec::with_capacity(1);
     let (raw_offset, _) = slice_offsets(offset, 0, own_length);
@@ -31,9 +38,12 @@ pub(crate) fn split_at(
             continue;
         }
 
-        let (l, r) = chunk.split_at_boxed(remaining_offset);
-        new_chunks_left.push(l);
-        new_chunks_right.push(r);
+        // SAFETY: `remaining_offset` is within this chunk, which is what ended the loop above.
+        unsafe {
+            new_chunks_left.push(chunk.sliced_unchecked(0, remaining_offset));
+            new_chunks_right
+                .push(chunk.sliced_unchecked(remaining_offset, chunk_len - remaining_offset));
+        }
         break;
     }
 
@@ -50,11 +60,11 @@ pub(crate) fn split_at(
 }
 
 pub(crate) fn slice(
-    chunks: &[ArrayRef],
+    chunks: &[PlArrayRef],
     offset: i64,
     slice_length: usize,
     own_length: usize,
-) -> (Vec<ArrayRef>, usize) {
+) -> (Vec<PlArrayRef>, usize) {
     let mut new_chunks = Vec::with_capacity(1);
     let (raw_offset, slice_len) = slice_offsets(offset, slice_length, own_length);
 
@@ -139,7 +149,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Compute the length
     pub(crate) fn compute_len(&mut self) {
-        fn inner(chunks: &[ArrayRef]) -> usize {
+        fn inner(chunks: &[PlArrayRef]) -> usize {
             match chunks.len() {
                 // fast path
                 1 => chunks[0].len(),
@@ -171,7 +181,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 if self.chunks.len() == 1 {
                     Cow::Borrowed(self)
                 } else {
-                    let chunks = vec![concatenate_unchecked(&self.chunks).unwrap()];
+                    let chunks = vec![concatenate_chunks(&self.chunks)];
 
                     let mut ca = unsafe { self.copy_with_chunks(chunks) };
                     use StatisticsFlags as F;
@@ -185,7 +195,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// Rechunks this ChunkedArray in-place.
     pub fn rechunk_mut(&mut self) {
         if self.chunks.len() > 1 {
-            let rechunked = concatenate_unchecked(&self.chunks).unwrap();
+            let rechunked = concatenate_chunks(&self.chunks);
             if self.chunks.capacity() <= 8 {
                 // Reuse chunk allocation if not excessive.
                 self.chunks.clear();
@@ -198,7 +208,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     pub fn rechunk_validity(&self) -> Option<Bitmap> {
         if self.chunks.len() == 1 {
-            return self.chunks[0].validity().cloned();
+            return self.chunks[0].validity().map(|v| v.to_flat().into_owned());
         }
 
         if !self.has_nulls() || self.is_empty() {
@@ -206,11 +216,15 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         }
 
         let mut bm = BitmapBuilder::with_capacity(self.len());
-        for arr in self.downcast_iter() {
-            if let Some(v) = arr.validity() {
-                bm.extend_from_bitmap(v);
-            } else {
-                bm.extend_constant(arr.len(), true);
+        for arr in self.chunks() {
+            match arr.validity() {
+                // A scalar mask is one bit for every element, which is extended as the run it
+                // stands for rather than written out first.
+                Some(v) => match v.scalar_value() {
+                    Some(value) => bm.extend_constant(v.len(), value),
+                    None => bm.extend_from_bitmap(v.flat_bitmap().unwrap()),
+                },
+                None => bm.extend_constant(arr.len(), true),
             }
         }
         bm.into_opt_validity()
@@ -222,7 +236,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         // SAFETY:
         // We don't change the data type of the chunks, nor the length.
         for (arr, validity) in unsafe { self.chunks_mut().iter_mut() }.zip(validities.iter()) {
-            *arr = arr.with_validity(validity.clone())
+            *arr = arr.with_validity(validity.clone().map(PlBitmap::from_bitmap))
         }
     }
 

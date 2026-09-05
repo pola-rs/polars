@@ -19,6 +19,7 @@ half = { workspace = true, optional = true, features = ["num-traits", "bytemuck"
 hashbrown = { workspace = true }
 itoa = { workspace = true, optional = true }
 num-traits = { workspace = true }
+polars-array = { workspace = true }
 polars-buffer = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
@@ -54,7 +55,7 @@ gather = []
 nightly = []
 simd = ["arrow/simd"]
 approx_unique = []
-dtype-array = []
+dtype-array = ["arrow/dtype-array"]
 dtype-decimal = ["arrow/dtype-decimal", "dtype-i128"]
 dtype-i128 = []
 dtype-u128 = []

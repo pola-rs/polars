@@ -1,6 +1,5 @@
 use std::hash::Hash;
 
-use arrow::array::BooleanArray;
 use arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::arity::{unary_elementwise, unary_elementwise_values};
 use polars_core::prelude::*;
@@ -81,7 +80,10 @@ where
 
                 let values = builder.freeze();
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                // One bit was pushed per element, and the mask holds one bit per element as well.
+                let length = values.len();
+                let result =
+                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             },
         }
@@ -101,7 +103,10 @@ where
 
                 let values = builder.freeze();
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                // One bit was pushed per element, and the mask holds one bit per element as well.
+                let length = values.len();
+                let result =
+                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             } else {
                 let mut builder = BitmapBuilder::with_capacity(ca_in.len());
@@ -124,7 +129,10 @@ where
                     (Some(l), Some(r)) => Some(arrow::bitmap::and(&l, &r)),
                 };
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                // One bit was pushed per element, and the mask holds one bit per element as well.
+                let length = values.len();
+                let result =
+                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             }
         }
@@ -167,7 +175,10 @@ where
 
                 let values = builder.freeze();
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                // One bit was pushed per element, and the mask holds one bit per element as well.
+                let length = values.len();
+                let result =
+                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             },
         }
@@ -187,7 +198,10 @@ where
 
                 let values = builder.freeze();
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                // One bit was pushed per element, and the mask holds one bit per element as well.
+                let length = values.len();
+                let result =
+                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             } else {
                 let mut builder = BitmapBuilder::with_capacity(ca_in.len());
@@ -211,7 +225,10 @@ where
                     (Some(l), Some(r)) => Some(arrow::bitmap::and(&l, &r)),
                 };
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                // One bit was pushed per element, and the mask holds one bit per element as well.
+                let length = values.len();
+                let result =
+                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             }
         }

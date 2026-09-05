@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use polars_core::prelude::*;
@@ -397,7 +399,6 @@ pub(super) fn arg_where(s: &mut [Column]) -> PolarsResult<Column> {
     if predicate.is_empty() {
         Ok(Column::full_null(predicate.name().clone(), 0, &IDX_DTYPE))
     } else {
-        use arrow::datatypes::IdxArr;
         use polars_core::prelude::IdxCa;
 
         let capacity = predicate.sum().unwrap();
@@ -405,9 +406,12 @@ pub(super) fn arg_where(s: &mut [Column]) -> PolarsResult<Column> {
         let mut total_offset = 0;
 
         predicate.downcast_iter().for_each(|arr| {
+            // `SlicesIterator` below indexes the mask flatly, so a scalar one is written out.
             let values = match arr.validity() {
-                Some(validity) if validity.unset_bits() > 0 => validity & arr.values(),
-                _ => arr.values().clone(),
+                Some(validity) if validity.unset_bits() > 0 => {
+                    Cow::Owned(&*validity.to_flat() & &*arr.values().to_flat())
+                },
+                _ => arr.values().to_flat(),
             };
 
             for (offset, len) in SlicesIterator::new(&values) {
@@ -424,7 +428,7 @@ pub(super) fn arg_where(s: &mut [Column]) -> PolarsResult<Column> {
 
             total_offset += arr.len();
         });
-        let ca = IdxCa::with_chunk(predicate.name().clone(), IdxArr::from_vec(out));
+        let ca = IdxCa::new_vec(predicate.name().clone(), out);
         Ok(ca.into_column())
     }
 }

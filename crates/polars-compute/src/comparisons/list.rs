@@ -214,6 +214,10 @@ macro_rules! compare_broadcast {
 impl<O: Offset> TotalEqKernel for ListArray<O> {
     type Scalar = Box<dyn Array>;
 
+    fn validity_mask(&self) -> Option<&Bitmap> {
+        self.validity()
+    }
+
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
         compare!(
             self,

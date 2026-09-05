@@ -3,7 +3,7 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::OffsetsBuffer;
 use polars_buffer::Buffer;
-use polars_compute::filter::filter_with_bitmap;
+use polars_compute::filter::filter_arrow_with_bitmap;
 
 use super::utils::dict_indices_decoder;
 use super::{Filter, PredicateFilter};
@@ -207,7 +207,7 @@ impl utils::Decoder for BinaryDecoder {
         let mut array = BinaryArray::new(ArrowDataType::LargeBinary, offsets, values, None);
 
         if let Some(Filter::Mask(mask)) = &filter {
-            array = filter_with_bitmap(&array, mask)
+            array = filter_arrow_with_bitmap(&array, mask)
                 .as_any()
                 .downcast_ref::<BinaryArray<i64>>()
                 .unwrap()

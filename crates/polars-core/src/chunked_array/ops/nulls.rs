@@ -1,4 +1,4 @@
-use arrow::bitmap::Bitmap;
+use polars_array::bitmap::{combine_validities_and, invert};
 
 use super::*;
 use crate::chunked_array::flags::StatisticsFlags;
@@ -22,7 +22,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         is_not_null(self.name().clone(), &self.chunks)
     }
 
-    pub(crate) fn coalesce_nulls(&self, other: &[ArrayRef]) -> Self {
+    pub(crate) fn coalesce_nulls(&self, other: &[PlArrayRef]) -> Self {
         let chunks = coalesce_nulls(&self.chunks, other);
         let mut ca = unsafe { self.copy_with_chunks(chunks) };
         use StatisticsFlags as F;
@@ -31,55 +31,45 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 }
 
-pub fn is_not_null(name: PlSmallStr, chunks: &[ArrayRef]) -> BooleanChunked {
-    let chunks = chunks.iter().map(|arr| {
-        let bitmap = arr
-            .validity()
-            .cloned()
-            .unwrap_or_else(|| !(&Bitmap::new_zeroed(arr.len())));
-        BooleanArray::from_data_default(bitmap, None)
+/// The mask of a chunk, as the boolean array of which elements are not null. A scalar mask stays
+/// one bit, so a chunk that is fully null maps to a boolean array in `O(1)` memory.
+pub fn is_not_null(name: PlSmallStr, chunks: &[PlArrayRef]) -> BooleanChunked {
+    let chunks = chunks.iter().map(|arr| match arr.validity() {
+        Some(validity) => PlBooleanArray::from_pl_bitmap(PlBitmap::from(validity)),
+        None => PlBooleanArray::new_scalar(true, arr.len()),
     });
     BooleanChunked::from_chunk_iter(name, chunks)
 }
 
-pub fn is_null(name: PlSmallStr, chunks: &[ArrayRef]) -> BooleanChunked {
-    let chunks = chunks.iter().map(|arr| {
-        let bitmap = arr
-            .validity()
-            .map(|bitmap| !bitmap)
-            .unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
-        BooleanArray::from_data_default(bitmap, None)
+/// The mask of a chunk, as the boolean array of which elements are null — see [`is_not_null`].
+pub fn is_null(name: PlSmallStr, chunks: &[PlArrayRef]) -> BooleanChunked {
+    let chunks = chunks.iter().map(|arr| match arr.validity() {
+        Some(validity) => {
+            PlBooleanArray::from_pl_bitmap(PlBitmap::new_broadcast(invert(validity), arr.len()))
+        },
+        None => PlBooleanArray::new_scalar(false, arr.len()),
     });
     BooleanChunked::from_chunk_iter(name, chunks)
 }
 
-pub fn replace_non_null(name: PlSmallStr, chunks: &[ArrayRef], default: bool) -> BooleanChunked {
+pub fn replace_non_null(name: PlSmallStr, chunks: &[PlArrayRef], default: bool) -> BooleanChunked {
     BooleanChunked::from_chunk_iter(
         name,
         chunks.iter().map(|el| {
-            BooleanArray::from_data_default(
-                Bitmap::new_with_value(default, el.len()),
-                el.validity().cloned(),
-            )
+            PlBooleanArray::new_scalar(default, el.len())
+                .with_validity(el.validity().map(PlBitmap::from))
         }),
     )
 }
 
-pub(crate) fn coalesce_nulls(chunks: &[ArrayRef], other: &[ArrayRef]) -> Vec<ArrayRef> {
+pub(crate) fn coalesce_nulls(chunks: &[PlArrayRef], other: &[PlArrayRef]) -> Vec<PlArrayRef> {
     assert_eq!(chunks.len(), other.len());
     chunks
         .iter()
         .zip(other)
         .map(|(a, b)| {
             assert_eq!(a.len(), b.len());
-            let validity = match (a.validity(), b.validity()) {
-                (None, Some(b)) => Some(b.clone()),
-                (Some(a), Some(b)) => Some(a & b),
-                (Some(a), None) => Some(a.clone()),
-                (None, None) => None,
-            };
-
-            a.with_validity(validity)
+            a.with_validity(combine_validities_and(a.validity(), b.validity()))
         })
         .collect()
 }

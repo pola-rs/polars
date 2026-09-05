@@ -31,29 +31,10 @@ pub fn utf8_to_dictionary<O: Offset, K: DictionaryKey>(
     Ok(array.into())
 }
 
-/// Conversion of utf8
-pub fn utf8_to_large_utf8(from: &Utf8Array<i32>) -> Utf8Array<i64> {
-    let dtype = Utf8Array::<i64>::default_dtype();
-    let validity = from.validity().cloned();
-    let values = from.values().clone();
-
-    let offsets = from.offsets().into();
-    // SAFETY: sound because `values` fulfills the same invariants as `from.values()`
-    unsafe { Utf8Array::<i64>::new_unchecked(dtype, offsets, values, validity) }
-}
-
-/// Conversion of utf8
-pub fn utf8_large_to_utf8(from: &Utf8Array<i64>) -> PolarsResult<Utf8Array<i32>> {
-    let dtype = Utf8Array::<i32>::default_dtype();
-    let validity = from.validity().cloned();
-    let values = from.values().clone();
-    let offsets = from.offsets().try_into()?;
-
-    // SAFETY: sound because `values` fulfills the same invariants as `from.values()`
-    Ok(unsafe { Utf8Array::<i32>::new_unchecked(dtype, offsets, values, validity) })
-}
-
-/// Conversion to binary
+/// Reads the bytes of a UTF-8 array as the bytes they are.
+///
+/// This is `O(1)`: the offsets, the bytes and the validity are the same on both sides, and all
+/// that changes is that nothing downstream may assume the bytes are valid UTF-8 any more.
 pub fn utf8_to_binary<O: Offset>(from: &Utf8Array<O>, to_dtype: ArrowDataType) -> BinaryArray<O> {
     // SAFETY: erasure of an invariant is always safe
     BinaryArray::<O>::new(

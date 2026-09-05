@@ -108,17 +108,17 @@ impl GroupedReduction for CovGroupedReduction {
                     self.evicted_values.push(old);
                 }
                 if let (Some(x), Some(y)) = (ox, oy) {
-                    grp.insert_one(*x, *y);
+                    grp.insert_one(x, y);
                 }
             }
         } else {
-            for ((x, y), g) in ax.values().iter().zip(ay.values().iter()).zip(group_idxs) {
+            for ((x, y), g) in ax.values_iter().zip(ay.values_iter()).zip(group_idxs) {
                 let grp = self.values.get_unchecked_mut(g.idx());
                 if g.should_evict() {
                     let old = core::mem::take(grp);
                     self.evicted_values.push(old);
                 }
-                grp.insert_one(*x, *y);
+                grp.insert_one(x, y);
             }
         }
         Ok(())
@@ -254,17 +254,17 @@ impl GroupedReduction for PearsonCorrGroupedReduction {
                     self.evicted_values.push(old);
                 }
                 if let (Some(x), Some(y)) = (ox, oy) {
-                    grp.insert_one(*x, *y);
+                    grp.insert_one(x, y);
                 }
             }
         } else {
-            for ((x, y), g) in ax.values().iter().zip(ay.values().iter()).zip(group_idxs) {
+            for ((x, y), g) in ax.values_iter().zip(ay.values_iter()).zip(group_idxs) {
                 let grp = self.values.get_unchecked_mut(g.idx());
                 if g.should_evict() {
                     let old = core::mem::take(grp);
                     self.evicted_values.push(old);
                 }
-                grp.insert_one(*x, *y);
+                grp.insert_one(x, y);
             }
         }
         Ok(())

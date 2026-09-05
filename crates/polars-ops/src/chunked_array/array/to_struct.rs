@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
-use arrow::array::{Array, StructArray};
-use arrow::datatypes::ArrowDataType;
+use polars_array::{PlArray, PlBitmap, PlStructArray};
 use polars_core::chunked_array::StructChunked;
 use polars_core::chunked_array::builder::NewChunkedArray as _;
-use polars_core::datatypes::{ArrayChunked, CompatLevel, DataType, Field, Int64Chunked};
+use polars_core::datatypes::{ArrayChunked, DataType, Field, Int64Chunked};
 use polars_core::runtime::RAYON;
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
@@ -16,7 +15,7 @@ pub trait ToStruct: AsArray {
     fn to_struct(&self, fields: &[PlSmallStr]) -> PolarsResult<StructChunked> {
         let ca = self.as_array();
 
-        let field_arrays: Vec<Box<dyn Array>> = RAYON.install(|| {
+        let field_arrays: Vec<Box<dyn PlArray>> = RAYON.install(|| {
             (0..fields.len())
                 .into_par_iter()
                 .map(|i| {
@@ -30,7 +29,6 @@ pub trait ToStruct: AsArray {
         })?;
 
         let field_dtype = ca.inner_dtype();
-        let field_phys_dtype = field_dtype.to_physical();
         let outer_validity = ca.rechunk_validity();
 
         Ok(unsafe {
@@ -44,18 +42,12 @@ pub trait ToStruct: AsArray {
                             .collect(),
                     ),
                 )),
-                vec![Box::new(StructArray::new(
-                    ArrowDataType::Struct(
-                        fields
-                            .iter()
-                            .map(|name| {
-                                field_phys_dtype.to_arrow_field(name.clone(), CompatLevel::newest())
-                            })
-                            .collect(),
-                    ),
-                    ca.len(),
+                // `rechunk_validity` hands back a flat mask, one bit per element, which is what
+                // a struct array takes; its field names live in the `DataType` above.
+                vec![Box::new(PlStructArray::new(
                     field_arrays,
-                    ca.rechunk_validity(),
+                    ca.len(),
+                    ca.rechunk_validity().map(PlBitmap::from_bitmap),
                 ))],
                 ca.len(),
                 outer_validity.map_or(0, |x| x.unset_bits()),

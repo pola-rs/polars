@@ -1,10 +1,10 @@
 use std::ops::{BitAnd, BitOr, BitXor};
 
-use arrow::compute::bitwise;
 use arrow::compute::utils::combine_validities_and;
+use polars_compute::arity::{prim_binary_values, prim_unary_values};
 
 use super::*;
-use crate::chunked_array::arity::apply_binary_kernel_broadcast;
+use crate::chunked_array::arity::apply_binary_kernel_broadcast_flat;
 
 impl<T> BitAnd for &ChunkedArray<T>
 where
@@ -14,12 +14,12 @@ where
     type Output = ChunkedArray<T>;
 
     fn bitand(self, rhs: Self) -> Self::Output {
-        apply_binary_kernel_broadcast(
+        apply_binary_kernel_broadcast_flat(
             self,
             rhs,
-            bitwise::and,
-            |l, r| bitwise::and_scalar(r, &l),
-            |l, r| bitwise::and_scalar(l, &r),
+            |l, r| prim_binary_values(l.clone(), r.clone(), |a, b| a & b),
+            |l, r| prim_unary_values(r.clone(), |b| l & b),
+            |l, r| prim_unary_values(l.clone(), |a| a & r),
         )
     }
 }
@@ -32,12 +32,12 @@ where
     type Output = ChunkedArray<T>;
 
     fn bitor(self, rhs: Self) -> Self::Output {
-        apply_binary_kernel_broadcast(
+        apply_binary_kernel_broadcast_flat(
             self,
             rhs,
-            bitwise::or,
-            |l, r| bitwise::or_scalar(r, &l),
-            |l, r| bitwise::or_scalar(l, &r),
+            |l, r| prim_binary_values(l.clone(), r.clone(), |a, b| a | b),
+            |l, r| prim_unary_values(r.clone(), |b| l | b),
+            |l, r| prim_unary_values(l.clone(), |a| a | r),
         )
     }
 }
@@ -50,12 +50,12 @@ where
     type Output = ChunkedArray<T>;
 
     fn bitxor(self, rhs: Self) -> Self::Output {
-        apply_binary_kernel_broadcast(
+        apply_binary_kernel_broadcast_flat(
             self,
             rhs,
-            bitwise::xor,
-            |l, r| bitwise::xor_scalar(r, &l),
-            |l, r| bitwise::xor_scalar(l, &r),
+            |l, r| prim_binary_values(l.clone(), r.clone(), |a, b| a ^ b),
+            |l, r| prim_unary_values(r.clone(), |b| l ^ b),
+            |l, r| prim_unary_values(l.clone(), |a| a ^ r),
         )
     }
 }
@@ -89,7 +89,12 @@ impl BitOr for &BooleanChunked {
             _ => {},
         }
 
-        arity::binary(self, rhs, polars_compute::boolean::or)
+        arity::binary_elementwise_kernel_flat(
+            self,
+            rhs,
+            polars_compute::boolean::or,
+            self.name().clone(),
+        )
     }
 }
 
@@ -119,11 +124,16 @@ impl BitXor for &BooleanChunked {
                 Some(true) => !other_ca,
             }
         } else {
-            arity::binary(self, rhs, |l_arr, r_arr| {
-                let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
-                let values = l_arr.values() ^ r_arr.values();
-                BooleanArray::from_data_default(values, validity)
-            })
+            arity::binary_elementwise_kernel_flat(
+                self,
+                rhs,
+                |l_arr, r_arr| {
+                    let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
+                    let values = l_arr.values() ^ r_arr.values();
+                    PlBooleanArray::new(values, l_arr.len(), validity.map(PlBitmap::from_bitmap))
+                },
+                self.name().clone(),
+            )
         }
     }
 }
@@ -161,7 +171,12 @@ impl BitAnd for &BooleanChunked {
             _ => {},
         }
 
-        arity::binary(self, rhs, polars_compute::boolean::and)
+        arity::binary_elementwise_kernel_flat(
+            self,
+            rhs,
+            polars_compute::boolean::and,
+            self.name().clone(),
+        )
     }
 }
 

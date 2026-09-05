@@ -5,7 +5,6 @@ mod numeric;
 
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use arrow::compute::utils::combine_validities_and;
 use num_traits::{Num, NumCast, ToPrimitive};
 pub use numeric::ArithmeticChunked;
 
@@ -44,10 +43,10 @@ impl Add<&str> for &StringChunked {
     }
 }
 
-fn concat_binview(a: &BinaryViewArray, b: &BinaryViewArray) -> BinaryViewArray {
-    let validity = combine_validities_and(a.validity(), b.validity());
+fn concat_binview(a: &PlBinaryViewArray, b: &PlBinaryViewArray) -> PlBinaryViewArray {
+    let validity = polars_array::bitmap::combine_validities_and(a.validity(), b.validity());
 
-    let mut mutable = MutableBinaryViewArray::with_capacity(a.len());
+    let mut mutable = polars_array::PlBinaryViewArrayBuilder::with_capacity(a.len());
 
     let mut scratch = vec![];
     for (a, b) in a.values_iter().zip(b.values_iter()) {
@@ -95,7 +94,14 @@ impl Add for &BinaryChunked {
             };
         }
 
-        arity::binary(self, rhs, concat_binview)
+        // TODO(polars-array-scalar): the values are concatenated one pair at a time, so a scalar
+        // chunk is written out rather than the one pair it stands for being concatenated once.
+        arity::binary_elementwise_kernel_flat(
+            self,
+            rhs,
+            |l, r| concat_binview(l, r),
+            self.name().clone(),
+        )
     }
 }
 
@@ -111,21 +117,22 @@ impl Add<&[u8]> for &BinaryChunked {
     type Output = BinaryChunked;
 
     fn add(self, rhs: &[u8]) -> Self::Output {
-        let arr = BinaryViewArray::from_slice_values([rhs]);
+        let arr = PlBinaryViewArray::from_values_iter([rhs]);
         let rhs: BinaryChunked = arr.into();
         self.add(&rhs)
     }
 }
 
-fn add_boolean(a: &BooleanArray, b: &BooleanArray) -> PrimitiveArray<IdxSize> {
-    let validity = combine_validities_and(a.validity(), b.validity());
+fn add_boolean(a: &PlBooleanArray, b: &PlBooleanArray) -> PlPrimitiveArray<IdxSize> {
+    let validity = polars_array::bitmap::combine_validities_and(a.validity(), b.validity());
 
     let values = a
         .values_iter()
         .zip(b.values_iter())
         .map(|(a, b)| a as IdxSize + b as IdxSize)
         .collect::<Vec<_>>();
-    PrimitiveArray::from_data_default(values.into(), validity)
+    let length = values.len();
+    PlPrimitiveArray::new(values.into(), length, validity)
 }
 
 impl Add for &BooleanChunked {

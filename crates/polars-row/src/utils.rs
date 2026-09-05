@@ -26,6 +26,33 @@ macro_rules! with_match_arrow_primitive_type {(
     }
 })}
 
+/// [`with_match_arrow_primitive_type`] over the [`PrimitiveType`](arrow::types::PrimitiveType) an
+/// array of `polars-array` carries, which is what the encoder dispatches on.
+#[macro_export]
+macro_rules! with_match_pl_primitive_type {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use arrow::types::PrimitiveType::*;
+    use polars_utils::float16::pf16;
+    match $key_type {
+        Int8 => __with_ty__! { i8 },
+        Int16 => __with_ty__! { i16 },
+        Int32 => __with_ty__! { i32 },
+        Int64 => __with_ty__! { i64 },
+        Int128 => __with_ty__! { i128 },
+        UInt8 => __with_ty__! { u8 },
+        UInt16 => __with_ty__! { u16 },
+        UInt32 => __with_ty__! { u32 },
+        UInt64 => __with_ty__! { u64 },
+        UInt128 => __with_ty__! { u128 },
+        Float16 => __with_ty__! { pf16 },
+        Float32 => __with_ty__! { f32 },
+        Float64 => __with_ty__! { f64 },
+        _ => unreachable!(),
+    }
+})}
+
 pub(crate) unsafe fn decode_opt_nulls(rows: &[&[u8]], null_sentinel: u8) -> Option<Bitmap> {
     let first_null = rows
         .iter()

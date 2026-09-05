@@ -1,7 +1,7 @@
-use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType;
+use polars_array::{PlArray, PlPrimitiveArray, StaticArray};
 
-use crate::ewm::EwmStateUpdate;
+use crate::ewm::{EwmStateUpdate, chunk_of};
 
 pub fn ewm_mean<I, T>(
     xs: I,
@@ -9,7 +9,7 @@ pub fn ewm_mean<I, T>(
     adjust: bool,
     min_periods: usize,
     ignore_nulls: bool,
-) -> PrimitiveArray<T>
+) -> PlPrimitiveArray<T>
 where
     I: IntoIterator<Item = Option<T>>,
     T: num_traits::Float + NativeType + std::ops::MulAssign,
@@ -44,9 +44,9 @@ where
         }
     }
 
-    pub fn update(&mut self, values: &PrimitiveArray<T>) -> PrimitiveArray<T> {
-        self.update_iter(values.iter().map(|x| x.copied()))
-            .collect()
+    /// Advances the state over the elements of `values`, one output element per input element.
+    pub fn update(&mut self, values: &PlPrimitiveArray<T>) -> PlPrimitiveArray<T> {
+        self.update_iter(values.iter()).collect()
     }
 
     pub fn update_iter<I>(&mut self, values: I) -> impl Iterator<Item = Option<T>>
@@ -94,12 +94,8 @@ impl<T> EwmStateUpdate for EwmMeanState<T>
 where
     T: NativeType + num_traits::Float + std::ops::MulAssign,
 {
-    fn ewm_state_update(&mut self, values: &dyn Array) -> Box<dyn Array> {
-        let values: &PrimitiveArray<T> = values.as_any().downcast_ref().unwrap();
-
-        let out: PrimitiveArray<T> = self.update(values);
-
-        out.boxed()
+    fn ewm_state_update(&mut self, values: &dyn PlArray) -> Box<dyn PlArray> {
+        self.update(chunk_of::<T>(values)).into_boxed()
     }
 }
 
@@ -118,8 +114,10 @@ mod test {
                 for min_periods in [0, 1] {
                     let result = ewm_mean(xs.clone(), ALPHA, adjust, min_periods, ignore_nulls);
                     let expected = match adjust {
-                        false => PrimitiveArray::from([Some(1.0f64), Some(1.5f64), Some(2.25f64)]),
-                        true => PrimitiveArray::from([
+                        false => {
+                            PlPrimitiveArray::from_iter([Some(1.0f64), Some(1.5f64), Some(2.25f64)])
+                        },
+                        true => PlPrimitiveArray::from_iter([
                             Some(1.0),
                             Some(1.666_666_666_666_666_7),
                             Some(2.428_571_428_571_428_4),
@@ -129,8 +127,8 @@ mod test {
                 }
                 let result = ewm_mean(xs.clone(), ALPHA, adjust, 2, ignore_nulls);
                 let expected = match adjust {
-                    false => PrimitiveArray::from([None, Some(1.5f64), Some(2.25f64)]),
-                    true => PrimitiveArray::from([
+                    false => PlPrimitiveArray::from_iter([None, Some(1.5f64), Some(2.25f64)]),
+                    true => PlPrimitiveArray::from_iter([
                         None,
                         Some(1.666_666_666_666_666_7),
                         Some(2.428_571_428_571_428_4),
@@ -155,7 +153,7 @@ mod test {
         ];
         assert_allclose!(
             ewm_mean(xs1.clone(), 0.5, true, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(5.0),
@@ -169,7 +167,7 @@ mod test {
         );
         assert_allclose!(
             ewm_mean(xs1.clone(), 0.5, true, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(5.0),
@@ -183,7 +181,7 @@ mod test {
         );
         assert_allclose!(
             ewm_mean(xs1.clone(), 0.5, false, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(5.0),
@@ -197,7 +195,7 @@ mod test {
         );
         assert_allclose!(
             ewm_mean(xs1, 0.5, false, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(5.0),

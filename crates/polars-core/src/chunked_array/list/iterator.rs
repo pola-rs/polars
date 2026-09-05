@@ -3,14 +3,15 @@ use std::ptr::NonNull;
 use std::rc::Rc;
 
 use crate::chunked_array::flags::StatisticsFlags;
+use crate::chunked_array::list::collect_list_chunk;
 use crate::prelude::*;
 use crate::series::amortized_iter::{AmortSeries, ArrayBox, unstable_series_container_and_ptr};
 
 pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     len: usize,
     series_container: Rc<Series>,
-    inner: NonNull<ArrayRef>,
-    lifetime: PhantomData<&'a ArrayRef>,
+    inner: NonNull<PlArrayRef>,
+    lifetime: PhantomData<&'a PlArrayRef>,
     iter: I,
     // used only if feature="dtype-struct"
     #[allow(dead_code)]
@@ -21,7 +22,7 @@ impl<I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'_, I> {
     pub(crate) unsafe fn new(
         len: usize,
         series_container: Series,
-        inner: NonNull<ArrayRef>,
+        inner: NonNull<PlArrayRef>,
         iter: I,
         inner_dtype: DataType,
     ) -> Self {
@@ -134,7 +135,7 @@ impl ListChunked {
         // we create the series container from the inner array
         // so that the container has the proper dtype.
         let arr = self.downcast_iter().next().unwrap();
-        let inner_values = arr.values();
+        let inner_values = arr.values().to_boxed();
 
         let inner_dtype = self.inner_dtype();
         let iter_dtype = match inner_dtype {
@@ -149,7 +150,7 @@ impl ListChunked {
         // SAFETY:
         // inner type passed as physical type
         let (s, ptr) =
-            unsafe { unstable_series_container_and_ptr(name, inner_values.clone(), &iter_dtype) };
+            unsafe { unstable_series_container_and_ptr(name, inner_values, &iter_dtype) };
 
         // SAFETY: ptr belongs the Series..
         unsafe {
@@ -376,7 +377,7 @@ impl ListChunked {
             return self.clone();
         }
         let mut fast_explode = self.null_count() == 0;
-        let mut ca: ListChunked = self
+        let elements = self
             .amortized_iter()
             .map(|opt_v| {
                 opt_v.map(|v| {
@@ -387,7 +388,9 @@ impl ListChunked {
                     to_arr(&out)
                 })
             })
-            .collect_ca_with_dtype(self.name().clone(), self.dtype().clone());
+            .collect::<Vec<_>>();
+        let chunk = collect_list_chunk(elements, self.inner_dtype());
+        let mut ca = ChunkedArray::from_chunk_iter_and_field(self.field.clone(), [chunk]);
 
         if fast_explode {
             ca.set_fast_explode();
@@ -440,7 +443,7 @@ impl ListChunked {
             return Ok(self.clone());
         }
         let mut fast_explode = self.null_count() == 0;
-        let mut ca: ListChunked = self
+        let elements = self
             .amortized_iter()
             .map(|opt_v| {
                 opt_v
@@ -453,7 +456,9 @@ impl ListChunked {
                     })
                     .transpose()
             })
-            .try_collect_ca_with_dtype(self.name().clone(), self.dtype().clone())?;
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let chunk = collect_list_chunk(elements, self.inner_dtype());
+        let mut ca = ChunkedArray::from_chunk_iter_and_field(self.field.clone(), [chunk]);
 
         if fast_explode {
             ca.set_fast_explode();
@@ -462,7 +467,7 @@ impl ListChunked {
     }
 }
 
-fn to_arr(s: &Series) -> ArrayRef {
+fn to_arr(s: &Series) -> PlArrayRef {
     if s.chunks().len() > 1 {
         let s = s.rechunk();
         s.chunks()[0].clone()

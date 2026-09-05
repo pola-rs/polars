@@ -3,6 +3,19 @@ pub use std::sync::Arc;
 
 pub use arrow::array::ArrayRef;
 pub(crate) use arrow::array::*;
+// The explicit imports of the array crate shadow the glob above: a `ChunkedArray` is backed by the
+// arrays of `polars-array`, and `arrow::array` is only what it is imported from and exported to.
+pub use polars_array::arrow::bridge::ToArrow;
+pub use polars_array::{
+    Flat, PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBitmapRef,
+    PlBooleanArray, PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray, PlNullArray,
+    PlPrimitiveArray, PlStructArray, PlUtf8ViewArray, PlUtf8ViewArrayBuilder, StaticArrayBuilder,
+    ZeroableArrayFromIter,
+};
+
+/// An owned, cheaply cloneable chunk of a [`ChunkedArray`]: the counterpart of
+/// [`ArrowArrayRef`](arrow::array::ArrayRef), carrying no logical type of its own.
+pub type PlArrayRef = Box<dyn PlArray>;
 pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
 pub use arrow::legacy::prelude::*;
 pub(crate) use arrow::trusted_len::TrustedLen;
@@ -26,6 +39,7 @@ pub use crate::chunked_array::builder::{
     ListStringChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder, StringChunkedBuilder,
 };
 pub use crate::chunked_array::collect::{ChunkedCollectInferIterExt, ChunkedCollectIterExt};
+pub use crate::chunked_array::flat::{FlatChunkedArray, FlatNumericChunkedArray};
 #[cfg(feature = "dtype-categorical")]
 #[allow(unused)] // See rust-lang/rust/issues/160691.
 pub use crate::chunked_array::logical::categorical::*;
@@ -39,7 +53,7 @@ pub use crate::chunked_array::ops::rolling_window::RollingOptionsFixedWindow;
 pub use crate::chunked_array::ops::*;
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;
-pub use crate::datatypes::{ArrayCollectIterExt, *};
+pub use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter, StaticArray, *};
 pub use crate::error::abort::try_raise_polars_abort;
 pub use crate::error::{
     PolarsContext, PolarsError, PolarsResult, polars_bail, polars_ensure, polars_err, polars_warn,

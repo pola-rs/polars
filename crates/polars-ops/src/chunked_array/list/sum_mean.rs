@@ -1,6 +1,5 @@
 use std::ops::Div;
 
-use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
 use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
@@ -11,7 +10,7 @@ use polars_utils::float16::pf16;
 use super::*;
 use crate::chunked_array::sum::sum_slice;
 
-fn sum_between_offsets<T, S>(values: &[T], offset: &[i64]) -> Vec<S>
+fn sum_between_offsets<T, S>(values: &[T], offset: &[u64]) -> Vec<S>
 where
     T: NativeType + ToPrimitive,
     S: NumCast + std::iter::Sum,
@@ -27,47 +26,59 @@ where
         .collect()
 }
 
-fn dispatch_sum<T, S>(arr: &dyn Array, offsets: &[i64], validity: Option<&Bitmap>) -> ArrayRef
+fn dispatch_sum<T, S>(arr: &dyn PlArray, offsets: &[u64], validity: Option<&Bitmap>) -> PlArrayRef
 where
     T: NativeType + ToPrimitive,
     S: NativeType + NumCast + std::iter::Sum,
 {
-    let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
-    let values = values.values().as_slice();
-    Box::new(PrimitiveArray::from_data_default(
-        sum_between_offsets::<_, S>(values, offsets).into(),
-        validity.cloned(),
-    )) as ArrayRef
+    let values = arr.as_any().downcast_ref::<PlPrimitiveArray<T>>().unwrap();
+    // TODO(polars-array-scalar): the sum reads the values as a slice, so a scalar values buffer
+    // is written out here rather than the one value it stands for being multiplied out.
+    let values = values.to_flat();
+    let out = PlPrimitiveArray::from_vec(sum_between_offsets::<_, S>(values.as_slice(), offsets));
+    // One sum per element, and `validity` holds one bit per element as well.
+    out.with_validity(validity.cloned().map(PlBitmap::from_bitmap))
+        .into_boxed()
 }
 
 pub(super) fn sum_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
     use DataType::*;
-    let chunks = ca
-        .downcast_iter()
-        .map(|arr| {
-            let offsets = arr.offsets().as_slice();
-            let values = arr.values().as_ref();
 
-            match inner_type {
-                Int8 => dispatch_sum::<i8, i64>(values, offsets, arr.validity()),
-                Int16 => dispatch_sum::<i16, i64>(values, offsets, arr.validity()),
-                Int32 => dispatch_sum::<i32, i32>(values, offsets, arr.validity()),
-                Int64 => dispatch_sum::<i64, i64>(values, offsets, arr.validity()),
-                Int128 => dispatch_sum::<i128, i128>(values, offsets, arr.validity()),
-                UInt8 => dispatch_sum::<u8, i64>(values, offsets, arr.validity()),
-                UInt16 => dispatch_sum::<u16, i64>(values, offsets, arr.validity()),
-                UInt32 => dispatch_sum::<u32, u32>(values, offsets, arr.validity()),
-                UInt64 => dispatch_sum::<u64, u64>(values, offsets, arr.validity()),
-                UInt128 => dispatch_sum::<u128, u128>(values, offsets, arr.validity()),
-                Float16 => dispatch_sum::<pf16, pf16>(values, offsets, arr.validity()),
-                Float32 => dispatch_sum::<f32, f32>(values, offsets, arr.validity()),
-                Float64 => dispatch_sum::<f64, f64>(values, offsets, arr.validity()),
-                _ => unimplemented!(),
+    macro_rules! dispatch {
+        ($T:ty, $S:ty, $out_dtype:expr) => {{
+            let chunks = ca
+                .downcast_iter()
+                .map(|arr| {
+                    // TODO(polars-array-scalar): the offsets are read as a slice, so scalar
+                    // offsets are written out here rather than the range every element shares.
+                    let arr = arr.to_flat();
+                    dispatch_sum::<$T, $S>(arr.values(), arr.offsets().as_slice(), arr.validity())
+                })
+                .collect::<Vec<_>>();
+
+            // SAFETY: `dispatch_sum` builds an array of `$S`, the physical type of `$out_dtype`.
+            unsafe {
+                Series::from_chunks_and_dtype_unchecked(ca.name().clone(), chunks, &$out_dtype)
             }
-        })
-        .collect::<Vec<_>>();
+        }};
+    }
 
-    Series::try_from((ca.name().clone(), chunks)).unwrap()
+    match inner_type {
+        Int8 => dispatch!(i8, i64, Int64),
+        Int16 => dispatch!(i16, i64, Int64),
+        Int32 => dispatch!(i32, i32, Int32),
+        Int64 => dispatch!(i64, i64, Int64),
+        Int128 => dispatch!(i128, i128, Int128),
+        UInt8 => dispatch!(u8, i64, Int64),
+        UInt16 => dispatch!(u16, i64, Int64),
+        UInt32 => dispatch!(u32, u32, UInt32),
+        UInt64 => dispatch!(u64, u64, UInt64),
+        UInt128 => dispatch!(u128, u128, UInt128),
+        Float16 => dispatch!(pf16, pf16, Float16),
+        Float32 => dispatch!(f32, f32, Float32),
+        Float64 => dispatch!(f64, f64, Float64),
+        _ => unimplemented!(),
+    }
 }
 
 pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> PolarsResult<Series> {
@@ -155,7 +166,7 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
     Ok(out)
 }
 
-fn mean_between_offsets<T, S>(values: &[T], offset: &[i64]) -> PrimitiveArray<S>
+fn mean_between_offsets<T, S>(values: &[T], offset: &[u64]) -> PlPrimitiveArray<S>
 where
     T: NativeType + ToPrimitive,
     S: NativeType + NumCast + std::iter::Sum + Div<Output = S>,
@@ -171,45 +182,58 @@ where
         .collect()
 }
 
-fn dispatch_mean<T, S>(arr: &dyn Array, offsets: &[i64], validity: Option<&Bitmap>) -> ArrayRef
+fn dispatch_mean<T, S>(arr: &dyn PlArray, offsets: &[u64], validity: Option<&Bitmap>) -> PlArrayRef
 where
     T: NativeType + ToPrimitive,
     S: NativeType + NumCast + std::iter::Sum + Div<Output = S>,
 {
-    let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
-    let values = values.values().as_slice();
-    let out = mean_between_offsets::<_, S>(values, offsets);
-    let new_validity = combine_validities_and(out.validity(), validity);
-    out.with_validity(new_validity).to_boxed()
+    let values = arr.as_any().downcast_ref::<PlPrimitiveArray<T>>().unwrap();
+    // TODO(polars-array-scalar): as in `dispatch_sum`, a scalar values buffer is written out here.
+    let values = values.to_flat();
+    let out = mean_between_offsets::<_, S>(values.as_slice(), offsets);
+    // Collecting leaves `out` flat, so its mask holds one bit per element like the other one.
+    let new_validity = combine_validities_and(out.as_flat().unwrap().validity(), validity);
+    out.with_validity(new_validity.map(PlBitmap::from_bitmap))
+        .into_boxed()
 }
 
 pub(super) fn mean_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
     use DataType::*;
-    let chunks = ca
-        .downcast_iter()
-        .map(|arr| {
-            let offsets = arr.offsets().as_slice();
-            let values = arr.values().as_ref();
 
-            match inner_type {
-                Int8 => dispatch_mean::<i8, f64>(values, offsets, arr.validity()),
-                Int16 => dispatch_mean::<i16, f64>(values, offsets, arr.validity()),
-                Int32 => dispatch_mean::<i32, f64>(values, offsets, arr.validity()),
-                Int64 => dispatch_mean::<i64, f64>(values, offsets, arr.validity()),
-                Int128 => dispatch_mean::<i128, f64>(values, offsets, arr.validity()),
-                UInt8 => dispatch_mean::<u8, f64>(values, offsets, arr.validity()),
-                UInt16 => dispatch_mean::<u16, f64>(values, offsets, arr.validity()),
-                UInt32 => dispatch_mean::<u32, f64>(values, offsets, arr.validity()),
-                UInt64 => dispatch_mean::<u64, f64>(values, offsets, arr.validity()),
-                UInt128 => dispatch_mean::<u128, f64>(values, offsets, arr.validity()),
-                Float32 => dispatch_mean::<f32, f32>(values, offsets, arr.validity()),
-                Float64 => dispatch_mean::<f64, f64>(values, offsets, arr.validity()),
-                _ => unimplemented!(),
+    macro_rules! dispatch {
+        ($T:ty, $S:ty, $out_dtype:expr) => {{
+            let chunks = ca
+                .downcast_iter()
+                .map(|arr| {
+                    // TODO(polars-array-scalar): as in `sum_list_numerical`, scalar offsets are
+                    // written out here.
+                    let arr = arr.to_flat();
+                    dispatch_mean::<$T, $S>(arr.values(), arr.offsets().as_slice(), arr.validity())
+                })
+                .collect::<Vec<_>>();
+
+            // SAFETY: `dispatch_mean` builds an array of `$S`, the physical type of `$out_dtype`.
+            unsafe {
+                Series::from_chunks_and_dtype_unchecked(ca.name().clone(), chunks, &$out_dtype)
             }
-        })
-        .collect::<Vec<_>>();
+        }};
+    }
 
-    Series::try_from((ca.name().clone(), chunks)).unwrap()
+    match inner_type {
+        Int8 => dispatch!(i8, f64, Float64),
+        Int16 => dispatch!(i16, f64, Float64),
+        Int32 => dispatch!(i32, f64, Float64),
+        Int64 => dispatch!(i64, f64, Float64),
+        Int128 => dispatch!(i128, f64, Float64),
+        UInt8 => dispatch!(u8, f64, Float64),
+        UInt16 => dispatch!(u16, f64, Float64),
+        UInt32 => dispatch!(u32, f64, Float64),
+        UInt64 => dispatch!(u64, f64, Float64),
+        UInt128 => dispatch!(u128, f64, Float64),
+        Float32 => dispatch!(f32, f32, Float32),
+        Float64 => dispatch!(f64, f64, Float64),
+        _ => unimplemented!(),
+    }
 }
 
 pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {

@@ -1,6 +1,8 @@
 #[cfg(feature = "performant")]
 use arrow::legacy::kernels::sorted_join;
 #[cfg(feature = "performant")]
+use polars_array::arrow::export;
+#[cfg(feature = "performant")]
 use polars_core::utils::_split_offsets;
 #[cfg(feature = "performant")]
 use polars_core::utils::flatten::flatten_par;
@@ -18,6 +20,10 @@ where
     let offsets = _split_offsets(s_left.len(), RAYON.current_num_threads());
     let s_left = s_left.rechunk();
     let s_right = s_right.rechunk();
+    // TODO(polars-array-scalar): the merge reads both sides as slices, so a scalar chunk is
+    // written out here rather than the one key it stands for being merged once.
+    let s_left = s_left.to_flat();
+    let s_right = s_right.to_flat();
 
     // we can unwrap because we should not have nulls
     let slice_left = s_left.cont_slice().unwrap();
@@ -102,6 +108,10 @@ where
     let offsets = _split_offsets(s_left.len(), RAYON.current_num_threads());
     let s_left = s_left.rechunk();
     let s_right = s_right.rechunk();
+    // TODO(polars-array-scalar): the merge reads both sides as slices, so a scalar chunk is
+    // written out here rather than the one key it stands for being merged once.
+    let s_left = s_left.to_flat();
+    let s_right = s_right.to_flat();
 
     // we can unwrap because we should not have nulls
     let slice_left = s_left.cont_slice().unwrap();
@@ -193,7 +203,12 @@ pub(crate) fn to_left_join_ids(
 
 #[cfg(feature = "performant")]
 fn create_reverse_map_from_arg_sort(mut arg_sort: IdxCa) -> Vec<IdxSize> {
-    let arr = unsafe { arg_sort.chunks_mut() }.pop().unwrap();
+    let chunk = unsafe { arg_sort.chunks_mut() }.pop().unwrap();
+    // TODO(polars-array-scalar): the reverse map is the values buffer itself, so a scalar chunk
+    // is written out here rather than the single index it stands for being repeated.
+    let arr = export::to_arrow(&*chunk);
+    // Drop the chunk so that the buffer is unshared and can be taken rather than copied.
+    drop(chunk);
     primitive_to_vec::<IdxSize>(arr).unwrap()
 }
 

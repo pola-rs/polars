@@ -1,4 +1,3 @@
-use arrow::array::PrimitiveArray;
 use chrono::format::ParseErrorKind;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 use polars_core::prelude::*;
@@ -297,7 +296,7 @@ impl<T: PolarsNumericType> DatetimeInfer<T> {
             let iter = array
                 .into_iter()
                 .map(|opt_val| opt_val.and_then(|val| self.parse(val)));
-            PrimitiveArray::from_trusted_len_iter(iter)
+            iter.collect_arr_trusted()
         });
         ChunkedArray::<T>::from_chunk_iter(ca.name().clone(), chunks)
             .into_series()

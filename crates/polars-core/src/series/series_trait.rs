@@ -234,13 +234,13 @@ pub trait SeriesTrait:
     }
 
     /// Underlying chunks.
-    fn chunks(&self) -> &Vec<ArrayRef>;
+    fn chunks(&self) -> &Vec<PlArrayRef>;
 
     /// Underlying chunks.
     ///
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
-    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef>;
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<PlArrayRef>;
 
     /// Number of chunks in this Series
     fn n_chunks(&self) -> usize {
@@ -323,7 +323,9 @@ pub trait SeriesTrait:
     /// Returns the validity of this series as a single bitmap.
     fn rechunk_validity(&self) -> Option<Bitmap> {
         if self.chunks().len() == 1 {
-            return self.chunks()[0].validity().cloned();
+            return self.chunks()[0]
+                .validity()
+                .map(|v| v.to_flat().into_owned());
         }
 
         if !self.has_nulls() || self.is_empty() {
@@ -333,7 +335,7 @@ pub trait SeriesTrait:
         let mut bm = BitmapBuilder::with_capacity(self.len());
         for arr in self.chunks() {
             if let Some(v) = arr.validity() {
-                bm.extend_from_bitmap(v);
+                bm.extend_from_bitmap(&v.to_flat());
             } else {
                 bm.extend_constant(arr.len(), true);
             }
@@ -667,6 +669,13 @@ pub trait SeriesTrait:
     /// Get the value at this index as a downcastable Any trait ref.
     fn get_object(&self, _index: usize) -> Option<&dyn PolarsObjectSafe> {
         invalid_operation_panic!(get_object, self)
+    }
+
+    #[cfg(feature = "object")]
+    /// The values of this object column, packed into the fixed size binary array that carries them
+    /// out to Arrow. Dispatched here because only the column knows the type of its values.
+    fn object_values_to_arrow(&self) -> ArrayRef {
+        invalid_operation_panic!(object_values_to_arrow, self)
     }
 
     #[cfg(feature = "object")]

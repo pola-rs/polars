@@ -302,6 +302,9 @@ impl BooleanChunked {
         let groups_len = groups.len();
 
         let ca = RAYON.install(|| {
+            // The masks are read as one run, so a chunk that is not laid out flat is written out
+            // first — see `StaticArray::to_flat`.
+            let values = values.to_flat();
             let validity = values
                 .validity()
                 .filter(|v| v.unset_bits() > 0)

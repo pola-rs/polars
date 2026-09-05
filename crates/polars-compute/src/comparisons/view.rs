@@ -1,4 +1,4 @@
-use arrow::array::{BinaryViewArray, Utf8ViewArray};
+use arrow::array::{Array, BinaryViewArray, Utf8ViewArray};
 use arrow::bitmap::Bitmap;
 
 use super::TotalEqKernel;
@@ -46,6 +46,10 @@ fn broadcast_inequality(
 
 impl TotalEqKernel for BinaryViewArray {
     type Scalar = [u8];
+
+    fn validity_mask(&self) -> Option<&Bitmap> {
+        self.validity()
+    }
 
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
         debug_assert!(self.len() == other.len());
@@ -206,6 +210,10 @@ impl TotalOrdKernel for BinaryViewArray {
 
 impl TotalEqKernel for Utf8ViewArray {
     type Scalar = str;
+
+    fn validity_mask(&self) -> Option<&Bitmap> {
+        self.validity()
+    }
 
     fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
         self.to_binview().tot_eq_kernel(&other.to_binview())

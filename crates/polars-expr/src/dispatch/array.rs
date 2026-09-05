@@ -1,3 +1,4 @@
+use polars_array::PlBitmap;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::{Column, DataType, ExplodeOptions, IntoColumn, SortOptions};
 use polars_ops::prelude::array::ArrayNameSpace;
@@ -53,7 +54,7 @@ pub(super) fn length(s: &Column) -> PolarsResult<Column> {
         let chunks = unsafe { series.chunks_mut() };
         assert_eq!(chunks.len(), 1);
 
-        chunks[0] = chunks[0].with_validity(Some(validity));
+        chunks[0] = chunks[0].with_validity(Some(PlBitmap::from_bitmap(validity)));
 
         series.compute_len();
         c = series.into_column();
