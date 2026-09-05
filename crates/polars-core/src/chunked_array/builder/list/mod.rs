@@ -5,11 +5,10 @@ mod null;
 mod primitive;
 
 pub use anonymous::*;
-use arrow::legacy::array::list::AnonymousBuilder;
 pub use binary::*;
 pub use boolean::*;
 pub use null::*;
-use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
+use polars_array::builder::{ShareStrategy, StaticArrayBuilder, builder_like};
 use polars_array::{
     PlBinaryViewArrayBuilder, PlBooleanArrayBuilder, PlListArrayBuilder, PlNullArrayBuilder,
     PlPrimitiveArrayBuilder, PlUtf8ViewArrayBuilder,
@@ -17,6 +16,7 @@ use polars_array::{
 pub use primitive::*;
 
 use super::*;
+use crate::chunked_array::new_empty_chunk;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_builder;
 
