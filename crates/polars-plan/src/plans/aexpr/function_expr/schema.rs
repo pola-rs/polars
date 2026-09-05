@@ -337,17 +337,12 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             InterpolateBy => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "log")]
-            Entropy { normalize, .. } => {
-                let mapper = mapper.ensure_satisfies(
+            Entropy { .. } => mapper
+                .ensure_satisfies(
                     |_, dtype| dtype.is_numeric() || matches!(dtype, DataType::Duration(_)),
                     "entropy",
-                )?;
-                if !normalize && matches!(fields[0].dtype(), DataType::Duration(_)) {
-                    mapper.with_same_dtype()
-                } else {
-                    mapper.map_to_float_dtype()
-                }
-            },
+                )?
+                .map_to_float_dtype(),
             #[cfg(feature = "log")]
             Log1p => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log1p")?

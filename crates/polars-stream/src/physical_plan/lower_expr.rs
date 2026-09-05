@@ -2224,9 +2224,15 @@ fn lower_exprs_with_ctx(
                 //   normalize=false: -sum(x * log(x, base))
                 //   normalize=true:  -sum(x/sum(x) * log(x/sum(x), base))
                 //                  = log(sum(x), base) - sum(x * log(x, base)) / sum(x)
+                let input_dtype = inner_exprs[0]
+                    .dtype(input.output_schema(ctx.phys_sm), ctx.expr_arena)?
+                    .clone();
                 let inner = inner_exprs[0].node();
                 let (trans_input, trans_inner) = lower_exprs_with_ctx(input, &[inner], ctx)?;
-                let x = AExprBuilder::new_from_node(trans_inner[0]);
+                let mut x = AExprBuilder::new_from_node(trans_inner[0]);
+                if matches!(input_dtype, DataType::Duration(_)) {
+                    x = x.to_physical(ctx.expr_arena);
+                }
                 let base = AExprBuilder::lit_scalar(Scalar::from(base), ctx.expr_arena);
                 let log_x = AExprBuilder::function(
                     vec![x.expr_ir_unnamed(), base.expr_ir_unnamed()],

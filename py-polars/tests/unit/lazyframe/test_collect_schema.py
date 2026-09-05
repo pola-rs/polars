@@ -136,23 +136,42 @@ def test_collect_schema_entropy_rejects_non_numeric_27565(
 
 
 @pytest.mark.parametrize(
-    ("dtype", "normalize", "expected"),
+    ("dtype", "values", "normalize", "expected"),
     [
-        (pl.Float16, True, pl.Float16),
-        (pl.Float32, True, pl.Float32),
-        (pl.Int64, True, pl.Float64),
-        (pl.Duration, True, pl.Float64),
-        (pl.Duration, False, pl.Duration),
+        (pl.Float16, [0.25, 0.75], True, pl.Float16),
+        (pl.Float32, [0.25, 0.75], True, pl.Float32),
+        (pl.Int64, [1, 3], True, pl.Float64),
+        (pl.Duration, [1, 3], True, pl.Float64),
+        (pl.Duration, [1, 3], False, pl.Float64),
     ],
 )
+@pytest.mark.parametrize("grouped", [False, True])
 def test_collect_schema_entropy_output_dtype_27565(
-    dtype: pl.DataType, normalize: bool, expected: pl.DataType
+    dtype: pl.DataType,
+    values: list[int | float],
+    normalize: bool,
+    expected: pl.DataType,
+    *,
+    grouped: bool,
 ) -> None:
-    lf = pl.LazyFrame({"a": [None]}, schema={"a": dtype}).select(
-        result=pl.col("a").entropy(normalize=normalize)
+    frame = pl.LazyFrame(
+        {"group": [0, 0], "a": values}, schema={"group": pl.Int8, "a": dtype}
     )
-    assert lf.collect_schema()["result"] == expected
-    assert lf.collect_schema() == lf.collect().schema
+    expr = pl.col("a").entropy(normalize=normalize)
+    lf = (
+        frame.group_by("group").agg(result=expr)
+        if grouped
+        else frame.select(result=expr)
+    )
+
+    schema = lf.collect_schema()
+    in_memory = lf.collect(engine="in-memory")
+    streaming = lf.collect(engine="streaming")
+    assert schema["result"] == expected
+    assert schema == in_memory.schema
+    assert schema == streaming.schema
+    if dtype == pl.Duration:
+        assert streaming["result"].item() == pytest.approx(in_memory["result"].item())
 
 
 def test_arr_get_oob_errors_at_schema_26088() -> None:
