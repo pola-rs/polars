@@ -208,6 +208,7 @@ fn replace_elementwise_components(
 #[allow(clippy::too_many_arguments)]
 fn try_lower_elementwise_scalar_agg_expr(
     expr: Node,
+    input_schema: &Schema,
     gbl_kind: GroupByLowerKind,
     canonical_exprs: &mut CanonicalExprMap,
     expr_cache: &mut ExprCache,
@@ -222,6 +223,7 @@ fn try_lower_elementwise_scalar_agg_expr(
         ($input:expr) => {
             try_lower_elementwise_scalar_agg_expr(
                 $input,
+                input_schema,
                 gbl_kind,
                 canonical_exprs,
                 expr_cache,
@@ -458,7 +460,11 @@ fn try_lower_elementwise_scalar_agg_expr(
             //   normalize=true:  -sum(x/sum(x) * log(x/sum(x), base))
             //                  = log(sum(x), base) - sum(x * log(x, base)) / sum(x)
             let (base, normalize) = (*base, *normalize);
-            let x = AExprBuilder::new_from_node(inner_exprs[0].node());
+            let input_dtype = inner_exprs[0].dtype(input_schema, expr_arena).ok()?.clone();
+            let mut x = AExprBuilder::new_from_node(inner_exprs[0].node());
+            if input_dtype.is_duration() {
+                x = x.to_physical(expr_arena);
+            }
             let base = AExprBuilder::lit_scalar(Scalar::from(base), expr_arena);
             let log_x = AExprBuilder::function(
                 vec![x.expr_ir_unnamed(), base.expr_ir_unnamed()],
@@ -799,9 +805,11 @@ pub fn try_build_streaming_group_by(
     // Maps elementwise input expression ids to column expression.
     let mut uniq_elementwise_exprs = PlIndexMap::new();
 
+    let input_schema = input.output_schema(phys_sm).clone();
     for agg in aggs {
         let Some(trans_node) = try_lower_elementwise_scalar_agg_expr(
             agg.node(),
+            input_schema.as_ref(),
             gbl_kind,
             &mut canonical_exprs,
             expr_cache,

@@ -45,12 +45,62 @@ impl IRFunctionExpr {
             #[cfg(feature = "business")]
             Business(func) => func.get_field(mapper),
             #[cfg(feature = "abs")]
-            Abs => mapper.with_same_dtype(),
-            Negate => mapper.with_same_dtype(),
+            Abs => mapper
+                .ensure_satisfies(
+                    |_, dtype| dtype.is_numeric() || matches!(dtype, DataType::Duration(_)),
+                    "abs",
+                )?
+                .with_same_dtype(),
+            Negate => mapper
+                .ensure_satisfies(
+                    |_, dtype| {
+                        (dtype.is_numeric()
+                            && !dtype.is_unsigned_integer()
+                            && !matches!(dtype, DataType::Int128))
+                            || matches!(dtype, DataType::Duration(_))
+                    },
+                    "neg",
+                )?
+                .with_same_dtype(),
             NullCount => mapper.with_dtype(IDX_DTYPE),
             Pow(pow_function) => match pow_function {
-                IRPowFunction::Generic => mapper.pow_dtype(),
-                _ => mapper.map_numeric_to_float_dtype(true),
+                IRPowFunction::Generic => {
+                    let dtype = fields[0].dtype();
+                    polars_ensure!(
+                        dtype.is_primitive_numeric(),
+                        InvalidOperation: "`pow` operation not supported for dtype `{}` as base", dtype
+                    );
+                    let dtype = fields[1].dtype();
+                    polars_ensure!(
+                        dtype.is_primitive_numeric(),
+                        InvalidOperation: "`pow` operation not supported for dtype `{}` as exponent", dtype
+                    );
+                    mapper.pow_dtype()
+                },
+                IRPowFunction::Sqrt => mapper
+                    .ensure_satisfies(
+                        |_, dtype| {
+                            dtype.is_numeric()
+                                || dtype.is_bool()
+                                || dtype.is_string()
+                                || dtype.is_null()
+                                || dtype.is_temporal()
+                        },
+                        "sqrt",
+                    )?
+                    .map_to_float_dtype(),
+                IRPowFunction::Cbrt => mapper
+                    .ensure_satisfies(
+                        |_, dtype| {
+                            dtype.is_numeric()
+                                || dtype.is_bool()
+                                || dtype.is_string()
+                                || dtype.is_null()
+                                || dtype.is_temporal()
+                        },
+                        "cbrt",
+                    )?
+                    .map_to_float_dtype(),
             },
             Coalesce => mapper.map_to_supertype(),
             #[cfg(feature = "row_hash")]
@@ -64,7 +114,9 @@ impl IRFunctionExpr {
             #[cfg(feature = "range")]
             Range(func) => func.get_field(mapper),
             #[cfg(feature = "trigonometry")]
-            Trigonometry(_) => mapper.map_to_float_dtype(),
+            Trigonometry(_) => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_primitive_numeric(), "trigonometry")?
+                .map_to_float_dtype(),
             #[cfg(feature = "trigonometry")]
             Atan2 => mapper.map_to_float_dtype(),
             #[cfg(feature = "sign")]
@@ -285,7 +337,12 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             InterpolateBy => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "log")]
-            Entropy { .. } => mapper.map_to_float_dtype(),
+            Entropy { .. } => mapper
+                .ensure_satisfies(
+                    |_, dtype| dtype.is_numeric() || matches!(dtype, DataType::Duration(_)),
+                    "entropy",
+                )?
+                .map_to_float_dtype(),
             #[cfg(feature = "log")]
             Log1p => mapper
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log1p")?
