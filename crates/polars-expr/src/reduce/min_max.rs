@@ -2,7 +2,6 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use arrow::array::BooleanArray;
 use arrow::bitmap::Bitmap;
 use num_traits::Bounded;
 use polars_core::with_match_physical_integer_polars_type;
@@ -410,8 +409,8 @@ impl GroupedReduction for BoolMinGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze()));
-        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
+        let arr = pl_boolean(v.freeze(), Some(m.freeze()));
+        Ok(BooleanChunked::with_chunk(PlSmallStr::EMPTY, arr).into_series())
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -526,8 +525,8 @@ impl GroupedReduction for BoolMaxGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze()));
-        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
+        let arr = pl_boolean(v.freeze(), Some(m.freeze()));
+        Ok(BooleanChunked::with_chunk(PlSmallStr::EMPTY, arr).into_series())
     }
 
     fn as_any(&self) -> &dyn Any {

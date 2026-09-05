@@ -1,5 +1,3 @@
-use arrow::array::BooleanArray;
-
 use super::*;
 
 pub struct IsEmptyReduce {
@@ -111,8 +109,8 @@ impl GroupedReduction for IsEmptyReduce {
 
     fn finalize(&mut self) -> PolarsResult<Series> {
         let is_empty = core::mem::take(&mut self.is_empty);
-        let arr = BooleanArray::from(is_empty.freeze());
-        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
+        let arr = pl_boolean(is_empty.freeze(), None);
+        Ok(BooleanChunked::with_chunk(PlSmallStr::EMPTY, arr).into_series())
     }
 
     fn as_any(&self) -> &dyn Any {

@@ -1,6 +1,5 @@
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
-use arrow::array::BooleanArray;
 use arrow::types::NativeType;
 use num_traits::Zero;
 use polars_compute::bitwise::BitwiseKernel;
@@ -238,8 +237,8 @@ impl GroupedReduction for BoolXorGroupedReduction {
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
-        let arr = BooleanArray::from(v.freeze()).with_validity(Some(m.freeze()));
-        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
+        let arr = pl_boolean(v.freeze(), Some(m.freeze()));
+        Ok(BooleanChunked::with_chunk(PlSmallStr::EMPTY, arr).into_series())
     }
 
     fn as_any(&self) -> &dyn Any {

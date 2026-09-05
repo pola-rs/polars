@@ -1,5 +1,3 @@
-use arrow::array::BooleanArray;
-
 use super::*;
 
 #[derive(Default)]
@@ -101,8 +99,8 @@ impl GroupedReduction for HasNullsReduce {
 
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.has_nulls);
-        let arr = BooleanArray::from(v.freeze());
-        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
+        let arr = pl_boolean(v.freeze(), None);
+        Ok(BooleanChunked::with_chunk(PlSmallStr::EMPTY, arr).into_series())
     }
 
     fn as_any(&self) -> &dyn Any {
