@@ -133,7 +133,13 @@ pub(super) fn node_stats_with_cache(
                 .iter()
                 .map(|k| into_column(k.node(), expr_arena))
                 .collect::<Option<Vec<_>>>()
-                .and_then(|sources| inner.key_distinct_count_product(&sources));
+                .and_then(|mut sources| {
+                    // Several keys reading one column split it no finer than one of
+                    // them does, so it must be counted once.
+                    sources.sort_unstable();
+                    sources.dedup();
+                    inner.key_distinct_count_product(&sources)
+                });
             let names: Vec<&PlSmallStr> = keys.iter().map(|k| k.output_name()).collect();
             Some(one_row_per_group(inner, &names, ndv, options.slice))
         },

@@ -864,3 +864,59 @@ def test_computed_group_key_does_not_borrow_a_column_distinct_count(
     on = lf.collect(optimizations=ON)
     assert on.height > 0
     assert_frame_equal(off.sort(pl.all()), on.sort(pl.all()))
+
+
+def duplicate_key_frames(tmp_path: Path) -> dict[str, pl.LazyFrame]:
+    """A relation to group, something to fan it back out, and two dimensions.
+
+    The fan-out raises the row count while leaving the grouped key's distinct
+    count alone, which is what lets an inflated group count show.
+    """
+    big = pl.DataFrame(
+        {"k": [i % 400 for i in range(10_000)], "v": list(range(10_000))}
+    )
+    fan = pl.DataFrame(
+        {"f_k": [i % 400 for i in range(20_000)], "f_x": list(range(20_000))}
+    )
+    dim_a = pl.DataFrame(
+        {"a_key": list(range(150)), "a_b": [i % 120 for i in range(150)]}
+    )
+    dim_b = pl.DataFrame(
+        {"b_key": list(range(120)), "b_name": [f"b{i}" for i in range(120)]}
+    )
+    return write_scans(tmp_path, big=big, fan=fan, dim_a=dim_a, dim_b=dim_b)
+
+
+def duplicate_key_query(
+    frames: dict[str, pl.LazyFrame], keys: list[pl.Expr]
+) -> pl.LazyFrame:
+    """`big` grouped on `k`, fanned out, grouped again on `keys`, then chained."""
+    return (
+        frames["big"]
+        .group_by("k")
+        .agg(pl.col("v").sum())
+        .join(frames["fan"], left_on="k", right_on="f_k", coalesce=False)
+        .group_by(*keys)
+        .agg(pl.col("k").min().alias("kj"), pl.col("v").sum().alias("sv"))
+        .join(frames["dim_a"], left_on="kj", right_on="a_key", coalesce=False)
+        .join(frames["dim_b"], left_on="a_b", right_on="b_key", coalesce=False)
+    )
+
+
+def test_two_keys_reading_one_column_count_it_once(tmp_path: Path) -> None:
+    frames = duplicate_key_frames(tmp_path)
+
+    # `k` and `k.alias("k2")` read the same column, so they cut the input into
+    # exactly the groups `k` alone does. Counting the column twice would square
+    # its distinct count and estimate the group-by far larger than it is.
+    expected = ["big", "fan", "dim_a", "dim_b"]
+    one = duplicate_key_query(frames, [pl.col("k")])
+    two = duplicate_key_query(frames, [pl.col("k"), pl.col("k").alias("k2")])
+
+    assert scan_order(one.explain(optimizations=ON)) == expected
+    assert scan_order(two.explain(optimizations=ON)) == expected
+
+    off = two.collect(optimizations=OFF)
+    on = two.collect(optimizations=ON)
+    assert on.height > 0
+    assert_frame_equal(off.sort(pl.all()), on.sort(pl.all()))
