@@ -4994,7 +4994,9 @@ class Series(metaclass=_Meta):
             removed_in="2.0",
         ),
     )
-    def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Array:
+    def to_arrow(
+        self, *, compat_level: CompatLevel | None = None
+    ) -> pa.Array[Any] | pa.ChunkedArray[Any]:
         """
         Return the underlying Arrow array.
 
