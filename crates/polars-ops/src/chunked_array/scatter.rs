@@ -39,16 +39,20 @@ unsafe fn with_values_mut<T: NativeType, F: FnOnce(&mut [T])>(arr: &mut PlPrimit
     let length = arr.len();
     let Some(values) = arr.flat_values_mut() else {
         // A scalar chunk holds one slot standing for every element, so it is written out before
-        // anything can be written into it.
-        let mut values = arr.to_flat().into_owned().flat_values().unwrap().clone();
-        let slice = values
-            .get_mut_slice()
-            .expect("a freshly written buffer is unshared");
-        f(slice);
+        // anything can be written into it — as a buffer of its own, since the array still holds
+        // the one slot it was written out of. `to_flat` is no help here: an array of a *single*
+        // element reads as scalar however it was built, so writing it out leaves it reading that
+        // way too.
+        let mut owned = match arr.scalar_values() {
+            Some(value) => vec![value; length],
+            // Values that are neither flat nor scalar are no values at all.
+            None => Vec::new(),
+        };
+        f(&mut owned);
         let validity = arr.validity().map(PlBitmap::from);
         // SAFETY: the buffer written out holds one slot per element, and the mask is the one the
         // array already carried.
-        *arr = unsafe { PlPrimitiveArray::new_unchecked(values, length, validity) };
+        *arr = unsafe { PlPrimitiveArray::new_unchecked(Buffer::from(owned), length, validity) };
         return;
     };
 
@@ -125,14 +129,12 @@ fn with_bool_values_mut<F: FnOnce(&mut MutableBitmap)>(arr: &mut PlBooleanArray,
         Some(values) => std::mem::take(values),
         None => {
             // A scalar chunk holds one bit standing for every element, so it is written out before
-            // anything can be written into it.
-            let flat = arr.to_flat().into_owned();
-            let values = flat.flat_values().unwrap().clone();
-            // The bitmap written out is shared with the array it was written into until that one
-            // is dropped, and `make_mut` copies whatever is still shared.
-            drop(flat);
-
-            let mut values = values.make_mut();
+            // anything can be written into it — as a bitmap of its own, for the reason given in
+            // `with_values_mut`.
+            let mut values = MutableBitmap::new();
+            if let Some(value) = arr.scalar_values() {
+                values.extend_constant(length, value);
+            }
             f(&mut values);
             let validity = arr.validity().map(PlBitmap::from);
             // SAFETY: the bitmap written out holds one bit per element — `f` may only write over
@@ -214,20 +216,19 @@ unsafe fn with_views_mut<F: FnOnce(&mut [View])>(arr: &mut PlBinaryViewArray, f:
         let buffers = arr.data_buffers().clone();
         let validity = arr.validity().map(PlBitmap::from);
 
-        let flat = arr.to_flat().into_owned();
-        let mut views = flat.flat_views().unwrap().clone();
-        // The buffer written out is shared with the array it was written into until that one is
-        // dropped, and a shared buffer cannot be written into.
-        drop(flat);
-
-        let slice = views
-            .get_mut_slice()
-            .expect("a freshly written buffer is unshared");
-        f(slice);
+        // Written out as a buffer of its own, for the reason given in `with_values_mut`.
+        let mut owned = match arr.scalar_views() {
+            Some(view) => vec![view; length],
+            // Views that are neither flat nor scalar are no views at all.
+            None => Vec::new(),
+        };
+        f(&mut owned);
 
         // SAFETY: the buffer written out holds one view per element, the buffers are the ones the
         // views were read against, and the caller owes that `f` left every view reading them.
-        *arr = unsafe { PlBinaryViewArray::new_unchecked(views, buffers, length, validity) };
+        *arr = unsafe {
+            PlBinaryViewArray::new_unchecked(Buffer::from(owned), buffers, length, validity)
+        };
         return;
     }
 
@@ -545,6 +546,31 @@ mod tests {
         assert_eq!(
             out.i32().unwrap().iter().collect::<Vec<_>>(),
             [None, Some(1), Some(1), Some(1)],
+        );
+    }
+
+    /// An array of a single element reads as scalar whichever way it was built — its values
+    /// buffer holds one slot, and so does a scalar one — so the write-out path has to hold for an
+    /// array that is really flat and whose buffer the array itself still holds.
+    #[test]
+    fn scattering_into_a_one_element_chunk() {
+        let mut ca = Int32Chunked::new("a".into(), &[Some(1)]);
+        let out = (&mut ca).scatter(&idx(&[0]), [None]).unwrap();
+        assert_eq!(out.i32().unwrap().iter().collect::<Vec<_>>(), [None]);
+
+        let mut ca = Int32Chunked::new("a".into(), &[None]);
+        let out = (&mut ca).scatter(&idx(&[0]), [Some(5)]).unwrap();
+        assert_eq!(out.i32().unwrap().iter().collect::<Vec<_>>(), [Some(5)]);
+
+        let mut ca = StringChunked::new("a".into(), &[Some("a")]);
+        let out = (&mut ca).scatter(&idx(&[0]), [Some("bb")]).unwrap();
+        assert_eq!(out.str().unwrap().iter().collect::<Vec<_>>(), [Some("bb")]);
+
+        let mut ca = BooleanChunked::new("a".into(), &[true]);
+        let out = (&mut ca).scatter(&idx(&[0]), [Some(false)]).unwrap();
+        assert_eq!(
+            out.bool().unwrap().iter().collect::<Vec<_>>(),
+            [Some(false)]
         );
     }
 
