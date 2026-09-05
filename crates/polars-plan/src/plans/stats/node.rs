@@ -620,8 +620,8 @@ pub fn key_domain(
         right.distinct_count(right_key),
     ) {
         (Some(l), Some(r)) => l.max(r),
-        // Both the uniqueness assumption and an integer range estimate the domain
-        // from above, so the tighter one is the better estimate.
+        // The uniqueness assumption and the integer range each estimate the domain
+        // from above, so the tighter one wins.
         _ => {
             let rows = left.unfiltered.min(right.unfiltered);
             match key_int_domain(left, left_key, right, right_key) {

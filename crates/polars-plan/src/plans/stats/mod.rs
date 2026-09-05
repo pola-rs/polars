@@ -101,9 +101,7 @@ pub struct ScanColumnStats {
     /// Average width of one value in the source, in bytes.
     pub avg_byte_width: Option<f32>,
     /// Inclusive value range of an integer column, folded over the chunks that were
-    /// read. Bounds the distinct count from above when those chunks cover the column,
-    /// and understates it otherwise, since a chunk that was skipped can only widen
-    /// the range.
+    /// read. A skipped chunk can only widen it, so a partial read understates it.
     #[cfg_attr(feature = "serde", serde(default))]
     pub int_range: Option<(i128, i128)>,
 }

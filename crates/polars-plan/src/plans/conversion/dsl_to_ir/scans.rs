@@ -566,7 +566,7 @@ fn parquet_column_stats(
     metadata: &[polars_io::parquet::metadata::FileMetadataRef],
     complete: bool,
 ) -> ScanColumnStatsMap {
-    /// Accumulated over every leaf chunk under one root column.
+    /// accumulated statistics over one root column (parquet leaf columns are excluded).
     #[derive(Default)]
     struct Acc {
         uncompressed: u64,
@@ -579,8 +579,8 @@ fn parquet_column_stats(
         nested: bool,
         /// Inclusive integer range folded over the chunks read so far.
         int_range: Option<(i128, i128)>,
-        /// Set once a chunk we read carried no range, so an unknown share of the
-        /// column is missing from the fold.
+        /// Set once a chunk carried no range, so part of the column is missing
+        /// from the fold.
         int_range_incomplete: bool,
     }
 
@@ -695,8 +695,8 @@ fn parquet_column_stats(
 /// Inclusive integer range of one column chunk, or `None` if it is not an integer
 /// column or carries no usable min/max.
 ///
-/// An unsigned column is stored as `Int32`/`Int64` but its bounds are ordered as
-/// unsigned, so its statistics are reinterpreted through the matching unsigned type.
+/// An unsigned column is stored as `Int32`/`Int64` with its bounds ordered as
+/// unsigned.
 #[cfg(feature = "parquet")]
 fn chunk_int_range(
     chunk: &polars_parquet::parquet::metadata::ColumnChunkMetadata,
@@ -727,8 +727,8 @@ fn chunk_int_range(
 
 /// Whether an `Int32`/`Int64` column holds unsigned values.
 ///
-/// A writer may annotate the column with either the logical or the older converted
-/// type; with neither it is signed.
+/// A writer may use either the logical or the older converted type; with neither
+/// it is signed.
 #[cfg(feature = "parquet")]
 fn is_unsigned_int(primitive_type: &polars_parquet::parquet::schema::types::PrimitiveType) -> bool {
     use polars_parquet::parquet::schema::types::{
