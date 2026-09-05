@@ -1041,7 +1041,7 @@ pub async fn csv_file_info(
                     csv_options.raise_if_empty,
                 )?;
 
-                if row_count < infer_schema_length && !reached_eof {
+                if (row_count == 0 || row_count < infer_schema_length) && !reached_eof {
                     if compression.is_some() && bytes_read == read_size {
                         // Decompressor had more to give — read_size too small
                         try_read_size *= 2;
