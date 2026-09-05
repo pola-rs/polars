@@ -34,18 +34,50 @@ impl PolarsOpsNumericType for Float16Type {}
 impl PolarsOpsNumericType for Float32Type {}
 impl PolarsOpsNumericType for Float64Type {}
 
+/// Writes into the values of `arr` where they can be written into, and copies them out first
+/// where they cannot — which is what Arrow's `with_values_mut` did, one level down.
+unsafe fn with_values_mut<T: NativeType, F: FnOnce(&mut [T])>(arr: &mut PlPrimitiveArray<T>, f: F) {
+    let length = arr.len();
+    let Some(values) = arr.flat_values_mut() else {
+        // A scalar chunk holds one slot standing for every element, so it is written out before
+        // anything can be written into it.
+        let mut values = arr.to_flat().into_owned().flat_values().unwrap().clone();
+        let slice = values
+            .get_mut_slice()
+            .expect("a freshly written buffer is unshared");
+        f(slice);
+        let validity = arr.validity().map(PlBitmap::from);
+        // SAFETY: the buffer written out holds one slot per element, and the mask is the one the
+        // array already carried.
+        *arr = unsafe { PlPrimitiveArray::new_unchecked(values, length, validity) };
+        return;
+    };
+
+    match values.get_mut_slice() {
+        Some(slice) => f(slice),
+        None => {
+            // Something else reads these values, so they are copied before being written.
+            let mut owned = values.as_slice().to_vec();
+            f(&mut owned);
+            *values = Buffer::from(owned);
+        },
+    }
+}
+
 unsafe fn scatter_primitive_impl<V, T: NativeType>(
     set_values: V,
-    arr: &mut PrimitiveArray<T>,
+    arr: &mut PlPrimitiveArray<T>,
     idx: &[IdxSize],
 ) where
     V: IntoIterator<Item = Option<T>>,
 {
     let mut values_iter = set_values.into_iter();
+    let length = arr.len();
 
-    if let Some(validity) = arr.take_validity() {
-        let mut mut_validity = validity.make_mut();
-        arr.with_values_mut(|cur_values| {
+    if let Some(validity) = arr.validity() {
+        // A scalar mask stands for one bit per element, which `to_flat` resolves.
+        let mut mut_validity = validity.to_flat().into_owned().make_mut();
+        with_values_mut(arr, |cur_values| {
             for (idx, val) in idx.iter().zip(&mut values_iter) {
                 match val {
                     Some(value) => {
@@ -56,10 +88,10 @@ unsafe fn scatter_primitive_impl<V, T: NativeType>(
                 }
             }
         });
-        arr.set_validity(mut_validity.into())
+        arr.set_validity(Some(PlBitmap::from_bitmap(mut_validity.into())))
     } else {
         let mut null_idx = vec![];
-        arr.with_values_mut(|cur_values| {
+        with_values_mut(arr, |cur_values| {
             for (idx, val) in idx.iter().zip(values_iter) {
                 match val {
                     Some(value) => *cur_values.get_unchecked_mut(*idx as usize) = value,
@@ -72,12 +104,12 @@ unsafe fn scatter_primitive_impl<V, T: NativeType>(
 
         // Only make a validity bitmap when null values are set.
         if !null_idx.is_empty() {
-            let mut validity = MutableBitmap::with_capacity(arr.len());
-            validity.extend_constant(arr.len(), true);
+            let mut validity = MutableBitmap::with_capacity(length);
+            validity.extend_constant(length, true);
             for idx in null_idx {
                 validity.set_unchecked(idx as usize, false)
             }
-            arr.set_validity(Some(validity.into()))
+            arr.set_validity(Some(PlBitmap::from_bitmap(validity.into())))
         }
     }
 }
@@ -193,17 +225,13 @@ impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T> {
         ca.rechunk_mut();
         let name = ca.name().clone();
 
-        // TODO(polars-array-scalar): the scatter kernels are Arrow ones that write into the
-        // backing buffers, so the chunk crosses over and back, a scalar one written out on the way.
-        let chunk = ca.downcast_into_iter().next().unwrap();
-        let mut arr = chunk_to_arrow(&chunk);
-        // The chunk held the only other handle on those buffers; dropping it lets the kernel
-        // write into them rather than copy them out.
-        drop(chunk);
+        // TODO(polars-array-scalar): the kernel writes one slot per element, so a scalar chunk is
+        // written out on the way in rather than the one value it stands for being set once.
+        let mut arr = ca.downcast_into_iter().next().unwrap();
 
         unsafe { scatter_primitive_impl(values, &mut arr, idx) };
 
-        let out = ChunkedArray::<T>::with_chunk(name, chunk_from_arrow(&arr));
+        let out = ChunkedArray::<T>::with_chunk(name, arr);
         Ok(out.into_series())
     }
 }
@@ -339,6 +367,42 @@ mod tests {
             out.str().unwrap().iter().collect::<Vec<_>>(),
             [Some("a"), Some("zzzz"), Some("ccc")],
         );
+    }
+
+    /// Scatter writes into the values that are already there — it sets a handful of slots, so
+    /// copying the whole buffer would turn an `O(idx)` write into an `O(len)` one.
+    #[test]
+    fn scattering_writes_into_the_existing_allocation() {
+        let values_ptr = |s: &Series| {
+            s.i32()
+                .unwrap()
+                .downcast_iter()
+                .next()
+                .unwrap()
+                .flat_values()
+                .unwrap()
+                .as_slice()
+                .as_ptr()
+        };
+
+        let mut ca = Int32Chunked::from_vec("a".into(), (0..64).collect());
+        let before = ca
+            .downcast_iter()
+            .next()
+            .unwrap()
+            .flat_values()
+            .unwrap()
+            .as_slice()
+            .as_ptr();
+
+        let out = (&mut ca)
+            .scatter(&idx(&[7, 40]), [Some(-7), Some(-40)])
+            .unwrap();
+
+        assert_eq!(values_ptr(&out), before);
+        assert_eq!(out.i32().unwrap().get(7), Some(-7));
+        assert_eq!(out.i32().unwrap().get(40), Some(-40));
+        assert_eq!(out.i32().unwrap().get(8), Some(8));
     }
 
     /// The trait's stated invariant: a failed scatter leaves the array as it was.
