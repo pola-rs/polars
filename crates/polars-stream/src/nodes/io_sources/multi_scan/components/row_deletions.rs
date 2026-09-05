@@ -656,7 +656,6 @@ fn load_iceberg_puffin_deletes(
     {
         use std::sync::LazyLock;
 
-        use arrow::array::UInt64Array;
         use polars_error::constants::LENGTH_LIMIT_MSG;
         use polars_error::polars_ensure;
         use polars_utils::index::idxsize_try_from;
@@ -699,12 +698,11 @@ fn load_iceberg_puffin_deletes(
                     ComputeError: LENGTH_LIMIT_MSG
                 );
 
-                let indices = indices.rechunk();
-                let indices: &UInt64Array = indices.chunks()[0].as_any().downcast_ref().unwrap();
+                let indices = indices.u64()?;
 
                 let mut filter_mask = MutableBitmap::from_len_set(filter_mask_len as usize);
 
-                for idx in indices.non_null_values_iter() {
+                for idx in indices.iter().flatten() {
                     let idx = usize::try_from(idx).unwrap();
                     filter_mask.set(idx, false);
                 }
