@@ -760,3 +760,42 @@ def test_key_value_range_survives_a_partial_footer_read(
 
     order = scan_order(fanout_query(frames).explain(optimizations=ON))
     assert ["sales" if n.startswith("p000") else n for n in order] == expected
+
+
+def test_non_elementwise_filter_between_joins_is_left_alone(tmp_path: Path) -> None:
+    # `b` matches every `a` row twice, so a window over the join sees groups of two.
+    frames = write_scans(
+        tmp_path,
+        a=pl.DataFrame({"a_id": [1, 2, 3, 4], "av": [10, 20, 30, 40]}),
+        b=pl.DataFrame({"b_id": [1, 1, 2, 2, 3, 3, 4, 4], "bv": list(range(8))}),
+        c=pl.DataFrame({"c_id": [1, 2, 3, 4], "cv": [100, 200, 300, 400]}),
+    )
+    lf = (
+        frames["a"]
+        .join(frames["b"], left_on="a_id", right_on="b_id", coalesce=False)
+        .filter(pl.len().over("a_id") == 1)
+        .join(frames["c"], left_on="a_id", right_on="c_id", coalesce=False)
+    )
+
+    assert_frame_equal(lf.collect(optimizations=OFF), lf.collect(optimizations=ON))
+
+
+def test_computed_join_key_does_not_borrow_a_column_range(tmp_path: Path) -> None:
+    # A computed key is named after its left-most column, here a constant whose value
+    # range would otherwise be read as the key's own.
+    frames = fanout_frames(tmp_path, pl.Int64, spread=10_000_000)
+    frames["sales"] = frames["sales"].with_columns(z1=pl.lit(0, dtype=pl.Int64))
+    frames["inv"] = frames["inv"].with_columns(z2=pl.lit(0, dtype=pl.Int64))
+
+    lf = (
+        frames["sales"]
+        .join(
+            frames["inv"],
+            left_on=pl.col("z1") + pl.col("s_item"),
+            right_on=pl.col("z2") + pl.col("i_item"),
+            coalesce=False,
+        )
+        .join(frames["wh"], left_on="i_wh", right_on="w_key", coalesce=False)
+    )
+
+    assert scan_order(lf.explain(optimizations=ON)) == ["sales", "inv", "wh"]

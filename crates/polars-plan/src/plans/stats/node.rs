@@ -199,8 +199,14 @@ pub(super) fn node_stats_with_cache(
             let right = node_stats_with_cache(*input_right, ir_arena, expr_arena, cache)?;
 
             let key_domains = composite_key_domain(
-                on.iter()
-                    .map(|(left_key, right_key)| key_domain(&left, left_key, &right, right_key)),
+                on.iter().map(|(left_key, right_key)| {
+                    key_domain(
+                        &left,
+                        plain_column(left_key, expr_arena).as_ref(),
+                        &right,
+                        plain_column(right_key, expr_arena).as_ref(),
+                    )
+                }),
                 left.unfiltered.max(right.unfiltered),
             );
             let how = &options.args.how;
@@ -296,15 +302,10 @@ impl NodeStats {
         Some((distinct as f64).clamp(MIN_CARDINALITY, self.unfiltered))
     }
 
-    /// Distinct values in `key`, when it is a plain column with a known NDV.
-    fn distinct_count(&self, key: &ExprIR) -> Option<f64> {
-        self.distinct_count_key(key.output_name_inner().get()?)
-    }
-
-    /// Values `key` could hold, from its integer range. Estimates its distinct
-    /// count from above, for a plain column of a scan that carried min/max.
-    fn int_domain(&self, key: &ExprIR) -> Option<f64> {
-        let domain = self.column(key.output_name_inner().get()?)?.int_domain()?;
+    /// Values `name` could hold, from its integer range. Estimates its distinct
+    /// count from above, for a column of a scan that carried min/max.
+    fn int_domain(&self, name: &str) -> Option<f64> {
+        let domain = self.column(name)?.int_domain()?;
         Some(domain.clamp(MIN_CARDINALITY, self.unfiltered))
     }
 
@@ -603,6 +604,15 @@ pub fn composite_key_domain(parts: impl Iterator<Item = f64>, max_rows: f64) -> 
     parts.product::<f64>().min(max_rows).max(MIN_CARDINALITY)
 }
 
+/// The column a join key reads, or `None` if the key computes something. A computed
+/// key is named after its left-most column, whose statistics are not the expression's.
+pub fn plain_column(key: &ExprIR, expr_arena: &Arena<AExpr>) -> Option<PlSmallStr> {
+    match expr_arena.get(key.node()) {
+        AExpr::Column(name) => Some(name.clone()),
+        _ => None,
+    }
+}
+
 /// Domain size of the key joining two leaves.
 ///
 /// With distinct counts for both sides the domain is the larger of the two: every
@@ -611,22 +621,26 @@ pub fn composite_key_domain(parts: impl Iterator<Item = f64>, max_rows: f64) -> 
 /// unique side, so the smaller relation is assumed to hold the key uniquely.
 pub fn key_domain(
     left: &NodeStats,
-    left_key: &ExprIR,
+    left_key: Option<&PlSmallStr>,
     right: &NodeStats,
-    right_key: &ExprIR,
+    right_key: Option<&PlSmallStr>,
 ) -> f64 {
-    let domain = match (
-        left.distinct_count(left_key),
-        right.distinct_count(right_key),
-    ) {
+    let left_ndv = left_key.and_then(|name| left.distinct_count_key(name));
+    let right_ndv = right_key.and_then(|name| right.distinct_count_key(name));
+    let domain = match (left_ndv, right_ndv) {
         (Some(l), Some(r)) => l.max(r),
         // The uniqueness assumption and the integer range each estimate the domain
-        // from above, so the tighter one wins.
+        // from above, so the tighter one wins. One side's known distinct count is a
+        // lower bound either way, since every value it holds is in the domain.
         _ => {
             let rows = left.unfiltered.min(right.unfiltered);
-            match key_int_domain(left, left_key, right, right_key) {
+            let estimate = match key_int_domain(left, left_key, right, right_key) {
                 Some(range) => rows.min(range),
                 None => rows,
+            };
+            match left_ndv.or(right_ndv) {
+                Some(ndv) => estimate.max(ndv),
+                None => estimate,
             }
         },
     };
@@ -636,11 +650,13 @@ pub fn key_domain(
 /// Domain implied by the integer ranges of the keys, from whichever sides have one.
 fn key_int_domain(
     left: &NodeStats,
-    left_key: &ExprIR,
+    left_key: Option<&PlSmallStr>,
     right: &NodeStats,
-    right_key: &ExprIR,
+    right_key: Option<&PlSmallStr>,
 ) -> Option<f64> {
-    match (left.int_domain(left_key), right.int_domain(right_key)) {
+    let left_domain = left_key.and_then(|name| left.int_domain(name));
+    let right_domain = right_key.and_then(|name| right.int_domain(name));
+    match (left_domain, right_domain) {
         (Some(l), Some(r)) => Some(l.max(r)),
         (l, r) => l.or(r),
     }
@@ -679,11 +695,8 @@ mod tests {
         )
     }
 
-    fn key(name: &str) -> ExprIR {
-        ExprIR::new(
-            Node::default(),
-            crate::plans::OutputName::ColumnLhs(PlSmallStr::from_str(name)),
-        )
+    fn key(name: &str) -> PlSmallStr {
+        PlSmallStr::from_str(name)
     }
 
     /// Joining a heavily filtered dimension must shrink the fact table so that it
@@ -699,17 +712,17 @@ mod tests {
         let with_date = join_cardinality(
             inventory.filtered,
             date_dim.filtered,
-            key_domain(&inventory, &key("k"), &date_dim, &key("k")),
+            key_domain(&inventory, Some(&key("k")), &date_dim, Some(&key("k"))),
         );
         let with_item = join_cardinality(
             inventory.filtered,
             item.filtered,
-            key_domain(&inventory, &key("k"), &item, &key("k")),
+            key_domain(&inventory, Some(&key("k")), &item, Some(&key("k"))),
         );
         let with_warehouse = join_cardinality(
             inventory.filtered,
             warehouse.filtered,
-            key_domain(&inventory, &key("k"), &warehouse, &key("k")),
+            key_domain(&inventory, Some(&key("k")), &warehouse, Some(&key("k"))),
         );
 
         // 11.7M * 60 / 73049
@@ -735,7 +748,7 @@ mod tests {
         let out = join_cardinality(
             acc,
             item.filtered,
-            key_domain(&inventory, &key("k"), &item, &key("k")),
+            key_domain(&inventory, Some(&key("k")), &item, Some(&key("k"))),
         );
         assert!((out - acc).abs() < 1.0, "got {out}");
     }
@@ -843,7 +856,7 @@ mod tests {
         let out = join_cardinality(
             inventory.filtered,
             head.filtered,
-            key_domain(&inventory, &key("k"), &head, &key("k")),
+            key_domain(&inventory, Some(&key("k")), &head, Some(&key("k"))),
         );
         // 11.7M * 10 / 73049. Dividing by the ten rows left would reproduce the
         // fact table whole.
@@ -858,10 +871,16 @@ mod tests {
         let fact = leaf_with_ndv(1_000_000.0, 1_000_000.0, "k", 500);
         let dim = leaf_with_ndv(800.0, 800.0, "k", 800);
 
-        assert_eq!(key_domain(&fact, &key("k"), &dim, &key("k")), 800.0);
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &dim, Some(&key("k"))),
+            800.0
+        );
         // Without them the smaller relation is assumed to hold the key uniquely.
         let opaque = leaf(800.0, 800.0);
-        assert_eq!(key_domain(&fact, &key("k"), &opaque, &key("k")), 800.0);
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &opaque, Some(&key("k"))),
+            800.0
+        );
     }
 
     /// A distinct count that is only a rough bound must not steer the domain.
@@ -880,7 +899,10 @@ mod tests {
 
         let fact = leaf_with_ndv(1_000_000.0, 1_000_000.0, "k", 500);
         // The rough count of 4 would otherwise dominate as the max.
-        assert_eq!(key_domain(&fact, &key("k"), &dim, &key("k")), 800.0);
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &dim, Some(&key("k"))),
+            800.0
+        );
     }
 
     /// A known distinct count replaces the interpolation between one group and one

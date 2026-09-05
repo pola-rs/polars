@@ -19,7 +19,7 @@ use recursive::recursive;
 
 use crate::plans::{
     AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, MintermIter, NodeStats, OutputName,
-    ProjectionOptions, aexpr_to_leaf_names_iter, node_stats,
+    ProjectionOptions, aexpr_to_leaf_names_iter, is_elementwise_rec, node_stats,
 };
 use crate::prelude::{JoinArgs, JoinType, MaintainOrderJoin};
 use crate::utils::rename_columns;
@@ -47,6 +47,11 @@ pub(super) struct Edge {
     pub(super) right_leaf: usize,
     pub(super) left_key: ExprIR,
     pub(super) right_key: ExprIR,
+    /// Column each key reads, when it is a plain column reference. A computed key
+    /// has none: it is named after its left-most column, whose statistics and
+    /// identity are not the expression's.
+    pub(super) left_name: Option<PlSmallStr>,
+    pub(super) right_name: Option<PlSmallStr>,
 }
 
 /// An edge oriented against the leaves joined so far.
@@ -57,6 +62,9 @@ pub(super) struct Bridge<'a> {
     pub(super) placed_key: &'a ExprIR,
     /// Key belonging to the candidate (right) side.
     pub(super) candidate_key: &'a ExprIR,
+    /// Column names of those keys, when they are plain column references.
+    pub(super) placed_name: Option<&'a PlSmallStr>,
+    pub(super) candidate_name: Option<&'a PlSmallStr>,
 }
 
 pub(super) struct Cluster {
@@ -95,12 +103,16 @@ impl Cluster {
                     placed_leaf: edge.left_leaf,
                     placed_key: &edge.left_key,
                     candidate_key: &edge.right_key,
+                    placed_name: edge.left_name.as_ref(),
+                    candidate_name: edge.right_name.as_ref(),
                 })
             } else if edge.left_leaf == candidate && is_placed[edge.right_leaf] {
                 Some(Bridge {
                     placed_leaf: edge.right_leaf,
                     placed_key: &edge.right_key,
                     candidate_key: &edge.left_key,
+                    placed_name: edge.right_name.as_ref(),
+                    candidate_name: edge.left_name.as_ref(),
                 })
             } else {
                 None
@@ -203,11 +215,15 @@ pub(super) fn extract(
         let right_key = normalize_key(&raw.right_key, &raw.renames, expr_arena);
         let left_leaf = owning_leaf(&left_key, &schemas, raw.left_leaves, expr_arena)?;
         let right_leaf = owning_leaf(&right_key, &schemas, raw.right_leaves, expr_arena)?;
+        let left_name = plain_column(&left_key, expr_arena);
+        let right_name = plain_column(&right_key, expr_arena);
         edges.push(Edge {
             left_leaf,
             right_leaf,
             left_key,
             right_key,
+            left_name,
+            right_name,
         });
     }
 
@@ -389,16 +405,29 @@ impl Collector<'_> {
         // ends here and everything below is one leaf, keys and all. Each conjunct
         // travels on its own so it can be re-applied as soon as its own columns are
         // available.
+        //
+        // Only an elementwise predicate may travel. Anything else reads a row's
+        // neighbours, so the rows reaching it decide its result, and reordering the
+        // joins below changes which rows those are.
         if let IR::Filter { input, predicate } = self.ir_arena.get(peeled) {
             let expr_arena = self.expr_arena;
-            self.residuals
-                .extend(
-                    MintermIter::new(predicate.node(), expr_arena).map(|node| RawResidual {
+            let minterms: Vec<Node> = MintermIter::new(predicate.node(), expr_arena).collect();
+            if minterms
+                .iter()
+                .all(|node| is_elementwise_rec(*node, expr_arena))
+            {
+                self.residuals
+                    .extend(minterms.into_iter().map(|node| RawResidual {
                         predicate: ExprIR::from_node(node, expr_arena),
                         renames: peeled_renames.clone(),
-                    }),
-                );
-            self.collect(*input, &peeled_renames);
+                    }));
+                self.collect(*input, &peeled_renames);
+            } else {
+                self.leaves.push(RawLeaf {
+                    node,
+                    renames: renames.clone(),
+                });
+            }
             return;
         }
 
@@ -563,6 +592,14 @@ fn rename_leaf(
 }
 
 /// A join key rewritten into the names the cluster root uses.
+/// The column a key reads, or `None` if the key computes something.
+fn plain_column(key: &ExprIR, expr_arena: &Arena<AExpr>) -> Option<PlSmallStr> {
+    match expr_arena.get(key.node()) {
+        AExpr::Column(name) => Some(name.clone()),
+        _ => None,
+    }
+}
+
 fn normalize_key(key: &ExprIR, renames: &Renames, expr_arena: &mut Arena<AExpr>) -> ExprIR {
     // `rename_columns` re-interns the whole expression, so only pay for it when this
     // key is one of the things being renamed.
@@ -671,6 +708,8 @@ fn coalesce_keys(
                     right_leaf,
                     left_key: template.left_key.clone(),
                     right_key: template.right_key.clone(),
+                    left_name: template.left_name.clone(),
+                    right_name: template.right_name.clone(),
                 });
             }
         }

@@ -105,11 +105,11 @@ fn key_domain_product(cluster: &Cluster, is_placed: &[bool], candidate: usize) -
     for bridge in cluster.bridging(is_placed, candidate) {
         let domain = key_domain(
             &cluster.leaves[bridge.placed_leaf].stats,
-            bridge.placed_key,
+            bridge.placed_name,
             &cluster.leaves[candidate].stats,
-            bridge.candidate_key,
+            bridge.candidate_name,
         );
-        let name = bridge.candidate_key.output_name_inner().get();
+        let name = bridge.candidate_name;
 
         match per_key
             .iter_mut()
@@ -175,18 +175,24 @@ mod tests {
                 right_leaf: 1,
                 left_key: key.clone(),
                 right_key: key.clone(),
+                left_name: Some("k".into()),
+                right_name: Some("k".into()),
             },
             Edge {
                 left_leaf: 0,
                 right_leaf: 2,
                 left_key: key.clone(),
                 right_key: key.clone(),
+                left_name: Some("k".into()),
+                right_name: Some("k".into()),
             },
             Edge {
                 left_leaf: 1,
                 right_leaf: 2,
                 left_key: key.clone(),
                 right_key: key.clone(),
+                left_name: Some("k".into()),
+                right_name: Some("k".into()),
             },
         ];
 
