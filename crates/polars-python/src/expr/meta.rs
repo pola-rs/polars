@@ -1,4 +1,4 @@
-use polars::prelude::Schema;
+use polars::prelude::{Expr, Schema};
 use pyo3::prelude::*;
 
 use crate::PyExpr;
@@ -70,6 +70,8 @@ impl PyExpr {
         self.inner.clone().meta().is_literal(allow_aliasing)
     }
 
+    fn meta_is_scalar_literal(&self) -> bool {
+        matches!(&self.inner, Expr::Literal(lv) if lv.is_scalar())
     fn meta_is_length_preserving(&self) -> PyResult<bool> {
         Ok(self
             .inner
