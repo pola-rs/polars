@@ -48,6 +48,39 @@ impl<B: PlArrayBuilder> PlFixedSizeListArrayBuilder<B> {
         self.width
     }
 
+    /// The builder of the values the lists are taken over, so that the values one element covers
+    /// can be appended to it directly.
+    ///
+    /// Everything appended through here becomes part of the element that the next
+    /// [`finish_row`](Self::finish_row) closes, which is why it has to be exactly the
+    /// [`width`](Self::width) of values.
+    #[inline]
+    pub fn values_mut(&mut self) -> &mut B {
+        &mut self.values
+    }
+
+    /// Closes one element, covering the width of values appended to the child since the last
+    /// element was.
+    ///
+    /// # Panics
+    /// Panics unless exactly the width of values was appended since then, which is what an element
+    /// of a fixed size list array covers.
+    #[inline]
+    pub fn finish_row(&mut self) {
+        assert_eq!(
+            self.values.len(),
+            (self.length + 1) * self.width,
+            "an element of a fixed size list builder of width {} covers {} values, \
+             but the child holds {} for the {} elements before it",
+            self.width,
+            self.width,
+            self.values.len(),
+            self.length,
+        );
+        self.length += 1;
+        self.validity.extend_constant(1, true);
+    }
+
     /// Panics unless `other` is as wide as the lists this builds.
     fn assert_width(&self, other: &PlFixedSizeListArray) {
         assert_eq!(
@@ -316,6 +349,37 @@ mod tests {
 
         // Every element covers the width, whether or not it is null.
         assert_eq!(built.flat_values().unwrap().len(), 18);
+    }
+
+    #[test]
+    fn appending_one_element_at_a_time() {
+        let values = PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4]);
+
+        let mut builder = builder();
+        builder
+            .values_mut()
+            .subslice_extend(&values, 0, 2, ShareStrategy::Always);
+        builder.finish_row();
+        builder.extend_nulls(1);
+        builder
+            .values_mut()
+            .subslice_extend(&values, 2, 2, ShareStrategy::Always);
+        builder.finish_row();
+
+        let built = builder.freeze();
+        assert_eq!(elements(&built), [Some(vec![1, 2]), None, Some(vec![3, 4])]);
+    }
+
+    #[test]
+    #[should_panic(expected = "covers 2 values")]
+    fn closing_an_element_that_is_not_the_width_panics() {
+        let values = PlPrimitiveArray::from_vec(vec![1i32]);
+
+        let mut builder = builder();
+        builder
+            .values_mut()
+            .subslice_extend(&values, 0, 1, ShareStrategy::Always);
+        builder.finish_row();
     }
 
     #[test]

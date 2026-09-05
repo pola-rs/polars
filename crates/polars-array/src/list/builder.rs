@@ -45,6 +45,29 @@ impl<B: PlArrayBuilder> PlListArrayBuilder<B> {
         &self.values
     }
 
+    /// The builder of the values the lists are taken over, so that the values one element covers
+    /// can be appended to it directly.
+    ///
+    /// Everything appended through here becomes part of the element that the next
+    /// [`finish_row`](Self::finish_row) closes. Until one does, the values are past the end of
+    /// every element the builder holds, and are dropped by a
+    /// [`freeze`](StaticArrayBuilder::freeze) that never closes them.
+    #[inline]
+    pub fn values_mut(&mut self) -> &mut B {
+        &mut self.values
+    }
+
+    /// Closes one element, covering every value appended to the child since the last element was.
+    #[inline]
+    pub fn finish_row(&mut self) {
+        // Every element ends where the child ended when it was closed, so the values appended
+        // since then are exactly the ones past the end of the last element.
+        let end = self.values.len() as u64;
+        debug_assert!(end >= self.last_offset(), "the child builder cannot shrink");
+        self.offsets.push(end);
+        self.validity.extend_constant(1, true);
+    }
+
     /// The end of the last element appended, which is where the next one starts.
     #[inline]
     fn last_offset(&self) -> u64 {
@@ -338,6 +361,51 @@ mod tests {
         // The values of the built array are the ones its elements reach, and no more: the ones a
         // null element would have covered are never appended.
         assert_eq!(built.values().len(), 13);
+    }
+
+    #[test]
+    fn appending_one_element_at_a_time() {
+        let values = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
+
+        let mut builder = builder();
+        // Two values appended to the child, closed as one element covering both.
+        builder
+            .values_mut()
+            .subslice_extend(&values, 0, 2, ShareStrategy::Always);
+        builder.finish_row();
+        // No values at all, closed as the empty list.
+        builder.finish_row();
+        builder.extend_nulls(1);
+        builder
+            .values_mut()
+            .subslice_extend(&values, 2, 1, ShareStrategy::Always);
+        builder.finish_row();
+
+        let built = builder.freeze();
+        assert_eq!(
+            elements(&built),
+            [Some(vec![1, 2]), Some(vec![]), None, Some(vec![3])],
+        );
+    }
+
+    #[test]
+    fn values_appended_without_being_closed_are_dropped() {
+        let values = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
+
+        let mut builder = builder();
+        builder
+            .values_mut()
+            .subslice_extend(&values, 0, 1, ShareStrategy::Always);
+        builder.finish_row();
+        // Appended but never closed: no element covers them.
+        builder
+            .values_mut()
+            .subslice_extend(&values, 1, 2, ShareStrategy::Always);
+
+        let built = builder.freeze();
+        assert_eq!(elements(&built), [Some(vec![1])]);
+        // The child still holds them; the offsets are what say they are past the last element.
+        assert_eq!(built.values().len(), 3);
     }
 
     #[test]

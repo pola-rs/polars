@@ -47,6 +47,38 @@ impl PlStructArrayBuilder {
         self.fields.len()
     }
 
+    /// The builders of the fields of the built array, so that the element every field holds for
+    /// one element of the array can be appended to them directly.
+    ///
+    /// Everything appended through here becomes part of the element that the next
+    /// [`finish_row`](Self::finish_row) closes, which is why every field has to be appended to
+    /// exactly once: the fields of a struct array hold one element per element of the array.
+    #[inline]
+    pub fn fields_mut(&mut self) -> &mut [Box<dyn PlArrayBuilder>] {
+        &mut self.fields
+    }
+
+    /// Closes one element, covering the element appended to every field since the last one was.
+    ///
+    /// # Panics
+    /// Panics unless every field had exactly one element appended since then.
+    #[inline]
+    pub fn finish_row(&mut self) {
+        for (i, field) in self.fields.iter().enumerate() {
+            assert_eq!(
+                field.len(),
+                self.length + 1,
+                "every field of a struct builder holds one element per element of the array, \
+                 but field {} holds {} for the {} elements closed so far",
+                i,
+                field.len(),
+                self.length,
+            );
+        }
+        self.length += 1;
+        self.validity.extend_constant(1, true);
+    }
+
     /// The builders of the fields, paired with the fields of `other` they append.
     ///
     /// # Panics
@@ -263,6 +295,35 @@ mod tests {
         // Every field holds one element per element of the array.
         assert_eq!(built.field(0).len(), 9);
         assert_eq!(built.field(1).len(), 9);
+    }
+
+    #[test]
+    fn appending_one_element_at_a_time() {
+        let first = PlPrimitiveArray::from_vec(vec![7i32, 8]);
+        let second = PlBooleanArray::new_scalar(false, 2);
+
+        let mut builder = builder();
+        builder.fields_mut()[0].subslice_extend(&first, 0, 1, ShareStrategy::Always);
+        builder.fields_mut()[1].subslice_extend(&second, 0, 1, ShareStrategy::Always);
+        builder.finish_row();
+        builder.extend_nulls(1);
+        builder.fields_mut()[0].subslice_extend(&first, 1, 1, ShareStrategy::Always);
+        builder.fields_mut()[1].subslice_extend(&second, 1, 1, ShareStrategy::Always);
+        builder.finish_row();
+
+        let built = builder.freeze();
+        assert_eq!(elements(&built), [Some(7), None, Some(8)]);
+        assert_eq!(built.field(1).len(), 3);
+    }
+
+    #[test]
+    #[should_panic(expected = "field 1 holds 0")]
+    fn closing_an_element_that_skipped_a_field_panics() {
+        let first = PlPrimitiveArray::from_vec(vec![7i32]);
+
+        let mut builder = builder();
+        builder.fields_mut()[0].subslice_extend(&first, 0, 1, ShareStrategy::Always);
+        builder.finish_row();
     }
 
     #[test]
