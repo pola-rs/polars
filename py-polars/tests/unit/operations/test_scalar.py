@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
@@ -152,6 +152,50 @@ def test_elementwise_over_broadcast_scalar_array(expr: pl.Expr) -> None:
     )
     assert_frame_equal(
         broadcast.select(expr).collect(), materialized.select(expr).collect()
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pytest.param(pl.col("lhs").arr.dot("rhs"), id="scalar-rhs"),
+        pytest.param(pl.col("rhs").arr.dot("lhs"), id="scalar-lhs"),
+    ],
+)
+def test_arr_dot_over_broadcast_scalar_array(
+    engine: Literal["in-memory", "streaming"], expr: pl.Expr
+) -> None:
+    dtype = pl.Array(pl.Int64, 3)
+    lhs = pl.Series("lhs", [[1, 2, 3], [4, None, 6], None], dtype=dtype)
+    rhs = pl.Series("rhs", [[10, None, 30]], dtype=dtype)
+    broadcast = pl.LazyFrame({"lhs": lhs}).with_columns(pl.lit(rhs).first())
+    materialized = pl.LazyFrame(
+        {
+            "lhs": lhs,
+            "rhs": pl.Series("rhs", [[10, None, 30]] * len(lhs), dtype=dtype),
+        }
+    )
+    assert_frame_equal(
+        broadcast.select(expr).collect(engine=engine),
+        materialized.select(expr).collect(engine=engine),
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_arr_dot_over_empty_broadcast_scalar_array(
+    engine: Literal["in-memory", "streaming"],
+) -> None:
+    dtype = pl.Array(pl.Float64, 2)
+    broadcast = pl.LazyFrame(schema={"lhs": dtype}).with_columns(
+        pl.lit(pl.Series("rhs", [[10.0, 20.0]], dtype=dtype)).first()
+    )
+    materialized = pl.LazyFrame(schema={"lhs": dtype, "rhs": dtype})
+    expr = pl.col("lhs").arr.dot("rhs")
+
+    assert_frame_equal(
+        broadcast.select(expr).collect(engine=engine),
+        materialized.select(expr).collect(engine=engine),
     )
 
 

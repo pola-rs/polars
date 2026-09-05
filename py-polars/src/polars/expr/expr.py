@@ -800,7 +800,7 @@ class Expr(metaclass=_Meta):
         """
         Return whether the column is empty.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -1604,7 +1604,7 @@ class Expr(metaclass=_Meta):
         """
         Get an array with the cumulative sum computed at every element.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -1668,7 +1668,7 @@ class Expr(metaclass=_Meta):
         """
         Get an array with the cumulative product computed at every element.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -1705,7 +1705,7 @@ class Expr(metaclass=_Meta):
         """
         Get an array with the cumulative min computed at every element.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -1736,7 +1736,7 @@ class Expr(metaclass=_Meta):
         """
         Get an array with the cumulative max computed at every element.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -1795,7 +1795,7 @@ class Expr(metaclass=_Meta):
         """
         Return the cumulative count of the non-null values in the column.
 
-        .. engine-support:: in-memory, partially-streaming
+        .. engine-support:: in-memory, partially-streaming, distributed
 
         Parameters
         ----------
@@ -3711,6 +3711,9 @@ class Expr(metaclass=_Meta):
         Get median value using linear interpolation.
 
         .. engine-support:: in-memory, partially-streaming, partially-distributed
+            :partially-distributed: This can map-reduce, but all the data of a single
+                group has to be shuffled to a single partition. Outside a group_by
+                there is only one group, so it runs on a single node.
 
         Examples
         --------
@@ -3850,7 +3853,7 @@ class Expr(metaclass=_Meta):
         """
         Check whether the expression contains one or more null values.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -3918,6 +3921,8 @@ class Expr(metaclass=_Meta):
         `null` is considered to be a unique value for the purposes of this operation.
 
         .. engine-support:: in-memory, streaming, partially-distributed
+            :partially-distributed: De-duplicates per partition for either value of
+                maintain_order, but the result is gathered onto a single node.
 
         Parameters
         ----------
@@ -5045,6 +5050,7 @@ class Expr(metaclass=_Meta):
         represented by an expression using a third-party library.
 
         .. engine-support:: in-memory, partially-streaming, partially-distributed
+            :partially-distributed: Runs distributed only if is_elementwise=True.
 
         Parameters
         ----------
@@ -10734,7 +10740,7 @@ class Expr(metaclass=_Meta):
         """
         Reshape this Expr to a flat column or an Array column.
 
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
+        .. engine-support:: in-memory, partially-streaming
 
         Parameters
         ----------

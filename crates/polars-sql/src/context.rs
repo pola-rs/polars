@@ -27,7 +27,8 @@ use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::sql_expr::{
-    parse_sql_array, parse_sql_expr, resolve_compound_identifier, to_sql_interface_err,
+    order_by_sort_options, parse_sql_array, parse_sql_expr, resolve_compound_identifier,
+    to_sql_interface_err,
 };
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
@@ -2724,12 +2725,18 @@ impl SQLContext {
                 table_with_joins,
                 alias,
             } => {
-                let lf =
-                    self.execute_isolated(|ctx| ctx.execute_from_statement(table_with_joins))?;
-                match alias {
-                    Some(a) => Ok((a.name.value.clone(), lf)),
-                    None => Ok(("".to_string(), lf)),
-                }
+                // Only an alias makes the parenthesized join a scope of its own; bare parens
+                // just group, so their relation aliases stay visible to the enclosing query.
+                let lf = match alias {
+                    Some(_) => {
+                        self.execute_isolated(|ctx| ctx.execute_from_statement(table_with_joins))?
+                    },
+                    None => self.execute_from_statement(table_with_joins)?,
+                };
+                let name = alias
+                    .as_ref()
+                    .map_or_else(String::new, |a| a.name.value.clone());
+                Ok((name, lf))
             },
             // Support bare table, optionally with an alias, for now
             _ => polars_bail!(SQLInterface: "not yet implemented: {}", relation),
@@ -2811,20 +2818,18 @@ impl SQLContext {
             } else {
                 by.extend(columns_iter);
             };
-            let desc_order = !opts.asc.unwrap_or(true);
-            nulls_last.resize(by.len(), !opts.nulls_first.unwrap_or(desc_order));
-            descending.resize(by.len(), desc_order);
+            let options = order_by_sort_options(opts);
+            nulls_last.resize(by.len(), options.nulls_last);
+            descending.resize(by.len(), options.descending);
         } else {
             let columns = &columns_iter.collect::<Vec<_>>();
             // A fresh set: the final projection has already dropped the columns any
             // earlier pass materialised.
             let mut bindings = SubqueryBindings::new();
             for ob in order_by {
-                // note: if not specified 'NULLS FIRST' is default for DESC, 'NULLS LAST' otherwise
-                // https://www.postgresql.org/docs/current/queries-order.html
-                let desc_order = !ob.options.asc.unwrap_or(true);
-                nulls_last.push(!ob.options.nulls_first.unwrap_or(desc_order));
-                descending.push(desc_order);
+                let options = order_by_sort_options(&ob.options);
+                nulls_last.push(options.nulls_last);
+                descending.push(options.descending);
 
                 let lowered;
                 (lf, lowered) = self.lower_correlated_subqueries(

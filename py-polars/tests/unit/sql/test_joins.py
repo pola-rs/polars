@@ -1037,6 +1037,41 @@ def test_nested_joins_17381() -> None:
     assert set(res["id"]) == {"one", "two"}
 
 
+def test_parenthesized_join_relation_29153() -> None:
+    # ref: https://github.com/pola-rs/polars/issues/29153
+    # bare parens around a join don't introduce a new scope, so the
+    # relation aliases they declare remain visible to the SELECT
+    frames = {
+        "lft": pl.DataFrame({"a": [1, 2, 3], "bob": [4, 5, 6]}),
+        "rgt": pl.DataFrame({"a": [1, 2, 3], "co": [4, 5, 7]}),
+        "other": pl.DataFrame({"co": [4, 5, 7], "z": ["x", "y", "z"]}),
+    }
+    for from_clause in (
+        "(lft AS lhs LEFT JOIN rgt AS rhs ON lhs.bob = rhs.co)",
+        "lft AS lhs LEFT JOIN rgt AS rhs ON lhs.bob = rhs.co",
+    ):
+        assert_sql_matches(
+            frames=frames,
+            query=f"""
+                SELECT lhs.a, lhs.bob, rhs.a AS a_right
+                FROM {from_clause}
+                ORDER BY lhs.a
+            """,
+            compare_with="sqlite",
+        )
+
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT lhs.a, rhs.co, t.z
+            FROM (lft AS lhs INNER JOIN rgt AS rhs ON lhs.bob = rhs.co)
+            INNER JOIN other AS t ON rhs.co = t.co
+            ORDER BY lhs.a
+        """,
+        compare_with="sqlite",
+    )
+
+
 def test_unnamed_nested_join_relation() -> None:
     df = pl.DataFrame({"a": 1})
 

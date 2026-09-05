@@ -76,9 +76,13 @@ pub(super) fn sum(s: &Column) -> PolarsResult<Column> {
 }
 
 pub(super) fn dot(s: &[Column]) -> PolarsResult<Column> {
-    let lhs = s[0].array()?;
-    let rhs = s[1].array()?;
-    lhs.array_dot(rhs).map(Column::from)
+    let lhs = s[0].as_materialized_series_maintain_scalar();
+    let rhs = s[1].as_materialized_series_maintain_scalar();
+
+    lhs.array()?
+        .array_dot(rhs.array()?)?
+        .into_column()
+        .broadcast_owned_to(broadcast_len(s)?)
 }
 
 pub(super) fn std(s: &Column, ddof: u8) -> PolarsResult<Column> {

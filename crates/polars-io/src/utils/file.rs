@@ -182,7 +182,12 @@ impl io::Write for Writable {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.sync_all()
+        match self {
+            Self::Dyn(v) => v.flush(),
+            Self::Local(v) => v.flush(),
+            #[cfg(feature = "cloud")]
+            Self::Cloud(v) => v.flush(),
+        }
     }
 }
 
