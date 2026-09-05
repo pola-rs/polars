@@ -1,6 +1,5 @@
 use std::fmt::Write;
 
-use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::trusted_len::TrustMyLength;
 use polars_core::downcast_as_macro_arg_physical;
@@ -1170,14 +1169,8 @@ fn set_numeric<T: PolarsNumericType>(
         }
         // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
-        let validity = Bitmap::from(validity);
-        let arr = PrimitiveArray::new(
-            T::get_static_dtype()
-                .to_physical()
-                .to_arrow(CompatLevel::newest()),
-            values.into(),
-            Some(validity),
-        );
-        Series::try_from((ca.name().clone(), arr.boxed())).unwrap()
+        let validity = PlBitmap::from_bitmap(Bitmap::from(validity));
+        let arr = PlPrimitiveArray::<T::Native>::new(values.into(), len, Some(validity));
+        ChunkedArray::<T>::with_chunk(ca.name().clone(), arr).into_series()
     }
 }
