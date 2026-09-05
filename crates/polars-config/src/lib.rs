@@ -81,13 +81,19 @@ const OOC_MEMORY_BUDGET_MB: &str = "POLARS_OOC_MEMORY_BUDGET_MB";
 const DEFAULT_OOC_MEMORY_BUDGET_MB: u64 = u64::MAX;
 
 const OOC_MEMORY_PREFETCH_FRACTION: &str = "POLARS_OOC_MEMORY_PREFETCH_FRACTION";
-const DEFAULT_OOC_MEMORY_PREFETCH_FRACTION: f64 = 0.8;
+const DEFAULT_OOC_MEMORY_PREFETCH_FRACTION: f64 = 0.9;
 
 const OOC_DISK_BUDGET_MB: &str = "POLARS_OOC_DISK_BUDGET_MB";
 const DEFAULT_OOC_DISK_BUDGET_MB: u64 = u64::MAX;
 
 const OOC_SPILL_MIN_BYTES: &str = "POLARS_OOC_SPILL_MIN_BYTES";
 const DEFAULT_OOC_SPILL_MIN_BYTES: u64 = 64 * 1024; // 64 KB
+
+const OOC_MAX_PARALLEL_SPILL_TASKS: &str = "POLARS_OOC_MAX_PARALLEL_SPILL_TASKS";
+const DEFAULT_OOC_MAX_PARALLEL_SPILL_TASKS: u64 = 64;
+
+const OOC_MAX_PARALLEL_PREFETCH_TASKS: &str = "POLARS_OOC_MAX_PARALLEL_PREFETCH_TASKS";
+const DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS: u64 = 64;
 
 const OOC_LOG_METRICS: &str = "POLARS_OOC_LOG_METRICS";
 const DEFAULT_OOC_LOG_METRICS: bool = false;
@@ -175,6 +181,8 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_MEMORY_PREFETCH_FRACTION,
     OOC_DISK_BUDGET_MB,
     OOC_SPILL_MIN_BYTES,
+    OOC_MAX_PARALLEL_SPILL_TASKS,
+    OOC_MAX_PARALLEL_PREFETCH_TASKS,
     OOC_LOG_METRICS,
     JOIN_SAMPLE_LIMIT,
     PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
@@ -212,6 +220,8 @@ pub struct Config {
     ooc_memory_prefetch_fraction: AtomicU64,
     ooc_disk_budget_bytes: AtomicU64,
     ooc_spill_min_bytes: AtomicU64,
+    ooc_max_parallel_spill_tasks: AtomicU64,
+    ooc_max_parallel_prefetch_tasks: AtomicU64,
     ooc_log_metrics: AtomicBool,
     join_sample_limit: AtomicU64,
     projection_pushdown_prune_strict_hconcat_inputs: AtomicBool,
@@ -263,6 +273,10 @@ impl Config {
                 DEFAULT_OOC_DISK_BUDGET_MB.saturating_mul(1_000_000),
             ),
             ooc_spill_min_bytes: AtomicU64::new(DEFAULT_OOC_SPILL_MIN_BYTES),
+            ooc_max_parallel_spill_tasks: AtomicU64::new(DEFAULT_OOC_MAX_PARALLEL_SPILL_TASKS),
+            ooc_max_parallel_prefetch_tasks: AtomicU64::new(
+                DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS,
+            ),
             ooc_log_metrics: AtomicBool::new(false),
             join_sample_limit: AtomicU64::new(DEFAULT_JOIN_SAMPLE_LIMIT),
             projection_pushdown_prune_strict_hconcat_inputs: AtomicBool::new(
@@ -302,7 +316,7 @@ impl Config {
 
     fn recompute_derived(&self) {
         let bytes = self.ooc_memory_budget_bytes.load(Ordering::Relaxed);
-        let frac = f64::from_bits(self.ooc_memory_budget_fraction.load(Ordering::Relaxed));
+        let frac = f64::from_bits(self.ooc_memory_prefetch_fraction.load(Ordering::Relaxed));
         self.ooc_memory_prefetch_bytes
             .store((bytes as f64 * frac) as u64, Ordering::Relaxed);
     }
@@ -412,7 +426,7 @@ impl Config {
                 Ordering::Relaxed,
             ),
             OOC_MEMORY_PREFETCH_FRACTION => self.ooc_memory_prefetch_fraction.store(
-                val.and_then(|x| parse::parse_f64_with_limits(var, x, 0.0, 0.95))
+                val.and_then(|x| parse::parse_f64_with_limits(var, x, 0.0, 0.99))
                     .unwrap_or(DEFAULT_OOC_MEMORY_PREFETCH_FRACTION)
                     .to_bits(),
                 Ordering::Relaxed,
@@ -426,6 +440,18 @@ impl Config {
             OOC_SPILL_MIN_BYTES => self.ooc_spill_min_bytes.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_OOC_SPILL_MIN_BYTES),
+                Ordering::Relaxed,
+            ),
+            OOC_MAX_PARALLEL_SPILL_TASKS => self.ooc_max_parallel_spill_tasks.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_OOC_MAX_PARALLEL_SPILL_TASKS)
+                    .max(1), // A semaphore with zero permits would deadlock.
+                Ordering::Relaxed,
+            ),
+            OOC_MAX_PARALLEL_PREFETCH_TASKS => self.ooc_max_parallel_prefetch_tasks.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_OOC_MAX_PARALLEL_PREFETCH_TASKS)
+                    .max(1),
                 Ordering::Relaxed,
             ),
             OOC_LOG_METRICS => self.ooc_log_metrics.store(
@@ -620,6 +646,16 @@ impl Config {
     #[inline(always)]
     pub fn ooc_spill_min_bytes(&self) -> u64 {
         self.ooc_spill_min_bytes.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn ooc_max_parallel_spill_tasks(&self) -> usize {
+        self.ooc_max_parallel_spill_tasks.load(Ordering::Relaxed) as usize
+    }
+
+    #[inline(always)]
+    pub fn ooc_max_parallel_prefetch_tasks(&self) -> usize {
+        self.ooc_max_parallel_prefetch_tasks.load(Ordering::Relaxed) as usize
     }
 
     #[inline(always)]

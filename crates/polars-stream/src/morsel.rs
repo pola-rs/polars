@@ -182,12 +182,12 @@ impl Morsel {
 
     pub async fn map<F: FnOnce(DataFrame) -> DataFrame>(self, f: F) -> Self {
         let Self {
-            mut sf,
+            sf,
             seq,
             source_token,
             consume_token,
         } = self;
-        let old_registry = sf.unregister();
+        let old_registry = sf.current_ctx();
         let df = f(sf.into_df().await);
         let sf = SpillFrame::new_unregistered(df);
         if let Some((ctx, param)) = old_registry {
@@ -206,12 +206,12 @@ impl Morsel {
         f: F,
     ) -> Result<Self, E> {
         let Self {
-            mut sf,
+            sf,
             seq,
             source_token,
             consume_token,
         } = self;
-        let old_registry = sf.unregister();
+        let old_registry = sf.current_ctx();
         let df = f(sf.into_df().await)?;
         let sf = SpillFrame::new_unregistered(df);
         if let Some((ctx, param)) = old_registry {
@@ -231,12 +231,12 @@ impl Morsel {
         F: Future<Output = Result<DataFrame, E>>,
     {
         let Self {
-            mut sf,
+            sf,
             seq,
             source_token,
             consume_token,
         } = self;
-        let old_registry = sf.unregister();
+        let old_registry = sf.current_ctx();
         let df = f(sf.into_df().await).await?;
         let sf = SpillFrame::new_unregistered(df);
         if let Some((ctx, param)) = old_registry {
