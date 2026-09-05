@@ -2,6 +2,7 @@
 use arrow::bitmap::utils::set_bit_unchecked;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
+use polars_buffer::Buffer;
 
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
@@ -141,12 +142,12 @@ where
         for i in nulls {
             unsafe { set_bit_unchecked(validity_slice, i, false) }
         }
-        let arr = PrimitiveArray::new(
-            T::get_static_dtype().to_arrow(CompatLevel::newest()),
-            new_values.into(),
-            Some(validity.into()),
+        let arr = PlPrimitiveArray::new(
+            Buffer::from(new_values),
+            validity.len(),
+            Some(PlBitmap::from_bitmap(validity.into())),
         );
-        Series::try_from((self.name().clone(), Box::new(arr) as ArrayRef)).unwrap()
+        ChunkedArray::<T>::with_chunk(self.name().clone(), arr).into_series()
     }
 }
 

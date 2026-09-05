@@ -4,6 +4,7 @@ use std::borrow::Cow;
 
 use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_array::arrow::import;
+use polars_buffer::Buffer;
 
 use crate::chunked_array::arity::{unary_elementwise, unary_elementwise_values};
 use crate::chunked_array::cast::CastOptions;
@@ -121,52 +122,43 @@ where
     F: Fn(S::Native) -> S::Native + Copy,
     S: PolarsNumericType,
 {
-    use arrow::Either::*;
     let chunks = chunks.into_iter().map(|arr| {
+        let typed = arr
+            .as_any()
+            .downcast_ref::<PlPrimitiveArray<S::Native>>()
+            .unwrap();
+
         // A scalar chunk reads one value at every element, so `f` is applied to that value alone
-        // and what comes back stands for every element in turn. The borrow is scoped so that the
-        // chunk below is still the only reference to its buffers.
-        {
-            let typed = arr
-                .as_any()
-                .downcast_ref::<PlPrimitiveArray<S::Native>>()
-                .unwrap();
-            if let Some(value) = typed.scalar_values() {
-                let validity = typed.validity().map(PlBitmap::from);
-                return PlPrimitiveArray::new_scalar(f(value), typed.len()).with_validity(validity);
-            }
+        // and what comes back stands for every element in turn.
+        if let Some(value) = typed.scalar_values() {
+            let validity = typed.validity().map(PlBitmap::from);
+            return PlPrimitiveArray::new_scalar(f(value), typed.len()).with_validity(validity);
         }
 
-        // The crossing to Arrow leaves the buffers as they are: the chunk is flat by now.
-        let owned_arr = chunk_to_arrow(
-            arr.as_any()
-                .downcast_ref::<PlPrimitiveArray<S::Native>>()
-                .unwrap(),
-        );
-        // Make sure we have a single ref count coming in.
+        // Cloning an array bumps the reference count of its buffers rather than copying them, so
+        // dropping the chunk straight after leaves this the only handle on the values — which is
+        // what lets them be mapped where they lie. That is the whole point of this function.
+        let mut owned = typed.clone();
         drop(arr);
 
-        let compute_immutable = |arr: &PrimitiveArray<S::Native>| {
-            arrow::compute::arity::unary(
-                arr,
-                f,
-                S::get_static_dtype().to_arrow(CompatLevel::newest()),
-            )
-        };
-
-        let out = if owned_arr.values().is_sliced() {
-            compute_immutable(&owned_arr)
-        } else {
-            match owned_arr.into_mut() {
-                Left(immutable) => compute_immutable(&immutable),
-                Right(mut mutable) => {
-                    let vals = mutable.values_mut_slice();
-                    vals.iter_mut().for_each(|v| *v = f(*v));
-                    mutable.into()
-                },
-            }
-        };
-        import::primitive_from_arrow(&out)
+        let values = owned
+            .flat_values_mut()
+            .expect("the chunk is flat: a scalar one returned above");
+        match values.get_mut_slice() {
+            Some(slice) => {
+                for value in slice {
+                    *value = f(*value);
+                }
+            },
+            None => {
+                // Something else still reads these values, so the mapped ones go into a buffer of
+                // their own. A sliced buffer is not this case: what is handed back above covers
+                // the elements of the array and no more.
+                let mapped: Vec<_> = values.as_slice().iter().map(|value| f(*value)).collect();
+                *values = Buffer::from(mapped);
+            },
+        }
+        owned
     });
 
     ChunkedArray::from_chunk_iter(name, chunks)
