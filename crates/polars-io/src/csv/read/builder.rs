@@ -1,5 +1,5 @@
-use arrow::array::MutableBinaryViewArray;
-use polars_array::arrow::import;
+use polars_array::builder::StaticArrayBuilder;
+use polars_array::{PlBinaryViewArrayBuilder, PlUtf8ViewArray};
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::str_to_dec128;
 #[cfg(feature = "dtype-categorical")]
@@ -167,7 +167,7 @@ where
 
 pub struct Utf8Field {
     name: PlSmallStr,
-    mutable: MutableBinaryViewArray<[u8]>,
+    mutable: PlBinaryViewArrayBuilder,
     scratch: Vec<u8>,
     quote_char: u8,
     encoding: CsvEncoding,
@@ -182,7 +182,7 @@ impl Utf8Field {
     ) -> Self {
         Self {
             name,
-            mutable: MutableBinaryViewArray::with_capacity(capacity),
+            mutable: PlBinaryViewArrayBuilder::with_capacity(capacity),
             scratch: vec![],
             quote_char: quote_char.unwrap_or(b'"'),
             encoding,
@@ -209,7 +209,7 @@ impl ParsedBuilder for Utf8Field {
             if missing_is_null {
                 self.mutable.push_null()
             } else {
-                self.mutable.push(Some([]))
+                self.mutable.push_value(b"")
             }
             return Ok(());
         }
@@ -811,8 +811,8 @@ impl Builder {
             Builder::Utf8(v) => {
                 // SAFETY: every byte pushed into the builder has been validated as UTF-8, either
                 // per field by `parse_bytes` or for the whole chunk by `read_impl`'s `check_utf8`.
-                let arr = unsafe { v.mutable.freeze().to_utf8view_unchecked() };
-                StringChunked::with_chunk(v.name, import::utf8_view_from_arrow(&arr)).into_series()
+                let arr = unsafe { PlUtf8ViewArray::from_binview_unchecked(v.mutable.freeze()) };
+                StringChunked::with_chunk(v.name, arr).into_series()
             },
             #[cfg(feature = "dtype-categorical")]
             Builder::Categorical8(buf) => buf.builder.finish().into_series(),
@@ -855,7 +855,7 @@ impl Builder {
             Builder::DecimalFloat64(v, _) => v.append_null(),
             Builder::Utf8(v) => {
                 if valid {
-                    v.mutable.push_value("")
+                    v.mutable.push_value(b"")
                 } else {
                     v.mutable.push_null()
                 }
