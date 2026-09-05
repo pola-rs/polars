@@ -3,7 +3,7 @@ use polars_utils::arena::{Arena, Node};
 use recursive::recursive;
 
 use crate::plans::schema::join_right_output_names;
-use crate::plans::{AExpr, IR, JoinTypeOptionsIR, into_column};
+use crate::plans::{AExpr, IR, JoinTypeOptionsIR};
 
 /// An inclusive range that holds every non-null value of column `name` of `node`, on
 /// its physical values.
@@ -55,10 +55,10 @@ pub fn column_value_range(
         | IR::Distinct { input, .. } => recurse(*input, name),
         IR::Select { input, expr, .. } => {
             let e = expr.iter().find(|e| e.output_name() == name)?;
-            recurse(*input, into_column(e.node(), expr_arena)?)
+            recurse(*input, e.as_column(expr_arena)?)
         },
         IR::HStack { input, exprs, .. } => match exprs.iter().find(|e| e.output_name() == name) {
-            Some(e) => recurse(*input, into_column(e.node(), expr_arena)?),
+            Some(e) => recurse(*input, e.as_column(expr_arena)?),
             None => recurse(*input, name),
         },
         IR::GroupBy {
@@ -72,7 +72,7 @@ pub fn column_value_range(
                 return None;
             }
             let key = keys.iter().find(|k| k.output_name() == name)?;
-            recurse(*input, into_column(key.node(), expr_arena)?)
+            recurse(*input, key.as_column(expr_arena)?)
         },
         IR::Union { inputs, .. } => inputs.iter().try_fold(None, |acc, input| {
             let (min, max) = recurse(*input, name)?;
@@ -125,8 +125,8 @@ pub fn column_value_range(
             match on.iter().find(|(l, _)| l.output_name() == name) {
                 // A full join's coalesced key holds the right keys of its unmatched rows.
                 Some((l, r)) if coalesced && matches!(how, JoinType::Full) => {
-                    into_column(l.node(), expr_arena)?;
-                    let right = recurse(*input_right, into_column(r.node(), expr_arena)?)?;
+                    l.as_column(expr_arena)?;
+                    let right = recurse(*input_right, r.as_column(expr_arena)?)?;
                     Some((left.0.min(right.0), left.1.max(right.1)))
                 },
                 _ => Some(left),

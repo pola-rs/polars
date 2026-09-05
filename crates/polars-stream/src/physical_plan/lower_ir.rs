@@ -24,7 +24,7 @@ use polars_plan::dsl::{CallbackSinkType, ExtraColumnsPolicy, FileScanIR, SinkTyp
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::prune::prune_plan;
 use polars_plan::plans::{
-    AExpr, DynamicPred, FunctionIR, IR, IRAggExpr, LiteralValue, column_value_range, into_column,
+    AExpr, DynamicPred, FunctionIR, IR, IRAggExpr, LiteralValue, column_value_range,
     window_exprs_match_keys, write_ir_non_recursive,
 };
 use polars_plan::prelude::*;
@@ -2384,7 +2384,7 @@ fn key_value_ranges(
 ) -> Vec<KeyRange> {
     keys.iter()
         .map(|k| {
-            let name = into_column(k.node(), expr_arena)?;
+            let name = k.as_column(expr_arena)?;
             column_value_range(input, name, ir_arena, expr_arena)
         })
         .collect()

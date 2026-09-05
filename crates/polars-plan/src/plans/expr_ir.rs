@@ -246,12 +246,17 @@ impl ExprIR {
         }
     }
 
-    /// The column this reads, if it is that column under its own name.
+    /// The column this reads, if it is a bare column reference. Ignores any rename, so the
+    /// name returned is the input's column, not this expression's output name.
+    pub fn as_column<'a>(&self, expr_arena: &'a Arena<AExpr>) -> Option<&'a PlSmallStr> {
+        expr_arena.get(self.node).as_column()
+    }
+
+    /// Like [`ExprIR::as_column`], but only when the column is not renamed, so the name is
+    /// both the input's column and this expression's output name.
     pub fn plain_column<'a>(&self, expr_arena: &'a Arena<AExpr>) -> Option<&'a PlSmallStr> {
-        match expr_arena.get(self.node) {
-            AExpr::Column(name) if self.output_name.get() == Some(name) => Some(name),
-            _ => None,
-        }
+        self.as_column(expr_arena)
+            .filter(|name| self.output_name.get() == Some(name))
     }
 
     pub fn get_alias(&self) -> Option<&PlSmallStr> {
