@@ -18,8 +18,8 @@ use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 
 use crate::plans::{
-    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, OutputName, ProjectionOptions,
-    aexpr_to_leaf_names_iter, node_stats,
+    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, MintermIter, NodeStats, OutputName,
+    ProjectionOptions, aexpr_to_leaf_names_iter, is_elementwise_rec, node_stats,
 };
 use crate::prelude::{JoinArgs, JoinType, MaintainOrderJoin};
 use crate::utils::rename_columns;
@@ -47,6 +47,11 @@ pub(super) struct Edge {
     pub(super) right_leaf: usize,
     pub(super) left_key: ExprIR,
     pub(super) right_key: ExprIR,
+    /// Column each key reads, when it is a plain column reference. A computed key
+    /// has none: it is named after its left-most column, whose statistics and
+    /// identity are not the expression's.
+    pub(super) left_name: Option<PlSmallStr>,
+    pub(super) right_name: Option<PlSmallStr>,
 }
 
 /// An edge oriented against the leaves joined so far.
@@ -57,6 +62,9 @@ pub(super) struct Bridge<'a> {
     pub(super) placed_key: &'a ExprIR,
     /// Key belonging to the candidate (right) side.
     pub(super) candidate_key: &'a ExprIR,
+    /// Column names of those keys, when they are plain column references.
+    pub(super) placed_name: Option<&'a PlSmallStr>,
+    pub(super) candidate_name: Option<&'a PlSmallStr>,
 }
 
 pub(super) struct Cluster {
@@ -71,6 +79,10 @@ pub(super) struct Cluster {
     /// Options used for every rebuilt join. [`same_settings`] guarantees all joins
     /// in the cluster agree on everything but their keys.
     pub(super) options: Arc<JoinOptionsIR>,
+    /// Conjuncts that sat between the cluster's joins, in the root namespace. The
+    /// joins are all inner, so these commute with them and are re-applied as soon as
+    /// the chain has the columns they read.
+    pub(super) residuals: Vec<ExprIR>,
 }
 
 impl Cluster {
@@ -91,12 +103,16 @@ impl Cluster {
                     placed_leaf: edge.left_leaf,
                     placed_key: &edge.left_key,
                     candidate_key: &edge.right_key,
+                    placed_name: edge.left_name.as_ref(),
+                    candidate_name: edge.right_name.as_ref(),
                 })
             } else if edge.left_leaf == candidate && is_placed[edge.right_leaf] {
                 Some(Bridge {
                     placed_leaf: edge.right_leaf,
                     placed_key: &edge.right_key,
                     candidate_key: &edge.left_key,
+                    placed_name: edge.right_name.as_ref(),
+                    candidate_name: edge.left_name.as_ref(),
                 })
             } else {
                 None
@@ -131,6 +147,12 @@ struct RawLeaf {
     renames: Arc<Renames>,
 }
 
+/// One conjunct found between two joins, with the renames carrying it to the root.
+struct RawResidual {
+    predicate: ExprIR,
+    renames: Arc<Renames>,
+}
+
 /// A key pair as written, together with the leaves either side of its join.
 ///
 /// A key expression is resolved by name against its own input, so the sides have to
@@ -158,17 +180,8 @@ pub(super) fn extract(
     }
     let options = options.clone();
 
-    let mut raw_leaves = Vec::new();
-    let mut raw_keys = Vec::new();
-    collect(
-        root,
-        ir_arena,
-        expr_arena,
-        &options,
-        &Arc::new(Renames::default()),
-        &mut raw_leaves,
-        &mut raw_keys,
-    );
+    let (raw_leaves, raw_keys, raw_residuals) =
+        Collector::run(root, ir_arena, expr_arena, &options);
 
     if raw_leaves.len() < MIN_LEAVES {
         return None;
@@ -189,11 +202,15 @@ pub(super) fn extract(
         let right_key = normalize_key(&raw.right_key, &raw.renames, expr_arena);
         let left_leaf = owning_leaf(&left_key, &schemas, raw.left_leaves, expr_arena)?;
         let right_leaf = owning_leaf(&right_key, &schemas, raw.right_leaves, expr_arena)?;
+        let left_name = left_key.plain_column(expr_arena).cloned();
+        let right_name = right_key.plain_column(expr_arena).cloned();
         edges.push(Edge {
             left_leaf,
             right_leaf,
             left_key,
             right_key,
+            left_name,
+            right_name,
         });
     }
 
@@ -235,6 +252,15 @@ pub(super) fn extract(
         if !column_names_are_unambiguous(&schemas, &coalesced) {
             return None;
         }
+        // A residual reads columns by name, and which leaf a name came from is not
+        // tracked here, so one naming a renamed column cannot be carried across.
+        let renamed_away = |raw: &RawResidual| {
+            aexpr_to_leaf_names_iter(raw.predicate.node(), expr_arena)
+                .any(|name| renames.iter().any(|r| r.contains_key(name.as_str())))
+        };
+        if raw_residuals.iter().any(renamed_away) {
+            return None;
+        }
     }
 
     // Every leaf needs an estimate. Ordering on partial information would order by
@@ -250,12 +276,18 @@ pub(super) fn extract(
         });
     }
 
+    let residuals = raw_residuals
+        .iter()
+        .map(|raw| normalize_key(&raw.predicate, &raw.renames, expr_arena))
+        .collect();
+
     Some(Cluster {
         leaves,
         edges,
         output_schema,
         restore,
         options,
+        residuals,
     })
 }
 
@@ -337,68 +369,104 @@ fn restore_exprs(
 /// A join configured differently from the root becomes a leaf instead of being folded
 /// in. Rebuilt joins inherit the root's settings, so folding in a join that disagreed
 /// on, say, `nulls_equal` would change its meaning.
-#[recursive]
-fn collect(
-    node: Node,
-    ir_arena: &Arena<IR>,
-    expr_arena: &Arena<AExpr>,
-    root_options: &JoinOptionsIR,
-    renames: &Arc<Renames>,
-    leaves: &mut Vec<RawLeaf>,
-    key_pairs: &mut Vec<RawKey>,
-) {
-    // Column projections commonly sit between joins. They preserve rows, so look past
-    // them for the join underneath; otherwise almost every join is its own cluster.
-    let (peeled, peeled_renames) = peel_projections(node, ir_arena, expr_arena, renames);
+struct Collector<'a> {
+    ir_arena: &'a Arena<IR>,
+    expr_arena: &'a Arena<AExpr>,
+    root_options: &'a JoinOptionsIR,
+    leaves: Vec<RawLeaf>,
+    key_pairs: Vec<RawKey>,
+    residuals: Vec<RawResidual>,
+}
 
-    match ir_arena.get(peeled) {
-        IR::Join {
-            input_left,
-            input_right,
-            options,
-            ..
-        } if reorderable(options) && same_settings(options, root_options) => {
-            // Each side's leaves land in one contiguous run, which is the range the
-            // keys of that side resolve against.
-            let start = leaves.len();
-            collect(
-                *input_left,
-                ir_arena,
-                expr_arena,
-                root_options,
-                &peeled_renames,
-                leaves,
-                key_pairs,
-            );
-            let mid = leaves.len();
-            collect(
-                *input_right,
-                ir_arena,
-                expr_arena,
-                root_options,
-                &peeled_renames,
-                leaves,
-                key_pairs,
-            );
-            let end = leaves.len();
+impl<'a> Collector<'a> {
+    /// Walk the cluster rooted at `root`, returning its leaves, keys and residuals.
+    fn run(
+        root: Node,
+        ir_arena: &'a Arena<IR>,
+        expr_arena: &'a Arena<AExpr>,
+        root_options: &'a JoinOptionsIR,
+    ) -> (Vec<RawLeaf>, Vec<RawKey>, Vec<RawResidual>) {
+        let mut collector = Self {
+            ir_arena,
+            expr_arena,
+            root_options,
+            leaves: Vec::new(),
+            key_pairs: Vec::new(),
+            residuals: Vec::new(),
+        };
+        collector.collect(root, &Arc::new(Renames::default()));
+        (collector.leaves, collector.key_pairs, collector.residuals)
+    }
 
-            if let Some(on) = options.options.key_pairs() {
-                key_pairs.extend(on.iter().map(|(left_key, right_key)| RawKey {
-                    left_key: left_key.clone(),
-                    right_key: right_key.clone(),
-                    left_leaves: start..mid,
-                    right_leaves: mid..end,
+    #[recursive]
+    fn collect(&mut self, node: Node, renames: &Arc<Renames>) {
+        // Column projections commonly sit between joins. They preserve rows, so look
+        // past them for the join underneath; otherwise almost every join is its own
+        // cluster.
+        let (peeled, peeled_renames) =
+            peel_projections(node, self.ir_arena, self.expr_arena, renames);
+
+        // A predicate over two of the relations cannot be pushed below their join, so
+        // it sits between the joins. Peel it off and carry it, otherwise the cluster
+        // ends here and everything below is one leaf, keys and all. Each conjunct
+        // travels on its own so it can be re-applied as soon as its own columns are
+        // available.
+        //
+        // Only an elementwise predicate may travel. Anything else reads a row's
+        // neighbours, so the rows reaching it decide its result, and reordering the
+        // joins below changes which rows those are.
+        if let IR::Filter { input, predicate } = self.ir_arena.get(peeled) {
+            let expr_arena = self.expr_arena;
+            let conjuncts = || MintermIter::new(predicate.node(), expr_arena);
+            if conjuncts().all(|node| is_elementwise_rec(node, expr_arena)) {
+                self.residuals.extend(conjuncts().map(|node| RawResidual {
+                    predicate: ExprIR::from_node(node, expr_arena),
                     renames: peeled_renames.clone(),
                 }));
+                self.collect(*input, &peeled_renames);
+            } else {
+                self.leaves.push(RawLeaf {
+                    node,
+                    renames: renames.clone(),
+                });
             }
-        },
-        // Keep the unpeeled node, and with it the renames as they stood above it: a
-        // projection on a leaf still narrows it, and its own renames are already
-        // part of its schema.
-        _ => leaves.push(RawLeaf {
-            node,
-            renames: renames.clone(),
-        }),
+            return;
+        }
+
+        match self.ir_arena.get(peeled) {
+            IR::Join {
+                input_left,
+                input_right,
+                options,
+                ..
+            } if reorderable(options) && same_settings(options, self.root_options) => {
+                // Each side's leaves land in one contiguous run, which is the range the
+                // keys of that side resolve against.
+                let start = self.leaves.len();
+                self.collect(*input_left, &peeled_renames);
+                let mid = self.leaves.len();
+                self.collect(*input_right, &peeled_renames);
+                let end = self.leaves.len();
+
+                if let Some(on) = options.options.key_pairs() {
+                    self.key_pairs
+                        .extend(on.iter().map(|(left_key, right_key)| RawKey {
+                            left_key: left_key.clone(),
+                            right_key: right_key.clone(),
+                            left_leaves: start..mid,
+                            right_leaves: mid..end,
+                            renames: peeled_renames.clone(),
+                        }));
+                }
+            },
+            // Keep the unpeeled node, and with it the renames as they stood above it: a
+            // projection on a leaf still narrows it, and its own renames are already
+            // part of its schema.
+            _ => self.leaves.push(RawLeaf {
+                node,
+                renames: renames.clone(),
+            }),
+        }
     }
 }
 
@@ -634,6 +702,8 @@ fn coalesce_keys(
                     right_leaf,
                     left_key: template.left_key.clone(),
                     right_key: template.right_key.clone(),
+                    left_name: template.left_name.clone(),
+                    right_name: template.right_name.clone(),
                 });
             }
         }

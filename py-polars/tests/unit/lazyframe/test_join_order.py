@@ -13,6 +13,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from polars._typing import PolarsDataType
+
 ON = pl.QueryOptFlags(join_order=True)
 OFF = pl.QueryOptFlags(join_order=False)
 
@@ -680,3 +682,120 @@ def test_correlated_multi_key_join_does_not_look_free(tmp_path: Path) -> None:
     )
 
     assert_reordered(lf, ["fact", "ret", "day"], ["fact", "day", "ret"])
+
+
+def fanout_frames(
+    tmp_path: Path, dtype: PolarsDataType, spread: int
+) -> dict[str, pl.LazyFrame]:
+    """Two relations sharing 100 key values, and a dimension hanging off one of them.
+
+    `spread` scales the keys apart without changing how many there are, so a domain
+    read from the key's value range only bounds the join for a small `spread`.
+    """
+    sales = pl.DataFrame(
+        {"s_item": pl.Series([(i % 100) * spread for i in range(2000)], dtype=dtype)}
+    )
+    inv = pl.DataFrame(
+        {
+            "i_item": pl.Series([(i % 100) * spread for i in range(3000)], dtype=dtype),
+            "i_wh": [i % 30 for i in range(3000)],
+        }
+    )
+    wh = pl.DataFrame(
+        {"w_key": list(range(30)), "w_name": [f"w{i}" for i in range(30)]}
+    )
+    return write_scans(tmp_path, sales=sales, inv=inv, wh=wh)
+
+
+def fanout_query(frames: dict[str, pl.LazyFrame]) -> pl.LazyFrame:
+    return (
+        frames["sales"]
+        .join(frames["inv"], left_on="s_item", right_on="i_item", coalesce=False)
+        .join(frames["wh"], left_on="i_wh", right_on="w_key", coalesce=False)
+    )
+
+
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.Int64, pl.UInt32, pl.UInt64])
+def test_key_value_range_defers_a_fan_out_join(
+    tmp_path: Path, dtype: PolarsDataType
+) -> None:
+    lf = fanout_query(fanout_frames(tmp_path, dtype, spread=1))
+
+    # 100 values shared by both sides fan out, so the dimension is folded in first.
+    assert_reordered(lf, ["sales", "inv", "wh"], ["inv", "wh", "sales"])
+
+
+@pytest.mark.parametrize("dtype", [pl.Int32, pl.UInt32, pl.UInt64, pl.Float64])
+def test_key_value_range_wider_than_the_relation_does_not_bound_it(
+    tmp_path: Path, dtype: PolarsDataType
+) -> None:
+    lf = fanout_query(fanout_frames(tmp_path, dtype, spread=10_000_000))
+
+    assert scan_order(lf.explain(optimizations=ON)) == ["sales", "inv", "wh"]
+
+
+@pytest.mark.parametrize(
+    ("spread", "expected"),
+    [(1, ["inv", "wh", "sales"]), (10_000_000, ["sales", "inv", "wh"])],
+)
+def test_key_value_range_survives_a_partial_footer_read(
+    tmp_path: Path, spread: int, expected: list[str]
+) -> None:
+    # More files than one footer wave, so only some of their footers are read.
+    parts = tmp_path / "sales"
+    parts.mkdir()
+    n_files = 40
+    for k in range(n_files):
+        pl.DataFrame(
+            {
+                "s_item": pl.Series(
+                    [(i % 100) * spread for i in range(k, 2000, n_files)],
+                    dtype=pl.Int32,
+                )
+            }
+        ).write_parquet(parts / f"p{k:03}.parquet")
+
+    frames = fanout_frames(tmp_path, pl.Int32, spread=spread)
+    frames["sales"] = pl.scan_parquet(parts / "*.parquet")
+
+    order = scan_order(fanout_query(frames).explain(optimizations=ON))
+    assert ["sales" if n.startswith("p000") else n for n in order] == expected
+
+
+def test_non_elementwise_filter_between_joins_is_left_alone(tmp_path: Path) -> None:
+    # `b` matches every `a` row twice, so a window over the join sees groups of two.
+    frames = write_scans(
+        tmp_path,
+        a=pl.DataFrame({"a_id": [1, 2, 3, 4], "av": [10, 20, 30, 40]}),
+        b=pl.DataFrame({"b_id": [1, 1, 2, 2, 3, 3, 4, 4], "bv": list(range(8))}),
+        c=pl.DataFrame({"c_id": [1, 2, 3, 4], "cv": [100, 200, 300, 400]}),
+    )
+    lf = (
+        frames["a"]
+        .join(frames["b"], left_on="a_id", right_on="b_id", coalesce=False)
+        .filter(pl.len().over("a_id") == 1)
+        .join(frames["c"], left_on="a_id", right_on="c_id", coalesce=False)
+    )
+
+    assert_frame_equal(lf.collect(optimizations=OFF), lf.collect(optimizations=ON))
+
+
+def test_computed_join_key_does_not_borrow_a_column_range(tmp_path: Path) -> None:
+    # A computed key is named after its left-most column, here a constant whose value
+    # range would otherwise be read as the key's own.
+    frames = fanout_frames(tmp_path, pl.Int64, spread=10_000_000)
+    frames["sales"] = frames["sales"].with_columns(z1=pl.lit(0, dtype=pl.Int64))
+    frames["inv"] = frames["inv"].with_columns(z2=pl.lit(0, dtype=pl.Int64))
+
+    lf = (
+        frames["sales"]
+        .join(
+            frames["inv"],
+            left_on=pl.col("z1") + pl.col("s_item"),
+            right_on=pl.col("z2") + pl.col("i_item"),
+            coalesce=False,
+        )
+        .join(frames["wh"], left_on="i_wh", right_on="w_key", coalesce=False)
+    )
+
+    assert scan_order(lf.explain(optimizations=ON)) == ["sales", "inv", "wh"]
