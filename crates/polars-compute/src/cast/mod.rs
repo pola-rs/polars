@@ -81,7 +81,11 @@ pub fn cast_chunk_from(
         return Ok(import::from_arrow(&*cast).new_from_index(0, array.len()));
     }
 
-    let cast = cast(&*retag(export::to_arrow(array), from_type), to_type, options)?;
+    let cast = cast(
+        &*retag(export::to_arrow(array), from_type),
+        to_type,
+        options,
+    )?;
     Ok(import::from_arrow(&*cast))
 }
 

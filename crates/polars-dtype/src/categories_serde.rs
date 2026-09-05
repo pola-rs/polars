@@ -124,15 +124,13 @@ impl schemars::JsonSchema for SerializableCategories {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn round_trip(strings: &[&str]) {
-        let array = import::utf8_view_from_arrow(
-            &arrow::array::Utf8ViewArray::from_slice_values(strings),
-        );
+        let array =
+            import::utf8_view_from_arrow(&arrow::array::Utf8ViewArray::from_slice_values(strings));
         let categories = SerializableCategories(array);
         let bytes = categories.to_ipc_bytes().unwrap();
         let read = SerializableCategories::from_ipc_bytes(&bytes).unwrap();

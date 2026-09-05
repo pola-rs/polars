@@ -1,16 +1,13 @@
 use std::sync::Arc;
 
-use arrow::datatypes::{
-    ArrowDataType, Field as ArrowField, IntervalUnit, Metadata,
-};
-#[cfg(feature = "dtype-categorical")]
-use crate::categorical::{Categories, CategoricalPhysical, FrozenCategories};
+use arrow::datatypes::{ArrowDataType, Field as ArrowField, IntervalUnit, Metadata};
 use polars_error::feature_gated;
 use polars_utils::pl_str::PlSmallStr;
-
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "dtype-categorical")]
+use crate::categorical::{CategoricalPhysical, Categories, FrozenCategories};
 use crate::config::check_allow_importing_interval_as_struct;
 use crate::dtype::*;
 use crate::temporal::time_unit::TimeUnit;

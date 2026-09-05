@@ -1,6 +1,6 @@
+use polars_error::PolarsResult;
 #[cfg(feature = "timezones")]
 use polars_error::polars_bail;
-use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
 #[cfg(feature = "timezones")]

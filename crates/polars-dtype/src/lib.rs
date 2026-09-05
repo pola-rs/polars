@@ -12,9 +12,12 @@
 
 #[cfg(any(feature = "serde", feature = "serde-lazy", feature = "dsl-schema"))]
 mod _serde;
-#[cfg(all(feature = "dtype-categorical", any(feature = "serde", feature = "serde-lazy", feature = "dsl-schema")))]
-mod categories_serde;
 pub mod categorical;
+#[cfg(all(
+    feature = "dtype-categorical",
+    any(feature = "serde", feature = "serde-lazy", feature = "dsl-schema")
+))]
+mod categories_serde;
 pub mod dtype;
 #[cfg(feature = "dtype-extension")]
 pub mod extension;

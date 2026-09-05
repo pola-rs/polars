@@ -14,32 +14,32 @@ use arrow::datatypes::{
     ArrowDataType, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW,
     Field as ArrowField, MAINTAIN_PL_TYPE, Metadata, PL_KEY, TimeUnit as ArrowTimeUnit,
 };
-#[cfg(feature = "dtype-array")]
-use polars_utils::format_tuple;
 #[cfg(any(feature = "dtype-map", feature = "dtype-struct"))]
 use polars_error::polars_ensure;
 use polars_error::{PolarsResult, polars_bail};
+use polars_utils::aliases::PlHashSet;
+#[cfg(feature = "dtype-array")]
+use polars_utils::format_tuple;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::itertools::Itertools;
-use polars_utils::aliases::PlHashSet;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(any(feature = "serde-lazy", feature = "serde"))]
 use serde::{Deserialize, Serialize};
-pub use crate::temporal::time_zone::TimeZone;
 
-#[cfg(feature = "object")]
-use crate::object::get_object_physical_type;
-#[cfg(feature = "dtype-extension")]
-pub use crate::extension::ExtensionTypeInstance;
 #[cfg(feature = "dtype-categorical")]
 use crate::categorical::{
-    CategoricalMapping, CategoricalPhysical, Categories, FrozenCategories,
-    ensure_same_categories, ensure_same_frozen_categories,
+    CategoricalMapping, CategoricalPhysical, Categories, FrozenCategories, ensure_same_categories,
+    ensure_same_frozen_categories,
 };
 use crate::dyn_int_dtype;
+#[cfg(feature = "dtype-extension")]
+pub use crate::extension::ExtensionTypeInstance;
 #[cfg(feature = "dtype-struct")]
 use crate::field::Field;
+#[cfg(feature = "object")]
+use crate::object::get_object_physical_type;
 use crate::temporal::time_unit::TimeUnit;
+pub use crate::temporal::time_zone::TimeZone;
 
 pub trait MetaDataExt: IntoMetadata {
     fn pl_enum_metadata(&self) -> Option<&str> {

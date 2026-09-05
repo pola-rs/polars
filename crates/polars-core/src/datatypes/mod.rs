@@ -47,12 +47,12 @@ pub use polars_dtype::categorical::{
 // dispatched on it. It is re-exported here because this is where the rest of the crate — and
 // everything downstream of it — has always reached for it.
 pub use polars_dtype::dtype::*;
-pub use polars_dtype::field::*;
-pub use polars_dtype::temporal::{time_unit, time_zone};
-#[cfg(feature = "dtype-extension")]
-pub use polars_dtype::extension;
 #[cfg(feature = "dtype-map")]
 pub use polars_dtype::ensure_map_entries_dtype;
+#[cfg(feature = "dtype-extension")]
+pub use polars_dtype::extension;
+pub use polars_dtype::field::*;
+pub use polars_dtype::temporal::{time_unit, time_zone, *};
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::float::IsFloat;
 use polars_utils::float16::pf16;
@@ -62,7 +62,6 @@ use polars_utils::total_ord::TotalHash;
 pub use schema::SchemaExtPl;
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserialize, Serialize};
-pub use polars_dtype::temporal::*;
 
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]

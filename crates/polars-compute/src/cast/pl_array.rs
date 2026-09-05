@@ -143,14 +143,16 @@ pub(super) fn cast_native(
         },
 
         _ if is_plain_numeric(from_type) && is_plain_numeric(to_type) => {
-            let wrapped = options.wrapped
-                || casts_with_as(primitive_of(from_type), primitive_of(to_type));
-            Some(Ok(with_match_primitive_type!(primitive_of(from_type), |$I| {
-                let from: &PlPrimitiveArray<$I> = downcast(array);
-                with_match_primitive_type!(primitive_of(to_type), |$O| {
-                    Box::new(numeric_to_numeric::<$I, $O>(from, wrapped)) as Box<dyn PlArray>
-                })
-            })))
+            let wrapped =
+                options.wrapped || casts_with_as(primitive_of(from_type), primitive_of(to_type));
+            Some(Ok(
+                with_match_primitive_type!(primitive_of(from_type), |$I| {
+                    let from: &PlPrimitiveArray<$I> = downcast(array);
+                    with_match_primitive_type!(primitive_of(to_type), |$O| {
+                        Box::new(numeric_to_numeric::<$I, $O>(from, wrapped)) as Box<dyn PlArray>
+                    })
+                }),
+            ))
         },
 
         _ => None,
@@ -215,12 +217,17 @@ fn casts_with_as(from: PrimitiveType, to: PrimitiveType) -> bool {
     use PrimitiveType::*;
     matches!(
         (from, to),
-        (UInt8, UInt16 | UInt32 | UInt64 | Float16 | Float32 | Float64)
-            | (UInt16, UInt32 | UInt64 | Float16 | Float32 | Float64)
+        (
+            UInt8,
+            UInt16 | UInt32 | UInt64 | Float16 | Float32 | Float64
+        ) | (UInt16, UInt32 | UInt64 | Float16 | Float32 | Float64)
             | (UInt32, UInt64 | Float16 | Float32 | Float64)
             | (UInt64, Float16 | Float32 | Float64)
             | (UInt128, Float16 | Float32 | Float64)
-            | (Int8, Int16 | Int32 | Int64 | Int128 | Float16 | Float32 | Float64)
+            | (
+                Int8,
+                Int16 | Int32 | Int64 | Int128 | Float16 | Float32 | Float64
+            )
             | (Int16, Int32 | Int64 | Int128 | Float16 | Float32 | Float64)
             | (Int32, Int64 | Int128 | Float16 | Float32 | Float64)
             | (Int64, Float16 | Float64)
@@ -302,10 +309,7 @@ where
         // The values hold a slot per element, so this is the one place the cast writes one too.
         // The shared kernel is `#[inline(never)]` over the element types, which keeps one unrolled
         // loop rather than one per pair of types cast between.
-        ArrayRepr::Flat(_) => crate::arity::prim_unary_values(
-            from.to_flat().into_owned(),
-            op,
-        ),
+        ArrayRepr::Flat(_) => crate::arity::prim_unary_values(from.to_flat().into_owned(), op),
     }
 }
 
@@ -374,7 +378,11 @@ fn and_validity(validity: Option<PlBitmapRef<'_>>, mask: arrow::bitmap::Bitmap) 
         Some(validity) => {
             // A mask of one element reads as scalar behind `flat_bitmap`, so the bits are taken
             // off the flattened mask itself.
-            let validity = PlBitmap::from(validity).to_flat().into_owned().into_inner().0;
+            let validity = PlBitmap::from(validity)
+                .to_flat()
+                .into_owned()
+                .into_inner()
+                .0;
             PlBitmap::new(arrow::bitmap::and(&validity, &mask), length)
         },
     }
@@ -518,7 +526,10 @@ mod tests {
 
         // Read off the `as_options` arms of the Arrow dispatch.
         assert!(casts_with_as(Int32, Int64), "a widening int is not checked");
-        assert!(casts_with_as(Float32, Float16), "a narrowing float saturates");
+        assert!(
+            casts_with_as(Float32, Float16),
+            "a narrowing float saturates"
+        );
         assert!(casts_with_as(Float64, Float16));
         assert!(casts_with_as(UInt8, Float64));
 
@@ -540,7 +551,11 @@ mod tests {
         )
         .expect("a numeric cast is answered here")
         .unwrap();
-        assert_eq!(out.null_count(), 0, "{out:?} read a saturating cast as null");
+        assert_eq!(
+            out.null_count(),
+            0,
+            "{out:?} read a saturating cast as null"
+        );
     }
 
     /// A value the target type cannot hold reads as null, and the count is read off the answer.

@@ -4,7 +4,6 @@ use arrow::array::*;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::compute::arity::unary;
 use arrow::datatypes::{ArrowDataType, TimeUnit};
-
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
 #[cfg(feature = "dtype-decimal")]
