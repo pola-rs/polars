@@ -1,3 +1,5 @@
+#[cfg(feature = "python")]
+use std::cell::LazyCell;
 use std::fmt::Debug;
 use std::ops::ControlFlow;
 use std::sync::Arc;
@@ -24,6 +26,9 @@ use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::{AExpr, Card, IR};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 
+#[cfg(feature = "python")]
+pub type PyScanResolveThreadPool = polars_utils::python_thread_pool::PyThreadPool;
+
 pub(super) fn expand_datasets(
     root: Node,
     ir_arena: &mut Arena<IR>,
@@ -38,7 +43,8 @@ pub(super) fn expand_datasets(
         FuturesUnordered::new();
 
     #[cfg(feature = "python")]
-    let mut py_scan_resolve_threadpool: Option<Arc<PyScanResolveThreadPool>> = None;
+    let py_scan_resolve_threadpool: LazyCell<Arc<PyScanResolveThreadPool>> =
+        LazyCell::new(|| Arc::new(PyScanResolveThreadPool::new()));
 
     match ir_graph_traversal(
         root,
@@ -146,9 +152,7 @@ pub(super) fn expand_datasets(
                             assert!(matches!(ir, IR::Scan { .. }));
 
                             let py_scan_resolve_threadpool =
-                                Arc::clone(py_scan_resolve_threadpool.get_or_insert_with(|| {
-                                    Arc::new(PyScanResolveThreadPool::new())
-                                }));
+                                Arc::clone(&py_scan_resolve_threadpool);
 
                             let handle = AbortOnDropHandle(ASYNC.spawn_blocking(move || {
                                 (
@@ -476,82 +480,6 @@ fn expand_python_dataset(
     }
 
     Ok(scan_ir)
-}
-
-#[cfg(feature = "python")]
-#[derive(pyo3::IntoPyObject)]
-pub struct PyScanResolveThreadPool(
-    /// polars._utils.threading.PyScanResolveThreadPool
-    pyo3::Py<pyo3::PyAny>,
-);
-
-#[cfg(feature = "python")]
-impl<'py> pyo3::IntoPyObject<'py> for &'py PyScanResolveThreadPool {
-    type Output = <&'py pyo3::Py<pyo3::PyAny> as pyo3::IntoPyObject<'py>>::Output;
-    type Target = <&'py pyo3::Py<pyo3::PyAny> as pyo3::IntoPyObject<'py>>::Target;
-    type Error = <&'py pyo3::Py<pyo3::PyAny> as pyo3::IntoPyObject<'py>>::Error;
-
-    fn into_pyobject(self, py: pyo3::prelude::Python<'py>) -> Result<Self::Output, Self::Error> {
-        pyo3::IntoPyObject::into_pyobject(&self.0, py)
-    }
-}
-
-#[cfg(feature = "python")]
-impl PyScanResolveThreadPool {
-    pub fn new() -> Self {
-        use std::num::NonZeroUsize;
-        use std::sync::LazyLock;
-
-        use pyo3::types::PyAnyMethods;
-        use pyo3::{Py, PyAny, PyResult, Python};
-
-        Python::attach(|py| {
-            let num_threads =
-                std::env::var("POLARS_PYTHON_SCAN_RESOLVE_THREADS").map_or(128, |x| {
-                    x.parse::<NonZeroUsize>()
-                        .unwrap_or_else(|_| {
-                            panic!("invalid value for POLARS_PYTHON_SCAN_RESOLVE_THREADS: {x}")
-                        })
-                        .get()
-                });
-
-            if polars_config::config().verbose() {
-                eprintln!("python scan_resolve_threadpool threads: {num_threads}")
-            }
-
-            if LazyLock::get(&PY_SCAN_RESOLVE_THREADPOOL_CLS).is_none() {
-                py.detach(|| LazyLock::force(&PY_SCAN_RESOLVE_THREADPOOL_CLS));
-            }
-
-            return Self(
-                PY_SCAN_RESOLVE_THREADPOOL_CLS
-                    .bind(py)
-                    .call1((num_threads,))
-                    .map(|x| x.unbind())
-                    .unwrap(),
-            );
-
-            static PY_SCAN_RESOLVE_THREADPOOL_CLS: LazyLock<Py<PyAny>> = LazyLock::new(|| {
-                Python::attach(|py| {
-                    (|| {
-                        PyResult::Ok(
-                            py.import("polars._utils.threading")?
-                                .getattr("PyScanResolveThreadPool")?
-                                .unbind(),
-                        )
-                    })()
-                    .unwrap()
-                })
-            });
-        })
-    }
-}
-
-#[cfg(feature = "python")]
-impl Default for PyScanResolveThreadPool {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 #[derive(Clone)]

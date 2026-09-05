@@ -245,6 +245,21 @@ impl IR {
                     output_name.hash(state);
                 },
             },
+            IR::Resolver {
+                resolver,
+                resolver_schema: _,
+                projection,
+                slice,
+                filters,
+                filter_drop_columns_idx: _,
+                resolved_dsl: _,
+                resolved_ir: _,
+            } => {
+                resolver.hash(state);
+                projection.hash(state);
+                slice.hash(state);
+                hash_exprs(filters, state);
+            },
             IR::Invalid => unreachable!(),
         }
     }

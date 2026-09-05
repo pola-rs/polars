@@ -11,6 +11,7 @@ use polars_io::ipc::IpcScanOptions;
 use polars_io::parquet::read::ParquetOptions;
 use polars_utils::unique_id::UniqueId;
 
+use crate::dsl::dsl_resolver::DslResolver;
 use crate::dsl::functions::lit;
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonFunction;
@@ -143,6 +144,15 @@ impl DslBuilder {
                 dataset_object: Arc::new(PythonDatasetProvider::new(dataset_object)),
             }),
             cached_ir: Default::default(),
+        }
+        .into()
+    }
+
+    pub fn from_dsl_resolver(dsl_resolver: Arc<DslResolver>) -> DslBuilder {
+        DslPlan::Resolver {
+            resolver: dsl_resolver,
+            resolver_schema: Default::default(),
+            resolved_cache: Default::default(),
         }
         .into()
     }

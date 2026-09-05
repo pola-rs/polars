@@ -8,6 +8,7 @@ use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
 use super::format::ExprIRSliceDisplay;
+use crate::dsl::dsl_resolver::ResolverExplainHeadingDisplay;
 use crate::prelude::ir::format::ColumnsDisplay;
 use crate::prelude::*;
 
@@ -357,6 +358,28 @@ impl<'a> IRDotDisplay<'a> {
                     recurse!(*input);
                 }
                 write_label(f, id, |f| write!(f, "DISPATCH {operation}"))?;
+            },
+            Resolver {
+                resolver,
+                resolved_dsl,
+                resolved_ir,
+                ..
+            } => {
+                if let Some(node) = *resolved_ir {
+                    recurse!(node);
+                };
+
+                write_label(f, id, |f| {
+                    write!(
+                        f,
+                        "{}",
+                        ResolverExplainHeadingDisplay {
+                            indent: 0,
+                            resolver,
+                            resolved_dsl
+                        }
+                    )
+                })?;
             },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
         }

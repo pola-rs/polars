@@ -1,3 +1,4 @@
+use std::pin::Pin;
 use std::sync::LazyLock;
 
 use arrow::datatypes::ArrowSchemaRef;
@@ -21,6 +22,7 @@ use super::stack_opt::ConversionOptimizer;
 use super::*;
 use crate::constants::get_pl_element_name;
 use crate::dsl::PartitionedSinkOptions;
+use crate::dsl::dsl_resolver::DslResolverTrait;
 use crate::dsl::file_provider::{FileProviderType, HivePathProvider};
 use crate::dsl::functions::{all_horizontal, col};
 use crate::plans::conversion::dsl_to_ir::scans::SourcesToFileInfo;
@@ -115,23 +117,19 @@ async fn fetch_metadata(
 ) -> PolarsResult<()> {
     use futures::stream::StreamExt;
     #[cfg(feature = "python")]
-    let py_scan_resolve_threadpool: Arc<
-        LazyLock<PyScanResolveThreadPool, fn() -> PyScanResolveThreadPool>,
-    > = Arc::new(LazyLock::new(PyScanResolveThreadPool::new));
+    let py_scan_resolve_threadpool = Arc::new(LazyLock::new(
+        (|| Arc::new(PyScanResolveThreadPool::new())) as fn() -> _,
+    ));
 
     let mut futures = lp
         .into_iter()
-        .filter_map(|dsl| {
-            let DslPlan::Scan {
+        .filter_map(|dsl| match dsl {
+            DslPlan::Scan {
                 sources,
                 unified_scan_args,
                 scan_type,
                 cached_ir,
-            } = dsl
-            else {
-                return None;
-            };
-            Some(scans::dsl_to_ir(
+            } => Some(Box::pin(scans::dsl_to_ir(
                 sources.clone(),
                 unified_scan_args.clone(),
                 scan_type.clone(),
@@ -141,6 +139,34 @@ async fn fetch_metadata(
                 Arc::clone(&py_scan_resolve_threadpool),
                 verbose,
             ))
+                as Pin<Box<dyn Future<Output = PolarsResult<()>>>>),
+            DslPlan::Resolver {
+                resolver,
+                resolver_schema,
+                resolved_cache: _,
+            } => {
+                let resolver = Arc::clone(resolver);
+                let resolver_schema = Arc::clone(resolver_schema);
+
+                if resolver_schema.lock().unwrap().is_none() {
+                    Some(
+                        match resolver.schema(
+                            #[cfg(feature = "python")]
+                            Arc::clone(&*py_scan_resolve_threadpool),
+                        ) {
+                            Ok(fut) => Box::pin(async move {
+                                let schema = fut.await?;
+                                *resolver_schema.lock().unwrap() = Some(schema);
+                                Ok(())
+                            }),
+                            Err(e) => Box::pin(std::future::ready(Err(e))),
+                        },
+                    )
+                } else {
+                    None
+                }
+            },
+            _ => None,
         })
         .collect::<FuturesUnordered<_>>();
 
@@ -1589,6 +1615,23 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 },
                 _ => to_alp_impl(owned(dsl), ctxt),
             };
+        },
+        DslPlan::Resolver {
+            resolver,
+            resolver_schema,
+            resolved_cache,
+        } => IR::Resolver {
+            resolver,
+            resolver_schema: { resolver_schema.lock().unwrap().clone() }
+                .expect("DslPlan::Resolver schema should be resolved before to_alp_impl()"),
+
+            projection: Default::default(),
+            slice: Default::default(),
+            filters: Default::default(),
+            filter_drop_columns_idx: Default::default(),
+
+            resolved_dsl: resolved_cache,
+            resolved_ir: None,
         },
     };
     Ok(ctxt.lp_arena.add(v))

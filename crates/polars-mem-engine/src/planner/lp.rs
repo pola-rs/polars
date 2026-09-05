@@ -852,6 +852,10 @@ fn create_physical_plan_impl(
             Ok(Box::new(exec))
         },
         UnoptimizedDispatch { .. } => get_streaming_executor_builder()(root, lp_arena, expr_arena),
+        Resolver { resolved_ir, .. } => {
+            let node = resolved_ir.expect("IR::Resolver not resolved at create_physical_plan_impl");
+            recurse!(node, state)
+        },
         Invalid => unreachable!(),
     }
 }
