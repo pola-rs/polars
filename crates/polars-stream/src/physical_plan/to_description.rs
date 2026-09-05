@@ -872,6 +872,8 @@ pub fn phys_props(
                     predicate,
                     validate_schema,
                     is_pure,
+                    explain_name,
+                    explain_detail,
                     ..
                 },
             ..
@@ -899,6 +901,8 @@ pub fn phys_props(
                 schema_names: schema.iter_names().map(ToString::to_string).collect(),
                 is_pure: *is_pure,
                 validate_schema: *validate_schema,
+                explain_name: explain_name.as_ref().map(|s| s.to_string()),
+                explain_detail: explain_detail.as_ref().map(|s| s.to_string()),
             },
             vec![],
         ),
@@ -941,4 +945,44 @@ fn fmt_exprs(exprs: &[ExprIR], expr_arena: &Arena<AExpr>) -> Vec<String> {
 /// Helper to one-line [`strum_macros::IntoStaticStr`]
 fn fmt_from_static_str(x: impl Into<&'static str>) -> String {
     x.into().to_string()
+}
+
+#[cfg(all(test, feature = "python"))]
+mod tests {
+    use polars_utils::pl_str::PlSmallStr;
+
+    use super::*;
+
+    fn python_scan_explain(
+        explain_name: Option<PlSmallStr>,
+        explain_detail: Option<PlSmallStr>,
+    ) -> (Option<String>, Option<String>) {
+        let options = PythonOptions {
+            explain_name,
+            explain_detail,
+            ..Default::default()
+        };
+        let props = phys_props(&PhysNodeKind::PythonScan { options }, &Arena::new()).0;
+        let PhysicalPropsDescription::PythonScan {
+            explain_name,
+            explain_detail,
+            ..
+        } = props
+        else {
+            panic!("expected PythonScan description, got {props:?}");
+        };
+        (explain_name, explain_detail)
+    }
+
+    #[test]
+    fn python_scan_carries_explain_fields() {
+        assert_eq!(
+            python_scan_explain(
+                Some(PlSmallStr::from_static("my_plugin")),
+                Some(PlSmallStr::from_static("scanning foo")),
+            ),
+            (Some("my_plugin".into()), Some("scanning foo".into())),
+        );
+        assert_eq!(python_scan_explain(None, None), (None, None));
+    }
 }

@@ -277,6 +277,8 @@ pub enum PhysicalPropsDescription {
         schema_names: Vec<String>,
         is_pure: bool,
         validate_schema: bool,
+        explain_name: Option<String>,
+        explain_detail: Option<String>,
     },
     StrptimeInfer {
         format: Option<String>,
