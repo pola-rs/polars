@@ -1,13 +1,13 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::hash::BuildHasher;
 
-use arrow::array::{Array, BinaryViewArray, PrimitiveArray, UInt64Array};
+use arrow::array::Array;
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and_many;
-use polars_array::arrow::bridge::chunk_to_arrow;
 use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
 use polars_array::{
-    PlBinaryArray, PlBinaryArrayBuilder, PlPrimitiveArray, PlPrimitiveArrayBuilder,
+    PlBinaryArray, PlBinaryArrayBuilder, PlBinaryViewArray, PlBinaryViewArrayBuilder,
+    PlPrimitiveArray, PlPrimitiveArrayBuilder,
 };
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
@@ -150,9 +150,7 @@ impl HashKeys {
             } else {
                 df[0].binary().unwrap().clone()
             };
-            // The hash tables over these keys read Arrow views and buffers, so the chunk
-            // crosses the bridge once here rather than per lookup.
-            let keys = chunk_to_arrow(keys.rechunk().downcast_as_array());
+            let keys = keys.rechunk().downcast_as_array().clone();
 
             let hashes = if keys.has_nulls() {
                 keys.iter()
@@ -165,7 +163,7 @@ impl HashKeys {
             };
 
             Self::Binview(BinviewKeys {
-                hashes: PrimitiveArray::from_vec(hashes),
+                hashes: PlPrimitiveArray::from_vec(hashes),
                 keys,
                 null_is_valid,
             })
@@ -196,7 +194,7 @@ impl HashKeys {
             HashKeys::Single(s) => s.keys.chunks()[0]
                 .validity()
                 .map(|v| v.to_flat().into_owned()),
-            HashKeys::Binview(s) => s.keys.validity().cloned(),
+            HashKeys::Binview(s) => s.keys.validity().map(|v| v.to_flat().into_owned()),
         }
     }
 
@@ -422,14 +420,16 @@ impl SingleKeys {
 /// Pre-hashed binary view keys with prehashing.
 #[derive(Clone, Debug)]
 pub struct BinviewKeys {
-    pub hashes: UInt64Array,
-    pub keys: BinaryViewArray,
+    pub hashes: PlPrimitiveArray<u64>,
+    pub keys: PlBinaryViewArray,
     pub null_is_valid: bool,
 }
 
 impl BinviewKeys {
     pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
-        for_each_hash_prehashed(self.hashes.values().as_slice(), self.keys.validity(), f);
+        let hashes = self.hashes.to_flat();
+        let validity = self.keys.validity().map(|v| v.to_flat().into_owned());
+        for_each_hash_prehashed(hashes.as_slice(), validity.as_ref(), f);
     }
 
     /// # Safety
@@ -439,24 +439,24 @@ impl BinviewKeys {
         subset: &[IdxSize],
         f: F,
     ) {
-        for_each_hash_subset_prehashed(
-            self.hashes.values().as_slice(),
-            self.keys.validity(),
-            subset,
-            f,
-        );
+        let hashes = self.hashes.to_flat();
+        let validity = self.keys.validity().map(|v| v.to_flat().into_owned());
+        for_each_hash_subset_prehashed(hashes.as_slice(), validity.as_ref(), subset, f);
     }
 
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
-        let idx_arr = arrow::ffi::mmap::slice(idxs);
+        // A gather picks the elements out again, so the views are compacted rather than shared.
+        let mut hashes = PlPrimitiveArrayBuilder::<u64>::with_capacity(idxs.len());
+        let mut keys = PlBinaryViewArrayBuilder::with_capacity(idxs.len());
+        unsafe {
+            hashes.gather_extend(&self.hashes, idxs, ShareStrategy::Never);
+            keys.gather_extend(&self.keys, idxs, ShareStrategy::Never);
+        }
         Self {
-            hashes: polars_compute::gather::primitive::take_primitive_unchecked(
-                &self.hashes,
-                &idx_arr,
-            ),
-            keys: polars_compute::gather::binview::take_binview_unchecked(&self.keys, &idx_arr),
+            hashes: hashes.freeze(),
+            keys: keys.freeze(),
             null_is_valid: self.null_is_valid,
         }
     }
