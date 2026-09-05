@@ -2,7 +2,6 @@ use std::borrow::Cow;
 
 use polars_core::schema::Schema;
 use polars_utils::arena::{Arena, Node};
-use polars_utils::pl_str::PlSmallStr;
 
 use super::{AExpr, LiteralValue, aexpr_to_leaf_names_iter};
 
@@ -21,12 +20,5 @@ pub fn constant_evaluate<'a>(
                 None
             }
         },
-    }
-}
-
-pub fn into_column(e: Node, expr_arena: &Arena<AExpr>) -> Option<&PlSmallStr> {
-    match expr_arena.get(e) {
-        AExpr::Column(c) => Some(c),
-        _ => None,
     }
 }

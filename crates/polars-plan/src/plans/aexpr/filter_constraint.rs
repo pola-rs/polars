@@ -586,7 +586,7 @@ fn classify_into_constraints(
                 // is subtle).
                 #[cfg(feature = "is_in")]
                 IRBooleanFunction::IsIn { .. } => {
-                    if let Some(col_name) = as_column(expr_arena.get(input[0].node())) {
+                    if let Some(col_name) = input[0].as_column(expr_arena).cloned() {
                         if let Some(values) = as_value_set(expr_arena.get(input[1].node())) {
                             let allowed = values.into_iter().collect();
                             constraints
@@ -772,7 +772,7 @@ fn classify_negation(
             ..
         } => {
             if let (Some(col_name), Some(values)) = (
-                as_column(expr_arena.get(input[0].node())),
+                input[0].as_column(expr_arena).cloned(),
                 as_value_set(expr_arena.get(input[1].node())),
             ) {
                 constraints
@@ -836,7 +836,7 @@ fn classify_null(
     expr_arena: &Arena<AExpr>,
     constraints: &mut PlIndexMap<PlSmallStr, ColumnConstraints>,
 ) -> Classification {
-    let Some(col_name) = as_column(expr_arena.get(col)) else {
+    let Some(col_name) = expr_arena.get(col).as_column().cloned() else {
         return Classification::Opaque;
     };
     let cc = constraints.entry(col_name).or_default();
@@ -858,7 +858,7 @@ fn classify_is_between(
     expr_arena: &Arena<AExpr>,
     constraints: &mut PlIndexMap<PlSmallStr, ColumnConstraints>,
 ) -> Classification {
-    let Some(col_name) = as_column(expr_arena.get(col)) else {
+    let Some(col_name) = expr_arena.get(col).as_column().cloned() else {
         return Classification::Opaque;
     };
     let Some(lo_lit) = as_scalar_lit(expr_arena.get(lo)) else {
@@ -880,14 +880,6 @@ fn classify_is_between(
         Classification::Unsat
     } else {
         Classification::Bound
-    }
-}
-
-fn as_column(ae: &AExpr) -> Option<PlSmallStr> {
-    if let AExpr::Column(name) = ae {
-        Some(name.clone())
-    } else {
-        None
     }
 }
 
