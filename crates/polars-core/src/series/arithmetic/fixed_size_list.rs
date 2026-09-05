@@ -70,11 +70,14 @@ use inner::NumericFixedSizeListOpHelper;
 #[cfg(feature = "array_arithmetic")]
 mod inner {
     use arrow::bitmap::{Bitmap, BitmapBuilder};
+    // The level validities below this leaf are plain bitmaps, one bit per element throughout, so
+    // combining them is the Arrow one; the *leaf* mask carries its own representation and is
+    // combined with `polars_array`'s.
     use arrow::compute::utils::combine_validities_and;
     use fixed_size_list::NumericFixedSizeListOp;
     use list_utils::with_match_pl_num_arith;
     use num_traits::Zero;
-    use polars_array::arrow::bridge::chunk_to_arrow;
+    use polars_array::ArrayRepr;
     use polars_compute::arithmetic::pl_num::PlNumArithmetic;
     use polars_utils::float::IsFloat;
 
@@ -447,20 +450,20 @@ mod inner {
         ) -> ArrayChunked
         where
             T::Native: PlNumArithmetic,
-            PrimitiveArray<T::Native>:
-                polars_compute::comparisons::TotalEqKernel<Scalar = T::Native>,
+            PlPrimitiveArray<T::Native>:
+                polars_compute::comparisons::PlTotalEqKernel<Scalar = T::Native>,
             T::Native: Zero + IsFloat,
         {
             let mut arr_lhs = {
                 let ca: &ChunkedArray<T> = prim_s_lhs.as_ref().as_ref();
                 assert_eq!(ca.chunks().len(), 1);
-                chunk_to_arrow(ca.downcast_get(0).unwrap())
+                ca.downcast_get(0).unwrap().clone()
             };
 
             let mut arr_rhs = {
                 let ca: &ChunkedArray<T> = prim_s_rhs.as_ref().as_ref();
                 assert_eq!(ca.chunks().len(), 1);
-                chunk_to_arrow(ca.downcast_get(0).unwrap())
+                ca.downcast_get(0).unwrap().clone()
             };
 
             self.op.0.prepare_numeric_op_side_validities::<T>(
@@ -491,16 +494,14 @@ mod inner {
 
                     unsafe { out_vec.set_len(self.output_len * self.stride) };
 
-                    let leaf_validity = combine_validities_and(
+                    let repeated = arr_rhs.validity().map(|x| repeat_mask(x, self.output_len));
+                    let leaf_validity = polars_array::bitmap::combine_validities_and(
                         arr_lhs.validity(),
-                        arr_rhs
-                            .validity()
-                            .map(|x| repeat_bitmap(x, self.output_len))
-                            .as_ref(),
+                        repeated.as_ref().map(PlBitmap::as_ref),
                     );
 
-                    let arr =
-                        PrimitiveArray::<T::Native>::from_vec(out_vec).with_validity(leaf_validity);
+                    let arr = PlPrimitiveArray::<T::Native>::from_vec(out_vec)
+                        .with_validity(leaf_validity);
 
                     let (_, validities_lhs) = std::mem::take(&mut self.data_lhs);
                     let (_, mut validities_rhs) = std::mem::take(&mut self.data_rhs);
@@ -518,7 +519,7 @@ mod inner {
                         self.output_len,
                         &validities_lhs,
                         &validities_rhs,
-                        <T::Array as ToArrow>::from_arrow(&arr).into_boxed(),
+                        Box::new(arr),
                     )
                 },
                 (BinaryOpApplyType::ListToPrimitive, Broadcast::Left) => {
@@ -543,17 +544,15 @@ mod inner {
 
                     unsafe { out_vec.set_len(self.output_len * self.stride) };
 
+                    let repeated = arr_lhs.validity().map(|x| repeat_mask(x, self.output_len));
                     let leaf_validity = combine_validities_array_to_primitive_no_broadcast(
-                        arr_lhs
-                            .validity()
-                            .map(|x| repeat_bitmap(x, self.output_len))
-                            .as_ref(),
+                        repeated.as_ref().map(PlBitmap::as_ref),
                         arr_rhs.validity(),
                         self.stride,
                     );
 
-                    let arr =
-                        PrimitiveArray::<T::Native>::from_vec(out_vec).with_validity(leaf_validity);
+                    let arr = PlPrimitiveArray::<T::Native>::from_vec(out_vec)
+                        .with_validity(leaf_validity.map(PlBitmap::from_bitmap));
 
                     let (_, mut validities) = std::mem::take(&mut self.data_lhs);
 
@@ -569,7 +568,7 @@ mod inner {
                         &self.output_widths,
                         self.output_len,
                         &validities,
-                        <T::Array as ToArrow>::from_arrow(&arr).into_boxed(),
+                        Box::new(arr),
                     )
                 },
                 (BinaryOpApplyType::ListToPrimitive, Broadcast::NoBroadcast) => {
@@ -601,8 +600,8 @@ mod inner {
                         self.stride,
                     );
 
-                    let arr =
-                        PrimitiveArray::<T::Native>::from_vec(out_vec).with_validity(leaf_validity);
+                    let arr = PlPrimitiveArray::<T::Native>::from_vec(out_vec)
+                        .with_validity(leaf_validity.map(PlBitmap::from_bitmap));
 
                     let (_, validities) = std::mem::take(&mut self.data_lhs);
 
@@ -612,7 +611,7 @@ mod inner {
                         &self.output_widths,
                         self.output_len,
                         &validities,
-                        <T::Array as ToArrow>::from_arrow(&arr).into_boxed(),
+                        Box::new(arr),
                     )
                 },
                 (BinaryOpApplyType::ListToPrimitive, Broadcast::Right) => {
@@ -629,13 +628,9 @@ mod inner {
                             &self.output_widths,
                             self.output_len,
                             &validities,
-                            <T::Array as ToArrow>::from_arrow(
-                                &arr_lhs.clone().with_validity(Some(Bitmap::new_with_value(
-                                    false,
-                                    arr_lhs.len(),
-                                ))),
-                            )
-                            .into_boxed(),
+                            Box::new(arr_lhs.clone().with_validity(Some(PlBitmap::from_bitmap(
+                                Bitmap::new_with_value(false, arr_lhs.len()),
+                            )))),
                         );
                     };
 
@@ -652,7 +647,7 @@ mod inner {
                         &self.output_widths,
                         self.output_len,
                         &validities,
-                        <T::Array as ToArrow>::from_arrow(&arr).into_boxed(),
+                        Box::new(arr),
                     )
                 },
                 v @ (BinaryOpApplyType::ListToList, Broadcast::NoBroadcast)
@@ -762,13 +757,15 @@ mod inner {
     /// ```
     #[inline(never)]
     fn combine_validities_array_to_primitive_no_broadcast(
-        array_leaf_validity: Option<&Bitmap>,
-        primitive_validity: Option<&Bitmap>,
+        array_leaf_validity: Option<PlBitmapRef<'_>>,
+        primitive_validity: Option<PlBitmapRef<'_>>,
         stride: usize,
     ) -> Option<Bitmap> {
         match (array_leaf_validity, primitive_validity) {
-            (Some(l), Some(r)) => Some((l.clone().make_mut(), r)),
-            (Some(v), None) => return Some(v.clone()),
+            // A mask that repeats one bit is written out here: the bits are set one at a
+            // time below, which needs one per element.
+            (Some(l), Some(r)) => Some((l.to_flat().into_owned().make_mut(), r)),
+            (Some(v), None) => return Some(v.to_flat().into_owned()),
             // Materialize a full-true validity to re-use the codepath, as we still
             // need to spread the bits from the RHS to the correct positions.
             (None, Some(v)) => Some((Bitmap::new_with_value(true, stride * v.len()).make_mut(), v)),
@@ -779,7 +776,7 @@ mod inner {
 
             unsafe {
                 for outer_idx in 0..primitive_validity.len() {
-                    let r = primitive_validity.get_bit_unchecked(outer_idx);
+                    let r = primitive_validity.get_unchecked(outer_idx);
 
                     for inner_idx in 0..stride {
                         let idx = stride * outer_idx + inner_idx;
@@ -806,6 +803,17 @@ mod inner {
         }
 
         out.freeze()
+    }
+
+    /// [`repeat_bitmap`] over a mask in whichever representation it is in.
+    ///
+    /// A mask that repeats one bit already says the same of every element, so repeating it says
+    /// the same thing of `n_repeats` times as many — which is the mask itself over that length.
+    fn repeat_mask(mask: PlBitmapRef<'_>, n_repeats: usize) -> PlBitmap {
+        match mask.repr() {
+            ArrayRepr::Scalar(_) => mask.broadcast(mask.len() * n_repeats).into(),
+            ArrayRepr::Flat(bitmap) => PlBitmap::from_bitmap(repeat_bitmap(bitmap, n_repeats)),
+        }
     }
 
     struct FixedSizeListLevelBuilder {

@@ -129,7 +129,7 @@ mod inner {
     use either::Either;
     use list_utils::with_match_pl_num_arith;
     use num_traits::Zero;
-    use polars_array::arrow::bridge::chunk_to_arrow;
+    use polars_buffer::Buffer;
     use polars_compute::arithmetic::pl_num::PlNumArithmetic;
     use polars_utils::float::IsFloat;
 
@@ -452,8 +452,8 @@ mod inner {
         ) -> PolarsResult<ListChunked>
         where
             T::Native: PlNumArithmetic,
-            PrimitiveArray<T::Native>:
-                polars_compute::comparisons::TotalEqKernel<Scalar = T::Native>,
+            PlPrimitiveArray<T::Native>:
+                polars_compute::comparisons::PlTotalEqKernel<Scalar = T::Native>,
             T::Native: Zero + IsFloat,
         {
             #[inline(never)]
@@ -482,13 +482,13 @@ mod inner {
             let mut arr_lhs = {
                 let ca: &ChunkedArray<T> = prim_s_lhs.as_ref().as_ref();
                 assert_eq!(ca.chunks().len(), 1);
-                chunk_to_arrow(ca.downcast_get(0).unwrap())
+                ca.downcast_get(0).unwrap().clone()
             };
 
             let mut arr_rhs = {
                 let ca: &ChunkedArray<T> = prim_s_rhs.as_ref().as_ref();
                 assert_eq!(ca.chunks().len(), 1);
-                chunk_to_arrow(ca.downcast_get(0).unwrap())
+                ca.downcast_get(0).unwrap().clone()
             };
 
             match (&self.op_apply_type, &self.broadcast) {
@@ -574,13 +574,15 @@ mod inner {
                     fn combine_validities_list_to_list_no_broadcast(
                         offsets_lhs: &OffsetsBuffer<i64>,
                         offsets_rhs: &OffsetsBuffer<i64>,
-                        validity_lhs: Option<&Bitmap>,
-                        validity_rhs: Option<&Bitmap>,
+                        validity_lhs: Option<PlBitmapRef<'_>>,
+                        validity_rhs: Option<PlBitmapRef<'_>>,
                         len_lhs: usize,
                     ) -> Option<Bitmap> {
                         match (validity_lhs, validity_rhs) {
-                            (Some(l), Some(r)) => Some((l.clone().make_mut(), r)),
-                            (Some(v), None) => return Some(v.clone()),
+                            // A mask that repeats one bit is written out here: the bits are set one at a
+                            // time below, which needs one per element.
+                            (Some(l), Some(r)) => Some((l.to_flat().into_owned().make_mut(), r)),
+                            (Some(v), None) => return Some(v.to_flat().into_owned()),
                             (None, Some(v)) => {
                                 Some((Bitmap::new_with_value(true, len_lhs).make_mut(), v))
                             },
@@ -598,7 +600,7 @@ mod inner {
                                     let r_idx = i + rhs_start;
 
                                     let l_valid = unsafe { validity_out.get_unchecked(l_idx) };
-                                    let r_valid = unsafe { validity_rhs.get_bit_unchecked(r_idx) };
+                                    let r_valid = unsafe { validity_rhs.get_unchecked(r_idx) };
                                     let is_valid = l_valid & r_valid;
 
                                     // Size and alignment of validity vec are based on LHS.
@@ -618,8 +620,8 @@ mod inner {
                         arr_lhs.len(),
                     );
 
-                    let arr =
-                        PrimitiveArray::<T::Native>::from_vec(out_vec).with_validity(leaf_validity);
+                    let arr = PlPrimitiveArray::<T::Native>::from_vec(out_vec)
+                        .with_validity(leaf_validity.map(PlBitmap::from_bitmap));
 
                     let (offsets, validities, _) = std::mem::take(&mut self.data_lhs);
                     assert_eq!(offsets.len(), 1);
@@ -673,15 +675,17 @@ mod inner {
                     #[inline(never)]
                     fn combine_validities_list_to_list_broadcast_right(
                         offsets_lhs: &OffsetsBuffer<i64>,
-                        validity_lhs: Option<&Bitmap>,
-                        validity_rhs: Option<&Bitmap>,
+                        validity_lhs: Option<PlBitmapRef<'_>>,
+                        validity_rhs: Option<PlBitmapRef<'_>>,
                         len_lhs: usize,
                         width: usize,
                         rhs_start: usize,
                     ) -> Option<Bitmap> {
                         match (validity_lhs, validity_rhs) {
-                            (Some(l), Some(r)) => Some((l.clone().make_mut(), r)),
-                            (Some(v), None) => return Some(v.clone()),
+                            // A mask that repeats one bit is written out here: the bits are set one at a
+                            // time below, which needs one per element.
+                            (Some(l), Some(r)) => Some((l.to_flat().into_owned().make_mut(), r)),
+                            (Some(v), None) => return Some(v.to_flat().into_owned()),
                             (None, Some(v)) => {
                                 Some((Bitmap::new_with_value(true, len_lhs).make_mut(), v))
                             },
@@ -696,7 +700,7 @@ mod inner {
                                     let r_idx = i + rhs_start;
 
                                     let l_valid = unsafe { validity_out.get_unchecked(l_idx) };
-                                    let r_valid = unsafe { validity_rhs.get_bit_unchecked(r_idx) };
+                                    let r_valid = unsafe { validity_rhs.get_unchecked(r_idx) };
                                     let is_valid = l_valid & r_valid;
 
                                     // Size and alignment of validity vec are based on LHS.
@@ -717,8 +721,8 @@ mod inner {
                         rhs_start,
                     );
 
-                    let arr =
-                        PrimitiveArray::<T::Native>::from_vec(out_vec).with_validity(leaf_validity);
+                    let arr = PlPrimitiveArray::<T::Native>::from_vec(out_vec)
+                        .with_validity(leaf_validity.map(PlBitmap::from_bitmap));
 
                     let (offsets, validities, _) = std::mem::take(&mut self.data_lhs);
                     assert_eq!(offsets.len(), 1);
@@ -761,8 +765,8 @@ mod inner {
                         arr_lhs.len(),
                     );
 
-                    let arr =
-                        PrimitiveArray::<T::Native>::from_vec(out_vec).with_validity(leaf_validity);
+                    let arr = PlPrimitiveArray::<T::Native>::from_vec(out_vec)
+                        .with_validity(leaf_validity.map(PlBitmap::from_bitmap));
 
                     let (offsets, validities, _) = std::mem::take(&mut self.data_lhs);
                     self.finish_offsets_and_validities(Box::new(arr), offsets, validities)
@@ -774,13 +778,14 @@ mod inner {
                     let offsets_lhs = self.data_lhs.0.as_slice();
 
                     let (arr, n_values) = Option::take(&mut self.list_to_prim_lhs).unwrap();
-                    // The kernel writes the results back into the values, which asks for the Arrow
-                    // array that shares them; dropping the chunk leaves this the only reference.
-                    let mut arr_lhs = chunk_to_arrow(
-                        arr.as_any()
-                            .downcast_ref::<PlPrimitiveArray<T::Native>>()
-                            .unwrap(),
-                    );
+                    // The results are written back over the values, so this has to be the only
+                    // handle on them: cloning bumps their refcount, and dropping the chunk right
+                    // after brings it back to one.
+                    let mut arr_lhs = arr
+                        .as_any()
+                        .downcast_ref::<PlPrimitiveArray<T::Native>>()
+                        .unwrap()
+                        .clone();
                     drop(arr);
 
                     self.op.0.prepare_numeric_op_side_validities::<T>(
@@ -789,7 +794,14 @@ mod inner {
                         self.swapped,
                     );
 
-                    let arr_lhs_mut_slice = arr_lhs.get_mut_values().unwrap();
+                    // The values are written one slot at a time, so a chunk that repeats a single
+                    // value is written out first — which this one never is, being the unique
+                    // allocation a broadcast just made.
+                    let arr_lhs_mut_slice = arr_lhs
+                        .flat_values_mut()
+                        .expect("a broadcast leaves the values it wrote out flat")
+                        .get_mut_slice()
+                        .expect("the chunk it was read out of has been dropped");
                     assert_eq!(arr_lhs_mut_slice.len(), n_values);
 
                     with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
@@ -812,7 +824,7 @@ mod inner {
                         arr_lhs.len(),
                     );
 
-                    let arr = arr_lhs.with_validity(leaf_validity);
+                    let arr = arr_lhs.with_validity(leaf_validity.map(PlBitmap::from_bitmap));
 
                     let (offsets, validities, _) = std::mem::take(&mut self.data_lhs);
                     self.finish_offsets_and_validities(Box::new(arr), offsets, validities)
@@ -826,12 +838,9 @@ mod inner {
                         // RHS is single primitive NULL, create the result by setting the leaf validity to all-NULL.
                         let (offsets, validities, _) = std::mem::take(&mut self.data_lhs);
                         return Ok(self.finish_offsets_and_validities(
-                            Box::new(
-                                arr_lhs.clone().with_validity(Some(Bitmap::new_with_value(
-                                    false,
-                                    arr_lhs.len(),
-                                ))),
-                            ),
+                            Box::new(arr_lhs.clone().with_validity(Some(PlBitmap::from_bitmap(
+                                Bitmap::new_with_value(false, arr_lhs.len()),
+                            )))),
                             offsets,
                             validities,
                         ));
@@ -863,12 +872,25 @@ mod inner {
 
         /// Construct the result `ListChunked` from the leaf array and the offsets/validities of every
         /// level.
+        /// Wraps the leaf array in one list level per pair of offsets, innermost first.
         fn finish_offsets_and_validities(
             &mut self,
-            leaf_array: Box<dyn Array>,
+            leaf_array: PlArrayRef,
             offsets: Vec<OffsetsBuffer<i64>>,
             validities: Vec<Option<Bitmap>>,
         ) -> ListChunked {
+            /// The offsets of a list array of this crate, which are the same numbers unsigned.
+            ///
+            /// This is `O(1)`: the buffer is handed over as it is, and only what the slots are
+            /// read as changes. An offset is an index into the values, so none of them is
+            /// negative and every one of them means the same thing on both sides.
+            fn unsigned(offsets: OffsetsBuffer<i64>) -> Buffer<u64> {
+                offsets
+                    .into_inner()
+                    .try_transmute::<u64>()
+                    .expect("i64 and u64 are laid out the same")
+            }
+
             assert!(!offsets.is_empty());
             assert_eq!(offsets.len(), validities.len());
             let mut results = leaf_array;
@@ -877,22 +899,32 @@ mod inner {
 
             while iter.len() > 1 {
                 let (offsets, validity) = iter.next().unwrap();
-                let dtype = LargeListArray::default_datatype(results.dtype().clone());
-                results = Box::new(LargeListArray::new(dtype, offsets, results, validity));
+                let length = offsets.len_proxy();
+                results = Box::new(PlListArray::new(
+                    results,
+                    unsigned(offsets),
+                    length,
+                    validity.map(PlBitmap::from_bitmap),
+                ));
             }
 
             // The combined outer validity is pre-computed during `try_new()`
             let (offsets, _) = iter.next().unwrap();
             let validity = std::mem::take(&mut self.outer_validity);
-            let dtype = LargeListArray::default_datatype(results.dtype().clone());
-            let results = LargeListArray::new(dtype, offsets, results, Some(validity));
+            let length = offsets.len_proxy();
+            let results = PlListArray::new(
+                results,
+                unsigned(offsets),
+                length,
+                Some(PlBitmap::from_bitmap(validity)),
+            );
 
-            // The result crosses back into the array a chunk is, which carries no data type of its
-            // own — the output dtype is what the `ChunkedArray` gets.
+            // A chunk carries no data type of its own — the output dtype is what the
+            // `ChunkedArray` gets.
             unsafe {
                 ListChunked::from_chunks_and_dtype_unchecked(
                     std::mem::take(&mut self.output_name),
-                    vec![<PlListArray as ToArrow>::from_arrow(&results).into_boxed()],
+                    vec![Box::new(results)],
                     self.output_dtype.clone(),
                 )
             }
@@ -942,13 +974,15 @@ mod inner {
     #[inline(never)]
     fn combine_validities_list_to_primitive_no_broadcast(
         offsets_lhs: &[OffsetsBuffer<i64>],
-        validity_lhs: Option<&Bitmap>,
-        validity_rhs: Option<&Bitmap>,
+        validity_lhs: Option<PlBitmapRef<'_>>,
+        validity_rhs: Option<PlBitmapRef<'_>>,
         len_lhs: usize,
     ) -> Option<Bitmap> {
         match (validity_lhs, validity_rhs) {
-            (Some(l), Some(r)) => Some((l.clone().make_mut(), r)),
-            (Some(v), None) => return Some(v.clone()),
+            // A mask that repeats one bit is written out here: the bits are set one at a
+            // time below, which needs one per element.
+            (Some(l), Some(r)) => Some((l.to_flat().into_owned().make_mut(), r)),
+            (Some(v), None) => return Some(v.to_flat().into_owned()),
             // Materialize a full-true validity to re-use the codepath, as we still
             // need to spread the bits from the RHS to the correct positions.
             (None, Some(v)) => Some((Bitmap::new_with_value(true, len_lhs).make_mut(), v)),
@@ -956,7 +990,7 @@ mod inner {
         }
         .map(|(mut validity_out, validity_rhs)| {
             for (i, l_range) in OffsetsBuffer::<i64>::leaf_ranges_iter(offsets_lhs).enumerate() {
-                let r_valid = unsafe { validity_rhs.get_bit_unchecked(i) };
+                let r_valid = unsafe { validity_rhs.get_unchecked(i) };
                 for l_idx in l_range {
                     let l_valid = unsafe { validity_out.get_unchecked(l_idx) };
                     let is_valid = l_valid & r_valid;

@@ -1,11 +1,9 @@
 /// Functionality shared between list and array arithmetic implementations.
-use arrow::array::PrimitiveArray;
-use arrow::compute::utils::combine_validities_and;
 use num_traits::Zero;
 use polars_array::PlPrimitiveArray;
-use polars_array::arrow::bridge::{ToArrow, chunk_to_arrow};
+use polars_array::bitmap::combine_validities_and;
 use polars_compute::arithmetic::ArithmeticKernel;
-use polars_compute::comparisons::TotalEqKernel;
+use polars_compute::comparisons::PlTotalEqKernel;
 use polars_error::PolarsResult;
 use polars_utils::float::IsFloat;
 
@@ -59,19 +57,22 @@ impl NumericOp {
     /// the denominator is 0.
     pub(super) fn prepare_numeric_op_side_validities<T: PolarsNumericType>(
         &self,
-        lhs: &mut PrimitiveArray<T::Native>,
-        rhs: &mut PrimitiveArray<T::Native>,
+        lhs: &mut PlPrimitiveArray<T::Native>,
+        rhs: &mut PlPrimitiveArray<T::Native>,
         swapped: bool,
     ) where
-        PrimitiveArray<T::Native>: polars_compute::comparisons::TotalEqKernel<Scalar = T::Native>,
+        PlPrimitiveArray<T::Native>:
+            polars_compute::comparisons::PlTotalEqKernel<Scalar = T::Native>,
         T::Native: Zero + IsFloat,
     {
         if !T::Native::is_float() {
             match self {
                 Self::Div | Self::Rem | Self::FloorDiv => {
                     let target = if swapped { lhs } else { rhs };
+                    // A chunk that repeats one value answers this in `O(1)`, and the mask that
+                    // comes back repeats one bit in turn.
                     let ne_0 = target.tot_ne_kernel_broadcast(&T::Native::zero());
-                    let validity = combine_validities_and(target.validity(), Some(&ne_0));
+                    let validity = combine_validities_and(target.validity(), Some(ne_0.as_ref()));
                     target.set_validity(validity);
                 },
                 _ => {},
@@ -123,26 +124,6 @@ impl NumericOp {
     /// `ArithmeticKernel`, which can have optimized codepaths for when one side is
     /// a scalar.
     pub(super) fn apply_array_to_scalar<T: PolarsNumericType>(
-        &self,
-        arr_lhs: PrimitiveArray<T::Native>,
-        r: T::Native,
-        swapped: bool,
-    ) -> PrimitiveArray<T::Native> {
-        // TODO(polars-array-scalar): the caller holds the leaf as an Arrow array, so a chunk
-        // repeating a single value has been written out before it gets here. The values cross
-        // over to the kernel and the result crosses back — see `polars_array::arrow::bridge`.
-        let arr_lhs = {
-            let imported = <T::Array as ToArrow>::from_arrow(&arr_lhs);
-            // Dropping the Arrow array leaves the import the only reference to the values, which
-            // is what lets the kernel write its result over them.
-            drop(arr_lhs);
-            imported
-        };
-
-        chunk_to_arrow(&self.apply_array_to_scalar_kernel::<T>(arr_lhs, r, swapped))
-    }
-
-    fn apply_array_to_scalar_kernel<T: PolarsNumericType>(
         &self,
         arr_lhs: PlPrimitiveArray<T::Native>,
         r: T::Native,
