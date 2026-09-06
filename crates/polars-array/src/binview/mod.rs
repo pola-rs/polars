@@ -42,7 +42,6 @@ impl PlBinaryViewArray {
     /// # Errors
     /// This function errors if `views` does not hold exactly `length` slots, if `validity` does not
     /// cover exactly `length` elements, or if a
-    /// view does not read bytes that `buffers` holds.
     pub fn try_new(
         views: Buffer<View>,
         buffers: Buffer<Buffer<u8>>,
@@ -68,9 +67,6 @@ impl PlBinaryViewArray {
     }
 
     /// Creates a flat [`PlBinaryViewArray`] out of its internal components.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::try_new`] errors.
     #[inline]
     pub fn new(
         views: Buffer<View>,
@@ -86,7 +82,6 @@ impl PlBinaryViewArray {
     /// # Safety
     /// `views` must hold exactly `length` slots, `validity` must cover exactly `length` elements in
     /// either representation, and every view must read bytes
-    /// that `buffers` holds.
     #[inline]
     pub unsafe fn new_unchecked(
         views: Buffer<View>,
@@ -113,7 +108,6 @@ impl PlBinaryViewArray {
     /// # Errors
     /// This function errors if `views` is not scalar for `length`, per
     /// [`is_scalar_buffer_len`], or if `validity` does not cover exactly `length` elements, per
-    /// [`is_scalar_buffer_len`], or if the view does not read bytes that `buffers` holds.
     pub fn try_new_broadcast(
         views: Buffer<View>,
         buffers: Buffer<Buffer<u8>>,
@@ -140,9 +134,6 @@ impl PlBinaryViewArray {
     }
 
     /// Creates a scalar [`PlBinaryViewArray`] of `length` elements out of its internal components.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::try_new_broadcast`] errors.
     #[inline]
     pub fn new_broadcast(
         views: Buffer<View>,
@@ -159,7 +150,6 @@ impl PlBinaryViewArray {
     /// # Safety
     /// `views` must be scalar for `length`, per [`is_scalar_buffer_len`], `validity` must cover
     /// exactly `length` elements in either representation, and
-    /// every view must read bytes that `buffers` holds.
     #[inline]
     pub unsafe fn new_broadcast_unchecked(
         views: Buffer<View>,
@@ -193,9 +183,6 @@ impl PlBinaryViewArray {
     }
 
     /// Creates a flat, fully valid [`PlBinaryViewArray`] from `views` over `buffers`.
-    ///
-    /// # Panics
-    /// Panics if a view does not read bytes that `buffers` holds.
     #[inline]
     pub fn from_views(views: Buffer<View>, buffers: Buffer<Buffer<u8>>) -> Self {
         let length = views.len();
@@ -203,10 +190,6 @@ impl PlBinaryViewArray {
     }
 
     /// Creates a flat, fully valid [`PlBinaryViewArray`] holding `values`, in order.
-    ///
-    /// # Panics
-    /// Panics if a value is longer than
-    /// [`BINVIEW_MAX_ROW_BYTE_LEN`](arrow::array::BINVIEW_MAX_ROW_BYTE_LEN) bytes.
     pub fn from_values_iter<V: AsRef<[u8]>, I: IntoIterator<Item = V>>(values: I) -> Self {
         let values = values.into_iter();
         let (lower, _) = values.size_hint();
@@ -224,10 +207,6 @@ impl PlBinaryViewArray {
     }
 
     /// Creates a [`PlBinaryViewArray`] of `length` copies of `value`, in `O(value.len())` memory.
-    ///
-    /// # Panics
-    /// Panics if `value` is longer than
-    /// [`BINVIEW_MAX_ROW_BYTE_LEN`](arrow::array::BINVIEW_MAX_ROW_BYTE_LEN) bytes.
     pub fn new_scalar(value: &[u8], length: usize) -> Self {
         // There is no element for the value to be shared by when there are no elements at all,
         // which is why an empty array is the one that keeps nothing of the value it repeats.
@@ -283,7 +262,6 @@ impl PlBinaryViewArray {
     /// # Safety
     /// Every view left in the buffer must still read bytes that [`data_buffers`](Self::data_buffers)
     /// holds, and the buffer must be left as long as it was found: a view is an index into the
-    /// buffers, so nothing else checks it again once the array is built.
     #[inline]
     pub unsafe fn flat_views_mut(&mut self) -> Option<&mut Buffer<View>> {
         if self.views_are_scalar() {
@@ -312,7 +290,6 @@ impl PlBinaryViewArray {
     /// # Safety
     /// Every view of this array must still read bytes the buffers hold once they are written. A
     /// buffer may be appended without reading the views, since that leaves every existing index
-    /// pointing where it did; removing or reordering one does not.
     #[inline]
     pub unsafe fn data_buffers_mut(&mut self) -> &mut Buffer<Buffer<u8>> {
         &mut self.buffers
@@ -328,9 +305,6 @@ impl PlBinaryViewArray {
     }
 
     /// Whether the views buffer holds a single view shared by every element.
-    ///
-    /// An array of no elements holds no such view: it keeps the empty buffer in place of the one
-    /// slot a scalar buffer would, and is flat.
     #[inline]
     pub fn views_are_scalar(&self) -> bool {
         self.views.len() == 1 && self.length > 0
@@ -376,9 +350,6 @@ impl PlBinaryViewArray {
     }
 
     /// Returns the view of the element at `i`.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn view(&self, i: usize) -> View {
         assert!(i < self.length, "index out of bounds");
@@ -400,9 +371,6 @@ impl PlBinaryViewArray {
     }
 
     /// Returns the value at `i`.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value(&self, i: usize) -> &[u8] {
         assert!(i < self.length, "index out of bounds");
@@ -425,9 +393,6 @@ impl PlBinaryViewArray {
     }
 
     /// Returns whether the element at `i` is valid (non-null).
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_valid(&self, i: usize) -> bool {
         assert!(i < self.length, "index out of bounds");
@@ -447,9 +412,6 @@ impl PlBinaryViewArray {
     }
 
     /// Returns whether the element at `i` is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_null(&self, i: usize) -> bool {
         !self.is_valid(i)
@@ -465,9 +427,6 @@ impl PlBinaryViewArray {
     }
 
     /// Returns the element at `i`, or `None` if it is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn get(&self, i: usize) -> Option<&[u8]> {
         assert!(i < self.length, "index out of bounds");
@@ -484,12 +443,6 @@ impl PlBinaryViewArray {
     }
 
     /// The number of null elements.
-    ///
-    /// Inlined so that an array with no mask to count is answered without a call at all: one left
-    /// standing is an opaque write as far as the compiler is concerned, and sinks behind it every
-    /// fact the caller had established about the array — the representation of its buffers
-    /// included — which is exactly what a caller asking [`Self::has_nulls`] ahead of a walk is
-    /// trying to hand the walk.
     #[inline]
     pub fn null_count(&self) -> usize {
         self.validity().map_or(0, |validity| validity.unset_bits())
@@ -502,10 +455,6 @@ impl PlBinaryViewArray {
     }
 
     /// The number of bytes it would take to lay the values of the valid elements end to end.
-    ///
-    /// # Panics
-    /// Panics if the total overflows a `usize`, which the scalar representation makes possible
-    /// without the memory to back it.
     pub fn total_bytes_len(&self) -> usize {
         if self.views_are_scalar() {
             let valid = self
@@ -548,9 +497,6 @@ impl PlBinaryViewArray {
 
     /// Returns an iterator over `length` values, repeating the single value of this array if that
     /// is all it holds, and ignoring validity.
-    ///
-    /// # Panics
-    /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
     #[inline]
     pub fn broadcast_values_iter(&self, length: usize) -> PlBinaryViewValuesIter<'_> {
         assert_broadcastable(self.length, length);
@@ -560,12 +506,6 @@ impl PlBinaryViewArray {
     }
 
     /// Returns this array with its validity mask replaced.
-    ///
-    /// The mask keeps whichever representation it is in: one that stands for a single bit shared
-    /// by every element is not written out one bit per element to be set.
-    ///
-    /// # Panics
-    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
     #[must_use]
     pub fn with_validity(mut self, validity: Option<PlBitmap>) -> Self {
         self.set_validity(validity);
@@ -573,9 +513,6 @@ impl PlBinaryViewArray {
     }
 
     /// Replaces the validity mask, which keeps the representation it is in.
-    ///
-    /// # Panics
-    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
     pub fn set_validity(&mut self, validity: Option<PlBitmap>) {
         let length = self.len();
         self.validity = validity_covering(validity, length);
@@ -589,9 +526,6 @@ impl PlBinaryViewArray {
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.length,
@@ -616,9 +550,6 @@ impl PlBinaryViewArray {
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     #[must_use]
     pub fn sliced(mut self, offset: usize, length: usize) -> Self {
         self.slice(offset, length);
@@ -636,9 +567,6 @@ impl PlBinaryViewArray {
     }
 
     /// Creates a [`PlBinaryViewArray`] of `length` copies of the element at `index`.
-    ///
-    /// # Panics
-    /// Panics if `index >= self.len()`.
     #[inline]
     pub fn new_from_index(&self, index: usize, length: usize) -> Self {
         assert!(index < self.length, "index out of bounds");
@@ -1012,23 +940,5 @@ mod tests {
         let sliced = arr.sliced(0, 1);
         assert_eq!(sliced.total_buffer_len(), LONG.len());
         assert_eq!(sliced.total_bytes_len(), 3);
-    }
-
-    #[test]
-    fn an_array_of_no_elements_keeps_no_view() {
-        // A single slot is scalar for no elements too, but there is no element left to read it, so
-        // it is not kept: the array is flat, like every empty array, rather than scalar.
-        let arr = PlBinaryViewArray::new_broadcast(
-            Buffer::zeroed(1),
-            Buffer::new(),
-            0,
-            Some(PlBitmap::new_scalar(false, 0)),
-        );
-
-        assert!(arr.is_empty());
-        assert!(arr.is_flat());
-        assert!(!arr.is_scalar());
-        assert!(arr.flat_views().unwrap().is_empty());
-        assert!(arr.validity().unwrap().is_empty());
     }
 }

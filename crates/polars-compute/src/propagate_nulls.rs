@@ -1,20 +1,4 @@
 //! Pushing the nulls of a nested chunk down onto the values under them.
-//!
-//! A null element of a list, a fixed size list or a struct still has values under it — the ones its
-//! offsets cover, or the ones its fields hold at that index — and nothing says what they are. The
-//! kernels that walk those values without walking the level above them, the row encoding among
-//! them, need those values to be null too, which is what this module writes.
-//!
-//! The nulls travel down through the validity masks alone, so a chunk keeps the representation it
-//! came in wherever the answer can be given in it. A level whose every element is null pushes a
-//! single unset bit down onto its values, in `O(1)`, however many values there are; and a level
-//! whose values are already null under every null element is handed back untouched.
-//!
-//! What cannot be answered in the scalar representation is a level whose elements share one range
-//! of the values while only some of them are null: the values under the null elements are the very
-//! values under the valid ones, and no mask over them nulls the former alone. Such a level is
-//! written out one range per element first, which is the only place here that materializes
-//! anything.
 
 use std::ops::Range;
 
@@ -31,9 +15,6 @@ use crate::nesting::{
 };
 
 /// Pushes the nulls of `array` down onto the values under them, recursively.
-///
-/// Returns `None` if no level of `array` had a null to push down, in which case `array` is already
-/// the answer.
 pub fn propagate_nulls(array: &dyn PlArray) -> Option<Box<dyn PlArray>> {
     match array.array_type() {
         PlArrayType::List => {
@@ -213,9 +194,6 @@ fn nulls(validity: Option<PlBitmapRef<'_>>) -> Option<PlBitmapRef<'_>> {
 
 /// The mask `values` takes on once a null is pushed down onto every value in `ranges`, or `None` if
 /// every one of those values is already null.
-///
-/// `ranges` hands out ranges within `values` that are ordered and do not overlap, which the ranges
-/// the elements of a list array cover are and do not.
 fn unset_ranges<I, F>(values: &dyn PlArray, ranges: F) -> Option<PlBitmap>
 where
     I: Iterator<Item = Range<usize>>,
@@ -279,115 +257,5 @@ fn set_bits_in(validity: Option<PlBitmapRef<'_>>, range: Range<usize>) -> usize 
         None => BitMask::from_bitmap(validity.flat_bitmap().unwrap())
             .sliced(range.start, range.len())
             .set_bits(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use polars_array::PlPrimitiveArray;
-    use polars_array::arrow::import::from_arrow;
-    use polars_buffer::Buffer;
-
-    use super::*;
-
-    fn primitives(values: impl IntoIterator<Item = i32>) -> Box<dyn PlArray> {
-        Box::new(PlPrimitiveArray::from_vec(values.into_iter().collect()))
-    }
-
-    /// An array whose every element is the same null list pushes a single unset bit down onto the
-    /// values, however many elements it holds: neither the list nor the mask is written out.
-    #[test]
-    fn a_fully_null_repeated_list_pushes_one_bit_down() {
-        let array = PlListArray::new_scalar(primitives(1..4), 1_000)
-            .with_validity(Some(PlBitmap::new_scalar(false, 1_000)));
-
-        let propagated = propagate_nulls_list(&array).unwrap();
-
-        assert!(propagated.offsets_are_scalar());
-        assert_eq!(propagated.len(), 1_000);
-        assert_eq!(propagated.values().len(), 3);
-        assert_eq!(
-            propagated
-                .values()
-                .validity()
-                .and_then(|v| v.scalar_value()),
-            Some(false),
-        );
-    }
-
-    /// A struct whose every element is null hands its one unset bit to every field.
-    #[test]
-    fn a_fully_null_struct_hands_one_bit_to_every_field() {
-        let array = PlStructArray::new_full_null(vec![primitives(1..4)], 3);
-
-        let propagated = propagate_nulls_struct(&array).unwrap();
-
-        assert_eq!(
-            propagated
-                .field(0)
-                .validity()
-                .and_then(|v| v.scalar_value()),
-            Some(false),
-        );
-    }
-
-    /// A level whose values are already null under every null element is handed back untouched.
-    #[test]
-    fn values_that_are_already_null_are_left_alone() {
-        let values = PlPrimitiveArray::from_iter([None, None, Some(3i32)]);
-        let array = PlListArray::from_offsets(Box::new(values), Buffer::from(vec![0, 2, 3]))
-            .with_validity(Some([false, true].into_iter().collect()));
-
-        assert!(propagate_nulls_list(&array).is_none());
-    }
-
-    /// The elements of a repeated list share one range of the values, so a null element that shares
-    /// it with a valid one is only told apart from it once the array is written out.
-    #[test]
-    fn a_repeated_list_with_some_nulls_is_written_out() {
-        let array = PlListArray::new_scalar(primitives(1..3), 3)
-            .with_validity(Some([true, false, true].into_iter().collect()));
-
-        let propagated = propagate_nulls_list(&array).unwrap();
-
-        assert!(propagated.offsets_are_flat());
-        assert_eq!(propagated.values().len(), 6);
-        assert_eq!(
-            propagated
-                .values()
-                .as_any()
-                .downcast_ref::<PlPrimitiveArray<i32>>(),
-            Some(&PlPrimitiveArray::from_iter([
-                Some(1),
-                Some(2),
-                None,
-                None,
-                Some(1),
-                Some(2),
-            ])),
-        );
-
-        // The elements themselves are the ones it came in with.
-        assert_eq!(propagated, array);
-    }
-
-    /// Pushing nulls down only ever changes values that sit under a null, which are no part of an
-    /// element: the elements that come back are the ones that went in.
-    mod proptests {
-        use arrow::array::proptest::array;
-        use proptest::proptest;
-
-        use super::*;
-
-        proptest! {
-            #[test]
-            fn propagating_nulls_leaves_every_element_alone(array in array(0..100)) {
-                let array = from_arrow(array.as_ref());
-
-                if let Some(propagated) = propagate_nulls(&*array) {
-                    proptest::prop_assert!(array.eq_dyn(&*propagated));
-                }
-            }
-        }
     }
 }

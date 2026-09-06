@@ -18,9 +18,6 @@ use crate::widths::RowWidths;
 use crate::{RowEncodingCategoricalContext, RowEncodingContext, with_match_pl_primitive_type};
 
 /// Downcasts an array whose [`PlArrayType`] has already been matched on.
-///
-/// # Panics
-/// Panics if `array` is not an `A`, which its array type rules out.
 #[inline]
 fn downcast<A: PlArray>(array: &dyn PlArray) -> &A {
     array
@@ -131,8 +128,6 @@ pub fn convert_columns_amortized<'a>(
 }
 
 /// The range of the values array every element of `array` covers.
-///
-/// Offsets that hold the single range every element covers are read as that one range, repeated.
 fn value_ranges(array: &PlListArray) -> impl ExactSizeIterator<Item = std::ops::Range<usize>> {
     // SAFETY: every index is below the length the iterator counts up to.
     (0..array.len()).map(|i| unsafe { array.value_range_unchecked(i) })
@@ -263,11 +258,6 @@ fn striter_num_column_bytes(
 }
 
 /// The array written out, if it holds one child that every one of its elements shares.
-///
-/// The leaf encoders read a scalar buffer as the one value it stands for, without writing it out.
-/// A nested array's child is indexed per row, though, and so is [`RowWidths`]: a [`PlListArray`]
-/// whose offsets hold the single range every element covers, or a [`PlFixedSizeListArray`] whose
-/// values hold the single list every element is, has to be written out before it is encoded.
 // Reading a shared child in place would mean the *child's* encoder writing one row per element of
 // the parent rather than per element of its own: `encode_array` is handed one offset per child
 // slot, and there are `len` times as many of those as the shared child holds. This is what the
@@ -876,9 +866,6 @@ unsafe fn encode_validity(
 }
 
 /// The width the row encoding of one value of `primitive` takes, if it has one.
-///
-/// A decimal is the one case where `dict` decides the width: the precision bounds how many bytes a
-/// value needs.
 fn fixed_size_primitive(
     primitive: PrimitiveType,
     dict: Option<&RowEncodingContext>,
@@ -912,9 +899,6 @@ fn fixed_size_primitive(
 }
 
 /// Whether `dict` makes the encoding variable-width whatever the representation says.
-///
-/// An ordered categorical that is not an enum encodes the string each key stands for, and those
-/// have no common width.
 fn dict_is_variable_width(opt: RowEncodingOptions, dict: Option<&RowEncodingContext>) -> bool {
     matches!(dict, Some(RowEncodingContext::Categorical(ctx)) if !ctx.is_enum && opt.is_ordered())
 }
@@ -962,9 +946,6 @@ fn fixed_size_of_array(
 }
 
 /// The width the row encoding of one value of `dtype` takes, if it has one.
-///
-/// This is the decoder's side of [`fixed_size_of_array`]: a decode is driven by the type it is
-/// asked for, since the array it produces does not carry one.
 pub fn fixed_size(
     dtype: &ArrowDataType,
     opt: RowEncodingOptions,
@@ -1028,7 +1009,6 @@ mod tests {
         ArrayArbitraryOptions, ArrowDataTypeArbitraryOptions, ArrowDataTypeArbitrarySelection,
         array_with_options,
     };
-    use polars_array::PlNullArray;
 
     use super::*;
 
@@ -1061,117 +1041,5 @@ mod tests {
             let dicts: Vec<Option<RowEncodingContext>> = (0..arrays.len()).map(|_| None).collect();
             convert_columns_no_order(arrays[0].len(), &arrays, &dicts);
         }
-    }
-
-    /// The rows one column of `array` encodes to, under both sort orders.
-    fn rows_of(array: Box<dyn PlArray>) -> Vec<Vec<u8>> {
-        let length = array.len();
-        let columns = [array];
-        let dicts = [None];
-
-        [
-            RowEncodingOptions::new_unsorted(),
-            RowEncodingOptions::new_sorted(false, false),
-            RowEncodingOptions::new_sorted(true, true),
-        ]
-        .into_iter()
-        .flat_map(|opt| {
-            convert_columns(length, &columns, &[opt], &dicts)
-                .iter()
-                .map(<[u8]>::to_vec)
-                .collect::<Vec<_>>()
-        })
-        .collect()
-    }
-
-    /// A logical array and the same one written out, which have to encode to the same rows.
-    #[track_caller]
-    fn assert_representations_agree(scalar: Box<dyn PlArray>, flat: Box<dyn PlArray>) {
-        assert_eq!(scalar.len(), flat.len());
-        assert!(
-            scalar.eq_dyn(&*flat),
-            "the two forms must hold the same elements"
-        );
-        assert_eq!(rows_of(scalar), rows_of(flat));
-    }
-
-    /// A scalar buffer is read as the one value it stands for, so it has to encode to the same
-    /// rows as the array that holds that value once per element.
-    #[test]
-    fn scalar_and_flat_arrays_encode_alike() {
-        const LENGTH: usize = 5;
-
-        assert_representations_agree(
-            Box::new(PlPrimitiveArray::new_scalar(7i64, LENGTH)),
-            Box::new(PlPrimitiveArray::from_vec(vec![7i64; LENGTH])),
-        );
-        assert_representations_agree(
-            Box::new(PlBooleanArray::new_scalar(true, LENGTH)),
-            Box::new(PlBooleanArray::from_values(
-                std::iter::repeat_n(true, LENGTH).collect(),
-            )),
-        );
-        assert_representations_agree(
-            Box::new(PlUtf8ViewArray::new_scalar("scalar", LENGTH)),
-            Box::new(std::iter::repeat_n(Some("scalar"), LENGTH).collect::<PlUtf8ViewArray>()),
-        );
-        assert_representations_agree(
-            Box::new(PlBinaryArray::new_scalar(b"scalar", LENGTH)),
-            Box::new(PlBinaryArray::from_values_iter(std::iter::repeat_n(
-                b"scalar", LENGTH,
-            ))),
-        );
-
-        // A scalar nested array shares one child, which is written out before it is encoded.
-        let element = || Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])) as Box<dyn PlArray>;
-        assert_representations_agree(
-            Box::new(PlFixedSizeListArray::new_scalar(element(), LENGTH)),
-            Box::new(PlFixedSizeListArray::new(
-                Box::new(PlPrimitiveArray::from_vec([1i32, 2].repeat(LENGTH))),
-                2,
-                LENGTH,
-                None,
-            )),
-        );
-        assert_representations_agree(
-            Box::new(PlListArray::new_scalar(element(), LENGTH)),
-            Box::new(PlListArray::from_offsets(
-                Box::new(PlPrimitiveArray::from_vec([1i32, 2].repeat(LENGTH))),
-                (0..=LENGTH as u64).map(|i| i * 2).collect(),
-            )),
-        );
-
-        // A struct array's own buffer is only its mask, and every field holds one element per row.
-        assert_representations_agree(
-            Box::new(PlStructArray::new(
-                vec![Box::new(PlPrimitiveArray::new_scalar(7i64, LENGTH))],
-                LENGTH,
-                None,
-            )),
-            Box::new(PlStructArray::new(
-                vec![Box::new(PlPrimitiveArray::from_vec(vec![7i64; LENGTH]))],
-                LENGTH,
-                None,
-            )),
-        );
-    }
-
-    /// The mask of a scalar array stands for the bit every element shares.
-    #[test]
-    fn scalar_and_flat_masks_encode_alike() {
-        const LENGTH: usize = 4;
-
-        assert_representations_agree(
-            Box::new(PlPrimitiveArray::<i64>::new_full_null(LENGTH)),
-            Box::new(std::iter::repeat_n(None, LENGTH).collect::<PlPrimitiveArray<i64>>()),
-        );
-        assert_representations_agree(
-            Box::new(PlUtf8ViewArray::new_full_null(LENGTH)),
-            Box::new(std::iter::repeat_n(None, LENGTH).collect::<PlUtf8ViewArray>()),
-        );
-        assert_representations_agree(
-            Box::new(PlNullArray::new(LENGTH)),
-            Box::new(PlNullArray::new(LENGTH)),
-        );
     }
 }

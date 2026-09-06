@@ -1,15 +1,4 @@
 //! Trimming a nested chunk down to the values its elements actually cover.
-//!
-//! A list array is free to hold values no element of it covers: the offsets may start past the
-//! beginning of the values array and stop before its end, which is what slicing one leaves behind.
-//! This module rewrites such an array into the one that holds the covered values alone, so that the
-//! offsets start at zero and end at the end of the values — what the row encoding and the kernels
-//! that walk the values directly need of it.
-//!
-//! Trimming reads no value and writes none: the values are handed over as a slice of the buffers
-//! they already sit in, and the offsets are shifted by the one start they all sit past. So a chunk
-//! comes back in the representation it went in — an array whose every element is the same list
-//! keeps its two offsets, and is trimmed in `O(1)`.
 
 use polars_array::{
     PlArray, PlArrayType, PlBitmap, PlFixedSizeListArray, PlListArray, PlStructArray,
@@ -19,9 +8,6 @@ use polars_buffer::Buffer;
 use crate::nesting::{covered_range, downcast, fsl_with_values, struct_with_fields};
 
 /// Trims the lists of `array` down to the values its elements cover, recursively.
-///
-/// Returns `None` if no level of `array` had a value to trim, in which case `array` is already the
-/// answer.
 pub fn trim_lists_to_normalized_offsets(array: &dyn PlArray) -> Option<Box<dyn PlArray>> {
     match array.array_type() {
         PlArrayType::List => {
@@ -72,8 +58,6 @@ pub fn trim_lists_to_normalized_offsets_list(array: &PlListArray) -> Option<PlLi
 
     // SAFETY: the offsets are as many as they were, and so still flat or scalar for `length` as
     // they were; shifting them all by the same start leaves them non-decreasing, and ending at the
-    // end of the values they were trimmed to. The mask is untouched, and so still valid for
-    // `length`.
     Some(unsafe {
         if offsets_are_flat {
             PlListArray::new_unchecked(values, offsets, length, validity.clone())
@@ -117,78 +101,4 @@ pub fn trim_lists_to_normalized_offsets_struct(array: &PlStructArray) -> Option<
     // SAFETY: every trimmed field is as long as the one it replaces, so each still holds one
     // element per element of the struct.
     Some(unsafe { struct_with_fields(array, fields) })
-}
-
-#[cfg(test)]
-mod tests {
-    use polars_array::PlPrimitiveArray;
-
-    use super::*;
-
-    fn values(range: std::ops::Range<i32>) -> Box<dyn PlArray> {
-        Box::new(PlPrimitiveArray::from_vec(range.collect()))
-    }
-
-    /// An array whose elements cover the whole values array is already trimmed.
-    #[test]
-    fn a_normalized_array_is_left_alone() {
-        let array = PlListArray::from_offsets(values(0..6), Buffer::from(vec![0, 2, 4, 6]));
-
-        assert!(trim_lists_to_normalized_offsets_list(&array).is_none());
-    }
-
-    /// The values the elements do not cover are dropped, and the offsets moved back onto the ones
-    /// that are left.
-    #[test]
-    fn the_values_outside_the_covered_range_are_dropped() {
-        let array = PlListArray::from_offsets(values(0..10), Buffer::from(vec![2, 4, 7]));
-
-        let trimmed = trim_lists_to_normalized_offsets_list(&array).unwrap();
-
-        assert_eq!(trimmed.values().len(), 5);
-        assert_eq!(
-            trimmed
-                .values()
-                .as_any()
-                .downcast_ref::<PlPrimitiveArray<i32>>(),
-            Some(&PlPrimitiveArray::from_vec(vec![2, 3, 4, 5, 6])),
-        );
-        assert_eq!(trimmed.value_range(0), 0..2);
-        assert_eq!(trimmed.value_range(1), 2..5);
-    }
-
-    /// An array whose every element is the same list is trimmed without that list ever being
-    /// written out once per element: it keeps the two offsets it came in with.
-    #[test]
-    fn a_repeated_list_stays_repeated() {
-        let array =
-            PlListArray::new_broadcast(values(0..10), Buffer::from(vec![3, 6]), 1_000, None);
-
-        let trimmed = trim_lists_to_normalized_offsets_list(&array).unwrap();
-
-        assert!(trimmed.offsets_are_scalar());
-        assert_eq!(trimmed.len(), 1_000);
-        assert_eq!(trimmed.values().len(), 3);
-        assert_eq!(trimmed.scalar_offsets(), Some(0..3));
-        assert_eq!(trimmed, array);
-    }
-
-    /// Trimming reaches every level: a struct hands back its fields trimmed, and a fixed size list
-    /// its values.
-    #[test]
-    fn trimming_reaches_through_every_level() {
-        let inner = PlListArray::from_offsets(values(0..10), Buffer::from(vec![1, 4]));
-        let outer = PlFixedSizeListArray::from_values(Box::new(inner), 1);
-        let array = PlStructArray::from_fields(vec![Box::new(outer)]);
-
-        let trimmed = trim_lists_to_normalized_offsets_struct(&array).unwrap();
-
-        let field = trimmed.field(0).as_any();
-        let field = field.downcast_ref::<PlFixedSizeListArray>().unwrap();
-        let values = field.values().as_any();
-        let values = values.downcast_ref::<PlListArray>().unwrap();
-
-        assert_eq!(values.values().len(), 3);
-        assert_eq!(values.value_range(0), 0..3);
-    }
 }

@@ -75,9 +75,6 @@ impl PlNullArray {
     }
 
     /// Returns whether the element at `i` is valid (non-null), which it never is.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_valid(&self, i: usize) -> bool {
         assert!(i < self.length, "index out of bounds");
@@ -95,9 +92,6 @@ impl PlNullArray {
     }
 
     /// Returns whether the element at `i` is null, which it always is.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_null(&self, i: usize) -> bool {
         !self.is_valid(i)
@@ -113,9 +107,6 @@ impl PlNullArray {
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.length,
@@ -136,9 +127,6 @@ impl PlNullArray {
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     #[must_use]
     pub fn sliced(mut self, offset: usize, length: usize) -> Self {
         self.slice(offset, length);
@@ -156,9 +144,6 @@ impl PlNullArray {
     }
 
     /// Creates a [`PlNullArray`] of `length` copies of the element at `index`, which is a null.
-    ///
-    /// # Panics
-    /// Panics if `index >= self.len()`.
     #[inline]
     pub fn new_from_index(&self, index: usize, length: usize) -> Self {
         assert!(index < self.length, "index out of bounds");

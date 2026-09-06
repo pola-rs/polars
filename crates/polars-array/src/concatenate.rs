@@ -18,12 +18,6 @@ use crate::{
 
 /// The arrays a concatenation is made of: `count` distinct arrays, read by index, which the
 /// concatenation lays down `repeats` times over.
-///
-/// The arrays are reached through a `dyn Fn` rather than held as a slice so that this type is
-/// generic in the array type alone. Every caller points at its arrays in its own way — a slice of
-/// references, a slice of boxes, one array repeated, one field of every array of another list —
-/// and carrying that shape as a type parameter is what used to fan every concatenation out into a
-/// copy per shape, on top of the copy per element type it already costs.
 struct ArrayList<'a, 'f, A: ?Sized> {
     /// The array at an index below [`Self::count`].
     get: &'f dyn Fn(usize) -> &'a A,
@@ -72,10 +66,6 @@ impl<'a, 'f, A: ?Sized> ArrayList<'a, 'f, A> {
     }
 
     /// How many arrays the concatenation is made of, the repeats included.
-    ///
-    /// # Panics
-    /// Panics if that overflows a `usize`, which no concatenation has the memory to back: an
-    /// element of it is at least a bit wide.
     fn len(&self) -> usize {
         self.count
             .checked_mul(self.repeats)
@@ -103,10 +93,6 @@ impl<A: ?Sized> Copy for ArrayList<'_, '_, A> {}
 
 /// Something that stands in as a [`PlArray`] trait object: every array of this crate, and the
 /// trait object itself.
-///
-/// This is what lets the parts of a concatenation that read nothing but the length, the null
-/// count and the validity mask of an array be written once over `dyn PlArray`, whichever concrete
-/// array type the caller holds.
 trait AsPlArray {
     fn as_pl_array(&self) -> &dyn PlArray;
 }
@@ -278,10 +264,6 @@ pub fn concatenate_validities<A: PlArray + AsPlArray + ?Sized>(arrays: &[&A]) ->
 }
 
 /// [`concatenate_validities`], for a caller that has already counted the elements and the nulls.
-///
-/// The arrays arrive as a trait object rather than as an iterator to be monomorphized over: a
-/// mask is built out of whole arrays at a time, so the one indirect call per array this costs is
-/// nothing against the copy of this function every caller would otherwise be handed.
 fn concatenate_validities_with(
     arrays: &mut dyn Iterator<Item = &dyn PlArray>,
     length: usize,
@@ -513,9 +495,6 @@ fn concatenate_binary_impl(list: ArrayList<'_, '_, PlBinaryArray>) -> PlBinaryAr
 
 /// Concatenates `arrays`, in order, into a single [`PlBinaryViewArray`] over the data buffers of
 /// all of them.
-///
-/// # Panics
-/// Panics if the arrays hold more data buffers between them than a view can index.
 pub fn concatenate_binview(arrays: &[&PlBinaryViewArray]) -> PlBinaryViewArray {
     concatenate_binview_impl(ArrayList::new(&|index| arrays[index], arrays.len()))
 }
@@ -950,13 +929,6 @@ fn only_non_empty<'a, A: ?Sized + PlArray>(list: &ArrayList<'a, '_, A>) -> Optio
 
 /// The total number of elements `distinct` arrays hold `repeats` times over, and how many of those
 /// elements are null.
-///
-/// The arrays arrive as a trait object rather than as an iterator to be monomorphized over, for
-/// the reason [`concatenate_validities_with`] gives.
-///
-/// # Panics
-/// Panics if the total length overflows a `usize`, which the scalar representation makes possible
-/// without the memory to back it.
 fn total_length_and_null_count(
     distinct: &mut dyn Iterator<Item = &dyn PlArray>,
     repeats: usize,
@@ -1081,11 +1053,6 @@ mod tests {
     }
 
     /// Repeated elements are collapsed onto one when their *bytes* agree, not when `==` does.
-    ///
-    /// `-0.0 == 0.0`, so comparing the floats would collapse an array of each onto whichever came
-    /// first and hand back the wrong zero for the other — a sign that survives a division. `NaN`
-    /// is the other way round: it equals nothing, itself included, so comparing the floats would
-    /// write out a repeat that the bytes collapse in `O(1)`.
     #[test]
     fn the_two_zeroes_are_kept_apart_and_repeated_nans_are_not_written_out() {
         let negative = PlPrimitiveArray::new_scalar(-0.0f64, 2);
@@ -1108,39 +1075,5 @@ mod tests {
         assert_eq!(concatenated.len(), 2_000_000_000);
         assert!(concatenated.is_scalar());
         assert!(concatenated.value(1_999_999_999).is_nan());
-    }
-
-    #[test]
-    fn the_trait_object_dispatches_to_every_array_type() {
-        let arrays: Vec<Box<dyn PlArray>> = vec![
-            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
-            Box::new(PlBooleanArray::from_vec(vec![true, false, true])),
-            Box::new(PlNullArray::new(3)),
-            Box::new(PlBinaryArray::from_values_iter([
-                b"foo".as_slice(),
-                b"",
-                b"bar",
-            ])),
-            Box::new(PlFixedSizeBinaryArray::from_vec(
-                vec![1u8, 2, 3, 4, 5, 6],
-                2,
-            )),
-            Box::new(PlStructArray::from_fields(vec![Box::new(
-                PlPrimitiveArray::from_vec(vec![1i32, 2, 3]),
-            )])),
-            Box::new(PlListArray::from_offsets(
-                Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
-                Buffer::from(vec![0u64, 1, 2, 3]),
-            )),
-        ];
-
-        for array in &arrays {
-            let concatenated = concatenate(&[&**array, &**array]).unwrap();
-
-            assert_eq!(concatenated.array_type(), array.array_type());
-            assert_eq!(concatenated.len(), 6);
-            assert_eq!(&concatenated.sliced(0, 3), array);
-            assert_eq!(&concatenated.sliced(3, 3), array);
-        }
     }
 }

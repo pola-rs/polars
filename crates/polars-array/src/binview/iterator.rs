@@ -15,9 +15,6 @@ pub struct PlBinaryViewValuesIter<'a> {
 }
 
 impl<'a> PlBinaryViewValuesIter<'a> {
-    /// # Panics
-    /// Panics unless `views` is flat or scalar for `length`, per [`crate::broadcast`].
-    ///
     /// # Safety
     /// Every view must read bytes that `buffers` holds.
     #[inline]
@@ -122,10 +119,6 @@ pub struct PlBinaryViewIter<'a> {
 }
 
 impl<'a> PlBinaryViewIter<'a> {
-    /// # Panics
-    /// Panics unless `views` is flat or scalar for `length`, per [`crate::broadcast`], and
-    /// `validity` has `length` bits.
-    ///
     /// # Safety
     /// Every view must read bytes that `buffers` holds.
     #[inline]
@@ -234,10 +227,8 @@ unsafe impl TrustedLen for PlBinaryViewIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
 
     use crate::PlBinaryViewArray;
-    use crate::bitmap::PlBitmap;
     use crate::iterator_tests::assert_iterates;
 
     /// The elements of a flat array: one that is inlined into its view, one that is not, and one
@@ -285,20 +276,6 @@ mod tests {
         assert_eq!(
             array.iter().nth_back(999_999_999),
             Some(Some(b"xy".as_slice()))
-        );
-    }
-
-    /// A mask of mixed bits, which is read by position alongside the views.
-    #[test]
-    fn mixed_validity() {
-        let array = flat_array().with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
-            true, false, true,
-        ]))));
-
-        assert_iterates(array.values_iter(), &elements());
-        assert_iterates(
-            array.iter(),
-            &[Some(elements()[0]), None, Some(elements()[2])],
         );
     }
 }

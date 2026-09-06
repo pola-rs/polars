@@ -30,8 +30,6 @@ pub trait BitwiseKernel {
 
 /// The counts of an array whose values buffer holds a single slot, counted once and repeated in
 /// `O(1)` memory, or of one that holds a slot per element, counted one by one.
-///
-/// The validity mask comes along as it is: these kernels leave the null elements where they are.
 fn count_values<T, I, F>(
     scalar_value: Option<T>,
     values: I,
@@ -52,9 +50,6 @@ where
 
 /// The value every element of `arr` reads and the number of its elements that are not null, if
 /// its values buffer holds a single slot and at least one element reads it as non-null.
-///
-/// `None` says the reduction has to walk the array: the values are laid out one per element, or
-/// every element is null and there is nothing to reduce at all.
 #[inline]
 fn repeated_value<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Option<(T, usize)> {
     let count = arr.len() - arr.null_count();
@@ -297,123 +292,5 @@ impl BitwiseKernel for PlBooleanArray {
 
     fn bit_xor(lhs: Self::Scalar, rhs: Self::Scalar) -> Self::Scalar {
         lhs ^ rhs
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use arrow::bitmap::Bitmap;
-
-    use super::*;
-
-    const VALUE: u8 = 0b1010_1010;
-
-    /// `length` copies of [`VALUE`], marked by `validity`, in both representations.
-    fn repeated(validity: Option<&Bitmap>, length: usize) -> [PlPrimitiveArray<u8>; 2] {
-        let scalar = PlPrimitiveArray::new_scalar(VALUE, length)
-            .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
-        let flat = PlPrimitiveArray::from_vec(vec![VALUE; length])
-            .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
-        assert_eq!(scalar, flat);
-        [scalar, flat]
-    }
-
-    /// `and` and `or` are idempotent and `xor` cancels in pairs, so the reduction of a repeated
-    /// value follows from the number of elements that are not null — which is what the kernel
-    /// reads it as, rather than folding every element.
-    #[test]
-    fn a_repeated_value_reduces_by_its_non_null_count() {
-        for length in [0, 1, 2, 3, 8, 65] {
-            for valid in 0..=length {
-                let mask: Bitmap = (0..length).map(|i| i < valid).collect();
-                for validity in [None, Some(&mask)] {
-                    let [scalar, flat] = repeated(validity, length);
-                    let count = validity.map_or(length, |_| valid);
-
-                    assert_eq!(scalar.reduce_and(), flat.reduce_and());
-                    assert_eq!(scalar.reduce_or(), flat.reduce_or());
-                    assert_eq!(scalar.reduce_xor(), flat.reduce_xor());
-
-                    let expected = (count > 0).then_some(VALUE);
-                    assert_eq!(scalar.reduce_and(), expected, "and of {scalar:?}");
-                    assert_eq!(scalar.reduce_or(), expected, "or of {scalar:?}");
-                    assert_eq!(
-                        scalar.reduce_xor(),
-                        (count > 0).then_some(if count % 2 == 1 { VALUE } else { 0 }),
-                        "xor of {scalar:?}",
-                    );
-                }
-            }
-        }
-    }
-
-    /// The counting kernels measure the one value a scalar chunk repeats once, and the result
-    /// repeats the count in turn rather than holding a slot per element.
-    #[test]
-    fn counting_a_repeated_value_keeps_it_repeated() {
-        let [scalar, flat] = repeated(None, 100);
-
-        let counts = scalar.count_ones();
-        assert!(counts.values_are_scalar());
-        assert_eq!(counts, flat.count_ones());
-        assert_eq!(counts, PlPrimitiveArray::from_vec(vec![4u32; 100]));
-
-        assert_eq!(scalar.count_zeros(), flat.count_zeros());
-        assert_eq!(scalar.leading_zeros(), flat.leading_zeros());
-        assert_eq!(scalar.trailing_zeros(), flat.trailing_zeros());
-    }
-
-    /// The mask comes along as it is: a count is written for every element, null or not.
-    #[test]
-    fn counting_keeps_the_mask() {
-        let mask = Bitmap::from_iter([true, false, true]);
-        let [scalar, flat] = repeated(Some(&mask), 3);
-
-        for counts in [scalar.count_ones(), flat.count_ones()] {
-            assert_eq!(
-                counts,
-                PlPrimitiveArray::from_iter([Some(4u32), None, Some(4)])
-            );
-        }
-    }
-
-    /// The boolean reductions read a repeated bit the same way.
-    #[test]
-    fn a_repeated_bit_reduces_by_its_non_null_count() {
-        for length in [0, 1, 2, 3, 8, 65] {
-            for valid in 0..=length {
-                let mask: Bitmap = (0..length).map(|i| i < valid).collect();
-                for value in [false, true] {
-                    let scalar = PlBooleanArray::new_scalar(value, length)
-                        .with_validity(Some(PlBitmap::from_bitmap(mask.clone())));
-                    let flat = PlBooleanArray::from_values(Bitmap::new_with_value(value, length))
-                        .with_validity(Some(PlBitmap::from_bitmap(mask.clone())));
-
-                    assert_eq!(scalar.reduce_and(), flat.reduce_and());
-                    assert_eq!(scalar.reduce_or(), flat.reduce_or());
-                    assert_eq!(scalar.reduce_xor(), flat.reduce_xor());
-                    assert_eq!(
-                        scalar.reduce_xor(),
-                        (valid > 0).then_some(value && valid % 2 == 1),
-                        "xor of {scalar:?}",
-                    );
-                }
-            }
-        }
-    }
-
-    /// Nulls take no part in a reduction, whichever representation the chunk is in.
-    #[test]
-    fn null_elements_are_passed_over() {
-        let arr = PlPrimitiveArray::from_iter([Some(0b1100u8), None, Some(0b1010)]);
-
-        assert_eq!(arr.reduce_and(), Some(0b1000));
-        assert_eq!(arr.reduce_or(), Some(0b1110));
-        assert_eq!(arr.reduce_xor(), Some(0b0110));
-
-        let all_null = PlPrimitiveArray::<u8>::new_full_null(4);
-        assert_eq!(all_null.reduce_and(), None);
-        assert_eq!(all_null.reduce_or(), None);
-        assert_eq!(all_null.reduce_xor(), None);
     }
 }

@@ -49,10 +49,6 @@ impl PlBinaryViewArrayBuilder {
     }
 
     /// Appends `value` as an element of its own.
-    ///
-    /// # Panics
-    /// Panics if `value` is longer than
-    /// [`BINVIEW_MAX_ROW_BYTE_LEN`](arrow::array::BINVIEW_MAX_ROW_BYTE_LEN) bytes.
     pub fn push_value(&mut self, value: &[u8]) {
         let view = self.copy_value(value);
         self.views.push(view);
@@ -107,10 +103,6 @@ impl PlBinaryViewArrayBuilder {
 
     /// A view over the bytes of `self`, holding `bytes` — copied into the buffers being written
     /// into unless the view inlines them.
-    ///
-    /// # Panics
-    /// Panics if `bytes` is longer than
-    /// [`BINVIEW_MAX_ROW_BYTE_LEN`](arrow::array::BINVIEW_MAX_ROW_BYTE_LEN) bytes.
     fn copy_value(&mut self, bytes: &[u8]) -> View {
         let buffer_idx_offset = self.buffer_idx_offset();
         copy_value(&mut self.active, buffer_idx_offset, bytes)

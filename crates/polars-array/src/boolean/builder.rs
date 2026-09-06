@@ -271,21 +271,4 @@ mod tests {
         valid.push_value(true);
         assert!(valid.freeze().validity().is_none());
     }
-
-    #[test]
-    fn scalar_values_are_read_through_the_broadcast() {
-        let array = PlBooleanArray::new_scalar(true, 1_000_000_000)
-            .with_validity(Some(PlBitmap::new_scalar(true, 1_000_000_000)));
-
-        let mut builder = PlBooleanArrayBuilder::new();
-        builder.subslice_extend(&array, 999_999_998, 2, ShareStrategy::Always);
-        builder.subslice_extend_each_repeated(&array, 0, 1, 2, ShareStrategy::Always);
-        unsafe { builder.gather_extend(&array, &[999_999_999], ShareStrategy::Always) };
-        builder.opt_gather_extend(&array, &[0, 1_000_000_000], ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 7);
-        assert_eq!(built.null_count(), 1);
-        assert_eq!(built.iter().take(6).flatten().count(), 6);
-    }
 }

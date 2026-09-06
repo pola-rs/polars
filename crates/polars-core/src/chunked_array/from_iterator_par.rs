@@ -65,11 +65,6 @@ where
 
 /// Folds `par_iter` into one builder per rayon task, `push`ing each item, and freezes each of them
 /// into a chunk of its own.
-///
-/// The builders are appended to one element at a time, which is the only thing they are asked for
-/// here — hence the closure rather than a trait: what `push` means differs per builder (a
-/// primitive takes the item, a view builder takes a reference into it), and a trait over that
-/// would need one impl per builder and a marker to keep `T` from overlapping `Option<T>`.
 fn collect_into_linked_list<I, B, F, P>(par_iter: I, identity: F, push: P) -> LinkedList<B::Array>
 where
     I: IntoParallelIterator,

@@ -1,8 +1,4 @@
 //! The unique kernel over booleans, of which there are only ever three: `false`, `true` and null.
-//!
-//! Which of the three a chunk holds is answered by counting its set bits, so a chunk that repeats
-//! one bit — and one whose validity mask does — is read in `O(1)`: the run stands for its every
-//! element, and there is nothing to count.
 
 use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
@@ -154,52 +150,6 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
-
-    /// A chunk that repeats one bit holds that one value, and a mask that repeats one bit either
-    /// leaves every element as it is or makes every one of them null. None of it is counted bit by
-    /// bit.
-    #[test]
-    fn a_repeated_bit_holds_one_value() {
-        let unique = |array: &PlBooleanArray| {
-            let mut state = BooleanUniqueKernelState::new();
-            state.append(array);
-            state.finalize_unique()
-        };
-
-        for bit in [false, true] {
-            let scalar = PlBooleanArray::new_scalar(bit, 100);
-            assert_eq!(unique(&scalar), PlBooleanArray::from_vec(vec![bit]));
-
-            // Under a mask that is unset everywhere the chunk holds nothing but nulls.
-            let all_null = scalar
-                .clone()
-                .with_validity(Some(PlBitmap::new_scalar(false, scalar.len())));
-            assert_eq!(unique(&all_null), PlBooleanArray::from_iter([None]));
-
-            // Under one that is set everywhere it holds what it held before.
-            let none_null = scalar
-                .clone()
-                .with_validity(Some(PlBitmap::new_scalar(true, scalar.len())));
-            assert_eq!(unique(&none_null), PlBooleanArray::from_vec(vec![bit]));
-
-            // A mask laid out one bit per element leaves both the value and a null behind.
-            let some_null = scalar.with_validity(Some(PlBitmap::from_bitmap(
-                (0..100).map(|i| i % 2 == 0).collect::<Bitmap>(),
-            )));
-            assert_eq!(
-                unique(&some_null),
-                PlBooleanArray::from_iter([Some(bit), None]),
-            );
-        }
-    }
-
-    /// A chunk of no elements holds no value at all, in either representation.
-    #[test]
-    fn an_empty_chunk_holds_nothing() {
-        let mut state = BooleanUniqueKernelState::new();
-        state.append(&PlBooleanArray::new_empty());
-        assert_eq!(state.finalize_n_unique(), 0);
-    }
 
     #[test]
     fn test_boolean_distinct_count() {

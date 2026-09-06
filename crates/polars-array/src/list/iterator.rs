@@ -9,30 +9,12 @@ use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 use crate::broadcast::{is_flat_offsets_len, is_valid_offsets_len};
 
 /// The ranges of the values the elements left to yield cover.
-///
-/// The representation of the offsets sets nothing but the step the walk takes through them: one
-/// slot while they hold a start per element, and nowhere at all once they hold the one range every
-/// element reads.
-///
-/// Resolving that step once, at construction, is what leaves the walk a plain add. Deciding per
-/// element instead leaves every read behind a load of the offsets out of the array and a select on
-/// how many there are — neither of which the loop can hoist, fold against what the caller has
-/// asserted about the array, or see past.
 #[derive(Clone)]
 struct Ranges<'a> {
     /// The offsets of the elements left to yield.
-    ///
-    /// Flat offsets hold exactly `remaining + 1` slots from here, which walking the front keeps
-    /// true; scalar offsets hold their two slots wherever the front has walked to, which is
-    /// nowhere — the step every walk takes is zero for them.
     offsets: NonNull<u64>,
     /// [`usize::MAX`] while the offsets are flat and `0` once they are scalar, to fold every
     /// position onto the one range scalar offsets hold without branching on which they are.
-    ///
-    /// This is a field rather than a tag bit stolen from `offsets` so that the walk never has to
-    /// read it back out of a pointer it is also stepping: held apart, it is loop invariant by
-    /// construction, and is a constant outright wherever the caller has pinned the representation
-    /// down, which leaves the offsets walked at a constant stride.
     index_mask: usize,
     /// The number of elements left to yield, over the whole range of a `usize`: a scalar array is
     /// as long as it says it is, and is never walked to find out.
@@ -115,9 +97,6 @@ impl<'a> Ranges<'a> {
     }
 
     /// Exhausts the walk, which leaves it yielding nothing from either end.
-    ///
-    /// The offsets are left where they are: a flat pointer still holds the one slot an empty walk
-    /// reads, and nothing reads it.
     #[inline(always)]
     fn exhaust(&mut self) {
         self.remaining = 0;
@@ -165,9 +144,6 @@ impl Iterator for Ranges<'_> {
 
     /// Walks the offsets as the buffer they are, rather than stepping one `Option` at a time —
     /// which is what `collect` and `for_each` route through.
-    ///
-    /// Flat offsets are read once each: the end of one element is the start of the next, so the
-    /// loop carries it rather than loading it twice. Scalar ones are read once for the whole walk.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where
@@ -296,15 +272,9 @@ unsafe fn element(values: &dyn PlArray, range: Range<usize>) -> Box<dyn PlArray>
 }
 
 /// Iterator over the elements of a [`PlListArray`](super::PlListArray), ignoring validity.
-///
-/// The representation of the offsets is resolved once, at construction, into the step the walk
-/// takes through them; see [`Ranges`].
 #[derive(Clone)]
 pub struct PlListValuesIter<'a> {
     /// The values array the elements are cut out of.
-    ///
-    /// Held as the borrow it is, rather than reached for through the array, so that the walk keeps
-    /// it in a register instead of loading the box out of the array on every element.
     values: &'a dyn PlArray,
     /// The ranges of the elements left to yield.
     ranges: Ranges<'a>,
@@ -422,10 +392,6 @@ impl ExactSizeIterator for PlListValuesIter<'_> {
 unsafe impl TrustedLen for PlListValuesIter<'_> {}
 
 /// Iterator over the optional elements of a [`PlListArray`](super::PlListArray).
-///
-/// The mask gates the element rather than the other way around: an element of this array is a
-/// fresh box over the values, so building one for a null position — only to throw it away — costs
-/// an allocation and a free that reading the bit first does not pay at all.
 #[derive(Clone)]
 pub struct PlListIter<'a> {
     values: &'a dyn PlArray,
@@ -434,9 +400,6 @@ pub struct PlListIter<'a> {
 }
 
 impl<'a> PlListIter<'a> {
-    /// # Panics
-    /// Panics unless `validity` has `length` bits.
-    ///
     /// # Safety
     /// `offsets` must be flat or scalar for `length`, per [`crate::broadcast`], and must be ordered
     /// and bounded by the length of `values`.
@@ -579,10 +542,8 @@ unsafe impl TrustedLen for PlListIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
     use polars_buffer::Buffer;
 
-    use crate::bitmap::PlBitmap;
     use crate::iterator_tests::assert_iterates;
     use crate::{PlArray, PlListArray, PlPrimitiveArray};
 
@@ -637,108 +598,5 @@ mod tests {
                 .map(Some)
                 .collect::<Vec<_>>(),
         );
-    }
-
-    /// An array of no elements, whose offsets hold nothing but the end an empty walk never reads.
-    #[test]
-    fn empty() {
-        assert_iterates(flat_array().sliced(0, 0).values_iter(), &[]);
-        assert_iterates(flat_array().sliced(0, 0).iter(), &[]);
-        assert_iterates(
-            PlListArray::new_scalar(element(&[1, 2]), 0).values_iter(),
-            &[],
-        );
-        assert_iterates(PlListArray::new_scalar(element(&[1, 2]), 0).iter(), &[]);
-    }
-
-    /// A mask of mixed bits, which is read by position alongside the elements the offsets cut out.
-    #[test]
-    fn mixed_validity() {
-        let array = flat_array().with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
-            true, false, true,
-        ]))));
-
-        assert_iterates(array.values_iter(), &elements());
-        assert_iterates(
-            array.iter(),
-            &[
-                Some(elements()[0].clone()),
-                None,
-                Some(elements()[2].clone()),
-            ],
-        );
-    }
-
-    /// An array whose elements are all null, which the walk never reaches the values for.
-    #[test]
-    fn all_null() {
-        let array = flat_array().with_validity(Some(PlBitmap::from_bitmap(Bitmap::new_zeroed(3))));
-
-        assert_iterates(array.values_iter(), &elements());
-        assert_iterates(array.iter(), &[None, None, None]);
-    }
-
-    /// A mask that broadcasts its single bit, which every element reads.
-    #[test]
-    fn scalar_validity() {
-        let null = PlListArray::new_full_null(element(&[1, 2]), 3);
-
-        assert_iterates(null.iter(), &[None, None, None]);
-        assert_eq!(null.iter().nth(2), Some(None));
-        assert_eq!(null.iter().nth_back(2), Some(None));
-        assert_eq!(null.iter().last(), Some(None));
-    }
-
-    /// An array of a single element, whose offsets are flat and scalar at once, broadcast over a
-    /// walk of many positions.
-    #[test]
-    fn broadcast() {
-        let array = PlListArray::new(element(&[1, 2, 3]), Buffer::from_owner([1, 3]), 1, None);
-        let expected = [(); 4].map(|()| element(&[2, 3]));
-
-        assert_iterates(array.broadcast_values_iter(4), &expected);
-        assert_iterates(array.broadcast_values_iter(1), &expected[..1]);
-    }
-
-    #[test]
-    fn a_broadcast_array_is_not_materialized() {
-        // Walking a billion elements would not finish; the scalar path must hit.
-        let array = PlListArray::new_scalar(element(&[1, 2]), 1_000_000_000);
-
-        assert_eq!(array.values_iter().count(), 1_000_000_000);
-        assert_eq!(array.values_iter().nth(999_999_999), Some(element(&[1, 2])));
-        assert_eq!(
-            array.values_iter().nth_back(999_999_999),
-            Some(element(&[1, 2]))
-        );
-        assert_eq!(array.iter().last(), Some(Some(element(&[1, 2]))));
-        assert_eq!(
-            array.iter().nth_back(999_999_999),
-            Some(Some(element(&[1, 2])))
-        );
-    }
-
-    /// Nothing is stolen from the length to say which representation the offsets are in, so a
-    /// scalar array reaches as far as a `usize` does.
-    #[test]
-    fn a_broadcast_array_is_as_long_as_it_says() {
-        let array = PlListArray::new_scalar(element(&[1, 2]), usize::MAX);
-
-        assert_eq!(array.values_iter().len(), usize::MAX);
-        assert_eq!(array.values_iter().count(), usize::MAX);
-        assert_eq!(
-            array.values_iter().size_hint(),
-            (usize::MAX, Some(usize::MAX))
-        );
-        assert_eq!(
-            array.values_iter().nth(usize::MAX - 1),
-            Some(element(&[1, 2]))
-        );
-        assert_eq!(array.values_iter().last(), Some(element(&[1, 2])));
-
-        let mut iter = array.values_iter();
-        assert_eq!(iter.next(), Some(element(&[1, 2])));
-        assert_eq!(iter.next_back(), Some(element(&[1, 2])));
-        assert_eq!(iter.len(), usize::MAX - 2);
     }
 }

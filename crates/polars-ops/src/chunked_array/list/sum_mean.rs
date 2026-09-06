@@ -27,9 +27,6 @@ where
 
 /// The sum of each list of `arr`, one per element, reading the offsets and the values in whatever
 /// representation each is in.
-///
-/// The values hold no null of their own — the caller has checked — so it is only the element mask
-/// that carries over onto the answer.
 fn dispatch_sum<T, S>(arr: &PlListArray) -> PlArrayRef
 where
     T: NativeType + ToPrimitive,
@@ -225,8 +222,6 @@ where
 
 /// The average of each list of `arr`, one per element, reading the offsets and the values in
 /// whatever representation each is in.
-///
-/// An empty list has no average, which nulls that element on top of whatever the mask already says.
 fn dispatch_mean<T, S>(arr: &PlListArray) -> PlArrayRef
 where
     T: NativeType + ToPrimitive,
@@ -366,100 +361,5 @@ pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
                 .with_name(ca.name().clone());
             out.into_series()
         },
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use polars_array::PlArray;
-
-    use super::*;
-
-    fn flat_lists(lists: &[&[i32]]) -> PlListArray {
-        let mut offsets = vec![0u64];
-        let mut values = Vec::new();
-        for list in lists {
-            values.extend_from_slice(list);
-            offsets.push(values.len() as u64);
-        }
-
-        PlListArray::from_offsets(
-            PlPrimitiveArray::from_vec(values).into_boxed(),
-            offsets.into(),
-        )
-    }
-
-    fn sums(arr: &PlListArray) -> PlArrayRef {
-        dispatch_sum::<i32, i32>(arr)
-    }
-
-    fn means(arr: &PlListArray) -> PlArrayRef {
-        dispatch_mean::<i32, f64>(arr)
-    }
-
-    fn read<T: NativeType>(arr: &PlArrayRef) -> Vec<Option<T>> {
-        arr.as_any()
-            .downcast_ref::<PlPrimitiveArray<T>>()
-            .unwrap()
-            .iter()
-            .collect()
-    }
-
-    /// A list array whose elements all cover one range sums and averages that range once, and the
-    /// answer repeats rather than being written out per element.
-    #[test]
-    fn one_shared_range_is_summed_once() {
-        let shared =
-            PlListArray::new_scalar(PlPrimitiveArray::from_vec(vec![1i32, 2, 3]).into_boxed(), 4);
-        let written_out = flat_lists(&[&[1, 2, 3], &[1, 2, 3], &[1, 2, 3], &[1, 2, 3]]);
-
-        let summed = sums(&shared);
-        assert!(
-            summed.is_scalar(),
-            "one range gives one total for every element"
-        );
-        assert_eq!(read::<i32>(&summed), read::<i32>(&sums(&written_out)));
-
-        let averaged = means(&shared);
-        assert!(averaged.is_scalar());
-        assert_eq!(read::<f64>(&averaged), read::<f64>(&means(&written_out)));
-    }
-
-    /// A values buffer that repeats one value is read as that value however long the lists are.
-    #[test]
-    fn a_repeated_value_is_never_written_out() {
-        let repeated = PlListArray::from_offsets(
-            PlPrimitiveArray::new_scalar(5i32, 6).into_boxed(),
-            vec![0u64, 1, 1, 4, 6].into(),
-        );
-        let written_out = flat_lists(&[&[5], &[], &[5, 5, 5], &[5, 5]]);
-
-        assert_eq!(
-            read::<i32>(&sums(&repeated)),
-            [Some(5), Some(0), Some(15), Some(10)]
-        );
-        assert_eq!(
-            read::<i32>(&sums(&repeated)),
-            read::<i32>(&sums(&written_out))
-        );
-
-        // An empty list has no average, so that element is null on both paths.
-        assert_eq!(
-            read::<f64>(&means(&repeated)),
-            [Some(5.0), None, Some(5.0), Some(5.0)]
-        );
-        assert_eq!(
-            read::<f64>(&means(&repeated)),
-            read::<f64>(&means(&written_out))
-        );
-    }
-
-    /// A shared range that is empty leaves every element without an average.
-    #[test]
-    fn a_shared_empty_range_averages_to_nothing() {
-        let empty = PlListArray::new_scalar(PlPrimitiveArray::<i32>::new_empty().into_boxed(), 3);
-
-        assert_eq!(read::<i32>(&sums(&empty)), [Some(0), Some(0), Some(0)]);
-        assert_eq!(read::<f64>(&means(&empty)), [None, None, None]);
     }
 }

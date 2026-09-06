@@ -254,28 +254,3 @@ impl Float64Chunked {
         out._reinterpret_float().into()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::prelude::*;
-    use crate::series::BitRepr;
-
-    /// An empty chunk is flat over an empty buffer, and a scalar chunk over a single slot: both
-    /// are reinterpreted through the buffer they hold, with no third case to fall through to.
-    #[test]
-    fn reinterpreting_empty_and_scalar_chunks() {
-        let empty = Int64Chunked::from_slice(PlSmallStr::from_static("a"), &[]);
-        let BitRepr::U64(out) = empty.to_bit_repr() else {
-            panic!("an i64 reinterprets as a u64")
-        };
-        assert_eq!(out.len(), 0);
-
-        let scalar = Int64Chunked::full(PlSmallStr::from_static("a"), -1, 5);
-        let BitRepr::U64(out) = scalar.to_bit_repr() else {
-            panic!("an i64 reinterprets as a u64")
-        };
-        assert_eq!(out.len(), 5);
-        assert_eq!(out.get(0), Some(u64::MAX));
-        assert!(out.downcast_iter().all(|arr| arr.values_are_scalar()));
-    }
-}

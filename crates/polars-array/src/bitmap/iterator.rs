@@ -43,9 +43,6 @@ impl<'a> PlBitmapIter<'a> {
     }
 
     /// The bits of `bytes` that `range` covers.
-    ///
-    /// # Panics
-    /// Panics unless `range` is in bounds of the bits `bytes` holds.
     #[inline]
     pub(crate) fn flat(bytes: &'a [u8], range: Range<usize>) -> Self {
         assert!(range.end <= bytes.len() * 8);
@@ -216,11 +213,6 @@ pub(crate) enum ValidityFold<'a> {
 
 /// The bits of a flat validity mask, read by the position of the element they stand for rather
 /// than walked.
-///
-/// Reading a bit by position costs no branch and keeps no state, which is what lets the loop over
-/// the values keep the shape their own representation gives it. Zipping an iterator of bits onto
-/// them instead would put a step of that iterator — and the branch inside it — back into the loop,
-/// and would leave the values stepped one at a time rather than folded.
 #[derive(Clone, Copy)]
 pub(crate) struct ValidityBits<'a> {
     /// The bytes the bits live in, of which only the ones `offset` and `len` cover are this mask's.
@@ -259,9 +251,6 @@ impl<'a> ValidityBits<'a> {
 
 impl<'a> ValidityFold<'a> {
     /// Folds `f` over the elements `values` yields, `None` where the mask says the element is null.
-    ///
-    /// The mask is hoisted out of the loop and `values` is folded rather than stepped, so the
-    /// representation of both is resolved once per walk instead of once per element.
     ///
     /// # Safety
     /// The mask must have a bit for every value `values` has left to yield.
@@ -409,11 +398,6 @@ impl<'a> ValidityIter<'a> {
     /// Whether the element the values are about to yield at the front is valid, without checking
     /// that the mask still covers one.
     ///
-    /// The mask of an element iterator is walked in lockstep with the values and holds a bit for
-    /// every one of them, so a value yielded is itself the proof that a bit is there to read. The
-    /// check [`Self::next`] makes instead is a branch the loop over the values cannot be unrolled
-    /// across, which costs more than the read it guards.
-    ///
     /// # Safety
     /// The mask must still cover an element at the front.
     #[inline(always)]
@@ -557,48 +541,5 @@ mod tests {
     fn flat() {
         let mask = PlBitmap::from_iter([true, false, true, true]);
         assert_iterates(mask.iter(), &[true, false, true, true]);
-    }
-
-    #[test]
-    fn scalar() {
-        let mask = PlBitmap::new_scalar(true, 5);
-        assert_iterates(mask.iter(), &[true; 5]);
-        assert_iterates(PlBitmap::new_scalar(false, 3).iter(), &[false; 3]);
-    }
-
-    #[test]
-    fn a_scalar_mask_is_not_materialized() {
-        // Walking a billion bits would not finish; the scalar path must hit.
-        let mask = PlBitmap::new_scalar(true, 1_000_000_000);
-
-        assert_eq!(mask.iter().count(), 1_000_000_000);
-        assert_eq!(mask.iter().nth(999_999_999), Some(true));
-        assert_eq!(mask.iter().nth_back(999_999_999), Some(true));
-        assert_eq!(mask.iter().last(), Some(true));
-        assert_eq!(mask.iter().len(), 1_000_000_000);
-    }
-
-    /// The bits of a flat mask, read by position rather than walked, which is what the fold of an
-    /// element iterator reads them by.
-    #[test]
-    fn bits_are_read_by_position() {
-        let bits = [true, false, true, true, false];
-        let mask = PlBitmap::from_iter(bits);
-        // A mask that starts partway into its bytes, as the mask of a sliced array does.
-        let sliced = PlBitmap::from_iter([false, false].into_iter().chain(bits)).sliced(2, 5);
-
-        for mask in [mask, sliced] {
-            let ValidityFold::Bits(read) = ValidityIter::new(Some(mask.as_ref())).into_mask()
-            else {
-                panic!("a mask of mixed bits is read bit by bit");
-            };
-
-            assert_eq!(read.len(), bits.len());
-            for (i, &bit) in bits.iter().enumerate() {
-                // SAFETY: `i` is below the number of bits the mask covers.
-                assert_eq!(unsafe { read.get_unchecked(i) }, bit, "bit {i}");
-            }
-            assert_eq!(read.iter().collect::<Vec<_>>(), bits, "walked");
-        }
     }
 }

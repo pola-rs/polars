@@ -92,7 +92,7 @@ impl<T: PolarsNumericType> Reducer for NumUnorderedImplodeReducer<T> {
         );
         for list in v.into_iter() {
             let values = builder.values_mut();
-            values.push_values(list.values.into_iter());
+            values.push_values(list.values);
             values.extend_nulls(list.null_count);
             builder.finish_row();
         }

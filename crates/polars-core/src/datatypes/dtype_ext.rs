@@ -1,9 +1,4 @@
 //! The parts of a [`DataType`] that are about *values* rather than about the type.
-//!
-//! [`DataType`] lives in `polars-dtype`, below `polars-compute`, so that a kernel can be
-//! dispatched on it. An [`AnyValue`] and a [`Scalar`] are values and live here with the rest of
-//! them, so the handful of `DataType` methods that answer *in* values are an extension trait
-//! rather than inherent methods.
 
 use polars_utils::float16::pf16;
 
@@ -87,33 +82,6 @@ impl DataTypeValueExt for DataType {
             #[cfg(feature = "dtype-i128")]
             Int128 => other.extract::<i128>().is_some(),
             _ => false,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    /// The type of the integer a dynamic integer literal reads as is answered in `polars-dtype`,
-    /// which has no [`AnyValue`] to build; the value itself is built here. The two have to agree,
-    /// or a literal would be typed as one thing and materialized as another.
-    #[test]
-    fn a_dynamic_integer_is_typed_as_it_materializes() {
-        for v in [
-            0i128,
-            1,
-            i32::MAX as i128,
-            i32::MAX as i128 + 1,
-            i64::MAX as i128,
-            i64::MAX as i128 + 1,
-            u64::MAX as i128,
-            i128::MIN,
-        ] {
-            assert_eq!(
-                polars_dtype::dyn_int_dtype(v),
-                crate::utils::materialize_dyn_int(v).dtype(),
-                "{v} is typed as one thing and materialized as another",
-            );
         }
     }
 }

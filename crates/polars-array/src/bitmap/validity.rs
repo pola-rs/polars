@@ -5,9 +5,6 @@ use arrow::bitmap::Bitmap;
 use crate::{PlBitmap, PlBitmapRef};
 
 /// The `and` of two masks over the same elements, or `None` if neither has a null.
-///
-/// # Panics
-/// Panics if the masks are over a different number of elements.
 pub fn combine_validities_and(
     lhs: Option<PlBitmapRef<'_>>,
     rhs: Option<PlBitmapRef<'_>>,
@@ -44,9 +41,6 @@ pub fn combine_validities_and(
 }
 
 /// The `and` of three masks over the same elements, or `None` if none of them has a null.
-///
-/// # Panics
-/// Panics if the masks are over a different number of elements.
 pub fn combine_validities_and3(
     first: Option<PlBitmapRef<'_>>,
     second: Option<PlBitmapRef<'_>>,

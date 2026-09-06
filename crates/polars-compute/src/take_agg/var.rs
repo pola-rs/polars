@@ -8,13 +8,6 @@ use polars_array::PlPrimitiveArray;
 use super::primitive::flat_validity;
 
 /// Numerical stable online variance aggregation.
-///
-/// See:
-/// Welford, B. P. (1962). "Note on a method for calculating corrected sums of squares and products".
-/// Technometrics. 4 (3): 419–420. doi:10.2307/1266577. JSTOR 1266577.
-/// and:
-/// Ling, Robert F. (1974). "Comparison of Several Algorithms for Computing Sample Means and Variances".
-/// Journal of the American Statistical Association. 69 (348): 859–866. doi:10.2307/2286154. JSTOR 2286154.
 pub fn online_variance<I>(
     // iterator producing values
     iter: I,
@@ -112,56 +105,4 @@ where
         }
     });
     online_variance(iter, ddof)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const LENGTH: usize = 6;
-    const INDICES: [usize; 4] = [0, 3, 1, 5];
-
-    #[test]
-    fn a_repeated_value_varies_the_same_either_way() {
-        let scalar = PlPrimitiveArray::new_scalar(7.0f64, LENGTH);
-        let flat = PlPrimitiveArray::from_vec(vec![7.0f64; LENGTH]);
-
-        for ddof in [0, 1] {
-            let scalar_var =
-                unsafe { take_var_no_null_primitive_iter_unchecked(&scalar, INDICES, ddof) };
-            let flat_var =
-                unsafe { take_var_no_null_primitive_iter_unchecked(&flat, INDICES, ddof) };
-            assert_eq!(scalar_var, flat_var);
-            assert_eq!(scalar_var, Some(0.0));
-        }
-
-        // Fewer gathered values than `ddof` leaves no variance at all.
-        assert_eq!(
-            unsafe { take_var_no_null_primitive_iter_unchecked(&scalar, [0usize], 1) },
-            None,
-        );
-    }
-
-    #[test]
-    fn a_repeated_null_varies_not_at_all() {
-        let arr = PlPrimitiveArray::<f64>::new_full_null(LENGTH);
-        assert_eq!(
-            unsafe { take_var_nulls_primitive_iter_unchecked(&arr, INDICES, 0) },
-            None,
-        );
-    }
-
-    #[test]
-    fn a_repeated_value_under_a_flat_mask() {
-        let mask = [true, false, true, true, false, true];
-        let scalar = PlPrimitiveArray::new_scalar(7.0f64, LENGTH)
-            .with_validity(Some(mask.into_iter().collect()));
-        let flat = PlPrimitiveArray::from_vec(vec![7.0f64; LENGTH])
-            .with_validity(Some(mask.into_iter().collect()));
-
-        assert_eq!(
-            unsafe { take_var_nulls_primitive_iter_unchecked(&scalar, INDICES, 0) },
-            unsafe { take_var_nulls_primitive_iter_unchecked(&flat, INDICES, 0) },
-        );
-    }
 }

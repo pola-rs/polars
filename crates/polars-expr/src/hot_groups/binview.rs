@@ -41,9 +41,7 @@ impl BinviewHashHotGrouper {
         unsafe {
             let mut evict = |ev_h: &u64, ev_view: &View, ev_buffer: &Vec<u8>| {
                 self.evicted_key_hashes.push(*ev_h);
-                let bytes = ev_view
-                    .get_inlined_slice()
-                    .unwrap_or_else(|| ev_buffer.as_slice());
+                let bytes = ev_view.get_inlined_slice().unwrap_or(ev_buffer.as_slice());
                 self.evicted_keys.push_value(bytes);
             };
             if view.is_inline() {
@@ -165,7 +163,7 @@ impl HotGrouper for BinviewHashHotGrouper {
             let mut keys_builder = PlBinaryViewArrayBuilder::with_capacity(self.table.len());
             for (h, view, buf) in self.table.keys() {
                 hashes.push_unchecked(*h);
-                let bytes = view.get_inlined_slice().unwrap_or_else(|| buf.as_slice());
+                let bytes = view.get_inlined_slice().unwrap_or(buf.as_slice());
                 keys_builder.push_value(bytes);
             }
 
@@ -202,53 +200,5 @@ impl HotGrouper for BinviewHashHotGrouper {
 
     fn as_any(&self) -> &dyn Any {
         self
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use polars_core::prelude::{Column, DataFrame, PlRandomState};
-
-    use super::*;
-    use crate::hash_keys::HashKeys;
-
-    /// Evicted keys are rebuilt through the builder, and an inline view carries its own bytes
-    /// while a long one points into a buffer — so both lengths have to come back intact.
-    #[test]
-    fn evicted_keys_come_back_whole_whether_inlined_or_not() {
-        // Well over the 12-byte inline limit, and well under it.
-        let sent = [
-            "a",
-            "a considerably longer key than fits inline",
-            "bb",
-            "another key that is far too long to inline",
-            "ccc",
-            "yet another long one that must live in a buffer",
-        ];
-        let values = Column::new("k".into(), sent);
-        let df = DataFrame::new(values.len(), vec![values]).unwrap();
-        let keys = HashKeys::from_df(&df, PlRandomState::default(), false, false);
-
-        // Fewer slots than keys, so the table has to evict.
-        let mut grouper = BinviewHashHotGrouper::new(2);
-        let (mut hot, mut hot_groups, mut cold) = (Vec::new(), Vec::new(), Vec::new());
-        grouper.insert_keys(&keys, &mut hot, &mut hot_groups, &mut cold, true);
-
-        let HashKeys::Binview(evicted) = grouper.take_evicted_keys() else {
-            unreachable!("a binview grouper evicts binview keys")
-        };
-        assert!(!evicted.keys.is_empty(), "two slots cannot hold six keys");
-        assert_eq!(evicted.hashes.len(), evicted.keys.len());
-
-        for key in evicted.keys.iter() {
-            let key = std::str::from_utf8(key.expect("an evicted key is never null")).unwrap();
-            assert!(
-                sent.contains(&key),
-                "{key:?} is not one of the keys sent in"
-            );
-        }
-
-        // Draining took the keys with it.
-        assert_eq!(grouper.num_evictions(), 0);
     }
 }

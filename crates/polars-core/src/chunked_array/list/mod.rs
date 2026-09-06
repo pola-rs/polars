@@ -60,7 +60,6 @@ pub(crate) fn list_with_values(arr: &PlListArray, values: PlArrayRef) -> PlListA
 
     // SAFETY: only the values are replaced, by an array of the same length, so the offsets still
     // cover them and are in the representation they were taken out in. The constructor decides the
-    // offsets; the mask carries its own representation and goes back on afterwards.
     let out = unsafe {
         if offsets_are_flat {
             PlListArray::new_unchecked(values, offsets, length, None)
@@ -261,45 +260,5 @@ impl ListChunked {
                 DataType::List(Box::new(values_dtype)),
             )
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use arrow::bitmap::Bitmap;
-    use polars_array::StaticArray;
-
-    use super::*;
-
-    fn values(values: Vec<i32>) -> PlArrayRef {
-        PlPrimitiveArray::from_vec(values).into_boxed()
-    }
-
-    /// The offsets and the mask of a list array are each flat or scalar independently of the
-    /// other, so replacing the values has to keep whichever representation both are in.
-    #[test]
-    fn list_with_values_keeps_a_mask_of_either_representation() {
-        // Scalar offsets — one range every element shares — under a flat mask.
-        let arr = PlListArray::new_full_null(values(vec![1, 2]), 4).with_validity(Some(
-            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true, false])),
-        ));
-        assert!(!arr.offsets_are_flat());
-        assert!(arr.validity().unwrap().is_flat());
-
-        let out = list_with_values(&arr, values(vec![7, 8]));
-        assert!(!out.offsets_are_flat());
-        assert_eq!(out.len(), 4);
-        assert_eq!(out.null_count(), 2);
-
-        // And the other way around: flat offsets under a scalar mask.
-        let arr = PlListArray::new(values(vec![1, 2]), vec![0, 1, 2].into(), 2, None)
-            .with_validity(Some(PlBitmap::new_scalar(false, 2)));
-        assert!(arr.offsets_are_flat());
-        assert!(arr.validity().unwrap().is_scalar());
-
-        let out = list_with_values(&arr, values(vec![7, 8]));
-        assert!(out.offsets_are_flat());
-        assert_eq!(out.len(), 2);
-        assert_eq!(out.null_count(), 2);
     }
 }

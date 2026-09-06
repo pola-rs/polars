@@ -889,10 +889,6 @@ mod inner {
             validities: Vec<Option<Bitmap>>,
         ) -> ListChunked {
             /// The offsets of a list array of this crate, which are the same numbers unsigned.
-            ///
-            /// This is `O(1)`: the buffer is handed over as it is, and only what the slots are
-            /// read as changes. An offset is an index into the values, so none of them is
-            /// negative and every one of them means the same thing on both sides.
             fn unsigned(offsets: OffsetsBuffer<i64>) -> Buffer<u64> {
                 offsets
                     .into_inner()

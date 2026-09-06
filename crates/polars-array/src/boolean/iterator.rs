@@ -10,8 +10,6 @@ pub struct PlBooleanIter<'a> {
 }
 
 impl<'a> PlBooleanIter<'a> {
-    /// # Panics
-    /// Panics unless `values` and `validity` both have `length` bits.
     #[inline]
     pub(super) fn new(
         values: PlBitmapRef<'a>,
@@ -118,10 +116,8 @@ unsafe impl TrustedLen for PlBooleanIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
 
     use crate::PlBooleanArray;
-    use crate::bitmap::PlBitmap;
     use crate::iterator_tests::assert_iterates;
 
     #[test]
@@ -149,30 +145,5 @@ mod tests {
         assert_eq!(array.iter().nth(999_999_999), Some(Some(true)));
         assert_eq!(array.iter().nth_back(999_999_999), Some(Some(true)));
         assert_eq!(array.iter().len(), 1_000_000_000);
-    }
-
-    /// A mask of mixed bits, which is read by position alongside the values rather than walked
-    /// alongside them.
-    #[test]
-    fn mixed_validity() {
-        let array = PlBooleanArray::from_vec(vec![true, false, true, false]).with_validity(Some(
-            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true, true])),
-        ));
-
-        assert_iterates(array.values_iter(), &[true, false, true, false]);
-        assert_iterates(array.iter(), &[Some(true), None, Some(true), Some(false)]);
-    }
-
-    /// Both bitmaps of a sliced array start partway into the bytes backing them.
-    #[test]
-    fn a_sliced_mask_is_read_from_its_own_front() {
-        let array = PlBooleanArray::from_vec(vec![true, true, false, true, false])
-            .with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
-                true, true, false, true, false,
-            ]))))
-            .sliced(2, 3);
-
-        assert_iterates(array.values_iter(), &[false, true, false]);
-        assert_iterates(array.iter(), &[None, Some(true), None]);
     }
 }

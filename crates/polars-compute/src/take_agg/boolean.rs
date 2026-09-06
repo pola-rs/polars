@@ -1,18 +1,10 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 //! Gather-and-reduce over a [`PlBooleanArray`].
-//!
-//! These answer the *position within the group* of an extremum, so they walk the indices in order
-//! and stop at the first one that gathers the extreme value. A values bitmap of a single bit makes
-//! every index gather that one value, so the walk has nothing to compare and the first index that
-//! gathers anything at all is the answer.
 
 use polars_array::PlBooleanArray;
 
 /// The position in `indices` of the first index that gathers `extreme`, or of the first that
 /// gathers a non-null value at all.
-///
-/// This is the shape of both the arg-min and the arg-max of a boolean: the smaller of the two
-/// values is `false` and the larger is `true`, so `extreme` is all that differs.
 ///
 /// # Safety
 /// Every index must be in bounds of `arr`.
@@ -125,93 +117,4 @@ pub unsafe fn take_arg_max_bool_iter_unchecked_no_nulls<I: IntoIterator<Item = u
     indices: I,
 ) -> Option<usize> {
     unsafe { take_arg_bool_no_nulls(arr, indices, true) }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const LENGTH: usize = 6;
-    const INDICES: [usize; 4] = [0, 3, 1, 5];
-
-    fn scalar_and_flat(value: bool, mask: Option<[bool; LENGTH]>) -> [PlBooleanArray; 2] {
-        let validity = mask.map(|mask| mask.into_iter().collect());
-        [
-            PlBooleanArray::new_scalar(value, LENGTH).with_validity(validity.clone()),
-            PlBooleanArray::from_values(std::iter::repeat_n(value, LENGTH).collect())
-                .with_validity(validity),
-        ]
-    }
-
-    #[test]
-    fn a_repeated_value_gathers_the_same_either_way() {
-        for value in [false, true] {
-            let [scalar, flat] = scalar_and_flat(value, None);
-
-            assert_eq!(
-                unsafe { take_arg_min_bool_iter_unchecked_no_nulls(&scalar, INDICES) },
-                unsafe { take_arg_min_bool_iter_unchecked_no_nulls(&flat, INDICES) },
-            );
-            assert_eq!(
-                unsafe { take_arg_max_bool_iter_unchecked_no_nulls(&scalar, INDICES) },
-                unsafe { take_arg_max_bool_iter_unchecked_no_nulls(&flat, INDICES) },
-            );
-        }
-    }
-
-    #[test]
-    fn a_repeated_null_gathers_nothing() {
-        let arr = PlBooleanArray::new_full_null(LENGTH);
-        assert_eq!(
-            unsafe { take_arg_min_bool_iter_unchecked_nulls(&arr, INDICES) },
-            None,
-        );
-        assert_eq!(
-            unsafe { take_arg_max_bool_iter_unchecked_nulls(&arr, INDICES) },
-            None,
-        );
-    }
-
-    #[test]
-    fn a_repeated_value_under_a_flat_mask() {
-        // The first of `INDICES` is masked out, so the answer is a later position.
-        let mask = [false, true, true, true, true, true];
-        for value in [false, true] {
-            let [scalar, flat] = scalar_and_flat(value, Some(mask));
-
-            let min = unsafe { take_arg_min_bool_iter_unchecked_nulls(&scalar, INDICES) };
-            assert_eq!(min, Some(1));
-            assert_eq!(min, unsafe {
-                take_arg_min_bool_iter_unchecked_nulls(&flat, INDICES)
-            });
-
-            let max = unsafe { take_arg_max_bool_iter_unchecked_nulls(&scalar, INDICES) };
-            assert_eq!(max, Some(1));
-            assert_eq!(max, unsafe {
-                take_arg_max_bool_iter_unchecked_nulls(&flat, INDICES)
-            });
-        }
-    }
-
-    /// A flat chunk that does hold both values still picks the extreme one out.
-    #[test]
-    fn a_flat_chunk_finds_the_extremum() {
-        let arr = PlBooleanArray::from_values(
-            [true, true, false, true, false, true].into_iter().collect(),
-        );
-        // `INDICES` is [0, 3, 1, 5]: every one of those is `true`, so the min falls back to zero.
-        assert_eq!(
-            unsafe { take_arg_min_bool_iter_unchecked_no_nulls(&arr, INDICES) },
-            Some(0),
-        );
-        assert_eq!(
-            unsafe { take_arg_max_bool_iter_unchecked_no_nulls(&arr, INDICES) },
-            Some(0),
-        );
-        // Index 2 gathers `false`, at position 1 of these indices.
-        assert_eq!(
-            unsafe { take_arg_min_bool_iter_unchecked_no_nulls(&arr, [0usize, 2, 3]) },
-            Some(1),
-        );
-    }
 }

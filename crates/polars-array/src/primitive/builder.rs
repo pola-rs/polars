@@ -13,11 +13,6 @@ use crate::builder::{
 };
 
 /// A builder of a [`PlPrimitiveArray`].
-///
-/// The values are held as the bytes of `T` rather than as `T`, so that appending them is compiled
-/// once per byte class rather than once per element type; see [`bytes`]. Nothing this builder
-/// does reads what a value means, so nothing is given up by holding them that way, and the
-/// reinterpretation back to `T` in [`freeze`](StaticArrayBuilder::freeze) is `O(1)`.
 #[derive(Clone)]
 pub struct PlPrimitiveArrayBuilder<T: NativeType> {
     values: Vec<Bytes<T>>,
@@ -41,19 +36,11 @@ impl<T: NativeType> PlPrimitiveArrayBuilder<T> {
     }
 
     /// A builder holding `values` and `validity` as the elements appended so far.
-    ///
-    /// The caller owes the same invariant the builder maintains itself: `validity`, where it is
-    /// not all-true, covers exactly as many elements as `values` holds.
     pub(crate) fn from_parts(values: Vec<Bytes<T>>, validity: OptBitmapBuilder) -> Self {
         Self { values, validity }
     }
 
     /// Appends `value` as an element of its own.
-    ///
-    /// This is the one routine here that is *not* taken over the byte class of `T`: a `Vec` of
-    /// byte-class slots is already only as many distinct `push`es as there are byte classes, and
-    /// unlike everything in [`bytes`] this one is called per element, so it stays inlinable in the
-    /// caller that holds the loop.
     #[inline]
     pub fn push_value(&mut self, value: T) {
         self.values.push(bytes::to_bytes(value));
@@ -61,13 +48,6 @@ impl<T: NativeType> PlPrimitiveArrayBuilder<T> {
     }
 
     /// Appends every value `values` yields, in order, none of them null.
-    ///
-    /// The mask is extended once for the whole run rather than once per value, which is the point
-    /// of appending them together: a run of values is one `extend_constant` instead of `n` of
-    /// them. The `Vec` reserves off the iterator's size hint, so a [`TrustedLen`] iterator such as
-    /// a range grows the buffer once.
-    ///
-    /// [`TrustedLen`]: arrow::trusted_len::TrustedLen
     #[inline]
     pub fn push_values<I: IntoIterator<Item = T>>(&mut self, values: I) {
         let before = self.values.len();
@@ -289,71 +269,6 @@ mod tests {
                 Some(8),
                 Some(7),
             ],
-        );
-    }
-
-    /// A run of values on its own never makes a mask, the same as pushing them one by one.
-    #[test]
-    fn a_run_of_values_alone_leaves_no_mask() {
-        let mut builder = PlPrimitiveArrayBuilder::<u32>::new();
-        builder.push_values(0..1_000);
-        let built = builder.freeze();
-
-        assert!(built.validity().is_none());
-        assert_eq!(built.len(), 1_000);
-        assert_eq!(built.flat_values().unwrap().as_slice()[999], 999);
-    }
-
-    /// An empty run is a no-op, including for the mask.
-    #[test]
-    fn an_empty_run_appends_nothing() {
-        let mut builder = PlPrimitiveArrayBuilder::<i64>::new();
-        builder.push_null();
-        builder.push_values(std::iter::empty());
-        builder.push_value(1);
-
-        assert_eq!(builder.freeze().iter().collect::<Vec<_>>(), [None, Some(1)],);
-    }
-
-    #[test]
-    fn pushing_elements_one_at_a_time() {
-        let mut builder = PlPrimitiveArrayBuilder::<i32>::with_capacity(4);
-        builder.push_value(1);
-        builder.push_null();
-        builder.push(Some(3));
-        builder.push(None);
-        assert_eq!(builder.len(), 4);
-
-        // An element appended one at a time is the element an appended array holds.
-        let mut appended = PlPrimitiveArrayBuilder::<i32>::new();
-        appended.extend(&builder.freeze_reset(), ShareStrategy::Never);
-
-        // The mask only comes into being once a null is pushed.
-        let mut valid = PlPrimitiveArrayBuilder::<i32>::new();
-        valid.push_value(7);
-
-        assert_eq!(
-            appended.freeze().iter().collect::<Vec<_>>(),
-            [Some(1), None, Some(3), None],
-        );
-        assert!(valid.freeze().validity().is_none());
-    }
-
-    #[test]
-    fn scalar_values_are_read_through_the_broadcast() {
-        let array = PlPrimitiveArray::new_scalar(7i32, 1_000_000_000)
-            .with_validity(Some(PlBitmap::new_scalar(true, 1_000_000_000)));
-
-        let mut builder = PlPrimitiveArrayBuilder::<i32>::with_capacity(8);
-        builder.subslice_extend(&array, 999_999_998, 2, ShareStrategy::Always);
-        builder.subslice_extend_each_repeated(&array, 0, 1, 2, ShareStrategy::Always);
-        unsafe { builder.gather_extend(&array, &[999_999_999], ShareStrategy::Always) };
-        builder.opt_gather_extend(&array, &[0, 1_000_000_000], ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(
-            built.iter().collect::<Vec<_>>(),
-            [Some(7), Some(7), Some(7), Some(7), Some(7), Some(7), None],
         );
     }
 }

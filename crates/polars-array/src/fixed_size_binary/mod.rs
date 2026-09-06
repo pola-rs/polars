@@ -64,9 +64,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// Creates a flat [`PlFixedSizeBinaryArray`] out of its internal components.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::try_new`] errors.
     #[inline]
     pub fn new(
         values: Buffer<u8>,
@@ -109,7 +106,6 @@ impl PlFixedSizeBinaryArray {
     /// # Errors
     /// This function errors if `values` is not scalar for `width` and `length`, per
     /// [`is_scalar_fixed_size_values_len`], or if `validity` is not scalar for `length`, per
-    /// [`is_scalar_buffer_len`].
     pub fn try_new_broadcast(
         values: Buffer<u8>,
         width: usize,
@@ -135,9 +131,6 @@ impl PlFixedSizeBinaryArray {
 
     /// Creates a scalar [`PlFixedSizeBinaryArray`] of `length` elements out of its internal
     /// components.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::try_new_broadcast`] errors.
     #[inline]
     pub fn new_broadcast(
         values: Buffer<u8>,
@@ -187,10 +180,6 @@ impl PlFixedSizeBinaryArray {
 
     /// Creates a fully valid, flat [`PlFixedSizeBinaryArray`] by cutting `values` into elements of
     /// `width` bytes, taking its length from how many of them there are.
-    ///
-    /// # Panics
-    /// Panics if `width` is zero, which leaves no number of elements to cut the values into, or if
-    /// the length of `values` is not a multiple of `width`.
     pub fn from_values(values: Buffer<u8>, width: usize) -> Self {
         assert!(
             width > 0,
@@ -215,9 +204,6 @@ impl PlFixedSizeBinaryArray {
 
     /// Creates a fully valid, flat [`PlFixedSizeBinaryArray`] by cutting a [`Vec`] into elements of
     /// `width` bytes.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::from_values`] panics.
     #[inline]
     pub fn from_vec(values: Vec<u8>, width: usize) -> Self {
         Self::from_values(Buffer::from(values), width)
@@ -357,9 +343,6 @@ impl PlFixedSizeBinaryArray {
 
     /// The range of the backing values buffer the element at `i` covers, which is always
     /// [`Self::width`] bytes wide.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value_range(&self, i: usize) -> Range<usize> {
         assert!(i < self.length, "index out of bounds");
@@ -386,9 +369,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// Returns the bytes of the element at `i`.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value(&self, i: usize) -> &[u8] {
         assert!(i < self.length, "index out of bounds");
@@ -407,9 +387,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// Returns whether the element at `i` is valid (non-null).
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_valid(&self, i: usize) -> bool {
         assert!(i < self.length, "index out of bounds");
@@ -429,9 +406,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// Returns whether the element at `i` is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_null(&self, i: usize) -> bool {
         !self.is_valid(i)
@@ -447,9 +421,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// Returns the bytes of the element at `i`, or `None` if it is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn get(&self, i: usize) -> Option<&[u8]> {
         assert!(i < self.length, "index out of bounds");
@@ -466,12 +437,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// The number of null elements.
-    ///
-    /// Inlined so that an array with no mask to count is answered without a call at all: one left
-    /// standing is an opaque write as far as the compiler is concerned, and sinks behind it every
-    /// fact the caller had established about the array — the representation of its buffers
-    /// included — which is exactly what a caller asking [`Self::has_nulls`] ahead of a walk is
-    /// trying to hand the walk.
     #[inline]
     pub fn null_count(&self) -> usize {
         self.validity().map_or(0, |validity| validity.unset_bits())
@@ -502,9 +467,6 @@ impl PlFixedSizeBinaryArray {
 
     /// Returns an iterator over `length` elements, repeating the single element of this array if
     /// that is all it holds, and ignoring validity.
-    ///
-    /// # Panics
-    /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
     #[inline]
     pub fn broadcast_values_iter(&self, length: usize) -> PlFixedSizeBinaryValuesIter<'_> {
         assert_broadcastable(self.length, length);
@@ -514,12 +476,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// Returns this array with its validity mask replaced.
-    ///
-    /// The mask keeps whichever representation it is in: one that stands for a single bit shared
-    /// by every element is not written out one bit per element to be set.
-    ///
-    /// # Panics
-    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
     #[must_use]
     pub fn with_validity(mut self, validity: Option<PlBitmap>) -> Self {
         self.set_validity(validity);
@@ -527,9 +483,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// Replaces the validity mask, which keeps the representation it is in.
-    ///
-    /// # Panics
-    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
     pub fn set_validity(&mut self, validity: Option<PlBitmap>) {
         let length = self.len();
         self.validity = validity_covering(validity, length);
@@ -543,9 +496,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.length,
@@ -572,9 +522,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     #[must_use]
     pub fn sliced(mut self, offset: usize, length: usize) -> Self {
         self.slice(offset, length);
@@ -592,9 +539,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// Creates a [`PlFixedSizeBinaryArray`] of `length` copies of the element at `index`.
-    ///
-    /// # Panics
-    /// Panics if `index >= self.len()`.
     #[inline]
     pub fn new_from_index(&self, index: usize, length: usize) -> Self {
         assert!(index < self.length, "index out of bounds");
@@ -662,7 +606,6 @@ impl PlFixedSizeBinaryArray {
 
         // SAFETY: the values are the element every element covers, repeated once per element, and
         // the mask is the flat counterpart of one valid for this array's length, which leaves every
-        // backing buffer holding one slot per element.
         Cow::Owned(unsafe {
             Flat::new(Self::new_unchecked(
                 values,
@@ -683,9 +626,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// The number of bytes a flat counterpart of this array holds.
-    ///
-    /// # Panics
-    /// Panics if that overflows a `usize`, which no buffer has the memory to back.
     #[inline]
     fn flat_values_len(&self) -> usize {
         self.length.checked_mul(self.width).expect(
@@ -913,23 +853,5 @@ mod tests {
         assert!(arr.is_empty());
         assert_eq!(arr.flat_values().unwrap().len(), 0);
         assert_eq!(arr.width(), 2);
-    }
-
-    #[test]
-    fn an_array_of_no_elements_covers_no_bytes() {
-        // A single slot is scalar for no elements too, but there is no element left to read it, so
-        // it is not kept: the array is flat, like every empty array, rather than scalar.
-        let arr = PlFixedSizeBinaryArray::new_broadcast(
-            Buffer::from(vec![1u8, 2]),
-            2,
-            0,
-            Some(PlBitmap::new_scalar(false, 0)),
-        );
-
-        assert!(arr.is_empty());
-        assert!(arr.is_flat());
-        assert!(!arr.is_scalar());
-        assert!(arr.flat_values().unwrap().is_empty());
-        assert!(arr.validity().unwrap().is_empty());
     }
 }

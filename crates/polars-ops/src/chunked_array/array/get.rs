@@ -122,9 +122,6 @@ fn array_get_impl(
 }
 
 /// The values `chunks` hold, as a series of the physical inner type of `ca`.
-///
-/// The values of an element carry no logical type of their own; the physical inner type is what
-/// `from_physical_unchecked` turns back into the logical one.
 fn values_series(ca: &ArrayChunked, chunks: Vec<Box<dyn PlArray>>) -> Series {
     unsafe {
         Series::from_chunks_and_dtype_unchecked(

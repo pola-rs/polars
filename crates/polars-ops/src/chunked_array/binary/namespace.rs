@@ -258,9 +258,6 @@ impl BinaryNameSpaceImpl for BinaryChunked {}
 
 /// Runs an elementwise Arrow `kernel` over `chunk`, reading a chunk that repeats a single element
 /// once rather than writing that element out per element first.
-///
-/// The kernel is elementwise — every element of the answer a function of the element at the same
-/// index alone — which is what makes the answer for one element the answer for every element.
 #[cfg(feature = "binary_encoding")]
 fn reinterpret_elementwise(
     chunk: &dyn PlArray,

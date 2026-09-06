@@ -1,14 +1,4 @@
 //! The data type of a Polars column, and the pieces a data type is built out of.
-//!
-//! This crate holds the [`DataType`] enum itself and what it names — [`Field`], [`TimeUnit`],
-//! [`TimeZone`], the categorical mappings and the extension types. It sits *below*
-//! `polars-compute`, so a kernel can be dispatched on a Polars type rather than on the Arrow type
-//! that type happens to be laid out as.
-//!
-//! What stays in `polars-core` is the `PolarsDataType` trait family — `PolarsNumericType` and
-//! friends — which is bounded on the arithmetic kernels of `polars-compute` and so cannot live
-//! below it. That family is about the *static* type of a `ChunkedArray`; this crate is about the
-//! runtime one.
 
 #[cfg(any(feature = "serde", feature = "serde-lazy", feature = "dsl-schema"))]
 mod _serde;
@@ -55,10 +45,6 @@ pub(crate) mod config {
 }
 
 /// The [`DataType`] of the smallest integer a dynamic integer literal fits in.
-///
-/// This is the type of `materialize_dyn_int(v)` in `polars-core`, which builds the `AnyValue` this
-/// answers the type of. The two are pinned to each other by a test there: an `AnyValue` is a value
-/// and lives with the values, while a [`DataType`] is needed down here.
 pub fn dyn_int_dtype(v: i128) -> DataType {
     // Smallest first, matching `materialize_dyn_int`.
     if i32::try_from(v).is_ok() {
@@ -81,10 +67,6 @@ pub fn dyn_int_dtype(v: i128) -> DataType {
 }
 
 /// The Arrow type the values of an [`Object`](DataType::Object) column are laid out as.
-///
-/// An object is whatever the host language registered, so the type is only known once that has
-/// happened. `polars-core` registers it alongside the rest of the object registry, which holds the
-/// builders and converters this crate has no business knowing about — only the type reaches here.
 #[cfg(feature = "object")]
 pub mod object {
     use std::sync::RwLock;
@@ -99,9 +81,6 @@ pub mod object {
         *OBJECT_PHYSICAL_DTYPE.write().unwrap() = Some(dtype);
     }
 
-    /// # Panics
-    /// Panics if no object type has been registered, as an object column cannot exist before one
-    /// has been.
     #[cold]
     pub fn get_object_physical_type() -> ArrowDataType {
         OBJECT_PHYSICAL_DTYPE
@@ -113,11 +92,6 @@ pub mod object {
 }
 
 /// Whether `dtype` is the `Struct {key, value}` a [`Map`](DataType::Map)'s entries are held as.
-///
-/// A map is stored as a list of two-field structs, so the type of those structs is part of what
-/// makes a map well-formed — which is a question about types alone, and is asked wherever one is
-/// built. The fields have to be *named*, which is what this asks: Arrow and Parquet define map
-/// entries positionally, so only what comes from outside those two is held to it.
 #[cfg(feature = "dtype-map")]
 pub fn ensure_map_entries_dtype(dtype: &DataType) -> polars_error::PolarsResult<()> {
     use arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};

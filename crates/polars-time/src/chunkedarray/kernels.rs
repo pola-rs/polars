@@ -1,10 +1,4 @@
 //! macros that define the extraction of `week`, `weekday`, `year`, `hour` etc. from one value.
-//!
-//! Each of these is a function of a single physical value, applied over a column by
-//! [`unary_elementwise`](polars_core::prelude::arity::unary_elementwise). They used to be array
-//! kernels, taking and building an Arrow array of their own; nothing about what they compute
-//! needed the array, and reading one value at a time is what lets the caller decide how the
-//! column is walked.
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time_opt;
 use arrow::temporal_conversions::{

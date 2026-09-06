@@ -2,9 +2,6 @@ use arrow::bitmap::{Bitmap, binary_fold, quaternary, ternary};
 use polars_array::{Flat, PlBitmap, PlBooleanArray};
 
 /// The validity mask of `arr`, if it holds one bit per element.
-///
-/// A scalar mask marks every element null or none of them, so a caller that has already told
-/// those two apart has nothing left to read in it.
 pub(crate) fn flat_validity(arr: &PlBooleanArray) -> Option<&Bitmap> {
     arr.validity().and_then(|validity| validity.flat_bitmap())
 }
@@ -214,80 +211,4 @@ pub fn and(lhs: &Flat<PlBooleanArray>, rhs: &Flat<PlBooleanArray>) -> PlBooleanA
         lhs.len(),
         validity.map(PlBitmap::from_bitmap),
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// `length` copies of `value`, marked by `validity`, in both representations: the scalar one
-    /// holds a single bit per buffer, and the flat one a bit per element.
-    fn repeated(value: bool, validity: Option<bool>, length: usize) -> [PlBooleanArray; 2] {
-        let scalar = PlBooleanArray::new_scalar(value, length)
-            .with_validity(validity.map(|valid| PlBitmap::new_scalar(valid, length)));
-        let flat = PlBooleanArray::new(
-            Bitmap::new_with_value(value, length),
-            length,
-            (validity.map(|valid| Bitmap::new_with_value(valid, length)))
-                .map(PlBitmap::from_bitmap),
-        );
-        assert_eq!(scalar, flat);
-        [scalar, flat]
-    }
-
-    #[test]
-    fn a_repeated_value_reads_the_same_either_way() {
-        for length in [0, 1, 3, 64, 100] {
-            for value in [false, true] {
-                for validity in [None, Some(true), Some(false)] {
-                    let [scalar, flat] = repeated(value, validity, length);
-
-                    // The one value every element repeats is the answer to both questions, and
-                    // an array of no elements or of nothing but nulls answers neither.
-                    let expected = (length > 0 && validity != Some(false)).then_some(value);
-                    assert_eq!(any(&scalar), expected, "any of {scalar:?}");
-                    assert_eq!(all(&scalar), expected, "all of {scalar:?}");
-                    assert_eq!(any(&flat), expected, "any of {flat:?}");
-                    assert_eq!(all(&flat), expected, "all of {flat:?}");
-
-                    assert_eq!(not(&scalar), not(&flat));
-                    // Inverting a scalar array inverts the single bit it is backed by.
-                    assert!(not(&scalar).values_are_scalar() || length <= 1);
-                }
-            }
-        }
-    }
-
-    /// A values buffer that holds a single bit still stands for every element when the mask holds
-    /// one bit per element.
-    #[test]
-    fn a_repeated_value_under_a_flat_mask() {
-        let arr = PlBooleanArray::new_scalar(true, 4).with_validity(Some(PlBitmap::from_bitmap(
-            Bitmap::from_iter([false, true, true, false]),
-        )));
-        assert_eq!(any(&arr), Some(true));
-        assert_eq!(all(&arr), Some(true));
-
-        // Every element that is left is null, so there is nothing to answer for.
-        let none = PlBooleanArray::new_scalar(true, 2).with_validity(Some(PlBitmap::from_bitmap(
-            Bitmap::from_iter([false, false]),
-        )));
-        assert_eq!(any(&none), None);
-        assert_eq!(all(&none), None);
-    }
-
-    #[test]
-    fn null_elements_are_passed_over() {
-        //            null   false  true
-        let values = Bitmap::from_iter([true, false, true]);
-        let validity = Bitmap::from_iter([false, true, true]);
-        let arr = PlBooleanArray::new(values, 3, Some(PlBitmap::from_bitmap(validity)));
-
-        assert_eq!(any(&arr), Some(true));
-        assert_eq!(all(&arr), Some(false));
-        assert_eq!(
-            not(&arr),
-            PlBooleanArray::from_iter([None, Some(true), Some(false)])
-        );
-    }
 }

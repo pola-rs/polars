@@ -13,8 +13,8 @@ use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
-    AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, Float64Chunked, GroupPositions,
-    GroupsType, IDX_DTYPE, IntoColumn,
+    AnyValue, BooleanChunked, ChunkCast, Column, Float64Chunked, GroupPositions, GroupsType,
+    IDX_DTYPE, IntoColumn,
 };
 use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;

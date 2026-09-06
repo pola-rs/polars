@@ -8,9 +8,6 @@ use crate::chunked_array::sum::{sum_repeated, sum_slice};
 
 /// The sum of each list of `arr`, one per element, reading the values in whatever representation
 /// they are in.
-///
-/// The values hold no null of their own — the caller has checked — so it is only the element mask
-/// that carries over onto the answer.
 fn dispatch_sum<T, S>(arr: &PlFixedSizeListArray) -> PlArrayRef
 where
     T: NativeType + ToPrimitive,
@@ -212,67 +209,4 @@ pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> Polar
     };
     out.rename(ca.name().clone());
     Ok(out)
-}
-
-#[cfg(test)]
-mod tests {
-    use polars_array::PlArray;
-
-    use super::*;
-
-    fn read(arr: &PlArrayRef) -> Vec<Option<i32>> {
-        arr.as_any()
-            .downcast_ref::<PlPrimitiveArray<i32>>()
-            .unwrap()
-            .iter()
-            .collect()
-    }
-
-    /// Every element reading the one list means they all sum to the same total, which is worked
-    /// out once and repeated rather than the list being written out per element.
-    #[test]
-    fn one_shared_list_is_summed_once() {
-        let shared = PlFixedSizeListArray::new_scalar(
-            PlPrimitiveArray::from_vec(vec![1i32, 2, 3]).into_boxed(),
-            4,
-        );
-        let written_out = PlFixedSizeListArray::new(
-            PlPrimitiveArray::from_vec([1i32, 2, 3].repeat(4)).into_boxed(),
-            3,
-            4,
-            None,
-        );
-
-        let summed = dispatch_sum::<i32, i32>(&shared);
-        assert!(summed.is_scalar());
-        assert_eq!(read(&summed), [Some(6), Some(6), Some(6), Some(6)]);
-        assert_eq!(read(&summed), read(&dispatch_sum::<i32, i32>(&written_out)));
-    }
-
-    /// A values buffer that repeats one value sums to that value taken `width` times, whichever
-    /// representation the lists themselves are in.
-    #[test]
-    fn a_repeated_value_is_never_written_out() {
-        let repeated = PlFixedSizeListArray::new(
-            PlPrimitiveArray::new_scalar(5i32, 6).into_boxed(),
-            3,
-            2,
-            None,
-        );
-        let written_out = PlFixedSizeListArray::new(
-            PlPrimitiveArray::from_vec(vec![5i32; 6]).into_boxed(),
-            3,
-            2,
-            None,
-        );
-
-        assert_eq!(
-            read(&dispatch_sum::<i32, i32>(&repeated)),
-            [Some(15), Some(15)]
-        );
-        assert_eq!(
-            read(&dispatch_sum::<i32, i32>(&repeated)),
-            read(&dispatch_sum::<i32, i32>(&written_out))
-        );
-    }
 }

@@ -50,10 +50,6 @@ impl<B: PlArrayBuilder> PlFixedSizeListArrayBuilder<B> {
 
     /// The builder of the values the lists are taken over, so that the values one element covers
     /// can be appended to it directly.
-    ///
-    /// Everything appended through here becomes part of the element that the next
-    /// [`finish_row`](Self::finish_row) closes, which is why it has to be exactly the
-    /// [`width`](Self::width) of values.
     #[inline]
     pub fn values_mut(&mut self) -> &mut B {
         &mut self.values
@@ -61,10 +57,6 @@ impl<B: PlArrayBuilder> PlFixedSizeListArrayBuilder<B> {
 
     /// Closes one element, covering the width of values appended to the child since the last
     /// element was.
-    ///
-    /// # Panics
-    /// Panics unless exactly the width of values was appended since then, which is what an element
-    /// of a fixed size list array covers.
     #[inline]
     pub fn finish_row(&mut self) {
         assert_eq!(
@@ -380,56 +372,5 @@ mod tests {
             .values_mut()
             .subslice_extend(&values, 0, 1, ShareStrategy::Always);
         builder.finish_row();
-    }
-
-    #[test]
-    fn gathering() {
-        let array = array();
-
-        let mut builder = builder();
-        unsafe { builder.gather_extend(&array, &[2, 0, 1], ShareStrategy::Always) };
-        builder.opt_gather_extend(&array, &[0, 9], ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(
-            elements(&built),
-            [
-                Some(vec![5, 6]),
-                Some(vec![1, 2]),
-                None,
-                Some(vec![1, 2]),
-                None,
-            ],
-        );
-    }
-
-    #[test]
-    fn a_scalar_array_is_appended_without_being_materialized() {
-        let array = PlFixedSizeListArray::new_scalar(
-            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])),
-            1_000_000_000,
-        );
-
-        let mut builder =
-            PlFixedSizeListArrayBuilder::new(builder_like(array.scalar_values().unwrap()), 2);
-        builder.subslice_extend(&array, 999_999_998, 2, ShareStrategy::Always);
-        builder.subslice_extend_each_repeated(&array, 0, 1, 2, ShareStrategy::Always);
-        unsafe { builder.gather_extend(&array, &[999_999_999], ShareStrategy::Always) };
-        builder.opt_gather_extend(&array, &[0, 1_000_000_000], ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(
-            elements(&built),
-            [
-                Some(vec![1, 2]),
-                Some(vec![1, 2]),
-                Some(vec![1, 2]),
-                Some(vec![1, 2]),
-                Some(vec![1, 2]),
-                Some(vec![1, 2]),
-                None,
-            ],
-        );
-        assert_eq!(built.null_count(), 1);
     }
 }

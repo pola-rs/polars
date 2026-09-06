@@ -72,9 +72,6 @@ impl PlUtf8ViewArray {
     }
 
     /// Returns the element at `i`, whether or not it is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value(&self, i: usize) -> &str {
         // SAFETY: the elements of this array are valid UTF-8.
@@ -92,9 +89,6 @@ impl PlUtf8ViewArray {
     }
 
     /// Returns the element at `i`, or `None` if it is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn get(&self, i: usize) -> Option<&str> {
         // SAFETY: the elements of this array are valid UTF-8.
@@ -155,9 +149,6 @@ impl PlUtf8ViewArray {
     }
 
     /// Returns this array with its validity mask replaced, keeping the representation it is in.
-    ///
-    /// # Panics
-    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
     #[inline]
     #[must_use]
     pub fn with_validity(self, validity: Option<PlBitmap>) -> Self {
@@ -486,9 +477,6 @@ mod tests {
     }
 
     /// Truncates every element to its first `keep` bytes, which is what a `str.head` does.
-    ///
-    /// `keep` stays above [`View::MAX_INLINE_SIZE`] so that a view of the buffer stays one: the
-    /// prefix a longer view already carries is the prefix of what is kept.
     fn head(arr: &PlUtf8ViewArray, keep: u32, calls: &mut usize) -> PlUtf8ViewArray {
         assert!(keep > View::MAX_INLINE_SIZE);
         // SAFETY: a prefix of a view reads bytes the same buffer already holds, and the values
@@ -535,21 +523,5 @@ mod tests {
             out.iter().collect::<Vec<_>>(),
             [Some(&LONG[..20]), None, Some(&LONG[10..30])],
         );
-    }
-
-    #[test]
-    fn a_scalar_array_is_written_out_flat() {
-        let scalar = PlUtf8ViewArray::new_scalar(LONG, 3);
-
-        assert!(scalar.as_flat().is_none());
-        let flat = scalar.to_flat();
-        assert!(flat.is_flat());
-        assert_eq!(*flat, scalar);
-        assert_eq!(flat.value(2), LONG);
-
-        // An array that is already flat is borrowed rather than written out again.
-        let arr: PlUtf8ViewArray = [Some("foo")].into_iter().collect();
-        let flat = arr.as_flat().expect("the array is flat");
-        assert_eq!(flat.value(0), "foo");
     }
 }

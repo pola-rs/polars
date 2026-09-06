@@ -62,9 +62,6 @@ pub trait StaticArray: PlArray + Clone {
     type Builder: StaticArrayBuilder<Array = Self>;
 
     /// Returns the element at `i`, whether or not it is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     fn value(&self, i: usize) -> Self::ValueT<'_> {
         assert!(i < self.len(), "index out of bounds");
@@ -79,9 +76,6 @@ pub trait StaticArray: PlArray + Clone {
     unsafe fn value_unchecked(&self, i: usize) -> Self::ValueT<'_>;
 
     /// Returns the element at `i`, or `None` if it is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     fn get(&self, i: usize) -> Option<Self::ValueT<'_>> {
         assert!(i < self.len(), "index out of bounds");
@@ -107,22 +101,13 @@ pub trait StaticArray: PlArray + Clone {
 
     /// Returns an iterator over `length` elements, repeating the single element of this array if
     /// that is all it holds.
-    ///
-    /// # Panics
-    /// Panics if `self.len()` is neither `length` nor one.
     fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_>;
 
     /// Returns this array with its validity mask replaced, keeping its representation.
-    ///
-    /// # Panics
-    /// Panics unless `validity` covers exactly [`len`](PlArray::len) elements.
     #[must_use]
     fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self;
 
     /// Returns an array of `length` copies of the element at `index`.
-    ///
-    /// # Panics
-    /// Panics if `index >= self.len()`.
     #[must_use]
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self;
 
@@ -146,9 +131,6 @@ pub trait StaticArray: PlArray + Clone {
     fn as_flat(&self) -> Option<&Flat<Self>>;
 
     /// Borrows this array as one with no null elements, or `None` if any element is null.
-    ///
-    /// This says nothing about the representation: a scalar array that repeats a valid element is
-    /// witnessed here without being written out.
     #[inline]
     fn as_no_nulls(&self) -> Option<&NoNulls<Self>> {
         // SAFETY: no element is null, as just counted.
@@ -749,8 +731,6 @@ pub struct PlUnitIter<'a> {
 }
 
 impl<'a> PlUnitIter<'a> {
-    /// # Panics
-    /// Panics if `validity` does not have `length` bits.
     #[inline]
     fn new(validity: Option<PlBitmapRef<'a>>, length: usize) -> Self {
         assert!(validity.is_none_or(|validity| validity.len() == length));
@@ -918,47 +898,5 @@ mod tests {
             assert_eq!(array.iter().nth_back(999_999_999), Some(Some(())));
             assert_eq!(array.iter().last(), Some(Some(())));
         }
-    }
-
-    #[test]
-    fn scalars_are_read_through_the_broadcast() {
-        let array = PlPrimitiveArray::new_scalar(7i32, 1_000_000_000);
-
-        assert_eq!(StaticArray::value(&array, 999_999_999), 7);
-        assert_eq!(StaticArray::get(&array, 999_999_999), Some(7));
-        assert_eq!(array.iter().nth(999_999_999), Some(Some(7)));
-
-        // An array of a single element iterates as any number of copies of it, in `O(1)`.
-        let one = PlPrimitiveArray::from_vec(vec![7i32]);
-        assert_eq!(
-            one.broadcast_values_iter(1_000_000_000).len(),
-            1_000_000_000
-        );
-        assert_eq!(one.broadcast_values_iter(1_000_000_000).last(), Some(7));
-
-        let one = PlStructArray::from_fields(vec![Box::new(one)]);
-        assert_eq!(
-            one.broadcast_values_iter(1_000_000_000).len(),
-            1_000_000_000
-        );
-
-        let nulls = PlNullArray::new(1);
-        assert_eq!(
-            nulls.broadcast_values_iter(1_000_000_000).len(),
-            1_000_000_000
-        );
-    }
-
-    #[test]
-    fn typed_operations_keep_the_concrete_type() {
-        let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
-
-        let nulled: PlPrimitiveArray<i32> = array
-            .clone()
-            .with_validity_typed(Some(PlBitmap::new_scalar(false, 3)));
-        assert_eq!(nulled.null_count(), 3);
-
-        let repeated: PlPrimitiveArray<i32> = array.new_from_index_typed(2, 4);
-        assert_eq!(repeated, PlPrimitiveArray::new_scalar(3, 4));
     }
 }

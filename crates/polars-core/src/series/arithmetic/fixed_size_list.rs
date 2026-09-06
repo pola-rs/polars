@@ -805,9 +805,6 @@ mod inner {
     }
 
     /// [`repeat_bitmap`] over a mask in whichever representation it is in.
-    ///
-    /// A mask that repeats one bit already says the same of every element, so repeating it says
-    /// the same thing of `n_repeats` times as many — which is the mask itself over that length.
     fn repeat_mask(mask: PlBitmapRef<'_>, n_repeats: usize) -> PlBitmap {
         match mask.flat_bitmap() {
             Some(bitmap) => PlBitmap::from_bitmap(repeat_bitmap(bitmap, n_repeats)),

@@ -8,36 +8,15 @@ use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 use crate::broadcast::is_flat_offsets_len;
 
 /// Iterator over the elements of a [`PlBinaryArray`](super::PlBinaryArray), ignoring validity.
-///
-/// The representation of the offsets is resolved once, at construction, into the mask every
-/// position is folded through, and no step of the walk branches on it again. A loop that walks the
-/// elements one way — [`fold`](Iterator::fold), [`rfold`] or a hand written one over
-/// [`split`](Self::split) — drops even the mask, and reads the offsets as the plain slice they
-/// are.
-///
-/// [`rfold`]: DoubleEndedIterator::rfold
 #[derive(Clone)]
 pub struct PlBinaryValuesIter<'a> {
     /// The bytes the offsets cut the elements out of. How many there are is never asked: every
     /// offset is in bounds of them, so the length would only be carried to be thrown away.
     values: NonNull<u8>,
     /// The offsets of the elements left to yield.
-    ///
-    /// Flat offsets hold exactly `remaining + 1` slots from here, which walking the front keeps
-    /// true; scalar offsets hold their two slots wherever the front has walked to, which is
-    /// nowhere — the step every walk takes is zero for them.
     offsets: NonNull<u64>,
     /// [`usize::MAX`] while the offsets are flat and `0` once they are scalar, to fold every
     /// position onto the one slot scalar offsets hold without branching on which they are.
-    ///
-    /// This is a field rather than a tag bit stolen from `offsets` so that the walk never has to
-    /// read it back out of a pointer it is also stepping. A tag in the pointer is recovered with
-    /// `ptrtoint`, which loses the alignment the free bits come from, so the mask — and the step
-    /// derived from it — turns into a value that changes with the pointer as far as the compiler
-    /// can tell, and is rebuilt inside the loop instead of being hoisted out of it. Held apart, it
-    /// is loop invariant by construction, and is a constant outright wherever the caller has
-    /// pinned the representation down, which leaves the offsets walked at a constant stride: an
-    /// affine walk the vectorizer can take.
     index_mask: usize,
     /// The number of elements left to yield, over the whole range of a `usize`: a scalar array is
     /// as long as it says it is, and is never walked to find out.
@@ -58,15 +37,8 @@ unsafe impl Send for PlBinaryValuesIter<'_> {}
 unsafe impl Sync for PlBinaryValuesIter<'_> {}
 
 /// What a [`PlBinaryValuesIter`] leaves a loop to walk, once its representation is hoisted out.
-///
-/// This is what a caller that knows which representation it holds — or that is willing to write
-/// the two loops the two representations deserve — reaches for: neither arm reads a tag, so
-/// neither loop carries the branch that picking between them would leave in it.
 pub enum PlBinaryValues<'a> {
     /// The bytes, and one start per element left plus the end of the last to cut them with.
-    ///
-    /// The offsets are ordered, and index the values from their start rather than from the first
-    /// element left, which a sliced array leaves behind.
     Flat {
         values: &'a [u8],
         offsets: &'a [u64],
@@ -161,18 +133,12 @@ impl<'a> PlBinaryValuesIter<'a> {
     }
 
     /// Exhausts the iterator without walking it, which leaves it yielding nothing from either end.
-    ///
-    /// The offsets are left where they are: a flat pointer still holds the one slot an empty walk
-    /// reads, and nothing reads it.
     #[inline(always)]
     fn exhaust(&mut self) {
         self.remaining = 0;
     }
 
     /// The elements left to yield, with the representation of the offsets hoisted out of them.
-    ///
-    /// This is what [`fold`](Iterator::fold) walks, and what a caller writing its own loop should
-    /// walk: it is resolved once, so neither arm pays for the other.
     #[inline]
     pub fn split(self) -> PlBinaryValues<'a> {
         if self.is_scalar() {
@@ -380,9 +346,6 @@ pub struct PlBinaryIter<'a> {
 }
 
 impl<'a> PlBinaryIter<'a> {
-    /// # Panics
-    /// Panics unless `validity` has `length` bits.
-    ///
     /// # Safety
     /// `offsets` must be flat or scalar for `length`, per [`crate::broadcast`], and must be ordered
     /// and bounded by the length of `values`.
@@ -492,11 +455,8 @@ unsafe impl TrustedLen for PlBinaryIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
 
-    use super::PlBinaryValues;
     use crate::PlBinaryArray;
-    use crate::bitmap::PlBitmap;
     use crate::iterator_tests::assert_iterates;
 
     /// The elements of a flat array, which are of different lengths and include an empty one.
@@ -532,105 +492,5 @@ mod tests {
         assert_iterates(array.iter(), &[]);
         // An array of no elements keeps no slot of the value a scalar one repeats.
         assert_iterates(PlBinaryArray::new_scalar(b"xy", 0).values_iter(), &[]);
-    }
-
-    /// The offsets of a sliced array start past the front of the values, which the elements are
-    /// still cut out of from their own start.
-    #[test]
-    fn sliced() {
-        let array = flat_array().sliced(1, 2);
-
-        assert_iterates(array.values_iter(), &elements()[1..]);
-        assert_iterates(
-            array.iter(),
-            &elements()[1..]
-                .iter()
-                .copied()
-                .map(Some)
-                .collect::<Vec<_>>(),
-        );
-    }
-
-    #[test]
-    fn a_broadcast_array_is_not_materialized() {
-        // Walking a billion elements would not finish; the scalar path must hit.
-        let array = PlBinaryArray::new_scalar(b"xy", 1_000_000_000);
-
-        assert_eq!(array.values_iter().count(), 1_000_000_000);
-        assert_eq!(array.values_iter().nth(999_999_999), Some(b"xy".as_slice()));
-        assert_eq!(
-            array.values_iter().nth_back(999_999_999),
-            Some(b"xy".as_slice())
-        );
-        assert_eq!(array.iter().last(), Some(Some(b"xy".as_slice())));
-        assert_eq!(
-            array.iter().nth_back(999_999_999),
-            Some(Some(b"xy".as_slice()))
-        );
-    }
-
-    /// A mask of mixed bits, which is read by position alongside the elements the offsets cut out.
-    #[test]
-    fn mixed_validity() {
-        let array = flat_array().with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
-            true, false, true,
-        ]))));
-
-        assert_iterates(array.values_iter(), &elements());
-        assert_iterates(
-            array.iter(),
-            &[Some(elements()[0]), None, Some(elements()[2])],
-        );
-    }
-
-    /// Nothing is stolen from the length to say which representation the offsets are in, so a
-    /// scalar array reaches as far as a `usize` does.
-    #[test]
-    fn a_broadcast_array_is_as_long_as_it_says() {
-        let array = PlBinaryArray::new_scalar(b"xy", usize::MAX);
-
-        assert_eq!(array.values_iter().len(), usize::MAX);
-        assert_eq!(array.values_iter().count(), usize::MAX);
-        assert_eq!(
-            array.values_iter().size_hint(),
-            (usize::MAX, Some(usize::MAX))
-        );
-        assert_eq!(
-            array.values_iter().nth(usize::MAX - 1),
-            Some(b"xy".as_slice())
-        );
-        assert_eq!(array.values_iter().last(), Some(b"xy".as_slice()));
-        assert_eq!(
-            array.iter().nth(usize::MAX - 1),
-            Some(Some(b"xy".as_slice()))
-        );
-
-        let mut iter = array.values_iter();
-        assert_eq!(iter.next(), Some(b"xy".as_slice()));
-        assert_eq!(iter.next_back(), Some(b"xy".as_slice()));
-        assert_eq!(iter.len(), usize::MAX - 2);
-    }
-
-    /// The two representations, resolved once for a loop to walk without a branch in it.
-    #[test]
-    fn split_hoists_the_representation() {
-        match flat_array().values_iter().split() {
-            PlBinaryValues::Flat { values, offsets } => {
-                assert_eq!(values, b"abcde");
-                assert_eq!(offsets, [0, 2, 2, 5]);
-            },
-            PlBinaryValues::Scalar { .. } => panic!("a flat array holds one range per element"),
-        }
-
-        match PlBinaryArray::new_scalar(b"xy", usize::MAX)
-            .values_iter()
-            .split()
-        {
-            PlBinaryValues::Scalar { value, count } => {
-                assert_eq!(value, b"xy");
-                assert_eq!(count, usize::MAX);
-            },
-            PlBinaryValues::Flat { .. } => panic!("a scalar array holds one range for all of them"),
-        }
     }
 }

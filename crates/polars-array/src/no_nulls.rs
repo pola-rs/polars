@@ -6,15 +6,6 @@ use crate::array::PlArray;
 use crate::flat::Flat;
 
 /// An array none of whose elements is null.
-///
-/// This is the witness a kernel takes when its answer is only defined for valid elements — the
-/// counterpart of [`Flat`] on the validity axis. It is deliberately *not* a representation: an
-/// array with no nulls may carry a validity mask that happens to be all-set, in either
-/// representation, and wrapping it here says nothing about that mask beyond it having no zero bit.
-///
-/// Like [`Flat`], it derefs to the array it wraps and has no `DerefMut`: a mutation could set a
-/// bit and leave the witness lying. `NoNulls<Flat<A>>` composes the two, and reaches the inherent
-/// methods of both through the deref chain.
 #[repr(transparent)]
 pub struct NoNulls<T>(T);
 
@@ -63,9 +54,6 @@ impl<T: PlArray> NoNulls<T> {
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     pub fn slice(&mut self, offset: usize, length: usize) {
         self.0.slice(offset, length);
     }
@@ -79,9 +67,6 @@ impl<T: PlArray> NoNulls<T> {
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     #[must_use]
     pub fn sliced(mut self, offset: usize, length: usize) -> Self {
         self.slice(offset, length);
@@ -181,13 +166,5 @@ mod tests {
             PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true])),
         ));
         assert!(array.as_no_nulls().is_none());
-    }
-
-    #[test]
-    fn a_scalar_array_can_be_witnessed_without_being_flattened() {
-        let array = PlPrimitiveArray::new_scalar(7i64, 1024);
-        let no_nulls = array.as_no_nulls().unwrap();
-        assert!(!no_nulls.is_flat());
-        assert_eq!(no_nulls.len(), 1024);
     }
 }

@@ -21,10 +21,6 @@ use crate::{
 };
 
 /// Imports an Arrow array as the array of this crate that holds the same elements.
-///
-/// # Panics
-/// Panics if `array` is a dictionary, union or map array, or if its elements are of a type no array
-/// of this crate is taken over.
 pub fn from_arrow(array: &dyn Array) -> Box<dyn PlArray> {
     match array.dtype().to_physical_type() {
         PhysicalType::Null => Box::new(null_from_arrow(downcast(array))),
@@ -161,9 +157,6 @@ pub fn fixed_size_binary_from_arrow(array: &FixedSizeBinaryArray) -> PlFixedSize
 }
 
 /// Imports an Arrow [`ListArray`] as a [`PlListArray`], importing its values along with it.
-///
-/// # Panics
-/// Panics if the values of `array` have no counterpart in this crate — see the [module docs](self).
 pub fn list_from_arrow<O: Offset>(array: &ListArray<O>) -> PlListArray {
     let values = from_arrow(&**array.values());
 
@@ -181,9 +174,6 @@ pub fn list_from_arrow<O: Offset>(array: &ListArray<O>) -> PlListArray {
 
 /// Imports an Arrow [`FixedSizeListArray`] as a [`PlFixedSizeListArray`], importing its values
 /// along with it, which is `O(1)`.
-///
-/// # Panics
-/// Panics if the values of `array` have no counterpart in this crate — see the [module docs](self).
 pub fn fixed_size_list_from_arrow(array: &FixedSizeListArray) -> PlFixedSizeListArray {
     let values = from_arrow(&**array.values());
 
@@ -201,9 +191,6 @@ pub fn fixed_size_list_from_arrow(array: &FixedSizeListArray) -> PlFixedSizeList
 
 /// Imports an Arrow [`StructArray`] as a [`PlStructArray`], importing its fields along with it,
 /// which is `O(fields)`.
-///
-/// # Panics
-/// Panics if a field of `array` has no counterpart in this crate — see the [module docs](self).
 pub fn struct_from_arrow(array: &StructArray) -> PlStructArray {
     let fields = array
         .values()
@@ -243,9 +230,6 @@ pub fn offsets_from_arrow<O: Offset>(offsets: &OffsetsBuffer<O>) -> Buffer<u64> 
 }
 
 /// Downcasts an Arrow array whose physical type has already been matched on.
-///
-/// # Panics
-/// Panics if `array` is not an `A`, which the physical type of its data type rules out.
 #[inline]
 fn downcast<A: Array + 'static>(array: &dyn Array) -> &A {
     array
@@ -256,10 +240,6 @@ fn downcast<A: Array + 'static>(array: &dyn Array) -> &A {
 
 /// Imports an Arrow primitive array of `primitive` elements as a [`PlPrimitiveArray`] of the Rust
 /// type they are of.
-///
-/// # Panics
-/// Panics if the elements are of no Rust type an array can be taken over, which is what
-/// [`PrimitiveType::MonthDayMillis`] is.
 fn primitive_from_arrow_dyn(array: &dyn Array, primitive: PrimitiveType) -> Box<dyn PlArray> {
     macro_rules! import {
         ($T:ty) => {

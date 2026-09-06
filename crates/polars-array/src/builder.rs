@@ -52,9 +52,6 @@ pub trait StaticArrayBuilder: Send {
     }
 
     /// Appends the `length` elements of `other` starting at `start`, in order.
-    ///
-    /// # Panics
-    /// Panics if `start + length > other.len()`.
     fn subslice_extend(
         &mut self,
         other: &Self::Array,
@@ -64,9 +61,6 @@ pub trait StaticArrayBuilder: Send {
     );
 
     /// Appends the `length` elements of `other` starting at `start` `repeats` times over.
-    ///
-    /// # Panics
-    /// Panics if `start + length > other.len()`.
     fn subslice_extend_repeated(
         &mut self,
         other: &Self::Array,
@@ -82,9 +76,6 @@ pub trait StaticArrayBuilder: Send {
     }
 
     /// Appends each of the `length` elements of `other` starting at `start` `repeats` times over.
-    ///
-    /// # Panics
-    /// Panics if `start + length > other.len()`.
     fn subslice_extend_each_repeated(
         &mut self,
         other: &Self::Array,
@@ -127,16 +118,9 @@ pub trait PlArrayBuilder: PlArrayBuilderBoxedHelper + Send {
     fn extend_nulls(&mut self, length: usize);
 
     /// Appends every element of `other`, in order.
-    ///
-    /// # Panics
-    /// Panics if `other` is not of the type this builder builds.
     fn extend(&mut self, other: &dyn PlArray, share: ShareStrategy);
 
     /// Appends the `length` elements of `other` starting at `start`, in order.
-    ///
-    /// # Panics
-    /// Panics if `other` is not of the type this builder builds, or if `start + length >
-    /// other.len()`.
     fn subslice_extend(
         &mut self,
         other: &dyn PlArray,
@@ -146,9 +130,6 @@ pub trait PlArrayBuilder: PlArrayBuilderBoxedHelper + Send {
     );
 
     /// Appends the `length` elements of `other` starting at `start` `repeats` times over.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::subslice_extend`] panics.
     fn subslice_extend_repeated(
         &mut self,
         other: &dyn PlArray,
@@ -159,9 +140,6 @@ pub trait PlArrayBuilder: PlArrayBuilderBoxedHelper + Send {
     );
 
     /// Appends each of the `length` elements of `other` starting at `start` `repeats` times over.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::subslice_extend`] panics.
     fn subslice_extend_each_repeated(
         &mut self,
         other: &dyn PlArray,
@@ -173,18 +151,12 @@ pub trait PlArrayBuilder: PlArrayBuilderBoxedHelper + Send {
 
     /// Appends the element of `other` at every index of `idxs`, in the order they are given.
     ///
-    /// # Panics
-    /// Panics if `other` is not of the type this builder builds.
-    ///
     /// # Safety
     /// Every index must be smaller than `other.len()`.
     unsafe fn gather_extend(&mut self, other: &dyn PlArray, idxs: &[IdxSize], share: ShareStrategy);
 
     /// Appends the element of `other` at every index of `idxs`, in the order they are given, with
     /// an out-of-bounds index standing for a null.
-    ///
-    /// # Panics
-    /// Panics if `other` is not of the type this builder builds.
     fn opt_gather_extend(&mut self, other: &dyn PlArray, idxs: &[IdxSize], share: ShareStrategy);
 }
 
@@ -202,9 +174,6 @@ impl<B: PlArrayBuilder> PlArrayBuilderBoxedHelper for B {
 }
 
 /// Downcasts `array` to the array `B` builds.
-///
-/// # Panics
-/// Panics if `array` is not of that type.
 #[inline]
 fn downcast<B: StaticArrayBuilder>(array: &dyn PlArray) -> &B::Array {
     array
@@ -460,9 +429,6 @@ pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
 }
 
 /// An array of `length` nulls of the type that `array` is one of.
-///
-/// # Panics
-/// Panics for an object array, which has no builder in this crate either.
 pub fn full_null_like(array: &dyn PlArray, length: usize) -> Box<dyn PlArray> {
     match array.array_type() {
         PlArrayType::Null => Box::new(PlNullArray::new(length)),
@@ -529,12 +495,6 @@ pub(crate) fn assert_subslice(array_len: usize, start: usize, length: usize) {
 }
 
 /// Appends the `length` bits of `validity` starting at `start` to `dst`.
-///
-/// This and the three below are the validity half of every builder in this crate, and they read
-/// nothing of the array they came from but its mask. They are `#[inline(never)]` so that the one
-/// copy of each stays one copy: inlined, each would be pasted into every builder's method — and
-/// into all seventeen of the primitive builder's, once per element type — for no gain, since a
-/// mask is appended a whole array at a time.
 #[inline(never)]
 pub(crate) fn subslice_extend_validity(
     dst: &mut OptBitmapBuilder,

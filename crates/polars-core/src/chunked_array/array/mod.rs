@@ -14,12 +14,6 @@ use crate::chunked_array::new_empty_chunk;
 use crate::prelude::*;
 
 /// The values `arr` is taken over: the values of every element, laid end to end.
-///
-/// Values that already hold one run per element are handed over as they are. Values holding the
-/// one list every element reads are written out, since a run per element is what this promises and
-/// there is nowhere to read a shared run from — a caller that can read one instead reaches for
-/// [`PlFixedSizeListArray::values`] and [`values_are_scalar`](PlFixedSizeListArray::values_are_scalar)
-/// itself, the way `array.dot` and `array.slice` do.
 pub(crate) fn array_values(arr: &PlFixedSizeListArray) -> PlArrayRef {
     if let Some(values) = arr.flat_values() {
         return values.to_boxed();
@@ -49,7 +43,7 @@ pub(crate) fn array_with_values(
 }
 
 /// Lays `elements` out as the chunk of an [`ArrayChunked`] of `width` and `inner_dtype`, writing
-/// `width` nulls for every null element. Panics if any element is not `width` values long.
+/// `width` nulls for every null element.
 pub(crate) fn collect_array_chunk(
     elements: Vec<Option<PlArrayRef>>,
     width: usize,

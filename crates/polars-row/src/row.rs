@@ -133,10 +133,6 @@ pub struct RowsEncoded {
 }
 
 /// The offsets a row encoding wrote as the offsets of a [`PlBinaryArray`].
-///
-/// The cap is `i64::MAX` rather than `u64::MAX` because these offsets cross over to Arrow's
-/// `i64`-offset [`BinaryArray`](arrow::array::BinaryArray) at the boundaries of the crates that
-/// still hold one.
 fn rows_to_offsets(offsets: Vec<usize>) -> Buffer<u64> {
     assert!(
         (*offsets.last().unwrap() as u64) < i64::MAX as u64,

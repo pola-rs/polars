@@ -82,7 +82,7 @@ pub fn business_day_count(
 
     let n_business_days_in_week_mask = week_mask.iter().filter(|&x| *x).count() as i32;
 
-    assert!(start_dates.len() >= 1 && end_dates.len() >= 1 && holidays_list.len() >= 1);
+    assert!(!start_dates.is_empty() && !end_dates.is_empty() && !holidays_list.is_empty());
 
     let out: ChunkedArray<Int32Type> = (0..output_height)
         .map(|i| {
@@ -273,7 +273,7 @@ pub fn add_business_days(
         let n = n.rechunk();
         let n = n.downcast_as_array();
 
-        assert!(start_dates.len() >= 1 && n.len() >= 1 && holidays_list.len() >= 1);
+        assert!(!start_dates.is_empty() && !n.is_empty() && !holidays_list.is_empty());
 
         (0..output_height)
             .map(|i| {
@@ -416,7 +416,7 @@ pub fn is_business_day(
     let dates = dates.physical().rechunk();
     let dates = dates.downcast_as_array();
 
-    assert!(dates.len() >= 1 && !holidays.is_empty());
+    assert!(!dates.is_empty() && !holidays.is_empty());
 
     let out: BooleanChunked = (0..output_height)
         .map(|i| {

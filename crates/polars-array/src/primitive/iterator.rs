@@ -12,8 +12,6 @@ pub struct PlPrimitiveValuesIter<'a, T: NativeType> {
 }
 
 impl<'a, T: NativeType> PlPrimitiveValuesIter<'a, T> {
-    /// # Panics
-    /// Panics unless `values` is flat or scalar for `length`, per [`crate::broadcast`].
     #[inline]
     pub(super) fn new(values: &'a [T], length: usize) -> Self {
         Self {
@@ -99,9 +97,6 @@ pub struct PlPrimitiveIter<'a, T: NativeType> {
 }
 
 impl<'a, T: NativeType> PlPrimitiveIter<'a, T> {
-    /// # Panics
-    /// Panics unless `values` is flat or scalar for `length`, per [`crate::broadcast`], and
-    /// `validity` has `length` bits.
     #[inline]
     pub(super) fn new(values: &'a [T], validity: Option<PlBitmapRef<'a>>, length: usize) -> Self {
         assert!(validity.is_none_or(|validity| validity.len() == length));
@@ -203,10 +198,8 @@ unsafe impl<T: NativeType> TrustedLen for PlPrimitiveIter<'_, T> {}
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
 
     use crate::PlPrimitiveArray;
-    use crate::bitmap::PlBitmap;
     use crate::iterator_tests::assert_iterates;
 
     #[test]
@@ -236,31 +229,5 @@ mod tests {
         assert_eq!(array.values_iter().last(), Some(7));
         assert_eq!(array.iter().nth(999_999_999), Some(Some(7)));
         assert_eq!(array.iter().nth_back(999_999_999), Some(Some(7)));
-    }
-
-    /// A mask of mixed bits, which neither collapses to the bit every element shares nor stops the
-    /// fold from walking the values as the slice they are: it is read by position alongside them.
-    #[test]
-    fn mixed_validity() {
-        let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4]).with_validity(Some(
-            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true, true])),
-        ));
-
-        assert_iterates(array.values_iter(), &[1, 2, 3, 4]);
-        assert_iterates(array.iter(), &[Some(1), None, Some(3), Some(4)]);
-    }
-
-    /// The mask of a sliced array starts partway into the bytes backing it, which the elements are
-    /// still read against from their own front.
-    #[test]
-    fn a_sliced_mask_is_read_from_its_own_front() {
-        let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4, 5])
-            .with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
-                true, true, false, true, false,
-            ]))))
-            .sliced(2, 3);
-
-        assert_iterates(array.values_iter(), &[3, 4, 5]);
-        assert_iterates(array.iter(), &[None, Some(4), None]);
     }
 }

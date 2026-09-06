@@ -13,10 +13,6 @@ const MAX_EXP_BLOCK_SIZE: usize = 16 * 1024 * 1024;
 const _: () = assert!(MAX_EXP_BLOCK_SIZE < BINVIEW_ARROW_BUFFER_LEN_LIMIT);
 
 /// Copies `bytes` into `buffers`, and returns the [`View`] holding them.
-///
-/// # Panics
-/// Panics if `bytes` is longer than [`BINVIEW_MAX_ROW_BYTE_LEN`], the longest a view can point at,
-/// or if the buffers of the array being built outgrow the buffer index of a view.
 #[inline]
 pub(super) fn copy_value(buffers: &mut Vec<Vec<u8>>, buffer_idx_offset: u32, bytes: &[u8]) -> View {
     copy_value_limited::<BINVIEW_ARROW_BUFFER_LEN_LIMIT, BINVIEW_MAX_ROW_BYTE_LEN>(
@@ -27,9 +23,6 @@ pub(super) fn copy_value(buffers: &mut Vec<Vec<u8>>, buffer_idx_offset: u32, byt
 }
 
 /// Copies `bytes` into a data buffer of its own, and returns the [`View`] holding them.
-///
-/// # Panics
-/// Panics if `bytes` is longer than [`BINVIEW_MAX_ROW_BYTE_LEN`], the longest a view can point at.
 pub(super) fn copy_only_value(bytes: &[u8]) -> (View, Vec<Vec<u8>>) {
     copy_only_value_limited::<BINVIEW_MAX_ROW_BYTE_LEN>(bytes)
 }

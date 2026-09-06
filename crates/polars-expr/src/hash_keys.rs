@@ -452,10 +452,6 @@ impl BinviewKeys {
 }
 
 /// Whether a validity mask leaves anything to read per element.
-///
-/// A mask that repeats one bit says the same of every key: either they are all there, which is
-/// what an absent mask says as well, or they are all null. Resolving that here is what keeps a
-/// scalar mask from being written out to one bit per key just to be walked.
 fn each_key_is_valid(opt_v: Option<PlBitmapRef<'_>>) -> Option<bool> {
     match opt_v {
         None => Some(true),

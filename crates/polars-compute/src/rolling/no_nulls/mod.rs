@@ -185,6 +185,5 @@ where
 #[cfg(test)]
 pub(super) fn chunk<T: NativeType>(values: &[T]) -> NoNulls<PlPrimitiveArray<T>> {
     NoNulls::try_new(PlPrimitiveArray::from_vec(values.to_vec()))
-        .ok()
         .expect("a plain slice holds no null")
 }

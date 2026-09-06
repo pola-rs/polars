@@ -9,10 +9,6 @@ use super::*;
 
 /// The column read as its local wall time, so that a value can be asked what calendar date and
 /// time it names in its own time zone.
-///
-/// A column with no time zone already is its wall time and is handed back untouched. Stripping one
-/// is always well-defined — it is *adding* a time zone that has to answer for hours that occur
-/// twice or not at all — which is why this cannot fail.
 fn local(ca: &DatetimeChunked) -> Cow<'_, DatetimeChunked> {
     match ca.dtype() {
         #[cfg(feature = "timezones")]

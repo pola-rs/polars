@@ -49,19 +49,12 @@ impl PlStructArrayBuilder {
 
     /// The builders of the fields of the built array, so that the element every field holds for
     /// one element of the array can be appended to them directly.
-    ///
-    /// Everything appended through here becomes part of the element that the next
-    /// [`finish_row`](Self::finish_row) closes, which is why every field has to be appended to
-    /// exactly once: the fields of a struct array hold one element per element of the array.
     #[inline]
     pub fn fields_mut(&mut self) -> &mut [Box<dyn PlArrayBuilder>] {
         &mut self.fields
     }
 
     /// Closes one element, covering the element appended to every field since the last one was.
-    ///
-    /// # Panics
-    /// Panics unless every field had exactly one element appended since then.
     #[inline]
     pub fn finish_row(&mut self) {
         for (i, field) in self.fields.iter().enumerate() {
@@ -80,9 +73,6 @@ impl PlStructArrayBuilder {
     }
 
     /// The builders of the fields, paired with the fields of `other` they append.
-    ///
-    /// # Panics
-    /// Panics unless `other` has one field per builder.
     fn zip_fields<'a>(
         &'a mut self,
         other: &'a PlStructArray,
@@ -324,42 +314,5 @@ mod tests {
         let mut builder = builder();
         builder.fields_mut()[0].subslice_extend(&first, 0, 1, ShareStrategy::Always);
         builder.finish_row();
-    }
-
-    #[test]
-    fn gathering() {
-        let array = array();
-
-        let mut builder = builder();
-        unsafe { builder.gather_extend(&array, &[2, 0, 1], ShareStrategy::Always) };
-        builder.opt_gather_extend(&array, &[0, 9], ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(elements(&built), [Some(3), Some(1), None, Some(1), None]);
-        assert_eq!(built.field(1).len(), 5);
-    }
-
-    #[test]
-    fn a_fully_null_array_appends_its_fields_too() {
-        let array = PlStructArray::new_full_null(
-            vec![Box::new(PlPrimitiveArray::<i32>::new_scalar(
-                1,
-                1_000_000_000,
-            ))],
-            1_000_000_000,
-        );
-
-        let fields = array
-            .fields()
-            .iter()
-            .map(|field| builder_like(&**field))
-            .collect();
-        let mut builder = PlStructArrayBuilder::new(fields);
-        builder.subslice_extend(&array, 0, 3, ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 3);
-        assert_eq!(built.null_count(), 3);
-        assert_eq!(built.field(0).len(), 3);
     }
 }

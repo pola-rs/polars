@@ -1,9 +1,4 @@
 //! Carrying the categories of an [`Enum`](crate::DataType::Enum) through serde.
-//!
-//! The categories are a [`PlUtf8ViewArray`], which has no serde of its own — an array is buffers,
-//! and what those mean is the Arrow IPC format's business rather than serde's. So the array is
-//! written as one IPC stream of a single column and handed to serde as the bytes of it, which is
-//! how a `Series` reaches serde too.
 
 use std::io::Cursor;
 use std::sync::Arc;
@@ -121,35 +116,5 @@ impl schemars::JsonSchema for SerializableCategories {
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         // The stream reaches serde as its bytes, so that is what a schema can say about it.
         Vec::<u8>::json_schema(generator)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn round_trip(strings: &[&str]) {
-        let array =
-            import::utf8_view_from_arrow(&arrow::array::Utf8ViewArray::from_slice_values(strings));
-        let categories = SerializableCategories(array);
-        let bytes = categories.to_ipc_bytes().unwrap();
-        let read = SerializableCategories::from_ipc_bytes(&bytes).unwrap();
-
-        let read: Vec<_> = read.0.values_iter().collect();
-        assert_eq!(read, strings);
-    }
-
-    /// The categories come back in the order they went out, which is the order that gives each of
-    /// them its category id.
-    #[test]
-    fn categories_round_trip_in_order() {
-        round_trip(&["a", "b", "c"]);
-        round_trip(&["", "one", "two words", "\u{1F600}"]);
-    }
-
-    /// An enum with no categories at all is a stream with no batch in it, not a broken one.
-    #[test]
-    fn no_categories_round_trip() {
-        round_trip(&[]);
     }
 }

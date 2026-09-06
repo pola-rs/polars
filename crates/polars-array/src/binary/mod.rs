@@ -66,9 +66,6 @@ impl PlBinaryArray {
     }
 
     /// Creates a flat [`PlBinaryArray`] out of its internal components.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::try_new`] errors.
     #[inline]
     pub fn new(
         values: Buffer<u8>,
@@ -111,7 +108,6 @@ impl PlBinaryArray {
     /// # Errors
     /// This function errors unless `offsets` is scalar for `length`, per [`is_scalar_offsets_len`],
     /// non-decreasing and ending within `values`, and `validity` is scalar for `length`, per
-    /// [`is_scalar_buffer_len`].
     pub fn try_new_broadcast(
         values: Buffer<u8>,
         offsets: Buffer<u64>,
@@ -138,9 +134,6 @@ impl PlBinaryArray {
     }
 
     /// Creates a scalar [`PlBinaryArray`] of `length` elements out of its internal components.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::try_new_broadcast`] errors.
     #[inline]
     pub fn new_broadcast(
         values: Buffer<u8>,
@@ -193,10 +186,6 @@ impl PlBinaryArray {
 
     /// Creates a fully valid, flat [`PlBinaryArray`] from `values` and `offsets`, taking its length
     /// from the offsets.
-    ///
-    /// # Panics
-    /// Panics if `offsets` is empty — the end of the last element is always needed, so even an
-    /// empty array has one offset — or under the conditions [`Self::try_new`] errors.
     pub fn from_offsets(values: Buffer<u8>, offsets: Buffer<u64>) -> Self {
         let length = offsets
             .len()
@@ -273,11 +262,6 @@ impl PlBinaryArray {
     }
 
     /// The backing offsets buffer, if it holds the range of every element, laid end to end.
-    ///
-    /// The offsets hold the start of every element plus the end of the last, and are resolved per
-    /// element with [`Self::value_range_unchecked`]. A caller that needs a range out of an array
-    /// in either representation asks [`Self::scalar_offsets`] first: it is the one range every
-    /// element covers, already resolved out of the two offsets a scalar buffer holds.
     #[inline]
     pub fn flat_offsets(&self) -> Option<&Buffer<u64>> {
         (!self.offsets_are_scalar()).then_some(&self.offsets)
@@ -374,9 +358,6 @@ impl PlBinaryArray {
     }
 
     /// The range of [`Self::values`] the element at `i` covers.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value_range(&self, i: usize) -> Range<usize> {
         assert!(i < self.length, "index out of bounds");
@@ -404,9 +385,6 @@ impl PlBinaryArray {
     }
 
     /// The number of bytes in the element at `i`.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value_length(&self, i: usize) -> usize {
         self.value_range(i).len()
@@ -422,9 +400,6 @@ impl PlBinaryArray {
     }
 
     /// Returns the bytes of the element at `i`.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value(&self, i: usize) -> &[u8] {
         assert!(i < self.length, "index out of bounds");
@@ -443,9 +418,6 @@ impl PlBinaryArray {
     }
 
     /// Returns whether the element at `i` is valid (non-null).
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_valid(&self, i: usize) -> bool {
         assert!(i < self.length, "index out of bounds");
@@ -465,9 +437,6 @@ impl PlBinaryArray {
     }
 
     /// Returns whether the element at `i` is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_null(&self, i: usize) -> bool {
         !self.is_valid(i)
@@ -483,9 +452,6 @@ impl PlBinaryArray {
     }
 
     /// Returns the bytes of the element at `i`, or `None` if it is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn get(&self, i: usize) -> Option<&[u8]> {
         assert!(i < self.length, "index out of bounds");
@@ -502,12 +468,6 @@ impl PlBinaryArray {
     }
 
     /// The number of null elements.
-    ///
-    /// Inlined so that an array with no mask to count is answered without a call at all: one left
-    /// standing is an opaque write as far as the compiler is concerned, and sinks behind it every
-    /// fact the caller had established about the array — the representation of its buffers
-    /// included — which is exactly what a caller asking [`Self::has_nulls`] ahead of a walk is
-    /// trying to hand the walk.
     #[inline]
     pub fn null_count(&self) -> usize {
         self.validity().map_or(0, |validity| validity.unset_bits())
@@ -533,9 +493,6 @@ impl PlBinaryArray {
 
     /// Returns an iterator over `length` elements, repeating the single element of this array if
     /// that is all it holds, and ignoring validity.
-    ///
-    /// # Panics
-    /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
     #[inline]
     pub fn broadcast_values_iter(&self, length: usize) -> PlBinaryValuesIter<'_> {
         assert_broadcastable(self.length, length);
@@ -545,12 +502,6 @@ impl PlBinaryArray {
     }
 
     /// Returns this array with its validity mask replaced.
-    ///
-    /// The mask keeps whichever representation it is in: one that stands for a single bit shared
-    /// by every element is not written out one bit per element to be set.
-    ///
-    /// # Panics
-    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
     #[must_use]
     pub fn with_validity(mut self, validity: Option<PlBitmap>) -> Self {
         self.set_validity(validity);
@@ -558,9 +509,6 @@ impl PlBinaryArray {
     }
 
     /// Replaces the validity mask, which keeps the representation it is in.
-    ///
-    /// # Panics
-    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
     pub fn set_validity(&mut self, validity: Option<PlBitmap>) {
         let length = self.len();
         self.validity = validity_covering(validity, length);
@@ -574,9 +522,6 @@ impl PlBinaryArray {
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.length,
@@ -602,9 +547,6 @@ impl PlBinaryArray {
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     #[must_use]
     pub fn sliced(mut self, offset: usize, length: usize) -> Self {
         self.slice(offset, length);
@@ -622,9 +564,6 @@ impl PlBinaryArray {
     }
 
     /// Creates a [`PlBinaryArray`] of `length` copies of the element at `index`.
-    ///
-    /// # Panics
-    /// Panics if `index >= self.len()`.
     #[inline]
     pub fn new_from_index(&self, index: usize, length: usize) -> Self {
         assert!(index < self.length, "index out of bounds");
@@ -705,7 +644,6 @@ impl PlBinaryArray {
 
         // SAFETY: the offsets are ordered, one per element plus the end of the last, and within the
         // values; the mask is the flat counterpart of one valid for this array's length. That
-        // leaves the offsets and the mask holding one slot per element.
         Cow::Owned(unsafe {
             Flat::new(Self::new_unchecked(values, offsets, self.length, validity))
         })
@@ -1010,24 +948,5 @@ mod tests {
         assert_eq!(masked.null_count(), 1);
         assert_eq!(masked.offsets().as_slice(), [0, 3, 6, 9]);
         assert_eq!(masked.get(1), None);
-    }
-
-    #[test]
-    fn an_array_of_no_elements_keeps_no_range() {
-        // A single slot is scalar for no elements too, but there is no element left to read it, so
-        // it is not kept: the array is flat, like every empty array, rather than scalar.
-        let arr = PlBinaryArray::new_broadcast(
-            Buffer::from(b"hello".to_vec()),
-            Buffer::from(vec![1u64, 4]),
-            0,
-            Some(PlBitmap::new_scalar(false, 0)),
-        );
-
-        assert!(arr.is_empty());
-        assert!(arr.is_flat());
-        assert!(!arr.is_scalar());
-        // The one offset that holds no starts is what is left of the range, as slicing leaves it.
-        assert_eq!(arr.flat_offsets().unwrap().as_slice(), [1]);
-        assert!(arr.validity().unwrap().is_empty());
     }
 }

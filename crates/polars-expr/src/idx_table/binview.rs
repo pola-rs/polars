@@ -68,7 +68,6 @@ impl BinviewKeyIdxTable {
     /// # Safety
     /// The views must be valid for the buffers.
     unsafe fn probe_impl<
-        'a,
         const MARK_MATCHES: bool,
         const EMIT_UNMATCHED: bool,
         const NULL_IS_VALID: bool,

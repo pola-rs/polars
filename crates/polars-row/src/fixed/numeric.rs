@@ -148,9 +148,6 @@ impl FixedLengthEncoding for f64 {
 }
 
 /// Writes one row per element of `arr`.
-///
-/// A values buffer that stands for a value repeated over every element is read as the one value it
-/// holds, without writing it out: only the rows are written.
 pub unsafe fn encode<T: NativeType + FixedLengthEncoding>(
     buffer: &mut [MaybeUninit<u8>],
     arr: &PlPrimitiveArray<T>,

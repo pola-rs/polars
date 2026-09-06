@@ -17,9 +17,6 @@ use crate::{
 };
 
 /// Exports an array of this crate as the Arrow array that holds the same elements.
-///
-/// # Panics
-/// Panics if `array` is an object array, which has no Arrow counterpart.
 pub fn to_arrow(array: &dyn PlArray) -> Box<dyn Array> {
     match array.array_type() {
         PlArrayType::Null => Box::new(null_to_arrow_null(downcast(array))),
@@ -126,10 +123,6 @@ pub fn utf8view_to_arrow_utf8view(array: &PlUtf8ViewArray) -> Utf8ViewArray {
 
 /// Exports a [`PlFixedSizeBinaryArray`] as an Arrow [`FixedSizeBinaryArray`] of
 /// [`FixedSizeBinary`](ArrowDataType::FixedSizeBinary) of the width its elements have.
-///
-/// # Panics
-/// Panics if the elements of `array` are zero bytes wide: an Arrow fixed size binary array derives
-/// its length from the length of its values, which leaves it none to derive.
 pub fn fixed_size_binary_to_arrow_fixed_size_binary(
     array: &PlFixedSizeBinaryArray,
 ) -> FixedSizeBinaryArray {
@@ -149,9 +142,6 @@ pub fn fixed_size_binary_to_arrow_fixed_size_binary(
 
 /// Exports a [`PlListArray`] as an Arrow [`ListArray`] of [`LargeList`](ArrowDataType::LargeList),
 /// exporting its values along with it.
-///
-/// # Panics
-/// Panics if the values of `array` have no Arrow counterpart — see the [module docs](self).
 pub fn list_to_arrow_large_list(array: &PlListArray) -> ListArray<i64> {
     let (values, offsets, validity) = array.to_flat().into_owned().into_inner();
     let values = to_arrow(&*values);
@@ -162,9 +152,6 @@ pub fn list_to_arrow_large_list(array: &PlListArray) -> ListArray<i64> {
 
 /// Exports a [`PlFixedSizeListArray`] as an Arrow [`FixedSizeListArray`] of the width its elements
 /// have, exporting its values along with it.
-///
-/// # Panics
-/// Panics if the values of `array` have no Arrow counterpart — see the [module docs](self).
 pub fn fixed_size_list_to_arrow_fixed_size_list(
     array: &PlFixedSizeListArray,
 ) -> FixedSizeListArray {
@@ -178,9 +165,6 @@ pub fn fixed_size_list_to_arrow_fixed_size_list(
 
 /// Exports a [`PlStructArray`] as an Arrow [`StructArray`] of [`Struct`](ArrowDataType::Struct),
 /// exporting its fields along with it.
-///
-/// # Panics
-/// Panics if a field of `array` has no Arrow counterpart — see the [module docs](self).
 pub fn struct_to_arrow_struct(array: &PlStructArray) -> StructArray {
     let values = array
         .fields()
@@ -216,9 +200,6 @@ pub fn offsets_to_arrow(offsets: Buffer<u64>) -> OffsetsBuffer<i64> {
 }
 
 /// Downcasts an array of this crate whose array type has already been matched on.
-///
-/// # Panics
-/// Panics if `array` is not an `A`, which its array type rules out.
 #[inline]
 fn downcast<A: PlArray>(array: &dyn PlArray) -> &A {
     array

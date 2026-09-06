@@ -100,10 +100,6 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
 }
 
 /// Runs a rolling aggregation over `arr` in whatever representation it is stored in.
-///
-/// The two window machines are the same aggregation written for the two preconditions — one for a
-/// chunk with no null element, one for a chunk with some — and which of them runs is settled here,
-/// once, out of the representation the chunk is in. Callers hand the chunk over as they hold it.
 pub fn _rolling_apply_agg_window<NoNullsAgg, NullsAgg, T, O, Out>(
     arr: &PlPrimitiveArray<T>,
     offsets: O,

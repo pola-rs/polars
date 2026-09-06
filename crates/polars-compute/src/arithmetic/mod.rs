@@ -7,9 +7,6 @@ use polars_array::{Flat, PlBitmap, PlPrimitiveArray};
 use self::pl_array::{binary, unary};
 
 /// The array the inner kernels read: flat, so its every buffer holds one slot per element.
-///
-/// [`ArithmeticKernel`] itself takes a chunk in whatever representation it is in and hands the
-/// inner kernel only what it has to read; see [`pl_array`].
 pub(crate) type PArr<T> = Flat<PlPrimitiveArray<T>>;
 /// The array a kernel writes, which is flat unless it is a single value repeated.
 pub(crate) type POut<T> = PlPrimitiveArray<T>;

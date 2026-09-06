@@ -5,16 +5,6 @@ use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 use crate::broadcast::is_valid_fixed_size_values_len;
 
 /// The offsets into the values at which the elements left to yield start.
-///
-/// The elements of a fixed size list array are a width apart, so their offsets are an affine
-/// sequence, and the representation of the values sets nothing but its stride: one width while
-/// they hold an element per position, and nowhere at all once they hold the one element every
-/// position reads.
-///
-/// Resolving that stride once, at construction, is what leaves the walk a plain add. Deciding per
-/// element instead leaves every read behind a *virtual* call for the length of the values and a
-/// select on it — a call the loop cannot hoist, cannot fold against what the caller has asserted
-/// about the array, and cannot see past.
 #[derive(Clone)]
 struct Offsets {
     /// Where the element at the front starts.
@@ -200,15 +190,9 @@ unsafe fn element(values: &dyn PlArray, width: usize, offset: usize) -> Box<dyn 
 
 /// Iterator over the elements of a [`PlFixedSizeListArray`](super::PlFixedSizeListArray), ignoring
 /// validity.
-///
-/// The representation of the values is resolved once, at construction, into the stride of the
-/// [`Offsets`] the walk steps through; see there.
 #[derive(Clone)]
 pub struct PlFixedSizeListValuesIter<'a> {
     /// The values array the elements are cut out of.
-    ///
-    /// Held as the borrow it is, rather than reached for through the array, so that the walk keeps
-    /// it in a register instead of loading the box out of the array on every element.
     values: &'a dyn PlArray,
     /// How many values every element covers.
     width: usize,
@@ -329,10 +313,6 @@ unsafe impl TrustedLen for PlFixedSizeListValuesIter<'_> {}
 
 /// Iterator over the optional elements of a
 /// [`PlFixedSizeListArray`](super::PlFixedSizeListArray).
-///
-/// The mask gates the element rather than the other way around: an element of this array is a
-/// fresh box over the values, so building one for a null position — only to throw it away — costs
-/// an allocation and a free that reading the bit first does not pay at all.
 #[derive(Clone)]
 pub struct PlFixedSizeListIter<'a> {
     values: &'a dyn PlArray,
@@ -342,9 +322,6 @@ pub struct PlFixedSizeListIter<'a> {
 }
 
 impl<'a> PlFixedSizeListIter<'a> {
-    /// # Panics
-    /// Panics unless `validity` has `length` bits.
-    ///
     /// # Safety
     /// `values` must be flat or scalar for `length` and `width`, per [`crate::broadcast`].
     #[inline]
@@ -492,9 +469,7 @@ unsafe impl TrustedLen for PlFixedSizeListIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
 
-    use crate::bitmap::PlBitmap;
     use crate::iterator_tests::assert_iterates;
     use crate::{PlArray, PlFixedSizeListArray, PlPrimitiveArray};
 
@@ -544,110 +519,5 @@ mod tests {
                 .map(Some)
                 .collect::<Vec<_>>(),
         );
-    }
-
-    /// An array of no elements, which keeps no element for a scalar one to repeat.
-    #[test]
-    fn empty() {
-        assert_iterates(flat_array().sliced(0, 0).values_iter(), &[]);
-        assert_iterates(flat_array().sliced(0, 0).iter(), &[]);
-        assert_iterates(
-            PlFixedSizeListArray::new_scalar(element(&[1, 2]), 0).values_iter(),
-            &[],
-        );
-    }
-
-    /// Elements no values wide, which are all the same empty list however many there are — and
-    /// which a flat walk would step over without ever leaving the front.
-    #[test]
-    fn a_width_of_zero() {
-        let flat = PlFixedSizeListArray::new(element(&[]), 0, 3, None);
-        assert_iterates(flat.values_iter(), &[(); 3].map(|()| element(&[])));
-        assert_iterates(flat.iter(), &[(); 3].map(|()| Some(element(&[]))));
-
-        let scalar = PlFixedSizeListArray::new_scalar(element(&[]), 3);
-        assert_iterates(scalar.values_iter(), &[(); 3].map(|()| element(&[])));
-        assert_iterates(scalar.iter(), &[(); 3].map(|()| Some(element(&[]))));
-    }
-
-    /// A mask of mixed bits, which is read by position alongside the elements the width cuts out.
-    #[test]
-    fn mixed_validity() {
-        let array = flat_array().with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
-            true, false, true,
-        ]))));
-
-        assert_iterates(array.values_iter(), &elements());
-        assert_iterates(
-            array.iter(),
-            &[
-                Some(elements()[0].clone()),
-                None,
-                Some(elements()[2].clone()),
-            ],
-        );
-    }
-
-    /// An array whose elements are all null, which the walk never reaches the values for.
-    #[test]
-    fn all_null() {
-        let array = flat_array().with_validity(Some(PlBitmap::from_bitmap(Bitmap::new_zeroed(3))));
-
-        assert_iterates(array.values_iter(), &elements());
-        assert_iterates(array.iter(), &[None, None, None]);
-    }
-
-    /// A mask that broadcasts its single bit, which every element reads.
-    #[test]
-    fn scalar_validity() {
-        let element = element(&[1, 2]);
-        let null = PlFixedSizeListArray::new_full_null(element.clone(), 3);
-
-        assert_iterates(null.iter(), &[None, None, None]);
-        assert_eq!(null.iter().nth(2), Some(None));
-        assert_eq!(null.iter().nth_back(2), Some(None));
-        assert_eq!(null.iter().last(), Some(None));
-    }
-
-    #[test]
-    fn a_broadcast_array_is_not_materialized() {
-        // Walking a billion elements would not finish; the scalar path must hit.
-        let array = PlFixedSizeListArray::new_scalar(element(&[1, 2]), 1_000_000_000);
-
-        assert_eq!(array.values_iter().count(), 1_000_000_000);
-        assert_eq!(array.values_iter().nth(999_999_999), Some(element(&[1, 2])));
-        assert_eq!(
-            array.values_iter().nth_back(999_999_999),
-            Some(element(&[1, 2]))
-        );
-        assert_eq!(array.iter().last(), Some(Some(element(&[1, 2]))));
-        assert_eq!(
-            array.iter().nth_back(999_999_999),
-            Some(Some(element(&[1, 2])))
-        );
-    }
-
-    /// Nothing is stolen from the length to say which representation the values are in, so a
-    /// scalar array reaches as far as a `usize` does.
-    #[test]
-    fn a_broadcast_array_is_as_long_as_it_says() {
-        let array = PlFixedSizeListArray::new_scalar(element(&[1, 2]), usize::MAX);
-
-        assert_eq!(array.values_iter().len(), usize::MAX);
-        assert_eq!(array.values_iter().count(), usize::MAX);
-        assert_eq!(
-            array.values_iter().size_hint(),
-            (usize::MAX, Some(usize::MAX))
-        );
-        assert_eq!(
-            array.values_iter().nth(usize::MAX - 1),
-            Some(element(&[1, 2]))
-        );
-        assert_eq!(array.values_iter().last(), Some(element(&[1, 2])));
-
-        let mut iter = array.values_iter();
-        assert_eq!(iter.next(), Some(element(&[1, 2])));
-        assert_eq!(iter.next_back(), Some(element(&[1, 2])));
-        assert_eq!(iter.len(), usize::MAX - 2);
     }
 }

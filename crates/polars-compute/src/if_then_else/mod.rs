@@ -19,9 +19,6 @@ mod view;
 pub use pl_array::IfThenElseKernel;
 
 /// The if-then-else kernel over an Arrow array, which holds one slot per element throughout.
-///
-/// [`IfThenElseKernel`] is the kernel over the arrays of `polars-array`, which reaches this one
-/// once a chunk is known to be laid out that way.
 pub trait IfThenElseArrowKernel: Sized + Array {
     type Scalar<'a>;
 

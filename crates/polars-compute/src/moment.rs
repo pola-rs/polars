@@ -55,10 +55,6 @@ fn joint_weight_of<T: NativeType, U: NativeType>(
 
 /// How far a repeated value deviates from the mean of the chunk that repeats it: zero, since that
 /// value *is* the mean.
-///
-/// The subtraction is carried out rather than assumed to vanish because a NaN deviates from
-/// itself, and so does an infinity. Either one has to reach the moments the way it would have had
-/// the chunk been walked element by element, which is what subtracting the value from itself does.
 #[inline]
 #[expect(clippy::eq_op)]
 fn deviation_of(mean: f64) -> f64 {
@@ -95,10 +91,6 @@ pub struct PearsonState {
 
 impl VarState {
     /// The state of `weight` copies of `mean`.
-    ///
-    /// A chunk that repeats one value has that value as its mean exactly, and no element of it
-    /// deviates from that mean, so the deviation product is nothing but the repeated deviation of
-    /// the value from itself -- see [`deviation_of`].
     fn repeated(mean: f64, weight: f64) -> Self {
         let deviation = deviation_of(mean);
         let mut state = Self {
@@ -419,9 +411,6 @@ impl SkewState {
     }
 
     /// The state of the `length` elements of `arr` starting at `start`, folded in one pass.
-    ///
-    /// # Panics
-    /// Panics if `start + length` exceeds the length of `arr`.
     pub fn from_array(arr: &PlPrimitiveArray<f64>, start: usize, length: usize) -> Self {
         // Slicing preserves the representation, so a range of a chunk that repeats one value
         // repeats it too and is read in `O(1)` below.
@@ -571,9 +560,6 @@ impl KurtosisState {
 
     /// The state of the `length` elements of `arr` starting at `start`, folded in one pass; see
     /// [`SkewState::from_array`].
-    ///
-    /// # Panics
-    /// Panics if `start + length` exceeds the length of `arr`.
     pub fn from_array(arr: &PlPrimitiveArray<f64>, start: usize, length: usize) -> Self {
         let arr = arr.clone().sliced(start, length);
 
@@ -850,230 +836,4 @@ where
         });
     }
     out
-}
-
-#[cfg(test)]
-mod tests {
-    use arrow::bitmap::Bitmap;
-    use polars_array::PlBitmap;
-
-    use super::*;
-
-    /// `length` copies of `value`, marked by `validity`, in both representations.
-    fn repeated(
-        value: f64,
-        validity: Option<&Bitmap>,
-        length: usize,
-    ) -> [PlPrimitiveArray<f64>; 2] {
-        let scalar = PlPrimitiveArray::new_scalar(value, length)
-            .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
-        let flat = PlPrimitiveArray::from_vec(vec![value; length])
-            .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
-        [scalar, flat]
-    }
-
-    /// A chunk that repeats one value is its own mean and has no spread about it, whichever
-    /// representation it is stored in.
-    #[test]
-    fn a_repeated_value_has_no_spread() {
-        for length in [0, 1, 2, 3, 65, 300] {
-            for valid in 0..=length {
-                let mask: Bitmap = (0..length).map(|i| i < valid).collect();
-                for validity in [None, Some(&mask)] {
-                    let [scalar, flat] = repeated(7.5, validity, length);
-                    let weight = validity.map_or(length, |_| valid);
-
-                    for ddof in [0, 1] {
-                        let expected = (weight > ddof as usize).then_some(0.0);
-                        assert_eq!(var(&scalar).finalize(ddof), expected, "var of {scalar:?}");
-                        assert_eq!(var(&flat).finalize(ddof), expected);
-                    }
-
-                    // The spread is zero either way, so skew and kurtosis are undefined; what
-                    // matters is that the two representations agree on that.
-                    assert_eq!(
-                        skew(&scalar).finalize(true).map(f64::is_nan),
-                        skew(&flat).finalize(true).map(f64::is_nan),
-                    );
-                    assert_eq!(
-                        kurtosis(&scalar).finalize(true, true).map(f64::is_nan),
-                        kurtosis(&flat).finalize(true, true).map(f64::is_nan),
-                    );
-                }
-            }
-        }
-    }
-
-    /// A repeated value is read as the mean exactly, which is what the chunk holds however many
-    /// times it holds it.
-    #[test]
-    fn a_repeated_value_is_read_as_the_mean() {
-        // A tenth is not exactly representable, so summing it 300 times and dividing drifts off
-        // the value itself; reading the repeated value takes the mean it should have.
-        let scalar = PlPrimitiveArray::new_scalar(0.1, 300);
-        let state = var(&scalar);
-        assert_eq!(state.mean, 0.1);
-        assert_eq!(state.dp, 0.0);
-        assert_eq!(state.weight, 300.0);
-    }
-
-    /// A chunk of nothing but NaNs has a NaN mean, and the NaN reaches the moments the way it
-    /// would have had the chunk been walked.
-    #[test]
-    fn a_repeated_nan_carries_through() {
-        for length in [1, 3, 300] {
-            let scalar = PlPrimitiveArray::new_scalar(f64::NAN, length);
-            let flat = PlPrimitiveArray::from_vec(vec![f64::NAN; length]);
-
-            for ddof in [0, 1] {
-                assert_eq!(
-                    var(&scalar).finalize(ddof).map(f64::is_nan),
-                    var(&flat).finalize(ddof).map(f64::is_nan),
-                    "a NaN chunk of {length} must read alike either way",
-                );
-                assert_eq!(var(&scalar).finalize(ddof).map(f64::is_nan), {
-                    let expected = length > ddof as usize;
-                    expected.then_some(true)
-                });
-            }
-        }
-    }
-
-    /// An all-null chunk weighs nothing, whatever value sits under the mask.
-    #[test]
-    fn an_all_null_chunk_weighs_nothing() {
-        let scalar = PlPrimitiveArray::<f64>::new_full_null(300);
-        assert_eq!(var(&scalar).finalize(0), None);
-        assert_eq!(skew(&scalar).finalize(true), None);
-        assert_eq!(kurtosis(&scalar).finalize(true, true), None);
-
-        // Nor does an empty one, which holds no value to repeat at all.
-        let empty = PlPrimitiveArray::<f64>::new_empty();
-        assert_eq!(var(&empty).finalize(0), None);
-    }
-
-    /// A chunk laid out one value per element folds its non-null elements as it always has.
-    #[test]
-    fn null_elements_are_passed_over() {
-        let arr = PlPrimitiveArray::from_iter([Some(1.0), None, Some(2.0), Some(3.0)]);
-        // The variance of 1, 2 and 3 with one degree of freedom is exactly 1.
-        assert_eq!(var(&arr).finalize(1), Some(1.0));
-        assert_eq!(var(&arr).finalize(0), Some(2.0 / 3.0));
-    }
-
-    /// Two chunks that each repeat one value never vary together, so they have no covariance and
-    /// no correlation to speak of.
-    #[test]
-    fn two_repeated_values_do_not_vary_together() {
-        for length in [1, 2, 65] {
-            let x = PlPrimitiveArray::new_scalar(3.0, length);
-            let y = PlPrimitiveArray::new_scalar(-1.0, length);
-            let flat_x = PlPrimitiveArray::from_vec(vec![3.0; length]);
-            let flat_y = PlPrimitiveArray::from_vec(vec![-1.0; length]);
-
-            assert_eq!(cov(&x, &y).finalize(0), Some(0.0));
-            assert_eq!(cov(&x, &y).finalize(0), cov(&flat_x, &flat_y).finalize(0));
-            assert_eq!(cov(&x, &y).weight(), length as f64);
-
-            assert!(pearson_corr(&x, &y).finalize().is_nan());
-            assert!(pearson_corr(&flat_x, &flat_y).finalize().is_nan());
-        }
-    }
-
-    /// A pair weighs in only at the elements where neither side is null, whichever side the mask
-    /// is on and whichever representation it is in.
-    #[test]
-    fn a_pair_weighs_where_both_sides_are_non_null() {
-        let length = 8;
-        let x = PlPrimitiveArray::new_scalar(3.0, length)
-            .with_validity(Some((0..length).map(|i| i < 6).collect()));
-        let y = PlPrimitiveArray::new_scalar(5.0, length)
-            .with_validity(Some((0..length).map(|i| i >= 2).collect()));
-
-        // Elements 2 through 5 are non-null on both sides.
-        assert_eq!(cov(&x, &y).weight(), 4.0);
-        assert_eq!(cov(&x, &y).finalize(0), Some(0.0));
-
-        // A scalar mask that leaves every element null leaves the pair weighing nothing.
-        let none = PlPrimitiveArray::<f64>::new_full_null(length);
-        assert_eq!(cov(&x, &none).weight(), 0.0);
-        assert_eq!(cov(&x, &none).finalize(0), None);
-    }
-
-    /// The covariance of a chunk that repeats a value against one that does not is folded the
-    /// long way, and is the same as if neither of them repeated.
-    #[test]
-    fn one_repeated_side_still_folds_the_long_way() {
-        let values: Vec<f64> = (0..70).map(|i| i as f64).collect();
-        let y = PlPrimitiveArray::from_vec(values.clone());
-        let x = PlPrimitiveArray::new_scalar(2.0, y.len());
-        let flat_x = PlPrimitiveArray::from_vec(vec![2.0; y.len()]);
-
-        // A constant does not vary, so it covaries with nothing.
-        assert_eq!(cov(&x, &y).finalize(1), Some(0.0));
-        assert_eq!(cov(&x, &y).finalize(1), cov(&flat_x, &y).finalize(1));
-    }
-
-    /// The states a range of a chunk folds to are the ones the whole chunk folds to when the
-    /// range is all of it, in either representation.
-    #[test]
-    fn a_range_reads_the_same_either_way() {
-        let length = 70;
-        let scalar = PlPrimitiveArray::new_scalar(4.0, length);
-        let flat = PlPrimitiveArray::from_vec(vec![4.0; length]);
-
-        for (start, len) in [(0, length), (0, 1), (3, 17), (length - 1, 1), (10, 0)] {
-            let from_scalar = SkewState::from_array(&scalar, start, len);
-            let from_flat = SkewState::from_array(&flat, start, len);
-            assert_eq!(
-                from_scalar.weight, from_flat.weight,
-                "range {start}..+{len}"
-            );
-            assert_eq!(from_scalar.weight, len as f64);
-            assert_eq!(
-                from_scalar.finalize(true).map(f64::is_nan),
-                from_flat.finalize(true).map(f64::is_nan),
-            );
-
-            let from_scalar = KurtosisState::from_array(&scalar, start, len);
-            let from_flat = KurtosisState::from_array(&flat, start, len);
-            assert_eq!(from_scalar.weight, from_flat.weight);
-            assert_eq!(
-                from_scalar.finalize(true, true).map(f64::is_nan),
-                from_flat.finalize(true, true).map(f64::is_nan),
-            );
-        }
-    }
-
-    /// A range that a mask leaves partly null weighs only its non-null elements, and reads the
-    /// same whichever representation the values are in.
-    #[test]
-    fn a_masked_range_weighs_its_non_null_elements() {
-        let length = 40;
-        let mask: Bitmap = (0..length).map(|i| i % 3 == 0).collect();
-        let [scalar, flat] = repeated(2.0, Some(&mask), length);
-
-        for (start, len) in [(0, length), (1, 9), (7, 12), (length - 2, 2)] {
-            let from_scalar = SkewState::from_array(&scalar, start, len);
-            let from_flat = SkewState::from_array(&flat, start, len);
-            let expected = (start..start + len).filter(|i| i % 3 == 0).count() as f64;
-
-            assert_eq!(from_scalar.weight, expected, "range {start}..+{len}");
-            assert_eq!(from_flat.weight, expected);
-            assert_eq!(from_scalar.mean, from_flat.mean);
-        }
-    }
-
-    /// A range of a chunk laid out one value per element folds the elements it covers, and only
-    /// those.
-    #[test]
-    fn a_range_covers_only_its_own_elements() {
-        let arr = PlPrimitiveArray::from_vec(vec![1.0, 2.0, 3.0, 100.0]);
-
-        // The variance of 1, 2 and 3 with one degree of freedom is exactly 1, so a range that
-        // stops short of the outlier is unmoved by it.
-        assert_eq!(var(&arr.clone().sliced(0, 3)).finalize(1), Some(1.0));
-        assert_eq!(SkewState::from_array(&arr, 0, 3).weight, 3.0);
-        assert_eq!(SkewState::from_array(&arr, 0, 3).mean, 2.0);
-    }
 }

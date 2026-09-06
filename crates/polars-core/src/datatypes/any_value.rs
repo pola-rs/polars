@@ -1223,7 +1223,6 @@ impl AnyValue<'_> {
                 .map(move |(field_arr, field)| unsafe {
                     // SAFETY: We asserted before that idx is smaller than the array length. Since it
                     // is an invariant of a struct array that all fields have the same length this is
-                    // fine to do.
                     arr_to_any_value(&**field_arr, idx, field.dtype())
                 })
         }

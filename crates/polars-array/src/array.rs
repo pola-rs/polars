@@ -44,9 +44,6 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     }
 
     /// Returns whether the element at `i` is valid (non-null).
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     fn is_valid(&self, i: usize) -> bool {
         assert!(i < self.len(), "index out of bounds");
@@ -66,9 +63,6 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     }
 
     /// Returns whether the element at `i` is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     fn is_null(&self, i: usize) -> bool {
         !self.is_valid(i)
@@ -84,9 +78,6 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     fn slice(&mut self, offset: usize, length: usize);
 
     /// Slices this array in place to `length` elements starting at `offset`.
@@ -96,9 +87,6 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     unsafe fn slice_unchecked(&mut self, offset: usize, length: usize);
 
     /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     #[must_use]
     fn sliced(&self, offset: usize, length: usize) -> Box<dyn PlArray> {
         let mut sliced = self.to_boxed();
@@ -119,15 +107,9 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
 
     /// Replaces the validity mask, which keeps the representation it is in: a [`PlBitmap`] that
     /// stands for a single bit is not written out one bit per element to be set.
-    ///
-    /// # Panics
-    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
     fn set_validity(&mut self, validity: Option<PlBitmap>);
 
     /// Returns this array with its validity mask replaced, keeping its representation.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::set_validity`] panics.
     #[must_use]
     fn with_validity(&self, validity: Option<PlBitmap>) -> Box<dyn PlArray> {
         let mut new = self.to_boxed();
@@ -142,9 +124,6 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     }
 
     /// Returns an array of `length` copies of the element at `index`.
-    ///
-    /// # Panics
-    /// Panics if `index >= self.len()`.
     #[must_use]
     fn new_from_index(&self, index: usize, length: usize) -> Box<dyn PlArray> {
         assert!(index < self.len(), "index out of bounds");

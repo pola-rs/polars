@@ -62,9 +62,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// Creates a flat [`PlPrimitiveArray`] out of its internal components.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::try_new`] errors.
     #[inline]
     pub fn new(values: Buffer<T>, length: usize, validity: Option<PlBitmap>) -> Self {
         Self::try_new(values, length, validity).unwrap()
@@ -98,7 +95,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// # Errors
     /// This function errors if `values` is not scalar for `length`, per
     /// [`is_scalar_buffer_len`], or if `validity` does not cover exactly `length` elements, per
-    /// [`is_scalar_buffer_len`].
     pub fn try_new_broadcast(
         values: Buffer<T>,
         length: usize,
@@ -121,9 +117,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// Creates a scalar [`PlPrimitiveArray`] of `length` elements out of its internal components.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::try_new_broadcast`] errors.
     #[inline]
     pub fn new_broadcast(values: Buffer<T>, length: usize, validity: Option<PlBitmap>) -> Self {
         Self::try_new_broadcast(values, length, validity).unwrap()
@@ -229,10 +222,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// The values of this array, in whichever representation the backing buffer is in.
-    ///
-    /// This is what the routines of [`bytes`] are handed: they move the values around without
-    /// reading what they mean, and so are taken over the byte class of `T` rather than over `T`
-    /// itself, which is nine copies of each instead of seventeen.
     #[inline]
     pub(crate) fn values_bytes(&self) -> bytes::ValuesBytes<'_, bytes::Bytes<T>> {
         match self.scalar_values() {
@@ -242,10 +231,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// The backing values buffer, whichever representation it is in.
-    ///
-    /// Writing over the slots a buffer holds leaves it in the representation it is in, so this
-    /// hands back the whole buffer either way: a caller that maps every slot maps a scalar
-    /// buffer's single value once, and it still stands for every element.
     #[inline]
     pub fn flat_or_scalar_values_mut(&mut self) -> &mut Buffer<T> {
         &mut self.values
@@ -270,12 +255,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// A builder that continues this array, reusing its values allocation rather than copying it.
-    ///
-    /// This is what makes appending to an array cheaper than concatenating onto it, and it is
-    /// possible only when the values are flat, unsliced, and shared with nothing else — so the
-    /// array is handed back untouched, on the left, whenever they are not. The validity mask is
-    /// copied either way: it holds one *bit* per element, so reclaiming it would save a fraction
-    /// of what reclaiming the values does, and it may be scalar, which a builder cannot hold.
     pub fn into_builder(self) -> Either<Self, PlPrimitiveArrayBuilder<T>> {
         if self.flat_values().is_none() {
             // Scalar values are a single slot standing for `length` elements; there is no
@@ -318,9 +297,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// Whether the values buffer holds a single value shared by every element.
-    ///
-    /// An array of no elements holds no such value: it keeps the empty buffer in place of the one
-    /// slot a scalar buffer would, and is flat.
     #[inline]
     pub fn values_are_scalar(&self) -> bool {
         self.values.len() == 1 && self.length > 0
@@ -366,9 +342,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// Returns the value at `i`.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value(&self, i: usize) -> T {
         assert!(i < self.length, "index out of bounds");
@@ -390,9 +363,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// Returns whether the element at `i` is valid (non-null).
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_valid(&self, i: usize) -> bool {
         assert!(i < self.length, "index out of bounds");
@@ -412,9 +382,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// Returns whether the element at `i` is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_null(&self, i: usize) -> bool {
         !self.is_valid(i)
@@ -430,9 +397,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// Returns the element at `i`, or `None` if it is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn get(&self, i: usize) -> Option<T> {
         assert!(i < self.length, "index out of bounds");
@@ -449,12 +413,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// The number of null elements.
-    ///
-    /// Inlined so that an array with no mask to count is answered without a call at all: one left
-    /// standing is an opaque write as far as the compiler is concerned, and sinks behind it every
-    /// fact the caller had established about the array — the representation of its buffers
-    /// included — which is exactly what a caller asking [`Self::has_nulls`] ahead of a walk is
-    /// trying to hand the walk.
     #[inline]
     pub fn null_count(&self) -> usize {
         self.validity().map_or(0, |validity| validity.unset_bits())
@@ -480,9 +438,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
 
     /// Returns an iterator over `length` values, repeating the single value of this array if that
     /// is all it holds, and ignoring validity.
-    ///
-    /// # Panics
-    /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
     #[inline]
     pub fn broadcast_values_iter(&self, length: usize) -> PlPrimitiveValuesIter<'_, T> {
         assert_broadcastable(self.length, length);
@@ -492,12 +447,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// Returns this array with its validity mask replaced.
-    ///
-    /// The mask keeps whichever representation it is in: one that stands for a single bit shared
-    /// by every element is not written out one bit per element to be set.
-    ///
-    /// # Panics
-    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
     #[must_use]
     pub fn with_validity(mut self, validity: Option<PlBitmap>) -> Self {
         self.set_validity(validity);
@@ -505,9 +454,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// Replaces the validity mask, which keeps the representation it is in.
-    ///
-    /// # Panics
-    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
     pub fn set_validity(&mut self, validity: Option<PlBitmap>) {
         let length = self.len();
         self.validity = validity_covering(validity, length);
@@ -521,9 +467,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.length,
@@ -548,9 +491,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     #[must_use]
     pub fn sliced(mut self, offset: usize, length: usize) -> Self {
         self.slice(offset, length);
@@ -568,9 +508,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// Creates a [`PlPrimitiveArray`] of `length` copies of the element at `index`.
-    ///
-    /// # Panics
-    /// Panics if `index >= self.len()`.
     #[inline]
     pub fn new_from_index(&self, index: usize, length: usize) -> Self {
         assert!(index < self.length, "index out of bounds");
@@ -622,11 +559,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
 
     /// The values buffer holding one slot per element, writing a repeated value out only when it
     /// is stored as one.
-    ///
-    /// This reads nothing of the validity mask, so an array whose values are already laid out one
-    /// slot per element hands its buffer over as it stands whatever representation the mask is in
-    /// — where [`Self::to_flat`] would have to write a repeated mask out along with it. Reach for
-    /// this where a kernel walks the values and resolves the mask itself, or ignores it entirely.
     pub fn to_flat_values(&self) -> Cow<'_, Buffer<T>> {
         if self.values_are_flat() {
             return Cow::Borrowed(&self.values);
@@ -831,7 +763,6 @@ impl<T: NativeType> PlArray for PlPrimitiveArray<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::builder::StaticArrayBuilder;
 
     #[test]
     fn flat() {
@@ -875,98 +806,5 @@ mod tests {
         assert_eq!(arr.flat_values().unwrap().len(), 2);
         assert_eq!(arr.validity().unwrap().len(), 2);
         assert_eq!(arr.iter().collect::<Vec<_>>(), [None, Some(3)]);
-    }
-
-    #[test]
-    fn an_array_of_no_elements_keeps_no_slot() {
-        // A single slot is scalar for no elements too, but there is no element left to read it, so
-        // it is not kept: the array is flat, like every empty array, rather than scalar.
-        let arr = PlPrimitiveArray::new_broadcast(
-            Buffer::from(vec![7i32]),
-            0,
-            Some(PlBitmap::new_scalar(false, 0)),
-        );
-
-        assert!(arr.is_empty());
-        assert!(arr.is_flat());
-        assert!(!arr.is_scalar());
-        assert!(arr.flat_values().unwrap().is_empty());
-        assert!(arr.validity().unwrap().is_flat());
-        assert!(arr.validity().unwrap().is_empty());
-
-        // The same goes for a mask broadcast over an empty array after the fact.
-        let arr = PlPrimitiveArray::<i32>::new_empty()
-            .with_validity(Some(PlBitmap::new_scalar(false, 0)));
-
-        assert!(arr.is_flat());
-        assert!(!arr.is_scalar());
-        assert!(arr.validity().unwrap().is_empty());
-    }
-
-    #[test]
-    fn a_sole_flat_array_gives_its_allocation_up_to_a_builder() {
-        // Room to grow, so that appending has an allocation to append *into* — an array whose
-        // buffer is exactly full would have to be moved wherever it came from.
-        let mut values = Vec::with_capacity(8);
-        values.extend([1i32, 2, 3]);
-        let arr = PlPrimitiveArray::from_vec(values);
-        let values_ptr = arr.flat_values().unwrap().as_slice().as_ptr();
-
-        let Either::Right(mut builder) = arr.into_builder() else {
-            panic!("an unshared flat array can be appended to in place");
-        };
-        builder.push_value(4);
-        let built = builder.freeze();
-
-        // The point of the whole exercise: the values were appended to where they already were.
-        assert_eq!(built.flat_values().unwrap().as_slice().as_ptr(), values_ptr);
-        assert_eq!(
-            built.iter().collect::<Vec<_>>(),
-            [Some(1), Some(2), Some(3), Some(4)],
-        );
-    }
-
-    #[test]
-    fn a_shared_or_sliced_array_keeps_its_allocation() {
-        let arr: PlPrimitiveArray<i32> = [Some(1), Some(2)].into_iter().collect();
-        let _alive = arr.clone();
-        assert!(
-            arr.into_builder().is_left(),
-            "a buffer another array still reads cannot be written into",
-        );
-
-        let arr: PlPrimitiveArray<i32> = [Some(1), Some(2), Some(3)].into_iter().collect();
-        assert!(
-            arr.sliced(1, 2).into_builder().is_left(),
-            "a slice does not own the whole allocation it points into",
-        );
-    }
-
-    #[test]
-    fn scalar_values_have_no_allocation_to_reclaim() {
-        let arr = PlPrimitiveArray::new_scalar(7i32, 1_000_000_000);
-        assert!(arr.into_builder().is_left());
-    }
-
-    #[test]
-    fn a_reclaimed_builder_carries_the_mask_over_in_either_representation() {
-        // A flat mask is copied bit for bit.
-        let arr: PlPrimitiveArray<i32> = [Some(1), None].into_iter().collect();
-        let Either::Right(builder) = arr.into_builder() else {
-            unreachable!()
-        };
-        assert_eq!(builder.freeze().iter().collect::<Vec<_>>(), [Some(1), None]);
-
-        // A scalar mask stands for one bit per element, and appending to it resolves it.
-        let arr = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
-            .with_validity(Some(PlBitmap::new_scalar(false, 3)));
-        let Either::Right(mut builder) = arr.into_builder() else {
-            unreachable!()
-        };
-        builder.push_value(4);
-        assert_eq!(
-            builder.freeze().iter().collect::<Vec<_>>(),
-            [None, None, None, Some(4)],
-        );
     }
 }

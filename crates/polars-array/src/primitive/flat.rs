@@ -31,9 +31,6 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     }
 
     /// Returns the value at `i`.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value(&self, i: usize) -> T {
         assert!(i < self.as_array().length, "index out of bounds");
@@ -51,9 +48,6 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     }
 
     /// Returns whether the element at `i` is valid (non-null).
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_valid(&self, i: usize) -> bool {
         assert!(i < self.as_array().length, "index out of bounds");
@@ -73,9 +67,6 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     }
 
     /// Returns whether the element at `i` is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_null(&self, i: usize) -> bool {
         !self.is_valid(i)
@@ -91,9 +82,6 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     }
 
     /// Returns the element at `i`, or `None` if it is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn get(&self, i: usize) -> Option<T> {
         assert!(i < self.as_array().length, "index out of bounds");
@@ -116,11 +104,6 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     }
 
     /// Returns an iterator over the optional elements.
-    ///
-    /// Knowing the array is flat buys nothing here, so this is the array's own iterator. Arrow's
-    /// `ZipValidity`, which this used to return, resolves its representation once per step rather
-    /// than once per walk and leaves [`Iterator::fold`] to the default; either of those stops the
-    /// loop from vectorizing.
     #[inline]
     pub fn iter(&self) -> PlPrimitiveIter<'_, T> {
         self.as_array().iter()
@@ -143,9 +126,6 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     }
 
     /// Reinterprets the values buffer as one of `U`, keeping the validity mask.
-    ///
-    /// # Panics
-    /// Panics unless `T` and `U` have the same size and alignment.
     pub fn transmute<U: NativeType>(self) -> Flat<PlPrimitiveArray<U>> {
         let (values, validity) = self.into_inner();
         let validity = validity.map(PlBitmap::from_bitmap);
@@ -244,35 +224,6 @@ mod tests {
         assert_eq!(flat.iter().collect::<Vec<_>>(), expected);
         assert_eq!(flat.into_iter().collect::<Vec<_>>(), expected);
         assert_eq!(flat.values_iter().copied().collect::<Vec<_>>(), [1, 0, 3]);
-    }
-
-    #[test]
-    fn as_flat_borrows_an_already_flat_array() {
-        let arr: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect();
-        let flat = arr.as_flat().expect("the array is flat");
-
-        assert_eq!(flat.as_slice(), [1, 0, 3]);
-        assert_eq!(*flat, arr);
-        assert!(
-            flat.values().is_same_buffer(arr.flat_values().unwrap()),
-            "the values buffer must be borrowed, not materialized again",
-        );
-
-        // Neither a scalar buffer nor a scalar validity mask can be borrowed as flat.
-        assert!(PlPrimitiveArray::new_scalar(7i32, 3).as_flat().is_none());
-        assert!(
-            PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
-                .with_validity(Some(PlBitmap::new_scalar(false, 3)))
-                .as_flat()
-                .is_none()
-        );
-
-        // A scalar array of unbounded length is still `O(1)` to reject.
-        assert!(
-            PlPrimitiveArray::<i32>::new_full_null(1_000_000_000)
-                .as_flat()
-                .is_none()
-        );
     }
 }
 

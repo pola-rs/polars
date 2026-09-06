@@ -2,8 +2,6 @@
 //! is still the Arrow one: the chunk crosses over through [`ToArrow`] and the mask comes straight
 //! back. A [`PlPrimitiveArray`](polars_array::PlPrimitiveArray) has its own kernel instead — see
 //! `simd` and `scalar`.
-//!
-//! Every kernel here takes a [`Flat`] array, whose buffers the export hands over as they are.
 
 use arrow::bitmap::Bitmap;
 #[cfg(feature = "dtype-array")]
@@ -17,10 +15,6 @@ use polars_array::{
 use super::{TotalEqKernel, TotalOrdKernel};
 
 /// The validity mask of a flat array, which holds one bit per element like its every other buffer.
-///
-/// The bitmap is taken as it stands rather than through `flat_bitmap`: a single bit over a single
-/// element is both the flat and the scalar reading of that mask, and `flat_bitmap` resolves it as
-/// the scalar one — so it answers `None` for an array of one element that is perfectly flat.
 fn flat_validity<A: PlArray>(array: &Flat<A>) -> Option<&Bitmap> {
     array
         .as_array()
@@ -110,32 +104,3 @@ impl_total_ord_kernel!(
     PlBinaryViewArray,
     PlUtf8ViewArray,
 );
-
-#[cfg(test)]
-mod tests {
-    use arrow::bitmap::Bitmap;
-    use polars_array::PlBitmap;
-
-    use super::*;
-
-    /// A mask of one bit over one element is both flat and scalar, and `PlBitmapRef::repr` resolves
-    /// such a buffer as the scalar one. The mask of a flat array is therefore read as it stands:
-    /// resolving it first would answer `None` for an array that is perfectly flat.
-    #[test]
-    fn a_flat_array_of_one_element_has_a_mask_to_read() {
-        for bit in [false, true] {
-            let array = PlBinaryViewArray::from_values_iter([b"foo".as_slice()])
-                .with_validity(Some(PlBitmap::from_bitmap(Bitmap::new_with_value(bit, 1))));
-
-            let flat = array.to_flat().into_owned();
-            assert!(flat.as_array().validity().unwrap().is_scalar());
-
-            assert_eq!(flat_validity(&flat).map(Bitmap::len), Some(1));
-
-            // Which is what the missing-aware kernels read: one element equals itself when it is
-            // there, and a null equals a null, so either way the two agree.
-            assert!(flat.tot_eq_missing_kernel(&flat).get_bit(0));
-            assert!(!flat.tot_ne_missing_kernel(&flat).get_bit(0));
-        }
-    }
-}

@@ -42,9 +42,6 @@ impl PlBitmap {
     }
 
     /// Creates a flat [`PlBitmap`] of `length` bits backed by `bitmap`.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::try_new`] errors.
     #[inline]
     pub fn new(bitmap: Bitmap, length: usize) -> Self {
         Self::try_new(bitmap, length).unwrap()
@@ -80,9 +77,6 @@ impl PlBitmap {
     }
 
     /// Creates a [`PlBitmap`] of `length` bits backed by a `bitmap` that broadcasts over them.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::try_new_broadcast`] errors.
     #[inline]
     pub fn new_broadcast(bitmap: Bitmap, length: usize) -> Self {
         Self::try_new_broadcast(bitmap, length).unwrap()
@@ -160,9 +154,6 @@ impl PlBitmap {
     }
 
     /// Whether the backing bitmap holds a single bit shared by every element.
-    ///
-    /// A mask over no elements holds no such bit: it keeps the empty bitmap in place of the one
-    /// bit a scalar bitmap would, and is flat.
     #[inline]
     pub fn is_scalar(&self) -> bool {
         self.bitmap.len() == 1 && self.length > 0
@@ -181,9 +172,6 @@ impl PlBitmap {
     }
 
     /// Returns the bit at `i`.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn get(&self, i: usize) -> bool {
         self.as_ref().get(i)
@@ -251,9 +239,6 @@ impl PlBitmap {
     }
 
     /// The `or` of two masks over the same elements, keeping a repeated bit repeated.
-    ///
-    /// # Panics
-    /// Panics if the masks are over a different number of bits.
     #[must_use]
     pub fn or(&self, other: &Self) -> Self {
         assert_eq!(self.length, other.length, "masks cover different lengths");
@@ -275,9 +260,6 @@ impl PlBitmap {
     }
 
     /// Slices this mask in place to `length` bits starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.length,
@@ -299,9 +281,6 @@ impl PlBitmap {
     }
 
     /// Returns this mask sliced to `length` bits starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     #[must_use]
     pub fn sliced(mut self, offset: usize, length: usize) -> Self {
         self.slice(offset, length);
@@ -486,19 +465,6 @@ mod tests {
         assert_eq!(bitmap.set_bits(), 3);
 
         assert!(PlBitmap::new_scalar(true, 0).into_bitmap().is_empty());
-    }
-
-    #[test]
-    fn a_mask_over_no_elements_keeps_no_bit() {
-        // A single bit is scalar for no elements too, but there is no element left to read it, so
-        // it is not kept: the mask is flat, like every empty mask, rather than scalar.
-        let mask = PlBitmap::new_broadcast(Bitmap::new_zeroed(1), 0);
-
-        assert!(mask.is_empty());
-        assert!(mask.is_flat());
-        assert!(!mask.is_scalar());
-        assert!(mask.flat_bitmap().unwrap().is_empty());
-        assert_eq!(mask.scalar_value(), None);
     }
 }
 

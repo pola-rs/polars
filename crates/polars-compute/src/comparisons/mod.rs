@@ -81,9 +81,6 @@ pub trait TotalOrdKernel: Sized {
 }
 
 /// What a validity mask leaves for the missing-aware kernels of [`PlTotalEqKernel`] to combine.
-///
-/// A mask that repeats a single bit says the same thing about every element of its array, so the
-/// two constant arms answer a whole array at once and are never written out one bit per element.
 enum Validity<'a> {
     /// Every element is there: no mask at all, or one repeating a set bit.
     AllValid,
@@ -105,9 +102,6 @@ fn validity_of(mask: Option<PlBitmapRef<'_>>) -> Validity<'_> {
 }
 
 /// `q & mask`, where `mask` holds one bit per element.
-///
-/// A `q` that repeats a single bit decides the answer on its own — either every element compared
-/// unequal, or the answer is exactly which of them are there — so neither arm writes it out.
 fn and_mask(q: PlBitmap, mask: &Bitmap) -> PlBitmap {
     match q.scalar_value() {
         Some(false) => q,
@@ -116,7 +110,7 @@ fn and_mask(q: PlBitmap, mask: &Bitmap) -> PlBitmap {
     }
 }
 
-/// `q | !mask`, where `mask` holds one bit per element. As [`and_mask`], the other way up.
+/// `q | !mask`, where `mask` holds one bit per element.
 fn or_not_mask(q: PlBitmap, mask: &Bitmap) -> PlBitmap {
     match q.scalar_value() {
         Some(true) => q,
@@ -129,12 +123,6 @@ fn or_not_mask(q: PlBitmap, mask: &Bitmap) -> PlBitmap {
 
 /// The equality kernels over an array whose buffers may repeat a single slot, whose answer is in
 /// whichever representation its operands leave it in.
-///
-/// This is [`TotalEqKernel`] with the flatness dropped from both ends. An operand that repeats a
-/// single value is compared once rather than `length` times over, and where that settles the answer
-/// for every element the [`PlBitmap`] handed back says so in a single bit rather than in `length`
-/// of them. Once both operands are known to lay one slot out per element the work crosses over to
-/// [`TotalEqKernel`], which is where the flat kernels — the SIMD ones included — stay.
 pub trait PlTotalEqKernel: Sized {
     type Scalar: ?Sized;
 

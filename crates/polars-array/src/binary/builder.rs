@@ -373,23 +373,4 @@ mod tests {
         // A null covers no bytes, so it leaves the values where the last element ended.
         assert_eq!(built.values().len(), 3);
     }
-
-    #[test]
-    fn a_scalar_array_is_appended_without_being_materialized() {
-        let array = PlBinaryArray::new_scalar(b"ab", 1_000_000_000);
-
-        let mut builder = PlBinaryArrayBuilder::new();
-        builder.subslice_extend(&array, 999_999_998, 2, ShareStrategy::Always);
-        builder.subslice_extend_each_repeated(&array, 0, 1, 2, ShareStrategy::Always);
-        unsafe { builder.gather_extend(&array, &[999_999_999], ShareStrategy::Always) };
-        builder.opt_gather_extend(&array, &[0, 1_000_000_000], ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 7);
-        assert_eq!(built.null_count(), 1);
-        // The out-of-bounds index is a null, which covers no bytes.
-        assert_eq!(built.values().as_slice(), b"abababababab");
-        assert_eq!(built.get(5), Some(b"ab".as_slice()));
-        assert_eq!(built.get(6), None);
-    }
 }

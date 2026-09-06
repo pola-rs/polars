@@ -22,9 +22,6 @@ impl Flat<PlBooleanArray> {
     }
 
     /// Returns the value at `i`.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value(&self, i: usize) -> bool {
         assert!(i < self.as_array().length, "index out of bounds");
@@ -42,9 +39,6 @@ impl Flat<PlBooleanArray> {
     }
 
     /// Returns whether the element at `i` is valid (non-null).
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_valid(&self, i: usize) -> bool {
         assert!(i < self.as_array().length, "index out of bounds");
@@ -64,9 +58,6 @@ impl Flat<PlBooleanArray> {
     }
 
     /// Returns whether the element at `i` is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_null(&self, i: usize) -> bool {
         !self.is_valid(i)
@@ -82,9 +73,6 @@ impl Flat<PlBooleanArray> {
     }
 
     /// Returns the element at `i`, or `None` if it is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn get(&self, i: usize) -> Option<bool> {
         assert!(i < self.as_array().length, "index out of bounds");
@@ -107,11 +95,6 @@ impl Flat<PlBooleanArray> {
     }
 
     /// Returns an iterator over the optional elements.
-    ///
-    /// Knowing the array is flat buys nothing here, so this is the array's own iterator. Arrow's
-    /// `ZipValidity`, which this used to return, resolves its representation once per step rather
-    /// than once per walk and leaves [`Iterator::fold`] to the default; either of those stops the
-    /// loop from vectorizing.
     #[inline]
     pub fn iter(&self) -> PlBooleanIter<'_> {
         self.as_array().iter()

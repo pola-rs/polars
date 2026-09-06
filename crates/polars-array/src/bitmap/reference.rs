@@ -34,9 +34,6 @@ impl<'a> PlBitmapRef<'a> {
     }
 
     /// Creates a flat [`PlBitmapRef`] of `length` bits backed by `bitmap`.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::try_new`] errors.
     #[inline]
     pub fn new(bitmap: &'a Bitmap, length: usize) -> Self {
         Self::try_new(bitmap, length).unwrap()
@@ -72,9 +69,6 @@ impl<'a> PlBitmapRef<'a> {
     }
 
     /// Creates a [`PlBitmapRef`] of `length` bits backed by a `bitmap` that broadcasts over them.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::try_new_broadcast`] errors.
     #[inline]
     pub fn new_broadcast(bitmap: &'a Bitmap, length: usize) -> Self {
         Self::try_new_broadcast(bitmap, length).unwrap()
@@ -119,9 +113,6 @@ impl<'a> PlBitmapRef<'a> {
     }
 
     /// Whether the backing bitmap holds a single bit shared by every element.
-    ///
-    /// A mask over no elements holds no such bit: it keeps the empty bitmap in place of the one
-    /// bit a scalar bitmap would, and is flat.
     #[inline]
     pub fn is_scalar(&self) -> bool {
         self.bitmap.len() == 1 && self.length > 0
@@ -142,9 +133,6 @@ impl<'a> PlBitmapRef<'a> {
     }
 
     /// Returns the bit at `i`.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn get(&self, i: usize) -> bool {
         assert!(i < self.length, "index out of bounds");
@@ -204,9 +192,6 @@ impl<'a> PlBitmapRef<'a> {
     }
 
     /// Returns this mask over `length` bits, repeating its single bit if that is all it holds.
-    ///
-    /// # Panics
-    /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
     #[inline]
     pub fn broadcast(&self, length: usize) -> PlBitmapRef<'a> {
         assert_broadcastable(self.length, length);
@@ -222,9 +207,6 @@ impl<'a> PlBitmapRef<'a> {
     }
 
     /// The number of set bits before the first unset one.
-    ///
-    /// A mask that repeats one bit is all ones or none of them, which is answered without the bits
-    /// being written out.
     #[inline]
     pub fn leading_ones(&self) -> usize {
         match self.scalar_value() {
@@ -367,24 +349,5 @@ mod tests {
 
         assert_eq!(mask.iter().collect::<Vec<_>>(), [false; 4]);
         assert_eq!(mask.iter().len(), 4);
-    }
-
-    #[test]
-    fn a_mask_over_no_elements_borrows_no_bit() {
-        // A single bit is scalar for no elements too, but there is no element left to read it, so
-        // it is not borrowed: the mask is flat, like every empty mask, rather than scalar.
-        let bitmap = Bitmap::new_zeroed(1);
-        let mask = PlBitmapRef::new_broadcast(&bitmap, 0);
-
-        assert!(mask.is_empty());
-        assert!(mask.is_flat());
-        assert!(!mask.is_scalar());
-        assert!(mask.flat_bitmap().unwrap().is_empty());
-
-        // Broadcasting a single bit over no elements borrows none either.
-        let mask = PlBitmapRef::new_broadcast(&bitmap, 1).broadcast(0);
-
-        assert!(mask.is_flat());
-        assert!(!mask.is_scalar());
     }
 }

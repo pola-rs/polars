@@ -12,9 +12,6 @@ pub struct Flat<T>(T);
 
 impl<T: PlArray> Flat<T> {
     /// Slices this array in place to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     pub fn slice(&mut self, offset: usize, length: usize) {
         self.0.slice(offset, length);
     }
@@ -28,9 +25,6 @@ impl<T: PlArray> Flat<T> {
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     #[must_use]
     pub fn sliced(mut self, offset: usize, length: usize) -> Self {
         self.slice(offset, length);
@@ -48,12 +42,6 @@ impl<T: PlArray> Flat<T> {
     }
 
     /// Replaces the validity mask with a flat one.
-    ///
-    /// Unlike [`PlArray::set_validity`], which takes a mask in either representation, this one
-    /// insists on a flat mask: a scalar one would leave the array no longer flat.
-    ///
-    /// # Panics
-    /// Panics unless `validity` is flat and covers exactly [`len`](PlArray::len) elements.
     pub fn set_validity(&mut self, validity: Option<PlBitmap>) {
         assert!(
             validity.as_ref().is_none_or(PlBitmap::is_flat),
@@ -63,9 +51,6 @@ impl<T: PlArray> Flat<T> {
     }
 
     /// Returns this array with its validity mask replaced by a flat one.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::set_validity`] panics.
     #[must_use]
     pub fn with_validity(mut self, validity: Option<PlBitmap>) -> Self {
         self.set_validity(validity);

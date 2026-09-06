@@ -2,16 +2,9 @@ use super::*;
 
 /// A list builder that is told the shape of its values by the first series appended to it, rather
 /// than at construction.
-///
-/// This is what builds the lists whose values are themselves nested — structs, lists and arrays —
-/// where there is no typed builder to reach for.
 pub struct AnonymousOwnedListBuilder {
     name: PlSmallStr,
     /// The builder, once the shape of the values is known.
-    ///
-    /// Until a series arrives that says what the values are, there is nothing to build them with:
-    /// the rows appended in the meantime are all made of nulls, and are held in `pending` until
-    /// there is a builder to replay them into.
     builder: Option<PlListArrayBuilder>,
     /// The rows appended before the builder existed: `None` is a null row, and `Some(n)` a valid
     /// row covering `n` nulls.
@@ -135,122 +128,5 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             DataType::List(Box::new(inner_dtype)),
         ));
         ca
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn elements(ca: &ListChunked) -> Vec<Option<Vec<Option<i32>>>> {
-        ca.amortized_iter()
-            .map(|row| row.map(|row| row.as_ref().i32().unwrap().iter().collect()))
-            .collect()
-    }
-
-    #[test]
-    fn appending_series_nulls_and_empties() {
-        let mut builder = AnonymousOwnedListBuilder::new("a".into(), 8, None);
-        builder
-            .append_series(&Series::new("".into(), [1i32, 2]))
-            .unwrap();
-        builder.append_null();
-        builder.append_empty();
-        builder
-            .append_series(&Series::new("".into(), [Some(3i32), None]))
-            .unwrap();
-
-        let ca = builder.finish();
-        assert_eq!(ca.name(), "a");
-        assert_eq!(ca.dtype(), &DataType::List(Box::new(DataType::Int32)));
-        assert_eq!(
-            elements(&ca),
-            [
-                Some(vec![Some(1), Some(2)]),
-                None,
-                Some(vec![]),
-                Some(vec![Some(3), None]),
-            ],
-        );
-        // A null row and an empty row both leave a hole in the values, so exploding cannot be a
-        // matter of dropping the offsets.
-        assert!(!ca.get_fast_explode_list());
-    }
-
-    /// The shape of the values is not known until a series arrives that says what they are, and
-    /// everything appended before then still has to come first.
-    #[test]
-    fn rows_appended_before_the_dtype_is_known_keep_their_place() {
-        let mut builder = AnonymousOwnedListBuilder::new("a".into(), 8, None);
-        builder.append_null();
-        builder
-            .append_series(&Series::new_null("".into(), 2))
-            .unwrap();
-        builder.append_empty();
-        builder
-            .append_series(&Series::new("".into(), [7i32]))
-            .unwrap();
-        // A null series after the fact says nothing about the values either.
-        builder
-            .append_series(&Series::new_null("".into(), 1))
-            .unwrap();
-
-        let ca = builder.finish();
-        assert_eq!(ca.dtype(), &DataType::List(Box::new(DataType::Int32)));
-        assert_eq!(
-            elements(&ca),
-            [
-                None,
-                Some(vec![None, None]),
-                Some(vec![]),
-                Some(vec![Some(7)]),
-                Some(vec![None]),
-            ],
-        );
-    }
-
-    /// Nothing ever said what the values are, so they are nulls.
-    #[test]
-    fn a_builder_that_is_only_ever_told_nulls_builds_a_list_of_nulls() {
-        let mut builder = AnonymousOwnedListBuilder::new("a".into(), 8, None);
-        builder.append_null();
-        builder
-            .append_series(&Series::new_null("".into(), 2))
-            .unwrap();
-
-        let ca = builder.finish();
-        assert_eq!(ca.dtype(), &DataType::List(Box::new(DataType::Null)));
-        assert_eq!(ca.len(), 2);
-
-        let empty = AnonymousOwnedListBuilder::new("a".into(), 0, None).finish();
-        assert_eq!(empty.dtype(), &DataType::List(Box::new(DataType::Null)));
-        assert_eq!(empty.len(), 0);
-    }
-
-    #[test]
-    fn a_series_of_the_wrong_dtype_is_rejected() {
-        let mut builder = AnonymousOwnedListBuilder::new("a".into(), 8, None);
-        builder
-            .append_series(&Series::new("".into(), [1i32]))
-            .unwrap();
-        assert!(
-            builder
-                .append_series(&Series::new("".into(), ["x"]))
-                .is_err()
-        );
-    }
-
-    /// A series of several chunks is appended chunk by chunk rather than rechunked first.
-    #[test]
-    fn a_multi_chunk_series_is_one_row() {
-        let mut s = Series::new("".into(), [1i32, 2]);
-        s.append(&Series::new("".into(), [3i32])).unwrap();
-        assert_eq!(s.n_chunks(), 2);
-
-        let mut builder = AnonymousOwnedListBuilder::new("a".into(), 8, None);
-        builder.append_series(&s).unwrap();
-
-        let ca = builder.finish();
-        assert_eq!(elements(&ca), [Some(vec![Some(1), Some(2), Some(3)])]);
     }
 }

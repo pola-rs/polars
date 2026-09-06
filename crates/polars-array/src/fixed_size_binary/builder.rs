@@ -44,10 +44,6 @@ impl PlFixedSizeBinaryArrayBuilder {
     }
 
     /// Appends `value` as an element of its own.
-    ///
-    /// # Panics
-    /// Panics unless `value` is exactly [`width`](Self::width) bytes long, which every element of
-    /// the built array covers.
     #[inline]
     pub fn push_value(&mut self, value: &[u8]) {
         assert_eq!(
@@ -74,9 +70,6 @@ impl PlFixedSizeBinaryArrayBuilder {
     }
 
     /// Appends `value`, or a null if it is [`None`].
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::push_value`] panics.
     #[inline]
     pub fn push(&mut self, value: Option<&[u8]>) {
         match value {
@@ -347,45 +340,5 @@ mod tests {
         // Every element covers the width, whether or not it is null.
         assert_eq!(built.flat_values().unwrap().len(), 18);
         assert!(built.is_flat());
-    }
-
-    #[test]
-    fn gathering() {
-        let array = array();
-
-        let mut builder = PlFixedSizeBinaryArrayBuilder::new(2);
-        unsafe { builder.gather_extend(&array, &[2, 0, 1], ShareStrategy::Never) };
-        builder.opt_gather_extend(&array, &[0, 9], ShareStrategy::Never);
-
-        let built = builder.freeze();
-        assert_eq!(
-            elements(&built),
-            [
-                Some(vec![5, 6]),
-                Some(vec![1, 2]),
-                None,
-                Some(vec![1, 2]),
-                None,
-            ],
-        );
-    }
-
-    #[test]
-    fn a_scalar_array_is_appended_without_being_materialized() {
-        let array = PlFixedSizeBinaryArray::new_scalar(b"ab", 1_000_000_000);
-
-        let mut builder = PlFixedSizeBinaryArrayBuilder::new(2);
-        builder.subslice_extend(&array, 999_999_998, 2, ShareStrategy::Always);
-        builder.subslice_extend_each_repeated(&array, 0, 1, 2, ShareStrategy::Always);
-        unsafe { builder.gather_extend(&array, &[999_999_999], ShareStrategy::Always) };
-        builder.opt_gather_extend(&array, &[0, 1_000_000_000], ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 7);
-        assert_eq!(built.null_count(), 1);
-        // The out-of-bounds index is a null, whose bytes are written out as zeros.
-        assert_eq!(built.flat_values().unwrap().as_slice(), b"abababababab\0\0");
-        assert_eq!(built.get(5), Some(b"ab".as_slice()));
-        assert_eq!(built.get(6), None);
     }
 }

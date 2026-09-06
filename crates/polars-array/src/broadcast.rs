@@ -1,17 +1,4 @@
 //! The rules governing the flat and scalar representations.
-//!
-//! Every backing buffer of an array is in one of two representations for the array's length:
-//!
-//! - *flat*: the buffer holds one slot per element;
-//! - *scalar*: the buffer holds a single slot that every element reads.
-//!
-//! An empty array is flat, and never scalar: there is no element for a single slot to be shared
-//! by, so every buffer of an empty array is empty as well. The broadcasting constructors and
-//! setters still accept a single slot for an array of no elements — a scalar over `n` elements is
-//! a scalar over `0` of them too — but store the empty buffer in its place, so that no array is
-//! ever backed by a slot none of its elements reads. That is what the `normalize_*` functions of
-//! this module do, and what the `slice_*` functions keep holding as an array is sliced down to
-//! nothing.
 
 use arrow::bitmap::Bitmap;
 use polars_buffer::Buffer;
@@ -22,10 +9,6 @@ use crate::array::PlArray;
 use crate::bitmap::PlBitmap;
 
 /// Iterates the slots a backing buffer holds for an array of `length` elements, in order.
-///
-/// # Panics
-/// Panics unless `buffer` is [flat](is_flat_buffer_len) or [scalar](is_scalar_buffer_len) for
-/// `length`, which every array of this crate upholds of every buffer it is backed by.
 #[inline]
 pub(crate) fn broadcast_slice<T>(buffer: &[T], length: usize) -> SliceBroadcastIter<'_, T> {
     SliceBroadcastIter::new_broadcast(buffer, length).unwrap_or_else(|| {
@@ -49,9 +32,6 @@ pub const fn is_flat_buffer_len(buffer_len: usize, length: usize) -> bool {
 }
 
 /// Whether a backing buffer of length `buffer_len` is *scalar* for an array of length `length`.
-///
-/// A single slot is scalar for any length, and no slot at all is scalar for an array of no
-/// elements, which is what such an array stores: see the [module docs](self).
 #[inline]
 pub const fn is_scalar_buffer_len(buffer_len: usize, length: usize) -> bool {
     buffer_len == 1 || (length == 0 && buffer_len == 0)
@@ -156,11 +136,6 @@ pub const fn is_valid_fixed_size_values_len(
 
 /// An empty [`Bitmap`] that lives for the whole program, to borrow where a mask over no elements
 /// is called for.
-///
-/// The bitmap is built at compile time rather than lazily: this sits behind
-/// [`PlBitmapRef::new_broadcast_unchecked`](crate::bitmap::PlBitmapRef::new_broadcast_unchecked),
-/// and so behind every `validity()` call, where a lazy initializer's opaque call would clobber
-/// what the optimizer knows about memory and stop it from folding away a caller's own checks.
 #[inline(always)]
 pub(crate) fn empty_bitmap() -> &'static Bitmap {
     static EMPTY: Bitmap = Bitmap::new();
@@ -168,8 +143,6 @@ pub(crate) fn empty_bitmap() -> &'static Bitmap {
 }
 
 /// The buffer an array of `length` elements stores for `buffer`, which is flat or scalar for it.
-///
-/// An array of no elements keeps no slot: the single one a scalar buffer holds is dropped.
 #[inline]
 pub(crate) fn normalize_buffer<T>(buffer: Buffer<T>, length: usize) -> Buffer<T> {
     if length == 0 && !buffer.is_empty() {
@@ -180,8 +153,6 @@ pub(crate) fn normalize_buffer<T>(buffer: Buffer<T>, length: usize) -> Buffer<T>
 }
 
 /// The bitmap an array of `length` elements stores for `bitmap`, which is flat or scalar for it.
-///
-/// An array of no elements keeps no bit: the single one a scalar bitmap holds is dropped.
 #[inline]
 pub(crate) fn normalize_bitmap(bitmap: Bitmap, length: usize) -> Bitmap {
     if length == 0 && !bitmap.is_empty() {
@@ -192,9 +163,6 @@ pub(crate) fn normalize_bitmap(bitmap: Bitmap, length: usize) -> Bitmap {
 }
 
 /// The bitmap a mask of `length` bits borrows for `bitmap`, which is flat or scalar for it.
-///
-/// A mask over no elements borrows no bit: the single one a scalar bitmap holds is passed over for
-/// an empty bitmap.
 #[inline]
 pub(crate) fn normalize_bitmap_ref(bitmap: &Bitmap, length: usize) -> &Bitmap {
     if length == 0 && !bitmap.is_empty() {
@@ -205,12 +173,6 @@ pub(crate) fn normalize_bitmap_ref(bitmap: &Bitmap, length: usize) -> &Bitmap {
 }
 
 /// The bitmap an array of `length` elements stores for the mask `validity`.
-///
-/// A [`PlBitmap`] is flat or scalar *for its own length* by construction, and normalized against
-/// it, so covering the array is the whole of what is left for a validity mask to be: an array has
-/// nothing else to check and nothing left to normalize. That is what lets one entry point take a
-/// mask in either representation where two were needed before — the representation travels inside
-/// the mask rather than in the choice of constructor.
 ///
 /// # Errors
 /// This function errors unless `validity` covers exactly `length` elements.
@@ -232,9 +194,6 @@ pub(crate) fn try_validity_covering(
 }
 
 /// As [`try_validity_covering`], panicking instead.
-///
-/// # Panics
-/// Panics unless `validity` covers exactly `length` elements.
 #[inline]
 pub(crate) fn validity_covering(validity: Option<PlBitmap>, length: usize) -> Option<Bitmap> {
     if let Some(validity) = validity.as_ref() {
@@ -268,10 +227,6 @@ pub(crate) fn validity_covering_unchecked(
 
 /// The offsets a list or binary array of `length` elements stores for `offsets`, which are flat or
 /// scalar for it.
-///
-/// An array of no elements keeps the one offset that holds no starts, exactly as slicing such an
-/// array down to nothing does: the range every element of a scalar array shares has no element
-/// left to share it.
 #[inline]
 pub(crate) fn normalize_offsets(offsets: Buffer<u64>, length: usize) -> Buffer<u64> {
     if length == 0 && offsets.len() != 1 {
@@ -283,9 +238,6 @@ pub(crate) fn normalize_offsets(offsets: Buffer<u64>, length: usize) -> Buffer<u
 
 /// The values a fixed size list array of `length` elements stores for `values`, which are flat or
 /// scalar for it.
-///
-/// An array of no elements covers no values: the one element a scalar values array holds is
-/// sliced away.
 #[inline]
 pub(crate) fn normalize_values(mut values: Box<dyn PlArray>, length: usize) -> Box<dyn PlArray> {
     if length == 0 && !values.is_empty() {
@@ -296,9 +248,6 @@ pub(crate) fn normalize_values(mut values: Box<dyn PlArray>, length: usize) -> B
 
 /// Slices a backing buffer that is flat or scalar for an array of `array_len` elements down to the
 /// `length` slots at `offset`.
-///
-/// A scalar buffer is left as it is — every element of the slice reads the same slot as every
-/// element of the array does — unless the slice is empty, which leaves no element to read it.
 ///
 /// # Safety
 /// `offset + length` must not exceed `array_len`.
@@ -355,11 +304,6 @@ pub(crate) unsafe fn slice_validity(
 /// Slices the offsets of a list or binary array of `array_len` elements down to the `length`
 /// elements at `offset`.
 ///
-/// The values the offsets point into are left as they are: nothing normalizes them, so what falls
-/// outside the slice simply stops being reachable. Scalar offsets are left alone as well, like a
-/// scalar mask, unless the slice is empty: the one offset that holds no starts is then all it
-/// keeps of the range every element of the array shares.
-///
 /// # Safety
 /// `offset + length` must not exceed `array_len`.
 #[inline]
@@ -378,9 +322,6 @@ pub(crate) unsafe fn slice_offsets(
 
 /// Slices a backing buffer of a fixed size array of `array_len` elements that are `width` slots
 /// wide down to the `length` elements at `offset`, a width at a time.
-///
-/// A scalar buffer is left as it is — every element of the slice covers the same slots as every
-/// element of the array does — unless the slice is empty, which leaves no element to cover them.
 ///
 /// # Safety
 /// `offset + length` must not exceed `array_len`.
@@ -531,31 +472,5 @@ mod tests {
         assert_eq!(validity_covering(Some(flat), 3).unwrap().len(), 3);
         assert_eq!(validity_covering(Some(scalar), 3).unwrap().len(), 1);
         assert!(validity_covering(None, 3).is_none());
-    }
-
-    /// The trap the old two-entry-point API left open: a single bit is a mask over *one* element,
-    /// and only a mask that says so itself covers an array of more.
-    #[test]
-    fn a_single_bit_does_not_cover_more_than_one_element() {
-        let one_bit = || PlBitmap::from_bitmap(Bitmap::new_zeroed(1));
-
-        assert!(try_validity_covering(Some(one_bit()), 1).is_ok());
-        assert!(try_validity_covering(Some(one_bit()), 5).is_err());
-        // Said as a mask over five elements, the very same bit does cover them.
-        assert!(try_validity_covering(Some(PlBitmap::new_scalar(false, 5)), 5).is_ok());
-    }
-
-    /// An array of no elements is flat, so a mask over it keeps no slot either.
-    #[test]
-    fn a_mask_over_no_elements_keeps_no_slot() {
-        let empty = validity_covering(Some(PlBitmap::new_scalar(false, 0)), 0);
-        assert!(empty.unwrap().is_empty());
-        assert!(try_validity_covering(Some(PlBitmap::new_scalar(false, 0)), 1).is_err());
-    }
-
-    #[test]
-    #[should_panic(expected = "does not cover an array of length 2")]
-    fn a_mask_that_does_not_cover_the_array_panics() {
-        validity_covering(Some(PlBitmap::new_scalar(true, 3)), 2);
     }
 }

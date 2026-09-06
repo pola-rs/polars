@@ -18,9 +18,6 @@ use crate::series::AsSeries;
 
 #[cfg(feature = "rolling_window")]
 /// Runs `rolling_agg_fn` over `ca`, handing it the chunk in whatever representation it is in.
-///
-/// The kernel resolves that itself — see `polars_compute::rolling::dispatch` — so nothing is
-/// written out here on the way in.
 #[allow(clippy::type_complexity)]
 fn rolling_agg<T>(
     ca: &ChunkedArray<T>,
@@ -55,10 +52,6 @@ where
 }
 
 /// The column a rolling kernel's answer is.
-///
-/// The kernels answer in the element type of the column they were given, except `rolling_rank`,
-/// which answers in the type its method ranks in — so the chunk itself is what says what the
-/// column holds.
 #[cfg(any(feature = "rolling_window", feature = "rolling_window_by"))]
 fn series_of(name: PlSmallStr, chunk: PlArrayRef) -> Series {
     let dtype = match chunk.array_type() {

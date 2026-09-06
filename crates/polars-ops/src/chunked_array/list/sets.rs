@@ -107,9 +107,6 @@ where
 
 /// The element as the key it is looked up by, which is what makes a float's `NaN` compare equal to
 /// itself.
-///
-/// The elements arrive by value rather than by reference: a `PlPrimitiveArray` reads a chunk that
-/// repeats one value without a slot per element to point at.
 fn wrapper_opt<T: Copy + TotalEq + TotalHash>(
     v: Option<T>,
 ) -> <Option<T> as ToTotalOrd>::TotalOrdItem {

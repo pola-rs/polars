@@ -17,8 +17,6 @@ where
 }
 
 /// The sum of `count` copies of `value`, added up in the order a buffer holding them would be.
-///
-/// This is what a values buffer that repeats a single value sums to, without it being written out.
 pub(super) fn sum_repeated<T, S>(value: T, count: usize) -> S
 where
     T: NativeType + ToPrimitive,

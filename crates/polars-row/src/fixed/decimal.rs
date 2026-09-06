@@ -40,9 +40,6 @@ fn len_from_num_bits(num_bits: usize) -> usize {
 }
 
 /// Writes one row per element of `input`.
-///
-/// A values buffer that stands for a value repeated over every element is read as the one value it
-/// holds, without writing it out: only the rows are written.
 pub unsafe fn encode(
     buffer: &mut [MaybeUninit<u8>],
     input: &PlPrimitiveArray<i128>,

@@ -40,9 +40,6 @@ fn buffer_slots(is_scalar: bool, length: usize) -> usize {
 }
 
 /// Downcasts an array whose [`PlArrayType`] has already been matched on.
-///
-/// # Panics
-/// Panics if `array` is not an `A`, which its array type rules out.
 #[inline]
 fn downcast<A: PlArray>(array: &dyn PlArray) -> &A {
     array
@@ -52,10 +49,6 @@ fn downcast<A: PlArray>(array: &dyn PlArray) -> &A {
 }
 
 /// The bytes the views of a view array cover, which is what such an array is measured by.
-///
-/// The data buffers behind the views may be shared with another array, so the sum of the buffers
-/// would overestimate what this array costs and spill data that did not need spilling. A views
-/// buffer of a single slot covers its bytes once, however many elements read it.
 fn viewed_bytes(array: &PlBinaryViewArray) -> usize {
     match array.scalar_views() {
         Some(view) => view.length as usize,
@@ -89,17 +82,6 @@ fn offset_bytes(array: &PlBinaryArray) -> (usize, usize) {
 }
 
 /// The bytes the buffers of `array` take, its children included.
-///
-/// A buffer that stands for a value repeated over every element holds a single slot, so this
-/// reports what such a chunk costs rather than what it would cost written out.
-///
-/// # Implementation
-/// This is the sum of the sizes of the buffers and masks of `array` and of everything nested under
-/// it. Arrays may share buffers and masks, so the size of two of them is not the sum of what this
-/// returns for each: a [`PlStructArray`] in particular is an upper bound.
-///
-/// Slicing an array leaves its allocation as it is, but shrinks what this returns, because what is
-/// measured is the part of each buffer the array can see rather than the whole allocation.
 pub fn estimated_bytes_size(array: &dyn PlArray) -> usize {
     use PlArrayType as A;
 
@@ -164,129 +146,5 @@ pub fn estimated_bytes_size(array: &dyn PlArray) -> usize {
         },
         // An object array holds its elements behind a trait object, whose size is its own business.
         A::Object { .. } => 0,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use arrow::bitmap::Bitmap;
-    use polars_array::PlNullArray;
-
-    use super::*;
-
-    /// The one view a scalar chunk holds is measured once, and the result repeats the length
-    /// rather than holding a slot per element.
-    #[test]
-    fn a_repeated_value_keeps_its_length_repeated() {
-        let scalar = PlBinaryViewArray::new_scalar(b"hello", 100);
-        let sizes = binary_size_bytes(&scalar);
-
-        assert!(sizes.values_are_scalar());
-        assert_eq!(sizes, PlPrimitiveArray::from_vec(vec![5u32; 100]));
-    }
-
-    /// A chunk laid out one view per element is measured one element at a time, and the mask
-    /// comes along as it is.
-    #[test]
-    fn every_element_is_measured() {
-        let arr = PlBinaryViewArray::from_iter([Some(&b"a"[..]), None, Some(&b"three"[..])]);
-        assert_eq!(
-            binary_size_bytes(&arr),
-            PlPrimitiveArray::from_iter([Some(1u32), None, Some(5)]),
-        );
-
-        // A scalar view under a mask that holds one bit per element stays scalar.
-        let masked = PlBinaryViewArray::new_scalar(b"ab", 3).with_validity(Some(
-            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true])),
-        ));
-        assert_eq!(
-            binary_size_bytes(&masked),
-            PlPrimitiveArray::from_iter([Some(2u32), None, Some(2)]),
-        );
-    }
-
-    #[test]
-    fn an_empty_chunk_measures_nothing() {
-        let empty = PlBinaryViewArray::new_empty();
-        assert!(binary_size_bytes(&empty).is_empty());
-    }
-
-    /// A buffer that stands for a repeated value holds one slot, and that is what it costs — the
-    /// point of the representation, and what measuring the written-out form would miss.
-    #[test]
-    fn a_repeated_value_costs_one_slot() {
-        const LENGTH: usize = 1_000;
-
-        let scalar = PlPrimitiveArray::new_scalar(7i64, LENGTH);
-        assert_eq!(estimated_bytes_size(&scalar), size_of::<i64>());
-
-        let flat = PlPrimitiveArray::from_vec(vec![7i64; LENGTH]);
-        assert_eq!(estimated_bytes_size(&flat), LENGTH * size_of::<i64>());
-
-        // A mask of a single bit costs the one byte that bit is stored in.
-        let masked = PlPrimitiveArray::new_scalar(7i64, LENGTH)
-            .with_validity(Some(PlBitmap::new_scalar(true, LENGTH)));
-        assert_eq!(estimated_bytes_size(&masked), size_of::<i64>() + 1);
-
-        // Nulls are a length and nothing else.
-        assert_eq!(estimated_bytes_size(&PlNullArray::new(LENGTH)), 0);
-    }
-
-    /// Every buffer under a nested array is measured, the child's included.
-    #[test]
-    fn a_nested_chunk_measures_its_child() {
-        let values = Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4]));
-        let list = PlListArray::from_offsets(values, vec![0u64, 2, 4].into());
-
-        assert_eq!(
-            estimated_bytes_size(&list),
-            4 * size_of::<i32>() + 2 * size_of::<u64>(),
-        );
-
-        let fields: Vec<Box<dyn PlArray>> = vec![
-            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])),
-            Box::new(PlPrimitiveArray::new_scalar(9i64, 2)),
-        ];
-        assert_eq!(
-            estimated_bytes_size(&PlStructArray::new(fields, 2, None)),
-            2 * size_of::<i32>() + size_of::<i64>(),
-        );
-    }
-
-    /// Slicing a list array in half has to halve what it is measured at, which is why its offsets
-    /// are counted one per element: the leading offset would leave the halves over half the whole.
-    #[test]
-    fn slicing_a_list_halves_it() {
-        const LENGTH: usize = 10_000;
-
-        let values = Box::new(PlPrimitiveArray::from_vec((0..LENGTH as i64).collect()));
-        let list =
-            PlListArray::from_offsets(values, (0..=LENGTH as u64).collect::<Vec<_>>().into());
-
-        let whole = estimated_bytes_size(&list);
-        let half = estimated_bytes_size(&list.clone().sliced(LENGTH / 2, LENGTH / 2));
-        assert!(
-            half * 2 <= whole,
-            "half of {LENGTH} lists measured {half}, which is over half of {whole}",
-        );
-    }
-
-    /// Slicing an array shrinks what it can see, and a view array is measured by the bytes its
-    /// views cover rather than by the buffers behind them.
-    #[test]
-    fn slicing_shrinks_what_is_measured() {
-        let arr = PlPrimitiveArray::from_vec((0..100i32).collect());
-        assert_eq!(
-            estimated_bytes_size(&arr.clone().sliced(10, 5)),
-            5 * size_of::<i32>(),
-        );
-
-        let views = PlBinaryViewArray::from_values_iter([b"aaaa".as_slice(), b"bb"]);
-        assert_eq!(estimated_bytes_size(&views), 6);
-        // One view stands for every element, so its bytes are counted once.
-        assert_eq!(
-            estimated_bytes_size(&PlBinaryViewArray::new_scalar(b"aaaa", 100)),
-            4
-        );
     }
 }

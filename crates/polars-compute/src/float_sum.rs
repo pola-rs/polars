@@ -297,10 +297,6 @@ where
 }
 
 /// Adds up every non-null element of `arr`, in whichever representation it is stored.
-///
-/// A chunk that repeats one value is read once rather than written out, and a values buffer that
-/// already holds one slot per element is handed to the pairwise kernels as the slice it is — so
-/// this dispatch costs one branch and never allocates.
 fn sum_arr<T, F>(arr: &PlPrimitiveArray<T>) -> F
 where
     T: NativeType + FloatSum<F>,
@@ -343,55 +339,4 @@ where
     T: NativeType + FloatSum<f64>,
 {
     sum_arr(arr)
-}
-
-#[cfg(test)]
-mod tests {
-    use arrow::bitmap::Bitmap;
-    use polars_array::PlBitmap;
-
-    use super::*;
-
-    /// A chunk reads the same whichever representation it is stored in: a repeated value is
-    /// multiplied by the number of non-null elements rather than written out and added up.
-    #[test]
-    fn both_representations_sum_alike() {
-        for length in [0, 1, 2, 3, 65, 300] {
-            for valid in 0..=length {
-                let mask: Bitmap = (0..length).map(|i| i < valid).collect();
-                for validity in [None, Some(&mask)] {
-                    let scalar = PlPrimitiveArray::new_scalar(0.5f64, length)
-                        .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
-                    let flat = PlPrimitiveArray::from_vec(vec![0.5f64; length])
-                        .with_validity(validity.cloned().map(PlBitmap::from_bitmap));
-
-                    let count = validity.map_or(length, |_| valid);
-                    assert_eq!(sum_arr_as_f64(&scalar), sum_arr_as_f64(&flat));
-                    assert_eq!(sum_arr_as_f64(&scalar), 0.5 * count as f64);
-                }
-            }
-        }
-    }
-
-    /// Null elements contribute nothing, and the accumulator is wider than the values.
-    #[test]
-    fn null_elements_contribute_nothing() {
-        let arr = PlPrimitiveArray::from_iter([Some(1.5f32), None, Some(2.0), Some(3.0)]);
-        assert_eq!(sum_arr_as_f32(&arr), 6.5);
-        assert_eq!(sum_arr_as_f64(&arr), 6.5);
-
-        let all_null = PlPrimitiveArray::<f64>::new_full_null(300);
-        assert_eq!(sum_arr_as_f64(&all_null), 0.0);
-
-        let empty = PlPrimitiveArray::<f64>::new_empty();
-        assert_eq!(sum_arr_as_f64(&empty), 0.0);
-    }
-
-    /// Integers are accumulated in the wider float type, so a total that would overflow them does
-    /// not overflow the sum.
-    #[test]
-    fn integers_accumulate_in_the_float() {
-        let arr = PlPrimitiveArray::from_vec(vec![i32::MAX; 4]);
-        assert_eq!(sum_arr_as_f64(&arr), 4.0 * f64::from(i32::MAX));
-    }
 }

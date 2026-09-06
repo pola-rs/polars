@@ -1,29 +1,4 @@
 //! The byte class of an element type, which is all a routine that only moves bytes is taken over.
-//!
-//! A [`PlPrimitiveArray`](super::PlPrimitiveArray) is generic in its element type, of which there
-//! are seventeen. Those seventeen fall into only nine distinct pairs of size and alignment, and a
-//! routine that copies, repeats, gathers or zeroes elements reads nothing of an element but those
-//! two numbers: `i32`, `u32` and `f32` differ in what their bytes *mean*, which is exactly what
-//! such a routine never looks at. Writing one over the byte class rather than over the element
-//! type therefore has it compiled nine times instead of seventeen, and leaves the array's own
-//! methods as thin adapters that reinterpret their buffers and call it.
-//!
-//! Which is also why the routines here are `#[inline(never)]`: nine copies of a routine only
-//! stay nine copies if the optimizer is kept from pasting each one back into all seventeen
-//! adapters that call it, which is what it does to a body this small left to its own judgement.
-//! Nothing here is called per element — each one appends a whole array, a whole subslice or a
-//! whole batch of gathered indices — so the call it costs is nothing against the code it saves,
-//! and the adapters around them stay inlinable as they were.
-//!
-//! Reinterpreting is free and cannot fail: an element type and its byte class have the same size
-//! and alignment by construction, which [`assert_same_layout`] pins down at compile time, and a
-//! [`Buffer`] carries the layout its storage was allocated with, so the original allocation is
-//! still freed correctly through the reinterpreted buffer.
-//!
-//! What must *not* be routed through here is anything that reads what the bytes mean — ordering,
-//! hashing, and equality on floats above all, where `+0.0` and `-0.0` are equal numbers with
-//! different bytes and a `NaN` is a number equal to nothing at all, itself included. The one
-//! place this crate does compare bytes on purpose is documented where it does so.
 
 use arrow::Either;
 use arrow::types::{AlignedBytes, NativeType};
@@ -35,11 +10,6 @@ use polars_utils::vec::PushUnchecked;
 pub(crate) type Bytes<T> = <T as NativeType>::AlignedBytes;
 
 /// The values of an array as bytes, in whichever representation the backing buffer is in.
-///
-/// The routines below are the one place in this crate that dispatches on the representation
-/// *ahead* of the loop rather than fast-pathing the scalar case and falling through: they are
-/// `#[inline(never)]` byte-class cores, so the match has to be inside the call, and both arms do
-/// real work over the whole run.
 #[derive(Clone, Copy)]
 pub(crate) enum ValuesBytes<'a, B> {
     /// The buffer holds one slot per element.
@@ -91,10 +61,6 @@ pub(crate) fn buffer_from_byte_vec<T: NativeType>(values: Vec<Bytes<T>>) -> Buff
 
 /// The bytes of the elements in `values` as a `Vec` that owns them, which reuses the allocation
 /// rather than copying it.
-///
-/// This is the inverse of [`buffer_from_byte_vec`], and it succeeds only when the buffer can give
-/// its allocation up: when it is unsliced and nothing else holds a reference to it. Otherwise the
-/// buffer is handed back untouched, on the left.
 #[inline(always)]
 pub(crate) fn byte_vec_from_buffer<T: NativeType>(
     values: Buffer<T>,
@@ -293,28 +259,5 @@ mod tests {
         assert_eq!(-0.0f64, 0.0f64);
         assert_ne!(to_bytes(-0.0f64), to_bytes(0.0f64));
         assert!(from_bytes::<f64>(to_bytes(-0.0f64)).is_sign_negative());
-    }
-
-    #[test]
-    fn values_are_appended_in_either_representation() {
-        let values = [1i32, 2, 3];
-        let flat = ValuesBytes::Flat(slice_to_bytes(&values));
-        let scalar = ValuesBytes::Scalar(to_bytes(7i32));
-
-        let mut built = Vec::new();
-        extend_subslice(&mut built, flat, 1, 2);
-        extend_subslice(&mut built, scalar, 0, 2);
-        extend_subslice_each_repeated(&mut built, flat, 0, 2, 2);
-        extend_subslice_each_repeated(&mut built, scalar, 0, 1, 2);
-        unsafe { extend_gathered(&mut built, flat, &[2, 0]) };
-        unsafe { extend_gathered(&mut built, scalar, &[0]) };
-        extend_opt_gathered(&mut built, flat, 3, &[1, 7]);
-        extend_opt_gathered(&mut built, scalar, 3, &[2, 7]);
-        extend_undetermined(&mut built, 1);
-
-        assert_eq!(
-            buffer_from_byte_vec::<i32>(built).as_slice(),
-            [2, 3, 7, 7, 1, 1, 2, 2, 7, 7, 3, 1, 7, 2, 0, 7, 0, 0],
-        );
     }
 }

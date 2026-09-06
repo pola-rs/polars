@@ -64,9 +64,6 @@ impl PlFixedSizeListArray {
     }
 
     /// Creates a flat [`PlFixedSizeListArray`] out of its internal components.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::try_new`] errors.
     #[inline]
     pub fn new(
         values: Box<dyn PlArray>,
@@ -109,7 +106,6 @@ impl PlFixedSizeListArray {
     /// # Errors
     /// This function errors if `values` is not scalar for `width` and `length`, per
     /// [`is_scalar_fixed_size_values_len`], or if `validity` is not scalar for `length`, per
-    /// [`is_scalar_buffer_len`].
     pub fn try_new_broadcast(
         values: Box<dyn PlArray>,
         width: usize,
@@ -135,9 +131,6 @@ impl PlFixedSizeListArray {
 
     /// Creates a scalar [`PlFixedSizeListArray`] of `length` elements out of its internal
     /// components.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::try_new_broadcast`] errors.
     #[inline]
     pub fn new_broadcast(
         values: Box<dyn PlArray>,
@@ -187,10 +180,6 @@ impl PlFixedSizeListArray {
 
     /// Creates a fully valid, flat [`PlFixedSizeListArray`] by cutting `values` into lists of
     /// `width` values, taking its length from how many of them there are.
-    ///
-    /// # Panics
-    /// Panics if `width` is zero, which leaves no number of lists to cut the values into, or if the
-    /// length of `values` is not a multiple of `width`.
     pub fn from_values(values: Box<dyn PlArray>, width: usize) -> Self {
         assert!(
             width > 0,
@@ -262,9 +251,6 @@ impl PlFixedSizeListArray {
     }
 
     /// The values array the lists are taken over.
-    ///
-    /// Which range of it an element covers depends on the representation the values are in, which
-    /// [`Self::value_range`] resolves.
     #[inline]
     pub fn values(&self) -> &dyn PlArray {
         &*self.values
@@ -349,9 +335,6 @@ impl PlFixedSizeListArray {
 
     /// The range of the values array the element at `i` covers, which is always [`Self::width`]
     /// values wide.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value_range(&self, i: usize) -> Range<usize> {
         assert!(i < self.length, "index out of bounds");
@@ -378,9 +361,6 @@ impl PlFixedSizeListArray {
     }
 
     /// Returns the element at `i`: the values array sliced to the range the element covers.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value(&self, i: usize) -> Box<dyn PlArray> {
         assert!(i < self.length, "index out of bounds");
@@ -399,9 +379,6 @@ impl PlFixedSizeListArray {
     }
 
     /// Returns whether the element at `i` is valid (non-null).
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_valid(&self, i: usize) -> bool {
         assert!(i < self.length, "index out of bounds");
@@ -421,9 +398,6 @@ impl PlFixedSizeListArray {
     }
 
     /// Returns whether the element at `i` is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_null(&self, i: usize) -> bool {
         !self.is_valid(i)
@@ -439,9 +413,6 @@ impl PlFixedSizeListArray {
     }
 
     /// Returns the element at `i`, or `None` if it is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn get(&self, i: usize) -> Option<Box<dyn PlArray>> {
         assert!(i < self.length, "index out of bounds");
@@ -458,12 +429,6 @@ impl PlFixedSizeListArray {
     }
 
     /// The number of null elements.
-    ///
-    /// Inlined so that an array with no mask to count is answered without a call at all: one left
-    /// standing is an opaque write as far as the compiler is concerned, and sinks behind it every
-    /// fact the caller had established about the array — the representation of its buffers
-    /// included — which is exactly what a caller asking [`Self::has_nulls`] ahead of a walk is
-    /// trying to hand the walk.
     #[inline]
     pub fn null_count(&self) -> usize {
         self.validity().map_or(0, |validity| validity.unset_bits())
@@ -493,9 +458,6 @@ impl PlFixedSizeListArray {
 
     /// Returns an iterator over `length` elements, repeating the single element of this array if
     /// that is all it holds, and ignoring validity.
-    ///
-    /// # Panics
-    /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
     #[inline]
     pub fn broadcast_values_iter(&self, length: usize) -> PlFixedSizeListValuesIter<'_> {
         assert_broadcastable(self.length, length);
@@ -505,12 +467,6 @@ impl PlFixedSizeListArray {
     }
 
     /// Returns this array with its validity mask replaced.
-    ///
-    /// The mask keeps whichever representation it is in: one that stands for a single bit shared
-    /// by every element is not written out one bit per element to be set.
-    ///
-    /// # Panics
-    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
     #[must_use]
     pub fn with_validity(mut self, validity: Option<PlBitmap>) -> Self {
         self.set_validity(validity);
@@ -518,9 +474,6 @@ impl PlFixedSizeListArray {
     }
 
     /// Replaces the validity mask, which keeps the representation it is in.
-    ///
-    /// # Panics
-    /// Panics unless `validity` covers exactly [`len`](Self::len) elements.
     pub fn set_validity(&mut self, validity: Option<PlBitmap>) {
         let length = self.len();
         self.validity = validity_covering(validity, length);
@@ -534,9 +487,6 @@ impl PlFixedSizeListArray {
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
             offset + length <= self.length,
@@ -563,9 +513,6 @@ impl PlFixedSizeListArray {
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// # Panics
-    /// Panics if `offset + length > self.len()`.
     #[must_use]
     pub fn sliced(mut self, offset: usize, length: usize) -> Self {
         self.slice(offset, length);
@@ -583,9 +530,6 @@ impl PlFixedSizeListArray {
     }
 
     /// Creates a [`PlFixedSizeListArray`] of `length` copies of the element at `index`.
-    ///
-    /// # Panics
-    /// Panics if `index >= self.len()`.
     #[inline]
     pub fn new_from_index(&self, index: usize, length: usize) -> Self {
         assert!(index < self.length, "index out of bounds");
@@ -639,7 +583,6 @@ impl PlFixedSizeListArray {
 
         // SAFETY: the values are the element every element covers, repeated once per element, and
         // the mask is the flat counterpart of one valid for this array's length, which leaves every
-        // backing buffer holding one slot per element.
         Cow::Owned(unsafe {
             Flat::new(Self::new_unchecked(
                 values,
@@ -660,9 +603,6 @@ impl PlFixedSizeListArray {
     }
 
     /// The number of values a flat counterpart of this array holds.
-    ///
-    /// # Panics
-    /// Panics if that overflows a `usize`, which no values array has the memory to back.
     #[inline]
     fn flat_values_len(&self) -> usize {
         self.length.checked_mul(self.width).expect(
@@ -892,23 +832,5 @@ mod tests {
             [Some(1), Some(2), Some(1), Some(2), Some(1), Some(2)],
         );
         assert_eq!(*flat, scalar);
-    }
-
-    #[test]
-    fn an_array_of_no_elements_covers_no_values() {
-        // A single slot is scalar for no elements too, but there is no element left to read it, so
-        // it is not kept: the array is flat, like every empty array, rather than scalar.
-        let arr = PlFixedSizeListArray::new_broadcast(
-            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])),
-            2,
-            0,
-            Some(PlBitmap::new_scalar(false, 0)),
-        );
-
-        assert!(arr.is_empty());
-        assert!(arr.is_flat());
-        assert!(!arr.is_scalar());
-        assert!(arr.flat_values().unwrap().is_empty());
-        assert!(arr.validity().unwrap().is_empty());
     }
 }

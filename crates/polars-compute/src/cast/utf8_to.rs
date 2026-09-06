@@ -32,9 +32,6 @@ pub fn utf8_to_dictionary<O: Offset, K: DictionaryKey>(
 }
 
 /// Reads the bytes of a UTF-8 array as the bytes they are.
-///
-/// This is `O(1)`: the offsets, the bytes and the validity are the same on both sides, and all
-/// that changes is that nothing downstream may assume the bytes are valid UTF-8 any more.
 pub fn utf8_to_binary<O: Offset>(from: &Utf8Array<O>, to_dtype: ArrowDataType) -> BinaryArray<O> {
     // SAFETY: erasure of an invariant is always safe
     BinaryArray::<O>::new(

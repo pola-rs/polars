@@ -35,10 +35,6 @@ use polars_core::prelude::*;
 use crate::EvictIdx;
 
 /// The boolean chunk holding `values`, one bit per element, under `validity`.
-///
-/// The reductions all finish the same way — a `BitmapBuilder` of one bit per group, sometimes
-/// alongside a mask of the groups that saw anything — so they share the one place that reads those
-/// bits as an array.
 fn pl_boolean(values: Bitmap, validity: Option<Bitmap>) -> PlBooleanArray {
     let length = values.len();
     PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap))

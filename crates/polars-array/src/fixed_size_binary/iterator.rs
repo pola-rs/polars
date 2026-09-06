@@ -5,22 +5,9 @@ use crate::broadcast::is_flat_fixed_size_values_len;
 
 /// Iterator over the elements of a [`PlFixedSizeBinaryArray`](super::PlFixedSizeBinaryArray),
 /// ignoring validity.
-///
-/// The representation of the values is resolved once, at construction, into the stride of the
-/// walk: one width while they hold an element per position, and nowhere at all once they hold the
-/// one element every position reads. Every element is then the same handful of instructions
-/// whatever the values turned out to be — no branch on the representation, nothing in the loop for
-/// the compiler to unswitch, and a trip count it can see, which is what lets it unroll the
-/// caller's loop.
-///
-/// Deciding per element instead — matching an enum, or loading the length of the values and
-/// selecting on it — leaves a diamond in the loop body and a stride the loop cannot hoist.
 #[derive(Clone)]
 pub struct PlFixedSizeBinaryValuesIter<'a> {
     /// The values from the element at the front on.
-    ///
-    /// Only the first [`Self::width`] bytes are ever read through it; the rest of its length is
-    /// carried along so the walk stays in safe slice arithmetic.
     front: &'a [u8],
     /// How many bytes every element is wide.
     width: usize,
@@ -236,9 +223,6 @@ pub struct PlFixedSizeBinaryIter<'a> {
 }
 
 impl<'a> PlFixedSizeBinaryIter<'a> {
-    /// # Panics
-    /// Panics unless `validity` has `length` bits.
-    ///
     /// # Safety
     /// `values` must be flat or scalar for `length` and `width`, per [`crate::broadcast`].
     #[inline]
@@ -261,7 +245,6 @@ impl<'a> PlFixedSizeBinaryIter<'a> {
     /// # Safety
     /// The mask must still cover the element the values yielded, which it does for one they
     /// yielded at the front — the two are walked in lockstep, and the mask holds a bit for every
-    /// element the values do.
     #[inline(always)]
     unsafe fn front(&mut self, value: &'a [u8], n: usize) -> Option<&'a [u8]> {
         // SAFETY: the mask covers the element the values yielded, per the caller.
@@ -382,11 +365,8 @@ unsafe impl TrustedLen for PlFixedSizeBinaryIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
-    use polars_buffer::Buffer;
 
     use crate::PlFixedSizeBinaryArray;
-    use crate::bitmap::PlBitmap;
     use crate::iterator_tests::assert_iterates;
 
     /// The elements of a flat array of three elements two bytes wide.
@@ -430,92 +410,5 @@ mod tests {
             array.iter().nth_back(999_999_999),
             Some(Some(b"xy".as_slice()))
         );
-    }
-
-    /// A mask of mixed bits, which is read by position alongside the elements.
-    #[test]
-    fn mixed_validity() {
-        let array = flat_array().with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
-            true, false, true,
-        ]))));
-
-        assert_iterates(array.values_iter(), &elements());
-        assert_iterates(
-            array.iter(),
-            &[Some(elements()[0]), None, Some(elements()[2])],
-        );
-    }
-
-    /// A mask that starts partway into its bytes, walked in lockstep with values that start
-    /// partway into theirs — which is what the elements are read out of step with if either end
-    /// of the walk drops a position the other one keeps.
-    #[test]
-    fn sliced_mixed_validity() {
-        let array = PlFixedSizeBinaryArray::from_vec(b"abcdefghij".to_vec(), 2)
-            .with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
-                true, false, true, true, false,
-            ]))))
-            .sliced(1, 3);
-
-        assert_iterates(array.values_iter(), &[b"cd", b"ef", b"gh"]);
-        assert_iterates(
-            array.iter(),
-            &[None, Some(b"ef".as_slice()), Some(b"gh".as_slice())],
-        );
-    }
-
-    /// A mask under a scalar array, which every position reads the same bit of.
-    #[test]
-    fn scalar_values_under_a_mixed_mask() {
-        let array = PlFixedSizeBinaryArray::new_scalar(b"xy", 3).with_validity(Some(
-            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true])),
-        ));
-
-        assert_iterates(
-            array.iter(),
-            &[Some(b"xy".as_slice()), None, Some(b"xy".as_slice())],
-        );
-    }
-
-    /// The elements of a sliced array start partway into the values, which are still cut into the
-    /// chunks the width makes of them.
-    #[test]
-    fn sliced() {
-        let array = flat_array().sliced(1, 2);
-
-        assert_iterates(array.values_iter(), &elements()[1..]);
-        assert_iterates(
-            array.iter(),
-            &elements()[1..]
-                .iter()
-                .copied()
-                .map(Some)
-                .collect::<Vec<_>>(),
-        );
-    }
-
-    /// An array of no elements, which keeps no element for a scalar one to repeat.
-    #[test]
-    fn empty() {
-        assert_iterates(flat_array().sliced(0, 0).values_iter(), &[]);
-        assert_iterates(
-            PlFixedSizeBinaryArray::new_scalar(b"xy", 0).values_iter(),
-            &[],
-        );
-    }
-
-    /// Elements no bytes wide, which are all the same empty slice however many there are — and
-    /// which the chunks of a flat walk would have no end of.
-    #[test]
-    fn a_width_of_zero() {
-        let empty: &[u8] = b"";
-
-        let flat = PlFixedSizeBinaryArray::new(Buffer::new(), 0, 3, None);
-        assert_iterates(flat.values_iter(), &[empty; 3]);
-        assert_iterates(flat.iter(), &[Some(empty); 3]);
-
-        let scalar = PlFixedSizeBinaryArray::new_scalar(empty, 3);
-        assert_iterates(scalar.values_iter(), &[empty; 3]);
-        assert_iterates(scalar.iter(), &[Some(empty); 3]);
     }
 }

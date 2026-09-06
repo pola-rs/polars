@@ -50,9 +50,6 @@ impl Flat<PlBinaryArray> {
     }
 
     /// The range of [`Self::values`] the element at `i` covers.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value_range(&self, i: usize) -> Range<usize> {
         assert!(i < self.as_array().length, "index out of bounds");
@@ -76,9 +73,6 @@ impl Flat<PlBinaryArray> {
     }
 
     /// Returns the bytes of the element at `i`.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn value(&self, i: usize) -> &[u8] {
         assert!(i < self.as_array().length, "index out of bounds");
@@ -97,9 +91,6 @@ impl Flat<PlBinaryArray> {
     }
 
     /// Returns whether the element at `i` is valid (non-null).
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_valid(&self, i: usize) -> bool {
         assert!(i < self.as_array().length, "index out of bounds");
@@ -119,9 +110,6 @@ impl Flat<PlBinaryArray> {
     }
 
     /// Returns whether the element at `i` is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn is_null(&self, i: usize) -> bool {
         !self.is_valid(i)
@@ -137,9 +125,6 @@ impl Flat<PlBinaryArray> {
     }
 
     /// Returns the bytes of the element at `i`, or `None` if it is null.
-    ///
-    /// # Panics
-    /// Panics if `i >= self.len()`.
     #[inline]
     pub fn get(&self, i: usize) -> Option<&[u8]> {
         assert!(i < self.as_array().length, "index out of bounds");

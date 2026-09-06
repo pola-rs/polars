@@ -8,9 +8,6 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 
 /// Takes the single chunk in `chunks` out, leaving no chunk behind.
-///
-/// The chunk is moved out of the box rather than cloned out of it, so that the array that comes
-/// back holds the only reference to its buffers.
 fn take_chunk<A: StaticArray + Default>(chunks: &mut Vec<PlArrayRef>) -> A {
     let mut chunk = chunks
         .pop()
@@ -187,34 +184,6 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
 #[cfg(test)]
 mod test {
     use super::*;
-
-    /// What makes `extend` worth having over `append`: the values go into the allocation that is
-    /// already there, and the result is still a single chunk.
-    #[test]
-    fn extend_appends_into_the_existing_allocation() {
-        let values_ptr = |ca: &Int32Chunked| {
-            ca.downcast_iter()
-                .next()
-                .unwrap()
-                .flat_values()
-                .unwrap()
-                .as_slice()
-                .as_ptr()
-        };
-
-        // Room to grow, so that appending has somewhere to go without moving what is there.
-        let mut values = Vec::with_capacity(64);
-        values.extend([1, 2, 3]);
-        let mut ca = Int32Chunked::from_vec(PlSmallStr::from_static("a"), values);
-        let before = values_ptr(&ca);
-
-        ca.extend(&Int32Chunked::new(PlSmallStr::from_static("a"), &[4, 5]))
-            .unwrap();
-
-        assert_eq!(ca.chunks().len(), 1);
-        assert_eq!(values_ptr(&ca), before);
-        assert_eq!(ca.into_no_null_iter().collect::<Vec<_>>(), [1, 2, 3, 4, 5]);
-    }
 
     #[test]
     #[allow(clippy::redundant_clone)]

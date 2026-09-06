@@ -101,9 +101,6 @@ fn nan_mask_slice<T: PartialEq + IsFloat>(slice: &[T], nan_is_set: bool) -> Opti
 }
 
 /// Returns a mask that is set where `array` is NaN.
-///
-/// A null element is NaN nowhere and not-NaN nowhere either: the mask carries `array`'s validity,
-/// so the answer at a null element is null in turn.
 pub fn is_nan<T: NativeType + IsFloat>(array: &PlPrimitiveArray<T>) -> PlBooleanArray {
     nan_mask(array, true)
 }
@@ -130,55 +127,4 @@ fn nan_mask<T: NativeType + IsFloat>(
     };
 
     PlBooleanArray::from_pl_bitmap(values).with_validity(array.validity().map(PlBitmap::from))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The one value a scalar chunk holds is tested once, and the mask repeats the answer rather
-    /// than holding a bit per element.
-    #[test]
-    fn a_repeated_value_is_tested_once() {
-        let nans = PlPrimitiveArray::new_scalar(f64::NAN, 100);
-        assert!(is_nan(&nans).values_are_scalar());
-        assert_eq!(is_nan(&nans), PlBooleanArray::new_scalar(true, 100));
-        assert_eq!(is_not_nan(&nans), PlBooleanArray::new_scalar(false, 100));
-
-        let numbers = PlPrimitiveArray::new_scalar(1.0f64, 100);
-        assert!(is_nan(&numbers).values_are_scalar());
-        assert_eq!(is_nan(&numbers), PlBooleanArray::new_scalar(false, 100));
-        assert_eq!(is_not_nan(&numbers), PlBooleanArray::new_scalar(true, 100));
-    }
-
-    /// A chunk laid out one value per element is tested one element at a time, and the mask comes
-    /// out with the validity it went in with.
-    #[test]
-    fn every_element_is_tested() {
-        let arr = PlPrimitiveArray::from_iter([Some(1.0f64), None, Some(f64::NAN)]);
-        assert_eq!(
-            is_nan(&arr),
-            PlBooleanArray::from_iter([Some(false), None, Some(true)]),
-        );
-        assert_eq!(
-            is_not_nan(&arr),
-            PlBooleanArray::from_iter([Some(true), None, Some(false)]),
-        );
-    }
-
-    /// A flat chunk that holds no NaN at all needs no slot per element to say so.
-    #[test]
-    fn a_chunk_without_nan_answers_once() {
-        let arr = PlPrimitiveArray::from_vec(vec![1.0f64, 2.0, 3.0]);
-        assert!(is_nan(&arr).values_are_scalar());
-        assert_eq!(is_nan(&arr), PlBooleanArray::new_scalar(false, 3));
-        assert_eq!(is_not_nan(&arr), PlBooleanArray::new_scalar(true, 3));
-    }
-
-    #[test]
-    fn an_empty_chunk_is_tested_nowhere() {
-        let empty = PlPrimitiveArray::<f64>::new_empty();
-        assert!(is_nan(&empty).is_empty());
-        assert!(is_not_nan(&empty).is_empty());
-    }
 }

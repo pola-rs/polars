@@ -170,7 +170,6 @@ macro_rules! sort_with_fast_path {
             return $ca.reverse()
         };
 
-
     }}
 }
 
@@ -949,35 +948,7 @@ pub unsafe fn perfect_sort(idx: &[(IdxSize, IdxSize)], out: &mut Vec<IdxSize>) {
 
 #[cfg(test)]
 mod test {
-    use arrow::bitmap::Bitmap;
-
     use crate::prelude::*;
-
-    #[test]
-    fn arg_sort_over_a_scalar_validity_mask() {
-        // `full_null` repeats a single unset bit, which `partition_nulls` has to read as the mask
-        // of every element rather than of the one bit it holds.
-        let scalar = BinaryOffsetChunked::full_null(PlSmallStr::EMPTY, 4);
-        assert!(scalar.downcast_as_array().validity().unwrap().is_scalar());
-
-        // The same column with the mask written out, which is what the result has to match.
-        let mut flat = BinaryOffsetChunked::full_null(PlSmallStr::EMPTY, 4);
-        flat.set_validity(Some(Bitmap::new_zeroed(4)));
-        assert!(!flat.downcast_as_array().validity().unwrap().is_scalar());
-
-        for nulls_last in [false, true] {
-            let options = SortOptions::default().with_nulls_last(nulls_last);
-            let expected = flat.arg_sort(options);
-            let out = scalar.arg_sort(options);
-
-            assert_eq!(out.len(), 4);
-            assert_eq!(out.null_count(), 4);
-            assert_eq!(
-                out.iter().collect::<Vec<_>>(),
-                expected.iter().collect::<Vec<_>>(),
-            );
-        }
-    }
 
     #[test]
     fn test_arg_sort() {

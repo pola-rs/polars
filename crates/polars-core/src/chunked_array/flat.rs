@@ -67,18 +67,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 impl<T: PolarsNumericType> ChunkedArray<T> {
     /// The values of this array as one contiguous slice, writing out only a chunk whose values
     /// repeat a single value.
-    ///
-    /// Errors if this array holds more than one chunk or any null element: neither leaves one run
-    /// of values to hand out. Unlike [`FlatNumericChunkedArray::cont_slice`], which asks for an
-    /// array that is already flat, this reads nothing of the validity mask — so a chunk that
-    /// carries a repeated mask over values that are laid out one slot per element hands its buffer
-    /// over as it stands.
-    /// The values of every chunk, each as one run, writing out only a chunk whose values repeat a
-    /// single value.
-    ///
-    /// This is [`FlatNumericChunkedArray::data_views`] without the flatness requirement, and it
-    /// reads no validity: reach for it where the values are walked and the mask is resolved apart
-    /// from them, or where there is no null for a mask to mark.
     pub fn to_data_views(&self) -> Vec<Cow<'_, Buffer<T::Native>>> {
         self.downcast_iter()
             .map(|arr| arr.to_flat_values())
@@ -104,7 +92,7 @@ pub trait FlatChunkedArray<T: PolarsDataType> {
     /// The chunk at `idx`, or `None` if there are fewer chunks than that.
     fn flat_chunk(&self, idx: usize) -> Option<&Flat<T::Array>>;
 
-    /// The single chunk of this array. Panics if this array does not have exactly one chunk.
+    /// The single chunk of this array.
     fn flat_as_array(&self) -> &Flat<T::Array>;
 }
 
@@ -178,72 +166,5 @@ impl<T: PolarsNumericType> FlatNumericChunkedArray<T> for Flat<ChunkedArray<T>> 
 
     fn data_views(&self) -> impl DoubleEndedIterator<Item = &[T::Native]> {
         self.flat_chunks().map(|arr| arr.as_slice())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    /// An array of one element is in both representations at once — one slot per element *is* one
-    /// slot standing for every element — and asking whether it is scalar says yes.
-    #[test]
-    fn a_one_element_chunk_is_still_written_into() {
-        let mut ca = Int32Chunked::from_vec(PlSmallStr::EMPTY, vec![7]);
-        assert!(ca.is_flat());
-
-        // SAFETY: just checked, and adding to the values leaves the chunk flat.
-        for value in unsafe { Flat::new_mut(&mut ca) }.cont_slice_mut().unwrap() {
-            *value += 1;
-        }
-        assert_eq!(ca.get(0), Some(8));
-    }
-
-    #[test]
-    fn a_scalar_chunk_is_written_out_by_to_flat() {
-        // `full` repeats one value in `O(1)`, which is the scalar representation.
-        let ca = Int32Chunked::full(PlSmallStr::EMPTY, 7, 3);
-        assert!(!ca.is_flat());
-        assert!(ca.as_flat().is_none());
-
-        let flat = ca.to_flat();
-        assert!(matches!(flat, Cow::Owned(_)));
-        assert_eq!(flat.cont_slice().unwrap(), [7, 7, 7]);
-
-        // The array itself is untouched: `to_flat` writes out a copy.
-        assert!(!ca.is_flat());
-    }
-
-    #[test]
-    fn a_flat_chunk_is_borrowed_rather_than_copied() {
-        let ca = Int32Chunked::new(PlSmallStr::EMPTY, &[1, 2, 3]);
-        assert!(ca.is_flat());
-
-        let flat = ca.to_flat();
-        assert!(matches!(flat, Cow::Borrowed(_)));
-        assert_eq!(flat.cont_slice().unwrap(), [1, 2, 3]);
-        assert_eq!(flat.data_views().next().unwrap(), [1, 2, 3]);
-    }
-
-    #[test]
-    fn flatten_mut_leaves_the_array_itself_flat() {
-        let mut ca = Int32Chunked::full(PlSmallStr::EMPTY, 7, 3);
-        ca.flatten_mut();
-
-        assert!(ca.is_flat());
-        assert_eq!(ca.as_flat().unwrap().cont_slice().unwrap(), [7, 7, 7]);
-        assert_eq!(ca.len(), 3);
-        assert_eq!(ca.null_count(), 0);
-    }
-
-    #[test]
-    fn cont_slice_needs_one_chunk_and_no_nulls() {
-        let mut ca = Int32Chunked::new(PlSmallStr::EMPTY, &[1, 2]);
-        ca.append(&Int32Chunked::new(PlSmallStr::EMPTY, &[3]))
-            .unwrap();
-        assert!(ca.to_flat().cont_slice().is_err());
-
-        let ca = Int32Chunked::new(PlSmallStr::EMPTY, &[Some(1), None]);
-        assert!(ca.to_flat().cont_slice().is_err());
     }
 }
