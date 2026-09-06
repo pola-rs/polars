@@ -17,8 +17,8 @@ def test_chunks_align_16830() -> None:
 
 
 def test_first_last_non_null_empty_leading_chunk_28495() -> None:
-    # A series carrying a sorted flag whose *first* chunk is empty used to read out of
-    # bounds while deciding whether the nulls sit at the start or at the end.
+    # Sorted flag + empty first chunk: deciding whether the nulls sit at the start or
+    # at the end must not read out of bounds.
     def with_empty_leading_chunk(values: list[int | None]) -> pl.Series:
         s = pl.concat(
             [

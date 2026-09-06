@@ -557,9 +557,8 @@ def test_is_sorted_list_pairwise_fallback_error() -> None:
 def test_is_sorted_float_multiple_chunks(
     values: list[float], descending: bool, dtype: pl.DataType
 ) -> None:
-    # The multi-chunk scan used to seed the running comparison with the finite
-    # `min`/`max` of the type, which are not the extremes of the total order for
-    # floats: `-inf`, `inf` and `NaN` all sort outside them.
+    # `-inf`, `inf` and `NaN` sort outside the finite `min`/`max` of the type, so the
+    # multi-chunk scan cannot seed its running comparison with those.
     single = pl.Series("a", values, dtype=dtype)
     assert single.n_chunks() == 1
     assert single.is_sorted(descending=descending)
@@ -585,9 +584,9 @@ def test_is_sorted_float_multiple_chunks(
 
 
 def test_is_sorted_boolean_constant_with_sorted_flag() -> None:
-    # A constant series is sorted in *both* directions, but the sorted-flag fast path
-    # in `first_true_idx` / `first_false_idx` used to report an index for a value that
-    # does not occur in the series at all.
+    # A constant series is sorted in both directions. The sorted-flag fast path in
+    # `first_true_idx` / `first_false_idx` must not report an index for a value that
+    # does not occur in the series.
     all_true = pl.Series("a", [True, True, True]).sort()
     assert all_true.flags["SORTED_ASC"]
     assert all_true.is_sorted()
@@ -608,9 +607,7 @@ def test_is_sorted_boolean_constant_with_sorted_flag() -> None:
     reason="the sorted flag short-circuits `is_sorted` without checking null placement"
 )
 def test_is_sorted_flag_respects_null_placement() -> None:
-    # The sorted flag records the order of the *values*; it says nothing about where the
-    # nulls are. `is_sorted` short-circuits on the flag alone, so it answers as if the
-    # nulls were wherever `nulls_last` asked for them.
+    # The sorted flag records the order of the values, not where the nulls are.
     #
     # Note that fixing this makes `ensure_sorted_arg` (asof join, rolling, upsample,
     # group_by_dynamic) and the streaming asof join's `check_df_sorted` start rejecting

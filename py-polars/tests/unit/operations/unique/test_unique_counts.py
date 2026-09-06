@@ -47,9 +47,7 @@ def test_unique_counts_null() -> None:
 
 
 def test_unique_counts_boolean_sorted_nulls_last() -> None:
-    # `first_null` on a sorted-flagged series with the nulls at the end returned
-    # `null_count` instead of `len - null_count`, which put the null count in the
-    # wrong position of the result.
+    # With the nulls at the end, the null run is the last group of the result.
     ascending = pl.Series("a", [None, False, True, False, None, True, True]).sort(
         nulls_last=True
     )

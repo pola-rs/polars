@@ -1611,9 +1611,8 @@ def test_unordered_implode_reduction_27373(
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
 def test_max_sorted_all_nan_with_nulls(dtype: pl.DataType) -> None:
-    # The sorted fast path looks for the last non-NaN value to report as the maximum.
-    # When every non-null value is NaN there is no such value, and it used to step off
-    # the front of the non-null region and report a null instead.
+    # The sorted fast path looks for the last non-NaN value to report as the maximum;
+    # when every non-null value is NaN, it must fall back to reporting a NaN.
     nan = float("nan")
 
     for values in ([None, nan, nan], [None, None, nan]):

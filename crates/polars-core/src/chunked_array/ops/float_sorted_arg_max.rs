@@ -23,9 +23,8 @@ where
         let idx = binary_search_ca(ca, search_val, SearchSortedSide::Left, false)[0] as usize;
         let candidate = idx.saturating_sub(1);
         if candidate < ca.first_non_null().unwrap() {
-            // Every non-null value is NaN, so stepping back lands on a null. There is no
-            // non-NaN maximum; report a NaN, as the NaN-ignoring reduction does for an
-            // all-NaN input.
+            // Stepping back landed on a null, so every non-null value is NaN. Report a NaN,
+            // as the NaN-ignoring reduction does for an all-NaN input.
             maybe_max_idx
         } else {
             candidate
@@ -48,9 +47,8 @@ where
         let idx = binary_search_ca(ca, search_val, SearchSortedSide::Right, true)[0] as usize;
         let candidate = if idx == ca.len() { idx - 1 } else { idx };
         if candidate > ca.last_non_null().unwrap() {
-            // Every non-null value is NaN, so stepping forward lands on a null. There is no
-            // non-NaN maximum; report a NaN, as the NaN-ignoring reduction does for an
-            // all-NaN input.
+            // Stepping forward landed on a null, so every non-null value is NaN. Report a NaN,
+            // as the NaN-ignoring reduction does for an all-NaN input.
             maybe_max_idx
         } else {
             candidate
