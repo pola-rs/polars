@@ -332,6 +332,17 @@ impl NodeStats {
             .map(|name| self.distinct_count_key(name))
             .try_fold(1.0, |acc, ndv| Some(acc * ndv?))
     }
+
+    /// [`Self::key_distinct_count_product`], falling back to the value range of a
+    /// key whose distinct count is unknown.
+    pub(crate) fn key_domain_product(&self, keys: &[&PlSmallStr]) -> Option<f64> {
+        keys.iter()
+            .map(|name| {
+                self.distinct_count_key(name)
+                    .or_else(|| self.int_domain(name))
+            })
+            .try_fold(1.0, |acc, ndv| Some(acc * ndv?))
+    }
 }
 
 /// Rows a join of the given type emits, given the sizes of its sides and the rows an

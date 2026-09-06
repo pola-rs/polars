@@ -395,20 +395,34 @@ fn try_rewrite(
         return None;
     }
 
-    // Only worth it when the surrogate is much smaller than what flows into the
-    // group-by, so that grouping on it collapses many rows into few.
+    // Only worth it when the first phase collapses many rows into few. It groups on
+    // the surrogate alongside the keys that stay behind, so both bound how far it
+    // can reduce.
     // The two nodes share descendants, so they share one cache.
     let cache = &mut StatsCache::new();
-    let in_rows = node_stats_with_cache(input, ir_arena, expr_arena, cache)?.filtered;
+    let in_stats = node_stats_with_cache(input, ir_arena, expr_arena, cache)?;
+    let in_rows = in_stats.filtered;
     let surrogate_rows =
         node_stats_with_cache(surrogate.node, ir_arena, expr_arena, cache)?.filtered;
+
+    let remaining: Vec<&PlSmallStr> = key_names
+        .iter()
+        .filter(|name| !surrogate.keys.contains(name))
+        .collect();
+    // The first phase emits one row per surrogate at least, and a key that stays
+    // behind can only split that further. Its value domain is all we know of how
+    // far, so a key that could be near-unique disqualifies the rewrite.
+    let remaining_domain = in_stats.key_domain_product(&remaining).unwrap_or_default();
+    let phase1_rows = surrogate_rows.max(remaining_domain);
+
     if polars_core::config::verbose() {
         eprintln!(
-            "surrogate group-by candidate: {in_rows:.0} rows over {surrogate_rows:.0} \
-             surrogate rows, key {surrogate_width}/{total_width} bytes",
+            "surrogate group-by candidate: {in_rows:.0} rows over {phase1_rows:.0} \
+             partial rows ({surrogate_rows:.0} surrogate), key \
+             {surrogate_width}/{total_width} bytes",
         );
     }
-    if in_rows < MIN_REDUCTION * surrogate_rows {
+    if in_rows < MIN_REDUCTION * phase1_rows {
         return None;
     }
 
