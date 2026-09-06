@@ -22,7 +22,7 @@ use crate::prelude::{JoinType, Operator};
 
 // We don't iterate over it.
 #[expect(clippy::disallowed_types)]
-pub(super) type StatsCache = PlHashMap<Node, Option<NodeStats>>;
+pub(crate) type StatsCache = PlHashMap<Node, Option<NodeStats>>;
 
 /// Fallback selectivity for a filter conjunct with no better estimate.
 const DEFAULT_SELECTIVITY: f64 = 0.2;
@@ -65,7 +65,7 @@ pub fn node_stats(
 /// one subplan would otherwise re-walk the same descendants once per ancestor. The
 /// cache is keyed on [`Node`] and is only valid while the arenas are unchanged.
 #[recursive]
-pub(super) fn node_stats_with_cache(
+pub(crate) fn node_stats_with_cache(
     node: Node,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,

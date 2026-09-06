@@ -12,16 +12,20 @@
 //!                                          Join(fact, dim[sk])
 //! ```
 
+use std::sync::Arc;
+
 use polars_core::prelude::DataType;
+use polars_core::schema::SchemaRef;
+use polars_utils::aliases::InitHashMaps;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 use polars_utils::{IdxSize, format_pl_smallstr};
 
-use crate::plans::stats::node_stats;
+use crate::plans::stats::{StatsCache, node_stats_with_cache};
 use crate::plans::{
-    AExpr, ExprIR, IR, IRAggExpr, IRBuilder, JoinOptionsIR, JoinTypeOptionsIR, OutputName,
-    has_aexpr,
+    AExpr, ArenaLpIter, ExprIR, IR, IRAggExpr, IRBuilder, JoinOptionsIR, JoinTypeOptionsIR,
+    OutputName, has_aexpr,
 };
 use crate::prelude::{JoinArgs, JoinCoalesce, JoinType};
 
@@ -46,33 +50,18 @@ const SURROGATE_WIDTH: usize = 1 + size_of::<IdxSize>();
 /// Assumed encoded width of a key whose width is not fixed.
 const VARIABLE_KEY_WIDTH: usize = 16;
 
-/// Rough width of a key in the row encoding, in bytes.
+/// Rough width of a key in the row encoding: a null byte plus the value.
 fn encoded_width(dtype: &DataType) -> usize {
-    use DataType::*;
-    1 + match dtype {
-        Boolean | Int8 | UInt8 => 1,
-        Int16 | UInt16 | Float16 => 2,
-        Int32 | UInt32 | Float32 | Date | Time => 4,
-        Int64 | UInt64 | Float64 | Datetime(_, _) | Duration(_) => 8,
-        Int128 | UInt128 => 16,
-        #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => 16,
-        #[cfg(feature = "dtype-categorical")]
-        Categorical(_, _) | Enum(_, _) => 4,
-        _ => VARIABLE_KEY_WIDTH,
-    }
+    1 + dtype
+        .byte_width()
+        .map_or(VARIABLE_KEY_WIDTH, |w| w.ceil() as usize)
 }
 
 pub fn surrogate_group_by(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
-    let mut stack = vec![root];
-    let mut group_bys = Vec::new();
-    while let Some(node) = stack.pop() {
-        let ir = ir_arena.get(node);
-        if matches!(ir, IR::GroupBy { .. }) {
-            group_bys.push(node);
-        }
-        ir.copy_inputs(&mut stack);
-    }
+    let group_bys: Vec<Node> = ir_arena
+        .iter(root)
+        .filter_map(|(node, ir)| matches!(ir, IR::GroupBy { .. }).then_some(node))
+        .collect();
 
     for node in group_bys {
         if let Some(rewritten) = try_rewrite(node, ir_arena, expr_arena) {
@@ -95,10 +84,53 @@ struct Surrogate {
 /// A node between the group-by and the surrogate, which must be rebuilt so it
 /// carries the row index up.
 enum PathStep {
-    /// A join, and whether the descent went into its left input.
-    Join(Node, bool),
-    /// A column selection.
-    Projection(Node),
+    /// A join: the input the descent did not follow, and which side it took.
+    Join {
+        other: Node,
+        went_left: bool,
+        options: Arc<JoinOptionsIR>,
+    },
+    /// The columns a projection selects.
+    Projection(SchemaRef),
+}
+
+/// Rebuilds `path` on top of `indexed`, so every level passes the row index up.
+fn rebuild_path(
+    path: &[PathStep],
+    indexed: Node,
+    sk: &PlSmallStr,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<Node> {
+    let mut child = indexed;
+    for step in path.iter().rev() {
+        child = match step {
+            PathStep::Join {
+                other,
+                went_left,
+                options,
+            } => {
+                let (left, right) = if *went_left {
+                    (child, *other)
+                } else {
+                    (*other, child)
+                };
+                IRBuilder::new(left, expr_arena, ir_arena)
+                    .join(right, options.clone())
+                    .node()
+            },
+            PathStep::Projection(columns) => {
+                let mut names = Vec::with_capacity(columns.len() + 1);
+                names.push(sk.clone());
+                names.extend(columns.iter_names().cloned());
+                IRBuilder::new(child, expr_arena, ir_arena)
+                    .project_simple(names)
+                    .ok()?
+                    .node()
+            },
+        };
+    }
+    Some(child)
 }
 
 fn find_surrogate(
@@ -112,9 +144,9 @@ fn find_surrogate(
 
     loop {
         // A simple projection only narrows, so the names below are a superset.
-        if let IR::SimpleProjection { input, .. } = ir_arena.get(cur) {
-            let input = *input;
-            path.push(PathStep::Projection(cur));
+        if let IR::SimpleProjection { input, columns } = ir_arena.get(cur) {
+            let (input, columns) = (*input, columns.clone());
+            path.push(PathStep::Projection(columns));
             cur = input;
             continue;
         }
@@ -132,35 +164,41 @@ fn find_surrogate(
             break;
         }
 
-        let (left, right) = (*input_left, *input_right);
+        let (left, right, options) = (*input_left, *input_right, options.clone());
         let left_schema = ir_arena.get(left).schema(ir_arena).into_owned();
         let right_schema = ir_arena.get(right).schema(ir_arena).into_owned();
 
-        let in_left: Vec<PlSmallStr> = key_names
-            .iter()
-            .filter(|n| left_schema.contains(n))
-            .cloned()
-            .collect();
-        let in_right: Vec<PlSmallStr> = key_names
-            .iter()
-            .filter(|n| right_schema.contains(n))
-            .cloned()
-            .collect();
-
-        // A name on both sides is renamed by the join, so we cannot follow it.
-        if in_left.iter().any(|n| right_schema.contains(n)) {
+        let mut in_left = Vec::new();
+        let mut in_right = Vec::new();
+        let mut ambiguous = false;
+        for name in key_names {
+            let (l, r) = (left_schema.contains(name), right_schema.contains(name));
+            // A name on both sides is renamed by the join, so we cannot follow it.
+            ambiguous |= l && r;
+            if l {
+                in_left.push(name.clone());
+            }
+            if r {
+                in_right.push(name.clone());
+            }
+        }
+        if ambiguous {
             break;
         }
 
-        let (next, next_keys) = if in_left.len() >= MIN_SURROGATE_KEYS {
-            (left, in_left)
+        let (next, other, next_keys) = if in_left.len() >= MIN_SURROGATE_KEYS {
+            (left, right, in_left)
         } else if in_right.len() >= MIN_SURROGATE_KEYS {
-            (right, in_right)
+            (right, left, in_right)
         } else {
             break;
         };
 
-        path.push(PathStep::Join(cur, next == left));
+        path.push(PathStep::Join {
+            other,
+            went_left: next == left,
+            options,
+        });
         keys = next_keys;
         cur = next;
     }
@@ -323,9 +361,12 @@ fn try_rewrite(
 
     // Only worth it when the group-by discards most of its input, and when the
     // surrogate is much smaller than what flows into the group-by.
-    let in_rows = node_stats(input, ir_arena, expr_arena)?.filtered;
-    let out_rows = node_stats(node, ir_arena, expr_arena)?.filtered;
-    let surrogate_rows = node_stats(surrogate.node, ir_arena, expr_arena)?.filtered;
+    // The three nodes share descendants, so they share one cache.
+    let cache = &mut StatsCache::new();
+    let in_rows = node_stats_with_cache(input, ir_arena, expr_arena, cache)?.filtered;
+    let out_rows = node_stats_with_cache(node, ir_arena, expr_arena, cache)?.filtered;
+    let surrogate_rows =
+        node_stats_with_cache(surrogate.node, ir_arena, expr_arena, cache)?.filtered;
     if polars_core::config::verbose() {
         eprintln!(
             "surrogate group-by candidate: {in_rows:.0} rows -> {out_rows:.0} groups \
@@ -367,49 +408,17 @@ fn try_rewrite(
     });
 
     // Rebuild the joins above the surrogate so they carry the row index up.
-    let mut child = indexed;
-    for step in surrogate.path.iter().rev() {
-        child = match step {
-            PathStep::Join(join, went_left) => {
-                let IR::Join {
-                    input_left,
-                    input_right,
-                    options,
-                    ..
-                } = ir_arena.get(*join)
-                else {
-                    unreachable!()
-                };
-                let (left, right, options) = (*input_left, *input_right, options.clone());
-                let (left, right) = if *went_left {
-                    (child, right)
-                } else {
-                    (left, child)
-                };
-                IRBuilder::new(left, expr_arena, ir_arena)
-                    .join(right, options)
-                    .node()
-            },
-            PathStep::Projection(node) => {
-                let IR::SimpleProjection { columns, .. } = ir_arena.get(*node) else {
-                    unreachable!()
-                };
-                let mut names = Vec::with_capacity(columns.len() + 1);
-                names.push(sk.clone());
-                names.extend(columns.iter_names().cloned());
-                IRBuilder::new(child, expr_arena, ir_arena)
-                    .project_simple(names)
-                    .ok()?
-                    .node()
-            },
-        };
-    }
+    let child = rebuild_path(&surrogate.path, indexed, &sk, ir_arena, expr_arena)?;
+
+    let sk_col = |expr_arena: &mut Arena<AExpr>| {
+        ExprIR::new(
+            expr_arena.add(AExpr::Column(sk.clone())),
+            OutputName::ColumnLhs(sk.clone()),
+        )
+    };
 
     let mut phase1_keys = Vec::with_capacity(keys.len());
-    phase1_keys.push(ExprIR::new(
-        expr_arena.add(AExpr::Column(sk.clone())),
-        OutputName::ColumnLhs(sk.clone()),
-    ));
+    phase1_keys.push(sk_col(expr_arena));
     phase1_keys.extend(
         keys.iter()
             .zip(&key_names)
@@ -432,14 +441,7 @@ fn try_rewrite(
         .ok()?
         .node();
 
-    let sk_left = ExprIR::new(
-        expr_arena.add(AExpr::Column(sk.clone())),
-        OutputName::ColumnLhs(sk.clone()),
-    );
-    let sk_right = ExprIR::new(
-        expr_arena.add(AExpr::Column(sk.clone())),
-        OutputName::ColumnLhs(sk.clone()),
-    );
+    let (sk_left, sk_right) = (sk_col(expr_arena), sk_col(expr_arena));
     let join_options = JoinOptionsIR {
         allow_parallel: true,
         force_parallel: false,
@@ -454,7 +456,7 @@ fn try_rewrite(
     };
 
     let joined = IRBuilder::new(phase1, expr_arena, ir_arena)
-        .join(attrs, std::sync::Arc::new(join_options))
+        .join(attrs, Arc::new(join_options))
         .node();
 
     let phase2 = IRBuilder::new(joined, expr_arena, ir_arena)

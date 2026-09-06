@@ -10,6 +10,7 @@ mod node;
 use std::sync::Arc;
 
 pub(crate) use cost::subplan_cost;
+pub(crate) use node::{StatsCache, node_stats_with_cache};
 pub use node::{NodeStats, composite_key_domain, join_cardinality, key_domain, node_stats};
 #[allow(clippy::disallowed_types)]
 use polars_utils::aliases::PlHashMap;
