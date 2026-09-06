@@ -18,7 +18,6 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 use polars_utils::{IdxSize, format_pl_smallstr};
 
-use super::deep_copy::deep_copy_ir_delete_cache_id;
 use crate::plans::stats::node_stats;
 use crate::plans::{
     AExpr, ExprIR, IR, IRAggExpr, IRBuilder, JoinOptionsIR, JoinTypeOptionsIR, OutputName,
@@ -166,10 +165,7 @@ fn find_surrogate(
         cur = next;
     }
 
-    // The surrogate is read twice and both reads must number the same rows the
-    // same way, so its row order has to come from the data rather than from how
-    // the plan happens to execute. A row index also blocks predicate pushdown,
-    // so nothing can later filter one of the two reads and not the other.
+    // Surrogates other than a scan are unmeasured.
     if !matches!(
         ir_arena.get(cur),
         IR::Scan { .. } | IR::DataFrameScan { .. }
@@ -367,14 +363,16 @@ fn try_rewrite(
 
     let sk = PlSmallStr::from_static(SURROGATE_KEY);
 
-    // The surrogate is read twice: once narrowed to the join keys, once for the
-    // attributes. Copy it so the two do not share arena nodes.
-    let attrs_source =
-        deep_copy_ir_delete_cache_id(surrogate.node, UniqueId::new(), ir_arena, expr_arena);
-
+    // Both the narrowed join input and the attribute side read the numbered
+    // surrogate, and they only agree if the numbering happens once. A cache is
+    // evaluated a single time and shared, so the two cannot diverge.
     let indexed = IRBuilder::new(surrogate.node, expr_arena, ir_arena)
         .row_index(sk.clone(), None)
         .node();
+    let indexed = ir_arena.add(IR::Cache {
+        input: indexed,
+        id: UniqueId::new(),
+    });
 
     // Rebuild the joins above the surrogate so they carry the row index up.
     let mut child = indexed;
@@ -432,8 +430,7 @@ fn try_rewrite(
         .ok()?
         .node();
 
-    let attrs = IRBuilder::new(attrs_source, expr_arena, ir_arena)
-        .row_index(sk.clone(), None)
+    let attrs = IRBuilder::new(indexed, expr_arena, ir_arena)
         .project_simple({
             let mut names = Vec::with_capacity(surrogate.keys.len() + 1);
             names.push(sk.clone());
