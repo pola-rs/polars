@@ -4,6 +4,7 @@ use std::ops::Deref;
 
 use crate::array::PlArray;
 use crate::bitmap::PlBitmap;
+use crate::no_nulls::NoNulls;
 
 /// An array whose backing buffers all hold one slot per element.
 #[repr(transparent)]
@@ -76,6 +77,13 @@ impl<T: PlArray> Flat<T> {
     pub fn without_validity(mut self) -> Self {
         self.0.set_validity(None);
         self
+    }
+
+    /// Borrows this array as one with no null elements, or `None` if any element is null.
+    #[inline]
+    pub fn as_no_nulls(&self) -> Option<&NoNulls<Self>> {
+        // SAFETY: no element is null, as just counted.
+        (self.0.null_count() == 0).then(|| unsafe { NoNulls::new_ref(self) })
     }
 }
 

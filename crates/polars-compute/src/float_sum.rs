@@ -6,7 +6,7 @@ use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float};
-use polars_array::{Flat, PlPrimitiveArray};
+use polars_array::PlPrimitiveArray;
 #[cfg(feature = "simd")]
 use polars_utils::float16::pf16;
 
@@ -242,6 +242,10 @@ where
 pub trait FloatSum<F>: Sized {
     fn sum(f: &[Self]) -> F;
     fn sum_with_validity(f: &[Self], validity: &Bitmap) -> F;
+
+    /// The sum of `count` copies of `value`, which is their product: one rounding rather than a
+    /// pass over a buffer holding the value that many times.
+    fn sum_repeated(value: Self, count: usize) -> F;
 }
 
 impl<T, F> FloatSum<F> for T
@@ -261,6 +265,10 @@ where
         // TODO: faster remainder.
         let restsum: F = rest.iter().map(|x| x.as_()).sum();
         mainsum + restsum
+    }
+
+    fn sum_repeated(value: Self, count: usize) -> F {
+        value.as_() * F::from(count).expect("a length is representable in the accumulator")
     }
 
     fn sum_with_validity(f: &[Self], validity: &Bitmap) -> F {
@@ -288,26 +296,45 @@ where
     }
 }
 
-/// The pairwise sum of every non-null element of a chunk that holds one value per element.
-fn sum_flat<T, F>(arr: &Flat<PlPrimitiveArray<T>>) -> F
+/// Adds up every non-null element of `arr`, in whichever representation it is stored.
+///
+/// A chunk that repeats one value is read once rather than written out, and a values buffer that
+/// already holds one slot per element is handed to the pairwise kernels as the slice it is — so
+/// this dispatch costs one branch and never allocates.
+fn sum_arr<T, F>(arr: &PlPrimitiveArray<T>) -> F
 where
     T: NativeType + FloatSum<F>,
+    F: num_traits::Zero,
 {
-    match arr.validity().filter(|validity| validity.unset_bits() > 0) {
-        Some(validity) => FloatSum::sum_with_validity(arr.as_slice(), validity),
-        None => FloatSum::sum(arr.as_slice()),
+    let count = arr.len() - arr.null_count();
+    if count == 0 {
+        return F::zero();
+    }
+
+    // The non-null elements of a chunk with a repeated values buffer are all that one value, so
+    // their total is it added up `count` times whatever the mask looks like.
+    if let Some(value) = arr.scalar_values() {
+        return FloatSum::sum_repeated(value, count);
+    }
+
+    let values = arr.flat_values().expect("the values are not repeated");
+
+    // A mask that repeats a single bit cannot reach here: it would have to be a set one, since an
+    // unset one leaves no element non-null and `count` is not zero, and a set one leaves nothing
+    // for the sum to skip.
+    match (count < arr.len()).then(|| arr.validity().expect("a null element has a mask").to_flat())
+    {
+        Some(validity) => FloatSum::sum_with_validity(values, &validity),
+        None => FloatSum::sum(values),
     }
 }
 
 /// Adds up every non-null element of `arr`, accumulating into `f32`.
-///
-/// TODO(polars-array-scalar): Fixed-size stack array strategy for init, can then reduce
-/// initial alloc size.
 pub fn sum_arr_as_f32<T>(arr: &PlPrimitiveArray<T>) -> f32
 where
     T: NativeType + FloatSum<f32>,
 {
-    sum_flat(&arr.to_flat())
+    sum_arr(arr)
 }
 
 /// Adds up every non-null element of `arr`, accumulating into `f64`; see [`sum_arr_as_f32`].
@@ -315,7 +342,7 @@ pub fn sum_arr_as_f64<T>(arr: &PlPrimitiveArray<T>) -> f64
 where
     T: NativeType + FloatSum<f64>,
 {
-    sum_flat(&arr.to_flat())
+    sum_arr(arr)
 }
 
 #[cfg(test)]
@@ -325,8 +352,8 @@ mod tests {
 
     use super::*;
 
-    /// A chunk reads the same whichever representation it is stored in, since a scalar one is laid
-    /// out one value per element before it is summed.
+    /// A chunk reads the same whichever representation it is stored in: a repeated value is
+    /// multiplied by the number of non-null elements rather than written out and added up.
     #[test]
     fn both_representations_sum_alike() {
         for length in [0, 1, 2, 3, 65, 300] {

@@ -18,6 +18,7 @@ pub mod flat;
 mod iterator_tests;
 pub mod list;
 mod macros;
+pub mod no_nulls;
 pub mod null;
 pub mod primitive;
 pub mod static_array;
@@ -35,6 +36,7 @@ pub use fixed_size_binary::{PlFixedSizeBinaryArray, PlFixedSizeBinaryArrayBuilde
 pub use fixed_size_list::{PlFixedSizeListArray, PlFixedSizeListArrayBuilder};
 pub use flat::Flat;
 pub use list::{PlListArray, PlListArrayBuilder};
+pub use no_nulls::NoNulls;
 pub use null::{PlNullArray, PlNullArrayBuilder};
 pub use primitive::{PlPrimitiveArray, PlPrimitiveArrayBuilder};
 pub use static_array::StaticArray;

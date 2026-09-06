@@ -17,6 +17,7 @@ use crate::fixed_size_binary::{PlFixedSizeBinaryIter, PlFixedSizeBinaryValuesIte
 use crate::fixed_size_list::{PlFixedSizeListIter, PlFixedSizeListValuesIter};
 use crate::flat::Flat;
 use crate::list::{PlListIter, PlListValuesIter};
+use crate::no_nulls::NoNulls;
 use crate::primitive::{PlPrimitiveIter, PlPrimitiveValuesIter};
 use crate::utf8view::{PlUtf8ViewIter, PlUtf8ViewValuesIter};
 use crate::{
@@ -143,6 +144,16 @@ pub trait StaticArray: PlArray + Clone {
 
     /// Borrows this array as a flat one, or `None` if any backing buffer is scalar.
     fn as_flat(&self) -> Option<&Flat<Self>>;
+
+    /// Borrows this array as one with no null elements, or `None` if any element is null.
+    ///
+    /// This says nothing about the representation: a scalar array that repeats a valid element is
+    /// witnessed here without being written out.
+    #[inline]
+    fn as_no_nulls(&self) -> Option<&NoNulls<Self>> {
+        // SAFETY: no element is null, as just counted.
+        (self.null_count() == 0).then(|| unsafe { NoNulls::new_ref(self) })
+    }
 
     /// Boxes this array as a [`PlArray`] trait object.
     #[inline]
