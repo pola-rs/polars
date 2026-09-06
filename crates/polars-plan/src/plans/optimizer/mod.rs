@@ -37,6 +37,7 @@ mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod sortedness;
 mod stack_opt;
+mod surrogate_group_by;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
 use delay_rechunk::DelayRechunk;
@@ -213,6 +214,15 @@ pub fn optimize(
     // before projection pushdown so projections follow the final join order.
     if opt_flags.join_order() && get_or_init_members!().has_joins_or_unions {
         root = join_order::join_order(root, ir_arena, expr_arena)?;
+    }
+
+    // Needs the final join order, and must run before projection pushdown so the
+    // narrowed surrogate side is pruned.
+    if opt_flags.contains(OptFlags::SURROGATE_GROUP_BY)
+        && opt_flags.row_estimate()
+        && get_or_init_members!().has_joins_or_unions
+    {
+        surrogate_group_by::surrogate_group_by(root, ir_arena, expr_arena);
     }
 
     if opt_flags.projection_pushdown() {

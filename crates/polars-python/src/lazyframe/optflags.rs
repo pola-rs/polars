@@ -63,6 +63,7 @@ flag_getter_setters! {
     (PARTITION_HIVE, get_pre_partition_hive, set_pre_partition_hive, clear=true)
     (JOIN_ORDER, get_join_order, set_join_order, clear=true)
     (ROW_ESTIMATE, get_row_estimate, set_row_estimate, clear=true)
+    (SURROGATE_GROUP_BY, get_surrogate_group_by, set_surrogate_group_by, clear=true)
 
     (EAGER, get_eager, set_eager, clear=true)
     (STREAMING, get_streaming, set_streaming, clear=true)

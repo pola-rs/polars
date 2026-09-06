@@ -3328,3 +3328,71 @@ def test_group_by_agg_primitive_opt_single_chunk_28684() -> None:
     )
 
     assert [s.n_chunks() for s in out.select(pl.exclude("g"))] == [1] * (out.width - 1)
+
+
+def _surrogate_frames(
+    a: list[str | None] | None = None,
+) -> tuple[pl.LazyFrame, pl.LazyFrame]:
+    """A dimension of wide string keys and a fact table referencing it."""
+    n_dim, n_fact = 200, 8000
+    cols = {
+        c: [f"attribute-{c}-{i}" for i in range(n_dim)] if a is None else a
+        for c in ("a", "b", "c", "d")
+    }
+    dim = pl.DataFrame({"id": range(n_dim), **cols}).lazy()
+    fact = pl.DataFrame(
+        {
+            "id": [i % n_dim for i in range(n_fact)],
+            "y": [i % 2 for i in range(n_fact)],
+            "v": [float(i) for i in range(n_fact)],
+        }
+    ).lazy()
+    return dim, fact
+
+
+def _query(dim: pl.LazyFrame, fact: pl.LazyFrame) -> pl.LazyFrame:
+    return (
+        dim.join(fact, on="id")
+        .group_by("a", "b", "c", "d", "y")
+        .agg(
+            pl.col("v").sum().alias("total"),
+            pl.col("v").min().alias("lo"),
+            pl.col("v").max().alias("hi"),
+            pl.len().alias("n"),
+            pl.col("v").count().alias("cnt"),
+        )
+    )
+
+
+def _both(lf: pl.LazyFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
+    off = pl.QueryOptFlags(surrogate_group_by=False)
+    on = pl.QueryOptFlags(surrogate_group_by=True)
+    # Guard against the rewrite silently no longer applying.
+    assert "__POLARS_SURROGATE_KEY" in lf.explain(optimizations=on)
+    keys = ["a", "b", "c", "d", "y"]
+    return (
+        lf.collect(optimizations=off).sort(keys),
+        lf.collect(optimizations=on).sort(keys),
+    )
+
+
+def test_group_by_surrogate_key_rewrite() -> None:
+    off, on = _both(_query(*_surrogate_frames()))
+    assert_frame_equal(off, on)
+
+
+def test_group_by_surrogate_key_duplicate_attributes() -> None:
+    # Dimension rows sharing every key column must end up in one group even
+    # though their row numbers differ.
+    off, on = _both(
+        _query(*_surrogate_frames([f"shared-{i % 20}" for i in range(200)]))
+    )
+    assert_frame_equal(off, on)
+    assert on.height == 20
+
+
+def test_group_by_surrogate_key_nulls() -> None:
+    values = [None if i % 7 == 0 else f"value-{i}" for i in range(200)]
+    off, on = _both(_query(*_surrogate_frames(values)))
+    assert_frame_equal(off, on)
+    assert on["a"].null_count() > 0

@@ -42,6 +42,7 @@ class QueryOptFlags:
         pre_partition_hive: None | bool = None,
         join_order: None | bool = None,
         row_estimate: None | bool = None,
+        surrogate_group_by: None | bool = None,
     ) -> None:
         self._pyoptflags = PyOptFlags.default()
         self.update(
@@ -58,6 +59,7 @@ class QueryOptFlags:
             pre_partition_hive=pre_partition_hive,
             join_order=join_order,
             row_estimate=row_estimate,
+            surrogate_group_by=surrogate_group_by,
         )
 
     @classmethod
@@ -90,6 +92,7 @@ class QueryOptFlags:
         pre_partition_hive: None | bool = None,
         join_order: None | bool = None,
         row_estimate: None | bool = None,
+        surrogate_group_by: None | bool = None,
     ) -> QueryOptFlags:
         """Create new empty set off optimizations."""
         optflags = QueryOptFlags()
@@ -108,6 +111,7 @@ class QueryOptFlags:
             pre_partition_hive=pre_partition_hive,
             join_order=join_order,
             row_estimate=row_estimate,
+            surrogate_group_by=surrogate_group_by,
         )
 
     @removed_parameters(
@@ -134,6 +138,7 @@ class QueryOptFlags:
         pre_partition_hive: None | bool = None,
         join_order: None | bool = None,
         row_estimate: None | bool = None,
+        surrogate_group_by: None | bool = None,
     ) -> QueryOptFlags:
         """Update the current optimization flags."""
         if predicate_pushdown is not None:
@@ -162,6 +167,8 @@ class QueryOptFlags:
             self.join_order = join_order
         if row_estimate is not None:
             self.row_estimate = row_estimate
+        if surrogate_group_by is not None:
+            self.surrogate_group_by = surrogate_group_by
 
         return self
 
@@ -301,6 +308,15 @@ class QueryOptFlags:
     def row_estimate(self, value: bool) -> None:
         self._pyoptflags.row_estimate = value
 
+    @property
+    def surrogate_group_by(self) -> bool:
+        """Aggregate on a join input's row number before grouping by its columns."""
+        return self._pyoptflags.surrogate_group_by
+
+    @surrogate_group_by.setter
+    def surrogate_group_by(self, value: bool) -> None:
+        self._pyoptflags.surrogate_group_by = value
+
     def __str__(self) -> str:
         return f"""
 QueryOptFlags {{
@@ -320,6 +336,7 @@ QueryOptFlags {{
     pre_partition_hive: {self.pre_partition_hive}
     join_order: {self.join_order}
     row_estimate: {self.row_estimate}
+    surrogate_group_by: {self.surrogate_group_by}
 
     eager: {self._pyoptflags.eager}
     streaming: {self._pyoptflags.streaming}

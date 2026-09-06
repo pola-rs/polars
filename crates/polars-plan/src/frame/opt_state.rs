@@ -54,6 +54,8 @@ bitflags! {
         const QUERY_MONITORING = 1 << 18;
         /// Try to reorder joins.
         const JOIN_ORDER = 1 << 19;
+        /// Rewrite a group-by over a join into two aggregations over a surrogate key.
+        const SURROGATE_GROUP_BY = 1 << 20;
     }
 }
 
