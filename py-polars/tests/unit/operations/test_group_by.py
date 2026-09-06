@@ -3419,3 +3419,31 @@ def test_group_by_surrogate_key_multi_file_scan(tmp_path: Path) -> None:
     off, on = _both(_query(scanned, fact))
     assert_frame_equal(off, on)
     assert on.height == 200
+
+
+@pytest.mark.parametrize("dtype", [pl.Float64, pl.Int64, pl.Int32])
+def test_group_by_surrogate_key_mean(dtype: PolarsDataType) -> None:
+    # A mean is split into a sum and a count, then divided after merging.
+    dim, fact = _surrogate_frames()
+    fact = fact.with_columns(pl.col("v").cast(dtype))
+    lf = (
+        dim.join(fact, on="id")
+        .group_by("a", "b", "c", "d", "y")
+        .agg(pl.col("v").mean().alias("avg"), pl.col("v").sum().alias("total"))
+    )
+    off, on = _both(lf)
+    assert_frame_equal(off, on)
+
+
+def test_group_by_surrogate_key_mean_all_null() -> None:
+    # Averaging nothing is null, not a division by zero.
+    dim, fact = _surrogate_frames()
+    fact = fact.with_columns(pl.lit(None, dtype=pl.Float64).alias("v"))
+    lf = (
+        dim.join(fact, on="id")
+        .group_by("a", "b", "c", "d", "y")
+        .agg(pl.col("v").mean().alias("avg"))
+    )
+    off, on = _both(lf)
+    assert_frame_equal(off, on)
+    assert on["avg"].null_count() == on.height

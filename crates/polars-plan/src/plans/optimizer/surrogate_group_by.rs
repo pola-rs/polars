@@ -27,7 +27,8 @@ use crate::plans::{
     AExpr, ArenaLpIter, ExprIR, IR, IRAggExpr, IRBuilder, JoinOptionsIR, JoinTypeOptionsIR,
     OutputName, has_aexpr,
 };
-use crate::prelude::{JoinArgs, JoinCoalesce, JoinType};
+use crate::plans::lit::LiteralValue;
+use crate::prelude::{JoinArgs, JoinCoalesce, JoinType, Operator};
 
 /// Name of the injected row-number column.
 const SURROGATE_KEY: &str = "__POLARS_SURROGATE_KEY";
@@ -242,7 +243,7 @@ fn split_expr(
     Some(expr_arena.add(ae.replace_inputs(&inputs)))
 }
 
-/// Emits the partial for one aggregation and returns the expression merging it.
+/// Emits the partials for one aggregation and returns the expression merging them.
 fn split_aggregation(
     node: Node,
     ae: &AExpr,
@@ -260,32 +261,67 @@ fn split_aggregation(
         }
     }
 
-    let partial_name = format_pl_smallstr!("__POLARS_PARTIAL_{}", partials.len());
-    let col = |expr_arena: &mut Arena<AExpr>| expr_arena.add(AExpr::Column(partial_name.clone()));
+    // Aggregates `expr` in the first phase and returns a column reading it back.
+    fn partial(expr: Node, partials: &mut Vec<ExprIR>, expr_arena: &mut Arena<AExpr>) -> Node {
+        let name = format_pl_smallstr!("__POLARS_PARTIAL_{}", partials.len());
+        partials.push(ExprIR::new(expr, OutputName::Alias(name.clone())));
+        expr_arena.add(AExpr::Column(name))
+    }
 
     let merge = match ae {
         AExpr::Len | AExpr::Agg(IRAggExpr::Sum(_)) | AExpr::Agg(IRAggExpr::Count { .. }) => {
-            let input = col(expr_arena);
+            let input = partial(node, partials, expr_arena);
             expr_arena.add(AExpr::Agg(IRAggExpr::Sum(input)))
         },
         AExpr::Agg(IRAggExpr::Min { propagate_nans, .. }) => {
-            let input = col(expr_arena);
+            let input = partial(node, partials, expr_arena);
             expr_arena.add(AExpr::Agg(IRAggExpr::Min {
                 input,
                 propagate_nans: *propagate_nans,
             }))
         },
         AExpr::Agg(IRAggExpr::Max { propagate_nans, .. }) => {
-            let input = col(expr_arena);
+            let input = partial(node, partials, expr_arena);
             expr_arena.add(AExpr::Agg(IRAggExpr::Max {
                 input,
                 propagate_nans: *propagate_nans,
             }))
         },
+        // A mean does not merge, but the sum and the count it is made of do.
+        AExpr::Agg(IRAggExpr::Mean(input)) => {
+            let sum = expr_arena.add(AExpr::Agg(IRAggExpr::Sum(*input)));
+            let count = expr_arena.add(AExpr::Agg(IRAggExpr::Count {
+                input: *input,
+                include_nulls: false,
+            }));
+            let sum = partial(sum, partials, expr_arena);
+            let count = partial(count, partials, expr_arena);
+
+            let total = expr_arena.add(AExpr::Agg(IRAggExpr::Sum(sum)));
+            let n = expr_arena.add(AExpr::Agg(IRAggExpr::Sum(count)));
+            let mean = expr_arena.add(AExpr::BinaryExpr {
+                left: total,
+                op: Operator::TrueDivide,
+                right: n,
+            });
+
+            // Averaging nothing is null rather than a division by zero.
+            let zero = expr_arena.add(AExpr::Literal(LiteralValue::new_idxsize(0)));
+            let any = expr_arena.add(AExpr::BinaryExpr {
+                left: n,
+                op: Operator::Gt,
+                right: zero,
+            });
+            let null = expr_arena.add(AExpr::Literal(LiteralValue::untyped_null()));
+            expr_arena.add(AExpr::Ternary {
+                predicate: any,
+                truthy: mean,
+                falsy: null,
+            })
+        },
         _ => return None,
     };
 
-    partials.push(ExprIR::new(node, OutputName::Alias(partial_name)));
     Some(merge)
 }
 
