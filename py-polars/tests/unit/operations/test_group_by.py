@@ -3377,6 +3377,13 @@ def _both(lf: pl.LazyFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
     )
 
 
+def test_group_by_surrogate_key_off_by_default() -> None:
+    # The rewrite can cost more than it saves on a group-by its estimates cannot
+    # tell apart from one it collapses, so it has to be asked for.
+    lf = _query(*_surrogate_frames())
+    assert "__POLARS_SURROGATE_KEY" not in lf.explain()
+
+
 def test_group_by_surrogate_key_rewrite() -> None:
     off, on = _both(_query(*_surrogate_frames()))
     assert_frame_equal(off, on)

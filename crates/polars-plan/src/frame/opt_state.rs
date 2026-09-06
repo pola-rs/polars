@@ -5,7 +5,8 @@ const DEFAULT_OPT_FLAGS: OptFlags = OptFlags::from_bits_truncate(
         & !(OptFlags::STREAMING.bits()
             | OptFlags::EAGER.bits()
             | OptFlags::GPU.bits()
-            | OptFlags::QUERY_MONITORING.bits()),
+            | OptFlags::QUERY_MONITORING.bits()
+            | OptFlags::SURROGATE_GROUP_BY.bits()),
 );
 
 bitflags! {
@@ -55,6 +56,9 @@ bitflags! {
         /// Try to reorder joins.
         const JOIN_ORDER = 1 << 19;
         /// Rewrite a group-by over a join into two aggregations over a surrogate key.
+        ///
+        /// Off by default: the estimates it is gated on cannot tell a group-by that
+        /// the rewrite collapses from one it only makes more expensive.
         const SURROGATE_GROUP_BY = 1 << 20;
     }
 }
