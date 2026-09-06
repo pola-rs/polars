@@ -127,35 +127,58 @@ pub mod kll {
     /// *single* query value. Union-bound over ~`1/error` values (i.e. pass
     /// `delta * error`) if you need all quantiles to hold simultaneously.
     ///
-    /// Randomized compaction makes the rank error a zero-mean sum of independent
-    /// steps: compacting level `h` shifts the estimate by ±2^h, and only when the
-    /// number of compacted items below the query is odd. Level `h` has capacity
-    /// `k_h = k c^(H-h)` and items of weight 2^h, so it compacts at most
-    /// `n / (2^h k_h)` times and, taking every step as ±2^h (worst-case parity),
+    /// Randomized compaction makes the rank error a zero-mean sum of ±2^h steps,
+    /// one per compaction at level `h`, taken only when the number of compacted
+    /// items below the query is odd. Level `h` has capacity `k_h = k c^(H-h)` and
+    /// items of weight 2^h; `compactor_threshold` never lets a compaction there
+    /// consume fewer than `k_h` items, so it compacts at most `m_h = n / (2^h k_h)`
+    /// times. Three things then cut the naive `sum_h m_h 4^h`:
     ///
-    ///     Var <= sum_h 4^h * n / (2^h * k_h) = (n * 2^H / k) * sum_j (2c)^-j
-    ///          = (n * 2^H / k) * 2c/(2c-1)                        [needs c > 1/2]
+    /// * the level-`H` compactor is the one that is still filling up -- it has
+    ///   never been compacted -- so the sum runs over `h < H`, not `h <= H`;
+    /// * `compact_level` pairs compactions up and takes the opposite parity on the
+    ///   odd one, so a *pair* moves the estimate by at most 2^h in total (not
+    ///   2 * 2^h) and is driven by a single coin: level `h` contributes
+    ///   `ceil(m_h / 2)` steps of size 2^h rather than `m_h` of them;
+    /// * level `H` is created only once the *then* top compactor filled, and its
+    ///   capacity at that moment was `k` -- `compactor_threshold` is recomputed
+    ///   from the live `levels.len()`, so the level that triggers the growth is
+    ///   always at depth 0. That gives `k 2^H <= 2n`, not just `c k 2^H <= 2n`.
     ///
-    /// A level above `H` only appears once the old top compactor -- capacity `k`,
-    /// weight 2^(H-1) -- filled up, so `2^H <= 2n/k` and
+    /// Putting those together (`ceil(m/2) <= (m+1)/2` leaves a bare
+    /// `sum_{h<H} 4^h <= 4^H / 3`):
     ///
-    ///     std <= (n/k) * 2 sqrt(c / (2c - 1)).
+    /// ```text
+    /// Var <= (1/2) n 2^H / (k (2c-1)) + (1/6) 4^H         [needs c > 1/2]
+    ///     <= (n/k)^2 * (1/(2c-1) + 2/3)
+    /// ```
     ///
-    /// The steps are bounded, so Hoeffding gives a sub-Gaussian tail with exactly
-    /// that variance proxy: the error stays below `z * std` except w.p. `delta`,
-    /// with `z = sqrt(2 ln(2/delta))`. Hence
+    /// so `std <= (n/k) sqrt(1/(2c-1) + 2/3)`. The steps are bounded and each is
+    /// mean zero given everything below its level, so Azuma-Hoeffding gives a
+    /// sub-Gaussian tail with exactly that variance proxy: the error stays below
+    /// `z * std` except w.p. `delta`, with `z = sqrt(2 ln(2/delta))`. Hence
     ///
-    ///     k = z * 2 sqrt(c / (2c - 1)) / error.
+    /// ```text
+    /// k = z * sqrt(1/(2c-1) + 2/3) / error.
+    /// ```
     ///
-    /// This is the worst case; the schedule in `compact()` lets compactors run past
-    /// their thresholds, so the measured std is 0.25..1.08 * n/k (k in 16..50k,
-    /// n in 1e4..1e8, random/sorted/reverse-sorted input) against the 2.83 * n/k
-    /// bound used here.
+    /// The steps are *not* independent -- level `h`'s buffers are a function of the
+    /// coins below `h` -- so plain Hoeffding does not apply here, which is why the
+    /// argument is phrased along the level filtration.
+    ///
+    /// This is machine-checked, in Lean 4 + Mathlib, as `CoinSpace.kll_antithetic`
+    /// in <https://github.com/dsprenkels/approx_quantile_formal>. Note that it
+    /// needs the compactor thresholds to be *even*; see `compactor_threshold`.
+    ///
+    /// It is still a worst case: the schedule in `compact()` lets compactors run
+    /// past their thresholds, so the measured std is 0.25..1.08 * n/k (k in
+    /// 16..50k, n in 1e4..1e8, random/sorted/reverse-sorted input) against the
+    /// 1.91 * n/k bound used here.
     fn compute_k(error: f64) -> usize {
         assert!(error > 0.0 && error < 1.0, "invalid error: {error}");
 
         let z = f64::sqrt(2.0 * f64::ln(2.0 / FAILURE_PROBABILITY)); // sub-Gaussian tail factor for prob. 1 - delta
-        let spread = 2.0 * f64::sqrt(CAPACITY_DECAY / (2.0 * CAPACITY_DECAY - 1.0)); // std bound in units of n/k
+        let spread = f64::sqrt(1.0 / (2.0 * CAPACITY_DECAY - 1.0) + 2.0 / 3.0); // std bound in units of n/k
         f64::max(MIN_COMPACTOR_SIZE as f64, f64::ceil(z * spread / error)) as usize
     }
 
@@ -429,6 +452,8 @@ pub mod kll {
         }
     }
 
+    /// Capacity of the compactor `depth` levels below the top: `ceil(k (2/3)^depth)`
+    /// rounded up to an even number, and never below `MIN_COMPACTOR_SIZE`.
     fn compactor_threshold(k: usize, depth: usize) -> usize {
         // Table of 2^63 * (2/3)^i
         const TABLE_SIZE: usize = 64;
@@ -454,10 +479,9 @@ pub mod kll {
             nominal_size,
             ((k as u128) * 2u128.pow(depth as u32)).div_ceil(3u128.pow(depth as u32)) as u64
         );
-        usize::max(
-            usize::try_from(nominal_size).expect("overflow"),
-            MIN_COMPACTOR_SIZE,
-        )
+        // Round up to an even number; see the doc comment.
+        let nominal_size = usize::try_from(nominal_size).expect("overflow");
+        usize::max(nominal_size.next_multiple_of(2), MIN_COMPACTOR_SIZE)
     }
 }
 
@@ -957,9 +981,6 @@ pub mod req {
                 consumed_items,
                 ..
             } = self;
-
-            let pool_size: usize = items.len();
-            dbg!(&pool_size);
 
             // Compaction only partially orders a compactor, so sort them all.
             for level in levels.iter() {
