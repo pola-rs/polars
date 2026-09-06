@@ -177,10 +177,11 @@ pub trait ArrayNameSpace: AsArray {
         let chunks = ca
             .downcast_iter()
             .map(|arr| {
-                // TODO(polars-array-scalar): the slice is taken row by row, so a scalar chunk is
-                // written out here rather than the one element it stands for being sliced once.
-                let arr = arr.to_flat();
                 let values = arr.values();
+
+                // Values holding a single list are the list every element reads, so every row is
+                // sliced out of that one list rather than it being written out per element first.
+                let values_shared = arr.values_are_scalar();
 
                 let mut builder = builder_like(values);
                 builder.reserve(slice_len * arr.len());
@@ -193,7 +194,7 @@ pub trait ArrayNameSpace: AsArray {
                         builder.extend_nulls(slice_len);
                         continue;
                     }
-                    let inner_offset = row * width + raw_offset;
+                    let inner_offset = if values_shared { 0 } else { row * width } + raw_offset;
                     builder.subslice_extend(values, inner_offset, slice_len, ShareStrategy::Always);
                 }
 

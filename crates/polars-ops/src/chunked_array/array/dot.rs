@@ -122,10 +122,15 @@ where
 {
     let lhs = lhs.rechunk();
     let rhs = rhs.rechunk();
-    // TODO(polars-array-scalar): both sides are read as slices, so a scalar chunk is written out
-    // here rather than the single row it stands for being multiplied out once.
-    let lhs_array = lhs.downcast_get(0).unwrap().to_flat();
-    let rhs_array = rhs.downcast_get(0).unwrap().to_flat();
+    let lhs_array = lhs.downcast_as_array();
+    let rhs_array = rhs.downcast_as_array();
+
+    // Values holding a single list are the list every element reads, so a side stored that way is
+    // read at row 0 throughout rather than being written out one list per element. Only the values
+    // are pinned: the outer mask still says something different about each element.
+    let lhs_values_shared = lhs_array.values_are_scalar();
+    let rhs_values_shared = rhs_array.values_are_scalar();
+
     let lhs_values = lhs_array
         .values()
         .as_any()
@@ -144,16 +149,22 @@ where
     let lhs_inner_validity = lhs_values.validity();
     let rhs_inner_validity = rhs_values.validity();
     let width = lhs.width();
-    debug_assert!(
+    // A side whose values hold the one list every element reads carries a single width of them;
+    // otherwise it carries one width per element.
+    debug_assert!(if lhs_values_shared {
+        lhs_slice.len() >= width
+    } else {
         lhs.len()
             .checked_mul(width)
             .is_some_and(|len| lhs_slice.len() >= len)
-    );
-    debug_assert!(
+    });
+    debug_assert!(if rhs_values_shared {
+        rhs_slice.len() >= width
+    } else {
         rhs.len()
             .checked_mul(width)
             .is_some_and(|len| rhs_slice.len() >= len)
-    );
+    });
     debug_assert!(lhs_inner_validity.is_none_or(|validity| validity.len() >= lhs_slice.len()));
     debug_assert!(rhs_inner_validity.is_none_or(|validity| validity.len() >= rhs_slice.len()));
     let row_reducer = DotRowReducer {
@@ -165,11 +176,13 @@ where
     };
     let lhs_broadcast = lhs.len() == 1 && output_len != 1;
     let rhs_broadcast = rhs.len() == 1 && output_len != 1;
+    let lhs_row_pinned = lhs_broadcast || lhs_values_shared;
+    let rhs_row_pinned = rhs_broadcast || rhs_values_shared;
 
     // An absent outer bitmap guarantees valid output rows without scanning.
     // Child validity only filters coordinate pairs inside `DotRowReducer`.
     if lhs_array.validity().is_none() && rhs_array.validity().is_none() {
-        let output = dot_outer_all_valid(&row_reducer, lhs_broadcast, rhs_broadcast, output_len);
+        let output = dot_outer_all_valid(&row_reducer, lhs_row_pinned, rhs_row_pinned, output_len);
         let output = PlPrimitiveArray::from_vec(output);
         // The sum of a `T` is a `T::Sum`, and that is the type of the chunk just built.
         return Ok(
@@ -192,6 +205,8 @@ where
         let outer_valid = unsafe {
             !lhs_array.is_null_unchecked(lhs_idx) && !rhs_array.is_null_unchecked(rhs_idx)
         };
+        let lhs_idx = if lhs_values_shared { 0 } else { lhs_idx };
+        let rhs_idx = if rhs_values_shared { 0 } else { rhs_idx };
         output_validity.push(outer_valid);
 
         if !outer_valid {
@@ -283,4 +298,91 @@ pub(super) fn array_dot(lhs: &ArrayChunked, rhs: &ArrayChunked) -> PolarsResult<
     }
 
     kernel(lhs, rhs, output_len)
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_array::PlBitmap;
+
+    use super::*;
+    use crate::chunked_array::array::ArrayNameSpace;
+
+    fn wrap(arr: PlFixedSizeListArray, width: usize) -> ArrayChunked {
+        let dtype = DataType::Array(Box::new(DataType::Int32), width);
+
+        // SAFETY: the chunk is a fixed size list of `width` `i32`s, which is what `dtype` says.
+        unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                vec![arr.into_boxed()],
+                &dtype,
+            )
+        }
+        .array()
+        .unwrap()
+        .clone()
+    }
+
+    fn column(values: PlPrimitiveArray<i32>, width: usize, length: usize) -> ArrayChunked {
+        wrap(
+            PlFixedSizeListArray::new(values.into_boxed(), width, length, None),
+            width,
+        )
+    }
+
+    fn shared_list(element: PlPrimitiveArray<i32>, length: usize) -> ArrayChunked {
+        let width = element.len();
+        wrap(
+            PlFixedSizeListArray::new_scalar(element.into_boxed(), length),
+            width,
+        )
+    }
+
+    /// Values holding a single list are read as the list every element covers, and the dot
+    /// products come out as they do when that list is written out per element.
+    #[test]
+    fn one_shared_list_is_read_at_row_zero() {
+        let shared = shared_list(PlPrimitiveArray::from_vec(vec![1i32, 2, 3]), 4);
+        let written_out = column(PlPrimitiveArray::from_vec([1i32, 2, 3].repeat(4)), 3, 4);
+        let other = column(
+            PlPrimitiveArray::from_vec(vec![1i32, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1]),
+            3,
+            4,
+        );
+
+        let dots = |lhs: &ArrayChunked| {
+            lhs.array_dot(&other)
+                .unwrap()
+                .i32()
+                .unwrap()
+                .iter()
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(dots(&shared), [Some(1i32), Some(2), Some(3), Some(6)]);
+        assert_eq!(dots(&shared), dots(&written_out));
+    }
+
+    /// The outer mask still says something different about each element even when they all read
+    /// the one list.
+    #[test]
+    fn the_outer_mask_is_not_pinned_with_the_values() {
+        let values = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]).into_boxed();
+        let validity =
+            PlBitmap::from_bitmap(arrow::bitmap::Bitmap::from_iter([true, false, true, true]));
+        let arr = PlFixedSizeListArray::new_scalar(values, 4).with_validity(Some(validity));
+        let shared = wrap(arr, 3);
+
+        let other = column(PlPrimitiveArray::from_vec(vec![1i32; 12]), 3, 4);
+        assert_eq!(
+            shared
+                .array_dot(&other)
+                .unwrap()
+                .i32()
+                .unwrap()
+                .iter()
+                .collect::<Vec<_>>(),
+            [Some(6i32), None, Some(6), Some(6)]
+        );
+    }
 }

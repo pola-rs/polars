@@ -22,22 +22,23 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
         },
         len if len == ca.len() => {
             let tmp = ca.rechunk();
-            // TODO(polars-array-scalar): the ranges are read off the offsets as a slice, so scalar
-            // offsets are written out rather than the one range they share being indexed once.
-            let arr = tmp.downcast_as_array().to_flat();
-            let offsets = arr.offsets().as_slice();
+            let arr = tmp.downcast_as_array();
+
+            // The range an element covers is resolved out of the offsets in whatever
+            // representation they are in, so offsets that hold the one range every element shares
+            // are read as that range rather than being written out one per element.
+            let range_of = |i: usize| {
+                // SAFETY: `i` indexes the elements of `arr`, which `index` is as long as.
+                let range = unsafe { arr.value_range_unchecked(i) };
+                (range.start as i64, range.end as i64)
+            };
             let take_by = if ca.null_count() == 0 {
                 index
                     .iter()
                     .enumerate()
                     .map(|(i, opt_idx)| match opt_idx {
                         Some(idx) => {
-                            let (start, end) = unsafe {
-                                (
-                                    *offsets.get_unchecked(i) as i64,
-                                    *offsets.get_unchecked(i + 1) as i64,
-                                )
-                            };
+                            let (start, end) = range_of(i);
                             let offset = if idx >= 0 { start + idx } else { end + idx };
                             if offset >= end || offset < start || start == end {
                                 if null_on_oob {
@@ -55,16 +56,11 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
             } else {
                 index
                     .iter()
-                    .zip(arr.validity().unwrap())
+                    .zip(arr.validity().unwrap().iter())
                     .enumerate()
                     .map(|(i, (opt_idx, valid))| match (valid, opt_idx) {
                         (true, Some(idx)) => {
-                            let (start, end) = unsafe {
-                                (
-                                    *offsets.get_unchecked(i) as i64,
-                                    *offsets.get_unchecked(i + 1) as i64,
-                                )
-                            };
+                            let (start, end) = range_of(i);
                             let offset = if idx >= 0 { start + idx } else { end + idx };
                             if offset >= end || offset < start || start == end {
                                 if null_on_oob {

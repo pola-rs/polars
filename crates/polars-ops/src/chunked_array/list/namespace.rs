@@ -310,17 +310,22 @@ pub trait ListNameSpaceImpl: AsList {
         }
 
         let mut lengths = Vec::with_capacity(ca.len());
-        ca.downcast_iter().for_each(|arr| {
-            // TODO(polars-array-scalar): the lengths are read off the offsets as a slice, so
-            // scalar offsets are written out rather than the single length being repeated.
-            let arr = arr.to_flat();
-            let offsets = arr.offsets().as_slice();
-            let mut last = offsets[0];
-            for o in &offsets[1..] {
-                lengths.push((*o - last) as IdxSize);
-                last = *o;
-            }
-        });
+        ca.downcast_iter()
+            .for_each(|arr| match arr.scalar_offsets() {
+                // Every element covers the one range, so they are all that range's length; the offsets
+                // are never written out one per element to say so.
+                Some(range) => lengths.resize(lengths.len() + arr.len(), range.len() as IdxSize),
+                None => {
+                    let offsets = arr
+                        .flat_offsets()
+                        .expect("the elements cover ranges of their own");
+                    let mut last = offsets[0];
+                    for o in &offsets[1..] {
+                        lengths.push((*o - last) as IdxSize);
+                        last = *o;
+                    }
+                },
+            });
 
         // `rechunk_validity` hands back a flat mask, one bit per element, like the lengths.
         let arr = PlPrimitiveArray::from_vec(lengths)
