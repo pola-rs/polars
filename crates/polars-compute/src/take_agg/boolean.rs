@@ -6,7 +6,7 @@
 //! every index gather that one value, so the walk has nothing to compare and the first index that
 //! gathers anything at all is the answer.
 
-use polars_array::{ArrayRepr, PlBooleanArray};
+use polars_array::PlBooleanArray;
 
 /// The position in `indices` of the first index that gathers `extreme`, or of the first that
 /// gathers a non-null value at all.
@@ -31,27 +31,25 @@ unsafe fn take_arg_bool_nulls<I: IntoIterator<Item = usize>>(
         return None;
     }
 
-    match arr.values_repr() {
-        // Every index gathers the same value, so no index is more extreme than the first one that
-        // gathers anything: whether that value is the extreme one or only stands in for it, the
-        // answer is the same position.
-        ArrayRepr::Scalar(_) => indices
+    // Every index gathers the same value where the values are scalar, so no index is more extreme
+    // than the first one that gathers anything: whether that value is the extreme one or only
+    // stands in for it, the answer is the same position.
+    let Some(values) = arr.flat_values() else {
+        return indices
             .into_iter()
-            .position(|idx| unsafe { validity.get_unchecked(idx) }),
-        ArrayRepr::Flat(values) => {
-            let mut first_non_null_pos = None;
+            .position(|idx| unsafe { validity.get_unchecked(idx) });
+    };
 
-            for (pos, idx) in indices.into_iter().enumerate() {
-                if unsafe { validity.get_unchecked(idx) } {
-                    if unsafe { values.get_bit_unchecked(idx) } == extreme {
-                        return Some(pos);
-                    }
-                    first_non_null_pos.get_or_insert(pos);
-                }
+    let mut first_non_null_pos = None;
+    for (pos, idx) in indices.into_iter().enumerate() {
+        if unsafe { validity.get_unchecked(idx) } {
+            if unsafe { values.get_bit_unchecked(idx) } == extreme {
+                return Some(pos);
             }
-            first_non_null_pos
-        },
+            first_non_null_pos.get_or_insert(pos);
+        }
     }
+    first_non_null_pos
 }
 
 /// [`take_arg_bool_nulls`] for a chunk with no nulls in it, where every index gathers a value and
@@ -71,9 +69,8 @@ unsafe fn take_arg_bool_no_nulls<I: IntoIterator<Item = usize>>(
 
     // Every index gathers the same value, so position zero is both the first index that gathers
     // the extremum and the fallback for when none does.
-    let values = match arr.values_repr() {
-        ArrayRepr::Scalar(_) => return Some(0),
-        ArrayRepr::Flat(values) => values,
+    let Some(values) = arr.flat_values() else {
+        return Some(0);
     };
 
     indices

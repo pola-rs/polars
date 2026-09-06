@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use polars_core::prelude::*;
@@ -407,12 +405,7 @@ pub(super) fn arg_where(s: &mut [Column]) -> PolarsResult<Column> {
 
         predicate.downcast_iter().for_each(|arr| {
             // `SlicesIterator` below indexes the mask flatly, so a scalar one is written out.
-            let values = match arr.validity() {
-                Some(validity) if validity.unset_bits() > 0 => {
-                    Cow::Owned(&*validity.to_flat() & &*arr.values().to_flat())
-                },
-                _ => arr.values().to_flat(),
-            };
+            let values = arr.true_and_valid().into_bitmap();
 
             for (offset, len) in SlicesIterator::new(&values) {
                 // law of small numbers optimization

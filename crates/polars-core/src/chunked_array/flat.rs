@@ -139,9 +139,9 @@ impl<T: PolarsNumericType> FlatNumericChunkedArray<T> for Flat<ChunkedArray<T>> 
         let arr = unsafe { ca.downcast_iter_mut().next().unwrap() };
         // `flat_values_mut` is no use here: an array of a *single* element reads as scalar
         // whichever way it was built, since its values buffer holds one slot either way, and it
-        // answers `None` for one. Both arms of the representation hand back the same buffer, and
-        // this array is flat, so that buffer holds one slot per element whichever arm it is in.
-        arr.values_repr_mut().into_inner().get_mut_slice()
+        // answers `None` for one. The buffer is the same in both representations, and this array
+        // is flat, so it holds one slot per element whichever one it reads as.
+        arr.flat_or_scalar_values_mut().get_mut_slice()
     }
 
     fn data_views(&self) -> impl DoubleEndedIterator<Item = &[T::Native]> {

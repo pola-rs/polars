@@ -1,4 +1,3 @@
-use polars_array::ArrayRepr;
 use polars_compute::min_max::MinMaxKernel;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -29,17 +28,19 @@ where
     // Without a null anywhere the rows are read straight out of the values buffer, in whichever
     // representation it is in.
     if !values.has_nulls() {
-        return match values.values_repr() {
+        return match values.scalar_values() {
             // Every row is the same `width` copies of the one value, and so reduces to it — as
             // does the answer, which repeats a single value in turn.
-            ArrayRepr::Scalar(value) => {
+            Some(value) => {
                 let reduced =
                     slice_agg(&[value]).expect("a row of one value reduces to that value");
                 PlPrimitiveArray::new_scalar(reduced, values.len() / width)
             },
             // The rows are runs of the values buffer, which the kernel that reads a slice reduces
             // without a validity mask to consult.
-            ArrayRepr::Flat(flat) => flat
+            None => values
+                .flat_values()
+                .unwrap()
                 .as_slice()
                 .chunks_exact(width)
                 .map(|sl| slice_agg(sl).unwrap())

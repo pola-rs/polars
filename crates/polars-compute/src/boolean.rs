@@ -1,5 +1,5 @@
 use arrow::bitmap::{Bitmap, binary_fold, quaternary, ternary};
-use polars_array::{ArrayRepr, Flat, PlBitmap, PlBooleanArray};
+use polars_array::{Flat, PlBitmap, PlBooleanArray};
 
 /// The validity mask of `arr`, if it holds one bit per element.
 ///
@@ -19,10 +19,11 @@ pub fn any(arr: &PlBooleanArray) -> Option<bool> {
 
     // Every element reads the one bit a scalar values buffer holds, and at least one of them is
     // non-null: that bit is the answer, and no buffer is walked at all.
-    let values = match arr.values_repr() {
-        ArrayRepr::Scalar(value) => return Some(value),
-        ArrayRepr::Flat(values) => values,
-    };
+    if let Some(value) = arr.scalar_values() {
+        return Some(value);
+    }
+
+    let values = arr.flat_values().unwrap();
 
     match flat_validity(arr) {
         Some(validity) => Some(values.intersects_with(validity)),
@@ -41,10 +42,11 @@ pub fn all(arr: &PlBooleanArray) -> Option<bool> {
     }
 
     // As in `any`: the one bit every element shares is the answer.
-    let values = match arr.values_repr() {
-        ArrayRepr::Scalar(value) => return Some(value),
-        ArrayRepr::Flat(values) => values,
-    };
+    if let Some(value) = arr.scalar_values() {
+        return Some(value);
+    }
+
+    let values = arr.flat_values().unwrap();
 
     match flat_validity(arr) {
         Some(validity) => {
@@ -65,9 +67,9 @@ pub fn all(arr: &PlBooleanArray) -> Option<bool> {
 pub fn not(arr: &PlBooleanArray) -> PlBooleanArray {
     // Inverting the backing bitmap keeps the representation: the single bit a scalar values
     // buffer holds inverts in `O(1)` and still stands for every element.
-    let inverted = match arr.values_repr() {
-        ArrayRepr::Scalar(value) => PlBooleanArray::new_scalar(!value, arr.len()),
-        ArrayRepr::Flat(values) => PlBooleanArray::from_values(!values),
+    let inverted = match arr.scalar_values() {
+        Some(value) => PlBooleanArray::new_scalar(!value, arr.len()),
+        None => PlBooleanArray::from_values(!arr.flat_values().unwrap()),
     };
 
     inverted.with_validity(arr.validity().map(PlBitmap::from))

@@ -9,7 +9,7 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmap, PlBitmapRef, validity_eq};
 use crate::broadcast::{
-    ArrayRepr, assert_broadcastable, broadcast_index, is_flat_offsets_len, is_scalar_offsets_len,
+    assert_broadcastable, broadcast_index, is_flat_offsets_len, is_scalar_offsets_len,
     normalize_offsets, scalar_buffer_len, scalar_offsets_len, slice_offsets, slice_validity,
     try_validity_covering, validity_covering, validity_covering_unchecked,
 };
@@ -251,42 +251,26 @@ impl PlListArray {
         &*self.values
     }
 
-    /// Which representation the backing offsets buffer is in, along with what it holds.
+    /// The backing offsets buffer, if it holds the range of every element, laid end to end.
     ///
-    /// The two arms are read differently: [`Flat`](ArrayRepr::Flat) is the raw offsets, which hold the
-    /// start of every element plus the end of the last and are resolved per element with
-    /// [`Self::value_range_unchecked`], while [`Scalar`](ArrayRepr::Scalar) is the one range every
+    /// The offsets hold the start of every element plus the end of the last, and are resolved per
+    /// element with [`Self::value_range_unchecked`]. A caller that needs a range out of an array
+    /// in either representation asks [`Self::scalar_offsets`] first: it is the one range every
     /// element covers, already resolved out of the two offsets a scalar buffer holds.
     #[inline]
-    pub fn offsets_repr(&self) -> ArrayRepr<&Buffer<u64>, Range<u64>> {
-        if self.offsets_are_scalar() {
-            // SAFETY: a scalar offsets buffer holds two slots, so both are in bounds.
-            let (start, end) = unsafe {
-                (
-                    *self.offsets.get_unchecked(0),
-                    *self.offsets.get_unchecked(1),
-                )
-            };
-            ArrayRepr::Scalar(start..end)
-        } else {
-            ArrayRepr::Flat(&self.offsets)
-        }
-    }
-
-    /// The backing offsets buffer, if it holds the range of every element, laid end to end.
-    #[inline]
     pub fn flat_offsets(&self) -> Option<&Buffer<u64>> {
-        self.offsets_repr().flat()
+        (!self.offsets_are_scalar()).then_some(&self.offsets)
     }
 
     /// The range of [`Self::values`] every element of this array covers, if the offsets hold a
     /// single range.
     #[inline]
     pub fn scalar_offsets(&self) -> Option<Range<usize>> {
-        // Every offset of an array that upholds its invariants fits in a `usize`.
-        self.offsets_repr()
-            .scalar()
-            .map(|range| range.start as usize..range.end as usize)
+        // SAFETY: a scalar offsets buffer holds two slots, so both are in bounds.
+        self.offsets_are_scalar().then(|| unsafe {
+            // Every offset of an array that upholds its invariants fits in a `usize`.
+            *self.offsets.get_unchecked(0) as usize..*self.offsets.get_unchecked(1) as usize
+        })
     }
 
     /// Consumes this array into its internal components.

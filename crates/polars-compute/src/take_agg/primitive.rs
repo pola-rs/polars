@@ -5,7 +5,7 @@ use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
 use either::Either;
 use num_traits::ToPrimitive;
-use polars_array::{ArrayRepr, PlPrimitiveArray};
+use polars_array::PlPrimitiveArray;
 use polars_utils::IdxSize;
 
 /// The mask of `arr` as one bit per element, or [`None`] where every element is null.
@@ -33,15 +33,18 @@ pub unsafe fn take_agg_no_null_primitive_iter_unchecked<
 ) -> impl Iterator<Item = T> {
     debug_assert!(arr.null_count() == 0);
 
-    match arr.values_repr() {
+    match arr.scalar_values() {
         // Every index gathers the one value the buffer holds, so it is read once here rather than
         // through the buffer once per index.
-        ArrayRepr::Scalar(value) => Either::Left(indices.into_iter().map(move |_| value)),
-        ArrayRepr::Flat(values) => Either::Right(
-            indices
-                .into_iter()
-                .map(|idx| unsafe { *values.get_unchecked(idx) }),
-        ),
+        Some(value) => Either::Left(indices.into_iter().map(move |_| value)),
+        None => {
+            let values = arr.flat_values().unwrap();
+            Either::Right(
+                indices
+                    .into_iter()
+                    .map(|idx| unsafe { *values.get_unchecked(idx) }),
+            )
+        },
     }
 }
 
@@ -59,20 +62,46 @@ pub unsafe fn take_agg_primitive_iter_unchecked<T: NativeType, I: IntoIterator<I
         return Either::Left(std::iter::empty());
     };
 
-    match arr.values_repr() {
-        ArrayRepr::Scalar(value) => Either::Right(Either::Left(
+    match arr.scalar_values() {
+        Some(value) => Either::Right(Either::Left(
             indices
                 .into_iter()
                 .filter(move |&idx| unsafe { validity.get_bit_unchecked(idx) })
                 .map(move |_| value),
         )),
-        ArrayRepr::Flat(values) => Either::Right(Either::Right(
-            indices
-                .into_iter()
-                .filter(|&idx| unsafe { validity.get_bit_unchecked(idx) })
-                .map(|idx| unsafe { *values.get_unchecked(idx) }),
-        )),
+        None => {
+            let values = arr.flat_values().unwrap();
+            Either::Right(Either::Right(
+                indices
+                    .into_iter()
+                    .filter(|&idx| unsafe { validity.get_bit_unchecked(idx) })
+                    .map(|idx| unsafe { *values.get_unchecked(idx) }),
+            ))
+        },
     }
+}
+
+/// Folds the values `indices` read through `value_at` with `f`, skipping the ones `validity`
+/// marks null and counting them.
+#[inline]
+fn fold_gathered<T, TOut>(
+    indices: impl IntoIterator<Item = usize>,
+    validity: &Bitmap,
+    value_at: impl Fn(usize) -> T,
+    init: TOut,
+    f: impl Fn(TOut, T) -> TOut,
+) -> (TOut, IdxSize) {
+    let mut null_count = 0 as IdxSize;
+    let out = indices.into_iter().fold(init, |acc, idx| {
+        if unsafe { validity.get_bit_unchecked(idx) } {
+            f(acc, value_at(idx))
+        } else {
+            null_count += 1;
+            acc
+        }
+    });
+
+    (out, null_count)
 }
 
 /// Folds the non-null values `indices` gather with `f`, alongside the number of nulls skipped.
@@ -99,22 +128,16 @@ pub unsafe fn take_agg_primitive_iter_unchecked_count_nulls<
         return None;
     };
 
-    let values = arr.values_repr();
-
-    let mut null_count = 0 as IdxSize;
-    let out = indices.into_iter().fold(init, |acc, idx| {
-        if unsafe { validity.get_bit_unchecked(idx) } {
-            let value = match values {
-                // Every index gathers the one value the buffer holds.
-                ArrayRepr::Scalar(value) => value,
-                ArrayRepr::Flat(values) => unsafe { *values.get_unchecked(idx) },
-            };
-            f(acc, value)
-        } else {
-            null_count += 1;
-            acc
-        }
-    });
+    // Which buffer the values come out of is settled once, ahead of the fold: every index of a
+    // scalar chunk gathers the one value it holds.
+    let (out, null_count) = match arr.scalar_values() {
+        Some(value) => fold_gathered(indices, validity, |_| value, init, f),
+        None => {
+            let values = arr.flat_values().unwrap();
+            let value_at = |idx| unsafe { *values.get_unchecked(idx) };
+            fold_gathered(indices, validity, value_at, init, f)
+        },
+    };
 
     if null_count == len {
         None

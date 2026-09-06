@@ -16,7 +16,7 @@
 
 use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
-use polars_array::{ArrayRepr, Flat, PlBitmap, PlBitmapRef, PlPrimitiveArray};
+use polars_array::{Flat, PlBitmap, PlBitmapRef, PlPrimitiveArray};
 use polars_buffer::Buffer;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 
@@ -58,19 +58,16 @@ macro_rules! binary_kernel {
         let (lhs, rhs) = ($self, $other);
         assert!(lhs.len() == rhs.len());
 
-        match (lhs.values_repr(), rhs.values_repr()) {
+        match (lhs.scalar_values(), rhs.scalar_values()) {
             // Every element of both sides holds the one value its own side repeats, so the one
             // comparison of those two values is the answer for all of them.
-            (ArrayRepr::Scalar(l), ArrayRepr::Scalar(r)) => repeated($scalar(&l, &r), lhs.len()),
-            (ArrayRepr::Scalar(l), ArrayRepr::Flat(r)) => {
-                written_out($flat_rhs(&flat_values(r), &l))
-            },
-            (ArrayRepr::Flat(l), ArrayRepr::Scalar(r)) => {
-                written_out($flat_lhs(&flat_values(l), &r))
-            },
-            (ArrayRepr::Flat(l), ArrayRepr::Flat(r)) => {
-                written_out($flat(&flat_values(l), &flat_values(r)))
-            },
+            (Some(l), Some(r)) => repeated($scalar(&l, &r), lhs.len()),
+            (Some(l), None) => written_out($flat_rhs(&flat_values(rhs.flat_values().unwrap()), &l)),
+            (None, Some(r)) => written_out($flat_lhs(&flat_values(lhs.flat_values().unwrap()), &r)),
+            (None, None) => written_out($flat(
+                &flat_values(lhs.flat_values().unwrap()),
+                &flat_values(rhs.flat_values().unwrap()),
+            )),
         }
     }};
 }
@@ -80,9 +77,9 @@ macro_rules! broadcast_kernel {
     ($self:expr, $other:expr, $scalar:expr, $flat:path $(,)?) => {{
         let (lhs, rhs) = ($self, $other);
 
-        match lhs.values_repr() {
-            ArrayRepr::Scalar(l) => repeated($scalar(&l, rhs), lhs.len()),
-            ArrayRepr::Flat(l) => written_out($flat(&flat_values(l), rhs)),
+        match lhs.scalar_values() {
+            Some(l) => repeated($scalar(&l, rhs), lhs.len()),
+            None => written_out($flat(&flat_values(lhs.flat_values().unwrap()), rhs)),
         }
     }};
 }

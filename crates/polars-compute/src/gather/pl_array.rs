@@ -7,7 +7,7 @@
 
 use polars_array::arrow::bridge::{chunk_to_arrow, with_arrow_chunk};
 use polars_array::bitmap::combine_validities_and;
-use polars_array::{ArrayRepr, PlArray, PlBitmap, PlBitmapRef, PlPrimitiveArray};
+use polars_array::{PlArray, PlBitmap, PlBitmapRef, PlPrimitiveArray};
 use polars_utils::IdxSize;
 
 use super::bitmap::take_bitmap_nulls_unchecked;
@@ -79,12 +79,12 @@ unsafe fn gather_validity(
     validity: Option<PlBitmapRef<'_>>,
     indices: &PlPrimitiveArray<IdxSize>,
 ) -> Option<PlBitmap> {
-    let gathered = validity.map(|validity| match validity.repr() {
+    let gathered = validity.map(|validity| match validity.scalar_value() {
         // One bit says the same of every element, and therefore of every element gathered.
-        ArrayRepr::Scalar(bit) => PlBitmap::new_scalar(bit, indices.len()),
+        Some(bit) => PlBitmap::new_scalar(bit, indices.len()),
         // A null index reads the mask at zero, which the index's own validity masks out below.
-        ArrayRepr::Flat(validity) => PlBitmap::from_bitmap(unsafe {
-            take_bitmap_nulls_unchecked(validity, &chunk_to_arrow(indices))
+        None => PlBitmap::from_bitmap(unsafe {
+            take_bitmap_nulls_unchecked(validity.flat_bitmap().unwrap(), &chunk_to_arrow(indices))
         }),
     });
 

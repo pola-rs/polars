@@ -1,15 +1,19 @@
+use std::ops::Range;
+
+use arrow::Either;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_compute::set::{scatter_single_non_null, set_with_mask};
 
 use crate::prelude::*;
 use crate::utils::align_chunks_binary;
 
-/// The bits of `mask` that are set and not null.
-fn true_and_valid(mask: &PlBooleanArray) -> Bitmap {
-    let mask = mask.to_flat();
-    match mask.validity() {
-        Some(validity) => mask.values() & validity,
-        None => mask.values().clone(),
+/// The elements `mask` picks out, as a range where it says the same of every one of them.
+fn picked_out(mask: &PlBooleanArray) -> Either<Range<IdxSize>, Bitmap> {
+    let picked = mask.true_and_valid();
+    match picked.scalar_value() {
+        Some(true) => Either::Left(0..mask.len() as IdxSize),
+        Some(false) => Either::Left(0..0),
+        None => Either::Right(picked.into_bitmap()),
     }
 }
 
@@ -68,7 +72,12 @@ where
                 else {
                     let mut av = Vec::with_capacity(self.len());
                     for chunk in self.downcast_iter() {
-                        av.extend_from_slice(chunk.to_flat().as_slice())
+                        // A chunk that repeats one value is filled in as that many copies of it,
+                        // rather than written out to a buffer that is then copied.
+                        match chunk.scalar_values() {
+                            Some(value) => av.resize(av.len() + chunk.len(), value),
+                            None => av.extend_from_slice(chunk.flat_values().unwrap().as_slice()),
+                        }
                     }
                     let data = av.as_mut_slice();
 
@@ -113,9 +122,12 @@ where
             Ok(ChunkedArray::from_chunk_iter(self.name().clone(), chunks))
         } else {
             let mask = mask.rechunk();
-            let mask = true_and_valid(mask.downcast_as_array());
-            let iter = mask.true_idx_iter();
-            self.scatter_single(iter.map(|v| v as IdxSize), value)
+            match picked_out(mask.downcast_as_array()) {
+                Either::Left(range) => self.scatter_single(range, value),
+                Either::Right(bits) => {
+                    self.scatter_single(bits.true_idx_iter().map(|v| v as IdxSize), value)
+                },
+            }
         }
     }
 }
@@ -141,12 +153,16 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
         let mut validity = MutableBitmap::with_capacity(self.len());
 
         for a in self.downcast_iter() {
-            let a = a.to_flat();
-            values.extend_from_bitmap(a.values());
-            if let Some(v) = a.validity() {
-                validity.extend_from_bitmap(v)
-            } else {
-                validity.extend_constant(a.len(), true);
+            // A bitmap that holds one bit standing for every element is extended as that many
+            // copies of the bit, rather than being written out to one bit per element first.
+            match a.scalar_values() {
+                Some(value) => values.extend_constant(a.len(), value),
+                None => values.extend_from_bitmap(a.flat_values().unwrap()),
+            }
+            match a.validity().map(|v| (v.scalar_value(), v)) {
+                None => validity.extend_constant(a.len(), true),
+                Some((Some(valid), _)) => validity.extend_constant(a.len(), valid),
+                Some((None, v)) => validity.extend_from_bitmap(v.flat_bitmap().unwrap()),
             }
         }
 
@@ -177,9 +193,12 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<bool>) -> PolarsResult<Self> {
         let mask = mask.rechunk();
-        let mask = true_and_valid(mask.downcast_as_array());
-        let iter = mask.true_idx_iter();
-        self.scatter_single(iter.map(|v| v as IdxSize), value)
+        match picked_out(mask.downcast_as_array()) {
+            Either::Left(range) => self.scatter_single(range, value),
+            Either::Right(bits) => {
+                self.scatter_single(bits.true_idx_iter().map(|v| v as IdxSize), value)
+            },
+        }
     }
 }
 
@@ -380,5 +399,49 @@ mod test {
         );
         let ca = ca.set(&mask, Some(true)).unwrap();
         assert_eq!(Vec::from(&ca), &[Some(false), Some(true), Some(true)]);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_array::PlBitmap;
+
+    use super::*;
+
+    const LENGTH: usize = 5;
+
+    /// The indices `picked_out` picks out, as a list.
+    fn picked(mask: &PlBooleanArray) -> Vec<IdxSize> {
+        match picked_out(mask) {
+            Either::Left(range) => range.collect(),
+            Either::Right(bits) => bits.true_idx_iter().map(|i| i as IdxSize).collect(),
+        }
+    }
+
+    /// A mask in any representation has to pick out exactly the elements the same mask written out
+    /// one bit per element does, on both its axes.
+    #[test]
+    fn a_scalar_mask_picks_out_what_its_written_out_form_does() {
+        let flat_values = || PlBitmap::from_bitmap([true, false, true, true, false].into());
+        let flat_validity = || PlBitmap::from_bitmap([true, true, false, true, true].into());
+
+        for values in [
+            PlBitmap::new_scalar(false, LENGTH),
+            PlBitmap::new_scalar(true, LENGTH),
+            flat_values(),
+        ] {
+            for validity in [
+                None,
+                Some(PlBitmap::new_scalar(false, LENGTH)),
+                Some(PlBitmap::new_scalar(true, LENGTH)),
+                Some(flat_validity()),
+            ] {
+                let mask =
+                    PlBooleanArray::from_pl_bitmap(values.clone()).with_validity(validity.clone());
+                let written_out = mask.to_flat().into_owned().into_array();
+
+                assert_eq!(picked(&mask), picked(&written_out), "{mask:?}");
+            }
+        }
     }
 }

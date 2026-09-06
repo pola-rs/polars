@@ -77,7 +77,6 @@ mod inner {
     use fixed_size_list::NumericFixedSizeListOp;
     use list_utils::with_match_pl_num_arith;
     use num_traits::Zero;
-    use polars_array::ArrayRepr;
     use polars_compute::arithmetic::pl_num::PlNumArithmetic;
     use polars_utils::float::IsFloat;
 
@@ -810,9 +809,9 @@ mod inner {
     /// A mask that repeats one bit already says the same of every element, so repeating it says
     /// the same thing of `n_repeats` times as many — which is the mask itself over that length.
     fn repeat_mask(mask: PlBitmapRef<'_>, n_repeats: usize) -> PlBitmap {
-        match mask.repr() {
-            ArrayRepr::Scalar(_) => mask.broadcast(mask.len() * n_repeats).into(),
-            ArrayRepr::Flat(bitmap) => PlBitmap::from_bitmap(repeat_bitmap(bitmap, n_repeats)),
+        match mask.flat_bitmap() {
+            Some(bitmap) => PlBitmap::from_bitmap(repeat_bitmap(bitmap, n_repeats)),
+            None => mask.broadcast(mask.len() * n_repeats).into(),
         }
     }
 

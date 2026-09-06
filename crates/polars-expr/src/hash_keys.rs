@@ -1,12 +1,10 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::hash::BuildHasher;
 
-use arrow::array::Array;
-use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and_many;
 use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
 use polars_array::{
-    PlBinaryArray, PlBinaryArrayBuilder, PlBinaryViewArray, PlBinaryViewArrayBuilder,
+    PlBinaryArray, PlBinaryArrayBuilder, PlBinaryViewArray, PlBinaryViewArrayBuilder, PlBitmapRef,
     PlPrimitiveArray, PlPrimitiveArrayBuilder,
 };
 use polars_core::frame::DataFrame;
@@ -188,13 +186,12 @@ impl HashKeys {
         self.len() == 0
     }
 
-    pub fn validity(&self) -> Option<Bitmap> {
+    /// The validity mask of the keys, in whichever representation they carry it.
+    pub fn validity(&self) -> Option<PlBitmap> {
         match self {
-            HashKeys::RowEncoded(s) => s.keys.validity().map(|v| v.to_flat().into_owned()),
-            HashKeys::Single(s) => s.keys.chunks()[0]
-                .validity()
-                .map(|v| v.to_flat().into_owned()),
-            HashKeys::Binview(s) => s.keys.validity().map(|v| v.to_flat().into_owned()),
+            HashKeys::RowEncoded(s) => s.keys.validity().map(PlBitmap::from),
+            HashKeys::Single(s) => s.keys.chunks()[0].validity().map(PlBitmap::from),
+            HashKeys::Binview(s) => s.keys.validity().map(PlBitmap::from),
         }
     }
 
@@ -345,9 +342,7 @@ pub struct RowEncodedKeys {
 
 impl RowEncodedKeys {
     pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
-        let hashes = self.hashes.to_flat();
-        let validity = self.keys.validity().map(|v| v.to_flat().into_owned());
-        for_each_hash_prehashed(hashes.as_slice(), validity.as_ref(), f);
+        for_each_hash_prehashed(&self.hashes, self.keys.validity(), f);
     }
 
     /// # Safety
@@ -357,9 +352,7 @@ impl RowEncodedKeys {
         subset: &[IdxSize],
         f: F,
     ) {
-        let hashes = self.hashes.to_flat();
-        let validity = self.keys.validity().map(|v| v.to_flat().into_owned());
-        for_each_hash_subset_prehashed(hashes.as_slice(), validity.as_ref(), subset, f);
+        for_each_hash_subset_prehashed(&self.hashes, self.keys.validity(), subset, f);
     }
 
     /// # Safety
@@ -427,9 +420,7 @@ pub struct BinviewKeys {
 
 impl BinviewKeys {
     pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
-        let hashes = self.hashes.to_flat();
-        let validity = self.keys.validity().map(|v| v.to_flat().into_owned());
-        for_each_hash_prehashed(hashes.as_slice(), validity.as_ref(), f);
+        for_each_hash_prehashed(&self.hashes, self.keys.validity(), f);
     }
 
     /// # Safety
@@ -439,9 +430,7 @@ impl BinviewKeys {
         subset: &[IdxSize],
         f: F,
     ) {
-        let hashes = self.hashes.to_flat();
-        let validity = self.keys.validity().map(|v| v.to_flat().into_owned());
-        for_each_hash_subset_prehashed(hashes.as_slice(), validity.as_ref(), subset, f);
+        for_each_hash_subset_prehashed(&self.hashes, self.keys.validity(), subset, f);
     }
 
     /// # Safety
@@ -462,48 +451,79 @@ impl BinviewKeys {
     }
 }
 
+/// Whether a validity mask leaves anything to read per element.
+///
+/// A mask that repeats one bit says the same of every key: either they are all there, which is
+/// what an absent mask says as well, or they are all null. Resolving that here is what keeps a
+/// scalar mask from being written out to one bit per key just to be walked.
+fn each_key_is_valid(opt_v: Option<PlBitmapRef<'_>>) -> Option<bool> {
+    match opt_v {
+        None => Some(true),
+        Some(validity) => validity.scalar_value(),
+    }
+}
+
 fn for_each_hash_prehashed<F: FnMut(IdxSize, Option<u64>)>(
-    hashes: &[u64],
-    opt_v: Option<&Bitmap>,
+    hashes: &PlPrimitiveArray<u64>,
+    opt_v: Option<PlBitmapRef<'_>>,
     mut f: F,
 ) {
-    if let Some(validity) = opt_v {
-        for (idx, (is_v, hash)) in validity.iter().zip(hashes).enumerate_idx() {
-            if is_v {
-                f(idx, Some(*hash))
-            } else {
-                f(idx, None)
+    // The hashes are read through the array, so a chunk that repeats one hash hands it back once
+    // per key rather than being written out to one slot per key first.
+    match each_key_is_valid(opt_v) {
+        Some(true) => {
+            for (idx, h) in hashes.values_iter().enumerate_idx() {
+                f(idx, Some(h));
             }
-        }
-    } else {
-        for (idx, h) in hashes.iter().enumerate_idx() {
-            f(idx, Some(*h));
-        }
+        },
+        Some(false) => {
+            for idx in 0..hashes.len() as IdxSize {
+                f(idx, None);
+            }
+        },
+        None => {
+            let validity = opt_v.unwrap();
+            for (idx, (is_v, hash)) in validity.iter().zip(hashes.values_iter()).enumerate_idx() {
+                if is_v {
+                    f(idx, Some(hash))
+                } else {
+                    f(idx, None)
+                }
+            }
+        },
     }
 }
 
 /// # Safety
 /// The indices must be in-bounds.
 unsafe fn for_each_hash_subset_prehashed<F: FnMut(IdxSize, Option<u64>)>(
-    hashes: &[u64],
-    opt_v: Option<&Bitmap>,
+    hashes: &PlPrimitiveArray<u64>,
+    opt_v: Option<PlBitmapRef<'_>>,
     subset: &[IdxSize],
     mut f: F,
 ) {
-    if let Some(validity) = opt_v {
-        for idx in subset {
-            let hash = *hashes.get_unchecked(*idx as usize);
-            let is_v = validity.get_bit_unchecked(*idx as usize);
-            if is_v {
-                f(*idx, Some(hash))
-            } else {
-                f(*idx, None)
+    match each_key_is_valid(opt_v) {
+        Some(true) => {
+            for idx in subset {
+                f(*idx, Some(hashes.value_unchecked(*idx as usize)));
             }
-        }
-    } else {
-        for idx in subset {
-            f(*idx, Some(*hashes.get_unchecked(*idx as usize)));
-        }
+        },
+        Some(false) => {
+            for idx in subset {
+                f(*idx, None);
+            }
+        },
+        None => {
+            let validity = opt_v.unwrap();
+            for idx in subset {
+                let hash = hashes.value_unchecked(*idx as usize);
+                if validity.get_unchecked(*idx as usize) {
+                    f(*idx, Some(hash))
+                } else {
+                    f(*idx, None)
+                }
+            }
+        },
     }
 }
 

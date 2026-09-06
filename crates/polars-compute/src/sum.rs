@@ -9,7 +9,7 @@ use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::types::NativeType;
 use num_traits::Zero;
-use polars_array::{ArrayRepr, PlPrimitiveArray};
+use polars_array::PlPrimitiveArray;
 use polars_utils::float16::pf16;
 
 macro_rules! wrapping_impl {
@@ -209,10 +209,11 @@ where
 
     // A chunk that repeats one value adds that value up once per non-null element, which is
     // `O(log n)` doublings rather than a pass over the chunk.
-    let values = match arr.values_repr() {
-        ArrayRepr::Scalar(value) => return repeat_wrapping_add(value, count),
-        ArrayRepr::Flat(values) => values,
-    };
+    if let Some(value) = arr.scalar_values() {
+        return repeat_wrapping_add(value, count);
+    }
+
+    let values = arr.flat_values().unwrap();
 
     match flat_mask_of(arr, count) {
         Some(mask) => WrappingSum::wrapping_sum_with_validity(values, &BitMask::from_bitmap(&mask)),
@@ -231,10 +232,11 @@ where
         return S::zero();
     }
 
-    let values = match arr.values_repr() {
-        ArrayRepr::Scalar(value) => return repeat_wrapping_add(value.into(), count),
-        ArrayRepr::Flat(values) => values,
-    };
+    if let Some(value) = arr.scalar_values() {
+        return repeat_wrapping_add(value.into(), count);
+    }
+
+    let values = arr.flat_values().unwrap();
 
     match flat_mask_of(arr, count) {
         Some(mask) => wrapping_sum_with_mask_scalar_upcast(values, &BitMask::from_bitmap(&mask)),

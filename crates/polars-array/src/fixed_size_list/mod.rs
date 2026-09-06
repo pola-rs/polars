@@ -8,9 +8,9 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmap, PlBitmapRef, validity_eq};
 use crate::broadcast::{
-    ArrayRepr, assert_broadcastable, is_flat_fixed_size_values_len,
-    is_scalar_fixed_size_values_len, normalize_values, scalar_buffer_len, slice_fixed_size_values,
-    slice_validity, try_validity_covering, validity_covering, validity_covering_unchecked,
+    assert_broadcastable, is_flat_fixed_size_values_len, is_scalar_fixed_size_values_len,
+    normalize_values, scalar_buffer_len, slice_fixed_size_values, slice_validity,
+    try_validity_covering, validity_covering, validity_covering_unchecked,
 };
 use crate::concatenate::concatenate_repeated;
 use crate::flat::Flat;
@@ -270,32 +270,17 @@ impl PlFixedSizeListArray {
         &*self.values
     }
 
-    /// Which representation the backing values array is in.
-    ///
-    /// Both arms hold the values array itself, which is read the same way either way: a caller
-    /// that does not care which representation it is in wants [`Self::values`] instead. The two
-    /// differ in what the array holds — the `length * width` values of every element laid end to
-    /// end, against the `width` values of the one element every element of this array reads.
-    #[inline]
-    pub fn values_repr(&self) -> ArrayRepr<&dyn PlArray> {
-        if self.values_are_scalar() {
-            ArrayRepr::Scalar(&*self.values)
-        } else {
-            ArrayRepr::Flat(&*self.values)
-        }
-    }
-
     /// The values array the lists are taken over, if it holds the values of every element, laid end
     /// to end.
     #[inline]
     pub fn flat_values(&self) -> Option<&dyn PlArray> {
-        self.values_repr().flat()
+        (!self.values_are_scalar()).then_some(&*self.values)
     }
 
     /// The list every element of this array reads, if the values hold a single element.
     #[inline]
     pub fn scalar_values(&self) -> Option<&dyn PlArray> {
-        self.values_repr().scalar()
+        self.values_are_scalar().then_some(&*self.values)
     }
 
     /// Consumes this array into its internal components.

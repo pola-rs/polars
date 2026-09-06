@@ -4,8 +4,7 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{PolarsResult, polars_ensure};
 
 use crate::broadcast::{
-    ArrayRepr, is_flat_buffer_len, is_valid_buffer_len, normalize_bitmap, scalar_buffer_len,
-    slice_bitmap,
+    is_flat_buffer_len, is_valid_buffer_len, normalize_bitmap, scalar_buffer_len, slice_bitmap,
 };
 
 mod iterator;
@@ -140,17 +139,11 @@ impl PlBitmap {
         self.length == 0
     }
 
-    /// Which representation the backing bitmap is in, along with what it holds.
-    #[inline]
-    pub fn repr(&self) -> ArrayRepr<&Bitmap, bool> {
-        // The reference borrows the bitmap this mask owns, so its `Flat` arm outlives it.
-        self.as_ref().repr()
-    }
-
     /// The backing bitmap, if it holds one bit per element.
     #[inline]
     pub fn flat_bitmap(&self) -> Option<&Bitmap> {
-        self.repr().flat()
+        // The reference borrows the bitmap this mask owns, so what it hands back outlives it.
+        self.as_ref().flat_bitmap()
     }
 
     /// Borrows this mask as a [`PlBitmapRef`].
@@ -184,7 +177,7 @@ impl PlBitmap {
     /// The bit shared by every element, if the backing bitmap holds a single bit.
     #[inline]
     pub fn scalar_value(&self) -> Option<bool> {
-        self.repr().scalar()
+        self.as_ref().scalar_value()
     }
 
     /// Returns the bit at `i`.

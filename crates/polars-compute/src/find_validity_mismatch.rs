@@ -19,6 +19,7 @@
 //!     - trimmed to normalized offsets
 //!     - have the same number of child elements below each element (even nulls)
 
+use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use polars_array::{
     PlArray, PlArrayType, PlBitmapRef, PlFixedSizeListArray, PlListArray, PlStructArray,
@@ -101,17 +102,36 @@ fn extend_mismatches(
         return;
     }
 
-    // At least one of the two holds one bit per element, so the answer is given bit for bit; the
-    // other crosses over to one bit per element to be read against it.
+    // At least one of the two holds one bit per element, which is the side the answer is read off.
+    // An absent mask is the one that says every element is valid, as is a scalar mask of a set
+    // bit: either way the other side says the same thing of every element, so the elements the two
+    // disagree about are the ones the flat mask says the opposite of — which is that mask itself,
+    // or its inverse, and never a mask written out from a single bit.
     let mismatches = match (left, right) {
-        (Some(left), Some(right)) => arrow::bitmap::xor(&left.to_flat(), &right.to_flat()),
-        // An absent mask is the one that says every element is valid, so the elements the two
-        // disagree about are the ones the mask that is there says are null.
-        (Some(mask), None) | (None, Some(mask)) => !&*mask.to_flat(),
+        (Some(left), Some(right)) => match (left.flat_bitmap(), right.flat_bitmap()) {
+            (Some(left), Some(right)) => arrow::bitmap::xor(left, right),
+            (Some(flat), None) => disagreements_with(flat, right.scalar_value().unwrap()),
+            (None, Some(flat)) => disagreements_with(flat, left.scalar_value().unwrap()),
+            (None, None) => unreachable!("two scalar masks are answered for above"),
+        },
+        (Some(mask), None) | (None, Some(mask)) => disagreements_with(
+            mask.flat_bitmap()
+                .expect("a scalar mask against an absent one is answered for above"),
+            true,
+        ),
         (None, None) => unreachable!("two absent masks are both a single bit"),
     };
 
     idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+}
+
+/// The elements `flat` disagrees about with a side that says `valid` of every one of them.
+///
+/// Where that side says they are all valid the disagreements are the elements `flat` says are
+/// null, which has to be written out; where it says they are all null they are the bits `flat`
+/// already has set, and the mask is handed back as it stands.
+fn disagreements_with(flat: &Bitmap, valid: bool) -> Bitmap {
+    if valid { !flat } else { flat.clone() }
 }
 
 /// Reports a disagreement under an element of `left` at that element.
@@ -240,4 +260,101 @@ fn find_validity_mismatch_list_fsl(
     let left: &PlFixedSizeListArray = downcast(&*left);
 
     find_validity_mismatch_nested(left.values(), right.values(), right.width(), idxs)
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_array::{PlBitmap, PlPrimitiveArray};
+
+    use super::*;
+
+    const LENGTH: usize = 6;
+    /// The elements a flat mask marks valid, which is what every crossing below is read against.
+    const VALID: [bool; LENGTH] = [true, false, true, true, false, true];
+
+    fn flat() -> PlBitmap {
+        PlBitmap::from_bitmap(VALID.into_iter().collect())
+    }
+
+    fn mismatches(left: Option<PlBitmap>, right: Option<PlBitmap>) -> Vec<IdxSize> {
+        let mut idxs = Vec::new();
+        extend_mismatches(
+            &mut idxs,
+            LENGTH,
+            left.as_ref().map(PlBitmap::as_ref),
+            right.as_ref().map(PlBitmap::as_ref),
+        );
+        idxs
+    }
+
+    /// A mask in either representation has to name the same elements as the same mask written out
+    /// one bit per element, which is what the flat-against-flat path answers.
+    #[test]
+    fn a_scalar_mask_disagrees_where_it_is_written_out_to() {
+        for value in [false, true] {
+            let scalar = PlBitmap::new_scalar(value, LENGTH);
+            let written_out = PlBitmap::from_bitmap(std::iter::repeat_n(value, LENGTH).collect());
+
+            assert_eq!(
+                mismatches(Some(flat()), Some(scalar.clone())),
+                mismatches(Some(flat()), Some(written_out.clone())),
+            );
+            assert_eq!(
+                mismatches(Some(scalar), Some(flat())),
+                mismatches(Some(written_out), Some(flat())),
+            );
+        }
+    }
+
+    /// An absent mask says every element is valid, and so names the elements a flat mask says are
+    /// null — the same ones a scalar mask of a set bit does.
+    #[test]
+    fn an_absent_mask_disagrees_where_the_other_says_null() {
+        let nulls: Vec<IdxSize> = (0..LENGTH as IdxSize)
+            .filter(|i| !VALID[*i as usize])
+            .collect();
+
+        assert_eq!(mismatches(Some(flat()), None), nulls);
+        assert_eq!(mismatches(None, Some(flat())), nulls);
+        assert_eq!(
+            mismatches(Some(flat()), Some(PlBitmap::new_scalar(true, LENGTH))),
+            nulls,
+        );
+    }
+
+    /// Two masks that each say the same of every element agree or disagree about all of them at
+    /// once, whichever way round they are and whether the mask is absent or a single bit.
+    #[test]
+    fn two_scalar_masks_are_answered_for_at_once() {
+        let all: Vec<IdxSize> = (0..LENGTH as IdxSize).collect();
+        let valid = || Some(PlBitmap::new_scalar(true, LENGTH));
+        let null = || Some(PlBitmap::new_scalar(false, LENGTH));
+
+        assert!(mismatches(valid(), valid()).is_empty());
+        assert!(mismatches(None, valid()).is_empty());
+        assert!(mismatches(null(), null()).is_empty());
+        assert_eq!(mismatches(valid(), null()), all);
+        assert_eq!(mismatches(null(), valid()), all);
+        assert_eq!(mismatches(None, null()), all);
+        assert_eq!(mismatches(null(), None), all);
+    }
+
+    /// The whole procedure, not just the mask comparison: a scalar chunk has to report the same
+    /// elements as the same chunk laid out one slot per element.
+    #[test]
+    fn a_scalar_chunk_reports_what_its_written_out_form_does() {
+        let scalar = PlPrimitiveArray::new_scalar(7i32, LENGTH)
+            .with_validity(Some(PlBitmap::new_scalar(false, LENGTH)));
+        let flat = PlPrimitiveArray::from_vec(vec![7i32; LENGTH]).with_validity(Some(flat()));
+
+        let mut from_scalar = Vec::new();
+        find_validity_mismatch(&scalar, &flat, &mut from_scalar);
+
+        let mut from_written_out = Vec::new();
+        let written_out = scalar.to_flat().into_owned().into_array();
+        find_validity_mismatch(&written_out, &flat, &mut from_written_out);
+
+        assert_eq!(from_scalar, from_written_out);
+        assert_eq!(from_scalar, vec![0, 2, 3, 5]);
+    }
 }

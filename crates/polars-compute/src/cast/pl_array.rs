@@ -16,9 +16,9 @@ use arrow::datatypes::{ArrowDataType, PhysicalType, PrimitiveType, TimeUnit};
 use arrow::types::NativeType;
 use arrow::with_match_primitive_type;
 use polars_array::{
-    ArrayRepr, PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBitmapRef,
-    PlBooleanArray, PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray, PlNullArray,
-    PlPrimitiveArray, PlStructArray, PlUtf8ViewArray,
+    PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBitmapRef, PlBooleanArray,
+    PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray, PlNullArray, PlPrimitiveArray,
+    PlStructArray, PlUtf8ViewArray,
 };
 use polars_error::PolarsResult;
 use polars_utils::format_pl_smallstr;
@@ -270,28 +270,28 @@ where
         return map_values(from, num_traits::AsPrimitive::<O>::as_);
     }
 
-    match from.values_repr() {
-        // The one value every element reads is cast once, and the answer repeats it in turn.
-        ArrayRepr::Scalar(value) => match num_traits::cast::cast::<I, O>(value) {
+    // The one value every element of a scalar chunk reads is cast once, and the answer repeats it
+    // in turn.
+    if let Some(value) = from.scalar_values() {
+        return match num_traits::cast::cast::<I, O>(value) {
             Some(cast) => PlPrimitiveArray::new_scalar(cast, from.len())
                 .with_validity(from.validity().map(PlBitmap::from)),
             None => PlPrimitiveArray::new_full_null(from.len()),
-        },
-        ArrayRepr::Flat(values) => {
-            let mut fits = MaskBuilder::with_capacity(from.len());
-            let mut out = Vec::with_capacity(from.len());
-            for &value in values.iter() {
-                let cast = num_traits::cast::cast::<I, O>(value);
-                fits.push(cast.is_some());
-                out.push(cast.unwrap_or_default());
-            }
-            let out = PlPrimitiveArray::from_vec(out);
-            match fits.finish() {
-                // Every value fit, so the mask the array came with is the whole answer.
-                None => out.with_validity(from.validity().map(PlBitmap::from)),
-                Some(fits) => out.with_validity(Some(and_validity(from.validity(), fits))),
-            }
-        },
+        };
+    }
+
+    let mut fits = MaskBuilder::with_capacity(from.len());
+    let mut out = Vec::with_capacity(from.len());
+    for &value in from.flat_values().unwrap().iter() {
+        let cast = num_traits::cast::cast::<I, O>(value);
+        fits.push(cast.is_some());
+        out.push(cast.unwrap_or_default());
+    }
+    let out = PlPrimitiveArray::from_vec(out);
+    match fits.finish() {
+        // Every value fit, so the mask the array came with is the whole answer.
+        None => out.with_validity(from.validity().map(PlBitmap::from)),
+        Some(fits) => out.with_validity(Some(and_validity(from.validity(), fits))),
     }
 }
 
@@ -303,13 +303,13 @@ where
     O: NativeType,
     F: Fn(I) -> O,
 {
-    match from.values_repr() {
-        ArrayRepr::Scalar(value) => PlPrimitiveArray::new_scalar(op(value), from.len())
+    match from.scalar_values() {
+        Some(value) => PlPrimitiveArray::new_scalar(op(value), from.len())
             .with_validity(from.validity().map(PlBitmap::from)),
         // The values hold a slot per element, so this is the one place the cast writes one too.
         // The shared kernel is `#[inline(never)]` over the element types, which keeps one unrolled
         // loop rather than one per pair of types cast between.
-        ArrayRepr::Flat(_) => crate::arity::prim_unary_values(from.to_flat().into_owned(), op),
+        None => crate::arity::prim_unary_values(from.as_flat().unwrap().clone(), op),
     }
 }
 
@@ -320,26 +320,23 @@ where
     T: NativeType,
     F: Fn(T) -> bool,
 {
-    match array.values_repr() {
-        ArrayRepr::Scalar(value) => {
-            if keep(value) {
-                array.clone()
-            } else {
-                PlPrimitiveArray::new_full_null(array.len())
-            }
-        },
-        ArrayRepr::Flat(values) => {
-            let mut fits = MaskBuilder::with_capacity(array.len());
-            for &value in values.iter() {
-                fits.push(keep(value));
-            }
-            match fits.finish() {
-                None => array.clone(),
-                Some(fits) => array
-                    .clone()
-                    .with_validity(Some(and_validity(array.validity(), fits))),
-            }
-        },
+    if let Some(value) = array.scalar_values() {
+        return if keep(value) {
+            array.clone()
+        } else {
+            PlPrimitiveArray::new_full_null(array.len())
+        };
+    }
+
+    let mut fits = MaskBuilder::with_capacity(array.len());
+    for &value in array.flat_values().unwrap().iter() {
+        fits.push(keep(value));
+    }
+    match fits.finish() {
+        None => array.clone(),
+        Some(fits) => array
+            .clone()
+            .with_validity(Some(and_validity(array.validity(), fits))),
     }
 }
 
@@ -348,14 +345,14 @@ where
     T: NativeType + num_traits::One,
 {
     let value_of = |set: bool| if set { T::one() } else { T::default() };
-    match from.values_repr() {
-        ArrayRepr::Scalar(value) => PlPrimitiveArray::new_scalar(value_of(value), from.len())
-            .with_validity(from.validity().map(PlBitmap::from)),
-        ArrayRepr::Flat(values) => {
-            let out: Vec<T> = values.iter().map(value_of).collect();
-            PlPrimitiveArray::from_vec(out).with_validity(from.validity().map(PlBitmap::from))
+    let values = match from.scalar_values() {
+        Some(value) => PlPrimitiveArray::new_scalar(value_of(value), from.len()),
+        None => {
+            let out: Vec<T> = from.flat_values().unwrap().iter().map(value_of).collect();
+            PlPrimitiveArray::from_vec(out)
         },
-    }
+    };
+    values.with_validity(from.validity().map(PlBitmap::from))
 }
 
 fn primitive_to_boolean<T>(from: &PlPrimitiveArray<T>) -> PlBooleanArray

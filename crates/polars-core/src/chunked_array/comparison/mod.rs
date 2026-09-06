@@ -10,6 +10,7 @@ use num_traits::{NumCast, ToPrimitive};
 use polars_array::bitmap::invert;
 use polars_compute::comparisons::{TotalEqKernel, TotalOrdKernel};
 
+use crate::chunked_array::ops::bits::{false_count, true_count};
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::series::implementations::null::NullChunked;
@@ -1064,39 +1065,6 @@ impl ChunkCompareEq<&ArrayChunked> for ArrayChunked {
             true,
             true,
         )
-    }
-}
-
-/// The number of elements of `arr` that are both valid and `true`. A chunk whose values and mask
-/// are both scalar is one bit each, so this is `O(1)` for it.
-fn true_count(arr: &PlBooleanArray) -> usize {
-    let values = arr.values();
-    match arr.validity() {
-        None => values.set_bits(),
-        Some(validity) => match (values.scalar_value(), validity.scalar_value()) {
-            // A scalar side shares one bit with every element, which settles the `and` on its own
-            // wherever that bit is unset. Only two flat masks are walked.
-            (Some(false), _) | (_, Some(false)) => 0,
-            (Some(true), Some(true)) => arr.len(),
-            (Some(true), None) => validity.set_bits(),
-            (None, Some(true)) => values.set_bits(),
-            (None, None) => (&*values.to_flat() & &*validity.to_flat()).set_bits(),
-        },
-    }
-}
-
-/// The number of elements of `arr` that are valid and `false` — see [`true_count`].
-fn false_count(arr: &PlBooleanArray) -> usize {
-    let values = arr.values();
-    match arr.validity() {
-        None => values.unset_bits(),
-        Some(validity) => match (values.scalar_value(), validity.scalar_value()) {
-            (Some(true), _) | (_, Some(false)) => 0,
-            (Some(false), Some(true)) => arr.len(),
-            (Some(false), None) => validity.set_bits(),
-            (None, Some(true)) => values.unset_bits(),
-            (None, None) => (&!&*values.to_flat() & &*validity.to_flat()).set_bits(),
-        },
     }
 }
 

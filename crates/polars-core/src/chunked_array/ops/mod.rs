@@ -12,7 +12,7 @@ mod apply;
 mod approx_n_unique;
 pub mod arity;
 mod bit_repr;
-mod bits;
+pub(crate) mod bits;
 #[cfg(feature = "bitwise")]
 mod bitwise_reduce;
 pub(crate) mod chunkops;

@@ -1,4 +1,3 @@
-use polars_array::ArrayRepr;
 use polars_buffer::Buffer;
 use polars_time::prelude::RollingWindower;
 use polars_time::{ClosedWindow, Duration, PolarsTemporalGroupby, RollingGroupOptions};
@@ -121,9 +120,9 @@ impl PhysicalExpr for RollingExpr {
             .expect("a rechunked column holds one chunk");
         // TODO(polars-array-scalar): the windower reads the timestamps as a slice, so a chunk that
         // repeats one timestamp is written out here rather than that timestamp being read once.
-        let timestamps = match chunk.values_repr() {
-            ArrayRepr::Flat(values) => values.clone(),
-            ArrayRepr::Scalar(value) => Buffer::from(vec![value; chunk.len()]),
+        let timestamps = match chunk.scalar_values() {
+            Some(value) => Buffer::from(vec![value; chunk.len()]),
+            None => chunk.flat_values().unwrap().clone(),
         };
         let mut index_column_data = Cow::Borrowed(timestamps.as_slice());
         let mut rolling =

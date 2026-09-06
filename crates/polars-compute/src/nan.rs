@@ -2,7 +2,7 @@
 
 use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
-use polars_array::{ArrayRepr, PlBitmap, PlBooleanArray, PlPrimitiveArray};
+use polars_array::{PlBitmap, PlBooleanArray, PlPrimitiveArray};
 use polars_buffer::SharedStorage;
 use polars_utils::float::IsFloat;
 
@@ -119,17 +119,13 @@ fn nan_mask<T: NativeType + IsFloat>(
 ) -> PlBooleanArray {
     // A scalar values buffer holds the one value every element reads: it is tested once, and the
     // one answer stands for the whole chunk, in `O(1)` memory.
-    let values = match array.values_repr() {
-        ArrayRepr::Scalar(value) => {
-            PlBitmap::new_scalar((value != value) == nan_is_set, array.len())
-        },
-        ArrayRepr::Flat(slice) => {
-            match nan_mask_slice(slice, nan_is_set) {
-                Some(mask) => PlBitmap::new(mask, array.len()),
-                // No element is NaN, so the whole mask is the one answer that holds for all of
-                // them, which needs no slot per element either.
-                None => PlBitmap::new_scalar(!nan_is_set, array.len()),
-            }
+    let values = match array.scalar_values() {
+        Some(value) => PlBitmap::new_scalar((value != value) == nan_is_set, array.len()),
+        None => match nan_mask_slice(array.flat_values().unwrap(), nan_is_set) {
+            Some(mask) => PlBitmap::new(mask, array.len()),
+            // No element is NaN, so the whole mask is the one answer that holds for all of
+            // them, which needs no slot per element either.
+            None => PlBitmap::new_scalar(!nan_is_set, array.len()),
         },
     };
 

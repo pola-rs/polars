@@ -1,5 +1,5 @@
 use arrow::bitmap::{self, Bitmap};
-use polars_array::{ArrayRepr, PlBitmap, PlBitmapRef};
+use polars_array::{PlBitmap, PlBitmapRef};
 
 pub trait TotalEqKernel: Sized {
     type Scalar: ?Sized;
@@ -96,10 +96,10 @@ enum Validity<'a> {
 fn validity_of(mask: Option<PlBitmapRef<'_>>) -> Validity<'_> {
     match mask {
         None => Validity::AllValid,
-        Some(mask) => match mask.repr() {
-            ArrayRepr::Scalar(true) => Validity::AllValid,
-            ArrayRepr::Scalar(false) => Validity::AllNull,
-            ArrayRepr::Flat(mask) => Validity::Flat(mask),
+        Some(mask) => match mask.scalar_value() {
+            Some(true) => Validity::AllValid,
+            Some(false) => Validity::AllNull,
+            None => Validity::Flat(mask.flat_bitmap().unwrap()),
         },
     }
 }
@@ -109,19 +109,21 @@ fn validity_of(mask: Option<PlBitmapRef<'_>>) -> Validity<'_> {
 /// A `q` that repeats a single bit decides the answer on its own — either every element compared
 /// unequal, or the answer is exactly which of them are there — so neither arm writes it out.
 fn and_mask(q: PlBitmap, mask: &Bitmap) -> PlBitmap {
-    match q.repr() {
-        ArrayRepr::Scalar(false) => q,
-        ArrayRepr::Scalar(true) => PlBitmap::from_bitmap(mask.clone()),
-        ArrayRepr::Flat(q) => PlBitmap::from_bitmap(bitmap::binary(q, mask, |q, m| q & m)),
+    match q.scalar_value() {
+        Some(false) => q,
+        Some(true) => PlBitmap::from_bitmap(mask.clone()),
+        None => PlBitmap::from_bitmap(bitmap::binary(q.flat_bitmap().unwrap(), mask, |q, m| q & m)),
     }
 }
 
 /// `q | !mask`, where `mask` holds one bit per element. As [`and_mask`], the other way up.
 fn or_not_mask(q: PlBitmap, mask: &Bitmap) -> PlBitmap {
-    match q.repr() {
-        ArrayRepr::Scalar(true) => q,
-        ArrayRepr::Scalar(false) => PlBitmap::from_bitmap(!mask),
-        ArrayRepr::Flat(q) => PlBitmap::from_bitmap(bitmap::binary(q, mask, |q, m| q | !m)),
+    match q.scalar_value() {
+        Some(true) => q,
+        Some(false) => PlBitmap::from_bitmap(!mask),
+        None => PlBitmap::from_bitmap(bitmap::binary(q.flat_bitmap().unwrap(), mask, |q, m| {
+            q | !m
+        })),
     }
 }
 

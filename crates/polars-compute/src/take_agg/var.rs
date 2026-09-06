@@ -3,7 +3,7 @@
 
 use arrow::types::NativeType;
 use num_traits::ToPrimitive;
-use polars_array::{ArrayRepr, PlPrimitiveArray};
+use polars_array::PlPrimitiveArray;
 
 use super::primitive::flat_validity;
 
@@ -64,19 +64,17 @@ where
     // Every index gathers the same value where the buffer holds a single slot, so the variance is
     // over that one value repeated — which is what a flat chunk of it would give as well. It is
     // not `0.0` in general: `ddof` still decides whether there are enough values at all.
-    match arr.values_repr() {
-        ArrayRepr::Scalar(value) => {
-            let value = unsafe { value.to_f64().unwrap_unchecked() };
-            online_variance(indices.into_iter().map(|_| value), ddof)
-        },
-        ArrayRepr::Flat(values) => {
-            let iter = indices.into_iter().map(|idx| unsafe {
-                let value = *values.get_unchecked(idx);
-                value.to_f64().unwrap_unchecked()
-            });
-            online_variance(iter, ddof)
-        },
+    if let Some(value) = arr.scalar_values() {
+        let value = unsafe { value.to_f64().unwrap_unchecked() };
+        return online_variance(indices.into_iter().map(|_| value), ddof);
     }
+
+    let values = arr.flat_values().unwrap();
+    let iter = indices.into_iter().map(|idx| unsafe {
+        let value = *values.get_unchecked(idx);
+        value.to_f64().unwrap_unchecked()
+    });
+    online_variance(iter, ddof)
 }
 
 /// The variance of the non-null values `indices` gather out of a chunk.
@@ -97,25 +95,23 @@ where
     // Every element is null, so no index gathers a value and there is no variance.
     let validity = flat_validity(arr)?;
 
-    match arr.values_repr() {
-        ArrayRepr::Scalar(value) => {
-            let iter = indices.into_iter().filter_map(|idx| {
-                unsafe { validity.get_bit_unchecked(idx) }.then(|| value.to_f64())?
-            });
-            online_variance(iter, ddof)
-        },
-        ArrayRepr::Flat(values) => {
-            let iter = indices.into_iter().flat_map(|idx| unsafe {
-                if validity.get_bit_unchecked(idx) {
-                    let value = *values.get_unchecked(idx);
-                    value.to_f64()
-                } else {
-                    None
-                }
-            });
-            online_variance(iter, ddof)
-        },
+    if let Some(value) = arr.scalar_values() {
+        let iter = indices.into_iter().filter_map(|idx| {
+            unsafe { validity.get_bit_unchecked(idx) }.then(|| value.to_f64())?
+        });
+        return online_variance(iter, ddof);
     }
+
+    let values = arr.flat_values().unwrap();
+    let iter = indices.into_iter().flat_map(|idx| unsafe {
+        if validity.get_bit_unchecked(idx) {
+            let value = *values.get_unchecked(idx);
+            value.to_f64()
+        } else {
+            None
+        }
+    });
+    online_variance(iter, ddof)
 }
 
 #[cfg(test)]

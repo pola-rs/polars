@@ -11,7 +11,6 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::binview::PlBinaryViewArray;
 use crate::bitmap::{PlBitmap, PlBitmapRef};
-use crate::broadcast::ArrayRepr;
 use crate::flat::Flat;
 
 mod builder;
@@ -194,13 +193,6 @@ impl PlUtf8ViewArray {
     #[inline]
     pub fn total_bytes_len(&self) -> usize {
         self.0.total_bytes_len()
-    }
-
-    /// Which representation the backing views buffer is in — see
-    /// [`PlBinaryViewArray::views_repr`].
-    #[inline]
-    pub fn views_repr(&self) -> ArrayRepr<&Buffer<View>, View> {
-        self.0.views_repr()
     }
 
     /// The views of this array, which index its data buffers.

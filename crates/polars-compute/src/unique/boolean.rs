@@ -7,7 +7,7 @@
 use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
-use polars_array::{ArrayRepr, PlBitmap, PlBitmapRef, PlBooleanArray};
+use polars_array::{PlBitmap, PlBitmapRef, PlBooleanArray};
 
 use super::{GenericUniqueKernel, RangedUniqueKernel};
 
@@ -64,24 +64,21 @@ fn num_valid_trues(values: PlBitmapRef<'_>, validity: Option<PlBitmapRef<'_>>) -
         return values.set_bits();
     };
 
-    match (values.repr(), validity.repr()) {
-        // One bit on either side says the same of every element, so the count is all of them or
-        // none — and where only one side repeats a set bit, the other side's count is the answer.
-        (ArrayRepr::Scalar(value), ArrayRepr::Scalar(valid)) => {
-            if value && valid {
-                values.len()
-            } else {
-                0
-            }
-        },
-        (ArrayRepr::Scalar(false), ArrayRepr::Flat(_))
-        | (ArrayRepr::Flat(_), ArrayRepr::Scalar(false)) => 0,
-        (ArrayRepr::Scalar(true), ArrayRepr::Flat(_)) => validity.set_bits(),
-        (ArrayRepr::Flat(_), ArrayRepr::Scalar(true)) => values.set_bits(),
-        (ArrayRepr::Flat(values), ArrayRepr::Flat(validity)) => {
-            values.num_intersections_with(validity)
-        },
+    // One bit on either side says the same of every element, so the count is all of them or none
+    // — and where only one side repeats a set bit, the other side's count is the answer.
+    match (values.scalar_value(), validity.scalar_value()) {
+        (Some(value), Some(valid)) => return usize::from(value && valid) * values.len(),
+        (Some(false), None) | (None, Some(false)) => return 0,
+        (Some(true), None) => return validity.set_bits(),
+        (None, Some(true)) => return values.set_bits(),
+        (None, None) => {},
     }
+
+    let (values, validity) = (
+        values.flat_bitmap().unwrap(),
+        validity.flat_bitmap().unwrap(),
+    );
+    values.num_intersections_with(validity)
 }
 
 impl RangedUniqueKernel for BooleanUniqueKernelState {

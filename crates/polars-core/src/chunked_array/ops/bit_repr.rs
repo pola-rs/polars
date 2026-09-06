@@ -1,4 +1,3 @@
-use polars_array::ArrayRepr;
 use polars_buffer::Buffer;
 use polars_error::feature_gated;
 
@@ -16,14 +15,14 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
     let chunks = ca.downcast_iter().map(|array| {
         let length = array.len();
         // The values are handed over as they are, so a scalar chunk stays one value.
-        let out = match array.values_repr() {
-            ArrayRepr::Flat(buf) => PlPrimitiveArray::new(
-                Buffer::try_transmute::<U::Native>(buf.clone()).unwrap(),
+        let out = match array.scalar_values() {
+            Some(value) => PlPrimitiveArray::new_broadcast(
+                Buffer::try_transmute::<U::Native>(Buffer::from(vec![value])).unwrap(),
                 length,
                 None,
             ),
-            ArrayRepr::Scalar(value) => PlPrimitiveArray::new_broadcast(
-                Buffer::try_transmute::<U::Native>(Buffer::from(vec![value])).unwrap(),
+            None => PlPrimitiveArray::new(
+                Buffer::try_transmute::<U::Native>(array.flat_values().unwrap().clone()).unwrap(),
                 length,
                 None,
             ),

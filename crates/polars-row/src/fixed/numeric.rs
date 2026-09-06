@@ -4,7 +4,7 @@ use std::mem::MaybeUninit;
 
 use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
-use polars_array::{ArrayRepr, PlBitmap, PlPrimitiveArray};
+use polars_array::{PlBitmap, PlPrimitiveArray};
 use polars_utils::float16::pf16;
 use polars_utils::slice::*;
 use polars_utils::total_ord::{canonical_f16, canonical_f32, canonical_f64};
@@ -161,14 +161,16 @@ pub unsafe fn encode<T: NativeType + FixedLengthEncoding>(
         return crate::fixed::numeric::encode_iter(buffer, arr.iter(), opt, offsets);
     }
 
-    match arr.values_repr() {
-        ArrayRepr::Flat(values) => {
-            crate::fixed::numeric::encode_slice(buffer, values.as_slice(), opt, offsets)
-        },
-        // Every row holds the same value, so it is encoded once and copied into each of them.
-        ArrayRepr::Scalar(value) => {
-            crate::fixed::numeric::encode_repeated(buffer, value, opt, offsets)
-        },
+    // Every row of a scalar chunk holds the same value, so it is encoded once and copied into
+    // each of them.
+    match arr.scalar_values() {
+        Some(value) => crate::fixed::numeric::encode_repeated(buffer, value, opt, offsets),
+        None => crate::fixed::numeric::encode_slice(
+            buffer,
+            arr.flat_values().unwrap().as_slice(),
+            opt,
+            offsets,
+        ),
     }
 }
 

@@ -2,7 +2,7 @@ use arrow::array::View;
 use arrow::bitmap::MutableBitmap;
 use polars_array::bitmap::PlBitmap;
 use polars_array::builder::StaticArrayBuilder;
-use polars_array::{ArrayRepr, PlBinaryViewArrayBuilder, PlPrimitiveArray};
+use polars_array::{PlBinaryViewArrayBuilder, PlPrimitiveArray};
 use polars_buffer::Buffer;
 use polars_utils::vec::PushUnchecked;
 
@@ -131,13 +131,9 @@ impl HotGrouper for BinviewHashHotGrouper {
         };
 
         unsafe {
-            // A scalar chunk repeats one view over every element, so the view is read out of
-            // the representation rather than out of a buffer that may hold only one slot.
-            let views = hash_keys.keys.views_repr();
-            let view_at = |idx: usize| match views {
-                ArrayRepr::Scalar(view) => view,
-                ArrayRepr::Flat(views) => unsafe { *views.get_unchecked(idx) },
-            };
+            // The getter resolves the index against the buffer, so a scalar chunk hands back the
+            // one view every element reads rather than being indexed past its single slot.
+            let view_at = |idx: usize| hash_keys.keys.view_unchecked(idx);
             let buffers = hash_keys.keys.data_buffers();
             if hash_keys.null_is_valid {
                 hash_keys.for_each_hash(|idx, opt_h| {

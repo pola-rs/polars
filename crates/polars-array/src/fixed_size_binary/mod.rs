@@ -9,9 +9,9 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmap, PlBitmapRef, validity_eq};
 use crate::broadcast::{
-    ArrayRepr, assert_broadcastable, is_flat_fixed_size_values_len,
-    is_scalar_fixed_size_values_len, normalize_buffer, scalar_buffer_len, slice_fixed_size_buffer,
-    slice_validity, try_validity_covering, validity_covering, validity_covering_unchecked,
+    assert_broadcastable, is_flat_fixed_size_values_len, is_scalar_fixed_size_values_len,
+    normalize_buffer, scalar_buffer_len, slice_fixed_size_buffer, slice_validity,
+    try_validity_covering, validity_covering, validity_covering_unchecked,
 };
 use crate::flat::Flat;
 
@@ -279,30 +279,16 @@ impl PlFixedSizeBinaryArray {
         self.width
     }
 
-    /// Which representation the backing values buffer is in, along with what it holds.
-    ///
-    /// The two arms are different quantities: [`Flat`](ArrayRepr::Flat) is the whole buffer, the
-    /// `length * width` bytes of every element laid end to end, while [`Scalar`](ArrayRepr::Scalar) is
-    /// the `width` bytes of the one element every element of this array reads.
-    #[inline]
-    pub fn values_repr(&self) -> ArrayRepr<&Buffer<u8>, &[u8]> {
-        if self.values_are_scalar() {
-            ArrayRepr::Scalar(self.values.as_slice())
-        } else {
-            ArrayRepr::Flat(&self.values)
-        }
-    }
-
     /// The backing values buffer, if it holds the bytes of every element, laid end to end.
     #[inline]
     pub fn flat_values(&self) -> Option<&Buffer<u8>> {
-        self.values_repr().flat()
+        (!self.values_are_scalar()).then_some(&self.values)
     }
 
     /// The bytes every element of this array reads, if the values hold a single element.
     #[inline]
     pub fn scalar_values(&self) -> Option<&[u8]> {
-        self.values_repr().scalar()
+        self.values_are_scalar().then(|| self.values.as_slice())
     }
 
     /// Consumes this array into its internal components.

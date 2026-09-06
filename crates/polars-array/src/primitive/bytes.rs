@@ -31,13 +31,22 @@ use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 use polars_utils::vec::PushUnchecked;
 
-use crate::broadcast::ArrayRepr;
-
 /// The byte class of `T`: a `[u8; N]` with the size and alignment of `T`, and nothing else.
 pub(crate) type Bytes<T> = <T as NativeType>::AlignedBytes;
 
 /// The values of an array as bytes, in whichever representation the backing buffer is in.
-pub(crate) type ValuesBytes<'a, B> = ArrayRepr<&'a [B], B>;
+///
+/// The routines below are the one place in this crate that dispatches on the representation
+/// *ahead* of the loop rather than fast-pathing the scalar case and falling through: they are
+/// `#[inline(never)]` byte-class cores, so the match has to be inside the call, and both arms do
+/// real work over the whole run.
+#[derive(Clone, Copy)]
+pub(crate) enum ValuesBytes<'a, B> {
+    /// The buffer holds one slot per element.
+    Flat(&'a [B]),
+    /// The buffer holds the single slot every element of the array reads.
+    Scalar(B),
+}
 
 /// Fails to compile unless `T` and its byte class really do have the same layout, which every
 /// reinterpretation in this module rests on.
@@ -132,10 +141,10 @@ pub(crate) fn extend_subslice<B: AlignedBytes>(
     length: usize,
 ) {
     match other {
-        ArrayRepr::Flat(slice) => values.extend_from_slice(&slice[start..start + length]),
+        ValuesBytes::Flat(slice) => values.extend_from_slice(&slice[start..start + length]),
         // Every element of the array reads the same value, so which of them the subslice covers
         // makes no difference to what is appended.
-        ArrayRepr::Scalar(value) => values.resize(values.len() + length, value),
+        ValuesBytes::Scalar(value) => values.resize(values.len() + length, value),
     }
 }
 
@@ -151,7 +160,7 @@ pub(crate) fn extend_subslice_each_repeated<B: AlignedBytes>(
     values.reserve(length * repeats);
 
     match other {
-        ArrayRepr::Flat(slice) => {
+        ValuesBytes::Flat(slice) => {
             for value in &slice[start..start + length] {
                 // SAFETY: room for every repeat of every value was just reserved.
                 unsafe {
@@ -162,7 +171,7 @@ pub(crate) fn extend_subslice_each_repeated<B: AlignedBytes>(
             }
         },
         // Every element repeats the same value, so which of them is repeated is immaterial.
-        ArrayRepr::Scalar(value) => values.resize(values.len() + length * repeats, value),
+        ValuesBytes::Scalar(value) => values.resize(values.len() + length * repeats, value),
     }
 }
 
@@ -178,12 +187,12 @@ pub(crate) unsafe fn extend_gathered<B: AlignedBytes>(
 ) {
     match other {
         // SAFETY: the indices are in bounds of the array, whose values are flat.
-        ArrayRepr::Flat(slice) => values.extend(
+        ValuesBytes::Flat(slice) => values.extend(
             idxs.iter()
                 .map(|idx| unsafe { *slice.get_unchecked(*idx as usize) }),
         ),
         // Every index reads the one value the array holds.
-        ArrayRepr::Scalar(value) => values.resize(values.len() + idxs.len(), value),
+        ValuesBytes::Scalar(value) => values.resize(values.len() + idxs.len(), value),
     }
 }
 
@@ -203,8 +212,8 @@ pub(crate) fn extend_opt_gathered<B: AlignedBytes>(
         let value = if idx < length {
             match other {
                 // SAFETY: the index is in bounds of the array, whose values are flat.
-                ArrayRepr::Flat(slice) => unsafe { *slice.get_unchecked(idx) },
-                ArrayRepr::Scalar(value) => value,
+                ValuesBytes::Flat(slice) => unsafe { *slice.get_unchecked(idx) },
+                ValuesBytes::Scalar(value) => value,
             }
         } else {
             // The value of a null element is undetermined, so anything at all does.
@@ -289,8 +298,8 @@ mod tests {
     #[test]
     fn values_are_appended_in_either_representation() {
         let values = [1i32, 2, 3];
-        let flat = ArrayRepr::Flat(slice_to_bytes(&values));
-        let scalar = ArrayRepr::Scalar(to_bytes(7i32));
+        let flat = ValuesBytes::Flat(slice_to_bytes(&values));
+        let scalar = ValuesBytes::Scalar(to_bytes(7i32));
 
         let mut built = Vec::new();
         extend_subslice(&mut built, flat, 1, 2);

@@ -22,8 +22,7 @@ use arrow::bitmap::BitmapBuilder;
 use arrow::bitmap::bitmask::BitMask;
 use polars_array::bitmap::combine_validities_and;
 use polars_array::{
-    ArrayRepr, PlArray, PlArrayType, PlBitmap, PlBitmapRef, PlFixedSizeListArray, PlListArray,
-    PlStructArray,
+    PlArray, PlArrayType, PlBitmap, PlBitmapRef, PlFixedSizeListArray, PlListArray, PlStructArray,
 };
 
 use crate::nesting::{
@@ -256,24 +255,28 @@ fn extend_from_validity(mask: &mut BitmapBuilder, validity: Option<PlBitmapRef<'
         .checked_sub(offset)
         .expect("the ranges a null is pushed down onto are ordered and do not overlap");
 
-    match validity.map(|validity| validity.repr()) {
-        // Nothing to read: an absent mask says every value is valid, and a single bit says the same
-        // of every value in turn.
-        None => mask.extend_constant(length, true),
-        Some(ArrayRepr::Scalar(value)) => mask.extend_constant(length, value),
-        Some(ArrayRepr::Flat(validity)) => {
-            mask.subslice_extend_from_bitmap(validity, offset, length)
-        },
+    // Nothing to read: an absent mask says every value is valid, and a single bit says the same of
+    // every value in turn.
+    let Some(validity) = validity else {
+        return mask.extend_constant(length, true);
+    };
+
+    match validity.scalar_value() {
+        Some(value) => mask.extend_constant(length, value),
+        None => mask.subslice_extend_from_bitmap(validity.flat_bitmap().unwrap(), offset, length),
     }
 }
 
 /// The number of values in `range` that `validity` says are not null.
 fn set_bits_in(validity: Option<PlBitmapRef<'_>>, range: Range<usize>) -> usize {
-    match validity.map(|validity| validity.repr()) {
-        None => range.len(),
+    let Some(validity) = validity else {
+        return range.len();
+    };
+
+    match validity.scalar_value() {
         // A single bit says the same of every value, so there is nothing to count.
-        Some(ArrayRepr::Scalar(value)) => range.len() * usize::from(value),
-        Some(ArrayRepr::Flat(validity)) => BitMask::from_bitmap(validity)
+        Some(value) => range.len() * usize::from(value),
+        None => BitMask::from_bitmap(validity.flat_bitmap().unwrap())
             .sliced(range.start, range.len())
             .set_bits(),
     }

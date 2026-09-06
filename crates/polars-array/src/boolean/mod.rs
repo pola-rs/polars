@@ -7,9 +7,8 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
 use crate::broadcast::{
-    ArrayRepr, is_flat_buffer_len, is_scalar_buffer_len, normalize_bitmap, scalar_buffer_len,
-    slice_bitmap, slice_validity, try_validity_covering, validity_covering,
-    validity_covering_unchecked,
+    is_flat_buffer_len, is_scalar_buffer_len, normalize_bitmap, scalar_buffer_len, slice_bitmap,
+    slice_validity, try_validity_covering, validity_covering, validity_covering_unchecked,
 };
 use crate::flat::Flat;
 
@@ -228,21 +227,33 @@ impl PlBooleanArray {
         unsafe { PlBitmapRef::new_broadcast_unchecked(&self.values, self.length) }
     }
 
-    /// Which representation the backing values bitmap is in, along with what it holds.
-    #[inline]
-    pub fn values_repr(&self) -> ArrayRepr<&Bitmap, bool> {
-        if self.values_are_scalar() {
-            // SAFETY: the bitmap holds a single bit, so bit 0 is in bounds.
-            ArrayRepr::Scalar(unsafe { self.values.get_bit_unchecked(0) })
-        } else {
-            ArrayRepr::Flat(&self.values)
+    /// The elements this array picks out: the ones it holds a set, non-null bit at.
+    ///
+    /// Both axes are read in whichever representation they are in. A bitmap that holds one bit
+    /// standing for every element settles the answer on its own wherever that bit is unset, and
+    /// where only one of the two is laid out per element that one *is* the answer — so the two are
+    /// combined, which is the only case that writes anything out, when neither of them is scalar.
+    pub fn true_and_valid(&self) -> PlBitmap {
+        let values = self.values();
+        let Some(validity) = self.validity() else {
+            return values.into();
+        };
+
+        match (values.scalar_value(), validity.scalar_value()) {
+            (Some(false), _) | (_, Some(false)) => PlBitmap::new_scalar(false, self.length),
+            (Some(true), Some(true)) => PlBitmap::new_scalar(true, self.length),
+            (Some(true), None) => validity.into(),
+            (None, Some(true)) => values.into(),
+            (None, None) => PlBitmap::from_bitmap(
+                values.flat_bitmap().unwrap() & validity.flat_bitmap().unwrap(),
+            ),
         }
     }
 
     /// The backing values bitmap, if it holds one bit per element.
     #[inline]
     pub fn flat_values(&self) -> Option<&Bitmap> {
-        self.values_repr().flat()
+        (!self.values_are_scalar()).then_some(&self.values)
     }
 
     /// The backing values bitmap, if it holds one bit per element.
@@ -266,7 +277,9 @@ impl PlBooleanArray {
     /// The value every element of this array reads, if the values bitmap holds a single bit.
     #[inline]
     pub fn scalar_values(&self) -> Option<bool> {
-        self.values_repr().scalar()
+        // SAFETY: a scalar bitmap holds a single bit, so bit 0 is in bounds.
+        self.values_are_scalar()
+            .then(|| unsafe { self.values.get_bit_unchecked(0) })
     }
 
     /// The validity mask, if any element may be null.
@@ -761,6 +774,45 @@ impl PlArray for PlBooleanArray {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Picking out the set, non-null elements cannot depend on the representation: the answer has
+    /// to name the same elements as the same array laid out one bit per element on both axes.
+    #[test]
+    fn true_and_valid_names_what_the_written_out_array_does() {
+        const LENGTH: usize = 5;
+        let flat_values = || PlBitmap::from_bitmap([true, false, true, true, false].into());
+        let flat_validity = || PlBitmap::from_bitmap([true, true, false, true, true].into());
+
+        for values in [
+            PlBitmap::new_scalar(false, LENGTH),
+            PlBitmap::new_scalar(true, LENGTH),
+            flat_values(),
+        ] {
+            for validity in [
+                None,
+                Some(PlBitmap::new_scalar(false, LENGTH)),
+                Some(PlBitmap::new_scalar(true, LENGTH)),
+                Some(flat_validity()),
+            ] {
+                let arr =
+                    PlBooleanArray::from_pl_bitmap(values.clone()).with_validity(validity.clone());
+                let written_out = arr.to_flat().into_owned().into_array();
+
+                // An element is picked out exactly when it reads back as a non-null `true`,
+                // which is what the array's own iterator says independently of either bitmap.
+                let expected: Vec<bool> = arr.iter().map(|v| v == Some(true)).collect();
+
+                let picked = arr.true_and_valid();
+                assert_eq!(picked.len(), LENGTH, "{arr:?}");
+                assert_eq!(picked.iter().collect::<Vec<_>>(), expected, "{arr:?}");
+                assert_eq!(
+                    written_out.true_and_valid().iter().collect::<Vec<_>>(),
+                    expected,
+                    "{arr:?}",
+                );
+            }
+        }
+    }
 
     #[test]
     fn flat() {

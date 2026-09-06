@@ -40,11 +40,17 @@ pub fn check_bounds_nulls(idx: &Flat<PlPrimitiveArray<IdxSize>>, len: IdxSize) -
 
 pub fn check_bounds_ca(indices: &IdxCa, len: IdxSize) -> PolarsResult<()> {
     let all_valid = indices.downcast_iter().all(|a| {
-        let a = a.to_flat();
+        // A chunk that repeats one index is checked once, however many elements read it — and a
+        // null index is not checked at all, so a wholly null chunk is in bounds by itself.
+        if let Some(index) = a.scalar_values() {
+            return a.null_count() == a.len() || check_bounds(&[index], len).is_ok();
+        }
+
+        let a = a.as_flat().expect("values that are not scalar are flat");
         if a.null_count() == 0 {
             check_bounds(a.as_slice(), len).is_ok()
         } else {
-            check_bounds_nulls(&a, len).is_ok()
+            check_bounds_nulls(a, len).is_ok()
         }
     });
     polars_ensure!(all_valid, OutOfBounds: "gather indices are out of bounds");
@@ -188,8 +194,10 @@ where
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
-            let idx_arr = idx_arr.to_flat();
             if idx_arr.null_count() == 0 {
+                // The kernel reads the indices as a slice, so a chunk that repeats one index is
+                // written out here; every other arm reads them through the iterator instead.
+                let idx_arr = idx_arr.to_flat();
                 gather_idx_array_unchecked(&targets, targets_have_nulls, idx_arr.as_slice())
             } else if targets.len() == 1 {
                 let target = targets.first().unwrap();
@@ -240,7 +248,6 @@ impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
                 let target = targets.first().unwrap();
                 take_chunk_unchecked(*target, idx_arr)
             } else {
-                let idx_arr = idx_arr.to_flat();
                 let cumlens = cumulative_lengths(&targets);
                 if targets_have_nulls {
                     let arr: PlBinaryViewArray = idx_arr
@@ -276,7 +283,6 @@ impl ChunkTakeUnchecked<IdxCa> for StringChunked {
                 let target = targets.first().unwrap();
                 take_chunk_unchecked(*target, idx_arr)
             } else {
-                let idx_arr = idx_arr.to_flat();
                 let cumlens = cumulative_lengths(&targets);
                 if targets_have_nulls {
                     let arr: PlUtf8ViewArray = idx_arr
@@ -379,8 +385,6 @@ impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
                     return take_chunk_unchecked(target, idx_arr);
                 }
 
-                let idx_arr = idx_arr.to_flat();
-
                 // The chunks carry no inner type to build a nested chunk out of, but the target
                 // does: the elements are appended into a builder shaped like it, one at a time.
                 let mut builder = builder_like(targets[0]);
@@ -441,8 +445,6 @@ impl ChunkTakeUnchecked<IdxCa> for ListChunked {
                 if let [target] = targets[..] {
                     return take_chunk_unchecked(target, idx_arr);
                 }
-
-                let idx_arr = idx_arr.to_flat();
 
                 // The chunks carry no inner type to build a nested chunk out of, but the target
                 // does: the elements are appended into a builder shaped like it, one at a time.

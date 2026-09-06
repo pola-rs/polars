@@ -23,14 +23,12 @@ pub mod primitive;
 pub mod static_array;
 pub mod struct_;
 pub mod utf8view;
-
 pub use array::PlArray;
 pub use array_type::{PlArrayType, PrimitiveType};
 pub use binary::{PlBinaryArray, PlBinaryArrayBuilder};
 pub use binview::{PlBinaryViewArray, PlBinaryViewArrayBuilder};
 pub use bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
 pub use boolean::{PlBooleanArray, PlBooleanArrayBuilder};
-pub use broadcast::ArrayRepr;
 pub use builder::{PlArrayBuilder, StaticArrayBuilder};
 pub use collect::{ArrayCollectIterExt, ArrayFromIter, ZeroableArrayFromIter};
 pub use fixed_size_binary::{PlFixedSizeBinaryArray, PlFixedSizeBinaryArrayBuilder};

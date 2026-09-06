@@ -8,12 +8,12 @@ use crate::bitmap::PlBitmapRef;
 /// Iterator over the bits of a [`PlBitmap`](super::PlBitmap) or a [`PlBitmapRef`].
 #[derive(Clone)]
 pub struct PlBitmapIter<'a> {
-    repr: ArrayRepr<'a>,
+    repr: BitsRepr<'a>,
 }
 
 /// The representation the mask turned out to be in, resolved once.
 #[derive(Clone)]
-enum ArrayRepr<'a> {
+enum BitsRepr<'a> {
     /// One bit per element, at the positions of `bytes` that `range` covers.
     Flat {
         bytes: &'a [u8],
@@ -34,7 +34,7 @@ impl<'a> PlBitmapIter<'a> {
             // A mask that is not flat is scalar: every element reads the one bit it is backed by,
             // which an empty mask has no position left to read.
             None => Self {
-                repr: ArrayRepr::Scalar {
+                repr: BitsRepr::Scalar {
                     bit: mask.scalar_value().unwrap_or(false),
                     remaining: mask.len(),
                 },
@@ -50,7 +50,7 @@ impl<'a> PlBitmapIter<'a> {
     pub(crate) fn flat(bytes: &'a [u8], range: Range<usize>) -> Self {
         assert!(range.end <= bytes.len() * 8);
         Self {
-            repr: ArrayRepr::Flat { bytes, range },
+            repr: BitsRepr::Flat { bytes, range },
         }
     }
 }
@@ -70,8 +70,8 @@ impl Iterator for PlBitmapIter<'_> {
     #[inline]
     fn next(&mut self) -> Option<bool> {
         match &mut self.repr {
-            ArrayRepr::Flat { bytes, range } => range.next().map(|i| bit(bytes, i)),
-            ArrayRepr::Scalar { bit, remaining } => {
+            BitsRepr::Flat { bytes, range } => range.next().map(|i| bit(bytes, i)),
+            BitsRepr::Scalar { bit, remaining } => {
                 *remaining = remaining.checked_sub(1)?;
                 Some(*bit)
             },
@@ -81,8 +81,8 @@ impl Iterator for PlBitmapIter<'_> {
     #[inline]
     fn nth(&mut self, n: usize) -> Option<bool> {
         match &mut self.repr {
-            ArrayRepr::Flat { bytes, range } => range.nth(n).map(|i| bit(bytes, i)),
-            ArrayRepr::Scalar { bit, remaining } => {
+            BitsRepr::Flat { bytes, range } => range.nth(n).map(|i| bit(bytes, i)),
+            BitsRepr::Scalar { bit, remaining } => {
                 let Some(left) = remaining.checked_sub(n + 1) else {
                     *remaining = 0;
                     return None;
@@ -118,8 +118,8 @@ impl Iterator for PlBitmapIter<'_> {
         F: FnMut(B, bool) -> B,
     {
         match self.repr {
-            ArrayRepr::Flat { bytes, range } => range.fold(init, |acc, i| f(acc, bit(bytes, i))),
-            ArrayRepr::Scalar {
+            BitsRepr::Flat { bytes, range } => range.fold(init, |acc, i| f(acc, bit(bytes, i))),
+            BitsRepr::Scalar {
                 bit: value,
                 remaining,
             } => {
@@ -137,8 +137,8 @@ impl DoubleEndedIterator for PlBitmapIter<'_> {
     #[inline]
     fn next_back(&mut self) -> Option<bool> {
         match &mut self.repr {
-            ArrayRepr::Flat { bytes, range } => range.next_back().map(|i| bit(bytes, i)),
-            ArrayRepr::Scalar { bit, remaining } => {
+            BitsRepr::Flat { bytes, range } => range.next_back().map(|i| bit(bytes, i)),
+            BitsRepr::Scalar { bit, remaining } => {
                 *remaining = remaining.checked_sub(1)?;
                 Some(*bit)
             },
@@ -147,7 +147,7 @@ impl DoubleEndedIterator for PlBitmapIter<'_> {
 
     #[inline]
     fn nth_back(&mut self, n: usize) -> Option<bool> {
-        if let ArrayRepr::Flat { bytes, range } = &mut self.repr {
+        if let BitsRepr::Flat { bytes, range } = &mut self.repr {
             return range.nth_back(n).map(|i| bit(bytes, i));
         }
 
@@ -164,8 +164,8 @@ impl DoubleEndedIterator for PlBitmapIter<'_> {
         F: FnMut(B, bool) -> B,
     {
         match self.repr {
-            ArrayRepr::Flat { bytes, range } => range.rfold(init, |acc, i| f(acc, bit(bytes, i))),
-            ArrayRepr::Scalar {
+            BitsRepr::Flat { bytes, range } => range.rfold(init, |acc, i| f(acc, bit(bytes, i))),
+            BitsRepr::Scalar {
                 bit: value,
                 remaining,
             } => {
@@ -183,8 +183,8 @@ impl ExactSizeIterator for PlBitmapIter<'_> {
     #[inline]
     fn len(&self) -> usize {
         match &self.repr {
-            ArrayRepr::Flat { range, .. } => range.len(),
-            ArrayRepr::Scalar { remaining, .. } => *remaining,
+            BitsRepr::Flat { range, .. } => range.len(),
+            BitsRepr::Scalar { remaining, .. } => *remaining,
         }
     }
 }

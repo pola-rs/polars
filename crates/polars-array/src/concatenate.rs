@@ -9,7 +9,6 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmap;
-use crate::broadcast::ArrayRepr;
 use crate::primitive::bytes;
 use crate::{
     PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray, PlFixedSizeListArray,
@@ -901,35 +900,32 @@ fn concatenate_list_impl(list: ArrayList<'_, '_, PlListArray>) -> PolarsResult<P
             continue;
         }
 
-        match array.offsets_repr() {
-            ArrayRepr::Flat(array_offsets) => {
-                let (first, last) = (array_offsets[0], array_offsets[array.len()]);
-                values.push(
-                    array
-                        .values()
-                        .sliced(first as usize, (last - first) as usize),
-                );
-                offsets.extend(
-                    array_offsets[1..]
-                        .iter()
-                        .map(|offset| end + (offset - first)),
-                );
-                end += last - first;
-            },
-            // Every element of the array covers the same range, which the result writes out once
-            // per element: concatenating the element with copies of itself is what repeats it, and
-            // that keeps the values scalar when the element is itself a single repeated value.
-            ArrayRepr::Scalar(range) => {
-                let value_length = range.end - range.start;
-                let element = array
-                    .values()
-                    .sliced(range.start as usize, value_length as usize);
-                values.push(concatenate_repeated(&*element, array.len())?);
+        // Every element of a scalar array covers the same range, which the result writes out once
+        // per element: concatenating the element with copies of itself is what repeats it, and
+        // that keeps the values scalar when the element is itself a single repeated value.
+        if let Some(range) = array.scalar_offsets() {
+            let value_length = (range.end - range.start) as u64;
+            let element = array.values().sliced(range.start, range.end - range.start);
+            values.push(concatenate_repeated(&*element, array.len())?);
 
-                offsets.extend((1..=array.len() as u64).map(|i| end + i * value_length));
-                end += value_length * array.len() as u64;
-            },
+            offsets.extend((1..=array.len() as u64).map(|i| end + i * value_length));
+            end += value_length * array.len() as u64;
+            continue;
         }
+
+        let array_offsets = array.flat_offsets().unwrap();
+        let (first, last) = (array_offsets[0], array_offsets[array.len()]);
+        values.push(
+            array
+                .values()
+                .sliced(first as usize, (last - first) as usize),
+        );
+        offsets.extend(
+            array_offsets[1..]
+                .iter()
+                .map(|offset| end + (offset - first)),
+        );
+        end += last - first;
     }
 
     // The values of the arrays are concatenated through the boxes they were sliced into.

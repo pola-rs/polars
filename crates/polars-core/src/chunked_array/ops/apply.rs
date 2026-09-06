@@ -205,7 +205,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
                 // Each chunk is mapped in whatever representation it is in: mapping the slots a
                 // buffer holds leaves it in that representation, so a scalar values buffer has
                 // its one value mapped once and it still stands for every element.
-                let values = arr.values_repr_mut().into_inner();
+                let values = arr.flat_or_scalar_values_mut();
                 match values.get_mut_slice() {
                     Some(slice) => slice.iter_mut().for_each(|v| *v = f(*v)),
                     // The buffer is shared with another array, so it cannot be written over.

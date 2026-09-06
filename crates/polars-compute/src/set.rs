@@ -14,7 +14,7 @@ use std::ops::BitOr;
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::utils::SlicesIterator;
 use arrow::types::NativeType;
-use polars_array::{ArrayRepr, PlBitmap, PlBooleanArray, PlPrimitiveArray};
+use polars_array::{PlBitmap, PlBooleanArray, PlPrimitiveArray};
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::IdxSize;
 
@@ -60,9 +60,9 @@ fn runs(mask: &Bitmap) -> impl Iterator<Item = (usize, usize, bool)> + '_ {
 
 /// The values buffer of `arr` as one slot per element, writing out a buffer of a single slot.
 fn values_written_out<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Vec<T> {
-    match arr.values_repr() {
-        ArrayRepr::Scalar(value) => vec![value; arr.len()],
-        ArrayRepr::Flat(values) => values.as_slice().to_vec(),
+    match arr.scalar_values() {
+        Some(value) => vec![value; arr.len()],
+        None => arr.flat_values().unwrap().as_slice().to_vec(),
     }
 }
 
@@ -89,22 +89,20 @@ pub fn set_at_nulls<T: NativeType>(array: &PlPrimitiveArray<T>, value: T) -> PlP
     // `value` wherever the mask is unset and that one value everywhere else. Which buffer the
     // runs are read out of is settled once, ahead of the loop over them.
     let mut av = Vec::with_capacity(array.len());
-    match array.values_repr() {
-        ArrayRepr::Scalar(repeated) => {
-            for (lower, upper, truthy) in runs(validity) {
-                let fill = if truthy { repeated } else { value };
-                av.extend(std::iter::repeat_n(fill, upper - lower));
+    if let Some(repeated) = array.scalar_values() {
+        for (lower, upper, truthy) in runs(validity) {
+            let fill = if truthy { repeated } else { value };
+            av.extend(std::iter::repeat_n(fill, upper - lower));
+        }
+    } else {
+        let values = array.flat_values().unwrap();
+        for (lower, upper, truthy) in runs(validity) {
+            if truthy {
+                av.extend_from_slice(&values[lower..upper]);
+            } else {
+                av.extend(std::iter::repeat_n(value, upper - lower));
             }
-        },
-        ArrayRepr::Flat(values) => {
-            for (lower, upper, truthy) in runs(validity) {
-                if truthy {
-                    av.extend_from_slice(&values[lower..upper]);
-                } else {
-                    av.extend(std::iter::repeat_n(value, upper - lower));
-                }
-            }
-        },
+        }
     }
 
     PlPrimitiveArray::from_vec(av)
@@ -123,31 +121,30 @@ pub fn set_with_mask<T: NativeType>(
 ) -> PlPrimitiveArray<T> {
     assert_eq!(array.len(), mask.len(), "the mask must cover every element");
 
-    let mask_values = match mask.values().repr() {
+    match mask.scalar_values() {
         // Every element is picked out, so every one of them holds `value` and none is null.
-        ArrayRepr::Scalar(true) => return PlPrimitiveArray::new_scalar(value, array.len()),
+        Some(true) => return PlPrimitiveArray::new_scalar(value, array.len()),
         // No element is picked out, so nothing changes.
-        ArrayRepr::Scalar(false) => return array.clone(),
-        ArrayRepr::Flat(mask_values) => mask_values,
-    };
+        Some(false) => return array.clone(),
+        None => {},
+    }
+    let mask_values = mask.flat_values().unwrap();
 
     let mut buf = Vec::with_capacity(array.len());
-    match array.values_repr() {
-        ArrayRepr::Scalar(repeated) => {
-            for (lower, upper, truthy) in runs(mask_values) {
-                let fill = if truthy { value } else { repeated };
-                buf.extend(std::iter::repeat_n(fill, upper - lower));
+    if let Some(repeated) = array.scalar_values() {
+        for (lower, upper, truthy) in runs(mask_values) {
+            let fill = if truthy { value } else { repeated };
+            buf.extend(std::iter::repeat_n(fill, upper - lower));
+        }
+    } else {
+        let values = array.flat_values().unwrap();
+        for (lower, upper, truthy) in runs(mask_values) {
+            if truthy {
+                buf.extend(std::iter::repeat_n(value, upper - lower));
+            } else {
+                buf.extend_from_slice(&values[lower..upper]);
             }
-        },
-        ArrayRepr::Flat(values) => {
-            for (lower, upper, truthy) in runs(mask_values) {
-                if truthy {
-                    buf.extend(std::iter::repeat_n(value, upper - lower));
-                } else {
-                    buf.extend_from_slice(&values[lower..upper]);
-                }
-            }
-        },
+        }
     }
 
     // Wherever the mask is set the element now holds `value`, so it is no longer null.

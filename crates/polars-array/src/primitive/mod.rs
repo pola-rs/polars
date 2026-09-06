@@ -10,7 +10,7 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmap, PlBitmapRef};
 use crate::broadcast::{
-    ArrayRepr, assert_broadcastable, broadcast_index, is_flat_buffer_len, is_scalar_buffer_len,
+    assert_broadcastable, broadcast_index, is_flat_buffer_len, is_scalar_buffer_len,
     normalize_buffer, scalar_buffer_len, slice_buffer, slice_validity, try_validity_covering,
     validity_covering, validity_covering_unchecked,
 };
@@ -228,59 +228,45 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         self.length == 0
     }
 
-    /// Which representation the backing values buffer is in, along with what it holds.
-    #[inline]
-    pub fn values_repr(&self) -> ArrayRepr<&Buffer<T>, T> {
-        if self.values_are_scalar() {
-            ArrayRepr::Scalar(self.values[0])
-        } else {
-            ArrayRepr::Flat(&self.values)
-        }
-    }
-
-    /// Which representation the backing values buffer is in, along with its bytes.
+    /// The values of this array, in whichever representation the backing buffer is in.
     ///
     /// This is what the routines of [`bytes`] are handed: they move the values around without
     /// reading what they mean, and so are taken over the byte class of `T` rather than over `T`
     /// itself, which is nine copies of each instead of seventeen.
     #[inline]
     pub(crate) fn values_bytes(&self) -> bytes::ValuesBytes<'_, bytes::Bytes<T>> {
-        match self.values_repr() {
-            ArrayRepr::Flat(values) => ArrayRepr::Flat(bytes::slice_to_bytes(values.as_slice())),
-            ArrayRepr::Scalar(value) => ArrayRepr::Scalar(bytes::to_bytes(value)),
+        match self.scalar_values() {
+            Some(value) => bytes::ValuesBytes::Scalar(bytes::to_bytes(value)),
+            None => bytes::ValuesBytes::Flat(bytes::slice_to_bytes(self.values.as_slice())),
         }
     }
 
-    /// Which representation the backing values buffer is in, along with the buffer itself.
+    /// The backing values buffer, whichever representation it is in.
     ///
-    /// Writing over the slots a buffer holds leaves it in the representation it is in, so both
-    /// arms hand back the whole buffer: a caller that maps every slot maps a scalar buffer's
-    /// single value once, and it still stands for every element.
+    /// Writing over the slots a buffer holds leaves it in the representation it is in, so this
+    /// hands back the whole buffer either way: a caller that maps every slot maps a scalar
+    /// buffer's single value once, and it still stands for every element.
     #[inline]
-    pub fn values_repr_mut(&mut self) -> ArrayRepr<&mut Buffer<T>> {
-        if self.values_are_scalar() {
-            ArrayRepr::Scalar(&mut self.values)
-        } else {
-            ArrayRepr::Flat(&mut self.values)
-        }
+    pub fn flat_or_scalar_values_mut(&mut self) -> &mut Buffer<T> {
+        &mut self.values
     }
 
     /// The backing values buffer, if it holds one slot per element.
     #[inline]
     pub fn flat_values(&self) -> Option<&Buffer<T>> {
-        self.values_repr().flat()
+        (!self.values_are_scalar()).then_some(&self.values)
     }
 
     /// The values buffer, if this array holds one slot per element and nothing else shares it.
     #[inline]
     pub fn flat_values_mut(&mut self) -> Option<&mut Buffer<T>> {
-        self.values_repr_mut().flat()
+        (!self.values_are_scalar()).then_some(&mut self.values)
     }
 
     /// The value every element of this array reads, if the values buffer holds a single slot.
     #[inline]
     pub fn scalar_values(&self) -> Option<T> {
-        self.values_repr().scalar()
+        self.values_are_scalar().then(|| self.values[0])
     }
 
     /// A builder that continues this array, reusing its values allocation rather than copying it.
