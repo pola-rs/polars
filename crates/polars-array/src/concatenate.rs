@@ -256,11 +256,16 @@ fn concatenate_impl(list: ArrayList<'_, '_, dyn PlArray>) -> PolarsResult<Box<dy
 
 /// Concatenates the validity masks of `arrays`, in order, into the mask of their concatenation.
 #[allow(private_bounds)]
-pub fn concatenate_validities<A: PlArray + AsPlArray + ?Sized>(arrays: &[&A]) -> Option<Bitmap> {
+pub fn concatenate_validities<A: PlArray + AsPlArray + ?Sized>(arrays: &[&A]) -> Option<PlBitmap> {
     let get = |index: usize| arrays[index];
     let list = ArrayList::new(&get, arrays.len());
     let (length, null_count) = list.length_and_null_count();
-    list.validities(length, null_count)
+    // The bits the concatenation is under cover its elements, in whatever representation they
+    // came out in: every element being null is the single bit it takes to say so.
+    let validity = list.validities(length, null_count)?;
+
+    // SAFETY: `concatenate_validities_with` answers a mask that is flat or scalar for `length`.
+    Some(unsafe { PlBitmap::new_broadcast_unchecked(validity, length) })
 }
 
 /// [`concatenate_validities`], for a caller that has already counted the elements and the nulls.

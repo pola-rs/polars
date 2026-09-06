@@ -1,6 +1,7 @@
 use std::hash::Hash;
 
 use arrow::bitmap::BitmapBuilder;
+use polars_array::bitmap::combine_validities_and;
 use polars_core::prelude::arity::{unary_elementwise, unary_elementwise_values};
 use polars_core::prelude::*;
 use polars_core::{with_match_categorical_physical_type, with_match_physical_numeric_polars_type};
@@ -82,8 +83,7 @@ where
 
                 // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
-                let result =
-                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             },
         }
@@ -105,8 +105,7 @@ where
 
                 // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
-                let result =
-                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             } else {
                 let mut builder = BitmapBuilder::with_capacity(ca_in.len());
@@ -123,16 +122,17 @@ where
 
                 let values = builder.freeze();
 
-                let validity = match (validity, ca_in.rechunk_validity()) {
-                    (None, None) => None,
-                    (Some(v), None) | (None, Some(v)) => Some(v),
-                    (Some(l), Some(r)) => Some(arrow::bitmap::and(&l, &r)),
-                };
+                // A mask that repeats a single bit combines as that one bit, without either
+                // side being written out first.
+                let ca_validity = ca_in.rechunk_validity();
+                let validity = combine_validities_and(
+                    validity.as_ref().map(PlBitmap::as_ref),
+                    ca_validity.as_ref().map(PlBitmap::as_ref),
+                );
 
                 // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
-                let result =
-                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             }
         }
@@ -177,8 +177,7 @@ where
 
                 // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
-                let result =
-                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             },
         }
@@ -200,8 +199,7 @@ where
 
                 // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
-                let result =
-                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             } else {
                 let mut builder = BitmapBuilder::with_capacity(ca_in.len());
@@ -219,16 +217,17 @@ where
 
                 let values = builder.freeze();
 
-                let validity = match (validity, ca_in.rechunk_validity()) {
-                    (None, None) => None,
-                    (Some(v), None) | (None, Some(v)) => Some(v),
-                    (Some(l), Some(r)) => Some(arrow::bitmap::and(&l, &r)),
-                };
+                // A mask that repeats a single bit combines as that one bit, without either
+                // side being written out first.
+                let ca_validity = ca_in.rechunk_validity();
+                let validity = combine_validities_and(
+                    validity.as_ref().map(PlBitmap::as_ref),
+                    ca_validity.as_ref().map(PlBitmap::as_ref),
+                );
 
                 // One bit was pushed per element, and the mask holds one bit per element as well.
                 let length = values.len();
-                let result =
-                    PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             }
         }
@@ -647,11 +646,11 @@ fn is_in_row_encoded(
 
     let mut validity = other.rechunk_validity();
     if !nulls_equal {
-        validity = match (validity, s.rechunk_validity()) {
-            (None, None) => None,
-            (Some(v), None) | (None, Some(v)) => Some(v),
-            (Some(l), Some(r)) => Some(arrow::bitmap::and(&l, &r)),
-        };
+        let s_validity = s.rechunk_validity();
+        validity = combine_validities_and(
+            validity.as_ref().map(PlBitmap::as_ref),
+            s_validity.as_ref().map(PlBitmap::as_ref),
+        );
     }
 
     assert_eq!(mask.null_count(), 0);

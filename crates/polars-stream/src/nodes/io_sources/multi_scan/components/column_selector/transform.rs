@@ -68,7 +68,7 @@ impl ColumnTransform {
                         struct_ca.len(),
                         &field_columns,
                     )?
-                    .with_outer_validity(struct_ca.rechunk_validity().map(PlBitmap::from_bitmap))
+                    .with_outer_validity(struct_ca.rechunk_validity())
                     .into_series(),
                 )
             },

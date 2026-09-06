@@ -1,7 +1,5 @@
 //! Combining the validity masks of arrays.
 
-use arrow::bitmap::Bitmap;
-
 use crate::{PlBitmap, PlBitmapRef};
 
 /// The `and` of two masks over the same elements, or `None` if neither has a null.
@@ -50,11 +48,26 @@ pub fn combine_validities_and3(
     combine_validities_and(head.as_ref().map(PlBitmap::as_ref), third)
 }
 
+/// The `and` of any number of masks over the same elements, or `None` if none of them has a null.
+pub fn combine_validities_and_many(masks: &[Option<PlBitmap>]) -> Option<PlBitmap> {
+    masks.iter().fold(None, |combined, mask| {
+        // Folding pairwise keeps every shortcut `combine_validities_and` takes: a mask that is
+        // unset everywhere settles the result on the spot, and one that is set everywhere leaves
+        // the running answer in whatever representation it is in.
+        combine_validities_and(
+            combined.as_ref().map(PlBitmap::as_ref),
+            mask.as_ref().map(PlBitmap::as_ref),
+        )
+    })
+}
+
 /// The bits of `mask`, inverted: set where an element is null.
-pub fn invert(mask: PlBitmapRef<'_>) -> Bitmap {
+pub fn invert(mask: PlBitmapRef<'_>) -> PlBitmap {
     // The backing bitmap is flat or scalar for the mask's length, and inverting it bit for bit
     // leaves it that way; there is nothing to expand first.
-    !mask.into_inner().0
+    let (bitmap, length) = mask.into_inner();
+    // SAFETY: inverting a bitmap leaves its length, and so its representation, alone.
+    unsafe { PlBitmap::new_broadcast_unchecked(!bitmap, length) }
 }
 
 #[cfg(test)]
@@ -96,6 +109,40 @@ mod tests {
             assert!(combined.is_scalar());
             assert_eq!(combined.scalar_value(), Some(false));
         }
+    }
+
+    #[test]
+    fn many_masks_fold_pairwise_and_keep_a_repeated_bit_repeated() {
+        let flat = PlBitmap::from_iter([true, false, true]);
+        let ones = PlBitmap::new_scalar(true, 3);
+
+        // Nothing to combine, and nothing that has a null.
+        assert_eq!(combine_validities_and_many(&[]), None);
+        assert_eq!(combine_validities_and_many(&[None, None]), None);
+
+        // Masks that are set everywhere leave the one that is not alone, as it is.
+        let combined =
+            combine_validities_and_many(&[Some(ones.clone()), None, Some(flat.clone())]).unwrap();
+        assert!(combined.is_flat());
+        assert_eq!(combined, flat);
+
+        // One mask that is unset everywhere settles the answer for all of them.
+        let combined = combine_validities_and_many(&[
+            Some(flat.clone()),
+            Some(PlBitmap::new_scalar(false, 3)),
+            Some(ones),
+        ])
+        .unwrap();
+        assert!(combined.is_scalar());
+        assert_eq!(combined.scalar_value(), Some(false));
+
+        // Masks that each hold one bit per element are combined bit for bit.
+        let combined = combine_validities_and_many(&[
+            Some(flat),
+            Some(PlBitmap::from_iter([true, true, false])),
+        ])
+        .unwrap();
+        assert_eq!(combined, PlBitmap::from_iter([true, false, false]));
     }
 
     #[test]

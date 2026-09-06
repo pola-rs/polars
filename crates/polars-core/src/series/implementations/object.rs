@@ -169,7 +169,7 @@ where
         })
     }
 
-    fn deposit(&self, validity: &Bitmap) -> Series {
+    fn deposit(&self, validity: &PlBitmap) -> Series {
         self.0.deposit(validity).into_series()
     }
 
@@ -182,7 +182,7 @@ where
         self.rechunk_object().into_series()
     }
 
-    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+    fn with_validity(&self, validity: Option<PlBitmap>) -> Series {
         self.0.clone().with_validity(validity).into_series()
     }
 

@@ -124,7 +124,6 @@ use inner::ListNumericOpHelper;
 #[cfg(feature = "list_arithmetic")]
 mod inner {
     use arrow::bitmap::Bitmap;
-    use arrow::compute::utils::combine_validities_and;
     use arrow::offset::OffsetsBuffer;
     use either::Either;
     use list_utils::with_match_pl_num_arith;
@@ -148,7 +147,7 @@ mod inner {
         output_len: usize,
         /// Outer validity of the result, we always materialize this to reduce the
         /// amount of code paths we need.
-        outer_validity: Bitmap,
+        outer_validity: PlBitmap,
         // The series are stored as they are used for list broadcasting.
         data_lhs: (Vec<OffsetsBuffer<i64>>, Vec<Option<Bitmap>>, Series),
         data_rhs: (Vec<OffsetsBuffer<i64>>, Vec<Option<Bitmap>>, Series),
@@ -184,8 +183,8 @@ mod inner {
             len_rhs: usize,
             data_lhs: (Vec<OffsetsBuffer<i64>>, Vec<Option<Bitmap>>, Series),
             data_rhs: (Vec<OffsetsBuffer<i64>>, Vec<Option<Bitmap>>, Series),
-            validity_lhs: Option<Bitmap>,
-            validity_rhs: Option<Bitmap>,
+            validity_lhs: Option<PlBitmap>,
+            validity_rhs: Option<PlBitmap>,
         ) -> PolarsResult<Either<Self, ListChunked>> {
             let prim_dtype_lhs = dtype_lhs.leaf_dtype();
             let prim_dtype_rhs = dtype_rhs.leaf_dtype();
@@ -297,7 +296,10 @@ mod inner {
             let outer_validity = match (&op_apply_type, &broadcast, validity_lhs, validity_rhs) {
                 // Both lists with same length, we combine the validity.
                 (BinaryOpApplyType::ListToList, Broadcast::NoBroadcast, l, r) => {
-                    combine_validities_and(l.as_ref(), r.as_ref())
+                    polars_array::bitmap::combine_validities_and(
+                        l.as_ref().map(PlBitmap::as_ref),
+                        r.as_ref().map(PlBitmap::as_ref),
+                    )
                 },
                 // Match all other combinations that have non-broadcasting lists.
                 (
@@ -314,7 +316,9 @@ mod inner {
                 ) => v,
                 _ => None,
             }
-            .unwrap_or_else(|| Bitmap::new_with_value(true, output_len));
+            // Nothing said any element is null, and that one bit stands for every one of them
+            // rather than being written out.
+            .unwrap_or_else(|| PlBitmap::new_scalar(true, output_len));
 
             Ok(Either::Left(Self {
                 op,
@@ -542,7 +546,7 @@ mod inner {
                                 (mismatch_pos == i)
                                 & (
                                     (lhs_len == rhs_len)
-                                    | unsafe { !self.outer_validity.get_bit_unchecked(i) }
+                                    | unsafe { !self.outer_validity.get_unchecked(i) }
                                 )
                             {
                                 mismatch_pos += 1;
@@ -646,7 +650,7 @@ mod inner {
                     with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
                         for (i, (lhs_start, lhs_len)) in offsets_lhs.offset_and_length_iter().enumerate() {
                             if ((lhs_len == width) & (mismatch_pos == i))
-                                | unsafe { !self.outer_validity.get_bit_unchecked(i) }
+                                | unsafe { !self.outer_validity.get_unchecked(i) }
                             {
                                 mismatch_pos += 1;
                             }
@@ -917,12 +921,7 @@ mod inner {
             let (offsets, _) = iter.next().unwrap();
             let validity = std::mem::take(&mut self.outer_validity);
             let length = offsets.len_proxy();
-            let results = PlListArray::new(
-                results,
-                unsigned(offsets),
-                length,
-                Some(PlBitmap::from_bitmap(validity)),
-            );
+            let results = PlListArray::new(results, unsigned(offsets), length, Some(validity));
 
             // A chunk carries no data type of its own — the output dtype is what the
             // `ChunkedArray` gets.

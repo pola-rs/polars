@@ -1188,7 +1188,7 @@ where
 pub fn binary_concatenate_validities<'a, T, B>(
     left: &'a ChunkedArray<T>,
     right: &'a ChunkedArray<B>,
-) -> Option<Bitmap>
+) -> Option<PlBitmap>
 where
     B: PolarsDataType,
     T: PolarsDataType,
@@ -1196,7 +1196,10 @@ where
     let (left, right) = align_chunks_binary(left, right);
     let left_validity = left.rechunk_validity();
     let right_validity = right.rechunk_validity();
-    arrow::compute::utils::combine_validities_and(left_validity.as_ref(), right_validity.as_ref())
+    polars_array::bitmap::combine_validities_and(
+        left_validity.as_ref().map(PlBitmap::as_ref),
+        right_validity.as_ref().map(PlBitmap::as_ref),
+    )
 }
 
 /// Convenience for `x.into_iter().map(Into::into).collect()` using an `into_vec()` function.

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
+use polars_array::PlBitmap;
 #[cfg(feature = "moment")]
 use polars_array::PlPrimitiveArray;
 #[cfg(feature = "moment")]
@@ -103,7 +104,9 @@ pub fn null_count<'a>(
     };
 
     RAYON.install(|| {
-        let validity = BitMask::from_bitmap(&validity);
+        // The groups are read one bit at a time, so the mask is written out once here.
+        let flat = validity.as_ref().to_flat();
+        let validity = BitMask::from_bitmap(&flat);
         let null_count: Vec<IdxSize> = match &**ac.groups.as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()
@@ -156,7 +159,9 @@ pub fn has_nulls<'a>(
     };
 
     RAYON.install(|| {
-        let validity = BitMask::from_bitmap(&validity);
+        // The groups are read one bit at a time, so the mask is written out once here.
+        let flat = validity.as_ref().to_flat();
+        let validity = BitMask::from_bitmap(&flat);
         let has_nulls: BooleanChunked = match &**ac.groups.as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()
@@ -499,9 +504,11 @@ pub fn drop_nulls<'a>(
     let predicate = ac.flat_naive().as_ref().clone();
     // Only the mask is wanted, which the series answers without its values being rechunked into
     // an Arrow array to read it off.
-    let predicate = predicate
-        .rechunk_validity()
-        .unwrap_or(Bitmap::new_with_value(true, 1));
+    let predicate = predicate.rechunk_validity().map_or_else(
+        || Bitmap::new_with_value(true, 1),
+        // The single bit a scalar mask holds already stands for every element.
+        PlBitmap::into_flat_or_scalar,
+    );
     drop_items(ac, &predicate)
 }
 
@@ -800,7 +807,9 @@ fn fw_bw_fill_null<'a>(
         return Ok(ac);
     };
 
-    let validity = BitMask::from_bitmap(&validity);
+    // The groups are read one bit at a time, so the mask is written out once here.
+    let flat = validity.as_ref().to_flat();
+    let validity = BitMask::from_bitmap(&flat);
     RAYON.install(|| {
         let positions = GroupsType::Idx(match &**ac.groups().as_ref() {
             GroupsType::Idx(idx) => idx

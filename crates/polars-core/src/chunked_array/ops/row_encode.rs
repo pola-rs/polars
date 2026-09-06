@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use arrow::compute::utils::combine_validities_and_many;
+use polars_array::bitmap::combine_validities_and_many;
 use polars_row::{RowEncodingContext, RowEncodingOptions, RowsEncoded, convert_columns};
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
@@ -54,14 +54,13 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
                     .chunks()
                     .to_vec()
                     .into_iter()
-                    .map(|arr| arr.validity().map(|v| v.to_flat().into_owned()))
+                    // The mask carries over as it is: a scalar one stays the single bit it is.
+                    .map(|arr| arr.validity().map(PlBitmap::from))
             })
             .collect::<Vec<_>>();
 
         let validity = combine_validities_and_many(&validities);
-        Ok(rows
-            .into_array()
-            .with_validity(validity.map(PlBitmap::from_bitmap)))
+        Ok(rows.into_array().with_validity(validity))
     });
     let chunks = RAYON.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
@@ -253,7 +252,7 @@ pub fn _get_rows_encoded_ca(
             .map(|c| c.as_materialized_series().rechunk_validity())
             .collect_vec();
         let combined = combine_validities_and_many(&validities);
-        rows_arr.set_validity(combined.map(PlBitmap::from_bitmap));
+        rows_arr.set_validity(combined);
     }
     Ok(BinaryOffsetChunked::with_chunk(name, rows_arr))
 }

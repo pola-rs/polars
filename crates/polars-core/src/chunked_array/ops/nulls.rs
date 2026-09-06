@@ -44,9 +44,7 @@ pub fn is_not_null(name: PlSmallStr, chunks: &[PlArrayRef]) -> BooleanChunked {
 /// The mask of a chunk, as the boolean array of which elements are null — see [`is_not_null`].
 pub fn is_null(name: PlSmallStr, chunks: &[PlArrayRef]) -> BooleanChunked {
     let chunks = chunks.iter().map(|arr| match arr.validity() {
-        Some(validity) => {
-            PlBooleanArray::from_pl_bitmap(PlBitmap::new_broadcast(invert(validity), arr.len()))
-        },
+        Some(validity) => PlBooleanArray::from_pl_bitmap(invert(validity)),
         None => PlBooleanArray::new_scalar(false, arr.len()),
     });
     BooleanChunked::from_chunk_iter(name, chunks)

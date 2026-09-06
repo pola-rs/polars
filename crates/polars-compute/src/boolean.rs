@@ -1,4 +1,5 @@
 use arrow::bitmap::{Bitmap, binary_fold, quaternary, ternary};
+use arrow::compute::utils::combine_validities_and;
 use polars_array::{Flat, PlBitmap, PlBooleanArray};
 
 /// The validity mask of `arr`, if it holds one bit per element.
@@ -72,8 +73,90 @@ pub fn not(arr: &PlBooleanArray) -> PlBooleanArray {
     inverted.with_validity(arr.validity().map(PlBitmap::from))
 }
 
+/// The value every element of `arr` is known to hold, if its values are the one bit they all
+/// share and no element is null: neither a scalar values buffer under nulls nor a flat one says
+/// the same of the whole chunk.
+fn known_value(arr: &PlBooleanArray) -> Option<bool> {
+    (arr.null_count() == 0)
+        .then(|| arr.scalar_values())
+        .flatten()
+}
+
 /// Logical 'or' operation on two arrays with [Kleene logic](https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics)..
-pub fn or(lhs: &Flat<PlBooleanArray>, rhs: &Flat<PlBooleanArray>) -> PlBooleanArray {
+pub fn or(lhs: &PlBooleanArray, rhs: &PlBooleanArray) -> PlBooleanArray {
+    assert_eq!(
+        lhs.len(),
+        rhs.len(),
+        "lhs and rhs must have the same length"
+    );
+
+    // A side that is `true` throughout makes the answer `true` throughout, whatever the other
+    // side holds — a null included, which `true` absorbs under Kleene logic — and that answer is
+    // the single bit it repeats. A side that is `false` throughout leaves the other one as it is,
+    // in whatever representation it is in; neither side is written out.
+    match (known_value(lhs), known_value(rhs)) {
+        (Some(true), _) | (_, Some(true)) => return PlBooleanArray::new_scalar(true, lhs.len()),
+        (Some(false), _) => return rhs.clone(),
+        (_, Some(false)) => return lhs.clone(),
+        (None, None) => {},
+    }
+
+    or_flat(&lhs.to_flat(), &rhs.to_flat())
+}
+
+/// Logical 'and' operation on two arrays with [Kleene logic](https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics).
+pub fn and(lhs: &PlBooleanArray, rhs: &PlBooleanArray) -> PlBooleanArray {
+    assert_eq!(
+        lhs.len(),
+        rhs.len(),
+        "lhs and rhs must have the same length"
+    );
+
+    // The mirror of `or`: `false` is what absorbs a null here, and `true` is what leaves the
+    // other side alone.
+    match (known_value(lhs), known_value(rhs)) {
+        (Some(false), _) | (_, Some(false)) => return PlBooleanArray::new_scalar(false, lhs.len()),
+        (Some(true), _) => return rhs.clone(),
+        (_, Some(true)) => return lhs.clone(),
+        (None, None) => {},
+    }
+
+    and_flat(&lhs.to_flat(), &rhs.to_flat())
+}
+
+/// Exclusive 'or' operation on two arrays. A null on either side answers null.
+pub fn xor(lhs: &PlBooleanArray, rhs: &PlBooleanArray) -> PlBooleanArray {
+    assert_eq!(
+        lhs.len(),
+        rhs.len(),
+        "lhs and rhs must have the same length"
+    );
+
+    // A side that is `false` throughout leaves the other one as it is, and one that is `true`
+    // throughout inverts it — which `not` does without writing a scalar values buffer out. Unlike
+    // `and` and `or`, neither value absorbs a null: the nulls of the other side carry over.
+    match (known_value(lhs), known_value(rhs)) {
+        (Some(l), Some(r)) => return PlBooleanArray::new_scalar(l != r, lhs.len()),
+        (Some(false), None) => return rhs.clone(),
+        (None, Some(false)) => return lhs.clone(),
+        (Some(true), None) => return not(rhs),
+        (None, Some(true)) => return not(lhs),
+        (None, None) => {},
+    }
+
+    let lhs = lhs.to_flat();
+    let rhs = rhs.to_flat();
+    let validity = combine_validities_and(lhs.validity(), rhs.validity());
+
+    PlBooleanArray::new(
+        lhs.values() ^ rhs.values(),
+        lhs.len(),
+        validity.map(PlBitmap::from_bitmap),
+    )
+}
+
+/// [`or`] for two chunks that each hold one bit per element.
+fn or_flat(lhs: &Flat<PlBooleanArray>, rhs: &Flat<PlBooleanArray>) -> PlBooleanArray {
     assert_eq!(
         lhs.len(),
         rhs.len(),
@@ -143,8 +226,8 @@ pub fn or(lhs: &Flat<PlBooleanArray>, rhs: &Flat<PlBooleanArray>) -> PlBooleanAr
     )
 }
 
-/// Logical 'and' operation on two arrays with [Kleene logic](https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics).
-pub fn and(lhs: &Flat<PlBooleanArray>, rhs: &Flat<PlBooleanArray>) -> PlBooleanArray {
+/// [`and`] for two chunks that each hold one bit per element.
+fn and_flat(lhs: &Flat<PlBooleanArray>, rhs: &Flat<PlBooleanArray>) -> PlBooleanArray {
     assert_eq!(
         lhs.len(),
         rhs.len(),

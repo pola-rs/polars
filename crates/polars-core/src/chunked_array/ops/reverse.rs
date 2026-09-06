@@ -1,5 +1,3 @@
-use arrow::bitmap::Bitmap;
-
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::array::array_values;
 #[cfg(feature = "dtype-array")]
@@ -8,11 +6,26 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::NoNull;
 
+/// A chunked array that is its own reverse, if it is one: a single chunk that repeats a single
+/// element reads as that same element whichever way it is walked, so nothing has to be written
+/// out. Several chunks reverse among themselves, which is why only one of them will do.
+fn reverses_to_itself<T: PolarsDataType>(ca: &ChunkedArray<T>) -> Option<ChunkedArray<T>> {
+    let [chunk] = ca.chunks().as_slice() else {
+        return None;
+    };
+
+    PlArray::is_scalar(&**chunk).then(|| ca.clone())
+}
+
 impl<T> ChunkReverse for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
     fn reverse(&self) -> ChunkedArray<T> {
+        if let Some(ca) = reverses_to_itself(self) {
+            return ca;
+        }
+
         let mut out = if let Some(slice) = self.as_flat().and_then(|ca| ca.cont_slice().ok()) {
             let ca: NoNull<ChunkedArray<T>> = slice.iter().rev().copied().collect_trusted();
             ca.into_inner()
@@ -38,6 +51,9 @@ macro_rules! impl_reverse {
                 if self.is_empty() {
                     return self.clone();
                 };
+                if let Some(ca) = reverses_to_itself(self) {
+                    return ca;
+                }
                 let mut ca: Self = self.iter().rev().collect_trusted();
                 ca.rename(self.name().clone());
                 ca
@@ -51,6 +67,9 @@ impl_reverse!(BinaryOffsetType, BinaryOffsetChunked);
 
 impl ChunkReverse for ListChunked {
     fn reverse(&self) -> Self {
+        if let Some(ca) = reverses_to_itself(self) {
+            return ca;
+        }
         if self.is_empty() {
             return self.clone();
         };
@@ -62,21 +81,25 @@ impl ChunkReverse for ListChunked {
 impl ChunkReverse for BinaryChunked {
     fn reverse(&self) -> Self {
         if self.chunks.len() == 1 {
+            if let Some(ca) = reverses_to_itself(self) {
+                return ca;
+            }
+
             // The views are reversed one per element, so a chunk that is not laid out flat is
-            // written out first.
-            let arr = self.downcast_iter().next().unwrap().to_flat();
+            // written out first. The mask is reversed on its own, in whatever representation it
+            // is in — a single bit stays a single bit.
+            let chunk = self.downcast_iter().next().unwrap();
+            let validity = chunk.validity().map(|v| PlBitmap::from(v).reversed());
+            let arr = chunk.to_flat();
             let length = arr.len();
             let views = arr.views().iter().copied().rev().collect::<Vec<_>>();
-            let validity = arr
-                .validity()
-                .map(|bitmap| bitmap.iter().rev().collect::<Bitmap>());
 
             unsafe {
                 let arr = PlBinaryViewArray::new_unchecked(
                     views.into(),
                     arr.data_buffers().clone(),
                     length,
-                    validity.map(PlBitmap::from_bitmap),
+                    validity,
                 )
                 .into_boxed();
                 BinaryChunked::from_chunks_and_dtype_unchecked(
@@ -104,6 +127,9 @@ impl ChunkReverse for StringChunked {
 #[cfg(feature = "dtype-array")]
 impl ChunkReverse for ArrayChunked {
     fn reverse(&self) -> Self {
+        if let Some(ca) = reverses_to_itself(self) {
+            return ca;
+        }
         if !self.inner_dtype().is_primitive_numeric() {
             todo!("reverse for FixedSizeList with non-numeric dtypes not yet supported")
         }
@@ -123,9 +149,9 @@ impl ChunkReverse for ArrayChunked {
                     builder.push_unchecked(values, i)
                 }
             } else {
-                let validity = arr.validity().unwrap().to_flat();
+                let validity = arr.validity().unwrap();
                 for i in (0..arr.len()).rev() {
-                    if validity.get_bit_unchecked(i) {
+                    if validity.get_unchecked(i) {
                         builder.push_unchecked(values, i)
                     } else {
                         builder.push_null()
@@ -148,5 +174,57 @@ impl<T: PolarsObject> ChunkReverse for ObjectChunked<T> {
                     .collect_ca(PlSmallStr::EMPTY),
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Whether the single chunk of `ca` repeats one element rather than holding one slot each.
+    fn is_repeated<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
+        let [chunk] = ca.chunks().as_slice() else {
+            return false;
+        };
+
+        PlArray::is_scalar(&**chunk)
+    }
+
+    /// A chunk that repeats one element reads as that element whichever way it is walked, so it
+    /// is handed back as it is rather than written out backwards.
+    #[test]
+    fn a_repeated_element_is_its_own_reverse() {
+        let name = PlSmallStr::from_static("a");
+
+        let ints = Int32Chunked::full(name.clone(), 7, 1_000);
+        assert!(is_repeated(&ints.reverse()));
+        assert_eq!(ints.reverse().len(), 1_000);
+        assert_eq!(ints.reverse().get(0), Some(7));
+
+        let bools = BooleanChunked::full(name.clone(), true, 1_000);
+        assert!(is_repeated(&bools.reverse()));
+
+        let strings = StringChunked::full(name.clone(), "abc", 1_000);
+        assert!(is_repeated(&strings.reverse()));
+        assert_eq!(strings.reverse().get(999), Some("abc"));
+
+        let nulls = Int32Chunked::full_null(name.clone(), 1_000);
+        assert!(is_repeated(&nulls.reverse()));
+        assert_eq!(nulls.reverse().null_count(), 1_000);
+    }
+
+    /// Reversing an array that holds one slot per element still walks it.
+    #[test]
+    fn a_flat_array_is_written_out_backwards() {
+        let name = PlSmallStr::from_static("a");
+
+        let ints = Int32Chunked::new(name.clone(), [Some(1), None, Some(3)]);
+        assert_eq!(Vec::from(&ints.reverse()), vec![Some(3), None, Some(1)]);
+
+        let strings = StringChunked::new(name, [Some("a"), None, Some("c")]);
+        assert_eq!(
+            Vec::from(&strings.reverse()),
+            vec![Some("c"), None, Some("a")],
+        );
     }
 }

@@ -154,11 +154,7 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
     // One bit was pushed per element, and `rechunk_validity` hands back one bit per element too.
     let values = out.freeze();
     let length = values.len();
-    let arr = PlBooleanArray::new(
-        values,
-        length,
-        ca.rechunk_validity().map(PlBitmap::from_bitmap),
-    );
+    let arr = PlBooleanArray::new(values, length, ca.rechunk_validity());
     BooleanChunked::with_chunk_like(ca, arr)
 }
 
@@ -206,11 +202,7 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
     // One bit was pushed per element, and `rechunk_validity` hands back one bit per element too.
     let values = out.freeze();
     let length = values.len();
-    let arr = PlBooleanArray::new(
-        values,
-        length,
-        ca.rechunk_validity().map(PlBitmap::from_bitmap),
-    );
+    let arr = PlBooleanArray::new(values, length, ca.rechunk_validity());
     BooleanChunked::with_chunk_like(ca, arr)
 }
 

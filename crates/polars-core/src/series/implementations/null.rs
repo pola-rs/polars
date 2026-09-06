@@ -213,7 +213,7 @@ impl SeriesTrait for NullChunked {
         NullChunked::new(self.name.clone(), indices.len()).into_series()
     }
 
-    fn deposit(&self, validity: &Bitmap) -> Series {
+    fn deposit(&self, validity: &PlBitmap) -> Series {
         assert_eq!(validity.set_bits(), 0);
         self.clone().into_series()
     }
@@ -230,7 +230,7 @@ impl SeriesTrait for NullChunked {
         NullChunked::new(self.name.clone(), self.len()).into_series()
     }
 
-    fn with_validity(&self, _validity: Option<Bitmap>) -> Series {
+    fn with_validity(&self, _validity: Option<PlBitmap>) -> Series {
         self.clone().into_series()
     }
 

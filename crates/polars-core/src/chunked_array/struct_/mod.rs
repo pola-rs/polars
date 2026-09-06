@@ -3,7 +3,6 @@ mod frame;
 use std::borrow::Cow;
 use std::fmt::Write;
 
-use arrow::bitmap::Bitmap;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::itertools::Itertools;
@@ -371,10 +370,7 @@ impl StructChunked {
                     for new in unsafe { ca.downcast_iter_mut() } {
                         let this_validity;
                         (this_validity, slf_validity) = slf_validity.split_at(new.len());
-                        new.set_validity(
-                            (this_validity.unset_bits() > 0)
-                                .then_some(PlBitmap::from_bitmap(this_validity)),
-                        );
+                        new.set_validity((this_validity.unset_bits() > 0).then_some(this_validity));
                     }
                 }
                 ca.compute_len();

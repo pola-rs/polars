@@ -62,12 +62,11 @@ fn combine_validities_chunked<T: PolarsDataType>(
         .downcast_iter()
         .zip(mask_al.downcast_iter())
         .map(|(a, m)| {
-            let length = m.len();
             let mut bm = bool_null_to_false(m);
             if not_mask {
                 // Inverting leaves the mask in the representation it is in: a single bit stays a
                 // single bit, which keeps a fully null or fully valid result in `O(1)` memory.
-                bm = PlBitmap::new_broadcast(invert(bm.as_ref()), length);
+                bm = invert(bm.as_ref());
             }
             let validity = combine_validities_and(a.validity(), Some(bm.as_ref()));
             a.clone().with_validity_typed(validity)

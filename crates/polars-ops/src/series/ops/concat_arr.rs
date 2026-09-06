@@ -1,4 +1,4 @@
-use arrow::compute::utils::combine_validities_and;
+use polars_array::bitmap::combine_validities_and;
 use polars_array::{PlBitmap, PlFixedSizeListArray};
 use polars_compute::horizontal_flatten::horizontal_flatten;
 use polars_core::prelude::{ArrayChunked, Column, DataType, IntoColumn, StaticArray};
@@ -45,7 +45,7 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
                     let arr = s.array().unwrap().rechunk();
                     let validity = arr.rechunk_validity();
 
-                    return_all_null |= len == 1 && validity.as_ref().is_some_and(|x| !x.get_bit(0));
+                    return_all_null |= len == 1 && validity.as_ref().is_some_and(|x| !x.get(0));
 
                     // Ignore unit-length validities. If they are non-valid then `return_all_null` will
                     // cause an early return.
@@ -90,9 +90,9 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
     }
 
     // Combine validities
-    let outer_validity = validities.into_iter().fold(None, |a, b| {
+    let outer_validity = validities.into_iter().fold(None, |a: Option<PlBitmap>, b| {
         debug_assert_eq!(b.len(), output_height);
-        combine_validities_and(a.as_ref(), Some(&b))
+        combine_validities_and(a.as_ref().map(PlBitmap::as_ref), Some(b.as_ref()))
     });
 
     // At this point the output height and all arrays should have non-zero length
@@ -100,12 +100,7 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
         // Fast-path for all scalars
         let inner_arr = horizontal_flatten(&arrays, &widths, 1);
 
-        let arr = PlFixedSizeListArray::new(
-            inner_arr,
-            width,
-            1,
-            outer_validity.map(PlBitmap::from_bitmap),
-        );
+        let arr = PlFixedSizeListArray::new(inner_arr, width, 1, outer_validity);
 
         // The chunk carries no inner type, so the array is built with its dtype directly.
         let out = unsafe {
@@ -126,12 +121,7 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
             horizontal_flatten(&arrays, &widths, output_height)
         };
 
-        let arr = PlFixedSizeListArray::new(
-            inner_arr,
-            width,
-            output_height,
-            outer_validity.map(PlBitmap::from_bitmap),
-        );
+        let arr = PlFixedSizeListArray::new(inner_arr, width, output_height, outer_validity);
 
         // The chunk carries no inner type, so the array is built with its dtype directly.
         let out = unsafe {

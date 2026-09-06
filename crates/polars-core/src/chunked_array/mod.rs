@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use arrow::bitmap::Bitmap;
-use arrow::compute::utils::combine_validities_and;
+use polars_array::bitmap::combine_validities_and;
 use polars_compute::filter::filter_with_bitmap;
 use polars_utils::broadcast::BroadcastLength;
 
@@ -632,7 +632,7 @@ where
         unsafe { arr.get_unchecked(arr.len() - 1) }
     }
 
-    pub fn set_validity(&mut self, validity: Option<Bitmap>) {
+    pub fn set_validity(&mut self, validity: Option<PlBitmap>) {
         assert!(
             !self.dtype().is_struct(),
             "set_outer_validity should be used for struct types"
@@ -642,17 +642,17 @@ where
         }
         let mut i = 0;
         for chunk in unsafe { self.chunks_mut() } {
-            *chunk = chunk.with_validity(
-                (validity.as_ref().map(|v| v.clone().sliced(i, chunk.len())))
-                    .map(PlBitmap::from_bitmap),
-            );
+            // Slicing a mask keeps its representation, so the part a chunk covers of one that
+            // repeats a single bit is that same bit rather than a run written out for it.
+            *chunk =
+                chunk.with_validity(validity.as_ref().map(|v| v.clone().sliced(i, chunk.len())));
             i += chunk.len();
         }
         self.null_count = validity.map(|v| v.unset_bits()).unwrap_or(0);
         self.set_fast_explode_list(false);
     }
 
-    pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
+    pub fn with_validity(mut self, validity: Option<PlBitmap>) -> Self {
         self.set_validity(validity);
         self
     }
@@ -701,7 +701,7 @@ where
     ChunkedArray<T>: ChunkTakeUnchecked<[IdxSize]>,
 {
     /// Deposit values into nulls with a certain validity mask.
-    pub fn deposit(&self, validity: &Bitmap) -> Self {
+    pub fn deposit(&self, validity: &PlBitmap) -> Self {
         let set_bits = validity.set_bits();
 
         assert_eq!(self.len(), set_bits);
@@ -714,7 +714,10 @@ where
             return Self::full_null_like(self, validity.len());
         }
 
-        let mut null_mask = validity.clone();
+        // A mask that repeats a single bit is set everywhere or unset everywhere, and both of
+        // those are answered above; what is left holds one bit per element.
+        let flat = validity.flat_bitmap().expect("the bits are not repeated");
+        let mut null_mask = flat.clone();
 
         let mut gather_idxs = Vec::with_capacity(validity.len());
         let leading_nulls = null_mask.take_leading_zeros();
@@ -728,8 +731,8 @@ where
 
         let mut ca = unsafe { ChunkTakeUnchecked::take_unchecked(self, &gather_idxs) };
         ca.set_validity(combine_validities_and(
-            Some(validity),
-            ca.rechunk_validity().as_ref(),
+            Some(validity.as_ref()),
+            ca.rechunk_validity().as_ref().map(PlBitmap::as_ref),
         ));
         ca
     }
@@ -872,7 +875,9 @@ impl ArrayChunked {
                     values,
                     offsets.into(),
                     chunk.len(),
-                    (chunk.validity().map(|v| v.to_flat().into_owned())).map(PlBitmap::from_bitmap),
+                    // The elements map one to one, so the mask carries over as it is — a
+                    // scalar one stays the single bit it is.
+                    chunk.validity().map(PlBitmap::from),
                 )) as PlArrayRef
             })
             .collect();
@@ -1115,15 +1120,15 @@ pub(crate) fn align_inner_chunks(
 
 pub(crate) fn to_primitive<T: PolarsNumericType>(
     values: Vec<T::Native>,
-    validity: Option<Bitmap>,
+    validity: Option<PlBitmap>,
 ) -> PlPrimitiveArray<T::Native> {
     let length = values.len();
-    PlPrimitiveArray::new(values.into(), length, validity.map(PlBitmap::from_bitmap))
+    PlPrimitiveArray::new(values.into(), length, validity)
 }
 
 pub(crate) fn to_array<T: PolarsNumericType>(
     values: Vec<T::Native>,
-    validity: Option<Bitmap>,
+    validity: Option<PlBitmap>,
 ) -> PlArrayRef {
     Box::new(to_primitive::<T>(values, validity))
 }

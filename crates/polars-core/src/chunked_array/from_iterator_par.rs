@@ -407,11 +407,12 @@ where
         .unzip_into_vecs(&mut values, &mut validity);
 
     let values = Bitmap::from_u8_vec(values, len);
-    let validity = Bitmap::from_u8_vec(validity, len);
+    // One bit was written per element, so the mask holds one bit per element.
+    let validity = PlBitmap::from_bitmap(Bitmap::from_u8_vec(validity, len));
     let validity = (validity.unset_bits() > 0).then_some(validity);
     BooleanChunked::with_chunk(
         PlSmallStr::EMPTY,
-        PlBooleanArray::new(values, len, validity.map(PlBitmap::from_bitmap)),
+        PlBooleanArray::new(values, len, validity),
     )
 }
 
@@ -454,7 +455,8 @@ where
         })
         .collect_into_vec(&mut validity);
 
-    let validity = Bitmap::from_u8_vec(validity, len);
+    // One bit was written per element, so the mask holds one bit per element.
+    let validity = PlBitmap::from_bitmap(Bitmap::from_u8_vec(validity, len));
     let validity = (validity.unset_bits() > 0).then_some(validity);
     ChunkedArray::from_vec_validity(PlSmallStr::EMPTY, values, validity)
 }

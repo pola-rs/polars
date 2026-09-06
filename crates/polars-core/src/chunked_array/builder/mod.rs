@@ -10,7 +10,6 @@ mod string;
 
 use std::sync::Arc;
 
-use arrow::bitmap::Bitmap;
 pub use boolean::*;
 #[cfg(feature = "dtype-categorical")]
 pub use categorical::*;
@@ -43,11 +42,11 @@ pub trait ChunkedBuilder<N, T: PolarsDataType> {
 }
 
 // Used in polars/src/chunked_array/apply.rs:24 to collect from aligned vecs and null bitmaps
-impl<T> FromIterator<(Vec<T::Native>, Option<Bitmap>)> for ChunkedArray<T>
+impl<T> FromIterator<(Vec<T::Native>, Option<PlBitmap>)> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn from_iter<I: IntoIterator<Item = (Vec<T::Native>, Option<Bitmap>)>>(iter: I) -> Self {
+    fn from_iter<I: IntoIterator<Item = (Vec<T::Native>, Option<PlBitmap>)>>(iter: I) -> Self {
         let chunks = iter
             .into_iter()
             .map(|(values, opt_buffer)| to_primitive::<T>(values, opt_buffer));

@@ -130,7 +130,6 @@ impl PhysicalExpr for TernaryExpr {
                     .expect("the values mask is always there"),
                 None => PlBitmap::from(arr.values()),
             }
-            .into_flat_or_scalar()
         });
 
         let op_truthy = || {
@@ -146,9 +145,11 @@ impl PhysicalExpr for TernaryExpr {
         let op_falsy = || {
             let mut mask_df = df.clone();
             if !self.falsy_mask_columns.is_empty() && true_count != 0 {
+                // Inverting keeps the representation, so a mask that is true or false throughout
+                // stays the single bit `Column::mask` reads as its shortcut.
+                let inverted = mask_bitmap.as_ref().unwrap().not();
                 for c in &self.falsy_mask_columns {
-                    mask_df
-                        .with_column(df.column(c).unwrap().mask(&!mask_bitmap.as_ref().unwrap()))?;
+                    mask_df.with_column(df.column(c).unwrap().mask(&inverted))?;
                 }
             }
             self.falsy.evaluate(&mask_df, &state)

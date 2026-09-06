@@ -399,6 +399,16 @@ impl ChunkCompareEq<&BooleanChunked> for BooleanChunked {
     }
 }
 
+/// A boolean chunked array answering `value` for every element of `ca`, under the validity of
+/// `ca`: the answer is the single bit it takes to say so, not one written out per element.
+fn repeated_answer<T: PolarsDataType>(ca: &ChunkedArray<T>, value: bool) -> BooleanChunked {
+    let chunks = ca.downcast_iter().map(|arr| {
+        PlBooleanArray::new_scalar(value, arr.len())
+            .with_validity_typed(arr.validity().map(PlBitmap::from))
+    });
+    BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, chunks)
+}
+
 impl ChunkCompareIneq<&BooleanChunked> for BooleanChunked {
     type Item = BooleanChunked;
 
@@ -408,6 +418,9 @@ impl ChunkCompareIneq<&BooleanChunked> for BooleanChunked {
         let length = arity::broadcast_height(self.len(), rhs.len())
             .expect("cannot compare arrays of different lengths");
         match (self.scalar_value(), rhs.scalar_value()) {
+            // No boolean is smaller than `false`, and none is greater than `true`: the value
+            // alone settles the comparison, and the answer is the one bit that says so.
+            (_, Some(Some(false))) if self.len() == length => repeated_answer(self, false),
             (_, Some(value)) if self.len() == length => {
                 if let Some(value) = value {
                     arity::unary_elementwise_mut_values_flat(self, |arr| {
@@ -417,6 +430,7 @@ impl ChunkCompareIneq<&BooleanChunked> for BooleanChunked {
                     BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
                 }
             },
+            (Some(Some(true)), _) => repeated_answer(rhs, false),
             (Some(value), _) => {
                 if let Some(value) = value {
                     arity::unary_elementwise_mut_values_flat(rhs, |arr| {
@@ -441,6 +455,9 @@ impl ChunkCompareIneq<&BooleanChunked> for BooleanChunked {
         let length = arity::broadcast_height(self.len(), rhs.len())
             .expect("cannot compare arrays of different lengths");
         match (self.scalar_value(), rhs.scalar_value()) {
+            // Every boolean is at most `true` and at least `false`: the value alone settles the
+            // comparison, and the answer is the one bit that says so.
+            (_, Some(Some(true))) if self.len() == length => repeated_answer(self, true),
             (_, Some(value)) if self.len() == length => {
                 if let Some(value) = value {
                     arity::unary_elementwise_mut_values_flat(self, |arr| {
@@ -450,6 +467,7 @@ impl ChunkCompareIneq<&BooleanChunked> for BooleanChunked {
                     BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
                 }
             },
+            (Some(Some(false)), _) => repeated_answer(rhs, true),
             (Some(value), _) => {
                 if let Some(value) = value {
                     arity::unary_elementwise_mut_values_flat(rhs, |arr| {
@@ -869,7 +887,7 @@ where
         let default =
             || BooleanChunked::with_chunk(PlSmallStr::EMPTY, PlBooleanArray::from_vec(vec![true]));
         let validity_to_ca =
-            |x| BooleanChunked::with_chunk(PlSmallStr::EMPTY, PlBooleanArray::from_values(x));
+            |x| BooleanChunked::with_chunk(PlSmallStr::EMPTY, PlBooleanArray::from_pl_bitmap(x));
 
         let a_s = a.rechunk_validity().map_or_else(default, validity_to_ca);
         let b_s = b.rechunk_validity().map_or_else(default, validity_to_ca);
@@ -884,10 +902,13 @@ where
     }
 
     if !is_missing && (a.has_nulls() || b.has_nulls()) {
-        use arrow::compute::utils::combine_validities_and;
+        use polars_array::bitmap::combine_validities_and;
         let av = a.rechunk_validity();
         let bv = b.rechunk_validity();
-        out.set_validity(combine_validities_and(av.as_ref(), bv.as_ref()));
+        out.set_validity(combine_validities_and(
+            av.as_ref().map(PlBitmap::as_ref),
+            bv.as_ref().map(PlBitmap::as_ref),
+        ));
     }
 
     out
@@ -1075,7 +1096,7 @@ impl Not for &BooleanChunked {
         // Inverting a scalar values buffer is inverting the one bit it holds, so a chunk that
         // repeats a value stays `O(1)`.
         let chunks = self.downcast_iter().map(|arr| {
-            PlBooleanArray::from_pl_bitmap(PlBitmap::new_broadcast(invert(arr.values()), arr.len()))
+            PlBooleanArray::from_pl_bitmap(invert(arr.values()))
                 .with_validity(arr.validity().map(PlBitmap::from))
         });
         ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
@@ -1129,6 +1150,44 @@ impl BooleanChunked {
             }
         }
         if self.has_nulls() { None } else { Some(true) }
+    }
+}
+
+#[cfg(test)]
+mod repeated_answer_test {
+    use super::*;
+
+    /// Whether the values of the single chunk of `ca` are the one bit every element shares.
+    fn values_are_repeated(ca: &BooleanChunked) -> bool {
+        ca.chunks().len() == 1 && ca.downcast_as_array().scalar_values().is_some()
+    }
+
+    /// Comparisons a boolean value settles on its own — no boolean is below `false` or above
+    /// `true` — answer with the one bit that says so rather than one written out per element.
+    #[test]
+    fn a_comparison_the_value_settles_is_one_bit() {
+        let name = PlSmallStr::from_static("a");
+        let flat = BooleanChunked::new(name.clone(), [Some(true), Some(false), None]);
+        let all_true = BooleanChunked::full(name.clone(), true, 3);
+        let all_false = BooleanChunked::full(name.clone(), false, 3);
+
+        for (out, expected) in [
+            (flat.lt(&all_false), false),
+            (flat.lt_eq(&all_true), true),
+            (all_true.lt(&flat), false),
+            (all_false.lt_eq(&flat), true),
+            // `gt` and `gt_eq` are the same comparisons with the sides swapped.
+            (all_false.gt(&flat), false),
+            (all_true.gt_eq(&flat), true),
+        ] {
+            assert!(values_are_repeated(&out), "{out:?}");
+            assert_eq!(out.len(), 3);
+            // The nulls of the side that is compared carry over: a null compares to null.
+            assert_eq!(out.null_count(), 1);
+            assert_eq!(out.get(0), Some(expected));
+            assert_eq!(out.get(1), Some(expected));
+            assert_eq!(out.get(2), None);
+        }
     }
 }
 

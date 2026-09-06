@@ -392,7 +392,15 @@ impl ChunkNestingUtils for NullChunked {
 
         match other.rechunk_validity() {
             None => idxs.extend(0..self.len() as IdxSize),
-            Some(v) => idxs.extend(v.true_idx_iter().map(|v| v as IdxSize)),
+            // A mask that repeats a single bit says the same of every element: the answer is
+            // either every index or none of them, and no bits are walked to find that out.
+            Some(v) => match v.scalar_value() {
+                Some(true) => idxs.extend(0..v.len() as IdxSize),
+                Some(false) => {},
+                None => {
+                    idxs.extend((v.flat_bitmap().unwrap().true_idx_iter()).map(|v| v as IdxSize))
+                },
+            },
         }
     }
 }

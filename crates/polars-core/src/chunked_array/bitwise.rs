@@ -1,6 +1,5 @@
 use std::ops::{BitAnd, BitOr, BitXor};
 
-use arrow::compute::utils::combine_validities_and;
 use polars_compute::arity::{prim_binary_values, prim_unary_values};
 
 use super::*;
@@ -89,7 +88,7 @@ impl BitOr for &BooleanChunked {
             _ => {},
         }
 
-        arity::binary_elementwise_kernel_flat(
+        arity::binary_elementwise_kernel(
             self,
             rhs,
             polars_compute::boolean::or,
@@ -124,14 +123,10 @@ impl BitXor for &BooleanChunked {
                 Some(true) => !other_ca,
             }
         } else {
-            arity::binary_elementwise_kernel_flat(
+            arity::binary_elementwise_kernel(
                 self,
                 rhs,
-                |l_arr, r_arr| {
-                    let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
-                    let values = l_arr.values() ^ r_arr.values();
-                    PlBooleanArray::new(values, l_arr.len(), validity.map(PlBitmap::from_bitmap))
-                },
+                polars_compute::boolean::xor,
                 self.name().clone(),
             )
         }
@@ -171,7 +166,7 @@ impl BitAnd for &BooleanChunked {
             _ => {},
         }
 
-        arity::binary_elementwise_kernel_flat(
+        arity::binary_elementwise_kernel(
             self,
             rhs,
             polars_compute::boolean::and,
@@ -191,6 +186,52 @@ impl BitAnd for BooleanChunked {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    /// The single chunk of `ca`, and whether its values are the one bit every element shares.
+    fn values_are_repeated(ca: &BooleanChunked) -> bool {
+        let [chunk] = ca.chunks().as_slice() else {
+            panic!("expected a single chunk")
+        };
+
+        ca.downcast_as_array().scalar_values().is_some() && chunk.len() == ca.len()
+    }
+
+    /// A mask that is `true` or `false` throughout combines with one that is not without either
+    /// of them being written out: `true` absorbs `or` and is the identity of `and`, and the other
+    /// way round for `false`.
+    #[test]
+    fn a_repeated_bit_combines_without_being_written_out() {
+        let name = PlSmallStr::from_static("a");
+        let flat = BooleanChunked::new(name.clone(), [Some(true), Some(false), None]);
+        let ones = BooleanChunked::full(name.clone(), true, 3);
+        let zeros = BooleanChunked::full(name.clone(), false, 3);
+
+        assert!(values_are_repeated(&ones) && values_are_repeated(&zeros));
+
+        // The absorbing side answers for every element, in the one bit it holds.
+        for absorbed in [&flat | &ones, &ones | &flat] {
+            assert!(values_are_repeated(&absorbed));
+            assert_eq!(absorbed.sum(), Some(3));
+        }
+        for absorbed in [&flat & &zeros, &zeros & &flat] {
+            assert!(values_are_repeated(&absorbed));
+            assert_eq!(absorbed.sum(), Some(0));
+        }
+
+        // The identity side hands the other one back as it is, nulls and all.
+        for kept in [&flat | &zeros, &zeros | &flat, &flat & &ones, &ones & &flat] {
+            assert_eq!(kept.len(), 3);
+            assert_eq!(Vec::from(&kept), Vec::from(&flat));
+        }
+
+        // `xor` against a repeated bit leaves the other side alone or inverts it, and neither
+        // writes it out; the nulls of that side carry over either way.
+        assert_eq!(Vec::from(&(&flat ^ &zeros)), Vec::from(&flat));
+        assert_eq!(
+            Vec::from(&(&flat ^ &ones)),
+            vec![Some(false), Some(true), None],
+        );
+    }
 
     #[test]
     fn guard_so_issue_2494() {

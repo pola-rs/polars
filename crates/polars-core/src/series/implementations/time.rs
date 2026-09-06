@@ -250,7 +250,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
             .into_series()
     }
 
-    fn deposit(&self, validity: &Bitmap) -> Series {
+    fn deposit(&self, validity: &PlBitmap) -> Series {
         self.0
             .physical()
             .deposit(validity)
@@ -271,7 +271,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
             .into_series()
     }
 
-    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+    fn with_validity(&self, validity: Option<PlBitmap>) -> Series {
         self.0
             .physical()
             .clone()

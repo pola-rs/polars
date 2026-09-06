@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use polars_array::bitmap::PlBitmap;
 use polars_array::builder::StaticArrayBuilder;
-use polars_array::{PlArray, PlArray as _, PlUtf8ViewArrayBuilder, StaticArray as _};
+use polars_array::{PlArray, PlUtf8ViewArrayBuilder, StaticArray as _};
 use polars_core::prelude::{Column, DataType, IntoColumn, StringChunked};
 use polars_core::scalar::Scalar;
 use polars_error::{PolarsContext, PolarsResult};
@@ -34,10 +34,12 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
                 ));
             }
 
-            match &mut validity {
-                v @ None => *v = Some(c_validity),
-                Some(v) => *v = arrow::bitmap::and(v, &c_validity),
-            }
+            // A mask that repeats a single bit combines as that one bit; neither side is
+            // written out to `and` them.
+            validity = polars_array::bitmap::combine_validities_and(
+                validity.as_ref().map(PlBitmap::as_ref),
+                Some(c_validity.as_ref()),
+            );
         }
 
         *c = c.cast(&DataType::String)?;
@@ -130,7 +132,7 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
     for i in 0..output_length {
         if validity
             .as_ref()
-            .is_some_and(|v| !unsafe { v.get_bit_unchecked(i) })
+            .is_some_and(|v| !unsafe { v.get_unchecked(i) })
         {
             // The value of a null element is undetermined, so anything at all does.
             builder.push_value("");
@@ -165,9 +167,6 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
         builder.push_value(&s);
     }
 
-    let array = builder
-        .freeze()
-        .with_validity(validity.map(PlBitmap::from_bitmap))
-        .into_boxed();
+    let array = builder.freeze().with_validity(validity).into_boxed();
     Ok(unsafe { StringChunked::from_chunks(output_name, vec![array]) }.into_column())
 }

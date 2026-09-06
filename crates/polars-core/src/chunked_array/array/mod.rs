@@ -151,7 +151,7 @@ impl ArrayChunked {
                 Either::Left(std::iter::once((
                     self.len(),
                     // Rechunking writes the mask out one bit per element.
-                    self.rechunk_validity().map(PlBitmap::from_bitmap),
+                    self.rechunk_validity(),
                 )))
             } else {
                 // No rechunking, expect the same number of chunks.

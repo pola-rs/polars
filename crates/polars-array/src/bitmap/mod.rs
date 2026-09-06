@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use arrow::array::Splitable;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{PolarsResult, polars_ensure};
 
@@ -14,7 +15,9 @@ mod validity;
 pub use iterator::PlBitmapIter;
 pub(crate) use iterator::{ValidityFold, ValidityIter};
 pub use reference::PlBitmapRef;
-pub use validity::{combine_validities_and, combine_validities_and3, invert};
+pub use validity::{
+    combine_validities_and, combine_validities_and_many, combine_validities_and3, invert,
+};
 
 /// An immutable, cheaply cloneable mask of `length` bits, in either the flat or the scalar
 /// representation.
@@ -259,6 +262,83 @@ impl PlBitmap {
         }
     }
 
+    /// The `and` of two masks over the same elements, keeping a repeated bit repeated.
+    #[must_use]
+    pub fn and(&self, other: &Self) -> Self {
+        assert_eq!(self.length, other.length, "masks cover different lengths");
+
+        match (self.scalar_value(), other.scalar_value()) {
+            // Two single bits `and` to a single bit, which covers every element in turn.
+            (Some(lhs), Some(rhs)) => Self::new_scalar(lhs && rhs, self.length),
+            // A repeated unset bit is unset everywhere whatever the other mask holds; a repeated
+            // set one leaves the other mask as it is, in whatever representation it is in.
+            (Some(false), None) | (None, Some(false)) => Self::new_scalar(false, self.length),
+            (Some(true), None) => other.clone(),
+            (None, Some(true)) => self.clone(),
+            (None, None) => Self::new(
+                self.flat_bitmap().expect("the bits are not repeated")
+                    & other.flat_bitmap().expect("the bits are not repeated"),
+                self.length,
+            ),
+        }
+    }
+
+    /// The `xor` of two masks over the same elements, keeping a repeated bit repeated.
+    #[must_use]
+    pub fn xor(&self, other: &Self) -> Self {
+        assert_eq!(self.length, other.length, "masks cover different lengths");
+
+        match (self.scalar_value(), other.scalar_value()) {
+            // Two single bits `xor` to a single bit, which covers every element in turn.
+            (Some(lhs), Some(rhs)) => Self::new_scalar(lhs != rhs, self.length),
+            // A repeated unset bit leaves the other mask as it is, in whatever representation it
+            // is in; a repeated set one inverts it, which leaves that representation alone too.
+            (Some(false), None) => other.clone(),
+            (None, Some(false)) => self.clone(),
+            (Some(true), None) => other.not(),
+            (None, Some(true)) => self.not(),
+            (None, None) => Self::new(
+                self.flat_bitmap().expect("the bits are not repeated")
+                    ^ other.flat_bitmap().expect("the bits are not repeated"),
+                self.length,
+            ),
+        }
+    }
+
+    /// Returns this mask with its bits in the opposite order, keeping the representation.
+    #[must_use]
+    pub fn reversed(&self) -> Self {
+        // A single bit says the same of every element whichever way they are read, so a mask
+        // that repeats one is its own reverse and nothing is written out.
+        match self.scalar_value() {
+            Some(_) => self.clone(),
+            None => Self::from_bitmap(self.iter().rev().collect()),
+        }
+    }
+
+    /// Splits this mask into the first `offset` bits and the rest, keeping the representation.
+    ///
+    /// # Panics
+    /// Panics if `offset` exceeds `self.len()`.
+    #[must_use]
+    pub fn split_at(&self, offset: usize) -> (Self, Self) {
+        assert!(
+            offset <= self.length,
+            "split point is past the end of the mask"
+        );
+
+        // A single bit says the same of both halves, so neither of them is written out.
+        if let Some(value) = self.scalar_value() {
+            return (
+                Self::new_scalar(value, offset),
+                Self::new_scalar(value, self.length - offset),
+            );
+        }
+
+        let (head, tail) = Splitable::split_at(&self.bitmap, offset);
+        (Self::from_bitmap(head), Self::from_bitmap(tail))
+    }
+
     /// Slices this mask in place to `length` bits starting at `offset`.
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
@@ -455,6 +535,86 @@ mod tests {
         assert_eq!(flat.flat_bitmap().unwrap().len(), 1_000);
         assert_eq!(flat.unset_bits(), 1_000);
         assert_eq!(*flat, mask);
+    }
+
+    #[test]
+    fn a_repeated_bit_combines_without_being_written_out() {
+        let flat = PlBitmap::from_iter([true, false, true]);
+        let ones = PlBitmap::new_scalar(true, 3);
+        let zeros = PlBitmap::new_scalar(false, 3);
+
+        // A repeated set bit is the identity of `and` and absorbs `or`, and the other way round
+        // for a repeated unset one; either way the flat mask is handed over as it is.
+        assert!(flat.and(&ones).is_flat());
+        assert_eq!(flat.and(&ones), flat);
+        assert_eq!(ones.and(&flat), flat);
+        assert_eq!(flat.or(&zeros), flat);
+        assert_eq!(zeros.or(&flat), flat);
+
+        for absorbed in [flat.and(&zeros), zeros.and(&flat)] {
+            assert!(absorbed.is_scalar());
+            assert_eq!(absorbed.scalar_value(), Some(false));
+        }
+        for absorbed in [flat.or(&ones), ones.or(&flat)] {
+            assert!(absorbed.is_scalar());
+            assert_eq!(absorbed.scalar_value(), Some(true));
+        }
+
+        // Two single bits answer with a single bit, whatever the operation.
+        assert_eq!(ones.and(&zeros).scalar_value(), Some(false));
+        assert_eq!(ones.or(&zeros).scalar_value(), Some(true));
+        assert_eq!(ones.xor(&zeros).scalar_value(), Some(true));
+        assert_eq!(ones.xor(&ones).scalar_value(), Some(false));
+
+        // `xor` against a repeated unset bit leaves the mask alone, and against a repeated set
+        // bit inverts it; neither writes the flat mask out first.
+        assert_eq!(flat.xor(&zeros), flat);
+        assert_eq!(flat.xor(&ones), flat.not());
+        assert!(flat.xor(&ones).is_flat());
+    }
+
+    #[test]
+    fn two_flat_masks_combine_bit_for_bit() {
+        let lhs = PlBitmap::from_iter([true, true, false]);
+        let rhs = PlBitmap::from_iter([true, false, false]);
+
+        assert_eq!(lhs.and(&rhs), PlBitmap::from_iter([true, false, false]));
+        assert_eq!(lhs.or(&rhs), PlBitmap::from_iter([true, true, false]));
+        assert_eq!(lhs.xor(&rhs), PlBitmap::from_iter([false, true, false]));
+    }
+
+    #[test]
+    fn reversing_keeps_the_representation() {
+        let scalar = PlBitmap::new_scalar(true, 1_000);
+        let reversed = scalar.reversed();
+
+        assert!(reversed.is_scalar());
+        assert_eq!(reversed.len(), 1_000);
+        assert_eq!(reversed.scalar_value(), Some(true));
+
+        let flat = PlBitmap::from_iter([true, false, false]);
+        assert_eq!(flat.reversed(), PlBitmap::from_iter([false, false, true]));
+        assert!(PlBitmap::new_empty().reversed().is_empty());
+    }
+
+    #[test]
+    fn splitting_keeps_the_representation() {
+        // Both halves of a repeated bit are that same bit, over however many elements each holds.
+        let (head, tail) = PlBitmap::new_scalar(true, 10).split_at(4);
+
+        assert!(head.is_scalar() && tail.is_scalar());
+        assert_eq!((head.len(), tail.len()), (4, 6));
+        assert_eq!(head.scalar_value(), Some(true));
+        assert_eq!(tail.scalar_value(), Some(true));
+
+        // Splitting away every element leaves an empty mask, which holds no bit to repeat.
+        let (head, tail) = PlBitmap::new_scalar(false, 3).split_at(3);
+        assert_eq!(head.len(), 3);
+        assert!(tail.is_empty());
+
+        let (head, tail) = PlBitmap::from_iter([true, false, true]).split_at(1);
+        assert_eq!(head, PlBitmap::from_iter([true]));
+        assert_eq!(tail, PlBitmap::from_iter([false, true]));
     }
 
     #[test]

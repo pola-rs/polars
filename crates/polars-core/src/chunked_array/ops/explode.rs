@@ -231,7 +231,7 @@ pub(crate) fn offsets_to_indexes(
     offsets: &[i64],
     capacity: usize,
     options: ExplodeOptions,
-    validity: Option<&Bitmap>,
+    validity: Option<&PlBitmap>,
 ) -> Vec<IdxSize> {
     if offsets.is_empty() {
         return vec![];

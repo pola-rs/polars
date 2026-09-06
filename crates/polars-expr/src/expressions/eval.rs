@@ -3,7 +3,8 @@ use std::cell::LazyCell;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use arrow::bitmap::BitmapBuilder;
+use polars_array::PlBitmap;
 use polars_core::chunked_array::builder::AnonymousOwnedListBuilder;
 use polars_core::error::{PolarsResult, feature_gated, polars_ensure};
 use polars_core::frame::DataFrame;
@@ -196,6 +197,8 @@ impl EvalExpr {
             let groups_are_unchanged = if let Some(validity) = &validity {
                 assert_eq!(validity.set_bits(), output_groups.len());
                 validity
+                    .as_ref()
+                    .to_flat()
                     .true_idx_iter()
                     .zip(output_groups)
                     .all(|(j, [start, len])| {
@@ -339,7 +342,7 @@ impl EvalExpr {
         let groups = if ca.has_nulls() {
             let validity = validity.as_ref().unwrap();
             (0..ca.len())
-                .filter(|i| unsafe { validity.get_bit_unchecked(*i) })
+                .filter(|i| unsafe { validity.get_unchecked(*i) })
                 .map(|i| [(i * ca.width()) as IdxSize, ca.width() as IdxSize])
                 .collect()
         } else {
@@ -368,6 +371,8 @@ impl EvalExpr {
             let groups_are_unchanged = if let Some(validity) = &validity {
                 assert_eq!(validity.set_bits(), output_groups.len());
                 validity
+                    .as_ref()
+                    .to_flat()
                     .true_idx_iter()
                     .zip(output_groups)
                     .all(|(j, [start, len])| {
@@ -444,26 +449,27 @@ impl EvalExpr {
         let flattened = input.clone().into_column();
         let validity = input.rechunk_validity();
 
-        let mut deposit: Option<Bitmap> = None;
+        let mut deposit: Option<PlBitmap> = None;
 
         let groups = if min_samples == 0 {
             (1..input.len() as IdxSize).map(|i| [0, i]).collect()
         } else {
-            let validity = validity
-                .clone()
-                .unwrap_or_else(|| Bitmap::new_with_value(true, input.len()));
+            // No mask at all means every element is valid, which is the single bit it takes to
+            // say so rather than one written out per element.
+            let validity =
+                (validity.clone()).unwrap_or_else(|| PlBitmap::new_scalar(true, input.len()));
             let mut count = 0;
             let mut deposit_builder = BitmapBuilder::with_capacity(input.len());
             let out = (0..input.len() as IdxSize)
                 .filter(|i| {
-                    count += usize::from(unsafe { validity.get_bit_unchecked(*i as usize) });
+                    count += usize::from(unsafe { validity.get_unchecked(*i as usize) });
                     let is_selected = count >= min_samples;
                     unsafe { deposit_builder.push_unchecked(is_selected) };
                     is_selected
                 })
                 .map(|i| [0, i + 1])
                 .collect();
-            deposit = Some(deposit_builder.freeze());
+            deposit = Some(PlBitmap::from_bitmap(deposit_builder.freeze()));
             out
         };
 

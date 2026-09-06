@@ -1,6 +1,6 @@
 use arrow::bitmap::BitmapBuilder;
-use arrow::compute::utils::combine_validities_and;
 use num_traits::{Bounded, ToPrimitive, Zero};
+use polars_array::bitmap::combine_validities_and;
 use polars_array::{PlBitmap, PlPrimitiveArray};
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::prelude::{ChunkedArray, IdxCa, IdxSize, PolarsIntegerType, Series};
@@ -68,11 +68,14 @@ where
     }
 
     let idx_arr = PlPrimitiveArray::from_vec(out);
-    let in_bounds_valid = in_bounds.into_opt_validity();
+    let in_bounds_valid = in_bounds.into_opt_validity().map(PlBitmap::from_bitmap);
     let ca_valid = ca.rechunk_validity();
-    // Both masks hold one bit per element, and so does the array they go on.
-    let valid = combine_validities_and(in_bounds_valid.as_ref(), ca_valid.as_ref());
-    let out = idx_arr.with_validity(valid.map(PlBitmap::from_bitmap));
+    // The bounds check wrote out one bit per element; the mask of `ca` carries over as it is.
+    let valid = combine_validities_and(
+        in_bounds_valid.as_ref().map(PlBitmap::as_ref),
+        ca_valid.as_ref().map(PlBitmap::as_ref),
+    );
+    let out = idx_arr.with_validity(valid);
 
     if !null_on_oob && out.null_count() != ca.null_count() {
         polars_bail!(

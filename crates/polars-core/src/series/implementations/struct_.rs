@@ -1,5 +1,3 @@
-use arrow::bitmap::Bitmap;
-
 use super::*;
 use crate::chunked_array::StructChunked;
 use crate::prelude::row_encode::{
@@ -86,10 +84,9 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
         if self.struct_fields().is_empty() {
             if self.has_nulls() {
                 let validity = self.rechunk_validity().unwrap();
-                let length = validity.len();
                 BooleanChunked::with_chunk(
                     self.name().clone(),
-                    PlBooleanArray::new(validity, length, None),
+                    PlBooleanArray::from_pl_bitmap(validity),
                 )
                 .group_tuples(multithreaded, sorted)
             } else {
@@ -195,7 +192,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.take_unchecked(_idx).into_series()
     }
 
-    fn deposit(&self, validity: &Bitmap) -> Series {
+    fn deposit(&self, validity: &PlBitmap) -> Series {
         self.0.deposit(validity).into_series()
     }
 
@@ -207,11 +204,8 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.rechunk().into_owned().into_series()
     }
 
-    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
-        self.0
-            .clone()
-            .with_outer_validity(validity.map(PlBitmap::from_bitmap))
-            .into_series()
+    fn with_validity(&self, validity: Option<PlBitmap>) -> Series {
+        self.0.clone().with_outer_validity(validity).into_series()
     }
 
     fn new_from_index(&self, _index: usize, _length: usize) -> Series {
@@ -297,30 +291,30 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         let iter = self.downcast_iter().map(|arr| {
             // The mask is inverted in whatever representation it is in — a scalar one is a
             // single bit — so this is `O(1)` for a chunk that is fully null or fully valid.
-            let bitmap = match arr.validity() {
+            let mask = match arr.validity() {
                 Some(valid) => polars_array::bitmap::invert(valid),
-                None => Bitmap::new_with_value(false, 1),
+                None => PlBitmap::new_scalar(false, arr.len()),
             };
-            PlBooleanArray::from_pl_bitmap(PlBitmap::new_broadcast(bitmap, arr.len()))
+            PlBooleanArray::from_pl_bitmap(mask)
         });
         BooleanChunked::from_chunk_iter(self.name().clone(), iter)
     }
 
     fn is_not_null(&self) -> BooleanChunked {
         let iter = self.downcast_iter().map(|arr| {
-            let bitmap = match arr.validity() {
-                Some(valid) => valid.to_flat_or_scalar(),
-                None => Bitmap::new_with_value(true, 1),
+            let mask = match arr.validity() {
+                Some(valid) => PlBitmap::from(valid),
+                None => PlBitmap::new_scalar(true, arr.len()),
             };
-            PlBooleanArray::from_pl_bitmap(PlBitmap::new_broadcast(bitmap, arr.len()))
+            PlBooleanArray::from_pl_bitmap(mask)
         });
         BooleanChunked::from_chunk_iter(self.name().clone(), iter)
     }
 
     fn reverse(&self) -> Series {
-        let validity = self
-            .rechunk_validity()
-            .map(|x| PlBitmap::from_bitmap(x.into_iter().rev().collect::<Bitmap>()));
+        // The mask is reversed in whatever representation it is in: one that repeats a single
+        // bit says the same of every element whichever way they are read.
+        let validity = self.rechunk_validity().map(|x| x.reversed());
         self.0
             ._apply_fields(|s| s.reverse())
             .unwrap()

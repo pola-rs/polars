@@ -1,7 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::hash::BuildHasher;
 
-use arrow::compute::utils::combine_validities_and_many;
+use polars_array::bitmap::combine_validities_and_many;
 use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
 use polars_array::{
     PlBinaryArray, PlBinaryArrayBuilder, PlBinaryViewArray, PlBinaryViewArrayBuilder, PlBitmapRef,
@@ -127,7 +127,7 @@ impl HashKeys {
                     .map(|c| c.as_materialized_series().rechunk_validity())
                     .collect_vec();
                 let combined = combine_validities_and_many(&validities);
-                keys_encoded.set_validity(combined.map(PlBitmap::from_bitmap));
+                keys_encoded.set_validity(combined);
             }
 
             // TODO: use vechash? Not supported yet for lists.

@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::cell::Cell;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use arrow::bitmap::BitmapBuilder;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;
@@ -206,9 +206,11 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         }
     }
 
-    pub fn rechunk_validity(&self) -> Option<Bitmap> {
+    pub fn rechunk_validity(&self) -> Option<PlBitmap> {
+        // A single chunk already holds the one mask this asks for, in whatever representation it
+        // is in: a scalar one is handed over as the single bit it is.
         if self.chunks.len() == 1 {
-            return self.chunks[0].validity().map(|v| v.to_flat().into_owned());
+            return self.chunks[0].validity().map(PlBitmap::from);
         }
 
         if !self.has_nulls() || self.is_empty() {
@@ -227,16 +229,16 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 None => bm.extend_constant(arr.len(), true),
             }
         }
-        bm.into_opt_validity()
+        bm.into_opt_validity().map(PlBitmap::from_bitmap)
     }
 
-    pub fn with_validities(&mut self, validities: &[Option<Bitmap>]) {
+    pub fn with_validities(&mut self, validities: &[Option<PlBitmap>]) {
         assert_eq!(validities.len(), self.chunks.len());
 
         // SAFETY:
         // We don't change the data type of the chunks, nor the length.
         for (arr, validity) in unsafe { self.chunks_mut().iter_mut() }.zip(validities.iter()) {
-            *arr = arr.with_validity(validity.clone().map(PlBitmap::from_bitmap))
+            *arr = arr.with_validity(validity.clone())
         }
     }
 

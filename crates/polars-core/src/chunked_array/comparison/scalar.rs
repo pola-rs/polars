@@ -48,28 +48,54 @@ fn bitonic_mask<T: PolarsNumericType>(
     };
 
     let chunks = ca.downcast_iter().map(|arr| {
-        // The sorted flag is what makes this worth a partition point, and a sorted array of more
-        // than one element is never in the scalar representation.
-        let arr = arr.to_flat();
-        let values = arr.as_slice();
-        let true_range_start = if let Some(f_a) = f_a {
-            values.partition_point(|x| !apply::<T>(f_a, *x, rhs))
-        } else {
-            0
+        let length = arr.len();
+
+        // Where the run of elements the two functions both hold at starts and ends. Every element
+        // of a chunk whose values are stored in the scalar representation is the one value it
+        // repeats — `full` builds exactly such a chunk and flags it sorted — so the two bounds
+        // are read off that one value rather than searched for over values written out first.
+        let (true_range_start, true_range_end) = match arr.scalar_values() {
+            Some(value) => {
+                let holds = f_a.is_none_or(|f_a| apply::<T>(f_a, value, rhs))
+                    && f_d.is_none_or(|f_d| apply::<T>(f_d, value, rhs));
+
+                if holds { (0, length) } else { (length, length) }
+            },
+            None => {
+                let values = arr.flat_values().expect("the values are not repeated");
+                let start = match f_a {
+                    Some(f_a) => values.partition_point(|x| !apply::<T>(f_a, *x, rhs)),
+                    None => 0,
+                };
+                let end = match f_d {
+                    Some(f_d) => {
+                        start + values[start..].partition_point(|x| apply::<T>(f_d, *x, rhs))
+                    },
+                    None => length,
+                };
+
+                (start, end)
+            },
         };
-        let true_range_end = if let Some(f_d) = f_d {
-            true_range_start
-                + values[true_range_start..].partition_point(|x| apply::<T>(f_d, *x, rhs))
-        } else {
-            values.len()
-        };
-        let mut mask = BitmapBuilder::with_capacity(arr.len());
-        mask.extend_constant(true_range_start, invert);
-        mask.extend_constant(true_range_end - true_range_start, !invert);
-        mask.extend_constant(arr.len() - true_range_end, invert);
+
         logical_extend(true_range_start, invert);
         logical_extend(true_range_end - true_range_start, !invert);
-        logical_extend(arr.len() - true_range_end, invert);
+        logical_extend(length - true_range_end, invert);
+
+        // The mask is three runs at most, so a chunk that falls entirely inside or entirely
+        // outside the range says the same of every element: that is the single bit it repeats,
+        // and it is not written out one bit per element.
+        if true_range_start == 0 && true_range_end == length {
+            return PlBooleanArray::new_scalar(!invert, length);
+        }
+        if true_range_start == true_range_end {
+            return PlBooleanArray::new_scalar(invert, length);
+        }
+
+        let mut mask = BitmapBuilder::with_capacity(length);
+        mask.extend_constant(true_range_start, invert);
+        mask.extend_constant(true_range_end - true_range_start, !invert);
+        mask.extend_constant(length - true_range_end, invert);
         PlBooleanArray::from_values(mask.freeze())
     });
 
@@ -372,5 +398,61 @@ mod test {
             out.into_series(),
             Series::new(PlSmallStr::EMPTY, [true, true, true, true, false, false])
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Whether the values of the single chunk of `ca` are the one bit every element shares.
+    fn values_are_repeated(ca: &BooleanChunked) -> bool {
+        ca.chunks().len() == 1 && ca.downcast_as_array().scalar_values().is_some()
+    }
+
+    /// `full` builds a chunk that repeats one value and flags it sorted, which is what sends it
+    /// down this path: the bounds of the run come off that one value, and the answer is the one
+    /// bit it settles for every element — neither side is written out.
+    #[test]
+    fn a_sorted_repeated_value_is_compared_once() {
+        let ca = Int32Chunked::full(PlSmallStr::from_static("a"), 7, 1_000);
+        assert_eq!(ca.is_sorted_flag(), IsSorted::Ascending);
+
+        for (out, expected) in [
+            (ca.equal(7), true),
+            (ca.equal(8), false),
+            (ca.not_equal(7), false),
+            (ca.not_equal(8), true),
+            (ca.lt(8), true),
+            (ca.lt(7), false),
+            (ca.gt_eq(7), true),
+            (ca.gt(7), false),
+        ] {
+            assert!(values_are_repeated(&out), "{out:?}");
+            assert_eq!(out.len(), 1_000);
+            assert_eq!(out.null_count(), 0);
+            assert_eq!(out.get(0), Some(expected));
+            assert_eq!(out.get(999), Some(expected));
+        }
+    }
+
+    /// A sorted array that holds one slot per element still answers over a partition point, and
+    /// a run that covers only part of it is written out one bit per element.
+    #[test]
+    fn a_sorted_flat_array_answers_over_a_run() {
+        let mut ca = Int32Chunked::new(PlSmallStr::from_static("a"), [1, 2, 2, 3]);
+        ca.set_sorted_flag(IsSorted::Ascending);
+
+        let out = ca.equal(2);
+        assert!(!values_are_repeated(&out));
+        assert_eq!(
+            Vec::from(&out),
+            vec![Some(false), Some(true), Some(true), Some(false)],
+        );
+
+        // A run that covers every element is still the one bit that says so.
+        let out = ca.lt(4);
+        assert!(values_are_repeated(&out));
+        assert_eq!(out.sum(), Some(4));
     }
 }

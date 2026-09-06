@@ -173,7 +173,7 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         self.0.take_unchecked(indices).into_series()
     }
 
-    fn deposit(&self, validity: &Bitmap) -> Series {
+    fn deposit(&self, validity: &PlBitmap) -> Series {
         self.0.deposit(validity).into_series()
     }
 
@@ -185,7 +185,7 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         self.0.rechunk().into_owned().into_series()
     }
 
-    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+    fn with_validity(&self, validity: Option<PlBitmap>) -> Series {
         self.0.clone().with_validity(validity).into_series()
     }
 

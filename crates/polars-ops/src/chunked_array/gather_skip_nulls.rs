@@ -159,8 +159,7 @@ where
                 .iter()
                 .map(|chunk| &**chunk)
                 .collect::<Vec<_>>();
-            arr = arr
-                .with_validity_typed((concatenate_validities(&chunks)).map(PlBitmap::from_bitmap));
+            arr = arr.with_validity_typed(concatenate_validities(&chunks));
         }
         Ok(ChunkedArray::from_chunk_iter_like(self, [arr]))
     }

@@ -205,7 +205,7 @@ where
     pub fn from_vec_validity(
         name: PlSmallStr,
         values: Vec<T::Native>,
-        buffer: Option<Bitmap>,
+        buffer: Option<PlBitmap>,
     ) -> Self {
         let arr = to_array::<T>(values, buffer);
         ChunkedArray::new_with_compute_len(

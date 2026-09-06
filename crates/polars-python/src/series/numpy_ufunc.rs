@@ -42,8 +42,11 @@ macro_rules! impl_ufuncs {
                             let (name, validity) = {
                                 let s = self.series.read();
                                 // The Arrow array below takes one flat mask over every element,
-                                // which is what `rechunk_validity` hands over.
-                                (s.name().clone(), s.rechunk_validity())
+                                // so a mask that repeats a single bit is written out here.
+                                (
+                                    s.name().clone(),
+                                    s.rechunk_validity().map(PlBitmap::into_bitmap),
+                                )
                             };
 
                             // Create a Series backed by the numpy array's buffer.
