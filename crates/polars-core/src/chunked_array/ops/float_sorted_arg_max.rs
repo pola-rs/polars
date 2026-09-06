@@ -18,9 +18,18 @@ where
             return maybe_max_idx;
         }
 
+        // The value before the left-most NaN is the largest non-NaN one, if there is any.
         let search_val = std::iter::once(Some(T::Native::nan()));
         let idx = binary_search_ca(ca, search_val, SearchSortedSide::Left, false)[0] as usize;
-        idx.saturating_sub(1)
+        let candidate = idx.saturating_sub(1);
+        if candidate < ca.first_non_null().unwrap() {
+            // Every non-null value is NaN, so stepping back lands on a null. There is no
+            // non-NaN maximum; report a NaN, as the NaN-ignoring reduction does for an
+            // all-NaN input.
+            maybe_max_idx
+        } else {
+            candidate
+        }
     }
 
     fn float_arg_max_sorted_descending(&self) -> usize {
@@ -34,9 +43,18 @@ where
             return maybe_max_idx;
         }
 
+        // The value after the right-most NaN is the largest non-NaN one, if there is any.
         let search_val = std::iter::once(Some(T::Native::nan()));
         let idx = binary_search_ca(ca, search_val, SearchSortedSide::Right, true)[0] as usize;
-        if idx == ca.len() { idx - 1 } else { idx }
+        let candidate = if idx == ca.len() { idx - 1 } else { idx };
+        if candidate > ca.last_non_null().unwrap() {
+            // Every non-null value is NaN, so stepping forward lands on a null. There is no
+            // non-NaN maximum; report a NaN, as the NaN-ignoring reduction does for an
+            // all-NaN input.
+            maybe_max_idx
+        } else {
+            candidate
+        }
     }
 }
 

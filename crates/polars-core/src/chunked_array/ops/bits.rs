@@ -7,7 +7,13 @@ fn first_true_idx_impl(ca: &BooleanChunked, invert: bool) -> Option<usize> {
     }
 
     if (ca.is_sorted_ascending_flag() && invert) || (ca.is_sorted_descending_flag() && !invert) {
-        return ca.first_non_null();
+        // The value we are looking for sorts before every other value, so if it occurs at all it
+        // is the first non-null one. Note that it may not occur at all (e.g. an all-`true` array
+        // that is flagged sorted ascending), in which case we must not report an index.
+        let idx = ca.first_non_null()?;
+        // SAFETY: `first_non_null` returns an in-bounds index of a non-null value.
+        let value = unsafe { ca.value_unchecked(idx) };
+        return (value != invert).then_some(idx);
     }
 
     let invert_mask = if invert { u64::MAX } else { 0 };
