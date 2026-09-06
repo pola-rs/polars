@@ -127,8 +127,21 @@ pub(super) fn node_stats_with_cache(
                 return None;
             }
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
+            // A computed key holds neither the values nor the distinct count of the
+            // column it is named after, so only a key reading one column contributes.
+            let ndv = keys
+                .iter()
+                .map(|k| into_column(k.node(), expr_arena))
+                .collect::<Option<Vec<_>>>()
+                .and_then(|mut sources| {
+                    // Several keys reading one column split it no finer than one of
+                    // them does, so it must be counted once.
+                    sources.sort_unstable();
+                    sources.dedup();
+                    inner.key_distinct_count_product(&sources)
+                });
             let names: Vec<&PlSmallStr> = keys.iter().map(|k| k.output_name()).collect();
-            Some(one_row_per_group(inner, &names, options.slice))
+            Some(one_row_per_group(inner, &names, ndv, options.slice))
         },
         IR::Distinct { input, options } => {
             let input_schema;
@@ -140,7 +153,8 @@ pub(super) fn node_stats_with_cache(
                 },
             };
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
-            Some(one_row_per_group(inner, &names, options.slice))
+            let ndv = inner.key_distinct_count_product(&names);
+            Some(one_row_per_group(inner, &names, ndv, options.slice))
         },
         IR::Filter { input, predicate } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
@@ -449,14 +463,17 @@ fn keeps_height(expr: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
 /// Estimates for a node emitting one row per distinct combination of `keys`,
 /// optionally sliced.
 ///
+/// `keys` names the output columns, and `ndv` is the distinct combinations they hold
+/// if that is known.
+///
 /// The output columns are the keys, each holding as many distinct values as the
 /// node has rows.
 fn one_row_per_group(
     inner: NodeStats,
     keys: &[&PlSmallStr],
+    ndv: Option<f64>,
     slice: Option<(i64, usize)>,
 ) -> NodeStats {
-    let ndv = inner.key_distinct_count_product(keys);
     let mut groups = NodeStats {
         filtered: n_groups(inner.filtered, keys.len(), ndv),
         unfiltered: n_groups(inner.unfiltered, keys.len(), ndv),
@@ -890,6 +907,34 @@ mod tests {
         assert_eq!(
             key_domain(&fact, Some(&key("k")), &dim, Some(&key("k"))),
             800.0
+        );
+    }
+
+    /// A value range narrower than a known distinct count must not shrink the
+    /// domain below it.
+    #[test]
+    fn a_one_sided_distinct_count_survives_the_range_fallback() {
+        // 100 values wide, but nothing says how many of them the fact table holds.
+        let fact = leaf(1_000_000.0, 1_000_000.0).with_column(
+            "k",
+            ScanColumnStats {
+                int_range: Some((0, 99)),
+                ..Default::default()
+            },
+        );
+        let dim = leaf_with_ndv(800.0, 800.0, "k", 500);
+
+        // The dimension holds 500 distinct keys, so the domain is at least that,
+        // however narrow the range on the other side is.
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &dim, Some(&key("k"))),
+            500.0
+        );
+        // Without a distinct count anywhere, the range is all there is to go on.
+        let opaque = leaf(800.0, 800.0);
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &opaque, Some(&key("k"))),
+            100.0
         );
     }
 
