@@ -20,14 +20,10 @@ where
     let offsets = _split_offsets(s_left.len(), RAYON.current_num_threads());
     let s_left = s_left.rechunk();
     let s_right = s_right.rechunk();
-    // TODO(polars-array-scalar): the merge reads both sides as slices, so a scalar chunk is
-    // written out here rather than the one key it stands for being merged once.
-    let s_left = s_left.to_flat();
-    let s_right = s_right.to_flat();
-
     // we can unwrap because we should not have nulls
-    let slice_left = s_left.cont_slice().unwrap();
-    let slice_right = s_right.cont_slice().unwrap();
+    let left = s_left.to_cont_slice().unwrap();
+    let right = s_right.to_cont_slice().unwrap();
+    let (slice_left, slice_right) = (left.as_slice(), right.as_slice());
 
     let indexes = par_map_collect(offsets.len(), &|i| {
         let (offset, len) = offsets[i];
@@ -108,14 +104,10 @@ where
     let offsets = _split_offsets(s_left.len(), RAYON.current_num_threads());
     let s_left = s_left.rechunk();
     let s_right = s_right.rechunk();
-    // TODO(polars-array-scalar): the merge reads both sides as slices, so a scalar chunk is
-    // written out here rather than the one key it stands for being merged once.
-    let s_left = s_left.to_flat();
-    let s_right = s_right.to_flat();
-
     // we can unwrap because we should not have nulls
-    let slice_left = s_left.cont_slice().unwrap();
-    let slice_right = s_right.cont_slice().unwrap();
+    let left = s_left.to_cont_slice().unwrap();
+    let right = s_right.to_cont_slice().unwrap();
+    let (slice_left, slice_right) = (left.as_slice(), right.as_slice());
 
     let indexes = par_map_collect(offsets.len(), &|i| {
         let (offset, len) = offsets[i];

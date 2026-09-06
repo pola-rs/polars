@@ -301,7 +301,7 @@ fn test_ext_store_sink_and_scan_parquet() -> PolarsResult<()> {
 
     assert_eq!(result.shape(), (3, 2));
     assert_eq!(
-        result.column("a")?.i32()?.to_flat().cont_slice()?,
+        result.column("a")?.i32()?.to_cont_slice()?.as_slice(),
         &[1, 2, 3]
     );
     assert_eq!(

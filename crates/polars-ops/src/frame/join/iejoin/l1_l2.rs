@@ -22,10 +22,9 @@ where
     assert_eq!(order.null_count(), 0);
     assert_eq!(ca.chunks().len(), 1);
     let arr = ca.downcast_get(0).unwrap();
-    // TODO(polars-array-scalar): the values are read as a slice, so a scalar chunk is written out
-    // here rather than the one value it stands for being read once.
-    let flat = arr.to_flat();
-    // Even if there are nulls, they will not be selected by order.
+    // Only a values buffer that repeats one value is written out: the mask is not read here, since
+    // even if there are nulls, they will not be selected by order.
+    let flat = arr.to_flat_values();
     let values = flat.as_slice();
 
     let mut array: Vec<L1Item<T::Native>> = Vec::with_capacity(ca.len());
@@ -69,9 +68,8 @@ where
     let mut prev_value = T::Native::default();
 
     let arr = ca.downcast_get(0).unwrap();
-    // TODO(polars-array-scalar): as above, a scalar chunk is written out here.
-    let flat = arr.to_flat();
-    // Even if there are nulls, they will not be selected by order.
+    // As above: the mask is not read, so only a repeated values buffer is written out.
+    let flat = arr.to_flat_values();
     let values = flat.as_slice();
 
     for (i, l1_index) in order.iter().copied().enumerate() {

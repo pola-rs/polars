@@ -97,10 +97,8 @@ where
 
     polars_ensure!(by.null_count() == 0, InvalidOperation: "null values in `by` column are not yet supported in 'interpolate_by' expression");
     let by = by.rechunk();
-    // TODO(polars-array-scalar): the interpolation reads `by` as a slice, so a scalar chunk is
-    // written out here rather than the single value it stands for being read once.
-    let by = by.to_flat();
-    let by_values = by.cont_slice().unwrap();
+    let by_values = by.to_cont_slice().unwrap();
+    let by_values = by_values.as_slice();
 
     // We first find the first and last so that we can set the null buffer.
     let first = chunked_arr.first_non_null().unwrap();
@@ -180,18 +178,16 @@ where
 
     polars_ensure!(by.null_count() == 0, InvalidOperation: "null values in `by` column are not yet supported in 'interpolate_by' expression");
     let sorting_indices = by.arg_sort(Default::default());
-    // TODO(polars-array-scalar): the indices and the values are read as slices, so scalar chunks
-    // are written out here rather than the single value they stand for being read once.
-    let sorting_indices = sorting_indices.to_flat();
     let sorting_indices = sorting_indices
-        .cont_slice()
+        .to_cont_slice()
         .expect("arg sort produces single chunk");
+    let sorting_indices = sorting_indices.as_slice();
     let by_sorted = unsafe { by.take_unchecked(sorting_indices) };
     let ca_sorted = unsafe { ca.take_unchecked(sorting_indices) };
-    let by_sorted = by_sorted.to_flat();
     let by_sorted_values = by_sorted
-        .cont_slice()
+        .to_cont_slice()
         .expect("We already checked for nulls, and `take_unchecked` produces single chunk");
+    let by_sorted_values = by_sorted_values.as_slice();
 
     // We first find the first and last so that we can set the null buffer.
     let first = ca_sorted.first_non_null().unwrap();

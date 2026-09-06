@@ -248,10 +248,8 @@ pub fn hist_series(
         let bins = bins.cast(&DataType::Float64)?;
         let bins_s = bins.rechunk();
         owned_bins = bins_s;
-        // TODO(polars-array-scalar): the bin edges are read as a slice, so a scalar chunk is
-        // written out here rather than the single edge it stands for being read once.
-        flat_bins = owned_bins.f64().unwrap().to_flat();
-        bins_arg = Some(flat_bins.cont_slice().unwrap());
+        flat_bins = owned_bins.f64().unwrap().to_cont_slice()?;
+        bins_arg = Some(flat_bins.as_slice());
     };
     polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "'hist' is only supported for numeric data");
 

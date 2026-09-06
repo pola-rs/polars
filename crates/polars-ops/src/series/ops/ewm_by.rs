@@ -131,12 +131,10 @@ where
     let sorting_indices = times.arg_sort(Default::default());
     let sorted_values = unsafe { values.take_unchecked(&sorting_indices) };
     let sorted_times = unsafe { times.take_unchecked(&sorting_indices) };
-    // TODO(polars-array-scalar): the indices are read as a slice, so a scalar chunk is written
-    // out here rather than the single index it stands for being read once.
-    let sorting_indices = sorting_indices.to_flat();
     let sorting_indices = sorting_indices
-        .cont_slice()
-        .expect("`arg_sort` should have returned a single chunk");
+        .to_cont_slice()
+        .expect("`arg_sort` should have returned a single chunk of indices, none of them null");
+    let sorting_indices = sorting_indices.as_slice();
 
     let mut out: Vec<_> = zeroed_vec(sorted_times.len());
     ewm_by_core::<T, IS_MEAN, _>(

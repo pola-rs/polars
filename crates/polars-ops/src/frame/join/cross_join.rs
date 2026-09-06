@@ -1,3 +1,4 @@
+use polars_array::bitmap::combine_validities_and;
 use polars_core::utils::{
     _set_partition_size, CustomIterTools, NoNull, accumulate_dataframes_vertical_unchecked,
     concat_df_unchecked, par_iter_bounded, split,
@@ -197,15 +198,15 @@ pub(super) fn fused_cross_filter(
                     debug_assert_eq!(joined.height(), len_left * len_right);
 
                     // Combine values and validity into one bitmap so a null bit reads as "no
-                    // match" (this is what filter has filtered)
-                    // TODO(polars-array-scalar): the bits are sliced per left row, so a scalar
-                    // chunk is written out here rather than its single bit being read once.
+                    // match" (this is what filter has filtered). The two are combined in whatever
+                    // representation each is in, and only the one bitmap that comes out is laid
+                    // out a bit per element — the bits below are sliced per left row.
                     let mask_arr = mask.rechunk();
-                    let mask_arr = mask_arr.downcast_get(0).unwrap().to_flat();
-                    let match_bits = match mask_arr.validity() {
-                        Some(validity) => mask_arr.values() & validity,
-                        None => mask_arr.values().clone(),
-                    };
+                    let mask_arr = mask_arr.downcast_as_array();
+                    let match_bits =
+                        combine_validities_and(Some(mask_arr.values()), mask_arr.validity())
+                            .expect("the values are always there")
+                            .into_bitmap();
 
                     // Emit each left row's matches, or a single null-extended row when it has
                     // none, so that unmatched rows keep their position in the left input's

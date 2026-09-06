@@ -174,16 +174,15 @@ fn maintain_order_idx(
     df.sort_in_place(columns, options).unwrap();
     df.rechunk_mut();
 
-    // TODO(polars-array-scalar): the tuples are read as slices, so a scalar chunk is written out
-    // here rather than the single index it stands for being taken repeatedly.
     let join_tuples_left = df
         .column("a")
         .unwrap()
         .as_materialized_series()
         .idx()
         .unwrap()
-        .to_flat();
-    let join_tuples_left = join_tuples_left.cont_slice().unwrap();
+        .to_cont_slice()
+        .unwrap();
+    let join_tuples_left = join_tuples_left.as_slice();
 
     let join_tuples_right = df
         .column("b")
@@ -191,8 +190,9 @@ fn maintain_order_idx(
         .as_materialized_series()
         .idx()
         .unwrap()
-        .to_flat();
-    let join_tuples_right = join_tuples_right.cont_slice().unwrap();
+        .to_cont_slice()
+        .unwrap();
+    let join_tuples_right = join_tuples_right.as_slice();
 
     RAYON.join(
         || materialize_left_join_idx_left(left, join_tuples_left, args),

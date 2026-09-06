@@ -4,6 +4,7 @@
 use std::borrow::Cow;
 
 use polars_array::{Flat, StaticArray};
+use polars_buffer::Buffer;
 
 use crate::prelude::*;
 
@@ -60,6 +61,25 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         // SAFETY: writing a chunk out flat changes neither its length nor its null count, so the
         // dimensions this array carries stay correct.
         unsafe { *self.chunks_mut() = chunks };
+    }
+}
+
+impl<T: PolarsNumericType> ChunkedArray<T> {
+    /// The values of this array as one contiguous slice, writing out only a chunk whose values
+    /// repeat a single value.
+    ///
+    /// Errors if this array holds more than one chunk or any null element: neither leaves one run
+    /// of values to hand out. Unlike [`FlatNumericChunkedArray::cont_slice`], which asks for an
+    /// array that is already flat, this reads nothing of the validity mask — so a chunk that
+    /// carries a repeated mask over values that are laid out one slot per element hands its buffer
+    /// over as it stands.
+    pub fn to_cont_slice(&self) -> PolarsResult<Cow<'_, Buffer<T::Native>>> {
+        polars_ensure!(
+            self.chunks().len() == 1 && self.null_count() == 0,
+            ComputeError: "chunked array is not contiguous"
+        );
+
+        Ok(self.downcast_as_array().to_flat_values())
     }
 }
 

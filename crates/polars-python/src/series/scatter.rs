@@ -69,17 +69,15 @@ fn scatter(s: Series, idx: &Series, values: &Series) -> Result<Series, (Series, 
         Ok(idx) => idx,
         Err(err) => return Err((s, err)),
     };
-    // TODO(polars-array-scalar): the indices are handed on as a slice, so a scalar chunk is
-    // written out rather than its single index being scattered once.
     let idx = idx.rechunk();
-    let idx = idx.to_flat();
-    let idx = idx.flat_as_array();
     if idx.has_nulls() {
         return Err((
             s,
             PolarsError::ComputeError("index values should not be null".into()),
         ));
     }
+    // The indices carry no null, so only a values buffer that repeats one index is written out.
+    let idx = idx.downcast_as_array().to_flat_values();
     let idx = idx.as_slice();
 
     let mut values = match values.to_physical_repr().cast(&s.dtype().to_physical()) {
