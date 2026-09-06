@@ -3,11 +3,10 @@ use std::ops::{Div, Range};
 use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use arrow::types::NativeType;
 use num_traits::{NumCast, ToPrimitive};
+use polars_array::bitmap::combine_validities_and;
 use polars_utils::float16::pf16;
 
 use super::*;
-use polars_array::bitmap::combine_validities_and;
-
 use crate::chunked_array::sum::{sum_repeated, sum_slice};
 
 fn sum_between_offsets<T, S>(values: &[T], offset: &[u64]) -> Vec<S>
@@ -52,7 +51,9 @@ where
             .into_boxed();
     }
 
-    let offsets = arr.flat_offsets().expect("the elements cover ranges of their own");
+    let offsets = arr
+        .flat_offsets()
+        .expect("the elements cover ranges of their own");
     let summed = match values.scalar_values() {
         // The values repeat one value, so a list adds up to that value taken as many times as the
         // list is long — again without the buffer being written out.
@@ -80,9 +81,9 @@ where
 {
     match values.scalar_values() {
         Some(value) => sum_repeated::<T, S>(value, range.len()),
-        None => sum_slice::<T, S>(
-            &values.flat_values().expect("the values are not repeated")[range],
-        ),
+        None => {
+            sum_slice::<T, S>(&values.flat_values().expect("the values are not repeated")[range])
+        },
     }
 }
 
@@ -252,7 +253,9 @@ where
         .into_boxed();
     }
 
-    let offsets = arr.flat_offsets().expect("the elements cover ranges of their own");
+    let offsets = arr
+        .flat_offsets()
+        .expect("the elements cover ranges of their own");
     let out: PlPrimitiveArray<S> = match values.scalar_values() {
         // The values repeat one value, so a list averages to it — worked out through the sum the
         // flat path takes, so the two agree to the last bit.
@@ -406,11 +409,15 @@ mod tests {
     /// answer repeats rather than being written out per element.
     #[test]
     fn one_shared_range_is_summed_once() {
-        let shared = PlListArray::new_scalar(PlPrimitiveArray::from_vec(vec![1i32, 2, 3]).into_boxed(), 4);
+        let shared =
+            PlListArray::new_scalar(PlPrimitiveArray::from_vec(vec![1i32, 2, 3]).into_boxed(), 4);
         let written_out = flat_lists(&[&[1, 2, 3], &[1, 2, 3], &[1, 2, 3], &[1, 2, 3]]);
 
         let summed = sums(&shared);
-        assert!(summed.is_scalar(), "one range gives one total for every element");
+        assert!(
+            summed.is_scalar(),
+            "one range gives one total for every element"
+        );
         assert_eq!(read::<i32>(&summed), read::<i32>(&sums(&written_out)));
 
         let averaged = means(&shared);
@@ -427,21 +434,20 @@ mod tests {
         );
         let written_out = flat_lists(&[&[5], &[], &[5, 5, 5], &[5, 5]]);
 
-        assert_eq!(read::<i32>(&sums(&repeated)), [
-            Some(5),
-            Some(0),
-            Some(15),
-            Some(10)
-        ]);
-        assert_eq!(read::<i32>(&sums(&repeated)), read::<i32>(&sums(&written_out)));
+        assert_eq!(
+            read::<i32>(&sums(&repeated)),
+            [Some(5), Some(0), Some(15), Some(10)]
+        );
+        assert_eq!(
+            read::<i32>(&sums(&repeated)),
+            read::<i32>(&sums(&written_out))
+        );
 
         // An empty list has no average, so that element is null on both paths.
-        assert_eq!(read::<f64>(&means(&repeated)), [
-            Some(5.0),
-            None,
-            Some(5.0),
-            Some(5.0)
-        ]);
+        assert_eq!(
+            read::<f64>(&means(&repeated)),
+            [Some(5.0), None, Some(5.0), Some(5.0)]
+        );
         assert_eq!(
             read::<f64>(&means(&repeated)),
             read::<f64>(&means(&written_out))

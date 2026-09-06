@@ -50,17 +50,20 @@ macro_rules! fused_kernel {
 
 fused_kernel!(
     /// `(a * b) + c`, element for element.
-    fma_arr, |a, b, c| a * b + c
+    fma_arr,
+    |a, b, c| a * b + c
 );
 
 fused_kernel!(
     /// `a - (b * c)`, element for element.
-    fsm_arr, |a, b, c| a - (b * c)
+    fsm_arr,
+    |a, b, c| a - (b * c)
 );
 
 fused_kernel!(
     /// `(a * b) - c`, element for element.
-    fms_arr, |a, b, c| (a * b) - c
+    fms_arr,
+    |a, b, c| (a * b) - c
 );
 
 fn fma_ca<T: PolarsNumericType>(
@@ -91,8 +94,6 @@ pub fn fma_columns(a: &Column, b: &Column, c: &Column) -> Column {
     }
 }
 
-
-
 fn fsm_ca<T: PolarsNumericType>(
     a: &ChunkedArray<T>,
     b: &ChunkedArray<T>,
@@ -120,7 +121,6 @@ pub fn fsm_columns(a: &Column, b: &Column, c: &Column) -> Column {
         (a - &(b * c).unwrap()).unwrap()
     }
 }
-
 
 fn fms_ca<T: PolarsNumericType>(
     a: &ChunkedArray<T>,
@@ -204,18 +204,20 @@ mod tests {
         let c = PlPrimitiveArray::from_iter([Some(10i32), Some(20), None, Some(40)]);
 
         let fused = fma_arr(&a, &b, &c);
-        assert_eq!(fused.iter().collect::<Vec<_>>(), [
-            Some(12),
-            None,
-            None,
-            Some(48)
-        ]);
+        assert_eq!(
+            fused.iter().collect::<Vec<_>>(),
+            [Some(12), None, None, Some(48)]
+        );
 
         // A repeated unset bit nulls every element without the mask being written out.
         let all_null = PlPrimitiveArray::new_scalar(2i32, 4)
             .with_validity(Some(PlBitmap::new_scalar(false, 4)));
         let fused = fma_arr(&a, &all_null, &c);
         assert_eq!(fused.null_count(), 4);
-        assert!(fused.validity().is_some_and(|validity| validity.is_scalar()));
+        assert!(
+            fused
+                .validity()
+                .is_some_and(|validity| validity.is_scalar())
+        );
     }
 }

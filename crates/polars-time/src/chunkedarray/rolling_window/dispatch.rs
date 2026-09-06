@@ -4,7 +4,7 @@ use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 #[cfg(feature = "dtype-f16")]
 use num_traits::real::Real;
-use polars_array::{Flat, NoNulls, PlArrayType, PlPrimitiveArray};
+use polars_array::{PlArrayType, PlPrimitiveArray};
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
 use polars_compute::rolling::{MeanWindow, SumWindow, no_nulls, nulls, rolling_chunk};
@@ -17,26 +17,22 @@ use crate::prelude::*;
 use crate::series::AsSeries;
 
 #[cfg(feature = "rolling_window")]
+/// Runs `rolling_agg_fn` over `ca`, handing it the chunk in whatever representation it is in.
+///
+/// The kernel resolves that itself — see `polars_compute::rolling::dispatch` — so nothing is
+/// written out here on the way in.
 #[allow(clippy::type_complexity)]
 fn rolling_agg<T>(
     ca: &ChunkedArray<T>,
     options: RollingOptionsFixedWindow,
     rolling_agg_fn: &dyn Fn(
-        &NoNulls<Flat<PlPrimitiveArray<T::Native>>>,
+        &PlPrimitiveArray<T::Native>,
         usize,
         usize,
         bool,
         Option<&[f64]>,
         Option<RollingFnParams>,
     ) -> PolarsResult<PlArrayRef>,
-    rolling_agg_fn_nulls: &dyn Fn(
-        &Flat<PlPrimitiveArray<T::Native>>,
-        usize,
-        usize,
-        bool,
-        Option<&[f64]>,
-        Option<RollingFnParams>,
-    ) -> PlArrayRef,
 ) -> PolarsResult<Series>
 where
     T: PolarsNumericType,
@@ -47,28 +43,14 @@ where
     }
     let ca = ca.rechunk();
 
-    // The kernels below walk their values as a slice, which `rolling_chunk` resolves without
-    // writing anything out that it does not have to; a mask that leaves no element null then takes
-    // the no-nulls path rather than being read bit by bit.
-    let chunk = rolling_chunk(ca.downcast_as_array());
-    let arr = match chunk.as_no_nulls() {
-        Some(no_nulls) => rolling_agg_fn(
-            no_nulls,
-            options.window_size,
-            options.min_periods,
-            options.center,
-            options.weights.as_deref(),
-            options.fn_params,
-        )?,
-        None => rolling_agg_fn_nulls(
-            &chunk,
-            options.window_size,
-            options.min_periods,
-            options.center,
-            options.weights.as_deref(),
-            options.fn_params,
-        ),
-    };
+    let arr = rolling_agg_fn(
+        ca.downcast_as_array(),
+        options.window_size,
+        options.min_periods,
+        options.center,
+        options.weights.as_deref(),
+        options.fn_params,
+    )?;
     Ok(series_of(ca.name().clone(), arr))
 }
 
@@ -276,8 +258,7 @@ pub trait SeriesOpsTime: AsSeries {
             rolling_agg(
                 ca,
                 options,
-                &rolling::no_nulls::rolling_mean,
-                &rolling::nulls::rolling_mean,
+                &rolling::dispatch::rolling_mean,
             )
         })
     }
@@ -339,8 +320,7 @@ pub trait SeriesOpsTime: AsSeries {
             rolling_agg(
                 ca,
                 options,
-                &rolling::no_nulls::rolling_sum,
-                &rolling::nulls::rolling_sum,
+                &rolling::dispatch::rolling_sum,
             )
         })
     }
@@ -373,8 +353,7 @@ pub trait SeriesOpsTime: AsSeries {
             rolling_agg(
                 ca,
                 options,
-                &rolling::no_nulls::rolling_quantile,
-                &rolling::nulls::rolling_quantile,
+                &rolling::dispatch::rolling_quantile,
             )
         })
     }
@@ -454,8 +433,7 @@ pub trait SeriesOpsTime: AsSeries {
             rolling_agg(
                 ca,
                 options,
-                &rolling::no_nulls::rolling_min,
-                &rolling::nulls::rolling_min,
+                &rolling::dispatch::rolling_min,
             )
         })
     }
@@ -535,8 +513,7 @@ pub trait SeriesOpsTime: AsSeries {
             rolling_agg(
                 ca,
                 options,
-                &rolling::no_nulls::rolling_max,
-                &rolling::nulls::rolling_max,
+                &rolling::dispatch::rolling_max,
             )
         })
     }
@@ -573,8 +550,7 @@ pub trait SeriesOpsTime: AsSeries {
             rolling_agg(
                 ca,
                 options,
-                &rolling::no_nulls::rolling_var,
-                &rolling::nulls::rolling_var,
+                &rolling::dispatch::rolling_var,
             )
         })
     }
@@ -706,8 +682,7 @@ pub trait SeriesOpsTime: AsSeries {
             rolling_agg(
                 &ca,
                 options,
-                &rolling::no_nulls::rolling_rank,
-                &rolling::nulls::rolling_rank,
+                &rolling::dispatch::rolling_rank,
             )
         })
     }

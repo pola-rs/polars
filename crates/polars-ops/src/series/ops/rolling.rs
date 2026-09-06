@@ -1,4 +1,4 @@
-use polars_compute::rolling::rolling_chunk;
+use polars_compute::rolling;
 use polars_core::prelude::*;
 #[cfg(feature = "moment")]
 use {
@@ -19,23 +19,13 @@ where
     T::Native: Float + SubAssign + Pow<T::Native, Output = T::Native>,
 {
     let ca = ca.rechunk();
-    let chunk = rolling_chunk(ca.downcast_as_array());
-    let out = match chunk.as_no_nulls() {
-        Some(no_nulls) => polars_compute::rolling::no_nulls::rolling_skew(
-            no_nulls,
-            window_size,
-            min_periods,
-            center,
-            params,
-        )?,
-        None => polars_compute::rolling::nulls::rolling_skew(
-            &chunk,
-            window_size,
-            min_periods,
-            center,
-            params,
-        ),
-    };
+    let out = rolling::dispatch::rolling_skew(
+        ca.downcast_as_array(),
+        window_size,
+        min_periods,
+        center,
+        params,
+    )?;
     Ok(unsafe { ca.with_chunks(vec![out]) })
 }
 
@@ -81,23 +71,13 @@ where
     T::Native: Float + SubAssign + Pow<T::Native, Output = T::Native>,
 {
     let ca = ca.rechunk();
-    let chunk = rolling_chunk(ca.downcast_as_array());
-    let out = match chunk.as_no_nulls() {
-        Some(no_nulls) => polars_compute::rolling::no_nulls::rolling_kurtosis(
-            no_nulls,
-            window_size,
-            min_periods,
-            center,
-            params,
-        )?,
-        None => polars_compute::rolling::nulls::rolling_kurtosis(
-            &chunk,
-            window_size,
-            min_periods,
-            center,
-            params,
-        ),
-    };
+    let out = rolling::dispatch::rolling_kurtosis(
+        ca.downcast_as_array(),
+        window_size,
+        min_periods,
+        center,
+        params,
+    )?;
     Ok(unsafe { ca.with_chunks(vec![out]) })
 }
 

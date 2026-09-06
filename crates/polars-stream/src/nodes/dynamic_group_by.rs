@@ -4,9 +4,7 @@ use arrow::legacy::time_zone::Tz;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{
-    Column, DataType, GroupsType, Int64Chunked, IntoColumn, TimeUnit,
-};
+use polars_core::prelude::{Column, DataType, GroupsType, Int64Chunked, IntoColumn, TimeUnit};
 use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure};

@@ -266,10 +266,10 @@ mod tests {
             None,
         );
 
-        assert_eq!(read(&dispatch_sum::<i32, i32>(&repeated)), [
-            Some(15),
-            Some(15)
-        ]);
+        assert_eq!(
+            read(&dispatch_sum::<i32, i32>(&repeated)),
+            [Some(15), Some(15)]
+        );
         assert_eq!(
             read(&dispatch_sum::<i32, i32>(&repeated)),
             read(&dispatch_sum::<i32, i32>(&written_out))

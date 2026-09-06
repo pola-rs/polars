@@ -1,11 +1,12 @@
 use arrow::types::NativeType;
-use polars_array::{ArrayCollectIterExt, Flat, PlPrimitiveArray};
+use polars_array::{ArrayCollectIterExt, PlPrimitiveArray};
 use polars_utils::IdxSize;
 use polars_utils::min_max::{MaxPropagateNan, MinMaxPolicy, MinPropagateNan};
 
 use super::arg_min_max::ArgMinMaxWindow;
 use super::no_nulls::RollingAggWindowNoNulls;
 use super::nulls::RollingAggWindowNulls;
+use super::rolling_chunk;
 
 /// Rolling argmin/argmax over a `by` array, returning global indices.
 ///
@@ -15,7 +16,7 @@ use super::nulls::RollingAggWindowNulls;
 /// - `starts` and `ends` must be monotonically non-decreasing (rolling window invariant).
 /// - All indices in `starts`/`ends` must be within bounds of `by`.
 fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
-    by: &Flat<PlPrimitiveArray<B>>,
+    by: &PlPrimitiveArray<B>,
     starts: &[IdxSize],
     ends: &[IdxSize],
     min_periods: usize,
@@ -26,6 +27,9 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
     if n == 0 || by.is_empty() {
         return PlPrimitiveArray::new_full_null(n);
     }
+
+    let by = rolling_chunk(by);
+    let by = &*by;
 
     let first_start = starts[0] as usize;
     let first_end = ends[0] as usize;
@@ -99,7 +103,7 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
 }
 
 pub fn rolling_argmin_by<B: NativeType>(
-    by: &Flat<PlPrimitiveArray<B>>,
+    by: &PlPrimitiveArray<B>,
     starts: &[IdxSize],
     ends: &[IdxSize],
     min_periods: usize,
@@ -108,7 +112,7 @@ pub fn rolling_argmin_by<B: NativeType>(
 }
 
 pub fn rolling_argmax_by<B: NativeType>(
-    by: &Flat<PlPrimitiveArray<B>>,
+    by: &PlPrimitiveArray<B>,
     starts: &[IdxSize],
     ends: &[IdxSize],
     min_periods: usize,

@@ -6,8 +6,8 @@ use polars_compute::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
 };
 use polars_core::frame::group_by::aggregations::{
-    _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window_no_nulls,
-    _rolling_apply_agg_window_nulls, _slice_from_offsets, _use_rolling_kernels,
+    _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window, _slice_from_offsets,
+    _use_rolling_kernels,
 };
 use polars_core::prelude::*;
 use polars_utils::min_max::MinMax;
@@ -102,21 +102,14 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
         } => {
             if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, ca.chunks()) {
                 let ca = ca.rechunk();
-                let chunk = rolling_chunk(ca.downcast_as_array());
                 let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
-                let arr = match chunk.as_no_nulls() {
-                    Some(no_nulls) => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _, _>(
-                        no_nulls,
-                        offset_iter,
-                        None,
-                    ),
-                    None => _rolling_apply_agg_window_nulls::<
-                        rolling::nulls::MaxWindow<_>,
-                        _,
-                        _,
-                        _,
-                    >(&chunk, offset_iter, None),
-                };
+                let arr = _rolling_apply_agg_window::<
+                    MaxWindow<_>,
+                    rolling::nulls::MaxWindow<_>,
+                    _,
+                    _,
+                    _,
+                >(ca.downcast_as_array(), offset_iter, None);
                 ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
@@ -171,21 +164,14 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
         } => {
             if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, ca.chunks()) {
                 let ca = ca.rechunk();
-                let chunk = rolling_chunk(ca.downcast_as_array());
                 let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
-                let arr = match chunk.as_no_nulls() {
-                    Some(no_nulls) => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _, _>(
-                        no_nulls,
-                        offset_iter,
-                        None,
-                    ),
-                    None => _rolling_apply_agg_window_nulls::<
-                        rolling::nulls::MinWindow<_>,
-                        _,
-                        _,
-                        _,
-                    >(&chunk, offset_iter, None),
-                };
+                let arr = _rolling_apply_agg_window::<
+                    MinWindow<_>,
+                    rolling::nulls::MinWindow<_>,
+                    _,
+                    _,
+                    _,
+                >(ca.downcast_as_array(), offset_iter, None);
                 ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {

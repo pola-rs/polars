@@ -1,3 +1,4 @@
+pub mod dispatch;
 mod mean;
 mod min_max;
 mod moment;

@@ -13,6 +13,7 @@ use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
+use polars_array::{Flat, NoNulls, PlPrimitiveArray};
 use polars_compute::rolling::no_nulls::{
     MaxWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
 };
@@ -23,7 +24,6 @@ use polars_compute::rolling::{
     RollingQuantileParams, RollingVarParams, SumWindow, quantile_filter, rolling_argmax_by,
     rolling_argmin_by, rolling_chunk,
 };
-use polars_array::{Flat, NoNulls, PlPrimitiveArray};
 use polars_compute::take_agg::*;
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::float::IsFloat;
@@ -87,16 +87,43 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
 
     let arr = with_match_physical_numeric_polars_type!(phys_dtype, |$T| {
         let ca: &ChunkedArray<$T> = by_phys.as_ref().as_ref().as_ref();
-        let chunk = rolling_chunk(ca.downcast_as_array());
+        let chunk = ca.downcast_as_array();
 
         if is_max_by {
-            rolling_argmax_by(&chunk, &starts, &ends, 1)
+            rolling_argmax_by(chunk, &starts, &ends, 1)
         } else {
-            rolling_argmin_by(&chunk, &starts, &ends, 1)
+            rolling_argmin_by(chunk, &starts, &ends, 1)
         }
     });
 
     IdxCa::with_chunk(PlSmallStr::EMPTY, arr)
+}
+
+/// Runs a rolling aggregation over `arr` in whatever representation it is stored in.
+///
+/// The two window machines are the same aggregation written for the two preconditions — one for a
+/// chunk with no null element, one for a chunk with some — and which of them runs is settled here,
+/// once, out of the representation the chunk is in. Callers hand the chunk over as they hold it.
+pub fn _rolling_apply_agg_window<NoNullsAgg, NullsAgg, T, O, Out>(
+    arr: &PlPrimitiveArray<T>,
+    offsets: O,
+    params: Option<RollingFnParams>,
+) -> PlPrimitiveArray<Out>
+where
+    O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
+    NoNullsAgg: RollingAggWindowNoNulls<T, Out>,
+    NullsAgg: RollingAggWindowNulls<T, Out>,
+    T: IsFloat + NativeType,
+    Out: NativeType,
+{
+    let chunk = rolling_chunk(arr);
+
+    match chunk.as_no_nulls() {
+        Some(no_nulls) => {
+            _rolling_apply_agg_window_no_nulls::<NoNullsAgg, _, _, _>(no_nulls, offsets, params)
+        },
+        None => _rolling_apply_agg_window_nulls::<NullsAgg, _, _, _>(&chunk, offsets, params),
+    }
 }
 
 // Use an aggregation window that maintains the state
@@ -352,28 +379,21 @@ where
                     .cast_with_options(&K::get_static_dtype(), CastOptions::Overflowing)
                     .unwrap();
                 let ca: &ChunkedArray<K> = s.as_ref().as_ref();
-                let chunk = rolling_chunk(ca.downcast_iter().next().unwrap());
                 let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
-                let arr = match chunk.as_no_nulls() {
-                    Some(no_nulls) => _rolling_apply_agg_window_no_nulls::<QuantileWindow<_>, _, _, _>(
-                        no_nulls,
-                        offset_iter,
-                        Some(RollingFnParams::Quantile(RollingQuantileParams {
-                            prob: quantile,
-                            method,
-                        })),
-                    ),
-                    None => {
-                        _rolling_apply_agg_window_nulls::<rolling::nulls::QuantileWindow<_>, _, _, _>(
-                            &chunk,
-                            offset_iter,
-                            Some(RollingFnParams::Quantile(RollingQuantileParams {
-                                prob: quantile,
-                                method,
-                            })),
-                        )
-                    },
-                };
+                let arr = _rolling_apply_agg_window::<
+                    QuantileWindow<_>,
+                    rolling::nulls::QuantileWindow<_>,
+                    _,
+                    _,
+                    _,
+                >(
+                    ca.downcast_iter().next().unwrap(),
+                    offset_iter,
+                    Some(RollingFnParams::Quantile(RollingQuantileParams {
+                        prob: quantile,
+                        method,
+                    })),
+                );
                 // The rolling kernels works on the dtype, this is not yet the
                 // float output type we need.
                 ChunkedArray::<K>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
@@ -540,22 +560,16 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let chunk = rolling_chunk(self.downcast_iter().next().unwrap());
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
-                    let arr = match chunk.as_no_nulls() {
-                        Some(no_nulls) => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _, _>(
-                            no_nulls,
-                            offset_iter,
-                            None,
-                        ),
-                        None => {
-                            _rolling_apply_agg_window_nulls::<rolling::nulls::MinWindow<_>, _, _, _>(
-                                &chunk,
-                                offset_iter,
-                                None,
-                            )
-                        },
-                    };
+                    let arr = _rolling_apply_agg_window::<
+                        MinWindow<_>,
+                        rolling::nulls::MinWindow<_>,
+                        _,
+                        _,
+                        _,
+                    >(
+                        self.downcast_iter().next().unwrap(), offset_iter, None
+                    );
                     Self::with_chunk(PlSmallStr::EMPTY, arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
@@ -641,24 +655,14 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let chunk = rolling_chunk(self.downcast_as_array());
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
-                    let idx_arr = match chunk.as_no_nulls() {
-                        Some(no_nulls) => {
-                            _rolling_apply_agg_window_no_nulls::<ArgMinWindow<_>, _, _, IdxSize>(
-                                no_nulls,
-                                offset_iter,
-                                None,
-                            )
-                        },
-                        None => {
-                            _rolling_apply_agg_window_nulls::<ArgMinWindow<_>, _, _, IdxSize>(
-                                &chunk,
-                                offset_iter,
-                                None,
-                            )
-                        },
-                    };
+                    let idx_arr = _rolling_apply_agg_window::<
+                        ArgMinWindow<_>,
+                        ArgMinWindow<_>,
+                        _,
+                        _,
+                        IdxSize,
+                    >(self.downcast_as_array(), offset_iter, None);
 
                     IdxCa::with_chunk(PlSmallStr::EMPTY, idx_arr).into_series()
                 } else {
@@ -722,22 +726,16 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let chunk = rolling_chunk(self.downcast_iter().next().unwrap());
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
-                    let arr = match chunk.as_no_nulls() {
-                        Some(no_nulls) => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _, _>(
-                            no_nulls,
-                            offset_iter,
-                            None,
-                        ),
-                        None => {
-                            _rolling_apply_agg_window_nulls::<rolling::nulls::MaxWindow<_>, _, _, _>(
-                                &chunk,
-                                offset_iter,
-                                None,
-                            )
-                        },
-                    };
+                    let arr = _rolling_apply_agg_window::<
+                        MaxWindow<_>,
+                        rolling::nulls::MaxWindow<_>,
+                        _,
+                        _,
+                        _,
+                    >(
+                        self.downcast_iter().next().unwrap(), offset_iter, None
+                    );
                     Self::with_chunk(PlSmallStr::EMPTY, arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
@@ -825,24 +823,16 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let chunk = rolling_chunk(self.downcast_iter().next().unwrap());
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
-                    let idx_arr = match chunk.as_no_nulls() {
-                        Some(no_nulls) => {
-                            _rolling_apply_agg_window_no_nulls::<ArgMaxWindow<_>, _, _, IdxSize>(
-                                no_nulls,
-                                offset_iter,
-                                None,
-                            )
-                        },
-                        None => {
-                            _rolling_apply_agg_window_nulls::<ArgMaxWindow<_>, _, _, IdxSize>(
-                                &chunk,
-                                offset_iter,
-                                None,
-                            )
-                        },
-                    };
+                    let idx_arr = _rolling_apply_agg_window::<
+                        ArgMaxWindow<_>,
+                        ArgMaxWindow<_>,
+                        _,
+                        _,
+                        IdxSize,
+                    >(
+                        self.downcast_iter().next().unwrap(), offset_iter, None
+                    );
                     IdxCa::with_chunk(PlSmallStr::EMPTY, idx_arr).into_series()
                 } else {
                     _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
@@ -900,24 +890,16 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let chunk = rolling_chunk(self.downcast_iter().next().unwrap());
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
-                    let arr = match chunk.as_no_nulls() {
-                        Some(no_nulls) => _rolling_apply_agg_window_no_nulls::<
-                            SumWindow<T::Native, T::Native>,
-                            _,
-                            _,
-                            _,
-                        >(no_nulls, offset_iter, None),
-                        None => {
-                            _rolling_apply_agg_window_nulls::<
-                                SumWindow<T::Native, T::Native>,
-                                _,
-                                _,
-                                _,
-                            >(&chunk, offset_iter, None)
-                        },
-                    };
+                    let arr = _rolling_apply_agg_window::<
+                        SumWindow<T::Native, T::Native>,
+                        SumWindow<T::Native, T::Native>,
+                        _,
+                        _,
+                        _,
+                    >(
+                        self.downcast_iter().next().unwrap(), offset_iter, None
+                    );
                     Self::with_chunk(PlSmallStr::EMPTY, arr).into_series()
                 } else {
                     _agg_helper_slice_no_null::<T, _>(groups, |[first, len]| {
@@ -994,22 +976,12 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let chunk = rolling_chunk(self.downcast_iter().next().unwrap());
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
-                    let arr = match chunk.as_no_nulls() {
-                        Some(no_nulls) => _rolling_apply_agg_window_no_nulls::<MeanWindow<_>, _, _, _>(
-                            no_nulls,
-                            offset_iter,
-                            None,
-                        ),
-                        None => {
-                            _rolling_apply_agg_window_nulls::<MeanWindow<_>, _, _, _>(
-                                &chunk,
-                                offset_iter,
-                                None,
-                            )
-                        },
-                    };
+                    let arr = _rolling_apply_agg_window::<MeanWindow<_>, MeanWindow<_>, _, _, _>(
+                        self.downcast_iter().next().unwrap(),
+                        offset_iter,
+                        None,
+                    );
                     ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
@@ -1057,30 +1029,18 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let chunk = rolling_chunk(self.downcast_iter().next().unwrap());
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
-                    let arr = match chunk.as_no_nulls() {
-                        Some(no_nulls) => _rolling_apply_agg_window_no_nulls::<
-                            MomentWindow<_, VarianceMoment>,
-                            _,
-                            _,
-                            _,
-                        >(
-                            no_nulls,
-                            offset_iter,
-                            Some(RollingFnParams::Var(RollingVarParams { ddof })),
-                        ),
-                        None => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::MomentWindow<_, VarianceMoment>,
-                            _,
-                            _,
-                            _,
-                        >(
-                            &chunk,
-                            offset_iter,
-                            Some(RollingFnParams::Var(RollingVarParams { ddof })),
-                        ),
-                    };
+                    let arr = _rolling_apply_agg_window::<
+                        MomentWindow<_, VarianceMoment>,
+                        rolling::nulls::MomentWindow<_, VarianceMoment>,
+                        _,
+                        _,
+                        _,
+                    >(
+                        self.downcast_iter().next().unwrap(),
+                        offset_iter,
+                        Some(RollingFnParams::Var(RollingVarParams { ddof })),
+                    );
                     ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
@@ -1132,30 +1092,18 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let chunk = rolling_chunk(ca.downcast_iter().next().unwrap());
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
-                    let arr = match chunk.as_no_nulls() {
-                        Some(no_nulls) => _rolling_apply_agg_window_no_nulls::<
-                            MomentWindow<_, VarianceMoment>,
-                            _,
-                            _,
-                            _,
-                        >(
-                            no_nulls,
-                            offset_iter,
-                            Some(RollingFnParams::Var(RollingVarParams { ddof })),
-                        ),
-                        None => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::MomentWindow<_, rolling::nulls::VarianceMoment>,
-                            _,
-                            _,
-                            _,
-                        >(
-                            &chunk,
-                            offset_iter,
-                            Some(RollingFnParams::Var(RollingVarParams { ddof })),
-                        ),
-                    };
+                    let arr = _rolling_apply_agg_window::<
+                        MomentWindow<_, VarianceMoment>,
+                        rolling::nulls::MomentWindow<_, rolling::nulls::VarianceMoment>,
+                        _,
+                        _,
+                        _,
+                    >(
+                        ca.downcast_iter().next().unwrap(),
+                        offset_iter,
+                        Some(RollingFnParams::Var(RollingVarParams { ddof })),
+                    );
 
                     let mut ca = ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr);
                     ca.apply_mut(|v| v.powf(NumCast::from(0.5).unwrap()));
