@@ -5,7 +5,7 @@ use arrow::array::{Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticAr
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and_many;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
+use polars_core::prelude::row_encode::_get_rows_encoded_unordered_hashed;
 use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType, *};
 use polars_core::series::Series;
 use polars_utils::IdxSize;
@@ -116,7 +116,9 @@ impl HashKeys {
             || first_col_variant == HashKeysVariant::RowEncoded;
         if use_row_encoding {
             let keys = df.columns();
-            let mut keys_encoded = _get_rows_encoded_unordered(keys).unwrap().into_array();
+            let (rows, hashes) =
+                _get_rows_encoded_unordered_hashed(keys, &random_state).unwrap();
+            let mut keys_encoded = rows.into_array();
 
             if !null_is_valid {
                 let validities = keys
@@ -127,14 +129,6 @@ impl HashKeys {
                 keys_encoded.set_validity(combined);
             }
 
-            // TODO: use vechash? Not supported yet for lists.
-            // let mut hashes = Vec::with_capacity(df.height());
-            // columns_to_hashes(df.columns(), Some(random_state), &mut hashes).unwrap();
-
-            let hashes = keys_encoded
-                .values_iter()
-                .map(|k| random_state.hash_one(k))
-                .collect();
             Self::RowEncoded(RowEncodedKeys {
                 hashes: PrimitiveArray::from_vec(hashes),
                 keys: keys_encoded,

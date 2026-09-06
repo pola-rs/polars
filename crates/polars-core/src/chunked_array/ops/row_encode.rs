@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 
 use arrow::compute::utils::combine_validities_and_many;
-use polars_row::{RowEncodingContext, RowEncodingOptions, RowsEncoded, convert_columns};
+use polars_row::{
+    RowEncodingContext, RowEncodingOptions, RowsEncoded, convert_columns, convert_columns_hashed,
+};
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -175,6 +177,33 @@ pub fn encode_rows_unordered(by: &[Column]) -> PolarsResult<BinaryOffsetChunked>
 }
 
 pub fn _get_rows_encoded_unordered(by: &[Column]) -> PolarsResult<RowsEncoded> {
+    let (cols, opts, ctxts, num_rows) = unordered_encoding_inputs(by);
+    Ok(convert_columns(num_rows, &cols, &opts, &ctxts))
+}
+
+/// As [`_get_rows_encoded_unordered`], but also returns a hash per encoded row.
+pub fn _get_rows_encoded_unordered_hashed(
+    by: &[Column],
+    random_state: &PlRandomState,
+) -> PolarsResult<(RowsEncoded, Vec<u64>)> {
+    let (cols, opts, ctxts, num_rows) = unordered_encoding_inputs(by);
+    Ok(convert_columns_hashed(
+        num_rows,
+        &cols,
+        &opts,
+        &ctxts,
+        random_state,
+    ))
+}
+
+type UnorderedEncodingInputs = (
+    Vec<ArrayRef>,
+    Vec<RowEncodingOptions>,
+    Vec<Option<RowEncodingContext>>,
+    usize,
+);
+
+fn unordered_encoding_inputs(by: &[Column]) -> UnorderedEncodingInputs {
     let mut cols = Vec::with_capacity(by.len());
     let mut opts = Vec::with_capacity(by.len());
     let mut ctxts = Vec::with_capacity(by.len());
@@ -199,7 +228,7 @@ pub fn _get_rows_encoded_unordered(by: &[Column]) -> PolarsResult<RowsEncoded> {
         opts.push(opt);
         ctxts.push(ctxt);
     }
-    Ok(convert_columns(num_rows, &cols, &opts, &ctxts))
+    (cols, opts, ctxts, num_rows)
 }
 
 pub fn _get_rows_encoded(

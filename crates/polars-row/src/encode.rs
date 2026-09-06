@@ -1,4 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+use std::hash::BuildHasher;
 use std::mem::MaybeUninit;
 
 use arrow::array::{
@@ -9,6 +10,7 @@ use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::{NativeType, Offset};
 use polars_dtype::categorical::CatNative;
+use polars_utils::aliases::PlRandomState;
 use polars_utils::float16::pf16;
 
 use crate::fixed::numeric::FixedLengthEncoding;
@@ -70,6 +72,53 @@ pub fn convert_columns_amortized<'a>(
     fields: impl IntoIterator<Item = (RowEncodingOptions, Option<&'a RowEncodingContext>)> + Clone,
     rows: &mut RowsEncoded,
 ) {
+    convert_columns_amortized_impl(num_rows, columns, fields, rows, None);
+}
+
+/// As [`convert_columns`], but also returns a hash per encoded row.
+///
+/// The hashes are equivalent to hashing each row of the output afterwards.
+pub fn convert_columns_hashed(
+    num_rows: usize,
+    columns: &[ArrayRef],
+    opts: &[RowEncodingOptions],
+    dicts: &[Option<RowEncodingContext>],
+    random_state: &PlRandomState,
+) -> (RowsEncoded, Vec<u64>) {
+    let mut rows = RowsEncoded::new(vec![], vec![]);
+    let mut hashes = Vec::new();
+    convert_columns_amortized_hashed(
+        num_rows,
+        columns,
+        opts.iter().copied().zip(dicts.iter().map(|v| v.as_ref())),
+        &mut rows,
+        &mut hashes,
+        random_state,
+    );
+    (rows, hashes)
+}
+
+/// Encodes the columns and additionally returns a hash per encoded row.
+///
+/// The hashes are equivalent to hashing each row of the output afterwards.
+pub fn convert_columns_amortized_hashed<'a>(
+    num_rows: usize,
+    columns: &[ArrayRef],
+    fields: impl IntoIterator<Item = (RowEncodingOptions, Option<&'a RowEncodingContext>)> + Clone,
+    rows: &mut RowsEncoded,
+    hashes: &mut Vec<u64>,
+    random_state: &PlRandomState,
+) {
+    convert_columns_amortized_impl(num_rows, columns, fields, rows, Some((hashes, random_state)));
+}
+
+fn convert_columns_amortized_impl<'a>(
+    num_rows: usize,
+    columns: &[ArrayRef],
+    fields: impl IntoIterator<Item = (RowEncodingOptions, Option<&'a RowEncodingContext>)> + Clone,
+    rows: &mut RowsEncoded,
+    mut hash_out: Option<(&mut Vec<u64>, &PlRandomState)>,
+) {
     let mut masked_out_max_length = 0;
     let mut row_widths = RowWidths::new(num_rows);
     let mut encoders = columns
@@ -100,7 +149,11 @@ pub fn convert_columns_amortized<'a>(
 
     let masked_out_write_offset = total_num_bytes;
     let mut scratches = EncodeScratches::default();
+    let mut hashed_while_encoding = false;
     if encoders.len() > 1 && encoders.iter().all(|e| e.state.is_none()) {
+        if let Some((hashes, _)) = hash_out.as_mut() {
+            hashes.reserve(num_rows);
+        }
         let mut start = 0;
         while start < num_rows {
             let len = ENCODE_ROW_TILE.min(num_rows - start);
@@ -116,8 +169,20 @@ pub fn convert_columns_amortized<'a>(
                     )
                 };
             }
+            if let Some((hashes, random_state)) = hash_out.as_mut() {
+                for i in start..start + len {
+                    let row = unsafe {
+                        std::slice::from_raw_parts(
+                            buffer.as_ptr().add(offsets[i]).cast::<u8>(),
+                            offsets[i + 1] - offsets[i],
+                        )
+                    };
+                    hashes.push(random_state.hash_one(row));
+                }
+            }
             start += len;
         }
+        hashed_while_encoding = hash_out.is_some();
     } else {
         for (encoder, (opt, dict)) in encoders.iter_mut().zip(fields) {
             unsafe {
@@ -136,6 +201,17 @@ pub fn convert_columns_amortized<'a>(
     // SAFETY: All the bytes in out up to total_num_bytes should now be initialized.
     unsafe {
         out.set_len(total_num_bytes);
+    }
+
+    if let Some((hashes, random_state)) = hash_out {
+        if !hashed_while_encoding {
+            hashes.reserve(num_rows);
+            hashes.extend(
+                offsets
+                    .windows(2)
+                    .map(|w| random_state.hash_one(&out[w[0]..w[1]])),
+            );
+        }
     }
 
     *rows = RowsEncoded {
