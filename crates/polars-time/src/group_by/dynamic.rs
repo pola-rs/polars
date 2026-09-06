@@ -315,10 +315,11 @@ impl Wrap<&DataFrame> {
         };
 
         let groups = if let Some(groups) = group_by.as_ref() {
-            // TODO(polars-array-scalar): the windowing kernels read the timestamps as a slice, so
-            // a scalar chunk is written out rather than its single value being read once.
-            let vals = dt.physical().downcast_iter().next().unwrap().to_flat();
-            let ts = vals.values().as_slice();
+            // The windowers read the timestamps and nothing else, so the mask is left in whatever
+            // representation it is in; only a values buffer that repeats one timestamp is written
+            // out. A `to_flat()` here would write the mask out along with it.
+            let vals = dt.physical().downcast_as_array().to_flat_values();
+            let ts = vals.as_slice();
 
             let iter = groups.par_iter().map(|[start, len]| {
                 let group_offset = *start;
@@ -363,10 +364,11 @@ impl Wrap<&DataFrame> {
             update_bounds(lower, upper);
             PolarsResult::Ok(GroupsType::new_slice(groups, overlapping, true))
         } else {
-            // TODO(polars-array-scalar): the windowing kernels read the timestamps as a slice, so
-            // a scalar chunk is written out rather than its single value being read once.
-            let vals = dt.physical().downcast_iter().next().unwrap().to_flat();
-            let ts = vals.values().as_slice();
+            // The windowers read the timestamps and nothing else, so the mask is left in whatever
+            // representation it is in; only a values buffer that repeats one timestamp is written
+            // out. A `to_flat()` here would write the mask out along with it.
+            let vals = dt.physical().downcast_as_array().to_flat_values();
+            let ts = vals.as_slice();
             let (groups, lower, upper) = group_by_windows(
                 w,
                 ts,
@@ -436,10 +438,11 @@ impl Wrap<&DataFrame> {
 
         let groups = if let Some(groups) = group_by {
             let dt = dt.datetime().unwrap();
-            // TODO(polars-array-scalar): the windowing kernels read the timestamps as a slice, so
-            // a scalar chunk is written out rather than its single value being read once.
-            let vals = dt.physical().downcast_iter().next().unwrap().to_flat();
-            let ts = vals.values().as_slice();
+            // The windowers read the timestamps and nothing else, so the mask is left in whatever
+            // representation it is in; only a values buffer that repeats one timestamp is written
+            // out. A `to_flat()` here would write the mask out along with it.
+            let vals = dt.physical().downcast_as_array().to_flat_values();
+            let ts = vals.as_slice();
 
             let iter = groups.into_par_iter().map(|[start, len]| {
                 let group_offset = start;
@@ -473,10 +476,11 @@ impl Wrap<&DataFrame> {
             // so we can set this such that downstream code has this info
             dt.set_sorted_flag(IsSorted::Ascending);
             let dt = dt.datetime().unwrap();
-            // TODO(polars-array-scalar): the windowing kernels read the timestamps as a slice, so
-            // a scalar chunk is written out rather than its single value being read once.
-            let vals = dt.physical().downcast_iter().next().unwrap().to_flat();
-            let ts = vals.values().as_slice();
+            // The windowers read the timestamps and nothing else, so the mask is left in whatever
+            // representation it is in; only a values buffer that repeats one timestamp is written
+            // out. A `to_flat()` here would write the mask out along with it.
+            let vals = dt.physical().downcast_as_array().to_flat_values();
+            let ts = vals.as_slice();
             let groups = group_by_values(
                 options.period,
                 options.offset,

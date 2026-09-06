@@ -603,20 +603,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
             return Cow::Borrowed(flat);
         }
 
-        // Writing the repeated value out is the one costly step here, and it reads nothing of the
-        // value but its bytes, so it is taken over the byte class of `T` rather than over `T`.
-        let values = if self.values_are_flat() {
-            self.values.clone()
-        } else if self.length == 0 {
-            Buffer::new()
-        } else if self.scalar_value() == Some(None) {
-            // Every element is null, and the value of a null element is undetermined, so the
-            // repeated value need not be written out: a zeroed buffer stands in for it.
-            bytes::buffer_from_bytes::<T>(bytes::undetermined(self.length))
-        } else {
-            let value = bytes::to_bytes(self.values[0]);
-            bytes::buffer_from_bytes::<T>(bytes::repeat(value, self.length))
-        };
+        let values = self.to_flat_values().into_owned();
 
         let validity = self
             .validity()
@@ -630,6 +617,34 @@ impl<T: NativeType> PlPrimitiveArray<T> {
                 length: self.length,
                 validity,
             })
+        })
+    }
+
+    /// The values buffer holding one slot per element, writing a repeated value out only when it
+    /// is stored as one.
+    ///
+    /// This reads nothing of the validity mask, so an array whose values are already laid out one
+    /// slot per element hands its buffer over as it stands whatever representation the mask is in
+    /// — where [`Self::to_flat`] would have to write a repeated mask out along with it. Reach for
+    /// this where a kernel walks the values and resolves the mask itself, or ignores it entirely.
+    pub fn to_flat_values(&self) -> Cow<'_, Buffer<T>> {
+        if self.values_are_flat() {
+            return Cow::Borrowed(&self.values);
+        }
+
+        if self.length == 0 {
+            return Cow::Owned(Buffer::new());
+        }
+
+        // Writing the repeated value out is the one costly step here, and it reads nothing of the
+        // value but its bytes, so it is taken over the byte class of `T` rather than over `T`.
+        Cow::Owned(if self.scalar_value() == Some(None) {
+            // Every element is null, and the value of a null element is undetermined, so the
+            // repeated value need not be written out: a zeroed buffer stands in for it.
+            bytes::buffer_from_bytes::<T>(bytes::undetermined(self.length))
+        } else {
+            let value = bytes::to_bytes(self.values[0]);
+            bytes::buffer_from_bytes::<T>(bytes::repeat(value, self.length))
         })
     }
 

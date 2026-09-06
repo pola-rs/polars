@@ -5,7 +5,7 @@ use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    Column, DataType, FlatChunkedArray, GroupsType, Int64Chunked, IntoColumn, TimeUnit,
+    Column, DataType, GroupsType, Int64Chunked, IntoColumn, TimeUnit,
 };
 use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
@@ -221,18 +221,18 @@ impl DynamicGroupBy {
         } else {
             let mut offset = self.windower.num_seen() - self.buf_df_offset;
             let ca = self.buf_index_column.datetime()?;
-            // TODO(polars-array-scalar): the windower takes the timestamps as a slice, so a scalar
-            // chunk has to be written out; a broadcasting iterator would keep it `O(1)`.
-            let physical = ca.physical().to_flat();
-            for arr in physical.flat_chunks() {
+            for arr in ca.physical().downcast_iter() {
                 let arr_len = arr.len() as IdxSize;
                 if offset >= arr_len {
                     offset -= arr_len;
                     continue;
                 }
 
+                // The windower reads the timestamps and nothing else, so only a values buffer
+                // that repeats one timestamp is written out; the mask is left as it is.
+                let values = arr.to_flat_values();
                 self.windower.insert(
-                    &arr.values().as_slice()[offset as usize..],
+                    &values.as_slice()[offset as usize..],
                     &mut windows,
                     &mut lower_bound,
                     &mut upper_bound,

@@ -1,4 +1,3 @@
-use polars_buffer::Buffer;
 use polars_time::prelude::RollingWindower;
 use polars_time::{ClosedWindow, Duration, PolarsTemporalGroupby, RollingGroupOptions};
 use polars_utils::UnitVec;
@@ -112,18 +111,13 @@ impl PhysicalExpr for RollingExpr {
             ComputeError: "null values in `rolling` not supported, fill nulls."
         );
         let index_column_data = index_column_data.to_physical_repr().rechunk();
-        let chunk = index_column_data
+        // The windower reads the timestamps and nothing else, so only a values buffer that repeats
+        // one timestamp is written out; the mask is left in whatever representation it is in.
+        let timestamps = index_column_data
             .i64()
             .expect("a datetime reads as its i64 timestamps")
-            .downcast_iter()
-            .next()
-            .expect("a rechunked column holds one chunk");
-        // TODO(polars-array-scalar): the windower reads the timestamps as a slice, so a chunk that
-        // repeats one timestamp is written out here rather than that timestamp being read once.
-        let timestamps = match chunk.scalar_values() {
-            Some(value) => Buffer::from(vec![value; chunk.len()]),
-            None => chunk.flat_values().unwrap().clone(),
-        };
+            .downcast_as_array()
+            .to_flat_values();
         let mut index_column_data = Cow::Borrowed(timestamps.as_slice());
         let mut rolling =
             RollingWindower::new(self.period, self.offset, self.closed_window, time_unit, tz);

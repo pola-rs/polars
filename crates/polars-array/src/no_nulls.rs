@@ -159,7 +159,7 @@ mod tests {
 
     use crate::bitmap::PlBitmap;
     use crate::static_array::StaticArray;
-    use crate::{PlArray, PlPrimitiveArray};
+    use crate::PlPrimitiveArray;
 
     #[test]
     fn an_array_without_a_mask_has_no_nulls() {

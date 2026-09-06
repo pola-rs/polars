@@ -275,3 +275,37 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod to_flat_values_tests {
+    use arrow::bitmap::Bitmap;
+
+    use crate::bitmap::PlBitmap;
+    use crate::PlPrimitiveArray;
+
+    /// A values buffer that already holds one slot per element is handed over as the very
+    /// allocation it is, whatever representation the mask is in.
+    #[test]
+    fn flat_values_are_borrowed_past_a_repeated_mask() {
+        let arr = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
+            .with_validity(Some(PlBitmap::new_scalar(false, 3)));
+        assert!(arr.to_flat().validity().is_some_and(|v| v.len() == 3));
+        assert!(matches!(arr.to_flat_values(), std::borrow::Cow::Borrowed(_)));
+    }
+
+    /// A repeated value is written out once per element, and an all-null array stands in a zeroed
+    /// buffer for the value no one reads.
+    #[test]
+    fn a_repeated_values_buffer_is_written_out() {
+        assert_eq!(
+            PlPrimitiveArray::new_scalar(7i32, 4).to_flat_values().as_slice(),
+            [7, 7, 7, 7]
+        );
+
+        let all_null = PlPrimitiveArray::new_scalar(7i32, 4)
+            .with_validity(Some(PlBitmap::from_bitmap(Bitmap::new_zeroed(4))));
+        assert_eq!(all_null.to_flat_values().len(), 4);
+
+        assert!(PlPrimitiveArray::<i32>::new_empty().to_flat_values().is_empty());
+    }
+}

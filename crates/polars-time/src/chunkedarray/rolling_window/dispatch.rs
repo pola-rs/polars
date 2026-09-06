@@ -191,38 +191,23 @@ where
         by_physical = Cow::Owned(unsafe { by_physical.take_unchecked(sorting_indices) });
     }
 
-    // TODO(polars-array-scalar): the rolling kernels read `by`, the values and the sorting indices
-    // as slices, so scalar chunks are written out rather than read once.
-    let by_flat = by_physical.to_flat();
-    let by_values = by_flat.cont_slice().unwrap();
-    let ca_flat = ca_rechunked.to_flat();
-    let arr = ca_flat.flat_as_array();
-    let values = arr.as_slice();
-    let sorting_indices_flat = sorting_indices_opt.as_ref().map(|s| s.to_flat());
+    // `by` and the sorting indices are read for their values alone — `by` has had its nulls taken
+    // out above, and the indices are an `arg_sort` — so only a values buffer that repeats one
+    // value is written out for them; their masks are left as they are.
+    let by_values = by_physical.downcast_as_array().to_flat_values();
+    let by_values = by_values.as_slice();
+    let sorting_indices_flat = sorting_indices_opt
+        .as_ref()
+        .map(|s| s.downcast_as_array().to_flat_values());
+    let sorting_indices_flat = sorting_indices_flat.as_ref().map(|s| s.as_slice());
+
+    let chunk = rolling_chunk(ca_rechunked.downcast_as_array());
 
     // We explicitly branch here because we want to compile different versions based on the no_nulls
     // or nulls kernel.
-    let out: PlArrayRef = if ca.null_count() == 0 {
-        let mut agg_window =
-            RollingAggWindowNoNullsWrapper(NoNullsAgg::new(values, 0, 0, options.fn_params, None));
-
-        rolling_apply_agg(
-            &mut agg_window,
-            options.window_size,
-            by_values,
-            options.closed_window,
-            options.min_periods,
-            tu,
-            tz.as_ref(),
-            sorting_indices_flat
-                .as_ref()
-                .map(|s| s.cont_slice().unwrap()),
-        )?
-    } else {
-        let validity = arr.validity().unwrap();
-        let mut agg_window = RollingAggWindowNullsWrapper(NullsAgg::new(
-            values,
-            validity,
+    let out: PlArrayRef = if let Some(no_nulls) = chunk.as_no_nulls() {
+        let mut agg_window = RollingAggWindowNoNullsWrapper(NoNullsAgg::new(
+            no_nulls.as_slice(),
             0,
             0,
             options.fn_params,
@@ -237,9 +222,29 @@ where
             options.min_periods,
             tu,
             tz.as_ref(),
-            sorting_indices_flat
-                .as_ref()
-                .map(|s| s.cont_slice().unwrap()),
+            sorting_indices_flat,
+        )?
+    } else {
+        let mut agg_window = RollingAggWindowNullsWrapper(NullsAgg::new(
+            chunk.as_slice(),
+            chunk
+                .validity()
+                .expect("a chunk that leaves an element null carries a mask"),
+            0,
+            0,
+            options.fn_params,
+            None,
+        ));
+
+        rolling_apply_agg(
+            &mut agg_window,
+            options.window_size,
+            by_values,
+            options.closed_window,
+            options.min_periods,
+            tu,
+            tz.as_ref(),
+            sorting_indices_flat,
         )?
     };
 

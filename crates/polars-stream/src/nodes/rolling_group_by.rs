@@ -4,7 +4,7 @@ use chrono_tz::Tz;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, DataType, FlatChunkedArray, GroupsType, TimeUnit};
+use polars_core::prelude::{Column, DataType, GroupsType, TimeUnit};
 use polars_core::schema::Schema;
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure};
 use polars_expr::state::ExecutionState;
@@ -135,11 +135,14 @@ impl RollingGroupBy {
     /// Progress the state and get the next available evaluation windows, data and key.
     fn next_windows(&mut self, finalize: bool) -> PolarsResult<Option<NextWindows>> {
         let buf_index_col_dt = self.buf_index_column.datetime()?;
-        // TODO(polars-array-scalar): the windower takes the timestamps as slices, so a scalar
-        // chunk has to be written out; a broadcasting iterator would keep it `O(1)`.
-        let physical = buf_index_col_dt.physical().to_flat();
-        let mut time = Vec::new();
-        time.extend(physical.flat_chunks().map(|arr| arr.values().as_slice()));
+        // The windower reads the timestamps and nothing else, so only a values buffer that repeats
+        // one timestamp is written out; the masks are left as they are.
+        let values = buf_index_col_dt
+            .physical()
+            .downcast_iter()
+            .map(|arr| arr.to_flat_values())
+            .collect::<Vec<_>>();
+        let time = values.iter().map(|arr| arr.as_slice()).collect::<Vec<_>>();
 
         let mut windows = Vec::new();
         let num_retired = if finalize {
