@@ -595,39 +595,48 @@ pub fn moment_agg<'a, S: Default>(
 
     let ca = RAYON.install(|| match &**ac.groups.as_ref() {
         GroupsType::Idx(idx) => {
-            // A group's elements lie at arbitrary positions, so the chunk is laid out one value
-            // per element once here rather than its representation being resolved at every one of
-            // them.
-            //
-            // TODO(polars-array-scalar): that writes out a chunk that repeats a single value,
-            // whose every group is that value with the weight of the group's non-null elements.
-            // Reaching it in `O(1)` per group needs a hook for a repeated value, which the states
-            // only expose to `new_from_slice` below.
-            let arr = arr.to_flat();
-            let values = arr.as_slice();
+            // A group's elements lie at arbitrary positions, so the representation is resolved
+            // once here rather than at every one of them: a chunk that repeats a single value
+            // folds that value in per element without the buffer ever being written out, and one
+            // that holds a slot each is read as the slice it is.
+            macro_rules! fold_groups {
+                ($value_at:expr) => {{
+                    let value_at = $value_at;
 
-            if let Some(validity) = arr.validity().filter(|v| v.unset_bits() > 0) {
-                idx.into_par_iter()
-                    .map(|(_, idx)| {
-                        let mut state = S::default();
-                        for &i in idx.iter() {
-                            if unsafe { validity.get_bit_unchecked(i as usize) } {
-                                insert_one(&mut state, values[i as usize]);
-                            }
-                        }
-                        finalize(state)
-                    })
-                    .collect::<Float64Chunked>()
-            } else {
-                idx.into_par_iter()
-                    .map(|(_, idx)| {
-                        let mut state = S::default();
-                        for &i in idx.iter() {
-                            insert_one(&mut state, values[i as usize]);
-                        }
-                        finalize(state)
-                    })
-                    .collect::<Float64Chunked>()
+                    match arr.validity().filter(|v| v.unset_bits() > 0) {
+                        Some(validity) => idx
+                            .into_par_iter()
+                            .map(|(_, idx)| {
+                                let mut state = S::default();
+                                for &i in idx.iter() {
+                                    // SAFETY: a group names elements of the chunk it groups.
+                                    if unsafe { validity.get_unchecked(i as usize) } {
+                                        insert_one(&mut state, value_at(i as usize));
+                                    }
+                                }
+                                finalize(state)
+                            })
+                            .collect::<Float64Chunked>(),
+                        None => idx
+                            .into_par_iter()
+                            .map(|(_, idx)| {
+                                let mut state = S::default();
+                                for &i in idx.iter() {
+                                    insert_one(&mut state, value_at(i as usize));
+                                }
+                                finalize(state)
+                            })
+                            .collect::<Float64Chunked>(),
+                    }
+                }};
+            }
+
+            match arr.scalar_values() {
+                Some(value) => fold_groups!(|_: usize| value),
+                None => {
+                    let values = arr.flat_values().expect("the values are not repeated");
+                    fold_groups!(|i: usize| values[i])
+                },
             }
         },
         GroupsType::Slice {

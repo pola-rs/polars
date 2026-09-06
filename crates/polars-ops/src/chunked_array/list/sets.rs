@@ -353,10 +353,24 @@ fn array_set_operation(
     set_op: SetOperation,
     inner_dtype: &DataType,
 ) -> PolarsResult<PlListArray> {
+    // Both sides holding the one range every element covers means every element is the same set
+    // operation over the same pair of lists: it is worked out once over a single element and
+    // repeated. The masks are left out of that and combined over the whole length after, since
+    // they are the one thing that still says something different about each element.
+    if a.offsets_are_scalar() && b.offsets_are_scalar() && a.len() > 1 {
+        let one = array_set_operation(
+            &a.clone().sliced(0, 1).without_validity(),
+            &b.clone().sliced(0, 1).without_validity(),
+            set_op,
+            inner_dtype,
+        )?;
+        let validity = combine_validities_and(a.validity(), b.validity());
+
+        return Ok(one.new_from_index(0, a.len()).with_validity(validity));
+    }
+
     // The kernels below read the offsets as a slice and walk the values one element at a time, so
     // a chunk whose offsets repeat is written out first.
-    // TODO(polars-array-scalar): a scalar chunk stands for one list, which could be reduced once
-    // rather than written out.
     let a = a.to_flat();
     let b = b.to_flat();
 

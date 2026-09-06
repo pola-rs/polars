@@ -107,10 +107,6 @@ impl ColumnTransform {
                     Vec::with_capacity(input_list_ca.chunks().len());
 
                 for list_arr in input_list_ca.downcast_iter() {
-                    // TODO(polars-array-scalar): the offsets have to line up one per element with
-                    // the mask the mapped values come back with, so a scalar chunk is written out.
-                    let list_arr = list_arr.to_flat();
-
                     let values: Column = unsafe {
                         Series::from_chunks_and_dtype_unchecked(
                             LIST_VALUES_NAME,
@@ -134,16 +130,17 @@ impl ColumnTransform {
                         .pop()
                         .unwrap();
 
-                    // The offsets and the mask are handed over as they are: only the values were
-                    // mapped, and that leaves their number untouched.
-                    let (_, offsets, length, validity) =
-                        list_arr.into_owned().into_array().into_inner();
-                    let list_arr = PlListArray::new(
-                        values,
-                        offsets,
-                        length,
-                        validity.map(PlBitmap::from_bitmap),
-                    );
+                    // The offsets and the mask are handed over in whatever representation each is
+                    // in: only the values were mapped, and that leaves their number untouched, so
+                    // offsets holding the one range every element covers still hold it.
+                    let validity = list_arr.validity().map(PlBitmap::from);
+                    let offsets_are_scalar = list_arr.offsets_are_scalar();
+                    let (_, offsets, length, _) = list_arr.clone().into_inner();
+
+                    let list_arr = match offsets_are_scalar {
+                        true => PlListArray::new_broadcast(values, offsets, length, validity),
+                        false => PlListArray::new(values, offsets, length, validity),
+                    };
 
                     out_chunks.push(Box::new(list_arr))
                 }
@@ -179,10 +176,6 @@ impl ColumnTransform {
                     Vec::with_capacity(input_array_ca.chunks().len());
 
                 for fixed_size_list_arr in input_array_ca.downcast_iter() {
-                    // TODO(polars-array-scalar): as above, the mask the mapped values come back
-                    // with is laid out one bit per element, so a scalar chunk is written out here.
-                    let fixed_size_list_arr = fixed_size_list_arr.to_flat();
-
                     let values: Column = unsafe {
                         Series::from_chunks_and_dtype_unchecked(
                             LIST_VALUES_NAME,
@@ -206,16 +199,19 @@ impl ColumnTransform {
                         .pop()
                         .unwrap();
 
-                    // The width and the mask are handed over as they are: only the values were
-                    // mapped, and that leaves their number untouched.
-                    let (_, width, length, validity) =
-                        fixed_size_list_arr.into_owned().into_array().into_inner();
-                    let fixed_size_list_arr = PlFixedSizeListArray::new(
-                        values,
-                        width,
-                        length,
-                        validity.map(PlBitmap::from_bitmap),
-                    );
+                    // The width and the mask are handed over in whatever representation each is
+                    // in: only the values were mapped, and that leaves their number untouched, so
+                    // values holding the one list every element reads still hold it.
+                    let validity = fixed_size_list_arr.validity().map(PlBitmap::from);
+                    let values_are_scalar = fixed_size_list_arr.values_are_scalar();
+                    let (_, width, length, _) = fixed_size_list_arr.clone().into_inner();
+
+                    let fixed_size_list_arr = match values_are_scalar {
+                        true => {
+                            PlFixedSizeListArray::new_broadcast(values, width, length, validity)
+                        },
+                        false => PlFixedSizeListArray::new(values, width, length, validity),
+                    };
 
                     out_chunks.push(Box::new(fixed_size_list_arr))
                 }
