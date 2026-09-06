@@ -428,8 +428,6 @@ fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOpt
     };
 
     if ca.null_count() == 0 {
-        // Seed with the first value: for floats, `min_value()` / `max_value()` are not the
-        // extremes of the total order, as `-inf`, `inf` and `NaN` all sort outside them.
         let Some(mut previous) = ca
             .downcast_iter()
             .find_map(|arr| arr.values().first().copied())

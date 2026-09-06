@@ -557,8 +557,6 @@ def test_is_sorted_list_pairwise_fallback_error() -> None:
 def test_is_sorted_float_multiple_chunks(
     values: list[float], descending: bool, dtype: pl.DataType
 ) -> None:
-    # `-inf`, `inf` and `NaN` sort outside the finite `min`/`max` of the type, so the
-    # multi-chunk scan cannot seed its running comparison with those.
     single = pl.Series("a", values, dtype=dtype)
     assert single.n_chunks() == 1
     assert single.is_sorted(descending=descending)
@@ -574,7 +572,6 @@ def test_is_sorted_float_multiple_chunks(
         assert chunked.n_chunks() == 2
         assert chunked.is_sorted(descending=descending)
 
-    # Same, but with an empty leading chunk.
     padded = pl.concat(
         [pl.Series("a", [0.0], dtype=dtype), pl.Series("a", values, dtype=dtype)],
         rechunk=False,
@@ -584,9 +581,6 @@ def test_is_sorted_float_multiple_chunks(
 
 
 def test_is_sorted_boolean_constant_with_sorted_flag() -> None:
-    # A constant series is sorted in both directions. The sorted-flag fast path in
-    # `first_true_idx` / `first_false_idx` must not report an index for a value that
-    # does not occur in the series.
     all_true = pl.Series("a", [True, True, True]).sort()
     assert all_true.flags["SORTED_ASC"]
     assert all_true.is_sorted()
@@ -607,11 +601,6 @@ def test_is_sorted_boolean_constant_with_sorted_flag() -> None:
     reason="the sorted flag short-circuits `is_sorted` without checking null placement"
 )
 def test_is_sorted_flag_respects_null_placement() -> None:
-    # The sorted flag records the order of the values, not where the nulls are.
-    #
-    # Note that fixing this makes `ensure_sorted_arg` (asof join, rolling, upsample,
-    # group_by_dynamic) and the streaming asof join's `check_df_sorted` start rejecting
-    # sorted-but-nulls-last inputs they accept today, because both hardcode
     # `nulls_last = false` for the key column.
     nulls_last = pl.Series("a", [1, 2, None]).sort(nulls_last=True)
     assert nulls_last.flags["SORTED_ASC"]
