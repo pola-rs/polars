@@ -15,7 +15,7 @@
 use std::sync::Arc;
 
 use polars_core::prelude::DataType;
-use polars_core::schema::SchemaRef;
+use polars_core::schema::{Schema, SchemaRef};
 use polars_utils::aliases::InitHashMaps;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -26,7 +26,7 @@ use crate::plans::lit::LiteralValue;
 use crate::plans::stats::{StatsCache, node_stats_with_cache};
 use crate::plans::{
     AExpr, AExprBuilder, ArenaLpIter, ExprIR, IR, IRAggExpr, IRBuilder, JoinOptionsIR,
-    JoinTypeOptionsIR, OutputName, has_aexpr,
+    JoinTypeOptionsIR, OutputName, ToFieldContext, has_aexpr,
 };
 use crate::prelude::{JoinArgs, JoinCoalesce, JoinType, Operator};
 
@@ -240,13 +240,14 @@ fn find_surrogate(
 fn split_expr(
     node: Node,
     sk: &PlSmallStr,
+    schema: &Schema,
     partials: &mut Vec<ExprIR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<Node> {
     let ae = expr_arena.get(node).clone();
 
     if matches!(ae, AExpr::Agg(_) | AExpr::Len) {
-        return split_aggregation(node, &ae, sk, partials, expr_arena);
+        return split_aggregation(node, &ae, sk, schema, partials, expr_arena);
     }
 
     // A bare column in a group-by is the whole group's values, which the second
@@ -258,7 +259,7 @@ fn split_expr(
     let mut inputs = Vec::new();
     ae.inputs_rev(&mut inputs);
     for input in &mut inputs {
-        *input = split_expr(*input, sk, partials, expr_arena)?;
+        *input = split_expr(*input, sk, schema, partials, expr_arena)?;
     }
     inputs.reverse();
     Some(expr_arena.add(ae.replace_inputs(&inputs)))
@@ -269,6 +270,7 @@ fn split_aggregation(
     node: Node,
     ae: &AExpr,
     sk: &PlSmallStr,
+    schema: &Schema,
     partials: &mut Vec<ExprIR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<Node> {
@@ -334,8 +336,23 @@ fn split_aggregation(
         },
         // A mean does not merge, but the sum and the count it is made of do.
         AExpr::Agg(IRAggExpr::Mean(input)) => {
-            let sum = AExprBuilder::agg(IRAggExpr::Sum(*input), expr_arena).node();
-            let count = AExprBuilder::new_from_node(*input)
+            let dtype = expr_arena
+                .get(*input)
+                .to_dtype(&ToFieldContext::new(expr_arena, schema))
+                .ok()?;
+            // A mean accumulates in `f64`, so the partial sums have to as well.
+            // Summing integers as integers rounds differently and can overflow.
+            let input = match dtype {
+                DataType::Float64 => *input,
+                dt if dt.is_integer() || dt.is_bool() => AExprBuilder::new_from_node(*input)
+                    .cast(DataType::Float64, expr_arena)
+                    .node(),
+                // Any other mean has a dtype of its own that a quotient loses.
+                _ => return None,
+            };
+
+            let sum = AExprBuilder::agg(IRAggExpr::Sum(input), expr_arena).node();
+            let count = AExprBuilder::new_from_node(input)
                 .count_opt_nulls(false, expr_arena)
                 .node();
             let total = partial_sum(sum, sk, partials, expr_arena);
@@ -475,7 +492,13 @@ fn try_rewrite(
     let mut merge_aggs = Vec::with_capacity(aggs.len());
     for agg in &aggs {
         let before = partial_aggs.len();
-        let merge = split_expr(agg.node(), &sk, &mut partial_aggs, expr_arena)?;
+        let merge = split_expr(
+            agg.node(),
+            &sk,
+            &input_schema,
+            &mut partial_aggs,
+            expr_arena,
+        )?;
         if partial_aggs.len() == before {
             // Nothing to aggregate; the expression is constant per group.
             return None;
