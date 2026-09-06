@@ -165,14 +165,6 @@ fn find_surrogate(
         cur = next;
     }
 
-    // Surrogates other than a scan are unmeasured.
-    if !matches!(
-        ir_arena.get(cur),
-        IR::Scan { .. } | IR::DataFrameScan { .. }
-    ) {
-        return None;
-    }
-
     (cur != input && keys.len() >= MIN_SURROGATE_KEYS).then_some(Surrogate {
         node: cur,
         path,

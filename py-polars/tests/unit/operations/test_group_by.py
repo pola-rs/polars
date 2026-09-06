@@ -26,6 +26,7 @@ from polars.testing.parametric import column, dataframes, series
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+    from pathlib import Path
 
     from polars._typing import PolarsDataType, TimeUnit
     from tests.conftest import PlMonkeyPatch
@@ -3396,3 +3397,24 @@ def test_group_by_surrogate_key_nulls() -> None:
     off, on = _both(_query(*_surrogate_frames(values)))
     assert_frame_equal(off, on)
     assert on["a"].null_count() > 0
+
+
+def test_group_by_surrogate_key_derived_dimension() -> None:
+    # The surrogate is a computed frame rather than a scan.
+    dim, fact = _surrogate_frames()
+    dim = dim.with_columns(pl.col("a").str.to_uppercase())
+    off, on = _both(_query(dim, fact))
+    assert_frame_equal(off, on)
+    assert on["a"].str.starts_with("ATTRIBUTE").all()
+
+
+def test_group_by_surrogate_key_multi_file_scan(tmp_path: Path) -> None:
+    # A scan whose row order spans several files must be numbered once.
+    dim, fact = _surrogate_frames()
+    frame = dim.collect()
+    for i in range(4):
+        frame.slice(i * 50, 50).write_parquet(tmp_path / f"part-{i}.parquet")
+    scanned = pl.scan_parquet(tmp_path / "part-*.parquet")
+    off, on = _both(_query(scanned, fact))
+    assert_frame_equal(off, on)
+    assert on.height == 200
