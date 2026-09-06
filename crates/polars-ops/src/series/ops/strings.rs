@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use polars_array::bitmap::PlBitmap;
 use polars_array::builder::StaticArrayBuilder;
-use polars_array::{PlArray as _, PlUtf8ViewArrayBuilder, StaticArray as _};
+use polars_array::{PlArray, PlArray as _, PlUtf8ViewArrayBuilder, StaticArray as _};
 use polars_core::prelude::{Column, DataType, IntoColumn, StringChunked};
 use polars_core::scalar::Scalar;
 use polars_error::{PolarsContext, PolarsResult};
@@ -99,6 +99,29 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
         })
         .collect::<Vec<_>>();
 
+    // Every input holding one chunk that repeats a single element makes every row the same string:
+    // it is formatted once and repeated, rather than being written out per row. A mask rules that
+    // out, since it says something different about at least one row.
+    if validity.is_none()
+        && !arrays.is_empty()
+        && arrays
+            .iter()
+            .all(|(_, arr, _)| PlArray::is_scalar(*arr) && arr.len() == output_length)
+    {
+        let mut s = String::new();
+        s.push_str(&format[..insertions[0]]);
+
+        for (j, (_, arr, _)) in arrays.iter().enumerate() {
+            s.push_str(opt_str_to_string(arr.get(0)));
+            let start = insertions[j];
+            let end = insertions.get(j + 1).copied().unwrap_or(format.len());
+            s.push_str(&format[start..end]);
+        }
+
+        let sc = Scalar::from(PlSmallStr::from_str(&s));
+        return Ok(Column::new_scalar(output_name, sc, output_length));
+    }
+
     // @Performance. There is some smarter stuff that can be done with views and stuff. Don't think
     // it is worth the complexity.
 
@@ -142,8 +165,6 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
         builder.push_value(&s);
     }
 
-    // TODO(polars-array-scalar): the rows are formatted one at a time, so a repeated row is
-    // written out once per element rather than formatted once and broadcast.
     let array = builder
         .freeze()
         .with_validity(validity.map(PlBitmap::from_bitmap))

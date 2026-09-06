@@ -159,6 +159,42 @@ where
     out.new_from_index_typed(0, length)
 }
 
+/// [`elementwise_binary_flat`] for a kernel that reads its chunks in whatever representation they
+/// are in, so that only the shortcut is left to take.
+///
+/// `op` must be elementwise, as above. Two scalar chunks are answered by the single element each
+/// repeats; anything else reaches `op` exactly as it stands, since a kernel that resolves its own
+/// representation has nothing to gain from a chunk being written out first.
+#[inline]
+fn elementwise_binary<A, B, Arr, F>(lhs: &A, rhs: &B, op: &mut F) -> Arr
+where
+    A: StaticArray,
+    B: StaticArray,
+    Arr: StaticArray,
+    F: FnMut(&A, &B) -> Arr,
+{
+    // The chunks are aligned, so the two lengths are the same one.
+    let length = lhs.len();
+    if length < 2 || !PlArray::is_scalar(lhs) || !PlArray::is_scalar(rhs) {
+        return op(lhs, rhs);
+    }
+
+    // Sliced down to the one element the chunks repeat, which leaves every buffer holding the
+    // single slot it already held, and is therefore `O(1)`.
+    let (mut lhs, mut rhs) = (lhs.clone(), rhs.clone());
+    lhs.slice(0, 1);
+    rhs.slice(0, 1);
+
+    let out = op(&lhs, &rhs);
+    debug_assert_eq!(
+        out.len(),
+        1,
+        "an elementwise kernel answers one element with one"
+    );
+
+    out.new_from_index_typed(0, length)
+}
+
 /// [`elementwise_flat`] for a kernel that reads two chunks of the same height at once.
 ///
 /// The shortcut is taken only when both chunks are scalar: a kernel reading one flat side cannot
@@ -712,6 +748,29 @@ where
         .downcast_iter()
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| elementwise_binary_flat(lhs_arr, rhs_arr, &mut op));
+    ChunkedArray::from_chunk_iter(name, iter)
+}
+
+/// Applies an elementwise binary kernel that reads its chunks in whatever representation they are
+/// in, taking the shortcut two scalar chunks allow. See [`elementwise_binary`].
+pub fn binary_elementwise_kernel<T, U, V, F, Arr>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+    name: PlSmallStr,
+) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: StaticArray,
+    F: FnMut(&T::Array, &U::Array) -> Arr,
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let iter = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| elementwise_binary(lhs_arr, rhs_arr, &mut op));
     ChunkedArray::from_chunk_iter(name, iter)
 }
 

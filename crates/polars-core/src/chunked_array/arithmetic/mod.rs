@@ -94,14 +94,9 @@ impl Add for &BinaryChunked {
             };
         }
 
-        // TODO(polars-array-scalar): the values are concatenated one pair at a time, so a scalar
-        // chunk is written out rather than the one pair it stands for being concatenated once.
-        arity::binary_elementwise_kernel_flat(
-            self,
-            rhs,
-            |l, r| concat_binview(l, r),
-            self.name().clone(),
-        )
+        // `concat_binview` reads both sides through their broadcasting iterators, so neither is
+        // written out; two chunks that each repeat one value are concatenated once.
+        arity::binary_elementwise_kernel(self, rhs, concat_binview, self.name().clone())
     }
 }
 
