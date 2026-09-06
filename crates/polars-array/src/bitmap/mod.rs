@@ -14,7 +14,7 @@ mod validity;
 pub use iterator::PlBitmapIter;
 pub(crate) use iterator::{ValidityFold, ValidityIter};
 pub use reference::PlBitmapRef;
-pub use validity::{combine_validities_and, invert};
+pub use validity::{combine_validities_and, combine_validities_and3, invert};
 
 /// An immutable, cheaply cloneable mask of `length` bits, in either the flat or the scalar
 /// representation.

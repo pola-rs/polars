@@ -43,6 +43,19 @@ pub fn combine_validities_and(
     }
 }
 
+/// The `and` of three masks over the same elements, or `None` if none of them has a null.
+///
+/// # Panics
+/// Panics if the masks are over a different number of elements.
+pub fn combine_validities_and3(
+    first: Option<PlBitmapRef<'_>>,
+    second: Option<PlBitmapRef<'_>>,
+    third: Option<PlBitmapRef<'_>>,
+) -> Option<PlBitmap> {
+    let head = combine_validities_and(first, second);
+    combine_validities_and(head.as_ref().map(PlBitmap::as_ref), third)
+}
+
 /// The bits of `mask`, inverted: set where an element is null.
 pub fn invert(mask: PlBitmapRef<'_>) -> Bitmap {
     // The backing bitmap is flat or scalar for the mask's length, and inverting it bit for bit
