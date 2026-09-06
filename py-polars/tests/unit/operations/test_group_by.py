@@ -3402,9 +3402,10 @@ def test_group_by_surrogate_key_nulls() -> None:
 def test_group_by_surrogate_key_derived_dimension() -> None:
     # The surrogate is a computed frame rather than a scan.
     dim, fact = _surrogate_frames()
-    dim = dim.with_columns(pl.col("a").str.to_uppercase())
+    dim = dim.with_columns(pl.col("a").str.to_uppercase()).filter(pl.col("id") < 150)
     off, on = _both(_query(dim, fact))
     assert_frame_equal(off, on)
+    assert on.height == 150
     assert on["a"].str.starts_with("ATTRIBUTE").all()
 
 

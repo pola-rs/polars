@@ -32,7 +32,7 @@ use crate::prelude::{JoinArgs, JoinCoalesce, JoinType};
 /// Name of the injected row-number column.
 const SURROGATE_KEY: &str = "__POLARS_SURROGATE_KEY";
 
-/// How much smaller the group-by output must be than its input before the extra
+/// How many rows must flow into the group-by per surrogate row before the extra
 /// aggregation and join pay for themselves.
 const MIN_REDUCTION: f64 = 4.0;
 
@@ -359,23 +359,20 @@ fn try_rewrite(
         return None;
     }
 
-    // Only worth it when the group-by discards most of its input, and when the
-    // surrogate is much smaller than what flows into the group-by.
-    // The three nodes share descendants, so they share one cache.
+    // Only worth it when the surrogate is much smaller than what flows into the
+    // group-by, so that grouping on it collapses many rows into few.
+    // The two nodes share descendants, so they share one cache.
     let cache = &mut StatsCache::new();
     let in_rows = node_stats_with_cache(input, ir_arena, expr_arena, cache)?.filtered;
-    let out_rows = node_stats_with_cache(node, ir_arena, expr_arena, cache)?.filtered;
     let surrogate_rows =
         node_stats_with_cache(surrogate.node, ir_arena, expr_arena, cache)?.filtered;
     if polars_core::config::verbose() {
         eprintln!(
-            "surrogate group-by candidate: {in_rows:.0} rows -> {out_rows:.0} groups \
-             (reduction {:.1}x), surrogate {surrogate_rows:.0} rows, \
-             key {surrogate_width}/{total_width} bytes",
-            in_rows / out_rows,
+            "surrogate group-by candidate: {in_rows:.0} rows over {surrogate_rows:.0} \
+             surrogate rows, key {surrogate_width}/{total_width} bytes",
         );
     }
-    if in_rows < MIN_REDUCTION * out_rows || in_rows < MIN_REDUCTION * surrogate_rows {
+    if in_rows < MIN_REDUCTION * surrogate_rows {
         return None;
     }
 
