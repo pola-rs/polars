@@ -22,15 +22,15 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 use polars_utils::{IdxSize, format_pl_smallstr};
 
+use crate::plans::lit::LiteralValue;
 use crate::plans::stats::{StatsCache, node_stats_with_cache};
 use crate::plans::{
     AExpr, AExprBuilder, ArenaLpIter, ExprIR, IR, IRAggExpr, IRBuilder, JoinOptionsIR,
     JoinTypeOptionsIR, OutputName, has_aexpr,
 };
-use crate::plans::lit::LiteralValue;
 use crate::prelude::{JoinArgs, JoinCoalesce, JoinType, Operator};
 
-/// Name of the injected row-number column.
+/// Base name of the injected row-number column.
 const SURROGATE_KEY: &str = "__POLARS_SURROGATE_KEY";
 
 /// How many rows must flow into the group-by per surrogate row before the extra
@@ -56,6 +56,26 @@ fn encoded_width(dtype: &DataType) -> usize {
     1 + dtype
         .byte_width()
         .map_or(VARIABLE_KEY_WIDTH, |w| w.ceil() as usize)
+}
+
+/// A name for the row-number column that no column in `schemas` shares a prefix
+/// with, so neither it nor the `_PARTIAL_` names derived from it can collide.
+fn unique_surrogate_name(schemas: &[SchemaRef]) -> PlSmallStr {
+    let mut n = 0;
+    loop {
+        let candidate = match n {
+            0 => PlSmallStr::from_static(SURROGATE_KEY),
+            n => format_pl_smallstr!("{SURROGATE_KEY}_{n}"),
+        };
+        let taken = schemas
+            .iter()
+            .flat_map(|schema| schema.iter_names())
+            .any(|name| name.starts_with(candidate.as_str()));
+        if !taken {
+            return candidate;
+        }
+        n += 1;
+    }
 }
 
 pub fn surrogate_group_by(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
@@ -219,13 +239,14 @@ fn find_surrogate(
 /// verbatim around the merged partials.
 fn split_expr(
     node: Node,
+    sk: &PlSmallStr,
     partials: &mut Vec<ExprIR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<Node> {
     let ae = expr_arena.get(node).clone();
 
     if matches!(ae, AExpr::Agg(_) | AExpr::Len) {
-        return split_aggregation(node, &ae, partials, expr_arena);
+        return split_aggregation(node, &ae, sk, partials, expr_arena);
     }
 
     // A bare column in a group-by is the whole group's values, which the second
@@ -237,7 +258,7 @@ fn split_expr(
     let mut inputs = Vec::new();
     ae.inputs_rev(&mut inputs);
     for input in &mut inputs {
-        *input = split_expr(*input, partials, expr_arena)?;
+        *input = split_expr(*input, sk, partials, expr_arena)?;
     }
     inputs.reverse();
     Some(expr_arena.add(ae.replace_inputs(&inputs)))
@@ -247,6 +268,7 @@ fn split_expr(
 fn split_aggregation(
     node: Node,
     ae: &AExpr,
+    sk: &PlSmallStr,
     partials: &mut Vec<ExprIR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<Node> {
@@ -262,24 +284,34 @@ fn split_aggregation(
     }
 
     // Aggregates `expr` in the first phase and returns a column reading it back.
-    fn partial(expr: Node, partials: &mut Vec<ExprIR>, expr_arena: &mut Arena<AExpr>) -> Node {
-        let name = format_pl_smallstr!("__POLARS_PARTIAL_{}", partials.len());
+    fn partial(
+        expr: Node,
+        sk: &PlSmallStr,
+        partials: &mut Vec<ExprIR>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> Node {
+        let name = format_pl_smallstr!("{sk}_PARTIAL_{}", partials.len());
         partials.push(ExprIR::new(expr, OutputName::Alias(name.clone())));
         AExprBuilder::col(name, expr_arena).node()
     }
 
     /// [`partial`], merged by summing what the first phase produced.
-    fn partial_sum(expr: Node, partials: &mut Vec<ExprIR>, expr_arena: &mut Arena<AExpr>) -> Node {
-        let col = partial(expr, partials, expr_arena);
+    fn partial_sum(
+        expr: Node,
+        sk: &PlSmallStr,
+        partials: &mut Vec<ExprIR>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> Node {
+        let col = partial(expr, sk, partials, expr_arena);
         AExprBuilder::new_from_node(col).sum(expr_arena).node()
     }
 
     let merge = match ae {
         AExpr::Len | AExpr::Agg(IRAggExpr::Sum(_)) | AExpr::Agg(IRAggExpr::Count { .. }) => {
-            partial_sum(node, partials, expr_arena)
+            partial_sum(node, sk, partials, expr_arena)
         },
         AExpr::Agg(IRAggExpr::Min { propagate_nans, .. }) => {
-            let input = partial(node, partials, expr_arena);
+            let input = partial(node, sk, partials, expr_arena);
             AExprBuilder::agg(
                 IRAggExpr::Min {
                     input,
@@ -290,7 +322,7 @@ fn split_aggregation(
             .node()
         },
         AExpr::Agg(IRAggExpr::Max { propagate_nans, .. }) => {
-            let input = partial(node, partials, expr_arena);
+            let input = partial(node, sk, partials, expr_arena);
             AExprBuilder::agg(
                 IRAggExpr::Max {
                     input,
@@ -306,8 +338,8 @@ fn split_aggregation(
             let count = AExprBuilder::new_from_node(*input)
                 .count_opt_nulls(false, expr_arena)
                 .node();
-            let total = partial_sum(sum, partials, expr_arena);
-            let n = partial_sum(count, partials, expr_arena);
+            let total = partial_sum(sum, sk, partials, expr_arena);
+            let n = partial_sum(count, sk, partials, expr_arena);
 
             let mean =
                 AExprBuilder::new_from_node(total).binary_op(n, Operator::TrueDivide, expr_arena);
@@ -426,11 +458,24 @@ fn try_rewrite(
         return None;
     }
 
+    // The row number and the partials named after it must not shadow a column the
+    // query already has.
+    let sk = unique_surrogate_name(&{
+        let mut schemas = vec![input_schema.clone()];
+        schemas.push(ir_arena.get(surrogate.node).schema(ir_arena).into_owned());
+        for step in &surrogate.path {
+            if let PathStep::Join { other, .. } = step {
+                schemas.push(ir_arena.get(*other).schema(ir_arena).into_owned());
+            }
+        }
+        schemas
+    });
+
     let mut partial_aggs = Vec::with_capacity(aggs.len());
     let mut merge_aggs = Vec::with_capacity(aggs.len());
     for agg in &aggs {
         let before = partial_aggs.len();
-        let merge = split_expr(agg.node(), &mut partial_aggs, expr_arena)?;
+        let merge = split_expr(agg.node(), &sk, &mut partial_aggs, expr_arena)?;
         if partial_aggs.len() == before {
             // Nothing to aggregate; the expression is constant per group.
             return None;
@@ -440,8 +485,6 @@ fn try_rewrite(
             OutputName::Alias(agg.output_name().clone()),
         ));
     }
-
-    let sk = PlSmallStr::from_static(SURROGATE_KEY);
 
     // Both the narrowed join input and the attribute side read the numbered
     // surrogate, and they only agree if the numbering happens once. A cache is

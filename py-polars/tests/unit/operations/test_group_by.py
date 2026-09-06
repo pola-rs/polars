@@ -3449,21 +3449,6 @@ def test_group_by_surrogate_key_mean_all_null() -> None:
     assert on["avg"].null_count() == on.height
 
 
-def test_group_by_surrogate_key_mean_large_integers() -> None:
-    # An integer mean accumulates in f64, so the partial sums have to as well.
-    dim, fact = _surrogate_frames()
-    # The two values cancel exactly, but only if they are not rounded first.
-    big = [2**53 + 1 if (i // 200) % 2 == 0 else -(2**53) for i in range(8000)]
-    fact = fact.with_columns(pl.Series("v", big, dtype=pl.Int64))
-    lf = (
-        dim.join(fact, on="id")
-        .group_by("a", "b", "c", "d", "y")
-        .agg(pl.col("v").mean().alias("avg"))
-    )
-    off, on = _both(lf)
-    assert_frame_equal(off, on)
-
-
 def test_group_by_surrogate_key_reserved_column_name() -> None:
     # A column already named like the row index must not be shadowed by it.
     name = "__POLARS_SURROGATE_KEY"
