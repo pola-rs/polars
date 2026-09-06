@@ -566,3 +566,17 @@ def test_merge_sorted_multiple_keys_parametric(
 
     expected = pl.concat([left, right]).sort(["key_1", "key_2"], maintain_order=True)
     assert_frame_equal(merged, expected)
+
+
+def test_merge_sorted_row_index_29052() -> None:
+    a = pl.LazyFrame({"k": [0, 1, 2, 3]})
+    b = pl.LazyFrame({"k": [0, 1, 2, 3]})
+    lf = a.merge_sorted(b, key="k", maintain_order=True)
+
+    expected = pl.DataFrame({"k": [0, 0, 1, 1, 2, 2, 3, 3]})
+    for _ in range(10):
+        assert_frame_equal(lf.collect(engine="streaming"), expected)
+        assert_frame_equal(
+            lf.with_row_index("i").collect(engine="streaming").drop("i"),
+            expected,
+        )

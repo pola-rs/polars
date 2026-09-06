@@ -23,6 +23,10 @@ pub struct IcebergSinkState {
     pub schema_mode: Option<IcebergSchemaMode>,
     pub snapshot_properties: BTreeMap<PlSmallStr, PlSmallStr>,
     pub iceberg_storage_properties: BTreeMap<PlSmallStr, PlSmallStr>,
+    pub compression: PlSmallStr,
+    pub compression_level: Option<i32>,
+    pub row_group_size: Option<usize>,
+    pub maintain_order: bool,
 
     pub sink_uuid_str: String,
 

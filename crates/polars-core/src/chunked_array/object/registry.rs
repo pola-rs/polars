@@ -65,6 +65,7 @@ pub trait AnonymousObjectBuilder: ArrayBuilder {
     /// [ObjectChunked<T>]: crate::chunked_array::object::ObjectChunked
     fn append_value(&mut self, value: &dyn Any);
 
+    #[inline]
     fn append_option(&mut self, value: Option<&dyn Any>) {
         match value {
             None => self.append_null(),

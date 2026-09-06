@@ -40,6 +40,8 @@ def scan_iceberg(
     """
     Lazily read from an Apache Iceberg table.
 
+    .. engine-support:: in-memory, streaming, distributed
+
     Parameters
     ----------
     source

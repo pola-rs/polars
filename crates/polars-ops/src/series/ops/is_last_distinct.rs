@@ -17,6 +17,13 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
         return Ok(BooleanChunked::new(s.name().clone(), &[true]));
     }
 
+    // A Map groups on its row-encoded entries, so it must not reach the `List` arm below,
+    // which sees the nested `List(Struct)` storage.
+    #[cfg(feature = "dtype-map")]
+    if matches!(s.dtype(), DataType::Map(_, _)) {
+        return is_last_distinct_by_groups(s);
+    }
+
     let s = s.to_physical_repr();
 
     use DataType::*;
@@ -51,14 +58,13 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             }
         },
         #[cfg(feature = "dtype-struct")]
-        Struct(_) => return is_last_distinct_struct(&s),
+        Struct(_) => return is_last_distinct_by_groups(&s),
         List(inner) => {
             polars_ensure!(
                 !inner.is_nested(),
                 InvalidOperation: "`is_last_distinct` on list type is only allowed if the inner type is not nested."
             );
-            let ca = s.list().unwrap();
-            return is_last_distinct_list(ca);
+            return is_last_distinct_by_groups(&s);
         },
         dt => polars_bail!(opq = is_last_distinct, dt),
     };
@@ -139,8 +145,7 @@ where
         .with_name(ca.name().clone())
 }
 
-#[cfg(feature = "dtype-struct")]
-fn is_last_distinct_struct(s: &Series) -> PolarsResult<BooleanChunked> {
+fn is_last_distinct_by_groups(s: &Series) -> PolarsResult<BooleanChunked> {
     let groups = s.group_tuples(true, false)?;
     // SAFETY: all groups have at least a single member
     let last = unsafe { groups.take_group_lasts() };
@@ -154,20 +159,4 @@ fn is_last_distinct_struct(s: &Series) -> PolarsResult<BooleanChunked> {
 
     let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
     Ok(BooleanChunked::with_chunk(s.name().clone(), arr))
-}
-
-fn is_last_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
-    let groups = ca.group_tuples(true, false)?;
-    // SAFETY: all groups have at least a single member
-    let last = unsafe { groups.take_group_lasts() };
-    let mut out = MutableBitmap::with_capacity(ca.len());
-    out.extend_constant(ca.len(), false);
-
-    for idx in last {
-        // Group tuples are always in bounds
-        unsafe { out.set_unchecked(idx as usize, true) }
-    }
-
-    let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    Ok(BooleanChunked::with_chunk(ca.name().clone(), arr))
 }

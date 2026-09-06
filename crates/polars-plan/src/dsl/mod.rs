@@ -25,6 +25,8 @@ mod from;
 pub mod function_expr;
 pub mod functions;
 mod list;
+#[cfg(feature = "dtype-map")]
+mod map;
 mod match_to_schema;
 #[cfg(feature = "meta")]
 mod meta;
@@ -38,6 +40,7 @@ mod scan_sources;
 mod selector;
 #[cfg(feature = "serde")]
 mod serializable_plan;
+mod sql;
 mod statistics;
 #[cfg(feature = "strings")]
 pub mod string;
@@ -61,6 +64,8 @@ pub use extension::*;
 pub use function_expr::*;
 pub use join::JoinCondition;
 pub use list::*;
+#[cfg(feature = "dtype-map")]
+pub use map::*;
 pub use match_to_schema::*;
 #[cfg(feature = "meta")]
 pub use meta::*;
@@ -76,6 +81,7 @@ use polars_core::series::ops::NullBehavior;
 #[cfg(feature = "is_close")]
 use polars_utils::total_ord::TotalOrdWrap;
 pub use selector::{DataTypeSelector, Selector, TimeUnitSet, TimeZoneSet};
+pub use sql::{CachedSqlStatement, SqlResolver, get_sql_resolver, set_sql_resolver};
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;
@@ -1678,6 +1684,14 @@ impl Expr {
     #[cfg(feature = "dtype-extension")]
     pub fn ext(self) -> extension::ExtensionNameSpace {
         extension::ExtensionNameSpace(self)
+    }
+
+    /// Get the [`map::MapNameSpace`].
+    ///
+    /// Named `map_` because [`Expr::map`] is the elementwise UDF entry point.
+    #[cfg(feature = "dtype-map")]
+    pub fn map_(self) -> map::MapNameSpace {
+        map::MapNameSpace(self)
     }
 
     /// Get the [`struct_::StructNameSpace`].

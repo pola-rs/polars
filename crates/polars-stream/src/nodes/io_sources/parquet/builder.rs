@@ -7,7 +7,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency::get_request_budget;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
-use polars_io::utils::byte_source::DynByteSourceBuilder;
+use polars_io::utils::byte_source::{self, DynByteSourceBuilder, FileReadContext};
 use polars_plan::dsl::ScanSource;
 
 use super::super::shared::pipeline_budget::PipelineBudget;
@@ -22,6 +22,8 @@ pub struct ParquetReaderBuilder {
     pub options: Arc<ParquetOptions>,
     pub pipeline_budget: std::sync::OnceLock<PipelineBudget>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
+    /// Shared with every file in the scan. Only relevant for `DynByteSourceBuilder::FilePread`.
+    pub file_read_context: std::sync::OnceLock<FileReadContext>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
 }
 
@@ -31,6 +33,7 @@ impl std::fmt::Debug for ParquetReaderBuilder {
             .field("first_metadata", &self.first_metadata)
             .field("options", &self.options)
             .field("pipeline_budget", &self.pipeline_budget)
+            .field("read_context", &self.file_read_context)
             .finish()
     }
 }
@@ -135,8 +138,35 @@ impl FileReaderBuilder for ParquetReaderBuilder {
         let byte_source_builder =
             if scan_source.is_cloud_url() || polars_config::config().force_async() {
                 DynByteSourceBuilder::ObjectStore(FetchConfig::random_access())
-            } else {
+            } else if scan_source.is_buffer() {
                 DynByteSourceBuilder::Mmap
+            } else {
+                let read_context = self.file_read_context.get_or_init(|| {
+                    let cfg = polars_config::config();
+                    let enable_o_direct = cfg.direct_io();
+                    let concurrency = cfg.file_read_concurrency().max(1) as usize;
+
+                    // TODO: Posix_fadv should follow the access-pattern, which varies
+                    // by file type and projection.
+                    let fadv = cfg.file_posix_fadv();
+
+                    if config::verbose() {
+                        eprintln!(
+                            "[ParquetReaderBuilder]: file read_context as configured: \
+                                read_concurrency: {concurrency}, \
+                                posix_fadv: {fadv}, \
+                                o_direct: {enable_o_direct}"
+                        );
+                    }
+
+                    FileReadContext {
+                        enable_o_direct,
+                        concurrency,
+                        permits: byte_source::global_read_permits(),
+                        advice: fadv,
+                    }
+                });
+                DynByteSourceBuilder::FilePread(read_context.clone())
             };
 
         let pipeline_budget = self

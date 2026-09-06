@@ -15,6 +15,8 @@ mod extension;
 mod general;
 #[cfg(feature = "pymethods")]
 mod list;
+#[cfg(all(feature = "dtype-map", feature = "pymethods"))]
+mod map;
 #[cfg(all(feature = "meta", feature = "pymethods"))]
 mod meta;
 #[cfg(feature = "pymethods")]

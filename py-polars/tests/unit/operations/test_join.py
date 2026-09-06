@@ -4496,3 +4496,21 @@ def test_join_coalesce_empty_suffix_28783() -> None:
     lf = left.join(right, on="k", how="inner", suffix="")
     expected = pl.LazyFrame({"k": [1], "a": [2], "b": [3]})
     assert_frame_equal(lf, expected)
+
+
+def test_empty_join_result_with_chunked_array_29093() -> None:
+    lhs = pl.DataFrame(
+        {
+            "x": [1, 2, 3],
+            "y": pl.Series(
+                [[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=pl.Array(pl.Int64, 3)
+            ),
+        }
+    )
+    lhs = pl.concat([lhs[:1], lhs[1:]])
+    assert lhs.n_chunks() == 2
+
+    rhs = pl.DataFrame({"x": [0]})
+    result = lhs.join(rhs, on="x")
+    expected = pl.DataFrame(schema={"x": pl.Int64, "y": pl.Array(pl.Int64, 3)})
+    assert_frame_equal(result, expected)

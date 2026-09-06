@@ -1,6 +1,7 @@
+use std::sync::Arc;
+
 use arrow::bitmap::BitmapBuilder;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
-use polars_async::primitives::distributor_channel::distributor_channel;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
@@ -9,17 +10,20 @@ use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::ComputeNode;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::pipe::{RecvPort, SendPort};
+use crate::utils::morsel_distributor::morsel_distributor;
 
 pub struct SortedUnique {
     keys: Vec<usize>,
     row_encode: bool,
     last: Vec<Option<AnyValue<'static>>>,
+    seq_offset: Arc<RelaxedCell<u64>>,
 }
 
 impl SortedUnique {
@@ -39,6 +43,7 @@ impl SortedUnique {
             keys,
             row_encode,
             last,
+            seq_offset: Arc::default(),
         }
     }
 }
@@ -73,8 +78,11 @@ impl ComputeNode for SortedUnique {
         let mut receiver = recv_ports[0].take().unwrap().serial();
         let senders = send_ports[0].take().unwrap().parallel();
 
-        let (mut distributor, distr_receivers) =
-            distributor_channel(senders.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+        let (mut distributor, distr_receivers) = morsel_distributor(
+            senders.len(),
+            *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
+            self.seq_offset.clone(),
+        );
 
         let last = &mut self.last;
         let keys = &self.keys;

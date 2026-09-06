@@ -11,7 +11,7 @@ use polars_utils::total_ord::TotalOrd;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use super::{_finish_join, build_tables};
+use super::{_finish_join, build_tables, build_tables_from_arrays, par_map_collect};
 use crate::frame::IntoDf;
 use crate::series::SeriesMethods;
 

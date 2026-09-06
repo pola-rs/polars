@@ -19,6 +19,7 @@ from polars.datatypes.classes import (
     Int64,
     Int128,
     List,
+    Map,
     Struct,
     Time,
     UInt8,
@@ -130,4 +131,6 @@ TEMPORAL_DTYPES: Final[frozenset[PolarsTemporalType]] = DataTypeGroup(
     frozenset([Date, Time]) | DATETIME_DTYPES | DURATION_DTYPES
 )
 
-NESTED_DTYPES: Final[frozenset[PolarsDataType]] = DataTypeGroup([List, Struct, Array])
+NESTED_DTYPES: Final[frozenset[PolarsDataType]] = DataTypeGroup(
+    [List, Struct, Array, Map]
+)

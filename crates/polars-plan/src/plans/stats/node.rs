@@ -5,6 +5,9 @@
 
 use std::sync::Arc;
 
+use polars_utils::aliases::InitHashMaps;
+#[expect(clippy::disallowed_types)] // We don't iterate over it.
+use polars_utils::aliases::PlHashMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
@@ -12,8 +15,14 @@ use recursive::recursive;
 
 use super::{Card, DEFAULT_REL_ERR, ScanColumnStats, ScanColumnStatsMap, leaf_row_count};
 use crate::plans::{
-    AExpr, ExprIR, IR, IRBooleanFunction, IRFunctionExpr, MintermIter, into_column,
+    AExpr, ExprIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR, MintermIter,
+    into_column,
 };
+use crate::prelude::{JoinType, Operator};
+
+// We don't iterate over it.
+#[expect(clippy::disallowed_types)]
+pub(super) type StatsCache = PlHashMap<Node, Option<NodeStats>>;
 
 /// Fallback selectivity for a filter conjunct with no better estimate.
 const DEFAULT_SELECTIVITY: f64 = 0.2;
@@ -42,14 +51,31 @@ pub struct NodeStats {
 ///
 /// `None` means the subtree is not modelled (a python scan, an opaque function, a
 /// gather by a computed index).
-#[recursive]
 pub fn node_stats(
     node: Node,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
 ) -> Option<NodeStats> {
+    node_stats_with_cache(node, ir_arena, expr_arena, &mut StatsCache::new())
+}
+
+/// [`node_stats`], reusing what `cache` already holds.
+///
+/// Every node is estimated from its inputs, so a caller asking about many nodes of
+/// one subplan would otherwise re-walk the same descendants once per ancestor. The
+/// cache is keyed on [`Node`] and is only valid while the arenas are unchanged.
+#[recursive]
+pub(super) fn node_stats_with_cache(
+    node: Node,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+    cache: &mut StatsCache,
+) -> Option<NodeStats> {
+    if let Some(hit) = cache.get(&node) {
+        return hit.clone();
+    }
     let ir = ir_arena.get(node);
-    match ir {
+    let stats = match ir {
         IR::Scan {
             predicate,
             unified_scan_args,
@@ -85,14 +111,10 @@ pub fn node_stats(
             })
         },
 
-        // An in-memory frame carries its rows with it, so the count is exact.
         IR::DataFrameScan { .. } => {
             let rows = (leaf_row_count(ir).value()? as f64).max(MIN_CARDINALITY);
             Some(NodeStats::of_rows(rows))
         },
-
-        // A group-by emits one row per distinct key, which is never more than its
-        // input and is exactly one when there is no key at all.
         IR::GroupBy {
             input,
             keys,
@@ -100,18 +122,27 @@ pub fn node_stats(
             apply,
             ..
         } => {
-            // A user function may emit any number of rows per group, and a
-            // rolling or dynamic group-by counts windows rather than keys.
+            // Those can produce more groups.
             if apply.is_some() || options.is_rolling() || options.is_dynamic() {
                 return None;
             }
-            let inner = node_stats(*input, ir_arena, expr_arena)?;
+            let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
+            // A computed key holds neither the values nor the distinct count of the
+            // column it is named after, so only a key reading one column contributes.
+            let ndv = keys
+                .iter()
+                .map(|k| into_column(k.node(), expr_arena))
+                .collect::<Option<Vec<_>>>()
+                .and_then(|mut sources| {
+                    // Several keys reading one column split it no finer than one of
+                    // them does, so it must be counted once.
+                    sources.sort_unstable();
+                    sources.dedup();
+                    inner.key_distinct_count_product(&sources)
+                });
             let names: Vec<&PlSmallStr> = keys.iter().map(|k| k.output_name()).collect();
-            Some(one_row_per_group(inner, &names, options.slice))
+            Some(one_row_per_group(inner, &names, ndv, options.slice))
         },
-
-        // `unique` keeps one row per distinct combination of its subset, which is a
-        // group-by over those columns. No subset means every column.
         IR::Distinct { input, options } => {
             let input_schema;
             let names: Vec<&PlSmallStr> = match &options.subset {
@@ -121,14 +152,12 @@ pub fn node_stats(
                     input_schema.iter_names().collect()
                 },
             };
-            let inner = node_stats(*input, ir_arena, expr_arena)?;
-            Some(one_row_per_group(inner, &names, options.slice))
+            let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
+            let ndv = inner.key_distinct_count_product(&names);
+            Some(one_row_per_group(inner, &names, ndv, options.slice))
         },
-
-        // A filter above the scan is equivalent to one pushed into it; predicate
-        // pushdown normally leaves none here, but a leaf need not be a bare scan.
         IR::Filter { input, predicate } => {
-            let inner = node_stats(*input, ir_arena, expr_arena)?;
+            let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             let filtered = apply_predicate(
                 inner.filtered,
                 inner.unfiltered,
@@ -136,37 +165,26 @@ pub fn node_stats(
                 expr_arena,
                 inner.columns.as_deref(),
             );
-            Some(inner.selecting(filtered))
+            Some(inner.filter(filtered))
         },
-
-        // Row-preserving, so they pass both estimates through untouched.
         IR::SimpleProjection { input, .. } | IR::Cache { input, .. } => {
-            node_stats(*input, ir_arena, expr_arena)
+            node_stats_with_cache(*input, ir_arena, expr_arena, cache)
         },
-
-        // A sort keeps every row it is given, and carries its own slice for a top-k.
         IR::Sort { input, slice, .. } => {
-            let inner = node_stats(*input, ir_arena, expr_arena)?;
+            let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             Some(match slice {
                 None => inner,
-                // The dynamic predicate reaches the same rows sooner, it does not
-                // change which ones they are.
-                Some((offset, len, _)) => inner.sliced_by((*offset, *len)),
+                Some((offset, len, _)) => inner.slice((*offset, *len)),
             })
         },
-
-        // A slice narrows the relation the way a filter does.
         IR::Slice { input, offset, len } => {
-            let inner = node_stats(*input, ir_arena, expr_arena)?;
-            Some(inner.sliced_by((*offset, *len as usize)))
+            let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
+            Some(inner.slice((*offset, *len as usize)))
         },
-
-        // A union stacks its inputs, so it holds every row and every key of all of
-        // them. Every input has to be measurable for the sum to mean anything.
         IR::Union { inputs, options } => {
             let mut acc = NodeStats::of_rows(0.0);
             for input in inputs {
-                let inner = node_stats(*input, ir_arena, expr_arena)?;
+                let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
                 acc.filtered += inner.filtered;
                 acc.unfiltered += inner.unfiltered;
                 acc.max_rows = acc.max_rows.zip(inner.max_rows).map(|(a, b)| a + b);
@@ -176,15 +194,54 @@ pub fn node_stats(
             acc.max_rows = acc.max_rows.map(|m| m.max(MIN_CARDINALITY));
             Some(match options.slice {
                 None => acc,
-                Some(slice) => acc.sliced_by(slice),
+                Some(slice) => acc.slice(slice),
             })
         },
+        // Both sides are divided by the shared domain of a key pair, see
+        // `join_cardinality`.
+        IR::Join {
+            input_left,
+            input_right,
+            options,
+            ..
+        } => {
+            // As-of, inequality and range matches are not modelled.
+            let JoinTypeOptionsIR::Equi { on } = &options.options else {
+                return None;
+            };
+            let left = node_stats_with_cache(*input_left, ir_arena, expr_arena, cache)?;
+            let right = node_stats_with_cache(*input_right, ir_arena, expr_arena, cache)?;
 
+            let key_domains = composite_key_domain(
+                on.iter().map(|(left_key, right_key)| {
+                    key_domain(
+                        &left,
+                        left_key.plain_column(expr_arena),
+                        &right,
+                        right_key.plain_column(expr_arena),
+                    )
+                }),
+                left.unfiltered.max(right.unfiltered),
+            );
+            let how = &options.args.how;
+            let rows = |l: f64, r: f64| join_rows(how, l, r, join_cardinality(l, r, key_domains));
+
+            let stats = NodeStats {
+                filtered: rows(left.filtered, right.filtered)?,
+                unfiltered: rows(left.unfiltered, right.unfiltered)?,
+                max_rows: join_max_rows(how, &left, &right),
+                columns: join_columns(&left, &right),
+            };
+            Some(match options.args.slice {
+                None => stats,
+                Some(slice) => stats.slice(slice),
+            })
+        },
         // A gather emits one row per index, and its indices are a frame of their own,
         // so its height is that frame's.
         IR::Gather { input, idxs, .. } => {
-            let idxs = node_stats(*idxs, ir_arena, expr_arena)?;
-            let inner = node_stats(*input, ir_arena, expr_arena)?;
+            let idxs = node_stats_with_cache(*idxs, ir_arena, expr_arena, cache)?;
+            let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             Some(NodeStats {
                 // A gather may repeat a row, so it can be taller than its input, but
                 // it reaches no key the input did not already hold.
@@ -194,49 +251,40 @@ pub fn node_stats(
                 columns: inner.columns,
             })
         },
-
-        // A `select` keeps its input's height when every expression does. Aggregates
-        // collapse the frame to one row, and a mix of the two broadcasts the scalars
-        // back up to the height of the rest.
         IR::Select { input, expr, .. } => {
             if expr.is_empty() || !expr.iter().all(|e| keeps_height(e, expr_arena)) {
                 return None;
             }
-            let inner = node_stats(*input, ir_arena, expr_arena)?;
+            let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             if expr.iter().all(|e| e.is_scalar(expr_arena)) {
                 return Some(NodeStats::of_rows(MIN_CARDINALITY));
             }
             let columns = passed_through_columns(&inner, expr, expr_arena);
             Some(NodeStats { columns, ..inner })
         },
-
-        // `with_columns` adds to the frame it is given rather than replacing it, so
-        // the height is the input's even when every expression is a scalar.
         IR::HStack { input, exprs, .. } => {
-            let inner = node_stats(*input, ir_arena, expr_arena)?;
+            let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             let columns = shadowed_columns(&inner, exprs, expr_arena);
             Some(NodeStats { columns, ..inner })
         },
-
-        // Anything else (python scan, opaque function, unpivot, ...) is not
-        // modelled. Do not guess.
         _ => None,
-    }
+    };
+    cache.insert(node, stats.clone());
+    stats
 }
 
 impl NodeStats {
-    /// The same leaf with fewer of its rows selected. The key domain is untouched:
-    /// the other side of a join still references all of it.
-    fn selecting(mut self, filtered: f64) -> Self {
+    /// The same leaf with fewer of its rows selected. The key domain is untouched.
+    fn filter(mut self, filtered: f64) -> Self {
         self.filtered = filtered;
         self
     }
 
     /// The same leaf narrowed by `slice`, applied to the estimate and the bound.
-    fn sliced_by(mut self, slice: impl Into<Slice> + Clone) -> Self {
+    fn slice(mut self, slice: impl Into<Slice> + Clone) -> Self {
         self.max_rows = self.max_rows.map(|m| sliced(m, slice.clone()));
         let filtered = sliced(self.filtered, slice);
-        self.selecting(filtered)
+        self.filter(filtered)
     }
 
     /// Estimates for a relation of exactly `rows` rows carrying no column
@@ -263,24 +311,81 @@ impl NodeStats {
     /// Distinct values in `name`, when known well enough to steer a decision.
     ///
     /// Never more than the rows the node emits.
-    fn ndv(&self, name: &str) -> Option<f64> {
+    fn distinct_count_key(&self, name: &str) -> Option<f64> {
         let distinct = self.column(name)?.distinct.confident(MAX_NDV_REL_ERR)?;
         Some((distinct as f64).clamp(MIN_CARDINALITY, self.unfiltered))
     }
 
-    /// Distinct values in `key`, when it is a plain column with a known NDV.
-    fn distinct_count(&self, key: &ExprIR) -> Option<f64> {
-        self.ndv(key.output_name_inner().get()?)
+    /// Values `name` could hold, from its integer range. Estimates its distinct
+    /// count from above, for a column of a scan that carried min/max.
+    fn int_domain(&self, name: &str) -> Option<f64> {
+        let domain = self.column(name)?.int_domain()?;
+        Some(domain.clamp(MIN_CARDINALITY, self.unfiltered))
     }
 
     /// Distinct combinations of `keys`, or `None` unless every one is known.
     ///
     /// The product assumes the keys are independent, which is an upper bound; the
     /// caller caps it at the row count.
-    fn key_ndv_product(&self, keys: &[&PlSmallStr]) -> Option<f64> {
+    fn key_distinct_count_product(&self, keys: &[&PlSmallStr]) -> Option<f64> {
         keys.iter()
-            .map(|name| self.ndv(name))
+            .map(|name| self.distinct_count_key(name))
             .try_fold(1.0, |acc, ndv| Some(acc * ndv?))
+    }
+}
+
+/// Rows a join of the given type emits, given the sizes of its sides and the rows an
+/// inner join of them would emit. `None` for a join type that is not modelled.
+fn join_rows(how: &JoinType, left: f64, right: f64, inner: f64) -> Option<f64> {
+    let rows = match how {
+        JoinType::Inner => inner,
+        // An outer side keeps every row it has, matched or not.
+        JoinType::Left => inner.max(left),
+        JoinType::Right => inner.max(right),
+        JoinType::Full => inner.max(left + right),
+        // A semi-join emits the left rows that matched, an anti-join the rest.
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Semi => inner.min(left),
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Anti => left - inner.min(left),
+        JoinType::Cross => left * right,
+        // As-of, inequality and range matches are not modelled.
+        _ => return None,
+    };
+    Some(rows.max(MIN_CARDINALITY))
+}
+
+/// A bound on the rows a join emits, for the types that have one. An equi-join can
+/// repeat a row of either side once per match on the other, so most of them do not.
+fn join_max_rows(how: &JoinType, left: &NodeStats, right: &NodeStats) -> Option<f64> {
+    match how {
+        // Every pair, and no more.
+        JoinType::Cross => Some(left.max_rows? * right.max_rows?),
+        // Both keep a subset of the left side.
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Semi | JoinType::Anti => left.max_rows,
+        _ => None,
+    }
+}
+
+/// Column statistics of a join output: those of both sides, minus any name they
+/// share. A shared name is either coalesced or suffixed, and which side the output
+/// column came from is no longer clear.
+fn join_columns(left: &NodeStats, right: &NodeStats) -> Option<Arc<ScanColumnStatsMap>> {
+    match (&left.columns, &right.columns) {
+        (None, None) => None,
+        (Some(columns), None) | (None, Some(columns)) => Some(columns.clone()),
+        (Some(left), Some(right)) => {
+            let mut merged = ScanColumnStatsMap::default();
+            let mut take_from = |from: &ScanColumnStatsMap, other: &ScanColumnStatsMap| {
+                for (name, stats) in from.iter().filter(|(name, _)| !other.contains_key(*name)) {
+                    merged.insert(name.clone(), stats.clone());
+                }
+            };
+            take_from(left, right);
+            take_from(right, left);
+            Some(Arc::new(merged))
+        },
     }
 }
 
@@ -358,14 +463,17 @@ fn keeps_height(expr: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
 /// Estimates for a node emitting one row per distinct combination of `keys`,
 /// optionally sliced.
 ///
+/// `keys` names the output columns, and `ndv` is the distinct combinations they hold
+/// if that is known.
+///
 /// The output columns are the keys, each holding as many distinct values as the
 /// node has rows.
 fn one_row_per_group(
     inner: NodeStats,
     keys: &[&PlSmallStr],
+    ndv: Option<f64>,
     slice: Option<(i64, usize)>,
 ) -> NodeStats {
-    let ndv = inner.key_ndv_product(keys);
     let mut groups = NodeStats {
         filtered: n_groups(inner.filtered, keys.len(), ndv),
         unfiltered: n_groups(inner.unfiltered, keys.len(), ndv),
@@ -393,6 +501,7 @@ fn single_key_column(keys: &[&PlSmallStr], rows: f64) -> Option<Arc<ScanColumnSt
             distinct: Card::approx(rows as u64),
             null_count: Card::Unknown,
             avg_byte_width: None,
+            int_range: None,
         },
     );
     Some(Arc::new(map))
@@ -446,21 +555,45 @@ fn conjunct_selectivity(
     columns: Option<&ScanColumnStatsMap>,
     rows: f64,
 ) -> Option<f64> {
-    let AExpr::Function {
-        input,
-        function: IRFunctionExpr::Boolean(function),
-        ..
-    } = expr_arena.get(conjunct)
-    else {
-        return None;
+    let (name, function) = match expr_arena.get(conjunct) {
+        AExpr::Function {
+            input,
+            function: IRFunctionExpr::Boolean(function),
+            ..
+        } => {
+            let [arg] = input.as_slice() else {
+                return None;
+            };
+            (into_column(arg.node(), expr_arena)?, function)
+        },
+        // Pushing an equi-join key into one of its sides leaves `x == x` behind. That
+        // is a null check on the key, not the arbitrary comparison it looks like.
+        AExpr::BinaryExpr {
+            left,
+            op: Operator::Eq,
+            right,
+        } => {
+            let name = into_column(*left, expr_arena)?;
+            if name != into_column(*right, expr_arena)? {
+                return None;
+            }
+            (name, &IRBooleanFunction::IsNotNull)
+        },
+        _ => return None,
     };
-    let [arg] = input.as_slice() else {
-        return None;
-    };
-    let name = into_column(arg.node(), expr_arena)?;
 
-    let nulls = columns?.get(name)?.null_count.confident(0.0)? as f64;
-    let null_fraction = (nulls / rows.max(MIN_CARDINALITY)).clamp(0.0, 1.0);
+    let Some(nulls) = columns
+        .and_then(|columns| columns.get(name))
+        .and_then(|stats| stats.null_count.confident(0.0))
+    else {
+        // Nothing describes the column. Most frames are mostly non-null; how many rows
+        // hold a null is anyone's guess.
+        return match function {
+            IRBooleanFunction::IsNotNull => Some(1.0),
+            _ => None,
+        };
+    };
+    let null_fraction = (nulls as f64 / rows.max(MIN_CARDINALITY)).clamp(0.0, 1.0);
     match function {
         IRBooleanFunction::IsNull => Some(null_fraction),
         IRBooleanFunction::IsNotNull => Some(1.0 - null_fraction),
@@ -480,6 +613,14 @@ pub fn join_cardinality(left: f64, right: f64, key_domain_product: f64) -> f64 {
     (left * right / key_domain_product).max(MIN_CARDINALITY)
 }
 
+/// Domain size of a composite key, from the domains of the columns making it up.
+///
+/// The parts multiply, which holds only if they vary independently. `max_rows` bounds
+/// the result, since neither side holds more distinct combinations than it has rows.
+pub fn composite_key_domain(parts: impl Iterator<Item = f64>, max_rows: f64) -> f64 {
+    parts.product::<f64>().min(max_rows).max(MIN_CARDINALITY)
+}
+
 /// Domain size of the key joining two leaves.
 ///
 /// With distinct counts for both sides the domain is the larger of the two: every
@@ -488,18 +629,42 @@ pub fn join_cardinality(left: f64, right: f64, key_domain_product: f64) -> f64 {
 /// unique side, so the smaller relation is assumed to hold the key uniquely.
 pub fn key_domain(
     left: &NodeStats,
-    left_key: &ExprIR,
+    left_key: Option<&PlSmallStr>,
     right: &NodeStats,
-    right_key: &ExprIR,
+    right_key: Option<&PlSmallStr>,
 ) -> f64 {
-    let domain = match (
-        left.distinct_count(left_key),
-        right.distinct_count(right_key),
-    ) {
+    let left_ndv = left_key.and_then(|name| left.distinct_count_key(name));
+    let right_ndv = right_key.and_then(|name| right.distinct_count_key(name));
+    let domain = match (left_ndv, right_ndv) {
         (Some(l), Some(r)) => l.max(r),
-        _ => left.unfiltered.min(right.unfiltered),
+        // The uniqueness assumption and the integer range each estimate the domain
+        // from above, so the tighter one wins. One side's known distinct count is a
+        // lower bound either way, since every value it holds is in the domain.
+        _ => {
+            let rows = left.unfiltered.min(right.unfiltered);
+            let estimate = key_int_domain(left, left_key, right, right_key)
+                .map_or(rows, |range| rows.min(range));
+            left_ndv
+                .or(right_ndv)
+                .map_or(estimate, |ndv| estimate.max(ndv))
+        },
     };
     domain.max(MIN_CARDINALITY)
+}
+
+/// Domain implied by the integer ranges of the keys, from whichever sides have one.
+fn key_int_domain(
+    left: &NodeStats,
+    left_key: Option<&PlSmallStr>,
+    right: &NodeStats,
+    right_key: Option<&PlSmallStr>,
+) -> Option<f64> {
+    let left_domain = left_key.and_then(|name| left.int_domain(name));
+    let right_domain = right_key.and_then(|name| right.int_domain(name));
+    match (left_domain, right_domain) {
+        (Some(l), Some(r)) => Some(l.max(r)),
+        (l, r) => l.or(r),
+    }
 }
 
 #[cfg(test)]
@@ -535,11 +700,8 @@ mod tests {
         )
     }
 
-    fn key(name: &str) -> ExprIR {
-        ExprIR::new(
-            Node::default(),
-            crate::plans::OutputName::ColumnLhs(PlSmallStr::from_str(name)),
-        )
+    fn key(name: &str) -> PlSmallStr {
+        PlSmallStr::from_str(name)
     }
 
     /// Joining a heavily filtered dimension must shrink the fact table so that it
@@ -555,17 +717,17 @@ mod tests {
         let with_date = join_cardinality(
             inventory.filtered,
             date_dim.filtered,
-            key_domain(&inventory, &key("k"), &date_dim, &key("k")),
+            key_domain(&inventory, Some(&key("k")), &date_dim, Some(&key("k"))),
         );
         let with_item = join_cardinality(
             inventory.filtered,
             item.filtered,
-            key_domain(&inventory, &key("k"), &item, &key("k")),
+            key_domain(&inventory, Some(&key("k")), &item, Some(&key("k"))),
         );
         let with_warehouse = join_cardinality(
             inventory.filtered,
             warehouse.filtered,
-            key_domain(&inventory, &key("k"), &warehouse, &key("k")),
+            key_domain(&inventory, Some(&key("k")), &warehouse, Some(&key("k"))),
         );
 
         // 11.7M * 60 / 73049
@@ -591,9 +753,68 @@ mod tests {
         let out = join_cardinality(
             acc,
             item.filtered,
-            key_domain(&inventory, &key("k"), &item, &key("k")),
+            key_domain(&inventory, Some(&key("k")), &item, Some(&key("k"))),
         );
         assert!((out - acc).abs() < 1.0, "got {out}");
+    }
+
+    /// Every join type is bounded by what its match semantics allow, whatever the
+    /// inner-join estimate says.
+    #[test]
+    fn join_types_stay_within_their_bounds() {
+        let (left, right) = (1000.0, 20.0);
+
+        // A match that keeps few rows: the outer sides still keep all of theirs.
+        let selective = 5.0;
+        assert_eq!(
+            join_rows(&JoinType::Inner, left, right, selective),
+            Some(5.0)
+        );
+        assert_eq!(
+            join_rows(&JoinType::Left, left, right, selective),
+            Some(left)
+        );
+        assert_eq!(
+            join_rows(&JoinType::Right, left, right, selective),
+            Some(right)
+        );
+        assert_eq!(
+            join_rows(&JoinType::Full, left, right, selective),
+            Some(left + right)
+        );
+
+        // A match that fans out: an outer join is at least as large as the inner one.
+        let fanning = 5000.0;
+        assert_eq!(
+            join_rows(&JoinType::Left, left, right, fanning),
+            Some(fanning)
+        );
+        assert_eq!(
+            join_rows(&JoinType::Cross, left, right, fanning),
+            Some(20_000.0)
+        );
+    }
+
+    /// A semi-join is a subset of its left side and an anti-join is the complement,
+    /// so the two must add up to it however far off the inner estimate is.
+    #[cfg(feature = "semi_anti_join")]
+    #[test]
+    fn semi_and_anti_partition_the_left_side() {
+        let left = 1000.0;
+        for inner in [0.0, 5.0, 400.0, 1000.0, 5000.0] {
+            let semi = join_rows(&JoinType::Semi, left, 20.0, inner).unwrap();
+            let anti = join_rows(&JoinType::Anti, left, 20.0, inner).unwrap();
+            assert!(semi <= left && anti <= left, "{inner}: {semi} / {anti}");
+            // Both floor at one row, so they only sum to the left side above that.
+            assert!(semi + anti <= left + MIN_CARDINALITY, "{inner}");
+        }
+    }
+
+    /// A join type we do not model must say so rather than fall back to a guess.
+    #[cfg(feature = "iejoin")]
+    #[test]
+    fn unmodelled_join_types_have_no_estimate() {
+        assert_eq!(join_rows(&JoinType::IEJoin, 1000.0, 20.0, 5.0), None);
     }
 
     /// The two ends of the group-count estimate are known exactly; only what lies
@@ -635,12 +856,12 @@ mod tests {
         let inventory = leaf(11_745_000.0, 11_745_000.0);
         let date_dim = leaf(73_049.0, 73_049.0);
         let rows = sliced(date_dim.filtered, (0i64, 10));
-        let head = date_dim.selecting(rows);
+        let head = date_dim.filter(rows);
 
         let out = join_cardinality(
             inventory.filtered,
             head.filtered,
-            key_domain(&inventory, &key("k"), &head, &key("k")),
+            key_domain(&inventory, Some(&key("k")), &head, Some(&key("k"))),
         );
         // 11.7M * 10 / 73049. Dividing by the ten rows left would reproduce the
         // fact table whole.
@@ -655,10 +876,16 @@ mod tests {
         let fact = leaf_with_ndv(1_000_000.0, 1_000_000.0, "k", 500);
         let dim = leaf_with_ndv(800.0, 800.0, "k", 800);
 
-        assert_eq!(key_domain(&fact, &key("k"), &dim, &key("k")), 800.0);
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &dim, Some(&key("k"))),
+            800.0
+        );
         // Without them the smaller relation is assumed to hold the key uniquely.
         let opaque = leaf(800.0, 800.0);
-        assert_eq!(key_domain(&fact, &key("k"), &opaque, &key("k")), 800.0);
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &opaque, Some(&key("k"))),
+            800.0
+        );
     }
 
     /// A distinct count that is only a rough bound must not steer the domain.
@@ -677,7 +904,38 @@ mod tests {
 
         let fact = leaf_with_ndv(1_000_000.0, 1_000_000.0, "k", 500);
         // The rough count of 4 would otherwise dominate as the max.
-        assert_eq!(key_domain(&fact, &key("k"), &dim, &key("k")), 800.0);
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &dim, Some(&key("k"))),
+            800.0
+        );
+    }
+
+    /// A value range narrower than a known distinct count must not shrink the
+    /// domain below it.
+    #[test]
+    fn a_one_sided_distinct_count_survives_the_range_fallback() {
+        // 100 values wide, but nothing says how many of them the fact table holds.
+        let fact = leaf(1_000_000.0, 1_000_000.0).with_column(
+            "k",
+            ScanColumnStats {
+                int_range: Some((0, 99)),
+                ..Default::default()
+            },
+        );
+        let dim = leaf_with_ndv(800.0, 800.0, "k", 500);
+
+        // The dimension holds 500 distinct keys, so the domain is at least that,
+        // however narrow the range on the other side is.
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &dim, Some(&key("k"))),
+            500.0
+        );
+        // Without a distinct count anywhere, the range is all there is to go on.
+        let opaque = leaf(800.0, 800.0);
+        assert_eq!(
+            key_domain(&fact, Some(&key("k")), &opaque, Some(&key("k"))),
+            100.0
+        );
     }
 
     /// A known distinct count replaces the interpolation between one group and one

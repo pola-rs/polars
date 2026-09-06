@@ -56,7 +56,7 @@ impl WindowExpr {
         out_column: Column,
         flattened: &Column,
         mut ac: AggregationContext,
-        gb: GroupBy,
+        gb: &GroupBy,
     ) -> PolarsResult<IdxCa> {
         // idx (new-idx, original-idx)
         let mut idx_mapping = Vec::with_capacity(out_column.len());
@@ -129,7 +129,7 @@ impl WindowExpr {
         flattened: &Column,
         mut ac: AggregationContext,
         group_by_columns: &[Column],
-        gb: GroupBy,
+        gb: &GroupBy,
         cache_key: String,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
@@ -520,18 +520,13 @@ impl PhysicalExpr for WindowExpr {
                     empty_as_null: true,
                     keep_nulls: true,
                 })?;
-                // we extend the lifetime as we must convince the compiler that ac lives
-                // long enough. We drop `GrouBy` when we are done with `ac`.
-                let ac = unsafe {
-                    std::mem::transmute::<AggregationContext<'_>, AggregationContext<'static>>(ac)
-                };
                 self.map_by_arg_sort(
                     df,
                     out_column,
                     &flattened,
                     ac,
                     &group_by_columns,
-                    gb,
+                    &gb,
                     cache_key,
                     state,
                 )

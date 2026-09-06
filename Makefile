@@ -136,6 +136,12 @@ build-nodebug-release: update-cargo-env  ## Same as build-release, but without a
 	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile nodebug-release $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
+.PHONY: build-fast-release
+build-fast-release: update-cargo-env  ## Same as build-release, but without LTO (much faster to build, a bit slower to run)
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile fast-release $(ARGS) --uv \
+	$(FILTER_PIP_WARNINGS)
+
 .PHONY: build-debug-release
 build-debug-release: update-cargo-env  ## Same as build-release, but with full debug symbols turned on (a bit slower to build)
 	@unset CONDA_PREFIX \

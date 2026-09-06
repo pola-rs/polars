@@ -53,8 +53,25 @@ impl SQLContext {
                 }
             },
             FilterMode::KeepTrue => {
+                let (plain, with_subquery): (Vec<&SQLExpr>, Vec<&SQLExpr>) =
+                    MintermIter::new(expr).partition(|c| !expr_contains_subquery(c));
+
+                if with_subquery.is_empty() {
+                    return Ok((lf, plain));
+                }
+
+                // A subquery rewrite can row-index the frame, which blocks predicate
+                // pushdown. Apply the conjuncts holding no subquery before that.
+                if !plain.is_empty() {
+                    let early = plain
+                        .iter()
+                        .map(|c| parse_sql_expr(c, self, Some(schema)))
+                        .collect::<PolarsResult<Vec<_>>>()?;
+                    lf = lf.filter(all_horizontal(early)?);
+                }
+
                 let mut residual = Vec::new();
-                for conj in MintermIter::new(expr) {
+                for conj in with_subquery {
                     if let Some(new_lf) =
                         self.try_rewrite_subquery_conjunct(&lf, conj, filter_mode, schema)?
                     {

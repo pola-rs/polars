@@ -45,7 +45,7 @@ fn ensure_error(sql: &str, expected_error: &str) {
 
     let mut ctx = SQLContext::new();
     ctx.register("df", df);
-    match ctx.execute(&query) {
+    match ctx.execute(&query).and_then(|lf| lf.collect()) {
         Ok(_) => panic!("expected error: {expected_error}"),
         Err(e) => {
             assert!(

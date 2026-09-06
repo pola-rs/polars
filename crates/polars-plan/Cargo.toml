@@ -67,6 +67,7 @@ debugging = []
 python = ["dep:pyo3", "polars-utils/python", "polars-ffi", "polars-core/object", "serde"]
 serde = [
   "dep:serde",
+  "dep:serde_json",
   "polars-buffer/serde",
   "polars-config/serde",
   "polars-core/serde-lazy",
@@ -113,6 +114,7 @@ dtype-time = ["polars-time/dtype-time", "temporal"]
 dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-extension = ["polars-core/dtype-extension", "polars-ops/dtype-extension"]
+dtype-map = ["polars-core/dtype-map", "polars-ops/dtype-map"]
 dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object", "polars-ops/object"]
 list_filter = ["polars-ops/list_filter"]

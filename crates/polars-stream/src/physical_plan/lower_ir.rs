@@ -765,6 +765,7 @@ pub fn lower_ir(
                             first_metadata: metadata_per_source.first_metadata().cloned(),
                             pipeline_budget: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
+                            file_read_context: std::sync::OnceLock::new(),
                             io_metrics: std::sync::OnceLock::new(),
                         },
                     ) as _,
@@ -1435,8 +1436,14 @@ pub fn lower_ir(
             // by with an aggregate for each column.
             let input_schema = phys_input.output_schema(phys_sm);
             if input_schema.is_empty() {
-                // Can't group (or have duplicates) if dataframe has zero-width.
-                return Ok(phys_input);
+                // With zero width every row is identical to every other row, so
+                // at most a single row remains. This matches the zero-width case
+                // of `DataFrame::unique_impl`.
+                let mut stream = build_slice_stream(phys_input, 0, 1, phys_sm);
+                if let Some((offset, length)) = options.slice {
+                    stream = build_slice_stream(stream, offset, length, phys_sm);
+                }
+                return Ok(stream);
             }
 
             // Create the key expressions.

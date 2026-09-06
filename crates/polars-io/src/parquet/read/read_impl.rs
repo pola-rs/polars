@@ -13,7 +13,7 @@ use polars_parquet::read::{self, ColumnChunkMetadata, FileMetadata, Filter, RowG
 use rayon::prelude::*;
 
 use super::mmap::mmap_columns;
-use super::utils::materialize_empty_df;
+use super::utils::{canonicalize_parquet_maps, materialize_empty_df};
 use super::{ParallelStrategy, mmap};
 use crate::RowIndex;
 use crate::hive::materialize_hive_partitions;
@@ -38,10 +38,8 @@ fn assert_dtypes(dtype: &ArrowDataType) {
         // This should have been converted to a LargeList
         D::List(_) => unreachable!(),
 
-        // This should have been converted to a LargeList(Struct(_))
-        D::Map(_, _) => unreachable!(),
-
         // Recursive checks
+        D::Map(entries, _) => assert_dtypes(&entries.dtype),
         D::Dictionary(_, dtype, _) => assert_dtypes(dtype),
         D::Extension(ext) => assert_dtypes(&ext.inner),
         D::LargeList(inner) => assert_dtypes(&inner.dtype),
@@ -115,7 +113,8 @@ fn column_idx_to_series(
     }
     let columns = mmap_columns(store, field_md);
     let (arrays, pred_true_mask) = mmap::to_deserializer(columns, field.clone(), filter)?;
-    let series = Series::try_from((field, arrays))?;
+    let mut series = Series::try_from((field, arrays))?;
+    canonicalize_parquet_maps(&mut series)?;
 
     Ok((series, pred_true_mask))
 }
@@ -207,9 +206,7 @@ fn rg_to_dfs_optionally_par_over_columns(
         .sum();
     let slice_end = slice.0 + slice.1;
 
-    for rg_idx in row_group_start..row_group_end {
-        let md = &file_metadata.row_groups[rg_idx];
-
+    for md in &file_metadata.row_groups[row_group_start..row_group_end] {
         let rg_slice =
             split_slice_at_file(&mut n_rows_processed, md.num_rows(), slice.0, slice_end);
         let current_row_count = md.num_rows() as IdxSize;
@@ -321,9 +318,8 @@ fn rg_to_dfs_par_over_rg(
         rows_scanned = 0;
     }
 
-    for i in row_group_start..row_group_end {
+    for rg_md in &file_metadata.row_groups[row_group_start..row_group_end] {
         let row_count_start = rows_scanned;
-        let rg_md = &file_metadata.row_groups[i];
         let n_rows_this_file = rg_md.num_rows();
         let rg_slice =
             split_slice_at_file(&mut n_rows_processed, n_rows_this_file, slice.0, slice_end);

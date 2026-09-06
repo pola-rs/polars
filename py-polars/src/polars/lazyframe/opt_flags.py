@@ -294,7 +294,7 @@ class QueryOptFlags:
 
     @property
     def row_estimate(self) -> bool:
-        """Pick a join's build side from plan-time row estimates."""
+        """Use row estimates to pick join build sides and keep useful caches."""
         return self._pyoptflags.row_estimate
 
     @row_estimate.setter

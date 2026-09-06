@@ -147,6 +147,11 @@ pub(crate) enum SerializableDslPlanNode {
         key: Arc<[PlSmallStr]>,
         maintain_order: bool,
     },
+    #[allow(clippy::upper_case_acronyms)]
+    SQL {
+        query: Arc<String>,
+        relations: Vec<(PlSmallStr, DslPlanKey)>,
+    },
     IR {
         dsl: DslPlanKey,
         version: u32,
@@ -364,6 +369,17 @@ fn convert_dsl_plan_to_serializable_plan(
             input_right: dsl_plan_key(input_right, arenas),
             key: key.clone(),
             maintain_order: *maintain_order,
+        },
+        DP::SQL {
+            query,
+            relations,
+            cached_stmt: _,
+        } => SP::SQL {
+            query: query.clone(),
+            relations: relations
+                .iter()
+                .map(|(name, plan)| (name.clone(), dsl_plan_key_from_ref(plan, arenas)))
+                .collect(),
         },
         DP::IR {
             dsl,
@@ -613,6 +629,17 @@ fn try_convert_serializable_plan_to_dsl_plan(
             input_right: get_dsl_plan(*input_right, ser_dsl_plan, arenas)?,
             key: key.clone(),
             maintain_order: *maintain_order,
+        }),
+        SP::SQL { query, relations } => Ok(DP::SQL {
+            query: query.clone(),
+            relations: relations
+                .iter()
+                .map(|(name, key)| {
+                    let plan = get_dsl_plan(*key, ser_dsl_plan, arenas)?;
+                    Ok((name.clone(), Arc::unwrap_or_clone(plan)))
+                })
+                .collect::<PolarsResult<Vec<_>>>()?,
+            cached_stmt: Default::default(),
         }),
         SP::IR {
             dsl: dsl_key,

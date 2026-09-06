@@ -172,7 +172,7 @@ fn cast_to_parquet_scalar(scalar: Scalar) -> Option<ParquetScalar> {
         A::Int32(v) => P::Int32(v),
         A::Int64(v) => P::Int64(v),
 
-        #[cfg(feature = "dtype-time")]
+        #[cfg(feature = "dtype-date")]
         A::Date(v) => P::Int32(v),
         #[cfg(feature = "dtype-datetime")]
         A::Datetime(v, _, _) | A::DatetimeOwned(v, _, _) => P::Int64(v),

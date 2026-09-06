@@ -176,7 +176,7 @@ impl Morsel {
         let sf = SpillFrame::new_unregistered(df);
         self.sf = sf;
         if let Some((ctx, param)) = old_registry {
-            ctx.register(&self.sf, param);
+            ctx.register_no_spill_check(&self.sf, param);
         }
     }
 
@@ -191,7 +191,7 @@ impl Morsel {
         let df = f(sf.into_df().await);
         let sf = SpillFrame::new_unregistered(df);
         if let Some((ctx, param)) = old_registry {
-            ctx.register(&sf, param);
+            ctx.register_no_spill_check(&sf, param);
         }
         Self {
             sf,
@@ -215,7 +215,7 @@ impl Morsel {
         let df = f(sf.into_df().await)?;
         let sf = SpillFrame::new_unregistered(df);
         if let Some((ctx, param)) = old_registry {
-            ctx.register(&sf, param);
+            ctx.register_no_spill_check(&sf, param);
         }
         Ok(Self {
             sf,
@@ -240,7 +240,7 @@ impl Morsel {
         let df = f(sf.into_df().await).await?;
         let sf = SpillFrame::new_unregistered(df);
         if let Some((ctx, param)) = old_registry {
-            ctx.register(&sf, param);
+            ctx.register_no_spill_check(&sf, param);
         }
         Ok(Self {
             sf,
