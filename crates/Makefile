@@ -46,6 +46,7 @@ miri:  ## Run miri
 .PHONY: test
 test:  ## Run tests
 	cargo test --all-features \
+		-p polars-array \
 		-p polars-compute \
 		-p polars-core \
 		-p polars-dtype \
