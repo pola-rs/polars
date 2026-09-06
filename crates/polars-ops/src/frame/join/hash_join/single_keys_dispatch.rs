@@ -465,8 +465,12 @@ where
         .collect()
 }
 
-/// Splits `ca` for `n_threads`, writing out every chunk that is scalar. TODO(polars-array-scalar):
-/// the hash join reads the keys as slices, so a repeated key is written out rather than hashed once.
+/// Splits `ca` for `n_threads`, writing out every chunk that is scalar.
+///
+/// The hash tables are built and probed by index over the key *slices* — see [`chunks_as_slices`] —
+/// so this is where a repeated key becomes one. Reading it as the single key it stands for would
+/// mean the build and probe loops resolving the representation per key, which is the hottest loop
+/// in the join: it needs the loops monomorphised over the two representations, not a branch.
 fn split_flat<T: PolarsDataType>(ca: &ChunkedArray<T>, n_threads: usize) -> Vec<ChunkedArray<T>> {
     let mut splitted = split(ca, n_threads);
     for ca in &mut splitted {

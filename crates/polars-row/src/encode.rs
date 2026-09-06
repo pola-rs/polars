@@ -268,8 +268,10 @@ fn striter_num_column_bytes(
 /// A nested array's child is indexed per row, though, and so is [`RowWidths`]: a [`PlListArray`]
 /// whose offsets hold the single range every element covers, or a [`PlFixedSizeListArray`] whose
 /// values hold the single list every element is, has to be written out before it is encoded.
-// TODO(polars-array): read a shared child in place instead, the way the leaves read a scalar
-// buffer. Until then this is what the Arrow export used to do for every array, not just these.
+// Reading a shared child in place would mean the *child's* encoder writing one row per element of
+// the parent rather than per element of its own: `encode_array` is handed one offset per child
+// slot, and there are `len` times as many of those as the shared child holds. This is what the
+// Arrow export used to do for every array, not just these.
 fn write_out_shared_child(array: &dyn PlArray) -> Option<Box<dyn PlArray>> {
     match array.array_type() {
         PlArrayType::List => {

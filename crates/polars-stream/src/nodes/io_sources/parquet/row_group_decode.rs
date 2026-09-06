@@ -563,8 +563,10 @@ impl RowGroupDecoder {
 
         mask.rechunk_mut();
         let mask_bitmap = mask.downcast_as_array();
-        // TODO(polars-array-scalar): the parquet prefilter takes the mask as a flat `Bitmap`, so a
-        // scalar chunk is written out here, where one repeated bit selects every row or none.
+        // The prefilter hands the mask to the parquet decoders as `read::Filter::Mask`, which is
+        // an `arrow::Bitmap` read a word at a time by each of them — the reader's Arrow boundary,
+        // as `polars_compute`'s module doc puts it. So a mask that repeats one bit is written out
+        // here, at one bit per row against a whole row group's decode.
         let mask_bitmap = mask_bitmap.true_and_valid().into_bitmap();
 
         assert_eq!(mask_bitmap.len(), projection_height);
