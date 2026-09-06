@@ -1,6 +1,5 @@
-use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
-use polars_array::{ArrayCollectIterExt, PlPrimitiveArray};
+use polars_array::{ArrayCollectIterExt, Flat, PlPrimitiveArray};
 use polars_utils::IdxSize;
 use polars_utils::min_max::{MaxPropagateNan, MinMaxPolicy, MinPropagateNan};
 
@@ -16,8 +15,7 @@ use super::nulls::RollingAggWindowNulls;
 /// - `starts` and `ends` must be monotonically non-decreasing (rolling window invariant).
 /// - All indices in `starts`/`ends` must be within bounds of `by`.
 fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
-    by: &[B],
-    validity: Option<&Bitmap>,
+    by: &Flat<PlPrimitiveArray<B>>,
     starts: &[IdxSize],
     ends: &[IdxSize],
     min_periods: usize,
@@ -32,7 +30,13 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
     let first_start = starts[0] as usize;
     let first_end = ends[0] as usize;
 
-    match validity {
+    // The deque walks the `by` values as a slice, and reads the mask bit by bit only when there is
+    // a null to skip: a mask that is present but leaves none takes the same path as no mask at all.
+    let no_nulls = by.as_no_nulls().is_some();
+    let validity = by.validity();
+    let by = by.as_slice();
+
+    match validity.filter(|_| !no_nulls) {
         None => {
             let mut window =
                 <ArgMinMaxWindow<'_, B, P> as RollingAggWindowNoNulls<B, IdxSize>>::new(
@@ -95,21 +99,19 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
 }
 
 pub fn rolling_argmin_by<B: NativeType>(
-    by: &[B],
-    validity: Option<&Bitmap>,
+    by: &Flat<PlPrimitiveArray<B>>,
     starts: &[IdxSize],
     ends: &[IdxSize],
     min_periods: usize,
 ) -> PlPrimitiveArray<IdxSize> {
-    rolling_arg_extremum_by::<B, MinPropagateNan>(by, validity, starts, ends, min_periods)
+    rolling_arg_extremum_by::<B, MinPropagateNan>(by, starts, ends, min_periods)
 }
 
 pub fn rolling_argmax_by<B: NativeType>(
-    by: &[B],
-    validity: Option<&Bitmap>,
+    by: &Flat<PlPrimitiveArray<B>>,
     starts: &[IdxSize],
     ends: &[IdxSize],
     min_periods: usize,
 ) -> PlPrimitiveArray<IdxSize> {
-    rolling_arg_extremum_by::<B, MaxPropagateNan>(by, validity, starts, ends, min_periods)
+    rolling_arg_extremum_by::<B, MaxPropagateNan>(by, starts, ends, min_periods)
 }

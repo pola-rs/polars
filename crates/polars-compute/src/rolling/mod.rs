@@ -19,13 +19,37 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
 pub use mean::MeanWindow;
 use num_traits::{Bounded, Float, NumCast, One, Zero};
-use polars_array::{ArrayCollectIterExt, Flat, PlArray, PlPrimitiveArray};
+use polars_array::{ArrayCollectIterExt, Flat, NoNulls, PlArray, PlPrimitiveArray};
 use polars_utils::float::IsFloat;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 pub use sum::SumWindow;
 use window::*;
+
+/// The chunk a rolling kernel reads, borrowed out of whatever representation `arr` is stored in.
+///
+/// A chunk whose buffers already hold one slot per element is borrowed as it stands, and a mask
+/// that repeats a *set* bit is dropped rather than written out: it leaves no element null, so the
+/// answer is the one the no-nulls kernels give. Only a values buffer that repeats a single value
+/// is laid out, and only because the window machines walk their values as a slice — see the
+/// `RollingAggWindowNoNulls::new` signature.
+pub fn rolling_chunk<T: NativeType>(
+    arr: &PlPrimitiveArray<T>,
+) -> std::borrow::Cow<'_, Flat<PlPrimitiveArray<T>>> {
+    if let (Some(values), Some(true)) = (
+        arr.flat_values(),
+        arr.validity().and_then(|validity| validity.scalar_value()),
+    ) {
+        // SAFETY: the values hold one slot per element, and dropping the mask leaves nothing else
+        // that could be repeated.
+        return std::borrow::Cow::Owned(unsafe {
+            Flat::new(PlPrimitiveArray::from(values.clone()))
+        });
+    }
+
+    arr.to_flat()
+}
 
 type Start = usize;
 type End = usize;
@@ -183,4 +207,51 @@ fn flat_chunk<T: NativeType>(
         .as_flat()
         .expect("a chunk built out of a values buffer and a flat mask is flat")
         .clone()
+}
+
+#[cfg(test)]
+mod rolling_chunk_tests {
+    use polars_array::PlBitmap;
+
+    use super::*;
+
+    /// A chunk that already holds one slot per element is borrowed, not copied.
+    #[test]
+    fn a_flat_chunk_is_borrowed() {
+        let arr = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
+        assert!(matches!(rolling_chunk(&arr), std::borrow::Cow::Borrowed(_)));
+    }
+
+    /// A mask that repeats a set bit leaves no element null, so it is dropped rather than written
+    /// out — and the values buffer is handed on as the very allocation it was.
+    #[test]
+    fn a_repeated_set_mask_is_dropped_rather_than_written_out() {
+        let arr = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
+            .with_validity(Some(PlBitmap::new_scalar(true, 3)));
+        let values = arr.flat_values().unwrap().as_ptr();
+
+        let chunk = rolling_chunk(&arr);
+        assert!(chunk.validity().is_none());
+        assert!(chunk.as_no_nulls().is_some());
+        assert_eq!(chunk.as_slice().as_ptr(), values, "the values were copied");
+    }
+
+    /// A mask that repeats an unset bit says every element is null, which the no-nulls kernels
+    /// cannot be told — so it is written out for the kernels that read it.
+    #[test]
+    fn a_repeated_unset_mask_is_written_out() {
+        let arr = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
+            .with_validity(Some(PlBitmap::new_scalar(false, 3)));
+
+        let chunk = rolling_chunk(&arr);
+        assert!(chunk.as_no_nulls().is_none());
+        assert_eq!(chunk.null_count(), 3);
+    }
+
+    /// A values buffer that repeats one value is laid out, since the window machines read a slice.
+    #[test]
+    fn a_repeated_values_buffer_is_laid_out() {
+        let arr = PlPrimitiveArray::new_scalar(7i32, 4);
+        assert_eq!(rolling_chunk(&arr).as_slice(), [7, 7, 7, 7]);
+    }
 }

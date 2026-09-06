@@ -110,7 +110,7 @@ impl<
 }
 
 pub fn rolling_quantile<T>(
-    values: &[T],
+    values: &NoNulls<Flat<PlPrimitiveArray<T>>>,
     window_size: usize,
     min_periods: usize,
     center: bool,
@@ -132,6 +132,10 @@ where
         + PartialOrd
         + Sub<Output = T>,
 {
+    // The window machines walk their values as a slice, and this is where the chunk
+    // becomes one: the representation is resolved once, out of the loop.
+    let values = values.as_slice();
+
     let offset_fn = match center {
         true => det_offsets_center,
         false => det_offsets,
@@ -278,7 +282,7 @@ mod test {
 
     #[test]
     fn test_rolling_median() {
-        let values = &[1.0, 2.0, 3.0, 4.0];
+        let values = &chunk(&[1.0, 2.0, 3.0, 4.0]);
         let med_pars = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: 0.5,
             method: Linear,
@@ -306,7 +310,7 @@ mod test {
 
     #[test]
     fn test_rolling_quantile_limits() {
-        let values = &[1.0f64, 2.0, 3.0, 4.0];
+        let values = &chunk(&[1.0f64, 2.0, 3.0, 4.0]);
 
         let methods = vec![
             QuantileMethod::Lower,

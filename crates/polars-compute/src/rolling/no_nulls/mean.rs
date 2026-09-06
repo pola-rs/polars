@@ -4,7 +4,7 @@ use super::super::mean::MeanWindow;
 use super::*;
 
 pub fn rolling_mean<T>(
-    values: &[T],
+    values: &NoNulls<Flat<PlPrimitiveArray<T>>>,
     window_size: usize,
     min_periods: usize,
     center: bool,
@@ -14,6 +14,10 @@ pub fn rolling_mean<T>(
 where
     T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
 {
+    // The window machines walk their values as a slice, and this is where the chunk
+    // becomes one: the representation is resolved once, out of the loop.
+    let values = values.as_slice();
+
     let offset_fn = match center {
         true => det_offsets_center,
         false => det_offsets,

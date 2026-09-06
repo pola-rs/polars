@@ -102,7 +102,7 @@ pub type RankWindowDense<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyDense>;
 pub type RankWindowRandom<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyRandom>;
 
 pub fn rolling_rank<T>(
-    values: &[T],
+    values: &NoNulls<Flat<PlPrimitiveArray<T>>>,
     window_size: usize,
     min_periods: usize,
     center: bool,
@@ -112,6 +112,10 @@ pub fn rolling_rank<T>(
 where
     T: NativeType + num_traits::Num,
 {
+    // The window machines walk their values as a slice, and this is where the chunk
+    // becomes one: the representation is resolved once, out of the loop.
+    let values = values.as_slice();
+
     assert!(weights.is_none(), "weights are not supported for rank");
 
     let offset_fn = match center {

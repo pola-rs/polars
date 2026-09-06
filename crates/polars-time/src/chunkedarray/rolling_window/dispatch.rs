@@ -4,10 +4,10 @@ use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 #[cfg(feature = "dtype-f16")]
 use num_traits::real::Real;
-use polars_array::{Flat, PlArrayType, PlPrimitiveArray};
+use polars_array::{Flat, NoNulls, PlArrayType, PlPrimitiveArray};
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
-use polars_compute::rolling::{MeanWindow, SumWindow, no_nulls, nulls};
+use polars_compute::rolling::{MeanWindow, SumWindow, no_nulls, nulls, rolling_chunk};
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_numeric_polars_type};
 use polars_ops::series::SeriesMethods;
 use polars_utils::float::IsFloat;
@@ -22,7 +22,7 @@ fn rolling_agg<T>(
     ca: &ChunkedArray<T>,
     options: RollingOptionsFixedWindow,
     rolling_agg_fn: &dyn Fn(
-        &[T::Native],
+        &NoNulls<Flat<PlPrimitiveArray<T::Native>>>,
         usize,
         usize,
         bool,
@@ -46,22 +46,22 @@ where
         return Ok(Series::new_empty(ca.name().clone(), ca.dtype()));
     }
     let ca = ca.rechunk();
-    // TODO(polars-array-scalar): the rolling kernels read the values as a slice, so a scalar chunk
-    // is written out here rather than the single value it stands for being read once.
-    let ca = ca.to_flat();
 
-    let arr = ca.flat_as_array();
-    let arr = match ca.null_count() {
-        0 => rolling_agg_fn(
-            arr.as_slice(),
+    // The kernels below walk their values as a slice, which `rolling_chunk` resolves without
+    // writing anything out that it does not have to; a mask that leaves no element null then takes
+    // the no-nulls path rather than being read bit by bit.
+    let chunk = rolling_chunk(ca.downcast_as_array());
+    let arr = match chunk.as_no_nulls() {
+        Some(no_nulls) => rolling_agg_fn(
+            no_nulls,
             options.window_size,
             options.min_periods,
             options.center,
             options.weights.as_deref(),
             options.fn_params,
         )?,
-        _ => rolling_agg_fn_nulls(
-            arr,
+        None => rolling_agg_fn_nulls(
+            &chunk,
             options.window_size,
             options.min_periods,
             options.center,

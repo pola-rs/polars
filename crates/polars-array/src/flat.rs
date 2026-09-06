@@ -85,6 +85,15 @@ impl<T: PlArray> Flat<T> {
         // SAFETY: no element is null, as just counted.
         (self.0.null_count() == 0).then(|| unsafe { NoNulls::new_ref(self) })
     }
+
+    /// Wraps this array as one with no null elements, or hands it back if any element is null.
+    pub fn try_into_no_nulls(self) -> Result<NoNulls<Self>, Self> {
+        match self.0.null_count() {
+            // SAFETY: no element is null, as just counted.
+            0 => Ok(unsafe { NoNulls::new(self) }),
+            _ => Err(self),
+        }
+    }
 }
 
 impl<T> Flat<T> {

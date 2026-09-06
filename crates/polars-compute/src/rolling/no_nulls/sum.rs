@@ -3,7 +3,7 @@ use super::super::sum::SumWindow;
 use super::*;
 
 pub fn rolling_sum<T>(
-    values: &[T],
+    values: &NoNulls<Flat<PlPrimitiveArray<T>>>,
     window_size: usize,
     min_periods: usize,
     center: bool,
@@ -21,6 +21,10 @@ where
         + Num
         + PartialOrd,
 {
+    // The window machines walk their values as a slice, and this is where the chunk
+    // becomes one: the representation is resolved once, out of the loop.
+    let values = values.as_slice();
+
     match (center, weights) {
         (true, None) => rolling_apply_agg_window::<SumWindow<T, T>, _, _, _>(
             values,
@@ -68,7 +72,7 @@ mod test {
     use super::*;
     #[test]
     fn test_rolling_sum() {
-        let values = &[1.0f64, 2.0, 3.0, 4.0];
+        let values = &chunk(&[1.0f64, 2.0, 3.0, 4.0]);
 
         let out = rolling_sum(values, 2, 2, false, None, None).unwrap();
         let out = elements_of::<f64>(&*out);
@@ -91,7 +95,7 @@ mod test {
         assert_eq!(out, &[None, None, Some(10.0), None]);
 
         // test nan handling.
-        let values = &[1.0, 2.0, 3.0, f64::nan(), 5.0, 6.0, 7.0];
+        let values = &chunk(&[1.0, 2.0, 3.0, f64::nan(), 5.0, 6.0, 7.0]);
         let out = rolling_sum(values, 3, 3, false, None, None).unwrap();
         let out = elements_of::<f64>(&*out);
 

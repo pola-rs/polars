@@ -218,7 +218,10 @@ mod test {
         let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(4.0), Some(4.0), Some(3.0), Some(2.0)]);
 
-        let out = super::no_nulls::rolling_max(arr.as_slice(), 2, 1, false, None, None).unwrap();
+        // The mask is present but leaves no element null, so the chunk is witnessed as one
+        // without nulls rather than having to be rebuilt without its mask.
+        let no_nulls = arr.as_no_nulls().expect("the mask leaves no element null");
+        let out = super::no_nulls::rolling_max(no_nulls, 2, 1, false, None, None).unwrap();
         let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(4.0), Some(4.0), Some(3.0), Some(2.0)]);
     }

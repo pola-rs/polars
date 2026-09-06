@@ -22,7 +22,7 @@ where
 macro_rules! rolling_minmax_func {
     ($rolling_m:ident, $policy:ident) => {
         pub fn $rolling_m<T>(
-            values: &[T],
+            values: &NoNulls<Flat<PlPrimitiveArray<T>>>,
             window_size: usize,
             min_periods: usize,
             center: bool,
@@ -32,6 +32,10 @@ macro_rules! rolling_minmax_func {
         where
             T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T> + Num,
         {
+            // The window machines walk their values as a slice, and this is where the chunk
+            // becomes one: the representation is resolved once, out of the loop.
+            let values = values.as_slice();
+
             let offset_fn = match center {
                 true => det_offsets_center,
                 false => det_offsets,
@@ -77,7 +81,7 @@ mod test {
 
     #[test]
     fn test_rolling_min_max() {
-        let values = &[1.0f64, 5.0, 3.0, 4.0];
+        let values = &chunk(&[1.0f64, 5.0, 3.0, 4.0]);
 
         let out = rolling_min(values, 2, 2, false, None, None).unwrap();
         let out = elements_of::<f64>(&*out);
@@ -98,7 +102,7 @@ mod test {
         assert_eq!(out, &[Some(1.0), Some(5.0), Some(5.0), Some(5.0)]);
 
         // test nan handling.
-        let values = &[1.0, 2.0, 3.0, f64::nan(), 5.0, 6.0, 7.0];
+        let values = &chunk(&[1.0, 2.0, 3.0, f64::nan(), 5.0, 6.0, 7.0]);
         let out = rolling_min(values, 3, 3, false, None, None).unwrap();
         let out = elements_of::<f64>(&*out);
         // we cannot compare nans, so we compare the string values

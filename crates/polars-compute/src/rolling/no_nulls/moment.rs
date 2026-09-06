@@ -6,7 +6,7 @@ pub use super::super::moment::*;
 use super::*;
 
 pub fn rolling_var<T>(
-    values: &[T],
+    values: &NoNulls<Flat<PlPrimitiveArray<T>>>,
     window_size: usize,
     min_periods: usize,
     center: bool,
@@ -16,6 +16,10 @@ pub fn rolling_var<T>(
 where
     T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
 {
+    // The window machines walk their values as a slice, and this is where the chunk
+    // becomes one: the representation is resolved once, out of the loop.
+    let values = values.as_slice();
+
     let offset_fn = match center {
         true => det_offsets_center,
         false => det_offsets,
@@ -52,7 +56,7 @@ where
 }
 
 pub fn rolling_skew<T>(
-    values: &[T],
+    values: &NoNulls<Flat<PlPrimitiveArray<T>>>,
     window_size: usize,
     min_periods: usize,
     center: bool,
@@ -61,6 +65,10 @@ pub fn rolling_skew<T>(
 where
     T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
 {
+    // The window machines walk their values as a slice, and this is where the chunk
+    // becomes one: the representation is resolved once, out of the loop.
+    let values = values.as_slice();
+
     let offset_fn = match center {
         true => det_offsets_center,
         false => det_offsets,
@@ -75,7 +83,7 @@ where
 }
 
 pub fn rolling_kurtosis<T>(
-    values: &[T],
+    values: &NoNulls<Flat<PlPrimitiveArray<T>>>,
     window_size: usize,
     min_periods: usize,
     center: bool,
@@ -84,6 +92,10 @@ pub fn rolling_kurtosis<T>(
 where
     T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
 {
+    // The window machines walk their values as a slice, and this is where the chunk
+    // becomes one: the representation is resolved once, out of the loop.
+    let values = values.as_slice();
+
     let offset_fn = match center {
         true => det_offsets_center,
         false => det_offsets,
@@ -103,7 +115,7 @@ mod test {
 
     #[test]
     fn test_rolling_var() {
-        let values = &[1.0f64, 5.0, 3.0, 4.0];
+        let values = &chunk(&[1.0f64, 5.0, 3.0, 4.0]);
 
         let out = rolling_var(values, 2, 2, false, None, None).unwrap();
         let out = elements_of::<f64>(&*out);
@@ -122,7 +134,7 @@ mod test {
             format!("{:?}", &[None, Some(8.0), Some(2.0), Some(0.5)])
         );
         // test nan handling.
-        let values = &[-10.0, 2.0, 3.0, f64::nan(), 5.0, 6.0, 7.0];
+        let values = &chunk(&[-10.0, 2.0, 3.0, f64::nan(), 5.0, 6.0, 7.0]);
         let out = rolling_var(values, 3, 3, false, None, None).unwrap();
         let out = elements_of::<f64>(&*out);
         // we cannot compare nans, so we compare the string values

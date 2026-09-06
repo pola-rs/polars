@@ -1,6 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use polars_compute::rolling;
 use polars_compute::rolling::no_nulls::{MaxWindow, MinWindow};
+use polars_compute::rolling::rolling_chunk;
 use polars_compute::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
 };
@@ -100,26 +101,21 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
             monotonic,
         } => {
             if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, ca.chunks()) {
-                // TODO(polars-array-scalar): the rolling kernels read the values as a slice, so
-                // a scalar chunk is written out here rather than aggregated once.
-                let flat = ca.to_flat();
-                let arr = flat
-                    .flat_chunk(0)
-                    .expect("the rolling kernels need one chunk");
-                let values = arr.as_slice();
+                let ca = ca.rechunk();
+                let chunk = rolling_chunk(ca.downcast_as_array());
                 let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
-                let arr = match arr.validity() {
-                    None => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _, _>(
-                        values,
+                let arr = match chunk.as_no_nulls() {
+                    Some(no_nulls) => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _, _>(
+                        no_nulls,
                         offset_iter,
                         None,
                     ),
-                    Some(validity) => _rolling_apply_agg_window_nulls::<
+                    None => _rolling_apply_agg_window_nulls::<
                         rolling::nulls::MaxWindow<_>,
                         _,
                         _,
                         _,
-                    >(values, validity, offset_iter, None),
+                    >(&chunk, offset_iter, None),
                 };
                 ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
             } else {
@@ -174,26 +170,21 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
             monotonic,
         } => {
             if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, ca.chunks()) {
-                // TODO(polars-array-scalar): the rolling kernels read the values as a slice, so
-                // a scalar chunk is written out here rather than aggregated once.
-                let flat = ca.to_flat();
-                let arr = flat
-                    .flat_chunk(0)
-                    .expect("the rolling kernels need one chunk");
-                let values = arr.as_slice();
+                let ca = ca.rechunk();
+                let chunk = rolling_chunk(ca.downcast_as_array());
                 let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
-                let arr = match arr.validity() {
-                    None => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _, _>(
-                        values,
+                let arr = match chunk.as_no_nulls() {
+                    Some(no_nulls) => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _, _>(
+                        no_nulls,
                         offset_iter,
                         None,
                     ),
-                    Some(validity) => _rolling_apply_agg_window_nulls::<
+                    None => _rolling_apply_agg_window_nulls::<
                         rolling::nulls::MinWindow<_>,
                         _,
                         _,
                         _,
-                    >(values, validity, offset_iter, None),
+                    >(&chunk, offset_iter, None),
                 };
                 ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
             } else {

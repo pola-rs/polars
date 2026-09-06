@@ -1,3 +1,4 @@
+use polars_compute::rolling::rolling_chunk;
 use polars_core::prelude::*;
 #[cfg(feature = "moment")]
 use {
@@ -18,19 +19,22 @@ where
     T::Native: Float + SubAssign + Pow<T::Native, Output = T::Native>,
 {
     let ca = ca.rechunk();
-    // TODO(polars-array-scalar): the rolling kernels read the values as a slice, so a scalar
-    // chunk is written out here rather than one window being computed and repeated.
-    let arr = ca.downcast_get(0).unwrap().to_flat();
-    let out = if arr.has_nulls() {
-        polars_compute::rolling::nulls::rolling_skew(&arr, window_size, min_periods, center, params)
-    } else {
-        polars_compute::rolling::no_nulls::rolling_skew(
-            arr.as_slice(),
+    let chunk = rolling_chunk(ca.downcast_as_array());
+    let out = match chunk.as_no_nulls() {
+        Some(no_nulls) => polars_compute::rolling::no_nulls::rolling_skew(
+            no_nulls,
             window_size,
             min_periods,
             center,
             params,
-        )?
+        )?,
+        None => polars_compute::rolling::nulls::rolling_skew(
+            &chunk,
+            window_size,
+            min_periods,
+            center,
+            params,
+        ),
     };
     Ok(unsafe { ca.with_chunks(vec![out]) })
 }
@@ -77,25 +81,22 @@ where
     T::Native: Float + SubAssign + Pow<T::Native, Output = T::Native>,
 {
     let ca = ca.rechunk();
-    // TODO(polars-array-scalar): the rolling kernels read the values as a slice, so a scalar
-    // chunk is written out here rather than one window being computed and repeated.
-    let arr = ca.downcast_get(0).unwrap().to_flat();
-    let out = if arr.has_nulls() {
-        polars_compute::rolling::nulls::rolling_kurtosis(
-            &arr,
+    let chunk = rolling_chunk(ca.downcast_as_array());
+    let out = match chunk.as_no_nulls() {
+        Some(no_nulls) => polars_compute::rolling::no_nulls::rolling_kurtosis(
+            no_nulls,
             window_size,
             min_periods,
             center,
             params,
-        )
-    } else {
-        polars_compute::rolling::no_nulls::rolling_kurtosis(
-            arr.as_slice(),
+        )?,
+        None => polars_compute::rolling::nulls::rolling_kurtosis(
+            &chunk,
             window_size,
             min_periods,
             center,
             params,
-        )?
+        ),
     };
     Ok(unsafe { ca.with_chunks(vec![out]) })
 }
