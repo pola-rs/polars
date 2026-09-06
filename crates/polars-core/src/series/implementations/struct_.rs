@@ -208,7 +208,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn with_validity(&self, validity: Option<Bitmap>) -> Series {
-        self.0.clone().with_outer_validity(validity).into_series()
+        self.0
+            .clone()
+            .with_outer_validity(validity.map(PlBitmap::from_bitmap))
+            .into_series()
     }
 
     fn new_from_index(&self, _index: usize, _length: usize) -> Series {
@@ -317,7 +320,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     fn reverse(&self) -> Series {
         let validity = self
             .rechunk_validity()
-            .map(|x| x.into_iter().rev().collect::<Bitmap>());
+            .map(|x| PlBitmap::from_bitmap(x.into_iter().rev().collect::<Bitmap>()));
         self.0
             ._apply_fields(|s| s.reverse())
             .unwrap()

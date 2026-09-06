@@ -220,6 +220,45 @@ impl<'a> PlBitmapRef<'a> {
     pub fn iter(&self) -> PlBitmapIter<'a> {
         PlBitmapIter::new(*self)
     }
+
+    /// The number of set bits before the first unset one.
+    ///
+    /// A mask that repeats one bit is all ones or none of them, which is answered without the bits
+    /// being written out.
+    #[inline]
+    pub fn leading_ones(&self) -> usize {
+        match self.scalar_value() {
+            Some(bit) => usize::from(bit) * self.length,
+            None => self.bitmap.leading_ones(),
+        }
+    }
+
+    /// The number of unset bits before the first set one; see [`Self::leading_ones`].
+    #[inline]
+    pub fn leading_zeros(&self) -> usize {
+        match self.scalar_value() {
+            Some(bit) => usize::from(!bit) * self.length,
+            None => self.bitmap.leading_zeros(),
+        }
+    }
+
+    /// The number of set bits after the last unset one; see [`Self::leading_ones`].
+    #[inline]
+    pub fn trailing_ones(&self) -> usize {
+        match self.scalar_value() {
+            Some(bit) => usize::from(bit) * self.length,
+            None => self.bitmap.trailing_ones(),
+        }
+    }
+
+    /// The number of unset bits after the last set one; see [`Self::leading_ones`].
+    #[inline]
+    pub fn trailing_zeros(&self) -> usize {
+        match self.scalar_value() {
+            Some(bit) => usize::from(!bit) * self.length,
+            None => self.bitmap.trailing_zeros(),
+        }
+    }
 }
 
 impl<'a> IntoIterator for PlBitmapRef<'a> {

@@ -1,7 +1,8 @@
 use std::sync::{Arc, OnceLock};
 
+use arrow::bitmap::MutableBitmap;
 use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_array::PlBitmap;
 use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
 use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
@@ -611,25 +612,12 @@ impl ExternalFilterMask {
         phys_slice
     }
 
-    // TODO(polars-array-scalar): the callers walk the mask bit by bit, so a scalar chunk is
-    // written out here, where one repeated bit deletes either every row or none of them.
-    fn get_mask(&self) -> Bitmap {
-        match self {
-            Self::Iceberg { mask } => mask
-                .rechunk()
-                .downcast_get(0)
-                .unwrap()
-                .values()
-                .to_flat()
-                .into_owned(),
-            Self::DeltaDeletionVector { mask } => mask
-                .rechunk()
-                .downcast_get(0)
-                .unwrap()
-                .values()
-                .to_flat()
-                .into_owned(),
-        }
+    /// The mask, in whichever representation it is in: one repeated bit deletes either every row
+    /// or none of them, and stands for that without being written out one bit per row.
+    fn get_mask(&self) -> PlBitmap {
+        let (Self::Iceberg { mask } | Self::DeltaDeletionVector { mask }) = self;
+
+        PlBitmap::from(mask.rechunk().downcast_as_array().values())
     }
 
     pub fn len(&self) -> usize {
@@ -641,11 +629,16 @@ impl ExternalFilterMask {
 }
 
 /// Calculates the nth set bit as though `mask` were extended infinitely with trues.
-fn nth_set_bit_extend(mask: &Bitmap, n: usize) -> usize {
+fn nth_set_bit_extend(mask: &PlBitmap, n: usize) -> usize {
     if let Some(n_additional) = n.checked_sub(mask.set_bits()) {
-        mask.len().saturating_add(n_additional)
-    } else {
-        BitMask::from_bitmap(mask).nth_set_bit_idx(n, 0).unwrap()
+        return mask.len().saturating_add(n_additional);
+    }
+
+    match mask.flat_bitmap() {
+        Some(bitmap) => BitMask::from_bitmap(bitmap).nth_set_bit_idx(n, 0).unwrap(),
+        // Every bit of a repeated mask is set here — an unset one leaves no set bit for `n` to
+        // count to, which the subtraction above already answered — so the `n`th of them is at `n`.
+        None => n,
     }
 }
 

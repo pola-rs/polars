@@ -1,9 +1,9 @@
-use arrow::bitmap::Bitmap;
+use polars_core::prelude::PlBitmap;
 
 #[derive(Debug, Clone)]
 pub enum SkipFilesMask {
-    Exclusion(Bitmap),
-    Inclusion(Bitmap),
+    Exclusion(PlBitmap),
+    Inclusion(PlBitmap),
 }
 
 impl SkipFilesMask {
@@ -23,8 +23,8 @@ impl SkipFilesMask {
 
     pub fn is_skipped_file(&self, index: usize) -> bool {
         match self {
-            Self::Exclusion(mask) => mask.get_bit(index),
-            Self::Inclusion(mask) => !mask.get_bit(index),
+            Self::Exclusion(mask) => mask.get(index),
+            Self::Inclusion(mask) => !mask.get(index),
         }
     }
 

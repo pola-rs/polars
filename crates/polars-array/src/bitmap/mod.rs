@@ -216,6 +216,64 @@ impl PlBitmap {
         self.as_ref().iter()
     }
 
+    /// The number of set bits before the first unset one.
+    #[inline]
+    pub fn leading_ones(&self) -> usize {
+        self.as_ref().leading_ones()
+    }
+
+    /// The number of unset bits before the first set one.
+    #[inline]
+    pub fn leading_zeros(&self) -> usize {
+        self.as_ref().leading_zeros()
+    }
+
+    /// The number of set bits after the last unset one.
+    #[inline]
+    pub fn trailing_ones(&self) -> usize {
+        self.as_ref().trailing_ones()
+    }
+
+    /// The number of unset bits after the last set one.
+    #[inline]
+    pub fn trailing_zeros(&self) -> usize {
+        self.as_ref().trailing_zeros()
+    }
+
+    /// Returns this mask with every bit inverted, keeping the representation.
+    #[must_use]
+    pub fn not(&self) -> Self {
+        // A single bit inverts in `O(1)` and still stands for every element.
+        Self {
+            bitmap: !&self.bitmap,
+            length: self.length,
+        }
+    }
+
+    /// The `or` of two masks over the same elements, keeping a repeated bit repeated.
+    ///
+    /// # Panics
+    /// Panics if the masks are over a different number of bits.
+    #[must_use]
+    pub fn or(&self, other: &Self) -> Self {
+        assert_eq!(self.length, other.length, "masks cover different lengths");
+
+        match (self.scalar_value(), other.scalar_value()) {
+            // Two single bits `or` to a single bit, which covers every element in turn.
+            (Some(lhs), Some(rhs)) => Self::new_scalar(lhs || rhs, self.length),
+            // A repeated set bit is set everywhere whatever the other mask holds; a repeated unset
+            // one leaves the other mask as it is, in whatever representation it is in.
+            (Some(true), None) | (None, Some(true)) => Self::new_scalar(true, self.length),
+            (Some(false), None) => other.clone(),
+            (None, Some(false)) => self.clone(),
+            (None, None) => Self::new(
+                self.flat_bitmap().expect("the bits are not repeated")
+                    | other.flat_bitmap().expect("the bits are not repeated"),
+                self.length,
+            ),
+        }
+    }
+
     /// Slices this mask in place to `length` bits starting at `offset`.
     ///
     /// # Panics
@@ -441,5 +499,44 @@ mod tests {
         assert!(!mask.is_scalar());
         assert!(mask.flat_bitmap().unwrap().is_empty());
         assert_eq!(mask.scalar_value(), None);
+    }
+}
+
+#[cfg(test)]
+mod run_length_tests {
+    use arrow::bitmap::Bitmap;
+
+    use super::PlBitmap;
+
+    /// A mask that repeats one bit is all ones or none of them, and its runs are read off that one
+    /// bit rather than off bits written out per element.
+    #[test]
+    fn a_repeated_bit_is_one_run() {
+        for (bit, ones, zeros) in [(true, 7, 0), (false, 0, 7)] {
+            let mask = PlBitmap::new_scalar(bit, 7);
+
+            assert_eq!(mask.leading_ones(), ones);
+            assert_eq!(mask.trailing_ones(), ones);
+            assert_eq!(mask.leading_zeros(), zeros);
+            assert_eq!(mask.trailing_zeros(), zeros);
+
+            // Inverting keeps the single bit, which still stands for every element.
+            let inverted = mask.not();
+            assert!(inverted.is_scalar());
+            assert_eq!(inverted.leading_ones(), zeros);
+        }
+    }
+
+    /// A mask holding one bit per element answers off the bits themselves.
+    #[test]
+    fn flat_runs_are_read_off_the_bits() {
+        let mask =
+            PlBitmap::from_bitmap(Bitmap::from_iter([true, true, false, true, false, false]));
+
+        assert_eq!(mask.leading_ones(), 2);
+        assert_eq!(mask.leading_zeros(), 0);
+        assert_eq!(mask.trailing_zeros(), 2);
+        assert_eq!(mask.trailing_ones(), 0);
+        assert_eq!(mask.not().leading_zeros(), 2);
     }
 }

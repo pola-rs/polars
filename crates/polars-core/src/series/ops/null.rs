@@ -55,7 +55,7 @@ impl Series {
                     .collect::<Vec<_>>();
                 let ca = StructChunked::from_series(name, size, fields.iter()).unwrap();
 
-                ca.with_outer_validity(Some(Bitmap::new_zeroed(size)))
+                ca.with_outer_validity(Some(PlBitmap::new_scalar(false, size)))
                     .into_series()
             },
             DataType::BinaryOffset => {

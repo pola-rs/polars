@@ -233,7 +233,9 @@ mod tests {
             .iter(),
         )
         .unwrap()
-        .with_outer_validity(Some(Bitmap::from_iter([false, true, true, false])))
+        .with_outer_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
+            false, true, true, false,
+        ]))))
         .into_series();
         let expected_dtype = expected_series.dtype().clone();
 

@@ -455,17 +455,20 @@ impl StructChunked {
             .find(|s| s.name().as_str() == name)
             .ok_or_else(|| polars_err!(StructFieldNotFound: "{name}"))
     }
-    pub(crate) fn set_outer_validity(&mut self, validity: Option<Bitmap>) {
+    /// Replaces the outer validity mask, which may repeat a single bit: an all-null struct says
+    /// so in one bit rather than one per element.
+    pub(crate) fn set_outer_validity(&mut self, validity: Option<PlBitmap>) {
         assert_eq!(self.chunks().len(), 1);
         unsafe {
             let arr = self.chunks_mut().iter_mut().next().unwrap();
-            *arr = arr.with_validity(validity.map(PlBitmap::from_bitmap));
+            *arr = arr.with_validity(validity);
         }
         self.compute_len();
         self.propagate_nulls_mut();
     }
 
-    pub fn with_outer_validity(mut self, validity: Option<Bitmap>) -> Self {
+    /// As [`Self::set_outer_validity`], by value.
+    pub fn with_outer_validity(mut self, validity: Option<PlBitmap>) -> Self {
         self.set_outer_validity(validity);
         self
     }

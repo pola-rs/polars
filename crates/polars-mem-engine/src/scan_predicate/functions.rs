@@ -1,10 +1,11 @@
 use std::cell::LazyCell;
 use std::sync::Arc;
 
-use arrow::bitmap::Bitmap;
 use polars_core::config;
 use polars_core::error::PolarsResult;
-use polars_core::prelude::{IDX_DTYPE, IdxCa, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet};
+use polars_core::prelude::{
+    IDX_DTYPE, IdxCa, InitHashMaps, PlBitmap, PlHashMap, PlIndexMap, PlIndexSet,
+};
 use polars_core::schema::Schema;
 use polars_error::polars_warn;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
@@ -217,8 +218,8 @@ pub fn initialize_scan_predicate<'a>(
         return Ok((None, None));
     };
 
-    let mut hive_inclusion: Option<Bitmap> = None;
-    let mut stats_exclusion: Option<Bitmap> = None;
+    let mut hive_inclusion: Option<PlBitmap> = None;
+    let mut stats_exclusion: Option<PlBitmap> = None;
 
     // Hive partitioning pruning.
     if let Some(hive_parts) = hive_parts
@@ -256,9 +257,9 @@ pub fn initialize_scan_predicate<'a>(
             return Ok((None, Some(predicate)));
         }
 
-        // TODO(polars-array-scalar): a hive predicate that holds throughout leaves the mask as a
-        // single bit; `SkipFilesMask` holds an `arrow::Bitmap`, so it is written out here.
-        let hive_inclusion_bitmap = hive_inclusion_array.values().to_flat().into_owned();
+        // A hive predicate that holds throughout leaves the mask as a single bit, which stands for
+        // every file without being written out one bit each.
+        let hive_inclusion_bitmap = PlBitmap::from(hive_inclusion_array.values());
 
         if predicate.hive_predicate_is_full_predicate {
             let skip_files_mask = SkipFilesMask::Inclusion(hive_inclusion_bitmap);
@@ -305,13 +306,13 @@ pub fn initialize_scan_predicate<'a>(
             return Ok((None, Some(predicate)));
         }
 
-        stats_exclusion = Some(stats_exclusion_bitmap);
+        stats_exclusion = Some(PlBitmap::from_bitmap(stats_exclusion_bitmap));
     }
 
     // Merge masks.
     let skip_files_mask = match (hive_inclusion, stats_exclusion) {
         (Some(ref hive_inclusion), Some(ref stats_exclusion)) => {
-            SkipFilesMask::Exclusion(&!hive_inclusion | stats_exclusion)
+            SkipFilesMask::Exclusion(hive_inclusion.not().or(stats_exclusion))
         },
         (Some(hive_inclusion), None) => SkipFilesMask::Inclusion(hive_inclusion),
         (None, Some(stats_exclusion)) => SkipFilesMask::Exclusion(stats_exclusion),

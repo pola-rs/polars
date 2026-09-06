@@ -188,7 +188,8 @@ impl ChunkFullNull for StructChunked {
     fn full_null(name: PlSmallStr, length: usize) -> StructChunked {
         StructChunked::from_series(name, length, [].iter())
             .unwrap()
-            .with_outer_validity(Some(Bitmap::new_zeroed(length)))
+            // Every element is null, which one repeated unset bit says without a bit each.
+            .with_outer_validity(Some(PlBitmap::new_scalar(false, length)))
     }
 }
 

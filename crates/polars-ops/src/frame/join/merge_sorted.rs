@@ -105,15 +105,9 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
                 let mut merged_validity = merge_ca(&lhs_validity, &rhs_validity, merge_indicator);
                 merged_validity.rechunk_mut();
 
-                // TODO(polars-array-scalar): the merged mask is handed out as a flat bitmap, so
-                // a scalar chunk is written out here rather than its single bit being reused.
-                validity = Some(
-                    merged_validity
-                        .downcast_as_array()
-                        .to_flat()
-                        .values()
-                        .clone(),
-                );
+                // The merged mask is handed over in whatever representation it is in: one that
+                // repeats a single bit says the same of every element without being written out.
+                validity = Some(PlBitmap::from(merged_validity.downcast_as_array().values()));
             }
 
             let new_fields = lhs
