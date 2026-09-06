@@ -1940,3 +1940,94 @@ def test_cspe_nondeterministic_still_caches_inputs_28733() -> None:
     # can be cached
     plan = copied.explain()
     assert plan.count("WITH_COLUMNS") == 1, plan
+
+
+def year_totals() -> pl.LazyFrame:
+    """An aggregation worth sharing, keyed by a column its readers filter on."""
+    lf = pl.LazyFrame(
+        {
+            "year": [2000, 2001, None, 2002, 2003] * 3,
+            "v": list(range(15)),
+            "w": list(range(15)),
+        }
+    )
+    return lf.group_by("year").agg(
+        pl.col("v").sum().alias("total"), pl.col("w").max().alias("mw")
+    )
+
+
+def test_cspe_narrows_shared_subplan_to_what_its_readers_ask_for() -> None:
+    # `total` is computed in the subplan so the filters cannot be pushed and the
+    # cache stays. The years they select still bound the subplan from both sides.
+    base = year_totals()
+    q = pl.concat(
+        [
+            base.filter((pl.col("year") == 2001) & (pl.col("total") > 0)),
+            base.filter((pl.col("year") == 2002) & (pl.col("total") > 0)),
+        ]
+    )
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'FILTER (col("year") >= 2001) & (col("year") <= 2002)' in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_no_narrowing_when_a_reader_takes_every_row() -> None:
+    # One reader has no filter, so nothing may be dropped below the cache.
+    base = year_totals()
+    q = pl.concat([base, base.filter((pl.col("year") == 2001) & (pl.col("total") > 0))])
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'col("year") >=' not in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_narrowing_keeps_only_what_every_reader_bounds() -> None:
+    # The readers bound different columns, so only the constraint they share is
+    # pushed; `year` and `mw` stay above the cache.
+    base = year_totals()
+    q = pl.concat(
+        [
+            base.filter((pl.col("total") > 0) & (pl.col("year") == 2001)),
+            base.filter((pl.col("total") > 0) & (pl.col("mw") > 1)),
+        ]
+    )
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'col("year") >=' not in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_narrowing_keeps_the_rows_a_reader_still_needs() -> None:
+    # A reader taking an open range must not be narrowed to another's point.
+    base = year_totals()
+    q = pl.concat(
+        [
+            base.filter((pl.col("year") == 2001) & (pl.col("total") > 0)),
+            base.filter((pl.col("year") >= 2000) & (pl.col("total") > 0)),
+        ]
+    )
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'col("year") <=' not in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )

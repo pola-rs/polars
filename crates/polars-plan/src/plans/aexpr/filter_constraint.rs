@@ -1012,3 +1012,107 @@ fn fold_and(nodes: Vec<Node>, expr_arena: &mut Arena<AExpr>) -> Node {
     }
     acc
 }
+
+/// Comparisons that every predicate in `predicates` implies.
+///
+/// Each predicate is read as an `AND` chain of `col op lit` comparisons, and a
+/// column bounded in all of them contributes the widest of those bounds. Every row
+/// any one predicate keeps therefore passes all of the results, so they may be
+/// applied ahead of a set of filters without changing what those filters select.
+///
+/// Returned one comparison at a time, as pushdown moves a conjunct only when it is
+/// its own filter.
+///
+/// Only bounds widen: a column some predicate leaves free is dropped, as are `!=`,
+/// `is_in` and null checks. Empty when nothing survives.
+pub(crate) fn widen_over_predicates(
+    predicates: &[Node],
+    expr_arena: &mut Arena<AExpr>,
+) -> Vec<Node> {
+    let Some((&first, rest)) = predicates.split_first() else {
+        return Vec::new();
+    };
+    let Some(mut widened) = predicate_bounds(first, expr_arena) else {
+        return Vec::new();
+    };
+
+    for &predicate in rest {
+        let Some(bounds) = predicate_bounds(predicate, expr_arena) else {
+            return Vec::new();
+        };
+        widened.retain(|name, cc| {
+            bounds
+                .get(name)
+                .is_some_and(|other| widen_bounds(cc, other))
+        });
+        if widened.is_empty() {
+            return Vec::new();
+        }
+    }
+
+    let mut comparisons: Vec<(&PlSmallStr, Operator, &Scalar)> = Vec::new();
+    for (name, cc) in &widened {
+        collect_column_comparisons(name, cc, &mut comparisons);
+    }
+    comparisons
+        .into_iter()
+        .map(|(name, op, value)| comparison_node(name, op, value.clone(), expr_arena))
+        .collect()
+}
+
+// The bounds one predicate places on the columns it constrains. `None` for an
+// unsatisfiable predicate: it selects nothing, so it says nothing about what the
+// others need.
+fn predicate_bounds(
+    predicate: Node,
+    expr_arena: &Arena<AExpr>,
+) -> Option<PlIndexMap<PlSmallStr, ColumnConstraints>> {
+    let mut constraints: PlIndexMap<PlSmallStr, ColumnConstraints> = PlIndexMap::new();
+    for conjunct in MintermIter::new(predicate, expr_arena) {
+        if matches!(
+            classify_into_constraints(expr_arena.get(conjunct), expr_arena, &mut constraints),
+            Classification::Unsat
+        ) {
+            return None;
+        }
+    }
+    // Only the bounds carry over. Anything else would be emitted as a comparison
+    // the other predicates never agreed to.
+    constraints.retain(|_, cc| {
+        if cc.unsat || (cc.lower.is_none() && cc.upper.is_none()) {
+            return false;
+        }
+        *cc = ColumnConstraints {
+            lower: cc.lower.take(),
+            upper: cc.upper.take(),
+            ..Default::default()
+        };
+        true
+    });
+    Some(constraints)
+}
+
+// Loosens `cc` to also admit everything `other` admits. A bound `other` does not
+// have is dropped, as is one whose values cannot be ordered. Returns whether any
+// bound is left.
+fn widen_bounds(cc: &mut ColumnConstraints, other: &ColumnConstraints) -> bool {
+    // A lower bound widens to the smaller value, an upper bound to the larger one.
+    // Equal values keep the inclusive bound, which is the wider of the two.
+    fn widen(slot: &mut Option<(Scalar, bool)>, other: &Option<(Scalar, bool)>, wider: Ordering) {
+        let (Some((value, inclusive)), Some((other_value, other_inclusive))) = (&*slot, other)
+        else {
+            *slot = None;
+            return;
+        };
+        match scalar_cmp(other_value, value) {
+            Some(ord) if ord == wider => *slot = Some((other_value.clone(), *other_inclusive)),
+            Some(Ordering::Equal) => *slot = Some((value.clone(), *inclusive || *other_inclusive)),
+            Some(_) => {},
+            None => *slot = None,
+        }
+    }
+
+    widen(&mut cc.lower, &other.lower, Ordering::Less);
+    widen(&mut cc.upper, &other.upper, Ordering::Greater);
+    cc.lower.is_some() || cc.upper.is_some()
+}
