@@ -4315,10 +4315,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         all_predicates.extend(
             F.col(name).eq(value) for name, value in constraints.items()
         )
-        if not (all_predicates or boolean_masks):
-            msg = "at least one predicate or constraint must be provided"
-            raise TypeError(msg)
-
         # if multiple predicates, combine as 'horizontal' expression
         combined_predicate = (
             (
