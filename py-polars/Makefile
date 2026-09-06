@@ -40,6 +40,10 @@ build-release: .venv  ## Compile and install Python Polars binary with optimizat
 build-nodebug-release: .venv  ## Same as build-release, but without any debug symbols at all (a bit faster to build)
 	@$(MAKE) -s -C .. $@
 
+.PHONY: build-fast-release
+build-fast-release: .venv  ## Same as build-release, but without LTO (much faster to build, a bit slower to run)
+	@$(MAKE) -s -C .. $@
+
 .PHONY: build-debug-release
 build-debug-release: .venv  ## Same as build-release, but with full debug symbols turned on (a bit slower to build)
 	@$(MAKE) -s -C .. $@

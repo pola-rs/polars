@@ -2,7 +2,7 @@ use std::ops::Range;
 #[cfg(target_os = "linux")]
 use std::os::fd::AsRawFd;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use dio_align::DioAlign;
 use futures::{StreamExt, TryStreamExt};
@@ -95,6 +95,17 @@ pub struct FileByteSource {
     // File size.
     size: u64,
     io_metrics: OptIOMetrics,
+}
+
+/// Each permit pins a tokio blocking thread for the duration of a `pread`.
+pub fn global_read_permits() -> Arc<Semaphore> {
+    static PERMITS: LazyLock<Arc<Semaphore>> = LazyLock::new(|| {
+        Arc::new(Semaphore::new(
+            polars_config::config().file_read_concurrency().max(1) as usize,
+        ))
+    });
+
+    PERMITS.clone()
 }
 
 #[derive(Clone)]

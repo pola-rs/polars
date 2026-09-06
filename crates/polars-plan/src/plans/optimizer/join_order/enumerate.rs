@@ -13,24 +13,50 @@ use crate::plans::{composite_key_domain, join_cardinality, key_domain};
 /// Returns leaf indices in join order: the first is the base relation, each later
 /// leaf is joined onto the accumulated result.
 ///
-/// The largest relation anchors the chain and the rest are folded in
-/// most-selective-first. Only leaves connected to an already placed leaf are
-/// considered, so this never adds a cross product that the plan did not have.
+/// Every leaf is tried as the base and the chain with the smallest total
+/// intermediate size wins. A cluster wider than [`MAX_STARTS`] only tries the
+/// largest leaf, as each start is a full greedy pass.
 pub(super) fn order(cluster: &Cluster) -> Vec<usize> {
+    let n = cluster.leaves.len();
+    let largest = || {
+        (0..n).fold(0, |best, i| {
+            if cluster.leaves[i].stats.filtered > cluster.leaves[best].stats.filtered {
+                i
+            } else {
+                best
+            }
+        })
+    };
+
+    // Ties keep the earlier start so the order is deterministic.
+    let starts: Box<dyn Iterator<Item = usize>> = if n > MAX_STARTS {
+        Box::new(std::iter::once(largest()))
+    } else {
+        Box::new(0..n)
+    };
+    starts
+        .map(|anchor| chain_from(cluster, anchor))
+        .min_by(|(a, _), (b, _)| a.total_cmp(b))
+        .map_or_else(Vec::new, |(_, order)| order)
+}
+
+/// Leaves above which every-anchor search is skipped.
+const MAX_STARTS: usize = 24;
+
+/// One greedy left-deep chain starting at `anchor`, with the total of the
+/// intermediate results it materialises.
+///
+/// Only leaves connected to an already placed leaf are considered, so this never
+/// adds a cross product that the plan did not have. The base relation's own rows
+/// are not counted: it is read whichever leaf it is, and charging for it would
+/// always favour the smallest leaf as the base.
+fn chain_from(cluster: &Cluster, anchor: usize) -> (f64, Vec<usize>) {
     let n = cluster.leaves.len();
     let mut is_placed = vec![false; n];
     let mut placed = Vec::with_capacity(n);
 
-    // Ties keep the earlier leaf so the order is deterministic.
-    let anchor = (0..n).fold(0, |best, i| {
-        if cluster.leaves[i].stats.filtered > cluster.leaves[best].stats.filtered {
-            i
-        } else {
-            best
-        }
-    });
-
     let mut card = cluster.leaves[anchor].stats.filtered;
+    let mut cost = 0.0;
     placed.push(anchor);
     is_placed[anchor] = true;
 
@@ -48,6 +74,7 @@ pub(super) fn order(cluster: &Cluster) -> Vec<usize> {
         match best {
             Some((out, candidate)) => {
                 card = out;
+                cost += out;
                 placed.push(candidate);
                 is_placed[candidate] = true;
             },
@@ -60,7 +87,7 @@ pub(super) fn order(cluster: &Cluster) -> Vec<usize> {
         }
     }
 
-    placed
+    (cost, placed)
 }
 
 /// Product of the key domains bridging `candidate` to the placed leaves, or `None`
@@ -78,11 +105,11 @@ fn key_domain_product(cluster: &Cluster, is_placed: &[bool], candidate: usize) -
     for bridge in cluster.bridging(is_placed, candidate) {
         let domain = key_domain(
             &cluster.leaves[bridge.placed_leaf].stats,
-            bridge.placed_key,
+            bridge.placed_name,
             &cluster.leaves[candidate].stats,
-            bridge.candidate_key,
+            bridge.candidate_name,
         );
-        let name = bridge.candidate_key.output_name_inner().get();
+        let name = bridge.candidate_name;
 
         match per_key
             .iter_mut()
@@ -148,18 +175,24 @@ mod tests {
                 right_leaf: 1,
                 left_key: key.clone(),
                 right_key: key.clone(),
+                left_name: Some("k".into()),
+                right_name: Some("k".into()),
             },
             Edge {
                 left_leaf: 0,
                 right_leaf: 2,
                 left_key: key.clone(),
                 right_key: key.clone(),
+                left_name: Some("k".into()),
+                right_name: Some("k".into()),
             },
             Edge {
                 left_leaf: 1,
                 right_leaf: 2,
                 left_key: key.clone(),
                 right_key: key.clone(),
+                left_name: Some("k".into()),
+                right_name: Some("k".into()),
             },
         ];
 
@@ -169,6 +202,7 @@ mod tests {
             output_schema: Schema::default().into(),
             restore: Vec::new(),
             options: dummy_options(),
+            residuals: Vec::new(),
         };
 
         // Leaves 0 and 1 placed, 2 the candidate: it bridges on `k` to both.
