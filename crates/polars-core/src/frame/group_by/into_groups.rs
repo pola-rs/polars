@@ -38,10 +38,10 @@ where
 
         // use the arrays as iterators
         if ca.null_count() == 0 {
-            // The values are read as slices, so chunks that are not laid out flat are written out
-            // first — see `polars_array::arrow::bridge`.
-            let flat = ca.to_flat();
-            let keys = flat.data_views().collect::<Vec<_>>();
+            // The values are read as slices, and nothing is null for the mask to mark, so only a
+            // chunk whose values repeat one value is written out.
+            let views = ca.to_data_views();
+            let keys = views.iter().map(|values| values.as_slice()).collect();
             group_by_threaded_slice(keys, n_partitions, sorted)
         } else {
             let keys = ca.downcast_iter().map(|arr| arr.iter()).collect::<Vec<_>>();

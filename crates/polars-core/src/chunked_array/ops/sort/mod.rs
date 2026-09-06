@@ -273,10 +273,10 @@ where
     options.multithreaded &= RAYON.current_num_threads() > 1;
     arg_sort_fast_path!(ca, options);
     if ca.null_count() == 0 {
-        // The kernel reads the values as a slice, so a chunk that is not laid out flat is
-        // written out first — see `StaticArray::to_flat`.
-        let flat = ca.to_flat();
-        let iter = flat.data_views().map(|values| values.iter().copied());
+        // The kernel reads the values as a slice, and nothing is null for it to skip, so only a
+        // chunk whose values repeat one value is written out — its mask is not read at all.
+        let views = ca.to_data_views();
+        let iter = views.iter().map(|values| values.iter().copied());
         arg_sort::arg_sort_no_nulls(
             ca.name().clone(),
             iter,
@@ -311,10 +311,9 @@ fn arg_sort_multiple_numeric<T: PolarsNumericType>(
 
     if no_nulls {
         let mut vals = Vec::with_capacity(ca.len());
-        // The values are read as a slice, so a chunk that is not laid out flat is written out
-        // first — see `StaticArray::to_flat`.
-        let flat = ca.to_flat();
-        for values in flat.data_views() {
+        // As above: the values are read as a slice and the mask is not read at all.
+        let views = ca.to_data_views();
+        for values in &views {
             vals.extend_trusted_len(values.iter().map(|v| {
                 let i = count;
                 count += 1;

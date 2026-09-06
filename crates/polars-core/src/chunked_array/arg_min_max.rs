@@ -190,10 +190,12 @@ where
                             }
                         })
                 } else {
-                    // When no nulls & array not empty => we can use fast argmin.
-                    let arr = arr.to_flat();
-                    let min_idx: usize = arr.as_slice().argmin();
-                    Some((min_idx, arr.value(min_idx)))
+                    // When no nulls & array not empty => we can use fast argmin. Nothing is
+                    // null, so the mask is not read whatever representation it is in; only a
+                    // values buffer that repeats one value is written out.
+                    let values = arr.to_flat_values();
+                    let min_idx: usize = values.as_slice().argmin();
+                    Some((min_idx, values[min_idx]))
                 };
 
                 if let Some((chunk_min_idx, chunk_min_val)) = chunk_min {
@@ -241,10 +243,12 @@ where
                             }
                         })
                 } else {
-                    // When no nulls & array not empty => we can use fast argmax.
-                    let arr = arr.to_flat();
-                    let max_idx: usize = arr.as_slice().argmax();
-                    Some((max_idx, arr.value(max_idx)))
+                    // When no nulls & array not empty => we can use fast argmax. Nothing is
+                    // null, so the mask is not read whatever representation it is in; only a
+                    // values buffer that repeats one value is written out.
+                    let values = arr.to_flat_values();
+                    let max_idx: usize = values.as_slice().argmax();
+                    Some((max_idx, values[max_idx]))
                 };
 
                 if let Some((chunk_max_idx, chunk_max_val)) = chunk_max {

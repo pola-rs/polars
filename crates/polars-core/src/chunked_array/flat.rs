@@ -73,6 +73,18 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
     /// array that is already flat, this reads nothing of the validity mask — so a chunk that
     /// carries a repeated mask over values that are laid out one slot per element hands its buffer
     /// over as it stands.
+    /// The values of every chunk, each as one run, writing out only a chunk whose values repeat a
+    /// single value.
+    ///
+    /// This is [`FlatNumericChunkedArray::data_views`] without the flatness requirement, and it
+    /// reads no validity: reach for it where the values are walked and the mask is resolved apart
+    /// from them, or where there is no null for a mask to mark.
+    pub fn to_data_views(&self) -> Vec<Cow<'_, Buffer<T::Native>>> {
+        self.downcast_iter()
+            .map(|arr| arr.to_flat_values())
+            .collect()
+    }
+
     pub fn to_cont_slice(&self) -> PolarsResult<Cow<'_, Buffer<T::Native>>> {
         polars_ensure!(
             self.chunks().len() == 1 && self.null_count() == 0,
