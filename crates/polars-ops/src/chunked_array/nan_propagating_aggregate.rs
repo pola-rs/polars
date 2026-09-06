@@ -1,7 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use polars_compute::rolling;
 use polars_compute::rolling::no_nulls::{MaxWindow, MinWindow};
-use polars_compute::rolling::rolling_chunk;
 use polars_compute::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
 };

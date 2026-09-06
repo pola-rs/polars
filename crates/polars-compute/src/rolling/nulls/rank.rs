@@ -105,7 +105,7 @@ pub type RankWindowDense<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyDense>;
 pub type RankWindowRandom<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyRandom>;
 
 pub fn rolling_rank<T>(
-    arr: &Flat<PlPrimitiveArray<T>>,
+    arr: &PlPrimitiveArray<T>,
     window_size: usize,
     min_periods: usize,
     center: bool,
@@ -115,6 +115,10 @@ pub fn rolling_rank<T>(
 where
     T: NativeType,
 {
+    // The window machines walk the values as a slice and read the mask bit by bit, so the chunk
+    // is laid out here, once at the top, and only a buffer that repeats is written out.
+    let arr = arr.to_flat();
+
     assert!(weights.is_none(), "weights are not supported for rank");
 
     let offset_fn = match center {

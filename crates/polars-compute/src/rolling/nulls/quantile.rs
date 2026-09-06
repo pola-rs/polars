@@ -115,7 +115,7 @@ impl<
 }
 
 pub fn rolling_quantile<T>(
-    arr: &Flat<PlPrimitiveArray<T>>,
+    arr: &PlPrimitiveArray<T>,
     window_size: usize,
     min_periods: usize,
     center: bool,
@@ -137,6 +137,10 @@ where
         + PartialOrd
         + Sub<Output = T>,
 {
+    // The window machines walk the values as a slice and read the mask bit by bit, so the chunk
+    // is laid out here, once at the top, and only a buffer that repeats is written out.
+    let arr = arr.to_flat();
+
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
     }

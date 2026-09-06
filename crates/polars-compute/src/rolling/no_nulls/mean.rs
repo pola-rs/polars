@@ -4,7 +4,7 @@ use super::super::mean::MeanWindow;
 use super::*;
 
 pub fn rolling_mean<T>(
-    values: &NoNulls<Flat<PlPrimitiveArray<T>>>,
+    values: &NoNulls<PlPrimitiveArray<T>>,
     window_size: usize,
     min_periods: usize,
     center: bool,
@@ -14,8 +14,11 @@ pub fn rolling_mean<T>(
 where
     T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
 {
-    // The window machines walk their values as a slice, and this is where the chunk
-    // becomes one: the representation is resolved once, out of the loop.
+    // The window machines walk their values as a slice, and this is where the chunk becomes
+    // one: the representation is resolved once, out of the loop, and a buffer that already holds
+    // one slot per element is handed over as it stands. No element is null here, so the mask is
+    // not read at all, whatever representation it is in.
+    let values = values.to_flat_values();
     let values = values.as_slice();
 
     let offset_fn = match center {

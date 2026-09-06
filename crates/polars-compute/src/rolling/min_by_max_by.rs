@@ -1,12 +1,11 @@
 use arrow::types::NativeType;
-use polars_array::{ArrayCollectIterExt, PlPrimitiveArray};
+use polars_array::{ArrayCollectIterExt, PlPrimitiveArray, StaticArray};
 use polars_utils::IdxSize;
 use polars_utils::min_max::{MaxPropagateNan, MinMaxPolicy, MinPropagateNan};
 
 use super::arg_min_max::ArgMinMaxWindow;
 use super::no_nulls::RollingAggWindowNoNulls;
 use super::nulls::RollingAggWindowNulls;
-use super::rolling_chunk;
 
 /// Rolling argmin/argmax over a `by` array, returning global indices.
 ///
@@ -28,19 +27,29 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
         return PlPrimitiveArray::new_full_null(n);
     }
 
-    let by = rolling_chunk(by);
-    let by = &*by;
-
     let first_start = starts[0] as usize;
     let first_end = ends[0] as usize;
 
-    // The deque walks the `by` values as a slice, and reads the mask bit by bit only when there is
-    // a null to skip: a mask that is present but leaves none takes the same path as no mask at all.
-    let no_nulls = by.as_no_nulls().is_some();
-    let validity = by.validity();
-    let by = by.as_slice();
+    // The deque walks the `by` values as a slice, and reads the mask bit by bit only where there is
+    // a null to skip. With nothing null there is no mask to read at all, whatever representation it
+    // is in, so only a values buffer that repeats one value is written out; with something null the
+    // two are laid out together.
+    let values;
+    let flat;
+    let validity = match by.as_no_nulls() {
+        Some(no_nulls) => {
+            values = no_nulls.to_flat_values();
+            None
+        },
+        None => {
+            flat = by.to_flat();
+            values = std::borrow::Cow::Borrowed(flat.values());
+            flat.validity()
+        },
+    };
+    let by = values.as_slice();
 
-    match validity.filter(|_| !no_nulls) {
+    match validity {
         None => {
             let mut window =
                 <ArgMinMaxWindow<'_, B, P> as RollingAggWindowNoNulls<B, IdxSize>>::new(

@@ -13,7 +13,7 @@ use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
-use polars_array::{Flat, NoNulls, PlPrimitiveArray};
+use polars_array::{NoNulls, PlPrimitiveArray, StaticArray};
 use polars_compute::rolling::no_nulls::{
     MaxWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
 };
@@ -22,7 +22,7 @@ use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::{
     self, ArgMaxWindow, ArgMinWindow, MeanWindow, QuantileMethod, RollingFnParams,
     RollingQuantileParams, RollingVarParams, SumWindow, quantile_filter, rolling_argmax_by,
-    rolling_argmin_by, rolling_chunk,
+    rolling_argmin_by,
 };
 use polars_compute::take_agg::*;
 use polars_utils::arg_min_max::ArgMinMax;
@@ -87,12 +87,12 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
 
     let arr = with_match_physical_numeric_polars_type!(phys_dtype, |$T| {
         let ca: &ChunkedArray<$T> = by_phys.as_ref().as_ref().as_ref();
-        let chunk = ca.downcast_as_array();
+        let by = ca.downcast_as_array();
 
         if is_max_by {
-            rolling_argmax_by(chunk, &starts, &ends, 1)
+            rolling_argmax_by(by, &starts, &ends, 1)
         } else {
-            rolling_argmin_by(chunk, &starts, &ends, 1)
+            rolling_argmin_by(by, &starts, &ends, 1)
         }
     });
 
@@ -116,19 +116,19 @@ where
     T: IsFloat + NativeType,
     Out: NativeType,
 {
-    let chunk = rolling_chunk(arr);
-
-    match chunk.as_no_nulls() {
+    // Nothing is laid out here: whether any element is null is a count, and each of the two
+    // implementations resolves the representation itself.
+    match arr.as_no_nulls() {
         Some(no_nulls) => {
             _rolling_apply_agg_window_no_nulls::<NoNullsAgg, _, _, _>(no_nulls, offsets, params)
         },
-        None => _rolling_apply_agg_window_nulls::<NullsAgg, _, _, _>(&chunk, offsets, params),
+        None => _rolling_apply_agg_window_nulls::<NullsAgg, _, _, _>(arr, offsets, params),
     }
 }
 
 // Use an aggregation window that maintains the state
 pub fn _rolling_apply_agg_window_nulls<Agg, T, O, Out>(
-    arr: &Flat<PlPrimitiveArray<T>>,
+    arr: &PlPrimitiveArray<T>,
     offsets: O,
     params: Option<RollingFnParams>,
 ) -> PlPrimitiveArray<Out>
@@ -138,8 +138,9 @@ where
     T: IsFloat + NativeType,
     Out: NativeType,
 {
-    // The window machine walks its values as a slice and reads the mask bit by bit, so both are
-    // resolved here, once, rather than inside the loop.
+    // The window machine walks its values as a slice and reads the mask bit by bit, so the chunk
+    // is laid out here, once, and only what repeats is written out.
+    let arr = arr.to_flat();
     let values = arr.as_slice();
     let mask = arr
         .validity()
@@ -178,7 +179,7 @@ where
 
 // Use an aggregation window that maintains the state.
 pub fn _rolling_apply_agg_window_no_nulls<Agg, T, O, Out>(
-    arr: &NoNulls<Flat<PlPrimitiveArray<T>>>,
+    arr: &NoNulls<PlPrimitiveArray<T>>,
     offsets: O,
     params: Option<RollingFnParams>,
 ) -> PlPrimitiveArray<Out>
@@ -189,8 +190,11 @@ where
     T: IsFloat + NativeType,
     Out: NativeType,
 {
-    // The window machine walks its values as a slice: the representation is resolved here, once.
-    let values = arr.as_slice();
+    // The window machine walks its values as a slice: the representation is resolved here, once,
+    // and a buffer that already holds one slot per element is handed over as it stands. No element
+    // is null, so the mask is not read at all.
+    let values = arr.to_flat_values();
+    let values = values.as_slice();
 
     // start with a dummy index, will be overwritten on first iteration.
     let mut agg_window = Agg::new(values, 0, 0, params, None);

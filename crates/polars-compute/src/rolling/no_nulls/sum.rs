@@ -3,7 +3,7 @@ use super::super::sum::SumWindow;
 use super::*;
 
 pub fn rolling_sum<T>(
-    values: &NoNulls<Flat<PlPrimitiveArray<T>>>,
+    values: &NoNulls<PlPrimitiveArray<T>>,
     window_size: usize,
     min_periods: usize,
     center: bool,
@@ -21,8 +21,11 @@ where
         + Num
         + PartialOrd,
 {
-    // The window machines walk their values as a slice, and this is where the chunk
-    // becomes one: the representation is resolved once, out of the loop.
+    // The window machines walk their values as a slice, and this is where the chunk becomes
+    // one: the representation is resolved once, out of the loop, and a buffer that already holds
+    // one slot per element is handed over as it stands. No element is null here, so the mask is
+    // not read at all, whatever representation it is in.
+    let values = values.to_flat_values();
     let values = values.as_slice();
 
     match (center, weights) {

@@ -95,14 +95,14 @@ where
 
 #[cfg(test)]
 mod test {
-    use polars_array::PlBitmap;
+    use polars_array::{PlBitmap, StaticArray};
     use polars_utils::min_max::MaxIgnoreNan;
 
     use super::*;
     use crate::rolling::flat_chunk;
     use crate::rolling::min_max::MinMaxWindow;
 
-    fn get_null_arr() -> Flat<PlPrimitiveArray<f64>> {
+    fn get_null_arr() -> PlPrimitiveArray<f64> {
         // 1, None, -1, 4
         flat_chunk(
             vec![1.0, 0.0, -1.0, 4.0],
@@ -234,6 +234,7 @@ mod test {
         let min_periods = 3;
 
         let arr = flat_chunk(vals, Some(PlBitmap::from_bitmap(validity)));
+        let arr = arr.to_flat();
 
         let out = rolling_apply_agg_window::<MinMaxWindow<i32, MaxIgnoreNan>, _, _, _>(
             arr.as_slice(),

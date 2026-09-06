@@ -183,11 +183,8 @@ where
 
 /// A chunk of `values`, none of which is null, in the shape the kernels above take.
 #[cfg(test)]
-pub(super) fn chunk<T: NativeType>(values: &[T]) -> NoNulls<Flat<PlPrimitiveArray<T>>> {
-    PlPrimitiveArray::from_vec(values.to_vec())
-        .to_flat()
-        .into_owned()
-        .try_into_no_nulls()
+pub(super) fn chunk<T: NativeType>(values: &[T]) -> NoNulls<PlPrimitiveArray<T>> {
+    NoNulls::try_new(PlPrimitiveArray::from_vec(values.to_vec()))
         .ok()
         .expect("a plain slice holds no null")
 }

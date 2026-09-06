@@ -7,7 +7,7 @@ use num_traits::real::Real;
 use polars_array::{PlArrayType, PlPrimitiveArray};
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
-use polars_compute::rolling::{MeanWindow, SumWindow, no_nulls, nulls, rolling_chunk};
+use polars_compute::rolling::{MeanWindow, SumWindow, no_nulls, nulls};
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_numeric_polars_type};
 use polars_ops::series::SeriesMethods;
 use polars_utils::float::IsFloat;
@@ -183,13 +183,15 @@ where
         .map(|s| s.downcast_as_array().to_flat_values());
     let sorting_indices_flat = sorting_indices_flat.as_ref().map(|s| s.as_slice());
 
-    let chunk = rolling_chunk(ca_rechunked.downcast_as_array());
+    let arr = ca_rechunked.downcast_as_array();
 
     // We explicitly branch here because we want to compile different versions based on the no_nulls
-    // or nulls kernel.
-    let out: PlArrayRef = if let Some(no_nulls) = chunk.as_no_nulls() {
+    // or nulls kernel. Each side lays out only what its own window machine reads: with nothing
+    // null the mask is never looked at, whatever representation it is in.
+    let out: PlArrayRef = if let Some(no_nulls) = arr.as_no_nulls() {
+        let values = no_nulls.to_flat_values();
         let mut agg_window = RollingAggWindowNoNullsWrapper(NoNullsAgg::new(
-            no_nulls.as_slice(),
+            values.as_slice(),
             0,
             0,
             options.fn_params,
@@ -207,6 +209,7 @@ where
             sorting_indices_flat,
         )?
     } else {
+        let chunk = arr.to_flat();
         let mut agg_window = RollingAggWindowNullsWrapper(NullsAgg::new(
             chunk.as_slice(),
             chunk
