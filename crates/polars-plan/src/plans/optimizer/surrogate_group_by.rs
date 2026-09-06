@@ -24,8 +24,8 @@ use polars_utils::{IdxSize, format_pl_smallstr};
 
 use crate::plans::stats::{StatsCache, node_stats_with_cache};
 use crate::plans::{
-    AExpr, ArenaLpIter, ExprIR, IR, IRAggExpr, IRBuilder, JoinOptionsIR, JoinTypeOptionsIR,
-    OutputName, has_aexpr,
+    AExpr, AExprBuilder, ArenaLpIter, ExprIR, IR, IRAggExpr, IRBuilder, JoinOptionsIR,
+    JoinTypeOptionsIR, OutputName, has_aexpr,
 };
 use crate::plans::lit::LiteralValue;
 use crate::prelude::{JoinArgs, JoinCoalesce, JoinType, Operator};
@@ -265,59 +265,59 @@ fn split_aggregation(
     fn partial(expr: Node, partials: &mut Vec<ExprIR>, expr_arena: &mut Arena<AExpr>) -> Node {
         let name = format_pl_smallstr!("__POLARS_PARTIAL_{}", partials.len());
         partials.push(ExprIR::new(expr, OutputName::Alias(name.clone())));
-        expr_arena.add(AExpr::Column(name))
+        AExprBuilder::col(name, expr_arena).node()
+    }
+
+    /// [`partial`], merged by summing what the first phase produced.
+    fn partial_sum(expr: Node, partials: &mut Vec<ExprIR>, expr_arena: &mut Arena<AExpr>) -> Node {
+        let col = partial(expr, partials, expr_arena);
+        AExprBuilder::new_from_node(col).sum(expr_arena).node()
     }
 
     let merge = match ae {
         AExpr::Len | AExpr::Agg(IRAggExpr::Sum(_)) | AExpr::Agg(IRAggExpr::Count { .. }) => {
-            let input = partial(node, partials, expr_arena);
-            expr_arena.add(AExpr::Agg(IRAggExpr::Sum(input)))
+            partial_sum(node, partials, expr_arena)
         },
         AExpr::Agg(IRAggExpr::Min { propagate_nans, .. }) => {
             let input = partial(node, partials, expr_arena);
-            expr_arena.add(AExpr::Agg(IRAggExpr::Min {
-                input,
-                propagate_nans: *propagate_nans,
-            }))
+            AExprBuilder::agg(
+                IRAggExpr::Min {
+                    input,
+                    propagate_nans: *propagate_nans,
+                },
+                expr_arena,
+            )
+            .node()
         },
         AExpr::Agg(IRAggExpr::Max { propagate_nans, .. }) => {
             let input = partial(node, partials, expr_arena);
-            expr_arena.add(AExpr::Agg(IRAggExpr::Max {
-                input,
-                propagate_nans: *propagate_nans,
-            }))
+            AExprBuilder::agg(
+                IRAggExpr::Max {
+                    input,
+                    propagate_nans: *propagate_nans,
+                },
+                expr_arena,
+            )
+            .node()
         },
         // A mean does not merge, but the sum and the count it is made of do.
         AExpr::Agg(IRAggExpr::Mean(input)) => {
-            let sum = expr_arena.add(AExpr::Agg(IRAggExpr::Sum(*input)));
-            let count = expr_arena.add(AExpr::Agg(IRAggExpr::Count {
-                input: *input,
-                include_nulls: false,
-            }));
-            let sum = partial(sum, partials, expr_arena);
-            let count = partial(count, partials, expr_arena);
+            let sum = AExprBuilder::agg(IRAggExpr::Sum(*input), expr_arena).node();
+            let count = AExprBuilder::new_from_node(*input)
+                .count_opt_nulls(false, expr_arena)
+                .node();
+            let total = partial_sum(sum, partials, expr_arena);
+            let n = partial_sum(count, partials, expr_arena);
 
-            let total = expr_arena.add(AExpr::Agg(IRAggExpr::Sum(sum)));
-            let n = expr_arena.add(AExpr::Agg(IRAggExpr::Sum(count)));
-            let mean = expr_arena.add(AExpr::BinaryExpr {
-                left: total,
-                op: Operator::TrueDivide,
-                right: n,
-            });
-
+            let mean =
+                AExprBuilder::new_from_node(total).binary_op(n, Operator::TrueDivide, expr_arena);
             // Averaging nothing is null rather than a division by zero.
-            let zero = expr_arena.add(AExpr::Literal(LiteralValue::new_idxsize(0)));
-            let any = expr_arena.add(AExpr::BinaryExpr {
-                left: n,
-                op: Operator::Gt,
-                right: zero,
-            });
-            let null = expr_arena.add(AExpr::Literal(LiteralValue::untyped_null()));
-            expr_arena.add(AExpr::Ternary {
-                predicate: any,
-                truthy: mean,
-                falsy: null,
-            })
+            let zero = AExprBuilder::lit(LiteralValue::new_idxsize(0), expr_arena);
+            let null = AExprBuilder::lit(LiteralValue::untyped_null(), expr_arena);
+            AExprBuilder::new_from_node(n)
+                .binary_op(zero, Operator::Gt, expr_arena)
+                .ternary(mean, null, expr_arena)
+                .node()
         },
         _ => return None,
     };
@@ -443,15 +443,8 @@ fn try_rewrite(
     // Rebuild the joins above the surrogate so they carry the row index up.
     let child = rebuild_path(&surrogate.path, indexed, &sk, ir_arena, expr_arena)?;
 
-    let sk_col = |expr_arena: &mut Arena<AExpr>| {
-        ExprIR::new(
-            expr_arena.add(AExpr::Column(sk.clone())),
-            OutputName::ColumnLhs(sk.clone()),
-        )
-    };
-
     let mut phase1_keys = Vec::with_capacity(keys.len());
-    phase1_keys.push(sk_col(expr_arena));
+    phase1_keys.push(ExprIR::from_column_name(sk.clone(), expr_arena));
     phase1_keys.extend(
         keys.iter()
             .zip(&key_names)
@@ -474,7 +467,8 @@ fn try_rewrite(
         .ok()?
         .node();
 
-    let (sk_left, sk_right) = (sk_col(expr_arena), sk_col(expr_arena));
+    let sk_left = ExprIR::from_column_name(sk.clone(), expr_arena);
+    let sk_right = ExprIR::from_column_name(sk.clone(), expr_arena);
     let join_options = JoinOptionsIR {
         allow_parallel: true,
         force_parallel: false,
