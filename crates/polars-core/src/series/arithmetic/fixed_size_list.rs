@@ -811,7 +811,14 @@ mod inner {
     fn repeat_mask(mask: PlBitmapRef<'_>, n_repeats: usize) -> PlBitmap {
         match mask.flat_bitmap() {
             Some(bitmap) => PlBitmap::from_bitmap(repeat_bitmap(bitmap, n_repeats)),
-            None => mask.broadcast(mask.len() * n_repeats).into(),
+            // The one bit stands for every element in turn, so it stands for `n_repeats` times as
+            // many of them without being written out. `PlBitmapRef::broadcast` is no use here: it
+            // widens a mask over *one* element to cover many, not one over `mask.len()` of them.
+            None => PlBitmap::new_scalar(
+                mask.scalar_value()
+                    .expect("a mask that is not laid out one bit per element repeats one bit"),
+                mask.len() * n_repeats,
+            ),
         }
     }
 

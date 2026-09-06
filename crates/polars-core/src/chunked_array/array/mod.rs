@@ -13,12 +13,25 @@ use super::align_inner_chunks;
 use crate::chunked_array::new_empty_chunk;
 use crate::prelude::*;
 
-/// The values `arr` is taken over: the values of every element, laid end to end. A
-/// [`scalar`](polars_array::broadcast) array is written out first; a flat one is handed over.
+/// The values `arr` is taken over: the values of every element, laid end to end.
+///
+/// Values that already hold one run per element are handed over as they are. Values holding the
+/// one list every element reads are written out, since a run per element is what this promises and
+/// there is nowhere to read a shared run from — a caller that can read one instead reaches for
+/// [`PlFixedSizeListArray::values`] and [`values_are_scalar`](PlFixedSizeListArray::values_are_scalar)
+/// itself, the way `array.dot` and `array.slice` do.
 pub(crate) fn array_values(arr: &PlFixedSizeListArray) -> PlArrayRef {
-    // TODO(polars-array-scalar): the callers read the values as one run per element, which a
-    // scalar array has to be written out to hand over.
-    arr.to_flat().values().to_boxed()
+    if let Some(values) = arr.flat_values() {
+        return values.to_boxed();
+    }
+
+    // The mask is dropped first: it is not part of what is handed over, and a repeated one would
+    // otherwise be written out along with the values for no reader at all.
+    arr.clone()
+        .with_validity(None)
+        .to_flat()
+        .values()
+        .to_boxed()
 }
 
 /// Returns `arr` with its values replaced, keeping its width and validity mask. Panics if

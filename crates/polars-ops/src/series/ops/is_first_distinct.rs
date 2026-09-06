@@ -41,33 +41,49 @@ fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
         out.set(0, true);
     } else {
         let ca = ca.rechunk();
-        // TODO(polars-array-scalar): the search reads the bits as words, so a scalar chunk is
-        // written out here rather than the one value it stands for being looked at once.
-        let flat = ca.to_flat();
-        let arr = flat.flat_as_array();
-        if ca.null_count() == 0 {
-            let (true_index, false_index) =
-                find_first_true_false_no_null(arr.values().chunks::<u64>());
-            if let Some(idx) = true_index {
-                out.set(idx, true)
-            }
-            if let Some(idx) = false_index {
-                out.set(idx, true)
-            }
-        } else {
-            let (true_index, false_index, null_index) = find_first_true_false_null(
-                arr.values().chunks::<u64>(),
-                arr.validity().unwrap().chunks::<u64>(),
-            );
-            if let Some(idx) = true_index {
-                out.set(idx, true)
-            }
-            if let Some(idx) = false_index {
-                out.set(idx, true)
-            }
-            if let Some(idx) = null_index {
-                out.set(idx, true)
-            }
+        let arr = ca.downcast_as_array();
+
+        // A mask that leaves some but not every element null holds one bit per element: the case
+        // where it leaves every one of them null is settled above, and where it leaves none the
+        // mask says nothing the search has to read.
+        let validity = (arr.null_count() > 0).then(|| {
+            arr.validity()
+                .expect("a null element carries a mask")
+                .flat_bitmap()
+                .expect("a mask that leaves some but not every element null holds one bit each")
+        });
+
+        let firsts = match (arr.flat_values(), validity) {
+            // The values hold one bit per element, so the search reads them as words.
+            (Some(values), None) => {
+                let (t, f) = find_first_true_false_no_null(values.chunks::<u64>());
+                [t, f, None]
+            },
+            (Some(values), Some(validity)) => {
+                let (t, f, n) =
+                    find_first_true_false_null(values.chunks::<u64>(), validity.chunks::<u64>());
+                [t, f, n]
+            },
+            // The values repeat one bit, so every element carries that one value where it is
+            // valid: the first valid element is the only one that is distinct in it, and the
+            // first null the only one that is distinct as a null. The buffer is never written out.
+            (None, validity) => {
+                let value = arr.scalar_values().expect("the values are not flat");
+                // `null_count` is neither zero nor `len` here, so both are in bounds when there
+                // is a mask at all.
+                let first_valid = validity.map_or(0, |validity| validity.leading_zeros());
+                let carrier = Some(first_valid);
+
+                [
+                    carrier.filter(|_| value),
+                    carrier.filter(|_| !value),
+                    validity.map(|validity| validity.leading_ones()),
+                ]
+            },
+        };
+
+        for idx in firsts.into_iter().flatten() {
+            out.set(idx, true)
         }
     }
     BooleanChunked::from_bitmap(ca.name().clone(), out.into())

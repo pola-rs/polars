@@ -1,7 +1,6 @@
 #[cfg(feature = "performant")]
 use arrow::legacy::kernels::sorted_join;
 #[cfg(feature = "performant")]
-use polars_array::arrow::export;
 #[cfg(feature = "performant")]
 use polars_core::utils::_split_offsets;
 #[cfg(feature = "performant")]
@@ -196,12 +195,18 @@ pub(crate) fn to_left_join_ids(
 #[cfg(feature = "performant")]
 fn create_reverse_map_from_arg_sort(mut arg_sort: IdxCa) -> Vec<IdxSize> {
     let chunk = unsafe { arg_sort.chunks_mut() }.pop().unwrap();
-    // TODO(polars-array-scalar): the reverse map is the values buffer itself, so a scalar chunk
-    // is written out here rather than the single index it stands for being repeated.
-    let arr = export::to_arrow(&*chunk);
+    // The reverse map is the values buffer itself. An `arg_sort` names one index per element, so
+    // the buffer holds one slot each and is taken as it stands; only a buffer that repeats a
+    // single index is written out.
+    let values = chunk
+        .as_any()
+        .downcast_ref::<PlPrimitiveArray<IdxSize>>()
+        .expect("`arg_sort` answers in indices")
+        .to_flat_values()
+        .into_owned();
     // Drop the chunk so that the buffer is unshared and can be taken rather than copied.
     drop(chunk);
-    primitive_to_vec::<IdxSize>(arr).unwrap()
+    values.to_vec()
 }
 
 #[cfg(not(feature = "performant"))]

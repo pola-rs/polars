@@ -26,8 +26,19 @@ where
 /// One chunk of the result: element `i` of `arr` repeated `by[i]` times, as one list. A null
 /// repeat count makes the whole list null.
 fn repeat_chunk(arr: &dyn PlArray, by: &PlPrimitiveArray<IdxSize>) -> PlListArray {
-    // TODO(polars-array-scalar): the repeated values are written out one element at a time, so a
-    // scalar chunk is materialized here rather than the lists built as one scalar array.
+    // Every element repeating the one element it holds, the same number of times, makes every list
+    // the same list: it is built once and shared, rather than written out per element.
+    if PlArray::is_scalar(arr) {
+        match by.scalar_value() {
+            Some(Some(repeats)) => {
+                return PlListArray::new_scalar(arr.new_from_index(0, repeats as usize), by.len());
+            },
+            // A null repeat count makes the whole list null, so every one of them is.
+            Some(None) => return PlListArray::new_full_null(arr.sliced(0, 0), by.len()),
+            None => {},
+        }
+    }
+
     let mut values = builder_like(arr);
     let mut offsets = Vec::with_capacity(by.len() + 1);
     offsets.push(0);

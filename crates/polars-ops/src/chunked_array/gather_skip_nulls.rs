@@ -28,13 +28,18 @@ unsafe fn gather_skip_nulls_idx_pairs_unchecked<'a, T: PolarsDataType>(
         let arr_nonnull_len = arr.len() - arr.null_count();
         let mut arr_scan_offset = 0;
         let mut nonnull_before_offset = 0;
-        // TODO(polars-array-scalar): the null scan walks the mask bit by bit, so a scalar mask is
-        // written out here rather than its single bit being read once.
-        let validity = arr.validity().map(|v| v.to_flat().into_owned());
-        let mask = validity
-            .as_ref()
-            .map(BitMask::from_bitmap)
-            .unwrap_or_default();
+        // The scan only reads the mask where there is something non-null to find under it, so a
+        // mask that repeats a bit is never written out: a repeated unset bit leaves nothing
+        // non-null to look for, and a repeated set one leaves nothing null to skip.
+        let validity = arr
+            .validity()
+            .filter(|_| arr.null_count() > 0 && arr.null_count() < arr.len())
+            .map(|validity| {
+                validity
+                    .flat_bitmap()
+                    .expect("a mask that leaves some but not every element null holds one bit each")
+            });
+        let mask = validity.map(BitMask::from_bitmap).unwrap_or_default();
 
         // Is our next nonnull_idx in this array?
         while nonnull_idx as usize - nonnull_prev_arrays < arr_nonnull_len {

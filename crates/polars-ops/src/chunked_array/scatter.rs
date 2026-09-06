@@ -315,8 +315,8 @@ impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T> {
         ca.rechunk_mut();
         let name = ca.name().clone();
 
-        // TODO(polars-array-scalar): the kernel writes one slot per element, so a scalar chunk is
-        // written out on the way in rather than the one value it stands for being set once.
+        // Scattering writes a different value at each index it names, so a chunk that repeats a
+        // single value cannot stay repeated: `with_values_mut` writes it out, once, on the way in.
         let mut arr = ca.downcast_into_iter().next().unwrap();
 
         unsafe { scatter_primitive_impl(values, &mut arr, idx) };
@@ -336,8 +336,8 @@ impl<'a> ChunkedSet<&'a [u8]> for &mut BinaryChunked {
         ca.rechunk_mut();
         let name = ca.name().clone();
 
-        // TODO(polars-array-scalar): the kernel writes one view per element, so a scalar chunk is
-        // written out on the way in rather than the one view it stands for being set once.
+        // As above: a scatter writes a different view at each index it names, so a chunk that
+        // repeats a single view is written out on the way in.
         let mut arr = ca.downcast_into_iter().next().unwrap();
 
         unsafe { scatter_binview_impl(values, &mut arr, idx) };
@@ -357,8 +357,7 @@ impl<'a> ChunkedSet<&'a str> for &mut StringChunked {
         ca.rechunk_mut();
         let name = ca.name().clone();
 
-        // TODO(polars-array-scalar): the kernel writes one view per element, so a scalar chunk is
-        // written out on the way in rather than the one view it stands for being set once.
+        // As above, a chunk that repeats a single view is written out on the way in.
         //
         // The strings are scattered into the array as the bytes they are, which is why it is the
         // binary view underneath that the kernel writes into.
@@ -383,8 +382,7 @@ impl ChunkedSet<bool> for &mut BooleanChunked {
         ca.rechunk_mut();
         let name = ca.name().clone();
 
-        // TODO(polars-array-scalar): the kernel writes one bit per element, so a scalar chunk is
-        // written out on the way in rather than the one value it stands for being set once.
+        // As above, a chunk that repeats a single bit is written out on the way in.
         let mut arr = ca.downcast_into_iter().next().unwrap();
 
         unsafe { scatter_bool_impl(values, &mut arr, idx) };

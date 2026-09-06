@@ -218,19 +218,15 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                     .to_arrow(CompatLevel::newest())
                     .underlying_physical_type();
                 with_match_physical_numeric_polars_type!(dtype, |$T| {
-                    unsafe {
-                        ca.chunks().iter().map(|chunk| {
-                            // TODO(polars-array-scalar): the reinterpret kernels are Arrow ones,
-                            // so a scalar chunk is written out rather than reinterpreted once.
-                            let chunk = export::to_arrow(&**chunk);
+                    ca.chunks().iter().map(|chunk| {
+                        reinterpret_elementwise(&**chunk, |chunk| {
                             binview_to_primitive_dyn::<<$T as PolarsNumericType>::Native>(
-                                &*chunk,
+                                chunk,
                                 &arrow_data_type,
                                 is_little_endian,
                             )
-                            .map(|arr| import::from_arrow(&*arr))
-                        }).collect()
-                    }
+                        })
+                    }).collect()
                 })
             },
             #[cfg(feature = "dtype-array")]
@@ -239,18 +235,15 @@ pub trait BinaryNameSpaceImpl: AsBinary {
             {
                 let inner_dtype = inner_dtype.to_physical();
                 let result: Vec<PlArrayRef> = with_match_physical_numeric_polars_type!(inner_dtype, |$T| {
-                    unsafe {
-                        ca.chunks().iter().map(|chunk| {
-                            // TODO(polars-array-scalar): as above, a scalar chunk is written out.
-                            let chunk = export::to_arrow(&**chunk);
+                    ca.chunks().iter().map(|chunk| {
+                        reinterpret_elementwise(&**chunk, |chunk| {
                             binview_to_fixed_size_list_dyn::<<$T as PolarsNumericType>::Native>(
-                                &*chunk,
+                                chunk,
                                 *array_width,
                                 is_little_endian
                             )
-                            .map(|arr| import::from_arrow(&*arr))
-                        }).collect::<Result<Vec<PlArrayRef>, _>>()
-                    }
+                        })
+                    }).collect::<Result<Vec<PlArrayRef>, _>>()
                 })?;
                 Ok(result)
             },
@@ -262,3 +255,41 @@ pub trait BinaryNameSpaceImpl: AsBinary {
 }
 
 impl BinaryNameSpaceImpl for BinaryChunked {}
+
+/// Runs an elementwise Arrow `kernel` over `chunk`, reading a chunk that repeats a single element
+/// once rather than writing that element out per element first.
+///
+/// The kernel is elementwise — every element of the answer a function of the element at the same
+/// index alone — which is what makes the answer for one element the answer for every element.
+#[cfg(feature = "binary_encoding")]
+fn reinterpret_elementwise(
+    chunk: &dyn PlArray,
+    kernel: impl FnOnce(&dyn arrow::array::Array) -> PolarsResult<Box<dyn arrow::array::Array>>,
+) -> PolarsResult<PlArrayRef> {
+    let length = chunk.len();
+
+    // Sliced down to the one element the chunk repeats, which leaves every buffer holding the
+    // single slot it already held, and is therefore `O(1)`.
+    let repeated = PlArray::is_scalar(chunk) && length > 1;
+    let sliced;
+    let operand = if repeated {
+        sliced = chunk.sliced(0, 1);
+        &*sliced
+    } else {
+        chunk
+    };
+
+    // SAFETY: the export hands the chunk's buffers to the Arrow kernel, and the import takes the
+    // kernel's own answer back; neither outlives this call.
+    let out = unsafe {
+        let exported = export::to_arrow(operand);
+        let answered = kernel(&*exported)?;
+        import::from_arrow(&*answered)
+    };
+
+    Ok(if repeated {
+        out.new_from_index(0, length)
+    } else {
+        out
+    })
+}
