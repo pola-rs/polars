@@ -133,6 +133,19 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
         self.validity.extend_constant(length, false);
     }
 
+    #[inline]
+    unsafe fn extend_one(
+        &mut self,
+        other: &PlPrimitiveArray<T>,
+        index: usize,
+        _share: ShareStrategy,
+    ) {
+        // A single value is pushed straight onto the buffers: going through `subslice_extend`
+        // would cost a call into the out-of-line byte-class core per element.
+        debug_assert!(index < other.len());
+        self.push(unsafe { other.get_unchecked(index) });
+    }
+
     fn subslice_extend(
         &mut self,
         other: &PlPrimitiveArray<T>,

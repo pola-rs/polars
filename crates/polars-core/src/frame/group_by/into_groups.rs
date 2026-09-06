@@ -22,6 +22,26 @@ pub trait IntoGroupsType {
     }
 }
 
+/// The groups of a chunked array whose one chunk repeats a single value: every element is that
+/// same value — or every element is null, which group-by also puts in one group — so they are one
+/// group, and the answer is read off the representation rather than off `len()` elements.
+///
+/// `None` if the array is not stored that way, and the caller has to look at the elements.
+fn scalar_groups<T: PolarsDataType>(ca: &ChunkedArray<T>) -> Option<GroupsType> {
+    let [chunk] = ca.chunks().as_slice() else {
+        return None;
+    };
+    if chunk.is_empty() || !chunk.is_scalar() {
+        return None;
+    }
+
+    Some(GroupsType::new_slice(
+        vec![[0, ca.len() as IdxSize]],
+        false,
+        true,
+    ))
+}
+
 fn group_multithreaded<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
     // TODO! change to something sensible
     ca.len() > 1000 && RAYON.current_num_threads() > 1
@@ -66,6 +86,11 @@ where
         let arr = self.downcast_iter().next().unwrap();
         if arr.is_empty() {
             return GroupsSlice::default();
+        }
+        // One value repeated is one group; `to_flat` below would write out one slot per element
+        // first, which is the whole array this representation exists not to hold.
+        if arr.is_scalar() {
+            return vec![[0, arr.len() as IdxSize]];
         }
         let arr = arr.to_flat();
         let mut values = arr.as_slice();
@@ -144,6 +169,11 @@ where
     <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash,
 {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
+        // One value repeated is one group, whatever the length.
+        if let Some(groups) = scalar_groups(self) {
+            return Ok(groups);
+        }
+
         // sorted path
         if self.is_sorted_ascending_flag() || self.is_sorted_descending_flag() {
             // don't have to pass `sorted` arg, GroupSlice is always sorted.
@@ -224,6 +254,11 @@ impl IntoGroupsType for BinaryChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
+        // One value repeated is one group, whatever the length.
+        if let Some(groups) = scalar_groups(self) {
+            return Ok(groups);
+        }
+
         if self.is_sorted_any() && !self.has_nulls() && self.n_chunks() == 1 {
             let arr = self.downcast_get(0).unwrap();
             let values = arr.values_iter();

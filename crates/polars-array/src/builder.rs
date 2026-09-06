@@ -60,6 +60,19 @@ pub trait StaticArrayBuilder: Send {
         share: ShareStrategy,
     );
 
+    /// Appends the single element of `other` at `index`.
+    ///
+    /// A gather that reads one element at a time — of a chunked array, say, where consecutive
+    /// output elements come from different chunks — calls this once per element, so a builder
+    /// whose element append is cheaper than a subslice of one overrides it.
+    ///
+    /// # Safety
+    /// `index` must be smaller than `other.len()`.
+    #[inline]
+    unsafe fn extend_one(&mut self, other: &Self::Array, index: usize, share: ShareStrategy) {
+        self.subslice_extend(other, index, 1, share);
+    }
+
     /// Appends the `length` elements of `other` starting at `start` `repeats` times over.
     fn subslice_extend_repeated(
         &mut self,

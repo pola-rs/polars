@@ -117,6 +117,13 @@ impl StaticArrayBuilder for PlBooleanArrayBuilder {
         self.validity.extend_constant(length, false);
     }
 
+    #[inline]
+    unsafe fn extend_one(&mut self, other: &PlBooleanArray, index: usize, _share: ShareStrategy) {
+        // As in `PlPrimitiveArrayBuilder`: one bit is pushed rather than taken as a subslice.
+        debug_assert!(index < other.len());
+        self.push(unsafe { other.get_unchecked(index) });
+    }
+
     fn subslice_extend(
         &mut self,
         other: &PlBooleanArray,

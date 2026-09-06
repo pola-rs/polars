@@ -61,6 +61,13 @@ pub trait StaticArray: PlArray + Clone {
     /// The builder that builds this array.
     type Builder: StaticArrayBuilder<Array = Self>;
 
+    /// An empty builder of arrays shaped like this one.
+    ///
+    /// This is the typed counterpart of [`builder_like`](crate::builder::builder_like): a caller
+    /// that knows the array type gets a builder it can call without going through `dyn`, which is
+    /// what a loop over single elements needs to stay monomorphised.
+    fn builder_like(&self) -> Self::Builder;
+
     /// Returns the element at `i`, whether or not it is null.
     #[inline]
     fn value(&self, i: usize) -> Self::ValueT<'_> {
@@ -91,6 +98,16 @@ pub trait StaticArray: PlArray + Clone {
     unsafe fn get_unchecked(&self, i: usize) -> Option<Self::ValueT<'_>> {
         // SAFETY: `i` is in bounds of the array, and therefore of its validity mask.
         unsafe { (!self.is_null_unchecked(i)).then(|| self.value_unchecked(i)) }
+    }
+
+    /// The values as a contiguous slice, or `None` if this array does not hold one.
+    ///
+    /// Reading elements out of a slice avoids the buffer indirection — and, for an array that may
+    /// be scalar, the per-element `broadcast_index` — that [`value_unchecked`](Self::value_unchecked)
+    /// pays, so a gather that reads one element at a time asks for the slice first.
+    #[inline(always)]
+    fn as_slice(&self) -> Option<&[Self::ValueT<'_>]> {
+        None
     }
 
     /// Returns an iterator over the elements, ignoring validity.
@@ -155,6 +172,17 @@ impl<T: NativeType> StaticArray for PlPrimitiveArray<T> {
     type Builder = PlPrimitiveArrayBuilder<T>;
 
     #[inline]
+    fn builder_like(&self) -> Self::Builder {
+        PlPrimitiveArrayBuilder::new()
+    }
+
+    #[inline(always)]
+    fn as_slice(&self) -> Option<&[T]> {
+        // `None` for a scalar chunk, whose one slot is not one slot per element.
+        self.flat_values().map(|values| values.as_slice())
+    }
+
+    #[inline]
     unsafe fn value_unchecked(&self, i: usize) -> T {
         unsafe { self.value_unchecked(i) }
     }
@@ -211,6 +239,11 @@ impl StaticArray for PlBooleanArray {
     type ValueIterT<'a> = PlBitmapIter<'a>;
     type IterT<'a> = PlBooleanIter<'a>;
     type Builder = PlBooleanArrayBuilder;
+
+    #[inline]
+    fn builder_like(&self) -> Self::Builder {
+        PlBooleanArrayBuilder::new()
+    }
 
     #[inline]
     unsafe fn value_unchecked(&self, i: usize) -> bool {
@@ -271,6 +304,11 @@ impl StaticArray for PlBinaryArray {
     type Builder = PlBinaryArrayBuilder;
 
     #[inline]
+    fn builder_like(&self) -> Self::Builder {
+        PlBinaryArrayBuilder::new()
+    }
+
+    #[inline]
     unsafe fn value_unchecked(&self, i: usize) -> &[u8] {
         unsafe { self.value_unchecked(i) }
     }
@@ -327,6 +365,11 @@ impl StaticArray for PlBinaryViewArray {
     type ValueIterT<'a> = PlBinaryViewValuesIter<'a>;
     type IterT<'a> = PlBinaryViewIter<'a>;
     type Builder = PlBinaryViewArrayBuilder;
+
+    #[inline]
+    fn builder_like(&self) -> Self::Builder {
+        PlBinaryViewArrayBuilder::new()
+    }
 
     #[inline]
     unsafe fn value_unchecked(&self, i: usize) -> &[u8] {
@@ -388,6 +431,11 @@ impl StaticArray for PlUtf8ViewArray {
     type Builder = PlUtf8ViewArrayBuilder;
 
     #[inline]
+    fn builder_like(&self) -> Self::Builder {
+        PlUtf8ViewArrayBuilder::new()
+    }
+
+    #[inline]
     unsafe fn value_unchecked(&self, i: usize) -> &str {
         unsafe { self.value_unchecked(i) }
     }
@@ -444,6 +492,11 @@ impl StaticArray for PlFixedSizeBinaryArray {
     type ValueIterT<'a> = PlFixedSizeBinaryValuesIter<'a>;
     type IterT<'a> = PlFixedSizeBinaryIter<'a>;
     type Builder = PlFixedSizeBinaryArrayBuilder;
+
+    #[inline]
+    fn builder_like(&self) -> Self::Builder {
+        PlFixedSizeBinaryArrayBuilder::new(self.width())
+    }
 
     #[inline]
     unsafe fn value_unchecked(&self, i: usize) -> &[u8] {
@@ -504,6 +557,11 @@ impl StaticArray for PlListArray {
     type Builder = PlListArrayBuilder;
 
     #[inline]
+    fn builder_like(&self) -> Self::Builder {
+        PlListArrayBuilder::new(crate::builder::builder_like(self.values()))
+    }
+
+    #[inline]
     unsafe fn value_unchecked(&self, i: usize) -> Box<dyn PlArray> {
         unsafe { self.value_unchecked(i) }
     }
@@ -560,6 +618,11 @@ impl StaticArray for PlFixedSizeListArray {
     type ValueIterT<'a> = PlFixedSizeListValuesIter<'a>;
     type IterT<'a> = PlFixedSizeListIter<'a>;
     type Builder = PlFixedSizeListArrayBuilder;
+
+    #[inline]
+    fn builder_like(&self) -> Self::Builder {
+        PlFixedSizeListArrayBuilder::new(crate::builder::builder_like(self.values()), self.width())
+    }
 
     #[inline]
     unsafe fn value_unchecked(&self, i: usize) -> Box<dyn PlArray> {
@@ -622,6 +685,16 @@ impl StaticArray for PlStructArray {
     type Builder = PlStructArrayBuilder;
 
     #[inline]
+    fn builder_like(&self) -> Self::Builder {
+        PlStructArrayBuilder::new(
+            self.fields()
+                .iter()
+                .map(|field| crate::builder::builder_like(&**field))
+                .collect(),
+        )
+    }
+
+    #[inline]
     unsafe fn value_unchecked(&self, _i: usize) -> Self::ValueT<'_> {}
 
     #[inline]
@@ -674,6 +747,11 @@ impl StaticArray for PlNullArray {
     type ValueIterT<'a> = std::iter::RepeatN<()>;
     type IterT<'a> = PlUnitIter<'a>;
     type Builder = PlNullArrayBuilder;
+
+    #[inline]
+    fn builder_like(&self) -> Self::Builder {
+        PlNullArrayBuilder::new()
+    }
 
     #[inline]
     unsafe fn value_unchecked(&self, _i: usize) -> Self::ValueT<'_> {}

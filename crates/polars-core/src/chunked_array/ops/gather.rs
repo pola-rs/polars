@@ -138,6 +138,11 @@ where
         if has_nulls {
             it.map(|i| target.get_unchecked(i as usize))
                 .collect_arr_trusted()
+        } else if let Some(values) = target.as_slice() {
+            // Read the values straight out of the slice: `value_unchecked` would go through the
+            // buffer, and resolve the values representation, once per index.
+            it.map(|i| values.get_unchecked(i as usize).clone())
+                .collect_arr_trusted()
         } else {
             it.map(|i| target.value_unchecked(i as usize))
                 .collect_arr_trusted()

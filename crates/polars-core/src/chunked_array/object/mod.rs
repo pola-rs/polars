@@ -328,6 +328,11 @@ impl<T: PolarsObject> StaticArray for ObjectArray<T> {
     type Builder = ObjectArrayBuilder<T>;
 
     #[inline]
+    fn builder_like(&self) -> Self::Builder {
+        ObjectArrayBuilder::new()
+    }
+
+    #[inline]
     unsafe fn value_unchecked(&self, i: usize) -> &T {
         unsafe { self.value_unchecked(i) }
     }

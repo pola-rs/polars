@@ -2,7 +2,8 @@
 use std::fmt::Debug;
 
 use arrow::bitmap::BitmapBuilder;
-use polars_array::builder::{PlArrayBuilder, ShareStrategy, builder_like};
+use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
+use polars_array::static_array::StaticArray;
 use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -336,15 +337,21 @@ impl TakeChunked for Series {
     }
 }
 
-/// The builder of the chunks of `ca`, with room for `by.len()` elements. A `ChunkedArray` always
+/// The builder of the chunks of `ca`, with room for `capacity` elements. A `ChunkedArray` always
 /// has a chunk, which is the array the built one is shaped like.
-fn gather_builder<T: PolarsDataType, const B: u64>(
+///
+/// The builder is the *typed* one, not a `Box<dyn PlArrayBuilder>`: the gathers below append one
+/// element at a time, and a `dyn` call per element costs more than the append itself.
+fn gather_builder<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
-    by: &[ChunkId<B>],
-) -> Box<dyn PlArrayBuilder> {
-    let prototype = ca.chunks().first().expect("a ChunkedArray has a chunk");
-    let mut builder = builder_like(&**prototype);
-    builder.reserve(by.len());
+    capacity: usize,
+) -> <T::Array as StaticArray>::Builder {
+    let prototype = ca
+        .downcast_iter()
+        .next()
+        .expect("a ChunkedArray has a chunk");
+    let mut builder = prototype.builder_like();
+    builder.reserve(capacity);
     builder
 }
 
@@ -368,22 +375,35 @@ where
         sorted: IsSorted,
         avoid_sharing: bool,
     ) -> Self {
-        let mut builder = gather_builder(self, by);
+        let mut builder = gather_builder(self, by.len());
         let share = share_strategy(avoid_sharing);
 
-        for chunk_id in by {
-            debug_assert!(
-                !chunk_id.is_null(),
-                "null chunks should not hit this branch"
-            );
-            let (chunk_idx, array_idx) = chunk_id.extract();
-            let arr = self.downcast_get_unchecked(chunk_idx as usize);
-            builder.subslice_extend(arr, array_idx as usize, 1, share);
+        // One chunk is the common case, and it lets the chunk lookup leave the loop entirely.
+        if self.n_chunks() == 1 {
+            let arr = self.downcast_get_unchecked(0);
+            for chunk_id in by {
+                debug_assert!(
+                    !chunk_id.is_null(),
+                    "null chunks should not hit this branch"
+                );
+                let (_, array_idx) = chunk_id.extract();
+                builder.extend_one(arr, array_idx as usize, share);
+            }
+        } else {
+            for chunk_id in by {
+                debug_assert!(
+                    !chunk_id.is_null(),
+                    "null chunks should not hit this branch"
+                );
+                let (chunk_idx, array_idx) = chunk_id.extract();
+                let arr = self.downcast_get_unchecked(chunk_idx as usize);
+                builder.extend_one(arr, array_idx as usize, share);
+            }
         }
 
         // SAFETY: the builder was shaped like the chunks of this array, so what it froze is of
         // the same physical type.
-        let mut out = self.with_chunks(vec![PlArrayBuilder::freeze(builder)]);
+        let mut out = self.with_chunks(vec![builder.freeze().into_boxed()]);
         let sorted_flag = _update_gather_sorted_flag(self.is_sorted_flag(), sorted);
         out.set_sorted_flag(sorted_flag);
         out
@@ -395,22 +415,36 @@ where
         by: &[ChunkId<B>],
         avoid_sharing: bool,
     ) -> Self {
-        let mut builder = gather_builder(self, by);
+        let mut builder = gather_builder(self, by.len());
         let share = share_strategy(avoid_sharing);
 
-        for chunk_id in by {
-            if chunk_id.is_null() {
-                builder.extend_nulls(1);
-                continue;
-            }
+        // As above: a single chunk lifts the lookup out of the loop.
+        if self.n_chunks() == 1 {
+            let arr = self.downcast_get_unchecked(0);
+            for chunk_id in by {
+                if chunk_id.is_null() {
+                    builder.extend_nulls(1);
+                    continue;
+                }
 
-            let (chunk_idx, array_idx) = chunk_id.extract();
-            let arr = self.downcast_get_unchecked(chunk_idx as usize);
-            builder.subslice_extend(arr, array_idx as usize, 1, share);
+                let (_, array_idx) = chunk_id.extract();
+                builder.extend_one(arr, array_idx as usize, share);
+            }
+        } else {
+            for chunk_id in by {
+                if chunk_id.is_null() {
+                    builder.extend_nulls(1);
+                    continue;
+                }
+
+                let (chunk_idx, array_idx) = chunk_id.extract();
+                let arr = self.downcast_get_unchecked(chunk_idx as usize);
+                builder.extend_one(arr, array_idx as usize, share);
+            }
         }
 
         // SAFETY: as in `take_chunked_unchecked`.
-        self.with_chunks(vec![PlArrayBuilder::freeze(builder)])
+        self.with_chunks(vec![builder.freeze().into_boxed()])
     }
 }
 
