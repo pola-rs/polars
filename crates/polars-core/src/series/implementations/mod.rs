@@ -38,9 +38,7 @@ use polars_utils::aliases::PlSeedableRandomStateQuality;
 
 use super::*;
 use crate::chunked_array::AsSinglePtr;
-use crate::chunked_array::ops::compare_inner::{
-    IntoTotalOrdInner, TotalOrdInner,
-};
+use crate::chunked_array::ops::compare_inner::{IntoTotalOrdInner, TotalOrdInner};
 
 // Utility wrapper struct
 #[repr(transparent)]
