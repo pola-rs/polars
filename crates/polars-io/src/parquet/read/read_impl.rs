@@ -497,4 +497,3 @@ pub fn calc_prefilter_cost(mask: &arrow::bitmap::Bitmap) -> f64 {
     // Closer to 1: post-filtering is probably better.
     (num_edges / rg_len).clamp(0.0, 1.0)
 }
-
