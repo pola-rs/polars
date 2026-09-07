@@ -1,6 +1,3 @@
-use num_traits::{Float, NumCast};
-use polars_error::to_compute_err;
-use rand::distr::Bernoulli;
 use rand::prelude::*;
 use rand::seq::index::IndexVec;
 use rand_distr::Uniform;

@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 
-use arrow::bitmap::Bitmap;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::prelude::*;

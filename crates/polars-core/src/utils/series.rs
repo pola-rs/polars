@@ -1,10 +1,7 @@
-use std::rc::Rc;
-
 use polars_compute::find_validity_mismatch::find_validity_mismatch;
 use polars_compute::gather::take_unchecked;
 
 use crate::prelude::*;
-use crate::series::amortized_iter::AmortSeries;
 
 pub fn check_is_valid_struct_cast(
     input_dtype: &DataType,
