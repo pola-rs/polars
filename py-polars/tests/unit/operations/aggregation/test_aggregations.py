@@ -536,6 +536,19 @@ def test_approx_quantile_rank_error(
     assert distance / n <= error + 2 / n
 
 
+@pytest.mark.parametrize("fn", [pl.Expr.quantile, pl.Expr.approx_quantile])
+def test_quantile_varying_quantiles_unsupported(
+    fn: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0], "q": [0.1, 0.5, 0.9]})
+
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=r"does not support varying (approximate )?quantiles",
+    ):
+        df.select(fn(pl.col("a"), pl.col("q")))
+
+
 def test_mean_overflow() -> None:
     mean = pl.Series([9_223_372_036_854_775_800, 100]).mean()
     assert isinstance(mean, float)
@@ -1827,16 +1840,3 @@ def test_max_sorted_all_nan_with_nulls(dtype: pl.DataType) -> None:
     mixed = pl.Series("a", [None, 1.0, nan], dtype=dtype).sort()
     assert mixed.flags["SORTED_ASC"]
     assert mixed.max() == 1.0
-
-
-@pytest.mark.parametrize("fn", [pl.Expr.quantile, pl.Expr.approx_quantile])
-def test_quantile_varying_quantiles_unsupported(
-    fn: Callable[[pl.Expr, pl.Expr], pl.Expr],
-) -> None:
-    df = pl.DataFrame({"a": [1.0, 2.0, 3.0], "q": [0.1, 0.5, 0.9]})
-
-    with pytest.raises(
-        pl.exceptions.ComputeError,
-        match=r"does not support varying (approximate )?quantiles",
-    ):
-        df.select(fn(pl.col("a"), pl.col("q")))
