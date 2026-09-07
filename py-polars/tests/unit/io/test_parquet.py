@@ -133,9 +133,9 @@ def test_to_from_buffer(
 def test_read_parquet_respects_rechunk_16416(
     use_pyarrow: bool, rechunk_and_expected_chunks: tuple[bool, int]
 ) -> None:
-    # Create a dataframe with 3 chunks:
-    df = pl.DataFrame({"a": [1]})
-    df = pl.concat([df, df, df])
+    # Create a dataframe with 3 chunks. The values have to differ: concatenating
+    # chunks that hold the same single value keeps them as one scalar column.
+    df = pl.concat([pl.DataFrame({"a": [i]}) for i in range(3)])
     buf = io.BytesIO()
     df.write_parquet(buf, row_group_size=1)
     buf.seek(0)
