@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, and};
+use arrow::bitmap::Bitmap;
 use polars_error::{PolarsResult, polars_ensure};
 
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
-use crate::bitmap::{PlBitmap, PlBitmapRef, validity_eq};
+use crate::bitmap::{PlBitmap, PlBitmapRef, combine_validities_and, validity_eq};
 use crate::broadcast::{
     slice_validity, try_validity_covering, validity_covering, validity_covering_unchecked,
 };
@@ -342,11 +342,11 @@ impl PlStructArray {
 
 /// Returns `field` with `mask` merged into its validity, so that masked-out rows are ignored.
 fn masked(field: &dyn PlArray, mask: PlBitmapRef<'_>) -> Box<dyn PlArray> {
-    let validity = match field.validity() {
-        Some(field_validity) => and(&field_validity.to_flat(), &mask.to_flat()),
-        None => mask.to_flat().into_owned(),
-    };
-    field.with_validity(Some(PlBitmap::from_bitmap(validity)))
+    // Both masks come in whichever representation they are in, and `and`ing them keeps a repeated
+    // bit repeated: a field that is null throughout, or valid throughout, is masked in `O(1)`.
+    let validity = combine_validities_and(field.validity(), Some(mask))
+        .expect("a mask was handed in, so the combination is one too");
+    field.with_validity(Some(validity))
 }
 
 impl Default for PlStructArray {
@@ -551,5 +551,38 @@ mod tests {
                 .as_slice(),
             [2, 3],
         );
+    }
+
+    /// A field's own mask reaches `masked` in whichever representation it is in, and `and`ing the
+    /// row mask into it keeps a repeated bit repeated: a field that is null throughout, or valid
+    /// throughout, is masked without its mask being written out.
+    #[test]
+    fn masking_a_field_keeps_a_repeated_bit_repeated() {
+        let rows = Bitmap::from_iter([true, false, true, false]);
+        let mask = PlBitmapRef::new(&rows, 4);
+        let field = PlPrimitiveArray::<i32>::new_scalar(1, 4);
+
+        // No mask of its own: what comes back is the row mask, one bit per row.
+        let out = masked(&field, mask);
+        let validity = out.validity().unwrap();
+        assert!(validity.is_flat());
+        assert_eq!(validity.set_bits(), 2);
+
+        // Null throughout: no row of it is valid whatever the row mask says, which is the single
+        // unset bit it already holds.
+        let nulls = field
+            .clone()
+            .with_validity(Some(PlBitmap::new_scalar(false, 4)));
+        let out = masked(&nulls, mask);
+        let validity = out.validity().unwrap();
+        assert!(validity.is_scalar());
+        assert_eq!(validity.scalar_value(), Some(false));
+
+        // Valid throughout: the row mask is left as it is.
+        let valid = field.with_validity(Some(PlBitmap::new_scalar(true, 4)));
+        let out = masked(&valid, mask);
+        let validity = out.validity().unwrap();
+        assert!(validity.is_flat());
+        assert_eq!(validity.set_bits(), 2);
     }
 }

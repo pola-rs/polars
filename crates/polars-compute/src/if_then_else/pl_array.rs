@@ -8,6 +8,7 @@ use arrow::types::NativeType;
 use polars_array::PlFixedSizeListArray;
 use polars_array::arrow::bridge::{chunk_from_arrow, flat_to_arrow};
 use polars_array::arrow::export;
+use polars_array::bitmap::{combine_validities_and, invert};
 use polars_array::{
     Flat, PlArray, PlBinaryViewArray, PlBitmapRef, PlListArray, PlPrimitiveArray, PlUtf8ViewArray,
     StaticArray,
@@ -48,11 +49,43 @@ pub trait IfThenElseKernel: StaticArray {
 
         // One bit picks the same side at every element, which is therefore that side itself.
         match mask.scalar_value() {
-            Some(true) => if_true.clone(),
-            Some(false) => if_false.clone(),
-            None => {
-                Self::if_then_else_flat(&mask.to_flat(), &if_true.to_flat(), &if_false.to_flat())
+            Some(true) => return if_true.clone(),
+            Some(false) => return if_false.clone(),
+            None => {},
+        }
+
+        // A side that is null throughout holds no element to pick: what it leaves behind is the
+        // other side with the elements this one would have picked masked off. The other side's
+        // buffers are handed over as they are, in whatever representation they are in.
+        if if_true.scalar_value().is_some_and(|value| value.is_none()) {
+            let picked = invert(mask);
+            let validity = combine_validities_and(if_false.validity(), Some(picked.as_ref()));
+            return if_false.clone().with_validity_typed(validity);
+        }
+        if if_false.scalar_value().is_some_and(|value| value.is_none()) {
+            let validity = combine_validities_and(if_true.validity(), Some(mask));
+            return if_true.clone().with_validity_typed(validity);
+        }
+
+        // The mask holds one bit per element: a repeated one was answered above.
+        let mask = mask.flat_bitmap().expect("a scalar mask is answered above");
+
+        // A side that repeats one element hands the kernel that element rather than the array
+        // written out one slot per element, which is what the broadcast kernels take.
+        match (
+            if_true.scalar_value().flatten(),
+            if_false.scalar_value().flatten(),
+        ) {
+            (Some(if_true), Some(if_false)) => {
+                Self::if_then_else_flat_broadcast_both(mask, if_true, if_false)
             },
+            (Some(if_true), None) => {
+                Self::if_then_else_flat_broadcast_true(mask, if_true, &if_false.to_flat())
+            },
+            (None, Some(if_false)) => {
+                Self::if_then_else_flat_broadcast_false(mask, &if_true.to_flat(), if_false)
+            },
+            (None, None) => Self::if_then_else_flat(mask, &if_true.to_flat(), &if_false.to_flat()),
         }
     }
 
@@ -70,7 +103,18 @@ pub trait IfThenElseKernel: StaticArray {
             return if_false.clone();
         }
 
-        Self::if_then_else_flat_broadcast_true(&mask.to_flat(), if_true, &if_false.to_flat())
+        // Neither side is an array to hand back once `if_false` repeats one element too: both are
+        // the single value the kernel writes out.
+        match if_false.scalar_value().flatten() {
+            Some(if_false) => {
+                Self::if_then_else_flat_broadcast_both(&mask.to_flat(), if_true, if_false)
+            },
+            None => Self::if_then_else_flat_broadcast_true(
+                &mask.to_flat(),
+                if_true,
+                &if_false.to_flat(),
+            ),
+        }
     }
 
     /// As [`Self::if_then_else`], with a single value standing for every element of `if_false`.
@@ -86,7 +130,17 @@ pub trait IfThenElseKernel: StaticArray {
             return if_true.clone();
         }
 
-        Self::if_then_else_flat_broadcast_false(&mask.to_flat(), &if_true.to_flat(), if_false)
+        // Neither side is an array to hand back once `if_true` repeats one element too.
+        match if_true.scalar_value().flatten() {
+            Some(if_true) => {
+                Self::if_then_else_flat_broadcast_both(&mask.to_flat(), if_true, if_false)
+            },
+            None => Self::if_then_else_flat_broadcast_false(
+                &mask.to_flat(),
+                &if_true.to_flat(),
+                if_false,
+            ),
+        }
     }
 
     /// As [`Self::if_then_else`], with a single value standing for either side.
@@ -95,9 +149,21 @@ pub trait IfThenElseKernel: StaticArray {
         if_true: Self::ValueT<'_>,
         if_false: Self::ValueT<'_>,
     ) -> Self {
-        // Neither side is an array here, so there is nothing for a repeated bit to hand back: the
-        // kernel writes the chosen value out either way.
-        Self::if_then_else_flat_broadcast_both(&mask.to_flat(), if_true, if_false)
+        // Neither side is an array here, so there is no array for a repeated bit to hand back —
+        // but that one bit picks the same value at every element, which is the one element the
+        // kernel writes out below and the result repeats from there.
+        if let Some(bit) = mask.scalar_value() {
+            let single = Bitmap::new_with_value(bit, 1);
+            let element = Self::if_then_else_flat_broadcast_both(&single, if_true, if_false);
+            debug_assert_eq!(element.len(), 1);
+
+            return element.new_from_index_typed(0, mask.len());
+        }
+
+        // The mask holds one bit per element: a repeated one was answered above.
+        let mask = mask.flat_bitmap().expect("a scalar mask is answered above");
+
+        Self::if_then_else_flat_broadcast_both(mask, if_true, if_false)
     }
 }
 
@@ -192,4 +258,121 @@ impl IfThenElseKernel for PlFixedSizeListArray {
         Box::new(Field::new(LIST_VALUES_NAME, t.dtype().clone(), true)),
         t.len(),
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The mask `[true, false, true, false, true]`, one bit per element.
+    fn picked() -> Bitmap {
+        Bitmap::from_iter([true, false, true, false, true])
+    }
+
+    fn flat() -> PlPrimitiveArray<i32> {
+        PlPrimitiveArray::from_vec(vec![10, 20, 30, 40, 50])
+    }
+
+    /// A side that repeats one element hands that element to the broadcast kernel rather than
+    /// being written out one slot per element first.
+    #[test]
+    fn a_scalar_side_is_picked_through_the_broadcast_kernel() {
+        let bits = picked();
+        let mask = PlBitmapRef::new(&bits, 5);
+        let scalar = PlPrimitiveArray::new_scalar(1i32, 5);
+
+        let out = IfThenElseKernel::if_then_else(mask, &scalar, &flat());
+        assert_eq!(
+            out.iter().collect::<Vec<_>>(),
+            [Some(1), Some(20), Some(1), Some(40), Some(1)]
+        );
+
+        let out = IfThenElseKernel::if_then_else(mask, &flat(), &scalar);
+        assert_eq!(
+            out.iter().collect::<Vec<_>>(),
+            [Some(10), Some(1), Some(30), Some(1), Some(50)]
+        );
+
+        // Both sides repeating leaves the kernel two values and no array at all.
+        let other = PlPrimitiveArray::new_scalar(2i32, 5);
+        let out = IfThenElseKernel::if_then_else(mask, &scalar, &other);
+        assert_eq!(
+            out.iter().collect::<Vec<_>>(),
+            [Some(1), Some(2), Some(1), Some(2), Some(1)]
+        );
+    }
+
+    /// A side that is null throughout holds no element to pick: the other side is handed back as
+    /// it is, in the representation it is in, with the elements this one would have picked masked
+    /// off.
+    #[test]
+    fn a_side_that_is_null_throughout_only_masks_the_other_one() {
+        let bits = picked();
+        let mask = PlBitmapRef::new(&bits, 5);
+        let nulls = PlPrimitiveArray::<i32>::new_full_null(5);
+
+        let out = IfThenElseKernel::if_then_else(mask, &nulls, &flat());
+        assert_eq!(
+            out.iter().collect::<Vec<_>>(),
+            [None, Some(20), None, Some(40), None]
+        );
+
+        let out = IfThenElseKernel::if_then_else(mask, &flat(), &nulls);
+        assert_eq!(
+            out.iter().collect::<Vec<_>>(),
+            [Some(10), None, Some(30), None, Some(50)]
+        );
+
+        // The other side keeps its own representation: a repeated value stays one slot.
+        let scalar = PlPrimitiveArray::new_scalar(1i32, 5);
+        let out = IfThenElseKernel::if_then_else(mask, &nulls, &scalar);
+        assert!(out.values_are_scalar());
+        assert_eq!(
+            out.iter().collect::<Vec<_>>(),
+            [None, Some(1), None, Some(1), None]
+        );
+
+        // Two sides that are both null throughout leave every element null, with nothing written
+        // out on either axis.
+        let out = IfThenElseKernel::if_then_else(mask, &nulls, &nulls);
+        assert!(PlArray::is_scalar(&out));
+        assert_eq!(out.null_count(), 5);
+    }
+
+    /// The broadcast entry points take the same shortcut for the array side they are handed.
+    #[test]
+    fn a_scalar_array_side_folds_into_the_broadcast_both_kernel() {
+        let bits = picked();
+        let mask = PlBitmapRef::new(&bits, 5);
+        let scalar = PlPrimitiveArray::new_scalar(2i32, 5);
+
+        let out = IfThenElseKernel::if_then_else_broadcast_true(mask, 1i32, &scalar);
+        assert_eq!(
+            out.iter().collect::<Vec<_>>(),
+            [Some(1), Some(2), Some(1), Some(2), Some(1)]
+        );
+
+        let out = IfThenElseKernel::if_then_else_broadcast_false(mask, &scalar, 1i32);
+        assert_eq!(
+            out.iter().collect::<Vec<_>>(),
+            [Some(2), Some(1), Some(2), Some(1), Some(2)]
+        );
+
+        // A mask that repeats one bit picks the same value at every element, which the result
+        // repeats in turn rather than writing out one slot per element.
+        let all = Bitmap::new_with_value(true, 1);
+        let repeated = PlBitmapRef::new_broadcast(&all, 1_000_000_000);
+        let out: PlPrimitiveArray<i32> =
+            IfThenElseKernel::if_then_else_broadcast_both(repeated, 1, 2);
+        assert_eq!(out.len(), 1_000_000_000);
+        assert_eq!(out.scalar_values(), Some(1));
+
+        // A side that is null throughout is still only a mask over the one value handed in.
+        let nulls = PlPrimitiveArray::<i32>::new_full_null(5);
+        let out = IfThenElseKernel::if_then_else_broadcast_false(mask, &nulls, 1i32);
+        assert_eq!(
+            out.iter().collect::<Vec<_>>(),
+            [None, Some(1), None, Some(1), None]
+        );
+    }
 }

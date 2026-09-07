@@ -273,6 +273,18 @@ impl PlBinaryViewArray {
         self.views_are_scalar().then(|| self.views[0])
     }
 
+    /// The bytes every element of this array reads, if the views buffer holds a single slot.
+    ///
+    /// The mask is not looked at: a null element still holds the bytes its view reads, which is
+    /// what a kernel that answers over the values alone compares.
+    #[inline]
+    pub fn scalar_values(&self) -> Option<&[u8]> {
+        // SAFETY: a scalar views buffer holds the one view element 0 reads, and it is in bounds
+        // of an array that is not empty — which `views_are_scalar` is only true of.
+        self.views_are_scalar()
+            .then(|| unsafe { self.value_unchecked(0) })
+    }
+
     /// The buffers the views that do not inline their bytes point into.
     #[inline(always)]
     pub const fn data_buffers(&self) -> &Buffer<Buffer<u8>> {

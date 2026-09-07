@@ -1,5 +1,5 @@
 use arrow::bitmap::{Bitmap, binary_fold, quaternary, ternary};
-use arrow::compute::utils::combine_validities_and;
+use polars_array::bitmap::combine_validities_and;
 use polars_array::{Flat, PlBitmap, PlBooleanArray};
 
 /// The validity mask of `arr`, if it holds one bit per element.
@@ -142,15 +142,25 @@ pub fn xor(lhs: &PlBooleanArray, rhs: &PlBooleanArray) -> PlBooleanArray {
         (None, None) => {},
     }
 
-    let lhs = lhs.to_flat();
-    let rhs = rhs.to_flat();
-    let validity = combine_validities_and(lhs.validity(), rhs.validity());
+    // A values buffer of one bit either flips the other side's or leaves it alone, and neither
+    // side is written out to say so. What `xor` has left to do here is carry the nulls of both
+    // sides over, which combine in whatever representation they came in.
+    let length = lhs.len();
+    let values = match (lhs.scalar_values(), rhs.scalar_values()) {
+        (Some(lhs), Some(rhs)) => PlBooleanArray::new_scalar(lhs != rhs, length),
+        (Some(bit), None) => flipped_if(rhs.flat_values().unwrap(), bit),
+        (None, Some(bit)) => flipped_if(lhs.flat_values().unwrap(), bit),
+        (None, None) => {
+            PlBooleanArray::from_values(lhs.flat_values().unwrap() ^ rhs.flat_values().unwrap())
+        },
+    };
 
-    PlBooleanArray::new(
-        lhs.values() ^ rhs.values(),
-        lhs.len(),
-        validity.map(PlBitmap::from_bitmap),
-    )
+    values.with_validity(combine_validities_and(lhs.validity(), rhs.validity()))
+}
+
+/// The bits of `values`, flipped where `bit` is set: `xor`ing one bit into them says nothing else.
+fn flipped_if(values: &Bitmap, bit: bool) -> PlBooleanArray {
+    PlBooleanArray::from_values(if bit { !values } else { values.clone() })
 }
 
 /// [`or`] for two chunks that each hold one bit per element.
@@ -292,4 +302,63 @@ fn and_flat(lhs: &Flat<PlBooleanArray>, rhs: &Flat<PlBooleanArray>) -> PlBoolean
         lhs.len(),
         validity.map(PlBitmap::from_bitmap),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A chunk of `bits.len()` elements whose values are the bits and whose mask is `valid`.
+    fn chunk(bits: [bool; 4], valid: [bool; 4]) -> PlBooleanArray {
+        PlBooleanArray::new(
+            Bitmap::from_iter(bits),
+            4,
+            Some(PlBitmap::from_bitmap(Bitmap::from_iter(valid))),
+        )
+    }
+
+    /// A chunk of four elements that all read `bit`, with `valid` saying which are null. A null is
+    /// what keeps `known_value` from settling the answer, which leaves the values dispatch to it.
+    fn scalar_chunk(bit: bool, valid: [bool; 4]) -> PlBooleanArray {
+        PlBooleanArray::new_scalar(bit, 4)
+            .with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter(valid))))
+    }
+
+    /// `xor` against a values buffer of one bit either flips the other side's bits or leaves them
+    /// alone, and that side is never written out to say so.
+    #[test]
+    fn a_scalar_values_side_flips_the_other_one_without_being_written_out() {
+        let flat = chunk([true, false, true, false], [true, true, true, false]);
+
+        for (bit, expected) in [
+            (false, [Some(true), Some(false), None, None]),
+            (true, [Some(false), Some(true), None, None]),
+        ] {
+            let scalar = scalar_chunk(bit, [true, true, false, true]);
+
+            for out in [xor(&scalar, &flat), xor(&flat, &scalar)] {
+                assert_eq!(out.iter().collect::<Vec<_>>(), expected);
+                // The answer differs per element, so its values hold one bit for each of them.
+                assert!(out.values_are_flat());
+            }
+        }
+    }
+
+    /// Two sides that each repeat one bit `xor` to the one bit that answers for every element,
+    /// which stays the single bit it is.
+    #[test]
+    fn two_scalar_values_sides_xor_to_a_single_bit() {
+        for (lhs, rhs, expected) in [(true, true, false), (true, false, true)] {
+            let lhs = scalar_chunk(lhs, [true, true, true, false]);
+            let rhs = scalar_chunk(rhs, [true, false, true, true]);
+
+            let out = xor(&lhs, &rhs);
+            assert_eq!(out.len(), 4);
+            assert_eq!(out.scalar_values(), Some(expected));
+            assert_eq!(
+                out.iter().collect::<Vec<_>>(),
+                [Some(expected), None, Some(expected), None]
+            );
+        }
+    }
 }
