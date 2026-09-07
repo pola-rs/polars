@@ -6,7 +6,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 use polars_core::schema::SchemaRef;
 use polars_core::series::Series;
-use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
+use polars_ooc::{ParameterFreeSpillContext, RandomSpillContext, SpillFrame};
 use polars_utils::range::check_range;
 
 use crate::pipe::PortReceiver;
@@ -16,14 +16,14 @@ pub(super) struct SpillFrameSearchBuffer {
     schema: SchemaRef,
     // Use Arc<_> to prevent unspilling the SpillFrames when splitting the DFSB.
     sfs_at_offsets: BTreeMap<usize, Arc<SpillFrame>>,
-    spill_ctx: MostRecentSpillContext,
+    spill_ctx: RandomSpillContext,
     total_rows: usize,
     skip_rows: usize,
     frozen: bool,
 }
 
 impl SpillFrameSearchBuffer {
-    pub(super) fn empty_with_schema(schema: SchemaRef, spill_ctx: MostRecentSpillContext) -> Self {
+    pub(super) fn empty_with_schema(schema: SchemaRef, spill_ctx: RandomSpillContext) -> Self {
         SpillFrameSearchBuffer {
             schema,
             sfs_at_offsets: BTreeMap::new(),
@@ -42,13 +42,18 @@ impl SpillFrameSearchBuffer {
         self.total_rows
     }
 
-    fn spillframe_at(&self, row_index: usize) -> (&Arc<SpillFrame>, usize) {
-        debug_assert!(row_index < self.total_rows);
+    /// Get the offset of the first live row in `sfs_at_offsets` coordinates.
+    fn live_start(&self) -> usize {
         let first_offset = match self.sfs_at_offsets.first_key_value() {
             Some((offset, _)) => *offset,
             None => 0,
         };
-        let buf_index = self.skip_rows + first_offset + row_index;
+        first_offset + self.skip_rows
+    }
+
+    fn spillframe_at(&self, row_index: usize) -> (&Arc<SpillFrame>, usize) {
+        debug_assert!(row_index < self.total_rows);
+        let buf_index = self.live_start() + row_index;
         let (frame_offset, frame) = self.sfs_at_offsets.range(..=buf_index).next_back().unwrap();
         (frame, buf_index - frame_offset)
     }
@@ -114,10 +119,22 @@ impl SpillFrameSearchBuffer {
 
     pub(super) async fn into_df(self) -> DataFrame {
         let mut acc = DataFrame::empty_with_schema(&self.schema);
-        for frame in self.sfs_at_offsets.values() {
+        if self.total_rows == 0 {
+            return acc;
+        }
+
+        let live_start = self.live_start();
+        let live_end = live_start + self.total_rows;
+        let first_offset = *self
+            .sfs_at_offsets
+            .range(..=live_start)
+            .next_back()
+            .unwrap()
+            .0;
+        for (_, frame) in self.sfs_at_offsets.range(first_offset..live_end) {
             acc.vstack_mut(&*frame.get().await).unwrap();
         }
-        acc.slice(self.skip_rows as i64, self.total_rows)
+        acc.slice((live_start - first_offset) as i64, self.total_rows)
     }
 
     fn gc(&mut self) {

@@ -7,7 +7,7 @@ use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
-use polars_ooc::MostRecentSpillContext;
+use polars_ooc::RandomSpillContext;
 use polars_ops::frame::merge_join::*;
 use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_utils::UnitVec;
@@ -161,11 +161,11 @@ impl MergeJoinNode {
         };
         let build_unmerged = SpillFrameSearchBuffer::empty_with_schema(
             build_schema.clone(),
-            MostRecentSpillContext::new("merge-join-build-buffer".into()),
+            RandomSpillContext::new("merge-join-build-buffer".into()),
         );
         let probe_unmerged = SpillFrameSearchBuffer::empty_with_schema(
             probe_schema.clone(),
-            MostRecentSpillContext::new("merge-join-probe-buffer".into()),
+            RandomSpillContext::new("merge-join-probe-buffer".into()),
         );
         Ok(MergeJoinNode {
             state,
