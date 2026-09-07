@@ -1250,3 +1250,17 @@ def test_map_null_row_keeping_its_entries() -> None:
     # Row encoding also propagates first.
     assert s.to_frame().group_by("m").len().height == 2
     assert s.to_frame().sort("m")["m"].to_list() == [None, {Decimal("2.50"): 2}]
+
+
+def test_map_sort_by_categorical_keys() -> None:
+    # Ensure that categories are sorted by their values, not by their codes.
+    cats = pl.Categories("test_map_sort_by_categorical_keys")
+    dtype = pl.Map(pl.Categorical(cats), pl.Int64)
+    s = pl.Series("m", [{"b": 1}, {"a": 1}, {"a": 1}], dtype=dtype)
+    df = pl.DataFrame({"m": s, "x": [1, 2, 3], "y": [3, 4, 2]})
+
+    assert df.sort("m", "y")["x"].to_list() == [3, 2, 1]
+    assert df.select(pl.col("x").sort_by("m", "y"))["x"].to_list() == [3, 2, 1]
+
+    grouped = df.with_columns(g=1).group_by("g").agg(pl.col("x").sort_by("m", "y"))
+    assert grouped["x"].to_list() == [[3, 2, 1]]

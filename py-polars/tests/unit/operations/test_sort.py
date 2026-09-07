@@ -1443,3 +1443,38 @@ def test_sort_by_multiple_nested_keys(key: pl.Series) -> None:
 
     grouped = df.with_columns(g=1).group_by("g").agg(pl.col("x").sort_by("k", "y"))
     assert grouped["x"].to_list() == [[3, 2, 1]]
+
+
+NESTED_CATS = pl.Categories("test_sort_by_nested_categorical_keys")
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        pl.Series(
+            "k", [["b"], ["a"], ["a"]], dtype=pl.List(pl.Categorical(NESTED_CATS))
+        ),
+        pl.Series(
+            "k",
+            [["b", "z"], ["a", "z"], ["a", "z"]],
+            dtype=pl.Array(pl.Categorical(NESTED_CATS), 2),
+        ),
+        pl.Series(
+            "k",
+            [{"a": "b"}, {"a": "a"}, {"a": "a"}],
+            dtype=pl.Struct({"a": pl.Categorical(NESTED_CATS)}),
+        ),
+    ],
+)
+def test_sort_by_nested_categorical_keys(key: pl.Series) -> None:
+    # Ensure that categories are sorted by their values, not by their codes.
+    df = pl.DataFrame({"k": key, "x": [1, 2, 3], "y": [3, 4, 2]})
+
+    assert df.sort("k", "y")["x"].to_list() == [3, 2, 1]
+    assert df.select(pl.col("x").sort_by("k", "y"))["x"].to_list() == [3, 2, 1]
+    assert df.select(pl.col("x").sort_by("k", "y", descending=[True, False]))[
+        "x"
+    ].to_list() == [1, 3, 2]
+
+    grouped = df.with_columns(g=1).group_by("g").agg(pl.col("x").sort_by("k", "y"))
+    assert grouped["x"].to_list() == [[3, 2, 1]]
