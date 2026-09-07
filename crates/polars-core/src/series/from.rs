@@ -33,6 +33,9 @@ impl Series {
         }
     }
 
+    /// Construct a Series from a chunk holding the physical representation of `dtype`.
+    ///
+    /// Errors if the chunk does not match the physical dtype.
     pub fn from_chunk_and_dtype(
         name: PlSmallStr,
         chunk: ArrayRef,
@@ -47,12 +50,14 @@ impl Series {
 
         // Map invariants are not captured by the physical dtype.
         #[cfg(feature = "dtype-map")]
-        if let DataType::Map(_, _) = dtype {
-            let storage_dtype = dtype.map_storage_dtype().unwrap();
-            // SAFETY: the physical types match, checked above.
-            let storage =
-                unsafe { Self::from_chunks_and_dtype_unchecked(name, vec![chunk], &storage_dtype) };
-            return Ok(MapChunked::try_from_storage(dtype.clone(), storage)?.into_series());
+        if dtype.contains_map() {
+            // Ensure the unchecked construction below cannot produce an invalid Map dtype.
+            dtype.ensure_valid_map_dtypes()?;
+
+            // SAFETY: the physical types match, checked above. The value-level Map invariants
+            // are established by the canonicalization below.
+            let series = unsafe { Self::from_chunks_and_dtype_unchecked(name, vec![chunk], dtype) };
+            return Ok(series.canonicalize_maps()?.unwrap_or(series));
         }
 
         // SAFETY: We check that the datatype matches.
