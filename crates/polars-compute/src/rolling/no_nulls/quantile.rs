@@ -249,7 +249,7 @@ fn rolling_apply_weighted_quantile<T, Fo>(
 ) -> ArrayRef
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero,
+    T: Debug + NativeType + Float + NumCast,
 {
     assert_eq!(weights.len(), window_size);
     // Keep nonzero weights and their indices to know which values we need each iteration.
@@ -281,7 +281,7 @@ where
             }
             if buf.is_empty() {
                 // Quantile is undefined if all sum is zero, because of div/0
-                return T::zero();
+                return T::nan();
             }
             buf.sort_unstable_by(|&a, &b| a.0.tot_cmp(&b.0));
             // The precomputed total only holds for windows that cover all of the weights;
