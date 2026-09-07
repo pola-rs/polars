@@ -46,6 +46,16 @@ fn prepare_bool_vec(values: &[bool], by_len: usize) -> Vec<bool> {
     }
 }
 
+/// Ensure that (nested) categoricals and enums are sorted by their values, not by their codes.
+fn to_sort_repr(c: &Column) -> Column {
+    let dtype = c.dtype();
+    if dtype.is_nested() || dtype.contains_categoricals() || dtype.contains_enums() {
+        c.clone()
+    } else {
+        c.to_physical_repr()
+    }
+}
+
 static ERR_MSG: &str = "expressions in 'sort_by' must have matching group lengths";
 
 fn check_groups(a: &GroupsType, b: &GroupsType) -> PolarsResult<()> {
@@ -215,13 +225,7 @@ impl PhysicalExpr for SortByExpr {
                 let mut s_sort_by = self
                     .by
                     .iter()
-                    .map(|e| {
-                        e.evaluate(df, state).map(|c| match c.dtype() {
-                            #[cfg(feature = "dtype-categorical")]
-                            DataType::Categorical(_, _) | DataType::Enum(_, _) => c,
-                            _ => c.to_physical_repr(),
-                        })
-                    })
+                    .map(|e| e.evaluate(df, state).map(|c| to_sort_repr(&c)))
                     .collect::<PolarsResult<Vec<_>>>()?;
 
                 let broadcast_length = broadcast_len(s_sort_by.iter())
@@ -309,18 +313,9 @@ impl PhysicalExpr for SortByExpr {
 
         let mut sort_by_s = ac_sort_by
             .iter()
-            .map(|c| {
-                let c = c.flat_naive();
-                match c.dtype() {
-                    #[cfg(feature = "dtype-categorical")]
-                    DataType::Categorical(_, _) | DataType::Enum(_, _) => {
-                        c.as_materialized_series().clone()
-                    },
-                    // @scalar-opt
-                    // @partition-opt
-                    _ => c.to_physical_repr().take_materialized_series(),
-                }
-            })
+            // @scalar-opt
+            // @partition-opt
+            .map(|c| to_sort_repr(&c.flat_naive()).take_materialized_series())
             .collect::<Vec<_>>();
 
         let ordered_by_group_operation = matches!(
