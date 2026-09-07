@@ -19,7 +19,7 @@ use polars_error::PolarsResult;
 pub use schema::{FileMetadata, infer_schema};
 
 #[cfg(feature = "async")]
-pub use crate::parquet::read::{read_metadata_async as _read_metadata_async};
+pub use crate::parquet::read::read_metadata_async as _read_metadata_async;
 // re-exports of crate::parquet's relevant APIs
 pub use crate::parquet::{
     FallibleStreamingIterator,
