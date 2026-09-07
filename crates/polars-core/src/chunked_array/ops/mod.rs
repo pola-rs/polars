@@ -663,19 +663,3 @@ pub trait ChunkApplyKernel<A: Array> {
     where
         S: PolarsDataType;
 }
-
-#[cfg(feature = "is_first_distinct")]
-/// Mask the first unique values as `true`
-pub trait IsFirstDistinct<T: PolarsDataType> {
-    fn is_first_distinct(&self) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_first_distinct, T::get_static_dtype());
-    }
-}
-
-#[cfg(feature = "is_last_distinct")]
-/// Mask the last unique values as `true`
-pub trait IsLastDistinct<T: PolarsDataType> {
-    fn is_last_distinct(&self) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_last_distinct, T::get_static_dtype());
-    }
-}
