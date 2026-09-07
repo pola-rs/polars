@@ -11,14 +11,14 @@ use polars_utils::index::check_bounds;
 use polars_utils::pl_str::PlSmallStr;
 pub use scalar::ScalarColumn;
 
-use self::compare_inner::{TotalEqInner, TotalOrdInner};
+use self::compare_inner::TotalOrdInner;
 use self::gather::check_bounds_ca;
 use self::series::SeriesColumn;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::ReshapeDimension;
 use crate::prelude::*;
-use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
+use crate::series::{BitRepr, IsSorted};
 use crate::utils::{Container, slice_offsets};
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
@@ -1553,11 +1553,6 @@ impl Column {
         self.as_materialized_series().product()
     }
 
-    pub fn phys_iter(&self) -> SeriesPhysIter<'_> {
-        // @scalar-opt
-        self.as_materialized_series().phys_iter()
-    }
-
     #[inline]
     pub fn get(&self, index: usize) -> PolarsResult<AnyValue<'_>> {
         polars_ensure!(index < self.len(), oob = index, self.len());
@@ -1894,11 +1889,6 @@ impl Column {
     pub(crate) fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         // @scalar-opt
         self.as_materialized_series().into_total_ord_inner()
-    }
-    #[expect(unused, clippy::wrong_self_convention)]
-    pub(crate) fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        // @scalar-opt
-        self.as_materialized_series().into_total_eq_inner()
     }
 
     pub fn rechunk_to_arrow(self, compat_level: CompatLevel) -> Box<dyn Array> {

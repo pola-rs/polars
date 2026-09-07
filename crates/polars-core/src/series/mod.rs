@@ -36,7 +36,7 @@ use std::ops::Deref;
 
 use arrow::compute::aggregate::estimated_bytes_size;
 pub use from::*;
-pub use iterator::{SeriesIter, SeriesPhysIter};
+pub use iterator::SeriesIter;
 use num_traits::NumCast;
 use polars_error::feature_gated;
 use polars_utils::broadcast::BroadcastLength;

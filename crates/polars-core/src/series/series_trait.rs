@@ -43,7 +43,7 @@ pub(crate) mod private {
 
     use super::*;
     use crate::chunked_array::flags::StatisticsFlags;
-    use crate::chunked_array::ops::compare_inner::{TotalEqInner, TotalOrdInner};
+    use crate::chunked_array::ops::compare_inner::TotalOrdInner;
 
     pub trait PrivateSeriesNumeric {
         /// Return a bit representation
@@ -74,8 +74,6 @@ pub(crate) mod private {
 
         fn _set_flags(&mut self, flags: StatisticsFlags);
 
-        #[expect(clippy::wrong_self_convention)]
-        fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a>;
         #[expect(clippy::wrong_self_convention)]
         fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a>;
 

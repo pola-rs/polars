@@ -492,11 +492,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         &mut self.chunks
     }
 
-    /// Returns true if contains a single chunk and has no null values
-    pub fn is_optimal_aligned(&self) -> bool {
-        self.chunks.len() == 1 && self.null_count() == 0
-    }
-
     /// Create a new [`ChunkedArray`] from self, where the chunks are replaced.
     ///
     /// # Safety
