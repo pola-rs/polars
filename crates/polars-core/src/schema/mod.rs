@@ -24,9 +24,6 @@ pub trait SchemaExt {
 
     fn to_supertype(&mut self, other: &Schema) -> PolarsResult<bool>;
 
-    /// Select fields using a bitmap.
-    fn project_select(&self, select: &Bitmap) -> Self;
-
     fn contains_dtype(&self, dtype: &DataType, recursive: bool) -> bool;
 }
 
@@ -95,15 +92,6 @@ impl SchemaExt for Schema {
             *dt = st
         }
         Ok(changed)
-    }
-
-    fn project_select(&self, select: &Bitmap) -> Self {
-        assert_eq!(self.len(), select.len());
-        self.iter()
-            .zip(select.iter())
-            .filter(|(_, select)| *select)
-            .map(|((n, dt), _)| (n.clone(), dt.clone()))
-            .collect()
     }
 
     fn contains_dtype(&self, dtype: &DataType, recursive: bool) -> bool {
