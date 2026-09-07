@@ -201,31 +201,6 @@ pub(crate) fn row_slice_ranges(
         })
 }
 
-/// returns offset and length to slice the leaf values
-pub fn slice_nested_leaf(nested: &[Nested]) -> (usize, usize) {
-    // find the deepest recursive dremel structure as that one determines how many values we must
-    // take
-    let mut out = (0, 0);
-    for nested in nested.iter().rev() {
-        match nested {
-            Nested::LargeList(l_nested) => {
-                let start = *l_nested.offsets.first();
-                let end = *l_nested.offsets.last();
-                return (start as usize, (end - start) as usize);
-            },
-            Nested::List(l_nested) => {
-                let start = *l_nested.offsets.first();
-                let end = *l_nested.offsets.last();
-                return (start as usize, (end - start) as usize);
-            },
-            Nested::FixedSizeList(nested) => return (0, nested.length * nested.width),
-            Nested::Primitive(nested) => out = (0, nested.length),
-            Nested::Struct(_) => {},
-        }
-    }
-    out
-}
-
 fn decimal_length_from_precision(precision: usize) -> usize {
     // digits = floor(log_10(2^(8*n - 1) - 1))
     // ceil(digits) = log10(2^(8*n - 1) - 1)
