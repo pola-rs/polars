@@ -851,9 +851,12 @@ mod inner {
                         // RHS is single primitive NULL, create the result by setting the leaf validity to all-NULL.
                         let (offsets, validities, _) = std::mem::take(&mut self.data_lhs);
                         return Ok(self.finish_offsets_and_validities(
-                            Box::new(arr_lhs.clone().with_validity(Some(PlBitmap::from_bitmap(
-                                Bitmap::new_with_value(false, arr_lhs.len()),
-                            )))),
+                            Box::new(
+                                arr_lhs.clone().with_validity(Some(PlBitmap::new_scalar(
+                                    false,
+                                    arr_lhs.len(),
+                                ))),
+                            ),
                             offsets,
                             validities,
                         ));

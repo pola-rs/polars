@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
 use polars_array::PlBitmap;
@@ -361,7 +360,7 @@ pub fn bitwise_xor<'a>(
 
 pub fn drop_items<'a>(
     mut ac: AggregationContext<'a>,
-    predicate: &Bitmap,
+    predicate: &PlBitmap,
 ) -> PolarsResult<AggregationContext<'a>> {
     // No elements are filtered out.
     if predicate.unset_bits() == 0 {
@@ -413,6 +412,11 @@ pub fn drop_items<'a>(
     }
 
     ac.groups();
+    // Both branches above returned for a mask that says the same of every element, so what is
+    // left holds one bit per element and is indexed flatly below.
+    let predicate = predicate
+        .flat_bitmap()
+        .expect("a mask that is neither all set nor all unset holds one bit per element");
     let predicate = BitMask::from_bitmap(predicate);
     RAYON.install(|| {
         let positions = GroupsType::Idx(match &**ac.groups.as_ref() {
@@ -479,15 +483,19 @@ pub fn drop_nans<'a>(
     assert_eq!(inputs.len(), 1);
     let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
     ac.groups();
-    let predicate = if ac.agg_state().flat_dtype().is_float() {
+    let predicate = {
         let values = ac.flat_naive();
-        let mut values = values.is_nan().unwrap();
-        values.rechunk_mut();
-        values.downcast_as_array().values().to_flat_or_scalar()
-    } else {
-        Bitmap::new_with_value(false, 1)
+        let is_nan = if ac.agg_state().flat_dtype().is_float() {
+            let mut is_nan = values.is_nan().unwrap();
+            is_nan.rechunk_mut();
+            PlBitmap::from(is_nan.downcast_as_array().values())
+        } else {
+            // Nothing is a NaN, which is the one bit a scalar mask holds.
+            PlBitmap::new_scalar(false, values.len())
+        };
+        // What is kept is what is not a NaN; a scalar mask inverts as the single bit it holds.
+        is_nan.not()
     };
-    let predicate = !&predicate;
     drop_items(ac, &predicate)
 }
 
@@ -500,14 +508,13 @@ pub fn drop_nulls<'a>(
     assert_eq!(inputs.len(), 1);
     let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
     ac.groups();
-    let predicate = ac.flat_naive().as_ref().clone();
+    let values = ac.flat_naive().as_ref().clone();
     // Only the mask is wanted, which the series answers without its values being rechunked into
     // an Arrow array to read it off.
-    let predicate = predicate.rechunk_validity().map_or_else(
-        || Bitmap::new_with_value(true, 1),
-        // The single bit a scalar mask holds already stands for every element.
-        PlBitmap::into_flat_or_scalar,
-    );
+    let predicate = values
+        .rechunk_validity()
+        // No mask means nothing is null, which is the one bit a scalar mask holds.
+        .unwrap_or_else(|| PlBitmap::new_scalar(true, values.len()));
     drop_items(ac, &predicate)
 }
 

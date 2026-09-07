@@ -940,11 +940,7 @@ mod tests {
             let array = PlStructArray::new(vec![field.clone()], 3, None);
             assert_iterates(array.iter(), &[Some(()); 3]);
 
-            let all_null = PlStructArray::new(
-                vec![field],
-                3,
-                Some(PlBitmap::from_bitmap(Bitmap::new_with_value(false, 3))),
-            );
+            let all_null = PlStructArray::new(vec![field], 3, Some(PlBitmap::new_scalar(false, 3)));
             assert_iterates(all_null.iter(), &[None; 3]);
         }
 

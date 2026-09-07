@@ -565,7 +565,7 @@ pub(crate) fn assert_subslice(array_len: usize, start: usize, length: usize) {
 
 /// Appends the `length` bits of `validity` starting at `start` to `dst`.
 #[inline(never)]
-pub(crate) fn subslice_extend_validity(
+pub fn subslice_extend_validity(
     dst: &mut OptBitmapBuilder,
     validity: Option<PlBitmapRef<'_>>,
     start: usize,
@@ -587,7 +587,7 @@ pub(crate) fn subslice_extend_validity(
 
 /// Appends each of the `length` bits of `validity` starting at `start` `repeats` times over.
 #[inline(never)]
-pub(crate) fn subslice_extend_each_repeated_validity(
+pub fn subslice_extend_each_repeated_validity(
     dst: &mut OptBitmapBuilder,
     validity: Option<PlBitmapRef<'_>>,
     start: usize,
@@ -618,7 +618,7 @@ pub(crate) fn subslice_extend_each_repeated_validity(
 /// # Safety
 /// Every index must be smaller than the length of `validity`.
 #[inline(never)]
-pub(crate) unsafe fn gather_extend_validity(
+pub unsafe fn gather_extend_validity(
     dst: &mut OptBitmapBuilder,
     validity: Option<PlBitmapRef<'_>>,
     idxs: &[IdxSize],
@@ -637,7 +637,7 @@ pub(crate) unsafe fn gather_extend_validity(
 
 /// Appends the bit of `validity` at every index of `idxs`; an index past `length` is unset.
 #[inline(never)]
-pub(crate) fn opt_gather_extend_validity(
+pub fn opt_gather_extend_validity(
     dst: &mut OptBitmapBuilder,
     validity: Option<PlBitmapRef<'_>>,
     idxs: &[IdxSize],

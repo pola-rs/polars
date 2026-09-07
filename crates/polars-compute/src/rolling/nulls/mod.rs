@@ -229,11 +229,11 @@ mod test {
     #[test]
     fn test_rolling_extrema_nulls() {
         let vals = vec![3, 3, 3, 10, 10, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
-        let validity = Bitmap::new_with_value(true, vals.len());
+        let validity = PlBitmap::new_scalar(true, vals.len());
         let window_size = 3;
         let min_periods = 3;
 
-        let arr = flat_chunk(vals, Some(PlBitmap::from_bitmap(validity)));
+        let arr = flat_chunk(vals, Some(validity));
         let arr = arr.to_flat();
 
         let out = rolling_apply_agg_window::<MinMaxWindow<i32, MaxIgnoreNan>, _, _, _>(

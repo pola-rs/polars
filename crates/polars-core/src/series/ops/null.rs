@@ -1,6 +1,3 @@
-use arrow::bitmap::Bitmap;
-use polars_buffer::Buffer;
-
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_builder;
 use crate::prelude::*;
@@ -59,25 +56,14 @@ impl Series {
                     .into_series()
             },
             DataType::BinaryOffset => {
-                let length = size;
-
-                let offsets = vec![0u64; size + 1];
-                // SAFETY: the offsets are all zero, so every element is the empty byte string.
-                let array = unsafe {
-                    PlBinaryArray::new_unchecked(
-                        Buffer::default(),
-                        Buffer::from(offsets),
-                        size,
-                        Some(PlBitmap::from_bitmap(Bitmap::new_zeroed(size))),
-                    )
-                };
+                let array = PlBinaryArray::new_full_null(size);
 
                 unsafe {
                     BinaryOffsetChunked::new_with_dims(
                         Arc::new(Field::new(name, dtype.clone())),
                         vec![Box::new(array)],
-                        length,
-                        length,
+                        size,
+                        size,
                     )
                 }
                 .into_series()

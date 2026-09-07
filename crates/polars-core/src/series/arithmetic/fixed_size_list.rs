@@ -627,9 +627,12 @@ mod inner {
                             &self.output_widths,
                             self.output_len,
                             &validities,
-                            Box::new(arr_lhs.clone().with_validity(Some(PlBitmap::from_bitmap(
-                                Bitmap::new_with_value(false, arr_lhs.len()),
-                            )))),
+                            Box::new(
+                                arr_lhs.clone().with_validity(Some(PlBitmap::new_scalar(
+                                    false,
+                                    arr_lhs.len(),
+                                ))),
+                            ),
                         );
                     };
 

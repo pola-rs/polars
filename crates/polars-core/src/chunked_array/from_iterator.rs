@@ -272,7 +272,8 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
             .collect();
 
         let arr = Box::new(
-            ObjectArray::from(values).with_validity(null_mask_builder.into_opt_validity()),
+            ObjectArray::from(values)
+                .with_validity(null_mask_builder.into_opt_validity().map(PlBitmap::from)),
         );
         ChunkedArray::new_with_compute_len(
             Arc::new(Field::new(PlSmallStr::EMPTY, get_object_type::<T>())),

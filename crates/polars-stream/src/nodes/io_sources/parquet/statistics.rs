@@ -1,8 +1,8 @@
 use std::ops::Range;
 
 use arrow::array::{Array, MutablePrimitiveArray, StructArray};
-use arrow::bitmap::Bitmap;
 use arrow::pushable::Pushable;
+use polars_array::PlBitmap;
 use polars_async::executor::{self, TaskPriority};
 use polars_core::prelude::*;
 use polars_io::RowIndex;
@@ -85,7 +85,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
     // row group.
     mut row_index: Option<RowIndex>,
     verbose: bool,
-) -> PolarsResult<Option<Bitmap>> {
+) -> PolarsResult<Option<PlBitmap>> {
     if !use_statistics {
         return Ok(None);
     }

@@ -65,7 +65,7 @@ pub fn series_from_objects(py: Python<'_>, name: PlSmallStr, objects: Vec<Object
     ObjectChunked::<ObjectValue>::new_from_vec_and_validity(
         name,
         objects,
-        validity.into_opt_validity(),
+        validity.into_opt_validity().map(PlBitmap::from),
     )
     .into_series()
 }

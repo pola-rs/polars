@@ -306,7 +306,7 @@ pub fn initialize_scan_predicate<'a>(
             return Ok((None, Some(predicate)));
         }
 
-        stats_exclusion = Some(PlBitmap::from_bitmap(stats_exclusion_bitmap));
+        stats_exclusion = Some(stats_exclusion_bitmap);
     }
 
     // Merge masks.

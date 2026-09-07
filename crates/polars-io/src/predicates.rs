@@ -1,8 +1,9 @@
 use std::fmt;
 
 use arrow::array::Array;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use arrow::bitmap::BitmapBuilder;
 use arrow::datatypes::ArrowDataType;
+use polars_array::PlBitmap;
 use polars_array::bitmap::combine_validities_and;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
@@ -439,9 +440,13 @@ pub trait SkipBatchPredicate: Send + Sync {
         // * Each column is length = 1
         // * We have an IndexSet, so each column name is unique
         let df = unsafe { DataFrame::new_unchecked(1, columns) };
-        Ok(self.evaluate_with_stat_df(&df)?.get_bit(0))
+        Ok(self.evaluate_with_stat_df(&df)?.get(0))
     }
-    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap>;
+
+    /// One bit per row of `df`, saying whether that batch can be skipped. The mask carries its
+    /// own representation, so a predicate that answers the same of every batch hands out the
+    /// single bit it stands for instead of writing it out per row.
+    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<PlBitmap>;
 }
 
 #[derive(Clone)]
@@ -472,7 +477,7 @@ impl SkipBatchPredicate for PhysicalExprWithConstCols<Arc<dyn SkipBatchPredicate
         self.child.schema()
     }
 
-    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap> {
+    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<PlBitmap> {
         let mut df = df.clone();
         for (name, scalar) in self.constants.iter() {
             df.with_column(Column::new_scalar(

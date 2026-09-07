@@ -155,7 +155,7 @@ mod tests {
     #[test]
     fn an_all_set_mask_still_has_no_nulls() {
         let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
-            .with_validity(Some(PlBitmap::from_bitmap(Bitmap::new_with_value(true, 3))));
+            .with_validity(Some(PlBitmap::new_scalar(true, 3)));
         assert_eq!(array.null_count(), 0);
         assert!(array.as_no_nulls().is_some());
     }

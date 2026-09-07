@@ -4,12 +4,11 @@ use std::borrow::Cow;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
-use arrow::bitmap::utils::{BitmapIter, ZipValidity};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::MutableBitmap;
 use polars_array::builder::ShareStrategy;
 use polars_array::{
-    ArrayFromIter, Flat, PlArray, PlArrayType, PlBitmapRef, StaticArray, StaticArrayBuilder,
-    ZeroableArrayFromIter,
+    ArrayFromIter, Flat, PlArray, PlArrayType, PlBitmap, PlBitmapRef, StaticArray,
+    StaticArrayBuilder, ZeroableArrayFromIter,
 };
 use polars_buffer::Buffer;
 use polars_utils::IdxSize;
@@ -32,7 +31,9 @@ where
     T: PolarsObject,
 {
     values: Buffer<T>,
-    validity: Option<Bitmap>,
+    /// The values are always flat, but the mask carries its own representation: an array that
+    /// is all-null or fully valid holds the single bit that says so.
+    validity: Option<PlBitmap>,
 }
 
 /// Trimmed down object safe polars object
@@ -92,8 +93,8 @@ where
     }
 
     /// Returns an iterator of `Option<&T>` over every element of this array.
-    pub fn iter(&self) -> ZipValidity<&T, ObjectValueIter<'_, T>, BitmapIter<'_>> {
-        ZipValidity::new_with_validity(self.values_iter(), self.validity.as_ref())
+    pub fn iter(&self) -> ObjectIter<'_, T> {
+        ObjectIter::new(self)
     }
 
     /// Get a value at a certain index location
@@ -138,7 +139,7 @@ where
     #[inline]
     pub unsafe fn is_valid_unchecked(&self, i: usize) -> bool {
         if let Some(b) = &self.validity {
-            b.get_bit_unchecked(i)
+            b.get_unchecked(i)
         } else {
             true
         }
@@ -157,7 +158,8 @@ where
     pub fn new_full_null(length: usize) -> Self {
         Self {
             values: vec![T::default(); length].into(),
-            validity: Some(Bitmap::new_with_value(false, length)),
+            // Every element is null, which is the one bit a scalar mask holds.
+            validity: Some(PlBitmap::new_scalar(false, length)),
         }
     }
 
@@ -166,7 +168,7 @@ where
     /// Panics iff `validity.len() != self.len()`.
     #[must_use]
     #[inline]
-    pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
+    pub fn with_validity(mut self, validity: Option<PlBitmap>) -> Self {
         self.set_validity(validity);
         self
     }
@@ -175,11 +177,8 @@ where
     /// # Panics
     /// This function panics iff `validity.len() != self.len()`.
     #[inline]
-    pub fn set_validity(&mut self, validity: Option<Bitmap>) {
-        if matches!(&validity, Some(bitmap) if bitmap.len() != self.len()) {
-            panic!("validity must be equal to the array's length")
-        }
-        self.validity = validity;
+    pub fn set_validity(&mut self, validity: Option<PlBitmap>) {
+        PlArray::set_validity(self, validity);
     }
 }
 
@@ -190,7 +189,13 @@ impl<T: PolarsObject> Splitable for ObjectArray<T> {
 
     unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
         let (left_values, right_values) = unsafe { self.values.split_at_unchecked(offset) };
-        let (left_validity, right_validity) = unsafe { self.validity.split_at_unchecked(offset) };
+        let (left_validity, right_validity) = match self.validity.as_ref() {
+            None => (None, None),
+            Some(validity) => {
+                let (lhs, rhs) = validity.split_at(offset);
+                (Some(lhs), Some(rhs))
+            },
+        };
         (
             Self {
                 values: left_values,
@@ -236,9 +241,7 @@ impl<T: PolarsObject> PlArray for ObjectArray<T> {
 
     #[inline]
     fn validity(&self) -> Option<PlBitmapRef<'_>> {
-        self.validity
-            .as_ref()
-            .map(|validity| PlBitmapRef::new(validity, self.values.len()))
+        self.validity.as_ref().map(PlBitmap::as_ref)
     }
 
     #[inline]
@@ -265,9 +268,7 @@ impl<T: PolarsObject> PlArray for ObjectArray<T> {
     }
 
     fn set_validity(&mut self, validity: Option<PlBitmap>) {
-        // A mask that repeats a single bit covers every element with it; an object array has
-        // nowhere to hold one, so it is written out to the bit per element its length calls for.
-        self.validity = validity.map(|validity| {
+        if let Some(validity) = &validity {
             assert_eq!(
                 validity.len(),
                 self.len(),
@@ -275,8 +276,8 @@ impl<T: PolarsObject> PlArray for ObjectArray<T> {
                 validity.len(),
                 self.len(),
             );
-            validity.into_bitmap()
-        });
+        }
+        self.validity = validity;
     }
 
     unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Box<dyn PlArray> {
@@ -285,7 +286,7 @@ impl<T: PolarsObject> PlArray for ObjectArray<T> {
         let value = unsafe { self.value_unchecked(index) }.clone();
         Box::new(ObjectArray {
             values: vec![value; length].into(),
-            validity: (!is_valid).then(|| Bitmap::new_with_value(false, length)),
+            validity: (!is_valid).then(|| PlBitmap::new_scalar(false, length)),
         })
     }
 
@@ -362,7 +363,7 @@ impl<T: PolarsObject> StaticArray for ObjectArray<T> {
         let value = unsafe { self.value_unchecked(index) }.clone();
         ObjectArray {
             values: vec![value; length].into(),
-            validity: (!is_valid).then(|| Bitmap::new_with_value(false, length)),
+            validity: (!is_valid).then(|| PlBitmap::new_scalar(false, length)),
         }
     }
 
@@ -436,7 +437,7 @@ impl<T: PolarsObject> StaticArrayBuilder for ObjectArrayBuilder<T> {
     fn freeze_reset(&mut self) -> ObjectArray<T> {
         let values: Buffer<T> = std::mem::take(&mut self.values).into();
         let validity = std::mem::take(&mut self.validity);
-        let validity = (validity.unset_bits() > 0).then(|| validity.freeze());
+        let validity = (validity.unset_bits() > 0).then(|| PlBitmap::from(validity.freeze()));
         ObjectArray { values, validity }
     }
 
