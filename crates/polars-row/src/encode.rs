@@ -61,6 +61,9 @@ pub fn convert_columns_amortized_no_order(
     );
 }
 
+/// Number of rows encoded across all columns at a time.
+const ENCODE_ROW_TILE: usize = 1024;
+
 pub fn convert_columns_amortized<'a>(
     num_rows: usize,
     columns: &[ArrayRef],
@@ -97,18 +100,38 @@ pub fn convert_columns_amortized<'a>(
 
     let masked_out_write_offset = total_num_bytes;
     let mut scratches = EncodeScratches::default();
-    for (encoder, (opt, dict)) in encoders.iter_mut().zip(fields) {
-        unsafe {
-            encode_array(
-                buffer,
-                encoder,
-                opt,
-                dict,
-                &mut offsets[1..],
-                masked_out_write_offset,
-                &mut scratches,
-            )
-        };
+    if encoders.len() > 1 && encoders.iter().all(|e| e.state.is_none()) {
+        let mut start = 0;
+        while start < num_rows {
+            let len = ENCODE_ROW_TILE.min(num_rows - start);
+            for (encoder, (opt, dict)) in encoders.iter().zip(fields.clone()) {
+                let array = encoder.array.sliced(start, len);
+                unsafe {
+                    encode_flat_array(
+                        buffer,
+                        array.as_ref(),
+                        opt,
+                        dict,
+                        &mut offsets[1 + start..1 + start + len],
+                    )
+                };
+            }
+            start += len;
+        }
+    } else {
+        for (encoder, (opt, dict)) in encoders.iter_mut().zip(fields) {
+            unsafe {
+                encode_array(
+                    buffer,
+                    encoder,
+                    opt,
+                    dict,
+                    &mut offsets[1..],
+                    masked_out_write_offset,
+                    &mut scratches,
+                )
+            };
+        }
     }
     // SAFETY: All the bytes in out up to total_num_bytes should now be initialized.
     unsafe {

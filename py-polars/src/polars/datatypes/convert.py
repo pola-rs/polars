@@ -32,6 +32,7 @@ from polars.datatypes.classes import (
     Int64,
     Int128,
     List,
+    Map,
     Null,
     Object,
     String,
@@ -115,6 +116,12 @@ def unpack_dtypes(
             if include_compound:
                 unpacked.add(tp)
             unpacked.update(unpack_dtypes(tp.inner, include_compound=include_compound))
+        elif isinstance(tp, Map):
+            if include_compound:
+                unpacked.add(tp)
+            unpacked.update(
+                unpack_dtypes(tp.key, tp.value, include_compound=include_compound)
+            )
         elif isinstance(tp, Struct):
             if include_compound:
                 unpacked.add(tp)
@@ -147,6 +154,7 @@ class _DataTypeMappings:
             Int64: "i64",
             Int128: "i128",
             List: "list",
+            Map: "map",
             Object: "object",
             String: "str",
             Struct: "struct",
@@ -178,6 +186,7 @@ class _DataTypeMappings:
             Int64: int,
             Int128: int,
             List: list,
+            Map: dict,
             Null: None.__class__,
             Object: object,
             String: str,

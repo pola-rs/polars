@@ -57,7 +57,7 @@ polars-utils = { workspace = true, features = ["async-utils"] }
 version_check = { workspace = true }
 
 [features]
-nightly = ["polars-expr/nightly"]
+nightly = ["polars-expr/nightly", "polars-io/nightly"]
 serde = ["dep:serde"]
 approx_unique = ["polars-plan/approx_unique", "polars-expr/approx_unique"]
 cov = ["polars-plan/cov", "polars-expr/cov"]
@@ -130,6 +130,7 @@ dtype-categorical = [
 ]
 dtype-decimal = ["polars-core/dtype-decimal", "polars-expr/dtype-decimal", "polars-plan/dtype-decimal"]
 dtype-extension = ["polars-core/dtype-extension", "polars-expr/dtype-extension", "polars-plan/dtype-extension"]
+dtype-map = ["polars-core/dtype-map", "polars-expr/dtype-map", "polars-plan/dtype-map"]
 ewma = ["polars-expr/ewma", "polars-plan/ewma"]
 mode = ["polars-expr/mode", "polars-plan/mode"]
 moment = ["polars-expr/moment", "polars-plan/moment"]

@@ -13,7 +13,7 @@ use polars_error::{PolarsError, PolarsResult};
 use polars_utils::pl_path::PlRefPath;
 use tokio::io::AsyncWriteExt;
 
-use super::concurrency::IoSample;
+use super::concurrency::{ConcurrencyController, IoSample};
 use super::concurrency_config::{ConcurrencyStrategy, FetchConfig, get_download_chunk_size};
 use crate::pl_async::{
     self, MAX_BUDGET_PER_REQUEST, get_concurrency_limit, tune_with_concurrency_budget,
@@ -521,60 +521,64 @@ impl PolarsObjectStore {
         path: &Path,
         strategy: ConcurrencyStrategy,
     ) -> PolarsResult<ObjectMeta> {
-        // TODO: Refactor for updated concurrency strategy.
-        // For now, we fall back to 'Legacy' which is fine for metadata.
-        // Since this carries an early signal, the IO Sample is of interest regardless of
-        // the strategy in use.
-        with_concurrency_budget(1, || {
-            self.exec_with_rebuild_retry_on_err(|s| {
-                async move {
+        match strategy {
+            ConcurrencyStrategy::BytesBased => {
+                let controller = self.get_or_init_concurrency();
+                let _permit = controller.acquire(0).await;
+                self.head_inner(path, Some(&**controller)).await
+            },
+            ConcurrencyStrategy::Legacy => {
+                with_concurrency_budget(1, || self.head_inner(path, None)).await
+            },
+            ConcurrencyStrategy::Unbounded => self.head_inner(path, None).await,
+        }
+    }
+
+    async fn head_inner(
+        &self,
+        path: &Path,
+        controller: Option<&ConcurrencyController>,
+    ) -> PolarsResult<ObjectMeta> {
+        self.exec_with_rebuild_retry_on_err(|s| {
+            async move {
+                let t0 = Instant::now();
+                let head_result = self.io_metrics().record_io_read(0, s.head(path)).await;
+
+                if head_result.is_err() {
                     let t0 = Instant::now();
-                    let head_result = self.io_metrics().record_io_read(0, s.head(path)).await;
-                    if let ConcurrencyStrategy::BytesBased = strategy {
-                        // self.get_or_init_concurrency().record_ttfb(ttfb);
-                        self.get_or_init_concurrency().record_io(IoSample {
-                            n_bytes: 0,
-                            ttfb: t0.elapsed(),
-                            completion_time: Instant::now(),
-                        });
-                    }
 
-                    if head_result.is_err() {
-                        let t0 = Instant::now();
-                        // Pre-signed URLs forbid the HEAD method, but we can still retrieve the header
-                        // information with a range 0-1 request.
-                        let get_range_0_1_result = self
-                            .io_metrics()
-                            .record_io_read(
-                                0,
-                                s.get_opts(
-                                    path,
-                                    object_store::GetOptions {
-                                        range: Some((0..1).into()),
-                                        ..Default::default()
-                                    },
-                                ),
-                            )
-                            .await;
+                    // Pre-signed URLs forbid the HEAD method, but we can still retrieve the header
+                    // information with a range 0-1 request.
+                    let get_range_0_1_result = self
+                        .io_metrics()
+                        .record_io_read(
+                            0,
+                            s.get_opts(
+                                path,
+                                object_store::GetOptions {
+                                    range: Some((0..1).into()),
+                                    ..Default::default()
+                                },
+                            ),
+                        )
+                        .await;
 
-                        if let ConcurrencyStrategy::BytesBased = strategy {
-                            self.get_or_init_concurrency().record_io(IoSample {
-                                n_bytes: 0,
-                                ttfb: t0.elapsed(),
-                                completion_time: Instant::now(),
-                            });
+                    if let Ok(v) = get_range_0_1_result {
+                        if let Some(controller) = controller {
+                            controller.record_head_rtt(t0.elapsed());
                         }
-
-                        if let Ok(v) = get_range_0_1_result {
-                            return Ok(v.meta);
-                        }
+                        return Ok(v.meta);
                     }
-
-                    let out = head_result?;
-
-                    Ok(out)
                 }
-            })
+
+                let out = head_result?;
+
+                if let Some(controller) = controller {
+                    controller.record_head_rtt(t0.elapsed());
+                }
+
+                Ok(out)
+            }
         })
         .await
     }

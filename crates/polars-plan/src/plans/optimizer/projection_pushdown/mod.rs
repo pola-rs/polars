@@ -2063,6 +2063,35 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 post_project_and_return!()
             },
 
+            IR::Resolver {
+                projection,
+                filters,
+                filter_drop_columns_idx,
+                resolved_ir,
+                ..
+            } => {
+                if resolved_ir.is_some() {
+                    edges.swap_input_output(0, 0);
+                    return;
+                }
+
+                let (projected_names, _) = projected_names_subset_or_return!();
+
+                let len_before_added_names = projected_names.len();
+
+                *filter_drop_columns_idx = Some(len_before_added_names);
+
+                for eir in filters.iter() {
+                    for name in aexpr_to_leaf_names_iter(eir.node(), self.expr_arena) {
+                        projected_names.insert(name.clone());
+                    }
+                }
+
+                *projection = Some(projected_names.iter().cloned().collect());
+
+                reuse_names_alloc(edges);
+            },
+
             IR::Invalid => unreachable!(),
         };
     }

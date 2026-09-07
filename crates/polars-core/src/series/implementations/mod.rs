@@ -18,6 +18,8 @@ mod duration;
 mod extension;
 mod floats;
 mod list;
+#[cfg(feature = "dtype-map")]
+mod map;
 pub(crate) mod null;
 #[cfg(feature = "object")]
 mod object;

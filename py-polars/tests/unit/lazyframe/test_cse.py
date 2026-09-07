@@ -1940,3 +1940,191 @@ def test_cspe_nondeterministic_still_caches_inputs_28733() -> None:
     # can be cached
     plan = copied.explain()
     assert plan.count("WITH_COLUMNS") == 1, plan
+
+
+def year_totals() -> pl.LazyFrame:
+    """An aggregation worth sharing, keyed by a column its readers filter on."""
+    lf = pl.LazyFrame(
+        {
+            "year": [2000, 2001, None, 2002, 2003] * 3,
+            "v": list(range(15)),
+            "w": list(range(15)),
+        }
+    )
+    return lf.group_by("year").agg(
+        pl.col("v").sum().alias("total"), pl.col("w").max().alias("mw")
+    )
+
+
+def test_cspe_narrows_shared_subplan_to_what_its_readers_ask_for() -> None:
+    # `total` is computed in the subplan so the filters cannot be pushed and the
+    # cache stays. The years they select still bound the subplan from both sides.
+    base = year_totals()
+    q = pl.concat(
+        [
+            base.filter((pl.col("year") == 2001) & (pl.col("total") > 0)),
+            base.filter((pl.col("year") == 2002) & (pl.col("total") > 0)),
+        ]
+    )
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'FILTER (col("year") >= 2001) & (col("year") <= 2002)' in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_no_narrowing_when_a_reader_takes_every_row() -> None:
+    # One reader has no filter, so nothing may be dropped below the cache.
+    base = year_totals()
+    q = pl.concat([base, base.filter((pl.col("year") == 2001) & (pl.col("total") > 0))])
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'col("year") >=' not in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_narrowing_keeps_only_what_every_reader_bounds() -> None:
+    # The readers bound different columns, so only the constraint they share is
+    # pushed; `year` and `mw` stay above the cache.
+    base = year_totals()
+    q = pl.concat(
+        [
+            base.filter((pl.col("total") > 0) & (pl.col("year") == 2001)),
+            base.filter((pl.col("total") > 0) & (pl.col("mw") > 1)),
+        ]
+    )
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'col("year") >=' not in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_narrowing_keeps_the_rows_a_reader_still_needs() -> None:
+    # A reader taking an open range must not be narrowed to another's point.
+    base = year_totals()
+    q = pl.concat(
+        [
+            base.filter((pl.col("year") == 2001) & (pl.col("total") > 0)),
+            base.filter((pl.col("year") >= 2000) & (pl.col("total") > 0)),
+        ]
+    )
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'col("year") <=' not in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_no_narrowing_past_a_reader_that_reads_a_whole_column() -> None:
+    # `s.sort()` sees a different column once rows are dropped beneath it, so which
+    # rows this reader keeps is not implied by any bound on `year`.
+    base = (
+        pl.LazyFrame({"year": [2000, 2001, 2002], "s": ["z", "a", "b"], "v": [1, 1, 1]})
+        .group_by("year", maintain_order=True)
+        .agg(pl.col("v").sum().alias("total"), pl.col("s").first())
+    )
+    q = pl.concat(
+        [
+            base.filter((pl.col("year") == 2001) & (pl.col("s").sort() == "b")),
+            base.filter((pl.col("year") == 2002) & (pl.col("s").sort() == "b")),
+        ]
+    )
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'col("year") >=' not in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_no_narrowing_past_a_fallible_reader(plmonkeypatch: PlMonkeyPatch) -> None:
+    # Dropping rows beneath a filter that can error means it may no longer error.
+    base = (
+        pl.LazyFrame(
+            {"year": [2000, 2001, 2002], "lst": [[1], [1], [1]], "v": [1, 1, 1]}
+        )
+        .group_by("year", maintain_order=True)
+        .agg(pl.col("v").sum().alias("total"), pl.col("lst").first())
+    )
+    q = pl.concat(
+        [
+            base.filter((pl.col("year") == 2001) & (pl.col("lst").list.get(1) > 0)),
+            base.filter((pl.col("year") == 2002) & (pl.col("lst").list.get(1) > 0)),
+        ]
+    )
+    assert 'col("year") >=' in q.explain()
+
+    plmonkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+    assert 'col("year") >=' not in q.explain()
+
+
+def test_cspe_no_narrowing_of_a_column_with_its_own_order() -> None:
+    # An enum compares by its categories, so the string bounds "m" and "z" do not
+    # describe the rows the readers keep.
+    dtype = pl.Enum(["z", "a", "m"])
+    base = (
+        pl.LazyFrame({"key": pl.Series(["z", "a", "m"], dtype=dtype), "v": [1, 2, 3]})
+        .group_by("key", maintain_order=True)
+        .agg(pl.col("v").sum().alias("total"))
+    )
+    q = pl.concat(
+        [
+            base.filter((pl.col("key") == "z") & (pl.col("total") > 0)),
+            base.filter((pl.col("key") == "m") & (pl.col("total") > 0)),
+        ]
+    )
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'col("key") >=' not in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "dead",
+    [
+        (pl.col("mw") > 10) & (pl.col("mw") < 0),
+        (pl.col("mw") == 1) & (pl.col("mw") != 1),
+        pl.col("mw").is_null() & (pl.col("mw") > 0),
+        pl.col("mw").is_in([1]) & pl.col("mw").is_in([2]),
+    ],
+)
+def test_cspe_narrowing_ignores_a_reader_that_keeps_no_rows(dead: pl.Expr) -> None:
+    # The first reader selects nothing, so it asks nothing of the shared subplan
+    # and the second one is still narrowed to the rows it wants.
+    base = year_totals()
+    q = pl.concat([base.filter(dead), base.filter(pl.col("year") == 2001)])
+    plan = q.explain()
+
+    # Twice: the second reader's own filter, and the copy of it below the cache.
+    assert plan.count('col("year") == 2001') == 2, plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )

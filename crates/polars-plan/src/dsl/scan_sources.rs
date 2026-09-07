@@ -9,7 +9,7 @@ use polars_io::cloud::CloudOptions;
 #[cfg(feature = "cloud")]
 use polars_io::file_cache::FileCacheEntry;
 use polars_io::metrics::IOMetrics;
-use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
+use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder, FileByteSource};
 use polars_io::{
     BytesPerSource, decode_file_uri_paths, expand_paths, expand_paths_hive,
     expanded_from_single_directory,
@@ -132,6 +132,10 @@ impl ScanSource {
         } else {
             false
         }
+    }
+
+    pub fn is_buffer(&self) -> bool {
+        matches!(self, ScanSource::Buffer(_))
     }
 }
 
@@ -503,9 +507,19 @@ impl ScanSourceRef<'_> {
                     .try_build_from_path((*path).clone(), cloud_options, io_metrics)
                     .await
             },
-            Self::File(file) => Ok(DynByteSource::from(Buffer::from_owner(
-                MMapSemaphore::new_from_file(file)?,
-            ))),
+            Self::File(file) => match builder {
+                DynByteSourceBuilder::FilePread(read_context) => {
+                    Ok(FileByteSource::try_new_from_std(
+                        file.try_clone()?,
+                        read_context.clone(),
+                        io_metrics,
+                    )?
+                    .into())
+                },
+                _ => Ok(DynByteSource::from(Buffer::from_owner(
+                    MMapSemaphore::new_from_file(file)?,
+                ))),
+            },
             Self::Buffer(buff) => Ok(DynByteSource::from((*buff).clone())),
         }
     }
