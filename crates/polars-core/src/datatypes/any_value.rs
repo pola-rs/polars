@@ -120,25 +120,6 @@ pub enum AnyValue<'a> {
 }
 
 impl AnyValue<'static> {
-    pub fn zero_sum(dtype: &DataType) -> Self {
-        match dtype {
-            DataType::String => AnyValue::StringOwned(PlSmallStr::EMPTY),
-            DataType::Binary => AnyValue::BinaryOwned(Vec::new()),
-            DataType::Boolean => (0 as IdxSize).into(),
-            // SAFETY: numeric values are static, inform the compiler of this.
-            d if d.is_primitive_numeric() => unsafe {
-                std::mem::transmute::<AnyValue<'_>, AnyValue<'static>>(
-                    AnyValue::UInt8(0).cast(dtype),
-                )
-            },
-            #[cfg(feature = "dtype-duration")]
-            DataType::Duration(unit) => AnyValue::Duration(0, *unit),
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(p, s) => AnyValue::Decimal(0, *p, *s),
-            _ => AnyValue::Null,
-        }
-    }
-
     /// Can the [`AnyValue`] exist as having `dtype` as its `DataType`.
     pub fn can_have_dtype(&self, dtype: &DataType) -> bool {
         matches!(self, AnyValue::Null) || dtype == &self.dtype()
