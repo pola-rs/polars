@@ -157,6 +157,36 @@ impl ColumnConstraints {
         }
     }
 
+    // Keep the wider bound, dropping it when `other` has none or the values cannot be
+    // ordered. `wider` is the other-vs-existing ordering that means the other bound
+    // wins (`Less` lower, `Greater` upper).
+    fn widen_slot(
+        slot: &mut Option<(Scalar, bool)>,
+        other: &Option<(Scalar, bool)>,
+        wider: Ordering,
+    ) {
+        let (Some((value, inclusive)), Some((other_value, other_inclusive))) = (&*slot, other)
+        else {
+            *slot = None;
+            return;
+        };
+        match scalar_cmp(other_value, value) {
+            Some(ord) if ord == wider => *slot = Some((other_value.clone(), *other_inclusive)),
+            // Same value: the inclusive bound is the wider of the two.
+            Some(Ordering::Equal) => *slot = Some((value.clone(), *inclusive || *other_inclusive)),
+            Some(_) => {},
+            None => *slot = None,
+        }
+    }
+
+    // Loosens the bounds to also admit everything `other` admits. Returns whether a
+    // bound is left.
+    fn widen(&mut self, other: &Self) -> bool {
+        Self::widen_slot(&mut self.lower, &other.lower, Ordering::Less);
+        Self::widen_slot(&mut self.upper, &other.upper, Ordering::Greater);
+        self.lower.is_some() || self.upper.is_some()
+    }
+
     fn add_lower(&mut self, value: Scalar, inclusive: bool) -> bool {
         if self.unsat {
             return false;
@@ -409,17 +439,20 @@ impl ColumnConstraints {
     }
 }
 
-/// Rewrites `predicate`'s `AND` chain to a tighter equivalent, or `None` if
-/// nothing changes. Either collapses to `Literal(false)` when the comparisons
-/// can't all hold (letting the filter become an empty scan), or merges redundant
-/// per-column comparisons into the tightest set (`a >= 1 AND a >= 5` to `a >= 5`,
-/// `a >= 3 AND a != 3` to `a > 3`).
-pub(crate) fn merge_filter_constraints(
-    predicate: Node,
-    schema: &Schema,
-    maintain_errors: bool,
-    expr_arena: &mut Arena<AExpr>,
-) -> Option<Node> {
+// One `AND` chain modeled per column.
+struct ConstraintModel {
+    constraints: PlIndexMap<PlSmallStr, ColumnConstraints>,
+    // Conjuncts the model does not describe, kept for a rebuild.
+    opaque: Vec<Node>,
+    num_bound_conjuncts: usize,
+    normalized: bool,
+    propagated: bool,
+    dropped_equality: bool,
+    unsat: bool,
+}
+
+// Runs stages 1 to 3 of the module docs over `predicate`.
+fn model_and_chain(predicate: Node, schema: &Schema, expr_arena: &Arena<AExpr>) -> ConstraintModel {
     // Collect bounds per column; unmodeled conjuncts kept aside, `col == col`
     // routed to `edges` for cross-column propagation. Stop early once a column is
     // impossible (the whole filter is then false).
@@ -483,6 +516,38 @@ pub(crate) fn merge_filter_constraints(
             cc.unsat
         });
     }
+
+    ConstraintModel {
+        constraints,
+        opaque,
+        num_bound_conjuncts,
+        normalized,
+        propagated,
+        dropped_equality,
+        unsat,
+    }
+}
+
+/// Rewrites `predicate`'s `AND` chain to a tighter equivalent, or `None` if
+/// nothing changes. Either collapses to `Literal(false)` when the comparisons
+/// can't all hold (letting the filter become an empty scan), or merges redundant
+/// per-column comparisons into the tightest set (`a >= 1 AND a >= 5` to `a >= 5`,
+/// `a >= 3 AND a != 3` to `a > 3`).
+pub(crate) fn merge_filter_constraints(
+    predicate: Node,
+    schema: &Schema,
+    maintain_errors: bool,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<Node> {
+    let ConstraintModel {
+        constraints,
+        mut opaque,
+        num_bound_conjuncts,
+        normalized,
+        propagated,
+        dropped_equality,
+        unsat,
+    } = model_and_chain(predicate, schema, expr_arena);
 
     if unsat {
         // Collapsing to `false` drops the filter, so an expression that would have
@@ -1062,11 +1127,9 @@ pub(crate) fn widen_over_predicates(
         };
         match &mut widened {
             None => widened = Some(bounds),
-            Some(widened) => widened.retain(|name, cc| {
-                bounds
-                    .get(name)
-                    .is_some_and(|other| widen_bounds(cc, other))
-            }),
+            Some(widened) => {
+                widened.retain(|name, cc| bounds.get(name).is_some_and(|other| cc.widen(other)))
+            },
         }
         if widened.as_ref().is_some_and(PlIndexMap::is_empty) {
             return Vec::new();
@@ -1109,29 +1172,11 @@ fn predicate_bounds(
         return PredicateBounds::Blocked;
     }
 
-    // The same stages `merge_filter_constraints` runs, so a predicate is recognized
-    // as keeping no rows here just as often as it is there.
-    let mut constraints: PlIndexMap<PlSmallStr, ColumnConstraints> = PlIndexMap::new();
-    let mut edges: Vec<(PlSmallStr, PlSmallStr, Node)> = Vec::new();
-    for conjunct in MintermIter::new(predicate, expr_arena) {
-        if !compares_in_literal_order(conjunct, schema, expr_arena) {
-            continue;
-        }
-        match classify_into_constraints(expr_arena.get(conjunct), expr_arena, &mut constraints) {
-            Classification::Unsat => return PredicateBounds::Unsat,
-            Classification::Equality(a, b) => edges.push((a, b, conjunct)),
-            _ => {},
-        }
-    }
-    if !edges.is_empty() {
-        propagate_equalities(&mut constraints, &edges);
-    }
-    if constraints.values_mut().any(|cc| {
-        cc.resolve_deferred();
-        cc.unsat
-    }) {
+    let model = model_and_chain(predicate, schema, expr_arena);
+    if model.unsat {
         return PredicateBounds::Unsat;
     }
+    let mut constraints = model.constraints;
     // Only bounds widen; drop the rest.
     constraints.retain(|_, cc| {
         if cc.lower.is_none() && cc.upper.is_none() {
@@ -1145,28 +1190,4 @@ fn predicate_bounds(
         true
     });
     PredicateBounds::Bounds(constraints)
-}
-
-// Loosens `cc` to also admit everything `other` admits, dropping a bound `other`
-// does not have or whose values cannot be ordered. Returns whether a bound is left.
-fn widen_bounds(cc: &mut ColumnConstraints, other: &ColumnConstraints) -> bool {
-    // `wider` is the ordering that loosens: `Less` for a lower bound, `Greater` for
-    // an upper one. Equal values keep the inclusive bound.
-    fn widen(slot: &mut Option<(Scalar, bool)>, other: &Option<(Scalar, bool)>, wider: Ordering) {
-        let (Some((value, inclusive)), Some((other_value, other_inclusive))) = (&*slot, other)
-        else {
-            *slot = None;
-            return;
-        };
-        match scalar_cmp(other_value, value) {
-            Some(ord) if ord == wider => *slot = Some((other_value.clone(), *other_inclusive)),
-            Some(Ordering::Equal) => *slot = Some((value.clone(), *inclusive || *other_inclusive)),
-            Some(_) => {},
-            None => *slot = None,
-        }
-    }
-
-    widen(&mut cc.lower, &other.lower, Ordering::Less);
-    widen(&mut cc.upper, &other.upper, Ordering::Greater);
-    cc.lower.is_some() || cc.upper.is_some()
 }

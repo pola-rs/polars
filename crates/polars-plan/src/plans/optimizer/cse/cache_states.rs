@@ -355,12 +355,7 @@ pub(crate) fn set_cache_states(
                     }
 
                     // The filter (if any) that blocked pushdown sits directly above the cache.
-                    let filter_predicate = get_filter_node(*parents, lp_arena).map(|filter_node| {
-                        let IR::Filter { predicate, .. } = lp_arena.get(filter_node) else {
-                            unreachable!()
-                        };
-                        predicate.clone()
-                    });
+                    let filter_predicate = get_filter_predicate(*parents, lp_arena).cloned();
 
                     // Copy the subplan with this cache removed and re-run predicate pushdown on
                     // the copy. Nested caches of other ids are preserved.
@@ -529,13 +524,7 @@ fn narrow_shared_subplan(
 ) -> Option<Node> {
     let predicates = parents
         .iter()
-        .map(|parents| {
-            let filter = get_filter_node(*parents, lp_arena)?;
-            let IR::Filter { predicate, .. } = lp_arena.get(filter) else {
-                unreachable!()
-            };
-            Some(predicate.node())
-        })
+        .map(|parents| Some(get_filter_predicate(*parents, lp_arena)?.node()))
         .collect::<Option<Vec<_>>>()?;
 
     let input = *children.first().unwrap();
@@ -554,6 +543,14 @@ fn narrow_shared_subplan(
         });
     }
     Some(node)
+}
+
+fn get_filter_predicate(parents: TwoParents, lp_arena: &Arena<IR>) -> Option<&ExprIR> {
+    let filter = get_filter_node(parents, lp_arena)?;
+    let IR::Filter { predicate, .. } = lp_arena.get(filter) else {
+        unreachable!()
+    };
+    Some(predicate)
 }
 
 fn get_filter_node(parents: TwoParents, lp_arena: &Arena<IR>) -> Option<Node> {
