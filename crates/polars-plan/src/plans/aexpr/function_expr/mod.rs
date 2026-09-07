@@ -247,7 +247,6 @@ pub enum IRFunctionExpr {
     ApproxNUnique,
     #[cfg(feature = "approx_quantile")]
     ApproxQuantile {
-        // TODO: [amber] What kind of interpolation method?
         method: ApproxQuantileMethod,
         error: f64,
     },

@@ -170,6 +170,7 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedState<T> {
         if self.items.is_empty() {
             return None;
         }
+        // We round with ties toward ∞ for consistency with the regular quantile.
         let estimated_rank =
             (quantile * self.num_items().saturating_sub(1) as f64).round() as usize + 1;
         let idx = estimate_quantile_index(self.cum_weight.as_ref(), estimated_rank);
@@ -231,10 +232,7 @@ pub mod kll {
 
     #[derive(Debug)]
     struct IngestingState<T: fmt::Debug + Clone + TotalOrd> {
-        /// Contents of the compactors. The offsets of the compactors are stored
-        /// in the levels vector. The top-level compactor is stored at the start
-        /// of this Vec, and the bottom-most compactor is stored at the end of this
-        /// Vec.
+        /// Contents of the compactors.
         ///
         /// This algorithm uses the convention that the top-level compactor has
         /// *level* h-1.  The bottom-level compactor has *level* h,
@@ -538,7 +536,6 @@ pub mod req {
         while !n_is_ok(n) {
             n = n.checked_mul(2).expect("no sketch size fits this error");
         }
-        // TODO: [amber] Consider an additional factor of 8 or smth.
         n
     }
 
