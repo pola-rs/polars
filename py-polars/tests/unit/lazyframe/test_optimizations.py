@@ -277,6 +277,46 @@ def test_len_null_count_comparison_optimized(
     )
 
 
+@pytest.mark.parametrize(
+    ("op", "n", "expected_head_len"),
+    [
+        ("__eq__", 2, 3),
+        ("__ne__", 2, 3),
+        ("__lt__", 2, 2),
+        ("__le__", 2, 3),
+        ("__gt__", 2, 3),
+        ("__ge__", 2, 3),
+    ],
+)
+def test_len_cmp_head_insertion(op: str, n: int, expected_head_len: int) -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]})
+    expr = getattr(pl.len(), op)(n)
+    result_lf = lf.select(expr.alias("out"))
+
+    plan = result_lf.explain()
+    assert f"SLICE[offset: 0, len: {expected_head_len}]" in plan
+
+    assert_frame_equal(
+        result_lf.collect(),
+        result_lf.collect(optimizations=pl.QueryOptFlags(slice_pushdown=False)),
+    )
+
+
+def test_len_cmp_head_insertion_pushed_into_filter() -> None:
+    lf = pl.LazyFrame({"a": list(range(10))})
+    result_lf = lf.filter(pl.col("a") >= 0).select((pl.len() > 3).alias("out"))
+
+    plan = result_lf.explain()
+    assert "SLICE[offset: 0, len: 4]" in plan
+    # The slice should have been pushed below the filter.
+    assert plan.index("SLICE") < plan.index("FILTER")
+
+    assert_frame_equal(
+        result_lf.collect(),
+        result_lf.collect(optimizations=pl.QueryOptFlags(slice_pushdown=False)),
+    )
+
+
 def test_collapse_joins() -> None:
     a = pl.LazyFrame({"a": [1, 2, 3], "b": [2, 2, 2]})
     b = pl.LazyFrame({"x": [7, 1, 2]})
