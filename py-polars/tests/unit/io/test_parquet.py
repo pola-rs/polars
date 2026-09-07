@@ -2866,7 +2866,7 @@ def test_struct_list_statistics_20510() -> None:
     assert_frame_equal(result, df.filter(pl.col("name") == "b"))
 
 
-def test_required_masked_skip_values_20809(plmonkeypatch: PlMonkeyPatch) -> None:
+def test_required_masked_skip_values_20809() -> None:
     df = pl.DataFrame(
         [pl.Series("a", list(range(20)) + [42] * 15), pl.Series("b", range(35))]
     )
@@ -2876,7 +2876,6 @@ def test_required_masked_skip_values_20809(plmonkeypatch: PlMonkeyPatch) -> None
     df.write_parquet(f)
 
     f.seek(0)
-    plmonkeypatch.setenv("POLARS_PQ_PREFILTERED_MASK", "pre")
     df1 = (
         pl.scan_parquet(f, parallel="prefiltered")
         .filter(pl.col.b.is_in(needle))

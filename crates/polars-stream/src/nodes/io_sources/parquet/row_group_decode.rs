@@ -11,7 +11,6 @@ use polars_io::RowIndex;
 use polars_io::predicates::{
     ColumnPredicateExpr, ColumnPredicates, ScanIOPredicate, SpecializedColumnPredicate,
 };
-pub use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::_internal::canonicalize_parquet_maps;
 use polars_io::prelude::try_set_sorted_flag;
 use polars_parquet::read::{Filter, PredicateFilter, PrimitiveLogicalType};
@@ -28,7 +27,7 @@ pub(super) struct RowGroupDecoder {
     pub(super) allow_column_predicates: bool,
     pub(super) row_index: Option<RowIndex>,
     pub(super) predicate: Option<ScanIOPredicate>,
-    pub(super) use_prefiltered: Option<PrefilterMaskSetting>,
+    pub(super) use_prefiltered: bool,
     /// Indices into `projected_arrow_fields. This must be sorted.
     pub(super) predicate_field_indices: Arc<[usize]>,
     /// Indices into `projected_arrow_fields. This must be sorted.
@@ -47,7 +46,7 @@ impl RowGroupDecoder {
             slice.0 == 0 && slice.1 >= row_group_data.row_group_metadata.num_rows()
         });
 
-        if self.use_prefiltered.is_some()
+        if self.use_prefiltered
             && row_group_data.slice.is_none()
             && !self.predicate_field_indices.is_empty()
         {
