@@ -288,20 +288,6 @@ pub fn slice_parquet_array(
     }
 }
 
-/// Get the length of [`Array`] that should be sliced.
-pub fn get_max_length(nested: &[Nested]) -> usize {
-    let mut length = 0;
-    for nested in nested.iter() {
-        match nested {
-            Nested::LargeList(l_nested) => length += l_nested.offsets.range() as usize,
-            Nested::List(l_nested) => length += l_nested.offsets.range() as usize,
-            Nested::FixedSizeList(nested) => length += nested.length * nested.width,
-            _ => {},
-        }
-    }
-    length
-}
-
 /// Returns an iterator of [`Page`].
 pub fn array_to_pages(
     primitive_array: &dyn Array,
