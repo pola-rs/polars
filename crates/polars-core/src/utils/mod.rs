@@ -1320,28 +1320,6 @@ where
     None
 }
 
-/// ensure that nulls are propagated to both arrays
-pub fn coalesce_nulls<'a, T: PolarsDataType>(
-    a: &'a ChunkedArray<T>,
-    b: &'a ChunkedArray<T>,
-) -> (Cow<'a, ChunkedArray<T>>, Cow<'a, ChunkedArray<T>>) {
-    if a.null_count() > 0 || b.null_count() > 0 {
-        let (a, b) = align_chunks_binary(a, b);
-        let mut b = b.into_owned();
-        let a = a.coalesce_nulls(b.chunks());
-
-        for arr in a.chunks().iter() {
-            for arr_b in unsafe { b.chunks_mut() } {
-                *arr_b = arr_b.with_validity(arr.validity().cloned())
-            }
-        }
-        b.compute_len();
-        (Cow::Owned(a), Cow::Owned(b))
-    } else {
-        (Cow::Borrowed(a), Cow::Borrowed(b))
-    }
-}
-
 pub fn coalesce_nulls_columns(a: &Column, b: &Column) -> (Column, Column) {
     if a.null_count() > 0 || b.null_count() > 0 {
         let mut a = a.as_materialized_series().rechunk();
