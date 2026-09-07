@@ -24,8 +24,8 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::properties::ExprPushdownGroup;
-use crate::plans::iterator::ArenaExprIter;
 use super::{AExpr, IRBooleanFunction, IRFunctionExpr, LiteralValue, MintermIter, Operator};
+use crate::plans::iterator::ArenaExprIter;
 #[cfg(feature = "is_between")]
 use crate::prelude::ClosedInterval;
 
@@ -1051,27 +1051,32 @@ pub(crate) fn widen_over_predicates(
     maintain_errors: bool,
     expr_arena: &mut Arena<AExpr>,
 ) -> Vec<Node> {
-    let Some((&first, rest)) = predicates.split_first() else {
-        return Vec::new();
-    };
-    let Some(mut widened) = predicate_bounds(first, schema, maintain_errors, expr_arena) else {
-        return Vec::new();
-    };
+    let mut widened: Option<PlIndexMap<PlSmallStr, ColumnConstraints>> = None;
 
-    for &predicate in rest {
-        let Some(bounds) = predicate_bounds(predicate, schema, maintain_errors, expr_arena) else {
-            return Vec::new();
+    for &predicate in predicates {
+        let bounds = match predicate_bounds(predicate, schema, maintain_errors, expr_arena) {
+            PredicateBounds::Blocked => return Vec::new(),
+            // Keeps no rows, so it asks nothing of the result.
+            PredicateBounds::Unsat => continue,
+            PredicateBounds::Bounds(bounds) => bounds,
         };
-        widened.retain(|name, cc| {
-            bounds
-                .get(name)
-                .is_some_and(|other| widen_bounds(cc, other))
-        });
-        if widened.is_empty() {
+        match &mut widened {
+            None => widened = Some(bounds),
+            Some(widened) => widened.retain(|name, cc| {
+                bounds
+                    .get(name)
+                    .is_some_and(|other| widen_bounds(cc, other))
+            }),
+        }
+        if widened.as_ref().is_some_and(PlIndexMap::is_empty) {
             return Vec::new();
         }
     }
 
+    // Every predicate was unsatisfiable, so there is nothing to widen over.
+    let Some(widened) = widened else {
+        return Vec::new();
+    };
     let mut comparisons: Vec<(&PlSmallStr, Operator, &Scalar)> = Vec::new();
     for (name, cc) in &widened {
         collect_column_comparisons(name, cc, &mut comparisons);
@@ -1082,21 +1087,26 @@ pub(crate) fn widen_over_predicates(
         .collect()
 }
 
+enum PredicateBounds {
+    // The predicate does not decide row by row: one reading its column as a whole
+    // sees a different column once rows are dropped beneath it, so no bound
+    // describes the rows it keeps.
+    Blocked,
+    Unsat,
+    Bounds(PlIndexMap<PlSmallStr, ColumnConstraints>),
+}
+
 // The bounds one predicate places on the columns it constrains.
-//
-// `None` for an unsatisfiable predicate, which says nothing about what the others
-// need, and for one that does not decide row by row: a predicate reading its column
-// as a whole sees a different column once rows are dropped beneath it.
 fn predicate_bounds(
     predicate: Node,
     schema: &Schema,
     maintain_errors: bool,
     expr_arena: &Arena<AExpr>,
-) -> Option<PlIndexMap<PlSmallStr, ColumnConstraints>> {
+) -> PredicateBounds {
     let mut group = ExprPushdownGroup::Pushable;
     group.update_with_expr_rec(expr_arena.get(predicate), expr_arena, None);
     if group.blocks_pushdown(maintain_errors) {
-        return None;
+        return PredicateBounds::Blocked;
     }
 
     let mut constraints: PlIndexMap<PlSmallStr, ColumnConstraints> = PlIndexMap::new();
@@ -1108,12 +1118,15 @@ fn predicate_bounds(
             classify_into_constraints(expr_arena.get(conjunct), expr_arena, &mut constraints),
             Classification::Unsat
         ) {
-            return None;
+            return PredicateBounds::Unsat;
         }
+    }
+    if constraints.values().any(|cc| cc.unsat) {
+        return PredicateBounds::Unsat;
     }
     // Only bounds widen; drop the rest.
     constraints.retain(|_, cc| {
-        if cc.unsat || (cc.lower.is_none() && cc.upper.is_none()) {
+        if cc.lower.is_none() && cc.upper.is_none() {
             return false;
         }
         *cc = ColumnConstraints {
@@ -1123,7 +1136,7 @@ fn predicate_bounds(
         };
         true
     });
-    Some(constraints)
+    PredicateBounds::Bounds(constraints)
 }
 
 // Loosens `cc` to also admit everything `other` admits, dropping a bound `other`

@@ -2103,3 +2103,23 @@ def test_cspe_no_narrowing_of_a_column_with_its_own_order() -> None:
         q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
         check_row_order=False,
     )
+
+
+def test_cspe_narrowing_ignores_a_reader_that_keeps_no_rows() -> None:
+    # The first reader selects nothing, so it asks nothing of the shared subplan
+    # and the second one is still narrowed to the rows it wants.
+    base = year_totals()
+    q = pl.concat(
+        [
+            base.filter((pl.col("year") > 2003) & (pl.col("year") < 2000)),
+            base.filter((pl.col("year") == 2001) & (pl.col("total") > 0)),
+        ]
+    )
+    plan = q.explain()
+
+    assert 'col("year") == 2001' in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )

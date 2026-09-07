@@ -1802,7 +1802,7 @@ def test_filter_constraint_column_with_its_own_order() -> None:
     lf = pl.LazyFrame({"key": pl.Series(["z", "a", "m"], dtype=dtype), "v": [1, 2, 3]})
 
     q = lf.filter((pl.col("key") == "z") & (pl.col("key") >= "m"))
-    assert q.explain().count("col(\"key\")") == 2
+    assert q.explain().count('col("key")') == 2
     assert q.collect().is_empty()
 
 
