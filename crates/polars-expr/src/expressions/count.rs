@@ -87,39 +87,32 @@ pub fn evaluate_count_on_ac<'a>(
                             let array = &s.as_materialized_series().chunks()[0];
                             let validity = array.validity().unwrap();
 
-                            // The representation of the mask is resolved once, ahead of the walk:
-                            // reading it through `PlBitmapRef` costs a `broadcast_index` — a
-                            // length load, a compare and a select — for every element counted.
-                            match (validity.scalar_value(), validity.flat_bitmap()) {
+                            // The representation of the mask is resolved once, ahead of the
+                            // walk: reading it through `PlBitmapRef` costs a `broadcast_index` —
+                            // a length load, a compare and a select — per element counted.
+                            match validity.scalar_value() {
                                 // One bit says the same of every element, so a group counts every
                                 // member of itself, or none of them.
-                                (Some(bit), _) => idx
+                                Some(bit) => idx
                                     .iter()
                                     .map(|(_, g)| if bit { g.len() as IdxSize } else { 0 })
                                     .collect_ca_trusted_with_dtype(PlSmallStr::EMPTY, IDX_DTYPE),
-                                (None, Some(flat)) => idx
-                                    .iter()
-                                    .map(|(_, g)| {
-                                        let mut count = 0 as IdxSize;
-                                        // Count valid values
-                                        g.iter().for_each(|i| unsafe {
-                                            count += flat.get_bit_unchecked(*i as usize) as IdxSize;
-                                        });
-                                        count
-                                    })
-                                    .collect_ca_trusted_with_dtype(PlSmallStr::EMPTY, IDX_DTYPE),
-                                // A mask of a single bit over a single element is neither, and is
-                                // read through the reference it came as.
-                                (None, None) => idx
-                                    .iter()
-                                    .map(|(_, g)| {
-                                        let mut count = 0 as IdxSize;
-                                        g.iter().for_each(|i| unsafe {
-                                            count += validity.get_unchecked(*i as usize) as IdxSize;
-                                        });
-                                        count
-                                    })
-                                    .collect_ca_trusted_with_dtype(PlSmallStr::EMPTY, IDX_DTYPE),
+                                // The mask is not scalar, so it holds one bit per element and is
+                                // indexed by the element index itself.
+                                None => {
+                                    let flat = validity.flat_bitmap().unwrap();
+                                    idx.iter()
+                                        .map(|(_, g)| {
+                                            let mut count = 0 as IdxSize;
+                                            // Count valid values
+                                            g.iter().for_each(|i| unsafe {
+                                                count +=
+                                                    flat.get_bit_unchecked(*i as usize) as IdxSize;
+                                            });
+                                            count
+                                        })
+                                        .collect_ca_trusted_with_dtype(PlSmallStr::EMPTY, IDX_DTYPE)
+                                },
                             }
                         },
                         GroupsType::Slice { groups, .. } => {
