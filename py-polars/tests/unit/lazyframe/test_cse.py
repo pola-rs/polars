@@ -2105,19 +2105,24 @@ def test_cspe_no_narrowing_of_a_column_with_its_own_order() -> None:
     )
 
 
-def test_cspe_narrowing_ignores_a_reader_that_keeps_no_rows() -> None:
+@pytest.mark.parametrize(
+    "dead",
+    [
+        (pl.col("mw") > 10) & (pl.col("mw") < 0),
+        (pl.col("mw") == 1) & (pl.col("mw") != 1),
+        pl.col("mw").is_null() & (pl.col("mw") > 0),
+        pl.col("mw").is_in([1]) & pl.col("mw").is_in([2]),
+    ],
+)
+def test_cspe_narrowing_ignores_a_reader_that_keeps_no_rows(dead: pl.Expr) -> None:
     # The first reader selects nothing, so it asks nothing of the shared subplan
     # and the second one is still narrowed to the rows it wants.
     base = year_totals()
-    q = pl.concat(
-        [
-            base.filter((pl.col("year") > 2003) & (pl.col("year") < 2000)),
-            base.filter((pl.col("year") == 2001) & (pl.col("total") > 0)),
-        ]
-    )
+    q = pl.concat([base.filter(dead), base.filter(pl.col("year") == 2001)])
     plan = q.explain()
 
-    assert 'col("year") == 2001' in plan
+    # Twice: the second reader's own filter, and the copy of it below the cache.
+    assert plan.count('col("year") == 2001') == 2, plan
     assert_frame_equal(
         q.collect(),
         q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),

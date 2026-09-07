@@ -1109,19 +1109,27 @@ fn predicate_bounds(
         return PredicateBounds::Blocked;
     }
 
+    // The same stages `merge_filter_constraints` runs, so a predicate is recognized
+    // as keeping no rows here just as often as it is there.
     let mut constraints: PlIndexMap<PlSmallStr, ColumnConstraints> = PlIndexMap::new();
+    let mut edges: Vec<(PlSmallStr, PlSmallStr, Node)> = Vec::new();
     for conjunct in MintermIter::new(predicate, expr_arena) {
         if !compares_in_literal_order(conjunct, schema, expr_arena) {
             continue;
         }
-        if matches!(
-            classify_into_constraints(expr_arena.get(conjunct), expr_arena, &mut constraints),
-            Classification::Unsat
-        ) {
-            return PredicateBounds::Unsat;
+        match classify_into_constraints(expr_arena.get(conjunct), expr_arena, &mut constraints) {
+            Classification::Unsat => return PredicateBounds::Unsat,
+            Classification::Equality(a, b) => edges.push((a, b, conjunct)),
+            _ => {},
         }
     }
-    if constraints.values().any(|cc| cc.unsat) {
+    if !edges.is_empty() {
+        propagate_equalities(&mut constraints, &edges);
+    }
+    if constraints.values_mut().any(|cc| {
+        cc.resolve_deferred();
+        cc.unsat
+    }) {
         return PredicateBounds::Unsat;
     }
     // Only bounds widen; drop the rest.
