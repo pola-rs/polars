@@ -7,6 +7,7 @@ from numpy.typing import NDArray
 from polars._typing import ArrowSchemaExportable
 from polars.io.iceberg._sink import IcebergSinkState
 from polars.io.scan_options._options import ScanOptions
+from polars.lazyframe.resolver._resolver import LazyFrameResolver
 
 # This file mirrors all the definitions made in the polars-python Rust API.
 
@@ -899,6 +900,8 @@ class PyLazyFrame:
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_dataset_object(dataset_object: Any) -> PyLazyFrame: ...
+    @staticmethod
+    def from_lazyframe_resolver(resolver: LazyFrameResolver) -> PyLazyFrame: ...
     @staticmethod
     def scan_from_python_function_arrow_schema(
         schema: Any,
