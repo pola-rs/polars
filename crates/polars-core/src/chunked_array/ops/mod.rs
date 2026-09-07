@@ -103,10 +103,6 @@ pub trait ChunkExplode {
     ) -> PolarsResult<(Series, OffsetsBuffer<i64>)>;
 }
 
-pub trait ChunkBytes {
-    fn to_byte_slices(&self) -> Vec<&[u8]>;
-}
-
 /// This differs from ChunkWindowCustom and ChunkWindow
 /// by not using a fold aggregator, but reusing a `Series` wrapper and calling `Series` aggregators.
 /// This likely is a bit slower than ChunkWindow
