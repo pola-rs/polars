@@ -165,10 +165,35 @@ impl<T: NativeType> ArrayFromIter<Option<T>> for PlPrimitiveArray<T> {
     }
 }
 
+/// Collects `iter` into a bitmap a word at a time: an element costs a shift and an or into a
+/// register, and the builder is touched once per 64 of them rather than once each.
+fn collect_bitmap<I: Iterator<Item = bool>>(mut iter: I) -> BitmapBuilder {
+    let mut builder = BitmapBuilder::with_capacity(iter.size_hint().0);
+
+    loop {
+        builder.reserve(64);
+
+        let mut word = 0u64;
+        let mut length = 0;
+        while length < 64 {
+            let Some(value) = iter.next() else { break };
+            word |= (value as u64) << length;
+            length += 1;
+        }
+
+        // SAFETY: room for a whole word was just reserved, `length` is at most 64, and the bits
+        // above it were never written.
+        unsafe { builder.push_word_with_len_unchecked(word, length) };
+
+        if length < 64 {
+            return builder;
+        }
+    }
+}
+
 impl ArrayFromIter<bool> for PlBooleanArray {
-    #[inline]
     fn arr_from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
-        iter.into_iter().collect()
+        Self::from_values(collect_bitmap(iter.into_iter()).freeze())
     }
 
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<bool, E>>>(iter: I) -> Result<Self, E> {
@@ -184,9 +209,25 @@ impl ArrayFromIter<bool> for PlBooleanArray {
 }
 
 impl ArrayFromIter<Option<bool>> for PlBooleanArray {
-    #[inline]
     fn arr_from_iter<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self {
-        iter.into_iter().collect()
+        let iter = iter.into_iter();
+        let (lower, _) = iter.size_hint();
+
+        let mut values = BitmapBuilder::with_capacity(lower);
+        let mut validity = BitmapBuilder::with_capacity(lower);
+
+        for item in iter {
+            // The value of a null element is undetermined, so it is left at the default.
+            values.push(item.unwrap_or_default());
+            validity.push(item.is_some());
+        }
+
+        let length = values.len();
+        Self::new(
+            values.freeze(),
+            length,
+            validity.into_opt_validity().map(PlBitmap::from_bitmap),
+        )
     }
 
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<bool>, E>>>(

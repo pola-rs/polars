@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_error::{PolarsResult, polars_ensure};
 
 use crate::array::PlArray;
@@ -564,8 +564,11 @@ impl FromIterator<Option<bool>> for PlBooleanArray {
         let iter = iter.into_iter();
         let (lower, _) = iter.size_hint();
 
-        let mut values = MutableBitmap::with_capacity(lower);
-        let mut validity = MutableBitmap::with_capacity(lower);
+        // `BitmapBuilder`, not `MutableBitmap`: it accumulates a word at a time and counts its
+        // set bits as it goes, where `MutableBitmap::push` checks its capacity per bit and
+        // leaves the count to a scan of the whole mask afterwards.
+        let mut values = BitmapBuilder::with_capacity(lower);
+        let mut validity = BitmapBuilder::with_capacity(lower);
 
         for item in iter {
             values.push(item.unwrap_or_default());
@@ -573,13 +576,11 @@ impl FromIterator<Option<bool>> for PlBooleanArray {
         }
 
         let length = values.len();
-        let validity = Bitmap::from(validity);
-        let validity = (validity.unset_bits() > 0).then_some(validity);
 
         Self {
-            values: values.into(),
+            values: values.freeze(),
             length,
-            validity,
+            validity: validity.into_opt_validity(),
         }
     }
 }
@@ -587,7 +588,9 @@ impl FromIterator<Option<bool>> for PlBooleanArray {
 impl FromIterator<bool> for PlBooleanArray {
     #[inline]
     fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
-        Self::from_values(Bitmap::from_iter(iter))
+        // Not `Bitmap::from_iter`, which goes through `MutableBitmap` and packs a byte at a time
+        // behind a capacity check and an exhausted flag.
+        <Self as crate::collect::ArrayFromIter<bool>>::arr_from_iter(iter)
     }
 }
 

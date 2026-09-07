@@ -1,10 +1,11 @@
 use std::borrow::Cow;
 
 use arrow::Either;
-use arrow::bitmap::{Bitmap, MutableBitmap, OptBitmapBuilder};
+use arrow::bitmap::{Bitmap, BitmapBuilder, OptBitmapBuilder};
 use arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_ensure};
+use polars_utils::vec::PushUnchecked;
 
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
@@ -616,21 +617,31 @@ impl<T: NativeType> FromIterator<Option<T>> for PlPrimitiveArray<T> {
         let (lower, _) = iter.size_hint();
 
         let mut values = Vec::with_capacity(lower);
-        let mut validity = MutableBitmap::with_capacity(lower);
+        // `BitmapBuilder`, not `MutableBitmap`: it counts its set bits as it goes, so asking
+        // whether any element is null afterwards is `O(1)` rather than a scan of the whole mask.
+        let mut validity = BitmapBuilder::with_capacity(lower);
 
+        // One capacity check covers both buffers, which is what keeps an element append down to
+        // the two stores it is.
         for item in iter {
-            values.push(item.unwrap_or_default());
-            validity.push(item.is_some());
+            if values.len() == values.capacity() {
+                values.reserve(1);
+                validity.reserve(values.capacity() - values.len());
+            }
+
+            // SAFETY: room for one more element was just made in both buffers.
+            unsafe {
+                values.push_unchecked(item.unwrap_or_default());
+                validity.push_unchecked(item.is_some());
+            }
         }
 
         let length = values.len();
-        let validity = Bitmap::from(validity);
-        let validity = (validity.unset_bits() > 0).then_some(validity);
 
         Self {
             values: Buffer::from(values),
             length,
-            validity,
+            validity: validity.into_opt_validity(),
         }
     }
 }
