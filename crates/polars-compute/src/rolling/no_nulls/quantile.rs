@@ -259,7 +259,7 @@ where
         .enumerate()
         .filter(|&(_, w)| w != 0.0)
         .collect();
-    let mut buf = vec![(T::zero(), 0.0); nz_idx_wts.len()];
+    let mut buf: Vec<_> = Vec::with_capacity(nz_idx_wts.len());
     let len = values.len();
     let out = (0..len)
         .map(|idx| {
@@ -271,18 +271,14 @@ where
             let weights_end = weights_start + win_len;
 
             // Sorting is not ideal, see https://github.com/tobiasschoch/wquantile for something faster
-            let mut n = 0;
+            buf.clear();
             for &(i, w) in nz_idx_wts.iter() {
                 if (weights_start..weights_end).contains(&i) {
                     // SAFETY: `i - weights_start < win_len`, so the index is in `start..end`.
                     let v = unsafe { *values.get_unchecked(start + i - weights_start) };
-                    buf[n] = (v, w);
-                    n += 1;
+                    buf.push((v, w));
                 }
             }
-            // Ignore anything after 'n'.
-            // Anything after that is a left-over from a longer window.
-            let buf = &mut buf[..n];
             if buf.is_empty() {
                 // Quantile is undefined if all sum is zero, because of div/0
                 return T::zero();
@@ -295,7 +291,7 @@ where
             } else {
                 buf.iter().map(|&(_, w)| w).sum()
             };
-            compute_wq(buf, p, wsum, method)
+            compute_wq(&buf, p, wsum, method)
         })
         .collect_trusted::<Vec<T>>();
 
