@@ -1,5 +1,4 @@
 use super::super::delta_bitpacked;
-use crate::parquet::encoding::delta_bitpacked::SumGatherer;
 use crate::parquet::error::ParquetResult;
 
 /// Decodes according to [Delta strings](https://github.com/apache/parquet-format/blob/master/Encodings.md#delta-strings-delta_byte_array--7),
