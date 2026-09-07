@@ -498,35 +498,3 @@ pub fn calc_prefilter_cost(mask: &arrow::bitmap::Bitmap) -> f64 {
     (num_edges / rg_len).clamp(0.0, 1.0)
 }
 
-#[derive(Clone, Copy)]
-pub enum PrefilterMaskSetting {
-    Auto,
-    Pre,
-    Post,
-}
-
-impl PrefilterMaskSetting {
-    pub fn init_from_env() -> Self {
-        std::env::var("POLARS_PQ_PREFILTERED_MASK").map_or(Self::Auto, |v| match &v[..] {
-            "auto" => Self::Auto,
-            "pre" => Self::Pre,
-            "post" => Self::Post,
-            _ => panic!("Invalid `POLARS_PQ_PREFILTERED_MASK` value '{v}'."),
-        })
-    }
-
-    pub fn should_prefilter(&self, prefilter_cost: f64, dtype: &ArrowDataType) -> bool {
-        match self {
-            Self::Auto => {
-                // Prefiltering is only expensive for nested types so we make the cut-off quite
-                // high.
-                let is_nested = dtype.is_nested();
-
-                // We empirically selected these numbers.
-                !is_nested && prefilter_cost <= 0.01
-            },
-            Self::Pre => true,
-            Self::Post => false,
-        }
-    }
-}
