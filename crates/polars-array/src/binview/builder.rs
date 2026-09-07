@@ -157,9 +157,15 @@ impl PlBinaryViewArrayBuilder {
         share: ShareStrategy,
         opt: bool,
     ) {
+        // Adopting every chunk's buffers up front costs one entry per buffer whether or not any id
+        // reaches it, and leaves the result holding buffers nothing in it reads. That pays only
+        // when there are elements enough to amortize it: a gather of fewer elements than there are
+        // chunks adopts lazily instead, one buffer per view that actually points into it.
+        let hoisting_pays = ids.len() >= chunks.len();
+
         // Copying the bytes out of the source leaves no buffers to adopt, so there is nothing to
         // hoist and the elementwise path stands.
-        if matches!(share, ShareStrategy::Never) {
+        if matches!(share, ShareStrategy::Never) || !hoisting_pays {
             // SAFETY: the caller's guarantee is the one these ask for.
             return unsafe {
                 if opt {
@@ -580,6 +586,39 @@ mod tests {
             built.iter().collect::<Vec<_>>(),
             [Some(LONG), None, Some(b"foo".as_slice()), None],
         );
+    }
+
+    /// Adopting every chunk's buffers up front leaves the result holding buffers nothing in it
+    /// reads. A gather of fewer elements than there are chunks adopts lazily instead, so it holds
+    /// only the buffers its own views point into.
+    #[test]
+    fn a_gather_of_few_elements_out_of_many_chunks_holds_only_what_it_reads() {
+        let chunks: Vec<PlBinaryViewArray> = (0..64)
+            .map(|i| {
+                let mut value = LONG.to_vec();
+                value.push(i as u8);
+                [Some(value.as_slice())].into_iter().collect()
+            })
+            .collect();
+        let refs: Vec<&PlBinaryViewArray> = chunks.iter().collect();
+        for chunk in &refs {
+            assert_eq!(chunk.data_buffers().len(), 1, "the value is not inlined");
+        }
+
+        let ids: [ChunkId<24>; 2] = [ChunkId::store(7, 0), ChunkId::store(40, 0)];
+
+        let mut builder = PlBinaryViewArrayBuilder::new();
+        unsafe { builder.chunked_gather_extend(&refs, &ids, ShareStrategy::Always) };
+
+        let built = builder.freeze();
+        assert_eq!(built.len(), 2);
+        assert_eq!(
+            built.data_buffers().len(),
+            2,
+            "the buffers of the 62 chunks no id names are not held",
+        );
+        assert_eq!(built.value(0), chunks[7].value(0));
+        assert_eq!(built.value(1), chunks[40].value(0));
     }
 
     #[test]

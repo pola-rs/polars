@@ -200,43 +200,70 @@ where
 
 /// [`with_values_mut`] for views: writes into the views, copying them out where it cannot.
 ///
+/// `f` is handed the views, the index the first buffer it appends will have, and the buffers to
+/// append them to; those are added to the array's own before it is left holding the views, so a
+/// view is never in an array whose buffers it points past.
+///
 /// # Safety
-/// Every view left behind must read bytes that the array's buffers hold.
-unsafe fn with_views_mut<F: FnOnce(&mut [View])>(arr: &mut PlBinaryViewArray, f: F) {
+/// Every view `f` leaves behind must read bytes that the array's buffers hold, or ones it pushed
+/// onto the buffers it was handed.
+unsafe fn with_views_mut<F>(arr: &mut PlBinaryViewArray, f: F)
+where
+    F: FnOnce(&mut [View], u32, &mut Vec<Vec<u8>>),
+{
+    let length = arr.len();
+    let buffer_offset = arr.data_buffers().len() as u32;
+    let mut new_buffers: Vec<Vec<u8>> = Vec::new();
+
     if arr.views_are_scalar() {
         // A scalar chunk holds one view standing for every element, so it is written out before
-        // anything can be written into it.
-        let length = arr.len();
-        let buffers = arr.data_buffers().clone();
-        let validity = arr.validity().map(PlBitmap::from);
-
-        // Written out as a buffer of its own, for the reason given in `with_values_mut`.
+        // anything can be written into it. Written out as a buffer of its own, for the reason
+        // given in `with_values_mut`.
         let mut owned = match arr.scalar_views() {
             Some(view) => vec![view; length],
             // Views that are neither flat nor scalar are no views at all.
             None => Vec::new(),
         };
-        f(&mut owned);
+        let validity = arr.validity().map(PlBitmap::from);
+        let mut buffers = Buffer::to_vec(core::mem::take(unsafe { arr.data_buffers_mut() }));
 
-        // SAFETY: the buffer written out holds one view per element, the buffers are the ones the
-        // views were read against, and the caller owes that `f` left every view reading them.
+        f(&mut owned, buffer_offset, &mut new_buffers);
+        buffers.extend(new_buffers.into_iter().map(Buffer::from));
+
+        // SAFETY: the buffer written out holds one view per element, and every view reads bytes
+        // the buffers hold — the ones the array came with, or the ones just appended.
         *arr = unsafe {
-            PlBinaryViewArray::new_unchecked(Buffer::from(owned), buffers, length, validity)
+            PlBinaryViewArray::new_unchecked(
+                Buffer::from(owned),
+                Buffer::from(buffers),
+                length,
+                validity,
+            )
         };
         return;
     }
 
-    // SAFETY: the caller owes that `f` leaves every view reading the bytes the buffers hold.
-    let views = unsafe { arr.flat_views_mut() }.unwrap();
-    match views.get_mut_slice() {
-        Some(slice) => f(slice),
-        None => {
-            // Something else reads these views, so they are copied before being written.
-            let mut owned = views.as_slice().to_vec();
-            f(&mut owned);
-            *views = Buffer::from(owned);
-        },
+    {
+        // SAFETY: the caller owes that `f` leaves every view reading the bytes the buffers hold
+        // once the ones it appends are in them, which is what happens below.
+        let views = unsafe { arr.flat_views_mut() }.unwrap();
+        match views.get_mut_slice() {
+            Some(slice) => f(slice, buffer_offset, &mut new_buffers),
+            None => {
+                // Something else reads these views, so they are copied before being written.
+                let mut owned = views.as_slice().to_vec();
+                f(&mut owned, buffer_offset, &mut new_buffers);
+                *views = Buffer::from(owned);
+            },
+        }
     }
+
+    // The views written above index the buffers past the ones the array already held, which is
+    // what `buffer_offset` counted; appending them leaves every view that was already there
+    // reading what it read.
+    let mut buffers = Buffer::to_vec(core::mem::take(unsafe { arr.data_buffers_mut() }));
+    buffers.extend(new_buffers.into_iter().map(Buffer::from));
+    *unsafe { arr.data_buffers_mut() } = Buffer::from(buffers);
 }
 
 unsafe fn scatter_binview_impl<'a, V, T>(
@@ -249,16 +276,14 @@ unsafe fn scatter_binview_impl<'a, V, T>(
 {
     let mut values_iter = set_values.into_iter();
     let length = arr.len();
-    let buffer_offset = arr.data_buffers().len() as u32;
-    let mut new_buffers = Vec::new();
 
     if let Some(validity) = arr.validity() {
         // A scalar mask stands for one bit per element, which `to_flat` resolves.
         let mut mut_validity = validity.to_flat().into_owned().make_mut();
-        with_views_mut(arr, |views| {
+        with_views_mut(arr, |views, buffer_offset, new_buffers| {
             for (idx, val) in idx.iter().zip(&mut values_iter) {
                 if let Some(v) = val {
-                    let view = View::new_with_buffers(v.as_ref(), buffer_offset, &mut new_buffers);
+                    let view = View::new_with_buffers(v.as_ref(), buffer_offset, new_buffers);
                     *views.get_unchecked_mut(*idx as usize) = view;
                     mut_validity.set_unchecked(*idx as usize, true);
                 } else {
@@ -269,10 +294,10 @@ unsafe fn scatter_binview_impl<'a, V, T>(
         arr.set_validity(Some(PlBitmap::from_bitmap(mut_validity.into())))
     } else {
         let mut null_idx = vec![];
-        with_views_mut(arr, |views| {
+        with_views_mut(arr, |views, buffer_offset, new_buffers| {
             for (idx, val) in idx.iter().zip(values_iter) {
                 if let Some(v) = val {
-                    let view = View::new_with_buffers(v.as_ref(), buffer_offset, &mut new_buffers);
+                    let view = View::new_with_buffers(v.as_ref(), buffer_offset, new_buffers);
                     *views.get_unchecked_mut(*idx as usize) = view;
                 } else {
                     null_idx.push(*idx);
@@ -290,13 +315,6 @@ unsafe fn scatter_binview_impl<'a, V, T>(
             arr.set_validity(Some(PlBitmap::from_bitmap(validity.into())))
         }
     }
-
-    // The views written above index the buffers past the ones the array already held, which is
-    // what `buffer_offset` counted; appending them leaves every view that was already there
-    // reading what it read.
-    let mut buffers = Buffer::to_vec(core::mem::take(unsafe { arr.data_buffers_mut() }));
-    buffers.extend(new_buffers.into_iter().map(Buffer::from));
-    *unsafe { arr.data_buffers_mut() } = Buffer::from(buffers);
 }
 
 impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T> {
@@ -383,5 +401,48 @@ impl ChunkedSet<bool> for &mut BooleanChunked {
 
         let out = BooleanChunked::with_chunk(name, arr);
         Ok(out.into_series())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_core::prelude::*;
+
+    use super::ChunkedSet;
+
+    /// A value too long to inline is scattered in as a data buffer of its own, so the views of a
+    /// chunk that repeats one view read a buffer the array does not hold yet when they are written
+    /// out. The array is only ever built once those buffers are in it.
+    #[test]
+    fn scattering_a_long_string_into_a_repeated_chunk() {
+        const LONG: &str = "a value that is far too long to be inlined into a view";
+        let length = 4;
+
+        let mut ca =
+            StringChunked::with_chunk("s".into(), PlUtf8ViewArray::new_scalar("short", length));
+        assert!(ca.downcast_as_array().views_are_scalar());
+
+        let out = (&mut ca).scatter(&[1], [Some(LONG)]).unwrap();
+        assert_eq!(
+            out.str().unwrap().iter().collect::<Vec<_>>(),
+            [Some("short"), Some(LONG), Some("short"), Some("short")],
+        );
+    }
+
+    /// As above, over a chunk that repeats one value and carries a mask of its own.
+    #[test]
+    fn scattering_a_long_string_into_a_masked_repeated_chunk() {
+        const LONG: &str = "a value that is far too long to be inlined into a view";
+        let length = 3;
+
+        let arr = PlUtf8ViewArray::new_scalar("short", length)
+            .with_validity(Some(PlBitmap::new_scalar(true, length)));
+        let mut ca = StringChunked::with_chunk("s".into(), arr);
+
+        let out = (&mut ca).scatter(&[0, 2], [Some(LONG), None]).unwrap();
+        assert_eq!(
+            out.str().unwrap().iter().collect::<Vec<_>>(),
+            [Some(LONG), Some("short"), None],
+        );
     }
 }
