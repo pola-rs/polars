@@ -46,8 +46,8 @@ pub fn new_min_by_reduction(
         String | Binary => Box::new(SPGR::new(by_dtype, BinaryMinSelector, payload)),
         BinaryOffset => Box::new(SPGR::new(by_dtype, BinaryOffsetMinSelector, payload)),
         _ if by_dtype.is_integer() || by_dtype.is_temporal() || by_dtype.is_enum() => {
-            with_match_physical_integer_polars_type!(by_dtype.to_physical(), |$T| {
-                Box::new(SPGR::new(by_dtype, MinSelector::<$T>(PhantomData), payload))
+            with_match_physical_integer_polars_type!(by_dtype.to_physical(), impl<T> {
+                Box::new(SPGR::new(by_dtype, MinSelector::<T>(PhantomData), payload))
             })
         },
         #[cfg(feature = "dtype-decimal")]
@@ -57,9 +57,13 @@ pub fn new_min_by_reduction(
             payload,
         )),
         #[cfg(feature = "dtype-categorical")]
-        Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), |$C| {
+        Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), impl<C> {
             let map = map.clone();
-            Box::new(SPGR::new(by_dtype, CatMinSelector::<$C>(map, PhantomData), payload))
+            Box::new(SPGR::new(
+                by_dtype,
+                CatMinSelector::<C>(map, PhantomData),
+                payload,
+            ))
         }),
         _ => {
             polars_bail!(InvalidOperation: "`min_by` operation not supported for by dtype `{by_dtype}`")
@@ -98,8 +102,8 @@ pub fn new_max_by_reduction(
         String | Binary => Box::new(SPGR::new(by_dtype, BinaryMaxSelector, payload)),
         BinaryOffset => Box::new(SPGR::new(by_dtype, BinaryOffsetMaxSelector, payload)),
         _ if by_dtype.is_integer() || by_dtype.is_temporal() || by_dtype.is_enum() => {
-            with_match_physical_integer_polars_type!(by_dtype.to_physical(), |$T| {
-                Box::new(SPGR::new(by_dtype, MaxSelector::<$T>(PhantomData), payload))
+            with_match_physical_integer_polars_type!(by_dtype.to_physical(), impl<T> {
+                Box::new(SPGR::new(by_dtype, MaxSelector::<T>(PhantomData), payload))
             })
         },
         #[cfg(feature = "dtype-decimal")]
@@ -109,9 +113,13 @@ pub fn new_max_by_reduction(
             payload,
         )),
         #[cfg(feature = "dtype-categorical")]
-        Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), |$C| {
+        Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), impl<C> {
             let map = map.clone();
-            Box::new(SPGR::new(by_dtype, CatMaxSelector::<$C>(map, PhantomData), payload))
+            Box::new(SPGR::new(
+                by_dtype,
+                CatMaxSelector::<C>(map, PhantomData),
+                payload,
+            ))
         }),
         _ => {
             polars_bail!(InvalidOperation: "`max_by` operation not supported for by dtype `{by_dtype}`")

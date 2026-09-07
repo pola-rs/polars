@@ -253,9 +253,15 @@ pub fn hist_series(
     };
     polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "'hist' is only supported for numeric data");
 
-    let out = with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-         let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-         compute_hist(ca, bin_count, bins_arg, include_category, include_breakpoint)?
+    let out = with_match_physical_numeric_polars_type!(s.dtype(), impl<T> {
+        let ca: &ChunkedArray<T> = s.as_ref().as_ref();
+        compute_hist(
+            ca,
+            bin_count,
+            bins_arg,
+            include_category,
+            include_breakpoint,
+        )?
     });
     Ok(out)
 }

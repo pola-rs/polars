@@ -215,16 +215,17 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 let arrow_data_type = dtype
                     .to_arrow(CompatLevel::newest())
                     .underlying_physical_type();
-                with_match_physical_numeric_polars_type!(dtype, |$T| {
-                    unsafe {
-                        ca.chunks().iter().map(|chunk| {
-                            binview_to_primitive_dyn::<<$T as PolarsNumericType>::Native>(
+                with_match_physical_numeric_polars_type!(dtype, impl<T> {
+                    ca.chunks()
+                        .iter()
+                        .map(|chunk| {
+                            binview_to_primitive_dyn::<<T as PolarsNumericType>::Native>(
                                 &**chunk,
                                 &arrow_data_type,
                                 is_little_endian,
                             )
-                        }).collect()
-                    }
+                        })
+                        .collect()
                 })
             },
             #[cfg(feature = "dtype-array")]
@@ -232,16 +233,17 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 if inner_dtype.is_primitive_numeric() || inner_dtype.is_temporal() =>
             {
                 let inner_dtype = inner_dtype.to_physical();
-                let result: Vec<ArrayRef> = with_match_physical_numeric_polars_type!(inner_dtype, |$T| {
-                    unsafe {
-                        ca.chunks().iter().map(|chunk| {
-                            binview_to_fixed_size_list_dyn::<<$T as PolarsNumericType>::Native>(
+                let result: Vec<ArrayRef> = with_match_physical_numeric_polars_type!(inner_dtype, impl<T> {
+                    ca.chunks()
+                        .iter()
+                        .map(|chunk| {
+                            binview_to_fixed_size_list_dyn::<<T as PolarsNumericType>::Native>(
                                 &**chunk,
                                 *array_width,
-                                is_little_endian
+                                is_little_endian,
                             )
-                        }).collect::<Result<Vec<ArrayRef>, _>>()
-                    }
+                        })
+                        .collect::<Result<Vec<ArrayRef>, _>>()
                 })?;
                 Ok(result)
             },

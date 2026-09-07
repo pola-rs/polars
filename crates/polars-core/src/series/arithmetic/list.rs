@@ -433,8 +433,8 @@ mod inner {
             debug_assert_eq!(prim_dtype, &self.output_primitive_dtype);
 
             // Safety: Leaf dtypes have been checked to be numeric by `try_new()`
-            let out = with_match_physical_numeric_polars_type!(&prim_dtype, |$T| {
-                self._finish_impl::<$T>(prim_lhs, prim_rhs)
+            let out = with_match_physical_numeric_polars_type!(&prim_dtype, impl<T> {
+                self._finish_impl::<T>(prim_lhs, prim_rhs)
             })?;
 
             debug_assert_eq!(out.dtype(), &output_dtype);

@@ -69,8 +69,8 @@ pub fn write_array(
             write_bitmap(ctx, array.validity())?;
             write_bitmap(ctx, Some(array.values()))?;
         },
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
-            let array: &PrimitiveArray<$T> = array.as_any().downcast_ref().unwrap();
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, impl<T> {
+            let array: &PrimitiveArray<T> = array.as_any().downcast_ref().unwrap();
             write_primitive(ctx, array)?;
         }),
         Binary => {
@@ -123,10 +123,10 @@ pub fn write_array(
                 write_array(ctx, field_arr.as_ref())?;
             }
         },
-        Dictionary(key_type) => match_integer_type!(key_type, |$T| {
-            let array: &DictionaryArray<$T> = array.as_any().downcast_ref().unwrap();
-            let keys_array: &PrimitiveArray<$T> = array.keys().as_any().downcast_ref().unwrap();
-            write_primitive::<$T>(ctx, keys_array)?
+        Dictionary(key_type) => match_integer_type!(key_type, impl<T> {
+            let array: &DictionaryArray<T> = array.as_any().downcast_ref().unwrap();
+            let keys_array: &PrimitiveArray<T> = array.keys().as_any().downcast_ref().unwrap();
+            write_primitive::<T>(ctx, keys_array)?
         }),
         Map => {
             let array: &MapArray = array.as_any().downcast_ref().unwrap();

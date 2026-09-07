@@ -11,12 +11,15 @@ pub fn new_skew_reduction(dtype: DataType, bias: bool) -> PolarsResult<Box<dyn G
     use VecGroupedReduction as VGR;
     Ok(match dtype {
         _ if dtype.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VGR::new(dtype, SkewReducer::<$T> {
-                    bias,
-                    needs_cast: false,
-                    _phantom: PhantomData,
-                }))
+            with_match_physical_numeric_polars_type!(dtype.to_physical(), impl<T> {
+                Box::new(VGR::new(
+                    dtype,
+                    SkewReducer::<T> {
+                        bias,
+                        needs_cast: false,
+                        _phantom: PhantomData,
+                    },
+                ))
             })
         },
         #[cfg(feature = "dtype-decimal")]
@@ -46,13 +49,16 @@ pub fn new_kurtosis_reduction(
     use VecGroupedReduction as VGR;
     Ok(match dtype {
         _ if dtype.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VGR::new(dtype, KurtosisReducer::<$T> {
-                    fisher,
-                    bias,
-                    needs_cast: false,
-                    _phantom: PhantomData,
-                }))
+            with_match_physical_numeric_polars_type!(dtype.to_physical(), impl<T> {
+                Box::new(VGR::new(
+                    dtype,
+                    KurtosisReducer::<T> {
+                        fisher,
+                        bias,
+                        needs_cast: false,
+                        _phantom: PhantomData,
+                    },
+                ))
             })
         },
         #[cfg(feature = "dtype-decimal")]

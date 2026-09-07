@@ -336,11 +336,11 @@ pub fn array_to_pages(
     mut encoding: Encoding,
 ) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
     if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.dtype().to_storage() {
-        return match_integer_type!(key_type, |$T| {
-            dictionary::array_to_pages::<$T>(
+        return match_integer_type!(key_type, impl<T> {
+            dictionary::array_to_pages::<T>(
                 primitive_array.as_any().downcast_ref().unwrap(),
                 type_,
-                &nested,
+                nested,
                 options,
                 encoding,
             )

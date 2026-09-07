@@ -18,31 +18,30 @@ pub trait ArgAgg {
 }
 
 macro_rules! with_match_physical_numeric_polars_type {(
-    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+    $key_type:expr, impl<$T:ident> $($body:tt)*
 ) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use DataType::*;
     match $key_type {
         #[cfg(feature = "dtype-i8")]
-        Int8 => __with_ty__! { Int8Type },
+        Int8 => { type $T = Int8Type; $($body)* },
         #[cfg(feature = "dtype-i16")]
-        Int16 => __with_ty__! { Int16Type },
-        Int32 => __with_ty__! { Int32Type },
-        Int64 => __with_ty__! { Int64Type },
+        Int16 => { type $T = Int16Type; $($body)* },
+        Int32 => { type $T = Int32Type; $($body)* },
+        Int64 => { type $T = Int64Type; $($body)* },
         #[cfg(feature = "dtype-i128")]
-        Int128 => __with_ty__! { Int128Type },
+        Int128 => { type $T = Int128Type; $($body)* },
         #[cfg(feature = "dtype-u8")]
-        UInt8 => __with_ty__! { UInt8Type },
+        UInt8 => { type $T = UInt8Type; $($body)* },
         #[cfg(feature = "dtype-u16")]
-        UInt16 => __with_ty__! { UInt16Type },
-        UInt32 => __with_ty__! { UInt32Type },
-        UInt64 => __with_ty__! { UInt64Type },
+        UInt16 => { type $T = UInt16Type; $($body)* },
+        UInt32 => { type $T = UInt32Type; $($body)* },
+        UInt64 => { type $T = UInt64Type; $($body)* },
         #[cfg(feature = "dtype-u128")]
-        UInt128 => __with_ty__! { UInt128Type },
+        UInt128 => { type $T = UInt128Type; $($body)* },
         #[cfg(feature = "dtype-f16")]
-        Float16 => __with_ty__! { Float16Type },
-        Float32 => __with_ty__! { Float32Type },
-        Float64 => __with_ty__! { Float64Type },
+        Float16 => { type $T = Float16Type; $($body)* },
+        Float32 => { type $T = Float32Type; $($body)* },
+        Float64 => { type $T = Float64Type; $($body)* },
         dt => panic!("not implemented for dtype {:?}", dt),
     }
 })}
@@ -54,8 +53,8 @@ impl ArgAgg for Series {
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
             Categorical(cats, _) => {
-                with_match_categorical_physical_type!(cats.physical(), |$C| {
-                    arg_min_cat(self.cat::<$C>().unwrap())
+                with_match_categorical_physical_type!(cats.physical(), impl<C> {
+                    arg_min_cat(self.cat::<C>().unwrap())
                 })
             },
             #[cfg(feature = "dtype-categorical")]
@@ -68,8 +67,8 @@ impl ArgAgg for Series {
             BinaryOffset => arg_min_binary_offset(self.binary_offset().unwrap()),
             Boolean => arg_min_bool(self.bool().unwrap()),
             dt if dt.is_primitive_numeric() => {
-                with_match_physical_numeric_polars_type!(phys_s.dtype(), |$T| {
-                    let ca: &ChunkedArray<$T> = phys_s.as_ref().as_ref().as_ref();
+                with_match_physical_numeric_polars_type!(phys_s.dtype(), impl<T> {
+                    let ca: &ChunkedArray<T> = phys_s.as_ref().as_ref().as_ref();
                     arg_min_numeric(ca)
                 })
             },
@@ -88,8 +87,8 @@ impl ArgAgg for Series {
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
             Categorical(cats, _) => {
-                with_match_categorical_physical_type!(cats.physical(), |$C| {
-                    arg_max_cat(self.cat::<$C>().unwrap())
+                with_match_categorical_physical_type!(cats.physical(), impl<C> {
+                    arg_max_cat(self.cat::<C>().unwrap())
                 })
             },
             #[cfg(feature = "dtype-categorical")]
@@ -102,8 +101,8 @@ impl ArgAgg for Series {
             BinaryOffset => arg_max_binary_offset(self.binary_offset().unwrap()),
             Boolean => arg_max_bool(self.bool().unwrap()),
             dt if dt.is_primitive_numeric() => {
-                with_match_physical_numeric_polars_type!(phys_s.dtype(), |$T| {
-                    let ca: &ChunkedArray<$T> = phys_s.as_ref().as_ref().as_ref();
+                with_match_physical_numeric_polars_type!(phys_s.dtype(), impl<T> {
+                    let ca: &ChunkedArray<T> = phys_s.as_ref().as_ref().as_ref();
                     arg_max_numeric(ca)
                 })
             },

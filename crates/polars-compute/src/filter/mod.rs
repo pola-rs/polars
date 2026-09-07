@@ -53,9 +53,10 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
 
     use arrow::datatypes::PhysicalType::*;
     match array.dtype().to_physical_type() {
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
-            let array: &PrimitiveArray<$T> = array.as_any().downcast_ref().unwrap();
-            let (values, validity) = primitive::filter_values_and_validity::<$T>(array.values(), array.validity(), mask);
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, impl<T> {
+            let array: &PrimitiveArray<T> = array.as_any().downcast_ref().unwrap();
+            let (values, validity) =
+                primitive::filter_values_and_validity::<T>(array.values(), array.validity(), mask);
             Box::new(PrimitiveArray::from_vec(values).with_validity(validity))
         }),
         Boolean => {

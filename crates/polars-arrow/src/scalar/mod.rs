@@ -119,11 +119,8 @@ pub fn new_scalar(array: &dyn Array, index: usize) -> Box<dyn Scalar> {
             };
             Box::new(BooleanScalar::new(value))
         },
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
-            let array = array
-                .as_any()
-                .downcast_ref::<PrimitiveArray<$T>>()
-                .unwrap();
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, impl<T> {
+            let array = array.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
             let value = if array.is_valid(index) {
                 Some(array.value(index))
             } else {
@@ -190,20 +187,14 @@ pub fn new_scalar(array: &dyn Array, index: usize) -> Box<dyn Scalar> {
             };
             Box::new(MapScalar::new(array.dtype().clone(), value))
         },
-        Dictionary(key_type) => match_integer_type!(key_type, |$T| {
-            let array = array
-                .as_any()
-                .downcast_ref::<DictionaryArray<$T>>()
-                .unwrap();
+        Dictionary(key_type) => match_integer_type!(key_type, impl<T> {
+            let array = array.as_any().downcast_ref::<DictionaryArray<T>>().unwrap();
             let value = if array.is_valid(index) {
-                Some(array.value(index).into())
+                Some(array.value(index))
             } else {
                 None
             };
-            Box::new(DictionaryScalar::<$T>::new(
-                array.dtype().clone(),
-                value,
-            ))
+            Box::new(DictionaryScalar::<T>::new(array.dtype().clone(), value))
         }),
     }
 }

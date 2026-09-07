@@ -47,12 +47,10 @@ fn get_leaves(array: &FixedSizeListArray) -> &dyn Array {
 
 fn get_buffer_and_size(array: &dyn Array) -> (&[u8], usize) {
     match array.dtype().to_physical_type() {
-        PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
-
-            let arr = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
+        PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, impl<T> {
+            let arr = array.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
             let values = arr.values();
-            (bytemuck::cast_slice(values), size_of::<$T>())
-
+            (bytemuck::cast_slice(values), size_of::<T>())
         }),
         _ => {
             unimplemented!()
@@ -62,19 +60,18 @@ fn get_buffer_and_size(array: &dyn Array) -> (&[u8], usize) {
 
 unsafe fn from_buffer(mut buf: ManuallyDrop<Vec<u8>>, dtype: &ArrowDataType) -> ArrayRef {
     match dtype.to_physical_type() {
-        PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, impl<T> {
             let ptr = buf.as_mut_ptr();
             let len_units = buf.len();
             let cap_units = buf.capacity();
 
             let buf = Vec::from_raw_parts(
-                ptr as *mut $T,
-                len_units / size_of::<$T>(),
-                cap_units / size_of::<$T>(),
+                ptr as *mut T,
+                len_units / size_of::<T>(),
+                cap_units / size_of::<T>(),
             );
 
             PrimitiveArray::from_data_default(buf.into(), None).boxed()
-
         }),
         _ => {
             unimplemented!()
@@ -82,27 +79,27 @@ unsafe fn from_buffer(mut buf: ManuallyDrop<Vec<u8>>, dtype: &ArrowDataType) -> 
     }
 }
 
+// The `as *mut u8` cast below is a no-op for the u8 arm of the macro, but needed for the rest.
+#[allow(clippy::unnecessary_cast)]
 unsafe fn aligned_vec(dt: &ArrowDataType, n_bytes: usize) -> Vec<u8> {
     match dt.to_physical_type() {
-        PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, impl<T> {
+            let n_units = (n_bytes / size_of::<T>()) + 1;
 
-        let n_units = (n_bytes / size_of::<$T>()) + 1;
+            let mut aligned: Vec<T> = Vec::with_capacity(n_units);
 
-        let mut aligned: Vec<$T> = Vec::with_capacity(n_units);
+            let ptr = aligned.as_mut_ptr();
+            let len_units = aligned.len();
+            let cap_units = aligned.capacity();
 
-        let ptr = aligned.as_mut_ptr();
-        let len_units = aligned.len();
-        let cap_units = aligned.capacity();
+            std::mem::forget(aligned);
 
-        std::mem::forget(aligned);
-
-        Vec::from_raw_parts(
-            ptr as *mut u8,
-            len_units * size_of::<$T>(),
-            cap_units * size_of::<$T>(),
-        )
-
-            }),
+            Vec::from_raw_parts(
+                ptr as *mut u8,
+                len_units * size_of::<T>(),
+                cap_units * size_of::<T>(),
+            )
+        }),
         _ => {
             unimplemented!()
         },

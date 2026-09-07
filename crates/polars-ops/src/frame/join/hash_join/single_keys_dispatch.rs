@@ -85,9 +85,9 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 lhs.hash_join_left(rhs, validate, nulls_equal)
             },
             x if x.is_float() => {
-                with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
-                    let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
-                    let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                with_match_physical_float_polars_type!(lhs.dtype(), impl<T> {
+                    let lhs: &ChunkedArray<T> = lhs.as_ref().as_ref().as_ref();
+                    let rhs: &ChunkedArray<T> = rhs.as_ref().as_ref().as_ref();
                     num_group_join_left(lhs, rhs, validate, nulls_equal)
                 })
             },
@@ -188,9 +188,9 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 lhs.hash_join_semi_anti(rhs, anti, nulls_equal)?
             },
             x if x.is_float() => {
-                with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
-                    let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
-                    let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                with_match_physical_float_polars_type!(lhs.dtype(), impl<T> {
+                    let lhs: &ChunkedArray<T> = lhs.as_ref().as_ref().as_ref();
+                    let rhs: &ChunkedArray<T> = rhs.as_ref().as_ref().as_ref();
                     num_group_join_anti_semi(lhs, rhs, anti, nulls_equal)
                 })
             },
@@ -314,10 +314,10 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 lhs.hash_join_inner(rhs, validate, nulls_equal)
             },
             x if x.is_float() => {
-                with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
-                    let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
-                    let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
-                    group_join_inner::<$T>(lhs, rhs, validate, nulls_equal)
+                with_match_physical_float_polars_type!(lhs.dtype(), impl<T> {
+                    let lhs: &ChunkedArray<T> = lhs.as_ref().as_ref().as_ref();
+                    let rhs: &ChunkedArray<T> = rhs.as_ref().as_ref().as_ref();
+                    group_join_inner::<T>(lhs, rhs, validate, nulls_equal)
                 })
             },
             _ => {
@@ -409,9 +409,9 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 lhs.hash_join_outer(rhs, validate, nulls_equal)
             },
             x if x.is_float() => {
-                with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
-                    let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
-                    let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                with_match_physical_float_polars_type!(lhs.dtype(), impl<T> {
+                    let lhs: &ChunkedArray<T> = lhs.as_ref().as_ref().as_ref();
+                    let rhs: &ChunkedArray<T> = rhs.as_ref().as_ref().as_ref();
                     hash_join_outer(lhs, rhs, validate, nulls_equal)
                 })
             },

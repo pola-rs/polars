@@ -36,8 +36,11 @@ fn new_reduction_with_policy<P: Policy + 'static>(
             || dtype.is_categorical()
             || dtype.is_enum() =>
         {
-            with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VGR::new(dtype, NumFirstLastReducer::<_, $T>(policy, PhantomData)))
+            with_match_physical_numeric_polars_type!(dtype.to_physical(), impl<T> {
+                Box::new(VGR::new(
+                    dtype,
+                    NumFirstLastReducer::<_, T>(policy, PhantomData),
+                ))
             })
         },
         String | Binary => Box::new(VecGroupedReduction::new(

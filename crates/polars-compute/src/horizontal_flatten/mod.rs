@@ -43,15 +43,20 @@ pub unsafe fn horizontal_flatten_unchecked(
             output_height,
             dtype,
         )),
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, impl<T> {
             Box::new(horizontal_flatten_unchecked_impl_generic(
                 &arrays
                     .iter()
-                    .map(|x| x.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap().clone())
+                    .map(|x| {
+                        x.as_any()
+                            .downcast_ref::<PrimitiveArray<T>>()
+                            .unwrap()
+                            .clone()
+                    })
                     .collect::<Vec<_>>(),
                 widths,
                 output_height,
-                dtype
+                dtype,
             ))
         }),
         LargeBinary => Box::new(horizontal_flatten_unchecked_impl_generic(

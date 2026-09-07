@@ -119,9 +119,9 @@ fn series_to_numpy_view_recursive(py: Python<'_>, s: Series, writable: bool) -> 
 /// Create a NumPy view of a numeric Series.
 fn numeric_series_to_numpy_view(py: Python<'_>, s: Series, writable: bool) -> Py<PyAny> {
     let dims = [s.len()].into_dimension();
-    with_match_physical_numpy_polars_type!(s.dtype(), |$T| {
-        let np_dtype = <$T as PolarsNumericType>::Native::get_dtype(py);
-        let ca: &ChunkedArray<$T> = s.unpack::<$T>().unwrap();
+    with_match_physical_numpy_polars_type!(s.dtype(), impl<T> {
+        let np_dtype = <T as PolarsNumericType>::Native::get_dtype(py);
+        let ca: &ChunkedArray<T> = s.unpack::<T>().unwrap();
         let flags = if writable {
             flags::NPY_ARRAY_FARRAY
         } else {
@@ -253,8 +253,8 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> Py<P
             PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
         Categorical(_, _) | Enum(_, _) => {
-            with_match_categorical_physical_type!(s.dtype().cat_physical().unwrap(), |$C| {
-                let ca = s.cat::<$C>().unwrap();
+            with_match_categorical_physical_type!(s.dtype().cat_physical().unwrap(), impl<C> {
+                let ca = s.cat::<C>().unwrap();
                 let values = ca.iter_str().map(|s| s.into_py_any(py).unwrap());
                 PyArray1::from_iter(py, values).into_py_any(py).unwrap()
             })
