@@ -467,32 +467,28 @@ impl PyExpr {
         &self,
         quantile: Bound<'_, PyAny>,
         method: Wrap<ApproxQuantileMethod>,
-        mut error: f64,
-        bound_is_empirical: bool,
+        error: f64,
+        use_formal_bound: bool,
     ) -> PyResult<Self> {
-        let (quantile, quantiles) = if let Ok(expr) = quantile.extract::<PyExpr>() {
-            (expr.inner, None)
+        let quantile = if let Ok(expr) = quantile.extract::<PyExpr>() {
+            expr.inner
         } else if let Ok(q) = quantile.extract::<f64>() {
-            (lit(q), Some(vec![q]))
+            lit(q)
         } else if let Ok(qs) = quantile.extract::<Vec<f64>>() {
             let s = Series::new(PlSmallStr::from_static("literal"), qs.as_slice())
                 .implode()
                 .map_err(PyPolarsErr::from)?
                 .into_series();
-            (lit(s), Some(qs))
+            lit(s)
         } else {
             return Err(pyo3::exceptions::PyTypeError::new_err(
                 "`quantile` must be a float, a list of floats, or an expression",
             ));
         };
-        let method = method.0.resolve(quantiles.as_deref());
-        if bound_is_empirical {
-            error = method.empirical_error_to_formal(error);
-        };
         Ok(self
             .inner
             .clone()
-            .approx_quantile(quantile, error, method)
+            .approx_quantile(quantile, error, use_formal_bound, method.0)
             .into())
     }
 

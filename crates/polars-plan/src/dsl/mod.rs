@@ -989,10 +989,15 @@ impl Expr {
         self,
         quantile: E,
         error: f64,
+        use_formal_bound: bool,
         method: ApproxQuantileMethod,
     ) -> Self {
         self.map_binary(
-            FunctionExpr::ApproxQuantile { method, error },
+            FunctionExpr::ApproxQuantile {
+                method,
+                error,
+                use_formal_bound,
+            },
             quantile.into(),
         )
     }

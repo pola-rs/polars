@@ -918,7 +918,35 @@ pub(super) fn convert_functions(
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => I::ApproxNUnique,
         #[cfg(feature = "approx_quantile")]
-        F::ApproxQuantile { method, error } => I::ApproxQuantile { method, error },
+        F::ApproxQuantile {
+            method,
+            error,
+            use_formal_bound,
+        } => {
+            polars_ensure!(
+                0.0 < error && error < 1.0,
+                InvalidOperation: "`error` must be strictly between 0 and 1 (got: {error})"
+            );
+            let quantiles: Option<Vec<f64>> = match ctx.arena.get(e[1].node()) {
+                AExpr::Literal(LiteralValue::Series(s)) => s
+                    .list()
+                    .ok()
+                    .and_then(|ca| ca.get_as_series(0))
+                    .and_then(|s| s.cast(&DataType::Float64).ok())
+                    .and_then(|s| s.f64().ok()?.iter().collect()),
+                AExpr::Literal(lv) => lv
+                    .to_any_value()
+                    .and_then(|av| av.extract())
+                    .map(|q| vec![q]),
+                _ => None,
+            };
+            let method = method.resolve(quantiles.as_deref());
+            let error = match use_formal_bound {
+                true => error,
+                false => method.empirical_error_to_formal(error),
+            };
+            I::ApproxQuantile { method, error }
+        },
         F::Coalesce => I::Coalesce,
         #[cfg(feature = "diff")]
         F::Diff(n) => {

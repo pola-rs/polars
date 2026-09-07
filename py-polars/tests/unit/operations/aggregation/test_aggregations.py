@@ -21,7 +21,12 @@ if TYPE_CHECKING:
 
     import numpy.typing as npt
 
-    from polars._typing import ApproxQuantileMethod, PolarsDataType, TimeUnit
+    from polars._typing import (
+        ApproxQuantileErrorBound,
+        ApproxQuantileMethod,
+        PolarsDataType,
+        TimeUnit,
+    )
 
 
 def test_quantile_expr_input() -> None:
@@ -423,6 +428,20 @@ def test_approx_quantile_unsupported_dtype(method: ApproxQuantileMethod) -> None
 def test_approx_quantile_bad_method() -> None:
     with pytest.raises(ValueError, match="`method` must be one of"):
         pl.col("a").approx_quantile(0.5, method="nope")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("error_tightness", ["empirical", "formal"])
+@pytest.mark.parametrize("error", [0.0, 1.0, -0.1, 2.0, float("nan")])
+def test_approx_quantile_bad_error(
+    error: float, error_tightness: ApproxQuantileErrorBound
+) -> None:
+    s = pl.Series("a", [1.0, 2.0, 3.0])
+    with pytest.raises(InvalidOperationError, match="`error` must be strictly between"):
+        s.to_frame().select(
+            pl.col("a").approx_quantile(
+                0.5, error=error, error_tightness=error_tightness
+            )
+        )
 
 
 @pytest.mark.parametrize("method", APPROX_QUANTILE_METHODS)

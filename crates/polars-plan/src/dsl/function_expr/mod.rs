@@ -239,6 +239,8 @@ pub enum FunctionExpr {
     ApproxQuantile {
         method: ApproxQuantileMethod,
         error: f64,
+        /// Interpret `error` as the formal bound instead of the empirically calibrated one.
+        use_formal_bound: bool,
     },
     Coalesce,
     #[cfg(feature = "diff")]
@@ -594,9 +596,14 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => {},
             #[cfg(feature = "approx_quantile")]
-            ApproxQuantile { method, error } => {
+            ApproxQuantile {
+                method,
+                error,
+                use_formal_bound,
+            } => {
                 method.hash(state);
                 error.to_bits().hash(state);
+                use_formal_bound.hash(state);
             },
             Coalesce => {},
             #[cfg(feature = "pct_change")]

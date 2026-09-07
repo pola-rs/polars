@@ -3937,7 +3937,7 @@ class Expr(metaclass=_Meta):
                 q,
                 method,
                 error,
-                bound_is_empirical=error_tightness == "empirical",
+                use_formal_bound=error_tightness == "formal",
             )
         )
 
