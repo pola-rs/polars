@@ -839,7 +839,7 @@ def test_config_state_env_only() -> None:
 def test_set_streaming_chunk_size() -> None:
     with pl.Config() as cfg:
         cfg.set_streaming_chunk_size(8)
-        assert os.environ.get("POLARS_STREAMING_CHUNK_SIZE") == "8"
+        assert os.environ.get("POLARS_IDEAL_MORSEL_SIZE") == "8"
 
     with pytest.raises(ValueError), pl.Config() as cfg:
         cfg.set_streaming_chunk_size(0)
@@ -998,7 +998,7 @@ def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
             True,
             "1",
         ),
-        ("POLARS_STREAMING_CHUNK_SIZE", "set_streaming_chunk_size", 100, "100"),
+        ("POLARS_IDEAL_MORSEL_SIZE", "set_streaming_chunk_size", 100, "100"),
         ("POLARS_TABLE_WIDTH", "set_tbl_width_chars", 80, "80"),
         ("POLARS_VERBOSE", "set_verbose", True, "1"),
         ("POLARS_WARN_UNSTABLE", "warn_unstable", True, "1"),

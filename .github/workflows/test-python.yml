@@ -38,6 +38,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       POLARS_IDEAL_MORSEL_SIZE: ${{ matrix.ideal_morsel_size }}
+      # Slow tests are prohibitively slow with a tiny morsel size.
+      EXTRA_PYTEST_MARKERS: ${{ matrix.ideal_morsel_size < 10 && ' and not slow' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -150,21 +152,21 @@ jobs:
         env:
           POLARS_TIMEOUT_MS: 60000
         # TODO: Fix and re-enable may_fail_auto_streaming tests
-        run: pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs"
+        run: pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS"
 
       - name: Run Python tests - POLARS_ENGINE_AFFINITY=in-memory
         if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && matrix.variant == 'engine_affinity_in_memory'
         env:
           POLARS_ENGINE_AFFINITY: in-memory
           POLARS_TIMEOUT_MS: 60000
-        run: pytest -n auto -m "not release and not benchmark and not docs"
+        run: pytest -n auto -m "not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS"
 
       - name: Run tests with new streaming engine
         if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && matrix.variant == 'auto_new_streaming'
         env:
           POLARS_AUTO_STREAMING: 1
           POLARS_TIMEOUT_MS: 60000
-        run: pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs"
+        run: pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS"
 
       - name: Run tests async reader tests
         if: github.event_name == 'pull_request' && matrix.os != 'windows-latest' && matrix.python-version != '3.14t' && !matrix.variant
@@ -172,7 +174,7 @@ jobs:
           POLARS_FORCE_ASYNC: 1
           POLARS_TIMEOUT_MS: 60000
         # TODO: Fix and re-enable may_fail_auto_streaming tests
-        run: pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs" tests/unit/io/
+        run: pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/io/
 
       - name: Run tests multiscan force empty capabilities
         if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.variant
@@ -181,9 +183,9 @@ jobs:
           POLARS_TIMEOUT_MS: 60000
         # TODO: Fix and re-enable may_fail_auto_streaming tests
         run: |
-          pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs" tests/unit/io/test_multiscan.py
-          pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs" tests/unit/io/test_scan_row_deletion.py
-          pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs" tests/unit/io/test_iceberg.py
+          pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/io/test_multiscan.py
+          pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/io/test_scan_row_deletion.py
+          pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs$EXTRA_PYTEST_MARKERS" tests/unit/io/test_iceberg.py
 
       - name: Check import without optional dependencies
         if: github.event_name == 'pull_request' && matrix.os == 'ubuntu-latest' && (matrix.python-version == '3.14' || matrix.python-version == '3.14t')

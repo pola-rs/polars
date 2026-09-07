@@ -36,7 +36,7 @@ impl Series {
                     }
                     Some(count)
                 } else {
-                    Some(self.len() as IdxSize)
+                    Some(idxs.len() as IdxSize)
                 }
             }),
             GroupsType::Slice { groups, .. } => {
@@ -46,7 +46,7 @@ impl Series {
                         let m = BitMask::from_bitmap(v).sliced(first as usize, len as usize);
                         Some(m.set_bits() as IdxSize)
                     } else {
-                        Some(self.len() as IdxSize)
+                        Some(len)
                     }
                 })
             },

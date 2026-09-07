@@ -738,7 +738,7 @@ pub(super) fn log(columns: &[Column]) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
     assert_eq!(columns.len(), 2);
-    Column::apply_broadcasting_binary_elementwise(&columns[0], &columns[1], Series::log)
+    Column::try_apply_broadcasting_binary_elementwise(&columns[0], &columns[1], Series::log)
 }
 
 #[cfg(feature = "log")]

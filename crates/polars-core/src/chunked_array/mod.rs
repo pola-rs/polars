@@ -297,12 +297,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 0
             } else {
                 // nulls are all at the end
-                self.null_count()
+                self.len() - self.null_count()
             };
 
             debug_assert!(
                 // If we are lucky this catches something.
-                unsafe { self.get_unchecked(out) }.is_some(),
+                unsafe { self.get_unchecked(out) }.is_none(),
                 "incorrect sorted flag"
             );
 
@@ -490,11 +490,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     #[inline]
     pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         &mut self.chunks
-    }
-
-    /// Returns true if contains a single chunk and has no null values
-    pub fn is_optimal_aligned(&self) -> bool {
-        self.chunks.len() == 1 && self.null_count() == 0
     }
 
     /// Create a new [`ChunkedArray`] from self, where the chunks are replaced.

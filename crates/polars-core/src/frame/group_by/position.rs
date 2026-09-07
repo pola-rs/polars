@@ -151,10 +151,6 @@ impl GroupsIdx {
         &self.first
     }
 
-    pub fn first_mut(&mut self) -> &mut Vec<IdxSize> {
-        &mut self.first
-    }
-
     pub(crate) fn len(&self) -> usize {
         self.first.len()
     }

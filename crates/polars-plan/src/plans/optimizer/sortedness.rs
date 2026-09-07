@@ -578,6 +578,13 @@ fn is_sorted_rec(
             rec!(input)
         },
         IR::UnoptimizedDispatch { .. } => None,
+        IR::Resolver { resolved_ir, .. } => {
+            if let Some(node) = *resolved_ir {
+                rec!(node)
+            } else {
+                None
+            }
+        },
         IR::Invalid => unreachable!(),
     };
 

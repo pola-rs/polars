@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from bisect import bisect_left, bisect_right
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, cast
@@ -1803,6 +1804,29 @@ def test_unordered_implode_reduction_27373(
         pl.col("val").map_elements(sorted, return_dtype=pl.List(dtype))
     )
     assert_frame_equal(actual, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_max_sorted_all_nan_with_nulls(dtype: pl.DataType) -> None:
+    nan = float("nan")
+
+    for values in ([None, nan, nan], [None, None, nan]):
+        unsorted = pl.Series("a", values, dtype=dtype)
+        ascending = unsorted.sort()
+        assert ascending.flags["SORTED_ASC"]
+        assert math.isnan(cast("float", unsorted.max()))
+        assert math.isnan(cast("float", ascending.max()))
+
+    for values in ([nan, nan, None], [nan, None, None]):
+        unsorted = pl.Series("a", values, dtype=dtype)
+        descending = unsorted.sort(descending=True, nulls_last=True)
+        assert descending.flags["SORTED_DESC"]
+        assert math.isnan(cast("float", unsorted.max()))
+        assert math.isnan(cast("float", descending.max()))
+
+    mixed = pl.Series("a", [None, 1.0, nan], dtype=dtype).sort()
+    assert mixed.flags["SORTED_ASC"]
+    assert mixed.max() == 1.0
 
 
 @pytest.mark.parametrize("fn", [pl.Expr.quantile, pl.Expr.approx_quantile])
