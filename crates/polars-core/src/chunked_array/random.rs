@@ -257,69 +257,6 @@ impl DataFrame {
     }
 }
 
-impl<T> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    T::Native: Float,
-{
-    /// Create [`ChunkedArray`] with samples from a Normal distribution.
-    pub fn rand_normal(
-        name: PlSmallStr,
-        length: usize,
-        mean: f64,
-        std_dev: f64,
-    ) -> PolarsResult<Self> {
-        let normal = Normal::new(mean, std_dev).map_err(to_compute_err)?;
-        let mut builder = PrimitiveChunkedBuilder::<T>::new(name, length);
-        let mut rng = rand::rng();
-        for _ in 0..length {
-            let smpl = normal.sample(&mut rng);
-            let smpl = NumCast::from(smpl).unwrap();
-            builder.append_value(smpl)
-        }
-        Ok(builder.finish())
-    }
-
-    /// Create [`ChunkedArray`] with samples from a Standard Normal distribution.
-    pub fn rand_standard_normal(name: PlSmallStr, length: usize) -> Self {
-        let mut builder = PrimitiveChunkedBuilder::<T>::new(name, length);
-        let mut rng = rand::rng();
-        for _ in 0..length {
-            let smpl: f64 = rng.sample(StandardNormal);
-            let smpl = NumCast::from(smpl).unwrap();
-            builder.append_value(smpl)
-        }
-        builder.finish()
-    }
-
-    /// Create [`ChunkedArray`] with samples from a Uniform distribution.
-    pub fn rand_uniform(name: PlSmallStr, length: usize, low: f64, high: f64) -> Self {
-        let uniform = Uniform::new(low, high).unwrap();
-        let mut builder = PrimitiveChunkedBuilder::<T>::new(name, length);
-        let mut rng = rand::rng();
-        for _ in 0..length {
-            let smpl = uniform.sample(&mut rng);
-            let smpl = NumCast::from(smpl).unwrap();
-            builder.append_value(smpl)
-        }
-        builder.finish()
-    }
-}
-
-impl BooleanChunked {
-    /// Create [`ChunkedArray`] with samples from a Bernoulli distribution.
-    pub fn rand_bernoulli(name: PlSmallStr, length: usize, p: f64) -> PolarsResult<Self> {
-        let dist = Bernoulli::new(p).map_err(to_compute_err)?;
-        let mut rng = rand::rng();
-        let mut builder = BooleanChunkedBuilder::new(name, length);
-        for _ in 0..length {
-            let smpl = dist.sample(&mut rng);
-            builder.append_value(smpl)
-        }
-        Ok(builder.finish())
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
