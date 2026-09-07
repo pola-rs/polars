@@ -8,8 +8,7 @@ use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 use super::{PlTotalEqKernel, PlTotalOrdKernel, TotalEqKernel, TotalOrdKernel};
 
-/// The values of a chunk as a flat array of their own, which is what the kernels over [`Flat`]
-/// take: they read the values and nothing else, so dropping the mask along the way costs nothing.
+/// The values of a chunk as a flat array of their own, which is what the [`Flat`] kernels take.
 #[inline]
 fn flat_values<T: NativeType>(values: &Buffer<T>) -> Flat<PlPrimitiveArray<T>> {
     // An array built from a values buffer alone has one slot per element and no mask, so it is

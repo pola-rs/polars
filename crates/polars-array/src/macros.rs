@@ -1,7 +1,6 @@
 //! Macros over the array types of this crate.
 
-/// Runs a body with `T` bound to the element type of a
-/// [`PlPrimitiveArray`](crate::PlPrimitiveArray).
+/// Runs a body with `T` bound to the element type of a [`crate::PlPrimitiveArray`].
 #[macro_export]
 macro_rules! with_match_pl_primitive_array_type {
     ($array:expr, |$T:ident| $body:expr $(,)?) => {{
@@ -24,8 +23,7 @@ macro_rules! with_match_pl_primitive_array_type {
     }};
 }
 
-/// The body of [`with_match_pl_primitive_array_type`], which binds `$T` to the element type in
-/// `$element` the array is taken over.
+/// The body of [`with_match_pl_primitive_array_type`], binding `$T` to the element type.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __with_match_pl_primitive_array_type__ {(

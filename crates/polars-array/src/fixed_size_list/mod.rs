@@ -22,8 +22,7 @@ mod iterator;
 pub use builder::PlFixedSizeListArrayBuilder;
 pub use iterator::{PlFixedSizeListIter, PlFixedSizeListValuesIter};
 
-/// An immutable, cheaply cloneable sequence of `length` optional lists of `width` values each, over
-/// one values array.
+/// An immutable, cheaply cloneable sequence of `length` optional lists of `width` values each.
 #[derive(Clone)]
 pub struct PlFixedSizeListArray {
     /// Scalar: values.len() == width
@@ -38,8 +37,7 @@ impl PlFixedSizeListArray {
     /// Creates a flat [`PlFixedSizeListArray`] out of its internal components.
     ///
     /// # Errors
-    /// This function errors if `values` does not hold exactly `length * width` values, or if
-    /// `validity` does not hold exactly `length` bits.
+    /// Errors if `values` is not `length * width` values, or `validity` not `length` bits.
     pub fn try_new(
         values: Box<dyn PlArray>,
         width: usize,
@@ -74,12 +72,10 @@ impl PlFixedSizeListArray {
         Self::try_new(values, width, length, validity).unwrap()
     }
 
-    /// Creates a flat [`PlFixedSizeListArray`] out of its internal components without validating
-    /// them.
+    /// Creates a flat [`PlFixedSizeListArray`] out of its components without validating them.
     ///
     /// # Safety
-    /// `values` must hold exactly `length * width` values, and `validity` must cover exactly
-    /// `length` elements, in either representation.
+    /// `values` must hold `length * width` values and `validity` must cover `length` elements.
     #[inline]
     pub unsafe fn new_unchecked(
         values: Box<dyn PlArray>,
@@ -100,12 +96,10 @@ impl PlFixedSizeListArray {
         }
     }
 
-    /// Creates a scalar [`PlFixedSizeListArray`] of `length` elements out of its internal
-    /// components.
+    /// Creates a scalar [`PlFixedSizeListArray`] of `length` elements out of its components.
     ///
     /// # Errors
-    /// This function errors if `values` is not scalar for `width` and `length`, per
-    /// [`is_scalar_fixed_size_values_len`], or if `validity` is not scalar for `length`, per
+    /// Errors if `values` or `validity` is not scalar for `width` and `length`.
     pub fn try_new_broadcast(
         values: Box<dyn PlArray>,
         width: usize,
@@ -129,8 +123,7 @@ impl PlFixedSizeListArray {
         })
     }
 
-    /// Creates a scalar [`PlFixedSizeListArray`] of `length` elements out of its internal
-    /// components.
+    /// Creates a scalar [`PlFixedSizeListArray`] of `length` elements out of its components.
     #[inline]
     pub fn new_broadcast(
         values: Box<dyn PlArray>,
@@ -141,12 +134,10 @@ impl PlFixedSizeListArray {
         Self::try_new_broadcast(values, width, length, validity).unwrap()
     }
 
-    /// Creates a scalar [`PlFixedSizeListArray`] of `length` elements out of its internal
-    /// components without validating them.
+    /// Creates a scalar [`PlFixedSizeListArray`] of `length` elements without validating them.
     ///
     /// # Safety
-    /// `values` must be scalar for `width` and `length`, per [`is_scalar_fixed_size_values_len`],
-    /// and `validity` scalar for `length`, per [`is_scalar_buffer_len`].
+    /// `values` must be scalar for `width` and `length`, and `validity` scalar for `length`.
     #[inline]
     pub unsafe fn new_broadcast_unchecked(
         values: Box<dyn PlArray>,
@@ -178,8 +169,7 @@ impl PlFixedSizeListArray {
         }
     }
 
-    /// Creates a fully valid, flat [`PlFixedSizeListArray`] by cutting `values` into lists of
-    /// `width` values, taking its length from how many of them there are.
+    /// Creates a fully valid, flat array by cutting `values` into lists of `width` values.
     pub fn from_values(values: Box<dyn PlArray>, width: usize) -> Self {
         assert!(
             width > 0,
@@ -201,8 +191,7 @@ impl PlFixedSizeListArray {
         }
     }
 
-    /// Creates a [`PlFixedSizeListArray`] of `length` copies of the list `element`, in the memory
-    /// of that one list.
+    /// Creates a [`PlFixedSizeListArray`] of `length` copies of `element`, in its own memory.
     #[inline]
     pub fn new_scalar(element: Box<dyn PlArray>, length: usize) -> Self {
         let width = element.len();
@@ -256,8 +245,7 @@ impl PlFixedSizeListArray {
         &*self.values
     }
 
-    /// The values array the lists are taken over, if it holds the values of every element, laid end
-    /// to end.
+    /// The values array the lists are taken over, if it holds every element's values end to end.
     #[inline]
     pub fn flat_values(&self) -> Option<&dyn PlArray> {
         (!self.values_are_scalar()).then_some(&*self.values)
@@ -284,8 +272,7 @@ impl PlFixedSizeListArray {
             .map(|validity| unsafe { PlBitmapRef::new_broadcast_unchecked(validity, self.length) })
     }
 
-    /// Whether the values hold the single element every element of this array covers, so that every
-    /// element is the same list.
+    /// Whether the values hold one list that every element of this array shares.
     #[inline]
     pub fn values_are_scalar(&self) -> bool {
         self.values.len() == self.width && self.length >= 1
@@ -305,22 +292,19 @@ impl PlFixedSizeListArray {
         self.validity().is_some_and(|v| v.is_scalar())
     }
 
-    /// Whether this array's values hold the values of every element and its mask one bit per
-    /// element.
+    /// Whether the values hold the values of every element and the mask one bit per element.
     #[inline]
     pub fn is_flat(&self) -> bool {
         self.values_are_flat() && self.validity().is_none_or(|validity| validity.is_flat())
     }
 
-    /// Whether this array's own backing buffers stand for a single list repeated [`Self::len`]
-    /// times.
+    /// Whether this array's own buffers stand for one list repeated [`Self::len`] times.
     #[inline]
     pub fn is_scalar(&self) -> bool {
         self.values_are_scalar() && self.validity().is_none_or(|v| v.is_scalar())
     }
 
-    /// The single element every element of this array equals, if its own backing buffers both hold
-    /// one slot.
+    /// The single element every element equals, if this array's own buffers both hold one slot.
     #[inline]
     pub fn scalar_value(&self) -> Option<Option<Box<dyn PlArray>>> {
         let is_shared = self.values.len() == self.width
@@ -333,16 +317,14 @@ impl PlFixedSizeListArray {
         (is_shared && self.length > 0).then(|| unsafe { self.get_unchecked(0) })
     }
 
-    /// The range of the values array the element at `i` covers, which is always [`Self::width`]
-    /// values wide.
+    /// The [`Self::width`]-value range of the values array that element `i` covers.
     #[inline]
     pub fn value_range(&self, i: usize) -> Range<usize> {
         assert!(i < self.length, "index out of bounds");
         unsafe { self.value_range_unchecked(i) }
     }
 
-    /// The range of the values array the element at `i` covers, which is always [`Self::width`]
-    /// values wide.
+    /// The [`Self::width`]-value range of the values array that element `i` covers.
     ///
     /// # Safety
     /// `i` must be smaller than `self.len()`.
@@ -456,8 +438,7 @@ impl PlFixedSizeListArray {
         PlFixedSizeListIter::new(&*self.values, self.width, self.validity(), self.length)
     }
 
-    /// Returns an iterator over `length` elements, repeating the single element of this array if
-    /// that is all it holds, and ignoring validity.
+    /// Iterates `length` elements, repeating a scalar array's one value and ignoring validity.
     #[inline]
     pub fn broadcast_values_iter(&self, length: usize) -> PlFixedSizeListValuesIter<'_> {
         assert_broadcastable(self.length, length);
@@ -554,8 +535,7 @@ impl PlFixedSizeListArray {
         }
     }
 
-    /// Returns an equivalent array whose values hold the values of every element and whose mask
-    /// holds one bit per element, borrowing this array itself if they already do.
+    /// Returns an equivalent flat array, borrowing this one if it is already flat.
     pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         if let Some(flat) = self.as_flat() {
             return Cow::Borrowed(flat);
@@ -593,8 +573,7 @@ impl PlFixedSizeListArray {
         })
     }
 
-    /// Borrows this array as a [`Flat`] one, if its values already hold the values of every element
-    /// and its mask one bit per element.
+    /// Borrows this array as a [`Flat`] one, if it is already flat.
     #[inline]
     pub fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: the values of a flat array hold the width of every element, and its mask one bit
@@ -621,8 +600,7 @@ impl<'a> IntoIterator for &'a PlFixedSizeListArray {
     }
 }
 
-/// Compares two arrays element-wise; the values of null elements are not part of a value, so an
-/// array compares equal to any other one holding the same lists.
+/// Compares two arrays element-wise, disregarding representation and the values of nulls.
 impl PartialEq for PlFixedSizeListArray {
     fn eq(&self, other: &Self) -> bool {
         if self.length != other.length || self.width != other.width {
@@ -653,8 +631,7 @@ impl PartialEq for PlFixedSizeListArray {
 
 impl Eq for PlFixedSizeListArray {}
 
-/// Compares an array of unknown representation against a flat one; see
-/// [`PartialEq<PlFixedSizeListArray> for Flat<PlFixedSizeListArray>`](Flat).
+/// Compares an array of unknown representation against a flat one.
 impl PartialEq<Flat<PlFixedSizeListArray>> for PlFixedSizeListArray {
     #[inline]
     fn eq(&self, other: &Flat<PlFixedSizeListArray>) -> bool {

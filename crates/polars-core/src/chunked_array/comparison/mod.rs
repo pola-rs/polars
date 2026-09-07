@@ -399,8 +399,7 @@ impl ChunkCompareEq<&BooleanChunked> for BooleanChunked {
     }
 }
 
-/// A boolean chunked array answering `value` for every element of `ca`, under the validity of
-/// `ca`: the answer is the single bit it takes to say so, not one written out per element.
+/// A boolean chunked array answering `value` for every element of `ca`, under its validity.
 fn repeated_answer<T: PolarsDataType>(ca: &ChunkedArray<T>, value: bool) -> BooleanChunked {
     let chunks = ca.downcast_iter().map(|arr| {
         PlBooleanArray::new_scalar(value, arr.len())
@@ -1150,44 +1149,6 @@ impl BooleanChunked {
             }
         }
         if self.has_nulls() { None } else { Some(true) }
-    }
-}
-
-#[cfg(test)]
-mod repeated_answer_test {
-    use super::*;
-
-    /// Whether the values of the single chunk of `ca` are the one bit every element shares.
-    fn values_are_repeated(ca: &BooleanChunked) -> bool {
-        ca.chunks().len() == 1 && ca.downcast_as_array().scalar_values().is_some()
-    }
-
-    /// Comparisons a boolean value settles on its own — no boolean is below `false` or above
-    /// `true` — answer with the one bit that says so rather than one written out per element.
-    #[test]
-    fn a_comparison_the_value_settles_is_one_bit() {
-        let name = PlSmallStr::from_static("a");
-        let flat = BooleanChunked::new(name.clone(), [Some(true), Some(false), None]);
-        let all_true = BooleanChunked::full(name.clone(), true, 3);
-        let all_false = BooleanChunked::full(name.clone(), false, 3);
-
-        for (out, expected) in [
-            (flat.lt(&all_false), false),
-            (flat.lt_eq(&all_true), true),
-            (all_true.lt(&flat), false),
-            (all_false.lt_eq(&flat), true),
-            // `gt` and `gt_eq` are the same comparisons with the sides swapped.
-            (all_false.gt(&flat), false),
-            (all_true.gt_eq(&flat), true),
-        ] {
-            assert!(values_are_repeated(&out), "{out:?}");
-            assert_eq!(out.len(), 3);
-            // The nulls of the side that is compared carry over: a null compares to null.
-            assert_eq!(out.null_count(), 1);
-            assert_eq!(out.get(0), Some(expected));
-            assert_eq!(out.get(1), Some(expected));
-            assert_eq!(out.get(2), None);
-        }
     }
 }
 

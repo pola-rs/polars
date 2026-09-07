@@ -8,8 +8,7 @@ use super::{PlPrimitiveArray, PlPrimitiveIter};
 use crate::bitmap::PlBitmap;
 use crate::flat::Flat;
 
-/// The methods a [`PlPrimitiveArray`] gains from having one slot per element in every backing
-/// buffer.
+/// The methods a [`PlPrimitiveArray`] gains from holding one slot per element everywhere.
 impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     /// The backing values buffer, holding exactly [`len`](PlPrimitiveArray::len) slots.
     #[inline(always)]
@@ -23,8 +22,7 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
         self.as_array().values.as_slice()
     }
 
-    /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
-    /// [`len`](PlPrimitiveArray::len) bits.
+    /// The validity mask, if any element may be null, as a [`Bitmap`] of one bit per element.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
         self.as_array().validity.as_ref()
@@ -171,8 +169,7 @@ impl<'a, T: NativeType> IntoIterator for &'a Flat<PlPrimitiveArray<T>> {
     }
 }
 
-/// Compares an array of unknown representation against a flat one; see
-/// [`PartialEq<PlPrimitiveArray<T>> for Flat<PlPrimitiveArray<T>>`](Flat).
+/// Compares an array of unknown representation against a flat one.
 impl<T: NativeType> PartialEq<Flat<PlPrimitiveArray<T>>> for PlPrimitiveArray<T> {
     #[inline]
     fn eq(&self, other: &Flat<PlPrimitiveArray<T>>) -> bool {
@@ -234,8 +231,7 @@ mod to_flat_values_tests {
     use crate::PlPrimitiveArray;
     use crate::bitmap::PlBitmap;
 
-    /// A values buffer that already holds one slot per element is handed over as the very
-    /// allocation it is, whatever representation the mask is in.
+    /// A values buffer that already holds one slot per element is handed over as it is.
     #[test]
     fn flat_values_are_borrowed_past_a_repeated_mask() {
         let arr = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
@@ -247,8 +243,7 @@ mod to_flat_values_tests {
         ));
     }
 
-    /// A repeated value is written out once per element, and an all-null array stands in a zeroed
-    /// buffer for the value no one reads.
+    /// A repeated value is written out once per element, and an all-null array stands in zeros.
     #[test]
     fn a_repeated_values_buffer_is_written_out() {
         assert_eq!(

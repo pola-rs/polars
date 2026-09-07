@@ -29,8 +29,7 @@ impl PlStructArray {
     /// Creates a [`PlStructArray`] out of its internal components.
     ///
     /// # Errors
-    /// This function errors if any field does not have exactly `length` elements, or if `validity`
-    /// does not cover exactly `length` elements.
+    /// Errors unless every field holds `length` elements and `validity` covers `length` of them.
     pub fn try_new(
         fields: Vec<Box<dyn PlArray>>,
         length: usize,
@@ -55,8 +54,7 @@ impl PlStructArray {
     /// Creates a flat [`PlStructArray`] out of its internal components without validating them.
     ///
     /// # Safety
-    /// Every field must have exactly `length` elements, and `validity` must cover exactly `length`
-    /// bits.
+    /// Every field must hold `length` elements, and `validity` must cover `length` bits.
     #[inline]
     pub unsafe fn new_unchecked(
         fields: Vec<Box<dyn PlArray>>,
@@ -315,8 +313,7 @@ impl PlStructArray {
             && self.fields.iter().all(|field| field.is_scalar())
     }
 
-    /// Returns this array in the flat representation, writing out a scalar validity mask and
-    /// borrowing this array itself if its mask is not scalar.
+    /// Returns this array in the flat representation, writing out a scalar validity mask.
     #[must_use]
     pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         if let Some(flat) = self.as_flat() {
@@ -343,8 +340,7 @@ impl PlStructArray {
     }
 }
 
-/// Returns `field` with `mask` merged into its validity, so that the undetermined values of rows
-/// the struct array masks out are ignored when comparing fields.
+/// Returns `field` with `mask` merged into its validity, so that masked-out rows are ignored.
 fn masked(field: &dyn PlArray, mask: PlBitmapRef<'_>) -> Box<dyn PlArray> {
     let validity = match field.validity() {
         Some(field_validity) => and(&field_validity.to_flat(), &mask.to_flat()),
@@ -360,8 +356,7 @@ impl Default for PlStructArray {
     }
 }
 
-/// Compares two arrays row-wise; the representation (flat or scalar) is irrelevant, and so are the
-/// field values of null rows.
+/// Compares two arrays row-wise, disregarding representation and the fields of null rows.
 impl PartialEq for PlStructArray {
     fn eq(&self, other: &Self) -> bool {
         if self.length != other.length || self.fields.len() != other.fields.len() {

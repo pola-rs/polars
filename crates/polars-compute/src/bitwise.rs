@@ -28,8 +28,7 @@ pub trait BitwiseKernel {
     fn bit_xor(lhs: Self::Scalar, rhs: Self::Scalar) -> Self::Scalar;
 }
 
-/// The counts of an array whose values buffer holds a single slot, counted once and repeated in
-/// `O(1)` memory, or of one that holds a slot per element, counted one by one.
+/// The counts of an array, taken once for a scalar values buffer and one by one for a flat one.
 fn count_values<T, I, F>(
     scalar_value: Option<T>,
     values: I,
@@ -48,8 +47,7 @@ where
     .with_validity(validity)
 }
 
-/// The value every element of `arr` reads and the number of its elements that are not null, if
-/// its values buffer holds a single slot and at least one element reads it as non-null.
+/// The value every element of `arr` reads and its non-null count, if its values are one slot.
 #[inline]
 fn repeated_value<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Option<(T, usize)> {
     let count = arr.len() - arr.null_count();
@@ -67,8 +65,7 @@ fn repeated_bit(arr: &PlBooleanArray) -> Option<(bool, usize)> {
         .map(|v| (v, count))
 }
 
-/// Counts the bits of every value of a primitive array with `$count`, keeping the scalar
-/// representation where the array has one.
+/// Counts the bits of every value of a primitive array with `$count`, keeping a scalar chunk so.
 macro_rules! count_bits {
     ($arr:expr, $count:ident, $to_bits:expr) => {{
         let arr = $arr;

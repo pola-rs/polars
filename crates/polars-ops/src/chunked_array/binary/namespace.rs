@@ -256,8 +256,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
 
 impl BinaryNameSpaceImpl for BinaryChunked {}
 
-/// Runs an elementwise Arrow `kernel` over `chunk`, reading a chunk that repeats a single element
-/// once rather than writing that element out per element first.
+/// Runs an elementwise Arrow `kernel` over `chunk`, reading a scalar chunk's one element once.
 #[cfg(feature = "binary_encoding")]
 fn reinterpret_elementwise(
     chunk: &dyn PlArray,

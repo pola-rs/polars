@@ -122,8 +122,7 @@ impl<T> Flat<T> {
     /// The array itself, mutably.
     ///
     /// # Safety
-    /// The array must still be flat when the borrow ends: every backing buffer must hold one slot
-    /// per element.
+    /// The array must still be flat when the borrow ends: one slot per element everywhere.
     #[inline(always)]
     pub const unsafe fn as_array_mut(&mut self) -> &mut T {
         &mut self.0

@@ -11,8 +11,7 @@ use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter};
 use crate::prelude::{ChunkedArray, PlArrayRef, PolarsDataType, StringChunked};
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned, align_chunks_ternary};
 
-/// Returns `ret` masked off wherever either input has a null, on top of its own mask. A scalar
-/// mask among the three is combined as the single bit it stands for, not written out first.
+/// Returns `ret` masked off wherever either input has a null, on top of its own mask.
 #[inline]
 fn mask_with_inputs<A: StaticArray>(
     ret: A,
@@ -26,8 +25,7 @@ fn mask_with_inputs<A: StaticArray>(
     ret.with_validity_typed(validity)
 }
 
-/// The height of the output of an elementwise operation over two columns of these lengths, or
-/// `None` if the two do not broadcast.
+/// The height of an elementwise operation over two columns of these lengths, or `None` if unequal.
 #[inline]
 pub fn broadcast_height(lhs: usize, rhs: usize) -> Option<usize> {
     match (lhs, rhs) {
@@ -118,8 +116,7 @@ where
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
-/// Applies an elementwise kernel written against the [`flat`](polars_array::broadcast)
-/// representation to one chunk, leaving a [`scalar`](polars_array::broadcast) chunk scalar.
+/// Applies an elementwise flat kernel to one chunk, leaving a scalar chunk scalar.
 #[inline]
 fn elementwise_flat<A, Arr, F>(arr: &A, op: &mut F) -> Arr
 where
@@ -153,8 +150,7 @@ where
     out.new_from_index_typed(0, length)
 }
 
-/// [`elementwise_binary_flat`] for a kernel that reads its chunks in whatever representation they
-/// are in, so that only the shortcut is left to take.
+/// [`elementwise_binary_flat`] for a kernel that reads its chunks in either representation.
 #[inline]
 fn elementwise_binary<A, B, Arr, F>(lhs: &A, rhs: &B, op: &mut F) -> Arr
 where
@@ -218,8 +214,7 @@ where
     out.new_from_index_typed(0, length)
 }
 
-/// Applies an elementwise kernel written against the [`flat`](polars_array::broadcast)
-/// representation: this is [`unary_kernel`] over the backing buffers.
+/// Applies an elementwise flat kernel: this is [`unary_kernel`] over the backing buffers.
 #[inline]
 pub fn unary_elementwise_kernel_flat<T, V, F, Arr>(
     ca: &ChunkedArray<T>,
@@ -351,9 +346,7 @@ where
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
-/// Applies an elementwise kernel written against the [`flat`](polars_array::broadcast)
-/// representation, putting the input's validity mask back on the result: [`unary_mut_values`]
-/// over the buffers.
+/// Applies an elementwise flat kernel, putting the input's validity mask back on the result.
 #[inline]
 pub fn unary_elementwise_mut_values_flat<T, V, F, Arr>(
     ca: &ChunkedArray<T>,
@@ -383,9 +376,7 @@ where
     ChunkedArray::from_chunk_iter(ca.name().clone(), ca.downcast_iter().map(op))
 }
 
-/// Applies an elementwise kernel written against the [`flat`](polars_array::broadcast)
-/// representation, leaving the result's own validity mask alone: [`unary_mut_with_options`] over
-/// the buffers.
+/// Applies an elementwise flat kernel, leaving the result's own validity mask alone.
 #[inline]
 pub fn unary_elementwise_mut_with_options_flat<T, V, F, Arr>(
     ca: &ChunkedArray<T>,
@@ -626,8 +617,7 @@ where
     ChunkedArray::from_chunk_iter(name, iter)
 }
 
-/// Applies an elementwise binary kernel written against the [`flat`](polars_array::broadcast)
-/// representation, masking off every element that either side has a null at:
+/// Applies an elementwise binary flat kernel, masking off every element either side is null at.
 #[inline]
 pub fn binary_elementwise_mut_values_flat<T, U, V, F, Arr>(
     lhs: &ChunkedArray<T>,
@@ -699,8 +689,7 @@ where
     ChunkedArray::try_from_chunk_iter(name, iter)
 }
 
-/// Applies an elementwise binary kernel written against the [`flat`](polars_array::broadcast)
-/// representation.
+/// Applies an elementwise binary kernel written against the flat representation.
 pub fn binary_elementwise_kernel_flat<T, U, V, F, Arr>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
@@ -722,8 +711,7 @@ where
     ChunkedArray::from_chunk_iter(name, iter)
 }
 
-/// Applies an elementwise binary kernel that reads its chunks in whatever representation they are
-/// in, taking the shortcut two scalar chunks allow.
+/// Applies an elementwise binary kernel that reads its chunks in either representation.
 pub fn binary_elementwise_kernel<T, U, V, F, Arr>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
@@ -1034,8 +1022,7 @@ where
     }
 }
 
-/// Applies a binary kernel to the chunks of `lhs` and `rhs`, handing a side that is one value
-/// repeated to the kernel written for a repeated operand.
+/// Applies a binary kernel to the chunks of `lhs` and `rhs`, routing a scalar side to its kernel.
 pub fn apply_binary_kernel_broadcast<'l, 'r, L, R, O, K, LK, RK>(
     lhs: &'l ChunkedArray<L>,
     rhs: &'r ChunkedArray<R>,
@@ -1114,9 +1101,7 @@ where
     out.with_name(name)
 }
 
-/// [`apply_binary_kernel_broadcast`] for a kernel written against the
-/// [`flat`](polars_array::broadcast) representation, which a [`scalar`](polars_array::broadcast)
-/// chunk is written out to reach.
+/// [`apply_binary_kernel_broadcast`] for a kernel written against the flat representation.
 pub fn apply_binary_kernel_broadcast_flat<'l, 'r, L, R, O, K, LK, RK>(
     lhs: &'l ChunkedArray<L>,
     rhs: &'r ChunkedArray<R>,

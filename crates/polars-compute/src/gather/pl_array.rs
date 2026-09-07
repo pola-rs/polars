@@ -8,8 +8,7 @@ use polars_utils::IdxSize;
 use super::bitmap::take_bitmap_nulls_unchecked;
 use super::take_arrow_unchecked;
 
-/// Returns the elements of `values` at `indices`, one per index, reading a null index as a null
-/// element.
+/// Returns the elements of `values` at `indices`, reading a null index as a null element.
 ///
 /// # Safety
 /// Every non-null index must be in bounds of `values`.

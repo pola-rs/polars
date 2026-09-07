@@ -28,8 +28,7 @@ pub(crate) fn array_values(arr: &PlFixedSizeListArray) -> PlArrayRef {
         .to_boxed()
 }
 
-/// Returns `arr` with its values replaced, keeping its width and validity mask. Panics if
-/// `values` does not hold the width of every element, laid end to end.
+/// Returns `arr` with its values replaced, keeping its width and validity mask.
 pub(crate) fn array_with_values(
     arr: &PlFixedSizeListArray,
     values: PlArrayRef,
@@ -42,8 +41,7 @@ pub(crate) fn array_with_values(
         .with_validity(arr.validity().map(PlBitmap::from))
 }
 
-/// Lays `elements` out as the chunk of an [`ArrayChunked`] of `width` and `inner_dtype`, writing
-/// `width` nulls for every null element.
+/// Lays `elements` out as the chunk of an [`ArrayChunked`] of `width` and `inner_dtype`.
 pub(crate) fn collect_array_chunk(
     elements: Vec<Option<PlArrayRef>>,
     width: usize,

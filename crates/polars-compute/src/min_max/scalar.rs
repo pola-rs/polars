@@ -11,9 +11,7 @@ use super::pl_array::{
     fold_flat, fold_flat_min_max, min_max_ignore_nan, min_max_propagate_nan, reduce_flat,
 };
 
-/// The primitive types no vectorized kernel reduces — see `simd` for the ones that do. A chunk
-/// that repeats one value is read as that value, in `O(1)`; anything else is folded one element at
-/// a time.
+/// The primitive types no vectorized kernel reduces — see `simd` for the ones that do.
 impl<T: NativeType + MinMax + super::NotSimdPrimitive> MinMaxKernel for PlPrimitiveArray<T> {
     type Scalar<'a> = T;
 
@@ -66,9 +64,7 @@ impl<T: NativeType + MinMax + super::NotSimdPrimitive> MinMaxKernel for PlPrimit
     }
 }
 
-/// An Arrow chunk holds one slot per element throughout, which is one of the two layouts the
-/// kernel above reads: its buffers are handed over as they are, and it is that kernel that
-/// reduces them.
+/// An Arrow chunk holds one slot per element throughout, one of the two layouts the kernel reads.
 impl<T: NativeType + MinMax + super::NotSimdPrimitive> MinMaxKernel for PrimitiveArray<T> {
     type Scalar<'a> = T;
 

@@ -56,8 +56,7 @@ pub fn find_validity_mismatch(left: &dyn PlArray, right: &dyn PlArray, idxs: &mu
     idxs[original_idxs_length..].sort_unstable();
 }
 
-/// Appends the indices at which two validity masks over `length` elements disagree, reading an
-/// absent mask as one that says every element is valid.
+/// Appends the indices at which two validity masks over `length` elements disagree.
 fn extend_mismatches(
     idxs: &mut Vec<IdxSize>,
     length: usize,
@@ -176,8 +175,7 @@ fn find_validity_mismatch_fsl_fsl(
     )
 }
 
-/// Reports a disagreement between two values arrays of `size` values per element at the element
-/// above it, naming each such element once.
+/// Reports a disagreement between two values arrays of `size` values per element, once each.
 fn find_validity_mismatch_nested(
     left: &dyn PlArray,
     right: &dyn PlArray,
@@ -201,8 +199,7 @@ fn find_validity_mismatch_nested(
     }
 }
 
-/// Reports a disagreement between a list array and a fixed size list array of the same widths at
-/// the element it sits under.
+/// Reports a disagreement between a list array and a fixed size list array of the same widths.
 fn find_validity_mismatch_list_fsl(
     left: &PlListArray,
     right: &PlFixedSizeListArray,

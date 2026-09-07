@@ -8,8 +8,7 @@ use polars_buffer::Buffer;
 use super::PlBinaryArray;
 use crate::flat::Flat;
 
-/// The methods a [`PlBinaryArray`] gains from holding the range of every element and one validity
-/// bit per element.
+/// The methods a [`PlBinaryArray`] gains from holding one range and one validity bit per element.
 impl Flat<PlBinaryArray> {
     /// The backing offsets buffer, holding exactly [`len`](PlBinaryArray::len) `+ 1` offsets.
     #[inline(always)]
@@ -29,8 +28,7 @@ impl Flat<PlBinaryArray> {
         self.as_array().values.as_slice()
     }
 
-    /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
-    /// [`len`](PlBinaryArray::len) bits.
+    /// The validity mask, if any element may be null, as a [`Bitmap`] of one bit per element.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
         self.as_array().validity.as_ref()

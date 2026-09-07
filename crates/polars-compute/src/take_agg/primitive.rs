@@ -78,8 +78,7 @@ pub unsafe fn take_agg_primitive_iter_unchecked<T: NativeType, I: IntoIterator<I
     }
 }
 
-/// Folds the values `indices` read through `value_at` with `f`, skipping the ones `validity`
-/// marks null and counting them.
+/// Folds the values `indices` read through `value_at` with `f`, counting the nulls it skips.
 #[inline]
 fn fold_gathered<T, TOut>(
     indices: impl IntoIterator<Item = usize>,

@@ -1,11 +1,7 @@
 //! Defines different casting operators such as [`cast`] or [`primitive_to_binary`].
 //!
-//! These kernels are dispatched on a *pair* of [`ArrowDataType`]s, which is what a cast is: the
-//! arrays of `polars-array` carry no type of their own, so this is the one module here that stays
-//! over the Arrow arrays, and most of what reaches it — the Parquet and IPC readers and writers,
-//! the JSON deserializer, the Arrow export — is Arrow on both sides anyway. What a chunk of
-//! `polars-array` crosses over through is [`cast_chunk`], which hands the buffers over as they are
-//! and reads a chunk that repeats one value in `O(1)`.
+//! These kernels are dispatched on a *pair* of [`ArrowDataType`]s, so they stay over the Arrow
+//! arrays; a chunk of `polars-array` crosses over through [`cast_chunk`].
 
 mod binary_to;
 mod binview_to;
@@ -42,8 +38,7 @@ use polars_utils::float16::pf16;
 pub use primitive_to::*;
 pub use utf8_to::*;
 
-/// Casts `array` to `to_type`, reading the type of `array` as the physical one its buffers are
-/// laid out as — see [`pl_array::physical_dtype`].
+/// Casts `array` to `to_type`, reading the type of `array` as the physical one of its buffers.
 pub fn cast_chunk(
     array: &dyn PlArray,
     to_type: &ArrowDataType,
@@ -79,8 +74,7 @@ pub fn cast_chunk_from(
     Ok(import::from_arrow(&*cast))
 }
 
-/// Stamps `dtype` onto an array that crossed over carrying the physical type of its buffers, which
-/// is what tells the Arrow kernels the logical type the values under it stand for.
+/// Stamps `dtype` onto an array that crossed over carrying the physical type of its buffers.
 fn retag(mut array: Box<dyn Array>, dtype: &ArrowDataType) -> Box<dyn Array> {
     if array.dtype() != dtype {
         assert_eq!(

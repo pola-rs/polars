@@ -1,13 +1,11 @@
 use super::*;
 
-/// A list builder that is told the shape of its values by the first series appended to it, rather
-/// than at construction.
+/// A list builder told the shape of its values by the first series appended to it.
 pub struct AnonymousOwnedListBuilder {
     name: PlSmallStr,
     /// The builder, once the shape of the values is known.
     builder: Option<PlListArrayBuilder>,
-    /// The rows appended before the builder existed: `None` is a null row, and `Some(n)` a valid
-    /// row covering `n` nulls.
+    /// The rows appended before the builder existed: `None` a null row, `Some(n)` `n` nulls.
     pending: Vec<Option<usize>>,
     capacity: usize,
     inner_dtype: Option<DataType>,
@@ -38,8 +36,7 @@ impl AnonymousOwnedListBuilder {
         self.append_nulls(0);
     }
 
-    /// Appends one row covering `length` nulls, which is all a row can be made of before the shape
-    /// of the values is known.
+    /// Appends one row covering `length` nulls, all a row can be before the shape is known.
     fn append_nulls(&mut self, length: usize) {
         match &mut self.builder {
             Some(builder) => {

@@ -19,8 +19,7 @@ fn build_ac(
         .map_err(|e| polars_err!(ComputeError: "could not build aho corasick automaton {}", e))
 }
 
-/// The element of a list of strings as the bytes it holds. The kernels here read the patterns as
-/// the bytes they are, so this is `O(1)`, sharing the buffers.
+/// The element of a list of strings as the bytes it holds.
 fn list_element_as_binview(element: &dyn PlArray) -> PlBinaryViewArray {
     match element.as_any().downcast_ref::<PlUtf8ViewArray>() {
         Some(pat) => pat.clone().into_binview(),

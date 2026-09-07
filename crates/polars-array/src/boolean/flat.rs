@@ -14,8 +14,7 @@ impl Flat<PlBooleanArray> {
         &self.as_array().values
     }
 
-    /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
-    /// [`len`](PlBooleanArray::len) bits.
+    /// The validity mask, if any element may be null, as a [`Bitmap`] of one bit per element.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
         self.as_array().validity.as_ref()
@@ -123,8 +122,7 @@ impl<'a> IntoIterator for &'a Flat<PlBooleanArray> {
     }
 }
 
-/// Compares an array of unknown representation against a flat one; see [`PartialEq<PlBooleanArray>
-/// for Flat<PlBooleanArray>`](Flat).
+/// Compares an array of unknown representation against a flat one.
 impl PartialEq<Flat<PlBooleanArray>> for PlBooleanArray {
     #[inline]
     fn eq(&self, other: &Flat<PlBooleanArray>) -> bool {

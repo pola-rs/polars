@@ -595,8 +595,7 @@ where
         }
     }
 
-    /// The single element this column repeats, if it stands for one: a column of one element, or
-    /// one whose only chunk is [`scalar`](polars_array::broadcast). `None` means it does not.
+    /// The single element this column repeats, if it stands for one.
     #[inline]
     pub fn scalar_value(&self) -> Option<Option<T::Physical<'_>>> {
         // A column of one element repeats that element by definition, however its chunks are laid
@@ -1080,8 +1079,7 @@ impl ValueSize for BinaryOffsetChunked {
     }
 }
 
-/// An empty chunk laid out the way `dtype` describes. The chunks carry no logical type, so the
-/// shape is taken from the Arrow data type `dtype` maps to.
+/// An empty chunk laid out the way `dtype` describes.
 pub fn new_empty_chunk(dtype: &DataType) -> PlArrayRef {
     let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
     polars_array::arrow::import::from_arrow(&*new_empty_array(arrow_dtype))

@@ -2,8 +2,7 @@ use polars_compute::min_max::MinMaxKernel;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
-/// Reduces every run of `width` consecutive elements of `values` to one element, with `slice_agg`
-/// where none of them is null and `arr_agg` otherwise.
+/// Reduces every run of `width` consecutive elements of `values` to one element.
 fn array_agg<T, S, F1, F2>(
     values: &PlPrimitiveArray<T>,
     width: usize,

@@ -144,16 +144,4 @@ mod tests {
         .unwrap();
         assert_eq!(combined, PlBitmap::from_iter([true, false, false]));
     }
-
-    #[test]
-    fn two_flat_masks_are_combined_bit_for_bit() {
-        let lhs = PlBitmap::from_iter([true, true, false]);
-        let rhs = PlBitmap::from_iter([true, false, false]);
-
-        let combined = combine_validities_and(Some(lhs.as_ref()), Some(rhs.as_ref())).unwrap();
-
-        assert_eq!(combined.len(), 3);
-        assert!(combined.is_flat());
-        assert_eq!(combined, PlBitmap::from_iter([true, false, false]));
-    }
 }

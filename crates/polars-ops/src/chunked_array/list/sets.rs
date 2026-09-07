@@ -105,8 +105,7 @@ where
     }
 }
 
-/// The element as the key it is looked up by, which is what makes a float's `NaN` compare equal to
-/// itself.
+/// The element as the key it is looked up by, which makes a float's `NaN` equal itself.
 fn wrapper_opt<T: Copy + TotalEq + TotalHash>(
     v: Option<T>,
 ) -> <Option<T> as ToTotalOrd>::TotalOrdItem {

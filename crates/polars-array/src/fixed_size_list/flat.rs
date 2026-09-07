@@ -6,18 +6,15 @@ use super::PlFixedSizeListArray;
 use crate::array::PlArray;
 use crate::flat::Flat;
 
-/// The methods a [`PlFixedSizeListArray`] gains from holding the values of every element and one
-/// validity bit per element.
+/// The methods a [`PlFixedSizeListArray`] gains from holding one slot and one bit per element.
 impl Flat<PlFixedSizeListArray> {
-    /// The values array, holding exactly [`len`](PlFixedSizeListArray::len) `*`
-    /// [`width`](PlFixedSizeListArray::width) values.
+    /// The values array, holding `len * width` values.
     #[inline]
     pub fn values(&self) -> &dyn PlArray {
         &*self.as_array().values
     }
 
-    /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
-    /// [`len`](PlFixedSizeListArray::len) bits.
+    /// The validity mask, if any element may be null, as a [`Bitmap`] of one bit per element.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
         self.as_array().validity.as_ref()

@@ -82,8 +82,7 @@ fn first_valid(arr: &PlBooleanArray) -> Option<usize> {
     }
 }
 
-/// The number of elements of `arr` that are both valid and `true`. A chunk whose values and mask
-/// are both scalar is one bit each, so this is `O(1)` for it.
+/// The number of elements of `arr` that are both valid and `true`.
 pub(crate) fn true_count(arr: &PlBooleanArray) -> usize {
     let values = arr.values();
     match arr.validity() {

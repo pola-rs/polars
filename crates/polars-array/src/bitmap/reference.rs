@@ -52,8 +52,7 @@ impl<'a> PlBitmapRef<'a> {
     /// Creates a [`PlBitmapRef`] of `length` bits backed by a `bitmap` that broadcasts over them.
     ///
     /// # Errors
-    /// This function errors if `bitmap` is neither flat (length equal to `length`) nor scalar
-    /// (length one).
+    /// Errors if `bitmap` is neither flat (length equal to `length`) nor scalar (length one).
     pub fn try_new_broadcast(bitmap: &'a Bitmap, length: usize) -> PolarsResult<Self> {
         polars_ensure!(
             is_valid_buffer_len(bitmap.len(), length),
@@ -74,8 +73,7 @@ impl<'a> PlBitmapRef<'a> {
         Self::try_new_broadcast(bitmap, length).unwrap()
     }
 
-    /// Creates a [`PlBitmapRef`] of `length` bits backed by a `bitmap` that broadcasts over them,
-    /// without validating it.
+    /// Creates a [`PlBitmapRef`] of `length` bits backed by `bitmap`, without validating it.
     ///
     /// # Safety
     /// `bitmap` must be flat or scalar for `length`, per [`is_valid_buffer_len`].
@@ -173,8 +171,7 @@ impl<'a> PlBitmapRef<'a> {
         self.length - self.unset_bits()
     }
 
-    /// Returns an ordinary [`Bitmap`] holding one bit per element, borrowing the backing bitmap if
-    /// it already holds one.
+    /// Returns a [`Bitmap`] of one bit per element, borrowing the backing bitmap if it is flat.
     pub fn to_flat(&self) -> Cow<'a, Bitmap> {
         if let Some(bitmap) = self.flat_bitmap() {
             return Cow::Borrowed(bitmap);

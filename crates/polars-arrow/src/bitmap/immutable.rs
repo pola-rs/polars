@@ -256,8 +256,7 @@ impl Bitmap {
             .unwrap_or_else(|| self.count_unset_bits())
     }
 
-    /// Counts the unset bits of this [`Bitmap`] and caches the count, for [`Self::unset_bits`] to
-    /// call the first time it is asked.
+    /// Counts the unset bits of this [`Bitmap`] and caches the count for [`Self::unset_bits`].
     #[cold]
     #[inline(never)]
     fn count_unset_bits(&self) -> usize {

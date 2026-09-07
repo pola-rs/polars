@@ -10,16 +10,13 @@ use crate::broadcast::is_flat_offsets_len;
 /// Iterator over the elements of a [`PlBinaryArray`](super::PlBinaryArray), ignoring validity.
 #[derive(Clone)]
 pub struct PlBinaryValuesIter<'a> {
-    /// The bytes the offsets cut the elements out of. How many there are is never asked: every
-    /// offset is in bounds of them, so the length would only be carried to be thrown away.
+    /// The bytes the offsets cut the elements out of.
     values: NonNull<u8>,
     /// The offsets of the elements left to yield.
     offsets: NonNull<u64>,
-    /// [`usize::MAX`] while the offsets are flat and `0` once they are scalar, to fold every
-    /// position onto the one slot scalar offsets hold without branching on which they are.
+    /// Folds a position onto slot 0 when the offsets are scalar: [`usize::MAX`] flat, `0` scalar.
     index_mask: usize,
-    /// The number of elements left to yield, over the whole range of a `usize`: a scalar array is
-    /// as long as it says it is, and is never walked to find out.
+    /// The number of elements left to yield: a scalar array is as long as it says it is.
     remaining: usize,
     _lifetime: PhantomData<&'a [u8]>,
 }
@@ -49,8 +46,7 @@ pub enum PlBinaryValues<'a> {
 
 impl<'a> PlBinaryValuesIter<'a> {
     /// # Safety
-    /// `offsets` must be flat (`length + 1` offsets) or scalar (two offsets) for `length`, per
-    /// [`crate::broadcast`], and must be ordered and bounded by the length of `values`.
+    /// `offsets` must be flat or scalar for `length`, ordered and within the length of `values`.
     #[inline]
     pub(super) fn new(values: &'a [u8], offsets: &'a [u64], length: usize) -> Self {
         // Offsets that hold one start per element are flat, and offsets the caller promises are
@@ -84,8 +80,7 @@ impl<'a> PlBinaryValuesIter<'a> {
         self.index_mask == 0
     }
 
-    /// How far the offsets walk per element dropped: one offset while they are flat, and nowhere
-    /// at all once they are scalar, whose two slots every element reads.
+    /// How far the offsets walk per element dropped: one slot while flat, nowhere once scalar.
     #[inline(always)]
     fn step(&self) -> usize {
         size_of::<u64>() & self.index_mask
@@ -94,8 +89,7 @@ impl<'a> PlBinaryValuesIter<'a> {
     /// The bytes the element `i` positions on covers.
     ///
     /// # Safety
-    /// The offsets must hold a start `i` slots on and the end after it, which they do for every
-    /// `i` below the number of elements left, and for every `i` at all once they are scalar.
+    /// The offsets must hold a start `i` slots on and the end after it.
     #[inline(always)]
     unsafe fn get_unchecked(&self, i: usize) -> &'a [u8] {
         debug_assert!(i < self.remaining || self.is_scalar());
@@ -113,8 +107,7 @@ impl<'a> PlBinaryValuesIter<'a> {
         }
     }
 
-    /// Drops the `n` elements at the front, which walks flat offsets along and leaves scalar ones
-    /// where they are.
+    /// Drops the `n` elements at the front, walking flat offsets along and leaving scalar ones.
     ///
     /// # Safety
     /// `n` must not exceed the number of elements left.
@@ -169,9 +162,7 @@ impl<'a> PlBinaryValuesIter<'a> {
 }
 
 impl<'a> PlBinaryValues<'a> {
-    /// Folds `f` over the elements, walking flat offsets as the consecutive ranges they are —
-    /// carrying the end of each element into the start of the next, one offset read per element —
-    /// and scalar ones over the single range they hold.
+    /// Folds `f` over the elements, walking flat offsets as the consecutive ranges they are.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where
@@ -347,8 +338,7 @@ pub struct PlBinaryIter<'a> {
 
 impl<'a> PlBinaryIter<'a> {
     /// # Safety
-    /// `offsets` must be flat or scalar for `length`, per [`crate::broadcast`], and must be ordered
-    /// and bounded by the length of `values`.
+    /// `offsets` must be flat or scalar for `length`, ordered and within the length of `values`.
     #[inline]
     pub(super) fn new(
         values: &'a [u8],

@@ -16,8 +16,7 @@ use crate::{
     with_match_pl_primitive_array_type,
 };
 
-/// The arrays a concatenation is made of: `count` distinct arrays, read by index, which the
-/// concatenation lays down `repeats` times over.
+/// The arrays a concatenation is made of: `count` distinct arrays, laid down `repeats` times.
 struct ArrayList<'a, 'f, A: ?Sized> {
     /// The array at an index below [`Self::count`].
     get: &'f dyn Fn(usize) -> &'a A,
@@ -72,8 +71,7 @@ impl<'a, 'f, A: ?Sized> ArrayList<'a, 'f, A> {
             .expect("the number of arrays to concatenate overflows a `usize`")
     }
 
-    /// The same arrays, read as something else — downcast to their concrete array type, say, or
-    /// narrowed to one of their fields.
+    /// The same arrays, read as something else — downcast to their concrete type, say.
     fn read_as<'n, B: ?Sized>(&self, get: &'n dyn Fn(usize) -> &'a B) -> ArrayList<'a, 'n, B> {
         ArrayList {
             get,
@@ -91,8 +89,7 @@ impl<A: ?Sized> Clone for ArrayList<'_, '_, A> {
 
 impl<A: ?Sized> Copy for ArrayList<'_, '_, A> {}
 
-/// Something that stands in as a [`PlArray`] trait object: every array of this crate, and the
-/// trait object itself.
+/// Something that stands in as a [`PlArray`] trait object: every array here, and the object itself.
 trait AsPlArray {
     fn as_pl_array(&self) -> &dyn PlArray;
 }
@@ -122,8 +119,7 @@ impl<'a, 'f, A: AsPlArray + ?Sized> ArrayList<'a, 'f, A> {
         self.iter().map(AsPlArray::as_pl_array)
     }
 
-    /// The total number of elements the arrays hold and how many of them are null, per
-    /// [`total_length_and_null_count`].
+    /// The total number of elements the arrays hold and how many of them are null.
     fn length_and_null_count(&self) -> (usize, usize) {
         total_length_and_null_count(&mut self.distinct_erased(), self.repeats)
     }
@@ -137,8 +133,7 @@ impl<'a, 'f, A: AsPlArray + ?Sized> ArrayList<'a, 'f, A> {
 /// Concatenates `arrays`, in order, into a single array of their common [`PlArrayType`].
 ///
 /// # Errors
-/// This function errors if `arrays` is empty, if the arrays differ in [`PlArrayType`] or element
-/// type, or if the values of nested arrays do not concatenate.
+/// Errors if `arrays` is empty, if they differ in type, or if nested values do not concatenate.
 pub fn concatenate(arrays: &[&dyn PlArray]) -> PolarsResult<Box<dyn PlArray>> {
     concatenate_impl(ArrayList::new(&|index| arrays[index], arrays.len()))
 }
@@ -146,8 +141,7 @@ pub fn concatenate(arrays: &[&dyn PlArray]) -> PolarsResult<Box<dyn PlArray>> {
 /// Concatenates `repeats` copies of `array` into a single array of its [`PlArrayType`].
 ///
 /// # Errors
-/// This function errors if the values of a nested array do not concatenate with themselves, which
-/// they always do unless an outside implementation of [`PlArray`] misreports its array type.
+/// Errors if the values of a nested array do not concatenate with themselves, which they always do.
 pub fn concatenate_repeated(array: &dyn PlArray, repeats: usize) -> PolarsResult<Box<dyn PlArray>> {
     // No copy holds an element, so the result is empty. It is still sliced out of the array
     // itself, which is what carries anything a `PlArrayType` does not — the values of a list
@@ -170,8 +164,7 @@ pub fn concatenate_repeated(array: &dyn PlArray, repeats: usize) -> PolarsResult
     concatenate_impl(ArrayList::repeated(&|_| array, 1, repeats))
 }
 
-/// Concatenates the arrays of `list`, in order, into a single array of their common
-/// [`PlArrayType`], which is what [`concatenate`] and [`concatenate_repeated`] both come down to.
+/// Concatenates the arrays of `list`, in order, into one array of their common [`PlArrayType`].
 fn concatenate_impl(list: ArrayList<'_, '_, dyn PlArray>) -> PolarsResult<Box<dyn PlArray>> {
     let mut distinct = list.distinct();
     let Some(first) = distinct.next() else {
@@ -401,8 +394,7 @@ fn concatenate_boolean_impl(list: ArrayList<'_, '_, PlBooleanArray>) -> PlBoolea
     unsafe { PlBooleanArray::new_unchecked(values.freeze(), length, validity) }
 }
 
-/// Concatenates `arrays`, in order, into a single [`PlBinaryArray`] over the bytes their elements
-/// cover.
+/// Concatenates `arrays`, in order, into a single [`PlBinaryArray`] over the bytes they cover.
 pub fn concatenate_binary(arrays: &[&PlBinaryArray]) -> PlBinaryArray {
     concatenate_binary_impl(ArrayList::new(&|index| arrays[index], arrays.len()))
 }
@@ -498,8 +490,7 @@ fn concatenate_binary_impl(list: ArrayList<'_, '_, PlBinaryArray>) -> PlBinaryAr
     }
 }
 
-/// Concatenates `arrays`, in order, into a single [`PlBinaryViewArray`] over the data buffers of
-/// all of them.
+/// Concatenates `arrays`, in order, into a single [`PlBinaryViewArray`] over all their buffers.
 pub fn concatenate_binview(arrays: &[&PlBinaryViewArray]) -> PlBinaryViewArray {
     concatenate_binview_impl(ArrayList::new(&|index| arrays[index], arrays.len()))
 }
@@ -579,12 +570,10 @@ fn concatenate_binview_impl(list: ArrayList<'_, '_, PlBinaryViewArray>) -> PlBin
     }
 }
 
-/// Concatenates `arrays`, in order, into a single [`PlFixedSizeBinaryArray`] over the bytes their
-/// elements cover.
+/// Concatenates `arrays`, in order, into a single [`PlFixedSizeBinaryArray`] over their bytes.
 ///
 /// # Errors
-/// This function errors if `arrays` is empty, since there is then no width for the elements of the
-/// result to have, or if the arrays do not all have the same width.
+/// Errors if `arrays` is empty, since the result then has no width, or if the widths differ.
 pub fn concatenate_fixed_size_binary(
     arrays: &[&PlFixedSizeBinaryArray],
 ) -> PolarsResult<PlFixedSizeBinaryArray> {
@@ -670,12 +659,10 @@ fn concatenate_fixed_size_binary_impl(
     })
 }
 
-/// Concatenates `arrays`, in order, into a single [`PlFixedSizeListArray`] over the concatenation
-/// of the values their lists reach.
+/// Concatenates `arrays`, in order, into a single [`PlFixedSizeListArray`] over their values.
 ///
 /// # Errors
-/// This function errors if `arrays` is empty, if the arrays do not all have the same width, or if
-/// the values do not concatenate.
+/// Errors if `arrays` is empty, if the widths differ, or if the values do not concatenate.
 pub fn concatenate_fixed_size_list(
     arrays: &[&PlFixedSizeListArray],
 ) -> PolarsResult<PlFixedSizeListArray> {
@@ -772,12 +759,10 @@ fn concatenate_null_impl(list: ArrayList<'_, '_, PlNullArray>) -> PlNullArray {
     PlNullArray::new(list.length_and_null_count().0)
 }
 
-/// Concatenates `arrays`, in order, into a single [`PlStructArray`], concatenating each field with
-/// the field at the same position of every other array.
+/// Concatenates `arrays`, in order, into a single [`PlStructArray`], field by matching field.
 ///
 /// # Errors
-/// This function errors if the arrays do not all have the same number of fields, or if any of the
-/// fields do not concatenate.
+/// Errors if the arrays differ in the number of fields, or if any of the fields do not concatenate.
 pub fn concatenate_struct(arrays: &[&PlStructArray]) -> PolarsResult<PlStructArray> {
     concatenate_struct_impl(ArrayList::new(&|index| arrays[index], arrays.len()))
 }
@@ -826,12 +811,10 @@ fn concatenate_struct_impl(list: ArrayList<'_, '_, PlStructArray>) -> PolarsResu
     Ok(unsafe { PlStructArray::new_unchecked(fields, length, validity) })
 }
 
-/// Concatenates `arrays`, in order, into a single [`PlListArray`] over the concatenation of the
-/// values their lists reach.
+/// Concatenates `arrays`, in order, into a single [`PlListArray`] over their values.
 ///
 /// # Errors
-/// This function errors if `arrays` is empty, since there is no values array to take the lists of
-/// the result over, or if the values do not concatenate.
+/// Errors if `arrays` is empty, since the result then has no values array, or if they do not fit.
 pub fn concatenate_list(arrays: &[&PlListArray]) -> PolarsResult<PlListArray> {
     concatenate_list_impl(ArrayList::new(&|index| arrays[index], arrays.len()))
 }
@@ -932,8 +915,7 @@ fn only_non_empty<'a, A: ?Sized + PlArray>(list: &ArrayList<'a, '_, A>) -> Optio
     }
 }
 
-/// The total number of elements `distinct` arrays hold `repeats` times over, and how many of those
-/// elements are null.
+/// The number of elements `distinct` arrays hold `repeats` times over, and how many are null.
 fn total_length_and_null_count(
     distinct: &mut dyn Iterator<Item = &dyn PlArray>,
     repeats: usize,
@@ -957,8 +939,7 @@ fn total_length_and_null_count(
     )
 }
 
-/// The element every element of every array equals, if `element` sees one for each of them and they
-/// all agree.
+/// The element every element of every array equals, if `element` sees one and they all agree.
 fn shared_element<'a, A: PlArray, T: PartialEq>(
     list: &ArrayList<'a, '_, A>,
     element: impl Fn(&'a A) -> Option<T>,
@@ -975,8 +956,7 @@ fn shared_element<'a, A: PlArray, T: PartialEq>(
     shared
 }
 
-/// Reads the arrays of `list` as an `A`, or `None` if that is not the concrete array type of every
-/// one of them.
+/// Reads the arrays of `list` as an `A`, or `None` if that is not the concrete type of all of them.
 fn try_downcast_get<'a, 'f, A: PlArray>(
     list: &ArrayList<'a, 'f, dyn PlArray>,
 ) -> Option<impl Fn(usize) -> &'a A + use<'a, 'f, A>> {
@@ -989,8 +969,7 @@ fn try_downcast_get<'a, 'f, A: PlArray>(
     Some(move |index: usize| get(index).as_any().downcast_ref::<A>().unwrap())
 }
 
-/// [`try_downcast_get`], for the `array_type` every array reports, which guarantees `A` is their
-/// concrete array type.
+/// [`try_downcast_get`], for the `array_type` every array reports, which guarantees `A` is theirs.
 fn downcast_get<'a, 'f, A: PlArray>(
     list: &ArrayList<'a, 'f, dyn PlArray>,
     array_type: PlArrayType,
@@ -1005,8 +984,7 @@ fn downcast_get<'a, 'f, A: PlArray>(
     })
 }
 
-/// Concatenates the arrays of `list` as [`PlPrimitiveArray<T>`], or returns `None` if that is not
-/// the concrete array type of every one of them.
+/// Concatenates the arrays of `list` as [`PlPrimitiveArray<T>`], or `None` if they are not that.
 fn concatenate_primitive_as<T: NativeType>(
     list: &ArrayList<'_, '_, dyn PlArray>,
 ) -> Option<Box<dyn PlArray>> {

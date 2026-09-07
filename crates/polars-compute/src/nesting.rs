@@ -89,8 +89,7 @@ pub(crate) unsafe fn struct_with_fields(
     unsafe { PlStructArray::new_unchecked(fields, array.len(), validity) }
 }
 
-/// Returns `array` with its validity mask replaced by `validity`, which keeps the representation it
-/// is in: a mask that stands for a single bit is not written out one bit per element to be set.
+/// Returns `array` with its validity mask replaced by `validity`, keeping its representation.
 pub(crate) fn with_pl_validity(array: &dyn PlArray, validity: PlBitmap) -> Box<dyn PlArray> {
     assert_eq!(
         array.len(),

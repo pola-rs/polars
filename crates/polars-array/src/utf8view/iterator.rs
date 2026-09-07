@@ -104,8 +104,7 @@ impl ExactSizeIterator for PlUtf8ViewValuesIter<'_> {
 // change how many there are.
 unsafe impl TrustedLen for PlUtf8ViewValuesIter<'_> {}
 
-/// Iterator over the elements of a [`PlUtf8ViewArray`](super::PlUtf8ViewArray), `None` for the null
-/// ones.
+/// Iterator over the elements of a [`super::PlUtf8ViewArray`], `None` for the null ones.
 #[derive(Clone)]
 pub struct PlUtf8ViewIter<'a>(PlBinaryViewIter<'a>);
 
@@ -213,8 +212,7 @@ mod tests {
     use crate::PlUtf8ViewArray;
     use crate::iterator_tests::assert_iterates;
 
-    /// The elements of a flat array: one that is inlined into its view, one that is not, and one
-    /// that is empty.
+    /// The elements of a flat array: one inlined into its view, one that is not, and one empty.
     fn elements() -> [&'static str; 3] {
         [
             "ab",

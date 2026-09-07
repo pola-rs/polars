@@ -680,8 +680,7 @@ pub trait SeriesTrait:
     }
 
     #[cfg(feature = "object")]
-    /// The values of this object column, packed into the fixed size binary array that carries them
-    /// out to Arrow. Dispatched here because only the column knows the type of its values.
+    /// The values of this object column, packed into the array that carries them out to Arrow.
     fn object_values_to_arrow(&self) -> ArrayRef {
         invalid_operation_panic!(object_values_to_arrow, self)
     }

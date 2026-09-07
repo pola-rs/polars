@@ -111,8 +111,7 @@ impl PlUtf8ViewArray {
         }
     }
 
-    /// Whether this array is entirely stored in the scalar representation — see
-    /// [`PlBinaryViewArray::is_scalar`].
+    /// Whether this array is scalar throughout — see [`PlBinaryViewArray::is_scalar`].
     #[inline]
     pub fn is_scalar(&self) -> bool {
         self.0.is_scalar()
@@ -222,8 +221,7 @@ impl PlUtf8ViewArray {
         self.0.is_flat()
     }
 
-    /// Returns this array in the flat representation, borrowing this array itself if it is already
-    /// laid out flat.
+    /// Returns this array in the flat representation, borrowing it if it is already flat.
     #[inline]
     pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         if let Some(flat) = self.as_flat() {
@@ -237,8 +235,7 @@ impl PlUtf8ViewArray {
     /// Returns this array with every view replaced by what `update_view` makes of it.
     ///
     /// # Safety
-    /// The views the closure hands back must uphold every invariant of a view: each must read bytes
-    /// this array's data buffers hold, and those bytes must be valid UTF-8.
+    /// Every view handed back must read bytes this array's data buffers hold, valid as UTF-8.
     pub unsafe fn apply_views<F: FnMut(View, &str) -> View>(&self, mut update_view: F) -> Self {
         // A scalar views buffer holds the one view every element reads, so the closure maps that
         // view alone and what it hands back stands for every element in turn. The mask is put

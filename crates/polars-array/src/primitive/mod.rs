@@ -40,8 +40,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// Creates a flat [`PlPrimitiveArray`] out of its internal components.
     ///
     /// # Errors
-    /// This function errors if `values` does not hold exactly `length` slots, or if `validity` does
-    /// not cover exactly `length` elements.
+    /// Errors unless `values` holds `length` slots and `validity` covers `length` elements.
     pub fn try_new(
         values: Buffer<T>,
         length: usize,
@@ -71,8 +70,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// Creates a flat [`PlPrimitiveArray`] out of its internal components without validating them.
     ///
     /// # Safety
-    /// `values` must hold exactly `length` slots, and `validity` must cover exactly `length`
-    /// elements, in either representation.
+    /// `values` and `validity` must both be flat and valid for `length` elements.
     #[inline]
     pub unsafe fn new_unchecked(
         values: Buffer<T>,
@@ -94,8 +92,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// Creates a scalar [`PlPrimitiveArray`] of `length` elements out of its internal components.
     ///
     /// # Errors
-    /// This function errors if `values` is not scalar for `length`, per
-    /// [`is_scalar_buffer_len`], or if `validity` does not cover exactly `length` elements, per
+    /// Errors unless `values` is scalar for `length` and `validity` covers `length` elements.
     pub fn try_new_broadcast(
         values: Buffer<T>,
         length: usize,
@@ -123,12 +120,10 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         Self::try_new_broadcast(values, length, validity).unwrap()
     }
 
-    /// Creates a scalar [`PlPrimitiveArray`] of `length` elements out of its internal components
-    /// without validating them.
+    /// Creates a scalar [`PlPrimitiveArray`] of `length` elements without validating them.
     ///
     /// # Safety
-    /// `values` must be scalar for `length`, per [`is_scalar_buffer_len`]; `validity` must cover
-    /// exactly `length` elements, in either representation.
+    /// `values` and `validity` must both be scalar and valid for `length` elements.
     #[inline]
     pub unsafe fn new_broadcast_unchecked(
         values: Buffer<T>,
@@ -321,15 +316,13 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         self.values_are_flat() && self.validity().is_none_or(|validity| validity.is_flat())
     }
 
-    /// Whether this array is entirely stored in the scalar representation, and therefore is a
-    /// single logical value repeated [`Self::len`] times in `O(1)` memory.
+    /// Whether this array is scalar throughout: one value repeated [`Self::len`] times.
     #[inline]
     pub fn is_scalar(&self) -> bool {
         self.values_are_scalar() && self.validity().is_none_or(|v| v.is_scalar())
     }
 
-    /// The single element every element of this array equals, if every backing buffer holds one
-    /// slot.
+    /// The single element every element equals, if every backing buffer holds one slot.
     #[inline]
     pub fn scalar_value(&self) -> Option<Option<T>> {
         let is_shared = self.values.len() == 1
@@ -437,8 +430,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         PlPrimitiveIter::new(&self.values, self.validity(), self.length)
     }
 
-    /// Returns an iterator over `length` values, repeating the single value of this array if that
-    /// is all it holds, and ignoring validity.
+    /// Iterates `length` values, repeating a scalar array's one value and ignoring validity.
     #[inline]
     pub fn broadcast_values_iter(&self, length: usize) -> PlPrimitiveValuesIter<'_, T> {
         assert_broadcastable(self.length, length);
@@ -534,8 +526,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         Self::new_scalar(value, length)
     }
 
-    /// Returns an equivalent array whose backing buffers all hold one slot per element, borrowing
-    /// this array itself if they already do.
+    /// Returns an equivalent flat array, borrowing this one if it is already flat.
     pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         if let Some(flat) = self.as_flat() {
             return Cow::Borrowed(flat);
@@ -558,8 +549,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         })
     }
 
-    /// The values buffer holding one slot per element, writing a repeated value out only when it
-    /// is stored as one.
+    /// The values buffer holding one slot per element, written out only if it is scalar.
     pub fn to_flat_values(&self) -> Cow<'_, Buffer<T>> {
         if self.values_are_flat() {
             return Cow::Borrowed(&self.values);
@@ -581,8 +571,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         })
     }
 
-    /// Borrows this array as a [`Flat`] one, if every backing buffer already holds one slot per
-    /// element.
+    /// Borrows this array as a [`Flat`] one, if it is already flat.
     #[inline]
     pub fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: every backing buffer of a flat array holds one slot per element.

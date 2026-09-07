@@ -48,8 +48,7 @@ impl<T: NativeType> Iterator for PlPrimitiveValuesIter<'_, T> {
         self.values.last().copied()
     }
 
-    /// Hoists the representation out of the loop: flat values fold as the slice they are, which
-    /// vectorizes, and scalar ones fold over the single value they hold.
+    /// Hoists the representation out of the loop: flat values fold as the slice they are.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where

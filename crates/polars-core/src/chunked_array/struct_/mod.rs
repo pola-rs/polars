@@ -451,8 +451,7 @@ impl StructChunked {
             .find(|s| s.name().as_str() == name)
             .ok_or_else(|| polars_err!(StructFieldNotFound: "{name}"))
     }
-    /// Replaces the outer validity mask, which may repeat a single bit: an all-null struct says
-    /// so in one bit rather than one per element.
+    /// Replaces the outer validity mask, which may repeat a single bit.
     pub(crate) fn set_outer_validity(&mut self, validity: Option<PlBitmap>) {
         assert_eq!(self.chunks().len(), 1);
         unsafe {

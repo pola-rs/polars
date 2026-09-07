@@ -5,8 +5,7 @@ use polars_array::{PlBinaryViewArrayBuilder, PlUtf8ViewArray};
 use super::*;
 
 pub struct BinViewChunkedBuilder<T: ViewType + ?Sized> {
-    /// The bytes, whatever they stand for: a `str` is its own bytes, and which of the two the
-    /// chunk reads as is settled once, in `finish`.
+    /// The bytes, whatever they stand for; which of the two the chunk reads as is settled once.
     chunk_builder: PlBinaryViewArrayBuilder,
     pub(crate) field: FieldRef,
     _type: PhantomData<fn() -> Box<T>>,

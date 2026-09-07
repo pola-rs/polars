@@ -6,8 +6,7 @@ use polars_utils::float16::pf16;
 
 use crate::chunked_array::sum::{sum_repeated, sum_slice};
 
-/// The sum of each list of `arr`, one per element, reading the values in whatever representation
-/// they are in.
+/// The sum of each list of `arr`, one per element, in whatever representation the values are.
 fn dispatch_sum<T, S>(arr: &PlFixedSizeListArray) -> PlArrayRef
 where
     T: NativeType + ToPrimitive,

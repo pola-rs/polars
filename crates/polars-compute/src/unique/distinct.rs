@@ -34,9 +34,7 @@ fn flat_views(values: &PlBinaryViewArray) -> &[View] {
     values.flat_views().expect(FLAT).as_slice()
 }
 
-/// The validity mask of a chunk that has a null under it, which holds one bit per element: a mask
-/// that repeats one bit either marks nothing — leaving no null to have — or leaves nothing but
-/// nulls, and such a chunk is answered by [`RepeatedUnique`] rather than reaching here.
+/// The validity mask of a chunk that has a null under it, which holds one bit per element.
 fn flat_validity(values: &dyn PlArray) -> &Bitmap {
     values
         .validity()
@@ -95,8 +93,7 @@ pub trait AmortizedUnique: Send + Sync + 'static {
     fn n_unique_slice(&mut self, values: &dyn PlArray, start: IdxSize, length: IdxSize) -> IdxSize;
 }
 
-/// The state that answers the unique kernels over `values`, and over any chunk holding the same
-/// element type in the same representation — which is what every group of `values` is.
+/// The state that answers the unique kernels over `values`, and over any chunk like it.
 pub fn amortized_unique_like(values: &dyn PlArray) -> Box<dyn AmortizedUnique> {
     // A chunk that holds one value over and over has that value and a null in it and nothing
     // else, whichever value it is: which of the two an element is is all its validity mask says,
@@ -148,8 +145,7 @@ pub fn amortized_unique_like(values: &dyn PlArray) -> Box<dyn AmortizedUnique> {
     }
 }
 
-/// Whether the values of `values` are one slot standing for every element, however the validity
-/// mask over them is stored.
+/// Whether the values of `values` are one slot standing for every element.
 fn repeats_one_value(values: &dyn PlArray) -> bool {
     match values.array_type() {
         PlArrayType::Boolean => downcast::<PlBooleanArray>(values).values_are_scalar(),
@@ -173,8 +169,7 @@ impl RepeatedUnique {
         move |i| validity.as_ref().is_none_or(|mask| mask.get(i as usize))
     }
 
-    /// The first of the `length` elements from `start` that is not of the same kind as the one at
-    /// `start`: the one is the repeated value and the other a null, whichever way round.
+    /// The first of the `length` elements from `start` that is not of the kind of the one there.
     fn first_differing(values: &dyn PlArray, start: IdxSize, length: IdxSize) -> Option<IdxSize> {
         // A chunk with no mask over it is the repeated value throughout.
         let validity = values.validity()?;

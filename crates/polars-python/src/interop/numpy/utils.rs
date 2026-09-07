@@ -75,8 +75,7 @@ pub(super) fn series_contains_null(s: &Series) -> bool {
     }
 }
 
-/// Returns whether every chunk of the Series is flat, at any level of nesting. Of the nested
-/// types, only Array types are handled since only those are relevant for NumPy views.
+/// Returns whether every chunk of the Series is flat, at any level of nesting.
 pub(super) fn series_is_flat(s: &Series) -> bool {
     match s.dtype() {
         dt if dt.is_primitive_numeric() => {

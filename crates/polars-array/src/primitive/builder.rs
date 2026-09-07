@@ -258,8 +258,7 @@ mod tests {
         );
     }
 
-    /// Appending a run has to leave the mask exactly as long as the values, whether or not a
-    /// mask has come into being yet — the two are extended by separate calls.
+    /// Appending a run has to leave the mask exactly as long as the values.
     #[test]
     fn pushing_a_run_of_values_keeps_the_mask_aligned() {
         let mut builder = PlPrimitiveArrayBuilder::<i32>::new();

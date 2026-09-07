@@ -45,8 +45,7 @@ impl From<CastOptions> for CastOptionsImpl {
     }
 }
 
-/// Casts the chunks of a [`ChunkedArray`] to `dtype`, through the Arrow cast kernel — a cast is
-/// dispatched on a pair of Arrow types, which a chunk does not carry.
+/// Casts the chunks of a [`ChunkedArray`] to `dtype` through the Arrow cast kernel.
 pub(crate) fn cast_chunks(
     chunks: &[PlArrayRef],
     dtype: &DataType,

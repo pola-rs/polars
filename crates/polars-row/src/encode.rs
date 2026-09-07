@@ -1028,8 +1028,7 @@ mod tests {
     }
 
     proptest::proptest! {
-        /// The arrays are generated as Arrow ones because that is where the generator lives; the
-        /// import is a buffer handover, so what the encoder sees is the same data.
+        /// The arrays are generated as Arrow ones; the import hands the buffers over unchanged.
         #[test]
         fn test_encode_arrays
             (arrays in arrays())

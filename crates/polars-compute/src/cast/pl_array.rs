@@ -15,8 +15,7 @@ use polars_utils::format_pl_smallstr;
 use super::CastOptionsImpl;
 use crate::comparisons::PlTotalEqKernel;
 
-/// The Arrow type that says how to read the buffers of `array`, which is the type it crosses over
-/// to Arrow as — see [`polars_array::arrow::export`].
+/// The Arrow type that says how to read the buffers of `array`, which is what it exports as.
 pub fn physical_dtype(array: &dyn PlArray) -> ArrowDataType {
     use PlArrayType as A;
     match array.array_type() {
@@ -78,8 +77,7 @@ fn downcast<A: PlArray + 'static>(array: &dyn PlArray) -> &A {
         .expect("the array type dispatched on names the array")
 }
 
-/// Casts `array` from `from_type` to `to_type` over the arrays of `polars-array`, or answers `None`
-/// if this pair has no kernel here and belongs to the Arrow ones.
+/// Casts `array` from `from_type` to `to_type`, or `None` if the pair belongs to the Arrow kernels.
 pub(super) fn cast_native(
     array: &dyn PlArray,
     from_type: &ArrowDataType,
@@ -159,9 +157,7 @@ fn primitive_of(dtype: &ArrowDataType) -> PrimitiveType {
     }
 }
 
-/// Whether a cast between these two types is nothing but a change of the logical type over the
-/// same values, which an array of `polars-array` — holding no logical type — answers by handing
-/// itself back.
+/// Whether a cast is nothing but a change of logical type over the same values.
 fn is_retag(from_type: &ArrowDataType, to_type: &ArrowDataType) -> bool {
     use ArrowDataType::*;
     matches!(
@@ -204,8 +200,7 @@ fn casts_with_as(from: PrimitiveType, to: PrimitiveType) -> bool {
     )
 }
 
-/// An array of `length` nulls held by the array type `dtype` names, which needs no slot per
-/// element.
+/// An array of `length` nulls held by the array type `dtype` names, needing no slot per element.
 fn full_null(dtype: &ArrowDataType, length: usize) -> Option<Box<dyn PlArray>> {
     Some(match dtype.to_physical_type() {
         PhysicalType::Null => Box::new(PlNullArray::new(length)),
@@ -224,8 +219,7 @@ fn full_null(dtype: &ArrowDataType, length: usize) -> Option<Box<dyn PlArray>> {
     })
 }
 
-/// Casts the values of `from` to `O`, leaving a null where a value does not fit unless the cast
-/// wraps.
+/// Casts the values of `from` to `O`, leaving a null where a value does not fit.
 fn numeric_to_numeric<I, O>(from: &PlPrimitiveArray<I>, wrapped: bool) -> PlPrimitiveArray<O>
 where
     I: NativeType + num_traits::NumCast + num_traits::AsPrimitive<O>,
@@ -261,8 +255,7 @@ where
     }
 }
 
-/// Applies `op` to every value of `from`, reading the one value of a chunk that repeats one value
-/// once and leaving the answer repeating it in turn.
+/// Applies `op` to every value of `from`, reading a scalar chunk's one value once.
 fn map_values<I, O, F>(from: &PlPrimitiveArray<I>, op: F) -> PlPrimitiveArray<O>
 where
     I: NativeType,
@@ -279,8 +272,7 @@ where
     }
 }
 
-/// Unsets the mask wherever `keep` does not hold, which is how a cast into a type holding fewer
-/// values than its representation reports the ones with none.
+/// Unsets the mask wherever `keep` does not hold, which is how a narrowing cast reports a miss.
 fn mask_where<T, F>(array: &PlPrimitiveArray<T>, keep: F) -> PlPrimitiveArray<T>
 where
     T: NativeType,
@@ -332,8 +324,7 @@ where
     PlBooleanArray::from_pl_bitmap(values).with_validity(from.validity().map(PlBitmap::from))
 }
 
-/// Ands `mask` into `validity`, which is how a cast that dropped values reports them alongside the
-/// nulls the array already held.
+/// Ands `mask` into `validity`, which is how a cast reports the values it dropped.
 fn and_validity(validity: Option<PlBitmapRef<'_>>, mask: arrow::bitmap::Bitmap) -> PlBitmap {
     let length = mask.len();
     match validity {
@@ -351,8 +342,7 @@ fn and_validity(validity: Option<PlBitmapRef<'_>>, mask: arrow::bitmap::Bitmap) 
     }
 }
 
-/// Collects the bit a cast set for each element, answering `None` if it set them all — the common
-/// case, and the one that leaves the array's own mask untouched.
+/// Collects the bit a cast set for each element, answering `None` if it set them all.
 struct MaskBuilder {
     builder: arrow::bitmap::BitmapBuilder,
     all_set: bool,

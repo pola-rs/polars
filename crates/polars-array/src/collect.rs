@@ -71,8 +71,7 @@ pub trait ArrayCollectIterExt<A: StaticArray>: Iterator + Sized {
         A::try_arr_from_iter(self)
     }
 
-    /// Collects this iterator of [`Result`]s, whose length can be trusted, returning the first
-    /// error instead of the array.
+    /// Collects this iterator of [`Result`]s, returning the first error instead of the array.
     #[inline(always)]
     fn try_collect_arr_trusted<U, E>(self) -> Result<A, E>
     where
@@ -85,8 +84,7 @@ pub trait ArrayCollectIterExt<A: StaticArray>: Iterator + Sized {
 
 impl<A: StaticArray, I: Iterator> ArrayCollectIterExt<A> for I {}
 
-/// An array that can be collected from the [zeroable stand-ins](StaticArray::ZeroableValueT) for
-/// its elements.
+/// An array collectable from the [zeroable stand-ins](StaticArray::ZeroableValueT) for elements.
 pub trait ZeroableArrayFromIter:
     StaticArray + for<'a> ArrayFromIter<Self::ZeroableValueT<'a>>
 {
@@ -165,8 +163,7 @@ impl<T: NativeType> ArrayFromIter<Option<T>> for PlPrimitiveArray<T> {
     }
 }
 
-/// Collects `iter` into a bitmap a word at a time: an element costs a shift and an or into a
-/// register, and the builder is touched once per 64 of them rather than once each.
+/// Collects `iter` into a bitmap a word at a time, touching the builder once per 64 elements.
 fn collect_bitmap<I: Iterator<Item = bool>>(mut iter: I) -> BitmapBuilder {
     let mut builder = BitmapBuilder::with_capacity(iter.size_hint().0);
 
@@ -255,8 +252,7 @@ impl ArrayFromIter<Option<bool>> for PlBooleanArray {
     }
 }
 
-/// The values a [`PlBinaryArray`] or a [`PlBinaryViewArray`] can be collected from: the byte
-/// slices, and the strings, owned or borrowed.
+/// The values a [`PlBinaryArray`] or [`PlBinaryViewArray`] can be collected from.
 trait IntoBytes {
     /// What this turns into, which is the byte slice itself for everything but a [`Cow<str>`].
     type AsRefT: AsRef<[u8]>;
@@ -483,8 +479,7 @@ mod tests {
     /// Every fallible collect returns the first error, and none of them walks the iterator past it.
     #[test]
     fn a_fallible_collect_stops_at_the_first_error() {
-        /// The error of collecting `[Ok(value), Err("nope"), Ok(value)]`, and how many of those
-        /// three items were pulled from the iterator.
+        /// The error of collecting `[Ok(value), Err("nope"), Ok(value)]`, and how many were pulled.
         fn failed<A, T: Clone>(value: T) -> (&'static str, usize)
         where
             A: StaticArray + ArrayFromIter<T>,
@@ -517,8 +512,7 @@ mod tests {
         );
     }
 
-    /// What the traits are for: a kernel that names the array it builds as a type parameter, which
-    /// [`FromIterator`] cannot express over an element type that is the array's own.
+    /// What the traits are for: a kernel that names the array it builds as a type parameter.
     #[test]
     fn collecting_is_generic_over_the_array() {
         /// The elements of `array` that are not null, in an array of the same type.

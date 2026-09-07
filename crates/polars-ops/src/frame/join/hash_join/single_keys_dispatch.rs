@@ -448,8 +448,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
 impl SeriesJoin for Series {}
 
-/// The values of every chunk of every array, as the slices they are. Every array must have been
-/// written out flat with [`ChunkedArray::flatten_mut`] first.
+/// The values of every chunk of every array, as the slices they are.
 fn chunks_as_slices<T>(splitted: &[ChunkedArray<T>]) -> Vec<&[T::Native]>
 where
     T: PolarsNumericType,

@@ -13,8 +13,7 @@ pub use polars_array::{
     ZeroableArrayFromIter,
 };
 
-/// An owned, cheaply cloneable chunk of a [`ChunkedArray`]: the counterpart of
-/// [`ArrowArrayRef`](arrow::array::ArrayRef), carrying no logical type of its own.
+/// An owned, cheaply cloneable chunk of a [`ChunkedArray`], carrying no logical type of its own.
 pub type PlArrayRef = Box<dyn PlArray>;
 pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
 pub use arrow::legacy::prelude::*;

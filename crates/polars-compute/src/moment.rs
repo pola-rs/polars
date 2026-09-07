@@ -42,8 +42,7 @@ fn weight_of<T: NativeType>(arr: &PlPrimitiveArray<T>) -> f64 {
     (arr.len() - arr.null_count()) as f64
 }
 
-/// The weight of `x` and `y` taken together, which is the number of elements at which neither is
-/// null.
+/// The weight of `x` and `y` taken together: the number of elements at which neither is null.
 fn joint_weight_of<T: NativeType, U: NativeType>(
     x: &PlPrimitiveArray<T>,
     y: &PlPrimitiveArray<U>,
@@ -53,8 +52,7 @@ fn joint_weight_of<T: NativeType, U: NativeType>(
     (x.len() - nulls) as f64
 }
 
-/// How far a repeated value deviates from the mean of the chunk that repeats it: zero, since that
-/// value *is* the mean.
+/// How far a repeated value deviates from the mean of the chunk that repeats it: zero.
 #[inline]
 #[expect(clippy::eq_op)]
 fn deviation_of(mean: f64) -> f64 {
@@ -558,8 +556,7 @@ impl KurtosisState {
         }
     }
 
-    /// The state of the `length` elements of `arr` starting at `start`, folded in one pass; see
-    /// [`SkewState::from_array`].
+    /// The state of the `length` elements of `arr` starting at `start`, folded in one pass.
     pub fn from_array(arr: &PlPrimitiveArray<f64>, start: usize, length: usize) -> Self {
         let arr = arr.clone().sliced(start, length);
 

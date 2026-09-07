@@ -22,8 +22,7 @@ mod iterator;
 pub use builder::PlBinaryArrayBuilder;
 pub use iterator::{PlBinaryIter, PlBinaryValues, PlBinaryValuesIter};
 
-/// An immutable, cheaply cloneable sequence of `length` optional byte strings over one values
-/// buffer.
+/// An immutable, cheaply cloneable sequence of `length` optional byte strings.
 #[derive(Clone)]
 pub struct PlBinaryArray {
     values: Buffer<u8>,
@@ -38,8 +37,7 @@ impl PlBinaryArray {
     /// Creates a flat [`PlBinaryArray`] out of its internal components.
     ///
     /// # Errors
-    /// This function errors unless `offsets` holds `length + 1` non-decreasing offsets ending
-    /// within `values`, and `validity` holds `length` bits.
+    /// Errors unless `offsets` holds `length + 1` non-decreasing offsets within `values`.
     pub fn try_new(
         values: Buffer<u8>,
         offsets: Buffer<u64>,
@@ -79,8 +77,7 @@ impl PlBinaryArray {
     /// Creates a flat [`PlBinaryArray`] out of its internal components without validating them.
     ///
     /// # Safety
-    /// `offsets` must be non-decreasing, hold `length + 1` offsets and end within `values`;
-    /// `validity` must cover exactly `length` elements, in either representation.
+    /// `offsets` and `validity` must both be flat and valid for `length` elements.
     #[inline]
     pub unsafe fn new_unchecked(
         values: Buffer<u8>,
@@ -106,8 +103,7 @@ impl PlBinaryArray {
     /// Creates a scalar [`PlBinaryArray`] of `length` elements out of its internal components.
     ///
     /// # Errors
-    /// This function errors unless `offsets` is scalar for `length`, per [`is_scalar_offsets_len`],
-    /// non-decreasing and ending within `values`, and `validity` is scalar for `length`, per
+    /// Errors unless `offsets` is scalar for `length`, non-decreasing and within `values`.
     pub fn try_new_broadcast(
         values: Buffer<u8>,
         offsets: Buffer<u64>,
@@ -144,12 +140,10 @@ impl PlBinaryArray {
         Self::try_new_broadcast(values, offsets, length, validity).unwrap()
     }
 
-    /// Creates a scalar [`PlBinaryArray`] of `length` elements out of its internal components
-    /// without validating them.
+    /// Creates a scalar [`PlBinaryArray`] of `length` elements without validating them.
     ///
     /// # Safety
-    /// `offsets` must be non-decreasing, scalar for `length` per [`is_scalar_offsets_len`], and end
-    /// within `values`; `validity` must cover exactly `length` elements, in either representation.
+    /// `offsets` and `validity` must both be scalar and valid for `length` elements.
     #[inline]
     pub unsafe fn new_broadcast_unchecked(
         values: Buffer<u8>,
@@ -184,8 +178,7 @@ impl PlBinaryArray {
         }
     }
 
-    /// Creates a fully valid, flat [`PlBinaryArray`] from `values` and `offsets`, taking its length
-    /// from the offsets.
+    /// Creates a fully valid, flat [`PlBinaryArray`] from `values` and `offsets`.
     pub fn from_offsets(values: Buffer<u8>, offsets: Buffer<u64>) -> Self {
         let length = offsets
             .len()
@@ -267,8 +260,7 @@ impl PlBinaryArray {
         (!self.offsets_are_scalar()).then_some(&self.offsets)
     }
 
-    /// The range of [`Self::values`] every element of this array covers, if the offsets hold a
-    /// single range.
+    /// The range of [`Self::values`] every element covers, if the offsets hold one range.
     #[inline]
     pub fn scalar_offsets(&self) -> Option<Range<usize>> {
         // SAFETY: a scalar offsets buffer holds two slots, so both are in bounds.
@@ -301,8 +293,7 @@ impl PlBinaryArray {
             .map(|validity| unsafe { PlBitmapRef::new_broadcast_unchecked(validity, self.length) })
     }
 
-    /// Whether the offsets hold the single range every element covers, so that every element is the
-    /// same byte string.
+    /// Whether the offsets hold one range that every element of this array shares.
     #[inline]
     pub fn offsets_are_scalar(&self) -> bool {
         // The offsets hold one slot more than the starts that are flat or scalar for this array's
@@ -329,22 +320,19 @@ impl PlBinaryArray {
         self.validity().is_some_and(|v| v.is_scalar())
     }
 
-    /// Whether this array's offsets hold the range of every element and its mask one bit per
-    /// element.
+    /// Whether the offsets hold the range of every element and the mask one bit per element.
     #[inline]
     pub fn is_flat(&self) -> bool {
         self.offsets_are_flat() && self.validity().is_none_or(|validity| validity.is_flat())
     }
 
-    /// Whether this array is entirely stored in the scalar representation, and therefore stands for
-    /// a single value repeated [`Self::len`] times in the memory of that value alone.
+    /// Whether this array is scalar throughout: one value repeated [`Self::len`] times.
     #[inline]
     pub fn is_scalar(&self) -> bool {
         self.offsets_are_scalar() && self.validity().is_none_or(|v| v.is_scalar())
     }
 
-    /// The single element every element of this array equals, if both of its own backing buffers
-    /// hold one slot.
+    /// The single element every element equals, if this array's own buffers both hold one slot.
     #[inline]
     pub fn scalar_value(&self) -> Option<Option<&[u8]>> {
         let is_shared = self.offsets.len() == 2
@@ -491,8 +479,7 @@ impl PlBinaryArray {
         PlBinaryIter::new(&self.values, &self.offsets, self.validity(), self.length)
     }
 
-    /// Returns an iterator over `length` elements, repeating the single element of this array if
-    /// that is all it holds, and ignoring validity.
+    /// Iterates `length` elements, repeating a scalar array's one value and ignoring validity.
     #[inline]
     pub fn broadcast_values_iter(&self, length: usize) -> PlBinaryValuesIter<'_> {
         assert_broadcastable(self.length, length);
@@ -599,8 +586,7 @@ impl PlBinaryArray {
         }
     }
 
-    /// Returns an equivalent array whose offsets hold the range of every element and whose mask
-    /// holds one bit per element, borrowing this array itself if they already do.
+    /// Returns an equivalent flat array, borrowing this one if it is already flat.
     pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         if let Some(flat) = self.as_flat() {
             return Cow::Borrowed(flat);
@@ -649,8 +635,7 @@ impl PlBinaryArray {
         })
     }
 
-    /// Borrows this array as a [`Flat`] one, if its offsets already hold the range of every element
-    /// and its mask one bit per element.
+    /// Borrows this array as a [`Flat`] one, if it is already flat.
     #[inline]
     pub fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: the offsets of a flat array hold the range of every element, and its mask one
@@ -739,8 +724,7 @@ impl PartialEq for PlBinaryArray {
 
 impl Eq for PlBinaryArray {}
 
-/// Compares an array of unknown representation against a flat one; see [`PartialEq<PlBinaryArray>
-/// for Flat<PlBinaryArray>`](Flat).
+/// Compares an array of unknown representation against a flat one.
 impl PartialEq<Flat<PlBinaryArray>> for PlBinaryArray {
     #[inline]
     fn eq(&self, other: &Flat<PlBinaryArray>) -> bool {

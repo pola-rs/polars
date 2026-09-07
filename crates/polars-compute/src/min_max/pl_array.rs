@@ -11,8 +11,7 @@ use polars_utils::min_max::MinMax;
 use super::MinMaxKernel;
 use crate::boolean::{all, any};
 
-/// Folds the non-null elements of `arr` with `f`, reading a scalar chunk as the one element it
-/// repeats.
+/// Folds the non-null elements of `arr` with `f`, reading a scalar chunk as the one it repeats.
 fn reduce_values<'a, A, F>(arr: &'a A, f: F) -> Option<A::ValueT<'a>>
 where
     A: StaticArray,
@@ -54,15 +53,13 @@ where
 
 /// What is left of a primitive chunk for a kernel to reduce.
 enum Values<'a, T> {
-    /// The one value every element of the chunk holds, at least one of which is not null. It is
-    /// its own extremum, so no kernel ever sees it.
+    /// The one value every element of the chunk holds, at least one of which is not null.
     Repeated(T),
     /// The values, one per element, and the mask that says which of them are there at all.
     Flat(&'a [T], Option<&'a Bitmap>),
 }
 
-/// What `arr` leaves for a kernel to reduce, or `None` where it leaves nothing: a chunk of no
-/// elements, or one whose every element is null, has no extremum.
+/// What `arr` leaves for a kernel to reduce, or `None` where it leaves nothing.
 fn values_of<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Option<Values<'_, T>> {
     // A chunk with nothing but nulls in it, an empty one included, has no extremum.
     if arr.null_count() == arr.len() {
@@ -84,8 +81,7 @@ fn values_of<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Option<Values<'_, T>> 
     Some(Values::Flat(values.as_slice(), validity))
 }
 
-/// Reduces `arr` to its extremum, folding the elements it lays out one per slot with `flat` and
-/// reading the one value it repeats, where that is all it holds, through `repeated`.
+/// Reduces `arr` to its extremum, with `flat` over a flat chunk and `repeated` over a scalar one.
 pub(super) fn reduce_flat<T, R, F, G>(arr: &PlPrimitiveArray<T>, repeated: F, flat: G) -> Option<R>
 where
     T: NativeType,
@@ -153,8 +149,7 @@ pub(super) fn min_max_propagate_nan<T: MinMax>(
     )
 }
 
-/// `false` orders before `true`, so the minimum is the conjunction of the non-null values and the
-/// maximum is their disjunction: both already read a scalar chunk in `O(1)`.
+/// `false` orders before `true`, so the minimum is the conjunction and the maximum the disjunction.
 impl MinMaxKernel for PlBooleanArray {
     type Scalar<'a> = bool;
 

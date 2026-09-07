@@ -17,8 +17,7 @@ impl BooleanUniqueKernelState {
         Self::default()
     }
 
-    /// Records what an array of `len` elements holds, `null_count` of which are null and
-    /// `num_trues` of which are a non-null `true`.
+    /// Records what an array of `len` elements holds, `null_count` null and `num_trues` true.
     fn see(&mut self, len: usize, null_count: usize, num_trues: usize) {
         if len == 0 {
             return;

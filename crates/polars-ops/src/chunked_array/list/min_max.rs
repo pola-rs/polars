@@ -40,8 +40,7 @@ where
         .collect()
 }
 
-/// Reduces each list of `arr` to one element, reading the offsets and the values in whatever
-/// representation each is in.
+/// Reduces each list of `arr` to one element, in whatever representation each part is in.
 fn dispatch_min<T>(arr: &PlListArray) -> PlPrimitiveArray<T>
 where
     T: NativeType,
@@ -157,8 +156,7 @@ where
         .collect()
 }
 
-/// Reduces each list of `arr` to one element, reading the offsets and the values in whatever
-/// representation each is in.
+/// Reduces each list of `arr` to one element, in whatever representation each part is in.
 fn dispatch_max<T>(arr: &PlListArray) -> PlPrimitiveArray<T>
 where
     T: NativeType,

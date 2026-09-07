@@ -3,8 +3,7 @@ use polars_core::prelude::*;
 use polars_core::utils::align_chunks_ternary;
 use polars_core::with_match_physical_numeric_polars_type;
 
-/// Defines a fused elementwise kernel over three chunks, one that reads each of them in whatever
-/// representation it is in rather than having it written out first.
+/// Defines a fused elementwise kernel over three chunks, in whatever representation each is in.
 macro_rules! fused_kernel {
     ($(#[$meta:meta])* $name:ident, |$a:ident, $b:ident, $c:ident| $fuse:expr) => {
         $(#[$meta])*

@@ -26,8 +26,7 @@ macro_rules! with_match_arrow_primitive_type {(
     }
 })}
 
-/// [`with_match_arrow_primitive_type`] over the [`PrimitiveType`](arrow::types::PrimitiveType) an
-/// array of `polars-array` carries, which is what the encoder dispatches on.
+/// [`with_match_arrow_primitive_type`] over the `PrimitiveType` an array of `polars-array` carries.
 #[macro_export]
 macro_rules! with_match_pl_primitive_type {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*

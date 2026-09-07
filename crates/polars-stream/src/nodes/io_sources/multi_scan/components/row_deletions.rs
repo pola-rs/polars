@@ -612,8 +612,7 @@ impl ExternalFilterMask {
         phys_slice
     }
 
-    /// The mask, in whichever representation it is in: one repeated bit deletes either every row
-    /// or none of them, and stands for that without being written out one bit per row.
+    /// The mask, in whichever representation it is in: one repeated bit deletes every row or none.
     fn get_mask(&self) -> PlBitmap {
         let (Self::Iceberg { mask } | Self::DeltaDeletionVector { mask }) = self;
 

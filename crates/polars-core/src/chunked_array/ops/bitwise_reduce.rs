@@ -3,8 +3,7 @@ use polars_compute::bitwise::BitwiseKernel;
 
 use super::{BooleanType, ChunkBitwiseReduce, ChunkedArray, PolarsNumericType};
 
-/// The kernels read a chunk in whichever representation it is in: a scalar one reduces to the
-/// single value it repeats without being walked. See `polars_compute::bitwise`.
+/// The kernels read a chunk in whichever representation it is in.
 impl<T> ChunkBitwiseReduce for ChunkedArray<T>
 where
     T: PolarsNumericType,

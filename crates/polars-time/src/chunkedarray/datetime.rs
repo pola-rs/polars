@@ -7,8 +7,7 @@ use polars_ops::chunked_array::datetime::replace_time_zone;
 
 use super::*;
 
-/// The column read as its local wall time, so that a value can be asked what calendar date and
-/// time it names in its own time zone.
+/// The column read as its local wall time, in its own time zone.
 fn local(ca: &DatetimeChunked) -> Cow<'_, DatetimeChunked> {
     match ca.dtype() {
         #[cfg(feature = "timezones")]
@@ -25,8 +24,7 @@ fn local(ca: &DatetimeChunked) -> Cow<'_, DatetimeChunked> {
     }
 }
 
-/// Extracts one field of the local wall time of every element, with the timestamp unit of the
-/// column picking which of the three extractions is applied.
+/// Extracts one field of the local wall time of every element, per the column's timestamp unit.
 macro_rules! extract {
     ($ca:expr, $ns:ident, $us:ident, $ms:ident) => {{
         let ca = $ca;

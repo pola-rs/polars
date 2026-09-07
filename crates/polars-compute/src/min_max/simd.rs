@@ -148,9 +148,7 @@ where
     Some(state)
 }
 
-/// The [`MinMaxKernel`] of an Arrow chunk, which holds one slot per element throughout — one of
-/// the two layouts the kernels below read. Its buffers are handed over as they are, and it is
-/// those kernels that reduce them.
+/// The [`MinMaxKernel`] of an Arrow chunk, which holds one slot per element throughout.
 macro_rules! impl_arrow_min_max_kernel {
     ($T:ty) => {
         impl MinMaxKernel for PrimitiveArray<$T> {
@@ -185,9 +183,7 @@ macro_rules! impl_arrow_min_max_kernel {
 
 macro_rules! impl_min_max_kernel_int {
     ($T:ty, $N:literal) => {
-        /// An integer never is NaN, so both families of kernel reduce it the same way. A chunk
-        /// that repeats one value is that value, read in `O(1)`; anything else is reduced a
-        /// vector at a time.
+        /// An integer never is NaN, so both families of kernel reduce it the same way.
         impl MinMaxKernel for PlPrimitiveArray<$T> {
             type Scalar<'a> = $T;
 
@@ -299,9 +295,7 @@ impl_min_max_kernel_int!(i64, 8);
 
 macro_rules! impl_min_max_kernel_float {
     ($T:ty, $N:literal) => {
-        /// A float has a NaN to answer for, so the two families of kernel part ways: one folds it
-        /// away, the other carries it out. A chunk that repeats one value hands that value to
-        /// both — it is the only value there is, NaN or not.
+        /// A float has a NaN to answer for, so the two families of kernel part ways.
         impl MinMaxKernel for PlPrimitiveArray<$T> {
             type Scalar<'a> = $T;
 

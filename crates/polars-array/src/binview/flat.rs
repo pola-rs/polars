@@ -7,8 +7,7 @@ use polars_buffer::Buffer;
 use super::{PlBinaryViewArray, PlBinaryViewIter};
 use crate::flat::Flat;
 
-/// The methods a [`PlBinaryViewArray`] gains from having one slot per element in its views and its
-/// validity mask.
+/// The methods a [`PlBinaryViewArray`] gains from holding one view and one mask bit per element.
 impl Flat<PlBinaryViewArray> {
     /// The backing views buffer, holding exactly [`len`](PlBinaryViewArray::len) slots.
     #[inline(always)]
@@ -16,8 +15,7 @@ impl Flat<PlBinaryViewArray> {
         &self.as_array().views
     }
 
-    /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
-    /// [`len`](PlBinaryViewArray::len) bits.
+    /// The validity mask, if any element may be null, as a [`Bitmap`] of one bit per element.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
         self.as_array().validity.as_ref()
@@ -137,8 +135,7 @@ impl<'a> IntoIterator for &'a Flat<PlBinaryViewArray> {
     }
 }
 
-/// Compares an array of unknown representation against a flat one; see
-/// [`PartialEq<PlBinaryViewArray> for Flat<PlBinaryViewArray>`](Flat).
+/// Compares an array of unknown representation against a flat one.
 impl PartialEq<Flat<PlBinaryViewArray>> for PlBinaryViewArray {
     #[inline]
     fn eq(&self, other: &Flat<PlBinaryViewArray>) -> bool {

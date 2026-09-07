@@ -89,8 +89,7 @@ pub trait IfThenElseKernel: StaticArray {
         Self::if_then_else_flat_broadcast_false(&mask.to_flat(), &if_true.to_flat(), if_false)
     }
 
-    /// As [`Self::if_then_else`], with a single value standing for either side. The result covers
-    /// as many elements as the mask.
+    /// As [`Self::if_then_else`], with a single value standing for either side.
     fn if_then_else_broadcast_both(
         mask: PlBitmapRef<'_>,
         if_true: Self::ValueT<'_>,

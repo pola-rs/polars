@@ -14,8 +14,7 @@ use crate::builder::{
 /// A builder of a [`PlBinaryArray`].
 pub struct PlBinaryArrayBuilder {
     values: Vec<u8>,
-    /// The start of every element appended so far, plus the end of the last: one slot more than the
-    /// elements, which is what the offsets of a flat binary array hold.
+    /// The start of every element appended so far, plus the end of the last.
     offsets: Vec<u64>,
     validity: OptBitmapBuilder,
 }

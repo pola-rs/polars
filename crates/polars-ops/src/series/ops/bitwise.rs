@@ -7,8 +7,7 @@ use polars_error::{PolarsResult, polars_bail};
 
 use super::*;
 
-/// The kernels read a chunk in whichever representation it is in: the value a scalar chunk
-/// repeats is counted once and the count repeated in turn. See `polars_compute::bitwise`.
+/// The kernels read a chunk in whichever representation it is in, counting a scalar one once.
 macro_rules! apply_bitwise_op {
     ($($op:ident),+ $(,)?) => {
         $(

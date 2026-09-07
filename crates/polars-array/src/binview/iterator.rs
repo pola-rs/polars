@@ -6,8 +6,7 @@ use polars_utils::slice_broadcast_iter::SliceBroadcastIter;
 use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 use crate::broadcast::broadcast_slice;
 
-/// Iterator over the values of a [`PlBinaryViewArray`](super::PlBinaryViewArray), ignoring
-/// validity.
+/// Iterator over the values of a [`super::PlBinaryViewArray`], ignoring validity.
 #[derive(Clone)]
 pub struct PlBinaryViewValuesIter<'a> {
     views: SliceBroadcastIter<'a, View>,
@@ -64,8 +63,7 @@ impl<'a> Iterator for PlBinaryViewValuesIter<'a> {
         Some(Self::get(self.buffers, view))
     }
 
-    /// Hoists the representation out of the loop: flat views fold as the slice they are, and scalar
-    /// ones fold over the single view they hold.
+    /// Hoists the representation out of the loop: flat views fold as the slice they are.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where
@@ -231,8 +229,7 @@ mod tests {
     use crate::PlBinaryViewArray;
     use crate::iterator_tests::assert_iterates;
 
-    /// The elements of a flat array: one that is inlined into its view, one that is not, and one
-    /// that is empty.
+    /// The elements of a flat array: one inlined into its view, one that is not, and one empty.
     fn elements() -> [&'static [u8]; 3] {
         [
             b"ab",

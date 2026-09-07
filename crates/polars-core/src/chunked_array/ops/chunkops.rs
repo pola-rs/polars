@@ -10,8 +10,7 @@ use crate::chunked_array::flags::StatisticsFlags;
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::utils::slice_offsets;
 
-/// Concatenates the chunks of a [`ChunkedArray`] into the single chunk they hold together. They
-/// are all of the same physical type, which is what `concatenate` needs, so this cannot fail.
+/// Concatenates the chunks of a [`ChunkedArray`] into the single chunk they hold together.
 pub(crate) fn concatenate_chunks(chunks: &[PlArrayRef]) -> PlArrayRef {
     let refs: Vec<&dyn PlArray> = chunks.iter().map(|chunk| &**chunk).collect();
     polars_array::concatenate::concatenate(&refs)

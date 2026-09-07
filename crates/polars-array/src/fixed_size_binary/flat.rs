@@ -6,25 +6,21 @@ use polars_buffer::Buffer;
 use super::PlFixedSizeBinaryArray;
 use crate::flat::Flat;
 
-/// The methods a [`PlFixedSizeBinaryArray`] gains from holding the bytes of every element and one
-/// validity bit per element.
+/// The methods a [`PlFixedSizeBinaryArray`] gains from holding one slot and one bit per element.
 impl Flat<PlFixedSizeBinaryArray> {
-    /// The backing values buffer, holding exactly [`len`](PlFixedSizeBinaryArray::len) `*`
-    /// [`width`](PlFixedSizeBinaryArray::width) bytes.
+    /// The backing values buffer, holding `len * width` bytes.
     #[inline(always)]
     pub const fn values(&self) -> &Buffer<u8> {
         &self.as_array().values
     }
 
-    /// The values as a slice of exactly [`len`](PlFixedSizeBinaryArray::len) `*`
-    /// [`width`](PlFixedSizeBinaryArray::width) bytes.
+    /// The values as a slice of `len * width` bytes.
     #[inline(always)]
     pub fn as_slice(&self) -> &[u8] {
         self.as_array().values.as_slice()
     }
 
-    /// The validity mask, if any element may be null, as an ordinary [`Bitmap`] of exactly
-    /// [`len`](PlFixedSizeBinaryArray::len) bits.
+    /// The validity mask, if any element may be null, as a [`Bitmap`] of one bit per element.
     #[inline]
     pub fn validity(&self) -> Option<&Bitmap> {
         self.as_array().validity.as_ref()

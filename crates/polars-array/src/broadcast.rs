@@ -37,8 +37,7 @@ pub const fn is_scalar_buffer_len(buffer_len: usize, length: usize) -> bool {
     buffer_len == 1 || (length == 0 && buffer_len == 0)
 }
 
-/// The number of slots a scalar backing buffer holds for an array of `length` elements: one, or
-/// none at all for an array of no elements.
+/// The number of slots a scalar backing buffer holds for `length` elements: one, or none if empty.
 #[inline]
 pub const fn scalar_buffer_len(length: usize) -> usize {
     (length > 0) as usize
@@ -71,8 +70,7 @@ pub(crate) fn assert_broadcastable(length: usize, to_length: usize) {
     );
 }
 
-/// Whether an offsets buffer of length `offsets_len` is *flat* for a list or binary array of length
-/// `length`.
+/// Whether `offsets_len` offsets are *flat* for a list or binary array of `length` elements.
 #[inline]
 pub const fn is_flat_offsets_len(offsets_len: usize, length: usize) -> bool {
     match offsets_len.checked_sub(1) {
@@ -81,8 +79,7 @@ pub const fn is_flat_offsets_len(offsets_len: usize, length: usize) -> bool {
     }
 }
 
-/// Whether an offsets buffer of length `offsets_len` is *scalar* for a list or binary array of
-/// length `length`.
+/// Whether `offsets_len` offsets are *scalar* for a list or binary array of `length` elements.
 #[inline]
 pub const fn is_scalar_offsets_len(offsets_len: usize, length: usize) -> bool {
     match offsets_len.checked_sub(1) {
@@ -91,15 +88,13 @@ pub const fn is_scalar_offsets_len(offsets_len: usize, length: usize) -> bool {
     }
 }
 
-/// Whether an offsets buffer of length `offsets_len` is valid for a list or binary array of length
-/// `length`.
+/// Whether `offsets_len` offsets are valid for a list or binary array of `length` elements.
 #[inline]
 pub const fn is_valid_offsets_len(offsets_len: usize, length: usize) -> bool {
     is_flat_offsets_len(offsets_len, length) || is_scalar_offsets_len(offsets_len, length)
 }
 
-/// Whether a values array of `values_len` values is *flat* for a fixed size list array of `length`
-/// elements that are `width` values wide.
+/// Whether `values_len` values are *flat* for `length` elements that are `width` values wide.
 #[inline]
 pub const fn is_flat_fixed_size_values_len(values_len: usize, width: usize, length: usize) -> bool {
     match length.checked_mul(width) {
@@ -109,8 +104,7 @@ pub const fn is_flat_fixed_size_values_len(values_len: usize, width: usize, leng
     }
 }
 
-/// Whether a values array of `values_len` values is *scalar* for a fixed size list array of
-/// `length` elements that are `width` values wide.
+/// Whether `values_len` values are *scalar* for `length` elements that are `width` values wide.
 #[inline]
 pub const fn is_scalar_fixed_size_values_len(
     values_len: usize,
@@ -122,8 +116,7 @@ pub const fn is_scalar_fixed_size_values_len(
     values_len == width || (length == 0 && values_len == 0)
 }
 
-/// Whether a values array of `values_len` values is valid for a fixed size list array of `length`
-/// elements that are `width` values wide.
+/// Whether `values_len` values are valid for `length` elements that are `width` values wide.
 #[inline]
 pub const fn is_valid_fixed_size_values_len(
     values_len: usize,
@@ -134,8 +127,7 @@ pub const fn is_valid_fixed_size_values_len(
         || is_scalar_fixed_size_values_len(values_len, width, length)
 }
 
-/// An empty [`Bitmap`] that lives for the whole program, to borrow where a mask over no elements
-/// is called for.
+/// An empty [`Bitmap`] that lives for the whole program, to borrow for a mask over no elements.
 #[inline(always)]
 pub(crate) fn empty_bitmap() -> &'static Bitmap {
     static EMPTY: Bitmap = Bitmap::new();
@@ -225,8 +217,7 @@ pub(crate) fn validity_covering_unchecked(
     validity.map(PlBitmap::into_flat_or_scalar)
 }
 
-/// The offsets a list or binary array of `length` elements stores for `offsets`, which are flat or
-/// scalar for it.
+/// The offsets a list or binary array of `length` elements stores for `offsets`.
 #[inline]
 pub(crate) fn normalize_offsets(offsets: Buffer<u64>, length: usize) -> Buffer<u64> {
     if length == 0 && offsets.len() != 1 {
@@ -236,8 +227,7 @@ pub(crate) fn normalize_offsets(offsets: Buffer<u64>, length: usize) -> Buffer<u
     }
 }
 
-/// The values a fixed size list array of `length` elements stores for `values`, which are flat or
-/// scalar for it.
+/// The values a fixed size list array of `length` elements stores for `values`.
 #[inline]
 pub(crate) fn normalize_values(mut values: Box<dyn PlArray>, length: usize) -> Box<dyn PlArray> {
     if length == 0 && !values.is_empty() {
@@ -246,8 +236,7 @@ pub(crate) fn normalize_values(mut values: Box<dyn PlArray>, length: usize) -> B
     values
 }
 
-/// Slices a backing buffer that is flat or scalar for an array of `array_len` elements down to the
-/// `length` slots at `offset`.
+/// Slices a buffer that is flat or scalar for `array_len` elements to `length` slots at `offset`.
 ///
 /// # Safety
 /// `offset + length` must not exceed `array_len`.
@@ -265,8 +254,7 @@ pub(crate) unsafe fn slice_buffer<T>(
     }
 }
 
-/// Slices a backing bitmap that is flat or scalar for an array of `array_len` elements down to the
-/// `length` bits at `offset`, as [`slice_buffer`].
+/// Slices a bitmap that is flat or scalar for `array_len` elements to `length` bits at `offset`.
 ///
 /// # Safety
 /// `offset + length` must not exceed `array_len`.
@@ -284,8 +272,7 @@ pub(crate) unsafe fn slice_bitmap(
     }
 }
 
-/// Slices the validity mask of an array of `array_len` elements down to the `length` bits at
-/// `offset`, as [`slice_bitmap`].
+/// Slices the validity mask of an array of `array_len` elements to the `length` bits at `offset`.
 ///
 /// # Safety
 /// `offset + length` must not exceed `array_len`.
@@ -301,8 +288,7 @@ pub(crate) unsafe fn slice_validity(
     }
 }
 
-/// Slices the offsets of a list or binary array of `array_len` elements down to the `length`
-/// elements at `offset`.
+/// Slices the offsets of a list or binary array to the `length` elements at `offset`.
 ///
 /// # Safety
 /// `offset + length` must not exceed `array_len`.
@@ -320,8 +306,7 @@ pub(crate) unsafe fn slice_offsets(
     }
 }
 
-/// Slices a backing buffer of a fixed size array of `array_len` elements that are `width` slots
-/// wide down to the `length` elements at `offset`, a width at a time.
+/// Slices a buffer of `array_len` elements that are `width` slots wide, a width at a time.
 ///
 /// # Safety
 /// `offset + length` must not exceed `array_len`.
@@ -340,8 +325,7 @@ pub(crate) unsafe fn slice_fixed_size_buffer<T>(
     }
 }
 
-/// Slices the values array of a fixed size list array of `array_len` elements that are `width`
-/// values wide down to the `length` elements at `offset`, as [`slice_fixed_size_buffer`].
+/// Slices the values array of a fixed size list array to the `length` elements at `offset`.
 ///
 /// # Safety
 /// `offset + length` must not exceed `array_len`.
@@ -364,8 +348,7 @@ pub(crate) unsafe fn slice_fixed_size_values(
 mod tests {
     use super::*;
 
-    /// Slicing leaves a scalar buffer alone — every element of the slice reads the same slot — but
-    /// an empty slice has no element left to read it, so the slot goes.
+    /// Slicing leaves a scalar buffer alone, but an empty slice has no element left to read it.
     #[test]
     fn slicing_to_nothing_drops_the_scalar_slot() {
         unsafe {
@@ -458,9 +441,7 @@ mod tests {
         );
     }
 
-    /// A mask covers an array when its own length is the array's, whichever representation it is
-    /// in — which is the whole of what a constructor has left to check, and what lets one entry
-    /// point take both where two were needed before.
+    /// A mask covers an array when its own length is the array's, in either representation.
     #[test]
     fn a_mask_covers_an_array_in_either_representation() {
         let flat = PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true]));

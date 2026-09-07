@@ -47,8 +47,7 @@ impl PlStructArrayBuilder {
         self.fields.len()
     }
 
-    /// The builders of the fields of the built array, so that the element every field holds for
-    /// one element of the array can be appended to them directly.
+    /// The builders of the fields of the built array, appended to directly.
     #[inline]
     pub fn fields_mut(&mut self) -> &mut [Box<dyn PlArrayBuilder>] {
         &mut self.fields

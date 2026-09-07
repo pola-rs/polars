@@ -3,8 +3,7 @@
 
 use polars_array::PlBooleanArray;
 
-/// The position in `indices` of the first index that gathers `extreme`, or of the first that
-/// gathers a non-null value at all.
+/// The position in `indices` of the first index that gathers `extreme`, or any non-null value.
 ///
 /// # Safety
 /// Every index must be in bounds of `arr`.
@@ -44,8 +43,7 @@ unsafe fn take_arg_bool_nulls<I: IntoIterator<Item = usize>>(
     first_non_null_pos
 }
 
-/// [`take_arg_bool_nulls`] for a chunk with no nulls in it, where every index gathers a value and
-/// so position zero stands in wherever no index gathers the extreme one.
+/// [`take_arg_bool_nulls`] for a chunk with no nulls, where position zero stands in for a miss.
 ///
 /// # Safety
 /// Every index must be in bounds of `arr`.

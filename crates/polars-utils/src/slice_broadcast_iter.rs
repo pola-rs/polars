@@ -2,8 +2,7 @@ use core::iter::FusedIterator;
 use core::mem::size_of;
 use core::{fmt, slice};
 
-/// An iterator over a slice that is either flat (one slot per element) or scalar (a single slot
-/// every element shares).
+/// An iterator over a slice that is either flat (one slot per element) or scalar (one slot).
 pub struct SliceBroadcastIter<'a, T> {
     repr: Repr<'a, T>,
 }
@@ -56,8 +55,7 @@ impl<T: fmt::Debug> fmt::Debug for SliceBroadcastIter<'_, T> {
 }
 
 impl<'a, T> SliceBroadcastIter<'a, T> {
-    /// Broadcast `src` to length `n`. Returns `None` unless `src.len() == n` (normal mode) or
-    /// `src.len() == 1` (broadcast mode).
+    /// Broadcast `src` to length `n`.
     #[inline]
     pub fn new_broadcast(src: &'a [T], n: usize) -> Option<Self> {
         if src.len() == n {
@@ -122,8 +120,7 @@ impl<'a, T> SliceBroadcastIter<'a, T> {
         (i < self.len()).then(|| unsafe { self.get_unchecked(i) })
     }
 
-    /// Collapse the mode into a single branch so the caller can run a monomorphic, vectorizable
-    /// loop: `Ok(slice)` in normal mode, `Err((item, count))` in broadcast mode.
+    /// Collapse the mode into a single branch so the caller can run a monomorphic loop.
     #[inline]
     pub fn split(self) -> Result<&'a [T], (&'a T, usize)> {
         match self.repr {
@@ -181,8 +178,7 @@ impl<'a, T> Iterator for SliceBroadcastIter<'a, T> {
         }
     }
 
-    /// Hoists the mode branch out of the loop. `for_each`, `sum`, `collect` and friends route
-    /// through here.
+    /// Hoists the mode branch out of the loop.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where
@@ -222,8 +218,7 @@ impl<'a, T> DoubleEndedIterator for SliceBroadcastIter<'a, T> {
         }
     }
 
-    /// Hoists the mode branch out of the loop, the way [`Iterator::fold`] does. `rev().collect()`
-    /// and friends route through here.
+    /// Hoists the mode branch out of the loop, the way [`Iterator::fold`] does.
     #[inline]
     fn rfold<B, F>(self, init: B, mut f: F) -> B
     where

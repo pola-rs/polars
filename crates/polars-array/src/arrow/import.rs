@@ -118,8 +118,7 @@ pub fn utf8_from_arrow<O: Offset>(array: &Utf8Array<O>) -> PlBinaryArray {
     }
 }
 
-/// Imports an Arrow binary or UTF-8 view array as a [`PlBinaryViewArray`] of its bytes, in
-/// `O(1)`.
+/// Imports an Arrow binary or UTF-8 view array as a [`PlBinaryViewArray`] of its bytes, in `O(1)`.
 pub fn binary_view_from_arrow<T: ViewType + ?Sized>(
     array: &BinaryViewArrayGeneric<T>,
 ) -> PlBinaryViewArray {
@@ -135,8 +134,7 @@ pub fn binary_view_from_arrow<T: ViewType + ?Sized>(
     }
 }
 
-/// Imports an Arrow [`Utf8ViewArray`](arrow::array::Utf8ViewArray) as a [`PlUtf8ViewArray`], which
-/// is `O(1)`.
+/// Imports an Arrow `Utf8ViewArray` as a [`PlUtf8ViewArray`], which is `O(1)`.
 pub fn utf8_view_from_arrow(array: &BinaryViewArrayGeneric<str>) -> PlUtf8ViewArray {
     // SAFETY: the elements of an Arrow `Utf8ViewArray` are valid UTF-8.
     unsafe { PlUtf8ViewArray::from_binview_unchecked(binary_view_from_arrow(array)) }
@@ -172,8 +170,7 @@ pub fn list_from_arrow<O: Offset>(array: &ListArray<O>) -> PlListArray {
     }
 }
 
-/// Imports an Arrow [`FixedSizeListArray`] as a [`PlFixedSizeListArray`], importing its values
-/// along with it, which is `O(1)`.
+/// Imports an Arrow [`FixedSizeListArray`] as a [`PlFixedSizeListArray`], values and all.
 pub fn fixed_size_list_from_arrow(array: &FixedSizeListArray) -> PlFixedSizeListArray {
     let values = from_arrow(&**array.values());
 
@@ -189,8 +186,7 @@ pub fn fixed_size_list_from_arrow(array: &FixedSizeListArray) -> PlFixedSizeList
     }
 }
 
-/// Imports an Arrow [`StructArray`] as a [`PlStructArray`], importing its fields along with it,
-/// which is `O(fields)`.
+/// Imports an Arrow [`StructArray`] as a [`PlStructArray`], fields and all, in `O(fields)`.
 pub fn struct_from_arrow(array: &StructArray) -> PlStructArray {
     let fields = array
         .values()
@@ -238,8 +234,7 @@ fn downcast<A: Array + 'static>(array: &dyn Array) -> &A {
         .expect("the physical type of an arrow array determines the array it downcasts to")
 }
 
-/// Imports an Arrow primitive array of `primitive` elements as a [`PlPrimitiveArray`] of the Rust
-/// type they are of.
+/// Imports an Arrow primitive array of `primitive` elements as a [`PlPrimitiveArray`].
 fn primitive_from_arrow_dyn(array: &dyn Array, primitive: PrimitiveType) -> Box<dyn PlArray> {
     macro_rules! import {
         ($T:ty) => {

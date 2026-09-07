@@ -1,5 +1,4 @@
-//! A [`ChunkedArray`] whose every chunk is flat, which is what handing out a *slice* of the values
-//! needs: a [`scalar`](polars_array::broadcast) chunk has one value where a slice needs `len`.
+//! A [`ChunkedArray`] whose every chunk is flat, which is what handing out a *slice* needs.
 
 use std::borrow::Cow;
 
@@ -9,21 +8,18 @@ use polars_buffer::Buffer;
 use crate::prelude::*;
 
 impl<T: PolarsDataType> ChunkedArray<T> {
-    /// Whether every chunk of this array is [`flat`](polars_array::broadcast). This is what
-    /// [`ChunkedArray::as_flat`] answers with a borrow rather than with a `bool`.
+    /// Whether every chunk of this array is [`flat`](polars_array::broadcast).
     pub fn is_flat(&self) -> bool {
         self.downcast_iter().all(StaticArray::is_flat)
     }
 
-    /// Borrows this array as one whose every chunk is flat, or `None` if any chunk is scalar. This
-    /// is the `O(n_chunks)` half of [`ChunkedArray::to_flat`]: it writes nothing out.
+    /// Borrows this array as one whose every chunk is flat, or `None` if any chunk is scalar.
     pub fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: `is_flat` is exactly the invariant of `Flat` for a `ChunkedArray`.
         self.is_flat().then(|| unsafe { Flat::new_ref(self) })
     }
 
-    /// Returns this array with every chunk in the flat representation: `O(n_chunks)` for an array
-    /// that is laid out flat, `O(len)` for the chunks of one that is not, which are written out.
+    /// Returns this array with every chunk flat, writing out the chunks that are not.
     pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         if self.is_flat() {
             // SAFETY: just checked.
@@ -46,8 +42,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         Cow::Owned(flat)
     }
 
-    /// Writes out every scalar chunk of this array in place, leaving it flat. This is
-    /// [`ChunkedArray::to_flat`] for a caller that needs the array *itself* to be flat.
+    /// Writes out every scalar chunk of this array in place, leaving it flat.
     pub fn flatten_mut(&mut self) {
         if self.is_flat() {
             return;
@@ -65,8 +60,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 }
 
 impl<T: PolarsNumericType> ChunkedArray<T> {
-    /// The values of this array as one contiguous slice, writing out only a chunk whose values
-    /// repeat a single value.
+    /// The values of this array as one contiguous slice, writing out a scalar chunk only.
     pub fn to_data_views(&self) -> Vec<Cow<'_, Buffer<T::Native>>> {
         self.downcast_iter()
             .map(|arr| arr.to_flat_values())
@@ -83,8 +77,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
     }
 }
 
-/// The chunks of a [`ChunkedArray`] that is known to be flat. An extension trait because [`Flat`]
-/// belongs to `polars-array`, which is what keeps the array it wraps out of reach.
+/// The chunks of a [`ChunkedArray`] that is known to be flat.
 pub trait FlatChunkedArray<T: PolarsDataType> {
     /// The chunks, each as the flat array it is.
     fn flat_chunks(&self) -> impl DoubleEndedIterator<Item = &Flat<T::Array>>;
@@ -120,19 +113,15 @@ impl<T: PolarsDataType> FlatChunkedArray<T> for Flat<ChunkedArray<T>> {
     }
 }
 
-/// The values of a numeric [`ChunkedArray`] that is known to be flat, as slices. This is what the
-/// flatness is for: a flat chunk holds one slot per element, so its values are a `&[T::Native]`.
+/// The values of a numeric [`ChunkedArray`] that is known to be flat, as slices.
 pub trait FlatNumericChunkedArray<T: PolarsNumericType> {
-    /// The values of this array as one contiguous slice. Errors if this array has more than one
-    /// chunk, or any null: neither leaves one run of values to hand out.
+    /// The values of this array as one contiguous slice.
     fn cont_slice(&self) -> PolarsResult<&[T::Native]>;
 
-    /// The values of this array as one contiguous mutable slice, or `None` if there is no single
-    /// run of them to hand out, or the buffer holding them is shared with another array.
+    /// The values as one contiguous mutable slice, or `None` if there is no single run to hand out.
     fn cont_slice_mut(&mut self) -> Option<&mut [T::Native]>;
 
-    /// The values of this array, one slice per chunk. NOTE: null values should be taken into
-    /// account by the user of these slices, as they are handled separately.
+    /// The values of this array, one slice per chunk.
     fn data_views(&self) -> impl DoubleEndedIterator<Item = &[T::Native]>;
 }
 

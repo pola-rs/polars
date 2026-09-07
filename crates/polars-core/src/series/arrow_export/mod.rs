@@ -113,8 +113,7 @@ pub struct ToArrowConverter {
 }
 
 impl ToArrowConverter {
-    /// Exports one chunk of a [`Series`], crossing it over to Arrow first: [`Self::array_to_arrow`]
-    /// for a caller that holds the chunk itself rather than an Arrow array.
+    /// Exports one chunk of a [`Series`], crossing it over to Arrow first.
     pub fn chunk_to_arrow<'a>(
         &mut self,
         chunk: &dyn polars_array::PlArray,

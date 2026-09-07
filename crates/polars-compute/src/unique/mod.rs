@@ -10,8 +10,7 @@
 /// `State` between many chunks and allows for different implementations for the same array (e.g. a
 /// maintain order and no maintain-order variant).
 pub trait RangedUniqueKernel {
-    /// The array of `polars-array` whose elements are appended to the state, and which the unique
-    /// ones come back in.
+    /// The array of `polars-array` whose elements are appended, and which the unique ones come in.
     type Array;
 
     /// Returns whether all the values in the whole range are in the state

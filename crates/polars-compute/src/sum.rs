@@ -178,8 +178,7 @@ pub trait WrappingSum: WrappingAdd + Zero + Sized {
     fn wrapping_sum_with_validity(vals: &[Self], mask: &BitMask) -> Self;
 }
 
-/// The validity mask of `arr` laid out one bit per element, for the kernels below to read as
-/// words, or `None` where every element is valid.
+/// The validity mask of `arr` laid out one bit per element, or `None` where every element is valid.
 fn flat_mask_of<T: NativeType>(arr: &PlPrimitiveArray<T>, count: usize) -> Option<Cow<'_, Bitmap>> {
     (count < arr.len()).then(|| {
         arr.validity()

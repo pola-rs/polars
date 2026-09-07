@@ -124,9 +124,7 @@ pub trait PrimitiveArithmeticKernelImpl: NativeType {
     fn prim_true_div_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> POut<Self::TrueDivT>;
 }
 
-/// The kernels of [`PrimitiveArithmeticKernelImpl`], each behind the dispatch that hands it only
-/// the part of a chunk it has to read. A chunk that repeats a single value is never written out
-/// one slot per element to get to one; see [`pl_array`].
+/// The kernels of [`PrimitiveArithmeticKernelImpl`], each behind its own dispatch.
 #[rustfmt::skip]
 impl<T: HasPrimitiveArithmeticKernel> ArithmeticKernel for PlPrimitiveArray<T> {
     type Scalar = T;

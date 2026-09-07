@@ -3,26 +3,22 @@ use arrow::trusted_len::TrustedLen;
 use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 use crate::broadcast::is_flat_fixed_size_values_len;
 
-/// Iterator over the elements of a [`PlFixedSizeBinaryArray`](super::PlFixedSizeBinaryArray),
-/// ignoring validity.
+/// Iterator over the elements of a [`super::PlFixedSizeBinaryArray`], ignoring validity.
 #[derive(Clone)]
 pub struct PlFixedSizeBinaryValuesIter<'a> {
     /// The values from the element at the front on.
     front: &'a [u8],
     /// How many bytes every element is wide.
     width: usize,
-    /// How far the front walks per element: one width for flat values, and nowhere for scalar
-    /// ones, which every position reads the same bytes of.
+    /// How far the front walks per element: one width for flat values, nowhere for scalar ones.
     stride: usize,
-    /// How many elements are left to yield, over the whole range of a `usize`: a scalar array is
-    /// as long as it says it is, and is never walked to find out.
+    /// How many elements are left to yield: a scalar array is as long as it says it is.
     remaining: usize,
 }
 
 impl<'a> PlFixedSizeBinaryValuesIter<'a> {
     /// # Safety
-    /// `values` must be flat (`length * width` bytes) or scalar (`width` bytes) for `length`, per
-    /// [`crate::broadcast`].
+    /// `values` must be flat or scalar for `length`, per [`crate::broadcast`].
     #[inline]
     pub(super) fn new(values: &'a [u8], width: usize, length: usize) -> Self {
         // Values as long as one element hold the one every position reads; values the caller
@@ -47,8 +43,7 @@ impl<'a> PlFixedSizeBinaryValuesIter<'a> {
     /// The bytes of the element `n` strides on from the front.
     ///
     /// # Safety
-    /// The values must reach `width` bytes on from that element, which they do for every element
-    /// this iterator has left to yield.
+    /// The values must reach `width` bytes on from that element, as they do for every one left.
     #[inline(always)]
     unsafe fn at(&self, n: usize) -> &'a [u8] {
         let start = n.wrapping_mul(self.stride);
@@ -60,8 +55,7 @@ impl<'a> PlFixedSizeBinaryValuesIter<'a> {
     /// Drops the front `n` elements.
     ///
     /// # Safety
-    /// `n` must not exceed the number of elements left, so that the front lands on an element the
-    /// values hold — or, for `n` elements exactly, one width past the last of them.
+    /// `n` must not exceed the number of elements left, so that the front lands in the values.
     #[inline(always)]
     unsafe fn advance(&mut self, n: usize) {
         debug_assert!(n <= self.remaining);
@@ -126,8 +120,7 @@ impl<'a> Iterator for PlFixedSizeBinaryValuesIter<'a> {
         self.next_back()
     }
 
-    /// Hoists the representation of the values out of the loop, leaving it the plain walk of a
-    /// stride it is — which is what `collect` and `for_each` route through.
+    /// Hoists the representation of the values out of the loop, leaving a plain walk of a stride.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where
@@ -214,8 +207,7 @@ impl ExactSizeIterator for PlFixedSizeBinaryValuesIter<'_> {
 
 unsafe impl TrustedLen for PlFixedSizeBinaryValuesIter<'_> {}
 
-/// Iterator over the optional elements of a
-/// [`PlFixedSizeBinaryArray`](super::PlFixedSizeBinaryArray).
+/// Iterator over the optional elements of a [`super::PlFixedSizeBinaryArray`].
 #[derive(Clone)]
 pub struct PlFixedSizeBinaryIter<'a> {
     values: PlFixedSizeBinaryValuesIter<'a>,
@@ -243,16 +235,14 @@ impl<'a> PlFixedSizeBinaryIter<'a> {
     /// The bytes of the element the values just yielded, `None` where the mask says it is null.
     ///
     /// # Safety
-    /// The mask must still cover the element the values yielded, which it does for one they
-    /// yielded at the front — the two are walked in lockstep, and the mask holds a bit for every
+    /// The mask must still cover the element the values yielded at the front.
     #[inline(always)]
     unsafe fn front(&mut self, value: &'a [u8], n: usize) -> Option<&'a [u8]> {
         // SAFETY: the mask covers the element the values yielded, per the caller.
         unsafe { self.validity.nth_unchecked(n) }.then_some(value)
     }
 
-    /// The bytes of the element the values just yielded at the back, `None` where the mask says
-    /// it is null.
+    /// The bytes of the element just yielded at the back, `None` where the mask says it is null.
     ///
     /// # Safety
     /// The mask must still cover the element the values yielded at the back.

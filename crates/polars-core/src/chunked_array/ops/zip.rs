@@ -15,9 +15,7 @@ use crate::utils::{align_chunks_binary, align_chunks_ternary};
 const SHAPE_MISMATCH_STR: &str =
     "shapes of `self`, `mask` and `other` are not suitable for `zip_with` operation";
 
-/// The result of a mask that reads the same at every element: `mask_len` is the height that mask
-/// covers, which is one for a column of a single element and the height of the column for one
-/// whose only chunk repeats a single bit.
+/// The result of a mask that reads the same at every element, over the `mask_len` it covers.
 fn if_then_else_broadcast_mask<T: PolarsDataType>(
     mask: bool,
     mask_len: usize,
@@ -34,8 +32,7 @@ where
     Ok(ret.with_name(if_true.name().clone()))
 }
 
-/// The bits of a mask chunk that [`bool_null_to_false`] left fully valid, written out one bit per
-/// element for the kernels that read them that way.
+/// The bits of a fully valid mask chunk, written out one bit per element for the kernels.
 fn mask_values(mask: &PlBooleanArray) -> Bitmap {
     bool_null_to_false(mask).into_bitmap()
 }

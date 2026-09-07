@@ -10,8 +10,7 @@ use super::align_inner_chunks;
 use crate::chunked_array::new_empty_chunk;
 use crate::prelude::*;
 
-/// Lays `elements` out as the chunk of a [`ListChunked`] of `inner_dtype`, whose values are the
-/// elements laid end to end — a null element contributing nothing to them.
+/// Lays `elements` out as the chunk of a [`ListChunked`] of `inner_dtype`, laid end to end.
 pub(crate) fn collect_list_chunk(
     elements: Vec<Option<PlArrayRef>>,
     inner_dtype: &DataType,
@@ -50,8 +49,7 @@ pub(crate) fn collect_list_chunk(
     }
 }
 
-/// Returns `arr` with its values replaced, keeping its offsets and validity mask. Panics if
-/// `values` is not as long as the values `arr` is taken over.
+/// Returns `arr` with its values replaced, keeping its offsets and validity mask.
 pub(crate) fn list_with_values(arr: &PlListArray, values: PlArrayRef) -> PlListArray {
     assert_eq!(arr.values().len(), values.len());
     let offsets_are_flat = arr.offsets_are_flat();

@@ -18,9 +18,8 @@
 
 //! Defines take kernel for [`Array`]
 //!
-//! [`take_arrow_unchecked`] reads one slot per element throughout; the kernel over the arrays of
-//! `polars-array` is [`take_unchecked`], which crosses over to it once a chunk is known to be laid
-//! out that way.
+//! [`take_arrow_unchecked`] reads one slot per element throughout; [`take_unchecked`] crosses a
+//! chunk of `polars-array` over to it once the chunk is known to be laid out that way.
 
 use arrow::array::{
     self, Array, ArrayCollectIterExt, ArrayFromIterDtype, BinaryViewArray, NullArray, StaticArray,

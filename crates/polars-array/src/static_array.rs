@@ -62,10 +62,6 @@ pub trait StaticArray: PlArray + Clone {
     type Builder: StaticArrayBuilder<Array = Self>;
 
     /// An empty builder of arrays shaped like this one.
-    ///
-    /// This is the typed counterpart of [`builder_like`](crate::builder::builder_like): a caller
-    /// that knows the array type gets a builder it can call without going through `dyn`, which is
-    /// what a loop over single elements needs to stay monomorphised.
     fn builder_like(&self) -> Self::Builder;
 
     /// Returns the element at `i`, whether or not it is null.
@@ -101,10 +97,6 @@ pub trait StaticArray: PlArray + Clone {
     }
 
     /// The values as a contiguous slice, or `None` if this array does not hold one.
-    ///
-    /// Reading elements out of a slice avoids the buffer indirection — and, for an array that may
-    /// be scalar, the per-element `broadcast_index` — that [`value_unchecked`](Self::value_unchecked)
-    /// pays, so a gather that reads one element at a time asks for the slice first.
     #[inline(always)]
     fn as_slice(&self) -> Option<&[Self::ValueT<'_>]> {
         None
@@ -116,8 +108,7 @@ pub trait StaticArray: PlArray + Clone {
     /// Returns an iterator over the optional elements.
     fn iter(&self) -> Self::IterT<'_>;
 
-    /// Returns an iterator over `length` elements, repeating the single element of this array if
-    /// that is all it holds.
+    /// Returns an iterator over `length` elements, repeating a scalar array's one element.
     fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_>;
 
     /// Returns this array with its validity mask replaced, keeping its representation.
@@ -131,16 +122,14 @@ pub trait StaticArray: PlArray + Clone {
     /// Whether every backing buffer of this array holds one slot per element.
     fn is_flat(&self) -> bool;
 
-    /// The element every element of this array equals, if it is entirely stored in the scalar
-    /// representation.
+    /// The element every element of this array equals, if it is scalar throughout.
     #[inline]
     fn scalar_value(&self) -> Option<Option<Self::ValueT<'_>>> {
         // SAFETY: the array is not empty, so element 0 is in bounds.
         (PlArray::is_scalar(self) && !self.is_empty()).then(|| unsafe { self.get_unchecked(0) })
     }
 
-    /// Returns this array in the flat representation, writing out every buffer that is scalar and
-    /// borrowing this array itself if none is.
+    /// Returns this array in the flat representation, borrowing it if it is already flat.
     #[must_use]
     fn to_flat(&self) -> Cow<'_, Flat<Self>>;
 
@@ -675,8 +664,7 @@ impl StaticArray for PlFixedSizeListArray {
     }
 }
 
-/// A [`PlStructArray`] holds no values of its own: an element is a row across the field arrays,
-/// which are reached through [`PlStructArray::fields`] and read as the arrays they are.
+/// A [`PlStructArray`] holds no values of its own: an element is a row across the field arrays.
 impl StaticArray for PlStructArray {
     type ValueT<'a> = ();
     type ZeroableValueT<'a> = ();
@@ -739,8 +727,7 @@ impl StaticArray for PlStructArray {
     }
 }
 
-/// A [`PlNullArray`] is nothing but a length: every element is null, and there is no value under
-/// the mask, so the value of an element is `()` and [`StaticArray::get`] is always `None`.
+/// A [`PlNullArray`] is nothing but a length: an element's value is `()` and `get` always `None`.
 impl StaticArray for PlNullArray {
     type ValueT<'a> = ();
     type ZeroableValueT<'a> = ();
@@ -772,8 +759,7 @@ impl StaticArray for PlNullArray {
         std::iter::repeat_n((), length)
     }
 
-    /// Returns this array unchanged: an array of nothing but nulls has no element a mask could make
-    /// valid, exactly as [`PlArray::set_validity`] documents.
+    /// Returns this array unchanged: an array of nothing but nulls has no element to make valid.
     #[inline]
     fn with_validity_typed(self, _validity: Option<PlBitmap>) -> Self {
         self
@@ -857,8 +843,7 @@ impl Iterator for PlUnitIter<'_> {
         self.next_back()
     }
 
-    /// Hoists the validity mask out of the loop: an array without null elements folds over the
-    /// count alone, and one with a mask folds over the mask, which is what it is.
+    /// Hoists the validity mask out of the loop: without nulls, the fold is over the count alone.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where
@@ -930,8 +915,7 @@ mod tests {
     use crate::bitmap::PlBitmap;
     use crate::iterator_tests::assert_iterates;
 
-    /// The iterator of an array whose elements carry no value of their own, in both representations
-    /// of its validity mask.
+    /// The iterator of an array whose elements carry no value, in both mask representations.
     mod unit_iter {
         use super::*;
 
@@ -964,8 +948,7 @@ mod tests {
             assert_iterates(all_null.iter(), &[None; 3]);
         }
 
-        /// Walking in from either end of an array of a billion elements, which the default
-        /// `nth_back` would step to one element at a time.
+        /// Walking in from either end, which the default `nth_back` would do one element at a time.
         #[test]
         fn a_scalar_struct_is_not_materialized() {
             let field = Box::new(PlPrimitiveArray::new_scalar(1i32, 1_000_000_000));

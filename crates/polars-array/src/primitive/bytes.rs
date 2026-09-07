@@ -18,8 +18,7 @@ pub(crate) enum ValuesBytes<'a, B> {
     Scalar(B),
 }
 
-/// Fails to compile unless `T` and its byte class really do have the same layout, which every
-/// reinterpretation in this module rests on.
+/// Fails to compile unless `T` and its byte class really do have the same layout.
 const fn assert_same_layout<T: NativeType>() {
     assert!(size_of::<T>() == size_of::<Bytes<T>>());
     assert!(align_of::<T>() == align_of::<Bytes<T>>());
@@ -59,8 +58,7 @@ pub(crate) fn buffer_from_byte_vec<T: NativeType>(values: Vec<Bytes<T>>) -> Buff
     buffer_from_bytes::<T>(Buffer::from(values))
 }
 
-/// The bytes of the elements in `values` as a `Vec` that owns them, which reuses the allocation
-/// rather than copying it.
+/// The bytes of the elements in `values` as a `Vec`, reusing the allocation rather than copying.
 #[inline(always)]
 pub(crate) fn byte_vec_from_buffer<T: NativeType>(
     values: Buffer<T>,
@@ -162,8 +160,7 @@ pub(crate) unsafe fn extend_gathered<B: AlignedBytes>(
     }
 }
 
-/// Appends the value of `other` at every index of `idxs`, in the order they are given, with an
-/// index that falls outside an array of `length` elements standing for a null.
+/// Appends the value of `other` at every index of `idxs`; an index past `length` is a null.
 #[inline(never)]
 pub(crate) fn extend_opt_gathered<B: AlignedBytes>(
     values: &mut Vec<B>,
@@ -199,8 +196,7 @@ mod tests {
 
     use super::*;
 
-    /// The seventeen element types this crate dispatches on fall into nine byte classes, which is
-    /// the whole point of the module: it is that ratio the routines above are compiled at.
+    /// The seventeen element types this crate dispatches on fall into nine byte classes.
     #[test]
     fn seventeen_element_types_fall_into_nine_byte_classes() {
         fn class<T: NativeType>() -> (usize, usize) {
@@ -252,8 +248,7 @@ mod tests {
         );
     }
 
-    /// The bytes of `-0.0` differ from those of `+0.0`, which is what keeps the two apart here
-    /// where `PartialEq` on the floats themselves runs them together.
+    /// The bytes of `-0.0` differ from those of `+0.0`, which is what keeps the two apart here.
     #[test]
     fn the_two_zeroes_have_different_bytes() {
         assert_eq!(-0.0f64, 0.0f64);

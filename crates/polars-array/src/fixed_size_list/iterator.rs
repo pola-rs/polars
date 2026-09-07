@@ -11,15 +11,13 @@ struct Offsets {
     front: usize,
     /// How far that start walks per element dropped.
     stride: usize,
-    /// The number of elements left to yield, over the whole range of a `usize`: a scalar array is
-    /// as long as it says it is, and is never walked to find out.
+    /// The number of elements left to yield: a scalar array is as long as it says it is.
     remaining: usize,
 }
 
 impl Offsets {
     /// # Safety
-    /// The values must be flat (`length * width` values) or scalar (`width` values) for `length`,
-    /// per [`crate::broadcast`].
+    /// The values must be flat or scalar for `length`, per [`crate::broadcast`].
     #[inline]
     fn new(values_len: usize, width: usize, length: usize) -> Self {
         // Values as long as one element hold the one every position reads; values the caller
@@ -45,8 +43,7 @@ impl Offsets {
     /// Where the element `n` positions on from the front starts.
     ///
     /// # Safety
-    /// `n` must not exceed the number of elements left, so that the offset stays in bounds of the
-    /// values — or, for `n` elements exactly, one width past the last of them, which nothing reads.
+    /// `n` must not exceed the number of elements left, so the offset stays within the values.
     #[inline(always)]
     fn at(&self, n: usize) -> usize {
         debug_assert!(n <= self.remaining);
@@ -104,8 +101,7 @@ impl Iterator for Offsets {
         self.remaining
     }
 
-    /// Walks the offsets as the affine sequence they are, rather than stepping one `Option` at a
-    /// time — which is what `collect` and `for_each` route through.
+    /// Walks the offsets as the affine sequence they are, rather than one `Option` at a time.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where
@@ -179,8 +175,7 @@ unsafe impl TrustedLen for Offsets {}
 /// The element the values hold at `offset`, which is a fresh box over the same buffers.
 ///
 /// # Safety
-/// The values must reach `width` on from `offset`, which they do for the offset of every element
-/// an [`Offsets`] built for them yields.
+/// The values must reach `width` on from `offset`, as they do for every offset [`Offsets`] yields.
 #[inline(always)]
 unsafe fn element(values: &dyn PlArray, width: usize, offset: usize) -> Box<dyn PlArray> {
     debug_assert!(offset + width <= values.len());
@@ -188,8 +183,7 @@ unsafe fn element(values: &dyn PlArray, width: usize, offset: usize) -> Box<dyn 
     unsafe { values.sliced_unchecked(offset, width) }
 }
 
-/// Iterator over the elements of a [`PlFixedSizeListArray`](super::PlFixedSizeListArray), ignoring
-/// validity.
+/// Iterator over the elements of a [`super::PlFixedSizeListArray`], ignoring validity.
 #[derive(Clone)]
 pub struct PlFixedSizeListValuesIter<'a> {
     /// The values array the elements are cut out of.
@@ -202,8 +196,7 @@ pub struct PlFixedSizeListValuesIter<'a> {
 
 impl<'a> PlFixedSizeListValuesIter<'a> {
     /// # Safety
-    /// `values` must be flat (`length * width` values) or scalar (`width` values) for `length`,
-    /// per [`crate::broadcast`].
+    /// `values` must be flat or scalar for `length`, per [`crate::broadcast`].
     #[inline]
     pub(super) fn new(values: &'a dyn PlArray, width: usize, length: usize) -> Self {
         Self {
@@ -311,8 +304,7 @@ impl ExactSizeIterator for PlFixedSizeListValuesIter<'_> {
 
 unsafe impl TrustedLen for PlFixedSizeListValuesIter<'_> {}
 
-/// Iterator over the optional elements of a
-/// [`PlFixedSizeListArray`](super::PlFixedSizeListArray).
+/// Iterator over the optional elements of a [`PlFixedSizeListArray`](super::PlFixedSizeListArray).
 #[derive(Clone)]
 pub struct PlFixedSizeListIter<'a> {
     values: &'a dyn PlArray,
@@ -352,8 +344,7 @@ impl<'a> PlFixedSizeListIter<'a> {
         is_valid.then(|| unsafe { element(self.values, self.width, offset) })
     }
 
-    /// The offsets of the elements left to yield and the mask that says which of them are
-    /// elements, to walk in one loop.
+    /// The offsets of the elements left to yield and the mask that says which of them are elements.
     #[inline]
     fn split(self) -> (&'a dyn PlArray, usize, Offsets, ValidityFold<'a>) {
         (
@@ -401,8 +392,7 @@ impl Iterator for PlFixedSizeListIter<'_> {
         self.next_back()
     }
 
-    /// Hoists the validity mask out of the loop, and the walk over the offsets with it. An array
-    /// whose elements are all null never reaches the values at all.
+    /// Hoists the validity mask out of the loop, and the walk over the offsets with it.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where
@@ -504,8 +494,7 @@ mod tests {
         assert_iterates(array.iter(), &expected.map(Some));
     }
 
-    /// The elements of a sliced array start partway into the values, which the width still cuts
-    /// them out of from their own front.
+    /// The elements of a sliced array start partway into the values, cut out by the width.
     #[test]
     fn sliced() {
         let array = flat_array().sliced(1, 2);

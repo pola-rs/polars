@@ -91,8 +91,7 @@ pub(super) fn count_boolean_bits(ca: &ListChunked) -> IdxCa {
     IdxCa::from_chunk_iter(ca.name().clone(), chunks)
 }
 
-/// The number of set bits of `mask` over `range`, reading a bitmap that repeats a single bit as
-/// the one bit it is.
+/// The number of set bits of `mask` over `range`, reading a scalar bitmap as the one bit it is.
 fn count_set_over(mask: &PlBooleanArray, range: std::ops::Range<usize>) -> IdxSize {
     match mask.scalar_values() {
         Some(true) => range.len() as IdxSize,

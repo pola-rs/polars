@@ -50,9 +50,7 @@ pub fn is_not_nan_slice<T: PartialEq + IsFloat>(slice: &[T]) -> Option<Bitmap> {
     nan_mask_slice(slice, false)
 }
 
-/// Returns a bitmap where bit `i` says whether `slice[i]` is NaN, if `nan_is_set`, and whether it
-/// is not, otherwise. `None` stands for a slice that holds no NaN at all, whose mask is therefore
-/// `nan_is_set` nowhere and `!nan_is_set` everywhere.
+/// Returns a bitmap where bit `i` says whether `slice[i]` is NaN, or is not if `!nan_is_set`.
 fn nan_mask_slice<T: PartialEq + IsFloat>(slice: &[T], nan_is_set: bool) -> Option<Bitmap> {
     assert!(T::is_float());
     let invert = nan_is_set;

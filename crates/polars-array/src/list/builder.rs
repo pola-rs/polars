@@ -13,8 +13,7 @@ use crate::builder::{
 
 /// A builder of a [`PlListArray`].
 pub struct PlListArrayBuilder<B: PlArrayBuilder = Box<dyn PlArrayBuilder>> {
-    /// The start of every element appended so far, plus the end of the last: one slot more than the
-    /// elements, which is what the offsets of a flat list array hold.
+    /// The start of every element appended so far, plus the end of the last.
     offsets: Vec<u64>,
     values: B,
     validity: OptBitmapBuilder,
@@ -44,8 +43,7 @@ impl<B: PlArrayBuilder> PlListArrayBuilder<B> {
         &self.values
     }
 
-    /// The builder of the values the lists are taken over, so that the values one element covers
-    /// can be appended to it directly.
+    /// The builder of the values the lists are taken over, appended to directly.
     #[inline]
     pub fn values_mut(&mut self) -> &mut B {
         &mut self.values

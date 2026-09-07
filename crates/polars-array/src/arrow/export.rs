@@ -51,21 +51,18 @@ pub fn to_arrow(array: &dyn PlArray) -> Box<dyn Array> {
     }
 }
 
-/// Exports a [`PlNullArray`] as an Arrow [`NullArray`] of [`Null`](ArrowDataType::Null), which is
-/// `O(1)`.
+/// Exports a [`PlNullArray`] as an Arrow [`NullArray`], which is `O(1)`.
 pub fn null_to_arrow_null(array: &PlNullArray) -> NullArray {
     NullArray::new(ArrowDataType::Null, array.len())
 }
 
-/// Exports a [`PlBooleanArray`] as an Arrow [`BooleanArray`] of
-/// [`Boolean`](ArrowDataType::Boolean).
+/// Exports a [`PlBooleanArray`] as an Arrow [`BooleanArray`].
 pub fn boolean_to_arrow_boolean(array: &PlBooleanArray) -> BooleanArray {
     let (values, validity) = array.to_flat().into_owned().into_inner();
     BooleanArray::new(ArrowDataType::Boolean, values, validity)
 }
 
-/// Exports a [`PlPrimitiveArray`] as an Arrow [`PrimitiveArray`] of the data type `T` is the
-/// storage of.
+/// Exports a [`PlPrimitiveArray`] as an Arrow [`PrimitiveArray`] of the type `T` is the storage of.
 pub fn primitive_to_arrow_primitive<T: NativeType>(
     array: &PlPrimitiveArray<T>,
 ) -> PrimitiveArray<T> {
@@ -73,8 +70,7 @@ pub fn primitive_to_arrow_primitive<T: NativeType>(
     PrimitiveArray::new(T::PRIMITIVE.into(), values, validity)
 }
 
-/// Exports a [`PlBinaryArray`] as an Arrow [`BinaryArray`] of
-/// [`LargeBinary`](ArrowDataType::LargeBinary).
+/// Exports a [`PlBinaryArray`] as an Arrow [`BinaryArray`] of [`LargeBinary`](ArrowDataType).
 pub fn binary_to_arrow_large_binary(array: &PlBinaryArray) -> BinaryArray<i64> {
     let (values, offsets, validity) = array.to_flat().into_owned().into_inner();
     BinaryArray::new(
@@ -85,8 +81,7 @@ pub fn binary_to_arrow_large_binary(array: &PlBinaryArray) -> BinaryArray<i64> {
     )
 }
 
-/// Exports a [`PlBinaryViewArray`] as an Arrow [`BinaryViewArray`] of
-/// [`BinaryView`](ArrowDataType::BinaryView).
+/// Exports a [`PlBinaryViewArray`] as an Arrow [`BinaryViewArray`].
 pub fn binview_to_arrow_binview(array: &PlBinaryViewArray) -> BinaryViewArray {
     let (views, buffers, validity) = array.to_flat().into_owned().into_inner();
 
@@ -103,8 +98,7 @@ pub fn binview_to_arrow_binview(array: &PlBinaryViewArray) -> BinaryViewArray {
     }
 }
 
-/// Exports a [`PlUtf8ViewArray`] as an Arrow [`Utf8ViewArray`] of
-/// [`Utf8View`](ArrowDataType::Utf8View).
+/// Exports a [`PlUtf8ViewArray`] as an Arrow [`Utf8ViewArray`].
 pub fn utf8view_to_arrow_utf8view(array: &PlUtf8ViewArray) -> Utf8ViewArray {
     let (views, buffers, validity) = array.as_binview().to_flat().into_owned().into_inner();
 
@@ -121,8 +115,7 @@ pub fn utf8view_to_arrow_utf8view(array: &PlUtf8ViewArray) -> Utf8ViewArray {
     }
 }
 
-/// Exports a [`PlFixedSizeBinaryArray`] as an Arrow [`FixedSizeBinaryArray`] of
-/// [`FixedSizeBinary`](ArrowDataType::FixedSizeBinary) of the width its elements have.
+/// Exports a [`PlFixedSizeBinaryArray`] as an Arrow [`FixedSizeBinaryArray`] of its own width.
 pub fn fixed_size_binary_to_arrow_fixed_size_binary(
     array: &PlFixedSizeBinaryArray,
 ) -> FixedSizeBinaryArray {
@@ -140,8 +133,7 @@ pub fn fixed_size_binary_to_arrow_fixed_size_binary(
     )
 }
 
-/// Exports a [`PlListArray`] as an Arrow [`ListArray`] of [`LargeList`](ArrowDataType::LargeList),
-/// exporting its values along with it.
+/// Exports a [`PlListArray`] as an Arrow [`ListArray`], exporting its values along with it.
 pub fn list_to_arrow_large_list(array: &PlListArray) -> ListArray<i64> {
     let (values, offsets, validity) = array.to_flat().into_owned().into_inner();
     let values = to_arrow(&*values);
@@ -150,8 +142,7 @@ pub fn list_to_arrow_large_list(array: &PlListArray) -> ListArray<i64> {
     ListArray::new(dtype, offsets_to_arrow(offsets), values, validity)
 }
 
-/// Exports a [`PlFixedSizeListArray`] as an Arrow [`FixedSizeListArray`] of the width its elements
-/// have, exporting its values along with it.
+/// Exports a [`PlFixedSizeListArray`] as an Arrow [`FixedSizeListArray`] of its own width.
 pub fn fixed_size_list_to_arrow_fixed_size_list(
     array: &PlFixedSizeListArray,
 ) -> FixedSizeListArray {
@@ -163,8 +154,7 @@ pub fn fixed_size_list_to_arrow_fixed_size_list(
     FixedSizeListArray::new(dtype, length, values, validity)
 }
 
-/// Exports a [`PlStructArray`] as an Arrow [`StructArray`] of [`Struct`](ArrowDataType::Struct),
-/// exporting its fields along with it.
+/// Exports a [`PlStructArray`] as an Arrow [`StructArray`], exporting its fields along with it.
 pub fn struct_to_arrow_struct(array: &PlStructArray) -> StructArray {
     let values = array
         .fields()
@@ -185,8 +175,7 @@ pub fn struct_to_arrow_struct(array: &PlStructArray) -> StructArray {
     StructArray::new(ArrowDataType::Struct(fields), array.len(), values, validity)
 }
 
-/// Exports the 64-bit offsets a [`PlBinaryArray`] and a [`PlListArray`] hold as the 64-bit Arrow
-/// offsets, which is `O(1)`.
+/// Exports the 64-bit offsets of a binary or list array as the Arrow ones, which is `O(1)`.
 pub fn offsets_to_arrow(offsets: Buffer<u64>) -> OffsetsBuffer<i64> {
     debug_assert!(offsets.last().is_none_or(|&last| last <= i64::MAX as u64));
 

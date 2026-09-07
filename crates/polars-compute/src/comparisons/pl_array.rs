@@ -1,7 +1,4 @@
-//! The comparison kernels over the arrays of `polars-array`, for the element types whose kernel
-//! is still the Arrow one: the chunk crosses over through [`ToArrow`] and the mask comes straight
-//! back. A [`PlPrimitiveArray`](polars_array::PlPrimitiveArray) has its own kernel instead — see
-//! `simd` and `scalar`.
+//! The comparison kernels over the arrays of `polars-array` whose kernel is still the Arrow one.
 
 use arrow::bitmap::Bitmap;
 #[cfg(feature = "dtype-array")]

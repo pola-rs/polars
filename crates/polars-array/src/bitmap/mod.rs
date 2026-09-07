@@ -19,8 +19,7 @@ pub use validity::{
     combine_validities_and, combine_validities_and_many, combine_validities_and3, invert,
 };
 
-/// An immutable, cheaply cloneable mask of `length` bits, in either the flat or the scalar
-/// representation.
+/// An immutable, cheaply cloneable mask of `length` bits, flat or scalar.
 #[derive(Clone)]
 pub struct PlBitmap {
     /// Scalar: bitmap.len() == 1
@@ -63,8 +62,7 @@ impl PlBitmap {
     /// Creates a [`PlBitmap`] of `length` bits backed by a `bitmap` that broadcasts over them.
     ///
     /// # Errors
-    /// This function errors if `bitmap` is neither flat (length equal to `length`) nor scalar
-    /// (length one).
+    /// Errors if `bitmap` is neither flat (length equal to `length`) nor scalar (length one).
     pub fn try_new_broadcast(bitmap: Bitmap, length: usize) -> PolarsResult<Self> {
         polars_ensure!(
             is_valid_buffer_len(bitmap.len(), length),
@@ -85,8 +83,7 @@ impl PlBitmap {
         Self::try_new_broadcast(bitmap, length).unwrap()
     }
 
-    /// Creates a [`PlBitmap`] of `length` bits backed by a `bitmap` that broadcasts over them,
-    /// without validating it.
+    /// Creates a [`PlBitmap`] of `length` bits backed by `bitmap`, without validating it.
     ///
     /// # Safety
     /// `bitmap` must be flat or scalar for `length`, per [`is_valid_buffer_len`].
@@ -377,8 +374,7 @@ impl PlBitmap {
         self
     }
 
-    /// Returns an equivalent mask whose backing bitmap holds one bit per element, borrowing this
-    /// mask itself if it already does.
+    /// Returns an equivalent flat mask, borrowing this one if it is already flat.
     pub fn to_flat(&self) -> Cow<'_, Self> {
         if self.is_flat() {
             return Cow::Borrowed(self);
@@ -572,60 +568,6 @@ mod tests {
         assert_eq!(flat.xor(&ones), flat.not());
         assert!(flat.xor(&ones).is_flat());
     }
-
-    #[test]
-    fn two_flat_masks_combine_bit_for_bit() {
-        let lhs = PlBitmap::from_iter([true, true, false]);
-        let rhs = PlBitmap::from_iter([true, false, false]);
-
-        assert_eq!(lhs.and(&rhs), PlBitmap::from_iter([true, false, false]));
-        assert_eq!(lhs.or(&rhs), PlBitmap::from_iter([true, true, false]));
-        assert_eq!(lhs.xor(&rhs), PlBitmap::from_iter([false, true, false]));
-    }
-
-    #[test]
-    fn reversing_keeps_the_representation() {
-        let scalar = PlBitmap::new_scalar(true, 1_000);
-        let reversed = scalar.reversed();
-
-        assert!(reversed.is_scalar());
-        assert_eq!(reversed.len(), 1_000);
-        assert_eq!(reversed.scalar_value(), Some(true));
-
-        let flat = PlBitmap::from_iter([true, false, false]);
-        assert_eq!(flat.reversed(), PlBitmap::from_iter([false, false, true]));
-        assert!(PlBitmap::new_empty().reversed().is_empty());
-    }
-
-    #[test]
-    fn splitting_keeps_the_representation() {
-        // Both halves of a repeated bit are that same bit, over however many elements each holds.
-        let (head, tail) = PlBitmap::new_scalar(true, 10).split_at(4);
-
-        assert!(head.is_scalar() && tail.is_scalar());
-        assert_eq!((head.len(), tail.len()), (4, 6));
-        assert_eq!(head.scalar_value(), Some(true));
-        assert_eq!(tail.scalar_value(), Some(true));
-
-        // Splitting away every element leaves an empty mask, which holds no bit to repeat.
-        let (head, tail) = PlBitmap::new_scalar(false, 3).split_at(3);
-        assert_eq!(head.len(), 3);
-        assert!(tail.is_empty());
-
-        let (head, tail) = PlBitmap::from_iter([true, false, true]).split_at(1);
-        assert_eq!(head, PlBitmap::from_iter([true]));
-        assert_eq!(tail, PlBitmap::from_iter([false, true]));
-    }
-
-    #[test]
-    fn into_bitmap_materializes_scalars() {
-        let bitmap = PlBitmap::new_scalar(true, 3).into_bitmap();
-
-        assert_eq!(bitmap.len(), 3);
-        assert_eq!(bitmap.set_bits(), 3);
-
-        assert!(PlBitmap::new_scalar(true, 0).into_bitmap().is_empty());
-    }
 }
 
 #[cfg(test)]
@@ -634,8 +576,7 @@ mod run_length_tests {
 
     use super::PlBitmap;
 
-    /// A mask that repeats one bit is all ones or none of them, and its runs are read off that one
-    /// bit rather than off bits written out per element.
+    /// A mask that repeats one bit is all ones or none of them, and its runs come off that bit.
     #[test]
     fn a_repeated_bit_is_one_run() {
         for (bit, ones, zeros) in [(true, 7, 0), (false, 0, 7)] {

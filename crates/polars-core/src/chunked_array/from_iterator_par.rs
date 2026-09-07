@@ -63,8 +63,7 @@ where
         .reduce(LinkedList::new, list_append)
 }
 
-/// Folds `par_iter` into one builder per rayon task, `push`ing each item, and freezes each of them
-/// into a chunk of its own.
+/// Folds `par_iter` into one builder per rayon task, freezing each into a chunk of its own.
 fn collect_into_linked_list<I, B, F, P>(par_iter: I, identity: F, push: P) -> LinkedList<B::Array>
 where
     I: IntoParallelIterator,

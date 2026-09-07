@@ -107,8 +107,7 @@ impl Iterator for PlBitmapIter<'_> {
         self.next_back()
     }
 
-    /// Hoists the representation out of the loop: a flat mask folds over the positions it covers,
-    /// which are independent of one another, and a scalar one folds over the single bit it shares.
+    /// Hoists the representation out of the loop: a scalar mask folds over the one bit it shares.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where
@@ -211,8 +210,7 @@ pub(crate) enum ValidityFold<'a> {
     Bits(ValidityBits<'a>),
 }
 
-/// The bits of a flat validity mask, read by the position of the element they stand for rather
-/// than walked.
+/// The bits of a flat validity mask, read by the position of the element they stand for.
 #[derive(Clone, Copy)]
 pub(crate) struct ValidityBits<'a> {
     /// The bytes the bits live in, of which only the ones `offset` and `len` cover are this mask's.
@@ -395,8 +393,7 @@ impl<'a> ValidityIter<'a> {
         self.next_back()
     }
 
-    /// Whether the element the values are about to yield at the front is valid, without checking
-    /// that the mask still covers one.
+    /// Whether the element the values are about to yield at the front is valid, unchecked.
     ///
     /// # Safety
     /// The mask must still cover an element at the front.
@@ -413,8 +410,7 @@ impl<'a> ValidityIter<'a> {
         }
     }
 
-    /// Whether the element the values are about to yield at the back is valid, without checking
-    /// that the mask still covers one.
+    /// Whether the element the values are about to yield at the back is valid, unchecked.
     ///
     /// # Safety
     /// The mask must still cover an element at the back.
@@ -430,8 +426,7 @@ impl<'a> ValidityIter<'a> {
         }
     }
 
-    /// Whether the element the values are about to yield `n` positions on is valid, without
-    /// checking that the mask still covers one.
+    /// Whether the element the values are about to yield `n` positions on is valid, unchecked.
     ///
     /// # Safety
     /// The mask must still cover the element `n` positions on from the front.
@@ -446,8 +441,7 @@ impl<'a> ValidityIter<'a> {
         unsafe { self.next_unchecked() }
     }
 
-    /// Whether the element the values are about to yield `n` positions in from the back is valid,
-    /// without checking that the mask still covers one.
+    /// Whether the element `n` positions in from the back is valid, unchecked.
     ///
     /// # Safety
     /// The mask must still cover the element `n` positions in from the back.

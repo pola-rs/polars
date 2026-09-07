@@ -243,8 +243,7 @@ pub trait FloatSum<F>: Sized {
     fn sum(f: &[Self]) -> F;
     fn sum_with_validity(f: &[Self], validity: &Bitmap) -> F;
 
-    /// The sum of `count` copies of `value`, which is their product: one rounding rather than a
-    /// pass over a buffer holding the value that many times.
+    /// The sum of `count` copies of `value`, which is their product: one rounding, not a pass.
     fn sum_repeated(value: Self, count: usize) -> F;
 }
 

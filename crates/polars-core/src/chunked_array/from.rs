@@ -95,8 +95,7 @@ where
         unsafe { ChunkedArray::new_with_dims(field, chunks, length, null_count) }
     }
 
-    /// Creates a [`ChunkedArray`] from Arrow chunks, importing each one, which hands the backing
-    /// buffers over rather than copying the elements: `O(1)` per chunk.
+    /// Creates a [`ChunkedArray`] from Arrow chunks, handing the buffers over: `O(1)` per chunk.
     ///
     /// # Safety
     /// The physical type of all chunks must match the [`PolarsDataType`] `T`.
@@ -104,8 +103,7 @@ where
         unsafe { Self::from_chunks(name, import_arrow_chunks(chunks)) }
     }
 
-    /// Creates a [`ChunkedArray`] of `dtype` from Arrow chunks, importing each one. This is
-    /// [`ChunkedArray::from_arrow_chunks`] for a type whose [`DataType`] the chunks do not imply.
+    /// Creates a [`ChunkedArray`] of `dtype` from Arrow chunks, importing each one.
     ///
     /// # Safety
     /// The physical type of all chunks must match `dtype`.
@@ -172,10 +170,7 @@ where
         ChunkedArray::new_with_compute_len(field, chunks)
     }
 
-    /// A [`ChunkedArray`] of `length` nulls, laid out like `ca`. The nulls keep the
-    /// [`scalar`](polars_array::broadcast) representation wherever the array admits it, so this
-    /// is `O(1)` in memory for all but the arrays that hold one value per element either way —
-    /// see [`polars_array::PlArray::full_null_like`].
+    /// A [`ChunkedArray`] of `length` nulls, laid out like `ca`.
     pub fn full_null_like(ca: &Self, length: usize) -> Self {
         let prototype = ca.chunks.first().expect("a ChunkedArray has a chunk");
         let chunks = vec![prototype.full_null_like(length)];

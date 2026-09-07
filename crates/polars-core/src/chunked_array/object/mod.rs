@@ -154,8 +154,7 @@ where
         !self.is_valid_unchecked(i)
     }
 
-    /// An array of `length` nulls. An object array holds one `T` per element even where the mask
-    /// says there is no value, so this is `O(length)` in memory.
+    /// An array of `length` nulls.
     pub fn new_full_null(length: usize) -> Self {
         Self {
             values: vec![T::default(); length].into(),
@@ -206,8 +205,7 @@ impl<T: PolarsObject> Splitable for ObjectArray<T> {
     }
 }
 
-/// An object array is always [`flat`](polars_array::broadcast): it holds one `T` per element, so
-/// there is no scalar representation for it to be in and no buffer for `to_flat` to write out.
+/// An object array is always flat: it holds one `T` per element, with no scalar representation.
 impl<T: PolarsObject> PlArray for ObjectArray<T> {
     #[inline]
     fn as_any(&self) -> &dyn Any {
@@ -231,8 +229,7 @@ impl<T: PolarsObject> PlArray for ObjectArray<T> {
         self.values.len()
     }
 
-    /// Whether this array is one value repeated over its length, which an object array — holding
-    /// one `T` per element — only is when it holds a single element.
+    /// Whether this array is one value repeated, which an object array is only when it holds one.
     #[inline]
     fn is_scalar(&self) -> bool {
         self.values.len() == 1
@@ -298,8 +295,7 @@ impl<T: PolarsObject> PlArray for ObjectArray<T> {
         Box::new(self.clone())
     }
 
-    /// An object array lives outside `polars-array`, which therefore cannot build one; this is
-    /// where it is built instead.
+    /// An object array lives outside `polars-array`, so this is where it is built instead.
     fn full_null_like(&self, length: usize) -> Box<dyn PlArray> {
         Box::new(Self::new_full_null(length))
     }

@@ -8,8 +8,7 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     /// Converts itself to a reference of [`Any`], which enables downcasting to concrete types.
     fn as_any(&self) -> &dyn Any;
 
-    /// Converts itself to a mutable reference of [`Any`], which enables mutable downcasting to
-    /// concrete types.
+    /// Converts itself to a mutable [`Any`] reference, which enables mutable downcasting.
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
     /// The physical representation of this array.
@@ -24,8 +23,7 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
         self.len() == 0
     }
 
-    /// Whether this array is entirely stored in the scalar representation, and therefore is a
-    /// single logical value repeated [`PlArray::len`] times in `O(1)` memory.
+    /// Whether this array is scalar throughout: one value repeated [`PlArray::len`] times.
     fn is_scalar(&self) -> bool;
 
     /// The validity mask, if any element may be null.
@@ -105,8 +103,7 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
         sliced
     }
 
-    /// Replaces the validity mask, which keeps the representation it is in: a [`PlBitmap`] that
-    /// stands for a single bit is not written out one bit per element to be set.
+    /// Replaces the validity mask, keeping the representation the given mask is in.
     fn set_validity(&mut self, validity: Option<PlBitmap>);
 
     /// Returns this array with its validity mask replaced, keeping its representation.
@@ -148,8 +145,7 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
         crate::builder::full_null_like(&*self.to_boxed(), length)
     }
 
-    /// Compares this array element-wise against `other`, returning `false` if `other` is not of the
-    /// same concrete type.
+    /// Compares this array element-wise against `other`, `false` if it is of another type.
     fn eq_dyn(&self, other: &dyn PlArray) -> bool;
 }
 
@@ -160,8 +156,7 @@ impl Clone for Box<dyn PlArray> {
     }
 }
 
-/// Compares two arrays element-wise; the representation (flat or scalar) is irrelevant, but arrays
-/// of different [`PlArrayType`] never compare equal.
+/// Compares two arrays element-wise; arrays of different [`PlArrayType`] never compare equal.
 impl PartialEq for dyn PlArray + '_ {
     #[inline]
     fn eq(&self, other: &dyn PlArray) -> bool {
@@ -171,8 +166,7 @@ impl PartialEq for dyn PlArray + '_ {
 
 impl Eq for dyn PlArray + '_ {}
 
-/// Compares two arrays element-wise, exactly like [`PartialEq`]: an array holds no value that is
-/// unequal to itself, so there is nothing for a total comparison to do differently.
+/// Compares two arrays element-wise, exactly like [`PartialEq`]: no value is unequal to itself.
 impl polars_utils::total_ord::TotalEq for Box<dyn PlArray> {
     #[inline]
     fn tot_eq(&self, other: &Self) -> bool {
@@ -245,15 +239,13 @@ mod tests {
         ]
     }
 
-    /// Asserts that `array` holds no elements and no slot in any backing buffer, which is what
-    /// makes an empty array flat as well as scalar.
+    /// Asserts that `array` holds no elements and no slot in any backing buffer.
     fn assert_empty_and_flat<A: StaticArray>(array: A) {
         assert!(array.is_empty(), "{array:?}");
         assert!(array.is_flat(), "{array:?}");
     }
 
-    /// The value a scalar array repeats is kept in one slot per backing buffer — except when there
-    /// is no element to read it, which is what leaves an empty array with empty buffers.
+    /// The value a scalar array repeats is kept in one slot per backing buffer.
     #[test]
     fn an_empty_array_keeps_no_scalar_slot() {
         let element = || Box::new(PlPrimitiveArray::from_vec(vec![1i64, 2]));

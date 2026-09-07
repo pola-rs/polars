@@ -4,8 +4,7 @@ use arrow::array::{BINVIEW_ARROW_BUFFER_LEN_LIMIT, BINVIEW_MAX_ROW_BYTE_LEN, Vie
 
 /// The capacity the first data buffer is allocated with, and the smallest any of them gets.
 const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
-/// The largest capacity the doubling of the data buffers reaches, which bounds what a buffer
-/// over-allocates for the values still to come.
+/// The largest capacity the doubling of the data buffers reaches, which bounds over-allocation.
 const MAX_EXP_BLOCK_SIZE: usize = 16 * 1024 * 1024;
 
 // Growing a buffer never carries it past the limit by itself: only a single value longer than the
@@ -41,8 +40,7 @@ fn copy_only_value_limited<const MAX_ROW_BYTE_LEN: usize>(bytes: &[u8]) -> (View
     (view, vec![bytes.to_vec()])
 }
 
-/// [`copy_value`], against limits the tests lower to what they can reach without allocating
-/// gigabytes.
+/// [`copy_value`], against limits the tests lower to what they can reach cheaply.
 fn copy_value_limited<const BUFFER_LEN_LIMIT: usize, const MAX_ROW_BYTE_LEN: usize>(
     buffers: &mut Vec<Vec<u8>>,
     buffer_idx_offset: u32,
@@ -67,8 +65,7 @@ fn copy_value_limited<const BUFFER_LEN_LIMIT: usize, const MAX_ROW_BYTE_LEN: usi
     unsafe { View::new_noninline_unchecked(bytes, buffer_idx, offset) }
 }
 
-/// Makes room for `additional` bytes at the end of the last of `buffers`, pushing a new buffer
-/// where they do not fit.
+/// Makes room for `additional` bytes in the last of `buffers`, pushing a new one where they fit.
 #[inline]
 fn reserve<const BUFFER_LEN_LIMIT: usize, const MAX_ROW_BYTE_LEN: usize>(
     buffers: &mut Vec<Vec<u8>>,
@@ -115,8 +112,7 @@ fn assert_row_fits<const MAX_ROW_BYTE_LEN: usize>(len: usize) {
 mod tests {
     use super::*;
 
-    /// Limits in the same order as the real ones — a value may be longer than a buffer normally
-    /// grows — small enough to reach without allocating gigabytes.
+    /// Limits in the same order as the real ones, small enough to reach cheaply.
     const BUFFER_LEN_LIMIT: usize = 32;
     const MAX_ROW_BYTE_LEN: usize = 64;
 

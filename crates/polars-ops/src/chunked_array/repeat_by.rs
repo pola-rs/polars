@@ -23,8 +23,7 @@ where
     Ok((ca.broadcast_to(len)?, by.broadcast_to(len)?))
 }
 
-/// One chunk of the result: element `i` of `arr` repeated `by[i]` times, as one list. A null
-/// repeat count makes the whole list null.
+/// One chunk of the result: element `i` of `arr` repeated `by[i]` times, as one list.
 fn repeat_chunk(arr: &dyn PlArray, by: &PlPrimitiveArray<IdxSize>) -> PlListArray {
     // Every element repeating the one element it holds, the same number of times, makes every list
     // the same list: it is built once and shared, rather than written out per element.

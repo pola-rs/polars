@@ -31,8 +31,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 }
 
-/// The mask of a chunk, as the boolean array of which elements are not null. A scalar mask stays
-/// one bit, so a chunk that is fully null maps to a boolean array in `O(1)` memory.
+/// The mask of a chunk, as the boolean array of which elements are not null.
 pub fn is_not_null(name: PlSmallStr, chunks: &[PlArrayRef]) -> BooleanChunked {
     let chunks = chunks.iter().map(|arr| match arr.validity() {
         Some(validity) => PlBooleanArray::from_pl_bitmap(PlBitmap::from(validity)),

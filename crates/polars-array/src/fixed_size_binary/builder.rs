@@ -89,8 +89,7 @@ impl PlFixedSizeBinaryArrayBuilder {
         );
     }
 
-    /// Appends the bytes of the `length` elements of `other` starting at `start`, ignoring its
-    /// validity mask.
+    /// Appends the bytes of the `length` elements of `other` at `start`, ignoring validity.
     fn extend_values(&mut self, other: &PlFixedSizeBinaryArray, start: usize, length: usize) {
         if let Some(values) = other.flat_values() {
             let bytes = &values[start * self.width..(start + length) * self.width];

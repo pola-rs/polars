@@ -121,8 +121,7 @@ fn or_not_mask(q: PlBitmap, mask: &Bitmap) -> PlBitmap {
     }
 }
 
-/// The equality kernels over an array whose buffers may repeat a single slot, whose answer is in
-/// whichever representation its operands leave it in.
+/// The equality kernels over an array whose buffers may repeat a single slot.
 pub trait PlTotalEqKernel: Sized {
     type Scalar: ?Sized;
 
@@ -216,8 +215,7 @@ pub trait PlTotalEqKernel: Sized {
     }
 }
 
-/// The ordering kernels over an array whose buffers may repeat a single slot. As
-/// [`PlTotalEqKernel`] is to [`TotalEqKernel`], this is to [`TotalOrdKernel`].
+/// The ordering kernels over an array whose buffers may repeat a single slot.
 pub trait PlTotalOrdKernel: Sized {
     type Scalar: ?Sized;
 

@@ -25,8 +25,7 @@ where
         .collect()
 }
 
-/// The sum of each list of `arr`, one per element, reading the offsets and the values in whatever
-/// representation each is in.
+/// The sum of each list of `arr`, in whatever representation each part is in.
 fn dispatch_sum<T, S>(arr: &PlListArray) -> PlArrayRef
 where
     T: NativeType + ToPrimitive,
@@ -220,8 +219,7 @@ where
         .collect()
 }
 
-/// The average of each list of `arr`, one per element, reading the offsets and the values in
-/// whatever representation each is in.
+/// The average of each list of `arr`, in whatever representation each part is in.
 fn dispatch_mean<T, S>(arr: &PlListArray) -> PlArrayRef
 where
     T: NativeType + ToPrimitive,

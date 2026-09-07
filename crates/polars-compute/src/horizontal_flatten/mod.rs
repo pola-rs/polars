@@ -74,8 +74,7 @@ pub fn horizontal_flatten(
     builder.freeze()
 }
 
-/// Whether `array` holds the one row of `width` values it stands for at every output row, rather
-/// than a row of its own per output row.
+/// Whether `array` holds the one row of `width` values it stands for at every output row.
 fn is_broadcast(array: &dyn PlArray, width: usize, output_height: usize) -> bool {
     let flat = width.checked_mul(output_height);
     if flat == Some(array.len()) {

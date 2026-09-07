@@ -33,8 +33,7 @@ impl PolarsOpsNumericType for Float16Type {}
 impl PolarsOpsNumericType for Float32Type {}
 impl PolarsOpsNumericType for Float64Type {}
 
-/// Writes into the values of `arr` where they can be written into, and copies them out first
-/// where they cannot — which is what Arrow's `with_values_mut` did, one level down.
+/// Writes into the values of `arr` where it can, and copies them out first where it cannot.
 unsafe fn with_values_mut<T: NativeType, F: FnOnce(&mut [T])>(arr: &mut PlPrimitiveArray<T>, f: F) {
     let length = arr.len();
     let Some(values) = arr.flat_values_mut() else {
@@ -117,8 +116,7 @@ unsafe fn scatter_primitive_impl<V, T: NativeType>(
     }
 }
 
-/// Writes into the values of `arr` where they can be written into, and copies them out first
-/// where they cannot — the boolean counterpart of [`with_values_mut`].
+/// [`with_values_mut`] for booleans: writes into the values, copying them out where it cannot.
 fn with_bool_values_mut<F: FnOnce(&mut MutableBitmap)>(arr: &mut PlBooleanArray, f: F) {
     let length = arr.len();
 
@@ -200,8 +198,7 @@ where
     }
 }
 
-/// Writes into the views of `arr` where they can be written into, and copies them out first where
-/// they cannot — the view counterpart of [`with_values_mut`].
+/// [`with_values_mut`] for views: writes into the views, copying them out where it cannot.
 ///
 /// # Safety
 /// Every view left behind must read bytes that the array's buffers hold.

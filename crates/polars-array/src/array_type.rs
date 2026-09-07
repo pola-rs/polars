@@ -5,20 +5,15 @@ pub use arrow::types::PrimitiveType;
 pub enum PlArrayType {
     /// A [`PlBooleanArray`](crate::PlBooleanArray): a boolean stored as a single bit.
     Boolean,
-    /// A [`PlPrimitiveArray<T>`](crate::PlPrimitiveArray) where `T::PRIMITIVE` is this
-    /// [`PrimitiveType`]: a value with a known compile-time size.
+    /// A [`PlPrimitiveArray<T>`](crate::PlPrimitiveArray): a value with a known compile-time size.
     Primitive(PrimitiveType),
-    /// A [`PlBinaryArray`](crate::PlBinaryArray): a variable-length sequence of bytes, stored as
-    /// the offsets that cut one values buffer into consecutive slices.
+    /// A [`PlBinaryArray`](crate::PlBinaryArray): bytes cut out of one values buffer by offsets.
     Binary,
-    /// A [`PlBinaryViewArray`](crate::PlBinaryViewArray): a variable-length sequence of bytes,
-    /// stored as a view that either inlines them or points at a data buffer.
+    /// A [`PlBinaryViewArray`](crate::PlBinaryViewArray): bytes inlined in a view or pointed at.
     BinaryView,
-    /// A [`PlUtf8ViewArray`](crate::PlUtf8ViewArray): a [`PlArrayType::BinaryView`] whose bytes are
-    /// known to be valid UTF-8.
+    /// A [`PlUtf8ViewArray`](crate::PlUtf8ViewArray): a `BinaryView` known to be valid UTF-8.
     Utf8View,
-    /// A [`PlFixedSizeBinaryArray`](crate::PlFixedSizeBinaryArray): a sequence of bytes of a fixed
-    /// width, stored in one values buffer the elements cut into consecutive slices.
+    /// A [`PlFixedSizeBinaryArray`](crate::PlFixedSizeBinaryArray): bytes of a fixed width.
     FixedSizeBinary,
     /// A [`PlStructArray`](crate::PlStructArray): a row of one value per field array.
     Struct,
@@ -69,8 +64,7 @@ impl PlArrayType {
         matches!(self, Self::Utf8View)
     }
 
-    /// Whether this is [`PlArrayType::BinaryView`] or [`PlArrayType::Utf8View`], the two array
-    /// types stored as a view over a set of data buffers.
+    /// Whether this is [`PlArrayType::BinaryView`] or [`PlArrayType::Utf8View`], the view types.
     #[inline]
     pub fn is_view(&self) -> bool {
         matches!(self, Self::BinaryView | Self::Utf8View)

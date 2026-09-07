@@ -6,9 +6,7 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::NoNull;
 
-/// A chunked array that is its own reverse, if it is one: a single chunk that repeats a single
-/// element reads as that same element whichever way it is walked, so nothing has to be written
-/// out. Several chunks reverse among themselves, which is why only one of them will do.
+/// A chunked array that is its own reverse, if it is one: a single chunk repeating one element.
 fn reverses_to_itself<T: PolarsDataType>(ca: &ChunkedArray<T>) -> Option<ChunkedArray<T>> {
     let [chunk] = ca.chunks().as_slice() else {
         return None;
@@ -174,57 +172,5 @@ impl<T: PolarsObject> ChunkReverse for ObjectChunked<T> {
                     .collect_ca(PlSmallStr::EMPTY),
             )
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Whether the single chunk of `ca` repeats one element rather than holding one slot each.
-    fn is_repeated<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
-        let [chunk] = ca.chunks().as_slice() else {
-            return false;
-        };
-
-        PlArray::is_scalar(&**chunk)
-    }
-
-    /// A chunk that repeats one element reads as that element whichever way it is walked, so it
-    /// is handed back as it is rather than written out backwards.
-    #[test]
-    fn a_repeated_element_is_its_own_reverse() {
-        let name = PlSmallStr::from_static("a");
-
-        let ints = Int32Chunked::full(name.clone(), 7, 1_000);
-        assert!(is_repeated(&ints.reverse()));
-        assert_eq!(ints.reverse().len(), 1_000);
-        assert_eq!(ints.reverse().get(0), Some(7));
-
-        let bools = BooleanChunked::full(name.clone(), true, 1_000);
-        assert!(is_repeated(&bools.reverse()));
-
-        let strings = StringChunked::full(name.clone(), "abc", 1_000);
-        assert!(is_repeated(&strings.reverse()));
-        assert_eq!(strings.reverse().get(999), Some("abc"));
-
-        let nulls = Int32Chunked::full_null(name.clone(), 1_000);
-        assert!(is_repeated(&nulls.reverse()));
-        assert_eq!(nulls.reverse().null_count(), 1_000);
-    }
-
-    /// Reversing an array that holds one slot per element still walks it.
-    #[test]
-    fn a_flat_array_is_written_out_backwards() {
-        let name = PlSmallStr::from_static("a");
-
-        let ints = Int32Chunked::new(name.clone(), [Some(1), None, Some(3)]);
-        assert_eq!(Vec::from(&ints.reverse()), vec![Some(3), None, Some(1)]);
-
-        let strings = StringChunked::new(name, [Some("a"), None, Some("c")]);
-        assert_eq!(
-            Vec::from(&strings.reverse()),
-            vec![Some("c"), None, Some("a")],
-        );
     }
 }

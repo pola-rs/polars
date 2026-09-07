@@ -162,8 +162,7 @@ pub fn propagate_nulls_struct(array: &PlStructArray) -> Option<PlStructArray> {
     Some(unsafe { struct_with_fields(array, fields) })
 }
 
-/// Pushes `validity`, the nulls of the struct above `field`, down onto it, and its own nulls down
-/// in turn.
+/// Pushes `validity`, the nulls of the struct above `field`, down onto it and its own in turn.
 fn propagate_into_field(
     field: &dyn PlArray,
     validity: Option<PlBitmapRef<'_>>,
@@ -192,8 +191,7 @@ fn nulls(validity: Option<PlBitmapRef<'_>>) -> Option<PlBitmapRef<'_>> {
     validity.filter(|validity| validity.unset_bits() > 0)
 }
 
-/// The mask `values` takes on once a null is pushed down onto every value in `ranges`, or `None` if
-/// every one of those values is already null.
+/// The mask `values` takes on once a null is pushed down onto every value in `ranges`.
 fn unset_ranges<I, F>(values: &dyn PlArray, ranges: F) -> Option<PlBitmap>
 where
     I: Iterator<Item = Range<usize>>,

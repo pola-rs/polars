@@ -97,8 +97,7 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized + 'static {
     where
         Self: Sized;
 
-    /// An array of `length` nulls, laid out the way [`Self::get_static_dtype`] describes — so a
-    /// nested type has no inner type here. Nulls keep the scalar representation: `O(1)` in memory.
+    /// An array of `length` nulls, laid out the way [`Self::get_static_dtype`] describes.
     fn full_null_array(length: usize) -> Self::Array;
 }
 

@@ -160,22 +160,19 @@ impl PlNullArray {
         Self::new(length)
     }
 
-    /// Whether every backing buffer of this array holds one slot per element, which a
-    /// [`PlNullArray`] does vacuously: it has no buffers at all, only a length.
+    /// Whether every backing buffer holds one slot per element, which a [`PlNullArray`] does.
     #[inline]
     pub const fn is_flat(&self) -> bool {
         true
     }
 
-    /// Whether this array is a single element repeated over its length, which a [`PlNullArray`]
-    /// always is: every element is the same null, held in `O(1)` memory.
+    /// Whether this array is one element repeated, which a [`PlNullArray`] always is.
     #[inline]
     pub const fn is_scalar(&self) -> bool {
         true
     }
 
-    /// Returns this array in the flat representation, which is this array — see
-    /// [`PlNullArray::is_flat`].
+    /// Returns this array in the flat representation, which is this array itself.
     #[inline]
     pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         // SAFETY: a null array has no backing buffer that could be scalar.
@@ -197,8 +194,7 @@ impl Default for PlNullArray {
     }
 }
 
-/// Compares two arrays element-wise, which for arrays of nothing but nulls is comparing their
-/// lengths.
+/// Compares two arrays element-wise, which for arrays of nothing but nulls compares lengths.
 impl PartialEq for PlNullArray {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -383,8 +379,7 @@ impl StaticArrayBuilder for PlNullArrayBuilder {
         self.length += idxs.len();
     }
 
-    /// Appends one null per index: an out-of-bounds index stands for a null, which is what every
-    /// element of a null array is anyway.
+    /// Appends one null per index, which is what every element of a null array is anyway.
     #[inline]
     fn opt_gather_extend(&mut self, _other: &PlNullArray, idxs: &[IdxSize], _share: ShareStrategy) {
         self.length += idxs.len();

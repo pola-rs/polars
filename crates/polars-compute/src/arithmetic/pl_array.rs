@@ -6,18 +6,13 @@ use polars_array::{PlBitmap, PlPrimitiveArray};
 
 use super::{PArr, POut};
 
-/// A chunk taken apart into the values a kernel reads and the mask that goes back around its
-/// answer.
+/// A chunk taken apart into the values a kernel reads and the mask around its answer.
 enum Split<T: NativeType> {
-    /// Every element is null, so an elementwise kernel answers every element with a null and the
-    /// length is all that is left of the chunk. Only a validity mask of a single unset bit
-    /// reaches this arm: a flat mask is never scanned to find out whether it is empty.
+    /// Every element is null, so the length is all that is left of the chunk.
     AllNull,
-    /// The one value every element reads, and the mask over those elements, which holds one bit
-    /// per element where it is there at all.
+    /// The one value every element reads, and the mask over those elements.
     Repeated(T, Option<PlBitmap>),
-    /// The chunk itself, with one values slot per element. A mask of a single set bit has been
-    /// dropped on the way here, a set bit marking nothing.
+    /// The chunk itself, with one values slot per element.
     Flat(PArr<T>),
 }
 
@@ -52,8 +47,7 @@ fn single<T: NativeType>(value: T) -> PArr<T> {
         .into_owned()
 }
 
-/// A kernel's answer for the one value a chunk repeats, spread back over the `length` elements
-/// that read it under the `validity` mask they had.
+/// A kernel's answer for the one value a chunk repeats, spread back over `length` elements.
 fn repeat<O: NativeType>(out: POut<O>, length: usize, validity: Option<PlBitmap>) -> POut<O> {
     debug_assert_eq!(
         out.len(),
@@ -93,9 +87,7 @@ where
     }
 }
 
-/// Applies a binary elementwise kernel to `lhs` and `rhs`, in the shape that reads the least of
-/// them: `flat` over two flat chunks, `scalar_lhs`/`scalar_rhs` where the side it is named for
-/// repeats a single value.
+/// Applies a binary elementwise kernel to `lhs` and `rhs`, in the shape that reads the least.
 pub(super) fn binary<L, R, O, FF, FL, FR>(
     lhs: PlPrimitiveArray<L>,
     rhs: PlPrimitiveArray<R>,

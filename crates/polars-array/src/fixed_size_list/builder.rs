@@ -48,15 +48,13 @@ impl<B: PlArrayBuilder> PlFixedSizeListArrayBuilder<B> {
         self.width
     }
 
-    /// The builder of the values the lists are taken over, so that the values one element covers
-    /// can be appended to it directly.
+    /// The builder of the values the lists are taken over, appended to directly.
     #[inline]
     pub fn values_mut(&mut self) -> &mut B {
         &mut self.values
     }
 
-    /// Closes one element, covering the width of values appended to the child since the last
-    /// element was.
+    /// Closes one element, covering the width of values appended to the child since the last.
     #[inline]
     pub fn finish_row(&mut self) {
         assert_eq!(

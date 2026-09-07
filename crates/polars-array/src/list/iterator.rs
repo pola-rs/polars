@@ -13,11 +13,9 @@ use crate::broadcast::{is_flat_offsets_len, is_valid_offsets_len};
 struct Ranges<'a> {
     /// The offsets of the elements left to yield.
     offsets: NonNull<u64>,
-    /// [`usize::MAX`] while the offsets are flat and `0` once they are scalar, to fold every
-    /// position onto the one range scalar offsets hold without branching on which they are.
+    /// Folds a position onto slot 0 when the offsets are scalar: [`usize::MAX`] flat, `0` scalar.
     index_mask: usize,
-    /// The number of elements left to yield, over the whole range of a `usize`: a scalar array is
-    /// as long as it says it is, and is never walked to find out.
+    /// The number of elements left to yield: a scalar array is as long as it says it is.
     remaining: usize,
     _lifetime: PhantomData<&'a [u64]>,
 }
@@ -29,8 +27,7 @@ unsafe impl Sync for Ranges<'_> {}
 
 impl<'a> Ranges<'a> {
     /// # Safety
-    /// `offsets` must be flat (`length + 1` offsets) or scalar (two offsets, or one for an empty
-    /// array) for `length`, per [`crate::broadcast`], and must be ordered.
+    /// `offsets` must be flat or scalar for `length`, per [`crate::broadcast`], and be ordered.
     #[inline]
     fn new(offsets: &'a [u64], length: usize) -> Self {
         // Offsets that hold one start per element are flat, and offsets the caller promises are
@@ -54,8 +51,7 @@ impl<'a> Ranges<'a> {
         }
     }
 
-    /// How far the offsets walk per element dropped: one slot while they are flat, and nowhere at
-    /// all once they are scalar, whose two slots every element reads.
+    /// How far the offsets walk per element dropped: one slot while flat, nowhere once scalar.
     #[inline(always)]
     fn step(&self) -> usize {
         size_of::<u64>() & self.index_mask
@@ -64,8 +60,7 @@ impl<'a> Ranges<'a> {
     /// The range the element `n` positions on from the front covers.
     ///
     /// # Safety
-    /// `n` must be below the number of elements left, so that the start it reads and the end after
-    /// it are both in bounds of the offsets.
+    /// `n` must be below the number of elements left, so the start and end it reads are in bounds.
     #[inline(always)]
     unsafe fn at(&self, n: usize) -> Range<usize> {
         debug_assert!(n < self.remaining);
@@ -81,8 +76,7 @@ impl<'a> Ranges<'a> {
         }
     }
 
-    /// Drops the `n` elements at the front, which walks flat offsets along and leaves scalar ones
-    /// where they are.
+    /// Drops the `n` elements at the front, walking flat offsets along and leaving scalar ones.
     ///
     /// # Safety
     /// `n` must not exceed the number of elements left.
@@ -142,8 +136,7 @@ impl Iterator for Ranges<'_> {
         self.remaining
     }
 
-    /// Walks the offsets as the buffer they are, rather than stepping one `Option` at a time —
-    /// which is what `collect` and `for_each` route through.
+    /// Walks the offsets as the buffer they are, rather than one `Option` at a time.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where
@@ -261,8 +254,7 @@ unsafe impl TrustedLen for Ranges<'_> {}
 /// The element the values hold over `range`, which is a fresh box over the same buffers.
 ///
 /// # Safety
-/// `range` must be ordered and in bounds of the values, which it is for every range an
-/// [`Ranges`] built for them yields.
+/// `range` must be ordered and in bounds of the values, as every range [`Ranges`] yields is.
 #[inline(always)]
 unsafe fn element(values: &dyn PlArray, range: Range<usize>) -> Box<dyn PlArray> {
     debug_assert!(range.start <= range.end);
@@ -282,8 +274,7 @@ pub struct PlListValuesIter<'a> {
 
 impl<'a> PlListValuesIter<'a> {
     /// # Safety
-    /// `offsets` must be flat (`length + 1` offsets) or scalar (two offsets) for `length`, per
-    /// [`crate::broadcast`], and must be ordered and bounded by the length of `values`.
+    /// `offsets` must be flat or scalar for `length`, ordered and within the length of `values`.
     #[inline]
     pub(super) fn new(values: &'a dyn PlArray, offsets: &'a [u64], length: usize) -> Self {
         Self {
@@ -401,8 +392,7 @@ pub struct PlListIter<'a> {
 
 impl<'a> PlListIter<'a> {
     /// # Safety
-    /// `offsets` must be flat or scalar for `length`, per [`crate::broadcast`], and must be ordered
-    /// and bounded by the length of `values`.
+    /// `offsets` must be flat or scalar for `length`, ordered and within the length of `values`.
     #[inline]
     pub(super) fn new(
         values: &'a dyn PlArray,
@@ -430,8 +420,7 @@ impl<'a> PlListIter<'a> {
         is_valid.then(|| unsafe { element(self.values, range) })
     }
 
-    /// The ranges of the elements left to yield and the mask that says which of them are elements,
-    /// to walk in one loop.
+    /// The ranges of the elements left to yield and the mask that says which of them are elements.
     #[inline]
     fn split(self) -> (&'a dyn PlArray, Ranges<'a>, ValidityFold<'a>) {
         (self.values, self.ranges, self.validity.into_mask())
@@ -474,8 +463,7 @@ impl Iterator for PlListIter<'_> {
         self.next_back()
     }
 
-    /// Hoists the validity mask out of the loop, and the walk over the offsets with it. An array
-    /// whose elements are all null never reaches the values at all.
+    /// Hoists the validity mask out of the loop, and the walk over the offsets with it.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where
@@ -583,8 +571,7 @@ mod tests {
         assert_iterates(array.iter(), &expected.map(Some));
     }
 
-    /// The elements of a sliced array start partway into the offsets, which still hold the end of
-    /// the last of them.
+    /// The elements of a sliced array start partway into the offsets, which hold the last end.
     #[test]
     fn sliced() {
         let array = flat_array().sliced(1, 2);

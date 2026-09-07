@@ -162,8 +162,7 @@ pub fn chunk_from_arrow<A: ToArrow>(array: &A::Arrow) -> A {
     A::from_arrow(array)
 }
 
-/// Hands `array` to the Arrow array that holds the same elements, writing it out first if it is not
-/// laid out flat.
+/// Hands `array` to the Arrow array holding the same elements, writing it out first if not flat.
 #[inline]
 pub fn chunk_to_arrow<A: ToArrow>(array: &A) -> A::Arrow {
     A::to_arrow(&array.to_flat())

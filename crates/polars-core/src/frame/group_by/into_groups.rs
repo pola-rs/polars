@@ -22,11 +22,7 @@ pub trait IntoGroupsType {
     }
 }
 
-/// The groups of a chunked array whose one chunk repeats a single value: every element is that
-/// same value — or every element is null, which group-by also puts in one group — so they are one
-/// group, and the answer is read off the representation rather than off `len()` elements.
-///
-/// `None` if the array is not stored that way, and the caller has to look at the elements.
+/// The groups of a chunked array whose one chunk repeats a single value: they are one group.
 fn scalar_groups<T: PolarsDataType>(ca: &ChunkedArray<T>) -> Option<GroupsType> {
     let [chunk] = ca.chunks().as_slice() else {
         return None;

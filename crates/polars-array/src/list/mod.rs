@@ -38,8 +38,7 @@ impl PlListArray {
     /// Creates a flat [`PlListArray`] out of its internal components.
     ///
     /// # Errors
-    /// This function errors unless `offsets` holds `length + 1` non-decreasing offsets ending
-    /// within `values`, and `validity` holds `length` bits.
+    /// Errors unless `offsets` holds `length + 1` non-decreasing offsets within `values`.
     pub fn try_new(
         values: Box<dyn PlArray>,
         offsets: Buffer<u64>,
@@ -79,8 +78,7 @@ impl PlListArray {
     /// Creates a flat [`PlListArray`] out of its internal components without validating them.
     ///
     /// # Safety
-    /// `offsets` must be non-decreasing, hold `length + 1` offsets and end within `values`;
-    /// `validity` must cover exactly `length` elements, in either representation.
+    /// `offsets` and `validity` must both be flat and valid for `length` elements.
     #[inline]
     pub unsafe fn new_unchecked(
         values: Box<dyn PlArray>,
@@ -106,8 +104,7 @@ impl PlListArray {
     /// Creates a scalar [`PlListArray`] of `length` elements out of its internal components.
     ///
     /// # Errors
-    /// This function errors unless `offsets` is scalar for `length`, per [`is_scalar_offsets_len`],
-    /// non-decreasing and ending within `values`, and `validity` is scalar for `length`, per
+    /// Errors unless `offsets` is scalar for `length`, non-decreasing and within `values`.
     pub fn try_new_broadcast(
         values: Box<dyn PlArray>,
         offsets: Buffer<u64>,
@@ -144,12 +141,10 @@ impl PlListArray {
         Self::try_new_broadcast(values, offsets, length, validity).unwrap()
     }
 
-    /// Creates a scalar [`PlListArray`] of `length` elements out of its internal components without
-    /// validating them.
+    /// Creates a scalar [`PlListArray`] of `length` elements without validating them.
     ///
     /// # Safety
-    /// `offsets` must be non-decreasing, scalar for `length` per [`is_scalar_offsets_len`], and end
-    /// within `values`; `validity` must cover exactly `length` elements, in either representation.
+    /// `offsets` and `validity` must both be scalar and valid for `length` elements.
     #[inline]
     pub unsafe fn new_broadcast_unchecked(
         values: Box<dyn PlArray>,
@@ -183,8 +178,7 @@ impl PlListArray {
         }
     }
 
-    /// Creates a fully valid, flat [`PlListArray`] from `values` and `offsets`, taking its length
-    /// from the offsets.
+    /// Creates a fully valid, flat [`PlListArray`] from `values` and `offsets`.
     pub fn from_offsets(values: Box<dyn PlArray>, offsets: Buffer<u64>) -> Self {
         let length = offsets
             .len()
@@ -193,8 +187,7 @@ impl PlListArray {
         Self::new(values, offsets, length, None)
     }
 
-    /// Creates a [`PlListArray`] of `length` copies of the list `element`, in the memory of that
-    /// one list.
+    /// Creates a [`PlListArray`] of `length` copies of `element`, in its own memory.
     #[inline]
     pub fn new_scalar(element: Box<dyn PlArray>, length: usize) -> Self {
         // There is no element for the list to be shared by when there are no elements at all,
@@ -246,8 +239,7 @@ impl PlListArray {
         (!self.offsets_are_scalar()).then_some(&self.offsets)
     }
 
-    /// The range of [`Self::values`] every element of this array covers, if the offsets hold a
-    /// single range.
+    /// The range of [`Self::values`] every element covers, if the offsets hold one range.
     #[inline]
     pub fn scalar_offsets(&self) -> Option<Range<usize>> {
         // SAFETY: a scalar offsets buffer holds two slots, so both are in bounds.
@@ -272,8 +264,7 @@ impl PlListArray {
             .map(|validity| unsafe { PlBitmapRef::new_broadcast_unchecked(validity, self.length) })
     }
 
-    /// Whether the offsets hold the single range every element covers, so that every element is the
-    /// same list.
+    /// Whether the offsets hold one range that every element of this array shares.
     #[inline]
     pub fn offsets_are_scalar(&self) -> bool {
         // The offsets hold one slot more than the starts that are flat or scalar for this array's
@@ -306,15 +297,13 @@ impl PlListArray {
         self.offsets_are_flat() && self.validity().is_none_or(|validity| validity.is_flat())
     }
 
-    /// Whether this array's own backing buffers stand for a single list repeated [`Self::len`]
-    /// times.
+    /// Whether this array's own buffers stand for one list repeated [`Self::len`] times.
     #[inline]
     pub fn is_scalar(&self) -> bool {
         self.offsets_are_scalar() && self.validity().is_none_or(|v| v.is_scalar())
     }
 
-    /// The single element every element of this array equals, if both of its own backing buffers
-    /// hold one slot.
+    /// The single element every element equals, if this array's own buffers both hold one slot.
     #[inline]
     pub fn scalar_value(&self) -> Option<Option<Box<dyn PlArray>>> {
         let is_shared = self.offsets.len() == 2
@@ -465,8 +454,7 @@ impl PlListArray {
         PlListIter::new(&*self.values, &self.offsets, self.validity(), self.length)
     }
 
-    /// Returns an iterator over `length` elements, repeating the single element of this array if
-    /// that is all it holds, and ignoring validity.
+    /// Iterates `length` elements, repeating a scalar array's one value and ignoring validity.
     #[inline]
     pub fn broadcast_values_iter(&self, length: usize) -> PlListValuesIter<'_> {
         assert_broadcastable(self.length, length);
@@ -571,8 +559,7 @@ impl PlListArray {
         }
     }
 
-    /// Returns an equivalent array whose own backing buffers both hold one slot per element,
-    /// borrowing this array itself if they already do.
+    /// Returns an equivalent flat array, borrowing this one if it is already flat.
     pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         if let Some(flat) = self.as_flat() {
             return Cow::Borrowed(flat);
@@ -616,8 +603,7 @@ impl PlListArray {
         })
     }
 
-    /// Borrows this array as a [`Flat`] one, if both of its own backing buffers already hold one
-    /// slot per element.
+    /// Borrows this array as a [`Flat`] one, if it is already flat.
     #[inline]
     pub fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: both own backing buffers of a flat array hold one slot per element.
@@ -635,8 +621,7 @@ impl<'a> IntoIterator for &'a PlListArray {
     }
 }
 
-/// Compares two arrays element-wise; neither the offsets nor the values of null elements are part
-/// of a value, so an array compares equal to any other one holding the same lists.
+/// Compares two arrays element-wise, disregarding representation and the values of nulls.
 impl PartialEq for PlListArray {
     fn eq(&self, other: &Self) -> bool {
         if self.length != other.length {
@@ -667,8 +652,7 @@ impl PartialEq for PlListArray {
 
 impl Eq for PlListArray {}
 
-/// Compares an array of unknown representation against a flat one; see [`PartialEq<PlListArray> for
-/// Flat<PlListArray>`](Flat).
+/// Compares an array of unknown representation against a flat one.
 impl PartialEq<Flat<PlListArray>> for PlListArray {
     #[inline]
     fn eq(&self, other: &Flat<PlListArray>) -> bool {

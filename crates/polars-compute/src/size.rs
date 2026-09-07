@@ -33,8 +33,7 @@ fn validity_size(validity: Option<PlBitmapRef<'_>>) -> usize {
     })
 }
 
-/// The number of slots a backing buffer holds: a single one where it stands for a value repeated
-/// over every element, and one per element otherwise.
+/// The number of slots a backing buffer holds: a single one when scalar, one per element flat.
 fn buffer_slots(is_scalar: bool, length: usize) -> usize {
     if is_scalar { 1 } else { length }
 }

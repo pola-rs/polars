@@ -73,9 +73,7 @@ pub fn not(arr: &PlBooleanArray) -> PlBooleanArray {
     inverted.with_validity(arr.validity().map(PlBitmap::from))
 }
 
-/// The value every element of `arr` is known to hold, if its values are the one bit they all
-/// share and no element is null: neither a scalar values buffer under nulls nor a flat one says
-/// the same of the whole chunk.
+/// The value every element of `arr` is known to hold, if its values are one bit and none is null.
 fn known_value(arr: &PlBooleanArray) -> Option<bool> {
     (arr.null_count() == 0)
         .then(|| arr.scalar_values())
@@ -124,7 +122,7 @@ pub fn and(lhs: &PlBooleanArray, rhs: &PlBooleanArray) -> PlBooleanArray {
     and_flat(&lhs.to_flat(), &rhs.to_flat())
 }
 
-/// Exclusive 'or' operation on two arrays. A null on either side answers null.
+/// Exclusive 'or' operation on two arrays.
 pub fn xor(lhs: &PlBooleanArray, rhs: &PlBooleanArray) -> PlBooleanArray {
     assert_eq!(
         lhs.len(),

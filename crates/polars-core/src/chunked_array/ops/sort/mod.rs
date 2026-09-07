@@ -29,9 +29,7 @@ use crate::runtime::RAYON;
 use crate::series::IsSorted;
 use crate::utils::NoNull;
 
-/// Moves the values of the valid elements to one end of `values` and the nulls to the other,
-/// returning the run of valid values and the mask of the result. `validity` covers one element of
-/// `values` per bit, in either representation.
+/// Moves the valid values of `values` to one end and the nulls to the other.
 fn partition_nulls<'a, T: Copy>(
     values: &'a mut [T],
     validity: Option<PlBitmapRef<'_>>,
