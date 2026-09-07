@@ -120,11 +120,6 @@ pub enum AnyValue<'a> {
 }
 
 impl AnyValue<'static> {
-    /// Can the [`AnyValue`] exist as having `dtype` as its `DataType`.
-    pub fn can_have_dtype(&self, dtype: &DataType) -> bool {
-        matches!(self, AnyValue::Null) || dtype == &self.dtype()
-    }
-
     /// Generate a default dummy value for a given datatype.
     pub fn default_value(
         dtype: &DataType,
