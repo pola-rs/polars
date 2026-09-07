@@ -217,16 +217,6 @@ pub fn apply_predicate(
     Ok(())
 }
 
-/// Returns whether the [`DataType`] supports minimum/maximum operations.
-fn use_min_max(dtype: &DataType) -> bool {
-    dtype.is_primitive_numeric()
-        || dtype.is_temporal()
-        || matches!(
-            dtype,
-            DataType::String | DataType::Binary | DataType::Boolean
-        )
-}
-
 pub struct ColumnStatistics {
     pub dtype: DataType,
     pub min: AnyValue<'static>,
