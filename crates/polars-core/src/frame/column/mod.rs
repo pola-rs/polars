@@ -18,7 +18,7 @@ use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::ReshapeDimension;
 use crate::prelude::*;
-use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
+use crate::series::{BitRepr, IsSorted};
 use crate::utils::{Container, slice_offsets};
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
@@ -1551,11 +1551,6 @@ impl Column {
     pub fn product(&self) -> PolarsResult<Scalar> {
         // @scalar-opt
         self.as_materialized_series().product()
-    }
-
-    pub fn phys_iter(&self) -> SeriesPhysIter<'_> {
-        // @scalar-opt
-        self.as_materialized_series().phys_iter()
     }
 
     #[inline]
