@@ -9715,8 +9715,16 @@ class Series(metaclass=_Meta):
 
         Notes
         -----
-        As long as your data can fit in RAM, it is always more efficient to use the
-        regular :meth:`quantile` function instead.
+        * As long as your data can fit in RAM, it is always more efficient to use the
+          regular :meth:`quantile` function instead.
+
+        * NaN values are regarded as larger than any finite number (and equal to one
+          another). As a result, ``NaN`` values are treated as the largest values when
+          computing quantiles, which can lead to surprising results.
+
+          For example, the median of ``[1.0, 2.0, NaN, NaN, NaN, 6.0, 7.0]`` is ``7.0``,
+          not ``4.0``. To exclude ``NaN`` values from the calculation, use
+          :func:`Expr.drop_nans`.
 
         Examples
         --------
@@ -9727,7 +9735,7 @@ class Series(metaclass=_Meta):
         5000
 
         >>> # Allow for a large error (10% of the rank)
-        >>> s.approx_quantile(0.5, error=0.1)
+        >>> s.approx_quantile(0.5, error=0.1)  # doctest: +SKIP
         5006
 
         >>> # Get several quantiles at once
@@ -9735,7 +9743,7 @@ class Series(metaclass=_Meta):
         [2500, 7499]
 
         >>> # Explicitly use an algorithm that is accurate at the high tail
-        >>> s.approx_quantile(0.999, method="req_hi", error=0.1)
+        >>> s.approx_quantile(0.999, method="req_hi", error=0.1)  # doctest: +SKIP
         9989
         """
         out = (

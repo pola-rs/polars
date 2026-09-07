@@ -3879,8 +3879,16 @@ class Expr(metaclass=_Meta):
 
         Notes
         -----
-        As long as your data can fit in RAM, it is always more efficient to use the
-        regular :meth:`quantile` function instead.
+        * As long as your data can fit in RAM, it is always more efficient to use the
+          regular :meth:`quantile` function instead.
+
+        * NaN values are regarded as larger than any finite number (and equal to one
+          another). As a result, ``NaN`` values are treated as the largest values when
+          computing quantiles, which can lead to surprising results.
+
+          For example, the median of ``[1.0, 2.0, NaN, NaN, NaN, 6.0, 7.0]`` is ``7.0``,
+          not ``4.0``. To exclude ``NaN`` values from the calculation, use
+          :func:`Expr.drop_nans`.
 
         Examples
         --------
@@ -3898,7 +3906,9 @@ class Expr(metaclass=_Meta):
         └──────┘
 
         >>> # Allow for a large error (10% of the rank)
-        >>> lf.select(pl.col("a").approx_quantile(0.5, error=0.1)).collect()
+        >>> lf.select(
+        ...     pl.col("a").approx_quantile(0.5, error=0.1)
+        ... ).collect()  # doctest: +SKIP
         shape: (1, 1)
         ┌──────┐
         │ a    │
@@ -3911,7 +3921,7 @@ class Expr(metaclass=_Meta):
         >>> # Explicitly use an algorithm that is accurate at the high tail
         >>> lf.select(
         ...     pl.col("a").approx_quantile(0.999, method="req_hi", error=0.1)
-        ... ).collect()
+        ... ).collect()  # doctest: +SKIP
         shape: (1, 1)
         ┌──────┐
         │ a    │
