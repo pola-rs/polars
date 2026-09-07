@@ -44,8 +44,8 @@ pub(super) fn approx_quantile(
     method: &ApproxQuantileMethod,
     error: f64,
 ) -> PolarsResult<Column> {
-    assert!(s.len() == 2);
-    let input = &s[0];
+    assert_eq!(s.len(), 2);
+    let input = s[0].as_materialized_series();
     let mut quantile = s[1].as_materialized_series();
     polars_ensure!(quantile.len() <= 1, ComputeError:
         "polars does not support varying approximate quantiles yet, \

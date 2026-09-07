@@ -4,8 +4,8 @@ use std::{fmt, mem};
 use either::Either;
 pub use kll::KLLSketch;
 use polars_utils::total_ord::TotalOrd;
+use rand::RngExt;
 use rand::rngs::SmallRng;
-use rand::{RngExt, SeedableRng};
 pub use req::{DoubleReqSketch, ReqSketch};
 
 /// Compute these quantile values using KLL, if the method is Auto.
@@ -31,18 +31,6 @@ pub enum ApproxQuantileMethod {
     DoubleReqSketch,
 }
 
-pub fn empirical_error_to_formal(empirical_error: f64, method: &ApproxQuantileMethod) -> f64 {
-    // The maths get weird at errors close to 1 (especially for REQ), so cap it below that.
-    const MAX_ERROR: f64 = 0.90;
-    match method {
-        ApproxQuantileMethod::Auto => panic!("method not resolved"),
-        ApproxQuantileMethod::KLL => f64::min(MAX_ERROR, KLL_BOUND_LOOSENESS * empirical_error),
-        ApproxQuantileMethod::ReqSketch { .. } | ApproxQuantileMethod::DoubleReqSketch => {
-            f64::min(MAX_ERROR, REQ_BOUND_LOOSENESS * empirical_error)
-        },
-    }
-}
-
 impl ApproxQuantileMethod {
     /// Replace `Auto` by a concrete method.
     pub fn resolve(&self, quantiles: Option<&[f64]>) -> Self {
@@ -60,6 +48,19 @@ impl ApproxQuantileMethod {
             (true, false) => M::ReqSketch { hra: false },
             (false, true) => M::ReqSketch { hra: true },
             (true, true) => M::DoubleReqSketch,
+        }
+    }
+
+    /// Translate an empirically calibrated error into the formal bound of this method.
+    pub fn empirical_error_to_formal(&self, empirical_error: f64) -> f64 {
+        // The maths get weird at errors close to 1 (especially for REQ), so cap it below that.
+        const MAX_ERROR: f64 = 0.90;
+        match self {
+            Self::Auto => panic!("method not resolved"),
+            Self::KLL => f64::min(MAX_ERROR, KLL_BOUND_LOOSENESS * empirical_error),
+            Self::ReqSketch { .. } | Self::DoubleReqSketch => {
+                f64::min(MAX_ERROR, REQ_BOUND_LOOSENESS * empirical_error)
+            },
         }
     }
 }
@@ -89,7 +90,7 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedState<T> {
 
     fn num_items(&self) -> usize {
         match &self.cum_weight {
-            Some(cum_weight) => cum_weight.last().map(|x| *x).unwrap_or(0),
+            Some(cum_weight) => cum_weight.last().copied().unwrap_or(0),
             None => self.items.len(),
         }
     }
@@ -119,28 +120,23 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedState<T> {
             return;
         }
 
-        let mut items = Vec::with_capacity(len);
-        let mut cum_weight = Vec::with_capacity(len);
-        let mut total_weight = 0;
-        let mut iter1 = mem::take(self).into_weighted().peekable();
-        let mut iter2 = other.into_weighted().peekable();
-        while iter1.peek().is_some() || iter2.peek().is_some() {
-            let take1 = match (iter1.peek(), iter2.peek()) {
-                (Some(_), None) => true,
-                (None, Some(_)) => false,
-                (Some((x1, _)), Some((x2, _))) => TotalOrd::tot_cmp(x1, x2).is_le(),
-                (None, None) => unreachable!(),
-            };
-            let (item, weight) = match take1 {
-                true => iter1.next().unwrap(),
-                false => iter2.next().unwrap(),
-            };
-            total_weight += weight;
-            items.push(item);
-            cum_weight.push(total_weight);
-        }
+        let mut merged = Vec::with_capacity(len);
+        merge_sorted(
+            &mut merged,
+            mem::take(self).into_weighted(),
+            other.into_weighted(),
+            |(x1, _), (x2, _)| TotalOrd::tot_cmp(x1, x2),
+        );
+        debug_assert_eq!(merged.len(), len);
 
-        debug_assert_eq!(items.len(), len);
+        let mut total_weight = 0;
+        let (items, cum_weight): (Vec<T>, Vec<usize>) = merged
+            .into_iter()
+            .map(|(item, weight)| {
+                total_weight += weight;
+                (item, total_weight)
+            })
+            .unzip();
 
         self.items = items.into_boxed_slice();
         self.cum_weight = Some(cum_weight.into_boxed_slice());
@@ -173,13 +169,13 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedState<T> {
         // We round with ties toward ∞ for consistency with the regular quantile.
         let estimated_rank =
             (quantile * self.num_items().saturating_sub(1) as f64).round() as usize + 1;
-        let idx = estimate_quantile_index(self.cum_weight.as_ref(), estimated_rank);
+        let idx = estimate_quantile_index(self.cum_weight.as_deref(), estimated_rank);
         Some(&self.items[idx])
     }
 }
 
 #[inline(never)]
-fn estimate_quantile_index(cum_weight: Option<&Box<[usize]>>, estimated_rank: usize) -> usize {
+fn estimate_quantile_index(cum_weight: Option<&[usize]>, estimated_rank: usize) -> usize {
     match cum_weight {
         Some(cum_weight) => cum_weight.partition_point(|w| *w < estimated_rank),
         None => estimated_rank - 1,
@@ -243,7 +239,7 @@ pub mod kll {
         /// Total number of items that were consumed by this sketch.
         consumed_items: usize,
         /// Maximum number of items before we compact.
-        compactor_capacity: usize,
+        total_capacity: usize,
         rng: SmallRng,
         scratch: Vec<T>,
     }
@@ -255,7 +251,7 @@ pub mod kll {
                 levels: self.levels.clone(),
                 k: self.k,
                 consumed_items: self.consumed_items,
-                compactor_capacity: self.compactor_capacity,
+                total_capacity: self.total_capacity,
                 rng: rand::make_rng(),
                 scratch: Vec::new(),
             }
@@ -280,8 +276,8 @@ pub mod kll {
                 levels: vec![Level::default()],
                 k,
                 consumed_items: 0,
-                compactor_capacity: k,
-                rng: SmallRng::from_rng(&mut rand::rng()),
+                total_capacity: k,
+                rng: rand::make_rng(),
                 scratch: Vec::default(),
             };
             KLLSketch(State::Ingesting(state))
@@ -326,20 +322,16 @@ pub mod kll {
     impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
         #[inline]
         pub fn update(&mut self, item: &T) {
-            // Fast compare
-            if self.items.len() >= self.compactor_capacity {
-                self.compact(true);
+            if self.items.len() >= self.total_capacity {
+                self.compact();
             }
             self.items.push(item.clone());
             self.levels[0].size += 1;
             self.consumed_items += 1;
         }
 
-        /// Compact all of the compactors from base to top.
-        ///
-        /// If break_early is true, then the sweeping stops once a compaction has
-        /// taken place.
-        fn compact(&mut self, break_early: bool) {
+        /// Compact the lowest compactor that is over its threshold.
+        fn compact(&mut self) {
             for level in 0..self.levels.len() {
                 if self.levels[level].size
                     >= compactor_threshold(self.k, self.levels.len() - 1 - level)
@@ -350,18 +342,17 @@ pub mod kll {
                     let old_size = self.items.len();
                     self.compact_level(level);
                     debug_assert!(self.items.len() < old_size);
-                    if break_early {
-                        break;
-                    };
+                    return;
                 }
             }
         }
 
         fn add_new_compactor(&mut self) {
             self.levels.push(Level::default());
-            self.compactor_capacity = (0..self.levels.len())
+            self.total_capacity = (0..self.levels.len())
                 .map(|level| compactor_threshold(self.k, self.levels.len() - 1 - level))
-                .sum();
+                .sum::<usize>()
+                .next_multiple_of(2);
         }
 
         fn compact_level(&mut self, level: usize) {
@@ -389,7 +380,7 @@ pub mod kll {
 
             // If there is an odd number of items in this compactor, stash the "straggler" to add it back later
             let mut straggler = None;
-            if compact_level.size % 2 != 0 {
+            if !compact_level.size.is_multiple_of(2) {
                 if coin1 {
                     straggler = Some(self.items[compact_start].clone());
                     compact_start += 1;
@@ -415,7 +406,7 @@ pub mod kll {
 
             // Merge the items into the next compactor
             merge_sorted(buf, next_level_items, compacted_items, TotalOrd::tot_cmp);
-            self.items[next_start..next_start + buf.len()].clone_from_slice(&buf);
+            self.items[next_start..next_start + buf.len()].clone_from_slice(buf);
             next_level.size = buf.len();
 
             // Add back the straggler
@@ -484,31 +475,8 @@ pub mod kll {
     /// Capacity of the compactor `depth` levels below the top: `ceil(k (2/3)^depth)`
     /// rounded up to an even number, and never below `MIN_COMPACTOR_SIZE`.
     fn compactor_threshold(k: usize, depth: usize) -> usize {
-        // Table of 2^63 * (2/3)^i
-        const TABLE_SIZE: usize = 64;
-        const MUL: [u64; TABLE_SIZE] = {
-            let mut result = [0u64; TABLE_SIZE];
-            let mut numerator: u128 = 1;
-            let mut denominator: u128 = 1;
-            let mut i = 0;
-            while i < TABLE_SIZE {
-                let mut c = 1u128 << 63;
-                c *= numerator;
-                c /= denominator;
-                result[i] = c as u64;
-                numerator *= 2;
-                denominator *= 3;
-                i += 1;
-            }
-            result
-        };
-        // Compute ceil(k * 2^i / 3^i) as (k * MUL[i] + (2^63 - 1)) >> 63.
-        let nominal_size = (((k as u128) * (MUL[depth] as u128) + (1u128 << 63) - 1) >> 63) as u64;
-        debug_assert_eq!(
-            nominal_size,
-            ((k as u128) * 2u128.pow(depth as u32)).div_ceil(3u128.pow(depth as u32)) as u64
-        );
-        // Round up to an even number; see the doc comment.
+        let nominal_size =
+            ((k as u128) * 2u128.pow(depth as u32)).div_ceil(3u128.pow(depth as u32));
         let nominal_size = usize::try_from(nominal_size).expect("overflow");
         usize::max(nominal_size.next_multiple_of(2), MIN_COMPACTOR_SIZE)
     }
@@ -519,9 +487,6 @@ pub mod req {
 
     /// Stream length to parameterise a fresh sketch for.
     fn initial_n(error: f64) -> usize {
-        let k = |n: usize| compute_k(error, FAILURE_PROBABILITY, n);
-        let b = |n| compute_b(k(n), n);
-
         // Choose initial guess of n such that `error * n > 1`: at `error * n ==
         // 1` the `log2` in `compute_k` is zero and `k` overflows.
         let mut n = (f64::ceil(2.0 / error) as usize).next_power_of_two();
@@ -532,23 +497,23 @@ pub mod req {
         //   2. The number of consumable items in the sketch is greater than the
         //      capacity of a compactor. Otherwise, we would not even fill up
         //      that first compactor.
-        let n_is_ok = |n| n > k(n) && n > b(n);
+        let n_is_ok = |n| {
+            let k = compute_k(error, n);
+            n > k && n > compute_b(k, n)
+        };
         while !n_is_ok(n) {
             n = n.checked_mul(2).expect("no sketch size fits this error");
         }
         n
     }
 
-    fn compute_k(error: f64, failure_prob: f64, n: usize) -> usize {
+    fn compute_k(error: f64, n: usize) -> usize {
         assert!(error > 0.0 && error < 1.0, "invalid error: {error}");
-        assert!(
-            failure_prob > 0.0 && failure_prob <= 0.5,
-            "invalid failure probability: {failure_prob}"
-        );
 
         // Eq. 6
         let k = 2 * f64::ceil(
-            (4.0 / error) * f64::sqrt((-f64::ln(failure_prob)) / f64::log2(error * n as f64)),
+            (4.0 / error)
+                * f64::sqrt((-f64::ln(FAILURE_PROBABILITY)) / f64::log2(error * n as f64)),
         ) as usize;
         assert!(k >= 2);
         k
@@ -556,7 +521,10 @@ pub mod req {
 
     fn compute_b(k: usize, n: usize) -> usize {
         // Sec 2.1: k is an *even* integer parameter.
-        assert!(k > 0 && k % 2 == 0, "k must be a positive even integer");
+        debug_assert!(
+            k > 0 && k.is_multiple_of(2),
+            "k must be a positive even integer"
+        );
         2 * k * (usize::div_ceil(n, k) * 2 - 1).ilog2() as usize
     }
 
@@ -596,13 +564,13 @@ pub mod req {
         /// Bit that specifies if this sketch is high-rank-accurate or low-rank-accurate.
         is_hra: bool,
         /// Upper bound on the number of items this sketch is parameterised
-        /// for. Squared on every growth.
+        /// for. Doubled on every growth.
         n: usize,
         /// The allowed error as a fraction of `n`.
         error: f64,
         /// k parameter of the paper: the size of a compactor section. Impacts
         /// how many items are protected during a compaction. Shrinks over time,
-        /// see `ensure_enough_sections`.
+        /// see `close_out_if_needed`.
         k: usize,
         consumed_items: usize,
         rng: SmallRng,
@@ -639,7 +607,7 @@ pub mod req {
     impl<T: fmt::Debug + Clone + TotalOrd> ReqSketch<T> {
         pub fn new(error: f64, hra: bool) -> Self {
             let n = initial_n(error);
-            let k = compute_k(error, FAILURE_PROBABILITY, n);
+            let k = compute_k(error, n);
             assert!(n > k, "n must be greater than k");
             let state = IngestingState {
                 items: Vec::new(),
@@ -655,14 +623,6 @@ pub mod req {
             ReqSketch {
                 state: State::Ingesting(state),
                 is_hra: hra,
-            }
-        }
-
-        #[inline]
-        pub fn num_items(&self) -> usize {
-            match &self.state {
-                State::Ingesting(state) => state.consumed_items,
-                State::Finalized(state) => state.num_items(),
             }
         }
 
@@ -739,11 +699,6 @@ pub mod req {
             self.hra.finalize();
         }
 
-        pub fn num_items(&self) -> usize {
-            debug_assert_eq!(self.lra.num_items(), self.hra.num_items());
-            self.lra.num_items()
-        }
-
         pub fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
             match quantile <= 0.5 {
                 true => self.lra.estimate_quantile(quantile),
@@ -763,23 +718,19 @@ pub mod req {
 
         /// Grow the compactors once a compaction schedule runs out of sections.
         fn close_out_if_needed(&mut self, level: usize) {
-            let num_sections = self.num_sections();
-            if num_sections >= 64 {
+            if self.num_sections() >= 64 {
                 // We assume that the compaction schedule will never overflow over 64 bits.
                 return;
             }
 
             let schedule = self.levels[level].compaction_schedule;
             let sections_needed = u64::BITS - schedule.leading_zeros();
-            if sections_needed < num_sections as u32 {
-                return;
-            }
 
             // The paper squares here, but growing is quite cheap in practice,
             // so we just amortize by doubling.
             while sections_needed >= self.num_sections() as u32 {
                 self.n = self.n.checked_mul(2).expect("overflow");
-                self.k = compute_k(self.error, FAILURE_PROBABILITY, self.n);
+                self.k = compute_k(self.error, self.n);
             }
         }
 
@@ -797,7 +748,7 @@ pub mod req {
             self.levels[level].size >= self.compactor_capacity()
         }
 
-        /// Compact all of the compactors from base to top.
+        /// Compact `level` if it is full.
         fn compact_if_needed(&mut self, level: usize) {
             if self.is_compactor_full(level) {
                 let old_size = self.levels[level].size;
@@ -815,10 +766,8 @@ pub mod req {
             if level == self.levels.len() - 1 {
                 self.add_new_compactor();
             }
-            debug_assert!(
-                self.levels[level].size >= self.compactor_capacity(),
-                "compactor is not full"
-            );
+            let capacity = self.compactor_capacity();
+            debug_assert!(self.levels[level].size >= capacity, "compactor is not full");
             debug_assert_eq!(
                 self.levels[level + 1].offset + self.levels[level + 1].size,
                 self.levels[level].offset
@@ -843,12 +792,12 @@ pub mod req {
             let l_c = usize::min(z_c as usize + 1, self.num_sections()) * self.k;
             let promote_count = compactor[self.compactor_capacity() - l_c..].len() & !1;
             debug_assert!(l_c <= self.compactor_capacity() / 2);
-            debug_assert!(l_c % 2 == 0);
+            debug_assert!(l_c.is_multiple_of(2));
             debug_assert!(promote_count >= l_c);
 
             // Only draw a fresh promotion parity every other compaction, and take
             // the opposite one in between. See DOI 10.3390/s22249612, Sec 3.2.
-            let coin = match self.levels[level].compaction_schedule % 2 != 0 {
+            let coin = match !self.levels[level].compaction_schedule.is_multiple_of(2) {
                 true => !self.levels[level].coin,
                 false => self.rng.random(),
             };
@@ -993,7 +942,6 @@ fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
 }
 
 /// Append the merge of two runs, both sorted by `compare`, to `vec`.
-#[inline(never)]
 fn merge_sorted<T>(
     vec: &mut Vec<T>,
     iter1: impl ExactSizeIterator<Item = T>,

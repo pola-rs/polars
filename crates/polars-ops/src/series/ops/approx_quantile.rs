@@ -20,7 +20,7 @@ fn sketch_quantile<T>(
 where
     T: fmt::Debug + Clone + TotalOrd + Send,
 {
-    const THREAD_BOUNDARY: usize = if cfg!(debug_assertions) { 0 } else { 100_000 };
+    const THREAD_BOUNDARY: usize = if cfg!(debug_assertions) { 1 } else { 100_000 };
 
     // Merging is only allowed after finalization.
     let build = |offset, len| {
@@ -58,7 +58,7 @@ where
 
 /// Estimate the quantiles of `s`, one output element per requested quantile.
 pub fn approx_quantile(
-    s: &Column,
+    s: &Series,
     quantiles: &Series,
     error: f64,
     method: &ApproxQuantileMethod,
@@ -74,7 +74,6 @@ pub fn approx_quantile(
         ComputeError: "`quantile` should be between 0.0 and 1.0",
     );
 
-    let s = s.as_materialized_series();
     let dtype = s.dtype();
 
     let out = match dtype {
@@ -104,8 +103,11 @@ pub fn approx_quantile(
         DataType::String => {
             let ca = s.str()?;
             let v = sketch_quantile(ca.len(), quantiles, error, method, |offset, len, sketch| {
+                let mut buf = String::new();
                 for value in ca.slice(offset as i64, len).iter().flatten() {
-                    sketch.update(&value.to_owned());
+                    buf.clear();
+                    buf.push_str(value);
+                    sketch.update(&buf);
                 }
             });
             StringChunked::from_iter_options(PlSmallStr::EMPTY, v.into_iter()).into_series()

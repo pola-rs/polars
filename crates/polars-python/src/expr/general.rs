@@ -5,7 +5,7 @@ use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 #[cfg(feature = "approx_quantile")]
-use polars_compute::approx_quantile::{ApproxQuantileMethod, empirical_error_to_formal};
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
 use polars_plan::plans::{
@@ -13,7 +13,6 @@ use polars_plan::plans::{
 };
 use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
-use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 
 use super::datatype::PyDataTypeExpr;
@@ -482,13 +481,13 @@ impl PyExpr {
                 .into_series();
             (lit(s), Some(qs))
         } else {
-            return Err(PyTypeError::new_err(
+            return Err(pyo3::exceptions::PyTypeError::new_err(
                 "`quantile` must be a float, a list of floats, or an expression",
             ));
         };
         let method = method.0.resolve(quantiles.as_deref());
         if bound_is_empirical {
-            error = empirical_error_to_formal(error, &method);
+            error = method.empirical_error_to_formal(error);
         };
         Ok(self
             .inner

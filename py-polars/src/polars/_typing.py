@@ -476,6 +476,8 @@ DeprecationType: TypeAlias = Literal[
 __all__ = [
     "Alignment",
     "Ambiguous",
+    "ApproxQuantileErrorBound",
+    "ApproxQuantileMethod",
     "ArrowArrayExportable",
     "ArrowStreamExportable",
     "AsofJoinStrategy",
@@ -545,7 +547,6 @@ __all__ = [
     "PythonDataType",
     "PythonLiteral",
     "QuantileMethod",
-    "ApproxQuantileMethod",
     "RankMethod",
     "Roll",
     "RowTotalsDefinition",
