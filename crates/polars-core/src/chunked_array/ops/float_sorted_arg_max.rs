@@ -21,7 +21,7 @@ where
         let search_val = std::iter::once(Some(T::Native::nan()));
         let idx = binary_search_ca(ca, search_val, SearchSortedSide::Left, false)[0] as usize;
         let candidate = idx.saturating_sub(1);
-        if candidate < ca.first_non_null().unwrap() {
+        if ca.get(candidate).is_none() {
             maybe_max_idx
         } else {
             candidate
@@ -42,7 +42,7 @@ where
         let search_val = std::iter::once(Some(T::Native::nan()));
         let idx = binary_search_ca(ca, search_val, SearchSortedSide::Right, true)[0] as usize;
         let candidate = if idx == ca.len() { idx - 1 } else { idx };
-        if candidate > ca.last_non_null().unwrap() {
+        if ca.get(candidate).is_none() {
             maybe_max_idx
         } else {
             candidate
