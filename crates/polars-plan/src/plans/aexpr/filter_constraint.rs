@@ -1024,20 +1024,23 @@ fn fold_and(nodes: Vec<Node>, expr_arena: &mut Arena<AExpr>) -> Node {
 /// its own filter.
 ///
 /// Only bounds widen: a column some predicate leaves free is dropped, as are `!=`,
-/// `is_in` and null checks. Empty when nothing survives.
+/// `is_in` and null checks. Empty when nothing survives, and empty unless every
+/// predicate keeps rows one at a time, which is what makes the reasoning above
+/// hold.
 pub(crate) fn widen_over_predicates(
     predicates: &[Node],
+    maintain_errors: bool,
     expr_arena: &mut Arena<AExpr>,
 ) -> Vec<Node> {
     let Some((&first, rest)) = predicates.split_first() else {
         return Vec::new();
     };
-    let Some(mut widened) = predicate_bounds(first, expr_arena) else {
+    let Some(mut widened) = predicate_bounds(first, maintain_errors, expr_arena) else {
         return Vec::new();
     };
 
     for &predicate in rest {
-        let Some(bounds) = predicate_bounds(predicate, expr_arena) else {
+        let Some(bounds) = predicate_bounds(predicate, maintain_errors, expr_arena) else {
             return Vec::new();
         };
         widened.retain(|name, cc| {
@@ -1063,10 +1066,21 @@ pub(crate) fn widen_over_predicates(
 // The bounds one predicate places on the columns it constrains. `None` for an
 // unsatisfiable predicate: it selects nothing, so it says nothing about what the
 // others need.
+//
+// Also `None` for a predicate that does not decide row by row. One reading its
+// column as a whole - a sort, say - sees a different column once rows are dropped
+// beneath it, so which rows it keeps is not implied by any per-row bound.
 fn predicate_bounds(
     predicate: Node,
+    maintain_errors: bool,
     expr_arena: &Arena<AExpr>,
 ) -> Option<PlIndexMap<PlSmallStr, ColumnConstraints>> {
+    let mut group = ExprPushdownGroup::Pushable;
+    group.update_with_expr_rec(expr_arena.get(predicate), expr_arena, None);
+    if group.blocks_pushdown(maintain_errors) {
+        return None;
+    }
+
     let mut constraints: PlIndexMap<PlSmallStr, ColumnConstraints> = PlIndexMap::new();
     for conjunct in MintermIter::new(predicate, expr_arena) {
         if matches!(

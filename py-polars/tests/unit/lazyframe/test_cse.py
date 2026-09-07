@@ -2031,3 +2031,49 @@ def test_cspe_narrowing_keeps_the_rows_a_reader_still_needs() -> None:
         q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
         check_row_order=False,
     )
+
+
+def test_cspe_no_narrowing_past_a_reader_that_reads_a_whole_column() -> None:
+    # `s.sort()` sees a different column once rows are dropped beneath it, so which
+    # rows this reader keeps is not implied by any bound on `year`.
+    base = (
+        pl.LazyFrame({"year": [2000, 2001, 2002], "s": ["z", "a", "b"], "v": [1, 1, 1]})
+        .group_by("year", maintain_order=True)
+        .agg(pl.col("v").sum().alias("total"), pl.col("s").first())
+    )
+    q = pl.concat(
+        [
+            base.filter((pl.col("year") == 2001) & (pl.col("s").sort() == "b")),
+            base.filter((pl.col("year") == 2002) & (pl.col("s").sort() == "b")),
+        ]
+    )
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'col("year") >=' not in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_no_narrowing_past_a_fallible_reader(plmonkeypatch: PlMonkeyPatch) -> None:
+    # Dropping rows beneath a filter that can error means it may no longer error.
+    base = (
+        pl.LazyFrame(
+            {"year": [2000, 2001, 2002], "lst": [[1], [1], [1]], "v": [1, 1, 1]}
+        )
+        .group_by("year", maintain_order=True)
+        .agg(pl.col("v").sum().alias("total"), pl.col("lst").first())
+    )
+    q = pl.concat(
+        [
+            base.filter((pl.col("year") == 2001) & (pl.col("lst").list.get(1) > 0)),
+            base.filter((pl.col("year") == 2002) & (pl.col("lst").list.get(1) > 0)),
+        ]
+    )
+    assert 'col("year") >=' in q.explain()
+
+    plmonkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+    assert 'col("year") >=' not in q.explain()

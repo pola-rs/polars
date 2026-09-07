@@ -484,9 +484,13 @@ pub(crate) fn set_cache_states(
 
                     lp_arena.replace(filter_node, new_lp);
                 }
-            } else if let Some(narrowed) =
-                narrow_shared_subplan(&v.children, &v.parents, lp_arena, expr_arena)
-            {
+            } else if let Some(narrowed) = narrow_shared_subplan(
+                &v.children,
+                &v.parents,
+                pushdown_maintain_errors,
+                lp_arena,
+                expr_arena,
+            ) {
                 let start_lp = lp_arena.take(narrowed);
                 let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
                 lp_arena.replace(narrowed, lp);
@@ -527,6 +531,7 @@ pub(crate) fn set_cache_states(
 fn narrow_shared_subplan(
     children: &[Node],
     parents: &[TwoParents],
+    maintain_errors: bool,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<Node> {
@@ -541,7 +546,7 @@ fn narrow_shared_subplan(
         })
         .collect::<Option<Vec<_>>>()?;
 
-    let widened = widen_over_predicates(&predicates, expr_arena);
+    let widened = widen_over_predicates(&predicates, maintain_errors, expr_arena);
     if widened.is_empty() {
         return None;
     }
