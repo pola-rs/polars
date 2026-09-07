@@ -3,8 +3,6 @@ use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-#[cfg(feature = "cloud")]
-pub use async_writable::{AsyncDynWritable, AsyncWritable};
 use polars_error::{PolarsResult, feature_gated, polars_err};
 use polars_utils::file::close_file;
 use polars_utils::io::create_file;
@@ -26,8 +24,6 @@ pub trait WritableTrait: std::io::Write {
 /// Holds a non-async writable file, abstracted over local files or cloud files.
 ///
 /// This implements `DerefMut` to a trait object implementing [`std::io::Write`].
-///
-/// Also see: `Writable::try_into_async_writable` and `AsyncWritable`.
 #[allow(clippy::large_enum_variant)] // It will be boxed
 pub enum Writable {
     /// An abstract implementation for writable.
@@ -112,19 +108,6 @@ impl Writable {
                     .await
             },
             Self::Dyn(_) | Self::Local(_) => self.write_all(src.as_ref()),
-        }
-    }
-
-    /// This returns `Result<>` - if a write was performed before calling this,
-    /// `CloudWriter` can be in an Err(_) state.
-    #[cfg(feature = "cloud")]
-    pub fn try_into_async_writable(self) -> PolarsResult<AsyncWritable> {
-        use self::async_writable::AsyncDynWritable;
-
-        match self {
-            Self::Dyn(v) => Ok(AsyncWritable::Dyn(AsyncDynWritable(v))),
-            Self::Local(v) => Ok(AsyncWritable::Local(tokio::fs::File::from_std(v))),
-            Self::Cloud(v) => Ok(AsyncWritable::Cloud(v)),
         }
     }
 
@@ -266,154 +249,4 @@ async fn new_cloud_writer(
     writer.start().await?;
 
     Ok(writer)
-}
-
-#[cfg(feature = "cloud")]
-mod async_writable {
-    use std::io;
-    use std::num::NonZeroUsize;
-    use std::ops::{Deref, DerefMut};
-    use std::pin::Pin;
-    use std::sync::Arc;
-    use std::task::{Context, Poll};
-
-    use bytes::Bytes;
-    use polars_error::{PolarsError, PolarsResult};
-    use polars_utils::file::close_file;
-    use polars_utils::pl_path::PlRefPath;
-    use tokio::io::AsyncWriteExt;
-    use tokio::task;
-
-    use super::{Writable, WritableTrait};
-    use crate::cloud::CloudOptions;
-    use crate::metrics::IOMetrics;
-    use crate::utils::sync_on_close::SyncOnCloseType;
-
-    /// Turn an abstract io::Write into an abstract tokio::io::AsyncWrite.
-    pub struct AsyncDynWritable(pub Box<dyn WritableTrait + Send>);
-
-    impl tokio::io::AsyncWrite for AsyncDynWritable {
-        fn poll_write(
-            self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-            buf: &[u8],
-        ) -> Poll<io::Result<usize>> {
-            let result = task::block_in_place(|| self.get_mut().0.write(buf));
-            Poll::Ready(result)
-        }
-
-        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-            let result = task::block_in_place(|| self.get_mut().0.flush());
-            Poll::Ready(result)
-        }
-
-        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-            self.poll_flush(cx)
-        }
-    }
-
-    /// Holds an async writable file, abstracted over local files or cloud files.
-    ///
-    /// This implements `DerefMut` to a trait object implementing [`tokio::io::AsyncWrite`].
-    ///
-    /// Note: It is important that you do not call `shutdown()` on the deref'ed `AsyncWrite` object.
-    /// You should instead call the [`AsyncWritable::close`] at the end.
-    pub enum AsyncWritable {
-        Dyn(AsyncDynWritable),
-        Local(tokio::fs::File),
-        Cloud(crate::cloud::cloud_writer::CloudWriterIoTraitWrap),
-    }
-
-    impl AsyncWritable {
-        pub async fn try_new(
-            path: PlRefPath,
-            cloud_options: Option<&CloudOptions>,
-            cloud_upload_chunk_size: Option<NonZeroUsize>,
-            cloud_upload_concurrency: usize,
-            io_metrics: Option<Arc<IOMetrics>>,
-        ) -> PolarsResult<Self> {
-            // TODO: Native async impl
-            Writable::try_new(
-                path,
-                cloud_options,
-                cloud_upload_chunk_size,
-                cloud_upload_concurrency,
-                io_metrics,
-            )
-            .and_then(|x| x.try_into_async_writable())
-        }
-
-        /// If this writer holds a cloud writer, it will `mem::take(T)`. `T` is unmodified for other
-        /// writer types.
-        pub async fn write_all_owned<T>(&mut self, src: &mut T) -> io::Result<()>
-        where
-            T: AsRef<[u8]> + Default + Drop, // `Drop` is to exclude `&[u8]` slices.
-            Bytes: From<T>,
-        {
-            match self {
-                Self::Cloud(v) => v.write_all_owned(Bytes::from(std::mem::take(src))).await,
-                Self::Dyn(_) | Self::Local(_) => self.write_all(src.as_ref()).await,
-            }
-        }
-
-        pub async fn sync_all(&mut self) -> io::Result<()> {
-            match self {
-                Self::Dyn(v) => task::block_in_place(|| v.0.as_ref().sync_all()),
-                Self::Local(v) => v.sync_all().await,
-                Self::Cloud(_) => Ok(()),
-            }
-        }
-
-        pub async fn sync_data(&mut self) -> io::Result<()> {
-            match self {
-                Self::Dyn(v) => task::block_in_place(|| v.0.as_ref().sync_data()),
-                Self::Local(v) => v.sync_data().await,
-                Self::Cloud(_) => Ok(()),
-            }
-        }
-
-        pub async fn close(mut self, sync: SyncOnCloseType) -> PolarsResult<()> {
-            match sync {
-                SyncOnCloseType::All => self.sync_all().await?,
-                SyncOnCloseType::Data => self.sync_data().await?,
-                SyncOnCloseType::None => {},
-            }
-
-            match self {
-                Self::Dyn(mut v) => {
-                    v.shutdown().await.map_err(PolarsError::from)?;
-                    Ok(task::block_in_place(|| v.0.close())?)
-                },
-                Self::Local(v) => async {
-                    let f = v.into_std().await;
-                    close_file(f)
-                }
-                .await
-                .map_err(PolarsError::from),
-                Self::Cloud(mut v) => v.shutdown().await.map_err(PolarsError::from),
-            }
-        }
-    }
-
-    impl Deref for AsyncWritable {
-        type Target = dyn tokio::io::AsyncWrite + Send + Unpin;
-
-        fn deref(&self) -> &Self::Target {
-            match self {
-                Self::Dyn(v) => v,
-                Self::Local(v) => v,
-                Self::Cloud(v) => v,
-            }
-        }
-    }
-
-    impl DerefMut for AsyncWritable {
-        fn deref_mut(&mut self) -> &mut Self::Target {
-            match self {
-                Self::Dyn(v) => v,
-                Self::Local(v) => v,
-                Self::Cloud(v) => v,
-            }
-        }
-    }
 }
