@@ -7,8 +7,6 @@ use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr};
 use polars_utils::format_pl_smallstr;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 pub trait PhysicalIoExpr: Send + Sync {
     /// Take a [`DataFrame`] and produces a boolean [`Series`] that serves

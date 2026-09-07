@@ -13,13 +13,10 @@ mod primitive;
 mod simple;
 mod utils;
 
-use std::io::Cursor;
-
 use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::{ArrowDataType, Field};
 use arrow::offset::Offsets;
-use polars_buffer::Buffer;
 use simple::page_iter_to_array;
 
 pub use self::nested_utils::{InitNested, NestedState, init_nested};
