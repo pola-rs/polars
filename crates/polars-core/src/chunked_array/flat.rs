@@ -61,7 +61,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
 impl<T: PolarsNumericType> ChunkedArray<T> {
     /// The values of this array as one contiguous slice, writing out a scalar chunk only.
-    pub fn to_data_views(&self) -> Vec<Cow<'_, Buffer<T::Native>>> {
+    pub fn to_flat_values_chunks(&self) -> Vec<Cow<'_, Buffer<T::Native>>> {
         self.downcast_iter()
             .map(|arr| arr.to_flat_values())
             .collect()

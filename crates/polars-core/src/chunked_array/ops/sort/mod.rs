@@ -272,7 +272,7 @@ where
     if ca.null_count() == 0 {
         // The kernel reads the values as a slice, and nothing is null for it to skip, so only a
         // chunk whose values repeat one value is written out — its mask is not read at all.
-        let views = ca.to_data_views();
+        let views = ca.to_flat_values_chunks();
         let iter = views.iter().map(|values| values.iter().copied());
         arg_sort::arg_sort_no_nulls(
             ca.name().clone(),
@@ -309,7 +309,7 @@ fn arg_sort_multiple_numeric<T: PolarsNumericType>(
     if no_nulls {
         let mut vals = Vec::with_capacity(ca.len());
         // As above: the values are read as a slice and the mask is not read at all.
-        let views = ca.to_data_views();
+        let views = ca.to_flat_values_chunks();
         for values in &views {
             vals.extend_trusted_len(values.iter().map(|v| {
                 let i = count;
