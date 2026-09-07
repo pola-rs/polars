@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::ops::Add;
+use std::ops::{Add, Mul};
 #[cfg(feature = "simd")]
 use std::simd::Select;
 #[cfg(feature = "simd")]
@@ -8,7 +8,7 @@ use std::simd::prelude::*;
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::types::NativeType;
-use num_traits::Zero;
+use num_traits::{AsPrimitive, Zero};
 use polars_array::PlPrimitiveArray;
 use polars_utils::float16::pf16;
 
@@ -50,6 +50,52 @@ wrapping_impl!(WrappingAdd, add, pf16);
 wrapping_impl!(WrappingAdd, add, f32);
 wrapping_impl!(WrappingAdd, add, f64);
 
+macro_rules! wrapping_mul_impl {
+    ($method:ident, $t:ty) => {
+        impl WrappingMul for $t {
+            #[inline(always)]
+            fn wrapping_mul(&self, v: &Self) -> Self {
+                <$t>::$method(*self, *v)
+            }
+
+            #[inline(always)]
+            fn from_count(count: usize) -> Self {
+                count.as_()
+            }
+        }
+    };
+}
+
+/// Performs multiplication that wraps around on overflow.
+///
+/// Differs from num::WrappingMul in that this is also implemented for floats.
+pub trait WrappingMul: Sized {
+    /// Wrapping (modular) multiplication. Computes `self * other`, wrapping around at
+    /// the boundary of the type.
+    fn wrapping_mul(&self, v: &Self) -> Self;
+
+    /// A count of elements as `Self`, wrapped around at the boundary of the type.
+    fn from_count(count: usize) -> Self;
+}
+
+wrapping_mul_impl!(wrapping_mul, u8);
+wrapping_mul_impl!(wrapping_mul, u16);
+wrapping_mul_impl!(wrapping_mul, u32);
+wrapping_mul_impl!(wrapping_mul, u64);
+wrapping_mul_impl!(wrapping_mul, usize);
+wrapping_mul_impl!(wrapping_mul, u128);
+
+wrapping_mul_impl!(wrapping_mul, i8);
+wrapping_mul_impl!(wrapping_mul, i16);
+wrapping_mul_impl!(wrapping_mul, i32);
+wrapping_mul_impl!(wrapping_mul, i64);
+wrapping_mul_impl!(wrapping_mul, isize);
+wrapping_mul_impl!(wrapping_mul, i128);
+
+wrapping_mul_impl!(mul, pf16);
+wrapping_mul_impl!(mul, f32);
+wrapping_mul_impl!(mul, f64);
+
 #[cfg(feature = "simd")]
 const STRIPE: usize = 16;
 
@@ -82,7 +128,7 @@ where
 #[cfg(not(feature = "simd"))]
 impl<T> WrappingSum for T
 where
-    T: NativeType + WrappingAdd + Zero,
+    T: NativeType + WrappingAdd + WrappingMul + Zero,
 {
     fn wrapping_sum(vals: &[Self]) -> Self {
         vals.iter()
@@ -98,7 +144,7 @@ where
 #[cfg(feature = "simd")]
 impl<T> WrappingSum for T
 where
-    T: NativeType + WrappingAdd + Zero + crate::SimdPrimitive,
+    T: NativeType + WrappingAdd + WrappingMul + Zero + crate::SimdPrimitive,
 {
     fn wrapping_sum(vals: &[Self]) -> Self {
         vals.iter()
@@ -173,7 +219,7 @@ impl WrappingSum for pf16 {
 }
 
 /// Adding up a slice of values, wrapping around on overflow.
-pub trait WrappingSum: WrappingAdd + Zero + Sized {
+pub trait WrappingSum: WrappingAdd + WrappingMul + Zero + Sized {
     fn wrapping_sum(vals: &[Self]) -> Self;
     fn wrapping_sum_with_validity(vals: &[Self], mask: &BitMask) -> Self;
 }
@@ -198,7 +244,7 @@ where
     }
 
     // A chunk that repeats one value adds that value up once per non-null element, which is
-    // `O(log n)` doublings rather than a pass over the chunk.
+    // a single multiplication rather than a pass over the chunk.
     if let Some(value) = arr.scalar_values() {
         return repeat_wrapping_add(value, count);
     }
@@ -215,7 +261,7 @@ where
 pub fn wrapping_sum_arr_upcast<T, S>(arr: &PlPrimitiveArray<T>) -> S
 where
     T: NativeType + Zero + Into<S>,
-    S: Zero + WrappingAdd + Copy,
+    S: Zero + WrappingAdd + WrappingMul + Copy,
 {
     let count = arr.len() - arr.null_count();
     if count == 0 {
@@ -236,21 +282,7 @@ where
     }
 }
 
-/// `value` added to itself `count` times, wrapping around on overflow, by repeated doubling.
-fn repeat_wrapping_add<T: Zero + WrappingAdd + Copy>(value: T, count: usize) -> T {
-    let mut total = T::zero();
-    let mut addend = value;
-    let mut remaining = count;
-
-    while remaining > 0 {
-        if remaining % 2 == 1 {
-            total = total.wrapping_add(&addend);
-        }
-        remaining /= 2;
-        if remaining > 0 {
-            addend = addend.wrapping_add(&addend);
-        }
-    }
-
-    total
+/// `value` added to itself `count` times, wrapping around on overflow.
+fn repeat_wrapping_add<T: WrappingMul>(value: T, count: usize) -> T {
+    value.wrapping_mul(&T::from_count(count))
 }
