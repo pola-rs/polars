@@ -8,9 +8,9 @@ use arrow::datatypes::ArrowDataType;
 use crate::NotSimdPrimitive;
 
 mod array;
-mod boolean;
 mod list;
 mod pl_array;
+mod pl_boolean;
 mod scalar;
 #[cfg(feature = "simd")]
 mod simd;

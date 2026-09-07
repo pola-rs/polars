@@ -1,4 +1,4 @@
-use arrow::array::{BinaryArray, FixedSizeBinaryArray};
+use arrow::array::BinaryArray;
 use arrow::bitmap::Bitmap;
 use arrow::types::Offset;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
@@ -70,53 +70,5 @@ impl<O: Offset> TotalOrdKernel for BinaryArray<O> {
 
     fn tot_ge_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
         self.values_iter().map(|l| l.tot_ge(&other)).collect()
-    }
-}
-
-impl TotalEqKernel for FixedSizeBinaryArray {
-    type Scalar = [u8];
-
-    fn validity_mask(&self) -> Option<&Bitmap> {
-        self.validity()
-    }
-
-    fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
-        assert!(self.len() == other.len());
-
-        if self.size() != other.size() {
-            return Bitmap::new_zeroed(self.len());
-        }
-
-        (0..self.len())
-            .map(|i| self.value(i) == other.value(i))
-            .collect()
-    }
-
-    fn tot_ne_kernel(&self, other: &Self) -> Bitmap {
-        assert!(self.len() == other.len());
-
-        if self.size() != other.size() {
-            return Bitmap::new_with_value(true, self.len());
-        }
-
-        (0..self.len())
-            .map(|i| self.value(i) != other.value(i))
-            .collect()
-    }
-
-    fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        if self.size() != other.len() {
-            return Bitmap::new_zeroed(self.len());
-        }
-
-        (0..self.len()).map(|i| self.value(i) == other).collect()
-    }
-
-    fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        if self.size() != other.len() {
-            return Bitmap::new_with_value(true, self.len());
-        }
-
-        (0..self.len()).map(|i| self.value(i) != other).collect()
     }
 }

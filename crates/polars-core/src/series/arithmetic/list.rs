@@ -123,7 +123,7 @@ use inner::ListNumericOpHelper;
 
 #[cfg(feature = "list_arithmetic")]
 mod inner {
-    use arrow::bitmap::Bitmap;
+    use arrow::bitmap::{Bitmap, MutableBitmap};
     use arrow::offset::OffsetsBuffer;
     use either::Either;
     use list_utils::with_match_pl_num_arith;
@@ -587,9 +587,7 @@ mod inner {
                             // time below, which needs one per element.
                             (Some(l), Some(r)) => Some((l.to_flat().into_owned().make_mut(), r)),
                             (Some(v), None) => return Some(v.to_flat().into_owned()),
-                            (None, Some(v)) => {
-                                Some((Bitmap::new_with_value(true, len_lhs).make_mut(), v))
-                            },
+                            (None, Some(v)) => Some((MutableBitmap::from_len_set(len_lhs), v)),
                             (None, None) => None,
                         }
                         .map(|(mut validity_out, validity_rhs)| {
@@ -690,9 +688,7 @@ mod inner {
                             // time below, which needs one per element.
                             (Some(l), Some(r)) => Some((l.to_flat().into_owned().make_mut(), r)),
                             (Some(v), None) => return Some(v.to_flat().into_owned()),
-                            (None, Some(v)) => {
-                                Some((Bitmap::new_with_value(true, len_lhs).make_mut(), v))
-                            },
+                            (None, Some(v)) => Some((MutableBitmap::from_len_set(len_lhs), v)),
                             (None, None) => None,
                         }
                         .map(|(mut validity_out, validity_rhs)| {
@@ -992,7 +988,7 @@ mod inner {
             (Some(v), None) => return Some(v.to_flat().into_owned()),
             // Materialize a full-true validity to re-use the codepath, as we still
             // need to spread the bits from the RHS to the correct positions.
-            (None, Some(v)) => Some((Bitmap::new_with_value(true, len_lhs).make_mut(), v)),
+            (None, Some(v)) => Some((MutableBitmap::from_len_set(len_lhs), v)),
             (None, None) => None,
         }
         .map(|(mut validity_out, validity_rhs)| {

@@ -1173,3 +1173,88 @@ def test_is_between_rejects_datetime_string_28253(dtype: pl.DataType) -> None:
         match="cannot compare 'date/datetime/time' to a string value",
     ):
         q.explain()
+
+
+def test_nested_struct_comparison_is_per_row() -> None:
+    # A struct under a container wider than one element: the comparison of its child
+    # array must be read per row, not folded into one answer every row then takes.
+    dtype = pl.Array(pl.Struct({"a": pl.Int64}), 2)
+    df = pl.DataFrame(
+        {
+            "l": pl.Series([[{"a": 1}, {"a": 2}], [{"a": 3}, {"a": 4}]], dtype=dtype),
+            "r": pl.Series([[{"a": 1}, {"a": 2}], [{"a": 3}, {"a": 9}]], dtype=dtype),
+        }
+    )
+    assert df.select(pl.col("l") == pl.col("r"))["l"].to_list() == [True, False]
+    assert df.select(pl.col("l") != pl.col("r"))["l"].to_list() == [False, True]
+
+    lists = pl.DataFrame(
+        {
+            "l": pl.Series([[{"a": 1}, {"a": 2}], [{"a": 3}, {"a": 4}]]),
+            "r": pl.Series([[{"a": 1}, {"a": 2}], [{"a": 3}, {"a": 9}]]),
+        }
+    )
+    assert lists.select(pl.col("l") == pl.col("r"))["l"].to_list() == [True, False]
+
+
+def test_nested_comparison_shapes() -> None:
+    # Shapes whose answer the containers settle without a value being read: a length
+    # mismatch, an empty list, and a null child.
+    lists = pl.DataFrame(
+        {
+            "l": pl.Series([[1, 2], [1], [], [3]]),
+            "r": pl.Series([[1, 2], [1, 2], [], [4]]),
+        }
+    )
+    assert lists.select(pl.col("l") == pl.col("r"))["l"].to_list() == [
+        True,
+        False,
+        True,
+        False,
+    ]
+    assert lists.select(pl.col("l") != pl.col("r"))["l"].to_list() == [
+        False,
+        True,
+        False,
+        True,
+    ]
+
+    nulls = pl.DataFrame(
+        {
+            "l": pl.Series([{"a": None}, {"a": None}], dtype=pl.Struct({"a": pl.Null})),
+            "r": pl.Series([{"a": None}, {"a": None}], dtype=pl.Struct({"a": pl.Null})),
+        }
+    )
+    assert nulls.select(pl.col("l") == pl.col("r"))["l"].to_list() == [True, True]
+
+    nested = pl.Array(pl.Array(pl.Int64, 2), 2)
+    arrays = pl.DataFrame(
+        {
+            "l": pl.Series([[[1, 2], [3, 4]]], dtype=nested),
+            "r": pl.Series([[[1, 2], [3, 9]]], dtype=nested),
+        }
+    )
+    assert arrays.select(pl.col("l") == pl.col("r"))["l"].to_list() == [False]
+
+
+def test_boolean_comparison_against_scalar() -> None:
+    # Every ordering of a boolean against one value; two hold for every element.
+    s = pl.DataFrame({"a": [True, False, None]})
+    assert s.select(pl.col("a") <= True)["a"].to_list() == [True, True, None]
+    assert s.select(pl.col("a") >= False)["a"].to_list() == [True, True, None]
+    assert s.select(pl.col("a") < True)["a"].to_list() == [False, True, None]
+    assert s.select(pl.col("a") > False)["a"].to_list() == [True, False, None]
+
+
+def test_when_then_both_sides_one_boolean() -> None:
+    # Where the two sides agree the mask says nothing; where they differ the answer
+    # is the mask itself or its complement.
+    df = pl.DataFrame({"m": [True, False, True]})
+    for if_true, if_false, expected in [
+        (True, True, [True, True, True]),
+        (False, False, [False, False, False]),
+        (True, False, [True, False, True]),
+        (False, True, [False, True, False]),
+    ]:
+        out = df.select(pl.when(pl.col("m")).then(if_true).otherwise(if_false))
+        assert out.to_series().to_list() == expected

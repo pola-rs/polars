@@ -69,7 +69,7 @@ use inner::NumericFixedSizeListOpHelper;
 
 #[cfg(feature = "array_arithmetic")]
 mod inner {
-    use arrow::bitmap::{Bitmap, BitmapBuilder};
+    use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
     // The level validities below this leaf are plain bitmaps, one bit per element throughout, so
     // combining them is the Arrow one; the *leaf* mask carries its own representation and is
     // combined with `polars_array`'s.
@@ -770,7 +770,7 @@ mod inner {
             (Some(v), None) => return Some(v.to_flat().into_owned()),
             // Materialize a full-true validity to re-use the codepath, as we still
             // need to spread the bits from the RHS to the correct positions.
-            (None, Some(v)) => Some((Bitmap::new_with_value(true, stride * v.len()).make_mut(), v)),
+            (None, Some(v)) => Some((MutableBitmap::from_len_set(stride * v.len()), v)),
             (None, None) => None,
         }
         .map(|(mut validity_out, primitive_validity)| {

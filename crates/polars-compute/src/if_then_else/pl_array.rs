@@ -9,8 +9,8 @@ use polars_array::PlFixedSizeListArray;
 use polars_array::arrow::bridge::{chunk_from_arrow, flat_to_arrow};
 use polars_array::arrow::export;
 use polars_array::{
-    Flat, PlArray, PlBinaryViewArray, PlBitmapRef, PlBooleanArray, PlListArray, PlPrimitiveArray,
-    PlUtf8ViewArray, StaticArray,
+    Flat, PlArray, PlBinaryViewArray, PlBitmapRef, PlListArray, PlPrimitiveArray, PlUtf8ViewArray,
+    StaticArray,
 };
 
 use super::IfThenElseArrowKernel;
@@ -169,10 +169,6 @@ where
     arrow::array::PrimitiveArray<T>: for<'a> IfThenElseArrowKernel<Scalar<'a> = T>,
 {
     arrow_if_then_else_kernel!(std::convert::identity, |_t, _f| T::PRIMITIVE.into());
-}
-
-impl IfThenElseKernel for PlBooleanArray {
-    arrow_if_then_else_kernel!(std::convert::identity, |_t, _f| ArrowDataType::Boolean);
 }
 
 impl IfThenElseKernel for PlUtf8ViewArray {

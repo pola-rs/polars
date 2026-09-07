@@ -237,16 +237,12 @@ pub trait PlTotalOrdKernel: Sized {
 }
 
 mod binary;
-mod boolean;
-mod dictionary;
-mod dyn_array;
-mod list;
-mod null;
 mod pl_array;
+mod pl_boolean;
+mod pl_dyn_array;
+mod pl_nested;
 mod pl_primitive;
 mod scalar;
-mod struct_;
-mod utf8;
 mod view;
 
 #[cfg(feature = "simd")]
@@ -262,6 +258,3 @@ mod _simd_dtypes {
 
 #[cfg(feature = "simd")]
 mod simd;
-
-#[cfg(feature = "dtype-array")]
-mod array;
