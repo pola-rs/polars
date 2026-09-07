@@ -17,9 +17,9 @@ const KLL_RANGE: RangeInclusive<f64> = 0.05..=0.95;
 const FAILURE_PROBABILITY: f64 = 1.0 - 0.9973;
 
 /// Looseness of the formal KLL error bound (estimated by measuring).
-const KLL_BOUND_LOOSENESS: f64 = 2.35;
+const KLL_BOUND_LOOSENESS: f64 = 4.6;
 /// Looseness of the formal REQ error bound (estimated by measuring).
-const REQ_BOUND_LOOSENESS: f64 = 17.0;
+const REQ_BOUND_LOOSENESS: f64 = 23.0;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
