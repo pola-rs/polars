@@ -2192,29 +2192,6 @@ impl DataFrame {
         Ok(unsafe { DataFrame::new_unchecked(self.height(), col) })
     }
 
-    /// Pipe different functions/ closure operations that work on a DataFrame together.
-    pub fn pipe<F, B>(self, f: F) -> PolarsResult<B>
-    where
-        F: Fn(DataFrame) -> PolarsResult<B>,
-    {
-        f(self)
-    }
-
-    /// Pipe different functions/ closure operations that work on a DataFrame together.
-    pub fn pipe_mut<F, B>(&mut self, f: F) -> PolarsResult<B>
-    where
-        F: Fn(&mut DataFrame) -> PolarsResult<B>,
-    {
-        f(self)
-    }
-
-    /// Pipe different functions/ closure operations that work on a DataFrame together.
-    pub fn pipe_with_args<F, B, Args>(self, f: F, args: Args) -> PolarsResult<B>
-    where
-        F: Fn(DataFrame, Args) -> PolarsResult<B>,
-    {
-        f(self, args)
-    }
     /// Drop duplicate rows from a [`DataFrame`].
     /// *This fails when there is a column of type List in DataFrame*
     ///
