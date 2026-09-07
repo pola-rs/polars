@@ -2006,29 +2006,6 @@ impl DataFrame {
         unsafe { DataFrame::_new_unchecked_impl(0, cols).with_schema_from(self) }
     }
 
-    #[must_use]
-    pub fn slice_par(&self, offset: i64, length: usize) -> Self {
-        if offset == 0 && length == self.height() {
-            return self.clone();
-        }
-        let columns = self.apply_columns_par(|s| s.slice(offset, length));
-        unsafe { DataFrame::new_unchecked(length, columns).with_schema_from(self) }
-    }
-
-    #[must_use]
-    pub fn _slice_and_realloc(&self, offset: i64, length: usize) -> Self {
-        if offset == 0 && length == self.height() {
-            return self.clone();
-        }
-        // @scalar-opt
-        let columns = self.apply_columns(|s| {
-            let mut out = s.slice(offset, length);
-            out.shrink_to_fit();
-            out
-        });
-        unsafe { DataFrame::new_unchecked(length, columns).with_schema_from(self) }
-    }
-
     /// Get the head of the [`DataFrame`].
     ///
     /// # Example
