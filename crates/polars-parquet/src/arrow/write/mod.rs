@@ -103,7 +103,7 @@ pub struct WriteOptions {
 use arrow::compute::aggregate::estimated_bytes_size;
 use arrow::match_integer_type;
 pub use file::FileWriter;
-pub use pages::{Nested, array_to_columns, arrays_to_columns};
+pub use pages::{Nested, array_to_columns};
 use polars_error::{PolarsResult, polars_bail};
 pub use row_group::{RowGroupIterator, row_group_iter};
 pub use schema::{schema_to_metadata_key, to_parquet_type};
