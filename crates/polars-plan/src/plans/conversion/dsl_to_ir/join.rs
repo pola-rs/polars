@@ -12,7 +12,7 @@ use crate::dsl::Expr;
 #[cfg(feature = "iejoin")]
 use crate::plans::AExpr;
 
-fn check_join_keys(keys: &mut dyn Iterator<Item = &Expr>) -> PolarsResult<()> {
+fn check_join_keys<'a>(keys: impl IntoIterator<Item = &'a Expr>) -> PolarsResult<()> {
     for e in keys {
         if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
             polars_bail!(
@@ -24,6 +24,32 @@ fn check_join_keys(keys: &mut dyn Iterator<Item = &Expr>) -> PolarsResult<()> {
     Ok(())
 }
 
+fn expand_join_keys(
+    keys: Vec<Expr>,
+    schema: &Schema,
+    side: &str,
+    opt_flags: &mut OptFlags,
+) -> PolarsResult<Vec<Expr>> {
+    let keys = rewrite_projections(keys, &Default::default(), schema, opt_flags)?;
+    polars_ensure!(
+        !keys.is_empty(),
+        InvalidOperation: "{side} join keys expanded to zero expressions"
+    );
+    Ok(keys)
+}
+
+fn to_join_expr_irs(
+    keys: Vec<Expr>,
+    schema: &Schema,
+    expr_arena: &mut Arena<AExpr>,
+    opt_flags: &OptFlags,
+) -> PolarsResult<Vec<ExprIR>> {
+    let mut ctx = ExprToIRContext::new_with_opt_eager(expr_arena, schema, opt_flags);
+    keys.into_iter()
+        .map(|e| to_expr_ir_materialized_lit(e, &mut ctx))
+        .collect()
+}
+
 /// Returns: left: join_node, right: last_node (often both the same)
 pub fn resolve_join(
     input_left: Either<Arc<DslPlan>, Node>,
@@ -32,7 +58,7 @@ pub fn resolve_join(
     mut options: JoinOptionsIR,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<(Node, Node)> {
-    let on = match condition {
+    let (mut left_on, mut right_on) = match condition {
         JoinCondition::NonEqui { predicates } => {
             feature_gated!("iejoin", {
                 polars_ensure!(!predicates.is_empty(), InvalidOperation: "expected join keys/predicates");
@@ -45,7 +71,7 @@ pub fn resolve_join(
                 );
             })
         },
-        JoinCondition::Equi { on } => on,
+        JoinCondition::Equi { left_on, right_on } => (left_on, right_on),
     };
 
     let owned = Arc::unwrap_or_clone;
@@ -60,30 +86,36 @@ pub fn resolve_join(
     let schema_right = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
 
     if options.args.how.is_cross() {
-        polars_ensure!(on.is_empty(), InvalidOperation: "a 'cross' join doesn't expect any join keys");
+        polars_ensure!(
+            left_on.is_empty() && right_on.is_empty(),
+            InvalidOperation: "a 'cross' join doesn't expect any join keys"
+        );
     } else {
-        polars_ensure!(!on.is_empty(), InvalidOperation: "expected join keys/predicates");
-        check_join_keys(&mut on.iter().flat_map(|t| [&t.0, &t.1]))?;
+        polars_ensure!(
+            !left_on.is_empty() || !right_on.is_empty(),
+            InvalidOperation: "expected join keys/predicates"
+        );
+        check_join_keys(left_on.iter().chain(&right_on))?;
 
-        let mut turn_off_coalesce = false;
-        for e in on.iter().flat_map(|t| [&t.0, &t.1]) {
-            // Any expression that is not a simple column expression will turn of coalescing.
-            turn_off_coalesce |= has_expr(e, |e| !matches!(e, Expr::Column(_)));
-        }
-        if turn_off_coalesce {
-            if matches!(options.args.coalesce, JoinCoalesce::CoalesceColumns) {
-                polars_warn!(
-                    "coalescing join requested but not all join keys are column references, turning off key coalescing"
-                );
-            }
-            options.args.coalesce = JoinCoalesce::KeepColumns;
-        }
-
-        options.args.validation.is_valid_join(&options.args.how)?;
+        left_on = expand_join_keys(left_on, &schema_left, "left", ctxt.opt_flags)?;
+        right_on = expand_join_keys(right_on, &schema_right, "right", ctxt.opt_flags)?;
+        polars_ensure!(
+            left_on.len() == right_on.len(),
+            InvalidOperation:
+                "join keys expanded to a different number of expressions (left: {}, right: {})",
+            left_on.len(),
+            right_on.len(),
+        );
 
         #[cfg(feature = "asof_join")]
-        if let JoinType::AsOf(options) = &options.args.how {
-            match (&options.left_by, &options.right_by) {
+        if let JoinType::AsOf(asof_options) = &options.args.how {
+            polars_ensure!(
+                left_on.len() == 1,
+                InvalidOperation:
+                "'asof_join' expects exactly one join key after expression expansion, got {}",
+                left_on.len(),
+            );
+            match (&asof_options.left_by, &asof_options.right_by) {
                 (None, None) => {},
                 (Some(l), Some(r)) => {
                     polars_ensure!(l.len() == r.len(), InvalidOperation: "expected equal number of columns in 'by_left' and 'by_right' in 'asof_join'");
@@ -95,41 +127,31 @@ pub fn resolve_join(
                 },
             }
         }
+
+        let turn_off_coalesce = left_on
+            .iter()
+            .chain(&right_on)
+            .any(|e| !matches!(e, Expr::Column(_)));
+        if turn_off_coalesce {
+            if matches!(options.args.coalesce, JoinCoalesce::CoalesceColumns) {
+                polars_warn!(
+                    "coalescing join requested but not all join keys are column references, turning off key coalescing"
+                );
+            }
+            options.args.coalesce = JoinCoalesce::KeepColumns;
+        }
+
+        options.args.validation.is_valid_join(&options.args.how)?;
     }
 
-    let mut left_on = on
-        .iter()
-        .map(|e| {
-            to_expr_ir_materialized_lit(
-                e.0.clone(),
-                &mut ExprToIRContext::new_with_opt_eager(
-                    ctxt.expr_arena,
-                    &schema_left,
-                    ctxt.opt_flags,
-                ),
-            )
-        })
-        .collect::<PolarsResult<Vec<_>>>()?;
-    let mut right_on = on
-        .iter()
-        .map(|e| {
-            to_expr_ir_materialized_lit(
-                e.1.clone(),
-                &mut ExprToIRContext::new_with_opt_eager(
-                    ctxt.expr_arena,
-                    &schema_right,
-                    ctxt.opt_flags,
-                ),
-            )
-        })
-        .collect::<PolarsResult<Vec<_>>>()?;
-    let mut joined_on = PlIndexSet::new();
-
+    let mut left_on = to_join_expr_irs(left_on, &schema_left, ctxt.expr_arena, ctxt.opt_flags)?;
+    let mut right_on = to_join_expr_irs(right_on, &schema_right, ctxt.expr_arena, ctxt.opt_flags)?;
     #[cfg(feature = "iejoin")]
     let check = !matches!(options.args.how, JoinType::IEJoin);
     #[cfg(not(feature = "iejoin"))]
     let check = true;
-    if check {
+    if check && left_on.len() > 1 {
+        let mut joined_on = PlIndexSet::with_capacity(left_on.len());
         for (l, r) in left_on.iter().zip(right_on.iter()) {
             polars_ensure!(
                 joined_on.insert((l.output_name(), r.output_name())),
@@ -139,7 +161,6 @@ pub fn resolve_join(
             )
         }
     }
-    drop(joined_on);
 
     ctxt.conversion_optimizer
         .fill_scratch(&left_on, ctxt.expr_arena);
@@ -373,7 +394,7 @@ pub fn resolve_join(
         }
     };
 
-    let join_schema = det_join_schema(&schema_left, &schema_right, &options, ctxt.expr_arena)
+    let join_schema = det_join_schema(&schema_left, &schema_right, &options)
         .context(failed_here!(join schema resolving))?;
 
     if key_cols_coalesced {
@@ -462,7 +483,7 @@ fn resolve_join_where(
     if ctxt.opt_flags.eager() {
         ctxt.opt_flags.set(OptFlags::PREDICATE_PUSHDOWN, true);
     }
-    check_join_keys(&mut predicates.iter())?;
+    check_join_keys(&predicates)?;
     let input_left =
         to_alp_impl(Arc::unwrap_or_clone(input_left), ctxt).context(failed_here!(join left))?;
     let input_right =

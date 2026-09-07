@@ -28,7 +28,7 @@ pub fn expand_expression(
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<()> {
-    if expr.into_iter().all(|e| !needs_expansion(e)) {
+    if !needs_expansion(expr) {
         out.push(expr.clone());
         return Ok(());
     }
@@ -37,14 +37,17 @@ pub fn expand_expression(
     Ok(())
 }
 
-/// In case of single col(*) -> do nothing, no selection is the same as select all
-/// In other cases replace the wildcard with an expression with all columns
+/// Expand selectors and multi-output expressions against the input schema.
 pub fn rewrite_projections(
     exprs: Vec<Expr>,
     ignored_selector_columns: &PlIndexSet<PlSmallStr>,
     schema: &Schema,
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<Vec<Expr>> {
+    if !exprs.iter().any(needs_expansion) {
+        return Ok(exprs);
+    }
+
     let mut result = Vec::with_capacity(exprs.len() + schema.len());
     for expr in &exprs {
         expand_expression(
@@ -233,7 +236,7 @@ fn try_expand_single(
     Ok(did_expand)
 }
 
-fn needs_expansion(expr: &Expr) -> bool {
+pub(crate) fn needs_expansion(expr: &Expr) -> bool {
     expr.into_iter().any(|e| {
         let mut v = matches!(e, Expr::Selector(_) | Expr::Eval { .. });
 

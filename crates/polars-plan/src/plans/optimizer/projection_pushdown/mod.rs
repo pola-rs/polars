@@ -1004,13 +1004,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     )
                 };
 
-                let new_output_schema = det_join_schema(
-                    &new_input_schema_left,
-                    &new_input_schema_right,
-                    options,
-                    self.expr_arena,
-                )
-                .unwrap();
+                let new_output_schema =
+                    det_join_schema(&new_input_schema_left, &new_input_schema_right, options)
+                        .unwrap();
 
                 if project_left.len() != input_schema_left.len() {
                     *edges.inputs()[0].projection_state_mut() = ProjectionState {

@@ -554,7 +554,7 @@ fn try_reduce_redundant_join_keys(
         .options
         .set_keys(new_left_on, new_right_on);
 
-    *output_schema = det_join_schema(schema_left, schema_right, options, expr_arena)?;
+    *output_schema = det_join_schema(schema_left, schema_right, options)?;
 
     let original_names = original_schema.iter_names().collect::<Vec<_>>();
     let new_names = output_schema.iter_names().collect::<Vec<_>>();
