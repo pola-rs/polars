@@ -1,5 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
+#![cfg_attr(feature = "nightly", feature(core_io_borrowed_buf, read_buf_at))]
 #![cfg_attr(
     feature = "allow_unused",
     allow(unused, dead_code, irrefutable_let_patterns)

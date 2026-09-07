@@ -43,7 +43,7 @@ version_check = { workspace = true }
 
 [features]
 catalog = ["polars-io/catalog"]
-nightly = ["polars-core/nightly", "polars-expr/nightly"]
+nightly = ["polars-core/nightly", "polars-expr/nightly", "polars-io/nightly"]
 streaming = ["polars-stream"]
 parquet = [
   "polars-io/parquet",
