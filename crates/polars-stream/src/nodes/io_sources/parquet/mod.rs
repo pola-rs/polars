@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::datatypes::{ArrowSchemaRef, TimeUnit as ArrowTimeUnit};
+use arrow::datatypes::ArrowSchemaRef;
 use async_trait::async_trait;
 use polars_async::executor::{self};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
@@ -57,10 +57,6 @@ pub struct ParquetFileReader {
     init_data: Option<InitializedState>,
 }
 
-/// INT96 timestamps carry no time unit, so schema inference has to pick one; the default of
-/// nanoseconds overflows outside of the years 1678..=2262. Build inference options mirroring the
-/// user-provided scan schema (if any) so INT96 columns are inferred - and thus decoded -
-/// directly at the precision the scan asks for.
 fn schema_inference_options(config: &ParquetOptions) -> SchemaInferenceOptions {
     let Some(schema) = config.schema.as_ref() else {
         return SchemaInferenceOptions::default();
@@ -81,8 +77,6 @@ fn int96_options(
     mut dtype: &DataType,
     default: &Arc<SchemaInferenceOptions>,
 ) -> SchemaInferenceOptions {
-    // List/array levels are anonymous in parquet, so a datetime beneath them belongs to the
-    // field holding `dtype`; only structs introduce new named fields.
     while let Some(inner) = dtype.inner_dtype() {
         dtype = inner;
     }

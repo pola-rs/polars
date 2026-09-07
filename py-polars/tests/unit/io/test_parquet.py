@@ -3009,10 +3009,6 @@ def test_nested_deprecated_int96_timestamps_21332() -> None:
 def test_int96_timestamps_respect_scan_schema_time_unit_29184() -> None:
     f = io.BytesIO()
 
-    # Spark writes INT96 (a Julian day plus nanoseconds-of-day) and no arrow
-    # schema metadata. Every date fits INT96, but decoding it as nanoseconds
-    # saturates outside 1677..=2262; a scan schema requesting a coarser unit
-    # must decode directly into that unit instead.
     values = [
         datetime(9999, 12, 31, 23, 59, 59, 999999),
         datetime(1000, 1, 1),
