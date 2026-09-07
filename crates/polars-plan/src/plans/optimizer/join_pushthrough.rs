@@ -294,8 +294,8 @@ fn candidate(join: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Opt
 
     // A schema that cannot be built (a suffix collision, say) means no rewrite, not
     // an error.
-    let inner_schema = det_join_schema(&a_schema, &c_schema, inner_options, expr_arena).ok()?;
-    let outer_schema = det_join_schema(&inner_schema, &b_schema, outer_options, expr_arena).ok()?;
+    let inner_schema = det_join_schema(&a_schema, &c_schema, inner_options).ok()?;
+    let outer_schema = det_join_schema(&inner_schema, &b_schema, outer_options).ok()?;
     if !same_columns(&outer_schema, output_schema) {
         return None;
     }
@@ -550,8 +550,7 @@ fn pushdown_candidate(
     {
         (a, b, true, keys)
     } else {
-        let b_output_names =
-            join_right_output_names(&a_schema, &b_schema, &inner_options, expr_arena).ok()?;
+        let b_output_names = join_right_output_names(&a_schema, &b_schema, &inner_options).ok()?;
         let b_column = |name: &PlSmallStr| -> Option<PlSmallStr> {
             b_schema
                 .iter_names()

@@ -2167,6 +2167,8 @@ impl JoinBuilder {
     /// The expressions you want to join both tables on.
     ///
     /// The passed expressions must be valid in both `LazyFrame`s in the join.
+    /// Selectors expand independently against each input schema. The results are
+    /// paired in order and both sides must produce the same nonzero number of keys.
     pub fn on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         let on = on.as_ref().to_vec();
         self.left_on.clone_from(&on);
@@ -2176,7 +2178,8 @@ impl JoinBuilder {
 
     /// The expressions you want to join the left table on.
     ///
-    /// The passed expressions must be valid in the left table.
+    /// The passed expressions and selectors must be valid in the left table.
+    /// The total expanded key count must be nonzero and match the right side.
     pub fn left_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         self.left_on = on.as_ref().to_vec();
         self
@@ -2184,7 +2187,8 @@ impl JoinBuilder {
 
     /// The expressions you want to join the right table on.
     ///
-    /// The passed expressions must be valid in the right table.
+    /// The passed expressions and selectors must be valid in the right table.
+    /// The total expanded key count must be nonzero and match the left side.
     pub fn right_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         self.right_on = on.as_ref().to_vec();
         self

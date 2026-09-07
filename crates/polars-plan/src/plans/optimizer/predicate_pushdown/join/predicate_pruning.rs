@@ -684,12 +684,12 @@ pub fn try_rewrite_join_type(
     let original_output_schema = match (&original_join_type, &new_join_type) {
         (JoinType::Right, _) | (_, JoinType::Right) => std::mem::replace(
             output_schema,
-            det_join_schema(schema_left, schema_right, options, expr_arena).unwrap(),
+            det_join_schema(schema_left, schema_right, options).unwrap(),
         ),
         _ => {
             debug_assert_eq!(
                 output_schema,
-                &det_join_schema(schema_left, schema_right, options, expr_arena,).unwrap()
+                &det_join_schema(schema_left, schema_right, options).unwrap()
             );
             output_schema.clone()
         },

@@ -775,9 +775,13 @@ mod tests {
     #[test]
     fn test_dsl_plan_serialization() {
         let name = || "a".into();
+        let other_name = || "b".into();
         let df = Arc::new(
-            DataFrame::new_infer_height(vec![Column::new(name(), Series::new(name(), &[1, 2, 3]))])
-                .unwrap(),
+            DataFrame::new_infer_height(vec![
+                Column::new(name(), vec![1, 2, 3]),
+                Column::new(other_name(), vec![4, 5, 6]),
+            ])
+            .unwrap(),
         );
         let dfscan = Arc::new(DslPlan::DataFrameScan {
             df: df.clone(),
@@ -792,7 +796,8 @@ mod tests {
             input_left: dfscan.clone(),
             input_right: dfscan,
             condition: JoinCondition::Equi {
-                on: vec![(Expr::Column(name()), Expr::Column(name()))],
+                left_on: vec![Expr::Selector(Selector::Wildcard)],
+                right_on: vec![Expr::Column(name()), Expr::Column(other_name())],
             },
             options: Arc::new(join_options),
         };
