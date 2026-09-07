@@ -11,7 +11,7 @@ use std::io::{Read, Seek};
 use arrow::types::{NativeType, i256};
 pub use deserialize::{
     Filter, InitNested, NestedState, PredicateFilter, column_iter_to_arrays, create_list,
-    create_map, get_page_iterator, init_nested, n_columns,
+    create_map, init_nested, n_columns,
 };
 #[cfg(feature = "async")]
 use futures::{AsyncRead, AsyncSeek};
