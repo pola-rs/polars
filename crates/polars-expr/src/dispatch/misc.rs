@@ -47,7 +47,11 @@ pub(super) fn approx_quantile(
     assert_eq!(s.len(), 2);
     let input = s[0].as_materialized_series();
     let mut quantile = s[1].as_materialized_series();
-    polars_ensure!(quantile.len() <= 1, ComputeError:
+    polars_ensure!(!quantile.is_empty(), ComputeError:
+        "the 'quantile' expression input should produce a single quantile or a list of quantiles, \
+        got an empty input"
+    );
+    polars_ensure!(quantile.len() == 1, ComputeError:
         "polars does not support varying approximate quantiles yet, \
         make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
     );
@@ -57,7 +61,9 @@ pub(super) fn approx_quantile(
     let inner_s;
     if is_list {
         let list = quantile.list()?;
-        inner_s = list.get_as_series(0).unwrap();
+        inner_s = list
+            .get_as_series(0)
+            .ok_or_else(|| polars_err!(ComputeError: "`quantile` should not be null"))?;
         quantile = &inner_s;
     }
 
