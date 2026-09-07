@@ -494,7 +494,6 @@ pub(crate) fn set_cache_states(
                 let start_lp = lp_arena.take(narrowed);
                 let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
                 lp_arena.replace(narrowed, lp);
-                // Every reference now reads the one narrowed subplan.
                 for &cache in &v.cache_nodes {
                     let IR::Cache { input, .. } = lp_arena.get_mut(cache) else {
                         unreachable!()
@@ -515,19 +514,12 @@ pub(crate) fn set_cache_states(
     Ok(())
 }
 
-/// Filters the shared subplan by what every reference to it asks for, so the rows
-/// none of them keep are never materialized.
+/// Filters the shared subplan by a conjunction that every reference's filter
+/// implies, so rows no reference keeps are not materialized. Each reference keeps
+/// its own filter above.
 ///
-/// The references carry different predicates, which is why they blocked pushdown in
-/// the first place. What they agree on still narrows the subplan: a conjunction
-/// weak enough to be implied by all of them can be applied once, below the caches,
-/// leaving each reference's own filter in place above.
-///
-/// Returns the new node the caches should read, or `None` when a reference has no
+/// Returns the node the caches should read, or `None` when a reference has no
 /// filter above it - it needs every row - or when the filters share no bound.
-///
-/// `children` and `parents` hold the cached subplan and the nodes above it, one
-/// entry per reference.
 fn narrow_shared_subplan(
     children: &[Node],
     parents: &[TwoParents],
@@ -551,8 +543,7 @@ fn narrow_shared_subplan(
         return None;
     }
 
-    // One filter per comparison: pushdown moves a conjunct only when it stands alone,
-    // and a comparison that cannot be pushed must not hold back the others.
+    // One filter per comparison: pushdown moves a conjunct only when it stands alone.
     let mut node = *children.first().unwrap();
     for predicate in widened {
         node = lp_arena.add(IR::Filter {
