@@ -47,12 +47,6 @@ xxhash-rust = { version = "0.8", optional = true, features = ["xxh64"] }
 
 proptest = { workspace = true, optional = true }
 
-[dev-dependencies]
-# ensure that the proptest feature is enabled when we are testing
-polars-parquet = { path = ".", features = ["proptest"] }
-
-rand = { workspace = true }
-
 [features]
 compression = [
   "brotli",

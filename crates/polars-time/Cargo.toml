@@ -29,9 +29,6 @@ schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 
-[dev-dependencies]
-polars-ops = { workspace = true, features = ["abs"] }
-
 [features]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]

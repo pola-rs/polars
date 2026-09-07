@@ -7,7 +7,6 @@ use arrow::trusted_len::TrustMyLength;
 use polars_array::PlBitmap;
 #[cfg(feature = "moment")]
 use polars_array::PlPrimitiveArray;
-#[cfg(feature = "moment")]
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_like};
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};

@@ -54,13 +54,6 @@ xxhash-rust = { workspace = true }
 [target.'cfg(target_family = "wasm")'.dependencies]
 uuid = { workspace = true, features = ["js"] }
 
-[dev-dependencies]
-bincode = { workspace = true }
-# used to run formal property testing
-polars-core = { path = ".", features = ["proptest"] }
-proptest = { workspace = true }
-serde_json = { workspace = true }
-
 [build-dependencies]
 version_check = { workspace = true }
 
@@ -131,7 +124,13 @@ dtype-array = ["arrow/dtype-array", "polars-compute/dtype-array", "polars-dtype/
 dtype-i8 = ["polars-dtype/dtype-i8"]
 dtype-i16 = ["polars-dtype/dtype-i16"]
 dtype-i128 = ["polars-compute/dtype-i128", "polars-dtype/dtype-i128"]
-dtype-decimal = ["arrow/dtype-decimal", "polars-compute/cast", "polars-compute/dtype-decimal", "dtype-i128", "polars-dtype/dtype-decimal"]
+dtype-decimal = [
+  "arrow/dtype-decimal",
+  "polars-compute/cast",
+  "polars-compute/dtype-decimal",
+  "dtype-i128",
+  "polars-dtype/dtype-decimal",
+]
 dtype-extension = ["polars-dtype/dtype-extension"]
 dtype-map = ["dtype-struct", "polars-dtype/dtype-map"]
 dtype-u8 = ["polars-dtype/dtype-u8"]

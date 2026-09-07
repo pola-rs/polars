@@ -45,10 +45,6 @@ sysinfo = { version = "0.39", default-features = false, features = ["system"], o
 tokio = { workspace = true, optional = true, features = ["rt", "sync"] }
 uuid = { workspace = true }
 
-[dev-dependencies]
-proptest = { workspace = true }
-rand = { workspace = true }
-
 [build-dependencies]
 version_check = { workspace = true }
 

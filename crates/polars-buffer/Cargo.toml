@@ -15,8 +15,6 @@ polars-utils = { workspace = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 
-[dev-dependencies]
-
 [build-dependencies]
 version_check = { workspace = true }
 

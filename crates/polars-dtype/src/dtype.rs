@@ -14,7 +14,11 @@ use arrow::datatypes::{
     ArrowDataType, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW,
     Field as ArrowField, MAINTAIN_PL_TYPE, Metadata, PL_KEY, TimeUnit as ArrowTimeUnit,
 };
-#[cfg(any(feature = "dtype-map", feature = "dtype-struct"))]
+#[cfg(any(
+    feature = "dtype-array",
+    feature = "dtype-map",
+    feature = "dtype-struct"
+))]
 use polars_error::polars_ensure;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::aliases::PlHashSet;

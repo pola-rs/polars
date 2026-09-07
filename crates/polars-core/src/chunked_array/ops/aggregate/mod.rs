@@ -10,7 +10,9 @@ use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_compute::float_sum;
 use polars_compute::min_max::MinMaxKernel;
 use polars_compute::rolling::QuantileMethod;
-use polars_compute::sum::{WrappingAdd, WrappingSum, wrapping_sum_arr, wrapping_sum_arr_upcast};
+use polars_compute::sum::{
+    WrappingAdd, WrappingMul, WrappingSum, wrapping_sum_arr, wrapping_sum_arr_upcast,
+};
 use polars_utils::float::IsFloat;
 use polars_utils::float16::pf16;
 use polars_utils::min_max::MinMax;
@@ -127,8 +129,8 @@ where
 {
     fn sum(&self) -> Option<T::Native> {
         Some(
-            // An integer chunk that repeats one value adds that value up in `O(log n)` doublings;
-            // floats still sum pairwise, since no closed form reproduces that — see
+            // An integer chunk that repeats one value adds that value up in a single
+            // multiplication; floats still sum pairwise, since no closed form reproduces that — see
             // `polars_compute::float_sum::sum_arr_as_f32`.
             self.downcast_iter()
                 .map(sum)
@@ -307,7 +309,7 @@ impl<T> ChunkAggSeries for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: WrappingSum + SumCast,
-    <T::Native as SumCast>::Sum: WrappingAdd,
+    <T::Native as SumCast>::Sum: WrappingAdd + WrappingMul,
     PlPrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
 {
     fn sum_reduce(&self) -> Scalar {

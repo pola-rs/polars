@@ -494,11 +494,14 @@ def test_partition_approximate_size(tmp_path: Path) -> None:
 
     files = sorted(root.iterdir())
 
-    assert len(files) == 30
+    # The files are sized by `DataFrame::estimated_size`, and `a` is a constant column held
+    # in a scalar buffer that is measured once, so only `b` is paid for: 8 bytes a row, which
+    # is 25_000 rows to the 200_000 byte budget.
+    assert len(files) == 20
 
     assert [
         pl.scan_parquet(x).select(pl.len()).collect().item() for x in files
-    ] == 29 * [16667] + [16657]
+    ] == 20 * [25000]
 
     assert_frame_equal(pl.scan_parquet(root).collect(), df)
 

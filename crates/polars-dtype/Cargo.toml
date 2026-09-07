@@ -11,15 +11,15 @@ description = "Low-level datatype definitions of the Polars project."
 [dependencies]
 arrow = { workspace = true }
 boxcar = { workspace = true }
-hashbrown = { workspace = true }
 chrono-tz = { workspace = true, optional = true }
+hashbrown = { workspace = true }
 itoa = { workspace = true }
 num-traits = { workspace = true }
-regex = { workspace = true }
 polars-array = { workspace = true }
 polars-config = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
+regex = { workspace = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 strum_macros = { workspace = true }
