@@ -681,6 +681,7 @@ mod fixed_size_binary;
 mod fixed_size_list;
 mod list;
 pub use list::LIST_VALUES_NAME;
+pub use map::{MAP_ENTRIES_NAME, MAP_KEY_NAME, MAP_VALUE_NAME};
 mod map;
 mod null;
 mod primitive;

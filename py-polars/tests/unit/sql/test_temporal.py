@@ -530,3 +530,46 @@ def test_typed_timestamp_literal_precision(precision: int, time_unit: str) -> No
             f"SELECT TIMESTAMP({precision}) '2020-01-01 08:00:00.123' AS x FROM tbl"
         )
     assert res.schema["x"] == pl.Datetime(time_unit)  # type: ignore[arg-type]
+
+
+def test_date_plus_integer_days() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [date(2020, 1, 1), date(2020, 2, 28), date(2021, 2, 28)],
+            "n": [5, 2, 2],
+        }
+    )
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              dt + 5 AS plus_lit,
+              5 + dt AS lit_plus,
+              dt - 5 AS minus_lit,
+              dt + n AS plus_col,
+              dt - n AS minus_col
+            FROM tbl
+            """
+        )
+    assert res.to_dict(as_series=False) == {
+        "plus_lit": [date(2020, 1, 6), date(2020, 3, 4), date(2021, 3, 5)],
+        "lit_plus": [date(2020, 1, 6), date(2020, 3, 4), date(2021, 3, 5)],
+        "minus_lit": [date(2019, 12, 27), date(2020, 2, 23), date(2021, 2, 23)],
+        "plus_col": [date(2020, 1, 6), date(2020, 3, 1), date(2021, 3, 2)],
+        "minus_col": [date(2019, 12, 27), date(2020, 2, 26), date(2021, 2, 26)],
+    }
+
+
+def test_date_integer_arithmetic_in_filter() -> None:
+    df = pl.DataFrame({"dt": [date(2020, 1, 1), date(2020, 1, 8), date(2020, 1, 15)]})
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        res = ctx.execute("SELECT dt FROM tbl WHERE dt > DATE '2020-01-01' + 7")
+    assert res.to_series().to_list() == [date(2020, 1, 15)]
+
+
+def test_date_arithmetic_leaves_other_dtypes_alone() -> None:
+    df = pl.DataFrame({"a": [1, 2], "dt": [date(2020, 1, 1), date(2020, 3, 5)]})
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        res = ctx.execute("SELECT a + 5 AS x, dt - dt AS y FROM tbl")
+    assert res.schema["x"] == pl.Int64
+    assert res.schema["y"] == pl.Duration("us")

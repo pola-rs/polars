@@ -9,7 +9,7 @@ from typing import Any
 #   (py, func, args, kwargs, pool)
 #     -> FnPoolWrap.call0(py, func, pool).call(py, args, kwargs)
 class FnPoolWrap:
-    def __init__(self, f: Any, pool_wrap: PyScanResolveThreadPool) -> None:
+    def __init__(self, f: Any, pool_wrap: PyThreadPool) -> None:
         self.f = f
         self.pool_wrap = pool_wrap
 
@@ -27,7 +27,7 @@ class FnPoolWrap:
             raise self.pool_wrap.last_exception from e
 
 
-class PyScanResolveThreadPool:
+class PyThreadPool:
     def __init__(self, num_threads: int) -> None:
         self.pool = ThreadPoolExecutor(num_threads)
         self.last_exception: Any = None

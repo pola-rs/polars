@@ -268,6 +268,16 @@ fn set_variadic_buffer_counts(counts: &mut Vec<i64>, array: &dyn Array) {
             let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             set_variadic_buffer_counts(counts, array.values().as_ref())
         },
+        ArrowDataType::Map(_, _) => {
+            let array = array.as_any().downcast_ref::<MapArray>().unwrap();
+            let offsets = array.offsets().buffer();
+            let first = *offsets.first().unwrap();
+            let last = *offsets.last().unwrap();
+            let subslice = array
+                .field()
+                .sliced(first.to_usize(), last.to_usize() - first.to_usize());
+            set_variadic_buffer_counts(counts, &*subslice)
+        },
         // Don't traverse dictionary values as those are set when the `Dictionary` IPC struct
         // is read.
         ArrowDataType::Dictionary(_, _, _) => (),

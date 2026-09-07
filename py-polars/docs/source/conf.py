@@ -145,6 +145,7 @@ html_js_files = [
         "https://plausible.io/js/script.js",
         {"data-domain": "docs.pola.rs,combined.pola.rs", "defer": "defer"},
     ),
+    "js/posthog-init.js",
 ]
 
 html_theme_options = {

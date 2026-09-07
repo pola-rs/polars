@@ -145,6 +145,14 @@ pub(super) fn convert_functions(
                 C::Physical => IC::Physical,
             })
         },
+        #[cfg(feature = "dtype-map")]
+        F::MapExpr(map_function) => {
+            use IRMapFunction as IM;
+            use MapFunction as M;
+            I::MapExpr(match map_function {
+                M::Entries => IM::Entries,
+            })
+        },
         #[cfg(feature = "dtype-extension")]
         F::Extension(extension_function) => {
             use ExtensionFunction as E;
@@ -210,6 +218,8 @@ pub(super) fn convert_functions(
                 L::ToArray(v) => IL::ToArray(v),
                 #[cfg(feature = "list_to_struct")]
                 L::ToStruct(list_to_struct_args) => IL::ToStruct(list_to_struct_args),
+                #[cfg(feature = "dtype-map")]
+                L::ToMap => IL::ToMap,
             })
         },
         #[cfg(feature = "strings")]

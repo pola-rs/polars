@@ -8,11 +8,6 @@ ignore = [
 
   # error[unmaintained]: Bincode is unmaintained
   "RUSTSEC-2025-0141",
-
-  # error[vulnerability]: Quadratic run time when checking a start tag for duplicate attribute names in quick-xml
-  "RUSTSEC-2026-0194",
-  # error[vulnerability]: Unbounded namespace-declaration allocation in `NsReader` enables memory-exhaustion denial of service in quick-xml
-  "RUSTSEC-2026-0195",
 ]
 
 [licenses]
@@ -51,6 +46,6 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # don't use a given patch (these patches are only active in compute-plane).
 unknown-git = "deny"
 allow-git = [
-  "https://github.com/kdn36/arrow-rs-object-store",
+  "https://github.com/apache/arrow-rs-object-store",
   "https://github.com/pola-rs/jemallocator",
 ]

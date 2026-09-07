@@ -183,6 +183,8 @@ def scan_delta(
     """
     Lazily read from a Delta lake table.
 
+    .. engine-support:: in-memory, streaming, distributed
+
     Parameters
     ----------
     source

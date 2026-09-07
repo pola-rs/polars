@@ -252,26 +252,35 @@ fn to_nested_recursive(
         },
         Map => {
             let array = array.as_any().downcast_ref::<MapArray>().unwrap();
-            let type_ = if let ParquetType::GroupType { fields, .. } = type_ {
-                if let ParquetType::GroupType { fields, .. } = &fields[0] {
-                    &fields[0]
-                } else {
-                    polars_bail!(InvalidOperation:
-                        "Parquet type must be a group for a map array",
-                    )
-                }
+
+            let entry_types = if let ParquetType::GroupType { fields, .. } = type_
+                && let [ParquetType::GroupType { fields, .. }] = fields.as_slice()
+            {
+                fields
             } else {
                 polars_bail!(InvalidOperation:
-                    "Parquet type must be a group for a map array",
+                    "Parquet type must be a group holding a single group for a map array",
                 )
             };
+
+            let entries = array.field();
+            let entries = entries.as_any().downcast_ref::<StructArray>().unwrap();
 
             parents.push(Nested::List(ListNested::new(
                 array.offsets().clone(),
                 array.validity().cloned(),
                 is_optional,
             )));
-            to_nested_recursive(array.field().as_ref(), type_, nested, parents)?;
+
+            parents.push(Nested::Struct(StructNested {
+                is_optional: false,
+                validity: entries.validity().cloned(),
+                length: entries.len(),
+            }));
+
+            for (type_, array) in entry_types.iter().zip(entries.values()) {
+                to_nested_recursive(array.as_ref(), type_, nested, parents.clone())?;
+            }
         },
         _ => {
             parents.push(Nested::Primitive(PrimitiveNested {
@@ -290,20 +299,38 @@ fn expand_list_validity<'a, O: Offset>(
     validity: BitmapState,
     array_stack: &mut Vec<(&'a dyn Array, BitmapState)>,
 ) {
+    expand_nested_validity(
+        array.len(),
+        array.offsets(),
+        array.values().as_ref(),
+        validity,
+        array_stack,
+    )
+}
+
+/// Push `values` with the outer validity expanded through `offsets`, so that it applies to
+/// each element rather than to each row.
+fn expand_nested_validity<'a, O: Offset>(
+    len: usize,
+    offsets_buffer: &OffsetsBuffer<O>,
+    values: &'a dyn Array,
+    validity: BitmapState,
+    array_stack: &mut Vec<(&'a dyn Array, BitmapState)>,
+) {
     let BitmapState::SomeSet(list_validity) = validity else {
         array_stack.push((
-            array.values().as_ref(),
+            values,
             match validity {
                 BitmapState::AllSet => BitmapState::AllSet,
                 BitmapState::SomeSet(_) => unreachable!(),
-                BitmapState::AllUnset(_) => BitmapState::AllUnset(array.values().len()),
+                BitmapState::AllUnset(_) => BitmapState::AllUnset(values.len()),
             },
         ));
         return;
     };
 
-    let offsets = array.offsets().buffer();
-    let mut validity = MutableBitmap::with_capacity(array.values().len());
+    let offsets = offsets_buffer.buffer();
+    let mut validity = MutableBitmap::with_capacity(values.len());
     let mut list_validity_iter = list_validity.iter();
 
     // @NOTE: We need to take into account here that the list might only point to a slice of the
@@ -325,13 +352,13 @@ fn expand_list_validity<'a, O: Offset>(
 
         idx += num_zeros;
     }
-    validity.extend_constant(array.values().len() - validity.len(), false);
+    validity.extend_constant(values.len() - validity.len(), false);
 
-    debug_assert_eq!(idx, array.len());
+    debug_assert_eq!(idx, len);
     let validity = validity.freeze();
 
-    debug_assert_eq!(validity.len(), array.values().len());
-    array_stack.push((array.values().as_ref(), BitmapState::SomeSet(validity)));
+    debug_assert_eq!(validity.len(), values.len());
+    array_stack.push((values, BitmapState::SomeSet(validity)));
 }
 
 #[derive(Clone)]
@@ -472,7 +499,14 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
             },
             P::Map => {
                 let array = array.as_any().downcast_ref::<MapArray>().unwrap();
-                array_stack.push((array.field().as_ref(), validity));
+
+                expand_nested_validity(
+                    array.len(),
+                    array.offsets(),
+                    array.field().as_ref(),
+                    validity,
+                    &mut array_stack,
+                );
             },
             P::Null
             | P::Boolean
@@ -902,38 +936,8 @@ mod tests {
 
         let array = MapArray::try_new(map_type, offsets, kv_array, None).unwrap();
 
-        let type_ = ParquetType::GroupType {
-            field_info: FieldInfo {
-                name: "kv".into(),
-                repetition: Repetition::Optional,
-                id: None,
-            },
-            logical_type: None,
-            converted_type: None,
-            fields: vec![
-                ParquetType::PrimitiveType(ParquetPrimitiveType {
-                    field_info: FieldInfo {
-                        name: "k".into(),
-                        repetition: Repetition::Required,
-                        id: None,
-                    },
-                    logical_type: Some(PrimitiveLogicalType::String),
-                    converted_type: Some(PrimitiveConvertedType::Utf8),
-                    physical_type: ParquetPhysicalType::ByteArray,
-                }),
-                ParquetType::PrimitiveType(ParquetPrimitiveType {
-                    field_info: FieldInfo {
-                        name: "v".into(),
-                        repetition: Repetition::Required,
-                        id: None,
-                    },
-                    logical_type: None,
-                    converted_type: None,
-                    physical_type: ParquetPhysicalType::Int32,
-                }),
-            ],
-        };
-
+        // Per the specification the repeated `key_value` group holds the key and the value
+        // directly; it *is* the entries struct, so there is no group in between.
         let type_ = ParquetType::GroupType {
             field_info: FieldInfo {
                 name: "m".into(),
@@ -944,13 +948,34 @@ mod tests {
             converted_type: None,
             fields: vec![ParquetType::GroupType {
                 field_info: FieldInfo {
-                    name: "map".into(),
+                    name: "key_value".into(),
                     repetition: Repetition::Repeated,
                     id: None,
                 },
                 logical_type: None,
                 converted_type: None,
-                fields: vec![type_],
+                fields: vec![
+                    ParquetType::PrimitiveType(ParquetPrimitiveType {
+                        field_info: FieldInfo {
+                            name: "k".into(),
+                            repetition: Repetition::Required,
+                            id: None,
+                        },
+                        logical_type: Some(PrimitiveLogicalType::String),
+                        converted_type: Some(PrimitiveConvertedType::Utf8),
+                        physical_type: ParquetPhysicalType::ByteArray,
+                    }),
+                    ParquetType::PrimitiveType(ParquetPrimitiveType {
+                        field_info: FieldInfo {
+                            name: "v".into(),
+                            repetition: Repetition::Required,
+                            id: None,
+                        },
+                        logical_type: None,
+                        converted_type: None,
+                        physical_type: ParquetPhysicalType::Int32,
+                    }),
+                ],
             }],
         };
 
@@ -965,7 +990,7 @@ mod tests {
                         offsets: vec![0, 2, 3, 4, 6].try_into().unwrap(),
                         validity: None,
                     }),
-                    Nested::structure(None, true, 6),
+                    Nested::structure(None, false, 6),
                     Nested::primitive(None, false, 6),
                 ],
                 vec![
@@ -974,7 +999,7 @@ mod tests {
                         offsets: vec![0, 2, 3, 4, 6].try_into().unwrap(),
                         validity: None,
                     }),
-                    Nested::structure(None, true, 6),
+                    Nested::structure(None, false, 6),
                     Nested::primitive(None, false, 6),
                 ],
             ]

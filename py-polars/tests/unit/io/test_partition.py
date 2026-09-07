@@ -4,6 +4,7 @@ import io
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
+import pyarrow.parquet as pq
 import pytest
 from hypothesis import example, given
 
@@ -343,6 +344,28 @@ def test_partition_by_file_naming_preserves_order(tmp_path: Path) -> None:
     assert len(output_files) == 100
 
     assert_frame_equal(pl.scan_parquet(output_files).collect(), df)
+
+
+@pytest.mark.parametrize("inner_dtype", [pl.Categorical, pl.Enum(["a", "b"])])
+@pytest.mark.write_disk
+def test_partitioned_parquet_nested_dictionary_null_statistics(
+    tmp_path: Path, inner_dtype: pl.DataType
+) -> None:
+    values = [["a", "b"]] * 10 + [None, ["a"]]
+    df = pl.DataFrame({"values": values}, schema={"values": pl.List(inner_dtype)})
+
+    df.lazy().sink_parquet(
+        pl.PartitionBy(tmp_path, max_rows_per_file=6),
+        row_group_size=4,
+        data_page_size=1,
+        compression="uncompressed",
+    )
+
+    metadata = pq.ParquetFile(tmp_path / "00000001.parquet").metadata
+    assert [
+        metadata.row_group(i).column(0).statistics.null_count
+        for i in range(metadata.num_row_groups)
+    ] == [0, 0]
 
 
 @pytest.mark.parametrize(("io_type"), io_types)

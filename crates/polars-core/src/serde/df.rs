@@ -21,6 +21,14 @@ use crate::utils::accumulate_dataframes_vertical_unchecked;
 const FLAGS_KEY: PlSmallStr = PlSmallStr::from_static("_PL_FLAGS");
 
 impl DataFrame {
+    pub fn serialize_into_json(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
+        serde_json::to_writer(writer, self).map_err(to_compute_err)
+    }
+
+    pub fn deserialize_from_json(json: &[u8]) -> PolarsResult<Self> {
+        serde_json::from_slice(json).map_err(to_compute_err)
+    }
+
     pub fn serialize_into_writer(&mut self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
         let schema = self.schema();
 
