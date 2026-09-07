@@ -16,8 +16,10 @@ fn exp<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Float64Chunked {
 
 pub trait LogSeries: SeriesSealed {
     /// Compute the logarithm to a given base
-    fn log(&self, base: &Series) -> Series {
+    fn log(&self, base: &Series) -> PolarsResult<Series> {
         let s = self.as_series();
+        polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'log'");
+        polars_ensure!(base.dtype().is_numeric() || base.dtype().is_bool(), InvalidOperation: "expected numerical input for 'log'");
 
         match (s.dtype(), base.dtype()) {
             (dt1, dt2) if dt1 == dt2 && dt1.is_float() => {
@@ -29,7 +31,7 @@ pub trait LogSeries: SeriesSealed {
                     let out: ChunkedArray<$T> = broadcast_binary_elementwise_values(ca, base_ca,
                         |x, base| x.log(base)
                     );
-                    out.into_series()
+                    Ok(out.into_series())
                 })
             },
             (dt1, _) if dt1.is_float() => s.log(&base.cast(dt1).unwrap()),
@@ -119,7 +121,7 @@ pub trait LogSeries: SeriesSealed {
                 };
 
                 let base = &Series::new(PlSmallStr::EMPTY, [base]);
-                (&pk * &pk.log(base))?.sum::<f64>().map(|v| -v)
+                (&pk * &pk.log(base)?)?.sum::<f64>().map(|v| -v)
             },
             _ => s
                 .cast(&DataType::Float64)
