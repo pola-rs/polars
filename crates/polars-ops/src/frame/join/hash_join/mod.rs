@@ -48,8 +48,6 @@ macro_rules! det_hash_prone_order {
     }};
 }
 
-#[cfg(feature = "performant")]
-use arrow::legacy::conversion::primitive_to_vec;
 pub(super) use det_hash_prone_order;
 
 pub trait JoinDispatch: IntoDf {

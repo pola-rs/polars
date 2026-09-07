@@ -6,7 +6,6 @@ use std::hash::Hash;
 
 use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use polars_array::broadcast::{is_flat_buffer_len, is_valid_buffer_len};
 use polars_array::builder::ShareStrategy;
 use polars_array::{
     ArrayFromIter, Flat, PlArray, PlArrayType, PlBitmapRef, StaticArray, StaticArrayBuilder,

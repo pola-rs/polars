@@ -5,8 +5,8 @@ use arrow::types::NativeType;
 use polars_array::bitmap::combine_validities_and;
 use polars_array::builder::StaticArrayBuilder;
 use polars_array::{
-    PlArrayType, PlBinaryViewArray, PlBinaryViewArrayBuilder, PlBitmap, PlListArray,
-    PlPrimitiveArray, PlPrimitiveArrayBuilder, PlUtf8ViewArray,
+    PlBinaryViewArray, PlBinaryViewArrayBuilder, PlBitmap, PlListArray, PlPrimitiveArray,
+    PlPrimitiveArrayBuilder, PlUtf8ViewArray,
 };
 use polars_buffer::Buffer;
 use polars_core::prelude::*;

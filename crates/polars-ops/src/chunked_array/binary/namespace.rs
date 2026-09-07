@@ -275,9 +275,9 @@ fn reinterpret_elementwise(
         chunk
     };
 
-    // SAFETY: the export hands the chunk's buffers to the Arrow kernel, and the import takes the
-    // kernel's own answer back; neither outlives this call.
-    let out = unsafe {
+    // The export hands the chunk's buffers to the Arrow kernel, and the import takes the kernel's
+    // own answer back; neither outlives this call.
+    let out = {
         let exported = export::to_arrow(operand);
         let answered = kernel(&*exported)?;
         import::from_arrow(&*answered)

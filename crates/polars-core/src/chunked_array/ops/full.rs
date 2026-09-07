@@ -1,4 +1,3 @@
-use arrow::bitmap::Bitmap;
 use polars_array::builder::full_null_like;
 
 use crate::chunked_array::builder::get_list_builder;

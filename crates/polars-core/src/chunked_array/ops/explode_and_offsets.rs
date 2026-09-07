@@ -1,6 +1,6 @@
 use arrow::offset::OffsetsBuffer;
 use polars_array::PlPrimitiveArrayBuilder;
-use polars_array::arrow::{export, import};
+use polars_array::arrow::export;
 use polars_array::builder::StaticArrayBuilder;
 use polars_compute::gather::take_unchecked;
 

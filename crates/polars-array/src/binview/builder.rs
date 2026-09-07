@@ -179,13 +179,19 @@ impl PlBinaryViewArrayBuilder {
         self.views.reserve(ids.len());
         self.validity.reserve(ids.len());
 
-        // A chunk with no mask at all has no null element, and every element of a gather out of
-        // chunks like that is valid — which the mask is then extended with in one go.
+        // A chunk with no mask at all has no null element, so a gather out of chunks like that
+        // answers every element valid unless its own id is null — and the runs between the null
+        // ids then reach the mask in one extension rather than one per element.
         let masked = chunks.iter().any(|chunk| chunk.validity().is_some());
+        let mut valid_run = 0;
 
         for id in ids {
             if opt && id.is_null() {
                 self.views.push(View::default());
+                if !masked && valid_run > 0 {
+                    self.validity.extend_constant(valid_run, true);
+                    valid_run = 0;
+                }
                 self.validity.extend_constant(1, false);
                 continue;
             }
@@ -209,12 +215,14 @@ impl PlBinaryViewArrayBuilder {
                 if masked {
                     self.validity
                         .extend_constant(1, !chunk.is_null_unchecked(array_idx as usize));
+                } else {
+                    valid_run += 1;
                 }
             }
         }
 
-        if !masked {
-            self.validity.extend_constant(ids.len(), true);
+        if !masked && valid_run > 0 {
+            self.validity.extend_constant(valid_run, true);
         }
     }
 
@@ -549,6 +557,28 @@ mod tests {
         assert_eq!(
             built.iter().collect::<Vec<_>>(),
             [Some(LONG), Some(b"foo".as_slice()), None, Some(LONG), None],
+        );
+    }
+
+    #[test]
+    fn a_chunked_gather_over_unmasked_chunks_holds_one_mask_slot_per_id() {
+        let chunk: PlBinaryViewArray = [Some(b"foo".as_slice()), Some(LONG)].into_iter().collect();
+        assert!(chunk.validity().is_none(), "the chunk carries no mask");
+
+        let ids: [ChunkId<24>; 4] = [
+            ChunkId::store(0, 1),
+            ChunkId::null(),
+            ChunkId::store(0, 0),
+            ChunkId::null(),
+        ];
+
+        let mut builder = PlBinaryViewArrayBuilder::new();
+        unsafe { builder.opt_chunked_gather_extend(&[&chunk], &ids, ShareStrategy::Always) };
+
+        let built = builder.freeze();
+        assert_eq!(
+            built.iter().collect::<Vec<_>>(),
+            [Some(LONG), None, Some(b"foo".as_slice()), None],
         );
     }
 

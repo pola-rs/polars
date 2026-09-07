@@ -1,8 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::borrow::Cow;
 
-// The Arrow arrays' own accessors, whose trait is shadowed by the one of `polars-array`.
-use arrow::array::StaticArray as _;
 use arrow::types::PrimitiveType;
 use num_traits::ToBytes;
 use polars_compute::cast::SerPrimitive;

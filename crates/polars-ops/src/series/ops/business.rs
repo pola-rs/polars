@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::Bitmap;
 #[cfg(feature = "dtype-date")]
 use chrono::DateTime;
 use polars_array::{Flat, PlBitmapRef, PlListArray, PlPrimitiveArray};
