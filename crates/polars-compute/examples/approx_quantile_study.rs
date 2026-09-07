@@ -146,6 +146,7 @@ fn run_trial(
         for v in &data[offset..offset + size] {
             sketch.update(v);
         }
+        sketch.finalize();
         offset += size;
         sketches.push(sketch);
     }
@@ -161,9 +162,7 @@ fn run_trial(
         }
         sketches = next;
     }
-    let mut sketch = sketches.pop().unwrap();
-    sketch.finalize();
-    sketch
+    sketches.pop().unwrap()
 }
 
 /// Denominator that turns a rank error into the error notion the method

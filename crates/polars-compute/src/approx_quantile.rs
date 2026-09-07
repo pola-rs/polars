@@ -1,6 +1,7 @@
 use std::ops::RangeInclusive;
 use std::{fmt, mem};
 
+use either::Either;
 pub use kll::KLLSketch;
 use polars_utils::total_ord::TotalOrd;
 use rand::rngs::SmallRng;
@@ -96,6 +97,74 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedState<T> {
 
     fn estimate_rank(&self, value: &T) -> usize {
         todo!()
+    }
+
+    /// Merge `other` into `self`.
+    ///
+    /// This function retains every item of the sketch. No compaction is done
+    /// at this point.
+    fn merge(&mut self, other: Self) {
+        if other.items.is_empty() {
+            return;
+        }
+        if self.items.is_empty() {
+            *self = other;
+            return;
+        }
+
+        let len = self.items.len() + other.items.len();
+
+        if self.cum_weight.is_none() && other.cum_weight.is_none() {
+            let items1 = mem::take(&mut self.items).into_vec();
+            let items2 = other.items.into_vec();
+            let mut items = Vec::with_capacity(len);
+            let (i1, i2) = (items1.into_iter(), items2.into_iter());
+            merge_sorted(&mut items, i1, i2, TotalOrd::tot_cmp);
+            self.items = items.into_boxed_slice();
+            return;
+        }
+
+        let mut items = Vec::with_capacity(len);
+        let mut cum_weight = Vec::with_capacity(len);
+        let mut total_weight = 0;
+        let mut iter1 = mem::take(self).into_weighted().peekable();
+        let mut iter2 = other.into_weighted().peekable();
+        while iter1.peek().is_some() || iter2.peek().is_some() {
+            let take1 = match (iter1.peek(), iter2.peek()) {
+                (Some(_), None) => true,
+                (None, Some(_)) => false,
+                (Some((x1, _)), Some((x2, _))) => TotalOrd::tot_cmp(x1, x2).is_le(),
+                (None, None) => unreachable!(),
+            };
+            let (item, weight) = match take1 {
+                true => iter1.next().unwrap(),
+                false => iter2.next().unwrap(),
+            };
+            total_weight += weight;
+            items.push(item);
+            cum_weight.push(total_weight);
+        }
+
+        debug_assert_eq!(items.len(), len);
+
+        self.items = items.into_boxed_slice();
+        self.cum_weight = Some(cum_weight.into_boxed_slice());
+    }
+
+    /// Yield every retained item with its own weight.
+    fn into_weighted(self) -> impl ExactSizeIterator<Item = (T, usize)> {
+        let weights = match self.cum_weight {
+            Some(cum_weight) => {
+                let mut prev = 0;
+                Either::Left(cum_weight.into_vec().into_iter().map(move |cum| {
+                    let weight = cum - prev;
+                    prev = cum;
+                    weight
+                }))
+            },
+            None => Either::Right(std::iter::repeat_n(1, self.items.len())),
+        };
+        Iterator::zip(self.items.into_vec().into_iter(), weights)
     }
 
     fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
@@ -280,11 +349,12 @@ pub mod kll {
             state.update(item);
         }
 
+        /// Merge the finalized `other` into `self`.
         pub fn merge(&mut self, other: Self) {
-            let State::Ingesting(other) = other.0 else {
+            let State::Finalized(other) = other.0 else {
                 invalid_state()
             };
-            let State::Ingesting(state) = &mut self.0 else {
+            let State::Finalized(state) = &mut self.0 else {
                 invalid_state()
             };
             state.merge(other);
@@ -329,17 +399,14 @@ pub mod kll {
         /// Compact all of the compactors from base to top.
         ///
         /// If break_early is true, then the sweeping stops once a compaction has
-        /// taken place. Returns whether a new compactor was added, which
-        /// invalidates the thresholds of the levels already swept.
-        fn compact(&mut self, break_early: bool) -> bool {
-            let mut grew = false;
+        /// taken place.
+        fn compact(&mut self, break_early: bool) {
             for level in 0..self.levels.len() {
                 if self.levels[level].size
                     >= compactor_threshold(self.k, self.levels.len() - 1 - level)
                 {
                     if level == self.levels.len() - 1 {
                         self.add_new_compactor();
-                        grew = true;
                     }
                     let old_size = self.items.len();
                     self.compact_level(level);
@@ -349,7 +416,6 @@ pub mod kll {
                     };
                 }
             }
-            grew
         }
 
         fn add_new_compactor(&mut self) {
@@ -357,52 +423,6 @@ pub mod kll {
             self.compactor_capacity = (0..self.levels.len())
                 .map(|level| compactor_threshold(self.k, self.levels.len() - 1 - level))
                 .sum();
-        }
-
-        /// Merge `other` into `self`.
-        fn merge(&mut self, other: Self) {
-            // `k` is a function of the error, so k₁ = k₂ ⇒ ε₁ = ε₂.
-            assert_eq!(self.k, other.k);
-
-            // Make sure we have enough compactors on the left side.
-            while self.levels.len() < other.levels.len() {
-                self.add_new_compactor();
-            }
-
-            let mut items1 = mem::replace(&mut self.items, mem::take(&mut self.scratch));
-            let items2 = &other.items;
-            self.items.clear();
-            self.items.reserve(items1.len() + items2.len());
-
-            let mut next_offset = 0;
-            for level in (0..self.levels.len()).rev() {
-                let l1 = self.levels[level];
-                let l2 = other.levels.get(level).copied().unwrap_or_default();
-                let comp1 = &items1[l1.offset..l1.offset + l1.size];
-                let comp2 = &items2[l2.offset..l2.offset + l2.size];
-                if level == 0 {
-                    self.items.extend_from_slice(comp1);
-                    self.items.extend_from_slice(comp2);
-                } else {
-                    let (c1, c2) = (comp1.iter().cloned(), comp2.iter().cloned());
-                    merge_sorted(&mut self.items, c1, c2, TotalOrd::tot_cmp);
-                }
-
-                self.levels[level] = Level {
-                    offset: next_offset,
-                    size: l1.size + l2.size,
-                    mid_pair: l1.mid_pair | l2.mid_pair,
-                    coin: merge_coin(l1.mid_pair, l1.coin, l2.mid_pair, l2.coin, &mut self.rng),
-                };
-                next_offset += l1.size + l2.size;
-            }
-            debug_assert_eq!(next_offset, self.items.len());
-
-            items1.clear();
-            self.scratch = items1;
-
-            self.consumed_items += other.consumed_items;
-            self.compact(false);
         }
 
         fn compact_level(&mut self, level: usize) {
@@ -673,8 +693,10 @@ pub mod req {
     }
 
     #[derive(Debug, Clone)]
-    #[repr(transparent)]
-    pub struct ReqSketch<T: fmt::Debug + Clone + TotalOrd>(State<T>);
+    pub struct ReqSketch<T: fmt::Debug + Clone + TotalOrd> {
+        state: State<T>,
+        is_hra: bool,
+    }
 
     impl<T: fmt::Debug + Clone + TotalOrd> ReqSketch<T> {
         pub fn new(error: f64, hra: bool) -> Self {
@@ -692,12 +714,15 @@ pub mod req {
                 consumed_items: 0,
                 rng: rand::make_rng(),
             };
-            ReqSketch(State::Ingesting(state))
+            ReqSketch {
+                state: State::Ingesting(state),
+                is_hra: hra,
+            }
         }
 
         #[inline]
         pub fn num_items(&self) -> usize {
-            match &self.0 {
+            match &self.state {
                 State::Ingesting(state) => state.consumed_items,
                 State::Finalized(state) => state.num_items(),
             }
@@ -705,18 +730,19 @@ pub mod req {
 
         #[inline]
         pub fn update(&mut self, item: &T) {
-            let State::Ingesting(state) = &mut self.0 else {
+            let State::Ingesting(state) = &mut self.state else {
                 invalid_state()
             };
             state.update(item);
         }
 
-        #[inline]
+        /// Merge the finalized `other` into `self`.
         pub fn merge(&mut self, other: Self) {
-            let State::Ingesting(other) = other.0 else {
+            assert_eq!(self.is_hra, other.is_hra);
+            let State::Finalized(other) = other.state else {
                 invalid_state()
             };
-            let State::Ingesting(state) = &mut self.0 else {
+            let State::Finalized(state) = &mut self.state else {
                 invalid_state()
             };
             state.merge(other);
@@ -725,16 +751,16 @@ pub mod req {
         #[inline]
         pub fn finalize(&mut self) {
             let placeholder = State::Finalized(FinalizedState::default());
-            let state = mem::replace(&mut self.0, placeholder);
+            let state = mem::replace(&mut self.state, placeholder);
             let State::Ingesting(state) = state else {
                 invalid_state()
             };
-            self.0 = State::Finalized(state.finalize());
+            self.state = State::Finalized(state.finalize());
         }
 
         #[inline]
         pub fn estimate_rank(&self, value: &T) -> usize {
-            let State::Finalized(state) = &self.0 else {
+            let State::Finalized(state) = &self.state else {
                 invalid_state()
             };
             state.estimate_rank(value)
@@ -742,7 +768,7 @@ pub mod req {
 
         #[inline]
         pub fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
-            let State::Finalized(state) = &self.0 else {
+            let State::Finalized(state) = &self.state else {
                 invalid_state()
             };
             state.estimate_quantile(quantile)
@@ -963,74 +989,9 @@ pub mod req {
             self.compact_if_needed(level + 1);
         }
 
-        #[inline(never)]
         fn partition_compactor<const HRA: bool>(compactor: &mut [T], promote_count: usize) {
             compactor.select_nth_unstable_by(promote_count, cmp_desc::<HRA, T>);
             compactor[..promote_count].sort_unstable_by(cmp_desc::<HRA, T>);
-        }
-
-        /// Merge `other` into `self`.
-        fn merge(&mut self, other: Self) {
-            assert_eq!(self.is_hra, other.is_hra);
-            assert_eq!(self.error, other.error);
-
-            // We need a compactor for every one of `other`'s levels.
-            while self.levels.len() < other.levels.len() {
-                self.add_new_compactor();
-            }
-
-            // Build the merged pool in the scratch buffer; the old pool becomes
-            // the new scratch.
-            let mut items1 = mem::replace(&mut self.items, mem::take(&mut self.scratch));
-            let items2 = &other.items;
-            self.items.clear();
-            self.items.reserve(items1.len() + items2.len());
-
-            let mut next_offset = 0;
-            for level in (0..self.levels.len()).rev() {
-                let l1 = self.levels[level];
-                let l2 = other.levels.get(level).copied().unwrap_or_default();
-                let comp1 = &items1[l1.offset..l1.offset + l1.size];
-                let comp2 = &items2[l2.offset..l2.offset + l2.size];
-                if level == 0 {
-                    self.items.extend_from_slice(comp1);
-                    self.items.extend_from_slice(comp2);
-                } else {
-                    let (c1, c2) = (comp1.iter().cloned(), comp2.iter().cloned());
-                    match self.is_hra {
-                        false => merge_sorted(&mut self.items, c1, c2, cmp_desc::<false, T>),
-                        true => merge_sorted(&mut self.items, c1, c2, cmp_desc::<true, T>),
-                    }
-                }
-
-                let mid_pair = |l: &Level| !l.compaction_schedule.is_multiple_of(2);
-
-                self.levels[level] = Level {
-                    offset: next_offset,
-                    size: l1.size + l2.size,
-                    compaction_schedule: l1.compaction_schedule | l2.compaction_schedule,
-                    coin: merge_coin(
-                        mid_pair(&l1),
-                        l1.coin,
-                        mid_pair(&l2),
-                        l2.coin,
-                        &mut self.rng,
-                    ),
-                };
-                next_offset += l1.size + l2.size;
-            }
-            debug_assert_eq!(next_offset, self.items.len());
-
-            items1.clear();
-            self.scratch = items1;
-
-            self.n = usize::max(self.n, other.n);
-            self.k = compute_k(self.error, FAILURE_PROBABILITY, self.n);
-            self.consumed_items += other.consumed_items;
-
-            for level in 0..self.levels.len() {
-                self.compact_if_needed(level);
-            }
         }
 
         fn finalize(self) -> FinalizedState<T> {
@@ -1109,14 +1070,6 @@ fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
     cum_weights
 }
 
-fn merge_coin(mid1: bool, coin1: bool, mid2: bool, coin2: bool, rng: &mut SmallRng) -> bool {
-    match (mid1, mid2) {
-        (true, true) if coin1 != coin2 => rng.random(),
-        (false, true) => coin2,
-        _ => coin1,
-    }
-}
-
 /// Append the merge of two runs, both sorted by `compare`, to `vec`.
 #[inline(never)]
 fn merge_sorted<T>(
@@ -1171,6 +1124,7 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
         }
     }
 
+    /// Merge the finalized `other` into `self`.
     pub fn merge(&mut self, other: Self) {
         match (self, other) {
             (Sketch::Kll(a), Sketch::Kll(b)) => a.merge(b),
@@ -1253,12 +1207,22 @@ mod tests {
                 for v in chunk {
                     sketch.update(v);
                 }
+                sketch.finalize();
                 sketch
             })
             .collect();
         let mut sketch = sketches.remove(0);
         for other in sketches {
             sketch.merge(other);
+        }
+        sketch
+    }
+
+    /// Ingest `data` into a fresh finalized sketch.
+    fn finalized(method: &ApproxQuantileMethod, error: f64, data: &[f64]) -> Sketch<f64> {
+        let mut sketch = Sketch::new(method, error);
+        for v in data {
+            sketch.update(v);
         }
         sketch.finalize();
         sketch
@@ -1295,7 +1259,8 @@ mod tests {
         }
     }
 
-    /// Merging in empty sketches must not disturb the estimates.
+    /// Merging in empty sketches must not disturb the estimates, in either
+    /// direction.
     #[test]
     fn merge_of_empty_is_neutral() {
         const N: usize = 20_000;
@@ -1303,19 +1268,62 @@ mod tests {
 
         let data = shuffled(N);
         for method in &METHODS {
-            let mut sketch = Sketch::new(method, ERROR);
-            sketch.merge(Sketch::new(method, ERROR));
-            for v in &data {
-                sketch.update(v);
-            }
-            sketch.merge(Sketch::new(method, ERROR));
-            sketch.finalize();
+            let empty = || finalized(method, ERROR, &[]);
+            let full = || finalized(method, ERROR, &data);
 
-            for q in [0.0, 0.5, 1.0] {
+            let mut into_full = full();
+            into_full.merge(empty());
+            let mut into_empty = empty();
+            into_empty.merge(full());
+
+            for (name, sketch) in [("full+empty", &into_full), ("empty+full", &into_empty)] {
+                for q in [0.0, 0.5, 1.0] {
+                    let got = *sketch.estimate_quantile(q).unwrap();
+                    let want = q * (N - 1) as f64;
+                    assert!(
+                        (got - want).abs() <= ERROR * N as f64,
+                        "{method:?} {name} at q={q}: got rank {got}, want {want}",
+                    );
+                }
+            }
+        }
+    }
+
+    /// Parts small enough never to compact keep every item at weight 1, so
+    /// their merge is exact.
+    #[test]
+    fn merge_of_unweighted_parts_is_exact() {
+        const N: usize = 600;
+        const ERROR: f64 = 0.01;
+
+        let data = shuffled(N);
+        for method in &METHODS {
+            let sketch = merged(method, ERROR, &data, 6);
+            for q in [0.0, 0.25, 0.5, 0.75, 1.0] {
                 let got = *sketch.estimate_quantile(q).unwrap();
-                let want = q * (N - 1) as f64;
+                let want = (q * (N - 1) as f64).round();
+                assert_eq!(got, want, "{method:?} at q={q}");
+            }
+        }
+    }
+
+    /// A weighted sketch merged with an unweighted one.
+    #[test]
+    fn merge_of_mixed_weights() {
+        const BIG: usize = 50_000;
+        const SMALL: usize = 100;
+        const ERROR: f64 = 0.01;
+
+        let data = shuffled(BIG + SMALL);
+        for method in &METHODS {
+            let mut sketch = finalized(method, ERROR, &data[..BIG]);
+            sketch.merge(finalized(method, ERROR, &data[BIG..]));
+
+            for q in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                let got = *sketch.estimate_quantile(q).unwrap();
+                let want = q * (BIG + SMALL - 1) as f64;
                 assert!(
-                    (got - want).abs() <= ERROR * N as f64,
+                    (got - want).abs() <= ERROR * (BIG + SMALL) as f64,
                     "{method:?} at q={q}: got rank {got}, want {want}",
                 );
             }

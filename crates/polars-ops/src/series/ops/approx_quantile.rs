@@ -22,13 +22,15 @@ where
 {
     const THREAD_BOUNDARY: usize = if cfg!(debug_assertions) { 0 } else { 100_000 };
 
+    // Merging is only allowed after finalization.
     let build = |offset, len| {
         let mut sketch = Sketch::new(method, error);
         fill(offset, len, &mut sketch);
+        sketch.finalize();
         sketch
     };
 
-    let mut sketch = if len < THREAD_BOUNDARY
+    let sketch = if len < THREAD_BOUNDARY
         || RAYON.current_num_threads() == 1
         || RAYON.current_thread_has_pending_tasks().unwrap_or(false)
     {
@@ -48,7 +50,6 @@ where
             .unwrap()
     };
 
-    sketch.finalize();
     quantiles
         .iter()
         .map(|q| q.and_then(|q| sketch.estimate_quantile(q).cloned()))
