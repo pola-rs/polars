@@ -3006,6 +3006,32 @@ def test_nested_deprecated_int96_timestamps_21332() -> None:
     )
 
 
+def test_int96_timestamps_respect_scan_schema_time_unit_29184() -> None:
+    f = io.BytesIO()
+
+    # Spark writes INT96 (a Julian day plus nanoseconds-of-day) and no arrow
+    # schema metadata. Every date fits INT96, but decoding it as nanoseconds
+    # saturates outside 1677..=2262; a scan schema requesting a coarser unit
+    # must decode directly into that unit instead.
+    values = [
+        datetime(9999, 12, 31, 23, 59, 59, 999999),
+        datetime(1000, 1, 1),
+        datetime(2024, 6, 1, 12),
+        None,
+    ]
+    df = pl.DataFrame({"a": values, "b": [{"t": v} for v in values]})
+
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        use_deprecated_int96_timestamps=True,
+        store_schema=False,
+    )
+
+    f.seek(0)
+    assert_frame_equal(pl.scan_parquet(f, schema=df.collect_schema()).collect(), df)
+
+
 def test_final_masked_optional_iteration_21378() -> None:
     # fmt: off
     values = [
