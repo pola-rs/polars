@@ -62,9 +62,5 @@ dtype-u128 = []
 dtype-f16 = ["dep:half"]
 dsl-schema = ["dep:schemars"]
 
-[[example]]
-name = "approx_quantile_study"
-required-features = ["approx_quantile"]
-
 [lints]
 workspace = true
