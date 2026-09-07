@@ -1106,27 +1106,17 @@ impl DataType {
     /// this accepts dtypes that are not a `Map` themselves.
     #[cfg(feature = "dtype-map")]
     pub fn ensure_valid_map_dtypes(&self) -> PolarsResult<()> {
+        // Keep it cheap for non-Map dtypes.
         if !self.contains_map() {
             return Ok(());
         }
 
-        match self {
-            DataType::Map(key, value) => {
-                self.ensure_valid_map_dtype()?;
-                key.ensure_valid_map_dtypes()?;
-                value.ensure_valid_map_dtypes()
-            },
-            DataType::List(inner) => inner.ensure_valid_map_dtypes(),
-            #[cfg(feature = "dtype-array")]
-            DataType::Array(inner, _) => inner.ensure_valid_map_dtypes(),
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(fields) => fields
-                .iter()
-                .try_for_each(|field| field.dtype.ensure_valid_map_dtypes()),
-            #[cfg(feature = "dtype-extension")]
-            DataType::Extension(_, storage) => storage.ensure_valid_map_dtypes(),
-            _ => Ok(()),
-        }
+        self.try_visit_with(|dtype| {
+            if dtype.is_map() {
+                dtype.ensure_valid_map_dtype()?;
+            }
+            Ok(())
+        })
     }
 
     pub fn is_extension(&self) -> bool {

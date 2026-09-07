@@ -35,7 +35,8 @@ impl Series {
 
     /// Construct a Series from a chunk holding the physical representation of `dtype`.
     ///
-    /// Errors if the chunk does not match the physical dtype.
+    /// Errors if the chunk does not match the physical dtype. Additionally, we validate
+    /// all `Map` invariants, on the dtype level and the chunk level.
     pub fn from_chunk_and_dtype(
         name: PlSmallStr,
         chunk: ArrayRef,
