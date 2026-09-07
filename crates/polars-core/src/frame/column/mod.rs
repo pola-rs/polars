@@ -980,7 +980,7 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub fn agg_valid_count(&self, groups: &GroupsType) -> Self {
+    pub unsafe fn agg_valid_count(&self, groups: &GroupsType) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_valid_count(groups) }.into()
     }
