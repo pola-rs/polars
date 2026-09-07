@@ -27,23 +27,7 @@ pub use self::utils::filter::{Filter, PredicateFilter};
 use self::utils::freeze_validity;
 use super::*;
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::read::get_page_iterator as _get_page_iterator;
 use crate::parquet::schema::types::PrimitiveType;
-
-/// Creates a new iterator of compressed pages.
-pub fn get_page_iterator(
-    column_metadata: &ColumnChunkMetadata,
-    reader: Cursor<Buffer<u8>>,
-    buffer: Vec<u8>,
-    max_header_size: usize,
-) -> PolarsResult<PageReader> {
-    Ok(_get_page_iterator(
-        column_metadata,
-        reader,
-        buffer,
-        max_header_size,
-    )?)
-}
 
 /// Creates a new [`ListArray`] or [`FixedSizeListArray`].
 pub fn create_list(
