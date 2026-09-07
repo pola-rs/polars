@@ -1214,13 +1214,15 @@ impl AnyValue<'_> {
             fields: &'a [Field],
         ) -> impl ExactSizeIterator<Item = AnyValue<'a>> {
             assert!(idx < arr.len());
+            assert_eq!(arr.fields().len(), fields.len());
 
             arr.fields()
                 .iter()
                 .zip(fields)
                 .map(move |(field_arr, field)| unsafe {
-                    // SAFETY: We asserted before that idx is smaller than the array length. Since it
-                    // is an invariant of a struct array that all fields have the same length this is
+                    // SAFETY: We asserted before that idx is smaller than the array length. Since
+                    // it is an invariant of a struct array that all fields have the same length
+                    // this is fine to do.
                     arr_to_any_value(&**field_arr, idx, field.dtype())
                 })
         }
@@ -1332,21 +1334,21 @@ impl AnyValue<'_> {
                 null_equal,
             ),
             #[cfg(feature = "dtype-struct")]
-            (StructOwned(l), Struct(idx, arr, flds)) => struct_eq_missing(
+            (StructOwned(l), Struct(idx, arr, fields)) => struct_eq_missing(
                 struct_owned_value_iter(l.as_ref()),
-                struct_value_iter(*idx, arr, flds),
+                struct_value_iter(*idx, arr, fields),
                 null_equal,
             ),
             #[cfg(feature = "dtype-struct")]
-            (Struct(idx, arr, flds), StructOwned(r)) => struct_eq_missing(
-                struct_value_iter(*idx, arr, flds),
+            (Struct(idx, arr, fields), StructOwned(r)) => struct_eq_missing(
+                struct_value_iter(*idx, arr, fields),
                 struct_owned_value_iter(r.as_ref()),
                 null_equal,
             ),
             #[cfg(feature = "dtype-struct")]
-            (Struct(l_idx, l_arr, l_flds), Struct(r_idx, r_arr, r_flds)) => struct_eq_missing(
-                struct_value_iter(*l_idx, l_arr, l_flds),
-                struct_value_iter(*r_idx, r_arr, r_flds),
+            (Struct(l_idx, l_arr, l_fields), Struct(r_idx, r_arr, r_fields)) => struct_eq_missing(
+                struct_value_iter(*l_idx, l_arr, l_fields),
+                struct_value_iter(*r_idx, r_arr, r_fields),
                 null_equal,
             ),
             #[cfg(feature = "dtype-decimal")]

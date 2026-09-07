@@ -1,14 +1,21 @@
-use pyo3::Python;
+use pyo3::pyclass::PyClassGuardError;
+use pyo3::{PyErr, Python};
 
 use crate::PolarsError;
 
-pub struct PyErrWrap(pub pyo3::PyErr);
+pub struct PyErrWrap(pub PyErr);
 
-impl From<pyo3::PyErr> for PolarsError {
-    fn from(value: pyo3::PyErr) -> Self {
+impl From<PyErr> for PolarsError {
+    fn from(value: PyErr) -> Self {
         PolarsError::Python {
             error: PyErrWrap(value),
         }
+    }
+}
+
+impl<'a, 'py> From<PyClassGuardError<'a, 'py>> for PolarsError {
+    fn from(err: PyClassGuardError) -> Self {
+        PolarsError::from(PyErr::from(err))
     }
 }
 
@@ -31,7 +38,7 @@ impl std::fmt::Display for PyErrWrap {
 }
 
 impl std::ops::Deref for PyErrWrap {
-    type Target = pyo3::PyErr;
+    type Target = PyErr;
 
     fn deref(&self) -> &Self::Target {
         &self.0

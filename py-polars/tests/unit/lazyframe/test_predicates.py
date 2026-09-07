@@ -1794,6 +1794,18 @@ def test_filter_constraint_nested_scalar_no_panic() -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [[1, 2]], "b": [1]}))
 
 
+def test_filter_constraint_column_with_its_own_order() -> None:
+    # An enum compares by its declared categories, so a bound on it does not order
+    # the way the string literals do: under z < a < m, `== "z"` and `>= "m"` cannot
+    # both hold and neither comparison may be dropped.
+    dtype = pl.Enum(["z", "a", "m"])
+    lf = pl.LazyFrame({"key": pl.Series(["z", "a", "m"], dtype=dtype), "v": [1, 2, 3]})
+
+    q = lf.filter((pl.col("key") == "z") & (pl.col("key") >= "m"))
+    assert q.explain().count('col("key")') == 2
+    assert q.collect().is_empty()
+
+
 def test_predicate_pushdown_after_collect_schema_26882() -> None:
     # Resolving schema mid-build caches DSL->IR conversion with schema-only `opt_flags`
     # (eg: no predicate pushdown); subsequent `collect` should NOT skip optimisations

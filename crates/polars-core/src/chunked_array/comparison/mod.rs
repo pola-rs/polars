@@ -5,7 +5,7 @@ mod categorical;
 
 use std::ops::{BitAnd, BitOr, Not};
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use arrow::bitmap::BitmapBuilder;
 use num_traits::{NumCast, ToPrimitive};
 use polars_array::bitmap::invert;
 use polars_compute::comparisons::{

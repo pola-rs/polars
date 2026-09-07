@@ -18,6 +18,10 @@ where
     T: PolarsFloatType,
     T::Native: Float + SubAssign + Pow<T::Native, Output = T::Native>,
 {
+    if ca.is_empty() {
+        return Ok(ca.clone());
+    }
+
     let ca = ca.rechunk();
     let out = rolling::dispatch::rolling_skew(
         ca.downcast_as_array(),
@@ -70,6 +74,10 @@ where
     T: PolarsFloatType,
     T::Native: Float + SubAssign + Pow<T::Native, Output = T::Native>,
 {
+    if ca.is_empty() {
+        return Ok(ca.clone());
+    }
+
     let ca = ca.rechunk();
     let out = rolling::dispatch::rolling_kurtosis(
         ca.downcast_as_array(),

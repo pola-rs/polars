@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
+use polars_async::executor::TaskPriority;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::tick_counter::tick_counter;
 use rand::RngExt;
@@ -178,6 +179,13 @@ pub(crate) enum InsertReason {
     TooSmall(Timestamp),
 }
 
+pub(crate) enum PrefetchScheduleResult {
+    NothingToPrefetch,
+    NoPermitsLeft,
+    Okay,
+    StaleContext,
+}
+
 #[derive(Default)]
 struct SharedState {
     spill_queue: SpillQueue,
@@ -325,6 +333,49 @@ impl SpillContextInner {
             self.staging_empty.swap(false, Ordering::AcqRel);
         }
     }
+
+    pub(crate) fn schedule_prefetch(&self, ctx_id: u64) -> PrefetchScheduleResult {
+        let mut shared = self.shared.lock().unwrap();
+        if ctx_id != self.context_id.load(Ordering::Relaxed) {
+            return PrefetchScheduleResult::StaleContext;
+        }
+
+        self.drain_staging(&mut shared, false);
+
+        let mut prefetched = false;
+        let mm = memory_manager();
+        let mut rng = rand::rng();
+        for _ in 0..self.stats.suggested_prefetch_amount() {
+            let Some(permit) = mm.try_get_prefetch_permit() else {
+                return PrefetchScheduleResult::NoPermitsLeft;
+            };
+
+            let pop = match self.policy() {
+                SpillContextPolicy::MostRecent => shared.unspill_queue.pop_front(),
+                SpillContextPolicy::LeastRecent => shared.unspill_queue.pop_back(),
+                SpillContextPolicy::Random => shared.unspill_queue.pop_random(&mut rng),
+            };
+
+            let Some(rt) = pop else { break };
+            let Some(token) = rt.upgrade() else {
+                continue;
+            };
+
+            prefetched = true;
+            self.stats.add_prefetch_start();
+            let prefetch_fut = token.prefetch(); // Create fut outside of spawn to update statistics now.
+            polars_async::executor::spawn(TaskPriority::Low, async move {
+                prefetch_fut.await;
+                drop(permit);
+            });
+        }
+
+        if prefetched {
+            PrefetchScheduleResult::Okay
+        } else {
+            PrefetchScheduleResult::NothingToPrefetch
+        }
+    }
 }
 
 // We leak (but do re-use) contexts such that a weak reference does not require any reference
@@ -384,6 +435,7 @@ impl Clone for StrongSpillContext {
 impl Drop for StrongSpillContext {
     fn drop(&mut self) {
         if self.0.refcount.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.0.stats().on_drop();
             SPILL_CONTEXT_REUSE_ARENA.lock().unwrap().push(self.0);
         }
     }

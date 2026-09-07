@@ -11,6 +11,7 @@ use recursive::recursive;
 
 use self::ir::dot::ScanSourcesDisplay;
 use crate::dsl::deletion::DeletionFilesList;
+use crate::dsl::dsl_resolver::ResolverExplainHeadingDisplay;
 use crate::prelude::*;
 
 const INDENT_INCREMENT: usize = 2;
@@ -1127,6 +1128,21 @@ pub fn write_ir_non_recursive(
             arg_map: _,
             operation,
         } => write!(f, "{:indent$}DISPATCH {operation}", ""),
+        IR::Resolver {
+            resolver,
+            resolved_dsl,
+            ..
+        } => {
+            write!(
+                f,
+                "{}",
+                ResolverExplainHeadingDisplay {
+                    indent,
+                    resolver,
+                    resolved_dsl
+                }
+            )
+        },
         IR::Invalid => write!(f, "{:indent$}INVALID", ""),
     }
 }

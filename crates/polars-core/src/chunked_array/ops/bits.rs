@@ -9,7 +9,9 @@ fn first_true_idx_impl(ca: &BooleanChunked, invert: bool) -> Option<usize> {
     }
 
     if (ca.is_sorted_ascending_flag() && invert) || (ca.is_sorted_descending_flag() && !invert) {
-        return ca.first_non_null();
+        let idx = ca.first_non_null()?;
+        let value = unsafe { ca.value_unchecked(idx) };
+        return (value != invert).then_some(idx);
     }
 
     let invert_mask = if invert { u64::MAX } else { 0 };

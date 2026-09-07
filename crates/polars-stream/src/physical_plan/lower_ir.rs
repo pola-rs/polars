@@ -1796,6 +1796,10 @@ pub fn lower_ir(
                 },
             }
         },
+        IR::Resolver { resolved_ir, .. } => {
+            let node = resolved_ir.expect("IR::Resolver not resolved at lower_ir");
+            return lower_ir!(node);
+        },
         IR::Invalid => unreachable!(),
     };
 
