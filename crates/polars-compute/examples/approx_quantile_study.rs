@@ -90,14 +90,14 @@ struct Scratch {
     offsets: Vec<usize>,
 }
 
-/// Deliver a uniform random permutation of `0..n`, so a value equals its own
-/// 0-based rank.
+/// Fill `scratch.data` with a uniform random permutation of `0..n`, so a value
+/// equals its own 0-based rank.
 ///
 /// A plain Fisher-Yates over `n` items is dominated by cache misses, so bucket
 /// the values first (sequential writes into `B` streams) and shuffle each bucket
 /// in cache. Concatenating independently shuffled buckets of a uniform random
 /// bucket assignment is again a uniform random permutation.
-fn permutation<'a>(n: usize, rng: &mut SmallRng, scratch: &'a mut Scratch) -> &'a [f64] {
+fn permutation(n: usize, rng: &mut SmallRng, scratch: &mut Scratch) {
     const BUCKET_SIZE: usize = 2048;
     let buckets = usize::max(1, n / BUCKET_SIZE);
 
@@ -129,7 +129,6 @@ fn permutation<'a>(n: usize, rng: &mut SmallRng, scratch: &'a mut Scratch) -> &'
             bucket.swap(i, rng.random_range(0..=i));
         }
     }
-    data
 }
 
 /// Build one sketch per part, merge them, and return the finalized sketch.
@@ -247,7 +246,7 @@ fn run_config(cfg: &Config, threads: usize) {
                         .wrapping_add(cfg.parts as u64);
                     let mut rng = SmallRng::seed_from_u64(seed);
                     let sizes = cfg.split.sizes(cfg.n, cfg.parts, &mut rng);
-                    let data = permutation(cfg.n, &mut rng, &mut scratch);
+                    permutation(cfg.n, &mut rng, &mut scratch);
                     match cfg.order {
                         "sorted" => scratch.data.sort_by(f64::total_cmp),
                         "reverse" => scratch.data.sort_by(|a, b| f64::total_cmp(b, a)),

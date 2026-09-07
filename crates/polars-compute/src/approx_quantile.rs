@@ -44,8 +44,7 @@ pub fn empirical_error_to_formal(empirical_error: f64, method: &ApproxQuantileMe
 }
 
 impl ApproxQuantileMethod {
-    /// Replace `Auto` by a concrete method. Set `quantiles` to `None` if the
-    /// quantiles are not known at plan time.
+    /// Replace `Auto` by a concrete method.
     pub fn resolve(&self, quantiles: Option<&[f64]>) -> Self {
         use ApproxQuantileMethod as M;
         let M::Auto = self else {
@@ -93,10 +92,6 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedState<T> {
             Some(cum_weight) => cum_weight.last().map(|x| *x).unwrap_or(0),
             None => self.items.len(),
         }
-    }
-
-    fn estimate_rank(&self, value: &T) -> usize {
-        todo!()
     }
 
     /// Merge `other` into `self`.
@@ -198,14 +193,6 @@ fn invalid_state() -> ! {
 pub mod kll {
     use super::*;
 
-    // [amber]
-    // * In experiments I benchmarked that a Vec<Vec<T>> approach is slower than
-    //   having a single `items` Vec<T>.  I suspect that is due to the fact that the
-    //   data becomes a lot sparser.
-    // * However, it seems that *eager* compaction is faster than lazy compaction.
-    //   This makes sense, because on average we have less data to deal with.
-    //   (24.1 vs 20.7 seconds)
-
     /// `CAPACITY_DECAY` specifies how much smaller compactor h+1 is wrt to h.
     /// KLL calls this `c`.
     const CAPACITY_DECAY: f64 = 2.0 / 3.0;
@@ -213,56 +200,17 @@ pub mod kll {
     const MIN_COMPACTOR_SIZE: usize = 2;
 
     /// Smallest `k` guaranteeing rank error <= `error * n` w.p. >= 1 - `delta` for a
-    /// *single* query value. Union-bound over ~`1/error` values (i.e. pass
-    /// `delta * error`) if you need all quantiles to hold simultaneously.
+    /// *single* query value, with `delta` = `FAILURE_PROBABILITY`.
     ///
-    /// Randomized compaction makes the rank error a zero-mean sum of ±2^h steps,
-    /// one per compaction at level `h`, taken only when the number of compacted
-    /// items below the query is odd. Level `h` has capacity `k_h = k c^(H-h)` and
-    /// items of weight 2^h; `compactor_threshold` never lets a compaction there
-    /// consume fewer than `k_h` items, so it compacts at most `m_h = n / (2^h k_h)`
-    /// times. Three things then cut the naive `sum_h m_h 4^h`:
+    /// Randomized compaction makes the rank error a zero-mean sum of ±2^h steps, one
+    /// per compaction at level `h`. Bounding the compactions per level and summing
+    /// the variance over `h < H` gives `std <= (n/k) sqrt(1/(2c-1) + 2/3)`, for
+    /// `c > 1/2`. Each step is bounded and mean zero given the levels below it, so
+    /// Azuma-Hoeffding turns that into a sub-Gaussian tail with the same proxy,
+    /// giving `k = z sqrt(1/(2c-1) + 2/3) / error` for `z = sqrt(2 ln(2/delta))`.
     ///
-    /// * the level-`H` compactor is the one that is still filling up -- it has
-    ///   never been compacted -- so the sum runs over `h < H`, not `h <= H`;
-    /// * `compact_level` pairs compactions up and takes the opposite parity on the
-    ///   odd one, so a *pair* moves the estimate by at most 2^h in total (not
-    ///   2 * 2^h) and is driven by a single coin: level `h` contributes
-    ///   `ceil(m_h / 2)` steps of size 2^h rather than `m_h` of them;
-    /// * level `H` is created only once the *then* top compactor filled, and its
-    ///   capacity at that moment was `k` -- `compactor_threshold` is recomputed
-    ///   from the live `levels.len()`, so the level that triggers the growth is
-    ///   always at depth 0. That gives `k 2^H <= 2n`, not just `c k 2^H <= 2n`.
-    ///
-    /// Putting those together (`ceil(m/2) <= (m+1)/2` leaves a bare
-    /// `sum_{h<H} 4^h <= 4^H / 3`):
-    ///
-    /// ```text
-    /// Var <= (1/2) n 2^H / (k (2c-1)) + (1/6) 4^H         [needs c > 1/2]
-    ///     <= (n/k)^2 * (1/(2c-1) + 2/3)
-    /// ```
-    ///
-    /// so `std <= (n/k) sqrt(1/(2c-1) + 2/3)`. The steps are bounded and each is
-    /// mean zero given everything below its level, so Azuma-Hoeffding gives a
-    /// sub-Gaussian tail with exactly that variance proxy: the error stays below
-    /// `z * std` except w.p. `delta`, with `z = sqrt(2 ln(2/delta))`. Hence
-    ///
-    /// ```text
-    /// k = z * sqrt(1/(2c-1) + 2/3) / error.
-    /// ```
-    ///
-    /// The steps are *not* independent -- level `h`'s buffers are a function of the
-    /// coins below `h` -- so plain Hoeffding does not apply here, which is why the
-    /// argument is phrased along the level filtration.
-    ///
-    /// This is machine-checked, in Lean 4 + Mathlib, as `CoinSpace.kll_antithetic`
-    /// in <https://github.com/dsprenkels/approx_quantile_formal>. Note that it
-    /// needs the compactor thresholds to be *even*; see `compactor_threshold`.
-    ///
-    /// It is still a worst case: the schedule in `compact()` lets compactors run
-    /// past their thresholds, so the measured std is 0.25..1.08 * n/k (k in
-    /// 16..50k, n in 1e4..1e8, random/sorted/reverse-sorted input) against the
-    /// 1.91 * n/k bound used here.
+    /// The bound is computed for the worst case where compactions happen eagerly.
+    /// Therefore, the bound is somewhat loose with respect to the implementation.
     fn compute_k(error: f64) -> usize {
         assert!(error > 0.0 && error < 1.0, "invalid error: {error}");
 
@@ -367,13 +315,6 @@ pub mod kll {
                 invalid_state()
             };
             self.0 = State::Finalized(state.finalize());
-        }
-
-        pub fn estimate_rank(&self, value: &T) -> usize {
-            let State::Finalized(state) = &self.0 else {
-                invalid_state()
-            };
-            state.estimate_rank(value)
         }
 
         pub fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
@@ -759,14 +700,6 @@ pub mod req {
         }
 
         #[inline]
-        pub fn estimate_rank(&self, value: &T) -> usize {
-            let State::Finalized(state) = &self.state else {
-                invalid_state()
-            };
-            state.estimate_rank(value)
-        }
-
-        #[inline]
         pub fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
             let State::Finalized(state) = &self.state else {
                 invalid_state()
@@ -812,14 +745,6 @@ pub mod req {
         pub fn num_items(&self) -> usize {
             debug_assert_eq!(self.lra.num_items(), self.hra.num_items());
             self.lra.num_items()
-        }
-
-        pub fn estimate_rank(&self, value: &T) -> usize {
-            let rank = self.lra.estimate_rank(value);
-            match 2 * rank <= self.num_items() {
-                true => rank,
-                false => self.hra.estimate_rank(value),
-            }
         }
 
         pub fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
@@ -1139,14 +1064,6 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
             Sketch::Kll(s) => s.finalize(),
             Sketch::Req(s) => s.finalize(),
             Sketch::DoubleReq(s) => s.finalize(),
-        }
-    }
-
-    pub fn estimate_rank(&self, value: &T) -> usize {
-        match self {
-            Sketch::Kll(s) => s.estimate_rank(value),
-            Sketch::Req(s) => s.estimate_rank(value),
-            Sketch::DoubleReq(s) => s.estimate_rank(value),
         }
     }
 
