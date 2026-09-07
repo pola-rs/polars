@@ -1,7 +1,5 @@
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DEC128_MAX_PREC;
-#[cfg(feature = "approx_quantile")]
-use polars_core::datatypes::DataType::Binary;
 use polars_core::utils::materialize_dyn_int;
 
 use super::*;

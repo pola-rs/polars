@@ -9676,7 +9676,68 @@ class Series(metaclass=_Meta):
         error: float = 0.001,
         error_tightness: ApproxQuantileErrorBound = "empirical",
     ) -> PythonLiteral | list_[PythonLiteral]:
-        """[amber] TODO."""
+        """
+        Compute approximate quantile(s) of this Series.
+
+        Parameters
+        ----------
+        quantile
+            A single quantile or a list of quantiles.
+        method
+            Specifies which approximate-quantile algorithm is to be used.
+            When set to 'auto', polars will use KLL if the quantiles are all
+            in `[0.1, 0.9]` or one of the REQ variants if any of the quantiles
+            falls outside if the middle range.
+
+            When set to `'kll'`, Polars will use the KLL method. This is generally
+            the most efficient algorithm. In this case, the `error` will specify
+            the absolute maximum error of the *rank* of the quantile value that is
+            returned. This will break down at the edges of the domain (e.g., when
+            the quantile is 95% or greater).
+
+            In the cases that you need to retain the accuracy at the edges of the
+            domain, use `'req_lo'` (for quantiles close to `0`), `'req_hi'` (for
+            quantiles close to `1`), or `'req_both'` which computes a REQ sketch for
+            both variants.
+
+        error
+            The allowed rank error as a factor of the length of the Series.
+            For example: if `error=0.01`, and the approximate quantile is computed
+            over 1000 rows, the rank of the returned quantile value is (with probability
+            >99.7%) guaranteed to be a most 10 rows apart from the actual quantile.
+
+        error_tightness
+            The accuracy of the approximate-quantile algorithms is calibrated on
+            shuffled inputs. However, the error bound is not mathemetically sound for
+            all possible inputs (e.g., if any of them has an adversarially "bad" order).
+            Set this value to `'formal'` to use a (looser) mathematically-sound error\
+            bound, in return for slower performance.
+
+        Notes
+        -----
+        As long as your data can fit in RAM, it is always more efficient to use the
+        regular :meth:`quantile` function instead.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", range(10_000))
+
+        >>> # Get the approximate median
+        >>> s.approx_quantile(0.5)
+        5000
+
+        >>> # Allow for a large error (10% of the rank)
+        >>> s.approx_quantile(0.5, error=0.1)
+        5006
+
+        >>> # Get several quantiles at once
+        >>> s.approx_quantile([0.25, 0.75])
+        [2500, 7499]
+
+        >>> # Explicitly use an algorithm that is accurate at the high tail
+        >>> s.approx_quantile(0.999, method="req_hi", error=0.1)
+        9989
+        """
         out = (
             self.to_frame()
             .select_seq(
