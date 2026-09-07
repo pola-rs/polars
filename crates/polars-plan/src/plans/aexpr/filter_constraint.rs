@@ -76,9 +76,6 @@ enum Nullability {
     NonNull,
 }
 
-// Orders two scalars; incomparable pairs give `None`, so we never declare a
-// contradiction we aren't sure of. The dtype guard is load-bearing: `AnyValue`'s
-// `PartialOrd` panics on nested/mixed/object dtypes rather than returning `None`.
 // Whether the comparisons in `node` order their column the way they order the
 // literals it is compared against. A categorical or an enum orders by its
 // categories instead, so nothing here may reason about its bounds. A column that
@@ -87,11 +84,14 @@ fn compares_in_literal_order(node: Node, schema: &Schema, expr_arena: &Arena<AEx
     expr_arena.iter(node).all(|(_, ae)| match ae {
         AExpr::Column(name) => schema
             .get(name)
-            .is_some_and(|dtype| !dtype.is_categorical() && !dtype.is_enum()),
+            .is_some_and(|dtype| !dtype.contains_categoricals() && !dtype.contains_enums()),
         _ => true,
     })
 }
 
+// Orders two scalars; incomparable pairs give `None`, so we never declare a
+// contradiction we aren't sure of. The dtype guard is load-bearing: `AnyValue`'s
+// `PartialOrd` panics on nested/mixed/object dtypes rather than returning `None`.
 fn scalar_cmp(a: &Scalar, b: &Scalar) -> Option<Ordering> {
     if a.dtype() != b.dtype() || a.dtype().is_nested() || a.dtype().is_object() {
         return None;
