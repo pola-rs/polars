@@ -1933,6 +1933,40 @@ def test_rolling_median_23480() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_rolling_weighted_median_center_29170() -> None:
+    # A centered window is truncated at the tail, but the weighted kernel used to read
+    # `window_size` values past the window start regardless, running off the end of the
+    # array.
+    s = pl.Series([1.0, 2.0, 3.0])
+
+    result = s.rolling_median(
+        window_size=3, min_samples=1, weights=[1.0, 1.0, 1.0], center=True
+    )
+
+    # Windows are [1, 2], [1, 2, 3] and [2, 3].
+    expected = pl.Series([1.5, 2.0, 2.5])
+    assert_series_equal(result, expected)
+    # Uniform weights must agree with the unweighted kernel.
+    assert_series_equal(
+        result, s.rolling_median(window_size=3, min_samples=1, center=True)
+    )
+
+
+def test_rolling_weighted_median_partial_window_29170() -> None:
+    # With `min_samples` below `window_size` the leading windows are shorter than
+    # `window_size`. The weighted kernel used to fill them with values from *after* the
+    # window instead, so a backwards-looking rolling median looked forwards.
+    s = pl.Series([1.0, 2.0, 3.0])
+
+    result = s.rolling_median(window_size=3, min_samples=1, weights=[1.0, 1.0, 1.0])
+
+    # Windows are [1], [1, 2] and [1, 2, 3].
+    expected = pl.Series([1.0, 1.5, 2.0])
+    assert_series_equal(result, expected)
+    # Uniform weights must agree with the unweighted kernel.
+    assert_series_equal(result, s.rolling_median(window_size=3, min_samples=1))
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize("with_nulls", [True, False])
 def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:

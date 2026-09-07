@@ -184,6 +184,7 @@ where
                 window_size,
                 min_periods,
                 offset_fn,
+                center,
                 weights,
                 wsum,
             ))
@@ -242,6 +243,7 @@ fn rolling_apply_weighted_quantile<T, Fo>(
     window_size: usize,
     min_periods: usize,
     det_offsets_fn: Fo,
+    center: bool,
     weights: &[f64],
     wsum: f64,
 ) -> ArrayRef
@@ -251,22 +253,49 @@ where
 {
     assert_eq!(weights.len(), window_size);
     // Keep nonzero weights and their indices to know which values we need each iteration.
-    let nz_idx_wts: Vec<_> = weights.iter().enumerate().filter(|x| x.1 != &0.0).collect();
+    let nz_idx_wts: Vec<_> = weights
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|&(_, w)| w != 0.0)
+        .collect();
     let mut buf = vec![(T::zero(), 0.0); nz_idx_wts.len()];
     let len = values.len();
     let out = (0..len)
         .map(|idx| {
-            // Don't need end. Window size is constant and we computed offsets from start above.
-            let (start, _) = det_offsets_fn(idx, window_size, len);
+            let (start, end) = det_offsets_fn(idx, window_size, len);
+            // Actual window size may be shorter because of being close to a boundary,
+            // and having lower min_samples than the window length
+            let win_len = end - start;
+            let weights_start = det_weights_start(center, window_size, idx, start, win_len);
+            let weights_end = weights_start + win_len;
 
             // Sorting is not ideal, see https://github.com/tobiasschoch/wquantile for something faster
-            unsafe {
-                buf.iter_mut()
-                    .zip(nz_idx_wts.iter())
-                    .for_each(|(b, (i, w))| *b = (*values.get_unchecked(i + start), **w));
+            let mut n = 0;
+            for &(i, w) in nz_idx_wts.iter() {
+                if (weights_start..weights_end).contains(&i) {
+                    // SAFETY: `i - weights_start < win_len`, so the index is in `start..end`.
+                    let v = unsafe { *values.get_unchecked(start + i - weights_start) };
+                    buf[n] = (v, w);
+                    n += 1;
+                }
+            }
+            // Ignore anything after 'n'.
+            // Anything after that is a left-over from a longer window.
+            let buf = &mut buf[..n];
+            if buf.is_empty() {
+                // Quantile is undefined if all sum is zero, because of div/0
+                return T::zero();
             }
             buf.sort_unstable_by(|&a, &b| a.0.tot_cmp(&b.0));
-            compute_wq(&buf, p, wsum, method)
+            // The precomputed total only holds for windows that cover all of the weights;
+            // a truncated window has to be normalized by the weights it does cover.
+            let wsum = if win_len == window_size {
+                wsum
+            } else {
+                buf.iter().map(|&(_, w)| w).sum()
+            };
+            compute_wq(buf, p, wsum, method)
         })
         .collect_trusted::<Vec<T>>();
 
