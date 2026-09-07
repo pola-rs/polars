@@ -52,18 +52,25 @@ pub(super) fn approx_quantile(
         make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
     );
 
+    // A list input asks for several quantiles at once, and comes back as a list.
+    let is_list = quantile.dtype().is_list();
     let inner_s;
-    if quantile.dtype().is_list() {
+    if is_list {
         let list = quantile.list()?;
         inner_s = list.get_as_series(0).unwrap();
-        if inner_s.has_nulls() {
-            polars_bail!(ComputeError: "quantile expression contains null values");
-        }
         quantile = &inner_s;
     }
 
-    let sc = polars_ops::prelude::approx_quantile(input, &quantile, error, method)?;
-    Ok(sc.into_column(input.name().clone()))
+    let out = polars_ops::prelude::approx_quantile(input, quantile, error, method)?;
+    let name = input.name().clone();
+    let sc = match is_list {
+        true => Scalar::new(
+            DataType::List(Box::new(out.dtype().clone())),
+            AnyValue::List(out),
+        ),
+        false => Scalar::new(out.dtype().clone(), out.get(0)?.into_static()),
+    };
+    Ok(sc.into_column(name))
 }
 
 #[cfg(feature = "diff")]

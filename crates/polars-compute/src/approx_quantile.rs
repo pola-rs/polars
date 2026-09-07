@@ -7,6 +7,19 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 pub use req::{DoubleReqSketch, ReqSketch};
 
+/// Compute these quantile values using KLL, if the method is Auto.
+const KLL_RANGE: RangeInclusive<f64> = 0.05..=0.95;
+
+/// The probability that a query exceeds `error`. KLL calls this `δ`.
+///
+/// Taken from the 3-sigma rule.
+const FAILURE_PROBABILITY: f64 = 1.0 - 0.9973;
+
+/// Looseness of the formal KLL error bound (estimated by measuring).
+const KLL_BOUND_LOOSENESS: f64 = 2.35;
+/// Looseness of the formal REQ error bound (estimated by measuring).
+const REQ_BOUND_LOOSENESS: f64 = 17.0;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -17,8 +30,17 @@ pub enum ApproxQuantileMethod {
     DoubleReqSketch,
 }
 
-/// Quantiles in this range are served well enough by KLL's uniform error.
-const KLL_RANGE: RangeInclusive<f64> = 0.05..=0.95;
+pub fn empirical_error_to_formal(empirical_error: f64, method: &ApproxQuantileMethod) -> f64 {
+    // The maths get weird at errors close to 1 (especially for REQ), so cap it below that.
+    const MAX_ERROR: f64 = 0.90;
+    match method {
+        ApproxQuantileMethod::Auto => panic!("method not resolved"),
+        ApproxQuantileMethod::KLL => f64::min(MAX_ERROR, KLL_BOUND_LOOSENESS * empirical_error),
+        ApproxQuantileMethod::ReqSketch { .. } | ApproxQuantileMethod::DoubleReqSketch => {
+            f64::min(MAX_ERROR, REQ_BOUND_LOOSENESS * empirical_error)
+        },
+    }
+}
 
 impl ApproxQuantileMethod {
     /// Replace `Auto` by a concrete method. Set `quantiles` to `None` if the
@@ -115,8 +137,6 @@ pub mod kll {
     //   This makes sense, because on average we have less data to deal with.
     //   (24.1 vs 20.7 seconds)
 
-    /// KLL calls this `δ`. Equivalent to a 99.9999% success rate per queried value.
-    const FAILURE_PROBABILITY: f64 = 1e-6;
     /// `CAPACITY_DECAY` specifies how much smaller compactor h+1 is wrt to h.
     /// KLL calls this `c`.
     const CAPACITY_DECAY: f64 = 2.0 / 3.0;
@@ -182,12 +202,12 @@ pub mod kll {
         f64::max(MIN_COMPACTOR_SIZE as f64, f64::ceil(z * spread / error)) as usize
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, Default)]
     struct Level {
         offset: usize,
         size: usize,
-        /// Number of compactions performed on this compactor.
-        compactions: u64,
+        /// Set while the next compaction must take the opposite `coin`.
+        mid_pair: bool,
         /// Parity promoted by the previous compaction, see `compact_level`.
         coin: bool,
     }
@@ -222,7 +242,7 @@ pub mod kll {
                 consumed_items: self.consumed_items,
                 compactor_capacity: self.compactor_capacity,
                 rng: rand::make_rng(),
-                scratch: self.scratch.clone(),
+                scratch: Vec::new(),
             }
         }
     }
@@ -242,12 +262,7 @@ pub mod kll {
             let k = compute_k(error);
             let state = IngestingState {
                 items: Vec::new(),
-                levels: vec![Level {
-                    offset: 0,
-                    size: 0,
-                    compactions: 0,
-                    coin: false,
-                }],
+                levels: vec![Level::default()],
                 k,
                 consumed_items: 0,
                 compactor_capacity: k,
@@ -263,6 +278,16 @@ pub mod kll {
                 invalid_state()
             };
             state.update(item);
+        }
+
+        pub fn merge(&mut self, other: Self) {
+            let State::Ingesting(other) = other.0 else {
+                invalid_state()
+            };
+            let State::Ingesting(state) = &mut self.0 else {
+                invalid_state()
+            };
+            state.merge(other);
         }
 
         pub fn finalize(&mut self) {
@@ -304,14 +329,17 @@ pub mod kll {
         /// Compact all of the compactors from base to top.
         ///
         /// If break_early is true, then the sweeping stops once a compaction has
-        /// taken place.
-        fn compact(&mut self, break_early: bool) {
+        /// taken place. Returns whether a new compactor was added, which
+        /// invalidates the thresholds of the levels already swept.
+        fn compact(&mut self, break_early: bool) -> bool {
+            let mut grew = false;
             for level in 0..self.levels.len() {
                 if self.levels[level].size
                     >= compactor_threshold(self.k, self.levels.len() - 1 - level)
                 {
                     if level == self.levels.len() - 1 {
                         self.add_new_compactor();
+                        grew = true;
                     }
                     let old_size = self.items.len();
                     self.compact_level(level);
@@ -321,18 +349,60 @@ pub mod kll {
                     };
                 }
             }
+            grew
         }
 
         fn add_new_compactor(&mut self) {
-            self.levels.push(Level {
-                offset: 0,
-                size: 0,
-                compactions: 0,
-                coin: false,
-            });
+            self.levels.push(Level::default());
             self.compactor_capacity = (0..self.levels.len())
                 .map(|level| compactor_threshold(self.k, self.levels.len() - 1 - level))
                 .sum();
+        }
+
+        /// Merge `other` into `self`.
+        fn merge(&mut self, other: Self) {
+            // `k` is a function of the error, so k₁ = k₂ ⇒ ε₁ = ε₂.
+            assert_eq!(self.k, other.k);
+
+            // Make sure we have enough compactors on the left side.
+            while self.levels.len() < other.levels.len() {
+                self.add_new_compactor();
+            }
+
+            let mut items1 = mem::replace(&mut self.items, mem::take(&mut self.scratch));
+            let items2 = &other.items;
+            self.items.clear();
+            self.items.reserve(items1.len() + items2.len());
+
+            let mut next_offset = 0;
+            for level in (0..self.levels.len()).rev() {
+                let l1 = self.levels[level];
+                let l2 = other.levels.get(level).copied().unwrap_or_default();
+                let comp1 = &items1[l1.offset..l1.offset + l1.size];
+                let comp2 = &items2[l2.offset..l2.offset + l2.size];
+                if level == 0 {
+                    self.items.extend_from_slice(comp1);
+                    self.items.extend_from_slice(comp2);
+                } else {
+                    let (c1, c2) = (comp1.iter().cloned(), comp2.iter().cloned());
+                    merge_sorted(&mut self.items, c1, c2, TotalOrd::tot_cmp);
+                }
+
+                self.levels[level] = Level {
+                    offset: next_offset,
+                    size: l1.size + l2.size,
+                    mid_pair: l1.mid_pair | l2.mid_pair,
+                    coin: merge_coin(l1.mid_pair, l1.coin, l2.mid_pair, l2.coin, &mut self.rng),
+                };
+                next_offset += l1.size + l2.size;
+            }
+            debug_assert_eq!(next_offset, self.items.len());
+
+            items1.clear();
+            self.scratch = items1;
+
+            self.consumed_items += other.consumed_items;
+            self.compact(false);
         }
 
         fn compact_level(&mut self, level: usize) {
@@ -342,11 +412,11 @@ pub mod kll {
 
             // Only draw a fresh promotion parity every other compaction, and take
             // the opposite one in between. See DOI 10.3390/s22249612, Sec 3.2.
-            compact_level.coin = match compact_level.compactions % 2 == 1 {
+            compact_level.coin = match compact_level.mid_pair {
                 true => !compact_level.coin,
                 false => rand & 0x2 != 0,
             };
-            compact_level.compactions += 1;
+            compact_level.mid_pair = !compact_level.mid_pair;
             let coin2 = compact_level.coin;
 
             let mut next_level = self.levels[level + 1];
@@ -488,10 +558,6 @@ pub mod kll {
 pub mod req {
     use super::*;
 
-    /// KLL calls this `δ`. Equivalent to a 99.9999% success rate per queried value.
-    // const FAILURE_PROBABILITY: f64 = 1e-6;
-    const FAILURE_PROBABILITY: f64 = 0.5;
-
     /// Stream length to parameterise a fresh sketch for.
     fn initial_n(error: f64) -> usize {
         let k = |n: usize| compute_k(error, FAILURE_PROBABILITY, n);
@@ -501,16 +567,17 @@ pub mod req {
         // 1` the `log2` in `compute_k` is zero and `k` overflows.
         let mut n = (f64::ceil(2.0 / error) as usize).next_power_of_two();
         // Ensure that:
-        //   1. The number of protected items is not larger than the total number
-        //      of items, because that would mean that no items could get promoted
-        //      at all during compaction.
-        //   2. The capacity of a relative compactor is larger than the maximum
-        //      number of consumable items in the sketch, in that case we would
-        //      not even fill up that first compactor.
-        // TODO: [amber] Consider an addition factor of 8 or smth.
-        while k(n) > n || b(n) >= n {
-            n *= 2;
+        //   1. There are strictly more items than `k`, because at `k == n` no item
+        //      could get promoted at all during compaction, and `ReqSketch::new`
+        //      relies on `n > k`.
+        //   2. The number of consumable items in the sketch is greater than the
+        //      capacity of a compactor. Otherwise, we would not even fill up
+        //      that first compactor.
+        let n_is_ok = |n| n > k(n) && n > b(n);
+        while !n_is_ok(n) {
+            n = n.checked_mul(2).expect("no sketch size fits this error");
         }
+        // TODO: [amber] Consider an additional factor of 8 or smth.
         n
     }
 
@@ -587,7 +654,7 @@ pub mod req {
         fn clone(&self) -> Self {
             IngestingState {
                 items: self.items.clone(),
-                scratch: self.scratch.clone(),
+                scratch: Vec::new(),
                 levels: self.levels.clone(),
                 is_hra: self.is_hra,
                 n: self.n,
@@ -617,12 +684,7 @@ pub mod req {
             let state = IngestingState {
                 items: Vec::new(),
                 scratch: Vec::new(),
-                levels: vec![Level {
-                    offset: 0,
-                    size: 0,
-                    compaction_schedule: 0,
-                    coin: false,
-                }],
+                levels: vec![Level::default()],
                 is_hra: hra,
                 n,
                 error,
@@ -765,9 +827,12 @@ pub mod req {
                 return;
             }
 
-            // TODO: [amber] Decide whether we want to add in the error factor or not.
-            self.n = (self.error * self.n as f64 * self.n as f64) as usize;
-            self.k = compute_k(self.error, FAILURE_PROBABILITY, self.n);
+            // The paper squares here, but growing is quite cheap in practice,
+            // so we just amortize by doubling.
+            while sections_needed >= self.num_sections() as u32 {
+                self.n = self.n.checked_mul(2).expect("overflow");
+                self.k = compute_k(self.error, FAILURE_PROBABILITY, self.n);
+            }
         }
 
         /// `B` of the paper: the capacity of every relative compactor.
@@ -795,12 +860,7 @@ pub mod req {
         }
 
         fn add_new_compactor(&mut self) {
-            self.levels.push(Level {
-                offset: 0,
-                size: 0,
-                compaction_schedule: 0,
-                coin: false,
-            });
+            self.levels.push(Level::default());
         }
 
         fn compact_level_once(&mut self, level: usize) {
@@ -910,7 +970,7 @@ pub mod req {
         }
 
         /// Merge `other` into `self`.
-        fn merge(&mut self, mut other: Self) {
+        fn merge(&mut self, other: Self) {
             assert_eq!(self.is_hra, other.is_hra);
             assert_eq!(self.error, other.error);
 
@@ -919,15 +979,12 @@ pub mod req {
                 self.add_new_compactor();
             }
 
-            let scratch = [&mut self.scratch, &mut other.scratch]
-                .into_iter()
-                .max_by_key(|v| v.capacity())
-                .unwrap();
-            mem::swap(&mut self.items, scratch);
-            let items1 = scratch;
-            let items2 = &mut other.items;
+            // Build the merged pool in the scratch buffer; the old pool becomes
+            // the new scratch.
+            let mut items1 = mem::replace(&mut self.items, mem::take(&mut self.scratch));
+            let items2 = &other.items;
             self.items.clear();
-            self.items.reserve_exact(items1.len() + items2.len());
+            self.items.reserve(items1.len() + items2.len());
 
             let mut next_offset = 0;
             for level in (0..self.levels.len()).rev() {
@@ -946,24 +1003,26 @@ pub mod req {
                     }
                 }
 
-                let at_odd_schedule = |l: &Level| l.compaction_schedule % 2 != 0;
-                let coin = match (at_odd_schedule(&l1), at_odd_schedule(&l2)) {
-                    (false, false) => l1.coin, // Next compaction will draw a fresh coin, so we don't care.
-                    (true, false) => l1.coin,
-                    (false, true) => l2.coin,
-                    (true, true) if l1.coin == l2.coin => l1.coin,
-                    (true, true) => self.rng.random(),
-                };
+                let mid_pair = |l: &Level| !l.compaction_schedule.is_multiple_of(2);
 
                 self.levels[level] = Level {
                     offset: next_offset,
                     size: l1.size + l2.size,
                     compaction_schedule: l1.compaction_schedule | l2.compaction_schedule,
-                    coin,
+                    coin: merge_coin(
+                        mid_pair(&l1),
+                        l1.coin,
+                        mid_pair(&l2),
+                        l2.coin,
+                        &mut self.rng,
+                    ),
                 };
                 next_offset += l1.size + l2.size;
             }
             debug_assert_eq!(next_offset, self.items.len());
+
+            items1.clear();
+            self.scratch = items1;
 
             self.n = usize::max(self.n, other.n);
             self.k = compute_k(self.error, FAILURE_PROBABILITY, self.n);
@@ -979,6 +1038,7 @@ pub mod req {
                 mut items,
                 levels,
                 consumed_items,
+                mut scratch,
                 ..
             } = self;
 
@@ -997,13 +1057,13 @@ pub mod req {
                 .iter()
                 .map(|level| &items[level.offset..level.offset + level.size])
                 .collect();
-            let mut finalized_items = Vec::with_capacity(items.len());
-            let cum_weights = finalize_merge_levels(&level_items, &mut finalized_items);
+            let cum_weights = finalize_merge_levels(&level_items, &mut scratch);
 
+            debug_assert_eq!(scratch.len(), items.len());
             debug_assert_eq!(cum_weights.last().unwrap_or(&0), &consumed_items);
 
             FinalizedState::new(
-                finalized_items.into_boxed_slice(),
+                scratch.into_boxed_slice(),
                 Some(cum_weights.into_boxed_slice()),
             )
         }
@@ -1047,6 +1107,14 @@ fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
     debug_assert_eq!(out.len(), num_items);
     debug_assert_eq!(cum_weights.len(), num_items);
     cum_weights
+}
+
+fn merge_coin(mid1: bool, coin1: bool, mid2: bool, coin2: bool, rng: &mut SmallRng) -> bool {
+    match (mid1, mid2) {
+        (true, true) if coin1 != coin2 => rng.random(),
+        (false, true) => coin2,
+        _ => coin1,
+    }
 }
 
 /// Append the merge of two runs, both sorted by `compare`, to `vec`.
@@ -1105,8 +1173,7 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
 
     pub fn merge(&mut self, other: Self) {
         match (self, other) {
-            // TODO: [amber] KLLSketch has no merge yet.
-            (Sketch::Kll(_), Sketch::Kll(_)) => todo!(),
+            (Sketch::Kll(a), Sketch::Kll(b)) => a.merge(b),
             (Sketch::Req(a), Sketch::Req(b)) => a.merge(b),
             (Sketch::DoubleReq(a), Sketch::DoubleReq(b)) => a.merge(b),
             _ => panic!("cannot merge sketches of a different method"),
@@ -1140,9 +1207,9 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::ApproxQuantileMethod;
     use super::kll::KLLSketch;
     use super::req::ReqSketch;
+    use super::{ApproxQuantileMethod, Sketch};
 
     #[test]
     fn auto_resolves_by_queried_quantiles() {
@@ -1164,6 +1231,124 @@ mod tests {
         for method in [M::KLL, M::ReqSketch { hra: false }, M::DoubleReqSketch] {
             assert_eq!(method.resolve(None), method);
             assert_eq!(method.resolve(Some(&[0.01, 0.99])), method);
+        }
+    }
+
+    /// Deterministic shuffle of `0..n`, so a partition is not a contiguous range.
+    fn shuffled(n: usize) -> Vec<f64> {
+        (0..n).map(|i| ((i * 7919) % n) as f64).collect()
+    }
+
+    /// Build one sketch per partition and merge them into one.
+    fn merged(
+        method: &ApproxQuantileMethod,
+        error: f64,
+        data: &[f64],
+        parts: usize,
+    ) -> Sketch<f64> {
+        let mut sketches: Vec<_> = data
+            .chunks(usize::div_ceil(data.len(), parts))
+            .map(|chunk| {
+                let mut sketch = Sketch::new(method, error);
+                for v in chunk {
+                    sketch.update(v);
+                }
+                sketch
+            })
+            .collect();
+        let mut sketch = sketches.remove(0);
+        for other in sketches {
+            sketch.merge(other);
+        }
+        sketch.finalize();
+        sketch
+    }
+
+    const METHODS: [ApproxQuantileMethod; 4] = [
+        ApproxQuantileMethod::KLL,
+        ApproxQuantileMethod::ReqSketch { hra: false },
+        ApproxQuantileMethod::ReqSketch { hra: true },
+        ApproxQuantileMethod::DoubleReqSketch,
+    ];
+
+    /// A merged sketch answers within the same rank error as a single one.
+    #[test]
+    fn merge_keeps_rank_error() {
+        const N: usize = 100_000;
+        const ERROR: f64 = 0.01;
+        const QUANTILES: [f64; 7] = [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0];
+
+        let data = shuffled(N);
+        for method in &METHODS {
+            for parts in [2, 8, 24] {
+                let sketch = merged(method, ERROR, &data, parts);
+                for q in QUANTILES {
+                    // The data is `0..N` shuffled, so a value *is* its own rank.
+                    let got = *sketch.estimate_quantile(q).unwrap();
+                    let want = q * (N - 1) as f64;
+                    assert!(
+                        (got - want).abs() <= ERROR * N as f64,
+                        "{method:?} with {parts} parts at q={q}: got rank {got}, want {want}",
+                    );
+                }
+            }
+        }
+    }
+
+    /// Merging in empty sketches must not disturb the estimates.
+    #[test]
+    fn merge_of_empty_is_neutral() {
+        const N: usize = 20_000;
+        const ERROR: f64 = 0.01;
+
+        let data = shuffled(N);
+        for method in &METHODS {
+            let mut sketch = Sketch::new(method, ERROR);
+            sketch.merge(Sketch::new(method, ERROR));
+            for v in &data {
+                sketch.update(v);
+            }
+            sketch.merge(Sketch::new(method, ERROR));
+            sketch.finalize();
+
+            for q in [0.0, 0.5, 1.0] {
+                let got = *sketch.estimate_quantile(q).unwrap();
+                let want = q * (N - 1) as f64;
+                assert!(
+                    (got - want).abs() <= ERROR * N as f64,
+                    "{method:?} at q={q}: got rank {got}, want {want}",
+                );
+            }
+        }
+    }
+
+    /// Every `error` in the usable range has to produce a working sketch, and a
+    /// smaller `error` must never give a worse answer. `initial_n` used to leave
+    /// `n == k` for some errors (0.3 among them), which tripped `ReqSketch::new`.
+    #[test]
+    fn error_sweep_is_sound() {
+        const N: usize = 50_000;
+        const ERRORS: [f64; 14] = [
+            0.9, 0.7, 0.5, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05, 0.02, 0.01, 0.005,
+        ];
+
+        let data = shuffled(N);
+        for method in &METHODS {
+            for error in ERRORS {
+                let mut sketch = Sketch::new(method, error);
+                for v in &data {
+                    sketch.update(v);
+                }
+                sketch.finalize();
+                for q in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                    let got = *sketch.estimate_quantile(q).unwrap();
+                    let want = q * (N - 1) as f64;
+                    assert!(
+                        (got - want).abs() <= error * N as f64,
+                        "{method:?} at error={error} q={q}: got rank {got}, want {want}",
+                    );
+                }
+            }
         }
     }
 

@@ -1334,8 +1334,9 @@ class PyExpr:
     def approx_quantile(
         self,
         quantile: float | Sequence[float] | PyExpr,
-        error: float,
         method: ApproxQuantileMethod,
+        error: float,
+        bound_is_empirical: bool,
     ) -> PyExpr: ...
     def is_first_distinct(self) -> PyExpr: ...
     def is_last_distinct(self) -> PyExpr: ...

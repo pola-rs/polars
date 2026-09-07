@@ -93,6 +93,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, LazyFrame, Series
     from polars._typing import (
+        ApproxQuantileErrorBound,
         ApproxQuantileMethod,
         ClosedInterval,
         FillNullStrategy,
@@ -3823,17 +3824,26 @@ class Expr(metaclass=_Meta):
         """
         return wrap_expr(self._pyexpr.approx_n_unique())
 
+    @unstable()
     def approx_quantile(
         self,
         quantile: float | list_[float] | Expr,
         *,
-        error: float = 1 / 100,
         method: ApproxQuantileMethod = "auto",
+        error: float = 0.001,
+        error_tightness: ApproxQuantileErrorBound = "empirical",
     ) -> Expr:
         """Compute approximate quantile(s) of an expression."""
         # TODO: [amber] Extend docstring
         q = quantile._pyexpr if isinstance(quantile, pl.Expr) else quantile
-        return wrap_expr(self._pyexpr.approx_quantile(q, error, method))
+        return wrap_expr(
+            self._pyexpr.approx_quantile(
+                q,
+                method,
+                error,
+                bound_is_empirical=error_tightness == "empirical",
+            )
+        )
 
     def null_count(self) -> Expr:
         """

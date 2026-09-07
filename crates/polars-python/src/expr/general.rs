@@ -5,7 +5,7 @@ use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 #[cfg(feature = "approx_quantile")]
-use polars_compute::approx_quantile::ApproxQuantileMethod;
+use polars_compute::approx_quantile::{ApproxQuantileMethod, empirical_error_to_formal};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
 use polars_plan::plans::{
@@ -467,8 +467,9 @@ impl PyExpr {
     fn approx_quantile(
         &self,
         quantile: Bound<'_, PyAny>,
-        error: f64,
         method: Wrap<ApproxQuantileMethod>,
+        mut error: f64,
+        bound_is_empirical: bool,
     ) -> PyResult<Self> {
         let (quantile, quantiles) = if let Ok(expr) = quantile.extract::<PyExpr>() {
             (expr.inner, None)
@@ -485,10 +486,14 @@ impl PyExpr {
                 "`quantile` must be a float, a list of floats, or an expression",
             ));
         };
+        let method = method.0.resolve(quantiles.as_deref());
+        if bound_is_empirical {
+            error = empirical_error_to_formal(error, &method);
+        };
         Ok(self
             .inner
             .clone()
-            .approx_quantile(quantile, error, method.0.resolve(quantiles.as_deref()))
+            .approx_quantile(quantile, error, method)
             .into())
     }
 

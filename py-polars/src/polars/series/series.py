@@ -131,6 +131,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
+        ApproxQuantileErrorBound,
         ApproxQuantileMethod,
         ArrayLike,
         ClosedInterval,
@@ -9666,21 +9667,30 @@ class Series(metaclass=_Meta):
         """
         return self._s.approx_n_unique()
 
+    @unstable()
     def approx_quantile(
         self,
         quantile: float | list_[float],
-        error: float = 1 / 100,
+        *,
         method: ApproxQuantileMethod = "auto",
-    ) -> PythonLiteral:
+        error: float = 0.001,
+        error_tightness: ApproxQuantileErrorBound = "empirical",
+    ) -> PythonLiteral | list_[PythonLiteral]:
         """[amber] TODO."""
-        return (
+        out = (
             self.to_frame()
             .select_seq(
-                F.col(self.name).approx_quantile(quantile, error=error, method=method)
+                F.col(self.name).approx_quantile(
+                    quantile,
+                    method=method,
+                    error=error,
+                    error_tightness=error_tightness,
+                )
             )
             .to_series()
-            .item()
         )
+        # A list of quantiles comes back as a single list element.
+        return out.item().to_list() if isinstance(quantile, list) else out.item()
 
     def _row_encode(
         self,

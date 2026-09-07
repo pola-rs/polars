@@ -232,7 +232,14 @@ impl IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "approx_quantile")]
-            ApproxQuantile { .. } => mapper.with_same_dtype(), // TODO: [amber] Should change this if we update the quantile method.
+            ApproxQuantile { .. } => {
+                // A list of quantiles in, a list of estimates out.
+                let quantiles_are_list = mapper.args()[1].dtype().is_list();
+                mapper.map_dtype(|dtype| match quantiles_are_list {
+                    true => DataType::List(Box::new(dtype.clone())),
+                    false => dtype.clone(),
+                })
+            },
             #[cfg(feature = "hist")]
             Hist {
                 include_category,
