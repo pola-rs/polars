@@ -38,21 +38,6 @@ pub use crate::parquet::{
     types::int96_to_i64_ns,
 };
 
-/// Returns all [`ColumnChunkMetadata`] associated to `field_name`.
-/// For non-nested parquet types, this returns a single column
-pub fn get_field_pages<'a, T>(
-    columns: &'a [ColumnChunkMetadata],
-    items: &'a [T],
-    field_name: &str,
-) -> Vec<&'a T> {
-    columns
-        .iter()
-        .zip(items)
-        .filter(|(metadata, _)| metadata.descriptor().path_in_schema[0].as_str() == field_name)
-        .map(|(_, item)| item)
-        .collect()
-}
-
 /// Reads parquets' metadata synchronously.
 pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMetadata> {
     Ok(_read_metadata(reader)?)
