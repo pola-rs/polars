@@ -54,6 +54,13 @@ xxhash-rust = { workspace = true }
 [target.'cfg(target_family = "wasm")'.dependencies]
 uuid = { workspace = true, features = ["js"] }
 
+[dev-dependencies]
+bincode = { workspace = true }
+# used to run formal property testing
+polars-core = { path = ".", features = ["proptest"] }
+proptest = { workspace = true }
+serde_json = { workspace = true }
+
 [build-dependencies]
 version_check = { workspace = true }
 

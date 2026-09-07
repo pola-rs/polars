@@ -15,10 +15,6 @@
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_aggregate")))]
 pub mod aggregate;
 pub mod arity;
-pub mod arity_assign;
-#[cfg(feature = "compute_bitwise")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compute_bitwise")))]
-pub mod bitwise;
 pub mod concatenate;
 #[cfg(feature = "dtype-decimal")]
 pub mod decimal;

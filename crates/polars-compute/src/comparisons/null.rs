@@ -1,7 +1,7 @@
 use arrow::array::{Array, NullArray};
 use arrow::bitmap::Bitmap;
 
-use super::{TotalEqKernel, TotalOrdKernel};
+use super::TotalEqKernel;
 
 impl TotalEqKernel for NullArray {
     type Scalar = Box<dyn Array>;
@@ -26,33 +26,5 @@ impl TotalEqKernel for NullArray {
 
     fn tot_ne_kernel_broadcast(&self, _other: &Self::Scalar) -> Bitmap {
         todo!()
-    }
-}
-
-impl TotalOrdKernel for NullArray {
-    type Scalar = Box<dyn Array>;
-
-    fn tot_lt_kernel(&self, _other: &Self) -> Bitmap {
-        unimplemented!()
-    }
-
-    fn tot_le_kernel(&self, _other: &Self) -> Bitmap {
-        unimplemented!()
-    }
-
-    fn tot_lt_kernel_broadcast(&self, _other: &Self::Scalar) -> Bitmap {
-        unimplemented!()
-    }
-
-    fn tot_le_kernel_broadcast(&self, _other: &Self::Scalar) -> Bitmap {
-        unimplemented!()
-    }
-
-    fn tot_gt_kernel_broadcast(&self, _other: &Self::Scalar) -> Bitmap {
-        unimplemented!()
-    }
-
-    fn tot_ge_kernel_broadcast(&self, _other: &Self::Scalar) -> Bitmap {
-        unimplemented!()
     }
 }

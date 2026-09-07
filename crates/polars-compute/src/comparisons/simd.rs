@@ -84,7 +84,10 @@ where
     Bitmap::from_u8_vec(v, n)
 }
 
-macro_rules! impl_int_total_ord_kernel {
+// The vectorized comparison kernels. `$A` is the array whose values they read, in either the
+// Arrow layout or the flat one of `polars-array`. Only the equality half is implemented for both:
+// the ordering kernels are reached through the flat layout alone — see the invocations below.
+macro_rules! impl_int_total_eq_kernel {
     ($A: ty, $T: ty, $width: literal, $mask: ty) => {
         impl TotalEqKernel for $A {
             type Scalar = $T;
@@ -119,7 +122,11 @@ macro_rules! impl_int_total_ord_kernel {
                 })
             }
         }
+    };
+}
 
+macro_rules! impl_int_total_ord_kernel {
+    ($A: ty, $T: ty, $width: literal, $mask: ty) => {
         impl TotalOrdKernel for $A {
             type Scalar = $T;
 
@@ -166,7 +173,7 @@ macro_rules! impl_int_total_ord_kernel {
     };
 }
 
-macro_rules! impl_float_total_ord_kernel {
+macro_rules! impl_float_total_eq_kernel {
     ($A: ty, $T: ty, $width: literal, $mask: ty) => {
         impl TotalEqKernel for $A {
             type Scalar = $T;
@@ -215,7 +222,11 @@ macro_rules! impl_float_total_ord_kernel {
                 })
             }
         }
+    };
+}
 
+macro_rules! impl_float_total_ord_kernel {
+    ($A: ty, $T: ty, $width: literal, $mask: ty) => {
         impl TotalOrdKernel for $A {
             type Scalar = $T;
 
@@ -276,23 +287,33 @@ macro_rules! impl_float_total_ord_kernel {
     };
 }
 
-impl_int_total_ord_kernel!(PrimitiveArray<u8>, u8, 32, u32);
+impl_int_total_eq_kernel!(PrimitiveArray<u8>, u8, 32, u32);
+impl_int_total_eq_kernel!(Flat<PlPrimitiveArray<u8>>, u8, 32, u32);
 impl_int_total_ord_kernel!(Flat<PlPrimitiveArray<u8>>, u8, 32, u32);
-impl_int_total_ord_kernel!(PrimitiveArray<u16>, u16, 16, u16);
+impl_int_total_eq_kernel!(PrimitiveArray<u16>, u16, 16, u16);
+impl_int_total_eq_kernel!(Flat<PlPrimitiveArray<u16>>, u16, 16, u16);
 impl_int_total_ord_kernel!(Flat<PlPrimitiveArray<u16>>, u16, 16, u16);
-impl_int_total_ord_kernel!(PrimitiveArray<u32>, u32, 8, u8);
+impl_int_total_eq_kernel!(PrimitiveArray<u32>, u32, 8, u8);
+impl_int_total_eq_kernel!(Flat<PlPrimitiveArray<u32>>, u32, 8, u8);
 impl_int_total_ord_kernel!(Flat<PlPrimitiveArray<u32>>, u32, 8, u8);
-impl_int_total_ord_kernel!(PrimitiveArray<u64>, u64, 8, u8);
+impl_int_total_eq_kernel!(PrimitiveArray<u64>, u64, 8, u8);
+impl_int_total_eq_kernel!(Flat<PlPrimitiveArray<u64>>, u64, 8, u8);
 impl_int_total_ord_kernel!(Flat<PlPrimitiveArray<u64>>, u64, 8, u8);
-impl_int_total_ord_kernel!(PrimitiveArray<i8>, i8, 32, u32);
+impl_int_total_eq_kernel!(PrimitiveArray<i8>, i8, 32, u32);
+impl_int_total_eq_kernel!(Flat<PlPrimitiveArray<i8>>, i8, 32, u32);
 impl_int_total_ord_kernel!(Flat<PlPrimitiveArray<i8>>, i8, 32, u32);
-impl_int_total_ord_kernel!(PrimitiveArray<i16>, i16, 16, u16);
+impl_int_total_eq_kernel!(PrimitiveArray<i16>, i16, 16, u16);
+impl_int_total_eq_kernel!(Flat<PlPrimitiveArray<i16>>, i16, 16, u16);
 impl_int_total_ord_kernel!(Flat<PlPrimitiveArray<i16>>, i16, 16, u16);
-impl_int_total_ord_kernel!(PrimitiveArray<i32>, i32, 8, u8);
+impl_int_total_eq_kernel!(PrimitiveArray<i32>, i32, 8, u8);
+impl_int_total_eq_kernel!(Flat<PlPrimitiveArray<i32>>, i32, 8, u8);
 impl_int_total_ord_kernel!(Flat<PlPrimitiveArray<i32>>, i32, 8, u8);
-impl_int_total_ord_kernel!(PrimitiveArray<i64>, i64, 8, u8);
+impl_int_total_eq_kernel!(PrimitiveArray<i64>, i64, 8, u8);
+impl_int_total_eq_kernel!(Flat<PlPrimitiveArray<i64>>, i64, 8, u8);
 impl_int_total_ord_kernel!(Flat<PlPrimitiveArray<i64>>, i64, 8, u8);
-impl_float_total_ord_kernel!(PrimitiveArray<f32>, f32, 8, u8);
+impl_float_total_eq_kernel!(PrimitiveArray<f32>, f32, 8, u8);
+impl_float_total_eq_kernel!(Flat<PlPrimitiveArray<f32>>, f32, 8, u8);
 impl_float_total_ord_kernel!(Flat<PlPrimitiveArray<f32>>, f32, 8, u8);
-impl_float_total_ord_kernel!(PrimitiveArray<f64>, f64, 8, u8);
+impl_float_total_eq_kernel!(PrimitiveArray<f64>, f64, 8, u8);
+impl_float_total_eq_kernel!(Flat<PlPrimitiveArray<f64>>, f64, 8, u8);
 impl_float_total_ord_kernel!(Flat<PlPrimitiveArray<f64>>, f64, 8, u8);

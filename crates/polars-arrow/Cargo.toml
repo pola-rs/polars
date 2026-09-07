@@ -58,6 +58,16 @@ tokio = { workspace = true, optional = true, features = ["io-util"] }
 proptest = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 
+[dev-dependencies]
+# used to run formal property testing
+polars-arrow = { path = ".", features = ["proptest"] }
+proptest = { workspace = true }
+
+# use for flaky testing
+rand = { workspace = true }
+# used to test async readers
+tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }
+
 [build-dependencies]
 version_check = { workspace = true }
 
@@ -93,12 +103,10 @@ io_avro_async = ["avro-schema/async"]
 compute_aggregate = []
 compute_arithmetics_decimal = []
 compute_arithmetics = ["compute_arithmetics_decimal"]
-compute_bitwise = []
 compute_comparison = []
 compute = [
   "compute_aggregate",
   "compute_arithmetics",
-  "compute_bitwise",
   "compute_comparison",
 ]
 serde = [

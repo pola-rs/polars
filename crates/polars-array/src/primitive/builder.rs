@@ -3,6 +3,8 @@
 use arrow::bitmap::OptBitmapBuilder;
 use arrow::types::{AlignedBytes, NativeType};
 use polars_utils::IdxSize;
+use polars_utils::index::ChunkId;
+use polars_utils::vec::PushUnchecked;
 
 use super::PlPrimitiveArray;
 use super::bytes::{self, Bytes};
@@ -11,6 +13,7 @@ use crate::builder::{
     ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
     opt_gather_extend_validity, subslice_extend_each_repeated_validity, subslice_extend_validity,
 };
+use crate::static_array::StaticArray;
 
 /// A builder of a [`PlPrimitiveArray`].
 #[derive(Clone)]
@@ -71,6 +74,48 @@ impl<T: NativeType> PlPrimitiveArrayBuilder<T> {
         match value {
             Some(value) => self.push_value(value),
             None => self.push_null(),
+        }
+    }
+
+    /// Appends the values the ids name, reading nothing but the values of the chunks.
+    ///
+    /// # Safety
+    /// Room for `ids.len()` more values must be reserved, and every id must name a chunk of
+    /// `chunks` and an element of that chunk.
+    unsafe fn gather_values<const B: u64>(
+        &mut self,
+        chunks: &[&PlPrimitiveArray<T>],
+        ids: &[ChunkId<B>],
+    ) {
+        // Reading the values out of slices avoids the buffer indirection — and, for chunks that
+        // may be scalar, the per-element `broadcast_index` — that `value_unchecked` pays. A chunk
+        // that holds one slot per element has a slice; one that repeats a single value does not,
+        // and then every chunk is read through the array instead.
+        let Some(slices) = chunks
+            .iter()
+            .map(|chunk| chunk.as_slice())
+            .collect::<Option<Vec<&[T]>>>()
+        else {
+            for id in ids {
+                let (chunk_idx, array_idx) = id.extract();
+                // SAFETY: the caller guarantees the id names an element, and room for it.
+                unsafe {
+                    let chunk = chunks.get_unchecked(chunk_idx as usize);
+                    let value = chunk.value_unchecked(array_idx as usize);
+                    self.values.push_unchecked(bytes::to_bytes(value));
+                }
+            }
+            return;
+        };
+
+        for id in ids {
+            let (chunk_idx, array_idx) = id.extract();
+            // SAFETY: as above; the slices hold one slot per element of their chunk.
+            unsafe {
+                let slice = slices.get_unchecked(chunk_idx as usize);
+                let value = *slice.get_unchecked(array_idx as usize);
+                self.values.push_unchecked(bytes::to_bytes(value));
+            }
         }
     }
 
@@ -144,6 +189,68 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
         // would cost a call into the out-of-line byte-class core per element.
         debug_assert!(index < other.len());
         self.push(unsafe { other.get_unchecked(index) });
+    }
+
+    unsafe fn chunked_gather_extend<const B: u64>(
+        &mut self,
+        chunks: &[&PlPrimitiveArray<T>],
+        ids: &[ChunkId<B>],
+        _share: ShareStrategy,
+    ) {
+        self.reserve(ids.len());
+
+        // A chunk with no mask at all has no null element, so a gather out of chunks like that
+        // answers every element valid — one extension of the mask rather than one per element,
+        // and the mask is never read while the values are gathered.
+        if chunks.iter().any(|chunk| chunk.validity().is_some()) {
+            for id in ids {
+                let (chunk_idx, array_idx) = id.extract();
+                // SAFETY: the caller guarantees the id names an element.
+                unsafe {
+                    let chunk = chunks.get_unchecked(chunk_idx as usize);
+                    self.push(chunk.get_unchecked(array_idx as usize));
+                }
+            }
+            return;
+        }
+
+        // SAFETY: room for every element was reserved above, and the caller guarantees every id
+        // names an element of the chunk it points at.
+        unsafe { self.gather_values(chunks, ids) };
+        self.validity.extend_constant(ids.len(), true);
+    }
+
+    unsafe fn opt_chunked_gather_extend<const B: u64>(
+        &mut self,
+        chunks: &[&PlPrimitiveArray<T>],
+        ids: &[ChunkId<B>],
+        _share: ShareStrategy,
+    ) {
+        self.reserve(ids.len());
+
+        let masked = chunks.iter().any(|chunk| chunk.validity().is_some());
+
+        for id in ids {
+            if id.is_null() {
+                self.push_null();
+                continue;
+            }
+
+            let (chunk_idx, array_idx) = id.extract();
+            // SAFETY: the id is not null, so the caller guarantees it names an element.
+            unsafe {
+                let chunk = chunks.get_unchecked(chunk_idx as usize);
+                let index = array_idx as usize;
+
+                // An unmasked chunk answers every element of its own valid, which leaves the id
+                // as the only thing that can make one null.
+                if masked {
+                    self.push(chunk.get_unchecked(index));
+                } else {
+                    self.push_value(chunk.value_unchecked(index));
+                }
+            }
+        }
     }
 
     fn subslice_extend(
