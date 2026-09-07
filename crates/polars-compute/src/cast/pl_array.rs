@@ -324,7 +324,7 @@ where
     PlBooleanArray::from_pl_bitmap(values).with_validity(from.validity().map(PlBitmap::from))
 }
 
-/// Ands `mask` into `validity`, which is how a cast reports the values it dropped.
+/// And `mask` into `validity`, which is how a cast reports the values it dropped.
 fn and_validity(validity: Option<PlBitmapRef<'_>>, mask: arrow::bitmap::Bitmap) -> PlBitmap {
     let length = mask.len();
     match validity {
