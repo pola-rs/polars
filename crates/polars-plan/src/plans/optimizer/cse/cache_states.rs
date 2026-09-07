@@ -538,13 +538,15 @@ fn narrow_shared_subplan(
         })
         .collect::<Option<Vec<_>>>()?;
 
-    let widened = widen_over_predicates(&predicates, maintain_errors, expr_arena);
+    let input = *children.first().unwrap();
+    let schema = lp_arena.get(input).schema(lp_arena).into_owned();
+    let widened = widen_over_predicates(&predicates, &schema, maintain_errors, expr_arena);
     if widened.is_empty() {
         return None;
     }
 
     // One filter per comparison: pushdown moves a conjunct only when it stands alone.
-    let mut node = *children.first().unwrap();
+    let mut node = input;
     for predicate in widened {
         node = lp_arena.add(IR::Filter {
             input: node,

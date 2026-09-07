@@ -2077,3 +2077,29 @@ def test_cspe_no_narrowing_past_a_fallible_reader(plmonkeypatch: PlMonkeyPatch) 
 
     plmonkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
     assert 'col("year") >=' not in q.explain()
+
+
+def test_cspe_no_narrowing_of_a_column_with_its_own_order() -> None:
+    # An enum compares by its categories, so the string bounds "m" and "z" do not
+    # describe the rows the readers keep.
+    dtype = pl.Enum(["z", "a", "m"])
+    base = (
+        pl.LazyFrame({"key": pl.Series(["z", "a", "m"], dtype=dtype), "v": [1, 2, 3]})
+        .group_by("key", maintain_order=True)
+        .agg(pl.col("v").sum().alias("total"))
+    )
+    q = pl.concat(
+        [
+            base.filter((pl.col("key") == "z") & (pl.col("total") > 0)),
+            base.filter((pl.col("key") == "m") & (pl.col("total") > 0)),
+        ]
+    )
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'col("key") >=' not in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )

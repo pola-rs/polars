@@ -18,11 +18,13 @@ use std::cmp::Ordering;
 #[cfg(feature = "is_in")]
 use polars_core::prelude::{AnyValue, Series};
 use polars_core::scalar::Scalar;
+use polars_core::schema::Schema;
 use polars_utils::aliases::{InitHashMaps, PlIndexMap, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::properties::ExprPushdownGroup;
+use crate::plans::iterator::ArenaExprIter;
 use super::{AExpr, IRBooleanFunction, IRFunctionExpr, LiteralValue, MintermIter, Operator};
 #[cfg(feature = "is_between")]
 use crate::prelude::ClosedInterval;
@@ -77,6 +79,19 @@ enum Nullability {
 // Orders two scalars; incomparable pairs give `None`, so we never declare a
 // contradiction we aren't sure of. The dtype guard is load-bearing: `AnyValue`'s
 // `PartialOrd` panics on nested/mixed/object dtypes rather than returning `None`.
+// Whether the comparisons in `node` order their column the way they order the
+// literals it is compared against. A categorical or an enum orders by its
+// categories instead, so nothing here may reason about its bounds. A column that
+// is not in `schema` is treated the same way.
+fn compares_in_literal_order(node: Node, schema: &Schema, expr_arena: &Arena<AExpr>) -> bool {
+    expr_arena.iter(node).all(|(_, ae)| match ae {
+        AExpr::Column(name) => schema
+            .get(name)
+            .is_some_and(|dtype| !dtype.is_categorical() && !dtype.is_enum()),
+        _ => true,
+    })
+}
+
 fn scalar_cmp(a: &Scalar, b: &Scalar) -> Option<Ordering> {
     if a.dtype() != b.dtype() || a.dtype().is_nested() || a.dtype().is_object() {
         return None;
@@ -401,6 +416,7 @@ impl ColumnConstraints {
 /// `a >= 3 AND a != 3` to `a > 3`).
 pub(crate) fn merge_filter_constraints(
     predicate: Node,
+    schema: &Schema,
     maintain_errors: bool,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<Node> {
@@ -415,6 +431,10 @@ pub(crate) fn merge_filter_constraints(
     let mut unsat = false;
 
     for conjunct in MintermIter::new(predicate, expr_arena) {
+        if !compares_in_literal_order(conjunct, schema, expr_arena) {
+            opaque.push(conjunct);
+            continue;
+        }
         match classify_into_constraints(expr_arena.get(conjunct), expr_arena, &mut constraints) {
             Classification::Unsat => {
                 unsat = true;
@@ -1023,20 +1043,23 @@ fn fold_and(nodes: Vec<Node>, expr_arena: &mut Arena<AExpr>) -> Node {
 /// Only bounds widen; `!=`, `is_in` and null checks are dropped. Returned one
 /// comparison per node, as pushdown moves a conjunct only when it is its own
 /// filter. Empty when nothing survives.
+///
+/// `schema` is the schema the predicates are evaluated against.
 pub(crate) fn widen_over_predicates(
     predicates: &[Node],
+    schema: &Schema,
     maintain_errors: bool,
     expr_arena: &mut Arena<AExpr>,
 ) -> Vec<Node> {
     let Some((&first, rest)) = predicates.split_first() else {
         return Vec::new();
     };
-    let Some(mut widened) = predicate_bounds(first, maintain_errors, expr_arena) else {
+    let Some(mut widened) = predicate_bounds(first, schema, maintain_errors, expr_arena) else {
         return Vec::new();
     };
 
     for &predicate in rest {
-        let Some(bounds) = predicate_bounds(predicate, maintain_errors, expr_arena) else {
+        let Some(bounds) = predicate_bounds(predicate, schema, maintain_errors, expr_arena) else {
             return Vec::new();
         };
         widened.retain(|name, cc| {
@@ -1066,6 +1089,7 @@ pub(crate) fn widen_over_predicates(
 // as a whole sees a different column once rows are dropped beneath it.
 fn predicate_bounds(
     predicate: Node,
+    schema: &Schema,
     maintain_errors: bool,
     expr_arena: &Arena<AExpr>,
 ) -> Option<PlIndexMap<PlSmallStr, ColumnConstraints>> {
@@ -1077,6 +1101,9 @@ fn predicate_bounds(
 
     let mut constraints: PlIndexMap<PlSmallStr, ColumnConstraints> = PlIndexMap::new();
     for conjunct in MintermIter::new(predicate, expr_arena) {
+        if !compares_in_literal_order(conjunct, schema, expr_arena) {
+            continue;
+        }
         if matches!(
             classify_into_constraints(expr_arena.get(conjunct), expr_arena, &mut constraints),
             Classification::Unsat
