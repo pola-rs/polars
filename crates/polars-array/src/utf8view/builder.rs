@@ -1,6 +1,7 @@
 //! The builder of a [`PlUtf8ViewArray`].
 
 use polars_utils::IdxSize;
+use polars_utils::index::ChunkId;
 
 use super::PlUtf8ViewArray;
 use crate::binview::{PlBinaryViewArray, PlBinaryViewArrayBuilder};
@@ -88,6 +89,37 @@ impl StaticArrayBuilder for PlUtf8ViewArrayBuilder {
     }
 
     #[inline]
+    unsafe fn extend_one(&mut self, other: &PlUtf8ViewArray, index: usize, share: ShareStrategy) {
+        // Forwarded explicitly: the default would go back through `subslice_extend`, which is
+        // what the override on the inner builder exists to skip.
+        unsafe { self.0.extend_one(other.as_binview(), index, share) };
+    }
+
+    unsafe fn chunked_gather_extend<const B: u64>(
+        &mut self,
+        chunks: &[&PlUtf8ViewArray],
+        ids: &[ChunkId<B>],
+        share: ShareStrategy,
+    ) {
+        // Forwarded explicitly, as `extend_one` is: the default would not reach the inner
+        // builder's override, which is where the buffer bookkeeping is hoisted out of the loop.
+        let chunks: Vec<&PlBinaryViewArray> = chunks.iter().map(|c| c.as_binview()).collect();
+        // SAFETY: forwarded with the caller's guarantee that every id names an element.
+        unsafe { self.0.chunked_gather_extend(&chunks, ids, share) };
+    }
+
+    unsafe fn opt_chunked_gather_extend<const B: u64>(
+        &mut self,
+        chunks: &[&PlUtf8ViewArray],
+        ids: &[ChunkId<B>],
+        share: ShareStrategy,
+    ) {
+        // As above.
+        let chunks: Vec<&PlBinaryViewArray> = chunks.iter().map(|c| c.as_binview()).collect();
+        // SAFETY: as above; a null id is answered with a null rather than read.
+        unsafe { self.0.opt_chunked_gather_extend(&chunks, ids, share) };
+    }
+
     fn subslice_extend(
         &mut self,
         other: &PlUtf8ViewArray,

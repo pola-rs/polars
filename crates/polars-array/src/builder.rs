@@ -1,10 +1,10 @@
 //! Building arrays element by element, or array by array.
 
-/// Whether a builder may adopt the buffers of the arrays it appends, rather than copying out of
-/// them.
+/// Whether a builder may adopt the buffers of the arrays it appends, rather than copy them.
 pub use arrow::array::builder::ShareStrategy;
 use arrow::bitmap::OptBitmapBuilder;
 use polars_utils::IdxSize;
+use polars_utils::index::ChunkId;
 
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
@@ -62,10 +62,6 @@ pub trait StaticArrayBuilder: Send {
 
     /// Appends the single element of `other` at `index`.
     ///
-    /// A gather that reads one element at a time — of a chunked array, say, where consecutive
-    /// output elements come from different chunks — calls this once per element, so a builder
-    /// whose element append is cheaper than a subslice of one overrides it.
-    ///
     /// # Safety
     /// `index` must be smaller than `other.len()`.
     #[inline]
@@ -98,14 +94,77 @@ pub trait StaticArrayBuilder: Send {
         share: ShareStrategy,
     );
 
+    /// Appends the elements `ids` names, in order, out of the chunks of one chunked array.
+    ///
+    /// A builder whose element append carries per-array bookkeeping — adopting the data buffers a
+    /// view points into, say — overrides this to do that bookkeeping once per chunk instead of
+    /// once per element.
+    ///
+    /// # Safety
+    /// Every id must name a chunk of `chunks` and an element of that chunk.
+    unsafe fn chunked_gather_extend<const B: u64>(
+        &mut self,
+        chunks: &[&Self::Array],
+        ids: &[ChunkId<B>],
+        share: ShareStrategy,
+    ) {
+        self.reserve(ids.len());
+
+        // One chunk is the common case, and it lets the chunk lookup leave the loop.
+        if let [chunk] = chunks {
+            for id in ids {
+                let (_, array_idx) = id.extract();
+                // SAFETY: the caller guarantees the id names an element of the chunk.
+                unsafe { self.extend_one(chunk, array_idx as usize, share) };
+            }
+            return;
+        }
+
+        for id in ids {
+            let (chunk_idx, array_idx) = id.extract();
+            // SAFETY: the caller guarantees the id names a chunk and an element of it.
+            unsafe {
+                let chunk = chunks.get_unchecked(chunk_idx as usize);
+                self.extend_one(chunk, array_idx as usize, share);
+            }
+        }
+    }
+
+    /// Appends the elements `ids` names, in order, out of the chunks of one chunked array, with a
+    /// null id standing for a null element.
+    ///
+    /// # Safety
+    /// Every id that is not null must name a chunk of `chunks` and an element of that chunk.
+    unsafe fn opt_chunked_gather_extend<const B: u64>(
+        &mut self,
+        chunks: &[&Self::Array],
+        ids: &[ChunkId<B>],
+        share: ShareStrategy,
+    ) {
+        self.reserve(ids.len());
+
+        for id in ids {
+            if id.is_null() {
+                self.extend_nulls(1);
+                continue;
+            }
+
+            let (chunk_idx, array_idx) = id.extract();
+            // SAFETY: the id is not null, so the caller guarantees it names an element.
+            unsafe {
+                let chunk = chunks.get_unchecked(chunk_idx as usize);
+                self.extend_one(chunk, array_idx as usize, share);
+            }
+        }
+    }
+
     /// Appends the element of `other` at every index of `idxs`, in the order they are given.
     ///
     /// # Safety
     /// Every index must be smaller than `other.len()`.
     unsafe fn gather_extend(&mut self, other: &Self::Array, idxs: &[IdxSize], share: ShareStrategy);
 
-    /// Appends the element of `other` at every index of `idxs`, in the order they are given, with
-    /// an out-of-bounds index standing for a null.
+    /// Appends the element of `other` at every index of `idxs`; an out-of-bounds index is a null.
     fn opt_gather_extend(&mut self, other: &Self::Array, idxs: &[IdxSize], share: ShareStrategy);
 }
 
@@ -168,13 +227,11 @@ pub trait PlArrayBuilder: PlArrayBuilderBoxedHelper + Send {
     /// Every index must be smaller than `other.len()`.
     unsafe fn gather_extend(&mut self, other: &dyn PlArray, idxs: &[IdxSize], share: ShareStrategy);
 
-    /// Appends the element of `other` at every index of `idxs`, in the order they are given, with
-    /// an out-of-bounds index standing for a null.
+    /// Appends the element of `other` at every index of `idxs`; an out-of-bounds index is a null.
     fn opt_gather_extend(&mut self, other: &dyn PlArray, idxs: &[IdxSize], share: ShareStrategy);
 }
 
-/// The [`PlArrayBuilder::freeze`] of a builder that is already in a box, which is the one form of
-/// it a trait object admits.
+/// The [`PlArrayBuilder::freeze`] of a boxed builder, which is the form a trait object admits.
 trait PlArrayBuilderBoxedHelper {
     fn freeze_boxed(self: Box<Self>) -> Box<dyn PlArray>;
 }
@@ -495,8 +552,7 @@ pub fn full_null_like(array: &dyn PlArray, length: usize) -> Box<dyn PlArray> {
     }
 }
 
-/// Panics unless the `length` elements starting at `start` are in bounds of an array of `array_len`
-/// elements.
+/// Panics unless the `length` elements at `start` are in bounds of `array_len` elements.
 pub(crate) fn assert_subslice(array_len: usize, start: usize, length: usize) {
     assert!(
         start
@@ -579,8 +635,7 @@ pub(crate) unsafe fn gather_extend_validity(
     }
 }
 
-/// Appends the bit of `validity` at every index of `idxs`, in the order they are given, with an
-/// index that is not smaller than `length` standing for an unset bit.
+/// Appends the bit of `validity` at every index of `idxs`; an index past `length` is unset.
 #[inline(never)]
 pub(crate) fn opt_gather_extend_validity(
     dst: &mut OptBitmapBuilder,

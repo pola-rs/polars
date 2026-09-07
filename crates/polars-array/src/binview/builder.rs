@@ -5,6 +5,7 @@ use arrow::bitmap::OptBitmapBuilder;
 use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 use polars_utils::aliases::PlHashMap;
+use polars_utils::index::ChunkId;
 
 use super::PlBinaryViewArray;
 use super::buffers::copy_value;
@@ -20,12 +21,12 @@ pub struct PlBinaryViewArrayBuilder {
     views: Vec<View>,
     /// The data buffers whose index is final: the ones already adopted or flushed, in order.
     buffers: Vec<Buffer<u8>>,
-    /// The data buffers the copied bytes are written into, the first of which is buffer
-    /// `buffers.len()` — which is why they are flushed onto `buffers` before a buffer is adopted.
+    /// The data buffers the copied bytes are written into, flushed onto `buffers` before adoption.
     active: Vec<Vec<u8>>,
-    /// The index in `buffers` of every adopted buffer, keyed by the address its bytes start at, so
-    /// that a buffer appended through more than one array is adopted once.
+    /// The index in `buffers` of every adopted buffer, keyed by the address its bytes start at.
     adopted: PlHashMap<usize, u32>,
+    /// The buffer adopted last, as the address its bytes start at and the index it took.
+    last_adopted: Option<(usize, u32)>,
     validity: OptBitmapBuilder,
 }
 
@@ -37,6 +38,7 @@ impl PlBinaryViewArrayBuilder {
             buffers: Vec::new(),
             active: Vec::new(),
             adopted: PlHashMap::default(),
+            last_adopted: None,
             validity: OptBitmapBuilder::default(),
         }
     }
@@ -75,8 +77,7 @@ impl PlBinaryViewArrayBuilder {
             .expect("the built array holds more data buffers than a view can index")
     }
 
-    /// Hands the buffers being written into over to `self.buffers`, keeping the index every view
-    /// into them already has.
+    /// Hands the buffers being written into over to `self.buffers`, keeping every view's index.
     fn flush_active(&mut self) {
         self.buffers.extend(self.active.drain(..).map(Buffer::from));
     }
@@ -84,25 +85,35 @@ impl PlBinaryViewArrayBuilder {
     /// The index in `self.buffers` of `buffer`, adopting it if it is not held yet.
     fn adopt(&mut self, buffer: &Buffer<u8>) -> u32 {
         // Two views over one allocation reach it through buffers that start at the same address
-        // but need not end at the same one, so what is held is the whole allocation: expanding it
-        // leaves the offsets of the views into it untouched.
-        let buffer = buffer.clone().expand_end_to_storage();
+        // but need not end at the same one, so what is held is the whole allocation. Expanding a
+        // buffer towards the end leaves both the offsets of the views into it and the address it
+        // starts at untouched, so the address keys the buffer before it is expanded — and a
+        // buffer already held is answered without the refcount bump a clone would cost.
         let key = buffer.as_slice().as_ptr().addr();
 
-        if let Some(idx) = self.adopted.get(&key) {
-            return *idx;
+        // The one buffer a run of views shares is answered out of a compare, rather than out of a
+        // hash and a lookup.
+        if let Some((last_key, idx)) = self.last_adopted {
+            if last_key == key {
+                return idx;
+            }
+        }
+
+        if let Some(&idx) = self.adopted.get(&key) {
+            self.last_adopted = Some((key, idx));
+            return idx;
         }
 
         // The buffers being written into come before this one, so they take their index first.
         self.flush_active();
         let idx = self.buffer_idx_offset();
-        self.buffers.push(buffer);
+        self.buffers.push(buffer.clone().expand_end_to_storage());
         self.adopted.insert(key, idx);
+        self.last_adopted = Some((key, idx));
         idx
     }
 
-    /// A view over the bytes of `self`, holding `bytes` — copied into the buffers being written
-    /// into unless the view inlines them.
+    /// A view over the bytes of `self`, holding `bytes` — copied in unless the view inlines them.
     fn copy_value(&mut self, bytes: &[u8]) -> View {
         let buffer_idx_offset = self.buffer_idx_offset();
         copy_value(&mut self.active, buffer_idx_offset, bytes)
@@ -131,6 +142,140 @@ impl PlBinaryViewArrayBuilder {
                 self.copy_value(bytes)
             },
         }
+    }
+
+    /// Appends the elements `ids` names out of `chunks`, adopting the data buffers of each chunk
+    /// once instead of once per element: an element then costs a view read, an index into the
+    /// chunk's remapped buffer indices, and a push.
+    ///
+    /// # Safety
+    /// Every id that is not null must name a chunk of `chunks` and an element of that chunk.
+    unsafe fn gather_chunks<const B: u64>(
+        &mut self,
+        chunks: &[&PlBinaryViewArray],
+        ids: &[ChunkId<B>],
+        share: ShareStrategy,
+        opt: bool,
+    ) {
+        // Copying the bytes out of the source leaves no buffers to adopt, so there is nothing to
+        // hoist and the elementwise path stands.
+        if matches!(share, ShareStrategy::Never) {
+            // SAFETY: the caller's guarantee is the one these ask for.
+            return unsafe {
+                if opt {
+                    self.opt_gather_chunks_elementwise(chunks, ids, share)
+                } else {
+                    self.gather_chunks_elementwise(chunks, ids, share)
+                }
+            };
+        }
+
+        // The buffers of every chunk, adopted once, as the indices its views are rewritten onto.
+        let remaps: Vec<Vec<u32>> = chunks
+            .iter()
+            .map(|chunk| self.adopt_all(chunk.data_buffers()))
+            .collect();
+
+        self.views.reserve(ids.len());
+        self.validity.reserve(ids.len());
+
+        // A chunk with no mask at all has no null element, and every element of a gather out of
+        // chunks like that is valid — which the mask is then extended with in one go.
+        let masked = chunks.iter().any(|chunk| chunk.validity().is_some());
+
+        for id in ids {
+            if opt && id.is_null() {
+                self.views.push(View::default());
+                self.validity.extend_constant(1, false);
+                continue;
+            }
+
+            let (chunk_idx, array_idx) = id.extract();
+            // SAFETY: the id is not null, so it names a chunk and an element of it, and the view
+            // of an element points into that chunk's buffers, whose remapped indices are held.
+            unsafe {
+                let chunk = chunks.get_unchecked(chunk_idx as usize);
+                let mut view = chunk.view_unchecked(array_idx as usize);
+
+                // An inline view holds its bytes itself, so no buffer stands behind it.
+                if !view.is_inline() {
+                    view.buffer_idx = *remaps
+                        .get_unchecked(chunk_idx as usize)
+                        .get_unchecked(view.buffer_idx as usize);
+                }
+
+                self.views.push(view);
+
+                if masked {
+                    self.validity
+                        .extend_constant(1, !chunk.is_null_unchecked(array_idx as usize));
+                }
+            }
+        }
+
+        if !masked {
+            self.validity.extend_constant(ids.len(), true);
+        }
+    }
+
+    /// [`gather_chunks`](Self::gather_chunks) one element at a time.
+    ///
+    /// # Safety
+    /// Every id must name a chunk of `chunks` and an element of that chunk.
+    unsafe fn gather_chunks_elementwise<const B: u64>(
+        &mut self,
+        chunks: &[&PlBinaryViewArray],
+        ids: &[ChunkId<B>],
+        share: ShareStrategy,
+    ) {
+        self.reserve(ids.len());
+
+        for id in ids {
+            let (chunk_idx, array_idx) = id.extract();
+            // SAFETY: the caller guarantees the id names an element.
+            unsafe {
+                let chunk = chunks.get_unchecked(chunk_idx as usize);
+                StaticArrayBuilder::extend_one(self, chunk, array_idx as usize, share);
+            }
+        }
+    }
+
+    /// [`gather_chunks_elementwise`](Self::gather_chunks_elementwise), a null id standing for a
+    /// null element.
+    ///
+    /// # Safety
+    /// Every id that is not null must name a chunk of `chunks` and an element of that chunk.
+    unsafe fn opt_gather_chunks_elementwise<const B: u64>(
+        &mut self,
+        chunks: &[&PlBinaryViewArray],
+        ids: &[ChunkId<B>],
+        share: ShareStrategy,
+    ) {
+        self.reserve(ids.len());
+
+        for id in ids {
+            if id.is_null() {
+                StaticArrayBuilder::extend_nulls(self, 1);
+                continue;
+            }
+
+            let (chunk_idx, array_idx) = id.extract();
+            // SAFETY: the id is not null, so the caller guarantees it names an element.
+            unsafe {
+                let chunk = chunks.get_unchecked(chunk_idx as usize);
+                StaticArrayBuilder::extend_one(self, chunk, array_idx as usize, share);
+            }
+        }
+    }
+
+    /// The index in `self.buffers` of every data buffer of `buffers`, adopting the ones not held
+    /// yet. This is the bookkeeping a gather out of one chunk pays once rather than per element.
+    fn adopt_all(&mut self, buffers: &Buffer<Buffer<u8>>) -> Vec<u32> {
+        buffers
+            .as_slice()
+            .iter()
+            .map(|buffer| self.adopt(buffer))
+            .collect()
     }
 
     /// Appends the element of `other` at `i`, `repeats` times over.
@@ -251,6 +396,39 @@ impl StaticArrayBuilder for PlBinaryViewArrayBuilder {
         self.views
             .extend(std::iter::repeat_n(View::default(), length));
         self.validity.extend_constant(length, false);
+    }
+
+    unsafe fn chunked_gather_extend<const B: u64>(
+        &mut self,
+        chunks: &[&PlBinaryViewArray],
+        ids: &[ChunkId<B>],
+        share: ShareStrategy,
+    ) {
+        // SAFETY: forwarded with the caller's guarantee that every id names an element.
+        unsafe { self.gather_chunks(chunks, ids, share, false) };
+    }
+
+    unsafe fn opt_chunked_gather_extend<const B: u64>(
+        &mut self,
+        chunks: &[&PlBinaryViewArray],
+        ids: &[ChunkId<B>],
+        share: ShareStrategy,
+    ) {
+        // SAFETY: as above; a null id is answered with a null rather than read.
+        unsafe { self.gather_chunks(chunks, ids, share, true) };
+    }
+
+    #[inline]
+    unsafe fn extend_one(&mut self, other: &PlBinaryViewArray, index: usize, share: ShareStrategy) {
+        // One element is taken straight over: `subslice_extend` of a single element would check
+        // the subslice, resolve the values representation and go through the mask machinery per
+        // element, which a gather that reads one element at a time pays for every row.
+        debug_assert!(index < other.len());
+        unsafe {
+            self.extend_element(other, index, 1, share);
+            self.validity
+                .extend_constant(1, !other.is_null_unchecked(index));
+        }
     }
 
     fn subslice_extend(

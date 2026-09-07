@@ -337,11 +337,7 @@ impl TakeChunked for Series {
     }
 }
 
-/// The builder of the chunks of `ca`, with room for `capacity` elements. A `ChunkedArray` always
-/// has a chunk, which is the array the built one is shaped like.
-///
-/// The builder is the *typed* one, not a `Box<dyn PlArrayBuilder>`: the gathers below append one
-/// element at a time, and a `dyn` call per element costs more than the append itself.
+/// The builder of the chunks of `ca`, with room for `capacity` elements.
 fn gather_builder<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
     capacity: usize,
@@ -376,30 +372,11 @@ where
         avoid_sharing: bool,
     ) -> Self {
         let mut builder = gather_builder(self, by.len());
-        let share = share_strategy(avoid_sharing);
+        let chunks: Vec<&T::Array> = self.downcast_iter().collect();
 
-        // One chunk is the common case, and it lets the chunk lookup leave the loop entirely.
-        if self.n_chunks() == 1 {
-            let arr = self.downcast_get_unchecked(0);
-            for chunk_id in by {
-                debug_assert!(
-                    !chunk_id.is_null(),
-                    "null chunks should not hit this branch"
-                );
-                let (_, array_idx) = chunk_id.extract();
-                builder.extend_one(arr, array_idx as usize, share);
-            }
-        } else {
-            for chunk_id in by {
-                debug_assert!(
-                    !chunk_id.is_null(),
-                    "null chunks should not hit this branch"
-                );
-                let (chunk_idx, array_idx) = chunk_id.extract();
-                let arr = self.downcast_get_unchecked(chunk_idx as usize);
-                builder.extend_one(arr, array_idx as usize, share);
-            }
-        }
+        // The whole gather is handed over at once, so a builder that carries per-array
+        // bookkeeping — adopting the buffers a view points into — does it once per chunk.
+        builder.chunked_gather_extend(&chunks, by, share_strategy(avoid_sharing));
 
         // SAFETY: the builder was shaped like the chunks of this array, so what it froze is of
         // the same physical type.
@@ -416,32 +393,10 @@ where
         avoid_sharing: bool,
     ) -> Self {
         let mut builder = gather_builder(self, by.len());
-        let share = share_strategy(avoid_sharing);
+        let chunks: Vec<&T::Array> = self.downcast_iter().collect();
 
-        // As above: a single chunk lifts the lookup out of the loop.
-        if self.n_chunks() == 1 {
-            let arr = self.downcast_get_unchecked(0);
-            for chunk_id in by {
-                if chunk_id.is_null() {
-                    builder.extend_nulls(1);
-                    continue;
-                }
-
-                let (_, array_idx) = chunk_id.extract();
-                builder.extend_one(arr, array_idx as usize, share);
-            }
-        } else {
-            for chunk_id in by {
-                if chunk_id.is_null() {
-                    builder.extend_nulls(1);
-                    continue;
-                }
-
-                let (chunk_idx, array_idx) = chunk_id.extract();
-                let arr = self.downcast_get_unchecked(chunk_idx as usize);
-                builder.extend_one(arr, array_idx as usize, share);
-            }
-        }
+        // As above, with a null id standing for a null element.
+        builder.opt_chunked_gather_extend(&chunks, by, share_strategy(avoid_sharing));
 
         // SAFETY: as in `take_chunked_unchecked`.
         self.with_chunks(vec![builder.freeze().into_boxed()])
