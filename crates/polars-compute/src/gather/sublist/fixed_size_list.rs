@@ -2,6 +2,7 @@
 
 use arrow::legacy::index::IndexToUsize;
 use polars_array::bitmap::combine_validities_and;
+use polars_array::builder::new_full_null_like;
 use polars_array::{PlArray, PlFixedSizeListArray, PlPrimitiveArray};
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::IdxSize;
@@ -30,7 +31,7 @@ pub fn sub_fixed_size_list_get_literal(
         if !null_on_oob {
             polars_bail!(ComputeError: "get index is out of bounds");
         }
-        return Ok(arr.values().new_full_null(arr.len()));
+        return Ok(new_full_null_like(arr.values(), arr.len()));
     };
 
     // Values that hold the single element every element of `arr` repeats are indexed in place: the

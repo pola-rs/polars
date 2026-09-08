@@ -524,7 +524,7 @@ impl std::fmt::Debug for PlFixedSizeBinaryArray {
 crate::impl_pl_array! {
     PlFixedSizeBinaryArray,
     PlArrayType::FixedSizeBinary,
-    fn new_full_null(&self, length: usize) -> Box<dyn PlArray> {
+    fn new_full_null_like_self(&self, length: usize) -> Box<dyn PlArray> {
         Box::new(Self::new_full_null(self.width, length))
     }
 }

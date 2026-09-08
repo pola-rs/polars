@@ -2,6 +2,7 @@
 
 use polars_array::arrow::bridge::{chunk_to_arrow, with_arrow_chunk};
 use polars_array::bitmap::combine_validities_and;
+use polars_array::builder::new_full_null_like;
 use polars_array::{PlArray, PlBitmap, PlBitmapRef, PlPrimitiveArray};
 use polars_utils::IdxSize;
 
@@ -23,7 +24,7 @@ pub unsafe fn take_unchecked(
     // An index that is null picks no element at all, so a run of them picks nothing anywhere —
     // which leaves `values` unread, and is the one case in which it may hold no element to read.
     if indices.null_count() == indices.len() {
-        return values.new_full_null(indices.len());
+        return new_full_null_like(values, indices.len());
     }
 
     // From here on at least one index is in bounds, so `values` holds at least one element.

@@ -1,5 +1,6 @@
 //! Traits for miscellaneous operations on ChunkedArray
 use arrow::offset::OffsetsBuffer;
+use polars_array::builder::new_full_null_like;
 use polars_compute::rolling::QuantileMethod;
 
 use crate::prelude::*;
@@ -580,7 +581,7 @@ impl ChunkExpandAtIndex<StructType> for StructChunked {
         let chunk = self.downcast_chunks().get(chunk_idx).unwrap();
         let chunk = if chunk.is_null(idx) {
             // Every element of the result is null, so the fields are nulls of the new length.
-            chunk.new_full_null(length)
+            new_full_null_like(chunk, length)
         } else {
             let values = chunk
                 .fields()

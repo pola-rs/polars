@@ -7,6 +7,7 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmap, PlBitmapRef, combine_validities_and, validity_eq};
 use crate::broadcast::{slice_validity, try_validity_covering, validity_covering_unchecked};
+use crate::builder::new_full_null_like;
 use crate::flat::Flat;
 
 mod builder;
@@ -302,11 +303,11 @@ impl std::fmt::Debug for PlStructArray {
 crate::impl_pl_array! {
     PlStructArray,
     PlArrayType::Struct,
-    fn new_full_null(&self, length: usize) -> Box<dyn PlArray> {
+    fn new_full_null_like_self(&self, length: usize) -> Box<dyn PlArray> {
         let fields = self
             .fields
             .iter()
-            .map(|field| field.new_full_null(length))
+            .map(|field| new_full_null_like(&**field, length))
             .collect();
         Box::new(Self::new_full_null(fields, length))
     }

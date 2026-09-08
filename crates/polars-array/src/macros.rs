@@ -153,17 +153,17 @@ pub(crate) use impl_array_methods;
 /// Implements [`PlArray`](crate::PlArray) for an array of this crate.
 ///
 /// Every method of the trait object forwards to the inherent method of the same name, which is
-/// where an array's own documentation of it lives. `array_type` is the one that cannot: it names
-/// the variant this array is. A trailing method overrides the one the macro would write, which is
-/// how an array whose full-null constructor takes a shape — a width, a values array, fields —
-/// states what that shape is.
+/// where an array's own documentation of it lives. Two cannot: `array_type` names the variant
+/// this array is, and `new_full_null_like_self` forwards to the inherent `new_full_null`. A
+/// trailing method overrides the one the macro would write, which is how an array whose full-null
+/// constructor takes a shape — a width, a values array, fields — states what that shape is.
 ///
 /// The generic parameters of a generic array go in brackets before it.
 macro_rules! impl_pl_array {
     ([$($generics:tt)*] $array:ty, $array_type:expr $(,)?) => {
         $crate::impl_pl_array!(
             [$($generics)*] $array, $array_type,
-            fn new_full_null(&self, length: usize) -> Box<dyn $crate::PlArray> {
+            fn new_full_null_like_self(&self, length: usize) -> Box<dyn $crate::PlArray> {
                 Box::new(Self::new_full_null(length))
             }
         );

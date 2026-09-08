@@ -495,6 +495,14 @@ pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
     }
 }
 
+/// An array of `length` nulls shaped like `arr`, in `O(1)` memory.
+///
+/// Unlike [`new_full_null`], which starts from an array type, this keeps the shape an array type
+/// does not name: the fields of a struct, the values of a list, the rust type of an object array.
+pub fn new_full_null_like(arr: &dyn PlArray, length: usize) -> Box<dyn PlArray> {
+    arr.new_full_null_like_self(length)
+}
+
 /// An array of `length` nulls of the array type `array_type` names, in `O(1)` memory.
 ///
 /// # Panics

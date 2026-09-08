@@ -524,7 +524,7 @@ impl std::fmt::Debug for PlListArray {
 crate::impl_pl_array! {
     PlListArray,
     PlArrayType::List,
-    fn new_full_null(&self, length: usize) -> Box<dyn PlArray> {
+    fn new_full_null_like_self(&self, length: usize) -> Box<dyn PlArray> {
         // Every element is an empty list, so the values are only there to carry their shape.
         Box::new(Self::new_full_null(self.values.sliced(0, 0), length))
     }

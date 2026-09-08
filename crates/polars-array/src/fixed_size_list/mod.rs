@@ -12,6 +12,7 @@ use crate::broadcast::{
     normalize_values, scalar_buffer_len, slice_fixed_size_values, slice_validity,
     try_validity_covering, validity_covering_unchecked,
 };
+use crate::builder::new_full_null_like;
 use crate::concatenate::concatenate_repeated;
 use crate::flat::Flat;
 
@@ -506,11 +507,11 @@ impl std::fmt::Debug for PlFixedSizeListArray {
 crate::impl_pl_array! {
     PlFixedSizeListArray,
     PlArrayType::FixedSizeList,
-    fn new_full_null(&self, length: usize) -> Box<dyn PlArray> {
+    fn new_full_null_like_self(&self, length: usize) -> Box<dyn PlArray> {
         // An element of a null list is as wide as any other, so the one element the values stand
         // for is as many nulls as this array is wide.
         Box::new(Self::new_full_null(
-            self.values.new_full_null(self.width),
+            new_full_null_like(&*self.values, self.width),
             length,
         ))
     }
