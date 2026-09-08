@@ -1,9 +1,11 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::ffi::CStr;
+use std::path::PathBuf;
 use std::sync::{LazyLock, RwLock};
 
 use arrow::ffi::{ArrowSchema, import_field_from_c};
 use libloading::Library;
+use polars_utils::io::PathIoError;
 #[cfg(feature = "python")]
 use pyo3::{Python, types::PyAnyMethods};
 
@@ -36,7 +38,13 @@ fn get_lib(lib: &str) -> PolarsResult<Arc<PluginAndVersion>> {
 
     let library = unsafe {
         Library::new(&load_path).map_err(|e| {
-            PolarsError::ComputeError(format!("error loading dynamic library: {e}").into())
+            // Format through `PathIoError` so long paths are truncated consistently with
+            // other IO errors, and the full path is only shown with `POLARS_VERBOSE=1`.
+            let err = PathIoError {
+                path: PathBuf::from(&load_path),
+                source: std::io::Error::other(e),
+            };
+            PolarsError::ComputeError(format!("error loading dynamic library: {err}").into())
         })?
     };
     let version_function: libloading::Symbol<unsafe extern "C" fn() -> u32> = unsafe {
