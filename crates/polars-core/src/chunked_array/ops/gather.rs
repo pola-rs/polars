@@ -3,7 +3,6 @@ use std::sync::OnceLock;
 
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
-use polars_array::bitmap::combine_validities_and;
 use polars_array::builder::{ShareStrategy, builder_like};
 use polars_compute::gather::take_unchecked;
 use polars_error::polars_ensure;
