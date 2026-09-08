@@ -21,6 +21,22 @@ where
     out.finalize(ddof)
 }
 
+/// Compute the two-variable moment state of two columns, pairing only rows
+/// where both values are non-null. `x` is the independent and `y` the
+/// dependent variable.
+pub fn regression_state<T>(x: &ChunkedArray<T>, y: &ChunkedArray<T>) -> PearsonState
+where
+    T: PolarsNumericType,
+    T::Native: AsPrimitive<f64>,
+{
+    let (x, y) = align_chunks_binary(x, y);
+    let mut out = PearsonState::default();
+    for (x, y) in x.downcast_iter().zip(y.downcast_iter()) {
+        out.combine(&polars_compute::moment::pearson_corr(x, y))
+    }
+    out
+}
+
 /// Compute the pearson correlation between two columns.
 pub fn pearson_corr<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<f64>
 where

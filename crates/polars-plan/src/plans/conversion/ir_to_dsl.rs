@@ -1036,6 +1036,19 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 },
             }
         },
+        #[cfg(feature = "cov")]
+        IF::Regression { function } => {
+            use IRRegressionFunction as IR;
+            use RegressionFunction as R;
+            F::Regression {
+                function: match function {
+                    IR::Slope => R::Slope,
+                    IR::Intercept => R::Intercept,
+                    IR::R2 => R::R2,
+                    IR::Count => R::Count,
+                },
+            }
+        },
         #[cfg(feature = "peaks")]
         IF::PeakMin => F::PeakMin,
         #[cfg(feature = "peaks")]

@@ -551,6 +551,26 @@ pub fn pearson_corr(a: PyExpr, b: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
+pub fn regr_slope(y: PyExpr, x: PyExpr) -> PyExpr {
+    dsl::regr_slope(y.inner, x.inner).into()
+}
+
+#[pyfunction]
+pub fn regr_intercept(y: PyExpr, x: PyExpr) -> PyExpr {
+    dsl::regr_intercept(y.inner, x.inner).into()
+}
+
+#[pyfunction]
+pub fn regr_r2(y: PyExpr, x: PyExpr) -> PyExpr {
+    dsl::regr_r2(y.inner, x.inner).into()
+}
+
+#[pyfunction]
+pub fn regr_count(y: PyExpr, x: PyExpr) -> PyExpr {
+    dsl::regr_count(y.inner, x.inner).into()
+}
+
+#[pyfunction]
 pub fn reduce(
     lambda: Py<PyAny>,
     exprs: Vec<PyExpr>,

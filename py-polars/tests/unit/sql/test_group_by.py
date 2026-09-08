@@ -961,3 +961,59 @@ def test_group_by_relation_alias_key_projected_unqualified() -> None:
         compare_with="duckdb",
         expected={"city": ["c", "d"], "n": [1, 2]},
     )
+
+
+def test_group_by_regr_aggregates() -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["a", "a", "a", "a", "a", "b", "b", "b"],
+            "x": [1, 2, 3, 4, 5, 1, 2, 3],
+            "y": [2, 4, 5, 4, 5, 2, 4, 8],
+        }
+    )
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+                grp,
+                REGR_SLOPE(y, x) AS slope,
+                REGR_INTERCEPT(y, x) AS intercept,
+                REGR_R2(y, x) AS r2,
+                REGR_COUNT(y, x) AS cnt
+            FROM self
+            GROUP BY grp
+            ORDER BY grp
+        """,
+        compare_with="duckdb",
+        expected={
+            "grp": ["a", "b"],
+            "slope": [0.6, 3.0],
+            "intercept": [2.2, -4 / 3],
+            "r2": [0.6, 27 / 28],
+            "cnt": [5, 3],
+        },
+    )
+
+
+def test_group_by_regr_aggregates_nulls() -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["a", "a", "a", "a", "b"],
+            "x": [1.0, 2.0, None, 4.0, None],
+            "y": [2.0, 4.0, 5.0, None, 3.0],
+        }
+    )
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT
+                grp,
+                REGR_SLOPE(y, x) AS slope,
+                REGR_COUNT(y, x) AS cnt
+            FROM self
+            GROUP BY grp
+            ORDER BY grp
+        """,
+        compare_with="duckdb",
+        expected={"grp": ["a", "b"], "slope": [2.0, None], "cnt": [2, 0]},
+    )

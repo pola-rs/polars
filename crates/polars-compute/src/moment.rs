@@ -277,6 +277,39 @@ impl PearsonState {
             f64::NAN
         }
     }
+
+    /// The number of (non-null) value pairs inserted into this state.
+    pub fn count(&self) -> u64 {
+        self.weight as u64
+    }
+
+    /// Slope of the least-squares linear regression of y on x, where x is the
+    /// first variable and y the second.
+    pub fn regr_slope(&self) -> Option<f64> {
+        if self.weight == 0.0 || self.dp_xx == 0.0 {
+            None
+        } else {
+            Some(self.dp_xy / self.dp_xx)
+        }
+    }
+
+    /// Intercept of the least-squares linear regression of y on x.
+    pub fn regr_intercept(&self) -> Option<f64> {
+        Some(self.mean_y - self.regr_slope()? * self.mean_x)
+    }
+
+    /// Coefficient of determination of the least-squares linear regression of
+    /// y on x. Follows SQL semantics: null if x has zero variance, 1 if only
+    /// y has zero variance.
+    pub fn regr_r2(&self) -> Option<f64> {
+        if self.weight == 0.0 || self.dp_xx == 0.0 {
+            None
+        } else if self.dp_yy == 0.0 {
+            Some(1.0)
+        } else {
+            Some(self.dp_xy * self.dp_xy / (self.dp_xx * self.dp_yy))
+        }
+    }
 }
 
 #[derive(Default, Clone)]

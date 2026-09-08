@@ -25,3 +25,26 @@ impl Display for CorrelationMethod {
         write!(f, "{s}_correlation")
     }
 }
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Copy, Clone, PartialEq, Debug, Hash)]
+pub enum RegressionFunction {
+    Slope,
+    Intercept,
+    R2,
+    Count,
+}
+
+impl Display for RegressionFunction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use RegressionFunction::*;
+        let s = match self {
+            Slope => "slope",
+            Intercept => "intercept",
+            R2 => "r2",
+            Count => "count",
+        };
+        write!(f, "regr_{s}")
+    }
+}

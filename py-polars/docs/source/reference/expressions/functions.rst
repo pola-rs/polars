@@ -72,6 +72,10 @@ These functions are available from the Polars module root and can be used as exp
    ones
    quantile
    reduce
+   regr_count
+   regr_intercept
+   regr_r2
+   regr_slope
    repeat
    rolling_corr
    rolling_cov

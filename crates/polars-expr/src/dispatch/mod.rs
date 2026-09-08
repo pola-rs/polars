@@ -379,6 +379,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::ConcatExpr { rechunk } => map_as_slice!(misc::concat_expr, rechunk),
         #[cfg(feature = "cov")]
         F::Correlation { method } => map_as_slice!(misc::corr, method),
+        #[cfg(feature = "cov")]
+        F::Regression { function } => map_as_slice!(misc::regr, function),
         #[cfg(feature = "peaks")]
         F::PeakMin => map!(misc::peak_min),
         #[cfg(feature = "peaks")]
