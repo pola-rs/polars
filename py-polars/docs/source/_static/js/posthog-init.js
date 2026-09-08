@@ -1,4 +1,3 @@
-// biome-ignore-all lint: vendor snippet
 !(function (e, t) {
 	var r, o, s, i;
 	t.__SV ||
