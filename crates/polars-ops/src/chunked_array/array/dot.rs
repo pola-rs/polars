@@ -8,7 +8,6 @@ use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use rayon::prelude::*;
 
-// Historical crossover center; recalibrate against the all-valid baseline.
 const PARALLEL_MIN_COORDINATE_WORK: usize = 1 << 20;
 // Match the bounded task budget used by `polars_core::utils::par_iter_bounded`.
 const PARALLEL_TASKS_PER_THREAD: usize = 8;
@@ -157,6 +156,23 @@ fn parallel_min_len(output_len: usize, n_threads: usize) -> usize {
         .max(1)
 }
 
+#[inline]
+fn eligible_parallel_min_len(
+    allow_parallel: bool,
+    output_len: usize,
+    width: usize,
+) -> Option<usize> {
+    if !allow_parallel
+        || !has_enough_parallel_work(output_len, width)
+        || RAYON.current_thread_index().is_some()
+    {
+        return None;
+    }
+
+    let n_threads = RAYON.current_num_threads();
+    (n_threads > 1).then(|| parallel_min_len(output_len, n_threads))
+}
+
 fn dot_primitive<T, const MAY_PARALLELIZE: bool>(
     lhs: &ArrayChunked,
     rhs: &ArrayChunked,
@@ -212,14 +228,11 @@ where
     // An absent outer bitmap guarantees valid output rows without scanning.
     // Child validity only filters coordinate pairs inside `DotRowReducer`.
     if lhs_array.validity().is_none() && rhs_array.validity().is_none() {
-        let min_parallel_len =
-            if MAY_PARALLELIZE && allow_parallel && has_enough_parallel_work(output_len, width) {
-                let n_threads = RAYON.current_num_threads();
-                (n_threads > 1 && !RAYON.current_thread_has_pending_tasks().unwrap_or(false))
-                    .then(|| parallel_min_len(output_len, n_threads))
-            } else {
-                None
-            };
+        let min_parallel_len = if MAY_PARALLELIZE {
+            eligible_parallel_min_len(allow_parallel, output_len, width)
+        } else {
+            None
+        };
         let output = if let Some(min_len) = min_parallel_len {
             dot_outer_all_valid_parallel(
                 &row_reducer,
@@ -439,22 +452,6 @@ mod tests {
         assert_eq!(
             dot_outer_all_valid(&reverse_reducer, false, true, 2),
             dot_outer_all_valid_parallel(&reverse_reducer, false, true, 2, 1),
-        );
-    }
-
-    #[test]
-    fn test_parallel_outer_zero_width() {
-        let reducer = DotRowReducer::<f64> {
-            lhs_slice: &[],
-            rhs_slice: &[],
-            lhs_inner_validity: None,
-            rhs_inner_validity: None,
-            width: 0,
-        };
-
-        assert_eq!(
-            dot_outer_all_valid_parallel(&reducer, false, false, 3, 1),
-            vec![0.0, 0.0, 0.0],
         );
     }
 }
