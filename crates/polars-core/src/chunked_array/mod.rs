@@ -958,7 +958,7 @@ where
         // rather than into the copy `to_flat` would hand back.
         self.rechunk_mut();
         self.flatten_mut();
-        let a = self.as_flat().unwrap().data_views().next().unwrap();
+        let a = self.as_flat().unwrap().chunks_flat_values().next().unwrap();
         let ptr = a.as_ptr();
         Ok(ptr as usize)
     }

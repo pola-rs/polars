@@ -133,7 +133,7 @@ fn numeric_series_to_numpy_view(py: Python<'_>, mut s: Series, writable: bool) -
         // flat; `handle_chunks` is what decided that writing a scalar chunk out here is allowed.
         let ca: &mut ChunkedArray<$T> = s._get_inner_mut().as_mut();
         ca.flatten_mut();
-        let slice = ca.as_flat().unwrap().data_views().next().unwrap();
+        let slice = ca.as_flat().unwrap().chunks_flat_values().next().unwrap();
 
         unsafe {
             create_borrowed_np_array::<_>(
@@ -163,7 +163,7 @@ fn temporal_series_to_numpy_view(py: Python<'_>, s: Series, writable: bool) -> P
     let mut phys = s.to_physical_repr().into_owned();
     let ca: &mut Int64Chunked = phys._get_inner_mut().as_mut();
     ca.flatten_mut();
-    let slice = ca.as_flat().unwrap().data_views().next().unwrap();
+    let slice = ca.as_flat().unwrap().chunks_flat_values().next().unwrap();
 
     unsafe {
         create_borrowed_np_array::<_>(

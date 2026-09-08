@@ -240,13 +240,13 @@ where
         // The values are read as slices, so the chunks are written out flat first where they are
         // not already.
         let ca = self.to_flat();
-        let chunks =
-            ca.data_views()
-                .zip(ca.as_array().iter_validities())
-                .map(|(slice, validity)| {
-                    let arr: T::Array = slice.iter().copied().map(f).collect_arr();
-                    arr.with_validity_typed(validity.map(PlBitmap::from))
-                });
+        let chunks = ca
+            .chunks_flat_values()
+            .zip(ca.as_array().iter_validities())
+            .map(|(slice, validity)| {
+                let arr: T::Array = slice.iter().copied().map(f).collect_arr();
+                arr.with_validity_typed(validity.map(PlBitmap::from))
+            });
         ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }
 

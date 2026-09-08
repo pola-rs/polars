@@ -211,7 +211,7 @@ impl DataFrame {
                     .collect::<Vec<_>>();
                 let column_chunks: Vec<Vec<&[N::Native]>> = flat_columns
                     .iter()
-                    .map(|flat| flat.data_views().collect())
+                    .map(|flat| flat.chunks_flat_values().collect())
                     .collect();
 
                 // Cursor into one column's chunk list. Advanced only at chunk boundaries.

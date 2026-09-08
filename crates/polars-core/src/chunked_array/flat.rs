@@ -122,7 +122,7 @@ pub trait FlatNumericChunkedArray<T: PolarsNumericType> {
     fn cont_slice_mut(&mut self) -> Option<&mut [T::Native]>;
 
     /// The values of this array, one slice per chunk.
-    fn data_views(&self) -> impl DoubleEndedIterator<Item = &[T::Native]>;
+    fn chunks_flat_values(&self) -> impl DoubleEndedIterator<Item = &[T::Native]>;
 }
 
 impl<T: PolarsNumericType> FlatNumericChunkedArray<T> for Flat<ChunkedArray<T>> {
@@ -153,7 +153,7 @@ impl<T: PolarsNumericType> FlatNumericChunkedArray<T> for Flat<ChunkedArray<T>> 
         arr.flat_or_scalar_values_mut().get_mut_slice()
     }
 
-    fn data_views(&self) -> impl DoubleEndedIterator<Item = &[T::Native]> {
+    fn chunks_flat_values(&self) -> impl DoubleEndedIterator<Item = &[T::Native]> {
         self.flat_chunks().map(|arr| arr.as_slice())
     }
 }
