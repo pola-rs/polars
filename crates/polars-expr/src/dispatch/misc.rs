@@ -682,12 +682,12 @@ pub(super) fn entropy(s: &Column, base: f64, normalize: bool) -> PolarsResult<Co
     use polars_ops::series::LogSeries;
 
     let out = s.as_materialized_series().entropy(base, normalize)?;
-    if matches!(s.dtype(), DataType::Float32) {
-        let out = out as f32;
-        Ok(Column::new(s.name().clone(), [out]))
+    let out_dtype = if s.dtype().is_float() {
+        s.dtype().clone()
     } else {
-        Ok(Column::new(s.name().clone(), [out]))
-    }
+        DataType::Float64
+    };
+    Column::new(s.name().clone(), [out]).cast(&out_dtype)
 }
 
 #[cfg(feature = "log")]
