@@ -7,6 +7,7 @@ from typing import Final
 
 MONITORING_ENV_VAR: Final[str] = "POLARS_QUERY_MONITORING"
 MONITORING_WORKSPACE_ENV_VAR: Final[str] = "POLARS_QUERY_MONITORING_WORKSPACE"
+MONITORING_ORGANIZATION_ENV_VAR: Final[str] = "POLARS_QUERY_MONITORING_ORGANIZATION"
 
 
 def monitoring_enabled_globally() -> bool:
@@ -16,6 +17,11 @@ def monitoring_enabled_globally() -> bool:
 def monitoring_workspace() -> str | None:
     """The Polars Cloud workspace metrics are sent to, `None` for the default one."""
     return os.environ.get(MONITORING_WORKSPACE_ENV_VAR) or None
+
+
+def monitoring_organization() -> str | None:
+    """The Polars Cloud organization metrics are sent to, `None` for the default one."""
+    return os.environ.get(MONITORING_ORGANIZATION_ENV_VAR) or None
 
 
 def activate_monitoring() -> None:
