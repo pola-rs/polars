@@ -23,6 +23,8 @@ mod iterator;
 pub use builder::PlFixedSizeListArrayBuilder;
 pub use iterator::{PlFixedSizeListIter, PlFixedSizeListValuesIter};
 
+use crate::nested::Stride;
+
 /// An immutable, cheaply cloneable sequence of `length` optional lists of `width` values each.
 #[derive(Clone)]
 pub struct PlFixedSizeListArray {
@@ -354,7 +356,11 @@ impl PlFixedSizeListArray {
     pub fn values_iter(&self) -> PlFixedSizeListValuesIter<'_> {
         // SAFETY: the values are flat or scalar for this array's length, upheld by every
         // constructor.
-        PlFixedSizeListValuesIter::new(&*self.values, self.width, self.length)
+        PlFixedSizeListValuesIter::new(
+            &*self.values,
+            Stride::new(self.values.len(), self.width, self.length),
+            self.length,
+        )
     }
 
     /// Returns an iterator over the optional elements.
@@ -362,7 +368,12 @@ impl PlFixedSizeListArray {
     pub fn iter(&self) -> PlFixedSizeListIter<'_> {
         // SAFETY: the values are flat or scalar for this array's length, upheld by every
         // constructor.
-        PlFixedSizeListIter::new(&*self.values, self.width, self.validity(), self.length)
+        PlFixedSizeListIter::new(
+            &*self.values,
+            Stride::new(self.values.len(), self.width, self.length),
+            self.validity(),
+            self.length,
+        )
     }
 
     /// Iterates `length` elements, repeating a scalar array's one value and ignoring validity.
@@ -371,7 +382,11 @@ impl PlFixedSizeListArray {
         assert_broadcastable(self.length, length);
         // SAFETY: this array broadcasts to `length`, which is what was just asserted, so its
         // values are flat or scalar for it.
-        PlFixedSizeListValuesIter::new(&*self.values, self.width, length)
+        PlFixedSizeListValuesIter::new(
+            &*self.values,
+            Stride::new(self.values.len(), self.width, length),
+            length,
+        )
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.

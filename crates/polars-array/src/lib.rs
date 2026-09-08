@@ -20,6 +20,7 @@ pub mod flat;
 mod iterator_tests;
 pub mod list;
 mod macros;
+pub mod nested;
 pub mod no_nulls;
 pub mod null;
 pub mod primitive;

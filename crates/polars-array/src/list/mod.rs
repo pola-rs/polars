@@ -23,6 +23,8 @@ mod iterator;
 pub use builder::PlListArrayBuilder;
 pub use iterator::{PlListIter, PlListValuesIter};
 
+use crate::nested::Offsets;
+
 /// An immutable, cheaply cloneable sequence of `length` optional lists over one values array.
 #[derive(Clone)]
 pub struct PlListArray {
@@ -369,7 +371,11 @@ impl PlListArray {
     pub fn values_iter(&self) -> PlListValuesIter<'_> {
         // SAFETY: the offsets are flat or scalar for this array's length, are ordered and are
         // bounded by the length of the values, all upheld by every constructor.
-        PlListValuesIter::new(&*self.values, &self.offsets, self.length)
+        PlListValuesIter::new(
+            &*self.values,
+            Offsets::new(&self.offsets, self.length),
+            self.length,
+        )
     }
 
     /// Returns an iterator over the optional elements.
@@ -377,7 +383,12 @@ impl PlListArray {
     pub fn iter(&self) -> PlListIter<'_> {
         // SAFETY: the offsets are flat or scalar for this array's length, are ordered and are
         // bounded by the length of the values, all upheld by every constructor.
-        PlListIter::new(&*self.values, &self.offsets, self.validity(), self.length)
+        PlListIter::new(
+            &*self.values,
+            Offsets::new(&self.offsets, self.length),
+            self.validity(),
+            self.length,
+        )
     }
 
     /// Iterates `length` elements, repeating a scalar array's one value and ignoring validity.
@@ -386,7 +397,7 @@ impl PlListArray {
         assert_broadcastable(self.length, length);
         // SAFETY: this array broadcasts to `length`, which is what was just asserted, so its
         // offsets are flat or scalar for it.
-        PlListValuesIter::new(&*self.values, &self.offsets, length)
+        PlListValuesIter::new(&*self.values, Offsets::new(&self.offsets, length), length)
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.
