@@ -963,7 +963,7 @@ pub fn build_physical_plan(
     insert_multiplexers(vec![phys_root.node], phys_sm);
     split_multiplexers(vec![phys_root.node], phys_sm);
     fuse_drops(vec![phys_root.node], phys_sm);
-    
+
     // TODO: remove this after fusing pre-select into group-by node.
     rechunk_group_by_inputs(vec![phys_root.node], phys_sm);
 
