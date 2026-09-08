@@ -76,7 +76,12 @@ pub fn business_day_count(
     let holidays = holidays.rechunk();
     // The holidays of one row are read as a slice, so the offsets and the values behind them are
     // written out where they do not already hold one slot per element.
-    let holidays_list = holidays.list()?.downcast_as_array().to_flat();
+    let holidays_list = holidays.list()?.downcast_as_array();
+    let holidays_list = if holidays_list.is_scalar() {
+        holidays_list.sliced(0, 1).to_flat()
+    } else {
+        holidays_list.to_flat()
+    };
     let mut holidays_getter = HolidayListsGetter::new(&holidays_list, week_mask);
 
     let n_business_days_in_week_mask = week_mask.iter().filter(|&x| *x).count() as i32;
@@ -241,7 +246,12 @@ pub fn add_business_days(
 
     let holidays = holidays.rechunk();
     // As above: the holidays of one row are read as a slice.
-    let holidays_list = holidays.list()?.downcast_as_array().to_flat();
+    let holidays_list = holidays.list()?.downcast_as_array();
+    let holidays_list = if holidays_list.is_scalar() {
+        holidays_list.sliced(0, 1).to_flat()
+    } else {
+        holidays_list.to_flat()
+    };
     let mut holidays_getter = HolidayListsGetter::new(&holidays_list, week_mask);
 
     let start_dates = start_dates.physical().rechunk();
@@ -408,7 +418,12 @@ pub fn is_business_day(
 
     let holidays = holidays.rechunk();
     // As above: the holidays of one row are read as a slice.
-    let holidays_list = holidays.list()?.downcast_as_array().to_flat();
+    let holidays_list = holidays.list()?.downcast_as_array();
+    let holidays_list = if holidays_list.is_scalar() {
+        holidays_list.sliced(0, 1).to_flat()
+    } else {
+        holidays_list.to_flat()
+    };
     let mut holidays_getter = HolidayListsGetter::new(&holidays_list, week_mask);
 
     let dates = dates.date()?;
