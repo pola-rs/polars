@@ -79,7 +79,7 @@ pub trait LogSeries: SeriesSealed {
         match s.dtype() {
             dt if dt.is_integer() => {
                 with_match_physical_integer_polars_type!(s.dtype(), |$T| {
-                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
                     Ok(log1p(ca).into_series())
                 })
             },
@@ -100,7 +100,7 @@ pub trait LogSeries: SeriesSealed {
         match s.dtype() {
             dt if dt.is_integer() => {
                 with_match_physical_integer_polars_type!(s.dtype(), |$T| {
-                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
                     Ok(exp(ca).into_series())
                 })
             },
