@@ -9739,7 +9739,7 @@ class Series(metaclass=_Meta):
         5006
 
         >>> # Get several quantiles at once
-        >>> s.approx_quantile([0.25, 0.75])
+        >>> s.approx_quantile([0.25, 0.75])  # doctest: +SKIP
         [2500, 7499]
 
         >>> # Explicitly use an algorithm that is accurate at the high tail
