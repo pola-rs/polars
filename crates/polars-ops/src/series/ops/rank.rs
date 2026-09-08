@@ -104,9 +104,9 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
             use RankMethod::*;
             let name = s.name().clone();
             let out = match method {
-                Average => Some(
-                    Float64Chunked::full(name, (1.0 + len as f64) / 2.0, len).into_series(),
-                ),
+                Average => {
+                    Some(Float64Chunked::full(name, (1.0 + len as f64) / 2.0, len).into_series())
+                },
                 Min | Dense => Some(IdxCa::full(name, 1, len).into_series()),
                 Max => Some(IdxCa::full(name, len as IdxSize, len).into_series()),
                 Ordinal => None,

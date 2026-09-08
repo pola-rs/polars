@@ -152,6 +152,20 @@ impl EvalExpr {
             return Ok(column);
         }
 
+        // The groups below are cut out of the flattened values by one offset per element, but a
+        // chunk that repeats a single list holds that one list's values and not a copy of them per
+        // element: it is written out here so the two line up. The elementwise path above needs no
+        // such thing — it reads the values on their own and puts them back the way they came.
+        let flat;
+        let (ca, flattened, flattened_len) = if ca.is_flat() {
+            (&*ca, flattened, flattened_len)
+        } else {
+            flat = ca.to_flat().into_owned().into_array();
+            let flattened = flat.get_inner().into_column();
+            let flattened_len = flattened.len();
+            (&flat, flattened, flattened_len)
+        };
+
         let offsets = ca.offsets()?;
         // Detect accidental inclusion of sliced-out elements from chunks after the 1st (if present).
         assert_eq!(i64::try_from(flattened_len).unwrap(), *offsets.last());

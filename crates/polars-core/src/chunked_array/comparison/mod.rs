@@ -904,8 +904,17 @@ where
 
     if !is_missing && (a.has_nulls() || b.has_nulls()) {
         use polars_array::bitmap::combine_validities_and;
-        let av = a.rechunk_validity();
-        let bv = b.rechunk_validity();
+
+        // A side of a single element stands for every element of the output, and so does the one
+        // bit its mask holds: the two masks are put over the output before they are combined.
+        let length = out.len();
+        let over_output = |validity: Option<PlBitmap>| match validity {
+            Some(v) if v.len() == 1 && length != 1 => Some(PlBitmap::new_scalar(v.get(0), length)),
+            validity => validity,
+        };
+
+        let av = over_output(a.rechunk_validity());
+        let bv = over_output(b.rechunk_validity());
         out.set_validity(combine_validities_and(
             av.as_ref().map(PlBitmap::as_ref),
             bv.as_ref().map(PlBitmap::as_ref),

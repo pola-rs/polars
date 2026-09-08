@@ -9,11 +9,20 @@ use polars_array::PlPrimitiveArray;
 use polars_utils::IdxSize;
 
 /// The mask of `arr` as one bit per element, or [`None`] where every element is null.
+///
+/// A chunk reaches these kernels only with a null under it, so the one bit a mask that repeats
+/// one holds is unset — which is what makes [`None`] mean that every element is null here.
 #[inline]
 pub(super) fn flat_validity<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Option<&Bitmap> {
-    arr.validity()
-        .expect("a chunk with nulls in it holds a validity mask")
-        .flat_bitmap()
+    let validity = arr
+        .validity()
+        .expect("a chunk with nulls in it holds a validity mask");
+    debug_assert!(
+        validity.flat_bitmap().is_some() || validity.scalar_value() == Some(false),
+        "a mask that repeats a set bit leaves no null for these kernels to be reached with",
+    );
+
+    validity.flat_bitmap()
 }
 
 /// The values `indices` gather out of a chunk with no nulls in it.

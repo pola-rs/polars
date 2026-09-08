@@ -58,6 +58,13 @@ where
     for<'b> T::Physical<'b>: TotalHash + TotalEq + ToTotalOrd + Copy,
     for<'b> <T::Physical<'b> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
+    // The offsets index the values as one run, one offset per element, which is the single flat
+    // chunk written out here: `get_inner` hands over the values as they are, and a chunk that
+    // repeats a single list holds that one list rather than a copy of it per element.
+    let rechunked = other.rechunk();
+    let flat = rechunked.to_flat();
+    let other = flat.as_array();
+
     let offsets = other.offsets()?;
     let inner = other.get_inner();
     let inner: &ChunkedArray<T> = inner.as_ref().as_ref();
