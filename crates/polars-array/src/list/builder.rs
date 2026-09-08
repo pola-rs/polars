@@ -7,8 +7,9 @@ use polars_utils::IdxSize;
 use super::PlListArray;
 use crate::bitmap::PlBitmap;
 use crate::builder::{
-    PlArrayBuilder, ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
-    opt_gather_extend_validity, subslice_extend_each_repeated_validity, subslice_extend_validity,
+    PlArrayBuilder, ShareStrategy, StaticArrayBuilder, assert_subslice, for_each_run,
+    gather_extend_validity, opt_gather_extend_validity, subslice_extend_each_repeated_validity,
+    subslice_extend_validity,
 };
 
 /// A builder of a [`PlListArray`].
@@ -234,19 +235,9 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlListArrayBuilder<B> {
 
         if other.offsets_are_flat() {
             // A run of consecutive indices is a subslice, which the child appends in one go.
-            let mut run_start = 0;
-            while run_start < idxs.len() {
-                let first = idxs[run_start] as usize;
-                let mut run_length = 1;
-                while run_start + run_length < idxs.len()
-                    && idxs[run_start + run_length] as usize == first + run_length
-                {
-                    run_length += 1;
-                }
-
+            for_each_run(idxs, |first, run_length| {
                 self.extend_values(other, first, run_length, share);
-                run_start += run_length;
-            }
+            });
         } else {
             // Every index reads the one range the array holds.
             self.extend_values(other, 0, idxs.len(), share);
@@ -283,6 +274,7 @@ mod tests {
     use polars_buffer::Buffer;
 
     use super::PlListArrayBuilder;
+    use crate::array_tests::nested_i32_elements;
     use crate::bitmap::PlBitmap;
     use crate::builder::{ShareStrategy, StaticArrayBuilder, builder_like};
     use crate::{PlListArray, PlPrimitiveArray};
@@ -296,23 +288,6 @@ mod tests {
         .with_validity(Some(PlBitmap::from_bitmap(Bitmap::from_iter([
             true, false, true,
         ]))))
-    }
-
-    /// The elements of a list array, as the values of the lists they cover.
-    fn elements(array: &PlListArray) -> Vec<Option<Vec<i32>>> {
-        array
-            .iter()
-            .map(|element| {
-                element.map(|element| {
-                    element
-                        .as_any()
-                        .downcast_ref::<PlPrimitiveArray<i32>>()
-                        .unwrap()
-                        .values_iter()
-                        .collect()
-                })
-            })
-            .collect()
     }
 
     fn builder() -> PlListArrayBuilder {
@@ -355,7 +330,7 @@ mod tests {
 
         let built = builder.freeze();
         assert_eq!(
-            elements(&built),
+            nested_i32_elements(built.iter()),
             [Some(vec![1, 2]), Some(vec![]), None, Some(vec![3])],
         );
     }
@@ -375,7 +350,7 @@ mod tests {
             .subslice_extend(&values, 1, 2, ShareStrategy::Always);
 
         let built = builder.freeze();
-        assert_eq!(elements(&built), [Some(vec![1])]);
+        assert_eq!(nested_i32_elements(built.iter()), [Some(vec![1])]);
         // The child still holds them; the offsets are what say they are past the last element.
         assert_eq!(built.values().len(), 3);
     }

@@ -79,3 +79,22 @@ pub(crate) fn assert_picked(built: &dyn PlArray, array: &dyn PlArray, indices: &
     assert_eq!(built.len(), indices.len(), "length of {built:?}");
     assert_eq!(built, &*expected, "elements of {built:?}");
 }
+
+/// The elements of a nested array of `i32` lists, as the values of the lists they cover.
+pub(crate) fn nested_i32_elements(
+    elements: impl IntoIterator<Item = Option<Box<dyn PlArray>>>,
+) -> Vec<Option<Vec<i32>>> {
+    elements
+        .into_iter()
+        .map(|element| {
+            element.map(|element| {
+                element
+                    .as_any()
+                    .downcast_ref::<PlPrimitiveArray<i32>>()
+                    .unwrap()
+                    .values_iter()
+                    .collect()
+            })
+        })
+        .collect()
+}

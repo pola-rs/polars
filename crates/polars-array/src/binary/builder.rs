@@ -7,7 +7,7 @@ use polars_utils::IdxSize;
 use super::PlBinaryArray;
 use crate::bitmap::PlBitmap;
 use crate::builder::{
-    ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
+    ShareStrategy, StaticArrayBuilder, assert_subslice, for_each_run, gather_extend_validity,
     opt_gather_extend_validity, subslice_extend_each_repeated_validity, subslice_extend_validity,
 };
 
@@ -232,19 +232,9 @@ impl StaticArrayBuilder for PlBinaryArrayBuilder {
 
         if other.offsets_are_flat() {
             // A run of consecutive indices is a subslice, whose bytes are appended in one go.
-            let mut run_start = 0;
-            while run_start < idxs.len() {
-                let first = idxs[run_start] as usize;
-                let mut run_length = 1;
-                while run_start + run_length < idxs.len()
-                    && idxs[run_start + run_length] as usize == first + run_length
-                {
-                    run_length += 1;
-                }
-
+            for_each_run(idxs, |first, run_length| {
                 self.extend_values(other, first, run_length);
-                run_start += run_length;
-            }
+            });
         } else {
             // Every index reads the one range the array holds.
             self.extend_values(other, 0, idxs.len());

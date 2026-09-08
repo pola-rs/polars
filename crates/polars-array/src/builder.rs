@@ -445,6 +445,29 @@ impl PlArrayBuilder for Box<dyn PlArrayBuilder> {
     }
 }
 
+/// Calls `extend` once per maximal run of consecutive indices in `idxs`, with the index the run
+/// starts at and how many indices it covers.
+///
+/// A gather of consecutive indices is a subslice of the array gathered from, which a builder
+/// appends in one go rather than an element at a time.
+pub(crate) fn for_each_run(idxs: &[IdxSize], mut extend: impl FnMut(usize, usize)) {
+    let mut run_start = 0;
+
+    while run_start < idxs.len() {
+        let first = idxs[run_start] as usize;
+        let mut run_length = 1;
+
+        while run_start + run_length < idxs.len()
+            && idxs[run_start + run_length] as usize == first + run_length
+        {
+            run_length += 1;
+        }
+
+        extend(first, run_length);
+        run_start += run_length;
+    }
+}
+
 /// An empty builder of the arrays that `array` is one of.
 pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
     match array.array_type() {
