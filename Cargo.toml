@@ -62,8 +62,8 @@ half = { version = "2.7.1", features = ["num-traits"] }
 hashbrown = { version = "0.17.1", features = ["rayon", "serde"] }
 hex = "0.4.3"
 hwlocality-sys = { version = "0.7.1", features = ["vendored", "hwloc-2_12_1"] }
-iceberg = { version = "0.10.0", git = "https://github.com/apache/iceberg-rust.git", rev = "64cb19a4f798634c717773f81afeaead9ef7f757", default-features = false }
-iceberg-storage-opendal = { version = "0.10.0", git = "https://github.com/apache/iceberg-rust.git", rev = "64cb19a4f798634c717773f81afeaead9ef7f757", default-features = false }
+iceberg = { version = "0.10.0", git = "https://github.com/apache/iceberg-rust.git", rev = "6dc1486beec639ee217c7b52299d4900d27b9db9", default-features = false }
+iceberg-storage-opendal = { version = "0.10.0", git = "https://github.com/apache/iceberg-rust.git", rev = "6dc1486beec639ee217c7b52299d4900d27b9db9", default-features = false }
 indexmap = { version = "2.12", features = ["std", "serde"] }
 itoa = "1.0.6"
 libc = "0.2"
