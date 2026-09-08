@@ -3931,13 +3931,13 @@ class Expr(metaclass=_Meta):
         │ 9989 │
         └──────┘
         """
-        expect_method = ["auto", "kll", "req_lo", "req_hi", "req_both"]
-        if method not in expect_method:
-            msg = f"invalid value for `method` ({method:r}), expected one of {expect_method}"
+        if method not in {"auto", "kll", "req_lo", "req_hi", "req_both"}:
+            msg = f"`method` must be one of {{'auto', 'kll', 'req_lo', 'req_hi', 'req_both'}}, got {method!r}"
             raise ValueError(msg)
 
         if error_tightness not in {"empirical", "formal"}:
-            msg = f"invalid value for `error_tightness` ({error_tightness:r}), expected 'empirical' or 'formal'"
+            msg = f"`error_tightness` must be one of {{'empirical', 'formal'}}, got {error_tightness!r}"
+            raise ValueError(msg)
 
         q = quantile._pyexpr if isinstance(quantile, pl.Expr) else quantile
         return wrap_expr(
