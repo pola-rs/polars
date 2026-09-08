@@ -924,8 +924,8 @@ pub(super) fn convert_functions(
             use_formal_bound,
         } => {
             polars_ensure!(
-                0.0 < error && error < 1.0,
-                InvalidOperation: "`error` must be strictly between 0 and 1 (got: {error})"
+                (polars_compute::approx_quantile::MIN_ERROR..1.0).contains(&error),
+                InvalidOperation: "`error` must be in the range [2^-32, 1) (got: {error})"
             );
             let quantiles: Option<Vec<f64>> = match ctx.arena.get(e[1].node()) {
                 AExpr::Literal(LiteralValue::Series(s)) => s

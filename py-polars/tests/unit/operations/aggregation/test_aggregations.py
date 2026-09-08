@@ -432,12 +432,12 @@ def test_approx_quantile_bad_method() -> None:
 
 
 @pytest.mark.parametrize("error_tightness", ["empirical", "formal"])
-@pytest.mark.parametrize("error", [0.0, 1.0, -0.1, 2.0, float("nan")])
+@pytest.mark.parametrize("error", [0.0, 1.0, -0.1, 2.0, float("nan"), 1e-18])
 def test_approx_quantile_bad_error(
     error: float, error_tightness: ApproxQuantileErrorBound
 ) -> None:
     s = pl.Series("a", [1.0, 2.0, 3.0])
-    with pytest.raises(InvalidOperationError, match="`error` must be strictly between"):
+    with pytest.raises(InvalidOperationError, match=r"`error` must be in the range"):
         s.to_frame().select(
             pl.col("a").approx_quantile(
                 0.5, error=error, error_tightness=error_tightness
@@ -477,6 +477,35 @@ def test_approx_quantile_is_monotone(method: ApproxQuantileMethod) -> None:
         for i, q in enumerate([0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0])
     ).row(0)
     assert list(results) == sorted(results)
+
+
+@pytest.mark.parametrize("method", APPROX_QUANTILE_METHODS)
+def test_approx_quantile_is_monotone_around_median(
+    method: ApproxQuantileMethod,
+) -> None:
+    # `req_both` answers below and above 0.5 from two separate sketches.
+    values = np.random.default_rng(0).permutation(20_000).astype(float)
+    df = pl.DataFrame({"a": values})
+    quantiles = [0.49, 0.499999, 0.5, 0.500001, 0.51]
+    results = df.select(
+        pl.col("a").approx_quantile(quantiles, error=0.01, method=method)
+    )["a"].explode()
+    assert results.to_list() == sorted(results.to_list())
+
+
+@pytest.mark.parametrize("method", APPROX_QUANTILE_METHODS)
+def test_approx_quantile_smallest_error(method: ApproxQuantileMethod) -> None:
+    s = pl.Series("a", [float(i) for i in range(100)])
+    got = (
+        s.to_frame()
+        .select(
+            pl.col("a").approx_quantile(
+                [0.0, 0.5, 1.0], error=2**-32, method=method, error_tightness="formal"
+            )
+        )["a"]
+        .explode()
+    )
+    assert got.to_list() == [0.0, 50.0, 99.0]
 
 
 def test_approx_quantile_protected_tail_is_exact() -> None:

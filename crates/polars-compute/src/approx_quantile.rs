@@ -16,6 +16,9 @@ const KLL_RANGE: RangeInclusive<f64> = 0.05..=0.95;
 /// Taken from the 3-sigma rule.
 const FAILURE_PROBABILITY: f64 = 1.0 - 0.9973;
 
+/// Smallest error a sketch can be parameterised for.
+pub const MIN_ERROR: f64 = 1.0 / (1u64 << 32) as f64;
+
 /// Looseness of the formal KLL error bound (estimated by measuring).
 const KLL_BOUND_LOOSENESS: f64 = 4.6;
 /// Looseness of the formal REQ error bound (estimated by measuring).
@@ -209,7 +212,7 @@ pub mod kll {
     /// The bound is computed for the worst case where compactions happen eagerly.
     /// Therefore, the bound is somewhat loose with respect to the implementation.
     fn compute_k(error: f64) -> usize {
-        assert!(error > 0.0 && error < 1.0, "invalid error: {error}");
+        assert!((MIN_ERROR..1.0).contains(&error), "invalid error: {error}");
 
         let z = f64::sqrt(2.0 * f64::ln(2.0 / FAILURE_PROBABILITY)); // sub-Gaussian tail factor for prob. 1 - delta
         let spread = f64::sqrt(1.0 / (2.0 * CAPACITY_DECAY - 1.0) + 2.0 / 3.0); // std bound in units of n/k
@@ -508,7 +511,7 @@ pub mod req {
     }
 
     fn compute_k(error: f64, n: usize) -> usize {
-        assert!(error > 0.0 && error < 1.0, "invalid error: {error}");
+        assert!((MIN_ERROR..1.0).contains(&error), "invalid error: {error}");
 
         // Eq. 6
         let k = 2 * f64::ceil(
