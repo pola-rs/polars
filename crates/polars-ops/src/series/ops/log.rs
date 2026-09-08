@@ -23,11 +23,9 @@ pub trait LogSeries: SeriesSealed {
 
         match (s.dtype(), base.dtype()) {
             (dt1, dt2) if dt1 == dt2 && dt1.is_float() => {
-                let s = s.to_physical_repr();
-                let base = base.to_physical_repr();
                 with_match_physical_float_polars_type!(s.dtype(), |$T| {
-                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                    let base_ca: &ChunkedArray<$T> = base.as_ref().as_ref().as_ref();
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
+                    let base_ca: &ChunkedArray<$T> = base.as_ref().as_ref();
                     let out: ChunkedArray<$T> = broadcast_binary_elementwise_values(ca, base_ca,
                         |x, base| x.log(base)
                     );
@@ -44,12 +42,6 @@ pub trait LogSeries: SeriesSealed {
     fn log1p(&self) -> PolarsResult<Series> {
         let s = self.as_series();
         polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'log1p'");
-        if s.dtype().is_decimal() {
-            return s.cast(&DataType::Float64).unwrap().log1p();
-        }
-
-        let s = s.to_physical_repr();
-        let s = s.as_ref();
 
         use DataType::*;
         match s.dtype() {
@@ -71,12 +63,6 @@ pub trait LogSeries: SeriesSealed {
     fn exp(&self) -> PolarsResult<Series> {
         let s = self.as_series();
         polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'exp'");
-        if s.dtype().is_decimal() {
-            return s.cast(&DataType::Float64).unwrap().exp();
-        }
-
-        let s = s.to_physical_repr();
-        let s = s.as_ref();
 
         use DataType::*;
         match s.dtype() {
@@ -97,16 +83,16 @@ pub trait LogSeries: SeriesSealed {
     /// Compute the entropy as `-sum(pk * log(pk))`.
     /// where `pk` are discrete probabilities.
     fn entropy(&self, base: f64, normalize: bool) -> PolarsResult<f64> {
-        let s = self.as_series().to_physical_repr();
-        polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "expected numerical input for 'entropy'");
-        // if there is only one value in the series, return 0.0 to prevent the
-        // function from returning -0.0
+        let s = self.as_series();
+        polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'entropy'");
+
+        // If there is only one value in the series, return 0.0 to prevent the function from returning -0.0.
         if s.len() == 1 {
             return Ok(0.0);
         }
         match s.dtype() {
             DataType::Float16 | DataType::Float32 | DataType::Float64 => {
-                let pk = s.as_ref();
+                let pk = s;
 
                 let pk = if normalize {
                     let sum = pk.sum_reduce().unwrap().into_series(PlSmallStr::EMPTY);
