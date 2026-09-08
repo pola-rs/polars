@@ -3,6 +3,7 @@ use std::sync::OnceLock;
 
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
+use polars_array::bitmap::combine_validities_and;
 use polars_array::builder::{ShareStrategy, builder_like};
 use polars_compute::gather::take_unchecked;
 use polars_error::polars_ensure;
@@ -204,51 +205,81 @@ where
         let targets_have_nulls = ca.null_count() > 0;
         let targets: Vec<_> = ca.downcast_iter().collect();
 
-        let chunks = indices.downcast_iter().map(|idx_arr| {
-            if let Some(v) = idx_arr.scalar_value() {
-                return if let Some(idx) = v {
-                    gather_idx_array_unchecked(&targets, targets_have_nulls, &[idx])
+        // A lone chunk that is scalar throughout repeats one element, so every index picks that
+        // element again and the indices are never read — only their validity, which is what makes
+        // a gathered element null.
+        let scalar_target = match targets[..] {
+            [target] if !target.is_empty() && PlArray::is_scalar(target) => Some(target),
+            _ => None,
+        };
+
+        let mut out = if let [target] = targets[..]
+            && target.is_scalar()
+        {
+            ChunkedArray::from_chunk_iter_like(
+                ca,
+                indices.downcast_iter().map(|idx_arr| {
+                    target
                         .new_from_index_typed(0, idx_arr.len())
-                } else {
-                    T::full_null_array(idx_arr.len())
-                };
-            }
+                        .with_validity_typed(idx_arr.validity().map(Into::into))
+                }),
+            )
+        } else {
+            ChunkedArray::from_chunk_iter_like(
+                ca,
+                indices.downcast_iter().map(|idx_arr| {
+                    if let Some(target) = scalar_target {
+                        let gathered = target.new_from_index_typed(0, idx_arr.len());
+                        let validity =
+                            combine_validities_and(gathered.validity(), idx_arr.validity());
+                        return gathered.with_validity_typed(validity);
+                    }
 
-            if idx_arr.null_count() == 0 {
-                // The kernel reads the indices as a slice, so a chunk that repeats one index is
-                // written out here; every other arm reads them through the iterator instead.
-                let idx_arr = idx_arr.to_flat();
-                gather_idx_array_unchecked(&targets, targets_have_nulls, idx_arr.as_slice())
-            } else if targets.len() == 1 {
-                let target = targets.first().unwrap();
-                if targets_have_nulls {
-                    idx_arr
-                        .iter()
-                        .map(|i| target.get_unchecked(i? as usize))
-                        .collect_arr_trusted()
-                } else {
-                    idx_arr
-                        .iter()
-                        .map(|i| Some(target.value_unchecked(i? as usize)))
-                        .collect_arr_trusted()
-                }
-            } else {
-                let cumlens = cumulative_lengths(&targets);
-                if targets_have_nulls {
-                    idx_arr
-                        .iter()
-                        .map(|i| target_get_unchecked(&targets, &cumlens, i?))
-                        .collect_arr_trusted()
-                } else {
-                    idx_arr
-                        .iter()
-                        .map(|i| Some(target_value_unchecked(&targets, &cumlens, i?)))
-                        .collect_arr_trusted()
-                }
-            }
-        });
+                    if let Some(v) = idx_arr.scalar_value() {
+                        return if let Some(idx) = v {
+                            gather_idx_array_unchecked(&targets, targets_have_nulls, &[idx])
+                                .new_from_index_typed(0, idx_arr.len())
+                        } else {
+                            T::full_null_array(idx_arr.len())
+                        };
+                    }
 
-        let mut out = ChunkedArray::from_chunk_iter_like(ca, chunks);
+                    if idx_arr.null_count() == 0 {
+                        // The kernel reads the indices as a slice, so a chunk that repeats one index is
+                        // written out here; every other arm reads them through the iterator instead.
+                        let idx_arr = idx_arr.to_flat();
+                        gather_idx_array_unchecked(&targets, targets_have_nulls, idx_arr.as_slice())
+                    } else if targets.len() == 1 {
+                        let target = targets.first().unwrap();
+                        if targets_have_nulls {
+                            idx_arr
+                                .iter()
+                                .map(|i| target.get_unchecked(i? as usize))
+                                .collect_arr_trusted()
+                        } else {
+                            idx_arr
+                                .iter()
+                                .map(|i| Some(target.value_unchecked(i? as usize)))
+                                .collect_arr_trusted()
+                        }
+                    } else {
+                        let cumlens = cumulative_lengths(&targets);
+                        if targets_have_nulls {
+                            idx_arr
+                                .iter()
+                                .map(|i| target_get_unchecked(&targets, &cumlens, i?))
+                                .collect_arr_trusted()
+                        } else {
+                            idx_arr
+                                .iter()
+                                .map(|i| Some(target_value_unchecked(&targets, &cumlens, i?)))
+                                .collect_arr_trusted()
+                        }
+                    }
+                }),
+            )
+        };
+
         let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), indices.is_sorted_flag());
 
         out.set_sorted_flag(sorted_flag);
@@ -517,4 +548,44 @@ fn gather_ratio() -> usize {
     });
 
     static GATHER_RECHUNK_RATIO: OnceLock<usize> = OnceLock::new();
+}
+
+#[cfg(test)]
+mod test {
+    use polars_array::{PlBitmap, PlPrimitiveArray};
+
+    use crate::prelude::*;
+
+    /// An `IdxCa` of one chunk holding `idx`, where a `None` is a null index.
+    fn idx_ca(idx: &[Option<IdxSize>]) -> IdxCa {
+        IdxCa::from_iter_options(PlSmallStr::EMPTY, idx.iter().copied())
+    }
+
+    #[test]
+    fn gather_from_scalar_target_stays_scalar() {
+        let target =
+            Int32Chunked::with_chunk(PlSmallStr::EMPTY, PlPrimitiveArray::<i32>::new_scalar(7, 4));
+
+        let indices = idx_ca(&[Some(3), None, Some(0)]);
+        let out = target.take(&indices).unwrap();
+
+        assert_eq!(Vec::from(&out), &[Some(7), None, Some(7)]);
+        // The values are the one value of the target again, so they are never materialized.
+        let arr = out.downcast_as_array();
+        assert!(arr.values_are_scalar());
+    }
+
+    #[test]
+    fn gather_from_scalar_null_target_is_null() {
+        let target = Int32Chunked::with_chunk(
+            PlSmallStr::EMPTY,
+            PlPrimitiveArray::<i32>::new_scalar(7, 4)
+                .with_validity(Some(PlBitmap::new_scalar(false, 4))),
+        );
+
+        let out = target.take(&idx_ca(&[Some(1), None])).unwrap();
+
+        assert_eq!(out.null_count(), 2);
+        assert!(out.downcast_as_array().is_scalar());
+    }
 }
