@@ -145,7 +145,10 @@ mod tests {
             allow_parallel: true,
             force_parallel: false,
             args: JoinArgs::default(),
-            options: JoinTypeOptionsIR::Equi { on: Vec::new() },
+            options: JoinTypeOptionsIR::Equi {
+                on: Vec::new(),
+                residual: None,
+            },
         })
     }
 

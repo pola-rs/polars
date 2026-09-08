@@ -394,10 +394,18 @@ impl JoinOptionsIR {
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "snake_case")]
 pub enum JoinTypeOptionsIR {
-    /// The match condition is `left == right` for every key pair.
+    /// The match condition is `left == right` for every key pair, and, if there is a
+    /// `residual`, that predicate as well.
     ///
     /// An empty `on` is a plain cross join.
-    Equi { on: Vec<(ExprIR, ExprIR)> },
+    Equi {
+        on: Vec<(ExprIR, ExprIR)>,
+        /// Boolean match condition in the join's output namespace, evaluated per
+        /// candidate pair. A pair survives only on `true`; `false` and null reject it.
+        ///
+        /// Only ever set on an inner join with a non-empty `on` and no attached slice.
+        residual: Option<ExprIR>,
+    },
     /// Backwards/forwards/nearest match on a single key pair. The strategy, tolerance
     /// and `by` group keys live in [`JoinType::AsOf`].
     #[cfg(feature = "asof_join")]
@@ -432,7 +440,10 @@ pub enum JoinTypeOptionsIR {
 
 impl Default for JoinTypeOptionsIR {
     fn default() -> Self {
-        Self::Equi { on: Vec::new() }
+        Self::Equi {
+            on: Vec::new(),
+            residual: None,
+        }
     }
 }
 
@@ -515,6 +526,16 @@ impl JoinTypeOptionsIR {
             IEJoin { ie_options, .. } | Range { ie_options, .. } => {
                 Ok(Some(JoinTypeOptions::IEJoin(ie_options)))
             },
+            Equi {
+                residual: Some(residual),
+                ..
+            } => {
+                let predicate = plan(&residual)?;
+
+                Ok(Some(JoinTypeOptions::Residual(CrossJoinOptions {
+                    predicate,
+                })))
+            },
             Equi { .. } => Ok(None),
             #[cfg(feature = "asof_join")]
             AsOf { .. } => Ok(None),
@@ -527,7 +548,7 @@ impl JoinTypeOptionsIR {
     /// They cannot share an or-pattern arm because rustc rejects `#[cfg]` on one alternative.
     pub fn key_pairs(&self) -> Option<&[(ExprIR, ExprIR)]> {
         match self {
-            Self::Equi { on } => Some(on),
+            Self::Equi { on, .. } => Some(on),
             #[cfg(feature = "asof_join")]
             Self::AsOf { on } => Some(on),
             _ => None,
@@ -537,7 +558,7 @@ impl JoinTypeOptionsIR {
     /// See [`Self::key_pairs`].
     fn key_pairs_mut(&mut self) -> Option<&mut Vec<(ExprIR, ExprIR)>> {
         match self {
-            Self::Equi { on } => Some(on),
+            Self::Equi { on, .. } => Some(on),
             #[cfg(feature = "asof_join")]
             Self::AsOf { on } => Some(on),
             _ => None,
@@ -604,6 +625,9 @@ impl JoinTypeOptionsIR {
     ///
     /// The order must stay in sync with [`Self::exprs_mut`].
     pub fn exprs(&self) -> Exprs<'_> {
+        if let Self::Equi { on, residual } = self {
+            return Exprs::pair_sides_then(on, residual.as_ref());
+        }
         if let Some(on) = self.key_pairs() {
             return Exprs::pair_sides(on);
         }
@@ -623,6 +647,9 @@ impl JoinTypeOptionsIR {
     /// See [`Self::exprs`]. Yields in the same order.
     pub fn exprs_mut(&mut self) -> ExprsMut<'_> {
         // Checked first so the mutable borrow does not span the match below.
+        if let Self::Equi { on, residual } = self {
+            return ExprsMut::pair_sides_then(on, residual.as_mut());
+        }
         if self.key_pairs().is_some() {
             return ExprsMut::pair_sides(self.key_pairs_mut().unwrap());
         }
@@ -667,14 +694,51 @@ impl JoinTypeOptionsIR {
     /// The match condition is exactly `left == right` for every key pair.
     ///
     /// True for [`Self::AsOf`] too: its strategy and tolerance live in [`JoinType::AsOf`],
-    /// not in the match condition.
+    /// not in the match condition. False once a residual is attached.
     pub fn is_pure_equi(&self) -> bool {
         !self.is_non_equi()
     }
 
     /// The match condition has a non-equality component.
+    ///
+    /// Use [`Self::key_pairs`] instead where what is needed is paired keys: a residual
+    /// join has those as well.
     pub fn is_non_equi(&self) -> bool {
-        self.key_pairs().is_none()
+        self.key_pairs().is_none() || self.has_residual()
+    }
+
+    pub fn has_residual(&self) -> bool {
+        self.residual().is_some()
+    }
+
+    /// The fused match condition, if any. See [`Self::Equi`].
+    pub fn residual(&self) -> Option<&ExprIR> {
+        match self {
+            Self::Equi { residual, .. } => residual.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn take_residual(&mut self) -> Option<ExprIR> {
+        match self {
+            Self::Equi { residual, .. } => residual.take(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn push_key_pair(&mut self, left: ExprIR, right: ExprIR) {
+        let Self::Equi { on, .. } = self else {
+            panic!("key pairs can only be added to equi joins")
+        };
+        on.push((left, right));
+    }
+
+    pub(crate) fn set_residual(&mut self, new: ExprIR) {
+        let Self::Equi { residual, .. } = self else {
+            panic!("residuals are only supported on equi joins")
+        };
+        assert!(residual.is_none(), "residual would be overwritten");
+        *residual = Some(new);
     }
 }
 

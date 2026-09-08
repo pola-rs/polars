@@ -138,7 +138,7 @@ fn reorderable(options: &JoinOptionsIR) -> bool {
         && matches!(args.validation, JoinValidation::ManyToMany)
         // A forced build side refers to this specific join, so leave it alone.
         && args.build_side.is_none()
-        && matches!(&options.options, JoinTypeOptionsIR::Equi { on } if !on.is_empty())
+        && matches!(&options.options, JoinTypeOptionsIR::Equi { on, residual: None } if !on.is_empty())
 }
 
 /// A leaf as found, with the renames that carry its columns into the root namespace.

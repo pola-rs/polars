@@ -772,6 +772,7 @@ fn visualize_plan_rec(
             left_on,
             right_on,
             args,
+            ..
         }
         | PhysNodeKind::SemiAntiJoin {
             input_left,
@@ -798,12 +799,24 @@ fn visualize_plan_rec(
                 } if args.how.is_anti() => "is-not-in",
                 _ => unreachable!(),
             };
-            let label = fmt_join_label(
+            let mut label = fmt_join_label(
                 base_label,
                 &fmt_exprs_to_label(left_on, expr_arena, FormatExprStyle::NoAliases),
                 &fmt_exprs_to_label(right_on, expr_arena, FormatExprStyle::NoAliases),
                 args,
             );
+            if let PhysNodeKind::EquiJoin {
+                residual: Some(residual),
+                ..
+            } = &phys_sm[node_key].kind
+            {
+                let residual = fmt_exprs_to_label(
+                    std::slice::from_ref(residual),
+                    expr_arena,
+                    FormatExprStyle::NoAliases,
+                );
+                label.push_str(&format!("\nresidual: {residual}"));
+            }
             (label, &[*input_left, *input_right][..])
         },
         #[cfg(feature = "iejoin")]

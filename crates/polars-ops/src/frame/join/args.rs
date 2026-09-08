@@ -243,6 +243,8 @@ pub enum JoinTypeOptions {
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
     Cross(CrossJoinOptions),
+    /// A predicate fused into an equi join's match condition, on top of its keys.
+    Residual(CrossJoinOptions),
 }
 
 impl JoinTypeOptions {
@@ -392,6 +394,10 @@ impl JoinType {
     /// Whether the physical join implementations can execute this `how` with the given
     /// (already-resolved) match-condition algorithm without silently dropping it.
     pub fn supports_non_equi_options(&self, options: &Option<JoinTypeOptions>) -> bool {
+        // A residual is only ever attached to an inner join; see `JoinTypeOptionsIR::Equi`.
+        if matches!(options, Some(JoinTypeOptions::Residual(_))) {
+            return matches!(self, JoinType::Inner);
+        }
         options.is_none()
             || matches!(self, JoinType::Inner | JoinType::Cross)
             || self.is_ie()

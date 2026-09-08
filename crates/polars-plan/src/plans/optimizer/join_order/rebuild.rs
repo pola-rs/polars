@@ -39,7 +39,7 @@ pub(super) fn rebuild(
         // Field-by-field rather than struct-update syntax, which would clone the
         // old key vector only to overwrite it.
         let options = Arc::new(JoinOptionsIR {
-            options: JoinTypeOptionsIR::Equi { on },
+            options: JoinTypeOptionsIR::Equi { on, residual: None },
             args: cluster.options.args.clone(),
             allow_parallel: cluster.options.allow_parallel,
             force_parallel: cluster.options.force_parallel,

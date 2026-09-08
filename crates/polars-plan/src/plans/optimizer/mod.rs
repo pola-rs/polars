@@ -32,6 +32,7 @@ mod ir_traversal;
 mod parquet_metadata_prune;
 mod predicate_pushdown;
 mod projection_pushdown;
+mod residual_join;
 mod simplify_expr;
 pub mod simplify_ordering;
 mod slice_pushdown_expr;
@@ -162,6 +163,11 @@ pub fn optimize(
         });
     };
 
+    // Everything below is written against `Filter`-over-join.
+    if get_or_init_members!().has_joins_or_unions {
+        residual_join::unfuse_residual_joins(root, ir_arena)?;
+    }
+
     let mut repeat_slice_pd_after_filter_pd = false;
 
     if opt_flags.slice_pushdown() {
@@ -216,6 +222,12 @@ pub fn optimize(
     // before projection pushdown so projections follow the final join order.
     if opt_flags.join_order() && get_or_init_members!().has_joins_or_unions {
         root = join_order::join_order(root, ir_arena, expr_arena)?;
+    }
+
+    // After join ordering, and before projection pushdown drops what only the residual
+    // reads.
+    if opt_flags.predicate_pushdown() && get_or_init_members!().has_joins_or_unions {
+        residual_join::fuse_residual_predicates(root, ir_arena, expr_arena)?;
     }
 
     if opt_flags.projection_pushdown() {

@@ -32,6 +32,170 @@ use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
+/// Where one of the residual's input columns is found at probe time.
+struct ResidualColumn {
+    is_left: bool,
+    /// Index into that side's payload.
+    index: usize,
+}
+
+/// A match condition on top of the equi keys, applied to candidate pairs.
+struct ResidualPredicate {
+    expr: StreamExpr,
+    /// The columns the predicate reads. It was compiled against exactly this schema, in
+    /// this order.
+    schema: Arc<Schema>,
+    columns: Vec<ResidualColumn>,
+}
+
+impl ResidualPredicate {
+    fn new(
+        expr: StreamExpr,
+        schema: Arc<Schema>,
+        left_payload_schema: &Schema,
+        right_payload_schema: &Schema,
+    ) -> PolarsResult<Self> {
+        let columns = schema
+            .iter_names()
+            .map(|name| {
+                // Payload schemas are keyed by output name.
+                let column = if let Some(index) = left_payload_schema.index_of(name) {
+                    ResidualColumn {
+                        is_left: true,
+                        index,
+                    }
+                } else if let Some(index) = right_payload_schema.index_of(name) {
+                    ResidualColumn {
+                        is_left: false,
+                        index,
+                    }
+                } else {
+                    polars_bail!(
+                        ColumnNotFound:
+                        "join residual reads '{name}', which the join does not output"
+                    )
+                };
+                Ok(column)
+            })
+            .try_collect_vec()?;
+
+        Ok(Self {
+            expr,
+            schema,
+            columns,
+        })
+    }
+
+    /// Drops the candidate pairs the predicate rejects.
+    ///
+    /// `probe_match` keeps earlier survivors in front, so only its tail from `probe_start`
+    /// is touched. Both vectors are compacted in step and stay parallel.
+    async fn retain_matches(
+        &self,
+        left_is_build: bool,
+        build_payload: &DataFrame,
+        build_match: &mut Vec<IdxSize>,
+        probe_payload: &DataFrame,
+        probe_match: &mut Vec<IdxSize>,
+        probe_start: usize,
+        state: &ExecutionState,
+    ) -> PolarsResult<()> {
+        let n = build_match.len();
+        assert_eq!(n, probe_match.len() - probe_start);
+        if n == 0 {
+            return Ok(());
+        }
+
+        // `probe_subset` can hand back far more candidates than the morsel limit, so the
+        // gathered predicate inputs are bounded here instead.
+        let batch_size = get_ideal_morsel_size();
+        let mut kept = 0;
+        let mut start = 0;
+
+        while start < n {
+            let end = (start + batch_size).min(n);
+            let len = end - start;
+
+            let columns = self
+                .columns
+                .iter()
+                .zip(self.schema.iter_names())
+                .map(|(column, name)| {
+                    let (payload, idxs) = if column.is_left == left_is_build {
+                        (build_payload, &build_match[start..end])
+                    } else {
+                        (
+                            probe_payload,
+                            &probe_match[probe_start + start..probe_start + end],
+                        )
+                    };
+                    let gathered =
+                        unsafe { payload.columns()[column.index].take_slice_unchecked(idxs) };
+                    gathered.with_name(name.clone())
+                })
+                .collect();
+            let df = unsafe { DataFrame::new_unchecked(len, columns) };
+
+            let mask = self
+                .expr
+                .evaluate_preserve_len_broadcast(&df, state)
+                .await?;
+            let mask = mask.as_materialized_series().bool()?.rechunk();
+            let mask = mask.downcast_as_array();
+            polars_ensure!(
+                mask.len() == len,
+                ShapeMismatch: "join residual produced {} values for {len} rows", mask.len(),
+            );
+
+            // A null is not a match.
+            let keep = match mask.validity() {
+                Some(validity) => mask.values() & validity,
+                None => mask.values().clone(),
+            };
+
+            // `kept <= start + i`, so this never overwrites a candidate still to be read.
+            for i in keep.true_idx_iter() {
+                build_match[kept] = build_match[start + i];
+                probe_match[probe_start + kept] = probe_match[probe_start + start + i];
+                kept += 1;
+            }
+
+            start = end;
+        }
+
+        build_match.truncate(kept);
+        probe_match.truncate(probe_start + kept);
+
+        Ok(())
+    }
+}
+
+/// Drop the candidate pairs the join's residual rejects, if it has one.
+async fn apply_residual(
+    params: &EquiJoinParams,
+    build_payload: &DataFrame,
+    build_match: &mut Vec<IdxSize>,
+    probe_payload: &DataFrame,
+    probe_match: &mut Vec<IdxSize>,
+    probe_start: usize,
+    state: &ExecutionState,
+) -> PolarsResult<()> {
+    let Some(residual) = &params.residual else {
+        return Ok(());
+    };
+    residual
+        .retain_matches(
+            params.left_is_build.unwrap(),
+            build_payload,
+            build_match,
+            probe_payload,
+            probe_match,
+            probe_start,
+            state,
+        )
+        .await
+}
+
 struct EquiJoinParams {
     left_is_build: Option<bool>,
     preserve_order_build: bool,
@@ -46,6 +210,7 @@ struct EquiJoinParams {
     left_payload_schema: Arc<Schema>,
     right_payload_schema: Arc<Schema>,
     args: JoinArgs,
+    residual: Option<ResidualPredicate>,
     random_state: PlRandomState,
     sample_limit: usize,
 }
@@ -798,6 +963,8 @@ impl ProbeState {
         let probe_limit = get_ideal_morsel_size() as IdxSize;
         let mark_matches = params.emit_unmatched_build();
         let emit_unmatched = params.emit_unmatched_probe();
+        // Unmatched-row bookkeeping would count a candidate before the residual runs.
+        assert!(params.residual.is_none() || (!mark_matches && !emit_unmatched));
 
         let (key_selectors, payload_selector, build_payload_schema, probe_payload_schema);
         if params.left_is_build.unwrap() {
@@ -833,6 +1000,11 @@ impl ProbeState {
                 select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
             let mut payload = select_payload(df, payload_selector);
             let mut payload_rechunked = false; // We don't eagerly rechunk because there might be no matches.
+            if params.residual.is_some() {
+                // A residual gathers from the payload on every probe call.
+                payload.rechunk_mut();
+                payload_rechunked = true;
+            }
             let mut total_matches = 0;
 
             // Use selectivity estimate to reserve for morsel builders.
@@ -888,6 +1060,7 @@ impl ProbeState {
 
                         while probe_group_start < probe_group_end {
                             let matches_before_limit = probe_limit - probe_match.len() as IdxSize;
+                            let probe_start = probe_match.len();
                             table_match.clear();
                             probe_group_start += p.hash_table.probe_subset(
                                 &hash_keys,
@@ -898,6 +1071,17 @@ impl ProbeState {
                                 emit_unmatched,
                                 matches_before_limit,
                             ) as usize;
+
+                            apply_residual(
+                                params,
+                                &p.payload,
+                                &mut table_match,
+                                &payload,
+                                &mut probe_match,
+                                probe_start,
+                                &state.in_memory_exec_state,
+                            )
+                            .await?;
 
                             if emit_unmatched {
                                 build_out.opt_gather_extend(
@@ -956,6 +1140,7 @@ impl ProbeState {
                         let mut offset = 0;
                         while offset < idxs_in_p.len() {
                             let matches_before_limit = probe_limit - probe_match.len() as IdxSize;
+                            let probe_start = probe_match.len();
                             table_match.clear();
                             offset += p.hash_table.probe_subset(
                                 &hash_keys,
@@ -966,6 +1151,17 @@ impl ProbeState {
                                 emit_unmatched,
                                 matches_before_limit,
                             ) as usize;
+
+                            apply_residual(
+                                params,
+                                &p.payload,
+                                &mut table_match,
+                                &payload,
+                                &mut probe_match,
+                                probe_start,
+                                &state.in_memory_exec_state,
+                            )
+                            .await?;
 
                             if table_match.is_empty() {
                                 continue;
@@ -1218,6 +1414,7 @@ impl EquiJoinNode {
         output_schema: Arc<Schema>,
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
+        residual: Option<(StreamExpr, Arc<Schema>)>,
         args: JoinArgs,
         num_pipelines: usize,
     ) -> PolarsResult<Self> {
@@ -1289,6 +1486,13 @@ impl EquiJoinNode {
         let left_payload_schema = Arc::new(select_schema(&left_input_schema, &left_payload_select));
         let right_payload_schema =
             Arc::new(select_schema(&right_input_schema, &right_payload_select));
+
+        let residual = residual
+            .map(|(expr, schema)| {
+                ResidualPredicate::new(expr, schema, &left_payload_schema, &right_payload_schema)
+            })
+            .transpose()?;
+
         Ok(Self {
             state,
             params: EquiJoinParams {
@@ -1304,6 +1508,7 @@ impl EquiJoinNode {
                 left_payload_schema,
                 right_payload_schema,
                 args,
+                residual,
                 random_state: PlRandomState::default(),
                 sample_limit,
             },

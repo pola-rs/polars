@@ -369,7 +369,7 @@ pub fn resolve_join(
         match &options.args.how {
             #[cfg(feature = "asof_join")]
             JoinType::AsOf(_) => JoinTypeOptionsIR::AsOf { on },
-            _ => JoinTypeOptionsIR::Equi { on },
+            _ => JoinTypeOptionsIR::Equi { on, residual: None },
         }
     };
 

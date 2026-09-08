@@ -515,12 +515,15 @@ pub fn phys_props(
             left_on,
             right_on,
             args,
-            ..
+            residual,
         } => (
             PhysicalPropsDescription::EquiJoin {
                 how: format!("{}", args.how),
                 left_on: fmt_exprs(left_on, expr_arena),
                 right_on: fmt_exprs(right_on, expr_arena),
+                residual: residual
+                    .as_ref()
+                    .map(|r| fmt_exprs(&[r.clone()], expr_arena)),
                 nulls_equal: args.nulls_equal,
                 coalesce: fmt_from_static_str(args.coalesce),
                 maintain_order: fmt_from_static_str(args.maintain_order),

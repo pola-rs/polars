@@ -248,7 +248,13 @@ impl<'a> IRDisplay<'a> {
                     write!(f, "\n{:indent$}END {name} JOIN", "")
                 } else {
                     let how = &options.args.how;
-                    write!(f, "{:indent$}{how} JOIN:{build_side}", "")?;
+                    let residual = match options.options.residual() {
+                        Some(residual) => {
+                            format!("\n{:indent$}RESIDUAL: {}", "", self.display_expr(residual))
+                        },
+                        None => String::new(),
+                    };
+                    write!(f, "{:indent$}{how} JOIN:{build_side}{residual}", "")?;
                     write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
                     self.with_root(*input_left)
                         ._format(f, sub_indent, seen_caches)?;
@@ -1050,6 +1056,10 @@ pub fn write_ir_non_recursive(
                 write!(f, "{:indent$}{how} JOIN", "")?;
                 write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
                 write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on}", "")?;
+                if let Some(residual) = options.options.residual() {
+                    let residual = residual.display(expr_arena);
+                    write!(f, "\n{:indent$}RESIDUAL: {residual}", "")?;
+                }
             }
 
             Ok(())

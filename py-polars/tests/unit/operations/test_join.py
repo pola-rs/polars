@@ -1685,9 +1685,8 @@ def test_join_where_predicate_type_coercion_21009() -> None:
     )
 
     plan = q1.explain().splitlines()
-    assert plan[0].strip().startswith("FILTER")
-    assert plan[1] == "FROM"
-    assert plan[2].strip().startswith("INNER JOIN")
+    assert plan[0].strip().startswith("INNER JOIN")
+    assert plan[1].strip().startswith("RESIDUAL")
 
     q2 = left_frame.join_where(
         right_frame,
@@ -1696,9 +1695,8 @@ def test_join_where_predicate_type_coercion_21009() -> None:
     )
 
     plan = q2.explain().splitlines()
-    assert plan[0].strip().startswith("FILTER")
-    assert plan[1] == "FROM"
-    assert plan[2].strip().startswith("INNER JOIN")
+    assert plan[0].strip().startswith("INNER JOIN")
+    assert plan[1].strip().startswith("RESIDUAL")
 
     assert_frame_equal(q1.collect(), q2.collect())
 
@@ -2629,8 +2627,6 @@ def test_join_filter_pushdown_inner_join() -> None:
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
     # Filters don't pass if they refer to columns from both tables
-    # TODO: In the optimizer we can add additional equalities into the join
-    # condition itself for some cases.
     q = lhs.join(rhs, on=["a"], how="inner", maintain_order="left_right").filter(
         pl.col("b") == pl.col("b_right")
     )
@@ -2647,12 +2643,13 @@ def test_join_filter_pushdown_inner_join() -> None:
 
     plan = q.explain()
 
+    # An equality spanning both sides becomes another key pair.
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
-        'FILTER col("b") == col("b_right")',
-        'LEFT PLAN ON: [col("a")]',
-        'RIGHT PLAN ON: [col("a")]',
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'RIGHT PLAN ON: [col("a"), col("b").alias("__POLARS_JOIN_KEY_0_b")]',
     ]
+    assert "RESIDUAL" not in plan
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)

@@ -184,6 +184,10 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 how: args.how.to_string(),
                 left_on: fmt_exprs(&left_on, expr_arena),
                 right_on: fmt_exprs(&right_on, expr_arena),
+                residual: o
+                    .options
+                    .residual()
+                    .map(|residual| fmt_predicate(residual, expr_arena)),
                 nulls_equal: args.nulls_equal,
                 coalesce: fmt_from_static_str(args.coalesce),
                 maintain_order: fmt_from_static_str(args.maintain_order),

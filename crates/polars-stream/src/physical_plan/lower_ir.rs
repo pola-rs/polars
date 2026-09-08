@@ -1066,6 +1066,10 @@ pub fn lower_ir(
             let mut tmp_right_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let args = options.args.clone();
             let options = options.options.clone();
+            // Only the hash equi join evaluates a residual natively; other strategies get
+            // a `Filter` on top, and the in-memory fallback applies it from `options`.
+            let residual = options.residual().cloned();
+            let mut residual_is_native = false;
             #[cfg(feature = "asof_join")]
             let asof_options = || match args.how {
                 JoinType::AsOf(ref asof_options) => asof_options,
@@ -1206,7 +1210,8 @@ pub fn lower_ir(
 
             // A non-equality match condition is only handled natively by the range-join
             // node; anything else falls back to the in-memory engine.
-            let match_condition_supported = options.is_pure_equi() || args.how.is_range();
+            let match_condition_supported =
+                options.is_pure_equi() || options.has_residual() || args.how.is_range();
 
             if (args.how.is_equi()
                 || args.how.is_semi_anti()
@@ -1375,16 +1380,20 @@ pub fn lower_ir(
                             output_bool: false,
                         },
                     )),
-                    _ if args.how.is_equi() => phys_sm.insert(PhysNode::new(
-                        output_schema,
-                        PhysNodeKind::EquiJoin {
-                            input_left: trans_input_left,
-                            input_right: trans_input_right,
-                            left_on: trans_left_on,
-                            right_on: trans_right_on,
-                            args: args.clone(),
-                        },
-                    )),
+                    _ if args.how.is_equi() => {
+                        residual_is_native = residual.is_some();
+                        phys_sm.insert(PhysNode::new(
+                            output_schema,
+                            PhysNodeKind::EquiJoin {
+                                input_left: trans_input_left,
+                                input_right: trans_input_right,
+                                left_on: trans_left_on,
+                                right_on: trans_right_on,
+                                args: args.clone(),
+                                residual: residual.clone(),
+                            },
+                        ))
+                    },
                     _ if args.how.is_cross() => phys_sm.insert(PhysNode::new(
                         output_schema,
                         PhysNodeKind::CrossJoin {
@@ -1396,6 +1405,15 @@ pub fn lower_ir(
                     _ => unreachable!(),
                 };
                 let mut stream = PhysStream::first(node);
+                if let Some(residual) = residual
+                    && !residual_is_native
+                {
+                    // A residual join never carries a slice.
+                    debug_assert!(args.slice.is_none());
+                    stream = build_filter_stream(
+                        stream, residual, expr_arena, phys_sm, expr_cache, ctx,
+                    )?;
+                }
                 if let Some((offset, len)) = args.slice {
                     stream = build_slice_stream(stream, offset, len, phys_sm);
                 }

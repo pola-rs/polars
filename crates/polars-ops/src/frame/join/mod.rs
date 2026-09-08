@@ -149,6 +149,23 @@ pub trait DataFrameJoinOps: IntoDf {
             args.how,
         );
 
+        // A correctness fallback: the streaming hash join applies the residual per
+        // candidate instead of materializing every pair.
+        if let Some(JoinTypeOptions::Residual(residual_options)) = &options {
+            debug_assert!(args.slice.is_none());
+            let predicate = residual_options.predicate.clone();
+            let joined = self._join_impl(
+                other,
+                selected_left,
+                selected_right,
+                args,
+                None,
+                _check_rechunk,
+                _verbose,
+            )?;
+            return predicate.apply(joined);
+        }
+
         #[cfg(feature = "cross_join")]
         if let Some(JoinTypeOptions::Cross(cross_options)) = &options {
             assert!(args.slice.is_none());

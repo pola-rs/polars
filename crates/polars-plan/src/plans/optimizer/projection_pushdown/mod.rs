@@ -6,7 +6,7 @@ use std::sync::Arc;
 use edge::Edge;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, DataType, ScratchIndexMap, ScratchIndexSet};
+use polars_core::prelude::{Column, DataType, PlIndexMap, ScratchIndexMap, ScratchIndexSet};
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
 use polars_ops::frame::{JoinCoalesce, JoinType};
@@ -898,10 +898,22 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     has_cross_filter = true;
                 }
 
+                // A residual reads output columns the final projection may not ask for.
+                let residual_names: Vec<PlSmallStr> = options
+                    .options
+                    .residual()
+                    .map(|residual| {
+                        aexpr_to_leaf_names_iter(residual.node(), self.expr_arena)
+                            .cloned()
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let reads_in_residual = |name: &PlSmallStr| residual_names.contains(name);
+
                 // Add accumulated projections
                 for output_name in output_schema_arc
                     .iter_names()
-                    .filter(|name| is_projected_in_output(name))
+                    .filter(|name| is_projected_in_output(name) || reads_in_residual(name))
                     .chain(pred_used_names_iter.into_iter().flatten())
                 {
                     match ExprOrigin::get_column_origin(
@@ -974,11 +986,13 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             return false;
                         };
 
+                        // Coalescing drops the right key, so a residual reading it counts
+                        // as a use.
                         let projected = if input_schema_left.contains(name.as_str()) {
                             let name = format_pl_smallstr!("{}{}", name, options.args.suffix());
-                            is_projected_in_output(&name)
+                            is_projected_in_output(&name) || reads_in_residual(&name)
                         } else {
-                            is_projected_in_output(name)
+                            is_projected_in_output(name) || reads_in_residual(name)
                         };
 
                         !projected
@@ -1029,6 +1043,40 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 let opt_projected_names = out_edge.compute_projected_names(output_schema_arc);
 
                 *output_schema_arc = new_output_schema;
+
+                // Narrowing an input can remove a name collision, dropping the suffix from
+                // the right column. The rename map below need not mention a column that
+                // only the residual reads.
+                if !residual_names.is_empty() {
+                    let mut renames: PlIndexMap<PlSmallStr, PlSmallStr> = PlIndexMap::default();
+
+                    for name in residual_names.iter() {
+                        if output_schema_arc.contains(name) {
+                            continue;
+                        }
+                        let Some(stripped) = name.strip_suffix(options.args.suffix().as_str())
+                        else {
+                            continue;
+                        };
+                        renames.insert(name.clone(), PlSmallStr::from_str(stripped));
+                    }
+
+                    if !renames.is_empty() {
+                        let JoinTypeOptionsIR::Equi {
+                            residual: Some(residual),
+                            ..
+                        } = &mut Arc::make_mut(options).options
+                        else {
+                            unreachable!()
+                        };
+
+                        residual.set_node(rename_columns(
+                            residual.node(),
+                            self.expr_arena,
+                            &renames,
+                        ));
+                    }
+                }
 
                 if let Some(projected_names) = &opt_projected_names {
                     let orig_to_new_name_map = self.rename_map.get();
