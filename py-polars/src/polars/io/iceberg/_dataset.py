@@ -409,6 +409,9 @@ class IcebergScanResolver:
                 metadata_location=tbl.metadata_location,
                 projected_iceberg_schema=projected_iceberg_schema,
                 kms_client=kms_client,
+                storage_properties=_rust_iceberg_storage_properties(
+                    tbl, self.table.iceberg_storage_properties
+                ),
                 snapshot_id=snapshot_id,
                 with_columns=projection,
                 n_rows=limit,
@@ -733,6 +736,7 @@ def _load_kms_client(
 def _scan_iceberg_rust_impl(
     metadata_location: str,
     kms_client: Any,
+    storage_properties: dict[str, str],
     snapshot_id: int | None,
     with_columns: list[str] | None = None,
     _predicate: bytes | None = None,
@@ -745,6 +749,7 @@ def _scan_iceberg_rust_impl(
     batches = _plr._scan_iceberg_rust(
         metadata_location,
         kms_client,
+        storage_properties,
         snapshot_id,
         with_columns,
         n_rows,
@@ -758,6 +763,7 @@ class _RustIcebergScanData(_ResolvedScanDataBase):
     metadata_location: str
     projected_iceberg_schema: pyiceberg.schema.Schema
     kms_client: Any
+    storage_properties: dict[str, str]
     snapshot_id: int | None
     with_columns: list[str] | None
     n_rows: int | None
@@ -770,6 +776,7 @@ class _RustIcebergScanData(_ResolvedScanDataBase):
             _scan_iceberg_rust_impl,
             self.metadata_location,
             self.kms_client,
+            self.storage_properties,
             self.snapshot_id,
             with_columns=self.with_columns,
             n_rows=self.n_rows,
@@ -817,6 +824,124 @@ def _convert_iceberg_to_object_store_storage_options(
         # Otherwise, unknown keys are ignored / not passed. This is to avoid
         # interfering with credential provider auto-init, which bails on
         # unknown keys.
+
+    return storage_options
+
+
+def _rust_iceberg_storage_properties(
+    table: pyiceberg.table.Table,
+    storage_properties: StorageOptionsDict | None,
+) -> dict[str, str]:
+    properties = _convert_iceberg_to_rust_storage_options(
+        table.metadata_location, getattr(table.io, "properties", {})
+    )
+    properties.update(
+        _convert_iceberg_to_rust_storage_options(
+            table.metadata_location, getattr(table, "config", {})
+        )
+    )
+    properties.update(
+        _convert_iceberg_to_rust_storage_options(
+            table.metadata_location, storage_properties or {}
+        )
+    )
+    return properties
+
+
+def _convert_iceberg_to_rust_storage_options(
+    location: str, properties: dict[str, Any]
+) -> dict[str, str]:
+    storage_options = {key: str(value) for key, value in properties.items()}
+
+    aliases = {
+        "client.access-key-id": "s3.access-key-id",
+        "client.secret-access-key": "s3.secret-access-key",
+        "client.session-token": "s3.session-token",
+        "client.role-arn": "client.assume-role.arn",
+        "client.role-session-name": "client.assume-role.session-name",
+        "s3.role-arn": "client.assume-role.arn",
+        "s3.role-session-name": "client.assume-role.session-name",
+        "s3.anonymous": "s3.allow-anonymous",
+        "gcs.service.host": "gcs.service.path",
+    }
+
+    scheme = location.partition(":")[0].lower()
+    if scheme in {"s3", "s3a", "s3n"}:
+        aliases.update(
+            {
+                "aws_endpoint": "s3.endpoint",
+                "aws_endpoint_url": "s3.endpoint",
+                "endpoint": "s3.endpoint",
+                "endpoint_url": "s3.endpoint",
+                "aws_access_key_id": "s3.access-key-id",
+                "access_key_id": "s3.access-key-id",
+                "aws_secret_access_key": "s3.secret-access-key",
+                "secret_access_key": "s3.secret-access-key",
+                "aws_session_token": "s3.session-token",
+                "aws_token": "s3.session-token",
+                "session_token": "s3.session-token",
+                "aws_region": "s3.region",
+                "region": "s3.region",
+            }
+        )
+    elif scheme in {"gs", "gcs"}:
+        aliases.update(
+            {
+                "bearer_token": "gcs.oauth2.token",
+                "google_service_account_key": "gcs.credentials-json",
+                "service_account_key": "gcs.credentials-json",
+                "google_url": "gcs.service.path",
+            }
+        )
+    elif scheme in {"abfs", "abfss", "wasb", "wasbs"}:
+        aliases.update(
+            {
+                "azure_storage_account_name": "adls.account-name",
+                "account_name": "adls.account-name",
+                "azure_storage_account_key": "adls.account-key",
+                "azure_storage_access_key": "adls.account-key",
+                "azure_storage_master_key": "adls.account-key",
+                "access_key": "adls.account-key",
+                "account_key": "adls.account-key",
+                "master_key": "adls.account-key",
+                "azure_storage_sas_key": "adls.sas-token",
+                "azure_storage_sas_token": "adls.sas-token",
+                "sas_key": "adls.sas-token",
+                "sas_token": "adls.sas-token",
+                "azure_storage_tenant_id": "adls.tenant-id",
+                "azure_storage_authority_id": "adls.tenant-id",
+                "azure_tenant_id": "adls.tenant-id",
+                "azure_authority_id": "adls.tenant-id",
+                "tenant_id": "adls.tenant-id",
+                "authority_id": "adls.tenant-id",
+                "azure_storage_client_id": "adls.client-id",
+                "azure_client_id": "adls.client-id",
+                "client_id": "adls.client-id",
+                "azure_storage_client_secret": "adls.client-secret",
+                "azure_client_secret": "adls.client-secret",
+                "client_secret": "adls.client-secret",
+                "azure_storage_authority_host": "adls.authority-host",
+                "azure_authority_host": "adls.authority-host",
+                "authority_host": "adls.authority-host",
+            }
+        )
+
+    for source, target in aliases.items():
+        if source in storage_options:
+            storage_options.setdefault(target, storage_options[source])
+
+    if "s3.path-style-access" not in storage_options:
+        for key in (
+            "s3.force-virtual-addressing",
+            "aws_virtual_hosted_style_request",
+            "virtual_hosted_style_request",
+        ):
+            if key in storage_options:
+                value = storage_options[key].lower()
+                storage_options["s3.path-style-access"] = str(
+                    value not in {"1", "on", "true", "yes", "y"}
+                ).lower()
+                break
 
     return storage_options
 

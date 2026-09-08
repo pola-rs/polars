@@ -1,15 +1,17 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::mem::ManuallyDrop;
 use std::sync::Arc;
 
 use ::iceberg::encryption::{GeneratedKey, KeyManagementClient, SensitiveBytes};
-use ::iceberg::io::FileIO;
+use ::iceberg::io::{FileIO, FileIOBuilder};
 use ::iceberg::scan::ArrowRecordBatchStream;
 use ::iceberg::spec::TableMetadata;
 use ::iceberg::table::Table;
 use ::iceberg::{Error, ErrorKind, NamespaceIdent, Result, Runtime, TableIdent};
 use arrow_array::RecordBatch;
 use futures::StreamExt;
+use iceberg_storage_opendal::OpenDalResolvingStorageFactory;
 use polars_core::prelude::{DataFrame, IntoColumn, PolarsResult, Series};
 use polars_core::utils::arrow::ffi;
 use polars_error::polars_err;
@@ -133,6 +135,7 @@ pub fn _scan_iceberg_rust(
     py: Python<'_>,
     metadata_location: String,
     kms_client: Py<PyAny>,
+    storage_properties: HashMap<String, String>,
     snapshot_id: Option<i64>,
     columns: Option<Vec<String>>,
     n_rows: Option<usize>,
@@ -148,7 +151,7 @@ pub fn _scan_iceberg_rust(
     let stream = py
         .detach(|| {
             polars_core::runtime::ASYNC.block_on(async move {
-                let file_io = FileIO::new_with_fs();
+                let file_io = file_io_for_location(&metadata_location, storage_properties)?;
                 let metadata = TableMetadata::read_from(&file_io, &metadata_location).await?;
                 let table = Table::builder()
                     .metadata(metadata)
@@ -185,6 +188,29 @@ pub fn _scan_iceberg_rust(
             }),
         },
     )
+}
+
+fn file_io_for_location(
+    location: &str,
+    storage_properties: HashMap<String, String>,
+) -> Result<FileIO> {
+    let scheme = location
+        .split_once("://")
+        .map(|(scheme, _)| scheme)
+        .unwrap_or("file");
+
+    match scheme {
+        "file" => Ok(FileIO::new_with_fs()),
+        "s3" | "s3a" | "s3n" | "gs" | "gcs" | "abfs" | "abfss" | "wasb" | "wasbs" => Ok(
+            FileIOBuilder::new(Arc::new(OpenDalResolvingStorageFactory::new()))
+                .with_props(storage_properties)
+                .build(),
+        ),
+        _ => Err(Error::new(
+            ErrorKind::FeatureUnsupported,
+            format!("unsupported Iceberg storage scheme: {scheme}"),
+        )),
+    }
 }
 
 fn to_py_err(error: Error) -> PyErr {
@@ -331,6 +357,32 @@ mod tests {
                 .iter()
                 .collect::<Vec<_>>(),
             [Some("a"), Some("b"), Some("c")]
+        );
+    }
+
+    #[test]
+    fn test_file_io_for_cloud_locations() {
+        for location in [
+            "s3://bucket/metadata.json",
+            "gs://bucket/metadata.json",
+            "abfss://container@account.dfs.core.windows.net/metadata.json",
+        ] {
+            file_io_for_location(location, HashMap::new())
+                .unwrap()
+                .new_input(location)
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn test_file_io_for_unsupported_location() {
+        let error =
+            file_io_for_location("https://example.com/metadata.json", HashMap::new()).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported Iceberg storage scheme: https")
         );
     }
 }

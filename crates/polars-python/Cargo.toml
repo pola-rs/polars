@@ -47,6 +47,7 @@ flate2 = { workspace = true }
 futures = { workspace = true, optional = true }
 hashbrown = { workspace = true }
 iceberg = { workspace = true, optional = true }
+iceberg-storage-opendal = { workspace = true, features = ["opendal-azdls", "opendal-gcs", "opendal-s3"], optional = true }
 itoa = { workspace = true }
 libc = { workspace = true }
 ndarray = { workspace = true }
@@ -151,7 +152,7 @@ catalog = ["polars-lazy/catalog"]
 parquet = ["polars/parquet", "polars-parquet", "polars-mem-engine/parquet"]
 ipc = ["polars/ipc", "polars-mem-engine/ipc"]
 ipc_streaming = ["polars/ipc_streaming"]
-iceberg = ["dep:arrow-array", "dep:async-trait", "dep:futures", "dep:iceberg", "dep:tokio"]
+iceberg = ["dep:arrow-array", "dep:async-trait", "dep:futures", "dep:iceberg", "dep:iceberg-storage-opendal", "dep:tokio"]
 is_in = ["polars/is_in"]
 json = [
   "polars/serde",

@@ -76,9 +76,9 @@ def scan_iceberg(
         unwrapped key as bytes. The method is invoked synchronously from a
         Polars worker thread.
 
-        Encrypted scan support is unstable. It currently supports local
-        filesystem tables only, and predicates are evaluated by Polars after
-        scanning rather than pushed into the Iceberg reader.
+        Encrypted scan support is unstable. It supports local filesystem, S3,
+        GCS, and Azure Data Lake Storage tables. Predicates are evaluated by
+        Polars after scanning rather than pushed into the Iceberg reader.
     reader_override
         Overrides the reader used to read the data.
 
