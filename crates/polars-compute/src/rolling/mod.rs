@@ -84,6 +84,9 @@ fn det_offsets_center(i: Idx, window_size: WindowSize, len: Len) -> (usize, usiz
 }
 
 /// Compute the validity for a rolling aggregation.
+///
+/// `weights` may only be passed if the weights as a whole don't sum to zero; the caller is
+/// expected to reject that up front, since it makes the aggregation undefined everywhere.
 fn create_validity<Fo>(
     min_periods: usize,
     len: usize,
@@ -97,7 +100,7 @@ where
 {
     // Short path:
     // If there are no zero weights, then there can be no invalid values due to weights.
-    let weights = weights.filter(|w| w.is_empty() || w.iter().any(|&w| w == 0.0));
+    let weights = weights.filter(|w| w.iter().any(|&w| w == 0.0));
 
     if min_periods <= 1 && weights.is_none() {
         return None;
@@ -129,15 +132,37 @@ where
         }
     }
 
-    // Set the null values for windows that only cover zero weights.
+    // ASSUMPTION: the sum of *all* weights is not 0.
+    // This should be caught by the DSL.
+    // This only leaves an invalid possibility if a truncated window's sums are zero.
     if let Some(weights) = weights {
+        let covers_only_zero_weights = |i: usize, start: usize, win_len: usize| {
+            let weights_start =
+                no_nulls::det_weights_start(centered, window_size, i, start, win_len);
+            weights[weights_start..weights_start + win_len]
+                .iter()
+                .all(|&w| w == 0.0)
+        };
+
+        // Head.
         for i in 0..len {
             let (start, end) = det_offsets_fn(i, window_size, len);
             let win_len = end - start;
-            let weights_start =
-                no_nulls::det_weights_start(centered, window_size, i, start, win_len);
-            let covered = &weights[weights_start..weights_start + win_len];
-            if covered.iter().all(|&w| w == 0.0) {
+            if win_len == window_size {
+                break;
+            }
+            if covers_only_zero_weights(i, start, win_len) {
+                validity.set(i, false)
+            }
+        }
+        // Tail.
+        for i in (0..len).rev() {
+            let (start, end) = det_offsets_fn(i, window_size, len);
+            let win_len = end - start;
+            if win_len == window_size {
+                break;
+            }
+            if covers_only_zero_weights(i, start, win_len) {
                 validity.set(i, false)
             }
         }
