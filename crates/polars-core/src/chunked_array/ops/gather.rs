@@ -205,36 +205,26 @@ where
         let targets_have_nulls = ca.null_count() > 0;
         let targets: Vec<_> = ca.downcast_iter().collect();
 
-        // A lone chunk that is scalar throughout repeats one element, so every index picks that
-        // element again and the indices are never read — only their validity, which is what makes
-        // a gathered element null.
-        let scalar_target = match targets[..] {
-            [target] if !target.is_empty() && PlArray::is_scalar(target) => Some(target),
-            _ => None,
-        };
-
         let mut out = if let [target] = targets[..]
             && target.is_scalar()
         {
+            let target_is_null = target.is_null(0);
             ChunkedArray::from_chunk_iter_like(
                 ca,
                 indices.downcast_iter().map(|idx_arr| {
-                    target
-                        .new_from_index_typed(0, idx_arr.len())
-                        .with_validity_typed(idx_arr.validity().map(Into::into))
+                    let mut arr = target.new_from_index_typed(0, idx_arr.len());
+
+                    if !target_is_null {
+                        arr = arr.with_validity_typed(idx_arr.validity().map(Into::into))
+                    }
+
+                    arr
                 }),
             )
         } else {
             ChunkedArray::from_chunk_iter_like(
                 ca,
                 indices.downcast_iter().map(|idx_arr| {
-                    if let Some(target) = scalar_target {
-                        let gathered = target.new_from_index_typed(0, idx_arr.len());
-                        let validity =
-                            combine_validities_and(gathered.validity(), idx_arr.validity());
-                        return gathered.with_validity_typed(validity);
-                    }
-
                     if let Some(v) = idx_arr.scalar_value() {
                         return if let Some(idx) = v {
                             gather_idx_array_unchecked(&targets, targets_have_nulls, &[idx])
