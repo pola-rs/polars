@@ -570,6 +570,13 @@ pub fn cast(
                         It was removed in Polars 2.0. Use `str.to_date()` instead."
                     );
                 },
+                Time64(_) | Time32(_) => {
+                    polars_bail!(
+                        InvalidOperation:
+                        "casting from string to time is not supported.\n\
+                        It was removed in Polars 2.0. Use `str.to_time()` instead."
+                    );
+                },
                 #[cfg(feature = "dtype-decimal")]
                 Decimal(precision, scale) => {
                     Ok(binview_to_decimal(&arr.to_binview(), *precision, *scale).to_boxed())
