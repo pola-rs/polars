@@ -233,18 +233,6 @@ impl PlBinaryViewArray {
         }
     }
 
-    /// The number of elements in this array.
-    #[inline(always)]
-    pub const fn len(&self) -> usize {
-        self.length
-    }
-
-    /// Whether this array holds no elements.
-    #[inline(always)]
-    pub const fn is_empty(&self) -> bool {
-        self.length == 0
-    }
-
     /// The backing views buffer, if it holds one slot per element.
     #[inline]
     pub fn flat_views(&self) -> Option<&Buffer<View>> {

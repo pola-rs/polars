@@ -204,18 +204,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         }
     }
 
-    /// The number of elements in this array.
-    #[inline(always)]
-    pub const fn len(&self) -> usize {
-        self.length
-    }
-
-    /// Whether this array holds no elements.
-    #[inline(always)]
-    pub const fn is_empty(&self) -> bool {
-        self.length == 0
-    }
-
     /// The values of this array, in whichever representation the backing buffer is in.
     #[inline]
     pub(crate) fn values_bytes(&self) -> bytes::ValuesBytes<'_, bytes::Bytes<T>> {

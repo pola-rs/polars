@@ -235,18 +235,6 @@ impl PlBinaryArray {
         }
     }
 
-    /// The number of elements in this array.
-    #[inline(always)]
-    pub const fn len(&self) -> usize {
-        self.length
-    }
-
-    /// Whether this array holds no elements.
-    #[inline(always)]
-    pub const fn is_empty(&self) -> bool {
-        self.length == 0
-    }
-
     /// The backing values buffer, holding the bytes the offsets cut the elements out of.
     #[inline(always)]
     pub const fn values(&self) -> &Buffer<u8> {

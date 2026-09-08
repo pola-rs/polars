@@ -3,8 +3,8 @@
 /// Implements the inherent methods every array of this crate shares.
 ///
 /// These are the methods whose body says nothing about the array they are on: the ones that read
-/// the validity mask, the ones that replace it, and the ones that slice or repeat an array
-/// through the methods that do the work — `slice_unchecked`, `new_from_index_unchecked` and
+/// its `length` field, the ones that read the validity mask, the ones that replace it, and the
+/// ones that slice or repeat an array through the methods that do the work — `slice_unchecked`, `new_from_index_unchecked` and
 /// `new_full_null`, which every array writes for itself.
 ///
 /// The element accessors are written as well where the value type of the elements is given; an
@@ -37,6 +37,18 @@ macro_rules! impl_array_methods {
     };
     ([$($generics:tt)*] $array:ty $(,)?) => {
         impl<$($generics)*> $array {
+            /// The number of elements in this array.
+            #[inline(always)]
+            pub const fn len(&self) -> usize {
+                self.length
+            }
+
+            /// Whether this array holds no elements.
+            #[inline(always)]
+            pub const fn is_empty(&self) -> bool {
+                self.length == 0
+            }
+
             /// Returns whether the element at `i` is valid (non-null).
             #[inline]
             pub fn is_valid(&self, i: usize) -> bool {

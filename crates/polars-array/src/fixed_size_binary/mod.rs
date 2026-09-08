@@ -234,18 +234,6 @@ impl PlFixedSizeBinaryArray {
         }
     }
 
-    /// The number of elements in this array.
-    #[inline(always)]
-    pub const fn len(&self) -> usize {
-        self.length
-    }
-
-    /// Whether this array holds no elements.
-    #[inline(always)]
-    pub const fn is_empty(&self) -> bool {
-        self.length == 0
-    }
-
     /// The number of bytes in every element.
     #[inline(always)]
     pub const fn width(&self) -> usize {
