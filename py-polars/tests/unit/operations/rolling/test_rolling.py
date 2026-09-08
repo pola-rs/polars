@@ -272,6 +272,12 @@ def test_rolling_kurtosis() -> None:
     )
 
 
+@pytest.mark.parametrize("rolling_fn", ["rolling_skew", "rolling_kurtosis"])
+def test_rolling_skew_kurtosis_empty_28515(rolling_fn: str) -> None:
+    result = getattr(pl.Series("x", [], dtype=pl.Int32), rolling_fn)(window_size=3)
+    assert_series_equal(result, pl.Series("x", [], dtype=pl.Float64))
+
+
 @pytest.mark.parametrize("time_zone", [None, "America/Chicago"])
 @pytest.mark.parametrize(
     ("rolling_fn", "expected_values", "expected_dtype"),

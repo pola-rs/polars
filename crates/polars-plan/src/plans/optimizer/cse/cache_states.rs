@@ -9,6 +9,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 
 use crate::dsl::Expr;
+use crate::plans::aexpr::filter_constraint::widen_over_predicates;
 use crate::plans::deep_copy::deep_copy_ir_delete_cache_id;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::visitor::AexprNode;
@@ -354,12 +355,7 @@ pub(crate) fn set_cache_states(
                     }
 
                     // The filter (if any) that blocked pushdown sits directly above the cache.
-                    let filter_predicate = get_filter_node(*parents, lp_arena).map(|filter_node| {
-                        let IR::Filter { predicate, .. } = lp_arena.get(filter_node) else {
-                            unreachable!()
-                        };
-                        predicate.clone()
-                    });
+                    let filter_predicate = get_filter_predicate(*parents, lp_arena).cloned();
 
                     // Copy the subplan with this cache removed and re-run predicate pushdown on
                     // the copy. Nested caches of other ids are preserved.
@@ -483,6 +479,22 @@ pub(crate) fn set_cache_states(
 
                     lp_arena.replace(filter_node, new_lp);
                 }
+            } else if let Some(narrowed) = narrow_shared_subplan(
+                &v.children,
+                &v.parents,
+                pushdown_maintain_errors,
+                lp_arena,
+                expr_arena,
+            ) {
+                let start_lp = lp_arena.take(narrowed);
+                let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
+                lp_arena.replace(narrowed, lp);
+                for &cache in &v.cache_nodes {
+                    let IR::Cache { input, .. } = lp_arena.get_mut(cache) else {
+                        unreachable!()
+                    };
+                    *input = narrowed;
+                }
             } else {
                 let child = *v.children.first().unwrap();
                 let child_lp = lp_arena.take(child);
@@ -495,6 +507,50 @@ pub(crate) fn set_cache_states(
         }
     }
     Ok(())
+}
+
+/// Filters the shared subplan by a conjunction that every reference's filter
+/// implies, so rows no reference keeps are not materialized. Each reference keeps
+/// its own filter above.
+///
+/// Returns the node the caches should read, or `None` when a reference has no
+/// filter above it - it needs every row - or when the filters share no bound.
+fn narrow_shared_subplan(
+    children: &[Node],
+    parents: &[TwoParents],
+    maintain_errors: bool,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<Node> {
+    let predicates = parents
+        .iter()
+        .map(|parents| Some(get_filter_predicate(*parents, lp_arena)?.node()))
+        .collect::<Option<Vec<_>>>()?;
+
+    let input = *children.first().unwrap();
+    let schema = lp_arena.get(input).schema(lp_arena).into_owned();
+    let widened = widen_over_predicates(&predicates, &schema, maintain_errors, expr_arena);
+    if widened.is_empty() {
+        return None;
+    }
+
+    // One filter per comparison: pushdown moves a conjunct only when it stands alone.
+    let mut node = input;
+    for predicate in widened {
+        node = lp_arena.add(IR::Filter {
+            input: node,
+            predicate: ExprIR::from_node(predicate, expr_arena),
+        });
+    }
+    Some(node)
+}
+
+fn get_filter_predicate(parents: TwoParents, lp_arena: &Arena<IR>) -> Option<&ExprIR> {
+    let filter = get_filter_node(parents, lp_arena)?;
+    let IR::Filter { predicate, .. } = lp_arena.get(filter) else {
+        unreachable!()
+    };
+    Some(predicate)
 }
 
 fn get_filter_node(parents: TwoParents, lp_arena: &Arena<IR>) -> Option<Node> {

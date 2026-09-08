@@ -40,6 +40,10 @@ build-release: .venv  ## Compile and install Python Polars binary with optimizat
 build-nodebug-release: .venv  ## Same as build-release, but without any debug symbols at all (a bit faster to build)
 	@$(MAKE) -s -C .. $@
 
+.PHONY: build-fast-release
+build-fast-release: .venv  ## Same as build-release, but without LTO (much faster to build, a bit slower to run)
+	@$(MAKE) -s -C .. $@
+
 .PHONY: build-debug-release
 build-debug-release: .venv  ## Same as build-release, but with full debug symbols turned on (a bit slower to build)
 	@$(MAKE) -s -C .. $@
@@ -76,9 +80,9 @@ pre-commit: fmt lint clippy  ## Run all code formatting, lint, and clippy qualit
 test: .venv build  ## Run fast unittests
 	POLARS_TIMEOUT_MS=60000 $(VENV_BIN)/pytest -n auto $(PYTEST_ARGS)
 
-.PHONY: test-streaming
-test-streaming: .venv build  ## Run fast unittests with the streaming engine
-	POLARS_TIMEOUT_MS=60000 POLARS_AUTO_STREAMING=1 $(VENV_BIN)/pytest -n auto -m "not may_fail_auto_streaming and not docs and not benchmark and not ci_only" $(PYTEST_ARGS)
+.PHONY: test-in-memory
+test-in-memory: .venv build  ## Run fast unittests with the in-memory engine
+	POLARS_TIMEOUT_MS=60000 POLARS_ENGINE_AFFINITY=in-memory $(VENV_BIN)/pytest -n auto $(PYTEST_ARGS)
 
 .PHONY: test-all
 test-all: .venv build  ## Run all tests

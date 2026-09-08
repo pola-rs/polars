@@ -7,7 +7,10 @@ use polars_utils::arena::{Arena, Node};
 
 use super::cluster::Cluster;
 use crate::plans::schema::det_join_schema;
-use crate::plans::{AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, ProjectionOptions};
+use crate::plans::{
+    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, ProjectionOptions, SchemaRef,
+};
+use crate::utils::check_input_node;
 
 /// Emit a left-deep join chain over `order`, projected back to the cluster's
 /// original schema.
@@ -25,6 +28,9 @@ pub(super) fn rebuild(
     let mut acc_schema = cluster.leaves[order[0]].schema.clone();
     let mut is_placed = vec![false; cluster.leaves.len()];
     is_placed[order[0]] = true;
+
+    let mut pending = cluster.residuals.clone();
+    acc_node = apply_ready_residuals(&mut pending, &acc_schema, acc_node, ir_arena, expr_arena);
 
     for &next in &order[1..] {
         let leaf = &cluster.leaves[next];
@@ -49,6 +55,17 @@ pub(super) fn rebuild(
         });
         acc_schema = schema;
         is_placed[next] = true;
+
+        acc_node = apply_ready_residuals(&mut pending, &acc_schema, acc_node, ir_arena, expr_arena);
+    }
+
+    // A coalescing join folds its key columns away, so a residual reading one is
+    // never ready. It still has to be applied.
+    for predicate in pending {
+        acc_node = ir_arena.add(IR::Filter {
+            input: acc_node,
+            predicate,
+        });
     }
 
     if !cluster.restore.is_empty() {
@@ -89,4 +106,27 @@ fn keys_joining(cluster: &Cluster, is_placed: &[bool], candidate: usize) -> Vec<
         }
     }
     on
+}
+
+/// Apply every pending residual whose columns the chain now carries, innermost first.
+fn apply_ready_residuals(
+    pending: &mut Vec<ExprIR>,
+    schema: &SchemaRef,
+    mut acc_node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> Node {
+    let mut i = 0;
+    while i < pending.len() {
+        if check_input_node(pending[i].node(), schema, expr_arena) {
+            let predicate = pending.remove(i);
+            acc_node = ir_arena.add(IR::Filter {
+                input: acc_node,
+                predicate,
+            });
+        } else {
+            i += 1;
+        }
+    }
+    acc_node
 }

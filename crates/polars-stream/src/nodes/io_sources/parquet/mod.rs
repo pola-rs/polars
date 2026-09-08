@@ -4,7 +4,7 @@ use arrow::datatypes::ArrowSchemaRef;
 use async_trait::async_trait;
 use polars_async::executor::{self};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
-use polars_core::prelude::ArrowSchema;
+use polars_core::prelude::{ArrowSchema, DataType};
 use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_error::{PolarsResult, polars_err};
@@ -13,9 +13,10 @@ use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::{BufferByteSource, DynByteSource, DynByteSourceBuilder};
-use polars_parquet::read::schema::infer_schema_with_options;
+use polars_parquet::read::schema::{SchemaInferenceOptions, infer_schema_with_options};
 use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
+use polars_utils::aliases::PlHashMap;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::slice_enum::Slice;
 
@@ -54,6 +55,49 @@ pub struct ParquetFileReader {
 
     /// Set during initialize()
     init_data: Option<InitializedState>,
+}
+
+fn schema_inference_options(config: &ParquetOptions) -> SchemaInferenceOptions {
+    let Some(schema) = config.schema.as_ref() else {
+        return SchemaInferenceOptions::default();
+    };
+    let default = Arc::new(SchemaInferenceOptions::default());
+
+    SchemaInferenceOptions {
+        int96_coerce_to_timeunit: default.int96_coerce_to_timeunit,
+        nested: schema
+            .iter()
+            .map(|(name, dtype)| (name.clone(), int96_options(dtype, &default)))
+            .collect(),
+        default: Some(default),
+    }
+}
+
+fn int96_options(
+    mut dtype: &DataType,
+    default: &Arc<SchemaInferenceOptions>,
+) -> SchemaInferenceOptions {
+    while let Some(inner) = dtype.inner_dtype() {
+        dtype = inner;
+    }
+
+    let (int96_coerce_to_timeunit, nested) = match dtype {
+        DataType::Datetime(time_unit, _) => (time_unit.to_arrow(), PlHashMap::default()),
+        DataType::Struct(fields) => (
+            default.int96_coerce_to_timeunit,
+            fields
+                .iter()
+                .map(|f| (f.name().clone(), int96_options(f.dtype(), default)))
+                .collect(),
+        ),
+        _ => (default.int96_coerce_to_timeunit, PlHashMap::default()),
+    };
+
+    SchemaInferenceOptions {
+        int96_coerce_to_timeunit,
+        nested,
+        default: Some(default.clone()),
+    }
 }
 
 struct RowGroupPrefetchSync {
@@ -127,7 +171,10 @@ impl FileReader for ParquetFileReader {
             )?)
         };
 
-        let file_schema = Arc::new(infer_schema_with_options(&file_metadata, &None)?);
+        let file_schema = Arc::new(infer_schema_with_options(
+            &file_metadata,
+            &schema_inference_options(&self.config),
+        )?);
 
         self.init_data = Some(InitializedState {
             file_metadata,

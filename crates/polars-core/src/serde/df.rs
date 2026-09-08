@@ -76,13 +76,6 @@ impl DataFrame {
         Ok(())
     }
 
-    pub fn serialize_to_bytes(&mut self) -> PolarsResult<Vec<u8>> {
-        let mut buf = vec![];
-        self.serialize_into_writer(&mut buf)?;
-
-        Ok(buf)
-    }
-
     pub fn deserialize_from_reader<T: Read + Seek>(reader: &mut T) -> PolarsResult<Self> {
         let mut md = read_stream_metadata(reader)?;
         let pl_schema = Schema::from_arrow_schema(&md.schema);
