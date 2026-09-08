@@ -1,4 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+use std::borrow::Cow;
 use std::sync::OnceLock;
 
 use arrow::bitmap::Bitmap;
@@ -46,7 +47,7 @@ pub fn check_bounds_ca(indices: &IdxCa, len: IdxSize) -> PolarsResult<()> {
             return a.null_count() == a.len() || check_bounds(&[index], len).is_ok();
         }
 
-        let a = a.as_flat().expect("values that are not scalar are flat");
+        let a = a.to_flat();
         if a.null_count() == 0 {
             check_bounds(a.as_slice(), len).is_ok()
         } else {

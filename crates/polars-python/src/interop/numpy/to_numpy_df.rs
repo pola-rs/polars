@@ -87,7 +87,7 @@ fn try_df_to_numpy_view(py: Python<'_>, df: &DataFrame, allow_nulls: bool) -> Op
     if !allow_nulls && df.columns().iter().any(|s| s.null_count() > 0) {
         return None;
     }
-    if !check_df_columns_contiguous(df) {
+    if !check_df_columns_contiguous_and_flat(df) {
         return None;
     }
 
@@ -123,7 +123,7 @@ fn check_df_dtypes_support_view(df: &DataFrame) -> Option<&DataType> {
     Some(first_dtype)
 }
 /// Returns whether all columns of the dataframe are contiguous in memory.
-fn check_df_columns_contiguous(df: &DataFrame) -> bool {
+fn check_df_columns_contiguous_and_flat(df: &DataFrame) -> bool {
     let columns = df.columns();
 
     if columns
@@ -194,7 +194,7 @@ where
         .as_materialized_series()
         .unpack()
         .unwrap();
-    // Flat, since that is what `check_df_columns_contiguous` let this path be taken for.
+    // Flat, since that is what `check_df_columns_contiguous_and_flat` let this path be taken for.
     let first_slice = ca.as_flat().unwrap().chunks_flat_values().next().unwrap();
 
     let start_ptr = first_slice.as_ptr();
@@ -217,7 +217,7 @@ fn temporal_df_to_numpy_view(py: Python<'_>, df: &DataFrame, owner: Py<PyAny>) -
     let s = df.columns().first().unwrap();
     let phys = s.to_physical_repr();
     let ca = phys.i64().unwrap();
-    // Flat, since that is what `check_df_columns_contiguous` let this path be taken for.
+    // Flat, since that is what `check_df_columns_contiguous_and_flat` let this path be taken for.
     let first_slice = ca.as_flat().unwrap().chunks_flat_values().next().unwrap();
 
     let start_ptr = first_slice.as_ptr();

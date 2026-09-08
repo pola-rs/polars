@@ -269,7 +269,7 @@ where
         // The values hold a slot per element, so this is the one place the cast writes one too.
         // The shared kernel is `#[inline(never)]` over the element types, which keeps one unrolled
         // loop rather than one per pair of types cast between.
-        None => crate::arity::prim_unary_values(from.as_flat().unwrap().clone(), op),
+        None => crate::arity::prim_unary_values(from.to_flat().into_owned(), op),
     }
 }
 
