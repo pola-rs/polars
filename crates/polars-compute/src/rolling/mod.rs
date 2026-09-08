@@ -100,7 +100,7 @@ where
 {
     // Short path:
     // If there are no zero weights, then there can be no invalid values due to weights.
-    let weights = weights.filter(|w| w.iter().any(|&w| w == 0.0));
+    let weights = weights.filter(|w| w.contains(&0.0));
 
     if min_periods <= 1 && weights.is_none() {
         return None;
