@@ -95,3 +95,28 @@ fn test_out_of_range_date_year_11991() {
     let is_leap = s.is_leap_year().unwrap();
     assert_eq!(is_leap.get(0), None);
 }
+
+#[test]
+#[cfg(feature = "dtype-date")]
+fn test_naivedate_to_literal_29229() {
+    use chrono::NaiveDate;
+
+    fn compare(value: i64, time_unit: TimeUnit, year: i32, month: u32, day: u32) {
+        let expr = Expr::Literal(Scalar::new_datetime(value, time_unit, None).into());
+        let lit = NaiveDate::from_ymd_opt(year, month, day).unwrap().lit();
+        assert_eq!(lit, expr);
+    }
+
+    // NaiveDate[Time] values outside of the nanosecond resolution range should not panic
+    // on conversion to a literal.
+    compare(-9_223_286_400_000_000_000, TimeUnit::Nanoseconds, 1677, 9, 22);
+    compare(-9_223_372_800_000_000, TimeUnit::Microseconds, 1677, 9, 21);
+    compare(-18_429_206_400_000_000, TimeUnit::Microseconds, 1386, 1, 1);
+
+    compare(9_223_286_400_000_000_000, TimeUnit::Nanoseconds, 2262, 4, 11);
+    compare(9_223_372_800_000_000, TimeUnit::Microseconds, 2262, 4, 12);
+    compare(18_460_742_400_000_000, TimeUnit::Microseconds, 2554, 12, 31);
+
+    compare(-8_334_601_228_800_000_000, TimeUnit::Microseconds, -262143, 1, 1);
+    compare(8_210_266_790_400_000_000, TimeUnit::Microseconds, 262142, 12, 31);
+}

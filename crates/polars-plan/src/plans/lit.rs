@@ -562,25 +562,12 @@ impl Literal for Null {
 #[cfg(feature = "dtype-datetime")]
 impl Literal for NaiveDateTime {
     fn lit(self) -> Expr {
-        if polars_time::in_nanoseconds_window(&self) {
-            Expr::Literal(
-                Scalar::new_datetime(
-                    self.and_utc().timestamp_nanos_opt().unwrap(),
-                    TimeUnit::Nanoseconds,
-                    None,
-                )
-                .into(),
-            )
-        } else {
-            Expr::Literal(
-                Scalar::new_datetime(
-                    self.and_utc().timestamp_micros(),
-                    TimeUnit::Microseconds,
-                    None,
-                )
-                .into(),
-            )
-        }
+        let z = self.and_utc();
+        let (value, time_unit) = match z.timestamp_nanos_opt() {
+            None => (z.timestamp_micros(), TimeUnit::Microseconds),
+            Some(value) => (value, TimeUnit::Nanoseconds),
+        };
+        Expr::Literal(Scalar::new_datetime(value, time_unit, None).into())
     }
 }
 

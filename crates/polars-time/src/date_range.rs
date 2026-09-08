@@ -6,11 +6,6 @@ use polars_core::series::IsSorted;
 
 use crate::prelude::*;
 
-pub fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
-    // ~584 year around 1970
-    !(ndt.year() > 2554 || ndt.year() < 1386)
-}
-
 /// Create a [`DatetimeChunked`] from a given `start` and `end` date and a given `interval`.
 pub fn date_range(
     name: PlSmallStr,
