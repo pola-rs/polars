@@ -5,8 +5,8 @@ use arrow::types::NativeType;
 use polars_array::bitmap::combine_validities_and;
 use polars_array::builder::StaticArrayBuilder;
 use polars_array::{
-    PlBinaryViewArray, PlBinaryViewArrayBuilder, PlBitmap, PlListArray, PlPrimitiveArray,
-    PlPrimitiveArrayBuilder, PlUtf8ViewArray,
+    PlBinaryViewArray, PlBinaryViewArrayBuilder, PlBitmap, PlBitmapRef, PlListArray,
+    PlPrimitiveArray, PlPrimitiveArrayBuilder, PlUtf8ViewArray,
 };
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
@@ -360,7 +360,10 @@ fn array_set_operation(
             set_op,
             inner_dtype,
         )?;
-        let validity = combine_validities_and(a.validity(), b.validity());
+        let validity = combine_validities_and(
+            broadcast_validity(a.validity(), a.len()),
+            broadcast_validity(b.validity(), a.len()),
+        );
 
         return Ok(one.new_from_index(0, a.len()).with_validity(validity));
     }
@@ -380,7 +383,13 @@ fn array_set_operation(
     let values_b = b.values();
     assert_eq!(values_a.array_type(), values_b.array_type());
 
-    let validity = combine_validities_and(a.as_array().validity(), b.as_array().validity());
+    // A side of a single element is broadcast over the other, and so is its mask: combining the
+    // two as they come would be combining masks of different lengths.
+    let length = a.len().max(b.len());
+    let validity = combine_validities_and(
+        broadcast_validity(a.as_array().validity(), length),
+        broadcast_validity(b.as_array().validity(), length),
+    );
 
     match inner_dtype {
         // The set is taken over the bytes either way; what comes back out is the strings they
@@ -419,6 +428,22 @@ fn array_set_operation(
             })
         },
     }
+}
+
+/// The mask of a side of the operation, over the `length` the result covers.
+///
+/// A column of a single element is broadcast over the other, and the one bit its mask holds says
+/// the same of every element it is broadcast over — which is the scalar representation itself, so
+/// nothing is written out to reach it.
+fn broadcast_validity(validity: Option<PlBitmapRef<'_>>, length: usize) -> Option<PlBitmapRef<'_>> {
+    let validity = validity?;
+    if validity.len() == length {
+        return Some(validity);
+    }
+
+    debug_assert_eq!(validity.len(), 1, "only a single element is broadcast");
+    let (bitmap, _) = validity.into_inner();
+    Some(PlBitmapRef::new_broadcast(bitmap, length))
 }
 
 /// The array behind a chunk whose type is already known.
@@ -460,5 +485,38 @@ pub fn list_set_operation(
             false,
             false,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_core::prelude::*;
+
+    use super::{SetOperation, list_set_operation};
+
+    /// A list of the rows `values` names, of which a `None` is a null row.
+    fn lists(values: [Option<&[i32]>; 3]) -> ListChunked {
+        values
+            .into_iter()
+            .map(|row| row.map(|row| Series::new(PlSmallStr::EMPTY, row)))
+            .collect()
+    }
+
+    /// A column of a single element is broadcast over the other, and so is the mask that says its
+    /// one row is null: the two are combined over the rows the result covers, not over the rows
+    /// each side happens to hold.
+    #[test]
+    fn a_broadcast_side_that_is_null_nulls_every_row() {
+        let a = lists([Some(&[1]), Some(&[2]), None]);
+        // A single null row, which the operation broadcasts over `a`.
+        let b = lists([Some(&[1]), None, None]).slice(1, 1);
+        assert_eq!(b.len(), 1);
+
+        for (lhs, rhs) in [(&a, &b), (&b, &a)] {
+            let out = list_set_operation(lhs, rhs, SetOperation::Union).unwrap();
+
+            assert_eq!(out.len(), 3);
+            assert_eq!(out.null_count(), 3);
+        }
     }
 }
