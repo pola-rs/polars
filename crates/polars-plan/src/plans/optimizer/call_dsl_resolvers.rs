@@ -233,7 +233,8 @@ pub(super) fn call_dsl_resolvers(
                         and version key does not match or was not found: \
                         version_key: {version_key:?}, \
                         existing_resolved_version_keys: \
-                        {existing_resolved_version_keys:?}"
+                        {existing_resolved_version_keys:?}
+                        "
                     );
 
                     if resolved_ir.is_some() {
