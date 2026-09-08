@@ -77,11 +77,14 @@ pub fn business_day_count(
     // The holidays of one row are read as a slice, so the offsets and the values behind them are
     // written out where they do not already hold one slot per element.
     let holidays_list = holidays.list()?.downcast_as_array();
+    // A scalar array repeats one row, and only that row is ever read, so it is sliced out first
+    // to keep the write-out below from repeating it once per element.
     let holidays_list = if holidays_list.is_scalar() {
-        holidays_list.sliced(0, 1).to_flat()
+        Cow::Owned(holidays_list.sliced(0, 1))
     } else {
-        holidays_list.to_flat()
+        Cow::Borrowed(holidays_list)
     };
+    let holidays_list = holidays_list.to_flat();
     let mut holidays_getter = HolidayListsGetter::new(&holidays_list, week_mask);
 
     let n_business_days_in_week_mask = week_mask.iter().filter(|&x| *x).count() as i32;
@@ -247,11 +250,14 @@ pub fn add_business_days(
     let holidays = holidays.rechunk();
     // As above: the holidays of one row are read as a slice.
     let holidays_list = holidays.list()?.downcast_as_array();
+    // A scalar array repeats one row, and only that row is ever read, so it is sliced out first
+    // to keep the write-out below from repeating it once per element.
     let holidays_list = if holidays_list.is_scalar() {
-        holidays_list.sliced(0, 1).to_flat()
+        Cow::Owned(holidays_list.sliced(0, 1))
     } else {
-        holidays_list.to_flat()
+        Cow::Borrowed(holidays_list)
     };
+    let holidays_list = holidays_list.to_flat();
     let mut holidays_getter = HolidayListsGetter::new(&holidays_list, week_mask);
 
     let start_dates = start_dates.physical().rechunk();
@@ -419,11 +425,14 @@ pub fn is_business_day(
     let holidays = holidays.rechunk();
     // As above: the holidays of one row are read as a slice.
     let holidays_list = holidays.list()?.downcast_as_array();
+    // A scalar array repeats one row, and only that row is ever read, so it is sliced out first
+    // to keep the write-out below from repeating it once per element.
     let holidays_list = if holidays_list.is_scalar() {
-        holidays_list.sliced(0, 1).to_flat()
+        Cow::Owned(holidays_list.sliced(0, 1))
     } else {
-        holidays_list.to_flat()
+        Cow::Borrowed(holidays_list)
     };
+    let holidays_list = holidays_list.to_flat();
     let mut holidays_getter = HolidayListsGetter::new(&holidays_list, week_mask);
 
     let dates = dates.date()?;

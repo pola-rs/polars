@@ -68,9 +68,13 @@ impl<T: PlArray> NoNulls<T> {
 
     /// Returns this array sliced to `length` elements starting at `offset`.
     #[must_use]
-    pub fn sliced(mut self, offset: usize, length: usize) -> Self {
-        self.slice(offset, length);
-        self
+    pub fn sliced(&self, offset: usize, length: usize) -> Self
+    where
+        T: Clone,
+    {
+        let mut sliced = self.clone();
+        sliced.slice(offset, length);
+        sliced
     }
 }
 

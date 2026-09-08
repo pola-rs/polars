@@ -118,7 +118,7 @@ mod inner_mod {
                     } else {
                         // SAFETY:
                         // we are in bounds
-                        let arr_window = unsafe { arr.clone().sliced_unchecked(start, size) };
+                        let arr_window = unsafe { arr.sliced_unchecked(start, size) };
 
                         // ensure we still meet window size criteria after removing null values
                         if size - arr_window.null_count() < options.min_periods {
@@ -185,7 +185,7 @@ mod inner_mod {
                     } else {
                         // SAFETY:
                         // we are in bounds
-                        let arr_window = unsafe { arr.clone().sliced_unchecked(start, size) };
+                        let arr_window = unsafe { arr.sliced_unchecked(start, size) };
 
                         // ensure we still meet window size criteria after removing null values
                         if size - arr_window.null_count() < options.min_periods {

@@ -638,8 +638,7 @@ where
         for chunk in unsafe { self.chunks_mut() } {
             // Slicing a mask keeps its representation, so the part a chunk covers of one that
             // repeats a single bit is that same bit rather than a run written out for it.
-            *chunk =
-                chunk.with_validity(validity.as_ref().map(|v| v.clone().sliced(i, chunk.len())));
+            *chunk = chunk.with_validity(validity.as_ref().map(|v| v.sliced(i, chunk.len())));
             i += chunk.len();
         }
         self.null_count = validity.map(|v| v.unset_bits()).unwrap_or(0);

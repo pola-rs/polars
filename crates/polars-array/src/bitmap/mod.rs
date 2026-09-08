@@ -359,9 +359,10 @@ impl PlBitmap {
 
     /// Returns this mask sliced to `length` bits starting at `offset`.
     #[must_use]
-    pub fn sliced(mut self, offset: usize, length: usize) -> Self {
-        self.slice(offset, length);
-        self
+    pub fn sliced(&self, offset: usize, length: usize) -> Self {
+        let mut sliced = self.clone();
+        sliced.slice(offset, length);
+        sliced
     }
 
     /// Returns this mask sliced to `length` bits starting at `offset`.
@@ -369,9 +370,10 @@ impl PlBitmap {
     /// # Safety
     /// `offset + length` must not exceed `self.len()`.
     #[must_use]
-    pub unsafe fn sliced_unchecked(mut self, offset: usize, length: usize) -> Self {
-        unsafe { self.slice_unchecked(offset, length) };
-        self
+    pub unsafe fn sliced_unchecked(&self, offset: usize, length: usize) -> Self {
+        let mut sliced = self.clone();
+        unsafe { sliced.slice_unchecked(offset, length) };
+        sliced
     }
 
     /// Returns an equivalent flat mask, borrowing this one if it is already flat.

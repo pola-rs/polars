@@ -13,7 +13,7 @@ fn row_of<T: NativeType>(
     values: &PlPrimitiveArray<T>,
     range: Range<usize>,
 ) -> Option<PlPrimitiveArray<T>> {
-    (!range.is_empty()).then(|| values.clone().sliced(range.start, range.len()))
+    (!range.is_empty()).then(|| values.sliced(range.start, range.len()))
 }
 
 /// The range of the values buffer every element `offset` holds the ends of covers.

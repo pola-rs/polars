@@ -553,9 +553,10 @@ impl PlBinaryViewArray {
 
     /// Returns this array sliced to `length` elements starting at `offset`.
     #[must_use]
-    pub fn sliced(mut self, offset: usize, length: usize) -> Self {
-        self.slice(offset, length);
-        self
+    pub fn sliced(&self, offset: usize, length: usize) -> Self {
+        let mut sliced = self.clone();
+        sliced.slice(offset, length);
+        sliced
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
@@ -563,9 +564,10 @@ impl PlBinaryViewArray {
     /// # Safety
     /// `offset + length` must not exceed `self.len()`.
     #[must_use]
-    pub unsafe fn sliced_unchecked(mut self, offset: usize, length: usize) -> Self {
-        unsafe { self.slice_unchecked(offset, length) };
-        self
+    pub unsafe fn sliced_unchecked(&self, offset: usize, length: usize) -> Self {
+        let mut sliced = self.clone();
+        unsafe { sliced.slice_unchecked(offset, length) };
+        sliced
     }
 
     /// Creates a [`PlBinaryViewArray`] of `length` copies of the element at `index`.
@@ -928,7 +930,7 @@ mod tests {
         let arr: PlBinaryViewArray = [Some(b"foo".as_slice()), None, Some(LONG), Some(b"baz")]
             .into_iter()
             .collect();
-        let sliced = arr.clone().sliced(1, 2);
+        let sliced = arr.sliced(1, 2);
 
         assert_eq!(sliced.len(), 2);
         assert_eq!(sliced.flat_views().unwrap().len(), 2);

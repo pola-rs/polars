@@ -157,7 +157,7 @@ impl PlUtf8ViewArray {
     /// Returns this array sliced to `length` elements starting at `offset`.
     #[inline]
     #[must_use]
-    pub fn sliced(self, offset: usize, length: usize) -> Self {
+    pub fn sliced(&self, offset: usize, length: usize) -> Self {
         Self(self.0.sliced(offset, length))
     }
 
@@ -167,7 +167,7 @@ impl PlUtf8ViewArray {
     /// `offset + length` must not exceed `self.len()`.
     #[inline]
     #[must_use]
-    pub unsafe fn sliced_unchecked(self, offset: usize, length: usize) -> Self {
+    pub unsafe fn sliced_unchecked(&self, offset: usize, length: usize) -> Self {
         // SAFETY: the caller keeps the slice in bounds.
         Self(unsafe { self.0.sliced_unchecked(offset, length) })
     }

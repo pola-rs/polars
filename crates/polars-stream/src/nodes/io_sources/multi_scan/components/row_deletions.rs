@@ -587,7 +587,7 @@ impl ExternalFilterMask {
                     // We are past any row deletions
                     len
                 } else {
-                    let mask = mask.clone().sliced(phys_offset, mask.len() - phys_offset);
+                    let mask = mask.sliced(phys_offset, mask.len() - phys_offset);
                     nth_set_bit_extend(&mask, len - 1).saturating_add(1)
                 };
 

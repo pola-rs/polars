@@ -40,7 +40,7 @@ where
 
     (0..values.len())
         .step_by(width)
-        .map(|start| arr_agg(&values.clone().sliced(start, width)))
+        .map(|start| arr_agg(&values.sliced(start, width)))
         .collect_arr()
 }
 

@@ -355,8 +355,8 @@ fn array_set_operation(
     // they are the one thing that still says something different about each element.
     if a.offsets_are_scalar() && b.offsets_are_scalar() && a.len() > 1 {
         let one = array_set_operation(
-            &a.clone().sliced(0, 1).without_validity(),
-            &b.clone().sliced(0, 1).without_validity(),
+            &a.sliced(0, 1).without_validity(),
+            &b.sliced(0, 1).without_validity(),
             set_op,
             inner_dtype,
         )?;
