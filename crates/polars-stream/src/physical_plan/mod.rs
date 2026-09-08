@@ -170,6 +170,7 @@ pub enum PhysNodeKind {
         input: PhysStream,
         selectors: Vec<ExprIR>,
         extend_original: bool,
+        rechunk_input: bool,
     },
 
     InputIndependentSelect {
@@ -919,6 +920,25 @@ fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNo
     });
 }
 
+/// Sets `rechunk_input` on any `Select` node directly feeding into a `GroupBy`.
+///
+/// The group-by consumes the selected key/aggregation columns in bulk, so it is
+/// worth paying for a rechunk of the select's output to get contiguous inputs.
+fn rechunk_group_by_inputs(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+    visit_nodes_mut(roots, phys_sm, |key, phys_sm| {
+        let PhysNodeKind::GroupBy { inputs, .. } = phys_sm[key].kind() else {
+            return;
+        };
+
+        let input_nodes: Vec<PhysNodeKey> = inputs.iter().map(|i| i.node).collect();
+        for input_node in input_nodes {
+            if let PhysNodeKind::Select { rechunk_input, .. } = phys_sm[input_node].kind_mut() {
+                *rechunk_input = true;
+            }
+        }
+    });
+}
+
 pub fn build_physical_plan(
     root: Node,
     ir_arena: &mut Arena<IR>,
@@ -943,5 +963,6 @@ pub fn build_physical_plan(
     insert_multiplexers(vec![phys_root.node], phys_sm);
     split_multiplexers(vec![phys_root.node], phys_sm);
     fuse_drops(vec![phys_root.node], phys_sm);
+    rechunk_group_by_inputs(vec![phys_root.node], phys_sm);
     Ok(phys_root.node)
 }
