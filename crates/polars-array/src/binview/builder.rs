@@ -387,6 +387,7 @@ impl StaticArrayBuilder for PlBinaryViewArrayBuilder {
         let buffers = std::mem::take(&mut self.buffers);
         let validity = std::mem::take(&mut self.validity);
         self.adopted.clear();
+        self.last_adopted = None;
 
         let length = views.len();
         // SAFETY: as in `freeze`.

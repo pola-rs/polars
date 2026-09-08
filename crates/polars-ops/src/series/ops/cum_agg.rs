@@ -1,6 +1,6 @@
 use std::ops::{AddAssign, Mul};
 
-use arity::unary_elementwise_values;
+use arity::unary_elementwise_values_mut;
 use arrow::bitmap::BitmapBuilder;
 use num_traits::{AsPrimitive, Bounded, One, Zero};
 use polars_core::prelude::*;
@@ -449,7 +449,7 @@ pub fn cum_count_with_init(s: &Series, reverse: bool, init: IdxSize) -> PolarsRe
         let out: IdxCa = if reverse {
             let mut count = init + (s.len() - s.null_count()) as IdxSize;
             let mut prev = false;
-            unary_elementwise_values(&ca, |v: bool| {
+            unary_elementwise_values_mut(&ca, |v: bool| {
                 if prev {
                     count -= 1;
                 }
@@ -458,7 +458,7 @@ pub fn cum_count_with_init(s: &Series, reverse: bool, init: IdxSize) -> PolarsRe
             })
         } else {
             let mut count = init;
-            unary_elementwise_values(&ca, |v: bool| {
+            unary_elementwise_values_mut(&ca, |v: bool| {
                 if v {
                     count += 1;
                 }

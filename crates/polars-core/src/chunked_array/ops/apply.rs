@@ -237,16 +237,17 @@ where
     where
         F: Fn(T::Native) -> T::Native + Copy,
     {
-        // The values are read as slices, so the chunks are written out flat first where they are
-        // not already.
-        let ca = self.to_flat();
-        let chunks = ca
-            .chunks_flat_values()
-            .zip(ca.as_array().iter_validities())
-            .map(|(slice, validity)| {
-                let arr: T::Array = slice.iter().copied().map(f).collect_arr();
-                arr.with_validity_typed(validity.map(PlBitmap::from))
-            });
+        let chunks = self.downcast_iter().map(|arr| {
+            let validity = arr.validity().map(PlBitmap::from);
+            if let Some(value) = arr.scalar_value_ignore_validity() {
+                return PlPrimitiveArray::new_scalar(f(value), arr.len())
+                    .with_validity_typed(validity);
+            }
+
+            let flat = arr.to_flat();
+            let out: T::Array = flat.as_slice().iter().copied().map(f).collect_arr();
+            out.with_validity_typed(validity)
+        });
         ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }
 

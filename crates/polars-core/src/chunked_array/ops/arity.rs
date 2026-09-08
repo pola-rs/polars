@@ -83,6 +83,14 @@ impl<A1, R, T: FnMut(A1) -> R> UnaryFnMut<A1> for T {
     type Ret = R;
 }
 
+pub trait UnaryFn<A1>: Fn(A1) -> Self::Ret {
+    type Ret;
+}
+
+impl<A1, R, T: Fn(A1) -> R> UnaryFn<A1> for T {
+    type Ret = R;
+}
+
 // We need this helper because for<'a> notation can't yet be applied properly
 // on the return type.
 pub trait TernaryFnMut<A1, A2, A3>: FnMut(A1, A2, A3) -> Self::Ret {
@@ -283,7 +291,39 @@ where
 }
 
 #[inline]
-pub fn unary_elementwise_values<'a, T, V, F>(ca: &'a ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
+pub fn unary_elementwise_values<'a, T, V, F>(ca: &'a ChunkedArray<T>, op: F) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    V: PolarsDataType,
+    F: UnaryFn<T::Physical<'a>>,
+    V::Array: ArrayFromIter<<F as UnaryFn<T::Physical<'a>>>::Ret>,
+{
+    if ca.null_count() == ca.len() {
+        return ChunkedArray::with_chunk(ca.name().clone(), V::full_null_array(ca.len()));
+    }
+
+    let iter = ca.downcast_iter().map(|arr| {
+        let length = arr.len();
+        if length > 1 {
+            if let Some(Some(value)) = arr.scalar_value() {
+                let single: V::Array = std::iter::once(op(value)).collect_arr();
+                return single.new_from_index_typed(0, length);
+            }
+        }
+
+        let validity = arr.validity().map(PlBitmap::from);
+        let arr: V::Array = arr.values_iter().map(&op).collect_arr();
+        arr.with_validity_typed(validity)
+    });
+    ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
+}
+
+/// [`unary_elementwise_values`] for an `op` that carries state from one element to the next.
+#[inline]
+pub fn unary_elementwise_values_mut<'a, T, V, F>(
+    ca: &'a ChunkedArray<T>,
+    mut op: F,
+) -> ChunkedArray<V>
 where
     T: PolarsDataType,
     V: PolarsDataType,
@@ -995,13 +1035,13 @@ where
 pub fn broadcast_binary_elementwise_values<T, U, V, F, K>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
-    mut op: F,
+    op: F,
 ) -> ChunkedArray<V>
 where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType,
-    F: for<'a> FnMut(T::Physical<'a>, U::Physical<'a>) -> K,
+    F: for<'a> Fn(T::Physical<'a>, U::Physical<'a>) -> K,
     V::Array: ArrayFromIter<K>,
 {
     let length = broadcast_height(lhs.len(), rhs.len())
