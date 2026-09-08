@@ -150,7 +150,14 @@ where
                     values,
                     params.prob,
                 );
-                let validity = create_validity(min_periods, values.len(), window_size, offset_fn);
+                let validity = create_validity(
+                    min_periods,
+                    values.len(),
+                    window_size,
+                    offset_fn,
+                    None,
+                    false,
+                );
                 return Ok(Box::new(PrimitiveArray::new(
                     T::PRIMITIVE.into(),
                     out.into(),
@@ -280,7 +287,8 @@ where
                 }
             }
             if buf.is_empty() {
-                // Quantile is undefined if all sum is zero, because of div/0
+                // The weights covering this window sum to zero, so the quantile is undefined
+                // (div/0). `create_validity` marks this entry null; the value is a placeholder.
                 return T::nan();
             }
             buf.sort_unstable_by(|&a, &b| a.0.tot_cmp(&b.0));
@@ -295,7 +303,14 @@ where
         })
         .collect_trusted::<Vec<T>>();
 
-    let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
+    let validity = create_validity(
+        min_periods,
+        len,
+        window_size,
+        det_offsets_fn,
+        Some(weights),
+        center,
+    );
     Box::new(PrimitiveArray::new(
         T::PRIMITIVE.into(),
         out.into(),

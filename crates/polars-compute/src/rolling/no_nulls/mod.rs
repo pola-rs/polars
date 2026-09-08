@@ -128,7 +128,7 @@ where
         })
         .collect_trusted::<Vec<T>>();
 
-    let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
+    let validity = create_validity(min_periods, len, window_size, det_offsets_fn, None, false);
     Ok(Box::new(PrimitiveArray::new(
         ArrowDataType::from(T::PRIMITIVE),
         out.into(),

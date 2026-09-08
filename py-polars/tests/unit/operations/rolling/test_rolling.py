@@ -1970,14 +1970,14 @@ def test_rolling_weighted_median_partial_window_29170() -> None:
 def test_rolling_weighted_median_all_zero_weights_in_window() -> None:
     # A truncated window can cover only zero weights,
     # leaving nothing to take a quantile over.
-    # The result is undefined, represented as a NaN.
+    # The result is undefined, represented as a null.
     s = pl.Series([1.0, 2.0, 3.0])
     result = s.rolling_median(window_size=3, min_samples=1, weights=[1.0, 0.0, 0.0])
 
     # The first window covers only the last weight, which is zero.
     # The second covers the last two, also both zero.
     # The third now has a valid weight.
-    expected = pl.Series([float("nan"), float("nan"), 1.0])
+    expected = pl.Series([None, None, 1.0], dtype=pl.Float64)
     assert_series_equal(result, expected)
 
 
