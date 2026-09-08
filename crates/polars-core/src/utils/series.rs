@@ -84,10 +84,10 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
     let failures = input.take_slice(&idxs[..num_failures.min(10)])?;
 
     let additional_info = match (input.dtype(), output.dtype()) {
-        (DataType::String, DataType::Date | DataType::Datetime(_, _)) => {
+        (DataType::String, DataType::Date | DataType::Datetime(_, _) | DataType::Time) => {
             "\n\nYou might want to try:\n\
             - setting `strict=False` to set values that cannot be converted to `null`\n\
-            - using `str.strptime`, `str.to_date`, or `str.to_datetime` and providing a format string"
+            - using `str.strptime`, `str.to_date`, `str.to_datetime`, or `str.to_time` and providing a format string"
         },
         #[cfg(feature = "dtype-categorical")]
         (DataType::String, DataType::Enum(_, _)) => {
