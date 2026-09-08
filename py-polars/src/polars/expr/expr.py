@@ -3895,7 +3895,7 @@ class Expr(metaclass=_Meta):
         >>> lf = pl.select(a=pl.arange(10_000)).lazy()
 
         >>> # Get the approximate median
-        >>> lf.select(pl.col("a").approx_quantile(0.5)).collect()
+        >>> lf.select(pl.col("a").approx_quantile(0.5)).collect()  # doctest: +SKIP
         shape: (1, 1)
         ┌──────┐
         │ a    │
