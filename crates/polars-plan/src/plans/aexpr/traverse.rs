@@ -43,7 +43,7 @@ impl AExpr {
                 falsy,
                 predicate,
             } => {
-                container.extend([*predicate, *truthy, *falsy]);
+                container.extend([*truthy, *predicate, *falsy]);
             },
             AnonymousFunction { input, .. }
             | Function { input, .. }
@@ -131,7 +131,7 @@ impl AExpr {
                 falsy,
                 predicate,
             } => {
-                container.extend([*predicate, *falsy, *truthy]);
+                container.extend([*falsy, *predicate, *truthy]);
             },
             AnonymousFunction { input, .. }
             | Function { input, .. }
@@ -247,7 +247,7 @@ impl AExpr {
                 falsy,
                 predicate,
             } => {
-                container.extend([*predicate, *falsy, *truthy]);
+                container.extend([*falsy, *predicate, *truthy]);
             },
             AnonymousFunction { input, .. }
             | Function { input, .. }
@@ -335,8 +335,8 @@ impl AExpr {
                 predicate,
             } => {
                 *truthy = inputs[0];
-                *falsy = inputs[1];
-                *predicate = inputs[2];
+                *predicate = inputs[1];
+                *falsy = inputs[2];
                 return self;
             },
             AnonymousFunction { input, .. }
@@ -445,8 +445,8 @@ impl AExpr {
                 predicate,
             } => {
                 *truthy = inputs[0];
-                *falsy = inputs[1];
-                *predicate = inputs[2];
+                *predicate = inputs[1];
+                *falsy = inputs[2];
                 return self;
             },
             AnonymousAgg { input, .. }

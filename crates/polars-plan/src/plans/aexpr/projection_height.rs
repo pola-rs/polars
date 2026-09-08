@@ -147,8 +147,8 @@ pub fn aexpr_projection_height(
             l.zip_with(r)
         },
         Ternary { .. } => {
-            let [pred, truthy, falsy] = input_heights?.try_into().unwrap();
-            pred.zip_with(truthy).zip_with(falsy)
+            let [truthy, pred, falsy] = input_heights?.try_into().unwrap();
+            truthy.zip_with(pred).zip_with(falsy)
         },
 
         Cast { .. } | Sort { .. } => {

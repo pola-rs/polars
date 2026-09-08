@@ -192,8 +192,9 @@ pub enum AExpr {
     },
     Agg(IRAggExpr),
     Ternary {
-        predicate: Node,
+        /// `truthy` comes first as it determines the output name.
         truthy: Node,
+        predicate: Node,
         falsy: Node,
     },
     AnonymousAgg {
