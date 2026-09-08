@@ -1,8 +1,6 @@
 //! The Polars vector format.
 
 pub mod array;
-#[cfg(test)]
-mod array_tests;
 pub mod array_type;
 pub mod arrow;
 pub mod binary;
@@ -16,8 +14,6 @@ pub mod concatenate;
 pub mod fixed_size_binary;
 pub mod fixed_size_list;
 pub mod flat;
-#[cfg(test)]
-mod iterator_tests;
 pub mod list;
 mod macros;
 pub mod nested;

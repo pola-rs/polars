@@ -9,9 +9,6 @@ use polars_array::PlPrimitiveArray;
 use polars_utils::IdxSize;
 
 /// The mask of `arr` as one bit per element, or [`None`] where every element is null.
-///
-/// A chunk reaches these kernels only with a null under it, so the one bit a mask that repeats
-/// one holds is unset — which is what makes [`None`] mean that every element is null here.
 #[inline]
 pub(super) fn flat_validity<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Option<&Bitmap> {
     let validity = arr

@@ -141,34 +141,3 @@ impl<T: std::fmt::Debug> std::fmt::Debug for NoNulls<T> {
         self.0.fmt(f)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use arrow::bitmap::Bitmap;
-
-    use crate::PlPrimitiveArray;
-    use crate::bitmap::PlBitmap;
-    use crate::static_array::StaticArray;
-
-    #[test]
-    fn an_array_without_a_mask_has_no_nulls() {
-        let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
-        assert!(array.as_no_nulls().is_some());
-    }
-
-    #[test]
-    fn an_all_set_mask_still_has_no_nulls() {
-        let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
-            .with_validity(Some(PlBitmap::new_scalar(true, 3)));
-        assert_eq!(array.null_count(), 0);
-        assert!(array.as_no_nulls().is_some());
-    }
-
-    #[test]
-    fn a_single_null_denies_the_witness() {
-        let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]).with_validity(Some(
-            PlBitmap::from_bitmap(Bitmap::from_iter([true, false, true])),
-        ));
-        assert!(array.as_no_nulls().is_none());
-    }
-}

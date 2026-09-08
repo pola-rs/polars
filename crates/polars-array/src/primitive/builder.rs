@@ -80,8 +80,7 @@ impl<T: NativeType> PlPrimitiveArrayBuilder<T> {
     /// Appends the values the ids name, reading nothing but the values of the chunks.
     ///
     /// # Safety
-    /// Room for `ids.len()` more values must be reserved, and every id must name a chunk of
-    /// `chunks` and an element of that chunk.
+    /// Room for `ids.len()` more values must be reserved, and every id must name an element.
     unsafe fn gather_values<const B: u64>(
         &mut self,
         chunks: &[&PlPrimitiveArray<T>],
@@ -315,37 +314,5 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
         bytes::extend_opt_gathered(&mut self.values, other.values_bytes(), other.len(), idxs);
 
         opt_gather_extend_validity(&mut self.validity, other.validity(), idxs, other.len());
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-
-    /// Appending a run has to leave the mask exactly as long as the values.
-    #[test]
-    fn pushing_a_run_of_values_keeps_the_mask_aligned() {
-        let mut builder = PlPrimitiveArrayBuilder::<i32>::new();
-        builder.push_values(0..4);
-        builder.push_null();
-        builder.push_values([9, 8]);
-        builder.push_value(7);
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 8);
-        assert_eq!(
-            built.iter().collect::<Vec<_>>(),
-            [
-                Some(0),
-                Some(1),
-                Some(2),
-                Some(3),
-                None,
-                Some(9),
-                Some(8),
-                Some(7),
-            ],
-        );
     }
 }

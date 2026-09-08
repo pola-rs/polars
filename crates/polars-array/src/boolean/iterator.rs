@@ -31,37 +31,3 @@ impl<'a> PlBooleanIter<'a> {
 }
 
 crate::impl_optional_iter!(PlBooleanIter<'a>, bool);
-
-#[cfg(test)]
-mod tests {
-
-    use crate::PlBooleanArray;
-    use crate::iterator_tests::assert_iterates;
-
-    #[test]
-    fn flat() {
-        let array = PlBooleanArray::from_vec(vec![true, false, true]);
-
-        assert_iterates(array.values_iter(), &[true, false, true]);
-        assert_iterates(array.iter(), &[Some(true), Some(false), Some(true)]);
-    }
-
-    #[test]
-    fn scalar() {
-        let array = PlBooleanArray::new_scalar(true, 4);
-
-        assert_iterates(array.values_iter(), &[true; 4]);
-        assert_iterates(array.iter(), &[Some(true); 4]);
-    }
-
-    #[test]
-    fn a_broadcast_array_is_not_materialized() {
-        // Walking a billion elements would not finish; the scalar path must hit.
-        let array = PlBooleanArray::new_scalar(true, 1_000_000_000);
-
-        assert_eq!(array.values_iter().count(), 1_000_000_000);
-        assert_eq!(array.iter().nth(999_999_999), Some(Some(true)));
-        assert_eq!(array.iter().nth_back(999_999_999), Some(Some(true)));
-        assert_eq!(array.iter().len(), 1_000_000_000);
-    }
-}

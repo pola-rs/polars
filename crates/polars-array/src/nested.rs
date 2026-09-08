@@ -1,9 +1,4 @@
 //! The walk over the elements a nested array cuts its values into.
-//!
-//! A [`PlListArray`](crate::PlListArray) cuts them at offsets and a
-//! [`PlFixedSizeListArray`](crate::PlFixedSizeListArray) cuts them every width; what they do with
-//! the ranges that come out — box one element, or read the mask alongside them — is the same, and
-//! is written here once over the [`Shape`] that says how the cutting goes.
 
 use std::marker::PhantomData;
 use std::ops::Range;
@@ -16,28 +11,20 @@ use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 use crate::broadcast::{is_flat_offsets_len, is_valid_fixed_size_values_len, is_valid_offsets_len};
 
 /// How a nested array cuts its values into the elements a walk has left to yield.
-///
-/// A shape carries a cursor of its own, which [`Self::advance`] walks and [`Self::at`] reads from;
-/// the number of elements left is [`Ranges`]'s to keep, and is what bounds both of them.
 pub trait Shape: Clone {
     /// The range of the values that the element `n` positions on from the front covers.
     ///
     /// # Safety
-    /// `n` must be below the number of elements left, so that the cut it reads is one this shape
-    /// still holds.
+    /// `n` must be below the number of elements left.
     unsafe fn at(&self, n: usize) -> Range<usize>;
 
     /// Drops the `n` elements at the front, leaving the cursor at the one after them.
     ///
     /// # Safety
-    /// `n` must not exceed the number of elements left, so that the cursor lands on an element or
-    /// one past the last of them.
+    /// `n` must not exceed the number of elements left.
     unsafe fn advance(&mut self, n: usize);
 
     /// Folds `f` over the ranges of the front `n` elements, in order.
-    ///
-    /// This is where a shape says how to walk its cuts as the sequence they are, rather than one
-    /// [`Self::at`] per element.
     ///
     /// # Safety
     /// `n` must not exceed the number of elements left.

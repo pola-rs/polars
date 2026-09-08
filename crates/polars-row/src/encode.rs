@@ -304,10 +304,6 @@ fn write_out_shared_child(array: &dyn PlArray) -> Option<Box<dyn PlArray>> {
 }
 
 /// Get the encoder for a specific array.
-///
-/// The array carries no logical type of its own, so this dispatches on its [`PlArrayType`] and
-/// reads the widths and children off the array itself; `dict` carries what the physical
-/// representation does not say — a decimal's precision, a categorical's mapping.
 fn get_encoder(
     array: &dyn PlArray,
     opt: RowEncodingOptions,

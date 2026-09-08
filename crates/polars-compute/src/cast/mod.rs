@@ -1,7 +1,4 @@
 //! Defines different casting operators such as [`cast`] or [`primitive_to_binary`].
-//!
-//! These kernels are dispatched on a *pair* of [`ArrowDataType`]s, so they stay over the Arrow
-//! arrays; a chunk of `polars-array` crosses over through [`cast_chunk`].
 
 mod binary_to;
 mod binview_to;

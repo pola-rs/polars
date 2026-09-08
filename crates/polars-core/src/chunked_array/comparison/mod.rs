@@ -19,14 +19,6 @@ use crate::series::implementations::null::NullChunked;
 
 /// The body of a comparison between two chunked arrays, taking the shortcut a side that repeats a
 /// single value allows.
-///
-/// A side repeats a single value when it is a column of one element, or one whose only chunk is
-/// scalar; it is then compared against that value rather than written out. `broadcast` gives that
-/// comparison for either side — turned around on the right, where the comparison is not symmetric
-/// — `null` names how a repeated null is answered, and `flat` compares element by element.
-///
-/// `bounded` names, for either side, a repeated value the comparison alone settles: the bounds of
-/// an order that has them.
 macro_rules! broadcast_cmp {
     (@null full_null, $ca:ident) => {
         BooleanChunked::full_null(PlSmallStr::EMPTY, $ca.len())

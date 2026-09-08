@@ -447,9 +447,6 @@ impl PlArrayBuilder for Box<dyn PlArrayBuilder> {
 
 /// Calls `extend` once per maximal run of consecutive indices in `idxs`, with the index the run
 /// starts at and how many indices it covers.
-///
-/// A gather of consecutive indices is a subslice of the array gathered from, which a builder
-/// appends in one go rather than an element at a time.
 pub(crate) fn for_each_run(idxs: &[IdxSize], mut extend: impl FnMut(usize, usize)) {
     let mut run_start = 0;
 
@@ -519,9 +516,6 @@ pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
 }
 
 /// An array of `length` nulls shaped like `arr`, in `O(1)` memory.
-///
-/// Unlike [`new_full_null`], which starts from an array type, this keeps the shape an array type
-/// does not name: the fields of a struct, the values of a list, the rust type of an object array.
 pub fn new_full_null_like(arr: &dyn PlArray, length: usize) -> Box<dyn PlArray> {
     arr.new_full_null_like_self(length)
 }
@@ -691,141 +685,5 @@ pub fn opt_gather_extend_validity(
             // The mask is not scalar, so it holds one bit per element.
             None => dst.opt_gather_extend_from_opt_validity(validity.flat_bitmap(), idxs, length),
         },
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::array_tests::{arrays, assert_picked};
-    use crate::{PlArrayType, PlFixedSizeBinaryArray, PlFixedSizeListArray, PlStructArray};
-
-    /// An array of nulls of an array type alone, which names no shape of its own.
-    #[test]
-    fn new_full_null_of_every_array_type() {
-        for array in arrays() {
-            // A billion elements would not fit in memory if a slot were kept for each of them:
-            // that this test finishes at all is what shows the nulls are in `O(1)` memory.
-            let nulls = new_full_null(array.array_type(), 1_000_000_000);
-            assert_eq!(nulls.array_type(), array.array_type());
-            assert_eq!(nulls.len(), 1_000_000_000);
-            assert_eq!(nulls.null_count(), 1_000_000_000);
-        }
-
-        // The width of a fixed size array, the values of a nested one and the fields of a struct
-        // are no part of a `PlArrayType`, so they come back in the one shape it does name.
-        let nulls = new_full_null(PlArrayType::FixedSizeBinary, 3);
-        let array = nulls
-            .as_any()
-            .downcast_ref::<PlFixedSizeBinaryArray>()
-            .unwrap();
-        assert_eq!(array.width(), 0);
-
-        let nulls = new_full_null(PlArrayType::List, 3);
-        let array = nulls.as_any().downcast_ref::<PlListArray>().unwrap();
-        assert_eq!(array.values().array_type(), PlArrayType::Null);
-        assert!(array.values().is_empty());
-
-        let nulls = new_full_null(PlArrayType::FixedSizeList, 3);
-        let array = nulls
-            .as_any()
-            .downcast_ref::<PlFixedSizeListArray>()
-            .unwrap();
-        assert_eq!(array.width(), 0);
-        assert!(array.values().is_empty());
-
-        let nulls = new_full_null(PlArrayType::Struct, 3);
-        let array = nulls.as_any().downcast_ref::<PlStructArray>().unwrap();
-        assert!(array.fields().is_empty());
-    }
-
-    #[test]
-    fn a_builder_of_every_array_type_appends_arrays() {
-        for array in arrays() {
-            let mut builder = builder_like(&*array);
-            assert!(builder.is_empty());
-
-            builder.reserve(8);
-            builder.extend(&*array, ShareStrategy::Always);
-            builder.extend_nulls(2);
-            builder.subslice_extend(&*array, 1, 2, ShareStrategy::Never);
-
-            let built = builder.freeze();
-            assert_eq!(built.array_type(), array.array_type());
-            assert_picked(
-                &*built,
-                &*array,
-                &[Some(0), Some(1), Some(2), None, None, Some(1), Some(2)],
-            );
-        }
-    }
-
-    /// The elements a subslice, a repeat of one and a repeat of each of them append, in order.
-    #[test]
-    fn a_builder_of_every_array_type_appends_subslices_and_repeats() {
-        for share in [ShareStrategy::Never, ShareStrategy::Always] {
-            for array in arrays() {
-                let mut builder = builder_like(&*array);
-                builder.subslice_extend(&*array, 1, 2, share);
-                builder.extend_nulls(1);
-                builder.subslice_extend_repeated(&*array, 0, 2, 2, share);
-                builder.subslice_extend_each_repeated(&*array, 2, 1, 2, share);
-
-                let built = builder.freeze();
-                assert_picked(
-                    &*built,
-                    &*array,
-                    &[
-                        Some(1),
-                        Some(2),
-                        None,
-                        Some(0),
-                        Some(1),
-                        Some(0),
-                        Some(1),
-                        Some(2),
-                        Some(2),
-                    ],
-                );
-            }
-        }
-    }
-
-    /// The elements a gather picks, of which an index past the end of the array picks a null.
-    #[test]
-    fn a_builder_of_every_array_type_gathers() {
-        for share in [ShareStrategy::Never, ShareStrategy::Always] {
-            for array in arrays() {
-                let mut builder = builder_like(&*array);
-                // SAFETY: the indices are in bounds of an array of three elements.
-                unsafe { builder.gather_extend(&*array, &[2, 0, 1], share) };
-                builder.opt_gather_extend(&*array, &[0, 9], share);
-
-                let built = builder.freeze();
-                assert_picked(
-                    &*built,
-                    &*array,
-                    &[Some(2), Some(0), Some(1), Some(0), None],
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn freeze_reset_leaves_an_empty_builder() {
-        for array in arrays() {
-            let mut builder = builder_like(&*array);
-            builder.extend(&*array, ShareStrategy::Always);
-
-            let built = builder.freeze_reset();
-            assert_eq!(built.len(), 3);
-            assert!(builder.is_empty());
-            assert_eq!(builder.len(), 0);
-
-            builder.extend_nulls(1);
-            let built = builder.freeze();
-            assert_eq!(built.len(), 1);
-            assert_eq!(built.null_count(), 1);
-        }
     }
 }

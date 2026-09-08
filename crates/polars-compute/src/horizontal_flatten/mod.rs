@@ -7,13 +7,8 @@ mod struct_;
 
 /// Lays the `arrays` out end to end, `output_height` rows of `widths[i]` values from `arrays[i]`.
 ///
-/// Every array either holds `widths[i] * output_height` values — one row's worth per output row —
-/// or `widths[i]` of them, the one row it stands for at every output row.
-///
 /// # Panics
-/// Panics if `arrays` is empty, if `arrays` and `widths` are of different lengths, if the arrays
-/// are not all of the same type, or if any array holds neither of the two admissible number of
-/// values.
+/// Panics unless the arrays are of one type and each holds one of the two admissible lengths.
 pub fn horizontal_flatten(
     arrays: &[Box<dyn PlArray>],
     widths: &[usize],

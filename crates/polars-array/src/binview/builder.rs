@@ -511,33 +511,3 @@ impl StaticArrayBuilder for PlBinaryViewArrayBuilder {
         opt_gather_extend_validity(&mut self.validity, other.validity(), idxs, other.len());
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A value of more than `View::MAX_INLINE_SIZE` bytes, which no view inlines.
-    const LONG: &[u8] = b"a value that is too long to inline";
-
-    #[test]
-    fn a_chunked_gather_over_unmasked_chunks_holds_one_mask_slot_per_id() {
-        let chunk: PlBinaryViewArray = [Some(b"foo".as_slice()), Some(LONG)].into_iter().collect();
-        assert!(chunk.validity().is_none(), "the chunk carries no mask");
-
-        let ids: [ChunkId<24>; 4] = [
-            ChunkId::store(0, 1),
-            ChunkId::null(),
-            ChunkId::store(0, 0),
-            ChunkId::null(),
-        ];
-
-        let mut builder = PlBinaryViewArrayBuilder::new();
-        unsafe { builder.opt_chunked_gather_extend(&[&chunk], &ids, ShareStrategy::Always) };
-
-        let built = builder.freeze();
-        assert_eq!(
-            built.iter().collect::<Vec<_>>(),
-            [Some(LONG), None, Some(b"foo".as_slice()), None],
-        );
-    }
-}

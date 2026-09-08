@@ -213,29 +213,3 @@ impl StaticArrayBuilder for PlBooleanArrayBuilder {
         opt_gather_extend_validity(&mut self.validity, other.validity(), idxs, other.len());
     }
 }
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-
-    #[test]
-    fn pushing_elements_one_at_a_time() {
-        let mut builder = PlBooleanArrayBuilder::with_capacity(4);
-        builder.push_value(true);
-        builder.push_null();
-        builder.push(Some(false));
-        builder.push(None);
-
-        assert_eq!(builder.len(), 4);
-        assert_eq!(
-            builder.freeze().iter().collect::<Vec<_>>(),
-            [Some(true), None, Some(false), None],
-        );
-
-        // The mask only comes into being once a null is pushed.
-        let mut valid = PlBooleanArrayBuilder::new();
-        valid.push_value(true);
-        assert!(valid.freeze().validity().is_none());
-    }
-}

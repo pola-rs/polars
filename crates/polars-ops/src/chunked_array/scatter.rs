@@ -201,8 +201,7 @@ where
 /// [`with_values_mut`] for views: writes into the views, copying them out where it cannot.
 ///
 /// # Safety
-/// Every view `f` leaves behind must read bytes that the array's buffers hold, or ones it pushed
-/// onto the buffers it was handed.
+/// Every view `f` leaves behind must read bytes the array's buffers hold or it pushed onto them.
 unsafe fn with_views_mut<F>(arr: &mut PlBinaryViewArray, f: F)
 where
     F: FnOnce(&mut [View], u32, &mut Vec<Vec<u8>>),

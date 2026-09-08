@@ -117,9 +117,6 @@ where
 
     /// Create a new [`ChunkedArray`] from existing chunks.
     ///
-    /// The [`DataType`] is the static one of `T`, which names no inner type: a nested
-    /// [`ChunkedArray`] is built with [`ChunkedArray::from_chunks_and_dtype`] instead.
-    ///
     /// # Safety
     /// The physical type of all chunks must match the [`PolarsDataType`] `T`.
     pub unsafe fn from_chunks(name: PlSmallStr, chunks: Vec<PlArrayRef>) -> Self {

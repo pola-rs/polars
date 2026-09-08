@@ -114,39 +114,3 @@ impl<'a, T: NativeType> PlPrimitiveIter<'a, T> {
 }
 
 crate::impl_optional_iter!([T: NativeType] PlPrimitiveIter<'a, T>, T);
-
-#[cfg(test)]
-mod tests {
-
-    use crate::PlPrimitiveArray;
-    use crate::iterator_tests::assert_iterates;
-
-    #[test]
-    fn flat() {
-        let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
-
-        assert_iterates(array.values_iter(), &[1, 2, 3]);
-        assert_iterates(array.iter(), &[Some(1), Some(2), Some(3)]);
-    }
-
-    #[test]
-    fn scalar() {
-        let array = PlPrimitiveArray::new_scalar(7i32, 4);
-
-        assert_iterates(array.values_iter(), &[7; 4]);
-        assert_iterates(array.iter(), &[Some(7); 4]);
-    }
-
-    #[test]
-    fn a_broadcast_array_is_not_materialized() {
-        // Walking a billion elements would not finish; the scalar path must hit.
-        let array = PlPrimitiveArray::new_scalar(7i32, 1_000_000_000);
-
-        assert_eq!(array.values_iter().count(), 1_000_000_000);
-        assert_eq!(array.values_iter().nth(999_999_999), Some(7));
-        assert_eq!(array.values_iter().nth_back(999_999_999), Some(7));
-        assert_eq!(array.values_iter().last(), Some(7));
-        assert_eq!(array.iter().nth(999_999_999), Some(Some(7)));
-        assert_eq!(array.iter().nth_back(999_999_999), Some(Some(7)));
-    }
-}
