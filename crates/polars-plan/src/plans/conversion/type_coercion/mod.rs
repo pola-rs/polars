@@ -146,7 +146,7 @@ impl OptimizationRule for TypeCoercionRule {
                             null_upcast: true,
                             categorical_to_string: true,
                             missing_struct_fields: MissingColumnsPolicy::Insert,
-                            extra_struct_fields: ExtraColumnsPolicy::Ignore,
+                            extra_struct_fields: ExtraColumnsPolicy::Raise,
                         }
                         .should_cast_column("", cast_to, &cast_from);
 
