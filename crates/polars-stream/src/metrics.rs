@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use polars_async::executor::TaskMetrics;
 pub use polars_io::metrics::{IOMetrics, OptIOMetrics};
@@ -41,7 +41,7 @@ impl NodeMetrics {
     fn add_task(&mut self, task_metrics: &TaskMetrics) {
         self.total_polls += task_metrics.total_polls.load();
         self.total_stolen_polls += task_metrics.total_stolen_polls.load();
-        self.total_poll_time_ns += task_metrics.total_poll_time_ns.load();
+        self.total_poll_time_ns += task_metrics.poll_timer.total_time_live_ns();
         self.max_poll_time_ns = self
             .max_poll_time_ns
             .max(task_metrics.max_poll_time_ns.load());
@@ -95,6 +95,7 @@ impl NodeMetrics {
 #[derive(Default, Clone)]
 pub struct GraphMetrics {
     node_metrics: SecondaryMap<GraphNodeKey, NodeMetrics>,
+    in_progress_state_updates: SecondaryMap<GraphNodeKey, Instant>,
     in_progress_io_metrics: SecondaryMap<GraphNodeKey, Arc<IOMetrics>>,
     in_progress_task_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<TaskMetrics>>>,
     in_progress_pipe_metrics: SecondaryMap<LogicalPipeKey, Vec<Arc<PipeMetrics>>>,
@@ -117,7 +118,8 @@ impl GraphMetrics {
             .push(pipe_metrics);
     }
 
-    pub fn start_state_update(&mut self, key: GraphNodeKey) {
+    pub fn start_state_update(&mut self, key: GraphNodeKey, start: Instant) {
+        self.in_progress_state_updates.insert(key, start);
         self.node_metrics
             .entry(key)
             .unwrap()
@@ -125,11 +127,26 @@ impl GraphMetrics {
             .start_state_update();
     }
 
-    pub fn stop_state_update(&mut self, key: GraphNodeKey, time: Duration, is_done: bool) {
-        self.node_metrics[key].stop_state_update(time, is_done);
+    pub fn stop_state_update(&mut self, key: GraphNodeKey, is_done: bool) {
+        let start = self.in_progress_state_updates.remove(key).unwrap();
+        self.node_metrics[key].stop_state_update(start.elapsed(), is_done);
     }
 
     pub fn flush(&mut self, pipes: &SlotMap<LogicalPipeKey, LogicalPipe>) {
+        self.flush_at(pipes, Instant::now());
+    }
+
+    pub(crate) fn flush_at(&mut self, pipes: &SlotMap<LogicalPipeKey, LogicalPipe>, now: Instant) {
+        // A snapshot can be taken during a state update. Materialize its elapsed time
+        // in the cloned metrics without changing the completed totals in the live graph.
+        for (key, start) in self.in_progress_state_updates.drain() {
+            let elapsed_ns = now.duration_since(start).as_nanos() as u64;
+            let node_metrics = &mut self.node_metrics[key];
+            node_metrics.total_state_update_time_ns += elapsed_ns;
+            node_metrics.max_state_update_time_ns =
+                node_metrics.max_state_update_time_ns.max(elapsed_ns);
+        }
+
         for (key, in_progress_task_metrics) in self.in_progress_task_metrics.iter_mut() {
             let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
             this_node_metrics.num_running_tasks = 0;

@@ -4,8 +4,11 @@ import asyncio
 import os
 import sys
 import tempfile
+import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 from types import ModuleType
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
@@ -377,6 +380,65 @@ def test_metrics_handle_snapshot() -> None:
     assert expected_keys <= set(rows[0].keys())
     assert any(r["done"] for r in rows)
     assert sum(r["rows_sent"] for r in rows) > 0
+
+
+@pytest.mark.parametrize("streamable", [True, False])
+@pytest.mark.parametrize("fail", [False, True])
+def test_metrics_handle_snapshot_during_execution(streamable: bool, fail: bool) -> None:
+    msgpack = pytest.importorskip("msgpack")
+    module, observer = fake_cloud_observer()
+    entered = Event()
+    release = Event()
+
+    def wait_for_snapshot(df: pl.DataFrame) -> pl.DataFrame:
+        entered.set()
+        assert release.wait(timeout=10)
+        if fail:
+            msg = "query failed after snapshot"
+            raise ValueError(msg)
+        return df
+
+    df = pl.DataFrame({"a": [1]})
+    lf = df.lazy().map_batches(wait_for_snapshot, streamable=streamable)
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        engine = StreamingEngine(monitoring=True)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(lf.collect, engine=engine)
+            try:
+                assert entered.wait(timeout=10)
+                handle = observer.on_query_planned.call_args.args[1]
+
+                def snapshot() -> list[dict[str, int | bool]]:
+                    return msgpack.unpackb(handle.snapshot_query_metrics(), raw=False)
+
+                before = snapshot()
+                time.sleep(0.05)
+                during = snapshot()
+                field = (
+                    "total_poll_time_ns" if streamable else "total_state_update_time_ns"
+                )
+                active = next(r for r in during if r["rows_received"] > 0)
+                previous = next(
+                    r for r in before if r["phys_node_key"] == active["phys_node_key"]
+                )
+                assert not active["done"]
+                assert active[field] - previous[field] >= 25_000_000
+            finally:
+                release.set()
+
+            if fail:
+                with pytest.raises(ValueError, match="query failed after snapshot"):
+                    future.result(timeout=10)
+            else:
+                assert future.result(timeout=10).equals(df)
+
+        after = snapshot()
+        completed = next(
+            r for r in after if r["phys_node_key"] == active["phys_node_key"]
+        )
+        assert completed["done"] == (not fail)
+        assert completed[field] >= active[field]
+        assert snapshot() == after
 
 
 def test_on_query_failed_called() -> None:

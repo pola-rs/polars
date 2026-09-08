@@ -107,18 +107,20 @@ impl Graph {
             }
             let start = (metrics.is_some() || verbose).then(Instant::now);
             if let Some(lock) = metrics {
-                lock.lock().start_state_update(node_key);
+                lock.lock().start_state_update(node_key, start.unwrap());
             }
 
-            node.compute
-                .update_state(&mut recv_state, &mut send_state, state)?;
+            let result = node
+                .compute
+                .update_state(&mut recv_state, &mut send_state, state);
             let elapsed = start.map(|s| s.elapsed());
             if let Some(lock) = metrics {
-                let is_done = recv_state.iter().all(|s| *s == PortState::Done)
+                let is_done = result.is_ok()
+                    && recv_state.iter().all(|s| *s == PortState::Done)
                     && send_state.iter().all(|s| *s == PortState::Done);
-                lock.lock()
-                    .stop_state_update(node_key, elapsed.unwrap(), is_done);
+                lock.lock().stop_state_update(node_key, is_done);
             }
+            result?;
             if verbose {
                 eprintln!(
                     "updating {}, after: {recv_state:?} {send_state:?} (took {:?})",

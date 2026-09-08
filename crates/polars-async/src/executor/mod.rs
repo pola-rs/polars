@@ -26,6 +26,7 @@ use crossbeam_utils::CachePadded;
 use numa::{NumaRegionId, cpu_idx_to_numa_region, num_numa_regions, pin_thread_to_numa_region};
 use park_group::ParkGroup;
 use parking_lot::Mutex;
+use polars_utils::live_timer::LiveTimer;
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::with_drop::WithDrop;
 use rand::rngs::SmallRng;
@@ -78,7 +79,7 @@ struct ScopedTaskMetadata {
 pub struct TaskMetrics {
     pub total_polls: RelaxedCell<u64>,
     pub total_stolen_polls: RelaxedCell<u64>,
-    pub total_poll_time_ns: RelaxedCell<u64>,
+    pub poll_timer: LiveTimer,
     pub max_poll_time_ns: RelaxedCell<u64>,
     pub done: RelaxedCell<bool>,
 }
@@ -382,14 +383,16 @@ impl Executor {
                 }
 
                 if let Some(metrics) = task.metadata().metrics.clone() {
+                    // Include ongoing polls in snapshots, even if a poll takes a long time.
+                    let poll_session = metrics.poll_timer.start_session();
                     let start = Instant::now();
                     task.run();
                     let elapsed_ns = start.elapsed().as_nanos() as u64;
+                    drop(poll_session);
                     metrics.total_polls.fetch_add(1);
                     if !local {
                         metrics.total_stolen_polls.fetch_add(1);
                     }
-                    metrics.total_poll_time_ns.fetch_add(elapsed_ns);
                     metrics.max_poll_time_ns.fetch_max(elapsed_ns);
                 } else {
                     task.run();

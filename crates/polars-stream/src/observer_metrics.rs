@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use parking_lot::Mutex;
 use polars_descriptions::NodeMetricsDescription;
@@ -30,8 +31,13 @@ impl StreamingQueryMetricsSnapshotter {
 
 impl QueryMetricsSnapshotter for StreamingQueryMetricsSnapshotter {
     fn snapshot(&self) -> Vec<NodeMetricsDescription> {
-        let mut metrics = { self.metrics.lock().clone() };
-        metrics.flush(&self.pipes);
+        let (mut metrics, now) = {
+            let metrics = self.metrics.lock();
+            (metrics.clone(), Instant::now())
+        };
+        // Fix the timestamp while holding the lock: a state update may finish
+        // between cloning the metrics and materializing the snapshot.
+        metrics.flush_at(&self.pipes, now);
 
         self.phys_to_graph
             .iter()
