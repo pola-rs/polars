@@ -715,6 +715,15 @@ impl PlArray for PlFixedSizeListArray {
         Box::new(self.clone())
     }
 
+    fn new_full_null(&self, length: usize) -> Box<dyn PlArray> {
+        // An element of a null list is as wide as any other, so the one element the values stand
+        // for is as many nulls as this array is wide.
+        Box::new(Self::new_full_null(
+            self.values.new_full_null(self.width),
+            length,
+        ))
+    }
+
     fn eq_dyn(&self, other: &dyn PlArray) -> bool {
         other
             .as_any()

@@ -170,16 +170,12 @@ where
         ChunkedArray::new_with_compute_len(field, chunks)
     }
 
-    /// A [`ChunkedArray`] of `length` nulls, laid out like `ca`.
-    pub fn full_null_like(ca: &Self, length: usize) -> Self {
-        let prototype = ca.chunks.first().expect("a ChunkedArray has a chunk");
-        let chunks = vec![prototype.full_null_like(length)];
+    /// An unnamed [`ChunkedArray`] of `length` nulls, laid out the way `dtype` describes.
+    pub fn new_full_null(dtype: &DataType, length: usize) -> Self {
+        let chunks = vec![new_full_null_chunk(dtype, length)];
         unsafe {
-            let mut out = Self::from_chunks_and_dtype_unchecked(
-                ca.name().clone(),
-                chunks,
-                ca.dtype().clone(),
-            );
+            let mut out =
+                Self::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, chunks, dtype.clone());
             out.length = length;
             out.null_count = length;
             out

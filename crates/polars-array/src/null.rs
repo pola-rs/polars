@@ -278,6 +278,10 @@ impl PlArray for PlNullArray {
         Box::new(*self)
     }
 
+    fn new_full_null(&self, length: usize) -> Box<dyn PlArray> {
+        Box::new(Self::new_full_null(length))
+    }
+
     fn eq_dyn(&self, other: &dyn PlArray) -> bool {
         other
             .as_any()

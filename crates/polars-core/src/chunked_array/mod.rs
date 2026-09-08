@@ -704,7 +704,8 @@ where
         }
 
         if set_bits == 0 {
-            return Self::full_null_like(self, validity.len());
+            return Self::new_full_null(self.dtype(), validity.len())
+                .with_name(self.name().clone());
         }
 
         // A mask that repeats a single bit is set everywhere or unset everywhere, and both of
@@ -1079,6 +1080,51 @@ pub fn new_empty_chunk(dtype: &DataType) -> PlArrayRef {
     polars_array::arrow::import::from_arrow(&*new_empty_array(arrow_dtype))
 }
 
+/// A chunk of `length` nulls, laid out the way `dtype` describes.
+///
+/// A [`PlArrayType`](polars_array::PlArrayType) names the array a chunk is held in, but not the
+/// shape a nested one carries: that is what the inner types of `dtype` are read for. The nulls
+/// are in `O(1)` memory, except the ones of an object array, which are values like any other.
+pub fn new_full_null_chunk(dtype: &DataType, length: usize) -> PlArrayRef {
+    match dtype {
+        // Every element is an empty list, so the values are only there to carry the inner shape.
+        DataType::List(inner) => {
+            Box::new(PlListArray::new_full_null(new_empty_chunk(inner), length))
+        },
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(inner, width) => {
+            // An element of a null list is as wide as any other, so the one element the values
+            // stand for is `width` nulls of the inner type.
+            let values = new_full_null_chunk(inner, *width);
+            Box::new(PlFixedSizeListArray::new_full_null(values, length))
+        },
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(fields) => {
+            let fields = fields
+                .iter()
+                .map(|field| new_full_null_chunk(field.dtype(), length))
+                .collect();
+            Box::new(PlStructArray::new_full_null(fields, length))
+        },
+        // A map is stored as a list of its entries, which is the shape the nulls are built in.
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(_, _) => new_full_null_chunk(&dtype.map_storage_dtype().unwrap(), length),
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(_, storage) => new_full_null_chunk(storage, length),
+        // An object array is over a rust type that only the object registry knows, so its own
+        // builder is what builds one.
+        #[cfg(feature = "object")]
+        DataType::Object(_) => {
+            let mut builder =
+                crate::chunked_array::object::registry::get_object_builder(PlSmallStr::EMPTY, 0)
+                    .as_array_builder();
+            builder.extend_nulls(length);
+            builder.freeze_reset()
+        },
+        _ => polars_array::builder::new_full_null(dtype.to_pl_array_type(), length),
+    }
+}
+
 /// Re-chunk `values` so that its chunk lengths match `chunk_lens`.
 ///
 /// The sum of `chunk_lens` must equal `values.len()`. Returns a clone when the chunks
@@ -1154,10 +1200,88 @@ impl<T: PolarsDataType> BroadcastLength for ChunkedArray<T> {
 
 #[cfg(test)]
 pub(crate) mod test {
+    use super::{new_empty_chunk, new_full_null_chunk};
     use crate::prelude::*;
 
     pub(crate) fn get_chunked_array() -> Int32Chunked {
         ChunkedArray::new(PlSmallStr::from_static("a"), &[1, 2, 3])
+    }
+
+    /// The data types a chunk of nulls is built for, one of every array type they are held in.
+    fn dtypes() -> Vec<DataType> {
+        vec![
+            DataType::Null,
+            DataType::Boolean,
+            DataType::Int8,
+            DataType::Int16,
+            DataType::Int32,
+            DataType::Int64,
+            DataType::Int128,
+            DataType::UInt8,
+            DataType::UInt16,
+            DataType::UInt32,
+            DataType::UInt64,
+            DataType::UInt128,
+            DataType::Float32,
+            DataType::Float64,
+            DataType::String,
+            DataType::Binary,
+            DataType::BinaryOffset,
+            DataType::Date,
+            DataType::Datetime(TimeUnit::Microseconds, None),
+            DataType::Duration(TimeUnit::Nanoseconds),
+            DataType::Time,
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(38, 2),
+            DataType::List(Box::new(DataType::Int32)),
+            DataType::List(Box::new(DataType::List(Box::new(DataType::String)))),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(Box::new(DataType::Int32), 2),
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(vec![
+                Field::new(PlSmallStr::from_static("a"), DataType::Int32),
+                Field::new(
+                    PlSmallStr::from_static("b"),
+                    DataType::List(Box::new(DataType::Boolean)),
+                ),
+            ]),
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(Box::new(DataType::String), Box::new(DataType::Int32)),
+        ]
+    }
+
+    /// The array a chunk of nulls is held in is the one an empty chunk of the type is held in,
+    /// which is the shape Arrow reads out of the data type.
+    #[test]
+    fn a_full_null_chunk_is_shaped_like_an_empty_one() {
+        for dtype in dtypes() {
+            let nulls = new_full_null_chunk(&dtype, 1_000_000_000);
+            let empty = new_empty_chunk(&dtype);
+            assert_eq!(nulls.array_type(), empty.array_type(), "{dtype:?}");
+            assert_eq!(dtype.to_pl_array_type(), empty.array_type(), "{dtype:?}");
+
+            // A billion elements would not fit in memory if a slot were kept for each of them:
+            // that this test finishes at all is what shows the nulls are in `O(1)` memory.
+            assert_eq!(nulls.len(), 1_000_000_000, "{dtype:?}");
+            assert_eq!(nulls.null_count(), 1_000_000_000, "{dtype:?}");
+
+            // The values of a nested chunk are of the inner type, all the way down: the chunk is
+            // laid out the way a chunk of values of the type is, however deep it goes.
+            let mut builder = polars_array::builder::builder_like(&*empty);
+            builder.subslice_extend(&*nulls, 0, 3, polars_array::builder::ShareStrategy::Always);
+            assert_eq!(builder.freeze_reset().null_count(), 3, "{dtype:?}");
+        }
+    }
+
+    /// A `ChunkedArray` of nulls is of the data type it was asked for, nulls counted up front.
+    #[test]
+    fn a_full_null_chunked_array_carries_its_dtype() {
+        let dtype = DataType::List(Box::new(DataType::Int32));
+        let ca = ListChunked::new_full_null(&dtype, 1_000_000_000);
+        assert_eq!(ca.dtype(), &dtype);
+        assert_eq!(ca.len(), 1_000_000_000);
+        assert_eq!(ca.null_count(), 1_000_000_000);
+        assert_eq!(ca.name(), "");
     }
 
     #[test]

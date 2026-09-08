@@ -733,6 +733,11 @@ impl PlArray for PlListArray {
         Box::new(self.clone())
     }
 
+    fn new_full_null(&self, length: usize) -> Box<dyn PlArray> {
+        // Every element is an empty list, so the values are only there to carry their shape.
+        Box::new(Self::new_full_null(self.values.sliced(0, 0), length))
+    }
+
     fn eq_dyn(&self, other: &dyn PlArray) -> bool {
         other
             .as_any()

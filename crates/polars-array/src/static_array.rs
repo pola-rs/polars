@@ -64,6 +64,13 @@ pub trait StaticArray: PlArray + Clone {
     /// An empty builder of arrays shaped like this one.
     fn builder_like(&self) -> Self::Builder;
 
+    /// An array of `length` null elements, in `O(1)` memory.
+    ///
+    /// The array types that carry a shape of their own answer in the one shape their
+    /// [`PlArrayType`](crate::PlArrayType) alone names: a struct of no fields, a list over no
+    /// values, a width of zero. Their own `new_full_null` takes a shape to answer in another.
+    fn new_full_null(length: usize) -> Self;
+
     /// Returns the element at `i`, whether or not it is null.
     #[inline]
     fn value(&self, i: usize) -> Self::ValueT<'_> {
@@ -165,6 +172,11 @@ impl<T: NativeType> StaticArray for PlPrimitiveArray<T> {
         PlPrimitiveArrayBuilder::new()
     }
 
+    #[inline]
+    fn new_full_null(length: usize) -> Self {
+        Self::new_full_null(length)
+    }
+
     #[inline(always)]
     fn as_slice(&self) -> Option<&[T]> {
         // `None` for a scalar chunk, whose one slot is not one slot per element.
@@ -235,6 +247,11 @@ impl StaticArray for PlBooleanArray {
     }
 
     #[inline]
+    fn new_full_null(length: usize) -> Self {
+        Self::new_full_null(length)
+    }
+
+    #[inline]
     unsafe fn value_unchecked(&self, i: usize) -> bool {
         unsafe { self.value_unchecked(i) }
     }
@@ -298,6 +315,11 @@ impl StaticArray for PlBinaryArray {
     }
 
     #[inline]
+    fn new_full_null(length: usize) -> Self {
+        Self::new_full_null(length)
+    }
+
+    #[inline]
     unsafe fn value_unchecked(&self, i: usize) -> &[u8] {
         unsafe { self.value_unchecked(i) }
     }
@@ -358,6 +380,11 @@ impl StaticArray for PlBinaryViewArray {
     #[inline]
     fn builder_like(&self) -> Self::Builder {
         PlBinaryViewArrayBuilder::new()
+    }
+
+    #[inline]
+    fn new_full_null(length: usize) -> Self {
+        Self::new_full_null(length)
     }
 
     #[inline]
@@ -425,6 +452,11 @@ impl StaticArray for PlUtf8ViewArray {
     }
 
     #[inline]
+    fn new_full_null(length: usize) -> Self {
+        Self::new_full_null(length)
+    }
+
+    #[inline]
     unsafe fn value_unchecked(&self, i: usize) -> &str {
         unsafe { self.value_unchecked(i) }
     }
@@ -485,6 +517,12 @@ impl StaticArray for PlFixedSizeBinaryArray {
     #[inline]
     fn builder_like(&self) -> Self::Builder {
         PlFixedSizeBinaryArrayBuilder::new(self.width())
+    }
+
+    /// The elements are of the one width a [`PlArrayType`](crate::PlArrayType) names: zero bytes.
+    #[inline]
+    fn new_full_null(length: usize) -> Self {
+        Self::new_full_null(0, length)
     }
 
     #[inline]
@@ -550,6 +588,13 @@ impl StaticArray for PlListArray {
         PlListArrayBuilder::new(crate::builder::builder_like(self.values()))
     }
 
+    /// Every element is an empty list, over the one values array a
+    /// [`PlArrayType`](crate::PlArrayType) names: no null values at all.
+    #[inline]
+    fn new_full_null(length: usize) -> Self {
+        Self::new_full_null(Box::new(PlNullArray::new_empty()), length)
+    }
+
     #[inline]
     unsafe fn value_unchecked(&self, i: usize) -> Box<dyn PlArray> {
         unsafe { self.value_unchecked(i) }
@@ -611,6 +656,13 @@ impl StaticArray for PlFixedSizeListArray {
     #[inline]
     fn builder_like(&self) -> Self::Builder {
         PlFixedSizeListArrayBuilder::new(crate::builder::builder_like(self.values()), self.width())
+    }
+
+    /// Every element is a list of the one width a [`PlArrayType`](crate::PlArrayType) names: zero
+    /// values wide.
+    #[inline]
+    fn new_full_null(length: usize) -> Self {
+        Self::new_full_null(Box::new(PlNullArray::new_empty()), length)
     }
 
     #[inline]
@@ -682,6 +734,13 @@ impl StaticArray for PlStructArray {
         )
     }
 
+    /// The elements are rows across the one set of fields a [`PlArrayType`](crate::PlArrayType)
+    /// names: no fields at all.
+    #[inline]
+    fn new_full_null(length: usize) -> Self {
+        Self::new_full_null(vec![], length)
+    }
+
     #[inline]
     unsafe fn value_unchecked(&self, _i: usize) -> Self::ValueT<'_> {}
 
@@ -738,6 +797,11 @@ impl StaticArray for PlNullArray {
     #[inline]
     fn builder_like(&self) -> Self::Builder {
         PlNullArrayBuilder::new()
+    }
+
+    #[inline]
+    fn new_full_null(length: usize) -> Self {
+        Self::new_full_null(length)
     }
 
     #[inline]

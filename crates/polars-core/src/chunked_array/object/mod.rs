@@ -296,7 +296,7 @@ impl<T: PolarsObject> PlArray for ObjectArray<T> {
     }
 
     /// An object array lives outside `polars-array`, so this is where it is built instead.
-    fn full_null_like(&self, length: usize) -> Box<dyn PlArray> {
+    fn new_full_null(&self, length: usize) -> Box<dyn PlArray> {
         Box::new(Self::new_full_null(length))
     }
 
@@ -326,6 +326,11 @@ impl<T: PolarsObject> StaticArray for ObjectArray<T> {
     #[inline]
     fn builder_like(&self) -> Self::Builder {
         ObjectArrayBuilder::new()
+    }
+
+    #[inline]
+    fn new_full_null(length: usize) -> Self {
+        Self::new_full_null(length)
     }
 
     #[inline]

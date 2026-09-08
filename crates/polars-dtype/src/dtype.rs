@@ -14,6 +14,7 @@ use arrow::datatypes::{
     ArrowDataType, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY, DTYPE_ENUM_VALUES_NEW,
     Field as ArrowField, MAINTAIN_PL_TYPE, Metadata, PL_KEY, TimeUnit as ArrowTimeUnit,
 };
+use polars_array::{PlArrayType, PrimitiveType};
 #[cfg(any(
     feature = "dtype-array",
     feature = "dtype-map",
@@ -562,6 +563,77 @@ impl DataType {
             #[cfg(feature = "dtype-extension")]
             Extension(_, storage) => storage.to_physical(),
             _ => self.clone(),
+        }
+    }
+
+    /// The array type an array of this data type is held in.
+    ///
+    /// A [`PlArrayType`] names a physical representation, so a logical type answers with the one
+    /// it is stored in: a `Date` is held in an array of `Int32`, an `Enum` in one of the integers
+    /// its categories are numbered by, a `Map` in a list of its entries.
+    ///
+    /// # Panics
+    /// For [`UnknownKind::Any`], which is no type an array is held in.
+    pub fn to_pl_array_type(&self) -> PlArrayType {
+        use DataType::*;
+
+        macro_rules! primitive {
+            ($T:ident) => {
+                PlArrayType::Primitive(PrimitiveType::$T)
+            };
+        }
+
+        match self {
+            Boolean => PlArrayType::Boolean,
+            UInt8 => primitive!(UInt8),
+            UInt16 => primitive!(UInt16),
+            UInt32 => primitive!(UInt32),
+            UInt64 => primitive!(UInt64),
+            UInt128 => primitive!(UInt128),
+            Int8 => primitive!(Int8),
+            Int16 => primitive!(Int16),
+            Int32 => primitive!(Int32),
+            Int64 => primitive!(Int64),
+            Int128 => primitive!(Int128),
+            Float16 => primitive!(Float16),
+            Float32 => primitive!(Float32),
+            Float64 => primitive!(Float64),
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => primitive!(Int128),
+            String => PlArrayType::Utf8View,
+            Binary => PlArrayType::BinaryView,
+            BinaryOffset => PlArrayType::Binary,
+            Date => primitive!(Int32),
+            Datetime(_, _) | Duration(_) | Time => primitive!(Int64),
+            #[cfg(feature = "dtype-array")]
+            Array(_, _) => PlArrayType::FixedSizeList,
+            List(_) => PlArrayType::List,
+            #[cfg(feature = "object")]
+            Object(type_name) => PlArrayType::Object { type_name },
+            Null => PlArrayType::Null,
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_, _) | Enum(_, _) => match self.cat_physical().unwrap() {
+                CategoricalPhysical::U8 => primitive!(UInt8),
+                CategoricalPhysical::U16 => primitive!(UInt16),
+                CategoricalPhysical::U32 => primitive!(UInt32),
+            },
+            #[cfg(feature = "dtype-struct")]
+            Struct(_) => PlArrayType::Struct,
+            // A map is stored as a list of its entries, each of them a key and a value.
+            #[cfg(feature = "dtype-map")]
+            Map(_, _) => PlArrayType::List,
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.to_pl_array_type(),
+            // An unknown type is stored the way it is materialized, which is what a `Series` of
+            // one is read back as; there is no array of a type that is unknown outright.
+            Unknown(kind) => match kind {
+                UnknownKind::Float => primitive!(Float64),
+                UnknownKind::Str => PlArrayType::Utf8View,
+                UnknownKind::Int(value) => dyn_int_dtype(*value).to_pl_array_type(),
+                UnknownKind::Any => {
+                    panic!("an array of a wholly unknown data type is held in no array type")
+                },
+            },
         }
     }
 

@@ -428,6 +428,10 @@ impl PlArray for PlUtf8ViewArray {
         Box::new(self.clone())
     }
 
+    fn new_full_null(&self, length: usize) -> Box<dyn PlArray> {
+        Box::new(Self::new_full_null(length))
+    }
+
     #[inline]
     fn eq_dyn(&self, other: &dyn PlArray) -> bool {
         // A string array equals another string array with the same elements; a byte array of the

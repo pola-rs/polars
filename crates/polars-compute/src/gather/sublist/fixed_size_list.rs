@@ -30,7 +30,7 @@ pub fn sub_fixed_size_list_get_literal(
         if !null_on_oob {
             polars_bail!(ComputeError: "get index is out of bounds");
         }
-        return Ok(arr.values().full_null_like(arr.len()));
+        return Ok(arr.values().new_full_null(arr.len()));
     };
 
     // Values that hold the single element every element of `arr` repeats are indexed in place: the

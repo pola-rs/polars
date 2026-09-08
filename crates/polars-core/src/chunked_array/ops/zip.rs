@@ -100,7 +100,8 @@ where
         // Broadcast both.
         let ret = if if_true.len() == 1 && if_false.len() == 1 {
             match (if_true.get(0), if_false.get(0)) {
-                (None, None) => ChunkedArray::full_null_like(if_true, mask.len()),
+                (None, None) => ChunkedArray::new_full_null(if_true.dtype(), mask.len())
+                    .with_name(if_true.name().clone()),
                 (None, Some(_)) => {
                     combine_validities_chunked(&if_false.new_from_index(0, mask.len()), mask, true)
                 },

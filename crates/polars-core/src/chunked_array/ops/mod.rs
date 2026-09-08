@@ -580,12 +580,7 @@ impl ChunkExpandAtIndex<StructType> for StructChunked {
         let chunk = self.downcast_chunks().get(chunk_idx).unwrap();
         let chunk = if chunk.is_null(idx) {
             // Every element of the result is null, so the fields are nulls of the new length.
-            let fields = chunk
-                .fields()
-                .iter()
-                .map(|field| polars_array::builder::full_null_like(&**field, length))
-                .collect();
-            PlStructArray::new_full_null(fields, length).into_boxed()
+            chunk.new_full_null(length)
         } else {
             let values = chunk
                 .fields()

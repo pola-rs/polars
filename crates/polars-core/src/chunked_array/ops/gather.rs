@@ -51,7 +51,7 @@ pub fn check_bounds_ca(indices: &IdxCa, len: IdxSize) -> PolarsResult<()> {
         if a.null_count() == 0 {
             check_bounds(a.as_slice(), len).is_ok()
         } else {
-            check_bounds_nulls(a, len).is_ok()
+            check_bounds_nulls(&a, len).is_ok()
         }
     });
     polars_ensure!(all_valid, OutOfBounds: "gather indices are out of bounds");
@@ -200,6 +200,15 @@ where
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
+            if let Some(v) = idx_arr.scalar_value() {
+                return if let Some(idx) = v {
+                    gather_idx_array_unchecked(&targets, targets_have_nulls, &[idx])
+                        .new_from_index_typed(0, idx_arr.len())
+                } else {
+                    T::full_null_array(idx_arr.len())
+                };
+            }
+
             if idx_arr.null_count() == 0 {
                 // The kernel reads the indices as a slice, so a chunk that repeats one index is
                 // written out here; every other arm reads them through the iterator instead.

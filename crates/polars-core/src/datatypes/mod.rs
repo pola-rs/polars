@@ -34,7 +34,7 @@ use num_traits::{AsPrimitive, Bounded, FromPrimitive, Num, NumCast, One, Zero};
 pub use polars_array::{ArrayCollectIterExt, ArrayFromIter, StaticArray};
 use polars_array::{
     PlArray, PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeListArray, PlListArray,
-    PlNullArray, PlPrimitiveArray, PlStructArray, PlUtf8ViewArray,
+    PlPrimitiveArray, PlStructArray, PlUtf8ViewArray,
 };
 use polars_compute::arithmetic::HasPrimitiveArithmeticKernel;
 use polars_compute::float_sum::FloatSum;
@@ -98,7 +98,13 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized + 'static {
         Self: Sized;
 
     /// An array of `length` nulls, laid out the way [`Self::get_static_dtype`] describes.
-    fn full_null_array(length: usize) -> Self::Array;
+    ///
+    /// The static data type of a nested type names no inner type, which is the shape
+    /// [`StaticArray::new_full_null`] answers in when it is passed none.
+    #[inline]
+    fn full_null_array(length: usize) -> Self::Array {
+        StaticArray::new_full_null(length)
+    }
 }
 
 pub trait PolarsPhysicalType: PolarsDataType {
@@ -155,11 +161,6 @@ macro_rules! impl_polars_num_datatype {
             fn get_static_dtype() -> DataType {
                 DataType::$variant
             }
-
-            #[inline]
-            fn full_null_array(length: usize) -> Self::Array {
-                PlPrimitiveArray::new_full_null(length)
-            }
         }
 
         impl PolarsNumericType for $pdt {
@@ -188,11 +189,6 @@ macro_rules! impl_polars_datatype {
             #[inline]
             fn get_static_dtype() -> DataType {
                 $dtype
-            }
-
-            #[inline]
-            fn full_null_array(length: usize) -> Self::Array {
-                <$arr>::new_full_null(length)
             }
         }
     };
@@ -273,11 +269,6 @@ unsafe impl PolarsDataType for ListType {
         // Null as we cannot know anything without self.
         DataType::List(Box::new(DataType::Null))
     }
-
-    fn full_null_array(length: usize) -> Self::Array {
-        // Every element is an empty list, over the values `List(Null)` calls for.
-        PlListArray::new_full_null(Box::new(PlNullArray::new_empty()), length)
-    }
 }
 
 impl PolarsPhysicalType for ListType {
@@ -310,10 +301,6 @@ unsafe impl PolarsDataType for StructType {
     {
         DataType::Struct(vec![])
     }
-
-    fn full_null_array(length: usize) -> Self::Array {
-        PlStructArray::new_full_null(vec![], length)
-    }
 }
 
 #[cfg(feature = "dtype-array")]
@@ -333,11 +320,6 @@ unsafe impl PolarsDataType for FixedSizeListType {
         // Null as we cannot know anything without self.
         DataType::Array(Box::new(DataType::Null), 0)
     }
-
-    fn full_null_array(length: usize) -> Self::Array {
-        // Every element is a list of width 0, which `Array(Null, 0)` is.
-        PlFixedSizeListArray::new_full_null(Box::new(PlNullArray::new_empty()), length)
-    }
 }
 
 #[cfg(feature = "object")]
@@ -355,10 +337,6 @@ unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
 
     fn get_static_dtype() -> DataType {
         DataType::Object(T::type_name())
-    }
-
-    fn full_null_array(length: usize) -> Self::Array {
-        ObjectArray::new_full_null(length)
     }
 }
 

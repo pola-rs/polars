@@ -137,13 +137,13 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     /// Clones this array into an owned `Box<dyn PlArray>`.
     fn to_boxed(&self) -> Box<dyn PlArray>;
 
-    /// Returns an array of `length` nulls, laid out like this array.
+    /// Returns an array of `length` nulls, shaped like this array, in `O(1)` memory.
+    ///
+    /// The shape a [`PlArrayType`] does not name — the width of an element, the array the values
+    /// of a nested one are held in — is the shape this array carries; see
+    /// [`new_full_null`](crate::builder::new_full_null) to build one from an array type alone.
     #[must_use]
-    fn full_null_like(&self, length: usize) -> Box<dyn PlArray> {
-        // `full_null_like` reads the shape of a `&dyn PlArray`, which `&Self` does not coerce to
-        // in a default method. Boxing is `O(1)`, so going through one costs nothing.
-        crate::builder::full_null_like(&*self.to_boxed(), length)
-    }
+    fn new_full_null(&self, length: usize) -> Box<dyn PlArray>;
 
     /// Compares this array element-wise against `other`, `false` if it is of another type.
     fn eq_dyn(&self, other: &dyn PlArray) -> bool;
@@ -321,6 +321,56 @@ mod tests {
             .sliced(0, 0),
         );
         assert!(PlBitmap::new_scalar(true, 5).sliced(0, 0).is_flat());
+    }
+
+    /// The shape a [`PlArrayType`] does not name is the one the array asked for carries.
+    #[test]
+    fn new_full_null_keeps_the_shape_of_the_array() {
+        for arr in arrays() {
+            // A billion elements would not fit in memory if a slot were kept for each of them:
+            // that this test finishes at all is what shows the nulls are in `O(1)` memory.
+            let nulls = arr.new_full_null(1_000_000_000);
+            assert_eq!(nulls.array_type(), arr.array_type());
+            assert_eq!(nulls.len(), 1_000_000_000);
+            assert_eq!(nulls.null_count(), 1_000_000_000);
+        }
+
+        let values = || Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4]));
+        let element_type = PlArrayType::Primitive(PrimitiveType::Int32);
+
+        // An element of a fixed size array is as wide as the ones it stands in for.
+        let nulls = PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 2).new_full_null(5);
+        let array = nulls
+            .as_any()
+            .downcast_ref::<PlFixedSizeBinaryArray>()
+            .unwrap();
+        assert_eq!(array.width(), 2);
+
+        // The one element the values of a fixed size list stand for is as wide as any other.
+        let nulls = PlFixedSizeListArray::from_values(values(), 2).new_full_null(5);
+        let array = nulls
+            .as_any()
+            .downcast_ref::<PlFixedSizeListArray>()
+            .unwrap();
+        assert_eq!(array.width(), 2);
+        assert_eq!(array.values().array_type(), element_type);
+        assert_eq!(array.values().len(), 2);
+
+        // Every element of a list of nulls is an empty list, so its values hold nothing at all —
+        // they are only there to say what the elements are lists of.
+        let nulls =
+            PlListArray::from_offsets(values(), Buffer::from(vec![0u64, 2, 4])).new_full_null(5);
+        let array = nulls.as_any().downcast_ref::<PlListArray>().unwrap();
+        assert_eq!(array.values().array_type(), element_type);
+        assert!(array.values().is_empty());
+
+        // A null row of a struct is a null in each of its fields.
+        let nulls = PlStructArray::from_fields(vec![values()]).new_full_null(5);
+        let array = nulls.as_any().downcast_ref::<PlStructArray>().unwrap();
+        assert_eq!(array.fields().len(), 1);
+        assert_eq!(array.fields()[0].array_type(), element_type);
+        assert_eq!(array.fields()[0].len(), 5);
+        assert_eq!(array.fields()[0].null_count(), 5);
     }
 
     #[test]

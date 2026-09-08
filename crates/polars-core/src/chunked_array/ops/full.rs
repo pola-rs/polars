@@ -1,7 +1,7 @@
-use polars_array::builder::full_null_like;
-
 use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::new_empty_chunk;
+#[cfg(feature = "dtype-array")]
+use crate::chunked_array::new_full_null_chunk;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -122,7 +122,7 @@ impl ArrayChunked {
     ) -> ArrayChunked {
         // An element of a null list is as wide as any other, so the one row the values stand for
         // is `width` nulls of the inner type.
-        let values = full_null_like(&*new_empty_chunk(inner_dtype), width);
+        let values = new_full_null_chunk(inner_dtype, width);
         let arr = PlFixedSizeListArray::new_full_null(values, length);
 
         // SAFETY: physical type matches the logical.

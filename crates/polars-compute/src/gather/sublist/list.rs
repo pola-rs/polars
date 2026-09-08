@@ -40,7 +40,7 @@ pub fn sublist_get(arr: &PlListArray, index: i64) -> Box<dyn PlArray> {
         return match position {
             // SAFETY: the position lies within the range the element covers.
             Some(position) => unsafe { arr.values().new_from_index_unchecked(position, arr.len()) },
-            None => arr.values().full_null_like(arr.len()),
+            None => arr.values().new_full_null(arr.len()),
         };
     }
 

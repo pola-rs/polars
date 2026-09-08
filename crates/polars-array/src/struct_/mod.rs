@@ -456,6 +456,15 @@ impl PlArray for PlStructArray {
         Box::new(self.clone())
     }
 
+    fn new_full_null(&self, length: usize) -> Box<dyn PlArray> {
+        let fields = self
+            .fields
+            .iter()
+            .map(|field| field.new_full_null(length))
+            .collect();
+        Box::new(Self::new_full_null(fields, length))
+    }
+
     fn eq_dyn(&self, other: &dyn PlArray) -> bool {
         other
             .as_any()

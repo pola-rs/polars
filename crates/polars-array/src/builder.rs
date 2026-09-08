@@ -3,11 +3,13 @@
 /// Whether a builder may adopt the buffers of the arrays it appends, rather than copy them.
 pub use arrow::array::builder::ShareStrategy;
 use arrow::bitmap::OptBitmapBuilder;
+use arrow::types::{days_ms, i256, months_days_ns};
 use polars_utils::IdxSize;
+use polars_utils::float16::pf16;
 use polars_utils::index::ChunkId;
 
 use crate::array::PlArray;
-use crate::array_type::PlArrayType;
+use crate::array_type::{PlArrayType, PrimitiveType};
 use crate::bitmap::PlBitmapRef;
 use crate::static_array::StaticArray;
 use crate::{
@@ -498,57 +500,69 @@ pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
     }
 }
 
-/// An array of `length` nulls of the type that `array` is one of.
-pub fn full_null_like(array: &dyn PlArray, length: usize) -> Box<dyn PlArray> {
-    match array.array_type() {
-        PlArrayType::Null => Box::new(PlNullArray::new(length)),
-        PlArrayType::Boolean => Box::new(PlBooleanArray::new_full_null(length)),
-        PlArrayType::Primitive(_) => with_match_pl_primitive_array_type!(array, |T| {
-            Box::new(PlPrimitiveArray::<T>::new_full_null(length)) as Box<dyn PlArray>
-        })
-        .expect("a primitive array has a primitive element type"),
-        PlArrayType::Binary => Box::new(PlBinaryArray::new_full_null(length)),
-        PlArrayType::BinaryView => Box::new(PlBinaryViewArray::new_full_null(length)),
-        PlArrayType::Utf8View => Box::new(PlUtf8ViewArray::new_full_null(length)),
-        PlArrayType::FixedSizeBinary => {
-            let array = array
-                .as_any()
-                .downcast_ref::<PlFixedSizeBinaryArray>()
-                .unwrap();
-            Box::new(PlFixedSizeBinaryArray::new_full_null(array.width(), length))
-        },
-        PlArrayType::List => {
-            let array = array.as_any().downcast_ref::<PlListArray>().unwrap();
-            // Every element is an empty list, so the values are only there to carry their shape.
-            Box::new(PlListArray::new_full_null(
-                array.values().sliced(0, 0),
-                length,
-            ))
-        },
-        PlArrayType::FixedSizeList => {
-            let array = array
-                .as_any()
-                .downcast_ref::<PlFixedSizeListArray>()
-                .unwrap();
-            // An element of a null list is as wide as any other, so the one element the values
-            // stand for is as many nulls as the array is wide.
-            Box::new(PlFixedSizeListArray::new_full_null(
-                full_null_like(array.values(), array.width()),
-                length,
-            ))
-        },
-        PlArrayType::Struct => {
-            let array = array.as_any().downcast_ref::<PlStructArray>().unwrap();
-            let fields = array
-                .fields()
-                .iter()
-                .map(|field| full_null_like(&**field, length))
-                .collect();
-            Box::new(PlStructArray::new_full_null(fields, length))
-        },
+/// An array of `length` nulls of the array type `array_type` names, in `O(1)` memory.
+///
+/// An array type does not name the shape of a nested array or the width of a fixed size one, so
+/// those come back in the one shape it does name: an element of no bytes, a list of no values, a
+/// struct of no fields. [`PlArray::new_full_null`] answers in the shape of an array at hand.
+///
+/// # Panics
+/// For [`PlArrayType::Object`], whose rust type an array type does not name.
+pub fn new_full_null(array_type: PlArrayType, length: usize) -> Box<dyn PlArray> {
+    macro_rules! new_full_null {
+        ($A:ty) => {
+            Box::new(<$A as StaticArray>::new_full_null(length)) as Box<dyn PlArray>
+        };
+    }
+
+    match array_type {
+        PlArrayType::Null => new_full_null!(PlNullArray),
+        PlArrayType::Boolean => new_full_null!(PlBooleanArray),
+        PlArrayType::Primitive(primitive) => primitive_new_full_null(primitive, length),
+        PlArrayType::Binary => new_full_null!(PlBinaryArray),
+        PlArrayType::BinaryView => new_full_null!(PlBinaryViewArray),
+        PlArrayType::Utf8View => new_full_null!(PlUtf8ViewArray),
+        PlArrayType::FixedSizeBinary => new_full_null!(PlFixedSizeBinaryArray),
+        PlArrayType::List => new_full_null!(PlListArray),
+        PlArrayType::FixedSizeList => new_full_null!(PlFixedSizeListArray),
+        PlArrayType::Struct => new_full_null!(PlStructArray),
         x @ PlArrayType::Object { .. } => {
             panic!("polars-array: cannot build a full null {x:?} typed array")
         },
+    }
+}
+
+/// A [`PlPrimitiveArray`] of `length` nulls over the elements `primitive` names.
+fn primitive_new_full_null(primitive: PrimitiveType, length: usize) -> Box<dyn PlArray> {
+    macro_rules! new_full_null {
+        ($T:ty) => {
+            Box::new(PlPrimitiveArray::<$T>::new_full_null(length)) as Box<dyn PlArray>
+        };
+    }
+
+    match primitive {
+        PrimitiveType::Int8 => new_full_null!(i8),
+        PrimitiveType::Int16 => new_full_null!(i16),
+        PrimitiveType::Int32 => new_full_null!(i32),
+        PrimitiveType::Int64 => new_full_null!(i64),
+        PrimitiveType::Int128 => new_full_null!(i128),
+        PrimitiveType::Int256 => new_full_null!(i256),
+        PrimitiveType::UInt8 => new_full_null!(u8),
+        PrimitiveType::UInt16 => new_full_null!(u16),
+        PrimitiveType::UInt32 => new_full_null!(u32),
+        PrimitiveType::UInt64 => new_full_null!(u64),
+        // A `View` and a `u128` are both `PrimitiveType::UInt128`, which therefore does not pin
+        // the element type down: an array of views is asked for by the array that holds one.
+        PrimitiveType::UInt128 => new_full_null!(u128),
+        PrimitiveType::Float16 => new_full_null!(pf16),
+        PrimitiveType::Float32 => new_full_null!(f32),
+        PrimitiveType::Float64 => new_full_null!(f64),
+        PrimitiveType::DaysMs => new_full_null!(days_ms),
+        PrimitiveType::MonthDayNano => new_full_null!(months_days_ns),
+        PrimitiveType::MonthDayMillis => unimplemented!(
+            "cannot build an array of months_days_ms elements: they are of no rust type an array \
+             of polars-array is taken over",
+        ),
     }
 }
 
@@ -719,6 +733,45 @@ mod tests {
             ),
             Box::new(PlNullArray::new(3)),
         ]
+    }
+
+    /// An array of nulls of an array type alone, which names no shape of its own.
+    #[test]
+    fn new_full_null_of_every_array_type() {
+        for array in arrays() {
+            // A billion elements would not fit in memory if a slot were kept for each of them:
+            // that this test finishes at all is what shows the nulls are in `O(1)` memory.
+            let nulls = new_full_null(array.array_type(), 1_000_000_000);
+            assert_eq!(nulls.array_type(), array.array_type());
+            assert_eq!(nulls.len(), 1_000_000_000);
+            assert_eq!(nulls.null_count(), 1_000_000_000);
+        }
+
+        // The width of a fixed size array, the values of a nested one and the fields of a struct
+        // are no part of a `PlArrayType`, so they come back in the one shape it does name.
+        let nulls = new_full_null(PlArrayType::FixedSizeBinary, 3);
+        let array = nulls
+            .as_any()
+            .downcast_ref::<PlFixedSizeBinaryArray>()
+            .unwrap();
+        assert_eq!(array.width(), 0);
+
+        let nulls = new_full_null(PlArrayType::List, 3);
+        let array = nulls.as_any().downcast_ref::<PlListArray>().unwrap();
+        assert_eq!(array.values().array_type(), PlArrayType::Null);
+        assert!(array.values().is_empty());
+
+        let nulls = new_full_null(PlArrayType::FixedSizeList, 3);
+        let array = nulls
+            .as_any()
+            .downcast_ref::<PlFixedSizeListArray>()
+            .unwrap();
+        assert_eq!(array.width(), 0);
+        assert!(array.values().is_empty());
+
+        let nulls = new_full_null(PlArrayType::Struct, 3);
+        let array = nulls.as_any().downcast_ref::<PlStructArray>().unwrap();
+        assert!(array.fields().is_empty());
     }
 
     #[test]
