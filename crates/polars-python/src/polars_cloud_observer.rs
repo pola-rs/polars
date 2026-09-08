@@ -133,8 +133,11 @@ impl QueryObserver for PolarsCloudObserver {
     }
 }
 
+/// Register the `polars_cloud` query observer. `workspace` selects the workspace query
+/// metrics are sent to, given as a name or an id; `None` uses the default workspace.
 #[pyfunction]
-pub fn set_query_monitoring(py: Python<'_>, enable: bool) -> PyResult<()> {
+#[pyo3(signature = (enable, workspace=None))]
+pub fn set_query_monitoring(py: Python<'_>, enable: bool, workspace: Option<&str>) -> PyResult<()> {
     if !enable {
         register_query_observer_factory(None);
         return Ok(());
@@ -154,14 +157,18 @@ pub fn set_query_monitoring(py: Python<'_>, enable: bool) -> PyResult<()> {
              Ensure the polars_cloud and polars versions match.",
             )
         })?;
-    let observer = cls
-        .call0()
-        .map_err(|e| {
-            PyRuntimeError::new_err(format!(
-                "failed to construct the Polars Cloud observer: {e}"
-            ))
-        })?
-        .unbind();
+    let observer = match workspace {
+        // Passing no argument keeps working with `polars_cloud` versions whose observer
+        // does not take a workspace.
+        None => cls.call0(),
+        Some(workspace) => cls.call1((workspace,)),
+    }
+    .map_err(|e| {
+        PyRuntimeError::new_err(format!(
+            "failed to construct the Polars Cloud observer: {e}"
+        ))
+    })?
+    .unbind();
 
     register_query_observer_factory(Some(Arc::new(CloudObserverFactory {
         observer: Arc::new(observer),
