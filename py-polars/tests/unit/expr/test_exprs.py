@@ -155,7 +155,8 @@ def test_entropy_dtypes(
     result = lf.select(pl.col("a").entropy(normalize=normalize))
     assert result.collect_schema() == pl.Schema({"a": dtype_out})
     assert result.collect_schema() == result.collect().schema
-    assert result.collect().item() == pytest.approx(expected, rel=1e-3)
+    rel = 1e-2 if dtype_in == pl.Float16 else 1e-6
+    assert result.collect().item() == pytest.approx(expected, rel=rel)
 
 
 @pytest.mark.parametrize(
