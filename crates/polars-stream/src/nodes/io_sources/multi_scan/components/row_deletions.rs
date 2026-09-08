@@ -71,6 +71,7 @@ impl DeletionFilesProvider {
         match deletion_files {
             Some(DeletionFilesList::Iceberg(paths)) => feature_gated!("parquet", {
                 let reader_builder = ParquetReaderBuilder {
+                    bytes_per_source: None,
                     first_metadata: None,
                     options: Arc::new(polars_io::prelude::ParquetOptions {
                         schema: Some(Arc::new(Schema::from_iter([
