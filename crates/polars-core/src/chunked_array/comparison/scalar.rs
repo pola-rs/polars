@@ -54,7 +54,7 @@ fn bitonic_mask<T: PolarsNumericType>(
         // of a chunk whose values are stored in the scalar representation is the one value it
         // repeats — `full` builds exactly such a chunk and flags it sorted — so the two bounds
         // are read off that one value rather than searched for over values written out first.
-        let (true_range_start, true_range_end) = match arr.scalar_values() {
+        let (true_range_start, true_range_end) = match arr.scalar_value_ignore_validity() {
             Some(value) => {
                 let holds = f_a.is_none_or(|f_a| apply::<T>(f_a, value, rhs))
                     && f_d.is_none_or(|f_d| apply::<T>(f_d, value, rhs));

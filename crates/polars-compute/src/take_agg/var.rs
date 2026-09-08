@@ -57,7 +57,7 @@ where
     // Every index gathers the same value where the buffer holds a single slot, so the variance is
     // over that one value repeated — which is what a flat chunk of it would give as well. It is
     // not `0.0` in general: `ddof` still decides whether there are enough values at all.
-    if let Some(value) = arr.scalar_values() {
+    if let Some(value) = arr.scalar_value_ignore_validity() {
         let value = unsafe { value.to_f64().unwrap_unchecked() };
         return online_variance(indices.into_iter().map(|_| value), ddof);
     }
@@ -88,7 +88,7 @@ where
     // Every element is null, so no index gathers a value and there is no variance.
     let validity = flat_validity(arr)?;
 
-    if let Some(value) = arr.scalar_values() {
+    if let Some(value) = arr.scalar_value_ignore_validity() {
         let iter = indices.into_iter().filter_map(|idx| {
             unsafe { validity.get_bit_unchecked(idx) }.then(|| value.to_f64())?
         });

@@ -50,7 +50,7 @@ where
     let offsets = arr
         .flat_offsets()
         .expect("the elements cover ranges of their own");
-    let summed = match values.scalar_values() {
+    let summed = match values.scalar_value_ignore_validity() {
         // The values repeat one value, so a list adds up to that value taken as many times as the
         // list is long — again without the buffer being written out.
         Some(value) => offsets
@@ -75,7 +75,7 @@ where
     T: NativeType + ToPrimitive,
     S: NumCast + std::iter::Sum,
 {
-    match values.scalar_values() {
+    match values.scalar_value_ignore_validity() {
         Some(value) => sum_repeated::<T, S>(value, range.len()),
         None => {
             sum_slice::<T, S>(&values.flat_values().expect("the values are not repeated")[range])
@@ -249,7 +249,7 @@ where
     let offsets = arr
         .flat_offsets()
         .expect("the elements cover ranges of their own");
-    let out: PlPrimitiveArray<S> = match values.scalar_values() {
+    let out: PlPrimitiveArray<S> = match values.scalar_value_ignore_validity() {
         // The values repeat one value, so a list averages to it — worked out through the sum the
         // flat path takes, so the two agree to the last bit.
         Some(value) => offsets

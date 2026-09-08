@@ -233,7 +233,7 @@ where
 
     // The one value every element of a scalar chunk reads is cast once, and the answer repeats it
     // in turn.
-    if let Some(value) = from.scalar_values() {
+    if let Some(value) = from.scalar_value_ignore_validity() {
         return match num_traits::cast::cast::<I, O>(value) {
             Some(cast) => PlPrimitiveArray::new_scalar(cast, from.len())
                 .with_validity(from.validity().map(PlBitmap::from)),
@@ -263,7 +263,7 @@ where
     O: NativeType,
     F: Fn(I) -> O,
 {
-    match from.scalar_values() {
+    match from.scalar_value_ignore_validity() {
         Some(value) => PlPrimitiveArray::new_scalar(op(value), from.len())
             .with_validity(from.validity().map(PlBitmap::from)),
         // The values hold a slot per element, so this is the one place the cast writes one too.
@@ -279,7 +279,7 @@ where
     T: NativeType,
     F: Fn(T) -> bool,
 {
-    if let Some(value) = array.scalar_values() {
+    if let Some(value) = array.scalar_value_ignore_validity() {
         return if keep(value) {
             array.clone()
         } else {
@@ -304,7 +304,7 @@ where
     T: NativeType + num_traits::One,
 {
     let value_of = |set: bool| if set { T::one() } else { T::default() };
-    let values = match from.scalar_values() {
+    let values = match from.scalar_value_ignore_validity() {
         Some(value) => PlPrimitiveArray::new_scalar(value_of(value), from.len()),
         None => {
             let out: Vec<T> = from.flat_values().unwrap().iter().map(value_of).collect();

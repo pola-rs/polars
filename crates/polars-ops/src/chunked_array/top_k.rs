@@ -87,7 +87,7 @@ where
     // Every element of a chunk whose values repeat one value is that value, so the largest `k` of
     // them are it as well: the answer repeats it too, rather than the buffer being written out
     // and partitioned to find what it already holds.
-    if let Some(value) = chunk.scalar_values().filter(|_| out_len > 0) {
+    if let Some(value) = chunk.scalar_value_ignore_validity().filter(|_| out_len > 0) {
         let arr = PlPrimitiveArray::new_scalar(value, out_len)
             .with_validity(validity.map(PlBitmap::from_bitmap));
         return ChunkedArray::with_chunk_like(ca, arr);

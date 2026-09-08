@@ -51,7 +51,7 @@ where
 #[inline]
 fn repeated_value<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Option<(T, usize)> {
     let count = arr.len() - arr.null_count();
-    arr.scalar_values()
+    arr.scalar_value_ignore_validity()
         .filter(|_| count > 0)
         .map(|v| (v, count))
 }
@@ -60,7 +60,7 @@ fn repeated_value<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Option<(T, usize)
 #[inline]
 fn repeated_bit(arr: &PlBooleanArray) -> Option<(bool, usize)> {
     let count = arr.len() - arr.null_count();
-    arr.scalar_values()
+    arr.scalar_value_ignore_validity()
         .filter(|_| count > 0)
         .map(|v| (v, count))
 }
@@ -70,7 +70,7 @@ macro_rules! count_bits {
     ($arr:expr, $count:ident, $to_bits:expr) => {{
         let arr = $arr;
         count_values(
-            arr.scalar_values(),
+            arr.scalar_value_ignore_validity(),
             arr.values_iter(),
             arr.len(),
             arr.validity().map(PlBitmap::from),
@@ -204,7 +204,7 @@ impl BitwiseKernel for PlBooleanArray {
     #[inline(never)]
     fn count_ones(&self) -> PlPrimitiveArray<u32> {
         count_values(
-            self.scalar_values(),
+            self.scalar_value_ignore_validity(),
             self.values_iter(),
             self.len(),
             self.validity().map(PlBitmap::from),
@@ -215,7 +215,7 @@ impl BitwiseKernel for PlBooleanArray {
     #[inline(never)]
     fn count_zeros(&self) -> PlPrimitiveArray<u32> {
         count_values(
-            self.scalar_values(),
+            self.scalar_value_ignore_validity(),
             self.values_iter(),
             self.len(),
             self.validity().map(PlBitmap::from),

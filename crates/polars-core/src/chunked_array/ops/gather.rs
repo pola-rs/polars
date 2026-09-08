@@ -43,7 +43,7 @@ pub fn check_bounds_ca(indices: &IdxCa, len: IdxSize) -> PolarsResult<()> {
     let all_valid = indices.downcast_iter().all(|a| {
         // A chunk that repeats one index is checked once, however many elements read it — and a
         // null index is not checked at all, so a wholly null chunk is in bounds by itself.
-        if let Some(index) = a.scalar_values() {
+        if let Some(index) = a.scalar_value_ignore_validity() {
             return a.null_count() == a.len() || check_bounds(&[index], len).is_ok();
         }
 

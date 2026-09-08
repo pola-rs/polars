@@ -128,7 +128,7 @@ where
 
         // A scalar chunk reads one value at every element, so `f` is applied to that value alone
         // and what comes back stands for every element in turn.
-        if let Some(value) = typed.scalar_values() {
+        if let Some(value) = typed.scalar_value_ignore_validity() {
             let validity = typed.validity().map(PlBitmap::from);
             return PlPrimitiveArray::new_scalar(f(value), typed.len()).with_validity(validity);
         }

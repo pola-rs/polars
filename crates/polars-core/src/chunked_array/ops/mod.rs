@@ -665,4 +665,3 @@ pub trait ChunkZip<T: PolarsDataType> {
         other: &ChunkedArray<T>,
     ) -> PolarsResult<ChunkedArray<T>>;
 }
-

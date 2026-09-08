@@ -25,7 +25,7 @@ where
     // `width` of them add up alike, or the elements all read the one list. Either way the total is
     // worked out once over a single width and repeated, rather than the values being written out
     // one list per element first.
-    let repeated = if let Some(value) = values.scalar_values() {
+    let repeated = if let Some(value) = values.scalar_value_ignore_validity() {
         Some(sum_repeated::<T, S>(value, width))
     } else if arr.values_are_scalar() {
         Some(sum_slice::<T, S>(

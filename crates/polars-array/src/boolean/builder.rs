@@ -62,7 +62,7 @@ impl PlBooleanArrayBuilder {
         if let Some(values) = other.flat_values() {
             self.values
                 .subslice_extend_from_bitmap(values, start, length);
-        } else if let Some(value) = other.scalar_values() {
+        } else if let Some(value) = other.scalar_value_ignore_validity() {
             self.values.extend_constant(length, value);
         }
         // An empty array is neither, and the subslice it admits covers no element to append.
@@ -151,7 +151,7 @@ impl StaticArrayBuilder for PlBooleanArrayBuilder {
         if let Some(values) = other.flat_values() {
             self.values
                 .subslice_extend_each_repeated_from_bitmap(values, start, length, repeats);
-        } else if let Some(value) = other.scalar_values() {
+        } else if let Some(value) = other.scalar_value_ignore_validity() {
             // Every element repeats the same value, so which of them is repeated is immaterial.
             self.values.extend_constant(length * repeats, value);
         }

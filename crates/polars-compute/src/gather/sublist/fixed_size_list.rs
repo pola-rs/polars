@@ -35,7 +35,7 @@ pub fn sub_fixed_size_list_get_literal(
 
     // Values that hold the single element every element of `arr` repeats are indexed in place: the
     // value at `offset` within that one element is the answer at every element in turn, in `O(1)`.
-    if let Some(values) = arr.scalar_values() {
+    if let Some(values) = arr.scalar_value_ignore_validity() {
         // SAFETY: `offset` is within the width, which is how many values the one element holds.
         return Ok(unsafe { values.new_from_index_unchecked(offset, arr.len()) });
     }
@@ -67,7 +67,7 @@ pub fn sub_fixed_size_list_get(
 
     // Indices stored in the scalar representation are one index shared by every element, which
     // lands at the same position within all of them: it is resolved once, like a literal one.
-    if let Some(value) = index.scalar_values() {
+    if let Some(value) = index.scalar_value_ignore_validity() {
         let out = sub_fixed_size_list_get_literal(arr, value, null_on_oob)?;
 
         // An index that is null picks out no value at all, which is the null an out of bounds one

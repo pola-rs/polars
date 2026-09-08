@@ -36,7 +36,10 @@ macro_rules! binary_kernel {
         let (lhs, rhs) = ($self, $other);
         assert!(lhs.len() == rhs.len());
 
-        match (lhs.scalar_values(), rhs.scalar_values()) {
+        match (
+            lhs.scalar_value_ignore_validity(),
+            rhs.scalar_value_ignore_validity(),
+        ) {
             // Every element of both sides holds the one value its own side repeats, so the one
             // comparison of those two values is the answer for all of them.
             (Some(l), Some(r)) => repeated($scalar(&l, &r), lhs.len()),
@@ -55,7 +58,7 @@ macro_rules! broadcast_kernel {
     ($self:expr, $other:expr, $scalar:expr, $flat:path $(,)?) => {{
         let (lhs, rhs) = ($self, $other);
 
-        match lhs.scalar_values() {
+        match lhs.scalar_value_ignore_validity() {
             Some(l) => repeated($scalar(&l, rhs), lhs.len()),
             None => written_out($flat(&flat_values(lhs.flat_values().unwrap()), rhs)),
         }

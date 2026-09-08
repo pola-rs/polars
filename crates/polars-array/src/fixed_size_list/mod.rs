@@ -252,8 +252,12 @@ impl PlFixedSizeListArray {
     }
 
     /// The list every element of this array reads, if the values hold a single element.
+    ///
+    /// The mask is not looked at: a null element still holds the list it covers, which is what
+    /// a kernel that answers over the values alone reads too. [`Self::scalar_value`] answers
+    /// over both axes, and is what a caller that has to honour nulls wants.
     #[inline]
-    pub fn scalar_values(&self) -> Option<&dyn PlArray> {
+    pub fn scalar_value_ignore_validity(&self) -> Option<&dyn PlArray> {
         self.values_are_scalar().then_some(&*self.values)
     }
 
@@ -784,7 +788,7 @@ mod tests {
         assert!(!arr.values_are_flat());
         assert_eq!(arr.width(), 2);
         assert_eq!(arr.validity().unwrap().len(), 1_000_000);
-        assert_eq!(arr.scalar_values().unwrap().len(), 2);
+        assert_eq!(arr.scalar_value_ignore_validity().unwrap().len(), 2);
         assert_eq!(arr.null_count(), 1_000_000);
         assert!(arr.has_nulls());
         assert!(arr.is_null(999_999));

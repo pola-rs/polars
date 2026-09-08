@@ -107,7 +107,7 @@ pub fn estimated_bytes_size(array: &dyn PlArray) -> usize {
             let array = downcast::<PlFixedSizeBinaryArray>(array);
             // The bytes of the one element every element reads, or of every element laid end
             // to end.
-            let bytes = match array.scalar_values() {
+            let bytes = match array.scalar_value_ignore_validity() {
                 Some(value) => value.len(),
                 None => array.flat_values().unwrap().len(),
             };

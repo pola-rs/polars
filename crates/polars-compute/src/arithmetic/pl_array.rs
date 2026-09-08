@@ -27,7 +27,7 @@ impl<T: NativeType> Split<T> {
             arr = arr.without_validity();
         }
 
-        match arr.scalar_values() {
+        match arr.scalar_value_ignore_validity() {
             // The kernel is elementwise, so the one value the elements share is operated on once.
             // The mask, which is flat if it is still here, comes along to mask the answer again.
             Some(value) => Self::Repeated(value, arr.validity().map(PlBitmap::from)),

@@ -96,7 +96,10 @@ macro_rules! pl_eq_kernel_body {
         assert_eq!(lhs.len(), rhs.len());
         let length = lhs.len();
 
-        match (lhs.scalar_values(), rhs.scalar_values()) {
+        match (
+            lhs.scalar_value_ignore_validity(),
+            rhs.scalar_value_ignore_validity(),
+        ) {
             // Neither side is written out: the one comparison answers for every element.
             (Some(lhs), Some(rhs)) => PlBitmap::new_scalar($scalar(&lhs, &rhs), length),
             // One side holds the value the other is compared against element by element, which is
@@ -147,7 +150,7 @@ macro_rules! impl_pl_total_eq_kernel {
                 fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
                     // A values buffer of one value is compared against the scalar once, and its
                     // answer is the bit every element of this array shares.
-                    match self.scalar_values() {
+                    match self.scalar_value_ignore_validity() {
                         Some(values) => {
                             PlBitmap::new_scalar(values.tot_eq(&other), self.len())
                         },
@@ -159,7 +162,7 @@ macro_rules! impl_pl_total_eq_kernel {
 
                 fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
                     // As above, with the answer the other way around.
-                    match self.scalar_values() {
+                    match self.scalar_value_ignore_validity() {
                         Some(values) => {
                             PlBitmap::new_scalar(values.tot_ne(&other), self.len())
                         },

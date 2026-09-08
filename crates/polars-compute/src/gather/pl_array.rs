@@ -30,7 +30,7 @@ pub unsafe fn take_unchecked(
 
     // Indices stored in the scalar representation are one index repeated, and the one element it
     // picks is the answer at every position in turn.
-    if let Some(index) = indices.scalar_values() {
+    if let Some(index) = indices.scalar_value_ignore_validity() {
         // SAFETY: the index is one of the caller's, and is therefore in bounds.
         let gathered = unsafe { values.new_from_index_unchecked(index as usize, indices.len()) };
         return and_validity(gathered, indices.validity());

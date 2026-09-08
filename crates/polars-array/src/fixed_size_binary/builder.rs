@@ -94,7 +94,7 @@ impl PlFixedSizeBinaryArrayBuilder {
         if let Some(values) = other.flat_values() {
             let bytes = &values[start * self.width..(start + length) * self.width];
             self.values.extend_from_slice(bytes);
-        } else if let Some(element) = other.scalar_values() {
+        } else if let Some(element) = other.scalar_value_ignore_validity() {
             self.extend_repeated(element, length);
         }
         // An empty array is neither, and the subslice it admits covers no element to append.

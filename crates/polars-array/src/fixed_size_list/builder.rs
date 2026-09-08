@@ -93,7 +93,7 @@ impl<B: PlArrayBuilder> PlFixedSizeListArrayBuilder<B> {
         if let Some(values) = other.flat_values() {
             self.values
                 .subslice_extend(values, start * self.width, length * self.width, share);
-        } else if let Some(element) = other.scalar_values() {
+        } else if let Some(element) = other.scalar_value_ignore_validity() {
             // Every element covers the one list the values hold, which is appended once per
             // element.
             self.values

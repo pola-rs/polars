@@ -68,7 +68,9 @@ fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
             // valid: the first valid element is the only one that is distinct in it, and the
             // first null the only one that is distinct as a null. The buffer is never written out.
             (None, validity) => {
-                let value = arr.scalar_values().expect("the values are not flat");
+                let value = arr
+                    .scalar_value_ignore_validity()
+                    .expect("the values are not flat");
                 // `null_count` is neither zero nor `len` here, so both are in bounds when there
                 // is a mask at all.
                 let first_valid = validity.map_or(0, |validity| validity.leading_zeros());

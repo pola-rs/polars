@@ -384,7 +384,7 @@ fn concatenate_boolean_impl(list: ArrayList<'_, '_, PlBooleanArray>) -> PlBoolea
     for array in list.iter().filter(|array| !array.is_empty()) {
         if let Some(array_values) = array.flat_values() {
             values.extend_from_bitmap(array_values);
-        } else if let Some(value) = array.scalar_values() {
+        } else if let Some(value) = array.scalar_value_ignore_validity() {
             values.extend_constant(array.len(), value);
         }
     }
@@ -452,7 +452,7 @@ fn concatenate_binary_impl(list: ArrayList<'_, '_, PlBinaryArray>) -> PlBinaryAr
                     .iter()
                     .map(|offset| end + (offset - first)),
             );
-        } else if let Some(element) = array.scalar_values() {
+        } else if let Some(element) = array.scalar_value_ignore_validity() {
             // Every element of the array covers the same bytes, which the result writes out once
             // per element: no two elements of a flat binary array can share a range.
             values.reserve(element.len() * array.len());
@@ -638,7 +638,7 @@ fn concatenate_fixed_size_binary_impl(
     for array in list.distinct().filter(|array| !array.is_empty()) {
         if let Some(array_values) = array.flat_values() {
             values.extend_from_slice(array_values.as_slice());
-        } else if let Some(element) = array.scalar_values() {
+        } else if let Some(element) = array.scalar_value_ignore_validity() {
             // Scalar values are the one element every element covers, which the result writes out
             // once per element it stands for.
             for _ in 0..array.len() {
@@ -731,7 +731,7 @@ fn concatenate_fixed_size_list_impl(
     for array in list.iter() {
         if let Some(array_values) = array.flat_values() {
             values.push(array_values.to_boxed());
-        } else if let Some(element) = array.scalar_values() {
+        } else if let Some(element) = array.scalar_value_ignore_validity() {
             // Concatenating the element with copies of itself is what repeats it, and that keeps
             // the values scalar when the element is itself a single repeated value.
             values.push(concatenate_repeated(element, array.len())?);

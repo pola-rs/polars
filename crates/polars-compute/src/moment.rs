@@ -416,7 +416,7 @@ impl SkewState {
 
         // Every element of a chunk that repeats one value is that value, whatever the range's
         // length, so the whole range weighs in at once.
-        if let Some(value) = arr.scalar_values() {
+        if let Some(value) = arr.scalar_value_ignore_validity() {
             return Self::repeated(value, weight_of(&arr));
         }
 
@@ -560,7 +560,7 @@ impl KurtosisState {
     pub fn from_array(arr: &PlPrimitiveArray<f64>, start: usize, length: usize) -> Self {
         let arr = arr.clone().sliced(start, length);
 
-        if let Some(value) = arr.scalar_values() {
+        if let Some(value) = arr.scalar_value_ignore_validity() {
             return Self::repeated(value, weight_of(&arr));
         }
 
@@ -724,7 +724,7 @@ where
 {
     // Every element of a chunk that repeats one value is that value, which is therefore the
     // chunk's mean: the whole chunk weighs in at once, without an element of it being walked.
-    if let Some(value) = arr.scalar_values() {
+    if let Some(value) = arr.scalar_value_ignore_validity() {
         return VarState::repeated(value.as_(), weight_of(arr));
     }
 
@@ -750,7 +750,10 @@ where
 
     // Two chunks that each repeat one value are each their own mean, and the pair weighs in at
     // the elements where both of them are non-null.
-    if let (Some(x_value), Some(y_value)) = (x.scalar_values(), y.scalar_values()) {
+    if let (Some(x_value), Some(y_value)) = (
+        x.scalar_value_ignore_validity(),
+        y.scalar_value_ignore_validity(),
+    ) {
         return CovState::repeated(x_value.as_(), y_value.as_(), joint_weight_of(x, y));
     }
 
@@ -775,7 +778,10 @@ where
 {
     assert!(x.len() == y.len());
 
-    if let (Some(x_value), Some(y_value)) = (x.scalar_values(), y.scalar_values()) {
+    if let (Some(x_value), Some(y_value)) = (
+        x.scalar_value_ignore_validity(),
+        y.scalar_value_ignore_validity(),
+    ) {
         return PearsonState::repeated(x_value.as_(), y_value.as_(), joint_weight_of(x, y));
     }
 
@@ -797,7 +803,7 @@ pub fn skew<T>(arr: &PlPrimitiveArray<T>) -> SkewState
 where
     T: NativeType + AsPrimitive<f64>,
 {
-    if let Some(value) = arr.scalar_values() {
+    if let Some(value) = arr.scalar_value_ignore_validity() {
         return SkewState::repeated(value.as_(), weight_of(arr));
     }
 
@@ -818,7 +824,7 @@ pub fn kurtosis<T>(arr: &PlPrimitiveArray<T>) -> KurtosisState
 where
     T: NativeType + AsPrimitive<f64>,
 {
-    if let Some(value) = arr.scalar_values() {
+    if let Some(value) = arr.scalar_value_ignore_validity() {
         return KurtosisState::repeated(value.as_(), weight_of(arr));
     }
 

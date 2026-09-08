@@ -70,7 +70,7 @@ pub(super) fn count_boolean_bits(ca: &ListChunked) -> IdxCa {
         let offsets = arr
             .flat_offsets()
             .expect("the elements cover ranges of their own");
-        let out = match mask.scalar_values() {
+        let out = match mask.scalar_value_ignore_validity() {
             // The bits repeat a single bit, so a list counts either its whole length or nothing.
             Some(bit) => offsets
                 .windows(2)
@@ -93,7 +93,7 @@ pub(super) fn count_boolean_bits(ca: &ListChunked) -> IdxCa {
 
 /// The number of set bits of `mask` over `range`, reading a scalar bitmap as the one bit it is.
 fn count_set_over(mask: &PlBooleanArray, range: std::ops::Range<usize>) -> IdxSize {
-    match mask.scalar_values() {
+    match mask.scalar_value_ignore_validity() {
         Some(true) => range.len() as IdxSize,
         Some(false) => 0,
         None => mask

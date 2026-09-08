@@ -365,7 +365,7 @@ mod tests {
         let out: PlPrimitiveArray<i32> =
             IfThenElseKernel::if_then_else_broadcast_both(repeated, 1, 2);
         assert_eq!(out.len(), 1_000_000_000);
-        assert_eq!(out.scalar_values(), Some(1));
+        assert_eq!(out.scalar_value_ignore_validity(), Some(1));
 
         // A side that is null throughout is still only a mask over the one value handed in.
         let nulls = PlPrimitiveArray::<i32>::new_full_null(5);

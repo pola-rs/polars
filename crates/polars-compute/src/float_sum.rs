@@ -308,7 +308,7 @@ where
 
     // The non-null elements of a chunk with a repeated values buffer are all that one value, so
     // their total is it added up `count` times whatever the mask looks like.
-    if let Some(value) = arr.scalar_values() {
+    if let Some(value) = arr.scalar_value_ignore_validity() {
         return FloatSum::sum_repeated(value, count);
     }
 

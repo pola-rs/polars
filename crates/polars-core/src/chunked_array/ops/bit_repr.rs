@@ -15,7 +15,7 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
     let chunks = ca.downcast_iter().map(|array| {
         let length = array.len();
         // The values are handed over as they are, so a scalar chunk stays one value.
-        let out = match array.scalar_values() {
+        let out = match array.scalar_value_ignore_validity() {
             Some(value) => PlPrimitiveArray::new_broadcast(
                 Buffer::try_transmute::<U::Native>(Buffer::from(vec![value])).unwrap(),
                 length,

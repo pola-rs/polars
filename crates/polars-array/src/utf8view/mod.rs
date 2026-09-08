@@ -197,12 +197,13 @@ impl PlUtf8ViewArray {
         self.0.scalar_views()
     }
 
-    /// The string every element of this array reads — see [`PlBinaryViewArray::scalar_values`].
+    /// The string every element of this array reads, ignoring the mask — see
+    /// [`PlBinaryViewArray::scalar_value_ignore_validity`].
     #[inline]
-    pub fn scalar_values(&self) -> Option<&str> {
+    pub fn scalar_value_ignore_validity(&self) -> Option<&str> {
         // SAFETY: the elements of this array are valid UTF-8.
         self.0
-            .scalar_values()
+            .scalar_value_ignore_validity()
             .map(|v| unsafe { std::str::from_utf8_unchecked(v) })
     }
 
@@ -307,7 +308,7 @@ fn validate_utf8(array: &PlBinaryViewArray) -> PolarsResult<()> {
 
     // A views buffer of a single view holds the one value every element reads: checking it once
     // checks the whole array, and the views are never written out one per element.
-    if let Some(value) = array.scalar_values() {
+    if let Some(value) = array.scalar_value_ignore_validity() {
         return check(value);
     }
 
@@ -548,7 +549,7 @@ mod tests {
         let valid = PlBinaryViewArray::new_scalar(LONG.as_bytes(), length);
         let arr = PlUtf8ViewArray::from_binview(valid).unwrap();
         assert_eq!(arr.len(), length);
-        assert_eq!(arr.scalar_values(), Some(LONG));
+        assert_eq!(arr.scalar_value_ignore_validity(), Some(LONG));
 
         // The bytes under a null element are checked too: replacing the mask must not be able to
         // expose bytes that were never looked at.

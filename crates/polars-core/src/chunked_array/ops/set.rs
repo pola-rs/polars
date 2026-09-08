@@ -74,7 +74,7 @@ where
                     for chunk in self.downcast_iter() {
                         // A chunk that repeats one value is filled in as that many copies of it,
                         // rather than written out to a buffer that is then copied.
-                        match chunk.scalar_values() {
+                        match chunk.scalar_value_ignore_validity() {
                             Some(value) => av.resize(av.len() + chunk.len(), value),
                             None => av.extend_from_slice(chunk.flat_values().unwrap().as_slice()),
                         }
@@ -155,7 +155,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
         for a in self.downcast_iter() {
             // A bitmap that holds one bit standing for every element is extended as that many
             // copies of the bit, rather than being written out to one bit per element first.
-            match a.scalar_values() {
+            match a.scalar_value_ignore_validity() {
                 Some(value) => values.extend_constant(a.len(), value),
                 None => values.extend_from_bitmap(a.flat_values().unwrap()),
             }

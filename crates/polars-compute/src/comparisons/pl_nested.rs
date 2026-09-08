@@ -109,7 +109,10 @@ impl PlTotalEqKernel for PlFixedSizeBinaryArray {
             return repeated(true, self.len());
         }
 
-        match (self.scalar_values(), other.scalar_values()) {
+        match (
+            self.scalar_value_ignore_validity(),
+            other.scalar_value_ignore_validity(),
+        ) {
             // Each side repeats one byte string, so the one comparison answers for all of them.
             (Some(l), Some(r)) => repeated(l == r, self.len()),
             _ => PlBitmap::from_iter((0..self.len()).map(|i| self.value(i) == other.value(i))),
@@ -125,7 +128,7 @@ impl PlTotalEqKernel for PlFixedSizeBinaryArray {
             return repeated(false, self.len());
         }
 
-        match self.scalar_values() {
+        match self.scalar_value_ignore_validity() {
             Some(l) => repeated(l == other, self.len()),
             None => PlBitmap::from_iter((0..self.len()).map(|i| self.value(i) == other)),
         }
@@ -273,7 +276,10 @@ fn fsl_compare_values(
         return repeated(!mismatch, length);
     }
 
-    match (lhs.scalar_values(), rhs.scalar_values()) {
+    match (
+        lhs.scalar_value_ignore_validity(),
+        rhs.scalar_value_ignore_validity(),
+    ) {
         // Each side repeats one list, so comparing those two lists once — `width` values, not
         // `length * width` of them — answers for every element.
         (Some(lhs), Some(rhs)) => {
@@ -308,7 +314,7 @@ fn fsl_compare_scalar(
     }
 
     // The scalar is one list, so a side that repeats one list too is a single comparison.
-    if let Some(lhs) = lhs.scalar_values() {
+    if let Some(lhs) = lhs.scalar_value_ignore_validity() {
         let bit = condense(inner(lhs, rhs), 1, width, how);
         return repeated(bit.get(0), length);
     }

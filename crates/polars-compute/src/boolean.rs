@@ -17,7 +17,7 @@ pub fn any(arr: &PlBooleanArray) -> Option<bool> {
 
     // Every element reads the one bit a scalar values buffer holds, and at least one of them is
     // non-null: that bit is the answer, and no buffer is walked at all.
-    if let Some(value) = arr.scalar_values() {
+    if let Some(value) = arr.scalar_value_ignore_validity() {
         return Some(value);
     }
 
@@ -40,7 +40,7 @@ pub fn all(arr: &PlBooleanArray) -> Option<bool> {
     }
 
     // As in `any`: the one bit every element shares is the answer.
-    if let Some(value) = arr.scalar_values() {
+    if let Some(value) = arr.scalar_value_ignore_validity() {
         return Some(value);
     }
 
@@ -65,7 +65,7 @@ pub fn all(arr: &PlBooleanArray) -> Option<bool> {
 pub fn not(arr: &PlBooleanArray) -> PlBooleanArray {
     // Inverting the backing bitmap keeps the representation: the single bit a scalar values
     // buffer holds inverts in `O(1)` and still stands for every element.
-    let inverted = match arr.scalar_values() {
+    let inverted = match arr.scalar_value_ignore_validity() {
         Some(value) => PlBooleanArray::new_scalar(!value, arr.len()),
         None => PlBooleanArray::from_values(!arr.flat_values().unwrap()),
     };
@@ -76,7 +76,7 @@ pub fn not(arr: &PlBooleanArray) -> PlBooleanArray {
 /// The value every element of `arr` is known to hold, if its values are one bit and none is null.
 fn known_value(arr: &PlBooleanArray) -> Option<bool> {
     (arr.null_count() == 0)
-        .then(|| arr.scalar_values())
+        .then(|| arr.scalar_value_ignore_validity())
         .flatten()
 }
 
@@ -146,7 +146,10 @@ pub fn xor(lhs: &PlBooleanArray, rhs: &PlBooleanArray) -> PlBooleanArray {
     // side is written out to say so. What `xor` has left to do here is carry the nulls of both
     // sides over, which combine in whatever representation they came in.
     let length = lhs.len();
-    let values = match (lhs.scalar_values(), rhs.scalar_values()) {
+    let values = match (
+        lhs.scalar_value_ignore_validity(),
+        rhs.scalar_value_ignore_validity(),
+    ) {
         (Some(lhs), Some(rhs)) => PlBooleanArray::new_scalar(lhs != rhs, length),
         (Some(bit), None) => flipped_if(rhs.flat_values().unwrap(), bit),
         (None, Some(bit)) => flipped_if(lhs.flat_values().unwrap(), bit),
@@ -354,7 +357,7 @@ mod tests {
 
             let out = xor(&lhs, &rhs);
             assert_eq!(out.len(), 4);
-            assert_eq!(out.scalar_values(), Some(expected));
+            assert_eq!(out.scalar_value_ignore_validity(), Some(expected));
             assert_eq!(
                 out.iter().collect::<Vec<_>>(),
                 [Some(expected), None, Some(expected), None]

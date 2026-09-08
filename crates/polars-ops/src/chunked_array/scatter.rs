@@ -42,7 +42,7 @@ unsafe fn with_values_mut<T: NativeType, F: FnOnce(&mut [T])>(arr: &mut PlPrimit
         // the one slot it was written out of. `to_flat` is no help here: an array of a *single*
         // element reads as scalar however it was built, so writing it out leaves it reading that
         // way too.
-        let mut owned = match arr.scalar_values() {
+        let mut owned = match arr.scalar_value_ignore_validity() {
             Some(value) => vec![value; length],
             // Values that are neither flat nor scalar are no values at all.
             None => Vec::new(),
@@ -127,7 +127,7 @@ fn with_bool_values_mut<F: FnOnce(&mut MutableBitmap)>(arr: &mut PlBooleanArray,
             // anything can be written into it — as a bitmap of its own, for the reason given in
             // `with_values_mut`.
             let mut values = MutableBitmap::new();
-            if let Some(value) = arr.scalar_values() {
+            if let Some(value) = arr.scalar_value_ignore_validity() {
                 values.extend_constant(length, value);
             }
             f(&mut values);

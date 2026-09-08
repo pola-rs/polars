@@ -644,7 +644,7 @@ pub fn moment_agg<'a, S: Default>(
                 }};
             }
 
-            match arr.scalar_values() {
+            match arr.scalar_value_ignore_validity() {
                 Some(value) => fold_groups!(|_: usize| value),
                 None => {
                     let values = arr.flat_values().expect("the values are not repeated");

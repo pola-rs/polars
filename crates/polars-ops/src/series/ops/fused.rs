@@ -18,7 +18,7 @@ macro_rules! fused_kernel {
             let validity = combine_validities_and3(a.validity(), b.validity(), c.validity());
 
             if let (Some($a), Some($b), Some($c)) =
-                (a.scalar_values(), b.scalar_values(), c.scalar_values())
+                (a.scalar_value_ignore_validity(), b.scalar_value_ignore_validity(), c.scalar_value_ignore_validity())
             {
                 return PlPrimitiveArray::new_scalar($fuse, length).with_validity(validity);
             }

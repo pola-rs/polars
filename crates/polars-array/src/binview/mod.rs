@@ -276,9 +276,10 @@ impl PlBinaryViewArray {
     /// The bytes every element of this array reads, if the views buffer holds a single slot.
     ///
     /// The mask is not looked at: a null element still holds the bytes its view reads, which is
-    /// what a kernel that answers over the values alone compares.
+    /// what a kernel that answers over the values alone compares. [`Self::scalar_value`] answers
+    /// over both axes, and is what a caller that has to honour nulls wants.
     #[inline]
-    pub fn scalar_values(&self) -> Option<&[u8]> {
+    pub fn scalar_value_ignore_validity(&self) -> Option<&[u8]> {
         // SAFETY: a scalar views buffer holds the one view element 0 reads, and it is in bounds
         // of an array that is not empty — which `views_are_scalar` is only true of.
         self.views_are_scalar()

@@ -296,7 +296,12 @@ mod tests {
     /// A list column over `values`, cut into the rows `offsets` marks off.
     fn lists(values: PlPrimitiveArray<i32>, offsets: &[u64]) -> ListChunked {
         let length = offsets.len() - 1;
-        let arr = PlListArray::new(values.into_boxed(), Buffer::from(offsets.to_vec()), length, None);
+        let arr = PlListArray::new(
+            values.into_boxed(),
+            Buffer::from(offsets.to_vec()),
+            length,
+            None,
+        );
 
         unsafe {
             ListChunked::from_chunks_and_dtype(
@@ -320,11 +325,21 @@ mod tests {
 
         let ca = lists(flat, &offsets);
         assert_eq!(
-            list_min_function(&ca).unwrap().i32().unwrap().iter().collect::<Vec<_>>(),
+            list_min_function(&ca)
+                .unwrap()
+                .i32()
+                .unwrap()
+                .iter()
+                .collect::<Vec<_>>(),
             expected_min,
         );
         assert_eq!(
-            list_max_function(&ca).unwrap().i32().unwrap().iter().collect::<Vec<_>>(),
+            list_max_function(&ca)
+                .unwrap()
+                .i32()
+                .unwrap()
+                .iter()
+                .collect::<Vec<_>>(),
             expected_max,
         );
 
@@ -336,11 +351,21 @@ mod tests {
         let ca = lists(scalar, &offsets);
         let repeated = [Some(3), None, Some(3), Some(3)];
         assert_eq!(
-            list_min_function(&ca).unwrap().i32().unwrap().iter().collect::<Vec<_>>(),
+            list_min_function(&ca)
+                .unwrap()
+                .i32()
+                .unwrap()
+                .iter()
+                .collect::<Vec<_>>(),
             repeated,
         );
         assert_eq!(
-            list_max_function(&ca).unwrap().i32().unwrap().iter().collect::<Vec<_>>(),
+            list_max_function(&ca)
+                .unwrap()
+                .i32()
+                .unwrap()
+                .iter()
+                .collect::<Vec<_>>(),
             repeated,
         );
     }

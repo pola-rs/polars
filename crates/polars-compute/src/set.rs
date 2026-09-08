@@ -49,7 +49,7 @@ fn runs(mask: &Bitmap) -> impl Iterator<Item = (usize, usize, bool)> + '_ {
 
 /// The values buffer of `arr` as one slot per element, writing out a buffer of a single slot.
 fn values_written_out<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Vec<T> {
-    match arr.scalar_values() {
+    match arr.scalar_value_ignore_validity() {
         Some(value) => vec![value; arr.len()],
         None => arr.flat_values().unwrap().as_slice().to_vec(),
     }
@@ -75,7 +75,7 @@ pub fn set_at_nulls<T: NativeType>(array: &PlPrimitiveArray<T>, value: T) -> PlP
     // `value` wherever the mask is unset and that one value everywhere else. Which buffer the
     // runs are read out of is settled once, ahead of the loop over them.
     let mut av = Vec::with_capacity(array.len());
-    if let Some(repeated) = array.scalar_values() {
+    if let Some(repeated) = array.scalar_value_ignore_validity() {
         for (lower, upper, truthy) in runs(validity) {
             let fill = if truthy { repeated } else { value };
             av.extend(std::iter::repeat_n(fill, upper - lower));
@@ -102,7 +102,7 @@ pub fn set_with_mask<T: NativeType>(
 ) -> PlPrimitiveArray<T> {
     assert_eq!(array.len(), mask.len(), "the mask must cover every element");
 
-    match mask.scalar_values() {
+    match mask.scalar_value_ignore_validity() {
         // Every element is picked out, so every one of them holds `value` and none is null.
         Some(true) => return PlPrimitiveArray::new_scalar(value, array.len()),
         // No element is picked out, so nothing changes.
@@ -112,7 +112,7 @@ pub fn set_with_mask<T: NativeType>(
     let mask_values = mask.flat_values().unwrap();
 
     let mut buf = Vec::with_capacity(array.len());
-    if let Some(repeated) = array.scalar_values() {
+    if let Some(repeated) = array.scalar_value_ignore_validity() {
         for (lower, upper, truthy) in runs(mask_values) {
             let fill = if truthy { value } else { repeated };
             buf.extend(std::iter::repeat_n(fill, upper - lower));

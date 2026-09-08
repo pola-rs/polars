@@ -18,7 +18,7 @@ where
     // Without a null anywhere the rows are read straight out of the values buffer, in whichever
     // representation it is in.
     if !values.has_nulls() {
-        return match values.scalar_values() {
+        return match values.scalar_value_ignore_validity() {
             // Every row is the same `width` copies of the one value, and so reduces to it — as
             // does the answer, which repeats a single value in turn.
             Some(value) => {

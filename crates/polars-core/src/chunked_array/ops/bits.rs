@@ -20,7 +20,7 @@ fn first_true_idx_impl(ca: &BooleanChunked, invert: bool) -> Option<usize> {
         // A chunk that says the same of every element answers for itself: either it holds the bit
         // being looked for under a non-null element, which is the first such element, or it holds
         // none and the search moves on to the next chunk.
-        if let Some(value) = arr.scalar_values() {
+        if let Some(value) = arr.scalar_value_ignore_validity() {
             if value != invert {
                 if let Some(i) = first_valid(arr) {
                     return Some(offset + i);

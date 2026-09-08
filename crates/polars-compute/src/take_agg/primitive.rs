@@ -30,7 +30,7 @@ pub unsafe fn take_agg_no_null_primitive_iter_unchecked<
 ) -> impl Iterator<Item = T> {
     debug_assert!(arr.null_count() == 0);
 
-    match arr.scalar_values() {
+    match arr.scalar_value_ignore_validity() {
         // Every index gathers the one value the buffer holds, so it is read once here rather than
         // through the buffer once per index.
         Some(value) => Either::Left(indices.into_iter().map(move |_| value)),
@@ -59,7 +59,7 @@ pub unsafe fn take_agg_primitive_iter_unchecked<T: NativeType, I: IntoIterator<I
         return Either::Left(std::iter::empty());
     };
 
-    match arr.scalar_values() {
+    match arr.scalar_value_ignore_validity() {
         Some(value) => Either::Right(Either::Left(
             indices
                 .into_iter()
@@ -124,7 +124,7 @@ pub unsafe fn take_agg_primitive_iter_unchecked_count_nulls<
 
     // Which buffer the values come out of is settled once, ahead of the fold: every index of a
     // scalar chunk gathers the one value it holds.
-    let (out, null_count) = match arr.scalar_values() {
+    let (out, null_count) = match arr.scalar_value_ignore_validity() {
         Some(value) => fold_gathered(indices, validity, |_| value, init, f),
         None => {
             let values = arr.flat_values().unwrap();

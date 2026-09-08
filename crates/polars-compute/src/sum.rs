@@ -202,7 +202,7 @@ where
     // A chunk that repeats one value adds that value up once per non-null element, which for an
     // integer is a single multiplication rather than a pass over the chunk. A float still pays a
     // pass, but a float chunk is summed by [`crate::float_sum`] instead.
-    if let Some(value) = arr.scalar_values() {
+    if let Some(value) = arr.scalar_value_ignore_validity() {
         return repeat_wrapping_add(value, count);
     }
 
@@ -225,7 +225,7 @@ where
         return S::zero();
     }
 
-    if let Some(value) = arr.scalar_values() {
+    if let Some(value) = arr.scalar_value_ignore_validity() {
         return repeat_wrapping_add(value.into(), count);
     }
 

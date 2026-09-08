@@ -95,7 +95,7 @@ impl PlBinaryArrayBuilder {
             // The offsets are not flat, so every element covers the same bytes — which are appended
             // once per element. An empty array holds no range for the subslice to cover, but the
             // subslice it admits covers no element either.
-            if let Some(element) = other.scalar_values() {
+            if let Some(element) = other.scalar_value_ignore_validity() {
                 self.extend_repeated(element, length);
             }
             return;

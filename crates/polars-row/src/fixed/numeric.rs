@@ -160,7 +160,7 @@ pub unsafe fn encode<T: NativeType + FixedLengthEncoding>(
 
     // Every row of a scalar chunk holds the same value, so it is encoded once and copied into
     // each of them.
-    match arr.scalar_values() {
+    match arr.scalar_value_ignore_validity() {
         Some(value) => crate::fixed::numeric::encode_repeated(buffer, value, opt, offsets),
         None => crate::fixed::numeric::encode_slice(
             buffer,

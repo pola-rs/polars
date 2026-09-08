@@ -68,7 +68,7 @@ fn values_of<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Option<Values<'_, T>> 
 
     // Every element is the one value the buffer holds, and at least one element is not null, so
     // that value is both the minimum and the maximum — read here in `O(1)`.
-    if let Some(value) = arr.scalar_values() {
+    if let Some(value) = arr.scalar_value_ignore_validity() {
         return Some(Values::Repeated(value));
     }
     let values = arr.flat_values().unwrap();

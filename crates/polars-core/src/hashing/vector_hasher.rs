@@ -87,7 +87,7 @@ fn numeric_vec_hash<T>(
     #[allow(clippy::useless_transmute)]
     ca.downcast_iter().for_each(|arr| {
         // A chunk that repeats one value hashes it once, and that hash repeats in turn.
-        if let Some(value) = arr.scalar_values() {
+        if let Some(value) = arr.scalar_value_ignore_validity() {
             let hash = random_state.hash_one(value.to_total_ord());
             buf.extend(std::iter::repeat_n(hash, arr.len()));
             return;
@@ -121,7 +121,7 @@ fn numeric_vec_hash_combine<T>(
         // Combining reads one hash per element out of the buffer either way, but the value it is
         // combined with is hashed once where the chunk repeats a single one.
         let scalar_hash = arr
-            .scalar_values()
+            .scalar_value_ignore_validity()
             .map(|value| random_state.hash_one(value.to_total_ord()));
         let hash_of = |value: T::Native| {
             scalar_hash.unwrap_or_else(|| random_state.hash_one(value.to_total_ord()))
