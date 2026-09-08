@@ -6,20 +6,17 @@ use polars_array::{
     PlPrimitiveArray,
 };
 use polars_buffer::Buffer;
-use polars_dtype::DataType;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::IdxSize;
 
-use super::{CastOptionsImpl, MaskBuilder, cast, downcast};
+use super::{MaskBuilder, downcast};
 
 /// Casts the values of a list array, which leaves every element holding as many as it did.
 pub fn cast_list(
     from: &PlListArray,
-    from_inner: &DataType,
-    to_inner: &DataType,
-    options: CastOptionsImpl,
+    cast_values: impl FnOnce(&dyn PlArray) -> PolarsResult<Box<dyn PlArray>>,
 ) -> PolarsResult<PlListArray> {
-    let values = cast(from.values(), from_inner, to_inner, options)?;
+    let values = cast_values(from.values())?;
     Ok(list_with_values(from, values))
 }
 
@@ -27,11 +24,9 @@ pub fn cast_list(
 #[cfg(feature = "dtype-array")]
 pub fn cast_fixed_size_list(
     from: &PlFixedSizeListArray,
-    from_inner: &DataType,
-    to_inner: &DataType,
-    options: CastOptionsImpl,
+    cast_values: impl FnOnce(&dyn PlArray) -> PolarsResult<Box<dyn PlArray>>,
 ) -> PolarsResult<PlFixedSizeListArray> {
-    let values = cast(from.values(), from_inner, to_inner, options)?;
+    let values = cast_values(from.values())?;
     Ok(fixed_size_list_with_values(from, values))
 }
 
@@ -39,18 +34,13 @@ pub fn cast_fixed_size_list(
 #[cfg(feature = "dtype-struct")]
 pub fn cast_struct(
     from: &polars_array::PlStructArray,
-    from_fields: &[polars_dtype::Field],
-    to_fields: &[polars_dtype::Field],
-    options: CastOptionsImpl,
+    cast_field: impl Fn(usize, &dyn PlArray) -> PolarsResult<Box<dyn PlArray>>,
 ) -> PolarsResult<polars_array::PlStructArray> {
     let fields = from
         .fields()
         .iter()
-        .zip(from_fields)
-        .zip(to_fields)
-        .map(|((field, from_field), to_field)| {
-            cast(&**field, from_field.dtype(), to_field.dtype(), options)
-        })
+        .enumerate()
+        .map(|(i, field)| cast_field(i, &**field))
         .collect::<PolarsResult<_>>()?;
 
     Ok(polars_array::PlStructArray::new(
@@ -65,11 +55,9 @@ pub fn cast_struct(
 #[cfg(feature = "dtype-array")]
 pub fn fixed_size_list_to_list(
     from: &PlFixedSizeListArray,
-    from_inner: &DataType,
-    to_inner: &DataType,
-    options: CastOptionsImpl,
+    cast_values: impl FnOnce(&dyn PlArray) -> PolarsResult<Box<dyn PlArray>>,
 ) -> PolarsResult<PlListArray> {
-    let values = cast(from.values(), from_inner, to_inner, options)?;
+    let values = cast_values(from.values())?;
     let width = from.width() as u64;
     let validity = from.validity().map(PlBitmap::from);
 
@@ -103,7 +91,7 @@ pub fn fixed_size_list_to_list(
 pub fn list_to_fixed_size_list(
     from: &PlListArray,
     width: usize,
-    cast_values: impl Fn(Box<dyn PlArray>) -> PolarsResult<Box<dyn PlArray>>,
+    cast_values: impl FnOnce(&dyn PlArray) -> PolarsResult<Box<dyn PlArray>>,
 ) -> PolarsResult<PlFixedSizeListArray> {
     let validity = from.validity().map(PlBitmap::from);
 
@@ -113,7 +101,7 @@ pub fn list_to_fixed_size_list(
             range.len() == width,
             ComputeError: "not all elements have the specified width {width}"
         );
-        let values = cast_values(from.values().sliced(range.start, range.len()))?;
+        let values = cast_values(&*from.values().sliced(range.start, range.len()))?;
         return Ok(PlFixedSizeListArray::new_broadcast(
             values,
             width,
@@ -135,7 +123,7 @@ pub fn list_to_fixed_size_list(
         polars_ensure!(is_valid, ComputeError: "not all elements have the specified width {width}");
 
         let length = *offsets.last().unwrap() as usize - start_offset;
-        let values = cast_values(from.values().sliced(start_offset, length))?;
+        let values = cast_values(&*from.values().sliced(start_offset, length))?;
         return Ok(PlFixedSizeListArray::new(
             values,
             width,
@@ -187,7 +175,7 @@ pub fn list_to_fixed_size_list(
     // SAFETY: every index was read off the offsets of an element, which hold ranges within the
     // values; the ones that were not are null.
     let values = unsafe { crate::gather::take_unchecked(from.values(), &indices) };
-    let values = cast_values(values)?;
+    let values = cast_values(&*values)?;
 
     PlFixedSizeListArray::try_new(values, width, from.len(), validity)
         .map_err(|_| polars_error::polars_err!(ComputeError: "not all elements have the specified width {width}"))
@@ -241,20 +229,30 @@ pub fn list_uint8_to_binview(from: &PlListArray) -> PolarsResult<PlBinaryViewArr
 
 /// Rebuilds `from` over `values`, which hold as many values as its own do.
 fn list_with_values(from: &PlListArray, values: Box<dyn PlArray>) -> PlListArray {
+    assert_eq!(
+        values.len(),
+        from.values().len(),
+        "the values a list array is rebuilt over hold one value per value of its own",
+    );
     let validity = from.validity().map(PlBitmap::from);
-    match from.scalar_offsets() {
-        Some(range) => PlListArray::new_broadcast(
-            values,
-            Buffer::from(vec![range.start as u64, range.end as u64]),
-            from.len(),
-            validity,
-        ),
-        None => PlListArray::new(
-            values,
-            from.flat_offsets().unwrap().clone(),
-            from.len(),
-            validity,
-        ),
+
+    // SAFETY: the offsets are the ones `from` was built with, which hold ranges within values as
+    // many as its own — the length just asserted.
+    unsafe {
+        match from.scalar_offsets() {
+            Some(range) => PlListArray::new_broadcast_unchecked(
+                values,
+                Buffer::from(vec![range.start as u64, range.end as u64]),
+                from.len(),
+                validity,
+            ),
+            None => PlListArray::new_unchecked(
+                values,
+                from.flat_offsets().unwrap().clone(),
+                from.len(),
+                validity,
+            ),
+        }
     }
 }
 

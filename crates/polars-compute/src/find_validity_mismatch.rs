@@ -221,7 +221,9 @@ fn find_validity_mismatch_list_fsl(
     // The lists of a null element hold no values of their own, so lining the two sides up value for
     // value means filling those in — which is what the cast to a fixed width does. This only runs
     // once a cast has already failed.
-    let left = crate::cast::list_to_fixed_size_list(left, right.width(), Ok).unwrap();
+    let left =
+        crate::cast::list_to_fixed_size_list(left, right.width(), |values| Ok(values.to_boxed()))
+            .unwrap();
 
     find_validity_mismatch_nested(left.values(), right.values(), right.width(), idxs)
 }

@@ -22,7 +22,11 @@ pub use self::binview::binview_to_decimal;
 pub use self::binview::{
     binview_to_fixed_binary, binview_to_fixed_size_list, binview_to_primitive, view_to_binary,
 };
-pub use self::nested::list_to_fixed_size_list;
+#[cfg(feature = "dtype-struct")]
+pub use self::nested::cast_struct;
+#[cfg(feature = "dtype-array")]
+pub use self::nested::{cast_fixed_size_list, fixed_size_list_to_list};
+pub use self::nested::{cast_list, list_to_fixed_size_list, list_uint8_to_binview};
 #[cfg(feature = "dtype-decimal")]
 pub use self::primitive::decimal_to_utf8view;
 pub use self::primitive::{
@@ -154,8 +158,10 @@ fn cast_dispatch(
             from_fields.len() == to_fields.len(),
             InvalidOperation: "Cannot cast struct with different number of fields."
         );
-        return nested::cast_struct(downcast(array), from_fields, to_fields, options)
-            .map(|array| Box::new(array) as _);
+        return nested::cast_struct(downcast(array), |i, field| {
+            cast(field, from_fields[i].dtype(), to_fields[i].dtype(), options)
+        })
+        .map(|array| Box::new(array) as _);
     }
     if from.is_struct() || to.is_struct() {
         polars_bail!(InvalidOperation: "Cannot cast from struct to other types");
@@ -417,37 +423,31 @@ fn cast_nested(
     use DataType as D;
 
     let out: Box<dyn PlArray> = match (from, to) {
-        (D::List(from_inner), D::List(to_inner)) => Box::new(nested::cast_list(
-            downcast(array),
-            from_inner,
-            to_inner,
-            options,
-        )?),
+        (D::List(from_inner), D::List(to_inner)) => {
+            Box::new(nested::cast_list(downcast(array), |values| {
+                cast(values, from_inner, to_inner, options)
+            })?)
+        },
         #[cfg(feature = "dtype-array")]
         (D::Array(from_inner, from_width), D::Array(to_inner, to_width)) => {
             polars_ensure!(
                 from_width == to_width,
                 InvalidOperation: "cannot cast Array to a different width"
             );
-            Box::new(nested::cast_fixed_size_list(
-                downcast(array),
-                from_inner,
-                to_inner,
-                options,
-            )?)
+            Box::new(nested::cast_fixed_size_list(downcast(array), |values| {
+                cast(values, from_inner, to_inner, options)
+            })?)
         },
         #[cfg(feature = "dtype-array")]
         (D::List(from_inner), D::Array(to_inner, width)) => Box::new(
             nested::list_to_fixed_size_list(downcast(array), *width, |values| {
-                cast(&*values, from_inner, to_inner, options)
+                cast(values, from_inner, to_inner, options)
             })?,
         ),
         #[cfg(feature = "dtype-array")]
         (D::Array(from_inner, _), D::List(to_inner)) => Box::new(nested::fixed_size_list_to_list(
             downcast(array),
-            from_inner,
-            to_inner,
-            options,
+            |values| cast(values, from_inner, to_inner, options),
         )?),
 
         // The bytes of an element are held one per value, which is what makes the two readable as
