@@ -180,44 +180,13 @@ mod tests {
     use polars_buffer::Buffer;
 
     use super::*;
+    use crate::array_tests::arrays;
     use crate::builder::new_full_null_like;
     use crate::{
         PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBooleanArray, PlFixedSizeBinaryArray,
         PlFixedSizeListArray, PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray,
         PlUtf8ViewArray, StaticArray,
     };
-
-    fn arrays() -> Vec<Box<dyn PlArray>> {
-        vec![
-            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
-            Box::new(PlBooleanArray::from_vec(vec![true, false, true])),
-            Box::new(PlBinaryArray::from_values_iter([
-                b"foo".as_slice(),
-                b"",
-                b"bar",
-            ])),
-            Box::new(PlBinaryViewArray::from_values_iter([
-                b"foo".as_slice(),
-                b"bar",
-                b"a value that is too long to inline",
-            ])),
-            Box::new(PlFixedSizeBinaryArray::from_vec(
-                vec![1u8, 2, 3, 4, 5, 6],
-                2,
-            )),
-            Box::new(PlStructArray::from_fields(vec![Box::new(
-                PlPrimitiveArray::from_vec(vec![1i32, 2, 3]),
-            )])),
-            Box::new(PlListArray::from_offsets(
-                Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
-                Buffer::from(vec![0u64, 1, 2, 3]),
-            )),
-            Box::new(PlFixedSizeListArray::from_values(
-                Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4, 5, 6])),
-                2,
-            )),
-        ]
-    }
 
     /// Asserts that `array` holds no elements and no slot in any backing buffer.
     fn assert_empty_and_flat<A: StaticArray>(array: A) {

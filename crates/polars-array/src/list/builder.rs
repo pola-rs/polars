@@ -319,8 +319,9 @@ mod tests {
         PlListArrayBuilder::with_capacity(builder_like(array().values()), 8)
     }
 
+    /// The values of a built array are the ones its elements reach, and no more.
     #[test]
-    fn appending_subslices_and_repeats() {
+    fn a_null_element_appends_no_values() {
         let array = array();
 
         let mut builder = builder();
@@ -329,24 +330,8 @@ mod tests {
         builder.subslice_extend_repeated(&array, 0, 2, 2, ShareStrategy::Always);
         builder.subslice_extend_each_repeated(&array, 2, 1, 2, ShareStrategy::Always);
 
+        // The ones a null element would have covered are never appended at all.
         let built = builder.freeze();
-        assert_eq!(
-            elements(&built),
-            [
-                None,
-                Some(vec![3, 4, 5]),
-                None,
-                Some(vec![1, 2]),
-                None,
-                Some(vec![1, 2]),
-                None,
-                Some(vec![3, 4, 5]),
-                Some(vec![3, 4, 5]),
-            ],
-        );
-
-        // The values of the built array are the ones its elements reach, and no more: the ones a
-        // null element would have covered are never appended.
         assert_eq!(built.values().len(), 13);
     }
 

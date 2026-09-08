@@ -673,66 +673,9 @@ pub fn opt_gather_extend_validity(
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
-    use polars_buffer::Buffer;
-
     use super::*;
-    use crate::bitmap::PlBitmap;
-    use crate::{
-        PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray, PlNullArray,
-        PlPrimitiveArray, PlStructArray,
-    };
-
-    /// One array of every array type, all of three elements, with a null in the middle.
-    fn arrays() -> Vec<Box<dyn PlArray>> {
-        let validity = Bitmap::from_iter([true, false, true]);
-        vec![
-            Box::new(
-                PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
-                    .with_validity(Some(PlBitmap::from_bitmap(validity.clone()))),
-            ),
-            Box::new(
-                PlBooleanArray::from_vec(vec![true, false, true])
-                    .with_validity(Some(PlBitmap::from_bitmap(validity.clone()))),
-            ),
-            Box::new(
-                PlBinaryArray::from_values_iter([b"foo".as_slice(), b"", b"bar"])
-                    .with_validity(Some(PlBitmap::from_bitmap(validity.clone()))),
-            ),
-            Box::new(
-                PlBinaryViewArray::from_values_iter([
-                    b"foo".as_slice(),
-                    b"bar",
-                    b"a value that is too long to inline",
-                ])
-                .with_validity(Some(PlBitmap::from_bitmap(validity.clone()))),
-            ),
-            Box::new(
-                PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4, 5, 6], 2)
-                    .with_validity(Some(PlBitmap::from_bitmap(validity.clone()))),
-            ),
-            Box::new(PlStructArray::new(
-                vec![Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3]))],
-                3,
-                Some(PlBitmap::from_bitmap(validity.clone())),
-            )),
-            Box::new(
-                PlListArray::from_offsets(
-                    Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
-                    Buffer::from(vec![0u64, 1, 2, 3]),
-                )
-                .with_validity(Some(PlBitmap::from_bitmap(validity.clone()))),
-            ),
-            Box::new(
-                PlFixedSizeListArray::from_values(
-                    Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4, 5, 6])),
-                    2,
-                )
-                .with_validity(Some(PlBitmap::from_bitmap(validity))),
-            ),
-            Box::new(PlNullArray::new(3)),
-        ]
-    }
+    use crate::array_tests::{arrays, assert_picked};
+    use crate::{PlArrayType, PlFixedSizeBinaryArray, PlFixedSizeListArray, PlStructArray};
 
     /// An array of nulls of an array type alone, which names no shape of its own.
     #[test]
@@ -783,19 +726,65 @@ mod tests {
             builder.extend(&*array, ShareStrategy::Always);
             builder.extend_nulls(2);
             builder.subslice_extend(&*array, 1, 2, ShareStrategy::Never);
-            assert_eq!(builder.len(), 7);
 
             let built = builder.freeze();
             assert_eq!(built.array_type(), array.array_type());
-            assert_eq!(built.len(), 7);
-
-            // The elements are the ones appended, in the order they were appended in.
-            assert_eq!(&built.sliced(0, 3), &array);
-            assert_eq!(
-                built.null_count(),
-                array.null_count() + 2 + array.sliced(1, 2).null_count(),
+            assert_picked(
+                &*built,
+                &*array,
+                &[Some(0), Some(1), Some(2), None, None, Some(1), Some(2)],
             );
-            assert_eq!(&built.sliced(6, 1), &array.sliced(2, 1));
+        }
+    }
+
+    /// The elements a subslice, a repeat of one and a repeat of each of them append, in order.
+    #[test]
+    fn a_builder_of_every_array_type_appends_subslices_and_repeats() {
+        for share in [ShareStrategy::Never, ShareStrategy::Always] {
+            for array in arrays() {
+                let mut builder = builder_like(&*array);
+                builder.subslice_extend(&*array, 1, 2, share);
+                builder.extend_nulls(1);
+                builder.subslice_extend_repeated(&*array, 0, 2, 2, share);
+                builder.subslice_extend_each_repeated(&*array, 2, 1, 2, share);
+
+                let built = builder.freeze();
+                assert_picked(
+                    &*built,
+                    &*array,
+                    &[
+                        Some(1),
+                        Some(2),
+                        None,
+                        Some(0),
+                        Some(1),
+                        Some(0),
+                        Some(1),
+                        Some(2),
+                        Some(2),
+                    ],
+                );
+            }
+        }
+    }
+
+    /// The elements a gather picks, of which an index past the end of the array picks a null.
+    #[test]
+    fn a_builder_of_every_array_type_gathers() {
+        for share in [ShareStrategy::Never, ShareStrategy::Always] {
+            for array in arrays() {
+                let mut builder = builder_like(&*array);
+                // SAFETY: the indices are in bounds of an array of three elements.
+                unsafe { builder.gather_extend(&*array, &[2, 0, 1], share) };
+                builder.opt_gather_extend(&*array, &[0, 9], share);
+
+                let built = builder.freeze();
+                assert_picked(
+                    &*built,
+                    &*array,
+                    &[Some(2), Some(0), Some(1), Some(0), None],
+                );
+            }
         }
     }
 

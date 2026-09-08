@@ -256,7 +256,7 @@ mod tests {
     }
 
     #[test]
-    fn appending_subslices_and_repeats() {
+    fn every_field_holds_one_element_per_element() {
         let array = array();
 
         let mut builder = builder();
@@ -265,23 +265,8 @@ mod tests {
         builder.subslice_extend_repeated(&array, 0, 2, 2, ShareStrategy::Always);
         builder.subslice_extend_each_repeated(&array, 2, 1, 2, ShareStrategy::Always);
 
-        let built = builder.freeze();
-        assert_eq!(
-            elements(&built),
-            [
-                None,
-                Some(3),
-                None,
-                Some(1),
-                None,
-                Some(1),
-                None,
-                Some(3),
-                Some(3),
-            ],
-        );
-
         // Every field holds one element per element of the array.
+        let built = builder.freeze();
         assert_eq!(built.field(0).len(), 9);
         assert_eq!(built.field(1).len(), 9);
     }

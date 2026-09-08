@@ -220,46 +220,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn appending_subslices_and_repeats() {
-        let array: PlBooleanArray = [Some(true), None, Some(false)].into_iter().collect();
-
-        let mut builder = PlBooleanArrayBuilder::with_capacity(8);
-        builder.subslice_extend(&array, 1, 2, ShareStrategy::Never);
-        builder.subslice_extend_repeated(&array, 0, 2, 2, ShareStrategy::Never);
-        builder.subslice_extend_each_repeated(&array, 2, 1, 2, ShareStrategy::Never);
-
-        let built = builder.freeze();
-        assert_eq!(
-            built.iter().collect::<Vec<_>>(),
-            [
-                None,
-                Some(false),
-                Some(true),
-                None,
-                Some(true),
-                None,
-                Some(false),
-                Some(false),
-            ],
-        );
-    }
-
-    #[test]
-    fn gathering() {
-        let array: PlBooleanArray = [Some(true), None, Some(false)].into_iter().collect();
-
-        let mut builder = PlBooleanArrayBuilder::new();
-        unsafe { builder.gather_extend(&array, &[2, 0, 1], ShareStrategy::Never) };
-        builder.opt_gather_extend(&array, &[0, 9], ShareStrategy::Never);
-
-        let built = builder.freeze();
-        assert_eq!(
-            built.iter().collect::<Vec<_>>(),
-            [Some(false), Some(true), None, Some(true), None],
-        );
-    }
-
-    #[test]
     fn pushing_elements_one_at_a_time() {
         let mut builder = PlBooleanArrayBuilder::with_capacity(4);
         builder.push_value(true);

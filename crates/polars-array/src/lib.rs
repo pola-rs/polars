@@ -1,6 +1,8 @@
 //! The Polars vector format.
 
 pub mod array;
+#[cfg(test)]
+mod array_tests;
 pub mod array_type;
 pub mod arrow;
 pub mod binary;

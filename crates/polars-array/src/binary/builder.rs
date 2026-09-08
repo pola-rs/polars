@@ -300,8 +300,9 @@ mod tests {
             .collect()
     }
 
+    /// The bytes of a built array are the ones its elements reach, and no more.
     #[test]
-    fn appending_subslices_and_repeats() {
+    fn a_null_element_keeps_the_bytes_it_covered() {
         let array = array();
 
         let mut builder = PlBinaryArrayBuilder::with_capacity(8);
@@ -310,48 +311,11 @@ mod tests {
         builder.subslice_extend_repeated(&array, 0, 2, 2, ShareStrategy::Never);
         builder.subslice_extend_each_repeated(&array, 2, 1, 2, ShareStrategy::Never);
 
+        // The ones a null element would have covered are appended as they were, since it is
+        // the mask and not the offsets that makes an element null.
         let built = builder.freeze();
-        assert_eq!(
-            elements(&built),
-            [
-                None,
-                Some(b"bar".to_vec()),
-                None,
-                Some(b"foo".to_vec()),
-                None,
-                Some(b"foo".to_vec()),
-                None,
-                Some(b"bar".to_vec()),
-                Some(b"bar".to_vec()),
-            ],
-        );
-
-        // The bytes of the built array are the ones its elements reach, and no more: the ones a
-        // null element would have covered are appended as they were, since it is the mask and not
-        // the offsets that makes an element null.
         assert!(built.is_flat());
         assert_eq!(built.values().len(), 24);
-    }
-
-    #[test]
-    fn gathering() {
-        let array = array();
-
-        let mut builder = PlBinaryArrayBuilder::new();
-        unsafe { builder.gather_extend(&array, &[2, 0, 1], ShareStrategy::Never) };
-        builder.opt_gather_extend(&array, &[0, 9], ShareStrategy::Never);
-
-        let built = builder.freeze();
-        assert_eq!(
-            elements(&built),
-            [
-                Some(b"bar".to_vec()),
-                Some(b"foo".to_vec()),
-                None,
-                Some(b"foo".to_vec()),
-                None,
-            ],
-        );
     }
 
     #[test]

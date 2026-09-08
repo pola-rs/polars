@@ -520,50 +520,6 @@ mod tests {
     const LONG: &[u8] = b"a value that is too long to inline";
 
     #[test]
-    fn appending_subslices_and_repeats() {
-        let array: PlBinaryViewArray = [Some(b"foo".as_slice()), None, Some(LONG)]
-            .into_iter()
-            .collect();
-
-        let mut builder = PlBinaryViewArrayBuilder::with_capacity(8);
-        builder.subslice_extend(&array, 1, 2, ShareStrategy::Always);
-        builder.subslice_extend_repeated(&array, 0, 2, 2, ShareStrategy::Never);
-        builder.subslice_extend_each_repeated(&array, 2, 1, 2, ShareStrategy::Never);
-
-        let built = builder.freeze();
-        assert_eq!(
-            built.iter().collect::<Vec<_>>(),
-            [
-                None,
-                Some(LONG),
-                Some(b"foo".as_slice()),
-                None,
-                Some(b"foo".as_slice()),
-                None,
-                Some(LONG),
-                Some(LONG),
-            ],
-        );
-    }
-
-    #[test]
-    fn gathering() {
-        let array: PlBinaryViewArray = [Some(b"foo".as_slice()), None, Some(LONG)]
-            .into_iter()
-            .collect();
-
-        let mut builder = PlBinaryViewArrayBuilder::new();
-        unsafe { builder.gather_extend(&array, &[2, 0, 1], ShareStrategy::Always) };
-        builder.opt_gather_extend(&array, &[2, 9], ShareStrategy::Never);
-
-        let built = builder.freeze();
-        assert_eq!(
-            built.iter().collect::<Vec<_>>(),
-            [Some(LONG), Some(b"foo".as_slice()), None, Some(LONG), None],
-        );
-    }
-
-    #[test]
     fn a_chunked_gather_over_unmasked_chunks_holds_one_mask_slot_per_id() {
         let chunk: PlBinaryViewArray = [Some(b"foo".as_slice()), Some(LONG)].into_iter().collect();
         assert!(chunk.validity().is_none(), "the chunk carries no mask");

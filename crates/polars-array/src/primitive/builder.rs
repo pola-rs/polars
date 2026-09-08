@@ -323,48 +323,6 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn appending_subslices_and_repeats() {
-        let array: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect();
-
-        let mut builder = PlPrimitiveArrayBuilder::<i32>::new();
-        builder.subslice_extend(&array, 1, 2, ShareStrategy::Never);
-        builder.subslice_extend_repeated(&array, 0, 2, 2, ShareStrategy::Never);
-        builder.subslice_extend_each_repeated(&array, 0, 2, 2, ShareStrategy::Never);
-
-        let built = builder.freeze();
-        assert_eq!(
-            built.iter().collect::<Vec<_>>(),
-            [
-                None,
-                Some(3),
-                Some(1),
-                None,
-                Some(1),
-                None,
-                Some(1),
-                Some(1),
-                None,
-                None,
-            ],
-        );
-    }
-
-    #[test]
-    fn gathering() {
-        let array: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect();
-
-        let mut builder = PlPrimitiveArrayBuilder::<i32>::new();
-        unsafe { builder.gather_extend(&array, &[2, 0, 1], ShareStrategy::Never) };
-        builder.opt_gather_extend(&array, &[1, 7], ShareStrategy::Never);
-
-        let built = builder.freeze();
-        assert_eq!(
-            built.iter().collect::<Vec<_>>(),
-            [Some(3), Some(1), None, None, None],
-        );
-    }
-
     /// Appending a run has to leave the mask exactly as long as the values.
     #[test]
     fn pushing_a_run_of_values_keeps_the_mask_aligned() {
