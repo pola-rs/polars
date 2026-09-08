@@ -34,7 +34,8 @@ impl PyDataFrame {
 
         let lambda_result_iter = (0..height).map(move |_| {
             let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
-            let tpl = (PyTuple::new(py, iter).unwrap(),);
+            // Not every value has a Python equivalent, e.g. a Map with a nested key.
+            let tpl = (PyTuple::new(py, iter)?,);
             lambda.call1(tpl)
         });
 
