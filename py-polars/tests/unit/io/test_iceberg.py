@@ -17,7 +17,7 @@ from datetime import date, datetime
 from decimal import Decimal as D
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -70,6 +70,7 @@ from polars.io.iceberg._dataset import (
     IcebergScanResolver,
     IcebergScanTableSerializer,
     IcebergTableWrap,
+    _load_kms_client,
     _NativeIcebergScanData,
     _RustIcebergScanData,
 )
@@ -130,6 +131,41 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
     from pyiceberg.catalog.sql import SqlCatalog
     from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+
+class _TestKmsClient:
+    instances: ClassVar[list[_TestKmsClient]] = []
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[bytes, str]] = []
+        self.properties: dict[str, str] = {}
+        self.instances.append(self)
+
+    def initialize(self, properties: dict[str, str]) -> None:
+        self.properties = properties
+
+    def unwrap_key(self, wrapped_key: bytes, wrapping_key_id: str) -> bytes:
+        self.calls.append((wrapped_key, wrapping_key_id))
+        key = self.properties.get("test-kms-key")
+        if key is None:
+            msg = "unencrypted table should not request a key"
+            raise AssertionError(msg)
+        return bytes.fromhex(key)
+
+
+class _KmsWithoutInitialize:
+    def unwrap_key(self, wrapped_key: bytes, wrapping_key_id: str) -> bytes:
+        return wrapped_key
+
+
+class _KmsWithoutUnwrap:
+    def initialize(self, properties: dict[str, str]) -> None:
+        pass
+
+
+class _KmsWithRequiredArgument:
+    def __init__(self, value: str) -> None:
+        pass
 
 
 @pytest.fixture(autouse=True)
@@ -265,25 +301,85 @@ class TestIcebergScanIO:
         with pytest.raises(ValueError, match="snapshot ID not found"):
             pl.scan_iceberg(iceberg_path, snapshot_id=1234567890).collect()
 
-    def test_scan_iceberg_kms_client(self, iceberg_path: str) -> None:
-        class KmsClient:
-            def unwrap_key(self, wrapped_key: bytes, wrapping_key_id: str) -> bytes:
-                msg = "unencrypted table should not request a key"
-                raise AssertionError(msg)
+    def test_scan_iceberg_kms_implementation(self, iceberg_path: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.catalog.properties.update(
+            {
+                "py-kms-impl": f"{__name__}._TestKmsClient",
+                "property-precedence": "catalog",
+            }
+        )
+        table.config = {
+            "config-property": "config",
+            "property-precedence": "config",
+        }
+        table.metadata.properties["property-precedence"] = "table"
 
-        q = pl.scan_iceberg(iceberg_path, kms_client=KmsClient())
+        q = pl.scan_iceberg(table)
         assert q.select("id").head(2).collect().shape == (2, 1)
-        assert q.filter(pl.col("id") > 1).select("str").collect().rows() == [
-            ("3",),
+        assert q.filter(pl.col("id") > 1).select("str").sort(
+            "str"
+        ).collect().rows() == [
             ("2",),
+            ("3",),
         ]
 
-        scan_data = new_iceberg_scan_resolver(iceberg_path)
-        scan_data.kms_client = KmsClient()
+        scan_data = new_iceberg_scan_resolver(table)
         resolved = scan_data._to_dataset_scan_impl(projection=["str"])
 
         assert isinstance(resolved, _RustIcebergScanData)
         assert resolved.projected_iceberg_schema.column_names == ["str"]
+        assert resolved.kms_client.properties["config-property"] == "config"
+        assert resolved.kms_client.properties["property-precedence"] == "table"
+
+    @pytest.mark.parametrize(
+        ("kms_impl", "error", "match"),
+        [
+            ("InvalidKms", ValueError, "fully qualified class name"),
+            ("invalid_module.InvalidKms", ImportError, "failed to import"),
+            (
+                f"{__name__}.InvalidKms",
+                ImportError,
+                "KMS class 'InvalidKms' not found",
+            ),
+            (123, TypeError, "must be a string"),
+            (
+                f"{__name__}._KmsWithRequiredArgument",
+                TypeError,
+                "failed to construct",
+            ),
+            (
+                f"{__name__}._KmsWithoutInitialize",
+                TypeError,
+                "has no initialize",
+            ),
+            (
+                f"{__name__}._KmsWithoutUnwrap",
+                TypeError,
+                "has no unwrap_key",
+            ),
+        ],
+    )
+    def test_load_invalid_kms_implementation(
+        self,
+        iceberg_path: str,
+        kms_impl: Any,
+        error: type[Exception],
+        match: str,
+    ) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.config = {"py-kms-impl": kms_impl}
+
+        with pytest.raises(error, match=match):
+            _load_kms_client(table)
+
+    def test_kms_implementation_is_not_loaded_from_table_metadata(
+        self, iceberg_path: str
+    ) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.metadata.properties["py-kms-impl"] = f"{__name__}._TestKmsClient"
+
+        assert _load_kms_client(table) is None
 
     def test_scan_iceberg_encrypted_manifest_list(self, tmp_path: Path) -> None:
         encrypted_manifest_list = base64.b64decode(
@@ -350,7 +446,10 @@ class TestIcebergScanIO:
             "last-partition-id": 1000,
             "default-sort-order-id": 0,
             "sort-orders": [{"order-id": 0, "fields": []}],
-            "properties": {"encryption.key-id": "master-1"},
+            "properties": {
+                "encryption.key-id": "master-1",
+                "test-kms-key": "fa501fc8fcba0566490e925879392260",
+            },
             "current-snapshot-id": 1,
             "snapshots": [
                 {
@@ -389,21 +488,15 @@ class TestIcebergScanIO:
         metadata_path = tmp_path / "v1.metadata.json"
         metadata_path.write_text(json.dumps(metadata), encoding="utf8")
 
-        class KmsClient:
-            def __init__(self) -> None:
-                self.calls: list[tuple[bytes, str]] = []
-
-            def unwrap_key(self, wrapped_key: bytes, wrapping_key_id: str) -> bytes:
-                self.calls.append((wrapped_key, wrapping_key_id))
-                return bytes.fromhex("fa501fc8fcba0566490e925879392260")
-
-        kms_client = KmsClient()
+        instance_count = len(_TestKmsClient.instances)
         result = pl.scan_iceberg(
-            format_file_uri_iceberg(str(metadata_path)), kms_client=kms_client
+            format_file_uri_iceberg(str(metadata_path)),
+            storage_options={"py-kms-impl": f"{__name__}._TestKmsClient"},
         ).collect()
 
         assert_frame_equal(result, pl.DataFrame(schema={"x": pl.Int64}))
-        assert kms_client.calls == [
+        assert len(_TestKmsClient.instances) == instance_count + 1
+        assert _TestKmsClient.instances[-1].calls == [
             (
                 base64.b64decode(
                     "WVMIPwafypGJRgXOICFKcL+m8K4B40gEIJFsgC7rlitqN9PUpDeT19OZPs8="

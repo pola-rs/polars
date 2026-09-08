@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_ldf
@@ -36,7 +36,6 @@ def scan_iceberg(
     use_metadata_statistics: bool = True,
     fast_deletion_count: bool | None = None,
     use_pyiceberg_filter: bool = True,
-    kms_client: Any | None = None,
 ) -> LazyFrame:
     """
     Lazily read from an Apache Iceberg table.
@@ -58,6 +57,18 @@ def scan_iceberg(
     catalog
         PyIceberg catalog to load the table from if the provided `target`
         was a table name.
+
+        Encrypted scans load the KMS implementation named by the ``py-kms-impl``
+        catalog property, or from ``storage_options`` for a static metadata
+        path. The implementation is initialized with the merged catalog and
+        table properties. It must provide an
+        ``unwrap_key(wrapped_key, wrapping_key_id)`` method that returns the
+        unwrapped key as bytes. The method is invoked synchronously from a
+        Polars worker thread.
+
+        Encrypted scan support is unstable. It currently supports local
+        filesystem tables only, and predicates are evaluated by Polars after
+        scanning rather than pushed into the Iceberg reader.
     reader_override
         Overrides the reader used to read the data.
 
@@ -100,20 +111,6 @@ def scan_iceberg(
             at any point without it being considered a breaking change.
     use_pyiceberg_filter
         Convert and push the filter to PyIceberg where possible.
-    kms_client
-        Key management client used to decrypt an encrypted Iceberg table. The
-        object must implement ``unwrap_key(wrapped_key, wrapping_key_id)`` and
-        return the unwrapped key as bytes.
-
-        The callback is invoked synchronously from a Polars worker thread.
-
-        Providing this parameter uses an experimental ``iceberg-rust`` reader.
-        It currently supports local filesystem tables only. Predicates are
-        evaluated by Polars after scanning rather than pushed into the reader.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
     Returns
     -------
@@ -200,10 +197,6 @@ def scan_iceberg(
     else:
         fast_deletion_count = False
 
-    if kms_client is not None:
-        msg = "the `kms_client` parameter of `scan_iceberg()` is considered unstable."
-        issue_unstable_warning(msg)
-
     table: pyiceberg.table.Table | None = None
 
     if importlib.util.find_spec("pyiceberg.table") is not None:
@@ -240,7 +233,6 @@ def scan_iceberg(
         use_metadata_statistics=use_metadata_statistics,
         fast_deletion_count=fast_deletion_count,
         use_pyiceberg_filter=use_pyiceberg_filter,
-        kms_client=kms_client,
     )
 
     return wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset))

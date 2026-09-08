@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -9,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal, TypeAlias
 
 import polars._reexport as pl
 from polars._utils.logging import eprint, verbose, verbose_print_sensitive
+from polars._utils.unstable import issue_unstable_warning
 from polars.exceptions import ComputeError
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
@@ -213,7 +215,6 @@ class IcebergScanResolver:
     use_metadata_statistics: bool
     fast_deletion_count: bool
     use_pyiceberg_filter: bool
-    kms_client: Any | None = None
 
     #
     # PythonDatasetProvider interface functions
@@ -381,11 +382,13 @@ class IcebergScanResolver:
             is not None
         }
 
-        if self.kms_client is not None:
+        if (
+            kms_client := _load_kms_client(tbl, self.table.iceberg_storage_properties)
+        ) is not None:
             return _RustIcebergScanData(
                 metadata_location=tbl.metadata_location,
                 projected_iceberg_schema=projected_iceberg_schema,
-                kms_client=self.kms_client,
+                kms_client=kms_client,
                 snapshot_id=snapshot_id,
                 with_columns=projection,
                 n_rows=limit,
@@ -641,6 +644,65 @@ class _PyIcebergScanData(_ResolvedScanDataBase):
 
     def to_lazyframe(self) -> pl.LazyFrame:
         return self.lf
+
+
+def _load_kms_client(
+    table: pyiceberg.table.Table,
+    storage_properties: StorageOptionsDict | None = None,
+) -> Any | None:
+    kms_properties: dict[str, Any] = {}
+
+    if (catalog := getattr(table, "catalog", None)) is not None:
+        kms_properties.update(getattr(catalog, "properties", {}))
+
+    kms_properties.update(getattr(table, "config", {}))
+    kms_properties.update(storage_properties or {})
+
+    kms_impl = kms_properties.get("py-kms-impl")
+    if kms_impl is None:
+        return None
+    issue_unstable_warning("encrypted Iceberg scans are considered unstable.")
+    if not isinstance(kms_impl, str):
+        msg = "Iceberg property 'py-kms-impl' must be a string"
+        raise TypeError(msg)
+
+    module_name, separator, class_name = kms_impl.rpartition(".")
+    if not separator or not module_name or not class_name:
+        msg = (
+            "Iceberg property 'py-kms-impl' must be a fully qualified "
+            f"class name, got {kms_impl!r}"
+        )
+        raise ValueError(msg)
+
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as error:
+        msg = f"failed to import Iceberg KMS module {module_name!r}"
+        raise ImportError(msg) from error
+
+    try:
+        kms_class = getattr(module, class_name)
+    except AttributeError as error:
+        msg = f"Iceberg KMS class {class_name!r} not found in module {module_name!r}"
+        raise ImportError(msg) from error
+
+    try:
+        kms_client = kms_class()
+    except TypeError as error:
+        msg = f"failed to construct Iceberg KMS implementation {kms_impl!r}"
+        raise TypeError(msg) from error
+
+    initialize = getattr(kms_client, "initialize", None)
+    if not callable(initialize):
+        msg = f"Iceberg KMS implementation {kms_impl!r} has no initialize() method"
+        raise TypeError(msg)
+
+    if not callable(getattr(kms_client, "unwrap_key", None)):
+        msg = f"Iceberg KMS implementation {kms_impl!r} has no unwrap_key() method"
+        raise TypeError(msg)
+
+    initialize({**kms_properties, **table.metadata.properties})
+    return kms_client
 
 
 def _scan_iceberg_rust_impl(

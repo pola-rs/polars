@@ -138,6 +138,13 @@ pub fn _scan_iceberg_rust(
     n_rows: Option<usize>,
     batch_size: Option<usize>,
 ) -> PyResult<Py<IcebergBatchIterator>> {
+    #[cfg(windows)]
+    let metadata_location = metadata_location
+        .strip_prefix("file:///")
+        .or_else(|| metadata_location.strip_prefix("file://"))
+        .filter(|path| path.as_bytes().get(1) == Some(&b':'))
+        .map_or(metadata_location.clone(), ToOwned::to_owned);
+
     let stream = py
         .detach(|| {
             polars_core::runtime::ASYNC.block_on(async move {
