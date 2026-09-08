@@ -29,8 +29,7 @@ pub enum CategoricalPhysical {
 }
 
 impl CategoricalPhysical {
-    /// The [`DataType`](crate::dtype::DataType) of the integers a categorical's values are held
-    /// as.
+    /// The [`DataType`](crate::dtype::DataType) of the integers a categorical's values are held as.
     pub fn dtype(&self) -> crate::dtype::DataType {
         match self {
             Self::U8 => crate::dtype::DataType::UInt8,

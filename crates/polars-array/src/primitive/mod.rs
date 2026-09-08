@@ -245,10 +245,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// The value every element of this array reads, if the values buffer holds a single slot.
-    ///
-    /// The mask is not looked at: a null element still reads that one value, which is what a
-    /// kernel that answers over the values alone reads too. [`Self::scalar_value`] answers over
-    /// both axes, and is what a caller that has to honour nulls wants.
     #[inline]
     pub fn scalar_value_ignore_validity(&self) -> Option<T> {
         self.values_are_scalar().then(|| self.values[0])

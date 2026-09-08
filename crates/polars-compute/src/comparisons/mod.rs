@@ -1,3 +1,4 @@
+use arrow::bitmap::utils::count_zeros;
 use arrow::bitmap::{self, Bitmap};
 use polars_array::{PlBitmap, PlBitmapRef};
 
@@ -121,6 +122,53 @@ fn or_not_mask(q: PlBitmap, mask: &Bitmap) -> PlBitmap {
     }
 }
 
+/// The answer for every element at once, held in the single bit that says it.
+#[inline]
+fn repeated(value: bool, length: usize) -> PlBitmap {
+    PlBitmap::new_scalar(value, length)
+}
+
+/// How an element's own bit comes off the bits of the values under it.
+#[derive(Clone, Copy)]
+enum Condense {
+    /// The element's bit is set when every value's bit is: what equality asks.
+    All,
+    /// The element's bit is set when any value's bit is: what inequality asks.
+    Any,
+}
+
+impl Condense {
+    /// The element's bit, given how many of its `width` values are unset.
+    #[inline]
+    fn apply(self, zeros: usize, width: usize) -> bool {
+        match self {
+            Self::All => zeros == 0,
+            Self::Any => zeros < width,
+        }
+    }
+}
+
+/// Condenses `values`, holding `width` bits per element, into one bit per element.
+fn condense(values: PlBitmap, length: usize, width: usize, how: Condense) -> PlBitmap {
+    debug_assert!(width > 0);
+
+    // One bit says the same of every value under every element, so it says the same of every
+    // element in turn — however many values each of them covers.
+    if let Some(bit) = values.scalar_value() {
+        return repeated(how.apply(if bit { 0 } else { width }, width), length);
+    }
+
+    let values = values.into_bitmap();
+    debug_assert_eq!(values.len(), length * width);
+
+    let (slice, offset, _len) = values.as_slice();
+    PlBitmap::from_bitmap(
+        (0..length)
+            .map(|i| how.apply(count_zeros(slice, offset + i * width, width), width))
+            .collect(),
+    )
+}
+
 /// The equality kernels over an array whose buffers may repeat a single slot.
 pub trait PlTotalEqKernel: Sized {
     type Scalar: ?Sized;
@@ -236,13 +284,17 @@ pub trait PlTotalOrdKernel: Sized {
     fn tot_ge_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap;
 }
 
+#[cfg(feature = "dtype-array")]
+mod array;
 mod binary;
+mod boolean;
+mod dyn_array;
+mod list;
+mod null;
 mod pl_array;
-mod pl_boolean;
-mod pl_dyn_array;
-mod pl_nested;
 mod pl_primitive;
 mod scalar;
+mod struct_;
 mod view;
 
 #[cfg(feature = "simd")]

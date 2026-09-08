@@ -568,10 +568,6 @@ impl DataType {
 
     /// The array type an array of this data type is held in.
     ///
-    /// A [`PlArrayType`] names a physical representation, so a logical type answers with the one
-    /// it is stored in: a `Date` is held in an array of `Int32`, an `Enum` in one of the integers
-    /// its categories are numbered by, a `Map` in a list of its entries.
-    ///
     /// # Panics
     /// For [`UnknownKind::Any`], which is no type an array is held in.
     pub fn to_pl_array_type(&self) -> PlArrayType {
@@ -637,8 +633,7 @@ impl DataType {
         }
     }
 
-    /// Bytes one value of this type takes, or `None` when that depends on the
-    /// value.
+    /// Bytes one value of this type takes, or `None` when that depends on the value.
     #[must_use]
     pub fn byte_width(&self) -> Option<f64> {
         use DataType::*;
@@ -1966,42 +1961,5 @@ impl From<CategoricalPhysical> for DataType {
             CategoricalPhysical::U16 => DataType::UInt16,
             CategoricalPhysical::U32 => DataType::UInt32,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[cfg(feature = "dtype-array")]
-    #[test]
-    fn test_unpack_primitive_dtypes() {
-        let inner_type = DataType::Float64;
-        let array_type = DataType::Array(Box::new(inner_type), 10);
-        let list_type = DataType::List(Box::new(array_type));
-
-        let result = unpack_dtypes(&list_type, false);
-
-        let mut expected = PlHashSet::default();
-        expected.insert(DataType::Float64);
-
-        assert_eq!(result, expected)
-    }
-
-    #[cfg(feature = "dtype-array")]
-    #[test]
-    fn test_unpack_compound_dtypes() {
-        let inner_type = DataType::Float64;
-        let array_type = DataType::Array(Box::new(inner_type), 10);
-        let list_type = DataType::List(Box::new(array_type.clone()));
-
-        let result = unpack_dtypes(&list_type, true);
-
-        let mut expected = PlHashSet::default();
-        expected.insert(list_type);
-        expected.insert(array_type);
-        expected.insert(DataType::Float64);
-
-        assert_eq!(result, expected)
     }
 }

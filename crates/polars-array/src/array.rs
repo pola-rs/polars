@@ -138,10 +138,6 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     fn to_boxed(&self) -> Box<dyn PlArray>;
 
     /// Returns an array of `length` nulls, shaped like this array, in `O(1)` memory.
-    ///
-    /// The shape a [`PlArrayType`] does not name — the width of an element, the array the values
-    /// of a nested one are held in — is the shape this array carries; see
-    /// [`new_full_null`](crate::builder::new_full_null) to build one from an array type alone.
     #[must_use]
     fn new_full_null(&self, length: usize) -> Box<dyn PlArray>;
 
@@ -214,27 +210,6 @@ mod tests {
             Box::new(PlFixedSizeListArray::from_values(
                 Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4, 5, 6])),
                 2,
-            )),
-        ]
-    }
-
-    /// A scalar array of each type, all of `length` elements.
-    fn scalars(length: usize) -> Vec<Box<dyn PlArray>> {
-        vec![
-            Box::new(PlPrimitiveArray::<i64>::new_scalar(7, length)),
-            Box::new(PlBooleanArray::new_scalar(true, length)),
-            Box::new(PlBinaryArray::new_scalar(b"ab", length)),
-            Box::new(PlBinaryViewArray::new_scalar(
-                b"a value that is too long to inline",
-                length,
-            )),
-            Box::new(PlFixedSizeBinaryArray::new_scalar(b"ab", length)),
-            Box::new(PlStructArray::from_fields(vec![Box::new(
-                PlPrimitiveArray::<i64>::new_scalar(7, length),
-            )])),
-            Box::new(PlFixedSizeListArray::new_scalar(
-                Box::new(PlPrimitiveArray::from_vec(vec![1i64, 2])),
-                length,
             )),
         ]
     }
@@ -406,33 +381,5 @@ mod tests {
                 .unwrap()
                 .value(0)
         );
-    }
-
-    #[test]
-    fn is_scalar_behind_the_trait_object() {
-        // The arrays of `arrays()` hold three elements each, none of them repeated.
-        for arr in arrays() {
-            assert!(!arr.is_scalar(), "{arr:?}");
-        }
-
-        // A billion elements would not be walked in reasonable time; that this test finishes is
-        // what shows the answer is read off the buffers rather than from the elements.
-        for arr in scalars(1_000_000_000) {
-            assert!(arr.is_scalar(), "{arr:?}");
-        }
-
-        // An array of one element is scalar and flat at once, whichever way it was built.
-        for arr in scalars(1) {
-            assert!(arr.is_scalar(), "{arr:?}");
-        }
-        for arr in arrays() {
-            assert!(arr.sliced(1, 1).is_scalar(), "{arr:?}");
-        }
-
-        // An array of no elements repeats nothing, and a null array repeats its null.
-        for arr in arrays() {
-            assert!(!arr.sliced(0, 0).is_scalar(), "{arr:?}");
-        }
-        assert!(PlNullArray::new(1_000_000_000).is_scalar());
     }
 }

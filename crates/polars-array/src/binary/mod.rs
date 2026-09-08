@@ -271,10 +271,6 @@ impl PlBinaryArray {
     }
 
     /// The bytes every element of this array reads, if the offsets hold a single range.
-    ///
-    /// The mask is not looked at: a null element still holds the bytes its range covers, which
-    /// is what a kernel that answers over the values alone reads too. [`Self::scalar_value`]
-    /// answers over both axes, and is what a caller that has to honour nulls wants.
     #[inline]
     pub fn scalar_value_ignore_validity(&self) -> Option<&[u8]> {
         // SAFETY: the range comes from the offsets, so it is in bounds of the values.

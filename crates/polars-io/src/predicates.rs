@@ -443,9 +443,7 @@ pub trait SkipBatchPredicate: Send + Sync {
         Ok(self.evaluate_with_stat_df(&df)?.get(0))
     }
 
-    /// One bit per row of `df`, saying whether that batch can be skipped. The mask carries its
-    /// own representation, so a predicate that answers the same of every batch hands out the
-    /// single bit it stands for instead of writing it out per row.
+    /// One bit per row of `df`, saying whether that batch can be skipped.
     fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<PlBitmap>;
 }
 

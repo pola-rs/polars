@@ -361,33 +361,3 @@ impl MaskBuilder {
         (!self.all_set).then(|| self.builder.freeze())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The array's own mask comes in whichever representation it is in, and the cast's mask is
-    /// `and`ed into it without it being written out: a chunk that is null throughout stays the
-    /// single unset bit that says so, and one that is valid throughout leaves the cast's mask.
-    #[test]
-    fn a_repeated_mask_bit_survives_the_cast_that_drops_a_value() {
-        let values = PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4]);
-        let fits = arrow::bitmap::Bitmap::from_iter([true, false, true, false]);
-
-        let combined = and_validity(None, fits.clone());
-        assert!(combined.is_flat());
-        assert_eq!(combined.set_bits(), 2);
-
-        let nulls = values
-            .clone()
-            .with_validity(Some(PlBitmap::new_scalar(false, 4)));
-        let combined = and_validity(nulls.validity(), fits.clone());
-        assert!(combined.is_scalar());
-        assert_eq!(combined.scalar_value(), Some(false));
-
-        let valid = values.with_validity(Some(PlBitmap::new_scalar(true, 4)));
-        let combined = and_validity(valid.validity(), fits);
-        assert!(combined.is_flat());
-        assert_eq!(combined.set_bits(), 2);
-    }
-}

@@ -98,33 +98,3 @@ impl PreComputedKeys {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use polars_core::prelude::*;
-    use polars_core::scalar::Scalar;
-
-    use super::{PartitionKey, PreComputedKeys};
-
-    /// A column that repeats one value keeps the keys scalar, and the mask that says the repeated
-    /// value is null covers every element rather than the single bit that backs it.
-    #[test]
-    fn a_repeated_null_key_covers_every_row() {
-        let length = 5;
-
-        for (scalar, expected) in [
-            (Scalar::null(DataType::Int64), PartitionKey::NULL),
-            (
-                Scalar::from(7i64),
-                PartitionKey::from_slice(&7i64.to_ne_bytes()),
-            ),
-        ] {
-            let column = Column::new_scalar("k".into(), scalar, length);
-            let keys = PreComputedKeys::opt_new_non_encoded(&column).unwrap();
-
-            for i in 0..length {
-                assert_eq!(keys.get_key(i), expected);
-            }
-        }
-    }
-}

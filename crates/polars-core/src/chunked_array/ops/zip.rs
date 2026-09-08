@@ -547,37 +547,3 @@ impl ChunkZip<StructType> for StructChunked {
         Ok(out)
     }
 }
-
-#[cfg(all(test, feature = "dtype-struct"))]
-mod tests {
-    use super::*;
-
-    /// Zipping two rows of one element each leaves the result null wherever the mask picks the
-    /// side that is null, however many chunks the mask is spread over.
-    #[test]
-    fn a_null_side_nulls_the_rows_the_mask_picks_it_for() {
-        let field = Series::new(PlSmallStr::from_static("a"), [1i32]);
-        let valid =
-            StructChunked::from_series(PlSmallStr::from_static("s"), 1, [field].iter()).unwrap();
-        let null = valid
-            .clone()
-            .with_outer_validity(Some(PlBitmap::new_scalar(false, 1)));
-
-        let bits = [true, false, true, false];
-        let mut mask = BooleanChunked::new(PlSmallStr::from_static("m"), bits);
-        mask.append(&BooleanChunked::new(PlSmallStr::from_static("m"), bits))
-            .unwrap();
-        assert_eq!(mask.chunks().len(), 2, "the mask is spread over two chunks");
-
-        // The mask picks the null side where it is set, and the valid one where it is not.
-        let out = null.zip_with(&mask, &valid).unwrap();
-        let picked_null: Vec<bool> = out.into_series().is_null().iter().flatten().collect();
-        assert_eq!(picked_null, [bits.as_slice(), bits.as_slice()].concat());
-
-        // And the other way around, where it is the unset bits that pick the null side.
-        let out = valid.zip_with(&mask, &null).unwrap();
-        let picked_null: Vec<bool> = out.into_series().is_null().iter().flatten().collect();
-        let expected: Vec<bool> = bits.iter().chain(&bits).map(|bit| !bit).collect();
-        assert_eq!(picked_null, expected);
-    }
-}

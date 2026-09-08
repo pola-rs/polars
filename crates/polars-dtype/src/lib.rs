@@ -28,8 +28,7 @@ pub(crate) mod config {
         polars_config::config().verbose()
     }
 
-    /// The interval types of Arrow have no Polars type of their own, so importing one as the
-    /// struct that holds its parts is opt-in.
+    /// The interval types of Arrow have no Polars type of their own, so importing one is opt-in.
     pub fn check_allow_importing_interval_as_struct(type_name: &'static str) -> PolarsResult<()> {
         polars_ensure!(
             polars_config::config().import_interval_as_struct(),
@@ -75,8 +74,7 @@ pub mod object {
 
     static OBJECT_PHYSICAL_DTYPE: RwLock<Option<ArrowDataType>> = RwLock::new(None);
 
-    /// Records the type an object's values are laid out as, which `polars-core` does when the
-    /// object registry is set.
+    /// Records the type an object's values are laid out as.
     pub fn set_object_physical_type(dtype: ArrowDataType) {
         *OBJECT_PHYSICAL_DTYPE.write().unwrap() = Some(dtype);
     }

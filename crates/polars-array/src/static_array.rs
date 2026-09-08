@@ -65,10 +65,6 @@ pub trait StaticArray: PlArray + Clone {
     fn builder_like(&self) -> Self::Builder;
 
     /// An array of `length` null elements, in `O(1)` memory.
-    ///
-    /// The array types that carry a shape of their own answer in the one shape their
-    /// [`PlArrayType`](crate::PlArrayType) alone names: a struct of no fields, a list over no
-    /// values, a width of zero. Their own `new_full_null` takes a shape to answer in another.
     fn new_full_null(length: usize) -> Self;
 
     /// Returns the element at `i`, whether or not it is null.
@@ -588,8 +584,7 @@ impl StaticArray for PlListArray {
         PlListArrayBuilder::new(crate::builder::builder_like(self.values()))
     }
 
-    /// Every element is an empty list, over the one values array a
-    /// [`PlArrayType`](crate::PlArrayType) names: no null values at all.
+    /// Every element is an empty list, over the one values array an array type names.
     #[inline]
     fn new_full_null(length: usize) -> Self {
         Self::new_full_null(Box::new(PlNullArray::new_empty()), length)
@@ -658,8 +653,7 @@ impl StaticArray for PlFixedSizeListArray {
         PlFixedSizeListArrayBuilder::new(crate::builder::builder_like(self.values()), self.width())
     }
 
-    /// Every element is a list of the one width a [`PlArrayType`](crate::PlArrayType) names: zero
-    /// values wide.
+    /// Every element is a list of the one width an array type names: zero values wide.
     #[inline]
     fn new_full_null(length: usize) -> Self {
         Self::new_full_null(Box::new(PlNullArray::new_empty()), length)
@@ -734,8 +728,7 @@ impl StaticArray for PlStructArray {
         )
     }
 
-    /// The elements are rows across the one set of fields a [`PlArrayType`](crate::PlArrayType)
-    /// names: no fields at all.
+    /// The elements are rows across the one set of fields an array type names: no fields at all.
     #[inline]
     fn new_full_null(length: usize) -> Self {
         Self::new_full_null(vec![], length)

@@ -1,8 +1,4 @@
 //! The comparison kernels over a [`PlBooleanArray`], whose values are a mask of their own.
-//!
-//! Because the values are a [`PlBitmap`], every one of these kernels is a bitwise operation on
-//! that mask, and a mask that repeats a single bit comes out of one as a single bit in turn — the
-//! boolean kernels never have to write a values buffer out to answer.
 
 use polars_array::{PlBitmap, PlBitmapRef, PlBooleanArray};
 

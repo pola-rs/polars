@@ -259,10 +259,6 @@ impl PlFixedSizeBinaryArray {
     }
 
     /// The bytes every element of this array reads, if the values hold a single element.
-    ///
-    /// The mask is not looked at: a null element still holds the bytes it covers, which is what
-    /// a kernel that answers over the values alone reads too. [`Self::scalar_value`] answers
-    /// over both axes, and is what a caller that has to honour nulls wants.
     #[inline]
     pub fn scalar_value_ignore_validity(&self) -> Option<&[u8]> {
         self.values_are_scalar().then(|| self.values.as_slice())

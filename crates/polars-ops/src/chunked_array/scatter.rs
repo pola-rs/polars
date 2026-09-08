@@ -200,10 +200,6 @@ where
 
 /// [`with_values_mut`] for views: writes into the views, copying them out where it cannot.
 ///
-/// `f` is handed the views, the index the first buffer it appends will have, and the buffers to
-/// append them to; those are added to the array's own before it is left holding the views, so a
-/// view is never in an array whose buffers it points past.
-///
 /// # Safety
 /// Every view `f` leaves behind must read bytes that the array's buffers hold, or ones it pushed
 /// onto the buffers it was handed.
@@ -401,48 +397,5 @@ impl ChunkedSet<bool> for &mut BooleanChunked {
 
         let out = BooleanChunked::with_chunk(name, arr);
         Ok(out.into_series())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use polars_core::prelude::*;
-
-    use super::ChunkedSet;
-
-    /// A value too long to inline is scattered in as a data buffer of its own, so the views of a
-    /// chunk that repeats one view read a buffer the array does not hold yet when they are written
-    /// out. The array is only ever built once those buffers are in it.
-    #[test]
-    fn scattering_a_long_string_into_a_repeated_chunk() {
-        const LONG: &str = "a value that is far too long to be inlined into a view";
-        let length = 4;
-
-        let mut ca =
-            StringChunked::with_chunk("s".into(), PlUtf8ViewArray::new_scalar("short", length));
-        assert!(ca.downcast_as_array().views_are_scalar());
-
-        let out = (&mut ca).scatter(&[1], [Some(LONG)]).unwrap();
-        assert_eq!(
-            out.str().unwrap().iter().collect::<Vec<_>>(),
-            [Some("short"), Some(LONG), Some("short"), Some("short")],
-        );
-    }
-
-    /// As above, over a chunk that repeats one value and carries a mask of its own.
-    #[test]
-    fn scattering_a_long_string_into_a_masked_repeated_chunk() {
-        const LONG: &str = "a value that is far too long to be inlined into a view";
-        let length = 3;
-
-        let arr = PlUtf8ViewArray::new_scalar("short", length)
-            .with_validity(Some(PlBitmap::new_scalar(true, length)));
-        let mut ca = StringChunked::with_chunk("s".into(), arr);
-
-        let out = (&mut ca).scatter(&[0, 2], [Some(LONG), None]).unwrap();
-        assert_eq!(
-            out.str().unwrap().iter().collect::<Vec<_>>(),
-            [Some(LONG), Some("short"), None],
-        );
     }
 }

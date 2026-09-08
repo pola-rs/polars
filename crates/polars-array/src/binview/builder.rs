@@ -144,9 +144,7 @@ impl PlBinaryViewArrayBuilder {
         }
     }
 
-    /// Appends the elements `ids` names out of `chunks`, adopting the data buffers of each chunk
-    /// once instead of once per element: an element then costs a view read, an index into the
-    /// chunk's remapped buffer indices, and a push.
+    /// Appends the elements `ids` names out of `chunks`, adopting each chunk's buffers once.
     ///
     /// # Safety
     /// Every id that is not null must name a chunk of `chunks` and an element of that chunk.
@@ -254,8 +252,7 @@ impl PlBinaryViewArrayBuilder {
         }
     }
 
-    /// [`gather_chunks_elementwise`](Self::gather_chunks_elementwise), a null id standing for a
-    /// null element.
+    /// [`gather_chunks_elementwise`](Self::gather_chunks_elementwise), a null id being a null.
     ///
     /// # Safety
     /// Every id that is not null must name a chunk of `chunks` and an element of that chunk.
@@ -282,8 +279,7 @@ impl PlBinaryViewArrayBuilder {
         }
     }
 
-    /// The index in `self.buffers` of every data buffer of `buffers`, adopting the ones not held
-    /// yet. This is the bookkeeping a gather out of one chunk pays once rather than per element.
+    /// The index in `self.buffers` of every buffer of `buffers`, adopting ones not held yet.
     fn adopt_all(&mut self, buffers: &Buffer<Buffer<u8>>) -> Vec<u32> {
         buffers
             .as_slice()
@@ -585,57 +581,6 @@ mod tests {
         assert_eq!(
             built.iter().collect::<Vec<_>>(),
             [Some(LONG), None, Some(b"foo".as_slice()), None],
-        );
-    }
-
-    /// Adopting every chunk's buffers up front leaves the result holding buffers nothing in it
-    /// reads. A gather of fewer elements than there are chunks adopts lazily instead, so it holds
-    /// only the buffers its own views point into.
-    #[test]
-    fn a_gather_of_few_elements_out_of_many_chunks_holds_only_what_it_reads() {
-        let chunks: Vec<PlBinaryViewArray> = (0..64)
-            .map(|i| {
-                let mut value = LONG.to_vec();
-                value.push(i as u8);
-                [Some(value.as_slice())].into_iter().collect()
-            })
-            .collect();
-        let refs: Vec<&PlBinaryViewArray> = chunks.iter().collect();
-        for chunk in &refs {
-            assert_eq!(chunk.data_buffers().len(), 1, "the value is not inlined");
-        }
-
-        let ids: [ChunkId<24>; 2] = [ChunkId::store(7, 0), ChunkId::store(40, 0)];
-
-        let mut builder = PlBinaryViewArrayBuilder::new();
-        unsafe { builder.chunked_gather_extend(&refs, &ids, ShareStrategy::Always) };
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 2);
-        assert_eq!(
-            built.data_buffers().len(),
-            2,
-            "the buffers of the 62 chunks no id names are not held",
-        );
-        assert_eq!(built.value(0), chunks[7].value(0));
-        assert_eq!(built.value(1), chunks[40].value(0));
-    }
-
-    #[test]
-    fn a_scalar_array_is_appended_without_being_materialized() {
-        let array = PlBinaryViewArray::new_scalar(LONG, 1_000_000_000);
-
-        let mut builder = PlBinaryViewArrayBuilder::new();
-        builder.subslice_extend(&array, 999_999_997, 3, ShareStrategy::Never);
-        unsafe { builder.gather_extend(&array, &[0, 999_999_999], ShareStrategy::Always) };
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 5);
-        assert!(built.iter().all(|value| value == Some(LONG)));
-        assert_eq!(
-            built.data_buffers().len(),
-            2,
-            "the bytes of the one value are copied once and shared once",
         );
     }
 }

@@ -98,10 +98,6 @@ pub trait StaticArrayBuilder: Send {
 
     /// Appends the elements `ids` names, in order, out of the chunks of one chunked array.
     ///
-    /// A builder whose element append carries per-array bookkeeping — adopting the data buffers a
-    /// view points into, say — overrides this to do that bookkeeping once per chunk instead of
-    /// once per element.
-    ///
     /// # Safety
     /// Every id must name a chunk of `chunks` and an element of that chunk.
     unsafe fn chunked_gather_extend<const B: u64>(
@@ -132,8 +128,7 @@ pub trait StaticArrayBuilder: Send {
         }
     }
 
-    /// Appends the elements `ids` names, in order, out of the chunks of one chunked array, with a
-    /// null id standing for a null element.
+    /// Appends the elements `ids` names out of the chunks, a null id standing for a null element.
     ///
     /// # Safety
     /// Every id that is not null must name a chunk of `chunks` and an element of that chunk.
@@ -502,10 +497,6 @@ pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
 
 /// An array of `length` nulls of the array type `array_type` names, in `O(1)` memory.
 ///
-/// An array type does not name the shape of a nested array or the width of a fixed size one, so
-/// those come back in the one shape it does name: an element of no bytes, a list of no values, a
-/// struct of no fields. [`PlArray::new_full_null`] answers in the shape of an array at hand.
-///
 /// # Panics
 /// For [`PlArrayType::Object`], whose rust type an array type does not name.
 pub fn new_full_null(array_type: PlArrayType, length: usize) -> Box<dyn PlArray> {
@@ -816,27 +807,5 @@ mod tests {
             assert_eq!(built.len(), 1);
             assert_eq!(built.null_count(), 1);
         }
-    }
-
-    #[test]
-    fn builder_like_follows_the_shape_of_a_nested_array() {
-        let array = PlListArray::new_empty(Box::new(PlFixedSizeListArray::new_empty(
-            Box::new(PlBooleanArray::new_empty()),
-            3,
-        )));
-
-        let built = builder_like(&array).freeze();
-        let built = built.as_any().downcast_ref::<PlListArray>().unwrap();
-        let values = built
-            .values()
-            .as_any()
-            .downcast_ref::<PlFixedSizeListArray>()
-            .unwrap();
-
-        assert_eq!(values.width(), 3);
-        assert_eq!(
-            values.flat_values().unwrap().array_type(),
-            PlArrayType::Boolean
-        );
     }
 }

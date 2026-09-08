@@ -31,8 +31,7 @@ where
     T: PolarsObject,
 {
     values: Buffer<T>,
-    /// The values are always flat, but the mask carries its own representation: an array that
-    /// is all-null or fully valid holds the single bit that says so.
+    /// The values are always flat, but the mask carries its own representation.
     validity: Option<PlBitmap>,
 }
 
@@ -182,34 +181,6 @@ where
     }
 }
 
-impl<T: PolarsObject> Splitable for ObjectArray<T> {
-    fn check_bound(&self, offset: usize) -> bool {
-        offset <= self.len()
-    }
-
-    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
-        let (left_values, right_values) = unsafe { self.values.split_at_unchecked(offset) };
-        let (left_validity, right_validity) = match self.validity.as_ref() {
-            None => (None, None),
-            Some(validity) => {
-                let (lhs, rhs) = validity.split_at(offset);
-                (Some(lhs), Some(rhs))
-            },
-        };
-        (
-            Self {
-                values: left_values,
-                validity: left_validity,
-            },
-            Self {
-                values: right_values,
-                validity: right_validity,
-            },
-        )
-    }
-}
-
-/// An object array is always flat: it holds one `T` per element, with no scalar representation.
 impl<T: PolarsObject> PlArray for ObjectArray<T> {
     #[inline]
     fn as_any(&self) -> &dyn Any {
@@ -313,6 +284,34 @@ impl<T: PolarsObject> PlArray for ObjectArray<T> {
                     (None, None) => true,
                     _ => false,
                 })
+    }
+}
+
+/// An object array is always flat: it holds one `T` per element, with no scalar representation.
+impl<T: PolarsObject> Splitable for ObjectArray<T> {
+    fn check_bound(&self, offset: usize) -> bool {
+        offset <= self.len()
+    }
+
+    unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
+        let (left_values, right_values) = unsafe { self.values.split_at_unchecked(offset) };
+        let (left_validity, right_validity) = match self.validity.as_ref() {
+            None => (None, None),
+            Some(validity) => {
+                let (lhs, rhs) = validity.split_at(offset);
+                (Some(lhs), Some(rhs))
+            },
+        };
+        (
+            Self {
+                values: left_values,
+                validity: left_validity,
+            },
+            Self {
+                values: right_values,
+                validity: right_validity,
+            },
+        )
     }
 }
 

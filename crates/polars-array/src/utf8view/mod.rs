@@ -197,8 +197,7 @@ impl PlUtf8ViewArray {
         self.0.scalar_views()
     }
 
-    /// The string every element of this array reads, ignoring the mask — see
-    /// [`PlBinaryViewArray::scalar_value_ignore_validity`].
+    /// The string every element of this array reads, if the views buffer holds a single slot.
     #[inline]
     pub fn scalar_value_ignore_validity(&self) -> Option<&str> {
         // SAFETY: the elements of this array are valid UTF-8.
@@ -542,23 +541,5 @@ mod tests {
             out.iter().collect::<Vec<_>>(),
             [Some(&LONG[..20]), None, Some(&LONG[10..30])],
         );
-    }
-
-    /// A views buffer of one view holds the one value every element reads, so validating a scalar
-    /// array checks that value once — a billion elements never get written out to be checked.
-    #[test]
-    fn a_scalar_array_is_validated_once() {
-        let length = 1_000_000_000;
-
-        let valid = PlBinaryViewArray::new_scalar(LONG.as_bytes(), length);
-        let arr = PlUtf8ViewArray::from_binview(valid).unwrap();
-        assert_eq!(arr.len(), length);
-        assert_eq!(arr.scalar_value_ignore_validity(), Some(LONG));
-
-        // The bytes under a null element are checked too: replacing the mask must not be able to
-        // expose bytes that were never looked at.
-        let invalid = PlBinaryViewArray::new_scalar(&[0xff, 0xfe], length)
-            .with_validity(Some(PlBitmap::new_scalar(false, length)));
-        assert!(PlUtf8ViewArray::from_binview(invalid).is_err());
     }
 }

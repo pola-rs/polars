@@ -1,10 +1,4 @@
-//! The equality kernels over a `&dyn PlArray`, which a nested array recurses into its children
-//! through.
-//!
-//! This is the `polars-array` counterpart of [`super::dyn_array`]: it dispatches on
-//! [`PlArrayType`] rather than an Arrow `PhysicalType`, and answers in a [`PlBitmap`], so a
-//! comparison the shapes alone settle stays the single bit that says it all the way up through
-//! the nesting instead of being written out at every level.
+//! The equality kernels a nested array recurses into its children through, over a `&dyn PlArray`.
 
 use arrow::with_match_primitive_type;
 #[cfg(feature = "dtype-array")]

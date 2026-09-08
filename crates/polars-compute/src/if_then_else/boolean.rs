@@ -1,8 +1,4 @@
 //! The if-then-else kernel over a [`PlBooleanArray`], whose values are a mask of their own.
-//!
-//! Every case here is a bitwise operation on that mask, so none of them needs a values buffer
-//! written out: where the two sides are a single value each, the answer is the picking mask
-//! itself — or its complement, or the one value both sides agree on.
 
 use arrow::bitmap::{self, Bitmap};
 use polars_array::{Flat, PlBitmap, PlBitmapRef, PlBooleanArray};
@@ -10,9 +6,6 @@ use polars_array::{Flat, PlBitmap, PlBitmapRef, PlBooleanArray};
 use super::{IfThenElseKernel, if_then_else_validity};
 
 /// The values of a flat chunk, which hold one bit per element like its mask.
-///
-/// The backing bitmap is taken directly rather than through `flat_bitmap`, which answers `None`
-/// for a chunk of one element: a single bit is both this chunk's flat buffer and a scalar one.
 #[inline]
 fn values(array: &Flat<PlBooleanArray>) -> &Bitmap {
     array.as_array().values().into_inner().0
@@ -28,9 +21,6 @@ fn validity(array: &Flat<PlBooleanArray>) -> Option<&Bitmap> {
 }
 
 /// The values `mask` picks between `if_true` and `if_false`, for two single values.
-///
-/// The mask is handed back as it is where the two sides differ, and neither side is read where
-/// they agree, so this holds whatever representation `mask` came in.
 #[inline]
 fn pick(mask: PlBitmap, if_true: bool, if_false: bool) -> PlBitmap {
     match (if_true, if_false) {

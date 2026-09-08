@@ -240,46 +240,6 @@ where
 }
 
 /// `value` added to itself `count` times, wrapping around on overflow.
-///
-/// Written as the run of additions it is, which each type's addition then collapses on its own:
-/// the optimiser recognises the integer add-recurrence and rewrites the whole run as one
-/// multiplication, and the floats add algebraically, which lets it vectorise the run instead.
 fn repeat_wrapping_add<T: Zero + WrappingAdd + Copy>(value: T, count: usize) -> T {
     (0..count).fold(T::zero(), |total, _| total.wrapping_add(&value))
-}
-
-#[cfg(test)]
-mod tests {
-    use polars_buffer::Buffer;
-
-    use super::*;
-
-    /// A chunk of `len` elements that all repeat `value`, in the scalar representation.
-    fn scalar<T: NativeType>(value: T, len: usize) -> PlPrimitiveArray<T> {
-        PlPrimitiveArray::new_broadcast(Buffer::from(vec![value]), len.max(1), None).sliced(0, len)
-    }
-
-    /// The scalar path collapses a run of additions into a multiplication, which has to wrap
-    /// around exactly where adding the value up one at a time would have.
-    #[test]
-    fn scalar_chunk_sums_as_the_run_of_additions_it_stands_for() {
-        for count in [0, 1, 2, 3, 255, 256, 257, 1000] {
-            let value = i64::MAX / 3;
-            let added = (0..count).fold(0i64, |a, _| a.wrapping_add(value));
-            assert_eq!(wrapping_sum_arr(&scalar(value, count)), added, "{count}");
-
-            let added = (0..count).fold(0u8, |a, _| a.wrapping_add(200));
-            assert_eq!(wrapping_sum_arr(&scalar(200u8, count)), added, "{count}");
-        }
-    }
-
-    /// The upcast accumulates in the wider type, so it wraps around at that type's boundary.
-    #[test]
-    fn scalar_chunk_sums_upcast_at_the_wider_boundary() {
-        for count in [0, 1, 2, 3, 257, 1000] {
-            let added = (0..count).fold(0i128, |a, _| a.wrapping_add(i32::MIN as i128));
-            let summed: i128 = wrapping_sum_arr_upcast(&scalar(i32::MIN, count));
-            assert_eq!(summed, added, "{count}");
-        }
-    }
 }

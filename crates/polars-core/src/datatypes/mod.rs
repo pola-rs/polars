@@ -98,9 +98,6 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized + 'static {
         Self: Sized;
 
     /// An array of `length` nulls, laid out the way [`Self::get_static_dtype`] describes.
-    ///
-    /// The static data type of a nested type names no inner type, which is the shape
-    /// [`StaticArray::new_full_null`] answers in when it is passed none.
     #[inline]
     fn full_null_array(length: usize) -> Self::Array {
         StaticArray::new_full_null(length)

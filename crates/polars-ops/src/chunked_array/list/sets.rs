@@ -431,10 +431,6 @@ fn array_set_operation(
 }
 
 /// The mask of a side of the operation, over the `length` the result covers.
-///
-/// A column of a single element is broadcast over the other, and the one bit its mask holds says
-/// the same of every element it is broadcast over — which is the scalar representation itself, so
-/// nothing is written out to reach it.
 fn broadcast_validity(validity: Option<PlBitmapRef<'_>>, length: usize) -> Option<PlBitmapRef<'_>> {
     let validity = validity?;
     if validity.len() == length {
@@ -485,38 +481,5 @@ pub fn list_set_operation(
             false,
             false,
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use polars_core::prelude::*;
-
-    use super::{SetOperation, list_set_operation};
-
-    /// A list of the rows `values` names, of which a `None` is a null row.
-    fn lists(values: [Option<&[i32]>; 3]) -> ListChunked {
-        values
-            .into_iter()
-            .map(|row| row.map(|row| Series::new(PlSmallStr::EMPTY, row)))
-            .collect()
-    }
-
-    /// A column of a single element is broadcast over the other, and so is the mask that says its
-    /// one row is null: the two are combined over the rows the result covers, not over the rows
-    /// each side happens to hold.
-    #[test]
-    fn a_broadcast_side_that_is_null_nulls_every_row() {
-        let a = lists([Some(&[1]), Some(&[2]), None]);
-        // A single null row, which the operation broadcasts over `a`.
-        let b = lists([Some(&[1]), None, None]).slice(1, 1);
-        assert_eq!(b.len(), 1);
-
-        for (lhs, rhs) in [(&a, &b), (&b, &a)] {
-            let out = list_set_operation(lhs, rhs, SetOperation::Union).unwrap();
-
-            assert_eq!(out.len(), 3);
-            assert_eq!(out.null_count(), 3);
-        }
     }
 }

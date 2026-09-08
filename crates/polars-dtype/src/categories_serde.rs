@@ -16,8 +16,7 @@ use serde::de::Error as _;
 use serde::ser::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// The name the one column of the stream is written under. It is read back positionally, so this
-/// only has to stay the same for a stream to be recognisable, not to be understood.
+/// The name the one column of the stream is written under; it is read back positionally.
 const COLUMN_NAME: PlSmallStr = PlSmallStr::from_static("categories");
 
 /// The categories of an enum, written through serde as one Arrow IPC stream.
