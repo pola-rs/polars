@@ -93,7 +93,8 @@ impl private::PrivateSeries for SeriesWrap<MapChunked> {
         let list = self.0.storage().agg_list(groups);
         let mut list = list.list().unwrap().clone();
 
-        list.set_inner_dtype(self.dtype().clone());
+        // SAFETY: `agg_list` gathers whole rows, preserving the Map storage contract.
+        unsafe { list.set_inner_dtype(self.dtype().clone()) };
         list.into_series()
     }
 
@@ -139,6 +140,9 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
         self.0.storage().chunks()
     }
 
+    /// # Safety
+    /// Mutations must preserve the dtype and [`MapChunked`] storage safety contract.
+    /// Preserving key uniqueness also requires keeping keys and their row membership.
     unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         self.0.storage_mut().chunks_mut()
     }
