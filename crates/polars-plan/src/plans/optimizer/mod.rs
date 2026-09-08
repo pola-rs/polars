@@ -1,7 +1,6 @@
 use polars_core::prelude::*;
 use polars_error::feature_gated;
 
-use crate::plans::optimizer::len_cmp_slice_insertion::insert_slice_before_len_cmp;
 use crate::plans::optimizer::parquet_metadata_prune::prune_parquet_metadata;
 use crate::plans::optimizer::projection_pushdown::projection_pushdown;
 use crate::prelude::*;
@@ -21,7 +20,6 @@ mod fused;
 mod join_build_side;
 mod join_order;
 mod join_utils;
-mod len_cmp_slice_insertion;
 pub(crate) use join_utils::ExprOrigin;
 pub mod call_dsl_resolvers;
 mod expand_datasets;
@@ -167,11 +165,6 @@ pub fn optimize(
     let mut repeat_slice_pd_after_filter_pd = false;
 
     if opt_flags.slice_pushdown() {
-        // `select(len() <cmp> n)` -> `head(k).select(len() <cmp> n)`, so the
-        // slice-pushdown pass below can push the row limit further down the
-        // plan (e.g. into scans, filters, or union branches).
-        insert_slice_before_len_cmp(root, ir_arena, expr_arena);
-
         let mut slice_pushdown_opt = SlicePushDown::new();
         let ir = slice_pushdown_opt.optimize(root, ir_arena, expr_arena)?;
 
