@@ -35,7 +35,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 pub use from::*;
-pub use iterator::{SeriesIter, SeriesPhysIter};
+pub use iterator::SeriesIter;
 use num_traits::NumCast;
 use polars_compute::size::estimated_bytes_size;
 use polars_error::feature_gated;

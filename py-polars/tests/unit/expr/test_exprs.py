@@ -275,6 +275,37 @@ def test_exp_log1p_invalid_dtype_29102(s: pl.Series) -> None:
             q.collect()
 
 
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series("a", [{"a": 1, "b": "x"}]),
+        pl.Series("a", ["1", "2", "3"]),
+        pl.Series("a", [date(2020, 1, 1), date(2021, 1, 1)]),
+        pl.Series("a", [[1, 2], [3]]),
+    ],
+)
+def test_log_invalid_dtype_29189(s: pl.Series) -> None:
+    lf = pl.LazyFrame([s])
+    q = lf.select(pl.col("a").log())
+
+    with pytest.raises(InvalidOperationError):
+        q.collect_schema()
+
+    with pytest.raises(InvalidOperationError):
+        q.collect()
+
+
+def test_log_invalid_base_dtype_29189() -> None:
+    lf = pl.LazyFrame({"a": [1.0, 2.0], "b": [{"x": 1}, {"x": 2}]})
+    q = lf.select(pl.col("a").log(pl.col("b")))
+
+    with pytest.raises(InvalidOperationError):
+        q.collect_schema()
+
+    with pytest.raises(InvalidOperationError):
+        q.collect()
+
+
 def test_dot_in_group_by() -> None:
     df = pl.DataFrame(
         {

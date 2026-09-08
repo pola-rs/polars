@@ -2005,29 +2005,6 @@ impl DataFrame {
         unsafe { DataFrame::_new_unchecked_impl(0, cols).with_schema_from(self) }
     }
 
-    #[must_use]
-    pub fn slice_par(&self, offset: i64, length: usize) -> Self {
-        if offset == 0 && length == self.height() {
-            return self.clone();
-        }
-        let columns = self.apply_columns_par(|s| s.slice(offset, length));
-        unsafe { DataFrame::new_unchecked(length, columns).with_schema_from(self) }
-    }
-
-    #[must_use]
-    pub fn _slice_and_realloc(&self, offset: i64, length: usize) -> Self {
-        if offset == 0 && length == self.height() {
-            return self.clone();
-        }
-        // @scalar-opt
-        let columns = self.apply_columns(|s| {
-            let mut out = s.slice(offset, length);
-            out.shrink_to_fit();
-            out
-        });
-        unsafe { DataFrame::new_unchecked(length, columns).with_schema_from(self) }
-    }
-
     /// Get the head of the [`DataFrame`].
     ///
     /// # Example
@@ -2214,29 +2191,6 @@ impl DataFrame {
         Ok(unsafe { DataFrame::new_unchecked(self.height(), col) })
     }
 
-    /// Pipe different functions/ closure operations that work on a DataFrame together.
-    pub fn pipe<F, B>(self, f: F) -> PolarsResult<B>
-    where
-        F: Fn(DataFrame) -> PolarsResult<B>,
-    {
-        f(self)
-    }
-
-    /// Pipe different functions/ closure operations that work on a DataFrame together.
-    pub fn pipe_mut<F, B>(&mut self, f: F) -> PolarsResult<B>
-    where
-        F: Fn(&mut DataFrame) -> PolarsResult<B>,
-    {
-        f(self)
-    }
-
-    /// Pipe different functions/ closure operations that work on a DataFrame together.
-    pub fn pipe_with_args<F, B, Args>(self, f: F, args: Args) -> PolarsResult<B>
-    where
-        F: Fn(DataFrame, Args) -> PolarsResult<B>,
-    {
-        f(self, args)
-    }
     /// Drop duplicate rows from a [`DataFrame`].
     /// *This fails when there is a column of type List in DataFrame*
     ///

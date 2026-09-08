@@ -53,14 +53,6 @@ where
             },
         }
     }
-    /// Appends from an iterator over values
-    #[inline]
-    pub fn append_values_iter_trusted_len<I: Iterator<Item = T::Native> + TrustedLen>(
-        &mut self,
-        iter: I,
-    ) {
-        self.append_values_iter(iter)
-    }
 
     #[inline]
     pub fn append_values_iter<I: Iterator<Item = T::Native>>(&mut self, iter: I) {

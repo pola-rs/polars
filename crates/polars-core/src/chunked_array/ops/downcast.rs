@@ -1,8 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::marker::PhantomData;
 
-use polars_array::bitmap::combine_validities_and;
-
 use crate::prelude::*;
 use crate::utils::{index_to_chunked_index, index_to_chunked_index_rev};
 
@@ -136,18 +134,5 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             let index_from_back = len - index;
             index_to_chunked_index_rev(chunk_lens.rev(), index_from_back, self.chunks.len())
         }
-    }
-
-    /// # Panics
-    /// Panics if chunks don't align
-    pub fn merge_validities(&mut self, chunks: &[PlArrayRef]) {
-        assert_eq!(chunks.len(), self.chunks.len());
-        unsafe {
-            for (arr, other) in self.chunks_mut().iter_mut().zip(chunks) {
-                let validity = combine_validities_and(arr.validity(), other.validity());
-                *arr = arr.with_validity(validity);
-            }
-        }
-        self.compute_len();
     }
 }

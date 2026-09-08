@@ -20,21 +20,6 @@ impl ListStringChunkedBuilder {
     }
 
     #[inline]
-    pub fn append_trusted_len_iter<'a, I: Iterator<Item = Option<&'a str>> + TrustedLen>(
-        &mut self,
-        iter: I,
-    ) {
-        if iter.size_hint().0 == 0 {
-            self.fast_explode = false;
-        }
-        let values = self.builder.values_mut();
-        for value in iter {
-            values.push(value);
-        }
-        self.builder.finish_row();
-    }
-
-    #[inline]
     pub fn append_values_iter<'a, I: Iterator<Item = &'a str>>(&mut self, iter: I) {
         if iter.size_hint().0 == 0 {
             self.fast_explode = false;
@@ -109,20 +94,6 @@ impl ListBinaryChunkedBuilder {
             field,
             fast_explode: true,
         }
-    }
-
-    pub fn append_trusted_len_iter<'a, I: Iterator<Item = Option<&'a [u8]>> + TrustedLen>(
-        &mut self,
-        iter: I,
-    ) {
-        if iter.size_hint().0 == 0 {
-            self.fast_explode = false;
-        }
-        let values = self.builder.values_mut();
-        for value in iter {
-            values.push(value);
-        }
-        self.builder.finish_row();
     }
 
     pub fn append_values_iter<'a, I: Iterator<Item = &'a [u8]>>(&mut self, iter: I) {

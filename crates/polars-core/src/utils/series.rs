@@ -1,22 +1,7 @@
-use std::rc::Rc;
-
 use polars_compute::find_validity_mismatch::find_validity_mismatch;
 use polars_compute::gather::take_arrow_unchecked;
 
 use crate::prelude::*;
-use crate::series::amortized_iter::AmortSeries;
-
-/// A utility that allocates an [`AmortSeries`]. The applied function can then use that
-/// series container to save heap allocations and swap arrow arrays.
-pub fn with_unstable_series<F, T>(dtype: &DataType, f: F) -> T
-where
-    F: Fn(&mut AmortSeries) -> T,
-{
-    let container = Series::full_null(PlSmallStr::EMPTY, 0, dtype);
-    let mut us = AmortSeries::new(Rc::new(container));
-
-    f(&mut us)
-}
 
 pub fn check_is_valid_struct_cast(
     input_dtype: &DataType,

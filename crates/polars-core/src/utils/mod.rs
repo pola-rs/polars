@@ -852,25 +852,6 @@ Other dataframe has additional columns: [{df2_extra}]."#,
     )
 }
 
-pub fn accumulate_dataframes_vertical_unchecked_optional<I>(dfs: I) -> Option<DataFrame>
-where
-    I: IntoIterator<Item = DataFrame>,
-{
-    let mut iter = dfs.into_iter();
-    let additional = iter.size_hint().0;
-    let mut acc_df = iter.next()?;
-    acc_df.reserve_chunks(additional);
-
-    for df in iter {
-        if acc_df.width() != df.width() {
-            panic!("{}", width_mismatch(&acc_df, &df));
-        }
-
-        acc_df.vstack_mut_owned_unchecked(df);
-    }
-    Some(acc_df)
-}
-
 /// This takes ownership of the DataFrame so that drop is called earlier.
 /// Does not check if schema is correct
 pub fn accumulate_dataframes_vertical_unchecked<I>(dfs: I) -> DataFrame
@@ -1366,28 +1347,6 @@ fn trailing_zeros(mask: &PlBitmapRef<'_>) -> usize {
         Some(true) => 0,
         Some(false) => mask.len(),
         None => mask.flat_bitmap().map_or(0, Bitmap::trailing_zeros),
-    }
-}
-
-/// ensure that nulls are propagated to both arrays
-pub fn coalesce_nulls<'a, T: PolarsDataType>(
-    a: &'a ChunkedArray<T>,
-    b: &'a ChunkedArray<T>,
-) -> (Cow<'a, ChunkedArray<T>>, Cow<'a, ChunkedArray<T>>) {
-    if a.null_count() > 0 || b.null_count() > 0 {
-        let (a, b) = align_chunks_binary(a, b);
-        let mut b = b.into_owned();
-        let a = a.coalesce_nulls(b.chunks());
-
-        for arr in a.chunks().iter() {
-            for arr_b in unsafe { b.chunks_mut() } {
-                *arr_b = arr_b.with_validity(arr.validity().map(PlBitmap::from))
-            }
-        }
-        b.compute_len();
-        (Cow::Owned(a), Cow::Owned(b))
-    } else {
-        (Cow::Borrowed(a), Cow::Borrowed(b))
     }
 }
 

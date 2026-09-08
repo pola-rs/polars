@@ -1848,6 +1848,7 @@ def test_join_asof_by_nulls_27165_2() -> None:
     assert_frame_equal(actual, expected)
 
 
+@pytest.mark.slow
 def test_join_asof_maintain_order_left_27526() -> None:
     N_IDS = 20
     N_TS = 100_000

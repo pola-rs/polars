@@ -295,7 +295,9 @@ impl IRFunctionExpr {
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "exp")?
                 .map_to_float_dtype(),
             #[cfg(feature = "log")]
-            Log => mapper.log_dtype(),
+            Log => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log")?
+                .log_dtype(),
             Unique(_) => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
             Round { .. } | RoundSF { .. } | Truncate { .. } | Floor | Ceil => {

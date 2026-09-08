@@ -71,8 +71,6 @@ impl FromIterator<String> for Series {
     }
 }
 
-pub type SeriesPhysIter<'a> = Box<dyn ExactSizeIterator<Item = AnyValue<'a>> + 'a>;
-
 impl Series {
     /// Iterate over [`Series`] as [`AnyValue`].
     ///
@@ -87,43 +85,6 @@ impl Series {
             arrays,
             dtype: self.dtype(),
             total_elems_in_remaining_arrays: self.len(),
-        }
-    }
-
-    pub fn phys_iter(&self) -> SeriesPhysIter<'_> {
-        let dtype = self.dtype();
-        let phys_dtype = dtype.to_physical();
-
-        assert_eq!(dtype, &phys_dtype, "impl error");
-        assert_eq!(self.chunks().len(), 1, "impl error");
-        let arr = &*self.chunks()[0];
-
-        if phys_dtype.is_primitive_numeric() {
-            with_match_physical_numeric_type!(phys_dtype, |$T| {
-                let arr = arr.as_any().downcast_ref::<PlPrimitiveArray<$T>>().unwrap();
-                Box::new(arr.iter().map(|value| match value {
-                    Some(value) => AnyValue::from(value),
-                    None => AnyValue::Null,
-                })) as Box<dyn ExactSizeIterator<Item=AnyValue<'_>> + '_>
-            })
-        } else {
-            match dtype {
-                DataType::String => {
-                    let arr = arr.as_any().downcast_ref::<PlUtf8ViewArray>().unwrap();
-                    Box::new(arr.iter().map(|value| match value {
-                        Some(value) => AnyValue::String(value),
-                        None => AnyValue::Null,
-                    })) as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
-                },
-                DataType::Boolean => {
-                    let arr = arr.as_any().downcast_ref::<PlBooleanArray>().unwrap();
-                    Box::new(arr.iter().map(|value| match value {
-                        Some(value) => AnyValue::Boolean(value),
-                        None => AnyValue::Null,
-                    })) as Box<dyn ExactSizeIterator<Item = AnyValue<'_>> + '_>
-                },
-                _ => Box::new(self.iter()),
-            }
         }
     }
 }

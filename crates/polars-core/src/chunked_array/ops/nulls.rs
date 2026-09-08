@@ -1,7 +1,6 @@
-use polars_array::bitmap::{combine_validities_and, invert};
+use polars_array::bitmap::invert;
 
 use super::*;
-use crate::chunked_array::flags::StatisticsFlags;
 
 impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get a mask of the null values.
@@ -20,14 +19,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         }
         // dispatch to non-generic function
         is_not_null(self.name().clone(), &self.chunks)
-    }
-
-    pub(crate) fn coalesce_nulls(&self, other: &[PlArrayRef]) -> Self {
-        let chunks = coalesce_nulls(&self.chunks, other);
-        let mut ca = unsafe { self.copy_with_chunks(chunks) };
-        use StatisticsFlags as F;
-        ca.retain_flags_from(self, F::IS_SORTED_ANY);
-        ca
     }
 }
 
@@ -57,16 +48,4 @@ pub fn replace_non_null(name: PlSmallStr, chunks: &[PlArrayRef], default: bool) 
                 .with_validity(el.validity().map(PlBitmap::from))
         }),
     )
-}
-
-pub(crate) fn coalesce_nulls(chunks: &[PlArrayRef], other: &[PlArrayRef]) -> Vec<PlArrayRef> {
-    assert_eq!(chunks.len(), other.len());
-    chunks
-        .iter()
-        .zip(other)
-        .map(|(a, b)| {
-            assert_eq!(a.len(), b.len());
-            a.with_validity(combine_validities_and(a.validity(), b.validity()))
-        })
-        .collect()
 }

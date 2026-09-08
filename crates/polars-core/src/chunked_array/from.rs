@@ -223,16 +223,6 @@ where
 }
 
 impl BooleanChunked {
-    /// Create a temporary [`ChunkedArray`] from a slice.
-    ///
-    /// # Safety
-    /// The lifetime will be bound to the lifetime of the slice.
-    /// This will not be checked by the borrowchecker.
-    pub unsafe fn mmap_slice(name: PlSmallStr, values: &[u8], offset: usize, len: usize) -> Self {
-        let arr = arrow::ffi::mmap::bitmap(values, offset, len).unwrap();
-        Self::with_chunk(name, polars_array::arrow::import::boolean_from_arrow(&arr))
-    }
-
     pub fn from_bitmap(name: PlSmallStr, bitmap: Bitmap) -> Self {
         Self::with_chunk(name, PlBooleanArray::from_values(bitmap))
     }
