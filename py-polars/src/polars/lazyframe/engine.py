@@ -338,7 +338,10 @@ class _LocalEngine(Engine):
 
     def _with_monitoring(self, optimizations: QueryOptFlags) -> QueryOptFlags:
         """Register the query observer when enabled and update `optimizations`."""
-        from polars._utils.monitoring import monitoring_enabled_globally
+        from polars._utils.monitoring import (
+            monitoring_enabled_globally,
+            monitoring_workspace,
+        )
 
         monitor = (
             monitoring_enabled_globally()
@@ -348,7 +351,7 @@ class _LocalEngine(Engine):
         if monitor:
             import polars._plr as plr
 
-            plr.set_query_monitoring(True)
+            plr.set_query_monitoring(True, monitoring_workspace())
 
         optimizations = optimizations.__copy__()
         optimizations._pyoptflags.query_monitoring = monitor
