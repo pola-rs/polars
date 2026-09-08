@@ -3777,6 +3777,7 @@ def test_str_plain_is_in_more_than_4_values_24167() -> None:
     )
 
 
+@pytest.mark.may_fail_lazy_schema  # TODO: panic
 def test_binary_offset_roundtrip() -> None:
     f = io.BytesIO()
     pl.LazyFrame(

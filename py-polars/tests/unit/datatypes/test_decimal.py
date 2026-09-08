@@ -687,6 +687,7 @@ def test_decimal_truediv_int_schema_29105(int_dtype: PolarsDataType) -> None:
         assert schema[name] == pl.Decimal(38, 4)
 
 
+@pytest.mark.may_fail_lazy_schema  # TODO: precision
 def test_decimal_horizontal_20482() -> None:
     b = pl.LazyFrame(
         {

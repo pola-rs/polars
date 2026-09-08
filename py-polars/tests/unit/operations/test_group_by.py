@@ -1447,6 +1447,7 @@ def test_group_by_agg_19173() -> None:
     assert out.schema == pl.Schema([("g", pl.Int64), ("x", pl.List(pl.Float64))])
 
 
+@pytest.mark.may_fail_lazy_schema  # reason: declared-schema
 def test_group_by_map_groups_slice_pushdown_20002() -> None:
     schema = {
         "a": pl.Int8,
