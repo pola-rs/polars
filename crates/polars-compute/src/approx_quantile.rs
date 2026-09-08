@@ -700,10 +700,18 @@ pub mod req {
         }
 
         pub fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
-            match quantile <= 0.5 {
-                true => self.lra.estimate_quantile(quantile),
-                false => self.hra.estimate_quantile(quantile),
+            if quantile <= 0.5 {
+                return self.lra.estimate_quantile(quantile);
             }
+            // Both sketches are randomized independently, so the hra estimate
+            // just above 0.5 may fall below the lra estimate just below it.
+            // Clamping to the lra median keeps the answers non-decreasing.
+            let estimate = self.hra.estimate_quantile(quantile)?;
+            let pivot = self.lra.estimate_quantile(0.5)?;
+            Some(match TotalOrd::tot_cmp(estimate, pivot).is_ge() {
+                true => estimate,
+                false => pivot,
+            })
         }
     }
 
