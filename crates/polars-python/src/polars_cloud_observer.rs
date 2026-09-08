@@ -8,7 +8,7 @@ use polars_observer::{
 };
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
+use pyo3::types::{PyBytes, PyDict};
 use uuid::Uuid;
 
 const POLARS_CLOUD_PACKAGE_NAME: &str = "polars_cloud";
@@ -133,8 +133,17 @@ impl QueryObserver for PolarsCloudObserver {
     }
 }
 
+/// Register the `polars_cloud` query observer. `workspace` and `organization` select
+/// where query metrics are sent to, each given as a name or an id; `None` uses the
+/// default workspace or organization of the account.
 #[pyfunction]
-pub fn set_query_monitoring(py: Python<'_>, enable: bool) -> PyResult<()> {
+#[pyo3(signature = (enable, workspace=None, organization=None))]
+pub fn set_query_monitoring(
+    py: Python<'_>,
+    enable: bool,
+    workspace: Option<&str>,
+    organization: Option<&str>,
+) -> PyResult<()> {
     if !enable {
         register_query_observer_factory(None);
         return Ok(());
@@ -154,8 +163,17 @@ pub fn set_query_monitoring(py: Python<'_>, enable: bool) -> PyResult<()> {
              Ensure the polars_cloud and polars versions match.",
             )
         })?;
+    // Only the arguments that are set are passed, as keywords, so that older
+    // `polars_cloud` versions whose observer does not take them keep working.
+    let kwargs = PyDict::new(py);
+    if let Some(workspace) = workspace {
+        kwargs.set_item("workspace", workspace)?;
+    }
+    if let Some(organization) = organization {
+        kwargs.set_item("organization", organization)?;
+    }
     let observer = cls
-        .call0()
+        .call((), Some(&kwargs))
         .map_err(|e| {
             PyRuntimeError::new_err(format!(
                 "failed to construct the Polars Cloud observer: {e}"

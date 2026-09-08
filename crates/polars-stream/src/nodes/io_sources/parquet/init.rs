@@ -5,7 +5,6 @@ use polars_async::executor;
 use polars_core::frame::DataFrame;
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
-use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::ParallelStrategy;
 use polars_utils::IdxSize;
 
@@ -342,9 +341,7 @@ impl ParquetReadImpl {
                 Default::default()
             };
 
-        let use_prefiltered = use_prefiltered.then(PrefilterMaskSetting::init_from_env);
-
-        let non_predicate_field_indices: Arc<[usize]> = if use_prefiltered.is_some() {
+        let non_predicate_field_indices: Arc<[usize]> = if use_prefiltered {
             filtered_range(
                 predicate_field_indices.as_ref(),
                 projected_arrow_fields.len(),
@@ -354,7 +351,7 @@ impl ParquetReadImpl {
             Default::default()
         };
 
-        if use_prefiltered.is_some() && self.verbose {
+        if use_prefiltered && self.verbose {
             eprintln!(
                 "[ParquetFileReader]: Pre-filtered decode enabled ({} live, {} non-live)",
                 predicate_field_indices.len(),

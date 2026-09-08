@@ -458,7 +458,6 @@ def test_power_by_expression() -> None:
 
 
 @pytest.mark.may_fail_cloud  # reason: chunking
-@pytest.mark.may_fail_auto_streaming
 def test_expression_appends() -> None:
     df = pl.DataFrame({"a": [1, 1, 2]})
 
