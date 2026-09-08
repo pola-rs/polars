@@ -21,6 +21,7 @@ itoa = { workspace = true, optional = true }
 num-traits = { workspace = true }
 polars-array = { workspace = true }
 polars-buffer = { workspace = true }
+polars-dtype = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 rand = { workspace = true }
@@ -55,8 +56,9 @@ gather = []
 nightly = []
 simd = ["arrow/simd"]
 approx_unique = []
-dtype-array = ["arrow/dtype-array"]
-dtype-decimal = ["arrow/dtype-decimal", "dtype-i128"]
+dtype-array = ["arrow/dtype-array", "polars-dtype/dtype-array"]
+dtype-decimal = ["arrow/dtype-decimal", "dtype-i128", "polars-dtype/dtype-decimal"]
+dtype-struct = ["polars-dtype/dtype-struct"]
 dtype-i128 = []
 dtype-u128 = []
 dtype-f16 = ["dep:half"]

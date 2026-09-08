@@ -7,8 +7,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose;
 use memchr::memmem::find;
 #[cfg(feature = "binary_encoding")]
-use polars_array::arrow::{export, import};
-use polars_compute::cast::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
+use polars_compute::cast::{binview_to_fixed_size_list, binview_to_primitive};
 use polars_compute::size::binary_size_bytes;
 use polars_core::prelude::arity::{
     broadcast_binary_elementwise_values, unary_elementwise_values, unary_mut_values,
@@ -214,17 +213,13 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         match dtype {
             dtype if dtype.is_primitive_numeric() || dtype.is_temporal() => {
                 let dtype = dtype.to_physical();
-                let arrow_data_type = dtype
-                    .to_arrow(CompatLevel::newest())
-                    .underlying_physical_type();
                 with_match_physical_numeric_polars_type!(dtype, |$T| {
                     ca.chunks().iter().map(|chunk| {
                         reinterpret_elementwise(&**chunk, |chunk| {
-                            binview_to_primitive_dyn::<<$T as PolarsNumericType>::Native>(
+                            Ok(Box::new(binview_to_primitive::<<$T as PolarsNumericType>::Native>(
                                 chunk,
-                                &arrow_data_type,
                                 is_little_endian,
-                            )
+                            )))
                         })
                     }).collect()
                 })
@@ -237,11 +232,13 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 let result: Vec<PlArrayRef> = with_match_physical_numeric_polars_type!(inner_dtype, |$T| {
                     ca.chunks().iter().map(|chunk| {
                         reinterpret_elementwise(&**chunk, |chunk| {
-                            binview_to_fixed_size_list_dyn::<<$T as PolarsNumericType>::Native>(
-                                chunk,
-                                *array_width,
-                                is_little_endian
-                            )
+                            type N = <$T as PolarsNumericType>::Native;
+                            let out = if is_little_endian {
+                                binview_to_fixed_size_list::<N, true>(chunk, *array_width)
+                            } else {
+                                binview_to_fixed_size_list::<N, false>(chunk, *array_width)
+                            };
+                            Ok(Box::new(out?))
                         })
                     }).collect::<Result<Vec<PlArrayRef>, _>>()
                 })?;
@@ -256,11 +253,11 @@ pub trait BinaryNameSpaceImpl: AsBinary {
 
 impl BinaryNameSpaceImpl for BinaryChunked {}
 
-/// Runs an elementwise Arrow `kernel` over `chunk`, reading a scalar chunk's one element once.
+/// Runs an elementwise `kernel` over `chunk`, reading a scalar chunk's one element once.
 #[cfg(feature = "binary_encoding")]
 fn reinterpret_elementwise(
     chunk: &dyn PlArray,
-    kernel: impl FnOnce(&dyn arrow::array::Array) -> PolarsResult<Box<dyn arrow::array::Array>>,
+    kernel: impl FnOnce(&PlBinaryViewArray) -> PolarsResult<PlArrayRef>,
 ) -> PolarsResult<PlArrayRef> {
     let length = chunk.len();
 
@@ -275,13 +272,12 @@ fn reinterpret_elementwise(
         chunk
     };
 
-    // The export hands the chunk's buffers to the Arrow kernel, and the import takes the kernel's
-    // own answer back; neither outlives this call.
-    let out = {
-        let exported = export::to_arrow(operand);
-        let answered = kernel(&*exported)?;
-        import::from_arrow(&*answered)
-    };
+    let out = kernel(
+        operand
+            .as_any()
+            .downcast_ref()
+            .expect("a chunk of a binary column is a binary view array"),
+    )?;
 
     Ok(if repeated {
         out.new_from_index(0, length)

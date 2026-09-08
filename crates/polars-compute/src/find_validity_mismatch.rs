@@ -1,13 +1,11 @@
 //! Finding the elements two chunks disagree about being null.
 
 use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
 use polars_array::{
     PlArray, PlArrayType, PlBitmapRef, PlFixedSizeListArray, PlListArray, PlStructArray,
 };
 use polars_utils::IdxSize;
 
-use crate::cast::CastOptionsImpl;
 use crate::nesting::{covered_range, downcast};
 
 /// Appends the indices of the elements `left` and `right` disagree about being null.
@@ -223,15 +221,7 @@ fn find_validity_mismatch_list_fsl(
     // The lists of a null element hold no values of their own, so lining the two sides up value for
     // value means filling those in — which is what the cast to a fixed width does. This only runs
     // once a cast has already failed.
-    let from_type = crate::cast::pl_array::physical_dtype(left);
-    let ArrowDataType::LargeList(field) = &from_type else {
-        unreachable!("a list array of this crate reads as a large list");
-    };
-    let to_type = ArrowDataType::FixedSizeList(field.clone(), right.width());
-
-    let left = crate::cast::cast_chunk_from(left, &from_type, &to_type, CastOptionsImpl::default())
-        .unwrap();
-    let left: &PlFixedSizeListArray = downcast(&*left);
+    let left = crate::cast::list_to_fixed_size_list(left, right.width(), Ok).unwrap();
 
     find_validity_mismatch_nested(left.values(), right.values(), right.width(), idxs)
 }

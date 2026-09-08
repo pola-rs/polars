@@ -3198,6 +3198,7 @@ dependencies = [
  "polars-array",
  "polars-arrow",
  "polars-buffer",
+ "polars-dtype",
  "polars-error",
  "polars-utils",
  "proptest",

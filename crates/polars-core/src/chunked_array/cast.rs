@@ -45,20 +45,22 @@ impl From<CastOptions> for CastOptionsImpl {
     }
 }
 
-/// Casts the chunks of a [`ChunkedArray`] to `dtype` through the Arrow cast kernel.
+/// Casts the chunks of a [`ChunkedArray`] to `dtype`.
 pub(crate) fn cast_chunks(
     chunks: &[PlArrayRef],
     dtype: &DataType,
     options: CastOptions,
 ) -> PolarsResult<Vec<PlArrayRef>> {
     let check_nulls = matches!(options, CastOptions::Strict);
-    let arrow_dtype = dtype.try_to_arrow(CompatLevel::newest())?;
     let cast_options = options.into();
 
     chunks
         .iter()
         .map(|chunk| {
-            let out = polars_compute::cast::cast_chunk(&**chunk, &arrow_dtype, cast_options)?;
+            // A chunk carries no name over its values, so what it is cast off is the type its
+            // buffers are laid out in — which is what [`cast_chunks_from`] is for.
+            let from_dtype = polars_compute::cast::physical_dtype(&**chunk);
+            let out = polars_compute::cast::cast(&**chunk, &from_dtype, dtype, cast_options)?;
             if check_nulls && chunk.null_count() != out.null_count() {
                 // A cast that dropped an element is reported over the Arrow arrays, which is
                 // where the failing values are read back out of — and only once it has failed.
@@ -80,19 +82,12 @@ pub(crate) fn cast_chunks_from(
     options: CastOptions,
 ) -> PolarsResult<Vec<PlArrayRef>> {
     let check_nulls = matches!(options, CastOptions::Strict);
-    let from_arrow_dtype = from_dtype.try_to_arrow(CompatLevel::newest())?;
-    let arrow_dtype = dtype.try_to_arrow(CompatLevel::newest())?;
     let cast_options = options.into();
 
     chunks
         .iter()
         .map(|chunk| {
-            let out = polars_compute::cast::cast_chunk_from(
-                &**chunk,
-                &from_arrow_dtype,
-                &arrow_dtype,
-                cast_options,
-            )?;
+            let out = polars_compute::cast::cast(&**chunk, from_dtype, dtype, cast_options)?;
             if check_nulls && chunk.null_count() != out.null_count() {
                 // As in `cast_chunks`: the failing values are read back over the Arrow arrays,
                 // and only once the cast has failed.
@@ -107,11 +102,14 @@ pub(crate) fn cast_chunks_from(
 }
 
 /// Casts Arrow chunks to `dtype`, which is what the boundaries where data arrives as Arrow use.
+///
+/// The chunks cross over to the arrays of `polars-array` on the way, which is what they are cast
+/// over — see [`polars_compute::cast::cast_arrow`].
 pub(crate) fn cast_arrow_chunks(
     chunks: &[ArrayRef],
     dtype: &DataType,
     options: CastOptions,
-) -> PolarsResult<Vec<ArrayRef>> {
+) -> PolarsResult<Vec<PlArrayRef>> {
     let check_nulls = matches!(options, CastOptions::Strict);
     let options = options.into();
 
@@ -119,17 +117,16 @@ pub(crate) fn cast_arrow_chunks(
     chunks
         .iter()
         .map(|arr| {
-            let out = polars_compute::cast::cast(arr.as_ref(), &arrow_dtype, options);
-            if check_nulls {
-                out.and_then(|new| {
-                    if arr.null_count() != new.null_count() {
-                        handle_array_casting_failures(&**arr, &*new)?;
-                    }
-                    Ok(new)
-                })
-            } else {
-                out
+            let out = polars_compute::cast::cast_arrow(arr.as_ref(), &arrow_dtype, options)?;
+            if check_nulls && arr.null_count() != out.null_count() {
+                // A cast that dropped an element is reported over the Arrow arrays, which is
+                // where the failing values are read back out of — and only once it has failed.
+                handle_array_casting_failures(
+                    &**arr,
+                    &*polars_array::arrow::export::to_arrow(&*out),
+                )?;
             }
+            Ok(out)
         })
         .collect::<PolarsResult<Vec<_>>>()
 }
@@ -334,12 +331,10 @@ impl ChunkCast for StringChunked {
             },
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
-                let chunks = self.downcast_iter().map(|arr| {
-                    let arr = <PlUtf8ViewArray as ToArrow>::to_arrow(&arr.to_flat()).to_binview();
-                    let arr = polars_compute::cast::binview_to_decimal(&arr, *precision, *scale);
-                    polars_array::arrow::import::primitive_from_arrow(&arr)
-                });
-                let ca = Int128Chunked::from_chunk_iter(self.name().clone(), chunks);
+                // The text a value does not read as a decimal reads as null, which is what this
+                // cast has always answered — even when it was asked for a strict one.
+                let chunks = cast_chunks(&self.chunks, dtype, CastOptions::NonStrict)?;
+                let ca = unsafe { Int128Chunked::from_chunks(self.name().clone(), chunks) };
                 Ok(ca.into_decimal_unchecked(*precision, *scale).into_series())
             },
             #[cfg(feature = "dtype-date")]

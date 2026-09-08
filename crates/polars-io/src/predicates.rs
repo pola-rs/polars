@@ -149,11 +149,15 @@ fn predicate_values_to_series(
     );
 
     if timestamp_units_differ {
-        let values = polars_compute::cast::cast(
-            values,
-            source_arrow_dtype,
-            polars_compute::cast::CastOptionsImpl::default(),
-        )?;
+        // The values are the counts the source unit holds, which is what stamping the source type
+        // onto them says: the import is what then reads them in the target unit.
+        let mut values = values.to_boxed();
+        assert_eq!(
+            values.dtype().to_physical_type(),
+            source_arrow_dtype.to_physical_type(),
+            "the statistics of a {source_arrow_dtype:?} column cannot be read as one",
+        );
+        *values.dtype_mut() = source_arrow_dtype.clone();
         Series::try_from((name, values))
     } else {
         Series::from_chunk_and_dtype(name, values.to_boxed(), dtype)

@@ -15,7 +15,6 @@ pub mod categorical;
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use polars_compute::cast::cast_unchecked;
 use polars_error::{PolarsError, PolarsResult, polars_ensure, polars_err};
 
 use crate::prelude::{
@@ -382,18 +381,26 @@ impl ToArrowConverter {
             },
             (DataType::String, ArrowDataType::Utf8View) => array.to_boxed(),
             (DataType::String, ArrowDataType::LargeUtf8) => {
-                cast_unchecked(array, &ArrowDataType::LargeUtf8).unwrap()
+                use polars_compute::cast::utf8view_to_arrow_large_utf8;
+
+                let array: &arrow::array::Utf8ViewArray = array.as_any().downcast_ref().unwrap();
+
+                utf8view_to_arrow_large_utf8(array).boxed()
             },
             (DataType::Binary, ArrowDataType::BinaryView) => array.to_boxed(),
             (DataType::Binary, ArrowDataType::LargeBinary) => {
-                cast_unchecked(array, &ArrowDataType::LargeBinary).unwrap()
-            },
-            (DataType::Binary, ArrowDataType::FixedSizeBinary(row_width)) => {
-                use polars_compute::cast::binview_to_fixed_binary;
+                use polars_compute::cast::binview_to_arrow_large_binary;
 
                 let array: &BinaryViewArray = array.as_any().downcast_ref().unwrap();
 
-                binview_to_fixed_binary(array, *row_width)?.boxed()
+                binview_to_arrow_large_binary(array).boxed()
+            },
+            (DataType::Binary, ArrowDataType::FixedSizeBinary(row_width)) => {
+                use polars_compute::cast::binview_to_arrow_fixed_size_binary;
+
+                let array: &BinaryViewArray = array.as_any().downcast_ref().unwrap();
+
+                binview_to_arrow_fixed_size_binary(array, *row_width)?.boxed()
             },
             (DataType::Binary, ArrowDataType::Extension(_)) => {
                 let arrow_dtype = to_owned_dtype(arrow_field);

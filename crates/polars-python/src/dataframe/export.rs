@@ -1,7 +1,6 @@
 use arrow::datatypes::IntegerType;
 use arrow::record_batch::RecordBatch;
 use polars::prelude::*;
-use polars_compute::cast::CastOptionsImpl;
 use polars_utils::itertools::Itertools;
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
@@ -166,9 +165,7 @@ impl PyDataFrame {
                     } else {
                         &categorical_dtype
                     };
-                    let out =
-                        polars_compute::cast::cast(&**arr, cast_dtype, CastOptionsImpl::default())
-                            .unwrap();
+                    let out = polars_compute::cast::cast_to_dictionary(&**arr, cast_dtype).unwrap();
                     *arr = out;
                 }
                 let schema = replaced_schema
