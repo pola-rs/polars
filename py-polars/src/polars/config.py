@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING, Any, Final, Literal, TypedDict, get_args
 
 from polars._dependencies import json
 from polars._utils.deprecation import deprecated
-from polars._utils.monitoring import MONITORING_ENV_VAR, activate_monitoring
+from polars._utils.monitoring import (
+    MONITORING_ENV_VAR,
+    MONITORING_WORKSPACE_ENV_VAR,
+    activate_monitoring,
+)
 from polars._utils.unstable import unstable
 from polars._utils.various import normalize_filepath
 from polars.lazyframe.engine import Engine
@@ -85,6 +89,7 @@ _POLARS_CFG_ENV_VARS: Final[set[str]] = {
     "POLARS_MAX_EXPR_DEPTH",
     "POLARS_ENGINE_AFFINITY",
     "POLARS_QUERY_MONITORING",
+    "POLARS_QUERY_MONITORING_WORKSPACE",
 }
 
 # vars that set the rust env directly should declare themselves here as the Config
@@ -1632,7 +1637,9 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
-    def enable_monitoring(cls, active: bool | None = True) -> type[Config]:
+    def enable_monitoring(
+        cls, active: bool | None = True, *, workspace: str | None = None
+    ) -> type[Config]:
         """
         Enable runtime monitoring of query execution.
 
@@ -1656,10 +1663,18 @@ class Config(contextlib.ContextDecorator):
         ----------
         active
             Enable monitoring when True (the default), disable it when False.
+        workspace
+            Name or id of the Polars Cloud workspace the metrics are sent to; defaults
+            to the default workspace of your account. Ignored when disabling
+            monitoring.
 
         Examples
         --------
         >>> pl.Config.enable_monitoring()  # doctest: +SKIP
+
+        Send the metrics to a specific workspace instead of the default one:
+
+        >>> pl.Config.enable_monitoring(workspace="my-workspace")  # doctest: +SKIP
 
         Enable monitoring temporarily with ``Config``; the previous monitoring state
         and engine affinity are restored on exit:
@@ -1671,9 +1686,14 @@ class Config(contextlib.ContextDecorator):
             activate_monitoring()
 
             os.environ[MONITORING_ENV_VAR] = "1"
+            if workspace is None:
+                os.environ.pop(MONITORING_WORKSPACE_ENV_VAR, None)
+            else:
+                os.environ[MONITORING_WORKSPACE_ENV_VAR] = workspace
             cls.set_engine_affinity("streaming")
         else:
             os.environ.pop(MONITORING_ENV_VAR, None)
+            os.environ.pop(MONITORING_WORKSPACE_ENV_VAR, None)
 
         return cls
 
