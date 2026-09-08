@@ -3,13 +3,13 @@ use std::sync::Arc;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::Schema;
 use polars_ops::frame::JoinArgs;
-use polars_utils::aliases::PlHashSet;
+use polars_utils::aliases::{PlHashSet, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, unitvec};
 
-use super::join_utils::{ExprOrigin, remove_suffix};
+use super::join_utils::ExprOrigin;
 use super::predicate_pushdown::utils::{combine_by_and, contains_dynamic_pred};
 use crate::dsl::Operator;
 use crate::plans::options::JoinTypeOptionsIR;
@@ -17,6 +17,7 @@ use crate::plans::{
     AExpr, ExprIR, ExprPushdownGroup, IR, JoinOptionsIR, JoinType, MintermIter, OutputName,
     is_row_separable_rec,
 };
+use crate::utils::{aexpr_to_leaf_names_iter, rename_columns};
 
 /// Visit every node reachable from `root` once, parents before their inputs.
 fn for_each_ir_node(
@@ -140,6 +141,8 @@ fn try_fuse(
     let right_schema = ir_arena.get(input_right).schema(ir_arena).into_owned();
     let suffix = options.args.suffix().clone();
 
+    let right_names = right_output_to_input(&left_schema, &right_schema, &options, expr_arena)?;
+
     let mut left_key_names: PlHashSet<PlSmallStr> = options
         .options
         .key_pairs()
@@ -185,6 +188,7 @@ fn try_fuse(
             &right_schema,
             &options.args,
             &suffix,
+            &right_names,
             &mut left_key_names,
             &mut right_key_names,
         )? {
@@ -246,6 +250,7 @@ fn try_as_key_pair(
     right_schema: &Schema,
     args: &JoinArgs,
     suffix: &str,
+    right_names: &PlIndexMap<PlSmallStr, PlSmallStr>,
     left_key_names: &mut PlHashSet<PlSmallStr>,
     right_key_names: &mut PlHashSet<PlSmallStr>,
 ) -> PolarsResult<Option<(ExprIR, ExprIR)>> {
@@ -280,9 +285,17 @@ fn try_as_key_pair(
         _ => return Ok(None),
     };
 
+    // The right side is in the join's output namespace, where a name can belong to a
+    // different input column than the one it shares a name with.
+    if !aexpr_to_leaf_names_iter(right_node, expr_arena)
+        .all(|name| right_names.contains_key(name.as_str()))
+    {
+        return Ok(None);
+    }
+    let right_node = rename_columns(right_node, expr_arena, right_names);
+
     let mut left_key = ExprIR::from_node(left_node, expr_arena);
     let mut right_key = ExprIR::from_node(right_node, expr_arena);
-    remove_suffix(&mut right_key, expr_arena, right_schema, suffix);
 
     // Key pairs are matched without coercion.
     if left_key.field(left_schema, expr_arena)?.dtype
@@ -311,4 +324,37 @@ fn unique_key_name(base: &str, taken: &PlHashSet<PlSmallStr>, schema: &Schema) -
         .map(|i| format_pl_smallstr!("__POLARS_JOIN_KEY_{i}_{base}"))
         .find(|name| !taken.contains(name) && !schema.contains(name))
         .unwrap()
+}
+
+/// Maps each right input column reachable in the join's output to its output name.
+///
+/// A coalescing join drops the right key columns, and the rest take the join suffix where
+/// they collide with a left column, so an output name need not be the input name.
+fn right_output_to_input(
+    left_schema: &Schema,
+    right_schema: &Schema,
+    options: &JoinOptionsIR,
+    expr_arena: &Arena<AExpr>,
+) -> PolarsResult<PlIndexMap<PlSmallStr, PlSmallStr>> {
+    let mut coalesced: PlHashSet<PlSmallStr> = PlHashSet::default();
+    if options.args.should_coalesce() {
+        for key in options.options.right_on() {
+            coalesced.insert(key.field(right_schema, expr_arena)?.name);
+        }
+    }
+
+    let suffix = options.args.suffix();
+    let mut out = PlIndexMap::default();
+    for name in right_schema.iter_names() {
+        if coalesced.contains(name) {
+            continue;
+        }
+        let output_name = if left_schema.contains(name) {
+            format_pl_smallstr!("{}{}", name, suffix)
+        } else {
+            name.clone()
+        };
+        out.insert(output_name, name.clone());
+    }
+    Ok(out)
 }

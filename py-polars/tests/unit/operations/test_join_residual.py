@@ -661,3 +661,29 @@ def test_equality_promoted_without_coalesce(
         reference(left, right, predicate, on="k", coalesce=False),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_equality_resolves_suffixed_output_column(engine: str) -> None:
+    """An output name can belong to a different input column than it shares a name with."""
+    left = pl.LazyFrame({"k": [1, 1], "v": [10, 20]})
+    right = pl.LazyFrame({"v_right": [1, 1], "v": [10, 20]})
+    predicate = pl.col("v") == pl.col("v_right")
+    q = left.join(right, left_on="k", right_on="v_right").filter(predicate)
+
+    assert_not_fused(q)
+    assert q.collect_schema().names() == ["k", "v", "v_right"]
+
+    # This shape trips a projection pushdown bug that has nothing to do with the join
+    # condition, so the reference is taken without that pass.
+    no_pushdown = pl.QueryOptFlags(projection_pushdown=False)
+    expected = (
+        left.join(right, left_on="k", right_on="v_right")
+        .collect(optimizations=no_pushdown)
+        .filter(predicate)
+    )
+    assert_frame_equal(
+        q.collect(engine=engine, optimizations=no_pushdown),
+        expected,
+        check_row_order=False,
+    )
