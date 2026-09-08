@@ -3229,7 +3229,6 @@ def test_group_by_f16_agg_28353(agg: str, args: list[float]) -> None:
     assert_frame_equal(out16, out64, check_row_order=False, rel_tol=1e-3, abs_tol=1e-4)
 
 
-@pytest.mark.may_fail_auto_streaming  # n_chunks is an implementation detail for in-memory
 @pytest.mark.parametrize("agg", ["any", "all"])
 @pytest.mark.parametrize("ignore_nulls", [True, False])
 @pytest.mark.parametrize("null_frac", [0.0, 0.3])
@@ -3255,7 +3254,6 @@ def test_group_by_bool_agg_any_all_single_chunk_28684(
     assert_series_equal(out["b"], expected, check_names=False)
 
 
-@pytest.mark.may_fail_auto_streaming  # n_chunks is an implementation detail for in-memory
 @pytest.mark.parametrize("agg", ["min", "max"])
 @pytest.mark.parametrize("set_sorted", [False, True])
 @pytest.mark.parametrize("null_frac", [0.0, 0.3])
@@ -3281,7 +3279,6 @@ def test_group_by_bool_agg_min_max_single_chunk_28684(
     assert_series_equal(out["b"], expected, check_names=False)
 
 
-@pytest.mark.may_fail_auto_streaming  # n_chunks is an implementation detail for in-memory
 def test_group_by_agg_primitive_opt_single_chunk_28684() -> None:
     # must be large enough to trigger chunk fragmentation
     n = 20_000

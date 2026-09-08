@@ -21,7 +21,6 @@ use crate::series::{IntoSeries, Series};
 pub type BuilderConstructor =
     Box<dyn Fn(PlSmallStr, usize) -> Box<dyn AnonymousObjectBuilder> + Send + Sync>;
 pub type ObjectConverter = Arc<dyn Fn(AnyValue) -> Box<dyn Any> + Send + Sync>;
-pub type PyObjectConverter = Arc<dyn Fn(AnyValue) -> Box<dyn Any> + Send + Sync>;
 pub type ObjectArrayGetter = Arc<dyn Fn(&dyn PlArray, usize) -> Option<AnyValue<'_>> + Send + Sync>;
 pub type WithGIL = Arc<dyn Fn(&mut dyn FnMut()) + Send + Sync>;
 
@@ -30,8 +29,6 @@ pub struct ObjectRegistry {
     pub builder_constructor: BuilderConstructor,
     // A function that converts AnyValue to Box<dyn Any> of the object type
     object_converter: Option<ObjectConverter>,
-    // A function that converts AnyValue to Box<dyn Any> of the PyObject type
-    pyobject_converter: Option<PyObjectConverter>,
     pub physical_dtype: ArrowDataType,
     // A function that gets an AnyValue from a Box<dyn Array>.
     array_getter: ObjectArrayGetter,
@@ -127,7 +124,6 @@ impl<T: PolarsObject> AnonymousObjectBuilder for ObjectChunkedBuilder<T> {
 pub fn register_object_builder(
     builder_constructor: BuilderConstructor,
     object_converter: ObjectConverter,
-    pyobject_converter: PyObjectConverter,
     physical_dtype: ArrowDataType,
     array_getter: ObjectArrayGetter,
     with_gil: WithGIL,
@@ -142,7 +138,6 @@ pub fn register_object_builder(
     *reg = Some(ObjectRegistry {
         builder_constructor,
         object_converter: Some(object_converter),
-        pyobject_converter: Some(pyobject_converter),
         physical_dtype,
         array_getter,
         with_gil,
@@ -164,12 +159,6 @@ pub fn get_object_converter() -> ObjectConverter {
     let reg = GLOBAL_OBJECT_REGISTRY.read().unwrap();
     let reg = reg.as_ref().unwrap();
     reg.object_converter.as_ref().unwrap().clone()
-}
-
-pub fn get_pyobject_converter() -> PyObjectConverter {
-    let reg = GLOBAL_OBJECT_REGISTRY.read().unwrap();
-    let reg = reg.as_ref().unwrap();
-    reg.pyobject_converter.as_ref().unwrap().clone()
 }
 
 pub fn get_object_array_getter() -> ObjectArrayGetter {

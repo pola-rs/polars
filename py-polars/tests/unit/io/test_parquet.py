@@ -1326,9 +1326,6 @@ def test_parquet_nested_struct_17933() -> None:
     test_round_trip(df)
 
 
-# This is fixed with POLARS_FORCE_MULTISCAN=1. Without it we have
-# first_metadata.unwrap() on None.
-@pytest.mark.may_fail_auto_streaming
 def test_parquet_pyarrow_map() -> None:
     xs = [
         [
@@ -3003,6 +3000,28 @@ def test_nested_deprecated_int96_timestamps_21332() -> None:
         pl.read_parquet(f),
         df,
     )
+
+
+def test_int96_timestamps_respect_scan_schema_time_unit_29184() -> None:
+    f = io.BytesIO()
+
+    values = [
+        datetime(9999, 12, 31, 23, 59, 59, 999999),
+        datetime(1000, 1, 1),
+        datetime(2024, 6, 1, 12),
+        None,
+    ]
+    df = pl.DataFrame({"a": values, "b": [{"t": v} for v in values]})
+
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        use_deprecated_int96_timestamps=True,
+        store_schema=False,
+    )
+
+    f.seek(0)
+    assert_frame_equal(pl.scan_parquet(f, schema=df.collect_schema()).collect(), df)
 
 
 def test_final_masked_optional_iteration_21378() -> None:

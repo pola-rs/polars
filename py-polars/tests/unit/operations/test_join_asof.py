@@ -1186,7 +1186,6 @@ def test_asof_join_nearest_by_date() -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_asof_join_string() -> None:
     # These set_sorted() calls are invalid, so the code is technically incorrect.
     # However, this code used to work in the past and we'd like to know when it
