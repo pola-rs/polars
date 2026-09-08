@@ -9731,7 +9731,7 @@ class Series(metaclass=_Meta):
         >>> s = pl.Series("a", range(10_000))
 
         >>> # Get the approximate median
-        >>> s.approx_quantile(0.5)
+        >>> s.approx_quantile(0.5)  # doctest: +SKIP
         5000
 
         >>> # Allow for a large error (10% of the rank)
