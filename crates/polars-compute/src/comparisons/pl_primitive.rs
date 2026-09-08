@@ -65,6 +65,28 @@ macro_rules! broadcast_kernel {
     }};
 }
 
+/// Defines the kernels that take two operands, each dispatching on both representations.
+macro_rules! binary_kernels {
+    ($($name:ident: $scalar:path, $flat:path, $flat_lhs:path, $flat_rhs:path;)*) => {
+        $(
+            fn $name(&self, other: &Self) -> PlBitmap {
+                binary_kernel!(self, other, $scalar, $flat, $flat_lhs, $flat_rhs)
+            }
+        )*
+    };
+}
+
+/// Defines the kernels that take one operand and a scalar, dispatching on its representation.
+macro_rules! broadcast_kernels {
+    ($($name:ident: $scalar:path, $flat:path;)*) => {
+        $(
+            fn $name(&self, other: &T) -> PlBitmap {
+                broadcast_kernel!(self, other, $scalar, $flat)
+            }
+        )*
+    };
+}
+
 impl<T> PlTotalEqKernel for PlPrimitiveArray<T>
 where
     T: NativeType + TotalEq,
@@ -77,45 +99,17 @@ where
         self.validity()
     }
 
-    fn tot_eq_kernel(&self, other: &Self) -> PlBitmap {
-        // Equality is symmetric, so which side repeats its value makes no difference.
-        binary_kernel!(
-            self,
-            other,
-            TotalEq::tot_eq,
-            TotalEqKernel::tot_eq_kernel,
-            TotalEqKernel::tot_eq_kernel_broadcast,
-            TotalEqKernel::tot_eq_kernel_broadcast,
-        )
+    // Equality is symmetric, so which side repeats its value makes no difference.
+    binary_kernels! {
+        tot_eq_kernel: TotalEq::tot_eq, TotalEqKernel::tot_eq_kernel,
+            TotalEqKernel::tot_eq_kernel_broadcast, TotalEqKernel::tot_eq_kernel_broadcast;
+        tot_ne_kernel: TotalEq::tot_ne, TotalEqKernel::tot_ne_kernel,
+            TotalEqKernel::tot_ne_kernel_broadcast, TotalEqKernel::tot_ne_kernel_broadcast;
     }
 
-    fn tot_ne_kernel(&self, other: &Self) -> PlBitmap {
-        binary_kernel!(
-            self,
-            other,
-            TotalEq::tot_ne,
-            TotalEqKernel::tot_ne_kernel,
-            TotalEqKernel::tot_ne_kernel_broadcast,
-            TotalEqKernel::tot_ne_kernel_broadcast,
-        )
-    }
-
-    fn tot_eq_kernel_broadcast(&self, other: &T) -> PlBitmap {
-        broadcast_kernel!(
-            self,
-            other,
-            TotalEq::tot_eq,
-            TotalEqKernel::tot_eq_kernel_broadcast,
-        )
-    }
-
-    fn tot_ne_kernel_broadcast(&self, other: &T) -> PlBitmap {
-        broadcast_kernel!(
-            self,
-            other,
-            TotalEq::tot_ne,
-            TotalEqKernel::tot_ne_kernel_broadcast,
-        )
+    broadcast_kernels! {
+        tot_eq_kernel_broadcast: TotalEq::tot_eq, TotalEqKernel::tot_eq_kernel_broadcast;
+        tot_ne_kernel_broadcast: TotalEq::tot_ne, TotalEqKernel::tot_ne_kernel_broadcast;
     }
 }
 
@@ -126,62 +120,18 @@ where
 {
     type Scalar = T;
 
-    fn tot_lt_kernel(&self, other: &Self) -> PlBitmap {
-        binary_kernel!(
-            self,
-            other,
-            TotalOrd::tot_lt,
-            TotalOrdKernel::tot_lt_kernel,
-            TotalOrdKernel::tot_lt_kernel_broadcast,
-            // A repeated left operand turns the comparison around: `l < r[i]` is `r[i] > l`.
-            TotalOrdKernel::tot_gt_kernel_broadcast,
-        )
+    // A repeated left operand turns the comparison around: `l < r[i]` is `r[i] > l`.
+    binary_kernels! {
+        tot_lt_kernel: TotalOrd::tot_lt, TotalOrdKernel::tot_lt_kernel,
+            TotalOrdKernel::tot_lt_kernel_broadcast, TotalOrdKernel::tot_gt_kernel_broadcast;
+        tot_le_kernel: TotalOrd::tot_le, TotalOrdKernel::tot_le_kernel,
+            TotalOrdKernel::tot_le_kernel_broadcast, TotalOrdKernel::tot_ge_kernel_broadcast;
     }
 
-    fn tot_le_kernel(&self, other: &Self) -> PlBitmap {
-        binary_kernel!(
-            self,
-            other,
-            TotalOrd::tot_le,
-            TotalOrdKernel::tot_le_kernel,
-            TotalOrdKernel::tot_le_kernel_broadcast,
-            TotalOrdKernel::tot_ge_kernel_broadcast,
-        )
-    }
-
-    fn tot_lt_kernel_broadcast(&self, other: &T) -> PlBitmap {
-        broadcast_kernel!(
-            self,
-            other,
-            TotalOrd::tot_lt,
-            TotalOrdKernel::tot_lt_kernel_broadcast,
-        )
-    }
-
-    fn tot_le_kernel_broadcast(&self, other: &T) -> PlBitmap {
-        broadcast_kernel!(
-            self,
-            other,
-            TotalOrd::tot_le,
-            TotalOrdKernel::tot_le_kernel_broadcast,
-        )
-    }
-
-    fn tot_gt_kernel_broadcast(&self, other: &T) -> PlBitmap {
-        broadcast_kernel!(
-            self,
-            other,
-            TotalOrd::tot_gt,
-            TotalOrdKernel::tot_gt_kernel_broadcast,
-        )
-    }
-
-    fn tot_ge_kernel_broadcast(&self, other: &T) -> PlBitmap {
-        broadcast_kernel!(
-            self,
-            other,
-            TotalOrd::tot_ge,
-            TotalOrdKernel::tot_ge_kernel_broadcast,
-        )
+    broadcast_kernels! {
+        tot_lt_kernel_broadcast: TotalOrd::tot_lt, TotalOrdKernel::tot_lt_kernel_broadcast;
+        tot_le_kernel_broadcast: TotalOrd::tot_le, TotalOrdKernel::tot_le_kernel_broadcast;
+        tot_gt_kernel_broadcast: TotalOrd::tot_gt, TotalOrdKernel::tot_gt_kernel_broadcast;
+        tot_ge_kernel_broadcast: TotalOrd::tot_ge, TotalOrdKernel::tot_ge_kernel_broadcast;
     }
 }

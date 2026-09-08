@@ -1,5 +1,3 @@
-use arrow::trusted_len::TrustedLen;
-
 use crate::binview::{PlBinaryViewIter, PlBinaryViewValuesIter};
 
 /// The string `bytes` are.
@@ -25,84 +23,12 @@ impl<'a> PlUtf8ViewValuesIter<'a> {
     }
 }
 
-impl<'a> Iterator for PlUtf8ViewValuesIter<'a> {
-    type Item = &'a str;
-
-    #[inline]
-    fn next(&mut self) -> Option<&'a str> {
-        // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-        self.0.next().map(|value| unsafe { as_str(value) })
-    }
-
-    #[inline]
-    fn nth(&mut self, n: usize) -> Option<&'a str> {
-        // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-        self.0.nth(n).map(|value| unsafe { as_str(value) })
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
-    }
-
-    #[inline]
-    fn count(self) -> usize {
-        self.0.count()
-    }
-
-    #[inline]
-    fn last(self) -> Option<&'a str> {
-        // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-        self.0.last().map(|value| unsafe { as_str(value) })
-    }
-
-    /// Folds the bytes under this iterator, which hoists their representation out of the loop.
-    #[inline]
-    fn fold<B, F>(self, init: B, mut f: F) -> B
-    where
-        F: FnMut(B, &'a str) -> B,
-    {
-        // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-        self.0
-            .fold(init, |acc, value| f(acc, unsafe { as_str(value) }))
-    }
-}
-
-impl<'a> DoubleEndedIterator for PlUtf8ViewValuesIter<'a> {
-    #[inline]
-    fn next_back(&mut self) -> Option<&'a str> {
-        // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-        self.0.next_back().map(|value| unsafe { as_str(value) })
-    }
-
-    #[inline]
-    fn nth_back(&mut self, n: usize) -> Option<&'a str> {
-        // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-        self.0.nth_back(n).map(|value| unsafe { as_str(value) })
-    }
-
-    /// Folds the bytes under this iterator, which hoists their representation out of the loop.
-    #[inline]
-    fn rfold<B, F>(self, init: B, mut f: F) -> B
-    where
-        F: FnMut(B, &'a str) -> B,
-    {
-        // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-        self.0
-            .rfold(init, |acc, value| f(acc, unsafe { as_str(value) }))
-    }
-}
-
-impl ExactSizeIterator for PlUtf8ViewValuesIter<'_> {
-    #[inline]
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-// SAFETY: the iterator it wraps is trusted, and mapping the bytes to the string they are does not
-// change how many there are.
-unsafe impl TrustedLen for PlUtf8ViewValuesIter<'_> {}
+crate::impl_mapped_iter!(
+    PlUtf8ViewValuesIter<'a>,
+    &'a str,
+    // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
+    |value| unsafe { as_str(value) },
+);
 
 /// Iterator over the elements of a [`super::PlUtf8ViewArray`], `None` for the null ones.
 #[derive(Clone)]
@@ -117,94 +43,12 @@ impl<'a> PlUtf8ViewIter<'a> {
     }
 }
 
-impl<'a> Iterator for PlUtf8ViewIter<'a> {
-    type Item = Option<&'a str>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Option<&'a str>> {
-        // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-        self.0
-            .next()
-            .map(|value| value.map(|value| unsafe { as_str(value) }))
-    }
-
-    #[inline]
-    fn nth(&mut self, n: usize) -> Option<Option<&'a str>> {
-        // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-        self.0
-            .nth(n)
-            .map(|value| value.map(|value| unsafe { as_str(value) }))
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
-    }
-
-    #[inline]
-    fn count(self) -> usize {
-        self.0.count()
-    }
-
-    /// Walks to the last element from the back, rather than through every one before it.
-    #[inline]
-    fn last(mut self) -> Option<Self::Item> {
-        self.next_back()
-    }
-
-    /// Folds the bytes under this iterator, which hoists their validity mask out of the loop.
-    #[inline]
-    fn fold<B, F>(self, init: B, mut f: F) -> B
-    where
-        F: FnMut(B, Option<&'a str>) -> B,
-    {
-        self.0.fold(init, |acc, value| {
-            // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-            f(acc, value.map(|value| unsafe { as_str(value) }))
-        })
-    }
-}
-
-impl<'a> DoubleEndedIterator for PlUtf8ViewIter<'a> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Option<&'a str>> {
-        // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-        self.0
-            .next_back()
-            .map(|value| value.map(|value| unsafe { as_str(value) }))
-    }
-
-    #[inline]
-    fn nth_back(&mut self, n: usize) -> Option<Option<&'a str>> {
-        // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-        self.0
-            .nth_back(n)
-            .map(|value| value.map(|value| unsafe { as_str(value) }))
-    }
-
-    /// Folds the bytes under this iterator, which hoists their validity mask out of the loop.
-    #[inline]
-    fn rfold<B, F>(self, init: B, mut f: F) -> B
-    where
-        F: FnMut(B, Option<&'a str>) -> B,
-    {
-        self.0.rfold(init, |acc, value| {
-            // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-            f(acc, value.map(|value| unsafe { as_str(value) }))
-        })
-    }
-}
-
-impl ExactSizeIterator for PlUtf8ViewIter<'_> {
-    #[inline]
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-// SAFETY: the iterator it wraps is trusted, and mapping the bytes to the string they are does not
-// change how many there are.
-unsafe impl TrustedLen for PlUtf8ViewIter<'_> {}
+crate::impl_mapped_iter!(
+    PlUtf8ViewIter<'a>,
+    Option<&'a str>,
+    // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
+    |value| value.map(|value| unsafe { as_str(value) }),
+);
 
 #[cfg(test)]
 mod tests {

@@ -16,10 +16,7 @@ pub fn rolling_var<T>(
 where
     T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
 {
-    // The window machines walk their values as a slice, and this is where the chunk becomes
-    // one: the representation is resolved once, out of the loop, and a buffer that already holds
-    // one slot per element is handed over as it stands. No element is null here, so the mask is
-    // not read at all, whatever representation it is in.
+    // The chunk becomes a slice here, once, out of the window loop; see the module docs.
     let values = values.to_flat_values();
     let values = values.as_slice();
 
@@ -68,10 +65,7 @@ pub fn rolling_skew<T>(
 where
     T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
 {
-    // The window machines walk their values as a slice, and this is where the chunk becomes
-    // one: the representation is resolved once, out of the loop, and a buffer that already holds
-    // one slot per element is handed over as it stands. No element is null here, so the mask is
-    // not read at all, whatever representation it is in.
+    // The chunk becomes a slice here, once, out of the window loop; see the module docs.
     let values = values.to_flat_values();
     let values = values.as_slice();
 
@@ -98,10 +92,7 @@ pub fn rolling_kurtosis<T>(
 where
     T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
 {
-    // The window machines walk their values as a slice, and this is where the chunk becomes
-    // one: the representation is resolved once, out of the loop, and a buffer that already holds
-    // one slot per element is handed over as it stands. No element is null here, so the mask is
-    // not read at all, whatever representation it is in.
+    // The chunk becomes a slice here, once, out of the window loop; see the module docs.
     let values = values.to_flat_values();
     let values = values.as_slice();
 

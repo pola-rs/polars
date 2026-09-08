@@ -125,15 +125,7 @@ impl Flat<PlBinaryViewArray> {
     }
 }
 
-impl<'a> IntoIterator for &'a Flat<PlBinaryViewArray> {
-    type Item = Option<&'a [u8]>;
-    type IntoIter = PlBinaryViewIter<'a>;
-
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter {
-        self.as_array().iter()
-    }
-}
+crate::impl_into_iterator!(Flat<PlBinaryViewArray>, PlBinaryViewIter<'a>);
 
 /// Compares an array of unknown representation against a flat one.
 impl PartialEq<Flat<PlBinaryViewArray>> for PlBinaryViewArray {

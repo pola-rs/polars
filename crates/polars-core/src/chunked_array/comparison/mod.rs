@@ -17,6 +17,47 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::series::implementations::null::NullChunked;
 
+/// The body of a comparison between two chunked arrays, taking the shortcut a side that repeats a
+/// single value allows.
+///
+/// A side repeats a single value when it is a column of one element, or one whose only chunk is
+/// scalar; it is then compared against that value rather than written out. `broadcast` gives that
+/// comparison for either side — turned around on the right, where the comparison is not symmetric
+/// — `null` names how a repeated null is answered, and `flat` compares element by element.
+///
+/// `bounded` names, for either side, a repeated value the comparison alone settles: the bounds of
+/// an order that has them.
+macro_rules! broadcast_cmp {
+    (@null full_null, $ca:ident) => {
+        BooleanChunked::full_null(PlSmallStr::EMPTY, $ca.len())
+    };
+    (@null is_null, $ca:ident) => { $ca.is_null() };
+    (@null is_not_null, $ca:ident) => { $ca.is_not_null() };
+    (
+        $lhs:ident, $rhs:ident,
+        $(bounded: [$l_bound:pat => $l_settled:expr, $r_bound:pat => $r_settled:expr $(,)?],)?
+        broadcast: |$value:ident| [$l_against:expr, $r_against:expr $(,)?],
+        null: $null:ident,
+        flat: $flat:expr $(,)?
+    ) => {{
+        let length = arity::broadcast_height($lhs.len(), $rhs.len())
+            .expect("cannot compare arrays of different lengths");
+        match ($lhs.scalar_value(), $rhs.scalar_value()) {
+            $((_, Some($l_bound)) if $lhs.len() == length => $l_settled,)?
+            (_, Some(value)) if $lhs.len() == length => match value {
+                Some($value) => $l_against,
+                None => broadcast_cmp!(@null $null, $lhs),
+            },
+            $((Some($r_bound), _) => $r_settled,)?
+            (Some(value), _) => match value {
+                Some($value) => $r_against,
+                None => broadcast_cmp!(@null $null, $rhs),
+            },
+            _ => $flat,
+        }
+    }};
+}
+
 impl<T> ChunkCompareEq<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -25,119 +66,59 @@ where
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        // Broadcast: a side that repeats a single value — a column of one element, or one
-        // whose only chunk is scalar — is compared against that value, not written out.
-        let length = arity::broadcast_height(self.len(), rhs.len())
-            .expect("cannot compare arrays of different lengths");
-        match (self.scalar_value(), rhs.scalar_value()) {
-            (_, Some(value)) if self.len() == length => {
-                if let Some(value) = value {
-                    self.equal(value)
-                } else {
-                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
-                }
-            },
-            (Some(value), _) => {
-                if let Some(value) = value {
-                    rhs.equal(value)
-                } else {
-                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
-                }
-            },
-            _ => arity::binary_elementwise_mut_values_flat(
+        broadcast_cmp!(
+            self, rhs,
+            broadcast: |value| [self.equal(value), rhs.equal(value)],
+            null: full_null,
+            flat: arity::binary_elementwise_mut_values_flat(
                 self,
                 rhs,
                 |a, b| a.tot_eq_kernel(b).into(),
                 PlSmallStr::EMPTY,
             ),
-        }
+        )
     }
 
     fn equal_missing(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        // Broadcast: a side that repeats a single value — a column of one element, or one
-        // whose only chunk is scalar — is compared against that value, not written out.
-        let length = arity::broadcast_height(self.len(), rhs.len())
-            .expect("cannot compare arrays of different lengths");
-        match (self.scalar_value(), rhs.scalar_value()) {
-            (_, Some(value)) if self.len() == length => {
-                if let Some(value) = value {
-                    self.equal_missing(value)
-                } else {
-                    self.is_null()
-                }
-            },
-            (Some(value), _) => {
-                if let Some(value) = value {
-                    rhs.equal_missing(value)
-                } else {
-                    rhs.is_null()
-                }
-            },
-            _ => arity::binary_elementwise_kernel_flat(
+        broadcast_cmp!(
+            self, rhs,
+            broadcast: |value| [self.equal_missing(value), rhs.equal_missing(value)],
+            null: is_null,
+            flat: arity::binary_elementwise_kernel_flat(
                 self,
                 rhs,
                 |a, b| a.tot_eq_missing_kernel(b).into(),
                 PlSmallStr::EMPTY,
             ),
-        }
+        )
     }
 
     fn not_equal(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        // Broadcast: a side that repeats a single value — a column of one element, or one
-        // whose only chunk is scalar — is compared against that value, not written out.
-        let length = arity::broadcast_height(self.len(), rhs.len())
-            .expect("cannot compare arrays of different lengths");
-        match (self.scalar_value(), rhs.scalar_value()) {
-            (_, Some(value)) if self.len() == length => {
-                if let Some(value) = value {
-                    self.not_equal(value)
-                } else {
-                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
-                }
-            },
-            (Some(value), _) => {
-                if let Some(value) = value {
-                    rhs.not_equal(value)
-                } else {
-                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
-                }
-            },
-            _ => arity::binary_elementwise_mut_values_flat(
+        broadcast_cmp!(
+            self, rhs,
+            broadcast: |value| [self.not_equal(value), rhs.not_equal(value)],
+            null: full_null,
+            flat: arity::binary_elementwise_mut_values_flat(
                 self,
                 rhs,
                 |a, b| a.tot_ne_kernel(b).into(),
                 PlSmallStr::EMPTY,
             ),
-        }
+        )
     }
 
     fn not_equal_missing(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        // Broadcast: a side that repeats a single value — a column of one element, or one
-        // whose only chunk is scalar — is compared against that value, not written out.
-        let length = arity::broadcast_height(self.len(), rhs.len())
-            .expect("cannot compare arrays of different lengths");
-        match (self.scalar_value(), rhs.scalar_value()) {
-            (_, Some(value)) if self.len() == length => {
-                if let Some(value) = value {
-                    self.not_equal_missing(value)
-                } else {
-                    self.is_not_null()
-                }
-            },
-            (Some(value), _) => {
-                if let Some(value) = value {
-                    rhs.not_equal_missing(value)
-                } else {
-                    rhs.is_not_null()
-                }
-            },
-            _ => arity::binary_elementwise_kernel_flat(
+        broadcast_cmp!(
+            self, rhs,
+            broadcast: |value| [self.not_equal_missing(value), rhs.not_equal_missing(value)],
+            null: is_not_null,
+            flat: arity::binary_elementwise_kernel_flat(
                 self,
                 rhs,
                 |a, b| a.tot_ne_missing_kernel(b).into(),
                 PlSmallStr::EMPTY,
             ),
-        }
+        )
     }
 }
 
@@ -149,61 +130,31 @@ where
     type Item = BooleanChunked;
 
     fn lt(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        // Broadcast: a side that repeats a single value — a column of one element, or one
-        // whose only chunk is scalar — is compared against that value, not written out.
-        let length = arity::broadcast_height(self.len(), rhs.len())
-            .expect("cannot compare arrays of different lengths");
-        match (self.scalar_value(), rhs.scalar_value()) {
-            (_, Some(value)) if self.len() == length => {
-                if let Some(value) = value {
-                    self.lt(value)
-                } else {
-                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
-                }
-            },
-            (Some(value), _) => {
-                if let Some(value) = value {
-                    rhs.gt(value)
-                } else {
-                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
-                }
-            },
-            _ => arity::binary_elementwise_mut_values_flat(
+        broadcast_cmp!(
+            self, rhs,
+            broadcast: |value| [self.lt(value), rhs.gt(value)],
+            null: full_null,
+            flat: arity::binary_elementwise_mut_values_flat(
                 self,
                 rhs,
                 |a, b| a.tot_lt_kernel(b).into(),
                 PlSmallStr::EMPTY,
             ),
-        }
+        )
     }
 
     fn lt_eq(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        // Broadcast: a side that repeats a single value — a column of one element, or one
-        // whose only chunk is scalar — is compared against that value, not written out.
-        let length = arity::broadcast_height(self.len(), rhs.len())
-            .expect("cannot compare arrays of different lengths");
-        match (self.scalar_value(), rhs.scalar_value()) {
-            (_, Some(value)) if self.len() == length => {
-                if let Some(value) = value {
-                    self.lt_eq(value)
-                } else {
-                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
-                }
-            },
-            (Some(value), _) => {
-                if let Some(value) = value {
-                    rhs.gt_eq(value)
-                } else {
-                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
-                }
-            },
-            _ => arity::binary_elementwise_mut_values_flat(
+        broadcast_cmp!(
+            self, rhs,
+            broadcast: |value| [self.lt_eq(value), rhs.gt_eq(value)],
+            null: full_null,
+            flat: arity::binary_elementwise_mut_values_flat(
                 self,
                 rhs,
                 |a, b| a.tot_le_kernel(b).into(),
                 PlSmallStr::EMPTY,
             ),
-        }
+        )
     }
 
     fn gt(&self, rhs: &Self) -> BooleanChunked {
@@ -265,140 +216,20 @@ fn get_broadcast_length(lhs: &NullChunked, rhs: &NullChunked) -> usize {
     }
 }
 
-impl ChunkCompareEq<&BooleanChunked> for BooleanChunked {
-    type Item = BooleanChunked;
+/// The bits `op` leaves for every chunk of `ca`, under the validity mask `ca` came with.
+fn broadcast_values<F>(ca: &BooleanChunked, op: F) -> BooleanChunked
+where
+    F: Fn(&PlBooleanArray) -> PlBitmap,
+{
+    arity::unary_mut_values(ca, |arr| PlBooleanArray::from_pl_bitmap(op(arr)))
+}
 
-    fn equal(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        // Broadcast: a side that repeats a single value — a column of one element, or one
-        // whose only chunk is scalar — is compared against that value, not written out.
-        let length = arity::broadcast_height(self.len(), rhs.len())
-            .expect("cannot compare arrays of different lengths");
-        match (self.scalar_value(), rhs.scalar_value()) {
-            (_, Some(value)) if self.len() == length => {
-                if let Some(value) = value {
-                    arity::unary_mut_values(self, |arr| {
-                        PlBooleanArray::from_pl_bitmap(arr.tot_eq_kernel_broadcast(&value))
-                    })
-                } else {
-                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
-                }
-            },
-            (Some(value), _) => {
-                if let Some(value) = value {
-                    arity::unary_mut_values(rhs, |arr| {
-                        PlBooleanArray::from_pl_bitmap(arr.tot_eq_kernel_broadcast(&value))
-                    })
-                } else {
-                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
-                }
-            },
-            _ => arity::binary_mut_values(
-                self,
-                rhs,
-                |a, b| PlBooleanArray::from_pl_bitmap(a.tot_eq_kernel(b)),
-                PlSmallStr::EMPTY,
-            ),
-        }
-    }
-
-    fn equal_missing(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        // Broadcast: a side that repeats a single value — a column of one element, or one
-        // whose only chunk is scalar — is compared against that value, not written out.
-        let length = arity::broadcast_height(self.len(), rhs.len())
-            .expect("cannot compare arrays of different lengths");
-        match (self.scalar_value(), rhs.scalar_value()) {
-            (_, Some(value)) if self.len() == length => {
-                if let Some(value) = value {
-                    arity::unary_mut_with_options(self, |arr| {
-                        PlBooleanArray::from_pl_bitmap(arr.tot_eq_missing_kernel_broadcast(&value))
-                    })
-                } else {
-                    self.is_null()
-                }
-            },
-            (Some(value), _) => {
-                if let Some(value) = value {
-                    arity::unary_mut_with_options(rhs, |arr| {
-                        PlBooleanArray::from_pl_bitmap(arr.tot_eq_missing_kernel_broadcast(&value))
-                    })
-                } else {
-                    rhs.is_null()
-                }
-            },
-            _ => arity::binary_elementwise_kernel(
-                self,
-                rhs,
-                |a, b| PlBooleanArray::from_pl_bitmap(a.tot_eq_missing_kernel(b)),
-                PlSmallStr::EMPTY,
-            ),
-        }
-    }
-
-    fn not_equal(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        // Broadcast: a side that repeats a single value — a column of one element, or one
-        // whose only chunk is scalar — is compared against that value, not written out.
-        let length = arity::broadcast_height(self.len(), rhs.len())
-            .expect("cannot compare arrays of different lengths");
-        match (self.scalar_value(), rhs.scalar_value()) {
-            (_, Some(value)) if self.len() == length => {
-                if let Some(value) = value {
-                    arity::unary_mut_values(self, |arr| {
-                        PlBooleanArray::from_pl_bitmap(arr.tot_ne_kernel_broadcast(&value))
-                    })
-                } else {
-                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
-                }
-            },
-            (Some(value), _) => {
-                if let Some(value) = value {
-                    arity::unary_mut_values(rhs, |arr| {
-                        PlBooleanArray::from_pl_bitmap(arr.tot_ne_kernel_broadcast(&value))
-                    })
-                } else {
-                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
-                }
-            },
-            _ => arity::binary_mut_values(
-                self,
-                rhs,
-                |a, b| PlBooleanArray::from_pl_bitmap(a.tot_ne_kernel(b)),
-                PlSmallStr::EMPTY,
-            ),
-        }
-    }
-
-    fn not_equal_missing(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        // Broadcast: a side that repeats a single value — a column of one element, or one
-        // whose only chunk is scalar — is compared against that value, not written out.
-        let length = arity::broadcast_height(self.len(), rhs.len())
-            .expect("cannot compare arrays of different lengths");
-        match (self.scalar_value(), rhs.scalar_value()) {
-            (_, Some(value)) if self.len() == length => {
-                if let Some(value) = value {
-                    arity::unary_mut_with_options(self, |arr| {
-                        PlBooleanArray::from_pl_bitmap(arr.tot_ne_missing_kernel_broadcast(&value))
-                    })
-                } else {
-                    self.is_not_null()
-                }
-            },
-            (Some(value), _) => {
-                if let Some(value) = value {
-                    arity::unary_mut_with_options(rhs, |arr| {
-                        PlBooleanArray::from_pl_bitmap(arr.tot_ne_missing_kernel_broadcast(&value))
-                    })
-                } else {
-                    rhs.is_not_null()
-                }
-            },
-            _ => arity::binary_elementwise_kernel(
-                self,
-                rhs,
-                |a, b| PlBooleanArray::from_pl_bitmap(a.tot_ne_missing_kernel(b)),
-                PlSmallStr::EMPTY,
-            ),
-        }
-    }
+/// As [`broadcast_values`], for a kernel that answers over the nulls too and so leaves no mask.
+fn broadcast_missing<F>(ca: &BooleanChunked, op: F) -> BooleanChunked
+where
+    F: Fn(&PlBooleanArray) -> PlBitmap,
+{
+    arity::unary_mut_with_options(ca, |arr| PlBooleanArray::from_pl_bitmap(op(arr)))
 }
 
 /// A boolean chunked array answering `value` for every element of `ca`, under its validity.
@@ -410,81 +241,125 @@ fn repeated_answer<T: PolarsDataType>(ca: &ChunkedArray<T>, value: bool) -> Bool
     BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, chunks)
 }
 
+impl ChunkCompareEq<&BooleanChunked> for BooleanChunked {
+    type Item = BooleanChunked;
+
+    fn equal(&self, rhs: &BooleanChunked) -> BooleanChunked {
+        broadcast_cmp!(
+            self, rhs,
+            broadcast: |value| [
+                broadcast_values(self, |arr| arr.tot_eq_kernel_broadcast(&value)),
+                broadcast_values(rhs, |arr| arr.tot_eq_kernel_broadcast(&value)),
+            ],
+            null: full_null,
+            flat: arity::binary_mut_values(
+                self,
+                rhs,
+                |a, b| PlBooleanArray::from_pl_bitmap(a.tot_eq_kernel(b)),
+                PlSmallStr::EMPTY,
+            ),
+        )
+    }
+
+    fn equal_missing(&self, rhs: &BooleanChunked) -> BooleanChunked {
+        broadcast_cmp!(
+            self, rhs,
+            broadcast: |value| [
+                broadcast_missing(self, |arr| arr.tot_eq_missing_kernel_broadcast(&value)),
+                broadcast_missing(rhs, |arr| arr.tot_eq_missing_kernel_broadcast(&value)),
+            ],
+            null: is_null,
+            flat: arity::binary_elementwise_kernel(
+                self,
+                rhs,
+                |a, b| PlBooleanArray::from_pl_bitmap(a.tot_eq_missing_kernel(b)),
+                PlSmallStr::EMPTY,
+            ),
+        )
+    }
+
+    fn not_equal(&self, rhs: &BooleanChunked) -> BooleanChunked {
+        broadcast_cmp!(
+            self, rhs,
+            broadcast: |value| [
+                broadcast_values(self, |arr| arr.tot_ne_kernel_broadcast(&value)),
+                broadcast_values(rhs, |arr| arr.tot_ne_kernel_broadcast(&value)),
+            ],
+            null: full_null,
+            flat: arity::binary_mut_values(
+                self,
+                rhs,
+                |a, b| PlBooleanArray::from_pl_bitmap(a.tot_ne_kernel(b)),
+                PlSmallStr::EMPTY,
+            ),
+        )
+    }
+
+    fn not_equal_missing(&self, rhs: &BooleanChunked) -> BooleanChunked {
+        broadcast_cmp!(
+            self, rhs,
+            broadcast: |value| [
+                broadcast_missing(self, |arr| arr.tot_ne_missing_kernel_broadcast(&value)),
+                broadcast_missing(rhs, |arr| arr.tot_ne_missing_kernel_broadcast(&value)),
+            ],
+            null: is_not_null,
+            flat: arity::binary_elementwise_kernel(
+                self,
+                rhs,
+                |a, b| PlBooleanArray::from_pl_bitmap(a.tot_ne_missing_kernel(b)),
+                PlSmallStr::EMPTY,
+            ),
+        )
+    }
+}
+
 impl ChunkCompareIneq<&BooleanChunked> for BooleanChunked {
     type Item = BooleanChunked;
 
     fn lt(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        // Broadcast: a side that repeats a single value — a column of one element, or one
-        // whose only chunk is scalar — is compared against that value, not written out.
-        let length = arity::broadcast_height(self.len(), rhs.len())
-            .expect("cannot compare arrays of different lengths");
-        match (self.scalar_value(), rhs.scalar_value()) {
+        broadcast_cmp!(
+            self, rhs,
             // No boolean is smaller than `false`, and none is greater than `true`: the value
             // alone settles the comparison, and the answer is the one bit that says so.
-            (_, Some(Some(false))) if self.len() == length => repeated_answer(self, false),
-            (_, Some(value)) if self.len() == length => {
-                if let Some(value) = value {
-                    arity::unary_mut_values(self, |arr| {
-                        PlBooleanArray::from_pl_bitmap(arr.tot_lt_kernel_broadcast(&value))
-                    })
-                } else {
-                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
-                }
-            },
-            (Some(Some(true)), _) => repeated_answer(rhs, false),
-            (Some(value), _) => {
-                if let Some(value) = value {
-                    arity::unary_mut_values(rhs, |arr| {
-                        PlBooleanArray::from_pl_bitmap(arr.tot_gt_kernel_broadcast(&value))
-                    })
-                } else {
-                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
-                }
-            },
-            _ => arity::binary_mut_values(
+            bounded: [
+                Some(false) => repeated_answer(self, false),
+                Some(true) => repeated_answer(rhs, false),
+            ],
+            broadcast: |value| [
+                broadcast_values(self, |arr| arr.tot_lt_kernel_broadcast(&value)),
+                broadcast_values(rhs, |arr| arr.tot_gt_kernel_broadcast(&value)),
+            ],
+            null: full_null,
+            flat: arity::binary_mut_values(
                 self,
                 rhs,
                 |a, b| PlBooleanArray::from_pl_bitmap(a.tot_lt_kernel(b)),
                 PlSmallStr::EMPTY,
             ),
-        }
+        )
     }
 
     fn lt_eq(&self, rhs: &BooleanChunked) -> BooleanChunked {
-        // Broadcast: a side that repeats a single value — a column of one element, or one
-        // whose only chunk is scalar — is compared against that value, not written out.
-        let length = arity::broadcast_height(self.len(), rhs.len())
-            .expect("cannot compare arrays of different lengths");
-        match (self.scalar_value(), rhs.scalar_value()) {
+        broadcast_cmp!(
+            self, rhs,
             // Every boolean is at most `true` and at least `false`: the value alone settles the
             // comparison, and the answer is the one bit that says so.
-            (_, Some(Some(true))) if self.len() == length => repeated_answer(self, true),
-            (_, Some(value)) if self.len() == length => {
-                if let Some(value) = value {
-                    arity::unary_mut_values(self, |arr| {
-                        PlBooleanArray::from_pl_bitmap(arr.tot_le_kernel_broadcast(&value))
-                    })
-                } else {
-                    BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
-                }
-            },
-            (Some(Some(false)), _) => repeated_answer(rhs, true),
-            (Some(value), _) => {
-                if let Some(value) = value {
-                    arity::unary_mut_values(rhs, |arr| {
-                        PlBooleanArray::from_pl_bitmap(arr.tot_ge_kernel_broadcast(&value))
-                    })
-                } else {
-                    BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
-                }
-            },
-            _ => arity::binary_mut_values(
+            bounded: [
+                Some(true) => repeated_answer(self, true),
+                Some(false) => repeated_answer(rhs, true),
+            ],
+            broadcast: |value| [
+                broadcast_values(self, |arr| arr.tot_le_kernel_broadcast(&value)),
+                broadcast_values(rhs, |arr| arr.tot_ge_kernel_broadcast(&value)),
+            ],
+            null: full_null,
+            flat: arity::binary_mut_values(
                 self,
                 rhs,
                 |a, b| PlBooleanArray::from_pl_bitmap(a.tot_le_kernel(b)),
                 PlSmallStr::EMPTY,
             ),
-        }
+        )
     }
 
     fn gt(&self, rhs: &Self) -> BooleanChunked {
@@ -543,119 +418,62 @@ macro_rules! binary_eq_ineq_impl {
             type Item = BooleanChunked;
 
             fn equal(&self, rhs: &$ca) -> BooleanChunked {
-                // Broadcast: a side that repeats a single value — a column of one element, or one
-                // whose only chunk is scalar — is compared against that value, not written out.
-                let length = arity::broadcast_height(self.len(), rhs.len())
-                    .expect("cannot compare arrays of different lengths");
-                match (self.scalar_value(), rhs.scalar_value()) {
-                    (_, Some(value)) if self.len() == length => {
-                        if let Some(value) = value {
-                            self.equal(value)
-                        } else {
-                            BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
-                        }
-                    },
-                    (Some(value), _) => {
-                        if let Some(value) = value {
-                            rhs.equal(value)
-                        } else {
-                            BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
-                        }
-                    },
-                    _ => arity::binary_elementwise_mut_values_flat(
+                broadcast_cmp!(
+                    self, rhs,
+                    broadcast: |value| [self.equal(value), rhs.equal(value)],
+                    null: full_null,
+                    flat: arity::binary_elementwise_mut_values_flat(
                         self,
                         rhs,
                         |a, b| a.tot_eq_kernel(b).into(),
                         PlSmallStr::EMPTY,
                     ),
-                }
+                )
             }
 
             fn equal_missing(&self, rhs: &$ca) -> BooleanChunked {
-                // Broadcast: a side that repeats a single value — a column of one element, or one
-                // whose only chunk is scalar — is compared against that value, not written out.
-                let length = arity::broadcast_height(self.len(), rhs.len())
-                    .expect("cannot compare arrays of different lengths");
-                match (self.scalar_value(), rhs.scalar_value()) {
-                    (_, Some(value)) if self.len() == length => {
-                        if let Some(value) = value {
-                            self.equal_missing(value)
-                        } else {
-                            self.is_null()
-                        }
-                    },
-                    (Some(value), _) => {
-                        if let Some(value) = value {
-                            rhs.equal_missing(value)
-                        } else {
-                            rhs.is_null()
-                        }
-                    },
-                    _ => arity::binary_elementwise_kernel_flat(
+                broadcast_cmp!(
+                    self, rhs,
+                    broadcast: |value| [self.equal_missing(value), rhs.equal_missing(value)],
+                    null: is_null,
+                    flat: arity::binary_elementwise_kernel_flat(
                         self,
                         rhs,
                         |a, b| a.tot_eq_missing_kernel(b).into(),
                         PlSmallStr::EMPTY,
                     ),
-                }
+                )
             }
 
             fn not_equal(&self, rhs: &$ca) -> BooleanChunked {
-                // Broadcast: a side that repeats a single value — a column of one element, or one
-                // whose only chunk is scalar — is compared against that value, not written out.
-                let length = arity::broadcast_height(self.len(), rhs.len())
-                    .expect("cannot compare arrays of different lengths");
-                match (self.scalar_value(), rhs.scalar_value()) {
-                    (_, Some(value)) if self.len() == length => {
-                        if let Some(value) = value {
-                            self.not_equal(value)
-                        } else {
-                            BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
-                        }
-                    },
-                    (Some(value), _) => {
-                        if let Some(value) = value {
-                            rhs.not_equal(value)
-                        } else {
-                            BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
-                        }
-                    },
-                    _ => arity::binary_elementwise_mut_values_flat(
+                broadcast_cmp!(
+                    self, rhs,
+                    broadcast: |value| [self.not_equal(value), rhs.not_equal(value)],
+                    null: full_null,
+                    flat: arity::binary_elementwise_mut_values_flat(
                         self,
                         rhs,
                         |a, b| a.tot_ne_kernel(b).into(),
                         PlSmallStr::EMPTY,
                     ),
-                }
+                )
             }
 
             fn not_equal_missing(&self, rhs: &$ca) -> BooleanChunked {
-                // Broadcast: a side that repeats a single value — a column of one element, or one
-                // whose only chunk is scalar — is compared against that value, not written out.
-                let length = arity::broadcast_height(self.len(), rhs.len())
-                    .expect("cannot compare arrays of different lengths");
-                match (self.scalar_value(), rhs.scalar_value()) {
-                    (_, Some(value)) if self.len() == length => {
-                        if let Some(value) = value {
-                            self.not_equal_missing(value)
-                        } else {
-                            self.is_not_null()
-                        }
-                    },
-                    (Some(value), _) => {
-                        if let Some(value) = value {
-                            rhs.not_equal_missing(value)
-                        } else {
-                            rhs.is_not_null()
-                        }
-                    },
-                    _ => arity::binary_elementwise_kernel_flat(
+                broadcast_cmp!(
+                    self, rhs,
+                    broadcast: |value| [
+                        self.not_equal_missing(value),
+                        rhs.not_equal_missing(value),
+                    ],
+                    null: is_not_null,
+                    flat: arity::binary_elementwise_kernel_flat(
                         self,
                         rhs,
                         |a, b| a.tot_ne_missing_kernel(b).into(),
                         PlSmallStr::EMPTY,
                     ),
-                }
+                )
             }
         }
 
@@ -663,61 +481,31 @@ macro_rules! binary_eq_ineq_impl {
             type Item = BooleanChunked;
 
             fn lt(&self, rhs: &$ca) -> BooleanChunked {
-                // Broadcast: a side that repeats a single value — a column of one element, or one
-                // whose only chunk is scalar — is compared against that value, not written out.
-                let length = arity::broadcast_height(self.len(), rhs.len())
-                    .expect("cannot compare arrays of different lengths");
-                match (self.scalar_value(), rhs.scalar_value()) {
-                    (_, Some(value)) if self.len() == length => {
-                        if let Some(value) = value {
-                            self.lt(value)
-                        } else {
-                            BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
-                        }
-                    },
-                    (Some(value), _) => {
-                        if let Some(value) = value {
-                            rhs.gt(value)
-                        } else {
-                            BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
-                        }
-                    },
-                    _ => arity::binary_elementwise_mut_values_flat(
+                broadcast_cmp!(
+                    self, rhs,
+                    broadcast: |value| [self.lt(value), rhs.gt(value)],
+                    null: full_null,
+                    flat: arity::binary_elementwise_mut_values_flat(
                         self,
                         rhs,
                         |a, b| a.tot_lt_kernel(b).into(),
                         PlSmallStr::EMPTY,
                     ),
-                }
+                )
             }
 
             fn lt_eq(&self, rhs: &$ca) -> BooleanChunked {
-                // Broadcast: a side that repeats a single value — a column of one element, or one
-                // whose only chunk is scalar — is compared against that value, not written out.
-                let length = arity::broadcast_height(self.len(), rhs.len())
-                    .expect("cannot compare arrays of different lengths");
-                match (self.scalar_value(), rhs.scalar_value()) {
-                    (_, Some(value)) if self.len() == length => {
-                        if let Some(value) = value {
-                            self.lt_eq(value)
-                        } else {
-                            BooleanChunked::full_null(PlSmallStr::EMPTY, self.len())
-                        }
-                    },
-                    (Some(value), _) => {
-                        if let Some(value) = value {
-                            rhs.gt_eq(value)
-                        } else {
-                            BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
-                        }
-                    },
-                    _ => arity::binary_elementwise_mut_values_flat(
+                broadcast_cmp!(
+                    self, rhs,
+                    broadcast: |value| [self.lt_eq(value), rhs.gt_eq(value)],
+                    null: full_null,
+                    flat: arity::binary_elementwise_mut_values_flat(
                         self,
                         rhs,
                         |a, b| a.tot_le_kernel(b).into(),
                         PlSmallStr::EMPTY,
                     ),
-                }
+                )
             }
 
             fn gt(&self, rhs: &Self) -> BooleanChunked {

@@ -7,13 +7,12 @@ use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::vec::PushUnchecked;
 
-use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmap, PlBitmapRef};
 use crate::broadcast::{
     assert_broadcastable, broadcast_index, is_flat_buffer_len, is_scalar_buffer_len,
     normalize_buffer, scalar_buffer_len, slice_buffer, slice_validity, try_validity_covering,
-    validity_covering, validity_covering_unchecked,
+    validity_covering_unchecked,
 };
 use crate::builder::subslice_extend_validity;
 use crate::flat::Flat;
@@ -356,68 +355,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         }
     }
 
-    /// Returns whether the element at `i` is valid (non-null).
-    #[inline]
-    pub fn is_valid(&self, i: usize) -> bool {
-        assert!(i < self.length, "index out of bounds");
-        unsafe { self.is_valid_unchecked(i) }
-    }
-
-    /// Returns whether the element at `i` is valid (non-null).
-    ///
-    /// # Safety
-    /// `i` must be smaller than `self.len()`.
-    #[inline]
-    pub unsafe fn is_valid_unchecked(&self, i: usize) -> bool {
-        debug_assert!(i < self.length);
-        // SAFETY: `i` is in bounds of the array, and therefore of its validity mask.
-        self.validity()
-            .is_none_or(|validity| unsafe { validity.get_unchecked(i) })
-    }
-
-    /// Returns whether the element at `i` is null.
-    #[inline]
-    pub fn is_null(&self, i: usize) -> bool {
-        !self.is_valid(i)
-    }
-
-    /// Returns whether the element at `i` is null.
-    ///
-    /// # Safety
-    /// `i` must be smaller than `self.len()`.
-    #[inline]
-    pub unsafe fn is_null_unchecked(&self, i: usize) -> bool {
-        unsafe { !self.is_valid_unchecked(i) }
-    }
-
-    /// Returns the element at `i`, or `None` if it is null.
-    #[inline]
-    pub fn get(&self, i: usize) -> Option<T> {
-        assert!(i < self.length, "index out of bounds");
-        unsafe { self.get_unchecked(i) }
-    }
-
-    /// Returns the element at `i`, or `None` if it is null.
-    ///
-    /// # Safety
-    /// `i` must be smaller than `self.len()`.
-    #[inline]
-    pub unsafe fn get_unchecked(&self, i: usize) -> Option<T> {
-        unsafe { self.is_valid_unchecked(i).then(|| self.value_unchecked(i)) }
-    }
-
-    /// The number of null elements.
-    #[inline]
-    pub fn null_count(&self) -> usize {
-        self.validity().map_or(0, |validity| validity.unset_bits())
-    }
-
-    /// Whether this array has at least one null element.
-    #[inline]
-    pub fn has_nulls(&self) -> bool {
-        self.null_count() > 0
-    }
-
     /// Returns an iterator over the values, ignoring validity.
     #[inline]
     pub fn values_iter(&self) -> PlPrimitiveValuesIter<'_, T> {
@@ -439,35 +376,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         PlPrimitiveValuesIter::new(&self.values, length)
     }
 
-    /// Returns this array with its validity mask replaced.
-    #[must_use]
-    pub fn with_validity(mut self, validity: Option<PlBitmap>) -> Self {
-        self.set_validity(validity);
-        self
-    }
-
-    /// Replaces the validity mask, which keeps the representation it is in.
-    pub fn set_validity(&mut self, validity: Option<PlBitmap>) {
-        let length = self.len();
-        self.validity = validity_covering(validity, length);
-    }
-
-    /// Drops the validity mask, making every element valid.
-    #[must_use]
-    pub fn without_validity(mut self) -> Self {
-        self.validity = None;
-        self
-    }
-
-    /// Slices this array in place to `length` elements starting at `offset`.
-    pub fn slice(&mut self, offset: usize, length: usize) {
-        assert!(
-            offset + length <= self.length,
-            "the offset of the new slice must be smaller than the length of the array",
-        );
-        unsafe { self.slice_unchecked(offset, length) }
-    }
-
     /// Slices this array in place to `length` elements starting at `offset`.
     ///
     /// # Safety
@@ -481,32 +389,6 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         }
 
         self.length = length;
-    }
-
-    /// Returns this array sliced to `length` elements starting at `offset`.
-    #[must_use]
-    pub fn sliced(&self, offset: usize, length: usize) -> Self {
-        let mut sliced = self.clone();
-        sliced.slice(offset, length);
-        sliced
-    }
-
-    /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// # Safety
-    /// `offset + length` must not exceed `self.len()`.
-    #[must_use]
-    pub unsafe fn sliced_unchecked(&self, offset: usize, length: usize) -> Self {
-        let mut sliced = self.clone();
-        unsafe { sliced.slice_unchecked(offset, length) };
-        sliced
-    }
-
-    /// Creates a [`PlPrimitiveArray`] of `length` copies of the element at `index`.
-    #[inline]
-    pub fn new_from_index(&self, index: usize, length: usize) -> Self {
-        assert!(index < self.length, "index out of bounds");
-        unsafe { self.new_from_index_unchecked(index, length) }
     }
 
     /// Creates a [`PlPrimitiveArray`] of `length` copies of the element at `index`.
@@ -581,6 +463,8 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 }
 
+crate::impl_array_methods!([T: NativeType] PlPrimitiveArray<T>, T);
+
 impl<T: NativeType> Default for PlPrimitiveArray<T> {
     #[inline]
     fn default() -> Self {
@@ -644,15 +528,7 @@ impl<T: NativeType> FromIterator<T> for PlPrimitiveArray<T> {
     }
 }
 
-impl<'a, T: NativeType> IntoIterator for &'a PlPrimitiveArray<T> {
-    type Item = Option<T>;
-    type IntoIter = PlPrimitiveIter<'a, T>;
-
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
+crate::impl_into_iterator!([T: NativeType] PlPrimitiveArray<T>, PlPrimitiveIter<'a, T>);
 
 /// Compares two arrays element-wise; the representation (flat or scalar) is irrelevant.
 impl<T: NativeType> PartialEq for PlPrimitiveArray<T> {
@@ -671,100 +547,9 @@ impl<T: NativeType> PartialEq for PlPrimitiveArray<T> {
     }
 }
 
-impl<T: NativeType> std::fmt::Debug for PlPrimitiveArray<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        /// Renders nulls as `null` instead of `None`.
-        struct Element<T>(Option<T>);
+crate::impl_element_debug!([T: NativeType] PlPrimitiveArray<T>, "PlPrimitiveArray");
 
-        impl<T: std::fmt::Debug> std::fmt::Debug for Element<T> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match &self.0 {
-                    Some(value) => value.fmt(f),
-                    None => f.write_str("null"),
-                }
-            }
-        }
-
-        f.write_str("PlPrimitiveArray")?;
-
-        // Never materialize a scalar array: its length is unbounded by its memory use.
-        if self.length > 1 {
-            if let Some(element) = self.scalar_value() {
-                return write!(f, "[{:?}; {}]", Element(element), self.length);
-            }
-        }
-
-        f.debug_list().entries(self.iter().map(Element)).finish()
-    }
-}
-
-impl<T: NativeType> PlArray for PlPrimitiveArray<T> {
-    #[inline]
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    #[inline]
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-
-    #[inline]
-    fn array_type(&self) -> PlArrayType {
-        PlArrayType::Primitive(T::PRIMITIVE)
-    }
-
-    #[inline]
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    #[inline]
-    fn is_scalar(&self) -> bool {
-        self.is_scalar()
-    }
-
-    #[inline]
-    fn validity(&self) -> Option<PlBitmapRef<'_>> {
-        self.validity()
-    }
-
-    #[inline]
-    fn slice(&mut self, offset: usize, length: usize) {
-        self.slice(offset, length)
-    }
-
-    #[inline]
-    unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
-        unsafe { self.slice_unchecked(offset, length) }
-    }
-
-    #[inline]
-    fn set_validity(&mut self, validity: Option<PlBitmap>) {
-        self.set_validity(validity)
-    }
-
-    #[inline]
-    unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Box<dyn PlArray> {
-        Box::new(unsafe { self.new_from_index_unchecked(index, length) })
-    }
-
-    #[inline]
-    fn to_boxed(&self) -> Box<dyn PlArray> {
-        Box::new(self.clone())
-    }
-
-    fn new_full_null(&self, length: usize) -> Box<dyn PlArray> {
-        Box::new(Self::new_full_null(length))
-    }
-
-    fn eq_dyn(&self, other: &dyn PlArray) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>()
-            .is_some_and(|other| self == other)
-    }
-}
+crate::impl_pl_array!([T: NativeType] PlPrimitiveArray<T>, PlArrayType::Primitive(T::PRIMITIVE));
 
 #[cfg(test)]
 mod tests {

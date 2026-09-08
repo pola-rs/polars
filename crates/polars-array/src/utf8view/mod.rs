@@ -352,15 +352,7 @@ impl std::fmt::Debug for PlUtf8ViewArray {
     }
 }
 
-impl<'a> IntoIterator for &'a PlUtf8ViewArray {
-    type Item = Option<&'a str>;
-    type IntoIter = PlUtf8ViewIter<'a>;
-
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
+crate::impl_into_iterator!(PlUtf8ViewArray, PlUtf8ViewIter<'a>);
 
 impl PlArray for PlUtf8ViewArray {
     #[inline]

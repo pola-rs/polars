@@ -1,5 +1,3 @@
-use arrow::trusted_len::TrustedLen;
-
 use crate::bitmap::{PlBitmapIter, PlBitmapRef, ValidityFold, ValidityIter};
 
 /// Iterator over the optional elements of a [`PlBooleanArray`](super::PlBooleanArray).
@@ -32,87 +30,7 @@ impl<'a> PlBooleanIter<'a> {
     }
 }
 
-impl Iterator for PlBooleanIter<'_> {
-    type Item = Option<bool>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let value = self.values.next()?;
-        Some(self.validity.next().then_some(value))
-    }
-
-    #[inline]
-    fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        // The mask is advanced alongside the values, whether or not there is a value left.
-        let is_valid = self.validity.nth(n);
-        let value = self.values.nth(n)?;
-        Some(is_valid.then_some(value))
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.values.size_hint()
-    }
-
-    #[inline]
-    fn count(self) -> usize {
-        self.values.count()
-    }
-
-    /// Walks to the last element from the back, rather than through every one before it.
-    #[inline]
-    fn last(mut self) -> Option<Self::Item> {
-        self.next_back()
-    }
-
-    /// Hoists the validity mask out of the loop, and the representation of both masks with it.
-    #[inline]
-    fn fold<B, F>(self, init: B, f: F) -> B
-    where
-        F: FnMut(B, Self::Item) -> B,
-    {
-        let (values, mask) = self.split();
-        // SAFETY: the mask has one bit per element, and the values and the mask are walked in
-        // lockstep, so it has a bit for every value left to yield.
-        unsafe { mask.fold_values(values, init, f) }
-    }
-}
-
-impl DoubleEndedIterator for PlBooleanIter<'_> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        let value = self.values.next_back()?;
-        Some(self.validity.next_back().then_some(value))
-    }
-
-    #[inline]
-    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-        // The mask is advanced alongside the values, whether or not there is a value left.
-        let is_valid = self.validity.nth_back(n);
-        let value = self.values.nth_back(n)?;
-        Some(is_valid.then_some(value))
-    }
-
-    /// Hoists the validity mask out of the loop, the way [`Iterator::fold`] does.
-    #[inline]
-    fn rfold<B, F>(self, init: B, f: F) -> B
-    where
-        F: FnMut(B, Self::Item) -> B,
-    {
-        let (values, mask) = self.split();
-        // SAFETY: the mask has a bit for every value left to yield, per `Iterator::fold`.
-        unsafe { mask.rfold_values(values, init, f) }
-    }
-}
-
-impl ExactSizeIterator for PlBooleanIter<'_> {
-    #[inline]
-    fn len(&self) -> usize {
-        self.values.len()
-    }
-}
-
-unsafe impl TrustedLen for PlBooleanIter<'_> {}
+crate::impl_optional_iter!(PlBooleanIter<'a>, bool);
 
 #[cfg(test)]
 mod tests {

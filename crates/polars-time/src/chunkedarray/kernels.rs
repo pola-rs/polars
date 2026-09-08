@@ -117,58 +117,6 @@ to_temporal_unit!(
 );
 
 #[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_ordinal_ns,
-    ordinal,
-    timestamp_ns_to_datetime_opt,
-    i64,
-    i16
-);
-
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_ordinal_ms,
-    ordinal,
-    timestamp_ms_to_datetime_opt,
-    i64,
-    i16
-);
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_ordinal_us,
-    ordinal,
-    timestamp_us_to_datetime_opt,
-    i64,
-    i16
-);
-
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_iso_year_ns,
-    iso_year,
-    timestamp_ns_to_datetime_opt,
-    i64,
-    i32
-);
-
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_iso_year_us,
-    iso_year,
-    timestamp_us_to_datetime_opt,
-    i64,
-    i32
-);
-
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_iso_year_ms,
-    iso_year,
-    timestamp_ms_to_datetime_opt,
-    i64,
-    i32
-);
-#[cfg(feature = "dtype-datetime")]
 to_boolean_temporal_unit!(
     datetime_to_is_leap_year_ns,
     year,
@@ -223,94 +171,28 @@ to_calendar_value!(
 
 /// Defines the same extraction over each of the three timestamp units a datetime column can be in.
 macro_rules! datetime_units {
-    ($ns: ident, $us: ident, $ms: ident, $chrono_method: ident, $primitive_out: ty) => {
-        #[cfg(feature = "dtype-datetime")]
-        to_temporal_unit!(
-            $ns,
-            $chrono_method,
-            timestamp_ns_to_datetime_opt,
-            i64,
-            $primitive_out
-        );
-        #[cfg(feature = "dtype-datetime")]
-        to_temporal_unit!(
-            $us,
-            $chrono_method,
-            timestamp_us_to_datetime_opt,
-            i64,
-            $primitive_out
-        );
-        #[cfg(feature = "dtype-datetime")]
-        to_temporal_unit!(
-            $ms,
-            $chrono_method,
-            timestamp_ms_to_datetime_opt,
-            i64,
-            $primitive_out
-        );
+    ($($ns:ident, $us:ident, $ms:ident, $method:ident, $out:ty;)*) => {
+        $(
+            #[cfg(feature = "dtype-datetime")]
+            to_temporal_unit!($ns, $method, timestamp_ns_to_datetime_opt, i64, $out);
+            #[cfg(feature = "dtype-datetime")]
+            to_temporal_unit!($us, $method, timestamp_us_to_datetime_opt, i64, $out);
+            #[cfg(feature = "dtype-datetime")]
+            to_temporal_unit!($ms, $method, timestamp_ms_to_datetime_opt, i64, $out);
+        )*
     };
 }
 
-datetime_units!(
-    datetime_to_year_ns,
-    datetime_to_year_us,
-    datetime_to_year_ms,
-    year,
-    i32
-);
-datetime_units!(
-    datetime_to_month_ns,
-    datetime_to_month_us,
-    datetime_to_month_ms,
-    month,
-    i8
-);
-datetime_units!(
-    datetime_to_day_ns,
-    datetime_to_day_us,
-    datetime_to_day_ms,
-    day,
-    i8
-);
-datetime_units!(
-    datetime_to_hour_ns,
-    datetime_to_hour_us,
-    datetime_to_hour_ms,
-    hour,
-    i8
-);
-datetime_units!(
-    datetime_to_minute_ns,
-    datetime_to_minute_us,
-    datetime_to_minute_ms,
-    minute,
-    i8
-);
-datetime_units!(
-    datetime_to_second_ns,
-    datetime_to_second_us,
-    datetime_to_second_ms,
-    second,
-    i8
-);
-datetime_units!(
-    datetime_to_nanosecond_ns,
-    datetime_to_nanosecond_us,
-    datetime_to_nanosecond_ms,
-    nanosecond,
-    i32
-);
-datetime_units!(
-    datetime_to_weekday_ns,
-    datetime_to_weekday_us,
-    datetime_to_weekday_ms,
-    weekday_number,
-    i8
-);
-datetime_units!(
-    datetime_to_iso_week_ns,
-    datetime_to_iso_week_us,
-    datetime_to_iso_week_ms,
-    week,
-    i8
-);
+datetime_units! {
+    datetime_to_year_ns, datetime_to_year_us, datetime_to_year_ms, year, i32;
+    datetime_to_month_ns, datetime_to_month_us, datetime_to_month_ms, month, i8;
+    datetime_to_day_ns, datetime_to_day_us, datetime_to_day_ms, day, i8;
+    datetime_to_hour_ns, datetime_to_hour_us, datetime_to_hour_ms, hour, i8;
+    datetime_to_minute_ns, datetime_to_minute_us, datetime_to_minute_ms, minute, i8;
+    datetime_to_second_ns, datetime_to_second_us, datetime_to_second_ms, second, i8;
+    datetime_to_nanosecond_ns, datetime_to_nanosecond_us, datetime_to_nanosecond_ms, nanosecond, i32;
+    datetime_to_weekday_ns, datetime_to_weekday_us, datetime_to_weekday_ms, weekday_number, i8;
+    datetime_to_iso_week_ns, datetime_to_iso_week_us, datetime_to_iso_week_ms, week, i8;
+    datetime_to_ordinal_ns, datetime_to_ordinal_us, datetime_to_ordinal_ms, ordinal, i16;
+    datetime_to_iso_year_ns, datetime_to_iso_year_us, datetime_to_iso_year_ms, iso_year, i32;
+}

@@ -6,9 +6,7 @@ use polars_error::{PolarsResult, polars_ensure};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmap, PlBitmapRef, combine_validities_and, validity_eq};
-use crate::broadcast::{
-    slice_validity, try_validity_covering, validity_covering, validity_covering_unchecked,
-};
+use crate::broadcast::{slice_validity, try_validity_covering, validity_covering_unchecked};
 use crate::flat::Flat;
 
 mod builder;
@@ -149,81 +147,6 @@ impl PlStructArray {
         self.validity().is_some_and(|v| v.is_scalar())
     }
 
-    /// Returns whether the element at `i` is valid (non-null).
-    #[inline]
-    pub fn is_valid(&self, i: usize) -> bool {
-        assert!(i < self.length, "index out of bounds");
-        unsafe { self.is_valid_unchecked(i) }
-    }
-
-    /// Returns whether the element at `i` is valid (non-null).
-    ///
-    /// # Safety
-    /// `i` must be smaller than `self.len()`.
-    #[inline]
-    pub unsafe fn is_valid_unchecked(&self, i: usize) -> bool {
-        debug_assert!(i < self.length);
-        // SAFETY: `i` is in bounds of the array, and therefore of its validity mask.
-        self.validity()
-            .is_none_or(|validity| unsafe { validity.get_unchecked(i) })
-    }
-
-    /// Returns whether the element at `i` is null.
-    #[inline]
-    pub fn is_null(&self, i: usize) -> bool {
-        !self.is_valid(i)
-    }
-
-    /// Returns whether the element at `i` is null.
-    ///
-    /// # Safety
-    /// `i` must be smaller than `self.len()`.
-    #[inline]
-    pub unsafe fn is_null_unchecked(&self, i: usize) -> bool {
-        unsafe { !self.is_valid_unchecked(i) }
-    }
-
-    /// The number of null elements.
-    #[inline]
-    pub fn null_count(&self) -> usize {
-        self.validity().map_or(0, |validity| validity.unset_bits())
-    }
-
-    /// Whether this array has at least one null element.
-    #[inline]
-    pub fn has_nulls(&self) -> bool {
-        self.null_count() > 0
-    }
-
-    /// Returns this array with its validity mask replaced.
-    #[must_use]
-    pub fn with_validity(mut self, validity: Option<PlBitmap>) -> Self {
-        self.set_validity(validity);
-        self
-    }
-
-    /// Replaces the validity mask, which keeps the representation it is in.
-    pub fn set_validity(&mut self, validity: Option<PlBitmap>) {
-        let length = self.len();
-        self.validity = validity_covering(validity, length);
-    }
-
-    /// Drops the validity mask, making every row valid.
-    #[must_use]
-    pub fn without_validity(mut self) -> Self {
-        self.validity = None;
-        self
-    }
-
-    /// Slices this array in place to `length` elements starting at `offset`.
-    pub fn slice(&mut self, offset: usize, length: usize) {
-        assert!(
-            offset + length <= self.length,
-            "the offset of the new slice must be smaller than the length of the array",
-        );
-        unsafe { self.slice_unchecked(offset, length) }
-    }
-
     /// Slices this array in place to `length` elements starting at `offset`.
     ///
     /// # Safety
@@ -239,32 +162,6 @@ impl PlStructArray {
         unsafe { slice_validity(&mut self.validity, self.length, offset, length) };
 
         self.length = length;
-    }
-
-    /// Returns this array sliced to `length` elements starting at `offset`.
-    #[must_use]
-    pub fn sliced(&self, offset: usize, length: usize) -> Self {
-        let mut sliced = self.clone();
-        sliced.slice(offset, length);
-        sliced
-    }
-
-    /// Returns this array sliced to `length` elements starting at `offset`.
-    ///
-    /// # Safety
-    /// `offset + length` must not exceed `self.len()`.
-    #[must_use]
-    pub unsafe fn sliced_unchecked(&self, offset: usize, length: usize) -> Self {
-        let mut sliced = self.clone();
-        unsafe { sliced.slice_unchecked(offset, length) };
-        sliced
-    }
-
-    /// Creates a [`PlStructArray`] of `length` copies of the row at `index`.
-    #[inline]
-    pub fn new_from_index(&self, index: usize, length: usize) -> Self {
-        assert!(index < self.length, "index out of bounds");
-        unsafe { self.new_from_index_unchecked(index, length) }
     }
 
     /// Creates a [`PlStructArray`] of `length` copies of the row at `index`.
@@ -342,6 +239,8 @@ impl PlStructArray {
     }
 }
 
+crate::impl_array_methods!(PlStructArray);
+
 /// Returns `field` with `mask` merged into its validity, so that masked-out rows are ignored.
 fn masked(field: &dyn PlArray, mask: PlBitmapRef<'_>) -> Box<dyn PlArray> {
     // Both masks come in whichever representation they are in, and `and`ing them keeps a repeated
@@ -400,62 +299,9 @@ impl std::fmt::Debug for PlStructArray {
     }
 }
 
-impl PlArray for PlStructArray {
-    #[inline]
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    #[inline]
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-
-    #[inline]
-    fn array_type(&self) -> PlArrayType {
-        PlArrayType::Struct
-    }
-
-    #[inline]
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    #[inline]
-    fn is_scalar(&self) -> bool {
-        self.is_scalar()
-    }
-
-    #[inline]
-    fn validity(&self) -> Option<PlBitmapRef<'_>> {
-        self.validity()
-    }
-
-    #[inline]
-    fn slice(&mut self, offset: usize, length: usize) {
-        self.slice(offset, length)
-    }
-
-    #[inline]
-    unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
-        unsafe { self.slice_unchecked(offset, length) }
-    }
-
-    #[inline]
-    fn set_validity(&mut self, validity: Option<PlBitmap>) {
-        self.set_validity(validity)
-    }
-
-    #[inline]
-    unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Box<dyn PlArray> {
-        Box::new(unsafe { self.new_from_index_unchecked(index, length) })
-    }
-
-    #[inline]
-    fn to_boxed(&self) -> Box<dyn PlArray> {
-        Box::new(self.clone())
-    }
-
+crate::impl_pl_array! {
+    PlStructArray,
+    PlArrayType::Struct,
     fn new_full_null(&self, length: usize) -> Box<dyn PlArray> {
         let fields = self
             .fields
@@ -463,13 +309,6 @@ impl PlArray for PlStructArray {
             .map(|field| field.new_full_null(length))
             .collect();
         Box::new(Self::new_full_null(fields, length))
-    }
-
-    fn eq_dyn(&self, other: &dyn PlArray) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>()
-            .is_some_and(|other| self == other)
     }
 }
 

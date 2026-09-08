@@ -156,7 +156,8 @@ pub trait StaticArray: PlArray + Clone {
     }
 }
 
-impl<T: NativeType> StaticArray for PlPrimitiveArray<T> {
+crate::impl_static_array! {
+    [T: NativeType] PlPrimitiveArray<T>,
     type ValueT<'a> = T;
     type ZeroableValueT<'a> = T;
     type ValueIterT<'a> = PlPrimitiveValuesIter<'a, T>;
@@ -178,59 +179,10 @@ impl<T: NativeType> StaticArray for PlPrimitiveArray<T> {
         // `None` for a scalar chunk, whose one slot is not one slot per element.
         self.flat_values().map(|values| values.as_slice())
     }
-
-    #[inline]
-    unsafe fn value_unchecked(&self, i: usize) -> T {
-        unsafe { self.value_unchecked(i) }
-    }
-
-    #[inline]
-    unsafe fn get_unchecked(&self, i: usize) -> Option<T> {
-        unsafe { self.get_unchecked(i) }
-    }
-
-    #[inline]
-    fn values_iter(&self) -> Self::ValueIterT<'_> {
-        self.values_iter()
-    }
-
-    #[inline]
-    fn iter(&self) -> Self::IterT<'_> {
-        self.iter()
-    }
-
-    #[inline]
-    fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_> {
-        self.broadcast_values_iter(length)
-    }
-
-    #[inline]
-    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
-        self.with_validity(validity)
-    }
-
-    #[inline]
-    fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
-        self.new_from_index(index, length)
-    }
-
-    #[inline]
-    fn is_flat(&self) -> bool {
-        self.is_flat()
-    }
-
-    #[inline]
-    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
-        self.to_flat()
-    }
-
-    #[inline]
-    fn as_flat(&self) -> Option<&Flat<Self>> {
-        self.as_flat()
-    }
 }
 
-impl StaticArray for PlBooleanArray {
+crate::impl_static_array! {
+    PlBooleanArray,
     type ValueT<'a> = bool;
     type ZeroableValueT<'a> = bool;
     type ValueIterT<'a> = PlBitmapIter<'a>;
@@ -241,64 +193,14 @@ impl StaticArray for PlBooleanArray {
     fn builder_like(&self) -> Self::Builder {
         PlBooleanArrayBuilder::new()
     }
-
     #[inline]
     fn new_full_null(length: usize) -> Self {
         Self::new_full_null(length)
     }
-
-    #[inline]
-    unsafe fn value_unchecked(&self, i: usize) -> bool {
-        unsafe { self.value_unchecked(i) }
-    }
-
-    #[inline]
-    unsafe fn get_unchecked(&self, i: usize) -> Option<bool> {
-        unsafe { self.get_unchecked(i) }
-    }
-
-    #[inline]
-    fn values_iter(&self) -> Self::ValueIterT<'_> {
-        self.values_iter()
-    }
-
-    #[inline]
-    fn iter(&self) -> Self::IterT<'_> {
-        self.iter()
-    }
-
-    #[inline]
-    fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_> {
-        self.broadcast_values_iter(length)
-    }
-
-    #[inline]
-    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
-        self.with_validity(validity)
-    }
-
-    #[inline]
-    fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
-        self.new_from_index(index, length)
-    }
-
-    #[inline]
-    fn is_flat(&self) -> bool {
-        self.is_flat()
-    }
-
-    #[inline]
-    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
-        self.to_flat()
-    }
-
-    #[inline]
-    fn as_flat(&self) -> Option<&Flat<Self>> {
-        self.as_flat()
-    }
 }
 
-impl StaticArray for PlBinaryArray {
+crate::impl_static_array! {
+    PlBinaryArray,
     type ValueT<'a> = &'a [u8];
     type ZeroableValueT<'a> = Option<&'a [u8]>;
     type ValueIterT<'a> = PlBinaryValuesIter<'a>;
@@ -309,64 +211,14 @@ impl StaticArray for PlBinaryArray {
     fn builder_like(&self) -> Self::Builder {
         PlBinaryArrayBuilder::new()
     }
-
     #[inline]
     fn new_full_null(length: usize) -> Self {
         Self::new_full_null(length)
     }
-
-    #[inline]
-    unsafe fn value_unchecked(&self, i: usize) -> &[u8] {
-        unsafe { self.value_unchecked(i) }
-    }
-
-    #[inline]
-    unsafe fn get_unchecked(&self, i: usize) -> Option<&[u8]> {
-        unsafe { self.get_unchecked(i) }
-    }
-
-    #[inline]
-    fn values_iter(&self) -> Self::ValueIterT<'_> {
-        self.values_iter()
-    }
-
-    #[inline]
-    fn iter(&self) -> Self::IterT<'_> {
-        self.iter()
-    }
-
-    #[inline]
-    fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_> {
-        self.broadcast_values_iter(length)
-    }
-
-    #[inline]
-    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
-        self.with_validity(validity)
-    }
-
-    #[inline]
-    fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
-        self.new_from_index(index, length)
-    }
-
-    #[inline]
-    fn is_flat(&self) -> bool {
-        self.is_flat()
-    }
-
-    #[inline]
-    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
-        self.to_flat()
-    }
-
-    #[inline]
-    fn as_flat(&self) -> Option<&Flat<Self>> {
-        self.as_flat()
-    }
 }
 
-impl StaticArray for PlBinaryViewArray {
+crate::impl_static_array! {
+    PlBinaryViewArray,
     type ValueT<'a> = &'a [u8];
     type ZeroableValueT<'a> = Option<&'a [u8]>;
     type ValueIterT<'a> = PlBinaryViewValuesIter<'a>;
@@ -377,65 +229,15 @@ impl StaticArray for PlBinaryViewArray {
     fn builder_like(&self) -> Self::Builder {
         PlBinaryViewArrayBuilder::new()
     }
-
     #[inline]
     fn new_full_null(length: usize) -> Self {
         Self::new_full_null(length)
     }
-
-    #[inline]
-    unsafe fn value_unchecked(&self, i: usize) -> &[u8] {
-        unsafe { self.value_unchecked(i) }
-    }
-
-    #[inline]
-    unsafe fn get_unchecked(&self, i: usize) -> Option<&[u8]> {
-        unsafe { self.get_unchecked(i) }
-    }
-
-    #[inline]
-    fn values_iter(&self) -> Self::ValueIterT<'_> {
-        self.values_iter()
-    }
-
-    #[inline]
-    fn iter(&self) -> Self::IterT<'_> {
-        self.iter()
-    }
-
-    #[inline]
-    fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_> {
-        self.broadcast_values_iter(length)
-    }
-
-    #[inline]
-    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
-        self.with_validity(validity)
-    }
-
-    #[inline]
-    fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
-        self.new_from_index(index, length)
-    }
-
-    #[inline]
-    fn is_flat(&self) -> bool {
-        self.is_flat()
-    }
-
-    #[inline]
-    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
-        self.to_flat()
-    }
-
-    #[inline]
-    fn as_flat(&self) -> Option<&Flat<Self>> {
-        self.as_flat()
-    }
 }
 
-/// The elements are the strings the wrapper promises they are — see [`crate::utf8view`].
-impl StaticArray for PlUtf8ViewArray {
+crate::impl_static_array! {
+    /// The elements are the strings the wrapper promises they are — see [`crate::utf8view`].
+    PlUtf8ViewArray,
     type ValueT<'a> = &'a str;
     type ZeroableValueT<'a> = Option<&'a str>;
     type ValueIterT<'a> = PlUtf8ViewValuesIter<'a>;
@@ -446,64 +248,14 @@ impl StaticArray for PlUtf8ViewArray {
     fn builder_like(&self) -> Self::Builder {
         PlUtf8ViewArrayBuilder::new()
     }
-
     #[inline]
     fn new_full_null(length: usize) -> Self {
         Self::new_full_null(length)
     }
-
-    #[inline]
-    unsafe fn value_unchecked(&self, i: usize) -> &str {
-        unsafe { self.value_unchecked(i) }
-    }
-
-    #[inline]
-    unsafe fn get_unchecked(&self, i: usize) -> Option<&str> {
-        unsafe { self.get_unchecked(i) }
-    }
-
-    #[inline]
-    fn values_iter(&self) -> Self::ValueIterT<'_> {
-        self.values_iter()
-    }
-
-    #[inline]
-    fn iter(&self) -> Self::IterT<'_> {
-        self.iter()
-    }
-
-    #[inline]
-    fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_> {
-        self.broadcast_values_iter(length)
-    }
-
-    #[inline]
-    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
-        self.with_validity(validity)
-    }
-
-    #[inline]
-    fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
-        self.new_from_index(index, length)
-    }
-
-    #[inline]
-    fn is_flat(&self) -> bool {
-        self.is_flat()
-    }
-
-    #[inline]
-    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
-        self.to_flat()
-    }
-
-    #[inline]
-    fn as_flat(&self) -> Option<&Flat<Self>> {
-        self.as_flat()
-    }
 }
 
-impl StaticArray for PlFixedSizeBinaryArray {
+crate::impl_static_array! {
+    PlFixedSizeBinaryArray,
     type ValueT<'a> = &'a [u8];
     type ZeroableValueT<'a> = Option<&'a [u8]>;
     type ValueIterT<'a> = PlFixedSizeBinaryValuesIter<'a>;
@@ -514,65 +266,15 @@ impl StaticArray for PlFixedSizeBinaryArray {
     fn builder_like(&self) -> Self::Builder {
         PlFixedSizeBinaryArrayBuilder::new(self.width())
     }
-
     /// The elements are of the one width a [`PlArrayType`](crate::PlArrayType) names: zero bytes.
     #[inline]
     fn new_full_null(length: usize) -> Self {
         Self::new_full_null(0, length)
     }
-
-    #[inline]
-    unsafe fn value_unchecked(&self, i: usize) -> &[u8] {
-        unsafe { self.value_unchecked(i) }
-    }
-
-    #[inline]
-    unsafe fn get_unchecked(&self, i: usize) -> Option<&[u8]> {
-        unsafe { self.get_unchecked(i) }
-    }
-
-    #[inline]
-    fn values_iter(&self) -> Self::ValueIterT<'_> {
-        self.values_iter()
-    }
-
-    #[inline]
-    fn iter(&self) -> Self::IterT<'_> {
-        self.iter()
-    }
-
-    #[inline]
-    fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_> {
-        self.broadcast_values_iter(length)
-    }
-
-    #[inline]
-    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
-        self.with_validity(validity)
-    }
-
-    #[inline]
-    fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
-        self.new_from_index(index, length)
-    }
-
-    #[inline]
-    fn is_flat(&self) -> bool {
-        self.is_flat()
-    }
-
-    #[inline]
-    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
-        self.to_flat()
-    }
-
-    #[inline]
-    fn as_flat(&self) -> Option<&Flat<Self>> {
-        self.as_flat()
-    }
 }
 
-impl StaticArray for PlListArray {
+crate::impl_static_array! {
+    PlListArray,
     type ValueT<'a> = Box<dyn PlArray>;
     type ZeroableValueT<'a> = Option<Box<dyn PlArray>>;
     type ValueIterT<'a> = PlListValuesIter<'a>;
@@ -583,65 +285,15 @@ impl StaticArray for PlListArray {
     fn builder_like(&self) -> Self::Builder {
         PlListArrayBuilder::new(crate::builder::builder_like(self.values()))
     }
-
     /// Every element is an empty list, over the one values array an array type names.
     #[inline]
     fn new_full_null(length: usize) -> Self {
         Self::new_full_null(Box::new(PlNullArray::new_empty()), length)
     }
-
-    #[inline]
-    unsafe fn value_unchecked(&self, i: usize) -> Box<dyn PlArray> {
-        unsafe { self.value_unchecked(i) }
-    }
-
-    #[inline]
-    unsafe fn get_unchecked(&self, i: usize) -> Option<Box<dyn PlArray>> {
-        unsafe { self.get_unchecked(i) }
-    }
-
-    #[inline]
-    fn values_iter(&self) -> Self::ValueIterT<'_> {
-        self.values_iter()
-    }
-
-    #[inline]
-    fn iter(&self) -> Self::IterT<'_> {
-        self.iter()
-    }
-
-    #[inline]
-    fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_> {
-        self.broadcast_values_iter(length)
-    }
-
-    #[inline]
-    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
-        self.with_validity(validity)
-    }
-
-    #[inline]
-    fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
-        self.new_from_index(index, length)
-    }
-
-    #[inline]
-    fn is_flat(&self) -> bool {
-        self.is_flat()
-    }
-
-    #[inline]
-    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
-        self.to_flat()
-    }
-
-    #[inline]
-    fn as_flat(&self) -> Option<&Flat<Self>> {
-        self.as_flat()
-    }
 }
 
-impl StaticArray for PlFixedSizeListArray {
+crate::impl_static_array! {
+    PlFixedSizeListArray,
     type ValueT<'a> = Box<dyn PlArray>;
     type ZeroableValueT<'a> = Option<Box<dyn PlArray>>;
     type ValueIterT<'a> = PlFixedSizeListValuesIter<'a>;
@@ -652,61 +304,10 @@ impl StaticArray for PlFixedSizeListArray {
     fn builder_like(&self) -> Self::Builder {
         PlFixedSizeListArrayBuilder::new(crate::builder::builder_like(self.values()), self.width())
     }
-
     /// Every element is a list of the one width an array type names: zero values wide.
     #[inline]
     fn new_full_null(length: usize) -> Self {
         Self::new_full_null(Box::new(PlNullArray::new_empty()), length)
-    }
-
-    #[inline]
-    unsafe fn value_unchecked(&self, i: usize) -> Box<dyn PlArray> {
-        unsafe { self.value_unchecked(i) }
-    }
-
-    #[inline]
-    unsafe fn get_unchecked(&self, i: usize) -> Option<Box<dyn PlArray>> {
-        unsafe { self.get_unchecked(i) }
-    }
-
-    #[inline]
-    fn values_iter(&self) -> Self::ValueIterT<'_> {
-        self.values_iter()
-    }
-
-    #[inline]
-    fn iter(&self) -> Self::IterT<'_> {
-        self.iter()
-    }
-
-    #[inline]
-    fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_> {
-        self.broadcast_values_iter(length)
-    }
-
-    #[inline]
-    fn with_validity_typed(self, validity: Option<PlBitmap>) -> Self {
-        self.with_validity(validity)
-    }
-
-    #[inline]
-    fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
-        self.new_from_index(index, length)
-    }
-
-    #[inline]
-    fn is_flat(&self) -> bool {
-        self.is_flat()
-    }
-
-    #[inline]
-    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
-        self.to_flat()
-    }
-
-    #[inline]
-    fn as_flat(&self) -> Option<&Flat<Self>> {
-        self.as_flat()
     }
 }
 

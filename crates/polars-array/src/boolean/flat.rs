@@ -112,15 +112,7 @@ impl Flat<PlBooleanArray> {
     }
 }
 
-impl<'a> IntoIterator for &'a Flat<PlBooleanArray> {
-    type Item = Option<bool>;
-    type IntoIter = PlBooleanIter<'a>;
-
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
+crate::impl_into_iterator!(Flat<PlBooleanArray>, PlBooleanIter<'a>);
 
 /// Compares an array of unknown representation against a flat one.
 impl PartialEq<Flat<PlBooleanArray>> for PlBooleanArray {

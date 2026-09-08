@@ -159,15 +159,7 @@ impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     }
 }
 
-impl<'a, T: NativeType> IntoIterator for &'a Flat<PlPrimitiveArray<T>> {
-    type Item = Option<T>;
-    type IntoIter = PlPrimitiveIter<'a, T>;
-
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
+crate::impl_into_iterator!([T: NativeType] Flat<PlPrimitiveArray<T>>, PlPrimitiveIter<'a, T>);
 
 /// Compares an array of unknown representation against a flat one.
 impl<T: NativeType> PartialEq<Flat<PlPrimitiveArray<T>>> for PlPrimitiveArray<T> {
