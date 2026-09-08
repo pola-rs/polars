@@ -283,104 +283,16 @@ impl<'a> PlListValuesIter<'a> {
             ranges: Ranges::new(offsets, length),
         }
     }
-
-    /// The element covering `range`.
-    ///
-    /// # Safety
-    /// `range` must be one the iterator's own ranges yielded.
-    #[inline(always)]
-    unsafe fn get(&self, range: Range<usize>) -> Box<dyn PlArray> {
-        // SAFETY: the range is one of this iterator's elements.
-        unsafe { element(self.values, range) }
-    }
 }
 
-impl Iterator for PlListValuesIter<'_> {
-    type Item = Box<dyn PlArray>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let range = self.ranges.next()?;
-        // SAFETY: the range is one of this iterator's elements.
-        Some(unsafe { self.get(range) })
-    }
-
-    #[inline]
-    fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        let range = self.ranges.nth(n)?;
-        // SAFETY: the range is one of this iterator's elements.
-        Some(unsafe { self.get(range) })
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.ranges.size_hint()
-    }
-
-    #[inline]
-    fn count(self) -> usize {
-        self.ranges.count()
-    }
-
-    /// Walks to the last element from the back, rather than through every one before it.
-    #[inline]
-    fn last(mut self) -> Option<Self::Item> {
-        self.next_back()
-    }
-
-    /// Hoists the walk over the offsets out of the loop, per [`Ranges::fold`].
-    #[inline]
-    fn fold<B, F>(self, init: B, mut f: F) -> B
-    where
-        F: FnMut(B, Self::Item) -> B,
-    {
-        let values = self.values;
-
-        self.ranges.fold(init, |acc, range| {
-            // SAFETY: the range is one of this iterator's elements.
-            f(acc, unsafe { element(values, range) })
-        })
-    }
-}
-
-impl DoubleEndedIterator for PlListValuesIter<'_> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        let range = self.ranges.next_back()?;
-        // SAFETY: the range is one of this iterator's elements.
-        Some(unsafe { self.get(range) })
-    }
-
-    #[inline]
-    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-        let range = self.ranges.nth_back(n)?;
-        // SAFETY: the range is one of this iterator's elements.
-        Some(unsafe { self.get(range) })
-    }
-
-    /// Hoists the walk over the offsets out of the loop, the way [`Iterator::fold`] does.
-    #[inline]
-    fn rfold<B, F>(self, init: B, mut f: F) -> B
-    where
-        F: FnMut(B, Self::Item) -> B,
-    {
-        let values = self.values;
-
-        self.ranges.rfold(init, |acc, range| {
-            // SAFETY: the range is one of this iterator's elements.
-            f(acc, unsafe { element(values, range) })
-        })
-    }
-}
-
-impl ExactSizeIterator for PlListValuesIter<'_> {
-    #[inline]
-    fn len(&self) -> usize {
-        self.ranges.len()
-    }
-}
-
-unsafe impl TrustedLen for PlListValuesIter<'_> {}
+crate::impl_mapped_iter!(
+    PlListValuesIter<'a>,
+    Box<dyn PlArray>,
+    over: ranges,
+    with: [values],
+    // SAFETY: the range is one of this iterator's elements.
+    |range| unsafe { element(values, range) },
+);
 
 /// Iterator over the optional elements of a [`PlListArray`](super::PlListArray).
 #[derive(Clone)]
@@ -427,6 +339,10 @@ impl<'a> PlListIter<'a> {
     }
 }
 
+/// The iterator traits are written out rather than taken from `impl_optional_iter`, which reads
+/// the mask only where the values yielded an element: an element here is an array of its own,
+/// so the mask is read first and the walk over the ranges yields nothing but a shape, which
+/// leaves a null position paying for no array at all.
 impl Iterator for PlListIter<'_> {
     type Item = Option<Box<dyn PlArray>>;
 

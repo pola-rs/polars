@@ -232,26 +232,6 @@ impl<'a> PlFixedSizeBinaryIter<'a> {
         }
     }
 
-    /// The bytes of the element the values just yielded, `None` where the mask says it is null.
-    ///
-    /// # Safety
-    /// The mask must still cover the element the values yielded at the front.
-    #[inline(always)]
-    unsafe fn front(&mut self, value: &'a [u8], n: usize) -> Option<&'a [u8]> {
-        // SAFETY: the mask covers the element the values yielded, per the caller.
-        unsafe { self.validity.nth_unchecked(n) }.then_some(value)
-    }
-
-    /// The bytes of the element just yielded at the back, `None` where the mask says it is null.
-    ///
-    /// # Safety
-    /// The mask must still cover the element the values yielded at the back.
-    #[inline(always)]
-    unsafe fn back(&mut self, value: &'a [u8], n: usize) -> Option<&'a [u8]> {
-        // SAFETY: the mask covers the element the values yielded, per the caller.
-        unsafe { self.validity.nth_back_unchecked(n) }.then_some(value)
-    }
-
     /// The values and the mask that says which of them are elements, to walk in one loop.
     #[inline]
     fn split(self) -> (PlFixedSizeBinaryValuesIter<'a>, ValidityFold<'a>) {
@@ -259,99 +239,7 @@ impl<'a> PlFixedSizeBinaryIter<'a> {
     }
 }
 
-impl<'a> Iterator for PlFixedSizeBinaryIter<'a> {
-    type Item = Option<&'a [u8]>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let value = self.values.next()?;
-        // SAFETY: the values yielded the element at the front, so the mask still covers it.
-        Some(unsafe { self.front(value, 0) })
-    }
-
-    #[inline]
-    fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        // The values are asked first, so that the mask is only read where one of them was there
-        // to read it for; walking past the end leaves the mask covering nothing, the way walking
-        // it to its end would.
-        let Some(value) = self.values.nth(n) else {
-            self.validity.exhaust();
-            return None;
-        };
-
-        // SAFETY: the values yielded the element `n` positions on, so the mask still covers it.
-        Some(unsafe { self.front(value, n) })
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.values.size_hint()
-    }
-
-    #[inline]
-    fn count(self) -> usize {
-        self.values.count()
-    }
-
-    /// Walks to the last element from the back, rather than through every one before it.
-    #[inline]
-    fn last(mut self) -> Option<Self::Item> {
-        self.next_back()
-    }
-
-    /// Hoists the validity mask out of the loop, and the representation of the values with it.
-    #[inline]
-    fn fold<B, F>(self, init: B, f: F) -> B
-    where
-        F: FnMut(B, Self::Item) -> B,
-    {
-        let (values, mask) = self.split();
-        // SAFETY: the mask has one bit per element, and the values and the mask are walked in
-        // lockstep, so it has a bit for every value left to yield.
-        unsafe { mask.fold_values(values, init, f) }
-    }
-}
-
-impl DoubleEndedIterator for PlFixedSizeBinaryIter<'_> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        let value = self.values.next_back()?;
-        // SAFETY: the values yielded the element at the back, so the mask still covers it.
-        Some(unsafe { self.back(value, 0) })
-    }
-
-    #[inline]
-    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-        // The values are asked first, the way `Iterator::nth` does.
-        let Some(value) = self.values.nth_back(n) else {
-            self.validity.exhaust();
-            return None;
-        };
-
-        // SAFETY: the values yielded the element `n` positions in, so the mask still covers it.
-        Some(unsafe { self.back(value, n) })
-    }
-
-    /// Hoists the validity mask out of the loop, the way [`Iterator::fold`] does.
-    #[inline]
-    fn rfold<B, F>(self, init: B, f: F) -> B
-    where
-        F: FnMut(B, Self::Item) -> B,
-    {
-        let (values, mask) = self.split();
-        // SAFETY: the mask has a bit for every value left to yield, per `Iterator::fold`.
-        unsafe { mask.rfold_values(values, init, f) }
-    }
-}
-
-impl ExactSizeIterator for PlFixedSizeBinaryIter<'_> {
-    #[inline]
-    fn len(&self) -> usize {
-        self.values.len()
-    }
-}
-
-unsafe impl TrustedLen for PlFixedSizeBinaryIter<'_> {}
+crate::impl_optional_iter!(PlFixedSizeBinaryIter<'a>, &'a [u8]);
 
 #[cfg(test)]
 mod tests {

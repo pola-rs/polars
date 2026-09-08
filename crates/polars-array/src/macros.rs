@@ -466,6 +466,12 @@ pub(crate) use impl_into_iterator;
 /// elements, and the mask that says which of them are elements in a `validity` field, and must
 /// have a `split` method that hands the two of them over to be walked in one loop.
 ///
+/// The values are asked for an element before the mask is read for it, which is what lets the
+/// mask be read unchecked: a value the values yielded is one the mask still has a bit for, since
+/// the two are as long as one another and are walked in lockstep. An iterator whose items cost
+/// something to build — a nested array, say — wants the other order, and writes its own impls so
+/// that a null position builds nothing at all.
+///
 /// The generic parameters of a generic iterator go in brackets before it, and the lifetime the
 /// elements borrow for is `'a`.
 macro_rules! impl_optional_iter {
@@ -477,15 +483,22 @@ macro_rules! impl_optional_iter {
             #[inline]
             fn next(&mut self) -> Option<Self::Item> {
                 let value = self.values.next()?;
-                Some(self.validity.next().then_some(value))
+                // SAFETY: the values yielded the element at the front, so the mask still covers it.
+                Some(unsafe { self.validity.next_unchecked() }.then_some(value))
             }
 
             #[inline]
             fn nth(&mut self, n: usize) -> Option<Self::Item> {
-                // The mask is advanced alongside the values, whether or not there is a value left.
-                let is_valid = self.validity.nth(n);
-                let value = self.values.nth(n)?;
-                Some(is_valid.then_some(value))
+                // The values are asked first, so that the mask is only read where one of them was
+                // there to read it for; walking past the end leaves the mask covering nothing, the
+                // way walking it to its end would.
+                let Some(value) = self.values.nth(n) else {
+                    self.validity.exhaust();
+                    return None;
+                };
+
+                // SAFETY: the values yielded the element `n` positions on, so the mask covers it.
+                Some(unsafe { self.validity.nth_unchecked(n) }.then_some(value))
             }
 
             #[inline]
@@ -522,15 +535,20 @@ macro_rules! impl_optional_iter {
             #[inline]
             fn next_back(&mut self) -> Option<Self::Item> {
                 let value = self.values.next_back()?;
-                Some(self.validity.next_back().then_some(value))
+                // SAFETY: the values yielded the element at the back, so the mask still covers it.
+                Some(unsafe { self.validity.next_back_unchecked() }.then_some(value))
             }
 
             #[inline]
             fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-                // The mask is advanced alongside the values, whether or not there is a value left.
-                let is_valid = self.validity.nth_back(n);
-                let value = self.values.nth_back(n)?;
-                Some(is_valid.then_some(value))
+                // The values are asked first, the way [`Iterator::nth`] does.
+                let Some(value) = self.values.nth_back(n) else {
+                    self.validity.exhaust();
+                    return None;
+                };
+
+                // SAFETY: the values yielded the element `n` positions in, so the mask covers it.
+                Some(unsafe { self.validity.nth_back_unchecked(n) }.then_some(value))
             }
 
             /// Hoists the validity mask out of the loop, the way [`Iterator::fold`] does.
@@ -562,15 +580,18 @@ macro_rules! impl_optional_iter {
 }
 pub(crate) use impl_optional_iter;
 
-/// Implements the iterator traits for a newtype over another iterator, mapping every item.
+/// Implements the iterator traits for an iterator that maps every item of another one.
 ///
-/// The iterator must be a newtype whose one field is the iterator whose items it maps, and the
-/// lifetime the items borrow for is `'a`. The map runs once per item yielded, in a fold as well
-/// as one item at a time, which leaves the representation of the iterator underneath hoisted out
-/// of the loop.
+/// The iterator must hold the one it walks in a field, named after `over:`, and anything the map
+/// reads besides the item in `Copy` fields, named in `with:`. A newtype over the iterator it maps
+/// leaves both out. The lifetime the items borrow for is `'a`.
+///
+/// The map runs once per item yielded, in a fold as well as one item at a time, which leaves the
+/// representation of the iterator underneath hoisted out of the loop.
 macro_rules! impl_mapped_iter {
     (
-        $(#[$meta:meta])* [$($generics:tt)*] $iter:ty, $item:ty, |$value:ident| $map:expr $(,)?
+        $(#[$meta:meta])* [$($generics:tt)*] $iter:ty, $item:ty,
+        over: $walk:tt, with: [$($ctx:ident),* $(,)?], |$value:ident| $map:expr $(,)?
     ) => {
         $(#[$meta])*
         impl<'a, $($generics)*> Iterator for $iter {
@@ -578,27 +599,30 @@ macro_rules! impl_mapped_iter {
 
             #[inline]
             fn next(&mut self) -> Option<Self::Item> {
-                self.0.next().map(|$value| $map)
+                $(let $ctx = self.$ctx;)*
+                self.$walk.next().map(|$value| $map)
             }
 
             #[inline]
             fn nth(&mut self, n: usize) -> Option<Self::Item> {
-                self.0.nth(n).map(|$value| $map)
+                $(let $ctx = self.$ctx;)*
+                self.$walk.nth(n).map(|$value| $map)
             }
 
             #[inline]
             fn size_hint(&self) -> (usize, Option<usize>) {
-                self.0.size_hint()
+                self.$walk.size_hint()
             }
 
             #[inline]
             fn count(self) -> usize {
-                self.0.count()
+                self.$walk.count()
             }
 
+            /// Walks to the last item from the back, rather than through every one before it.
             #[inline]
-            fn last(self) -> Option<Self::Item> {
-                self.0.last().map(|$value| $map)
+            fn last(mut self) -> Option<Self::Item> {
+                self.next_back()
             }
 
             /// Folds the iterator underneath, which hoists its representation out of the loop.
@@ -607,19 +631,22 @@ macro_rules! impl_mapped_iter {
             where
                 F: FnMut(B, Self::Item) -> B,
             {
-                self.0.fold(init, |acc, $value| f(acc, $map))
+                $(let $ctx = self.$ctx;)*
+                self.$walk.fold(init, |acc, $value| f(acc, $map))
             }
         }
 
         impl<'a, $($generics)*> DoubleEndedIterator for $iter {
             #[inline]
             fn next_back(&mut self) -> Option<Self::Item> {
-                self.0.next_back().map(|$value| $map)
+                $(let $ctx = self.$ctx;)*
+                self.$walk.next_back().map(|$value| $map)
             }
 
             #[inline]
             fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-                self.0.nth_back(n).map(|$value| $map)
+                $(let $ctx = self.$ctx;)*
+                self.$walk.nth_back(n).map(|$value| $map)
             }
 
             /// Folds the iterator underneath, the way [`Iterator::fold`] does.
@@ -628,20 +655,29 @@ macro_rules! impl_mapped_iter {
             where
                 F: FnMut(B, Self::Item) -> B,
             {
-                self.0.rfold(init, |acc, $value| f(acc, $map))
+                $(let $ctx = self.$ctx;)*
+                self.$walk.rfold(init, |acc, $value| f(acc, $map))
             }
         }
 
         impl<'a, $($generics)*> ExactSizeIterator for $iter {
             #[inline]
             fn len(&self) -> usize {
-                self.0.len()
+                self.$walk.len()
             }
         }
 
         // SAFETY: the iterator underneath is trusted, and mapping its items does not change how
         // many there are.
         unsafe impl<'a, $($generics)*> ::arrow::trusted_len::TrustedLen for $iter {}
+    };
+    // A newtype walks the one field it has, and reads nothing else.
+    (
+        $(#[$meta:meta])* [$($generics:tt)*] $iter:ty, $item:ty, |$value:ident| $map:expr $(,)?
+    ) => {
+        $crate::impl_mapped_iter!(
+            $(#[$meta])* [$($generics)*] $iter, $item, over: 0, with: [], |$value| $map
+        );
     };
     ($(#[$meta:meta])* $iter:ty, $($rest:tt)*) => {
         $crate::impl_mapped_iter!($(#[$meta])* [] $iter, $($rest)*);

@@ -206,103 +206,16 @@ impl<'a> PlFixedSizeListValuesIter<'a> {
             offsets: Offsets::new(values.len(), width, length),
         }
     }
-
-    /// The element at `offset`.
-    ///
-    /// # Safety
-    /// `offset` must be one the iterator's own offsets yielded.
-    #[inline(always)]
-    unsafe fn get(&self, offset: usize) -> Box<dyn PlArray> {
-        // SAFETY: the offset is the front of one of this iterator's elements.
-        unsafe { element(self.values, self.width, offset) }
-    }
 }
 
-impl Iterator for PlFixedSizeListValuesIter<'_> {
-    type Item = Box<dyn PlArray>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let offset = self.offsets.next()?;
-        // SAFETY: the offset is the front of one of this iterator's elements.
-        Some(unsafe { self.get(offset) })
-    }
-
-    #[inline]
-    fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        let offset = self.offsets.nth(n)?;
-        // SAFETY: the offset is the front of one of this iterator's elements.
-        Some(unsafe { self.get(offset) })
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.offsets.size_hint()
-    }
-
-    #[inline]
-    fn count(self) -> usize {
-        self.offsets.count()
-    }
-
-    #[inline]
-    fn last(mut self) -> Option<Self::Item> {
-        self.next_back()
-    }
-
-    /// Hoists the walk over the offsets out of the loop, per [`Offsets::fold`].
-    #[inline]
-    fn fold<B, F>(self, init: B, mut f: F) -> B
-    where
-        F: FnMut(B, Self::Item) -> B,
-    {
-        let (values, width) = (self.values, self.width);
-
-        self.offsets.fold(init, |acc, offset| {
-            // SAFETY: the offset is the front of one of this iterator's elements.
-            f(acc, unsafe { element(values, width, offset) })
-        })
-    }
-}
-
-impl DoubleEndedIterator for PlFixedSizeListValuesIter<'_> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        let offset = self.offsets.next_back()?;
-        // SAFETY: the offset is the front of one of this iterator's elements.
-        Some(unsafe { self.get(offset) })
-    }
-
-    #[inline]
-    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-        let offset = self.offsets.nth_back(n)?;
-        // SAFETY: the offset is the front of one of this iterator's elements.
-        Some(unsafe { self.get(offset) })
-    }
-
-    /// Hoists the walk over the offsets out of the loop, the way [`Iterator::fold`] does.
-    #[inline]
-    fn rfold<B, F>(self, init: B, mut f: F) -> B
-    where
-        F: FnMut(B, Self::Item) -> B,
-    {
-        let (values, width) = (self.values, self.width);
-
-        self.offsets.rfold(init, |acc, offset| {
-            // SAFETY: the offset is the front of one of this iterator's elements.
-            f(acc, unsafe { element(values, width, offset) })
-        })
-    }
-}
-
-impl ExactSizeIterator for PlFixedSizeListValuesIter<'_> {
-    #[inline]
-    fn len(&self) -> usize {
-        self.offsets.len()
-    }
-}
-
-unsafe impl TrustedLen for PlFixedSizeListValuesIter<'_> {}
+crate::impl_mapped_iter!(
+    PlFixedSizeListValuesIter<'a>,
+    Box<dyn PlArray>,
+    over: offsets,
+    with: [values, width],
+    // SAFETY: the offset is the front of one of this iterator's elements.
+    |offset| unsafe { element(values, width, offset) },
+);
 
 /// Iterator over the optional elements of a [`PlFixedSizeListArray`](super::PlFixedSizeListArray).
 #[derive(Clone)]
@@ -356,6 +269,10 @@ impl<'a> PlFixedSizeListIter<'a> {
     }
 }
 
+/// The iterator traits are written out rather than taken from `impl_optional_iter`, which reads
+/// the mask only where the values yielded an element: an element here is an array of its own,
+/// so the mask is read first and the walk over the offsets yields nothing but a shape, which
+/// leaves a null position paying for no array at all.
 impl Iterator for PlFixedSizeListIter<'_> {
     type Item = Option<Box<dyn PlArray>>;
 
