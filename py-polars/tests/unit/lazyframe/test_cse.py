@@ -896,7 +896,6 @@ def test_cse_chunks_18124() -> None:
     ).collect().shape == (4, 4)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_eager_cse_during_struct_expansion_18411() -> None:
     df = pl.DataFrame({"foo": [0, 0, 0, 1, 1]})
     vc = pl.col("foo").value_counts()
@@ -925,7 +924,6 @@ def test_cse_as_struct_19253() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.skip('Fix this test after setting default engine to "streaming"')
 def test_cse_as_struct_value_counts_20927() -> None:
     q = pl.LazyFrame({"x": [i for i in range(1, 6) for _ in range(i)]}).select(
