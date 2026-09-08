@@ -28,12 +28,6 @@ impl Flat<PlBinaryArray> {
         self.as_array().values.as_slice()
     }
 
-    /// The validity mask, if any element may be null, as a [`Bitmap`] of one bit per element.
-    #[inline]
-    pub fn validity(&self) -> Option<&Bitmap> {
-        self.as_array().validity.as_ref()
-    }
-
     /// Consumes this array into its internal components, whose ranges and bits are one per element.
     #[inline]
     pub fn into_inner(self) -> (Buffer<u8>, Buffer<u64>, Option<Bitmap>) {
@@ -71,13 +65,6 @@ impl Flat<PlBinaryArray> {
     }
 
     /// Returns the bytes of the element at `i`.
-    #[inline]
-    pub fn value(&self, i: usize) -> &[u8] {
-        assert!(i < self.as_array().length, "index out of bounds");
-        unsafe { self.value_unchecked(i) }
-    }
-
-    /// Returns the bytes of the element at `i`.
     ///
     /// # Safety
     /// `i` must be smaller than `self.len()`.
@@ -87,57 +74,9 @@ impl Flat<PlBinaryArray> {
         // SAFETY: the offsets are ordered and bounded by the length of the values.
         unsafe { self.as_array().values.get_unchecked(range) }
     }
-
-    /// Returns whether the element at `i` is valid (non-null).
-    #[inline]
-    pub fn is_valid(&self, i: usize) -> bool {
-        assert!(i < self.as_array().length, "index out of bounds");
-        unsafe { self.is_valid_unchecked(i) }
-    }
-
-    /// Returns whether the element at `i` is valid (non-null).
-    ///
-    /// # Safety
-    /// `i` must be smaller than `self.len()`.
-    #[inline]
-    pub unsafe fn is_valid_unchecked(&self, i: usize) -> bool {
-        debug_assert!(i < self.as_array().length);
-        // SAFETY: the mask has one bit per element, so `i` is in bounds of it too.
-        self.validity()
-            .is_none_or(|validity| unsafe { validity.get_bit_unchecked(i) })
-    }
-
-    /// Returns whether the element at `i` is null.
-    #[inline]
-    pub fn is_null(&self, i: usize) -> bool {
-        !self.is_valid(i)
-    }
-
-    /// Returns whether the element at `i` is null.
-    ///
-    /// # Safety
-    /// `i` must be smaller than `self.len()`.
-    #[inline]
-    pub unsafe fn is_null_unchecked(&self, i: usize) -> bool {
-        unsafe { !self.is_valid_unchecked(i) }
-    }
-
-    /// Returns the bytes of the element at `i`, or `None` if it is null.
-    #[inline]
-    pub fn get(&self, i: usize) -> Option<&[u8]> {
-        assert!(i < self.as_array().length, "index out of bounds");
-        unsafe { self.get_unchecked(i) }
-    }
-
-    /// Returns the bytes of the element at `i`, or `None` if it is null.
-    ///
-    /// # Safety
-    /// `i` must be smaller than `self.len()`.
-    #[inline]
-    pub unsafe fn get_unchecked(&self, i: usize) -> Option<&[u8]> {
-        unsafe { self.is_valid_unchecked(i).then(|| self.value_unchecked(i)) }
-    }
 }
+
+crate::impl_flat_methods!(PlBinaryArray, &[u8]);
 
 #[cfg(test)]
 mod tests {

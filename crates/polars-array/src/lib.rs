@@ -37,8 +37,8 @@ pub use fixed_size_list::{PlFixedSizeListArray, PlFixedSizeListArrayBuilder};
 pub use flat::Flat;
 pub use list::{PlListArray, PlListArrayBuilder};
 pub(crate) use macros::{
-    impl_array_eq, impl_array_methods, impl_element_debug, impl_into_iterator, impl_mapped_iter,
-    impl_optional_iter, impl_pl_array, impl_static_array,
+    impl_array_eq, impl_array_methods, impl_element_debug, impl_flat_methods, impl_into_iterator,
+    impl_mapped_iter, impl_optional_iter, impl_pl_array, impl_static_array,
 };
 pub use no_nulls::NoNulls;
 pub use null::{PlNullArray, PlNullArrayBuilder};

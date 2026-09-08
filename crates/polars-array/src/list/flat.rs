@@ -15,12 +15,6 @@ impl Flat<PlListArray> {
         &self.as_array().offsets
     }
 
-    /// The validity mask, if any element may be null, as a [`Bitmap`] of one bit per element.
-    #[inline]
-    pub fn validity(&self) -> Option<&Bitmap> {
-        self.as_array().validity.as_ref()
-    }
-
     /// Consumes this array into its internal components, whose ranges and bits are one per element.
     #[inline]
     pub fn into_inner(self) -> (Box<dyn PlArray>, Buffer<u64>, Option<Bitmap>) {
@@ -34,6 +28,8 @@ impl Flat<PlListArray> {
         (values, offsets, validity)
     }
 }
+
+crate::impl_flat_methods!(PlListArray);
 
 #[cfg(test)]
 mod tests {

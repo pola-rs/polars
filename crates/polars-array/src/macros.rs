@@ -742,3 +742,99 @@ mod tests {
         }
     }
 }
+
+/// Implements the methods a [`Flat`](crate::flat::Flat) array shares with every other one.
+///
+/// These are the methods whose body says nothing about the array underneath: the one that hands
+/// out the validity mask, the ones that read it, and the ones that check an index and hand the
+/// read on to `value_unchecked`, which every array writes for itself. A flat array holds one slot
+/// per element in every buffer it has, so all of them go straight to the fields.
+///
+/// The element accessors are written where the value type of the elements is given; an array
+/// whose elements are read out as a whole array of their own leaves it out, and gains only the
+/// validity mask.
+///
+/// The generic parameters of a generic array go in brackets before it.
+macro_rules! impl_flat_methods {
+    ([$($generics:tt)*] $array:ty, $value:ty $(,)?) => {
+        $crate::impl_flat_methods!([$($generics)*] $array);
+
+        impl<$($generics)*> $crate::flat::Flat<$array> {
+            /// Returns the value at `i`.
+            #[inline]
+            pub fn value(&self, i: usize) -> $value {
+                assert!(i < self.as_array().length, "index out of bounds");
+                // SAFETY: `i` is in bounds of the array.
+                unsafe { self.value_unchecked(i) }
+            }
+
+            /// Returns the element at `i`, or `None` if it is null.
+            #[inline]
+            pub fn get(&self, i: usize) -> Option<$value> {
+                assert!(i < self.as_array().length, "index out of bounds");
+                // SAFETY: `i` is in bounds of the array.
+                unsafe { self.get_unchecked(i) }
+            }
+
+            /// Returns the element at `i`, or `None` if it is null.
+            ///
+            /// # Safety
+            /// `i` must be smaller than `self.len()`.
+            #[inline]
+            pub unsafe fn get_unchecked(&self, i: usize) -> Option<$value> {
+                // SAFETY: `i` is in bounds of the array, per the caller.
+                unsafe { self.is_valid_unchecked(i).then(|| self.value_unchecked(i)) }
+            }
+        }
+    };
+    ([$($generics:tt)*] $array:ty $(,)?) => {
+        impl<$($generics)*> $crate::flat::Flat<$array> {
+            /// The validity mask, if any element may be null, as a [`Bitmap`](::arrow::bitmap::Bitmap)
+            /// of one bit per element.
+            #[inline]
+            pub fn validity(&self) -> Option<&::arrow::bitmap::Bitmap> {
+                self.as_array().validity.as_ref()
+            }
+
+            /// Returns whether the element at `i` is valid (non-null).
+            #[inline]
+            pub fn is_valid(&self, i: usize) -> bool {
+                assert!(i < self.as_array().length, "index out of bounds");
+                // SAFETY: `i` is in bounds of the array.
+                unsafe { self.is_valid_unchecked(i) }
+            }
+
+            /// Returns whether the element at `i` is valid (non-null).
+            ///
+            /// # Safety
+            /// `i` must be smaller than `self.len()`.
+            #[inline]
+            pub unsafe fn is_valid_unchecked(&self, i: usize) -> bool {
+                debug_assert!(i < self.as_array().length);
+                // SAFETY: the mask has one bit per element, so `i` is in bounds of it too.
+                self.validity()
+                    .is_none_or(|validity| unsafe { validity.get_bit_unchecked(i) })
+            }
+
+            /// Returns whether the element at `i` is null.
+            #[inline]
+            pub fn is_null(&self, i: usize) -> bool {
+                !self.is_valid(i)
+            }
+
+            /// Returns whether the element at `i` is null.
+            ///
+            /// # Safety
+            /// `i` must be smaller than `self.len()`.
+            #[inline]
+            pub unsafe fn is_null_unchecked(&self, i: usize) -> bool {
+                // SAFETY: `i` is in bounds of the array, per the caller.
+                unsafe { !self.is_valid_unchecked(i) }
+            }
+        }
+    };
+    ($array:ty $(, $value:ty)? $(,)?) => {
+        $crate::impl_flat_methods!([] $array $(, $value)?);
+    };
+}
+pub(crate) use impl_flat_methods;
