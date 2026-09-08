@@ -211,7 +211,7 @@ pub trait StringNameSpaceImpl: AsString {
                     })
                 } else {
                     with_regex_cache(|reg_cache| {
-                        Ok(broadcast_binary_elementwise(
+                        Ok(broadcast_binary_elementwise_mut(
                             ca,
                             pat,
                             infer_re_match(|src, pat| {

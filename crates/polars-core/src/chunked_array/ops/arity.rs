@@ -111,6 +111,14 @@ impl<A1, A2, R, T: FnMut(A1, A2) -> R> BinaryFnMut<A1, A2> for T {
     type Ret = R;
 }
 
+pub trait BinaryFn<A1, A2>: Fn(A1, A2) -> Self::Ret {
+    type Ret;
+}
+
+impl<A1, A2, R, T: Fn(A1, A2) -> R> BinaryFn<A1, A2> for T {
+    type Ret = R;
+}
+
 /// Applies a kernel that produces `Array` types.
 #[inline]
 pub fn unary_kernel<T, V, F, Arr>(ca: &ChunkedArray<T>, op: F) -> ChunkedArray<V>
@@ -253,7 +261,36 @@ where
 }
 
 #[inline]
-pub fn unary_elementwise<'a, T, V, F>(ca: &'a ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
+pub fn unary_elementwise<'a, T, V, F>(ca: &'a ChunkedArray<T>, op: F) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    V: PolarsDataType,
+    F: UnaryFn<Option<T::Physical<'a>>>,
+    V::Array: ArrayFromIter<<F as UnaryFn<Option<T::Physical<'a>>>>::Ret>,
+{
+    let iter = ca.downcast_iter().map(|arr| {
+        let length = arr.len();
+        if length > 1 {
+            if let Some(element) = arr.scalar_value() {
+                // The chunk reads the same element throughout, null or not, so one call answers
+                // it and the result repeats that single element — its own mask included.
+                let single: V::Array = std::iter::once(op(element)).collect_arr();
+                return single.new_from_index_typed(0, length);
+            }
+        }
+
+        if arr.null_count() == 0 {
+            arr.values_iter().map(|x| op(Some(x))).collect_arr()
+        } else {
+            arr.iter().map(&op).collect_arr()
+        }
+    });
+    ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
+}
+
+/// [`unary_elementwise`] for an `op` that carries state from one element to the next.
+#[inline]
+pub fn unary_elementwise_mut<'a, T, V, F>(ca: &'a ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
 where
     T: PolarsDataType,
     V: PolarsDataType,
@@ -982,6 +1019,35 @@ where
 pub fn broadcast_binary_elementwise<T, U, V, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
+    op: F,
+) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    V: PolarsDataType,
+    F: for<'a> BinaryFn<Option<T::Physical<'a>>, Option<U::Physical<'a>>>,
+    V::Array: for<'a> ArrayFromIter<
+        <F as BinaryFn<Option<T::Physical<'a>>, Option<U::Physical<'a>>>>::Ret,
+    >,
+{
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    // A side that repeats one element is read once and handed to the unary walk over the other.
+    // A column of one element repeats it by definition, so this subsumes the length-one case.
+    match (lhs.scalar_value(), rhs.scalar_value()) {
+        (Some(a), _) if rhs.len() == length => {
+            unary_elementwise(rhs, |b| op(a.clone(), b)).with_name(lhs.name().clone())
+        },
+        (_, Some(b)) => unary_elementwise(lhs, |a| op(a, b.clone())),
+        _ => binary_elementwise(lhs, rhs, op),
+    }
+}
+
+/// [`broadcast_binary_elementwise`] for an `op` that carries state between elements.
+pub fn broadcast_binary_elementwise_mut<T, U, V, F>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
     mut op: F,
 ) -> ChunkedArray<V>
 where
@@ -996,13 +1062,11 @@ where
     let length = broadcast_height(lhs.len(), rhs.len())
         .expect("cannot apply operation on arrays of different lengths");
 
-    // A side that repeats one element is read once and handed to the unary walk over the other.
-    // A column of one element repeats it by definition, so this subsumes the length-one case.
     match (lhs.scalar_value(), rhs.scalar_value()) {
         (Some(a), _) if rhs.len() == length => {
-            unary_elementwise(rhs, |b| op(a.clone(), b)).with_name(lhs.name().clone())
+            unary_elementwise_mut(rhs, |b| op(a.clone(), b)).with_name(lhs.name().clone())
         },
-        (_, Some(b)) => unary_elementwise(lhs, |a| op(a, b.clone())),
+        (_, Some(b)) => unary_elementwise_mut(lhs, |a| op(a, b.clone())),
         _ => binary_elementwise(lhs, rhs, op),
     }
 }

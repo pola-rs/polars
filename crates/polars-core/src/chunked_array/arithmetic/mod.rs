@@ -61,6 +61,23 @@ impl Add for &BinaryChunked {
     type Output = BinaryChunked;
 
     fn add(self, rhs: Self) -> Self::Output {
+        // Two sides that each read one value throughout concatenate that pair once, and the
+        // answer is that one value repeated.
+        if let Some(length) = arity::broadcast_height(self.len(), rhs.len()) {
+            if length > 1 {
+                if let (Some(lhs), Some(rhs)) = (self.scalar_value(), rhs.scalar_value()) {
+                    return match (lhs, rhs) {
+                        (Some(lhs), Some(rhs)) => {
+                            let mut buf = vec![];
+                            concat_binary_arrs(lhs, rhs, &mut buf);
+                            BinaryChunked::full(self.name().clone(), &buf, length)
+                        },
+                        _ => BinaryChunked::full_null(self.name().clone(), length),
+                    };
+                }
+            }
+        }
+
         // broadcasting path rhs
         if rhs.len() == 1 {
             let rhs = rhs.get(0);

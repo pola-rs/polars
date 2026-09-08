@@ -96,6 +96,30 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
         };
     }
 
+    // Every element of a scalar column ties with every other, which is one tie group covering the
+    // column and therefore one rank repeated — the sort below would only rediscover that. The
+    // methods that rank within a tie group by position are the two that read the sort order.
+    if let [chunk] = s.chunks().as_slice() {
+        if chunk.is_scalar() && null_count == 0 {
+            use RankMethod::*;
+            let name = s.name().clone();
+            let out = match method {
+                Average => Some(
+                    Float64Chunked::full(name, (1.0 + len as f64) / 2.0, len).into_series(),
+                ),
+                Min | Dense => Some(IdxCa::full(name, 1, len).into_series()),
+                Max => Some(IdxCa::full(name, len as IdxSize, len).into_series()),
+                Ordinal => None,
+                #[cfg(feature = "random")]
+                Random => None,
+            };
+
+            if let Some(out) = out {
+                return out;
+            }
+        }
+    }
+
     let sort_idx_ca = s
         .arg_sort(SortOptions {
             descending,

@@ -60,6 +60,17 @@ pub trait SeriesMethods: SeriesSealed {
     fn hash(&self, build_hasher: PlSeedableRandomStateQuality) -> UInt64Chunked {
         let s = self.as_series();
         let mut h = vec![];
+
+        // Every element of a scalar chunk hashes to the hash of the one value it holds, which the
+        // slice below asks for on its own and the result repeats in `O(1)` memory.
+        if let [chunk] = s.chunks().as_slice() {
+            if s.len() > 1 && chunk.is_scalar() {
+                let single = s.slice(0, 1);
+                single.0.vec_hash(build_hasher, &mut h).unwrap();
+                return UInt64Chunked::full(s.name().clone(), h[0], s.len());
+            }
+        }
+
         s.0.vec_hash(build_hasher, &mut h).unwrap();
         UInt64Chunked::from_vec(s.name().clone(), h)
     }

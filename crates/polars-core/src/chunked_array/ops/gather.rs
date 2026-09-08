@@ -135,6 +135,12 @@ where
     let it = indices.iter().copied();
     if targets.len() == 1 {
         let target = targets.first().unwrap();
+        if !indices.is_empty() && !target.is_empty() && PlArray::is_scalar(*target) {
+            // Every element of the chunk reads the same value and is null or not alongside it, so
+            // whichever elements the indices pick, the answer is that element again.
+            return target.new_from_index_typed(0, indices.len());
+        }
+
         if has_nulls {
             it.map(|i| target.get_unchecked(i as usize))
                 .collect_arr_trusted()

@@ -19,6 +19,38 @@ where
         // The chunks carry no logical type — the arrays of `polars-array` are physical storage
         // only — so the collect below builds them without one.
         _dtype: DataType,
+        op: F,
+    ) -> ChunkedArray<U>
+    where
+        U: PolarsDataType,
+        F: Fn(T::Physical<'a>) -> K,
+        U::Array: ArrayFromIter<K> + ArrayFromIter<Option<K>>,
+    {
+        let iter = self.downcast_iter().map(|arr| {
+            let length = arr.len();
+            if length > 1 {
+                if let Some(Some(value)) = arr.scalar_value() {
+                    let single: U::Array = std::iter::once(op(value)).collect_arr();
+                    return single.new_from_index_typed(0, length);
+                }
+            }
+
+            if arr.null_count() == 0 {
+                let out: U::Array = arr.values_iter().map(&op).collect_arr();
+                out.with_validity_typed(arr.validity().map(PlBitmap::from))
+            } else {
+                let out: U::Array = arr.iter().map(|opt| opt.map(&op)).collect_arr();
+                out.with_validity_typed(arr.validity().map(PlBitmap::from))
+            }
+        });
+
+        ChunkedArray::from_chunk_iter(self.name().clone(), iter)
+    }
+
+    /// [`Self::apply_nonnull_values_generic`] for an `op` that carries state between elements.
+    pub fn apply_nonnull_values_generic_mut<'a, U, K, F>(
+        &'a self,
+        _dtype: DataType,
         mut op: F,
     ) -> ChunkedArray<U>
     where
@@ -74,7 +106,23 @@ where
         let chunks = self
             .downcast_iter()
             .map(|arr| {
-                let mut mutarr = PlUtf8ViewArrayBuilder::with_capacity(arr.len());
+                let length = arr.len();
+                if length > 1 {
+                    if let Some(element) = arr.scalar_value() {
+                        // `f` writes the answer for one element into the buffer it is handed, so
+                        // the chunk that reads one element throughout is one call and a repeat.
+                        return match element {
+                            None => PlUtf8ViewArray::new_full_null(length),
+                            Some(v) => {
+                                buf.clear();
+                                f(v, &mut buf);
+                                PlUtf8ViewArray::new_scalar(&buf, length)
+                            },
+                        };
+                    }
+                }
+
+                let mut mutarr = PlUtf8ViewArrayBuilder::with_capacity(length);
                 arr.iter().for_each(|opt| match opt {
                     None => mutarr.push_null(),
                     Some(v) => {
@@ -97,7 +145,23 @@ where
         let chunks = self
             .downcast_iter()
             .map(|arr| {
-                let mut mutarr = PlUtf8ViewArrayBuilder::with_capacity(arr.len());
+                let length = arr.len();
+                if length > 1 {
+                    if let Some(element) = arr.scalar_value() {
+                        // As in `apply_into_string_amortized`: one element read throughout is one
+                        // call, and the answer stands for the chunk.
+                        return match element {
+                            None => Ok(PlUtf8ViewArray::new_full_null(length)),
+                            Some(v) => {
+                                buf.clear();
+                                f(v, &mut buf)?;
+                                Ok(PlUtf8ViewArray::new_scalar(&buf, length))
+                            },
+                        };
+                    }
+                }
+
+                let mut mutarr = PlUtf8ViewArrayBuilder::with_capacity(length);
                 for opt in arr.iter() {
                     match opt {
                         None => mutarr.push_null(),
@@ -340,6 +404,16 @@ impl StringChunked {
         F: FnMut(&'a str) -> &'a str,
     {
         let chunks = self.downcast_iter().map(|arr| {
+            let length = arr.len();
+            if length > 1 {
+                // The value `f` answers is read before the next call, which is what a scalar
+                // chunk needs: one call, and the answer copied into the one slot it stands in.
+                if let Some(value) = arr.scalar_value_ignore_validity() {
+                    return PlUtf8ViewArray::new_scalar(f(value), length)
+                        .with_validity(arr.validity().map(PlBitmap::from));
+                }
+            }
+
             let iter = arr.values_iter().map(&mut f);
             let new = PlUtf8ViewArray::arr_from_iter(iter);
             new.with_validity(arr.validity().map(PlBitmap::from))
@@ -354,6 +428,16 @@ impl BinaryChunked {
         F: FnMut(&'a [u8]) -> &'a [u8],
     {
         let chunks = self.downcast_iter().map(|arr| {
+            let length = arr.len();
+            if length > 1 {
+                // The value `f` answers is read before the next call, which is what a scalar
+                // chunk needs: one call, and the answer copied into the one slot it stands in.
+                if let Some(value) = arr.scalar_value_ignore_validity() {
+                    return PlBinaryViewArray::new_scalar(f(value), length)
+                        .with_validity(arr.validity().map(PlBitmap::from));
+                }
+            }
+
             let iter = arr.values_iter().map(&mut f);
             let new = PlBinaryViewArray::arr_from_iter(iter);
             new.with_validity(arr.validity().map(PlBitmap::from))

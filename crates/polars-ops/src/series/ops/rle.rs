@@ -189,6 +189,11 @@ pub fn rle_id(s: &Column) -> PolarsResult<Column> {
         .as_materialized_series()
         .not_equal_missing(s2.as_materialized_series())?;
 
+    // A column whose neighbours never differ is a single run, and every element carries its id.
+    if let Some(Some(false)) = s_neq.scalar_value() {
+        return Ok(IdxCa::full(s.name().clone(), 0, s.len()).into_column());
+    }
+
     let mut out = Vec::<IdxSize>::with_capacity(s.len());
     let mut last = 0;
     out.push(last); // Run numbers start at zero
