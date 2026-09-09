@@ -1266,6 +1266,74 @@ def test_map_sort_by_categorical_keys() -> None:
     assert grouped["x"].to_list() == [[3, 2, 1]]
 
 
+def _map_with_null_row_keeping_its_entries() -> pl.Series:
+    """An Arrow Map with entries retained under a null row."""
+    pa = pytest.importorskip("pyarrow")
+
+    keys = pa.array([Decimal("1.50"), Decimal("2.50")], type=pa.decimal128(10, 2))
+    values = pa.array([1, 2], type=pa.int64())
+    arr = pa.MapArray.from_arrays(pa.array([0, 1, 2], type=pa.int32()), keys, values)
+    # Mark row 0 null while the offsets keep pointing at its entry.
+    arr = pa.Array.from_buffers(
+        arr.type,
+        2,
+        [pa.py_buffer(bytes([0b10])), arr.buffers()[1]],
+        children=[arr.values],
+    )
+    return pl.from_arrow(pa.table({"m": arr}))["m"]  # type: ignore[index]
+
+
+DEC_MAP = pl.Map(pl.Decimal(10, 2), pl.Int64)
+RESCALED_MAP = pl.Map(pl.Decimal(12, 3), pl.Int64)
+NULL_ROW = None
+LIVE_ROW = {Decimal("2.500"): 2}
+
+
+@pytest.mark.parametrize(
+    ("nest", "rescaled_dtype", "expected"),
+    [
+        pytest.param(
+            lambda s: s.implode(),
+            pl.List(RESCALED_MAP),
+            [[NULL_ROW, LIVE_ROW]],
+            id="list",
+        ),
+        pytest.param(
+            lambda s: s.implode().cast(pl.Array(DEC_MAP, 2)),
+            pl.Array(RESCALED_MAP, 2),
+            [[NULL_ROW, LIVE_ROW]],
+            id="array",
+        ),
+        pytest.param(
+            lambda s: pl.select(pl.struct(pl.lit(s).alias("m"))).to_series(),
+            pl.Struct({"m": RESCALED_MAP}),
+            [{"m": NULL_ROW}, {"m": LIVE_ROW}],
+            id="struct",
+        ),
+        pytest.param(
+            lambda s: pl.select(pl.struct(pl.lit(s).alias("m"))).to_series().implode(),
+            pl.List(pl.Struct({"m": RESCALED_MAP})),
+            [[{"m": NULL_ROW}, {"m": LIVE_ROW}]],
+            id="list-of-struct",
+        ),
+        pytest.param(
+            lambda s: s.implode().implode(),
+            pl.List(pl.List(RESCALED_MAP)),
+            [[[NULL_ROW, LIVE_ROW]]],
+            id="list-of-list",
+        ),
+    ],
+)
+def test_map_null_row_entries_survive_nesting(
+    nest: Callable[[pl.Series], pl.Series],
+    rescaled_dtype: pl.DataType,
+    expected: list[Any],
+) -> None:
+    # Nested null propagation must preserve Map entries during Decimal key rescaling.
+    nested = nest(_map_with_null_row_keeping_its_entries())
+    assert nested.cast(rescaled_dtype).to_list() == expected
+
+
 def test_map_null_entry_of_a_live_row_is_rejected() -> None:
     # Only hidden null entries or keys may be dropped.
     entries = pl.Series("m", [[None, {"key": "a", "value": 1}]], dtype=ENTRIES)
