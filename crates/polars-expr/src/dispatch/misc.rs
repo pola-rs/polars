@@ -50,7 +50,7 @@ pub(super) fn approx_quantile_sketch(
 ) -> PolarsResult<Column> {
     let input = s.as_materialized_series();
     let out = polars_ops::prelude::approx_quantile_sketch(input, error, method)?;
-    Ok(ScalarColumn::unit_scalar_from_series(out).into())
+    Ok(out.into_column())
 }
 
 /// Estimate quantiles from a sketch column.
