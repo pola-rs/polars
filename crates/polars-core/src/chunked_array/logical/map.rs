@@ -965,6 +965,106 @@ mod test {
     }
 
     #[test]
+    fn nested_map_with_duplicate_inner_keys_is_canonicalized() {
+        // Inner rows `{x: 1, x: 2}` and `{y: 3}`, under outer keys `a` and `b`.
+        let inner_keys = str_keys(&[Some("x"), Some("x"), Some("y")]);
+        let inner_values = i64_values(&[Some(1), Some(2), Some(3)]);
+        let inner_storage = storage(
+            &pack_map_entries(&inner_keys, &inner_values),
+            &[0, 2, 3],
+            None,
+        );
+        let outer_keys = str_keys(&[Some("a"), Some("b")]);
+        let outer_storage = storage(
+            &pack_map_entries(&outer_keys, &inner_storage),
+            &[0, 2],
+            None,
+        );
+
+        let inner_dtype = map_dtype(DataType::String, DataType::Int64);
+        let dtype = map_dtype(DataType::String, inner_dtype.clone());
+        assert_eq!(outer_storage.dtype(), &dtype.to_physical());
+
+        let map = outer_storage.try_from_physical(&dtype).unwrap();
+        let map = map.map().unwrap();
+        assert_eq!(map.dtype(), &dtype);
+        let inner = map.values();
+        let inner = inner.map().unwrap();
+        assert_eq!(inner.dtype(), &inner_dtype);
+        assert_eq!(list_offsets(inner.storage()), [0, 1, 2]);
+        assert_eq!(
+            inner.values().i64().unwrap().iter().collect::<Vec<_>>(),
+            [Some(2), Some(3)]
+        );
+    }
+
+    #[cfg(feature = "dtype-categorical")]
+    #[test]
+    fn from_chunk_and_dtype_rejects_out_of_range_enum_codes() {
+        use polars_dtype::categorical::FrozenCategories;
+
+        let dtype = DataType::from_frozen_categories(FrozenCategories::new(["a", "b"]).unwrap());
+        let physical = dtype.to_physical();
+        let codes = |codes: &[u32]| {
+            Series::new(PlSmallStr::from_static("e"), codes)
+                .cast(&physical)
+                .unwrap()
+                .chunks()[0]
+                .clone()
+        };
+
+        let err =
+            Series::from_chunk_and_dtype(PlSmallStr::from_static("e"), codes(&[0, 7]), &dtype)
+                .unwrap_err();
+        assert!(err.to_string().contains("invalid category"), "{err}");
+
+        let s = Series::from_chunk_and_dtype(PlSmallStr::from_static("e"), codes(&[0, 1]), &dtype)
+            .unwrap();
+        assert_eq!(s.dtype(), &dtype);
+        assert_eq!(s.null_count(), 0);
+    }
+
+    #[cfg(feature = "object")]
+    #[test]
+    fn from_chunk_and_dtype_rejects_objects_before_reinterpreting() {
+        let chunk = PrimitiveArray::<i64>::from_vec(vec![1]).boxed();
+        for dtype in [
+            DataType::Object("x"),
+            DataType::List(Box::new(DataType::Object("x"))),
+        ] {
+            let err =
+                Series::from_chunk_and_dtype(PlSmallStr::from_static("o"), chunk.clone(), &dtype)
+                    .unwrap_err();
+            assert!(err.to_string().contains("objects"), "{err}");
+        }
+    }
+
+    #[cfg(feature = "dtype-decimal")]
+    #[test]
+    fn from_chunk_and_dtype_validates_decimals() {
+        let name = PlSmallStr::from_static("d");
+        let empty = PrimitiveArray::<i128>::new_empty(ArrowDataType::Int128).boxed();
+
+        // Validate metadata even for empty arrays.
+        let err =
+            Series::from_chunk_and_dtype(name.clone(), empty.clone(), &DataType::Decimal(50, 2))
+                .unwrap_err();
+        assert!(err.to_string().contains("precision"), "{err}");
+        let err = Series::from_chunk_and_dtype(name.clone(), empty, &DataType::Decimal(5, 9))
+            .unwrap_err();
+        assert!(err.to_string().contains("scale"), "{err}");
+
+        let too_big = PrimitiveArray::<i128>::from_vec(vec![100_000]).boxed();
+        let err = Series::from_chunk_and_dtype(name.clone(), too_big, &DataType::Decimal(5, 0))
+            .unwrap_err();
+        assert!(err.to_string().contains("does not fit"), "{err}");
+
+        let fits = PrimitiveArray::<i128>::from_vec(vec![99_999]).boxed();
+        let s = Series::from_chunk_and_dtype(name, fits, &DataType::Decimal(5, 0)).unwrap();
+        assert_eq!(s.dtype(), &DataType::Decimal(5, 0));
+    }
+
+    #[test]
     fn from_physical_unchecked_compacts_nulled_hidden_entries() {
         // Simulate dtype-blind propagation nulling a hidden entry and its key.
         let keys = str_keys(&[None, Some("b")]);

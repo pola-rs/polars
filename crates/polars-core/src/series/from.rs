@@ -35,35 +35,37 @@ impl Series {
 
     /// Construct a Series from a chunk holding the physical representation of `dtype`.
     ///
-    /// Errors if the chunk does not match the physical dtype. Additionally, we validate
-    /// all `Map` invariants, on the dtype level and the chunk level.
+    /// Checks the physical dtype and validates values through [`Series::try_from_physical`].
     pub fn from_chunk_and_dtype(
         name: PlSmallStr,
         chunk: ArrayRef,
         dtype: &DataType,
     ) -> PolarsResult<Self> {
-        if &dtype.to_physical().to_arrow(CompatLevel::newest()) != chunk.dtype() {
+        // Reject objects before construction can reinterpret the chunk as pointers.
+        polars_ensure!(
+            !dtype.contains_objects(),
+            InvalidOperation: "cannot create a series of type '{dtype}' from an arrow chunk: objects are process-local"
+        );
+        polars_ensure!(
+            !dtype.contains_unknown(),
+            InvalidOperation: "cannot create a series of type '{dtype}' from an arrow chunk"
+        );
+        // Validate Map dtypes before construction.
+        #[cfg(feature = "dtype-map")]
+        dtype.ensure_valid_map_dtypes()?;
+
+        let physical = dtype.to_physical();
+        if &physical.to_arrow(CompatLevel::newest()) != chunk.dtype() {
             polars_bail!(
                 InvalidOperation: "cannot create a series of type '{dtype}' of arrow chunk with type '{:?}'",
                 chunk.dtype()
             );
         }
 
-        // Map invariants are not captured by the physical dtype.
-        #[cfg(feature = "dtype-map")]
-        if dtype.contains_map() {
-            // Ensure the unchecked construction below cannot produce an invalid Map dtype.
-            dtype.ensure_valid_map_dtypes()?;
-
-            // SAFETY: the physical types match, checked above. The value-level Map invariants
-            // are established by the canonicalization below.
-            let series = unsafe { Self::from_chunks_and_dtype_unchecked(name, vec![chunk], dtype) };
-            return Ok(series.canonicalize_maps()?.unwrap_or(series));
-        }
-
-        // SAFETY: We check that the datatype matches.
-        let series = unsafe { Self::from_chunks_and_dtype_unchecked(name, vec![chunk], dtype) };
-        Ok(series)
+        // SAFETY: the chunk matches the physical dtype, checked above.
+        let physical =
+            unsafe { Self::from_chunks_and_dtype_unchecked(name, vec![chunk], &physical) };
+        physical.try_from_physical(dtype)
     }
 
     /// Takes chunks and a polars datatype and constructs the Series.
@@ -74,8 +76,12 @@ impl Series {
     ///
     /// The caller must ensure that the given `dtype`'s physical type matches all the `ArrayRef` dtypes.
     ///
-    /// Value-level invariants must also hold. In particular, `DataType::Map` requires
-    /// a valid Map dtype and non-null entries with unique, non-null keys.
+    /// Payloads must also be valid for the logical dtype:
+    ///
+    /// - `Categorical` / `Enum`: every code names a category;
+    /// - `Decimal`: every value fits the precision;
+    /// - `Object`: chunks originate from this process;
+    /// - `Map`: storage satisfies the `MapChunked` storage safety contract. Keys may repeat.
     pub unsafe fn from_chunks_and_dtype_unchecked(
         name: PlSmallStr,
         chunks: Vec<ArrayRef>,
