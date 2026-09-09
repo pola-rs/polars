@@ -39,12 +39,6 @@ struct FusedColumn {
     index: usize,
 }
 
-/// One side of the candidate pairs: the rows to gather from, and the indices into them.
-struct MatchSide<'a> {
-    payload: &'a DataFrame,
-    matches: &'a mut [IdxSize],
-}
-
 /// A match condition on top of the equi keys, applied to candidate pairs.
 struct FusedPredicate {
     expr: StreamExpr,
@@ -88,24 +82,17 @@ impl FusedPredicate {
 
     /// Compacts the candidate pairs the predicate accepts to the front of both slices.
     ///
-    /// `build` and `probe` describe the same pairs positionally. Returns how many
+    /// The two match slices describe the same pairs positionally. Returns how many
     /// survived, which the caller truncates its own buffers to.
     async fn retain_matches(
         &self,
         left_is_build: bool,
-        build: MatchSide<'_>,
-        probe: MatchSide<'_>,
+        build_payload: &DataFrame,
+        build_match: &mut [IdxSize],
+        probe_payload: &DataFrame,
+        probe_match: &mut [IdxSize],
         state: &ExecutionState,
     ) -> PolarsResult<usize> {
-        let MatchSide {
-            payload: build_payload,
-            matches: build_match,
-        } = build;
-        let MatchSide {
-            payload: probe_payload,
-            matches: probe_match,
-        } = probe;
-
         let n = build_match.len();
         assert_eq!(n, probe_match.len());
 
@@ -147,17 +134,30 @@ impl FusedPredicate {
                 None => mask.values().clone(),
             };
 
-            // SAFETY: We are in bounds
-            for i in keep.true_idx_iter() {
-                debug_assert!(start + i < end);
-                debug_assert!(kept <= start + i);
-                unsafe {
-                    let build = *build_match.get_unchecked(start + i);
-                    let probe = *probe_match.get_unchecked(start + i);
-                    *build_match.get_unchecked_mut(kept) = build;
-                    *probe_match.get_unchecked_mut(kept) = probe;
-                }
-                kept += 1;
+            match keep.set_bits() {
+                0 => {},
+                // The batch survives whole, so it moves as one block.
+                set if set == len => {
+                    if kept != start {
+                        build_match.copy_within(start..end, kept);
+                        probe_match.copy_within(start..end, kept);
+                    }
+                    kept += len;
+                },
+                // SAFETY: We are in bounds
+                _ => {
+                    for i in keep.true_idx_iter() {
+                        debug_assert!(start + i < end);
+                        debug_assert!(kept <= start + i);
+                        unsafe {
+                            let build = *build_match.get_unchecked(start + i);
+                            let probe = *probe_match.get_unchecked(start + i);
+                            *build_match.get_unchecked_mut(kept) = build;
+                            *probe_match.get_unchecked_mut(kept) = probe;
+                        }
+                        kept += 1;
+                    }
+                },
             }
 
             start = end;
@@ -1117,14 +1117,10 @@ impl ProbeState {
                                 let kept = fused_predicate
                                     .retain_matches(
                                         params.left_is_build.unwrap(),
-                                        MatchSide {
-                                            payload: &p.payload,
-                                            matches: &mut table_match,
-                                        },
-                                        MatchSide {
-                                            payload: &payload,
-                                            matches: &mut probe_match[probe_start..],
-                                        },
+                                        &p.payload,
+                                        &mut table_match,
+                                        &payload,
+                                        &mut probe_match[probe_start..],
                                         &state.in_memory_exec_state,
                                     )
                                     .await?;
