@@ -134,34 +134,42 @@ where
 
     // ASSUMPTION: the sum of *all* weights is not 0.
     // This should be caught by the DSL.
-    // This only leaves an invalid possibility if a truncated window's sums are zero.
-    // Moving along from a boundary the 'valid' window grows, so each window covers a superset of the
-    // weights of the one before it. Once a window covers a nonzero weight, so does every window
-    // after it
+    // This only leaves an invalid possibility if a truncated window's sums are zero,
+    // so only the truncated windows have to be checked.
+    // This can only happen at boundaries (start/end).
     if let Some(weights) = weights {
+        // `None` if the window isn't truncated, so that the scan knows where to stop.
         let covers_only_zero_weights = |i: usize| {
             let (start, end) = det_offsets_fn(i, window_size, len);
             let win_len = end - start;
-            let weights_start =
-                no_nulls::det_weights_start(centered, window_size, i, start, win_len);
-            weights[weights_start..weights_start + win_len]
-                .iter()
-                .all(|&w| w == 0.0)
+            if win_len == window_size {
+                // Full-size window
+                None
+            } else {
+                let weights_start =
+                    no_nulls::det_weights_start(centered, window_size, i, start, win_len);
+                let window_weights = &weights[weights_start..weights_start + win_len];
+                Some(window_weights.iter().all(|&w| w == 0.0))
+            }
         };
 
         // Head.
         for i in 0..len {
-            if !covers_only_zero_weights(i) {
+            let Some(only_zeros) = covers_only_zero_weights(i) else {
                 break;
+            };
+            if only_zeros {
+                validity.set(i, false)
             }
-            validity.set(i, false)
         }
         // Tail.
         for i in (0..len).rev() {
-            if !covers_only_zero_weights(i) {
+            let Some(only_zeros) = covers_only_zero_weights(i) else {
                 break;
+            };
+            if only_zeros {
+                validity.set(i, false)
             }
-            validity.set(i, false)
         }
     }
 
