@@ -799,3 +799,25 @@ def test_non_strict_cast_equality_is_promoted(engine: str) -> None:
         reference(left, right, predicate, on="k"),
         check_row_order=False,
     )
+
+
+def test_residual_gathers_from_a_multi_chunk_payload() -> None:
+    """The probe payload is rechunked on the first gather, not up front."""
+    left = pl.concat(
+        [
+            pl.DataFrame({"k": [1, 2, 3], "a": [10, 20, 30]}),
+            pl.DataFrame({"k": [1, 2, 3], "a": [11, 21, 31]}),
+        ],
+        rechunk=False,
+    )
+    assert left.n_chunks() == 2
+    right = pl.DataFrame({"k": [1, 1, 2, 3], "b": [15, 5, 25, 99]})
+    predicate = pl.col("a") < pl.col("b")
+    q = left.lazy().join(right.lazy(), on="k").filter(predicate)
+
+    assert_native_streaming(q)
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        reference(left.lazy(), right.lazy(), predicate, on="k"),
+        check_row_order=False,
+    )

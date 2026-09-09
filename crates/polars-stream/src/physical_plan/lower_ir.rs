@@ -1071,8 +1071,7 @@ pub fn lower_ir(
             let options = options.options.clone();
             // Only the hash equi join evaluates a residual natively; other strategies get
             // a `Filter` on top, and the in-memory fallback applies it from `options`.
-            let residual = options.residual().cloned();
-            let mut residual_is_native = false;
+            let mut residual = options.residual().cloned();
             #[cfg(feature = "asof_join")]
             let asof_options = || match args.how {
                 JoinType::AsOf(ref asof_options) => asof_options,
@@ -1388,8 +1387,10 @@ pub fn lower_ir(
                         // bulk-probing per partition, so it would evaluate the residual
                         // once per consecutive partition group: a row or two at a time
                         // with shuffled keys. A filter over the output is cheaper.
-                        residual_is_native =
-                            residual.is_some() && args.maintain_order == MaintainOrderJoin::None;
+                        let native = match args.maintain_order {
+                            MaintainOrderJoin::None => residual.take(),
+                            _ => None,
+                        };
                         phys_sm.insert(PhysNode::new(
                             output_schema,
                             PhysNodeKind::EquiJoin {
@@ -1398,7 +1399,7 @@ pub fn lower_ir(
                                 left_on: trans_left_on,
                                 right_on: trans_right_on,
                                 args: args.clone(),
-                                residual: residual_is_native.then(|| residual.clone().unwrap()),
+                                residual: native,
                             },
                         ))
                     },
@@ -1413,9 +1414,8 @@ pub fn lower_ir(
                     _ => unreachable!(),
                 };
                 let mut stream = PhysStream::first(node);
-                if let Some(residual) = residual
-                    && !residual_is_native
-                {
+                // Anything the join did not take over is applied as a filter instead.
+                if let Some(residual) = residual {
                     // A residual join never carries a slice.
                     debug_assert!(args.slice.is_none());
                     stream = build_filter_stream(
