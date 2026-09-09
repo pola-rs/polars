@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import types
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
@@ -25,6 +26,7 @@ from polars._utils.various import (
     parse_percentiles,
     parse_version,
 )
+from tests.unit.conftest import mock_module_import
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -197,6 +199,32 @@ def test_parse_version(v1: Any, v2: Any) -> None:
 def test_in_notebook() -> None:
     # private function, but easier to test this separately and mock it in the callers
     assert not _in_notebook()
+
+
+def _make_fake_ipython_module(ipython_shell: Any) -> types.ModuleType:
+    module = types.ModuleType("IPython")
+    module.get_ipython = lambda: ipython_shell  # type: ignore[attr-defined]
+    return module
+
+
+@pytest.mark.parametrize(
+    ("ipython_shell", "expected"),
+    [
+        # IPython is importable, but there is no active shell/kernel at all
+        # (e.g. a plain script where IPython merely happens to be installed
+        # as a dependency of something else) -> not a notebook.
+        (None, False),
+        # a plain IPython terminal shell (no Jupyter kernel) -> not a notebook.
+        (types.SimpleNamespace(config={}), False),
+        # an actual Jupyter kernel -> is a notebook.
+        (types.SimpleNamespace(config={"IPKernelApp": {}}), True),
+    ],
+)
+def test_in_notebook_with_ipython_shell(ipython_shell: Any, expected: bool) -> None:
+    with mock_module_import(
+        "IPython", _make_fake_ipython_module(ipython_shell), replace_if_exists=True
+    ):
+        assert _in_notebook() is expected
 
 
 @pytest.mark.parametrize(
