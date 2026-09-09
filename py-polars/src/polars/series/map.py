@@ -25,6 +25,8 @@ class MapNameSpace:
         Each entry is a `Struct` with a `key` and a `value` field. Entry order is
         preserved. The inverse of :meth:`Series.list.to_map`.
 
+        Null maps remain null, and any entries stored beneath them are omitted.
+
         Examples
         --------
         >>> s = pl.Series([{"a": 1, "b": 2}], dtype=pl.Map(pl.String, pl.Int64))
