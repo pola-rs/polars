@@ -160,6 +160,20 @@ fn find_validity_mismatch_fsl_fsl(
     assert_eq!(left.width(), right.width());
     let width = left.width();
 
+    // Both sides hold the one list every element of them reads, so the two lists are read against
+    // each other once: either they agree about every value, and no element is reported, or they
+    // disagree somewhere every element reads, and all of them are — neither side is written out
+    // one list per element to say so.
+    if left.values_are_scalar() && right.values_are_scalar() {
+        let mut nested_idxs = Vec::new();
+        find_validity_mismatch(left.values(), right.values(), &mut nested_idxs);
+
+        if !nested_idxs.is_empty() {
+            idxs.extend(0..left.len() as IdxSize);
+        }
+        return;
+    }
+
     // A value is mapped back onto the element above it by its position, which needs the values of
     // both sides laid out one list per element.
     let left = left.to_flat();

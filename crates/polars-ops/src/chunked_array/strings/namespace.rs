@@ -277,8 +277,17 @@ pub trait StringNameSpaceImpl: AsString {
     /// Get the length of the string values as number of bytes.
     fn str_len_bytes(&self) -> UInt32Chunked {
         let ca = self.as_string();
-        // The length of a view is held in the view, so this reads no bytes at all.
-        unary_elementwise_values(ca, |s| s.len() as u32)
+        // The length of a value is held in its view, so the lengths come straight off the views
+        // buffer: resolving each view to the string it stands for would read bytes this never
+        // touches, and would chase a view that does not hold its own into a data buffer.
+        unary_mut_values(ca, |arr| match arr.scalar_views() {
+            // Every element reads the one view, so they are all the length it holds.
+            Some(view) => PlPrimitiveArray::new_scalar(view.length, arr.len()),
+            None => {
+                let views = arr.flat_views().expect("views are flat or scalar");
+                PlPrimitiveArray::from_vec(views.iter().map(|view| view.length).collect())
+            },
+        })
     }
 
     /// Pad the start of the string until it reaches the given length.

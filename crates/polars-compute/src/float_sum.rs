@@ -267,7 +267,13 @@ where
     }
 
     fn sum_repeated(value: Self, count: usize) -> F {
-        value.as_() * F::from(count).expect("a length is representable in the accumulator")
+        let total =
+            value.as_() * F::from(count).expect("a length is representable in the accumulator");
+        // Adding into a zero is what the loops above do with the first element they read, and it
+        // is the one thing the product does not answer alike: `-0.0` added to `+0.0` is `+0.0`,
+        // where multiplying it by a count leaves the sign of the zero on. Every other total is
+        // itself again.
+        F::zero() + total
     }
 
     fn sum_with_validity(f: &[Self], validity: &Bitmap) -> F {

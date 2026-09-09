@@ -2,6 +2,7 @@
 
 use std::ops::Range;
 
+use arrow::bitmap::bitmask::BitMask;
 use arrow::legacy::index::IndexToUsize;
 use polars_array::builder::new_full_null_like;
 use polars_array::{PlArray, PlListArray, PlPrimitiveArray};
@@ -45,6 +46,36 @@ pub fn sublist_get(arr: &PlListArray, index: i64) -> Box<dyn PlArray> {
         };
     }
 
+    // The elements cover ranges of their own, which the offsets hold end to end: walking them and
+    // the mask as the slices they are settles the representation once instead of at every element.
+    if let Some(offsets) = arr.flat_offsets() {
+        let offsets = offsets.as_slice();
+        let indices = match arr.validity().and_then(|validity| {
+            // A mask of a single bit says the same of every element: either none of them is null,
+            // which is nothing to read, or all of them are.
+            match validity.scalar_value() {
+                Some(true) => None,
+                Some(false) => Some(Err(())),
+                None => Some(Ok(BitMask::from_bitmap(
+                    validity.flat_bitmap().expect("a mask is flat or scalar"),
+                ))),
+            }
+        }) {
+            // Every element is null, so no index lands anywhere and no value is ever read.
+            Some(Err(())) => return new_full_null_like(arr.values(), arr.len()),
+            // SAFETY: the mask holds one bit per element, so every index below is in bounds.
+            Some(Ok(mask)) => {
+                positions_in(offsets, index, |i| unsafe { mask.get_bit_unchecked(i) })
+            },
+            None => positions_in(offsets, index, |_| true),
+        };
+
+        // SAFETY: every index lands within the range the element it is read for covers.
+        return unsafe { take_unchecked(arr.values(), &indices) };
+    }
+
+    // The elements share one range but not one mask bit, so the index lands at the same position
+    // for every one of them and it is only the mask that tells them apart.
     let indices = (0..arr.len())
         .map(|i| {
             // SAFETY: `i` is an element of `arr`.
@@ -61,6 +92,32 @@ pub fn sublist_get(arr: &PlListArray, index: i64) -> Box<dyn PlArray> {
     unsafe { take_unchecked(arr.values(), &indices) }
 }
 
+/// The position `index` lands on within each of the elements `offsets` holds the ends of.
+///
+/// An element `is_valid` answers `false` for is null, which no index lands within.
+#[inline]
+fn positions_in(
+    offsets: &[u64],
+    index: i64,
+    is_valid: impl Fn(usize) -> bool,
+) -> PlPrimitiveArray<IdxSize> {
+    let mut start = offsets[0] as usize;
+
+    offsets[1..]
+        .iter()
+        .enumerate()
+        .map(|(i, &end)| {
+            let range = start..end as usize;
+            start = range.end;
+
+            is_valid(i)
+                .then(|| position_in(index, range))
+                .flatten()
+                .map(|position| position as IdxSize)
+        })
+        .collect()
+}
+
 /// Whether `index` falls outside at least one of the non-null elements of `arr`.
 pub fn index_is_oob(arr: &PlListArray, index: i64) -> bool {
     // An array of nothing but nulls holds no list for the index to fall outside of, which covers
@@ -75,12 +132,27 @@ pub fn index_is_oob(arr: &PlListArray, index: i64) -> bool {
         return position_in(index, range).is_none();
     }
 
-    (0..arr.len()).any(|i| {
-        // SAFETY: `i` is an element of `arr`.
-        unsafe {
-            !arr.is_null_unchecked(i) && position_in(index, arr.value_range_unchecked(i)).is_none()
+    // The offsets hold the range of every element, and the mask says which of them are null: both
+    // are read out once, so the loop below touches nothing but the slices they are.
+    let offsets = arr
+        .flat_offsets()
+        .expect("the elements cover ranges of their own")
+        .as_slice();
+    let validity = arr.validity();
+
+    let mut start = offsets[0] as usize;
+    for (i, &end) in offsets[1..].iter().enumerate() {
+        let range = start..end as usize;
+        start = range.end;
+
+        // SAFETY: `i` is an element of `arr`, which the mask covers.
+        let is_valid = validity.is_none_or(|validity| unsafe { validity.get_unchecked(i) });
+        if is_valid && position_in(index, range).is_none() {
+            return true;
         }
-    })
+    }
+
+    false
 }
 
 /// Wraps every element of `array` in a list of its own, turning `[1, 2, 3]` into `[[1], [2], [3]]`.

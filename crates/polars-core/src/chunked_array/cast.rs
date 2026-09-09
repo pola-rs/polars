@@ -649,6 +649,28 @@ impl ChunkCast for ArrayChunked {
     }
 }
 
+/// Puts cast values back under the offsets and the mask of the list array they were cast out of.
+///
+/// # Safety
+/// The values must be as many as the ones `offsets` was read off, and `offsets_are_scalar` must
+/// say which representation it is in.
+unsafe fn list_with_values(
+    values: PlArrayRef,
+    offsets: polars_buffer::Buffer<u64>,
+    offsets_are_scalar: bool,
+    length: usize,
+    validity: Option<arrow::bitmap::Bitmap>,
+) -> PlListArray {
+    let validity = validity.map(|validity| PlBitmap::new_broadcast(validity, length));
+    unsafe {
+        if offsets_are_scalar {
+            PlListArray::new_broadcast_unchecked(values, offsets, length, validity)
+        } else {
+            PlListArray::new_unchecked(values, offsets, length, validity)
+        }
+    }
+}
+
 // Returns inner data type. This is needed because a cast can instantiate the dtype inner
 // values for instance with categoricals
 fn cast_list(
@@ -659,14 +681,15 @@ fn cast_list(
     // We still rechunk because we must bubble up a single data-type
     // TODO!: consider a version that works on chunks and merges the data-types and arrays.
     let ca = ca.rechunk();
-    let arr = ca.downcast_as_array().to_flat();
+    // Only the values are cast: the offsets and the mask are handed over in whatever
+    // representation they came in, so a chunk whose elements all read the one list casts that
+    // list once rather than a copy of it per element.
+    let arr = ca.downcast_as_array();
+    let offsets_are_scalar = arr.offsets_are_scalar();
+    let (values, offsets, length, validity) = arr.clone().into_inner();
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
-        Series::from_chunks_and_dtype_unchecked(
-            PlSmallStr::EMPTY,
-            vec![arr.values().to_boxed()],
-            ca.inner_dtype(),
-        )
+        Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![values], ca.inner_dtype())
     };
     let new_inner = s.cast_with_options(child_type, options)?;
 
@@ -675,39 +698,28 @@ fn cast_list(
 
     let new_values = new_inner.rechunk().array_ref(0).clone();
 
-    // The offsets and the mask are handed over as they are: only the values were cast.
-    let (_, offsets, length, validity) = arr.into_owned().into_array().into_inner();
-    let new_arr = PlListArray::new(
-        new_values,
-        offsets,
-        length,
-        validity.map(PlBitmap::from_bitmap),
-    );
+    let new_arr =
+        unsafe { list_with_values(new_values, offsets, offsets_are_scalar, length, validity) };
     Ok((Box::new(new_arr), inner_dtype))
 }
 
 unsafe fn cast_list_unchecked(ca: &ListChunked, child_type: &DataType) -> PolarsResult<Series> {
     // TODO! add chunked, but this must correct for list offsets.
     let ca = ca.rechunk();
-    let arr = ca.downcast_as_array().to_flat();
+    // As in `cast_list`: only the values are cast, so the offsets and the mask are handed over in
+    // the representation they came in.
+    let arr = ca.downcast_as_array();
+    let offsets_are_scalar = arr.offsets_are_scalar();
+    let (values, offsets, length, validity) = arr.clone().into_inner();
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
-        Series::from_chunks_and_dtype_unchecked(
-            PlSmallStr::EMPTY,
-            vec![arr.values().to_boxed()],
-            ca.inner_dtype(),
-        )
+        Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![values], ca.inner_dtype())
     };
     let new_inner = s.cast_unchecked(child_type)?;
     let new_values = new_inner.rechunk().array_ref(0).clone();
 
-    let (_, offsets, length, validity) = arr.into_owned().into_array().into_inner();
-    let new_arr = PlListArray::new(
-        new_values,
-        offsets,
-        length,
-        validity.map(PlBitmap::from_bitmap),
-    );
+    let new_arr =
+        unsafe { list_with_values(new_values, offsets, offsets_are_scalar, length, validity) };
     Ok(ListChunked::from_chunks_and_dtype_unchecked(
         ca.name().clone(),
         vec![Box::new(new_arr)],
@@ -725,14 +737,15 @@ fn cast_fixed_size_list(
     options: CastOptions,
 ) -> PolarsResult<(PlArrayRef, DataType)> {
     let ca = ca.rechunk();
-    let arr = ca.downcast_as_array().to_flat();
+    // Only the values are cast: the width and the mask are handed over in whatever representation
+    // they came in, so a chunk whose elements all read the one list casts that list once rather
+    // than a copy of it per element.
+    let arr = ca.downcast_as_array();
+    let values_are_scalar = arr.values_are_scalar();
+    let (values, width, length, validity) = arr.clone().into_inner();
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
-        Series::from_chunks_and_dtype_unchecked(
-            PlSmallStr::EMPTY,
-            vec![arr.values().to_boxed()],
-            ca.inner_dtype(),
-        )
+        Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![values], ca.inner_dtype())
     };
     let new_inner = s.cast_with_options(child_type, options)?;
 
@@ -741,14 +754,16 @@ fn cast_fixed_size_list(
 
     let new_values = new_inner.rechunk().array_ref(0).clone();
 
-    // The width and the mask are handed over as they are: only the values were cast.
-    let (_, width, length, validity) = arr.into_owned().into_array().into_inner();
-    let new_arr = PlFixedSizeListArray::new(
-        new_values,
-        width,
-        length,
-        validity.map(PlBitmap::from_bitmap),
-    );
+    // The values were cast one for one, so they are as many as they were: whichever
+    // representation the array they came out of was in, they are still in it.
+    let new_arr = unsafe {
+        let validity = validity.map(|validity| PlBitmap::new_broadcast(validity, length));
+        if values_are_scalar {
+            PlFixedSizeListArray::new_broadcast_unchecked(new_values, width, length, validity)
+        } else {
+            PlFixedSizeListArray::new_unchecked(new_values, width, length, validity)
+        }
+    };
     Ok((Box::new(new_arr), inner_dtype))
 }
 
