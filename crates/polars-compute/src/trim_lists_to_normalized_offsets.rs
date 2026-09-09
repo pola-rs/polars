@@ -1,6 +1,7 @@
 use arrow::array::{Array, FixedSizeListArray, ListArray, StructArray};
-use arrow::offset::OffsetsBuffer;
 use arrow::types::Offset;
+
+use crate::rebuild_list::rebuild_list_shallow;
 
 /// Trim all lists of unused start and end elements recursively.
 pub fn trim_lists_to_normalized_offsets(arr: &dyn Array) -> Option<Box<dyn Array>> {
@@ -29,33 +30,15 @@ pub fn trim_lists_to_normalized_offsets_list<O: Offset>(
 
     let len = offsets.range().to_usize();
 
-    let (values, offsets) = if values.len() == len {
-        let values = trim_lists_to_normalized_offsets(values.as_ref())?;
-        (values, offsets.clone())
+    let values = if values.len() == len {
+        // The offsets already span the whole child, so only a nested list can change.
+        trim_lists_to_normalized_offsets(values.as_ref())?
     } else {
-        let first_idx: O = *offsets.first();
-
-        let offsets = if first_idx.to_usize() == 0 {
-            offsets.clone()
-        } else {
-            let v: Vec<O> = offsets.iter().map(|x| *x - first_idx).collect();
-            unsafe { OffsetsBuffer::<O>::new_unchecked(v.into()) }
-        };
-
-        let values = values.sliced(first_idx.to_usize(), len);
-        let values = trim_lists_to_normalized_offsets(values.as_ref()).unwrap_or(values);
-        (values, offsets)
+        let values = values.sliced(offsets.first().to_usize(), len);
+        trim_lists_to_normalized_offsets(values.as_ref()).unwrap_or(values)
     };
 
-    assert_eq!(offsets.first().to_usize(), 0);
-    assert_eq!(values.len(), offsets.range().to_usize());
-
-    Some(ListArray::new(
-        arr.dtype().clone(),
-        offsets,
-        values,
-        arr.validity().cloned(),
-    ))
+    Some(rebuild_list_shallow(arr, arr.dtype().clone(), values))
 }
 
 pub fn trim_lists_to_normalized_offsets_fsl(

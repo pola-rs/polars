@@ -50,7 +50,6 @@ impl Series {
             !dtype.contains_unknown(),
             InvalidOperation: "cannot create a series of type '{dtype}' from an arrow chunk"
         );
-        // Validate Map dtypes before construction.
         #[cfg(feature = "dtype-map")]
         dtype.ensure_valid_map_dtypes()?;
 
@@ -76,10 +75,9 @@ impl Series {
     ///
     /// The caller must ensure that the given `dtype`'s physical type matches all the `ArrayRef` dtypes.
     ///
-    /// Payloads must also be valid for the logical dtype:
+    /// Payloads must also be safe to read as the logical dtype:
     ///
-    /// - `Categorical` / `Enum`: every code names a category;
-    /// - `Decimal`: every value fits the precision;
+    /// - `Categorical` / `Enum`: every non-null code names a category;
     /// - `Object`: chunks originate from this process;
     /// - `Map`: storage satisfies the `MapChunked` storage safety contract. Keys may repeat.
     pub unsafe fn from_chunks_and_dtype_unchecked(

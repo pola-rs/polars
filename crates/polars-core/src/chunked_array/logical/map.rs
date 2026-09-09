@@ -1,6 +1,7 @@
 use arrow::bitmap::Bitmap;
 use arrow::offset::OffsetsBuffer;
 use polars_compute::gather::take_unchecked;
+use polars_compute::rebuild_list::rebuild_list_shallow;
 
 use crate::chunked_array::align_inner_chunks;
 use crate::chunked_array::cast::CastOptions;
@@ -17,7 +18,7 @@ use crate::prelude::*;
 /// 1. The storage dtype is the [`DataType::map_storage_dtype`] of a Map dtype that passes
 ///    [`DataType::ensure_valid_map_dtype`].
 /// 2. Child arrays are valid over their entire extent, including outside the list offsets:
-///    categorical codes in range, Decimals within precision, no `Object`.
+///    categorical codes in range, no `Object`.
 /// 3. Entries and keys have no nulls anywhere in the child arrays.
 ///
 /// Map values are nullable. Null rows may retain valid entries. Repairs drop null entries
@@ -232,7 +233,8 @@ impl MapChunked {
         }
     }
 
-    /// Cast the entry children, leaving the offsets and outer validity untouched.
+    /// Cast the entry children, preserving the row boundaries and the outer validity. The
+    /// offsets themselves may be rebased onto the new entries.
     fn cast_entries(
         &self,
         to_key: &DataType,
@@ -383,21 +385,10 @@ fn windowed_entries(storage: &ListChunked) -> Series {
     }
 }
 
-/// Rebase offsets to zero for a sliced child.
-fn rebased_offsets(offsets: &OffsetsBuffer<i64>) -> OffsetsBuffer<i64> {
-    let first = *offsets.first();
-    if first == 0 {
-        return offsets.clone();
-    }
-    let rebased: Vec<i64> = offsets.as_slice().iter().map(|o| o - first).collect();
-    // SAFETY: rebasing preserves monotonicity and makes the first offset zero.
-    unsafe { OffsetsBuffer::new_unchecked(rebased.into()) }
-}
-
 /// Rebuild Map storage from flat fields with one element per windowed entry.
 ///
-/// Preserves entry and list validity, rebasing offsets onto the new child.
-/// Rebasing allocates only for sliced inputs.
+/// Preserves entry and list validity. Only the outer rows are rebuilt: entries nested inside
+/// the new fields keep their own offsets.
 fn repack_map_storage(storage: &ListChunked, keys: &Series, values: &Series) -> ListChunked {
     let entries = windowed_entries(storage);
     assert_eq!(
@@ -427,14 +418,8 @@ fn repack_map_storage(storage: &ListChunked, keys: &Series, values: &Series) -> 
         .downcast_iter()
         .zip(packed.into_chunks())
         .map(|(arr, values)| {
-            debug_assert_eq!(arr.offsets().range() as usize, values.len());
-            LargeListArray::new(
-                LargeListArray::default_datatype(values.dtype().clone()),
-                rebased_offsets(arr.offsets()),
-                values,
-                arr.validity().cloned(),
-            )
-            .boxed()
+            let dtype = LargeListArray::default_datatype(values.dtype().clone());
+            rebuild_list_shallow(arr, dtype, values).boxed()
         })
         .collect();
 
@@ -450,8 +435,9 @@ fn repack_map_storage(storage: &ListChunked, keys: &Series, values: &Series) -> 
 
 /// Transform the flat entry fields and rebuild the original Map storage.
 ///
-/// Preserves validity and row lengths. The transform must preserve the windowed entry count;
-/// its returned fields determine the output dtype.
+/// Also accepts `List(Struct {key, value})` that is not Map storage yet, whose entries and
+/// keys may be null. Preserves validity and row lengths. The transform must preserve the
+/// windowed entry count; its returned fields determine the output dtype.
 pub(crate) fn try_apply_map_entries(
     storage: &ListChunked,
     f: impl FnOnce(&Series, &Series) -> PolarsResult<(Series, Series)>,
@@ -643,7 +629,6 @@ fn canonical_map_indices(
     }))
 }
 
-/// Gather entries and rebuild the list chunk.
 fn gather_entries(
     arr: &LargeListArray,
     entries: &StructArray,

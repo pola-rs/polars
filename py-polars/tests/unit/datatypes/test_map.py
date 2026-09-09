@@ -1219,55 +1219,6 @@ def test_map_nested_key_conversion_is_an_error_not_a_panic(
         convert(s)
 
 
-def test_map_null_row_keeping_its_entries() -> None:
-    # Arrow lets a null row keep its entries instead of being empty, and other producers
-    # do that. Null propagation must not null those entries: it runs before casting and
-    # row encoding, and nulling them breaks the non-null entry invariant.
-    pa = pytest.importorskip("pyarrow")
-
-    keys = pa.array([Decimal("1.50"), Decimal("2.50")], type=pa.decimal128(10, 2))
-    values = pa.array([1, 2], type=pa.int64())
-    arr = pa.MapArray.from_arrays(pa.array([0, 1, 2], type=pa.int32()), keys, values)
-    # Mark row 0 null while the offsets keep pointing at its entry.
-    arr = pa.Array.from_buffers(
-        arr.type,
-        2,
-        [pa.py_buffer(bytes([0b10])), arr.buffers()[1]],
-        children=[arr.values],
-    )
-    s = pl.from_arrow(pa.table({"m": arr}))["m"]  # type: ignore[index]
-    assert s.dtype == pl.Map(pl.Decimal(10, 2), pl.Int64)
-    assert s.to_arrow().offsets.to_pylist() == [0, 1, 2]
-    assert s.to_list() == [None, {Decimal("2.50"): 2}]
-
-    # Rescaling a Decimal key is the cast that revalidates the entries.
-    rescaled = s.cast(pl.Map(pl.Decimal(12, 3), pl.Int64))
-    assert rescaled.to_list() == [None, {Decimal("2.500"): 2}]
-
-    # A value cast keeps the entries, so they have to stay exportable.
-    widened = s.cast(pl.Map(pl.Decimal(10, 2), pl.Float64))
-    assert widened.to_list() == [None, {Decimal("2.50"): 2.0}]
-    assert widened.to_arrow().values.null_count == 0
-
-    # Row encoding also propagates first.
-    assert s.to_frame().group_by("m").len().height == 2
-    assert s.to_frame().sort("m")["m"].to_list() == [None, {Decimal("2.50"): 2}]
-
-
-def test_map_sort_by_categorical_keys() -> None:
-    # Ensure that categories are sorted by their values, not by their codes.
-    cats = pl.Categories("test_map_sort_by_categorical_keys")
-    dtype = pl.Map(pl.Categorical(cats), pl.Int64)
-    s = pl.Series("m", [{"b": 1}, {"a": 1}, {"a": 1}], dtype=dtype)
-    df = pl.DataFrame({"m": s, "x": [1, 2, 3], "y": [3, 4, 2]})
-
-    assert df.sort("m", "y")["x"].to_list() == [3, 2, 1]
-    assert df.select(pl.col("x").sort_by("m", "y"))["x"].to_list() == [3, 2, 1]
-
-    grouped = df.with_columns(g=1).group_by("g").agg(pl.col("x").sort_by("m", "y"))
-    assert grouped["x"].to_list() == [[3, 2, 1]]
-
-
 def _map_with_null_row_keeping_its_entries() -> pl.Series:
     """An Arrow Map with entries retained under a null row."""
     pa = pytest.importorskip("pyarrow")
@@ -1289,6 +1240,53 @@ DEC_MAP = pl.Map(pl.Decimal(10, 2), pl.Int64)
 RESCALED_MAP = pl.Map(pl.Decimal(12, 3), pl.Int64)
 NULL_ROW = None
 LIVE_ROW = {Decimal("2.500"): 2}
+
+
+def test_map_null_row_keeping_its_entries() -> None:
+    # Arrow lets a null row keep its entries instead of being empty, and other producers
+    # do that. Null propagation must not null those entries: it runs before casting and
+    # row encoding, and nulling them breaks the non-null entry invariant.
+    s = _map_with_null_row_keeping_its_entries()
+    assert s.dtype == DEC_MAP
+    assert s.to_arrow().offsets.to_pylist() == [0, 1, 2]
+    assert s.to_list() == [None, {Decimal("2.50"): 2}]
+
+    # Rescaling a Decimal key is the cast that revalidates the entries.
+    assert s.cast(RESCALED_MAP).to_list() == [None, LIVE_ROW]
+
+    # A value cast keeps the entries, so they have to stay exportable.
+    widened = s.cast(pl.Map(pl.Decimal(10, 2), pl.Float64))
+    assert widened.to_list() == [None, {Decimal("2.50"): 2.0}]
+    assert widened.to_arrow().values.null_count == 0
+
+    # Row encoding also propagates first.
+    assert s.to_frame().group_by("m").len().height == 2
+    assert s.to_frame().sort("m")["m"].to_list() == [None, {Decimal("2.50"): 2}]
+
+
+def test_map_sliced_null_row_leaves_its_entries_outside_the_window() -> None:
+    # Slicing away the null row leaves its entry in the child, before the offsets.
+    sliced = _map_with_null_row_keeping_its_entries().slice(1, 1)
+    assert sliced.to_list() == [{Decimal("2.50"): 2}]
+
+    exported = sliced.cast(pl.Map(pl.Decimal(10, 2), pl.Float64)).to_arrow()
+    assert exported.offsets.to_pylist() == [0, 1]
+    assert exported.keys.to_pylist() == [Decimal("2.50")]
+    assert sliced.cast(RESCALED_MAP).to_list() == [LIVE_ROW]
+
+
+def test_map_sort_by_categorical_keys() -> None:
+    # Ensure that categories are sorted by their values, not by their codes.
+    cats = pl.Categories("test_map_sort_by_categorical_keys")
+    dtype = pl.Map(pl.Categorical(cats), pl.Int64)
+    s = pl.Series("m", [{"b": 1}, {"a": 1}, {"a": 1}], dtype=dtype)
+    df = pl.DataFrame({"m": s, "x": [1, 2, 3], "y": [3, 4, 2]})
+
+    assert df.sort("m", "y")["x"].to_list() == [3, 2, 1]
+    assert df.select(pl.col("x").sort_by("m", "y"))["x"].to_list() == [3, 2, 1]
+
+    grouped = df.with_columns(g=1).group_by("g").agg(pl.col("x").sort_by("m", "y"))
+    assert grouped["x"].to_list() == [[3, 2, 1]]
 
 
 @pytest.mark.parametrize(
@@ -1402,3 +1400,74 @@ def test_map_decimal_rescale_collapsing_keys_deduplicates() -> None:
     rescaled = s.cast(pl.Map(pl.Decimal(10, 1), pl.Int64))
     assert rescaled.to_list() == [{Decimal("1.5"): 2}]
     assert rescaled.to_arrow().offsets.to_pylist() == [0, 1]
+
+
+SLICED_MAP_CASES = [
+    pytest.param(
+        MAP,
+        pl.Map(pl.String, pl.Float64),
+        [{"a": 1}, {"b": 2, "c": 3}, {"d": 4}],
+        [{"b": 2.0, "c": 3.0}, {"d": 4.0}],
+        id="flat",
+    ),
+    pytest.param(
+        pl.Map(pl.String, pl.Map(pl.String, pl.Int64)),
+        pl.Map(pl.String, pl.Map(pl.String, pl.Float64)),
+        [{"a": {"x": 1}}, {"b": {"y": 2}, "c": {}}, {"d": {"z": 3}}],
+        [{"b": {"y": 2.0}, "c": {}}, {"d": {"z": 3.0}}],
+        id="map-in-map",
+    ),
+    pytest.param(
+        pl.Map(pl.String, pl.List(pl.Int64)),
+        pl.Map(pl.String, pl.List(pl.Float64)),
+        [{"a": [1]}, {"b": [2, 3], "c": []}, {"d": [4]}],
+        [{"b": [2.0, 3.0], "c": []}, {"d": [4.0]}],
+        id="list-in-map",
+    ),
+]
+
+
+@pytest.mark.parametrize(("dtype", "target", "rows", "expected"), SLICED_MAP_CASES)
+def test_map_sliced_and_chunked_value_casts_use_the_offset_window(
+    dtype: pl.Map,
+    target: pl.Map,
+    rows: list[dict[str, Any]],
+    expected: list[dict[str, Any]],
+) -> None:
+    # Slicing keeps the entries of the dropped row in the child, so replacing or casting
+    # the values has to window the entries the same way the offsets do. Nested children
+    # keep their own offsets, which only full normalization rebases.
+    s = pl.Series("m", rows, dtype=dtype)
+    sliced = s.slice(1, 2)
+    chunked = pl.concat([s.slice(1, 1), s.slice(2, 1)])
+    assert chunked.n_chunks() == 2
+
+    for variant in (sliced, chunked):
+        assert variant.to_list() == rows[1:]
+        assert variant.map.entries().to_list() == [
+            [{"key": key, "value": value} for key, value in row.items()]
+            for row in rows[1:]
+        ]
+
+        cast = variant.cast(target)
+        assert cast.to_list() == expected
+        # Repacking the entries rebases the outer offsets onto them.
+        assert cast.to_arrow().offsets.to_pylist()[0] == 0
+        # Row encoding requires normalized offsets at every depth.
+        assert variant.to_frame().group_by("m").len().height == 2
+        assert variant.to_frame().sort("m").height == 2
+
+
+@pytest.mark.parametrize(("dtype", "target", "rows", "expected"), SLICED_MAP_CASES)
+def test_map_sliced_value_casts_survive_nesting(
+    dtype: pl.Map,
+    target: pl.Map,
+    rows: list[dict[str, Any]],
+    expected: list[dict[str, Any]],
+) -> None:
+    sliced = pl.Series("m", rows, dtype=dtype).slice(1, 2)
+
+    assert sliced.implode().cast(pl.List(target)).to_list() == [expected]
+    assert pl.select(pl.struct(pl.lit(sliced).alias("m"))).to_series().cast(
+        pl.Struct({"m": target})
+    ).to_list() == [{"m": row} for row in expected]

@@ -532,10 +532,10 @@ impl Series {
     ///
     /// # Safety
     ///
-    /// Payloads must be valid for `dtype`: categorical codes in range, Decimals within
-    /// precision, and Maps satisfying the `MapChunked` storage safety contract. Null entries
-    /// or keys under null rows are allowed and compacted; those in live rows are errors.
-    /// Invalid payloads can cause invalid memory access downstream.
+    /// Payloads must be safe to read as `dtype`: categorical codes in range for every
+    /// non-null slot, and Maps satisfying the `MapChunked` storage safety contract. Null
+    /// entries or keys under null rows are allowed and compacted; those in live rows are
+    /// errors. Unsafe payloads can cause invalid memory access downstream.
     ///
     /// # Key uniqueness
     /// Not required for safety. Whole-row transformations preserve existing uniqueness;

@@ -112,7 +112,6 @@ fn propagate_nulls_list_impl<O: Offset>(arr: &ListArray<O>, recurse: bool) -> Op
     ))
 }
 
-/// Optionally propagate nulls into the updated child.
 fn descend(values: Option<Box<dyn Array>>, recurse: bool) -> Option<Box<dyn Array>> {
     if !recurse {
         return values;

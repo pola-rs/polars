@@ -39,10 +39,10 @@ impl ListChunked {
     /// Relabel the inner dtype without changing values.
     ///
     /// # Safety
-    /// Physical representations must match, and values must be valid for `inner_dtype`:
-    /// categorical codes in range, Decimals within precision, and nested Maps satisfying
-    /// the `MapChunked` storage safety contract. Dtype-blind null propagation may violate
-    /// the Map contract.
+    /// Physical representations must match, and the values must be safe to read as
+    /// `inner_dtype`: categorical codes in range for every non-null slot, and nested Maps
+    /// satisfying the `MapChunked` storage safety contract. Dtype-blind null propagation may
+    /// violate the Map contract.
     pub unsafe fn to_logical(&mut self, inner_dtype: DataType) {
         debug_assert_eq!(inner_dtype.to_physical(), self.inner_dtype().to_physical());
         let fld = Arc::make_mut(&mut self.field);

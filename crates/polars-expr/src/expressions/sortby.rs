@@ -46,7 +46,7 @@ fn prepare_bool_vec(values: &[bool], by_len: usize) -> Vec<bool> {
     }
 }
 
-/// Ensure that (nested) categoricals and enums are sorted by their values, not by their codes.
+/// Preserve logical ordering information, including inside nested columns
 fn to_sort_repr(c: &Column) -> Column {
     let dtype = c.dtype();
     if dtype.is_nested() || dtype.contains_categoricals() || dtype.contains_enums() {
