@@ -965,7 +965,7 @@ pub(super) fn convert_functions(
                 ctx.arena,
             );
             let estimate = AExprBuilder::function(
-                vec![sketch.expr_ir_unnamed(), e[1].clone()],
+                vec![sketch.expr_ir_retain_name(ctx.arena), e[1].clone()],
                 I::ApproxQuantileEstimate { values_dtype },
                 ctx.arena,
             );
