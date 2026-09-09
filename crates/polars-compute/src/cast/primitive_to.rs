@@ -172,8 +172,6 @@ pub fn primitive_to_utf8view<T: NativeType + SerPrimitive>(
 }
 
 /// Scales the values of `from` by `to_multiple / from_multiple`, which is how a time unit changes.
-///
-/// Scaling up overflows the values that no longer fit, which read as null.
 pub fn rescale_time(
     from: &PlPrimitiveArray<i64>,
     from_multiple: i64,
@@ -192,8 +190,7 @@ pub fn rescale_time(
     }
 }
 
-/// Reads the elapsed time a value holds as the day it falls in, which is how a timestamp reads as
-/// a date.
+/// Reads the elapsed time a value holds as the day it falls in.
 pub fn timestamp_to_date(
     from: &PlPrimitiveArray<i64>,
     timestamps_per_day: i64,

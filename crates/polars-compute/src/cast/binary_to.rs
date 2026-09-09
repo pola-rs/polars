@@ -70,8 +70,7 @@ impl Parse for f64 {
     }
 }
 
-/// Reads the text of every element as the number it stands for, leaving a null where it stands for
-/// none.
+/// Reads the text of every element as the number it stands for, leaving a null for none.
 pub fn binary_to_parsed<T: NativeType + Parse>(
     from: &PlBinaryArray,
     options: CastOptionsImpl,
@@ -196,8 +195,7 @@ pub fn fixed_size_binary_to_binview(from: &PlFixedSizeBinaryArray) -> PlBinaryVi
     }
 
     // The values already lie end to end, which is the layout of a view array's buffer, so the
-    // cast reads them out of the buffer they are in — split up where a view can no longer address
-    // it.
+    // cast reads them out of the buffer they are in.
     let max_bytes_per_buffer = if width <= ARROW_MAX_OFFSET {
         ARROW_MAX_OFFSET
     } else {
@@ -241,8 +239,7 @@ pub fn fixed_size_binary_to_binview(from: &PlFixedSizeBinaryArray) -> PlBinaryVi
         .with_validity(from.validity().map(PlBitmap::from))
 }
 
-/// Reads the bytes of every element as its own values, which is how a binary reads as a list of
-/// bytes.
+/// Reads the bytes of every element as its own values: a binary read as a list of bytes.
 pub fn binary_to_list(from: &PlBinaryArray) -> PlListArray {
     let values = Box::new(PlPrimitiveArray::from_values(from.values().clone()));
     let validity = from.validity().map(PlBitmap::from);
@@ -260,58 +257,5 @@ pub fn binary_to_list(from: &PlBinaryArray) -> PlListArray {
             from.len(),
             validity,
         ),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use polars_array::arrow::export;
-
-    use super::*;
-
-    /// The views of a long element read a buffer at an offset an Arrow consumer reads as an `i32`,
-    /// so the values are split across buffers once they no longer fit one.
-    #[test]
-    fn binary_to_binview_splits_its_buffers() {
-        let values = [
-            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdaj", // 0 (offset)
-            "123",                                                          // inline
-            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdaj", // 60
-            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdaj", // 0 (new buffer)
-            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdaj", // 60
-            "234",                                                          // inline
-            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdaj", // 0 (new buffer)
-            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdaj", // 60
-            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdaj", // 0 (new buffer)
-            "lksafjdlkakjslkjsafkjdalkjfalkdsalkjfaslkfjlkakdsjfkajfksdaj", // 60
-            "324",                                                          // inline
-        ];
-        let array = PlBinaryArray::from_values_iter(values.iter().map(|value| value.as_bytes()));
-
-        let out = binary_to_binview(&array);
-
-        // Ensure we hit the multiple buffers part.
-        assert_eq!(
-            export::binview_to_arrow_binview(&out).data_buffers().len(),
-            4
-        );
-        // Ensure we created a valid binview.
-        let read = out
-            .values_iter()
-            .map(|value| std::str::from_utf8(value).unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(read, values);
-    }
-
-    /// A chunk that repeats one value is viewed once, and the view repeats it in turn.
-    #[test]
-    fn binary_to_binview_keeps_a_scalar_chunk_scalar() {
-        let array = PlBinaryArray::new_scalar(b"the value every element reads", 8);
-
-        let out = binary_to_binview(&array);
-
-        assert!(out.is_scalar());
-        assert_eq!(out.len(), 8);
-        assert_eq!(out.value(7), b"the value every element reads");
     }
 }

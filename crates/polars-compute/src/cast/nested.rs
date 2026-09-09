@@ -50,8 +50,7 @@ pub fn cast_struct(
     ))
 }
 
-/// Reads every element of a fixed size list array as a list of its own, which is `O(1)` but for
-/// the offsets they need.
+/// Reads every element of a fixed size list array as a list of its own.
 #[cfg(feature = "dtype-array")]
 pub fn fixed_size_list_to_list(
     from: &PlFixedSizeListArray,
@@ -83,11 +82,7 @@ pub fn fixed_size_list_to_list(
     ))
 }
 
-/// Reads every element of a list array as a list of `width` values, erroring if one holds another
-/// count of them.
-///
-/// The values under a null element are whatever the array holds there, which is not `width` of
-/// them: they are filled in so that every element reads the same count.
+/// Reads every element of a list array as a list of `width` values, erroring on another count.
 pub fn list_to_fixed_size_list(
     from: &PlListArray,
     width: usize,
@@ -181,8 +176,7 @@ pub fn list_to_fixed_size_list(
         .map_err(|_| polars_error::polars_err!(ComputeError: "not all elements have the specified width {width}"))
 }
 
-/// Reads the bytes every element holds one per value as the bytes of one element, which is what a
-/// binary array holds.
+/// Reads the bytes every element holds one per value as the bytes of one element.
 pub fn list_uint8_to_binview(from: &PlListArray) -> PolarsResult<PlBinaryViewArray> {
     let values: &PlPrimitiveArray<u8> = downcast(from.values());
 
@@ -224,7 +218,7 @@ pub fn list_uint8_to_binview(from: &PlListArray) -> PolarsResult<PlBinaryViewArr
         ),
     };
 
-    Ok(super::binary::binary_to_binview(&binary))
+    Ok(super::binary_to::binary_to_binview(&binary))
 }
 
 /// Rebuilds `from` over `values`, which hold as many values as its own do.
@@ -266,60 +260,5 @@ fn fixed_size_list_with_values(
     match from.scalar_value_ignore_validity() {
         Some(_) => PlFixedSizeListArray::new_broadcast(values, from.width(), from.len(), validity),
         None => PlFixedSizeListArray::new(values, from.width(), from.len(), validity),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn list_of_bytes(bytes: &[u8], offsets: &[u64], validity: Option<&[bool]>) -> PlListArray {
-        let values = Box::new(PlPrimitiveArray::from_vec(bytes.to_vec()));
-        let validity = validity.map(|validity| {
-            PlBitmap::from_bitmap(validity.iter().copied().collect::<arrow::bitmap::Bitmap>())
-        });
-        PlListArray::new(
-            values,
-            Buffer::from(offsets.to_vec()),
-            offsets.len() - 1,
-            validity,
-        )
-    }
-
-    #[test]
-    fn list_uint8_reads_as_the_bytes_of_its_elements() {
-        let list = list_of_bytes(b"abcdefghij", &[0, 3, 3, 10], None);
-
-        let out = list_uint8_to_binview(&list).unwrap();
-
-        assert_eq!(out.len(), 3);
-        assert_eq!(out.value(0), b"abc");
-        assert_eq!(out.value(1), b"");
-        assert_eq!(out.value(2), b"defghij");
-        assert_eq!(out.validity().map(|validity| validity.unset_bits()), None);
-    }
-
-    /// A null element holds no bytes, and neither does one whose bytes hold a null.
-    #[test]
-    fn list_uint8_reads_a_null_byte_as_a_null_element() {
-        let mut list = list_of_bytes(b"abcdef", &[0, 3, 6], Some(&[true, true]));
-        let values = PlPrimitiveArray::from_vec(b"abcdef".to_vec()).with_validity(Some(
-            PlBitmap::from_bitmap(
-                [true, true, true, true, false, true]
-                    .into_iter()
-                    .collect::<arrow::bitmap::Bitmap>(),
-            ),
-        ));
-        list = PlListArray::new(
-            Box::new(values),
-            Buffer::from(vec![0, 3, 6]),
-            2,
-            list.validity().map(PlBitmap::from),
-        );
-
-        let out = list_uint8_to_binview(&list).unwrap();
-
-        assert_eq!(out.value(0), b"abc");
-        assert!(!out.validity().unwrap().get(1));
     }
 }

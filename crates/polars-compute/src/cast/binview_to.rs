@@ -8,11 +8,10 @@ use polars_array::{
 };
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 
-use super::binary::Parse;
+use super::binary_to::Parse;
 use super::{CastOptionsImpl, MaskBuilder, and_validity, map_bytes_fallible};
 
-/// Reads the text of every element as the number it stands for, leaving a null where it stands for
-/// none.
+/// Reads the text of every element as the number it stands for, leaving a null for none.
 pub fn binview_to_parsed<T: NativeType + Parse>(
     from: &PlBinaryViewArray,
     options: CastOptionsImpl,
@@ -70,8 +69,7 @@ where
     )
 }
 
-/// Writes the bytes every element's view reads out end to end, which is what an offset-backed
-/// binary array holds.
+/// Writes the bytes every element's view reads out end to end, into an offset-backed binary.
 pub fn view_to_binary(from: &PlBinaryViewArray) -> PlBinaryArray {
     // The one value every element of a scalar chunk reads is written once, and the offsets repeat
     // the range it lies in.
@@ -128,8 +126,7 @@ pub fn binview_to_fixed_binary(
     Ok(out)
 }
 
-/// Reads the bytes of every element as the `array_width` numbers they are the memory of, leaving a
-/// null where an element holds another count of them.
+/// Reads the bytes of every element as the `array_width` numbers they are the memory of.
 pub fn binview_to_fixed_size_list<T, const IS_LITTLE_ENDIAN: bool>(
     from: &PlBinaryViewArray,
     array_width: usize,
