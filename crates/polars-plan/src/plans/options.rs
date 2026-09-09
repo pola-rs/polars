@@ -757,13 +757,6 @@ impl JoinTypeOptionsIR {
         }
     }
 
-    pub(crate) fn take_residual(&mut self) -> Option<ExprIR> {
-        match self {
-            Self::Equi { residual, .. } => residual.take(),
-            _ => None,
-        }
-    }
-
     pub(crate) fn push_key_pair(&mut self, left: ExprIR, right: ExprIR) {
         let Self::Equi { on, .. } = self else {
             panic!("key pairs can only be added to equi joins")

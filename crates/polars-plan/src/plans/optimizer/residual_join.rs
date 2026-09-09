@@ -39,38 +39,6 @@ fn for_each_ir_node(
     Ok(())
 }
 
-/// Split fused residuals back out into a `Filter` above their join.
-///
-/// Undoes [`fuse_residual_predicates`] for optimized IR that re-enters the optimizer.
-pub(super) fn unfuse_residual_joins(root: Node, ir_arena: &mut Arena<IR>) -> PolarsResult<()> {
-    for_each_ir_node(root, ir_arena, |node, ir_arena| {
-        let IR::Join { options, .. } = ir_arena.get(node) else {
-            return Ok(());
-        };
-        if !options.options.has_residual() {
-            return Ok(());
-        }
-
-        let mut join = ir_arena.get(node).clone();
-        let IR::Join { options, .. } = &mut join else {
-            unreachable!()
-        };
-        let residual = Arc::make_mut(options).options.take_residual().unwrap();
-
-        // The join moves to a fresh node so `node` keeps holding whatever the parents
-        // already point at.
-        let join = ir_arena.add(join);
-        ir_arena.replace(
-            node,
-            IR::Filter {
-                input: join,
-                predicate: residual,
-            },
-        );
-        Ok(())
-    })
-}
-
 /// Fuse `Filter(join)` predicates that span both inputs into the join's match condition.
 pub(super) fn fuse_residual_predicates(
     root: Node,

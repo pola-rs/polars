@@ -163,11 +163,6 @@ pub fn optimize(
         });
     };
 
-    // Everything below is written against `Filter`-over-join.
-    if get_or_init_members!().has_joins_or_unions {
-        residual_join::unfuse_residual_joins(root, ir_arena)?;
-    }
-
     let mut repeat_slice_pd_after_filter_pd = false;
 
     if opt_flags.slice_pushdown() {
