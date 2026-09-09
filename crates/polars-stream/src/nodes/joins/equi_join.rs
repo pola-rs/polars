@@ -147,10 +147,19 @@ impl ResidualPredicate {
                 None => mask.values().clone(),
             };
 
-            // `kept <= start + i`, so this never overwrites a candidate still to be read.
+            // SAFETY: `keep` holds one bit per pair in the batch, so `start + i < end`,
+            // and `end <= n`. `kept` starts the batch at most at `start` and advances once
+            // per surviving pair, so `kept <= start + i`: the write trails the read and
+            // never clobbers a pair still to be inspected.
             for i in keep.true_idx_iter() {
-                build_match[kept] = build_match[start + i];
-                probe_match[kept] = probe_match[start + i];
+                debug_assert!(start + i < end);
+                debug_assert!(kept <= start + i);
+                unsafe {
+                    let build = *build_match.get_unchecked(start + i);
+                    let probe = *probe_match.get_unchecked(start + i);
+                    *build_match.get_unchecked_mut(kept) = build;
+                    *probe_match.get_unchecked_mut(kept) = probe;
+                }
                 kept += 1;
             }
 
