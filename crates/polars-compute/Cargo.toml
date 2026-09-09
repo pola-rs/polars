@@ -13,7 +13,6 @@ arrow = { workspace = true }
 atoi_simd = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
-either = { workspace = true }
 fast-float2 = { workspace = true, optional = true }
 half = { workspace = true, optional = true, features = ["num-traits", "bytemuck"] }
 hashbrown = { workspace = true }
