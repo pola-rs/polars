@@ -730,3 +730,22 @@ def test_fallible_inside_list_eval_is_not_promoted(engine: str) -> None:
     assert_frame_equal(
         q.collect(engine=engine), reference(left, right, predicate, on="k")
     )
+
+
+@pytest.mark.parametrize("maintain_order", ["left", "right", "left_right"])
+def test_residual_not_native_when_order_is_preserved(maintain_order: str) -> None:
+    """The ordered probe would evaluate the residual a group at a time."""
+    left = pl.LazyFrame({"k": [1, 1, 2], "a": [1, 5, 9]})
+    right = pl.LazyFrame({"k": [1, 2, 2], "b": [3, 4, 7]})
+    predicate = pl.col("a") < pl.col("b")
+    q = left.join(right, on="k", maintain_order=maintain_order).filter(predicate)  # type: ignore[arg-type]
+
+    plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert plan is not None
+    assert "residual:" not in plan
+    assert "filter" in plan
+
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        reference(left, right, predicate, on="k", maintain_order=maintain_order),
+    )

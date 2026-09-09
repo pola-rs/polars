@@ -15,6 +15,7 @@ use polars_expr::dispatch::function_expr_to_udf;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_ops::frame::JoinType;
+use polars_ops::prelude::MaintainOrderJoin;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
@@ -1383,7 +1384,12 @@ pub fn lower_ir(
                         },
                     )),
                     _ if args.how.is_equi() => {
-                        residual_is_native = residual.is_some();
+                        // An order-preserving probe follows the probe morsel rather than
+                        // bulk-probing per partition, so it would evaluate the residual
+                        // once per consecutive partition group: a row or two at a time
+                        // with shuffled keys. A filter over the output is cheaper.
+                        residual_is_native =
+                            residual.is_some() && args.maintain_order == MaintainOrderJoin::None;
                         phys_sm.insert(PhysNode::new(
                             output_schema,
                             PhysNodeKind::EquiJoin {
@@ -1392,7 +1398,7 @@ pub fn lower_ir(
                                 left_on: trans_left_on,
                                 right_on: trans_right_on,
                                 args: args.clone(),
-                                residual: residual.clone(),
+                                residual: residual_is_native.then(|| residual.clone().unwrap()),
                             },
                         ))
                     },
