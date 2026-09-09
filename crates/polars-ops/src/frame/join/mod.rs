@@ -139,8 +139,7 @@ pub trait DataFrameJoinOps: IntoDf {
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
 
-        // A correctness fallback: the streaming hash join applies the residual per
-        // candidate instead of materializing every pair.
+        // This join has no per-candidate match condition, so it filters after the fact.
         if let Some(JoinTypeOptions::Residual(residual_options)) = &options {
             debug_assert!(args.slice.is_none());
             let predicate = residual_options.predicate.clone();

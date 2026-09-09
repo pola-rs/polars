@@ -1044,9 +1044,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 *output_schema_arc = new_output_schema;
 
-                // Narrowing an input can remove a name collision, dropping the suffix from
-                // the right column. The rename map below need not mention a column that
-                // only the residual reads.
+                // Narrowing an input can remove a name collision, dropping the suffix
+                // from the right column. The map below covers only projected names, so a
+                // column read solely by the residual is renamed here.
                 if !residual_names.is_empty() {
                     let mut renames: PlIndexMap<PlSmallStr, PlSmallStr> = PlIndexMap::default();
 

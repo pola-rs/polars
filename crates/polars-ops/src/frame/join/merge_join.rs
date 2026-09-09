@@ -271,8 +271,8 @@ pub fn gather_and_postprocess(
         if right_on.contains(&col) && should_coalesce {
             continue;
         }
-        // A right column takes the suffix only if it collides with a left column that
-        // survives coalescing, which drops the left keys on a right join.
+        // A right column takes the suffix only where it collides with a left column
+        // that survives coalescing.
         let collides =
             left.schema().contains(&col) && !(left_keys_coalesced_away && left_on.contains(&col));
         let renamed = match collides {

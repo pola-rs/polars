@@ -161,7 +161,7 @@ impl ResidualPredicate {
     }
 }
 
-/// Rechunks on the first gather from `payload`, which a morsel with no matches skips.
+/// Rechunks `payload` the first time rows are gathered from it.
 fn rechunk_once(payload: &mut DataFrame, rechunked: &mut bool) {
     if !*rechunked {
         payload.rechunk_mut();
@@ -936,7 +936,6 @@ impl ProbeState {
         let probe_limit = get_ideal_morsel_size() as IdxSize;
         let mark_matches = params.emit_unmatched_build();
         let emit_unmatched = params.emit_unmatched_probe();
-        // Unmatched-row bookkeeping would count a candidate before the residual runs.
         assert!(params.residual.is_none() || (!mark_matches && !emit_unmatched));
 
         let (key_selectors, payload_selector, build_payload_schema, probe_payload_schema);

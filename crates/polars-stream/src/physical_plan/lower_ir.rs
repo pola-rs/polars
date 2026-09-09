@@ -1383,10 +1383,7 @@ pub fn lower_ir(
                         },
                     )),
                     _ if args.how.is_equi() => {
-                        // An order-preserving probe follows the probe morsel rather than
-                        // bulk-probing per partition, so it would evaluate the residual
-                        // once per consecutive partition group: a row or two at a time
-                        // with shuffled keys. A filter over the output is cheaper.
+                        // Only the unordered probe evaluates a residual in bulk.
                         let native = match args.maintain_order {
                             MaintainOrderJoin::None => residual.take(),
                             _ => None,

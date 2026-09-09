@@ -113,7 +113,6 @@ fn try_fuse(
         .map(|key| key.output_name().clone())
         .collect();
 
-    // Classify every minterm before rebuilding the two predicates from them.
     let mut promoted: Vec<(ExprIR, ExprIR)> = Vec::new();
     let mut fused: UnitVec<Node> = unitvec![];
     let mut kept: UnitVec<Node> = unitvec![];
@@ -205,8 +204,8 @@ fn try_fuse(
 ///
 /// A promoted key runs on all rows of its input, not only on the candidate pairs the
 /// filter would have seen, so it must not fail or draw randomly on rows the query
-/// excludes. Fallibility is tracked per known function and does not cover every way an
-/// expression can raise, so this accepts only operations that cannot.
+/// excludes. Fallibility is tracked per known function rather than proven, so this
+/// admits only operations that cannot raise at all.
 fn can_promote_key(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     expr_arena.iter(node).all(|(_, ae)| match ae {
         AExpr::Column(_) | AExpr::Literal(_) => true,
