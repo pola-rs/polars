@@ -249,8 +249,8 @@ pub fn _check_asof_columns(
         if by_groups_present {
             polars_warn!("Sortedness of columns cannot be checked when 'by' groups provided");
         } else {
-            a.ensure_sorted_arg("asof_join")?;
-            b.ensure_sorted_arg("asof_join")?;
+            a.drop_nulls().ensure_sorted_arg("asof_join")?;
+            b.drop_nulls().ensure_sorted_arg("asof_join")?;
         }
     }
     Ok(())

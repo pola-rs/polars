@@ -13,7 +13,7 @@ use polars_ops::frame::{
     _check_asof_columns, _finish_join, _join_asof_dispatch, AsOfOptions, AsofStrategy, JoinArgs,
     JoinType,
 };
-use polars_ops::series::{rle_lengths, rle_lengths_helper_ca};
+use polars_ops::series::{SeriesMethods, rle_lengths, rle_lengths_helper_ca};
 use polars_utils::itertools::Itertools;
 use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::sort::reorder_cmp;
@@ -842,14 +842,16 @@ fn check_df_sorted(
     on: &PlSmallStr,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
-    let sorted_by_cols = by.iter().chain([on]);
-    let sorted_by_descending = params.by_descending.iter().chain([&false]);
-    let sorted_by_nulls_last = params.by_nulls_last.iter().chain([&false]);
-    if !dataframe.is_sorted(
-        &sorted_by_cols.cloned().collect_vec(),
-        &sorted_by_descending.cloned().collect_vec(),
-        &sorted_by_nulls_last.cloned().collect_vec(),
-    )? {
+    // Don't enforce null position on the `on` column. They may be interspersed.
+    if !dataframe
+        .column(on)?
+        .as_materialized_series()
+        .drop_nulls()
+        .is_sorted(SortOptions::default())?
+    {
+        return Err(not_sorted_err());
+    }
+    if !by.is_empty() && !dataframe.is_sorted(&by, &params.by_descending, &params.by_nulls_last)? {
         return Err(not_sorted_err());
     }
     Ok(())
