@@ -1,7 +1,6 @@
 #[cfg(feature = "performant")]
 use arrow::legacy::kernels::sorted_join;
 #[cfg(feature = "performant")]
-#[cfg(feature = "performant")]
 use polars_core::utils::_split_offsets;
 #[cfg(feature = "performant")]
 use polars_core::utils::flatten::flatten_par;

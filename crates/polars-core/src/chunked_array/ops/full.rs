@@ -1,4 +1,3 @@
-use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::new_empty_chunk;
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::new_full_null_chunk;
@@ -87,22 +86,21 @@ impl ChunkFullNull for BinaryOffsetChunked {
 
 impl ChunkFull<&Series> for ListChunked {
     fn full(name: PlSmallStr, value: &Series, length: usize) -> ListChunked {
-        if value.len() == 1 && !value.dtype().is_nested() {
-            let out = value
-                .new_from_index(0, length)
-                .reshape_list(&[
-                    ReshapeDimension::Infer,
-                    ReshapeDimension::Specified(Dimension::new(1)),
-                ])
-                .unwrap();
-            return out.list().unwrap().clone();
-        }
+        // The one list every element reads lies in a single range of the values, which the
+        // offsets of the lists repeat rather than write out: the values are that list, however
+        // wide it is and whatever is under it.
+        let dtype = value.dtype();
+        let values = value.rechunk().chunks()[0].clone();
+        let arr = PlListArray::new_scalar(values, length);
 
-        let mut builder = get_list_builder(value.dtype(), value.len() * length, length, name);
-        for _ in 0..length {
-            builder.append_series(value).unwrap();
+        // SAFETY: physical type matches the logical.
+        unsafe {
+            ChunkedArray::from_chunks_and_dtype(
+                name,
+                vec![Box::new(arr)],
+                DataType::List(Box::new(dtype.clone())),
+            )
         }
-        builder.finish()
     }
 }
 

@@ -138,6 +138,7 @@ fn repeated(value: bool, length: usize) -> PlBitmap {
 }
 
 /// How an element's own bit comes off the bits of the values under it.
+#[cfg(feature = "dtype-array")]
 #[derive(Clone, Copy)]
 enum Condense {
     /// The element's bit is set when every value's bit is: what equality asks.
@@ -146,6 +147,7 @@ enum Condense {
     Any,
 }
 
+#[cfg(feature = "dtype-array")]
 impl Condense {
     /// The element's bit, given how many of its `width` values are unset.
     #[inline]
@@ -161,6 +163,7 @@ impl Condense {
 ///
 /// The answer is read off the bits rather than written back out, which is what [`condense`] would
 /// do for the one element: a caller that condenses element by element allocates nothing per one.
+#[cfg(feature = "dtype-array")]
 #[inline]
 fn condense_one(values: &PlBitmap, how: Condense) -> bool {
     how.apply(values.unset_bits(), values.len())

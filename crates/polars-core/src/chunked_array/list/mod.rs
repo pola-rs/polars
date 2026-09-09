@@ -202,7 +202,12 @@ impl ListChunked {
     ) -> PolarsResult<ListChunked> {
         // generated Series will have wrong length otherwise.
         let ca = self.rechunk();
-        let arr = ca.downcast_as_array();
+        // The values are handed over one list per element: `func` maps them one for one, and a
+        // caller may read that layout off the array itself rather than off the values it is
+        // handed — see the closures in `polars-expr` that ignore them. So the single range a
+        // scalar chunk repeats is written out here, as `array_values` does for a fixed size list.
+        let arr = ca.downcast_as_array().to_flat();
+        let arr = arr.as_ref().as_array();
 
         // SAFETY:
         // Inner dtype is passed correctly
