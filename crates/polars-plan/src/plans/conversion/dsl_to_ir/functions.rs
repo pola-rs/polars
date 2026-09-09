@@ -927,10 +927,6 @@ pub(super) fn convert_functions(
                 (polars_compute::approx_quantile::MIN_ERROR..1.0).contains(&error),
                 InvalidOperation: "`error` must be in the range [2^-32, 1) (got: {error})"
             );
-            fn try_f64_values(s: &Series) -> Option<Vec<f64>> {
-                let s = s.cast(&DataType::Float64).ok()?;
-                s.f64().ok()?.iter().collect()
-            }
             let quantile = match ctx.arena.get(e[1].node()) {
                 AExpr::Literal(LiteralValue::Series(s)) if s.len() == 1 => s.get(0).ok(),
                 AExpr::Literal(
