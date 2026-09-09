@@ -3339,6 +3339,7 @@ dependencies = [
  "rayon",
  "recursive",
  "regex",
+ "serde",
  "version_check",
 ]
 

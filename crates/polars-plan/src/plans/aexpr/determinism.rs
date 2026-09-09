@@ -192,7 +192,9 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => false,
         #[cfg(feature = "approx_quantile")]
-        F::ApproxQuantile { .. } => true,
+        F::ApproxQuantileSketch { .. } => true,
+        #[cfg(feature = "approx_quantile")]
+        F::ApproxQuantileEstimate { .. } => false,
         F::Coalesce => false,
         #[cfg(feature = "diff")]
         F::Diff(_) => false,

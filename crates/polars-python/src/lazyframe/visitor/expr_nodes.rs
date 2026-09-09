@@ -1,8 +1,6 @@
 #[cfg(feature = "iejoin")]
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
-#[cfg(feature = "approx_quantile")]
-use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::rolling::{QuantileMethod, RollingFnParams};
 use polars_core::chunked_array::ops::FillNullStrategy;
 #[cfg(feature = "string_normalize")]
@@ -1897,17 +1895,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 } => ("value_counts", sort, parallel, name.as_str(), normalize).into_py_any(py),
                 IRFunctionExpr::UniqueCounts => ("unique_counts",).into_py_any(py),
                 IRFunctionExpr::ApproxNUnique => ("approx_n_unique",).into_py_any(py),
-                #[cfg(feature = "approx_quantile")]
-                IRFunctionExpr::ApproxQuantile { method, error } => {
-                    let method = match method {
-                        ApproxQuantileMethod::Auto => "auto",
-                        ApproxQuantileMethod::KLL => "kll",
-                        ApproxQuantileMethod::ReqSketch { hra: false } => "req_lo",
-                        ApproxQuantileMethod::ReqSketch { hra: true } => "req_hi",
-                        ApproxQuantileMethod::DoubleReqSketch => "req_both",
-                    };
-                    ("approx_quantile", method, error).into_py_any(py)
-                },
                 IRFunctionExpr::Coalesce => ("coalesce",).into_py_any(py),
                 IRFunctionExpr::Diff(null_behaviour) => (
                     "diff",
@@ -2139,6 +2126,14 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 },
                 IRFunctionExpr::RowDecode(..) => {
                     return Err(PyNotImplementedError::new_err("row_decode"));
+                },
+                #[cfg(feature = "approx_quantile")]
+                IRFunctionExpr::ApproxQuantileSketch { .. } => {
+                    return Err(PyNotImplementedError::new_err("approx_quantile_sketch"));
+                },
+                #[cfg(feature = "approx_quantile")]
+                IRFunctionExpr::ApproxQuantileEstimate { .. } => {
+                    return Err(PyNotImplementedError::new_err("approx_quantile_estimate"));
                 },
                 IRFunctionExpr::DynamicPred { pred } => {
                     ("dynamic_pred", pred.id().map(|u| u.as_u128())).into_py_any(py)

@@ -230,14 +230,9 @@ impl IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "approx_quantile")]
-            ApproxQuantile { .. } => {
-                // A list of quantiles in, a list of estimates out.
-                let quantiles_are_list = mapper.args()[1].dtype().is_list();
-                mapper.map_dtype(|dtype| match quantiles_are_list {
-                    true => DataType::List(Box::new(dtype.clone())),
-                    false => dtype.clone(),
-                })
-            },
+            ApproxQuantileSketch { .. } => mapper.with_dtype(DataType::Binary),
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantileEstimate { return_dtype } => mapper.with_dtype(return_dtype.clone()),
             #[cfg(feature = "hist")]
             Hist {
                 include_category,

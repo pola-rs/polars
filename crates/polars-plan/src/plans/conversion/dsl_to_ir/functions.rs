@@ -948,7 +948,24 @@ pub(super) fn convert_functions(
                 true => error,
                 false => method.empirical_error_to_formal(error),
             };
-            I::ApproxQuantile { method, error }
+
+            let values_dtype = e[0].dtype(ctx.schema, ctx.arena)?.clone();
+            let return_dtype = if e[1].dtype(ctx.schema, ctx.arena)?.is_list() {
+                DataType::List(Box::new(values_dtype))
+            } else {
+                values_dtype
+            };
+            let sketch = AExprBuilder::function(
+                vec![e[0].clone()],
+                I::ApproxQuantileSketch { method, error },
+                ctx.arena,
+            );
+            let estimate = AExprBuilder::function(
+                vec![sketch.expr_ir_unnamed(), e[1].clone()],
+                I::ApproxQuantileEstimate { return_dtype },
+                ctx.arena,
+            );
+            return Ok((estimate.node(), e[0].output_name().clone()));
         },
         F::Coalesce => I::Coalesce,
         #[cfg(feature = "diff")]
