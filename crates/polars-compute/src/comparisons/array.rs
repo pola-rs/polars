@@ -3,7 +3,7 @@
 use polars_array::{PlArray, PlBitmap, PlBitmapRef, PlFixedSizeListArray};
 
 use super::dyn_array::{pl_array_tot_eq_missing_kernel, pl_array_tot_ne_missing_kernel};
-use super::{Condense, PlTotalEqKernel, condense, repeated};
+use super::{Condense, PlTotalEqKernel, condense, condense_one, repeated};
 
 impl PlTotalEqKernel for PlFixedSizeListArray {
     type Scalar = Box<dyn PlArray>;
@@ -79,10 +79,7 @@ fn fsl_compare_values(
     ) {
         // Each side repeats one list, so comparing those two lists once — `width` values, not
         // `length * width` of them — answers for every element.
-        (Some(lhs), Some(rhs)) => {
-            let bit = condense(inner(lhs, rhs), 1, width, how);
-            repeated(bit.get(0), length)
-        },
+        (Some(lhs), Some(rhs)) => repeated(condense_one(&inner(lhs, rhs), how), length),
         // At least one side holds every element's values, so both are read that way.
         _ => {
             let (lhs, rhs) = (lhs.to_flat(), rhs.to_flat());
@@ -111,8 +108,7 @@ fn fsl_compare_scalar(
 
     // The scalar is one list, so a side that repeats one list too is a single comparison.
     if let Some(lhs) = lhs.scalar_value_ignore_validity() {
-        let bit = condense(inner(lhs, rhs), 1, width, how);
-        return repeated(bit.get(0), length);
+        return repeated(condense_one(&inner(lhs, rhs), how), length);
     }
 
     // A chunk that repeats the scalar's list holds it once and reads it for every element, which

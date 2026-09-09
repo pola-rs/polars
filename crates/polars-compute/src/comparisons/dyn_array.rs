@@ -1,27 +1,24 @@
 //! The equality kernels a nested array recurses into its children through, over a `&dyn PlArray`.
 
-use arrow::with_match_primitive_type;
-#[cfg(feature = "dtype-array")]
-use polars_array::PlFixedSizeListArray;
-use polars_array::{
-    PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBooleanArray,
-    PlFixedSizeBinaryArray, PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray,
-    PlUtf8ViewArray,
-};
+use polars_array::{PlArray, PlBitmap};
 
 use super::PlTotalEqKernel;
 
-fn downcast<A: PlArray + 'static>(array: &dyn PlArray) -> &A {
+pub(super) fn downcast<A: PlArray + 'static>(array: &dyn PlArray) -> &A {
     array
         .as_any()
         .downcast_ref()
         .expect("the array type dispatched on names the array")
 }
 
-/// Dispatches a nested comparison on the array type both sides share.
-macro_rules! compare {
-    ($lhs:expr, $rhs:expr, $op:path $(,)?) => {{
-        let (lhs, rhs) = ($lhs, $rhs);
+/// Resolves the array type both sides share, once, and runs `$body` over them downcast to it.
+///
+/// The dispatch is what a `&dyn PlArray` costs, so a caller that reads many elements out of one
+/// pair of arrays runs its whole walk inside the body rather than coming back through here for
+/// every element.
+macro_rules! with_array_pair {
+    ($lhs_array:expr, $rhs_array:expr, |$lhs:ident, $rhs:ident| $body:expr $(,)?) => {{
+        let (lhs, rhs) = ($lhs_array, $rhs_array);
         assert_eq!(
             lhs.array_type(),
             rhs.array_type(),
@@ -29,27 +26,36 @@ macro_rules! compare {
         );
 
         macro_rules! call_binary {
-            ($A:ty) => {{ $op(downcast::<$A>(lhs), downcast::<$A>(rhs)) }};
+            ($A:ty) => {{
+                let $lhs = $crate::comparisons::dyn_array::downcast::<$A>(lhs);
+                let $rhs = $crate::comparisons::dyn_array::downcast::<$A>(rhs);
+                $body
+            }};
         }
 
-        use PlArrayType as A;
+        use ::polars_array::PlArrayType as A;
         match lhs.array_type() {
-            A::Null => call_binary!(PlNullArray),
-            A::Boolean => call_binary!(PlBooleanArray),
+            A::Null => call_binary!(::polars_array::PlNullArray),
+            A::Boolean => call_binary!(::polars_array::PlBooleanArray),
             // Dispatched on the element type the array type names, not on the concrete array,
             // so that the arms are exactly the primitives a `PlArrayType::Primitive` can hold.
-            A::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| $op(
-                downcast::<PlPrimitiveArray<$T>>(lhs),
-                downcast::<PlPrimitiveArray<$T>>(rhs),
-            )),
-            A::Binary => call_binary!(PlBinaryArray),
-            A::BinaryView => call_binary!(PlBinaryViewArray),
-            A::Utf8View => call_binary!(PlUtf8ViewArray),
-            A::FixedSizeBinary => call_binary!(PlFixedSizeBinaryArray),
-            A::Struct => call_binary!(PlStructArray),
-            A::List => call_binary!(PlListArray),
+            A::Primitive(primitive) => ::arrow::with_match_primitive_type!(primitive, |$T| {
+                let $lhs = $crate::comparisons::dyn_array::downcast::<
+                    ::polars_array::PlPrimitiveArray<$T>,
+                >(lhs);
+                let $rhs = $crate::comparisons::dyn_array::downcast::<
+                    ::polars_array::PlPrimitiveArray<$T>,
+                >(rhs);
+                $body
+            }),
+            A::Binary => call_binary!(::polars_array::PlBinaryArray),
+            A::BinaryView => call_binary!(::polars_array::PlBinaryViewArray),
+            A::Utf8View => call_binary!(::polars_array::PlUtf8ViewArray),
+            A::FixedSizeBinary => call_binary!(::polars_array::PlFixedSizeBinaryArray),
+            A::Struct => call_binary!(::polars_array::PlStructArray),
+            A::List => call_binary!(::polars_array::PlListArray),
             #[cfg(feature = "dtype-array")]
-            A::FixedSizeList => call_binary!(PlFixedSizeListArray),
+            A::FixedSizeList => call_binary!(::polars_array::PlFixedSizeListArray),
             #[cfg(not(feature = "dtype-array"))]
             A::FixedSizeList => todo!(
                 "comparison of a fixed-size-list array is not supported without the dtype-array \
@@ -62,12 +68,18 @@ macro_rules! compare {
     }};
 }
 
+pub(super) use with_array_pair;
+
 /// Whether both sides hold the same element, reading a null as a value equal only to itself.
 pub fn pl_array_tot_eq_missing_kernel(lhs: &dyn PlArray, rhs: &dyn PlArray) -> PlBitmap {
-    compare!(lhs, rhs, PlTotalEqKernel::tot_eq_missing_kernel)
+    with_array_pair!(lhs, rhs, |lhs, rhs| PlTotalEqKernel::tot_eq_missing_kernel(
+        lhs, rhs
+    ))
 }
 
 /// Whether the two sides differ, reading a null as a value equal only to itself.
 pub fn pl_array_tot_ne_missing_kernel(lhs: &dyn PlArray, rhs: &dyn PlArray) -> PlBitmap {
-    compare!(lhs, rhs, PlTotalEqKernel::tot_ne_missing_kernel)
+    with_array_pair!(lhs, rhs, |lhs, rhs| PlTotalEqKernel::tot_ne_missing_kernel(
+        lhs, rhs
+    ))
 }

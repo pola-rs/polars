@@ -1,3 +1,4 @@
+#[cfg(feature = "dtype-array")]
 use arrow::bitmap::utils::count_zeros;
 use arrow::bitmap::{self, Bitmap};
 use polars_array::{PlBitmap, PlBitmapRef};
@@ -148,7 +149,17 @@ impl Condense {
     }
 }
 
+/// The bit `values` — the bits of the values of a single element — condenses to.
+///
+/// The answer is read off the bits rather than written back out, which is what [`condense`] would
+/// do for the one element: a caller that condenses element by element allocates nothing per one.
+#[inline]
+fn condense_one(values: &PlBitmap, how: Condense) -> bool {
+    how.apply(values.unset_bits(), values.len())
+}
+
 /// Condenses `values`, holding `width` bits per element, into one bit per element.
+#[cfg(feature = "dtype-array")]
 fn condense(values: PlBitmap, length: usize, width: usize, how: Condense) -> PlBitmap {
     debug_assert!(width > 0);
 
@@ -288,7 +299,7 @@ pub trait PlTotalOrdKernel: Sized {
 mod array;
 mod binary;
 mod boolean;
-mod dyn_array;
+pub(crate) mod dyn_array;
 mod list;
 mod null;
 mod pl_array;

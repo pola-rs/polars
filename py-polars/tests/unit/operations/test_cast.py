@@ -1076,3 +1076,17 @@ def test_strict_struct_cast_field_name_mismatch() -> None:
     s = pl.Series("x", [{"a": 1}])
     with pytest.raises(InvalidOperationError, match="field name mismatch"):
         s.cast(pl.Struct({"b": pl.Int64}), strict=True)
+
+
+def test_cast_binary_to_string_rejects_invalid_utf8() -> None:
+    # A cast to String must not hand back a String series holding bytes that are not
+    # valid UTF-8.
+    s = pl.Series("x", [b"ok", b"\xff\xfe", None], dtype=pl.Binary)
+    for strict in (True, False):
+        with pytest.raises(ComputeError, match="invalid utf8"):
+            s.cast(pl.String, strict=strict)
+
+    assert_series_equal(
+        pl.Series("x", [b"ok", None], dtype=pl.Binary).cast(pl.String),
+        pl.Series("x", ["ok", None], dtype=pl.String),
+    )

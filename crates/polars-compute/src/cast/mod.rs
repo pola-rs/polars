@@ -358,11 +358,9 @@ fn cast_bytes(
     };
 
     match to {
-        // SAFETY: the caller of a cast to a string promises the bytes are valid UTF-8, which is
-        // the invariant the Arrow kernels this replaced upheld the same way.
-        D::String => Ok(Box::new(unsafe {
-            PlUtf8ViewArray::from_binview_unchecked(view.clone())
-        })),
+        // Bytes are only a string once they are known to be UTF-8: the cast reads them as such
+        // and errors if they are not, rather than handing back a string array that is not one.
+        D::String => Ok(Box::new(PlUtf8ViewArray::from_binview(view.clone())?)),
         D::Binary => Ok(Box::new(view.clone())),
         D::BinaryOffset => Ok(Box::new(binview_to::view_to_binary(view))),
         _ => unsupported(from, to),

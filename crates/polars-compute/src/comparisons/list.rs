@@ -2,8 +2,124 @@
 
 use polars_array::{PlArray, PlBitmap, PlBitmapRef, PlListArray};
 
-use super::dyn_array::{pl_array_tot_eq_missing_kernel, pl_array_tot_ne_missing_kernel};
-use super::{Condense, PlTotalEqKernel, condense, repeated};
+use super::dyn_array::with_array_pair;
+use super::{Condense, PlTotalEqKernel, condense_one, repeated};
+
+/// Compares the lists of `$lhs` against `$rhs`'s, element for element, with `$op` over the values
+/// of each pair.
+///
+/// The values of both sides are downcast once, ahead of the walk over the elements: an element is
+/// then a slice of a concrete array, which is a clone of its buffers and nothing more. Reading it
+/// as a `&dyn PlArray` instead costs a box and a dispatch of its own, once per element.
+macro_rules! compare_values {
+    ($lhs:expr, $rhs:expr, $how:expr, $op:path, $mismatch:expr $(,)?) => {{
+        let (lhs, rhs, how, mismatch) = ($lhs, $rhs, $how, $mismatch);
+        let length = lhs.len();
+
+        // Lists of different value types hold no pair of values to compare.
+        if lhs.values().array_type() != rhs.values().array_type() {
+            repeated(mismatch, length)
+        } else {
+            with_array_pair!(lhs.values(), rhs.values(), |lhs_values, rhs_values| {
+                // The bit an element gets from the ranges of the values its two lists cover.
+                let element = |l: std::ops::Range<usize>, r: std::ops::Range<usize>| {
+                    // Lists of different lengths hold no pair of values to compare.
+                    if l.len() != r.len() {
+                        return mismatch;
+                    }
+                    // Two empty lists are the same list, whatever the value type under them.
+                    if l.is_empty() {
+                        return !mismatch;
+                    }
+
+                    // SAFETY: the offsets of a list array are ordered and bounded by the length
+                    // of its values, so every range they hold is in bounds of them.
+                    let (l, r) = unsafe {
+                        (
+                            lhs_values.sliced_unchecked(l.start, l.len()),
+                            rhs_values.sliced_unchecked(r.start, r.len()),
+                        )
+                    };
+
+                    condense_one(&$op(&l, &r), how)
+                };
+
+                // Both sides hold the one range every element of them covers, and neither is null
+                // anywhere, so comparing those two lists once answers for every element: a single
+                // bit stands for all of them and none is written out.
+                if let (Some(l), Some(r)) = (lhs.scalar_offsets(), rhs.scalar_offsets())
+                    && lhs.null_count() == 0
+                    && rhs.null_count() == 0
+                {
+                    return repeated(element(l, r), length);
+                }
+
+                PlBitmap::from_iter((0..length).map(|i| {
+                    // A null element has no list to read; the missing-aware kernel answers for it.
+                    if lhs.is_null(i) || rhs.is_null(i) {
+                        return !mismatch;
+                    }
+
+                    // SAFETY: `i` is below the length both arrays share.
+                    let (l, r) =
+                        unsafe { (lhs.value_range_unchecked(i), rhs.value_range_unchecked(i)) };
+
+                    element(l, r)
+                }))
+            })
+        }
+    }};
+}
+
+/// Compares the lists of `$lhs` against the single list `$rhs`, per [`compare_values`].
+macro_rules! compare_scalar {
+    ($lhs:expr, $rhs:expr, $how:expr, $op:path, $mismatch:expr $(,)?) => {{
+        let (lhs, rhs, how, mismatch) = ($lhs, $rhs, $how, $mismatch);
+        let length = lhs.len();
+
+        // Lists of different value types hold no pair of values to compare.
+        if lhs.values().array_type() != rhs.array_type() {
+            repeated(mismatch, length)
+        } else {
+            with_array_pair!(lhs.values(), rhs, |lhs_values, rhs_values| {
+                let width = rhs_values.len();
+
+                // The bit an element gets from the range of the values its list covers, against
+                // the single list on the other side.
+                let element = |l: std::ops::Range<usize>| {
+                    if l.len() != width {
+                        return mismatch;
+                    }
+                    if l.is_empty() {
+                        return !mismatch;
+                    }
+
+                    // SAFETY: as in `compare_values`.
+                    let l = unsafe { lhs_values.sliced_unchecked(l.start, l.len()) };
+
+                    condense_one(&$op(&l, rhs_values), how)
+                };
+
+                // Every element covers the one range the offsets hold and none of them is null,
+                // so the one comparison against the scalar answers for all of them.
+                if let Some(l) = lhs.scalar_offsets()
+                    && lhs.null_count() == 0
+                {
+                    return repeated(element(l), length);
+                }
+
+                PlBitmap::from_iter((0..length).map(|i| {
+                    if lhs.is_null(i) {
+                        return !mismatch;
+                    }
+
+                    // SAFETY: `i` is below the length of `lhs`.
+                    element(unsafe { lhs.value_range_unchecked(i) })
+                }))
+            })
+        }
+    }};
+}
 
 impl PlTotalEqKernel for PlListArray {
     type Scalar = Box<dyn PlArray>;
@@ -14,119 +130,43 @@ impl PlTotalEqKernel for PlListArray {
 
     fn tot_eq_kernel(&self, other: &Self) -> PlBitmap {
         assert_eq!(self.len(), other.len());
-        list_compare_values(
+        compare_values!(
             self,
             other,
             Condense::All,
-            pl_array_tot_eq_missing_kernel,
+            PlTotalEqKernel::tot_eq_missing_kernel,
             false,
         )
     }
 
     fn tot_ne_kernel(&self, other: &Self) -> PlBitmap {
         assert_eq!(self.len(), other.len());
-        list_compare_values(
+        compare_values!(
             self,
             other,
             Condense::Any,
-            pl_array_tot_ne_missing_kernel,
+            PlTotalEqKernel::tot_ne_missing_kernel,
             true,
         )
     }
 
     fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
-        list_compare_scalar(
+        compare_scalar!(
             self,
             &**other,
             Condense::All,
-            pl_array_tot_eq_missing_kernel,
+            PlTotalEqKernel::tot_eq_missing_kernel,
             false,
         )
     }
 
     fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
-        list_compare_scalar(
+        compare_scalar!(
             self,
             &**other,
             Condense::Any,
-            pl_array_tot_ne_missing_kernel,
+            PlTotalEqKernel::tot_ne_missing_kernel,
             true,
         )
     }
-}
-
-/// Compares the lists of `lhs` against `rhs`'s, element for element.
-fn list_compare_values(
-    lhs: &PlListArray,
-    rhs: &PlListArray,
-    how: Condense,
-    inner: fn(&dyn PlArray, &dyn PlArray) -> PlBitmap,
-    mismatch: bool,
-) -> PlBitmap {
-    let length = lhs.len();
-
-    if lhs.values().array_type() != rhs.values().array_type() {
-        return repeated(mismatch, length);
-    }
-
-    // Both sides repeat one list, so comparing those two lists once answers for every element.
-    if let (Some(lhs), Some(rhs)) = (lhs.scalar_value(), rhs.scalar_value()) {
-        // A null element is one the missing-aware kernel answers for, not this.
-        if let (Some(lhs), Some(rhs)) = (lhs, rhs) {
-            return repeated(compare_lists(&*lhs, &*rhs, how, inner, mismatch), length);
-        }
-    }
-
-    PlBitmap::from_iter((0..length).map(|i| {
-        // A null element has no list to read; the missing-aware kernel answers for it.
-        if lhs.is_null(i) || rhs.is_null(i) {
-            return !mismatch;
-        }
-        compare_lists(&*lhs.value(i), &*rhs.value(i), how, inner, mismatch)
-    }))
-}
-
-/// Compares the lists of `lhs` against the single list `rhs`.
-fn list_compare_scalar(
-    lhs: &PlListArray,
-    rhs: &dyn PlArray,
-    how: Condense,
-    inner: fn(&dyn PlArray, &dyn PlArray) -> PlBitmap,
-    mismatch: bool,
-) -> PlBitmap {
-    let length = lhs.len();
-
-    if lhs.values().array_type() != rhs.array_type() {
-        return repeated(mismatch, length);
-    }
-
-    if let Some(Some(lhs)) = lhs.scalar_value() {
-        return repeated(compare_lists(&*lhs, rhs, how, inner, mismatch), length);
-    }
-
-    PlBitmap::from_iter((0..length).map(|i| {
-        if lhs.is_null(i) {
-            return !mismatch;
-        }
-        compare_lists(&*lhs.value(i), rhs, how, inner, mismatch)
-    }))
-}
-
-/// Whether the two lists answer `how` over the values they hold, one against one.
-fn compare_lists(
-    lhs: &dyn PlArray,
-    rhs: &dyn PlArray,
-    how: Condense,
-    inner: fn(&dyn PlArray, &dyn PlArray) -> PlBitmap,
-    mismatch: bool,
-) -> bool {
-    // Lists of different lengths hold no pair of values to compare.
-    if lhs.len() != rhs.len() {
-        return mismatch;
-    }
-    // Two empty lists are the same list, whatever the value type under them.
-    if lhs.is_empty() {
-        return !mismatch;
-    }
-    condense(inner(lhs, rhs), 1, lhs.len(), how).get(0)
 }

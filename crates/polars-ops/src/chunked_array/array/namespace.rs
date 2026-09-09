@@ -26,8 +26,7 @@ pub fn has_inner_nulls(ca: &ArrayChunked) -> bool {
 }
 
 fn get_agg(ca: &ArrayChunked, agg_type: AggType) -> Series {
-    let values = ca.get_inner();
-    min_max::array_dispatch(ca, &values, agg_type)
+    min_max::array_dispatch(ca, agg_type)
 }
 
 pub trait ArrayNameSpace: AsArray {

@@ -53,6 +53,40 @@ def test_arr_reduce_null_element_with_values() -> None:
         ).to_list() == [1, None, last_value]
 
 
+def test_arr_reduce_repeated_element() -> None:
+    # A chunk that repeats a single list holds it once: reducing it must still answer
+    # for every element, and must not read the values of one that is null.
+    repeated = pl.select(
+        pl.repeat([3, 1, 2], 4, dtype=pl.Array(pl.Int64, 3)).alias("a")
+    ).to_series()
+    assert repeated.arr.min().to_list() == [1] * 4
+    assert repeated.arr.max().to_list() == [3] * 4
+    assert repeated.arr.sum().to_list() == [6] * 4
+
+    with_nulls = pl.select(
+        pl.repeat([3, None, 2], 4, dtype=pl.Array(pl.Int64, 3)).alias("a")
+    ).to_series()
+    assert with_nulls.arr.min().to_list() == [2] * 4
+    assert with_nulls.arr.max().to_list() == [3] * 4
+
+    masked = pl.select(
+        pl.when(pl.Series("m", [True, False, True, False])).then(
+            pl.repeat([3, 1, 2], 4, dtype=pl.Array(pl.Int64, 3))
+        )
+    ).to_series()
+    assert masked.arr.min().to_list() == [1, None, 1, None]
+    assert masked.arr.max().to_list() == [3, None, 3, None]
+
+    all_null = pl.select(
+        pl.repeat(None, 3, dtype=pl.Array(pl.Int64, 3)).alias("a")
+    ).to_series()
+    assert all_null.arr.min().to_list() == [None] * 3
+    assert all_null.arr.max().to_list() == [None] * 3
+
+    assert repeated.slice(1, 2).arr.min().to_list() == [1, 1]
+    assert repeated.head(0).arr.min().to_list() == []
+
+
 def test_arr_reduce_zero_width() -> None:
     # An element of no values at all reduces to nothing.
     s = pl.Series("a", [[], []], dtype=pl.Array(pl.Int64, 0))

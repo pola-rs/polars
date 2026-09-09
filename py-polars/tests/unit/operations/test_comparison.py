@@ -1173,3 +1173,70 @@ def test_is_between_rejects_datetime_string_28253(dtype: pl.DataType) -> None:
         match="cannot compare 'date/datetime/time' to a string value",
     ):
         q.explain()
+
+
+def test_list_comparison_over_representations() -> None:
+    # The values of both sides are downcast once, ahead of the walk over the elements,
+    # so the walk has to answer alike whichever representation each side is stored in.
+    values = [[1, 2], None, [], [1], [None, 2], [3, 3]]
+    other = [[1, 2], [1, 2], [], [2], [None, 2], [3]]
+
+    flat = pl.Series("a", values, dtype=pl.List(pl.Int64))
+    pad = pl.Series("a", [values[0]] * 2, dtype=pl.List(pl.Int64))
+    shapes = {
+        "flat": flat,
+        "sliced": pl.concat([pad, flat, pad]).slice(2, len(values)),
+        "chunked": pl.concat(
+            [
+                pl.Series("a", values[:2], dtype=pl.List(pl.Int64)),
+                pl.Series("a", values[2:], dtype=pl.List(pl.Int64)),
+            ],
+            rechunk=False,
+        ),
+    }
+    rhs = pl.Series("b", other, dtype=pl.List(pl.Int64))
+
+    expected_eq = [True, None, True, False, True, False]
+    expected_eq_missing = [True, False, True, False, True, False]
+
+    for name, lhs in shapes.items():
+        df = pl.DataFrame({"a": lhs, "b": rhs})
+        assert df.select(pl.col("a") == pl.col("b"))["a"].to_list() == expected_eq, name
+        assert df.select(pl.col("a") != pl.col("b"))["a"].to_list() == [
+            None if e is None else not e for e in expected_eq
+        ], name
+        assert (
+            df.select(pl.col("a").eq_missing(pl.col("b")))["a"].to_list()
+            == expected_eq_missing
+        ), name
+        # Against a single list, which is the broadcast kernel.
+        assert df.select(pl.col("a") == pl.col("b").first())["a"].to_list() == [
+            True,
+            None,
+            False,
+            False,
+            False,
+            False,
+        ], name
+
+
+def test_list_comparison_repeated_element() -> None:
+    # Both sides repeat one list, which is compared once and answers for every element.
+    repeated = pl.select(
+        pl.repeat([1, 2], 3, dtype=pl.List(pl.Int64)).alias("a")
+    ).to_series()
+    other = pl.select(
+        pl.repeat([1, 3], 3, dtype=pl.List(pl.Int64)).alias("b")
+    ).to_series()
+
+    assert (repeated == repeated).to_list() == [True] * 3
+    assert (repeated == other).to_list() == [False] * 3
+    assert (repeated != other).to_list() == [True] * 3
+
+    masked = pl.select(
+        pl.when(pl.Series("m", [True, False, True])).then(
+            pl.repeat([1, 2], 3, dtype=pl.List(pl.Int64))
+        )
+    ).to_series()
+    assert (masked == repeated).to_list() == [True, None, True]
+    assert masked.eq_missing(repeated).to_list() == [True, False, True]
