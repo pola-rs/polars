@@ -1981,6 +1981,18 @@ def test_rolling_weighted_median_all_zero_weights_in_window() -> None:
     assert_series_equal(result, expected)
 
 
+def test_rolling_weighted_median_all_zero_weights_in_centered_window_29170() -> None:
+    s = pl.Series([1.0, 2.0, 3.0])
+    result = s.rolling_median(
+        window_size=5, min_samples=1, weights=[1.0, 0.0, 0.0, 0.0, 1.0], center=True
+    )
+
+    # The windows cover weights[2:5], weights[1:4] and weights[0:3]; only the middle one
+    # is left without a value to take a quantile over.
+    expected = pl.Series([3.0, None, 1.0], dtype=pl.Float64)
+    assert_series_equal(result, expected)
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize("with_nulls", [True, False])
 def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
