@@ -716,3 +716,17 @@ def test_promoted_key_keeps_right_payload_in_merge_join(engine: str) -> None:
         q.collect(engine=engine),
         reference(left, right, predicate, on="k", maintain_order="left_right"),
     )
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_fallible_inside_list_eval_is_not_promoted(engine: str) -> None:
+    """A key is evaluated on every row, so a nested fallible cast must block it."""
+    left = pl.LazyFrame({"k": [1, 2], "a": [["1"], ["bad"]]})
+    right = pl.LazyFrame({"k": [1], "b": [[1]]})
+    predicate = pl.col("a").list.eval(pl.element().cast(pl.Int64)) == pl.col("b")
+    q = left.join(right, on="k").filter(predicate)
+
+    assert_not_fused(q)
+    assert_frame_equal(
+        q.collect(engine=engine), reference(left, right, predicate, on="k")
+    )
