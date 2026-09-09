@@ -248,3 +248,19 @@ def test_broadcast_sliced() -> None:
     expected = pl.DataFrame({"a": [[2], [3, 4]]})
 
     assert_frame_equal(out, expected)
+
+
+def test_set_operations_schema_mismatch_29103() -> None:
+    lf = pl.LazyFrame(
+        {"a": [[1, 2]], "b": [[2.5]]},
+        schema={"a": pl.List(pl.Int64), "b": pl.List(pl.Float64)},
+    )
+
+    for op in (
+        "set_union",
+        "set_intersection",
+        "set_difference",
+        "set_symmetric_difference",
+    ):
+        q = lf.select(getattr(pl.col("a").list, op)(pl.col("b")))
+        assert q.collect_schema() == q.collect().schema
