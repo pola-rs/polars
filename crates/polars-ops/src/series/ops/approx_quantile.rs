@@ -118,7 +118,7 @@ pub fn approx_quantile_estimate(
     polars_ensure!(
         quantiles.len() == 1 || quantiles.len() == sketch.len(),
         ComputeError:
-            "polars does not support varying approximate quantiles yet, \
+            "polars does not support varying approximate quantiles, \
             make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
     );
 
