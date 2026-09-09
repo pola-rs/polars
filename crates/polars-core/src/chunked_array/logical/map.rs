@@ -1,6 +1,7 @@
 use arrow::offset::OffsetsBuffer;
 use polars_compute::gather::take_unchecked;
 
+use crate::chunked_array::align_inner_chunks;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::iterator::PolarsIterator;
 use crate::chunked_array::ops::row_encode::encode_rows_unordered;
@@ -68,6 +69,7 @@ impl MapChunked {
         self.dtype.as_map().unwrap().1
     }
 
+    /// Raw storage; the entries child may extend beyond the list offsets after slicing.
     pub fn storage(&self) -> &Series {
         &self.storage
     }
@@ -135,19 +137,19 @@ impl MapChunked {
         map_av(unsafe { self.storage.get_unchecked(i) })
     }
 
-    /// The key child, one element per entry across all rows.
+    /// Non-null keys within each chunk's list offsets, including entries retained by null rows.
     pub fn keys(&self) -> Series {
         unpack_map_entries(&self.entries()).0
     }
 
-    /// The value child, one element per entry across all rows.
+    /// Values within each chunk's list offsets, including entries retained by null rows.
     pub fn values(&self) -> Series {
         unpack_map_entries(&self.entries()).1
     }
 
     /// Replace the value child, keeping the keys and the entry layout.
     ///
-    /// Errors if `values` cannot be a Map value, e.g. because it holds objects.
+    /// Requires the same length as [`Self::values`] and a valid Map value dtype.
     pub fn with_values(&self, values: &Series) -> PolarsResult<Self> {
         let dtype = DataType::Map(
             Box::new(self.key_dtype().clone()),
@@ -155,8 +157,7 @@ impl MapChunked {
         );
         dtype.ensure_valid_map_dtype()?;
 
-        let storage = self.storage.list().unwrap();
-        let (keys, _) = unpack_map_entries(&storage.get_inner());
+        let keys = self.keys();
         polars_ensure!(
             values.len() == keys.len(),
             ShapeMismatch:
@@ -164,7 +165,7 @@ impl MapChunked {
             keys.len(),
             values.len(),
         );
-        let storage = repack_map_storage(storage, &keys, values).into_series();
+        let storage = repack_map_storage(self.storage.list().unwrap(), &keys, values).into_series();
 
         // SAFETY: the keys and the entry layout are untouched, and the dtype is checked.
         Ok(unsafe { Self::from_storage_unchecked(dtype, storage) })
@@ -172,9 +173,7 @@ impl MapChunked {
 
     /// Propagate nulls within entry children without changing row or entry validity.
     pub(crate) fn propagate_nulls(&self) -> Option<Self> {
-        let storage = self.storage.list().unwrap();
-        let entries = storage.get_inner();
-        let (keys, values) = unpack_map_entries(&entries);
+        let (keys, values) = unpack_map_entries(&self.entries());
 
         let new_keys = keys.propagate_nulls();
         let new_values = values.propagate_nulls();
@@ -183,15 +182,16 @@ impl MapChunked {
         }
         let keys = new_keys.unwrap_or(keys);
         let values = new_values.unwrap_or(values);
-        let storage = repack_map_storage(storage, &keys, &values).into_series();
+        let storage =
+            repack_map_storage(self.storage.list().unwrap(), &keys, &values).into_series();
 
         // SAFETY: only values below nested nulls change; layout and key semantics remain.
         Some(unsafe { self.with_storage_unchecked(storage) })
     }
 
-    /// The entries of every row, flattened.
+    /// Flatten entries within each chunk's list offsets, excluding sliced-away rows.
     fn entries(&self) -> Series {
-        self.storage.list().unwrap().get_inner()
+        windowed_entries(self.storage.list().unwrap())
     }
 
     pub fn cast_with_options(
@@ -251,9 +251,10 @@ impl MapChunked {
         );
 
         if cast_key {
-            // Even with matching key schemas, we are allowed to rescale Decimals, which might collapse distinct keys into duplicates.
+            // Decimal rescaling can merge distinct keys even when schemas match.
             Ok(Self::try_from_storage(dtype, storage)?.into_series())
         } else {
+            // SAFETY: keys and layout are unchanged; cast values remain valid throughout.
             Ok(unsafe { Self::from_storage_unchecked(dtype, storage) }.into_series())
         }
     }
@@ -330,11 +331,53 @@ pub(crate) fn pack_map_entries(keys: &Series, values: &Series) -> Series {
     .into_series()
 }
 
-/// Rebuild Map storage from flat fields, preserving all nested layout.
+/// Slice the entries child to its list offsets in O(1), without recursion.
+fn windowed_entries_array(arr: &LargeListArray) -> ArrayRef {
+    let offsets = arr.offsets();
+    let first = *offsets.first() as usize;
+    let len = offsets.range() as usize;
+    let values = arr.values();
+    if first == 0 && len == values.len() {
+        values.clone()
+    } else {
+        values.sliced(first, len)
+    }
+}
+
+/// Flatten entries within each chunk's list offsets. Unlike [`ListChunked::get_inner`],
+/// this excludes sliced-away entries.
+fn windowed_entries(storage: &ListChunked) -> Series {
+    let chunks = storage
+        .downcast_iter()
+        .map(windowed_entries_array)
+        .collect();
+    // SAFETY: chunks are slices of the storage's entry children.
+    unsafe {
+        Series::from_chunks_and_dtype_unchecked(
+            storage.name().clone(),
+            chunks,
+            storage.inner_dtype(),
+        )
+    }
+}
+
+/// Rebase offsets to zero for a sliced child.
+fn rebased_offsets(offsets: &OffsetsBuffer<i64>) -> OffsetsBuffer<i64> {
+    let first = *offsets.first();
+    if first == 0 {
+        return offsets.clone();
+    }
+    let rebased: Vec<i64> = offsets.as_slice().iter().map(|o| o - first).collect();
+    // SAFETY: rebasing preserves monotonicity and makes the first offset zero.
+    unsafe { OffsetsBuffer::new_unchecked(rebased.into()) }
+}
+
+/// Rebuild Map storage from flat fields with one element per windowed entry.
 ///
-/// This keeps entry validity, list offsets, and list validity.
+/// Preserves entry and list validity, rebasing offsets onto the new child.
+/// Rebasing allocates only for sliced inputs.
 fn repack_map_storage(storage: &ListChunked, keys: &Series, values: &Series) -> ListChunked {
-    let entries = storage.get_inner();
+    let entries = windowed_entries(storage);
     assert_eq!(
         keys.len(),
         entries.len(),
@@ -349,19 +392,49 @@ fn repack_map_storage(storage: &ListChunked, keys: &Series, values: &Series) -> 
     let packed = pack_map_entries(keys, values);
     let mut packed = packed.struct_().unwrap().clone();
     packed.zip_outer_validity(entries.struct_().expect("map entries are a struct"));
+    let packed = packed.into_series();
 
-    storage.with_inner_values(&packed.into_series())
+    // Align chunks by offset-window length, not full child length.
+    let window_lens = storage
+        .downcast_iter()
+        .map(|arr| arr.offsets().range() as usize);
+    let packed = align_inner_chunks(window_lens, &packed);
+    let entries_dtype = packed.dtype().clone();
+
+    let chunks = storage
+        .downcast_iter()
+        .zip(packed.into_chunks())
+        .map(|(arr, values)| {
+            debug_assert_eq!(arr.offsets().range() as usize, values.len());
+            LargeListArray::new(
+                LargeListArray::default_datatype(values.dtype().clone()),
+                rebased_offsets(arr.offsets()),
+                values,
+                arr.validity().cloned(),
+            )
+            .boxed()
+        })
+        .collect();
+
+    // SAFETY: the list dtype is derived from the packed entries.
+    unsafe {
+        ListChunked::from_chunks_and_dtype_unchecked(
+            storage.name().clone(),
+            chunks,
+            DataType::List(Box::new(entries_dtype)),
+        )
+    }
 }
 
 /// Transform the flat entry fields and rebuild the original Map storage.
 ///
-/// Preserves entry validity, list offsets, and list validity. The transform must preserve the
-/// total number of entries; the output dtype is derived from its returned fields.
+/// Preserves validity and row lengths. The transform must preserve the windowed entry count;
+/// its returned fields determine the output dtype.
 pub(crate) fn try_apply_map_entries(
     storage: &ListChunked,
     f: impl FnOnce(&Series, &Series) -> PolarsResult<(Series, Series)>,
 ) -> PolarsResult<ListChunked> {
-    let entries = storage.get_inner();
+    let entries = windowed_entries(storage);
     let (key, value) = try_unpack_map_entries(&entries)?;
 
     let entries_len = entries.len();
@@ -535,4 +608,125 @@ fn canonicalize_list_chunk(
     };
 
     Ok(Some(gather_entries(arr, entries, indices)))
+}
+
+/// Check storage invariants directly, before higher-level operations can repair them.
+#[cfg(test)]
+mod test {
+    use arrow::bitmap::Bitmap;
+    use arrow::offset::OffsetsBuffer;
+
+    use super::*;
+
+    fn map_dtype(key: DataType, value: DataType) -> DataType {
+        DataType::Map(Box::new(key), Box::new(value))
+    }
+
+    fn str_keys(keys: &[Option<&str>]) -> Series {
+        Series::new(MAP_KEY_NAME.clone(), keys)
+    }
+
+    fn i64_values(values: &[Option<i64>]) -> Series {
+        Series::new(MAP_VALUE_NAME.clone(), values)
+    }
+
+    /// Build storage with explicit offsets and validity to test hidden entries.
+    fn storage(entries: &Series, offsets: &[i64], row_validity: Option<&[bool]>) -> Series {
+        let entries = entries.rechunk();
+        let values = entries.chunks()[0].clone();
+        let arr = LargeListArray::new(
+            LargeListArray::default_datatype(values.dtype().clone()),
+            unsafe { OffsetsBuffer::new_unchecked(offsets.to_vec().into()) },
+            values,
+            row_validity.map(Bitmap::from),
+        );
+        unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::from_static("m"),
+                vec![arr.boxed()],
+                &DataType::List(Box::new(entries.dtype().clone())),
+            )
+        }
+    }
+
+    fn list_offsets(storage: &Series) -> Vec<i64> {
+        let ca = storage.list().unwrap();
+        assert_eq!(ca.chunks().len(), 1);
+        ca.downcast_iter()
+            .next()
+            .unwrap()
+            .offsets()
+            .as_slice()
+            .to_vec()
+    }
+
+    /// Whole-child length, including entries outside the offsets.
+    fn child_len(storage: &Series) -> usize {
+        storage.list().unwrap().get_inner().len()
+    }
+
+    /// Rows `{a: 1, b: 2}`, `{c: 3}`, `{d: 4, e: 5}`.
+    fn three_row_map() -> MapChunked {
+        let keys = str_keys(&[Some("a"), Some("b"), Some("c"), Some("d"), Some("e")]);
+        let values = i64_values(&[Some(1), Some(2), Some(3), Some(4), Some(5)]);
+        let storage = storage(&pack_map_entries(&keys, &values), &[0, 2, 3, 5], None);
+        MapChunked::try_from_storage(map_dtype(DataType::String, DataType::Int64), storage).unwrap()
+    }
+
+    fn str_values(s: &Series) -> Vec<Option<String>> {
+        s.str()
+            .unwrap()
+            .iter()
+            .map(|v| v.map(str::to_owned))
+            .collect()
+    }
+
+    #[test]
+    fn sliced_map_windows_flat_access() {
+        let sliced = three_row_map().into_series().slice(1, 2);
+        let sliced = sliced.map().unwrap();
+
+        // Storage retains all entries; flat access respects the slice.
+        assert_eq!(child_len(sliced.storage()), 5);
+        assert_eq!(
+            str_values(&sliced.keys()),
+            [
+                Some("c".to_owned()),
+                Some("d".to_owned()),
+                Some("e".to_owned())
+            ]
+        );
+        assert_eq!(sliced.values().len(), 3);
+        // Valid entries outside the offsets need no repair.
+        assert!(
+            canonicalize_map_storage(sliced.storage())
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn with_values_round_trip_on_a_sliced_map() {
+        let sliced = three_row_map().into_series().slice(1, 2);
+        let sliced = sliced.map().unwrap();
+        let values = sliced.values().cast(&DataType::Float64).unwrap();
+        let out = sliced.with_values(&values).unwrap();
+
+        let dtype = map_dtype(DataType::String, DataType::Float64);
+        assert_eq!(out.dtype(), &dtype);
+        assert_eq!(out.len(), 2);
+        assert_eq!(list_offsets(out.storage()), [0, 1, 3]);
+        assert_eq!(child_len(out.storage()), 3);
+
+        // Casting must use the same offset window.
+        let expected = three_row_map()
+            .into_series()
+            .slice(1, 2)
+            .cast(&dtype)
+            .unwrap();
+        assert!(
+            out.storage()
+                .equals_missing(expected.map().unwrap().storage())
+        );
+    }
 }
