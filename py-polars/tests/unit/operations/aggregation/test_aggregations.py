@@ -12,7 +12,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
@@ -463,9 +463,9 @@ def test_approx_quantile_null_quantile() -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.Float64, pl.List(pl.Float64)])
-def test_approx_quantile_empty_quantile(dtype: PolarsDataType) -> None:
+def test_approx_quantile_non_scalar_quantile(dtype: PolarsDataType) -> None:
     df = pl.DataFrame(schema={"a": pl.Float64, "q": dtype})
-    with pytest.raises(ComputeError, match="got an empty input"):
+    with pytest.raises(ShapeError, match="'quantile' must be a scalar value"):
         df.select(pl.col("a").approx_quantile(pl.col("q")))
 
 
@@ -671,16 +671,21 @@ def test_approx_quantile_rank_error(
     assert distance / n <= error + 2 / n
 
 
-@pytest.mark.parametrize("fn", [pl.Expr.quantile, pl.Expr.approx_quantile])
+@pytest.mark.parametrize(
+    ("fn", "exc", "match"),
+    [
+        (pl.Expr.quantile, ComputeError, r"does not support varying quantiles"),
+        (pl.Expr.approx_quantile, ShapeError, r"'quantile' must be a scalar value"),
+    ],
+)
 def test_quantile_varying_quantiles_unsupported(
     fn: Callable[[pl.Expr, pl.Expr], pl.Expr],
+    exc: type[Exception],
+    match: str,
 ) -> None:
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0], "q": [0.1, 0.5, 0.9]})
 
-    with pytest.raises(
-        pl.exceptions.ComputeError,
-        match=r"does not support varying (approximate )?quantiles",
-    ):
+    with pytest.raises(exc, match=match):
         df.select(fn(pl.col("a"), pl.col("q")))
 
 
