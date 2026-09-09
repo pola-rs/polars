@@ -149,8 +149,8 @@ pub fn amortized_unique_like(values: &dyn PlArray) -> Box<dyn AmortizedUnique> {
 fn repeats_one_value(values: &dyn PlArray) -> bool {
     match values.array_type() {
         PlArrayType::Boolean => downcast::<PlBooleanArray>(values).values_are_scalar(),
-        PlArrayType::Primitive(_) => with_match_pl_primitive_array_type!(values, |T| {
-            downcast::<PlPrimitiveArray<T>>(values).values_are_scalar()
+        PlArrayType::Primitive(_) => with_match_pl_primitive_array_type!(values, |$T| {
+            downcast::<PlPrimitiveArray<$T>>(values).values_are_scalar()
         })
         .expect("a primitive array has a primitive element type"),
         PlArrayType::BinaryView => downcast::<PlBinaryViewArray>(values).views_are_scalar(),

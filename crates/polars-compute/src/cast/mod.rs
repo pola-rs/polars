@@ -17,7 +17,10 @@ use polars_array::{
     PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBitmapRef, PlBooleanArray,
     PlNullArray, PlPrimitiveArray, PlUtf8ViewArray,
 };
-use polars_dtype::DataType;
+use polars_dtype::{DataType, with_match_physical_numeric_type};
+// Only the decimal casts dispatch on just the integer or just the float types.
+#[cfg(feature = "dtype-decimal")]
+use polars_dtype::{with_match_physical_float_type, with_match_physical_integer_type};
 use polars_error::{PolarsResult, polars_bail, polars_ensure};
 pub use primitive_to::SerPrimitive;
 
@@ -114,77 +117,6 @@ pub fn physical_dtype(array: &dyn PlArray) -> DataType {
     }
 }
 
-macro_rules! with_match_numeric_dtype {(
-    $dtype:expr, | $_:tt $T:ident | $($body:tt)*
-) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    #[allow(unused_imports)]
-    use polars_utils::float16::pf16;
-    use polars_dtype::DataType::*;
-
-    match $dtype {
-        UInt8 => __with_ty__! { u8 },
-        UInt16 => __with_ty__! { u16 },
-        UInt32 => __with_ty__! { u32 },
-        UInt64 => __with_ty__! { u64 },
-        #[cfg(feature = "dtype-u128")]
-        UInt128 => __with_ty__! { u128 },
-        Int8 => __with_ty__! { i8 },
-        Int16 => __with_ty__! { i16 },
-        Int32 => __with_ty__! { i32 },
-        Int64 => __with_ty__! { i64 },
-        #[cfg(feature = "dtype-i128")]
-        Int128 => __with_ty__! { i128 },
-        #[cfg(feature = "dtype-f16")]
-        Float16 => __with_ty__! { pf16 },
-        Float32 => __with_ty__! { f32 },
-        Float64 => __with_ty__! { f64 },
-        dtype => unreachable!("a plain numeric type is one of the above, got {dtype:?}"),
-    }
-})}
-
-#[cfg_attr(not(feature = "dtype-decimal"), allow(unused_macros))]
-macro_rules! with_match_integer_dtype {(
-    $dtype:expr, | $_:tt $T:ident | $($body:tt)*
-) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use polars_dtype::DataType::*;
-
-    match $dtype {
-        UInt8 => __with_ty__! { u8 },
-        UInt16 => __with_ty__! { u16 },
-        UInt32 => __with_ty__! { u32 },
-        UInt64 => __with_ty__! { u64 },
-        #[cfg(feature = "dtype-u128")]
-        UInt128 => __with_ty__! { u128 },
-        Int8 => __with_ty__! { i8 },
-        Int16 => __with_ty__! { i16 },
-        Int32 => __with_ty__! { i32 },
-        Int64 => __with_ty__! { i64 },
-        #[cfg(feature = "dtype-i128")]
-        Int128 => __with_ty__! { i128 },
-        dtype => unreachable!("an integer type is one of the above, got {dtype:?}"),
-    }
-})}
-
-#[cfg_attr(not(feature = "dtype-decimal"), allow(unused_macros))]
-macro_rules! with_match_float_dtype {(
-    $dtype:expr, | $_:tt $T:ident | $($body:tt)*
-) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    #[allow(unused_imports)]
-    use polars_utils::float16::pf16;
-    use polars_dtype::DataType::*;
-
-    match $dtype {
-        #[cfg(feature = "dtype-f16")]
-        Float16 => __with_ty__! { pf16 },
-        Float32 => __with_ty__! { f32 },
-        Float64 => __with_ty__! { f64 },
-        dtype => unreachable!("a float type is one of the above, got {dtype:?}"),
-    }
-})}
-
 /// Casts `array`, which holds the elements of `from`, to `to`.
 pub fn cast(
     array: &dyn PlArray,
@@ -252,7 +184,7 @@ fn cast_dispatch(
     if matches!(from, D::Boolean) {
         let array: &PlBooleanArray = downcast(array);
         if is_plain_numeric(to) {
-            return Ok(with_match_numeric_dtype!(to, |$T| {
+            return Ok(with_match_physical_numeric_type!(to, |$T| {
                 Box::new(primitive_to::boolean_to_primitive::<$T>(array)) as Box<dyn PlArray>
             }));
         }
@@ -265,7 +197,7 @@ fn cast_dispatch(
 
     if matches!(to, D::Boolean) {
         if is_plain_numeric(from) {
-            return Ok(with_match_numeric_dtype!(from, |$T| {
+            return Ok(with_match_physical_numeric_type!(from, |$T| {
                 Box::new(primitive_to::primitive_to_boolean::<$T>(downcast(array))) as Box<dyn PlArray>
             }));
         }
@@ -296,12 +228,12 @@ fn cast_dispatch(
         let from_scale = *from_scale;
 
         if to.is_float() {
-            return Ok(with_match_float_dtype!(to, |$T| {
+            return Ok(with_match_physical_float_type!(to, |$T| {
                 Box::new(primitive_to::decimal_to_float::<$T>(array, from_scale)) as Box<dyn PlArray>
             }));
         }
         if to.is_integer() {
-            return Ok(with_match_integer_dtype!(to, |$T| {
+            return Ok(with_match_physical_integer_type!(to, |$T| {
                 Box::new(primitive_to::decimal_to_integer::<$T>(array, from_scale)) as Box<dyn PlArray>
             }));
         }
@@ -367,7 +299,7 @@ fn cast_string(
     use DataType as D;
 
     if is_plain_numeric(to) {
-        return Ok(with_match_numeric_dtype!(to, |$T| {
+        return Ok(with_match_physical_numeric_type!(to, |$T| {
             Box::new(binview_to::binview_to_parsed::<$T>(&array.clone().into_binview(), options))
                 as Box<dyn PlArray>
         }));
@@ -424,7 +356,7 @@ fn cast_bytes(
             matches!(from, D::BinaryOffset),
             InvalidOperation: "casting from {from:?} to {to:?} not supported"
         );
-        return Ok(with_match_numeric_dtype!(to, |$T| {
+        return Ok(with_match_physical_numeric_type!(to, |$T| {
             Box::new(binary_to::binary_to_parsed::<$T>(downcast(array), options)) as Box<dyn PlArray>
         }));
     }
@@ -461,9 +393,9 @@ fn cast_number(
     use DataType as D;
 
     if is_plain_numeric(to) {
-        return Ok(with_match_numeric_dtype!(from, |$I| {
+        return Ok(with_match_physical_numeric_type!(from, |$I| {
             let array: &PlPrimitiveArray<$I> = downcast(array);
-            with_match_numeric_dtype!(to, |$O| {
+            with_match_physical_numeric_type!(to, |$O| {
                 let wrapped = options.wrapped || casts_with_as(from, to);
                 Box::new(primitive_to::numeric_to_numeric::<$I, $O>(array, wrapped)) as Box<dyn PlArray>
             })
@@ -471,22 +403,22 @@ fn cast_number(
     }
 
     match to {
-        D::String => Ok(with_match_numeric_dtype!(from, |$T| {
+        D::String => Ok(with_match_physical_numeric_type!(from, |$T| {
             Box::new(primitive_to::primitive_to_utf8view::<$T>(downcast(array))) as Box<dyn PlArray>
         })),
-        D::Binary => Ok(with_match_numeric_dtype!(from, |$T| {
+        D::Binary => Ok(with_match_physical_numeric_type!(from, |$T| {
             Box::new(primitive_to::primitive_to_binview::<$T>(downcast(array))) as Box<dyn PlArray>
         })),
         #[cfg(feature = "dtype-decimal")]
         D::Decimal(precision, scale) => {
             let (precision, scale) = (*precision, *scale);
             if from.is_float() {
-                return Ok(with_match_float_dtype!(from, |$T| {
+                return Ok(with_match_physical_float_type!(from, |$T| {
                     Box::new(primitive_to::float_to_decimal::<$T>(downcast(array), precision, scale))
                         as Box<dyn PlArray>
                 }));
             }
-            Ok(with_match_integer_dtype!(from, |$T| {
+            Ok(with_match_physical_integer_type!(from, |$T| {
                 Box::new(primitive_to::integer_to_decimal::<$T>(downcast(array), precision, scale))
                     as Box<dyn PlArray>
             }))

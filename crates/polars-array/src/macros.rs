@@ -624,42 +624,43 @@ macro_rules! impl_mapped_iter {
 }
 pub(crate) use impl_mapped_iter;
 
-/// Runs a body with `T` bound to the element type of a [`crate::PlPrimitiveArray`].
+/// Runs a body with `$T` bound to the element type of a [`crate::PlPrimitiveArray`].
+///
+/// Answers `None` when `$array` is not a [`crate::PlPrimitiveArray`], and `Some(body)` otherwise.
 #[macro_export]
-macro_rules! with_match_pl_primitive_array_type {
-    ($array:expr, |$T:ident| $body:expr $(,)?) => {{
-        use ::arrow::array::View;
-        use ::arrow::types::{days_ms, i256, months_days_ns};
-        use ::polars_utils::float16::pf16;
+macro_rules! with_match_pl_primitive_array_type {(
+    $array:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use ::arrow::array::View;
+    use ::arrow::types::{days_ms, i256, months_days_ns};
+    use ::polars_utils::float16::pf16;
 
-        // `NativeType` is a sealed trait, so this list of element types is exhaustive.
-        $crate::__with_match_pl_primitive_array_type__! {
-            $array,
-            [
-                i8, i16, i32, i64, i128, i256,
-                u8, u16, u32, u64, u128,
-                pf16, f32, f64,
-                days_ms, months_days_ns, View,
-            ],
-            $T,
-            $body
-        }
-    }};
-}
+    // `NativeType` is a sealed trait, so this list of element types is exhaustive.
+    $crate::__with_match_pl_primitive_array_type__! {
+        $array,
+        [
+            i8, i16, i32, i64, i128, i256,
+            u8, u16, u32, u64, u128,
+            pf16, f32, f64,
+            days_ms, months_days_ns, View,
+        ],
+        __with_ty__
+    }
+})}
 
-/// The body of [`with_match_pl_primitive_array_type`], binding `$T` to the element type.
+/// The body of [`with_match_pl_primitive_array_type`], run for the element type `$array` holds.
+///
+/// `$with_ty` is passed in rather than named here so that it resolves to the one the caller's
+/// expansion defined, which is where the body lives.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __with_match_pl_primitive_array_type__ {(
-    $array:expr, [$($element:ty),* $(,)?], $T:ident, $body:expr
+    $array:expr, [$($element:ident),* $(,)?], $with_ty:ident
 ) => ({
     let array: &dyn $crate::PlArray = $array;
     $(if array.as_any().is::<$crate::PlPrimitiveArray<$element>>() {
-        Some({
-            #[allow(dead_code)]
-            type $T = $element;
-            $body
-        })
+        Some($with_ty! { $element })
     } else)* {
         None
     }

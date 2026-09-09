@@ -13,7 +13,7 @@ use arrow::array::{
 };
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::utils::SlicesIterator;
-use arrow::with_match_primitive_type_full;
+use arrow::with_match_primitive_type;
 pub use boolean::filter_boolean_kernel;
 pub use pl_array::{filter, filter_with_bitmap};
 
@@ -44,7 +44,7 @@ pub fn filter_arrow_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Arr
 
     use arrow::datatypes::PhysicalType::*;
     match array.dtype().to_physical_type() {
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let array: &PrimitiveArray<$T> = array.as_any().downcast_ref().unwrap();
             let (values, validity) = primitive::filter_values_and_validity::<$T>(array.values(), array.validity(), mask);
             Box::new(PrimitiveArray::from_vec(values).with_validity(validity))

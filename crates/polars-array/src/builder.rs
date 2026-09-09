@@ -468,8 +468,8 @@ pub(crate) fn for_each_run(idxs: &[IdxSize], mut extend: impl FnMut(usize, usize
 /// An empty builder of the arrays that `array` is one of.
 pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
     match array.array_type() {
-        PlArrayType::Primitive(_) => with_match_pl_primitive_array_type!(array, |T| {
-            Box::new(PlPrimitiveArrayBuilder::<T>::new()) as Box<dyn PlArrayBuilder>
+        PlArrayType::Primitive(_) => with_match_pl_primitive_array_type!(array, |$T| {
+            Box::new(PlPrimitiveArrayBuilder::<$T>::new()) as Box<dyn PlArrayBuilder>
         })
         .expect("a primitive array has a primitive element type"),
         PlArrayType::Boolean => Box::new(PlBooleanArrayBuilder::new()),

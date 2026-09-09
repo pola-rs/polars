@@ -5,6 +5,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use crate::chunked_array::new_empty_chunk;
 use crate::prelude::*;
+use crate::with_match_physical_numeric_type;
 
 pub(crate) struct FixedSizeListNumericBuilder<T: NativeType> {
     inner: Option<PlFixedSizeListArrayBuilder<PlPrimitiveArrayBuilder<T>>>,

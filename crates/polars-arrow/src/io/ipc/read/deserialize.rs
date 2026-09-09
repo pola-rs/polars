@@ -11,7 +11,7 @@ use crate::array::*;
 use crate::datatypes::{ArrowDataType, Field, PhysicalType};
 use crate::io::ipc::IpcField;
 use crate::types::{PrimitiveType, months_days_ns};
-use crate::{match_integer_type, with_match_primitive_type_full};
+use crate::{match_integer_type, with_match_primitive_type};
 
 #[allow(clippy::too_many_arguments)]
 pub fn read<R: Read + Seek>(
@@ -59,7 +59,7 @@ pub fn read<R: Read + Seek>(
             scratch,
         )
         .map(|x| x.boxed()),
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             read_primitive::<$T, _>(
                 field_nodes,
                 dtype,

@@ -12,6 +12,7 @@ pub mod dtype;
 #[cfg(feature = "dtype-extension")]
 pub mod extension;
 pub mod field;
+mod macros;
 pub mod temporal;
 
 pub use dtype::{CompatLevel, DataType, MetaDataExt, UnknownKind};

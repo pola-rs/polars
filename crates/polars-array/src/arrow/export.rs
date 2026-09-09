@@ -24,9 +24,9 @@ pub fn to_arrow(array: &dyn PlArray) -> Box<dyn Array> {
 
         // The element type is taken from the array rather than from the `PrimitiveType`, which
         // does not pin it down: a `View` and a `u128` are both `PrimitiveType::UInt128`.
-        PlArrayType::Primitive(_) => with_match_pl_primitive_array_type!(array, |T| {
+        PlArrayType::Primitive(_) => with_match_pl_primitive_array_type!(array, |$T| {
             Box::new(primitive_to_arrow_primitive(
-                downcast::<PlPrimitiveArray<T>>(array),
+                downcast::<PlPrimitiveArray<$T>>(array),
             )) as Box<dyn Array>
         })
         .expect("a primitive array is taken over one of the element types dispatched on"),

@@ -187,7 +187,7 @@ fn concatenate_impl(list: ArrayList<'_, '_, dyn PlArray>) -> PolarsResult<Box<dy
             Ok(Box::new(concatenate_boolean_impl(list.read_as(&get))))
         },
         PlArrayType::Primitive(primitive) => {
-            with_match_pl_primitive_array_type!(first, |T| concatenate_primitive_as::<T>(&list))
+            with_match_pl_primitive_array_type!(first, |$T| concatenate_primitive_as::<$T>(&list))
                 .flatten()
                 .ok_or_else(|| {
                     polars_err!(

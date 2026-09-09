@@ -1,6 +1,6 @@
 //! The kernels that measure what an array holds.
 
-use arrow::with_match_primitive_type_full;
+use arrow::with_match_primitive_type;
 use polars_array::{
     PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBitmapRef, PlBooleanArray,
     PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray, PlPrimitiveArray, PlStructArray,
@@ -91,7 +91,7 @@ pub fn estimated_bytes_size(array: &dyn PlArray) -> usize {
             let array = downcast::<PlBooleanArray>(array);
             array.values().to_flat_or_scalar().as_slice().0.len() + validity_size(array.validity())
         },
-        A::Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
+        A::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let array = downcast::<PlPrimitiveArray<$T>>(array);
             buffer_slots(array.values_are_scalar(), array.len()) * size_of::<$T>()
                 + validity_size(array.validity())

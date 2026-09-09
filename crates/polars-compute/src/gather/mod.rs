@@ -37,7 +37,7 @@ pub mod primitive;
 pub mod structure;
 pub mod sublist;
 
-use arrow::with_match_primitive_type_full;
+use arrow::with_match_primitive_type;
 pub use pl_array::take_unchecked;
 
 /// Returns a new [`Array`] with only indices at `indices`. Null indices are taken as nulls.
@@ -56,7 +56,7 @@ pub unsafe fn take_arrow_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<
             let values = values.as_any().downcast_ref().unwrap();
             Box::new(boolean::take_unchecked(values, indices))
         },
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let values = values.as_any().downcast_ref().unwrap();
             Box::new(primitive::take_primitive_unchecked::<$T>(&values, indices))
         }),

@@ -3,6 +3,7 @@ use std::mem::MaybeUninit;
 
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 use arrow::types::{NativeType, PrimitiveType};
+use arrow::with_match_primitive_type;
 use polars_array::{
     PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmapRef, PlBooleanArray,
     PlFixedSizeListArray, PlListArray, PlPrimitiveArray, PlStructArray, PlUtf8ViewArray,
@@ -15,7 +16,7 @@ use crate::fixed::{boolean, decimal, numeric};
 use crate::row::{RowEncodingOptions, RowsEncoded};
 use crate::variable::{binary, no_order, utf8};
 use crate::widths::RowWidths;
-use crate::{RowEncodingCategoricalContext, RowEncodingContext, with_match_pl_primitive_type};
+use crate::{RowEncodingCategoricalContext, RowEncodingContext};
 
 /// Downcasts an array whose [`PlArrayType`] has already been matched on.
 #[inline]
@@ -662,7 +663,7 @@ unsafe fn encode_flat_array(
                 }
             }
 
-            with_match_pl_primitive_type!(primitive, |$T| {
+            with_match_primitive_type!(primitive, |$T| {
                 numeric::encode(buffer, downcast::<PlPrimitiveArray<$T>>(array), opt, offsets);
             })
         },
