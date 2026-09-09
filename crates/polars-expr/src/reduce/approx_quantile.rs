@@ -78,7 +78,7 @@ where
 
     #[inline(always)]
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        a.merge(b.clone());
+        a.merge(b);
     }
 
     #[inline(always)]
