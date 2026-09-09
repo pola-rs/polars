@@ -139,13 +139,6 @@ pub trait DataFrameJoinOps: IntoDf {
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
 
-        polars_ensure!(
-            args.how.supports_non_equi_options(&options),
-            InvalidOperation:
-            "'{}' join is not supported with non-equi join conditions",
-            args.how,
-        );
-
         // A correctness fallback: the streaming hash join applies the residual per
         // candidate instead of materializing every pair.
         if let Some(JoinTypeOptions::Residual(residual_options)) = &options {

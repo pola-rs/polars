@@ -5,7 +5,7 @@ use polars_core::prelude::*;
 use polars_core::utils::SuperTypeOptions;
 #[cfg(feature = "iejoin")]
 use polars_ops::frame::IEJoinOptions;
-use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinTypeOptions};
+use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinType, JoinTypeOptions};
 use polars_utils::bool::UnsafeBool;
 use polars_utils::itertools::Itertools;
 #[cfg(feature = "serde")]
@@ -354,6 +354,44 @@ impl JoinOptionsIR {
     /// The match condition has a non-equality component, held in `options`.
     pub fn is_non_equi(&self) -> bool {
         self.options.is_non_equi()
+    }
+
+    /// Errors if no engine can execute this `args.how` with this match condition.
+    ///
+    /// Whether a non-equi condition ends up executable depends on how far the optimizer
+    /// managed to lower it, so this can only be answered once the plan is optimized.
+    pub fn ensure_executable(&self) -> PolarsResult<()> {
+        use JoinTypeOptionsIR::*;
+
+        let how = &self.args.how;
+        let supported = match &self.options {
+            Equi { residual: None, .. } => true,
+            Equi {
+                on,
+                residual: Some(_),
+            } => how.is_inner() && !on.is_empty() && self.args.slice.is_none(),
+            #[cfg(feature = "asof_join")]
+            AsOf { .. } => how.is_asof(),
+            #[cfg(feature = "iejoin")]
+            IEJoin { .. } | Range { .. } => {
+                how.is_ie()
+                    || how.is_range()
+                    || how.is_inner()
+                    || how.is_cross()
+                    || matches!(how, JoinType::Left | JoinType::Right)
+            },
+            CrossAndFilter { .. } => {
+                how.is_inner() || how.is_cross() || matches!(how, JoinType::Left)
+            },
+        };
+
+        polars_ensure!(
+            supported,
+            InvalidOperation:
+            "'{}' join is not supported with non-equi join conditions",
+            how,
+        );
+        Ok(())
     }
 
     pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {

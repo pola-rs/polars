@@ -708,6 +708,8 @@ fn create_physical_plan_impl(
             schema,
             ..
         } => {
+            options.ensure_executable()?;
+
             let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
             let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
 

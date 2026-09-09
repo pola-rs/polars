@@ -1054,6 +1054,8 @@ pub fn lower_ir(
             #[cfg(feature = "iejoin")]
             const RANGE_JOIN_PREFER_DESCENDING: bool = false;
 
+            options.ensure_executable()?;
+
             #[allow(unused_mut)]
             let (mut input_left, mut input_right) = (*input_left, *input_right);
             let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);

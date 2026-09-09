@@ -251,16 +251,6 @@ pub enum JoinTypeOptions {
     Residual(CrossJoinOptions),
 }
 
-impl JoinTypeOptions {
-    pub fn is_iejoin(&self) -> bool {
-        match self {
-            #[cfg(feature = "iejoin")]
-            Self::IEJoin(_) => true,
-            _ => false,
-        }
-    }
-}
-
 impl Display for JoinType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use JoinType::*;
@@ -393,22 +383,6 @@ impl JoinType {
     /// Joins supported in join where with non-equi conditions
     pub fn supports_non_equi(&self) -> bool {
         matches!(self, JoinType::Inner | JoinType::Left | JoinType::Right)
-    }
-
-    /// Whether the physical join implementations can execute this `how`
-    pub fn supports_non_equi_options(&self, options: &Option<JoinTypeOptions>) -> bool {
-        // A residual is only ever attached to an inner join; see `JoinTypeOptionsIR::Equi`.
-        if matches!(options, Some(JoinTypeOptions::Residual(_))) {
-            return matches!(self, JoinType::Inner);
-        }
-        options.is_none()
-            || matches!(self, JoinType::Inner | JoinType::Cross)
-            || self.is_ie()
-            || self.is_range()
-            || (matches!(self, JoinType::Left | JoinType::Right)
-                && options.as_ref().map(|o| o.is_iejoin()).unwrap_or(false))
-            || (matches!(self, JoinType::Left)
-                && matches!(options, Some(JoinTypeOptions::Cross(_))))
     }
 }
 
