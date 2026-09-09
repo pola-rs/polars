@@ -67,28 +67,14 @@ impl CastOptionsImpl {
 pub fn physical_dtype(array: &dyn PlArray) -> DataType {
     use polars_array::PlArrayType as A;
 
-    match array.array_type() {
-        A::Null => DataType::Null,
-        A::Boolean => DataType::Boolean,
-        A::Primitive(primitive) => match primitive {
-            polars_array::PrimitiveType::Int8 => DataType::Int8,
-            polars_array::PrimitiveType::Int16 => DataType::Int16,
-            polars_array::PrimitiveType::Int32 => DataType::Int32,
-            polars_array::PrimitiveType::Int64 => DataType::Int64,
-            polars_array::PrimitiveType::Int128 => DataType::Int128,
-            polars_array::PrimitiveType::UInt8 => DataType::UInt8,
-            polars_array::PrimitiveType::UInt16 => DataType::UInt16,
-            polars_array::PrimitiveType::UInt32 => DataType::UInt32,
-            polars_array::PrimitiveType::UInt64 => DataType::UInt64,
-            polars_array::PrimitiveType::UInt128 => DataType::UInt128,
-            polars_array::PrimitiveType::Float16 => DataType::Float16,
-            polars_array::PrimitiveType::Float32 => DataType::Float32,
-            polars_array::PrimitiveType::Float64 => DataType::Float64,
-            primitive => unimplemented!("polars-compute: {primitive:?} is no type of Polars"),
-        },
-        A::Binary => DataType::BinaryOffset,
-        A::BinaryView => DataType::Binary,
-        A::Utf8View => DataType::String,
+    let array_type = array.array_type();
+
+    // Every array type but a nested one pins a Polars type down on its own.
+    if let Some(dtype) = DataType::from_pl_array_type(array_type) {
+        return dtype;
+    }
+
+    match array_type {
         A::List => DataType::List(Box::new(physical_dtype(
             downcast::<polars_array::PlListArray>(array).values(),
         ))),

@@ -1,10 +1,9 @@
 use std::borrow::Cow;
 
-use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 #[cfg(feature = "dtype-f16")]
 use num_traits::real::Real;
-use polars_array::{PlArrayType, PlPrimitiveArray};
+use polars_array::PlPrimitiveArray;
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
 use polars_compute::rolling::{MeanWindow, SumWindow, no_nulls, nulls};
@@ -54,14 +53,11 @@ where
 /// The column a rolling kernel's answer is.
 #[cfg(any(feature = "rolling_window", feature = "rolling_window_by"))]
 fn series_of(name: PlSmallStr, chunk: PlArrayRef) -> Series {
-    let dtype = match chunk.array_type() {
-        PlArrayType::Primitive(primitive) => {
-            DataType::from_arrow_dtype(&ArrowDataType::from(primitive))
-        },
-        array_type => unreachable!("a rolling kernel answered in a {array_type:?} chunk"),
-    };
+    let array_type = chunk.array_type();
+    let dtype = DataType::from_pl_array_type(array_type)
+        .unwrap_or_else(|| unreachable!("a rolling kernel answered in a {array_type:?} chunk"));
 
-    // SAFETY: the chunk is a primitive one of exactly the type just read off it.
+    // SAFETY: the chunk is an array of exactly the type just read off it.
     unsafe { Series::from_chunks_and_dtype_unchecked(name, vec![chunk], &dtype) }
 }
 

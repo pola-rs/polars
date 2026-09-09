@@ -633,6 +633,55 @@ impl DataType {
         }
     }
 
+    /// The data type whose values an array of this array type holds, where the array type pins one
+    /// down.
+    ///
+    /// This is the inverse of [`DataType::to_pl_array_type`], and answers `None` where an array
+    /// type pins no data type down: for the nested array types, whose data type also names the
+    /// type of their children — and for the array types that hold the values of no Polars type at
+    /// all.
+    pub fn from_pl_array_type(array_type: PlArrayType) -> Option<DataType> {
+        use DataType::*;
+
+        Some(match array_type {
+            PlArrayType::Null => Null,
+            PlArrayType::Boolean => Boolean,
+            PlArrayType::Primitive(primitive) => match primitive {
+                PrimitiveType::Int8 => Int8,
+                PrimitiveType::Int16 => Int16,
+                PrimitiveType::Int32 => Int32,
+                PrimitiveType::Int64 => Int64,
+                PrimitiveType::Int128 => Int128,
+                PrimitiveType::UInt8 => UInt8,
+                PrimitiveType::UInt16 => UInt16,
+                PrimitiveType::UInt32 => UInt32,
+                PrimitiveType::UInt64 => UInt64,
+                PrimitiveType::UInt128 => UInt128,
+                PrimitiveType::Float16 => Float16,
+                PrimitiveType::Float32 => Float32,
+                PrimitiveType::Float64 => Float64,
+                // A 256-bit integer and the interval types are the values of no Polars type.
+                PrimitiveType::Int256
+                | PrimitiveType::DaysMs
+                | PrimitiveType::MonthDayNano
+                | PrimitiveType::MonthDayMillis => return None,
+            },
+            PlArrayType::Binary => BinaryOffset,
+            PlArrayType::BinaryView => Binary,
+            PlArrayType::Utf8View => String,
+            #[cfg(feature = "object")]
+            PlArrayType::Object { type_name } => Object(type_name),
+            #[cfg(not(feature = "object"))]
+            PlArrayType::Object { .. } => return None,
+            // The data type of a list, of a fixed-size list and of a struct names the type of the
+            // children, which is read off the array itself and not off its array type — as is the
+            // width of a fixed-size list.
+            PlArrayType::List | PlArrayType::FixedSizeList | PlArrayType::Struct => return None,
+            // Bytes of a fixed width are the values of no Polars type.
+            PlArrayType::FixedSizeBinary => return None,
+        })
+    }
+
     /// Bytes one value of this type takes, or `None` when that depends on the value.
     #[must_use]
     pub fn byte_width(&self) -> Option<f64> {
