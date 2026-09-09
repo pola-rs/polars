@@ -56,37 +56,43 @@ pub(super) async fn dsl_to_ir(
         let sources_before_expansion = &sources;
 
         let mut bytes_per_source = unified_scan_args.source_sizes.clone();
-        let sources = match &*scan_type {
-            #[cfg(feature = "parquet")]
-            FileScanDsl::Parquet { .. } => {
-                let (sources, bytes) = sources
-                    .expand_paths_with_hive_update(unified_scan_args)
-                    .await?;
-                bytes_per_source = bytes.map(Buffer::from_owner).or(bytes_per_source);
-                sources
-            },
-            #[cfg(feature = "ipc")]
-            FileScanDsl::Ipc { .. } => {
-                sources
-                    .expand_paths_with_hive_update(unified_scan_args)
-                    .await?
-                    .0
-            },
-            #[cfg(feature = "csv")]
-            FileScanDsl::Csv { .. } => sources.expand_paths(unified_scan_args).await?,
-            #[cfg(feature = "json")]
-            FileScanDsl::NDJson { .. } => sources.expand_paths(unified_scan_args).await?,
-            #[cfg(feature = "python")]
-            FileScanDsl::PythonDataset { .. } => {
-                // There are a lot of places that short-circuit if the paths is empty,
-                // so we just give a dummy path here.
-                ScanSources::Paths(Buffer::from_owner([PlRefPath::new("PL_PY_DSET")]))
-            },
-            #[cfg(feature = "scan_lines")]
-            FileScanDsl::Lines { .. } => sources.expand_paths(unified_scan_args).await?,
+        let sources = if !unified_scan_args.expand_paths {
+            sources.clone()
+        } else {
+            match &*scan_type {
+                #[cfg(feature = "parquet")]
+                FileScanDsl::Parquet { .. } => {
+                    let (sources, bytes) = sources
+                        .expand_paths_with_hive_update(unified_scan_args)
+                        .await?;
+                    bytes_per_source = bytes.map(Buffer::from_owner).or(bytes_per_source);
+                    sources
+                },
+                #[cfg(feature = "ipc")]
+                FileScanDsl::Ipc { .. } => {
+                    sources
+                        .expand_paths_with_hive_update(unified_scan_args)
+                        .await?
+                        .0
+                },
+                #[cfg(feature = "csv")]
+                FileScanDsl::Csv { .. } => sources.expand_paths(unified_scan_args).await?,
+                #[cfg(feature = "json")]
+                FileScanDsl::NDJson { .. } => sources.expand_paths(unified_scan_args).await?,
+                #[cfg(feature = "python")]
+                FileScanDsl::PythonDataset { .. } => {
+                    // There are a lot of places that short-circuit if the paths is empty,
+                    // so we just give a dummy path here.
+                    ScanSources::Paths(Buffer::from_owner([PlRefPath::new("PL_PY_DSET")]))
+                },
+                #[cfg(feature = "scan_lines")]
+                FileScanDsl::Lines { .. } => sources.expand_paths(unified_scan_args).await?,
 
-            FileScanDsl::ExpandedPaths { .. } => sources.expand_paths(unified_scan_args).await?,
-            FileScanDsl::Anonymous { .. } => sources.clone(),
+                FileScanDsl::ExpandedPaths { .. } => {
+                    sources.expand_paths(unified_scan_args).await?
+                },
+                FileScanDsl::Anonymous { .. } => sources.clone(),
+            }
         };
 
         if let Some(sizes) = &bytes_per_source {

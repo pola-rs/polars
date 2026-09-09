@@ -684,14 +684,15 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     input_names_projection.extend(min_dtype_size_col(input_schema.iter()).cloned());
                 }
 
-                input_names_projection
-                    .sort_unstable_by_key(|name| input_schema.index_of(name).unwrap_or(usize::MAX));
-
                 let output_schema_arc = output_schema;
 
                 let has_dropped_input_column = input_names_projection.len() != input_schema.len();
 
                 if exprs.len() != orig_exprs_len || has_dropped_input_column {
+                    input_names_projection.sort_by_cached_key(|name| {
+                        input_schema.index_of(name).unwrap_or(usize::MAX)
+                    });
+
                     let output_schema = Arc::make_mut(output_schema_arc);
                     let mut orig_schema = mem::take(output_schema);
 
@@ -2194,25 +2195,16 @@ fn set_scan_projection(scan_ir: &mut IR, projection_schema: Arc<Schema>) {
 
 /// Create a dummy column with small memory footprint.
 fn small_dummy_column(name: PlSmallStr, height: usize) -> Column {
-    // Prefer 0-field struct if possible, as it doesn't need validity allocation.
+    // Prefer 0-field struct if possible, as it doesn't need validity allocation when
+    // materialized.
     #[cfg(feature = "dtype-struct")]
-    {
-        use polars_core::prelude::{IntoColumn, PlStructArray, StructChunked};
-
-        unsafe {
-            StructChunked::from_chunks(
-                name,
-                vec![Box::new(PlStructArray::new(vec![], height, None))],
-            )
-        }
-        .into_column()
-    }
+    let dtype = DataType::Struct(Vec::new());
     // Null column if we don't have struct available. For <=67108864 rows it uses a global zero
     // buffer, otherwise it will allocate for validity.
     #[cfg(not(feature = "dtype-struct"))]
-    {
-        Column::full_null(name, height, &DataType::Null)
-    }
+    let dtype = DataType::Null;
+
+    Column::full_null(name, height, &dtype)
 }
 
 /// Returns `Some(ExprIR)` if `ir` is `select(len())`.

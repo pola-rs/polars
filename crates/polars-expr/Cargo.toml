@@ -88,6 +88,7 @@ dtype-f16 = ["polars-plan/dtype-f16"]
 
 # operations
 approx_unique = ["polars-plan/approx_unique"]
+approx_quantile = ["polars-plan/approx_quantile", "polars-ops/approx_quantile"]
 is_in = ["polars-plan/is_in", "polars-ops/is_in"]
 is_first_distinct = ["polars-plan/is_first_distinct"]
 is_last_distinct = ["polars-plan/is_last_distinct"]
