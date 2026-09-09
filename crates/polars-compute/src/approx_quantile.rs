@@ -1,8 +1,8 @@
 use std::ops::RangeInclusive;
 use std::{fmt, mem};
 
-use either::Either;
 pub use kll::KLLSketch;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::total_ord::TotalOrd;
 use rand::RngExt;
 use rand::rngs::SmallRng;
@@ -20,9 +20,9 @@ const FAILURE_PROBABILITY: f64 = 1.0 - 0.9973;
 pub const MIN_ERROR: f64 = 1.0 / (1u64 << 32) as f64;
 
 /// Looseness of the formal KLL error bound (estimated by measuring).
-const KLL_BOUND_LOOSENESS: f64 = 4.6;
+const KLL_BOUND_LOOSENESS: f64 = 4.0;
 /// Looseness of the formal REQ error bound (estimated by measuring).
-const REQ_BOUND_LOOSENESS: f64 = 23.0;
+const REQ_BOUND_LOOSENESS: f64 = 20.0;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -69,125 +69,50 @@ impl ApproxQuantileMethod {
 }
 
 #[derive(Debug, Clone)]
-struct FinalizedState<T: fmt::Debug + Clone + TotalOrd> {
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct FinalizedState<T: fmt::Debug + Clone + TotalOrd> {
     /// All retained items, sorted.
     items: Box<[T]>,
     /// Inclusive cumulative weight, i.e. `cum_weight[i]` is the 1-based rank of
     /// `items[i]`. `None` when every item has weight 1.
-    cum_weight: Option<Box<[usize]>>,
-}
-
-impl<T: fmt::Debug + Clone + TotalOrd> Default for FinalizedState<T> {
-    fn default() -> Self {
-        Self {
-            items: Box::new([]),
-            cum_weight: None,
-        }
-    }
+    cum_weight: Option<Box<[u64]>>,
 }
 
 impl<T: fmt::Debug + Clone + TotalOrd> FinalizedState<T> {
-    fn new(items: Box<[T]>, cum_weight: Option<Box<[usize]>>) -> Self {
+    fn new(items: Box<[T]>, cum_weight: Option<Box<[u64]>>) -> Self {
         Self { items, cum_weight }
     }
 
-    fn num_items(&self) -> usize {
+    /// The number of items this sketch ingested.
+    fn num_items(&self) -> u64 {
         match &self.cum_weight {
             Some(cum_weight) => cum_weight.last().copied().unwrap_or(0),
-            None => self.items.len(),
+            None => self.items.len() as u64,
         }
     }
 
-    /// Merge `other` into `self`.
-    ///
-    /// This function retains every item of the sketch. No compaction is done
-    /// at this point.
-    fn merge(&mut self, other: Self) {
-        if other.items.is_empty() {
-            return;
-        }
-        if self.items.is_empty() {
-            *self = other;
-            return;
-        }
-
-        let len = self.items.len() + other.items.len();
-
-        if self.cum_weight.is_none() && other.cum_weight.is_none() {
-            let items1 = mem::take(&mut self.items).into_vec();
-            let items2 = other.items.into_vec();
-            let mut items = Vec::with_capacity(len);
-            let (i1, i2) = (items1.into_iter(), items2.into_iter());
-            merge_sorted(&mut items, i1, i2, TotalOrd::tot_cmp);
-            self.items = items.into_boxed_slice();
-            return;
-        }
-
-        let mut merged = Vec::with_capacity(len);
-        merge_sorted(
-            &mut merged,
-            mem::take(self).into_weighted(),
-            other.into_weighted(),
-            |(x1, _), (x2, _)| TotalOrd::tot_cmp(x1, x2),
-        );
-        debug_assert_eq!(merged.len(), len);
-
-        let mut total_weight = 0;
-        let (items, cum_weight): (Vec<T>, Vec<usize>) = merged
-            .into_iter()
-            .map(|(item, weight)| {
-                total_weight += weight;
-                (item, total_weight)
-            })
-            .unzip();
-
-        self.items = items.into_boxed_slice();
-        self.cum_weight = Some(cum_weight.into_boxed_slice());
-    }
-
-    /// Yield every retained item with its own weight.
-    fn into_weighted(self) -> impl ExactSizeIterator<Item = (T, usize)> {
-        let weights = match self.cum_weight {
-            Some(cum_weight) => {
-                let mut prev = 0;
-                Either::Left(cum_weight.into_vec().into_iter().map(move |cum| {
-                    let weight = cum - prev;
-                    prev = cum;
-                    weight
-                }))
-            },
-            None => Either::Right(std::iter::repeat_n(1, self.items.len())),
-        };
-        Iterator::zip(self.items.into_vec().into_iter(), weights)
-    }
-
-    fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
-        assert!(
+    fn estimate_quantile(&self, quantile: f64) -> PolarsResult<Option<&T>> {
+        polars_ensure!(
             (0.0..=1.0).contains(&quantile),
-            "quantile should be between 0.0 and 1.0"
+            ComputeError: "`quantile` should be between 0.0 and 1.0",
         );
         if self.items.is_empty() {
-            return None;
+            return Ok(None);
         }
         // We round with ties toward ∞ for consistency with the regular quantile.
         let estimated_rank =
-            (quantile * self.num_items().saturating_sub(1) as f64).round() as usize + 1;
+            (quantile * self.num_items().saturating_sub(1) as f64).round() as u64 + 1;
         let idx = estimate_quantile_index(self.cum_weight.as_deref(), estimated_rank);
-        Some(&self.items[idx])
+        Ok(Some(&self.items[idx]))
     }
 }
 
 #[inline(never)]
-fn estimate_quantile_index(cum_weight: Option<&[usize]>, estimated_rank: usize) -> usize {
+fn estimate_quantile_index(cum_weight: Option<&[u64]>, estimated_rank: u64) -> usize {
     match cum_weight {
         Some(cum_weight) => cum_weight.partition_point(|w| *w < estimated_rank),
-        None => estimated_rank - 1,
+        None => estimated_rank as usize - 1,
     }
-}
-
-#[inline(never)]
-fn invalid_state() -> ! {
-    panic!("invalid state")
 }
 
 pub mod kll {
@@ -240,7 +165,7 @@ pub mod kll {
         levels: Vec<Level>,
         k: usize,
         /// Total number of items that were consumed by this sketch.
-        consumed_items: usize,
+        consumed_items: u64,
         /// Maximum number of items before we compact.
         total_capacity: usize,
         rng: SmallRng,
@@ -262,14 +187,8 @@ pub mod kll {
     }
 
     #[derive(Debug, Clone)]
-    enum State<T: fmt::Debug + Clone + TotalOrd> {
-        Ingesting(IngestingState<T>),
-        Finalized(FinalizedState<T>),
-    }
-
-    #[derive(Debug, Clone)]
     #[repr(transparent)]
-    pub struct KLLSketch<T: fmt::Debug + Clone + TotalOrd>(State<T>);
+    pub struct KLLSketch<T: fmt::Debug + Clone + TotalOrd>(IngestingState<T>);
 
     impl<T: fmt::Debug + Clone + TotalOrd> KLLSketch<T> {
         pub fn new(error: f64) -> Self {
@@ -283,58 +202,45 @@ pub mod kll {
                 rng: rand::make_rng(),
                 scratch: Vec::default(),
             };
-            KLLSketch(State::Ingesting(state))
+            KLLSketch(state)
         }
 
         #[inline]
         pub fn update(&mut self, item: &T) {
-            let State::Ingesting(state) = &mut self.0 else {
-                invalid_state()
-            };
-            state.update(item);
+            self.update_owned(item.clone());
         }
 
-        /// Merge the finalized `other` into `self`.
+        #[inline]
+        pub fn update_owned(&mut self, item: T) {
+            self.0.update(item);
+        }
+
         pub fn merge(&mut self, other: Self) {
-            let State::Finalized(other) = other.0 else {
-                invalid_state()
-            };
-            let State::Finalized(state) = &mut self.0 else {
-                invalid_state()
-            };
-            state.merge(other);
+            self.0.merge(other.0);
         }
 
-        pub fn finalize(&mut self) {
-            let placeholder = State::Finalized(FinalizedState::default());
-            let state = mem::replace(&mut self.0, placeholder);
-            let State::Ingesting(state) = state else {
-                invalid_state()
-            };
-            self.0 = State::Finalized(state.finalize());
-        }
-
-        pub fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
-            let State::Finalized(state) = &self.0 else {
-                invalid_state()
-            };
-            state.estimate_quantile(quantile)
+        /// Stop ingesting, keeping only what this sketch retained.
+        pub fn finalize(self) -> FinalizedState<T> {
+            self.0.finalize()
         }
     }
 
     impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
         #[inline]
-        pub fn update(&mut self, item: &T) {
+        pub fn update(&mut self, item: T) {
             if self.items.len() >= self.total_capacity {
-                self.compact();
+                self.compact(true);
             }
-            self.items.push(item.clone());
+            self.items.push(item);
             self.levels[0].size += 1;
             self.consumed_items += 1;
         }
 
-        /// Compact the lowest compactor that is over its threshold.
-        fn compact(&mut self) {
+        /// Compact all of the compactors from base to top.
+        ///
+        /// If break_early is true, then the sweeping stops once a compaction has
+        /// taken place.
+        fn compact(&mut self, break_early: bool) {
             for level in 0..self.levels.len() {
                 if self.levels[level].size
                     >= compactor_threshold(self.k, self.levels.len() - 1 - level)
@@ -345,15 +251,21 @@ pub mod kll {
                     let old_size = self.items.len();
                     self.compact_level(level);
                     debug_assert!(self.items.len() < old_size);
-                    return;
+                    if break_early {
+                        return;
+                    };
                 }
             }
         }
 
         fn add_new_compactor(&mut self) {
             self.levels.push(Level::default());
+            self.recompute_total_capacity();
+        }
+
+        fn recompute_total_capacity(&mut self) {
             self.total_capacity = (0..self.levels.len())
-                .map(|level| compactor_threshold(self.k, self.levels.len() - 1 - level))
+                .map(|depth| compactor_threshold(self.k, depth))
                 .sum::<usize>()
                 .next_multiple_of(2);
         }
@@ -438,6 +350,49 @@ pub mod kll {
                 offset += level.size;
             }
             debug_assert_eq!(offset, self.items.len());
+        }
+
+        /// Merge `other` into `self`.
+        fn merge(&mut self, other: Self) {
+            // `k` is a function of the error, so k₁ = k₂ ⇒ ε₁ = ε₂.
+            assert_eq!(self.k, other.k);
+
+            // Make sure we have enough compactors on the left side.
+            while self.levels.len() < other.levels.len() {
+                self.add_new_compactor();
+            }
+
+            let mut items = Vec::with_capacity(self.items.len() + other.items.len());
+            let items1 = mem::take(&mut self.items);
+            let items2 = &other.items;
+
+            let mut next_offset = 0;
+            for level in (0..self.levels.len()).rev() {
+                let l1 = self.levels[level];
+                let l2 = other.levels.get(level).copied().unwrap_or_default();
+                let comp1 = &items1[l1.offset..l1.offset + l1.size];
+                let comp2 = &items2[l2.offset..l2.offset + l2.size];
+                if level == 0 {
+                    items.extend_from_slice(comp1);
+                    items.extend_from_slice(comp2);
+                } else {
+                    let (c1, c2) = (comp1.iter().cloned(), comp2.iter().cloned());
+                    merge_sorted(&mut items, c1, c2, TotalOrd::tot_cmp);
+                }
+
+                self.levels[level] = Level {
+                    offset: next_offset,
+                    size: l1.size + l2.size,
+                    mid_pair: l1.mid_pair | l2.mid_pair,
+                    coin: merge_coin(l1.mid_pair, l1.coin, l2.mid_pair, l2.coin, &mut self.rng),
+                };
+                next_offset += l1.size + l2.size;
+            }
+            debug_assert_eq!(next_offset, items.len());
+            self.items = items;
+
+            self.consumed_items += other.consumed_items;
+            self.compact(false);
         }
 
         fn finalize(self) -> FinalizedState<T> {
@@ -575,7 +530,7 @@ pub mod req {
         /// how many items are protected during a compaction. Shrinks over time,
         /// see `close_out_if_needed`.
         k: usize,
-        consumed_items: usize,
+        consumed_items: u64,
         rng: SmallRng,
     }
 
@@ -596,16 +551,8 @@ pub mod req {
     }
 
     #[derive(Debug, Clone)]
-    enum State<T: fmt::Debug + Clone + TotalOrd> {
-        Ingesting(IngestingState<T>),
-        Finalized(FinalizedState<T>),
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct ReqSketch<T: fmt::Debug + Clone + TotalOrd> {
-        state: State<T>,
-        is_hra: bool,
-    }
+    #[repr(transparent)]
+    pub struct ReqSketch<T: fmt::Debug + Clone + TotalOrd>(IngestingState<T>);
 
     impl<T: fmt::Debug + Clone + TotalOrd> ReqSketch<T> {
         pub fn new(error: f64, hra: bool) -> Self {
@@ -623,48 +570,28 @@ pub mod req {
                 consumed_items: 0,
                 rng: rand::make_rng(),
             };
-            ReqSketch {
-                state: State::Ingesting(state),
-                is_hra: hra,
-            }
+            ReqSketch(state)
         }
 
         #[inline]
         pub fn update(&mut self, item: &T) {
-            let State::Ingesting(state) = &mut self.state else {
-                invalid_state()
-            };
-            state.update(item);
+            self.update_owned(item.clone());
         }
 
-        /// Merge the finalized `other` into `self`.
+        #[inline]
+        pub fn update_owned(&mut self, item: T) {
+            self.0.update(item);
+        }
+
         pub fn merge(&mut self, other: Self) {
-            assert_eq!(self.is_hra, other.is_hra);
-            let State::Finalized(other) = other.state else {
-                invalid_state()
-            };
-            let State::Finalized(state) = &mut self.state else {
-                invalid_state()
-            };
-            state.merge(other);
+            assert_eq!(self.0.is_hra, other.0.is_hra);
+            self.0.merge(other.0);
         }
 
+        /// Stop ingesting, keeping only what this sketch retained.
         #[inline]
-        pub fn finalize(&mut self) {
-            let placeholder = State::Finalized(FinalizedState::default());
-            let state = mem::replace(&mut self.state, placeholder);
-            let State::Ingesting(state) = state else {
-                invalid_state()
-            };
-            self.state = State::Finalized(state.finalize());
-        }
-
-        #[inline]
-        pub fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
-            let State::Finalized(state) = &self.state else {
-                invalid_state()
-            };
-            state.estimate_quantile(quantile)
+        pub fn finalize(self) -> FinalizedState<T> {
+            self.0.finalize()
         }
     }
 
@@ -687,9 +614,9 @@ pub mod req {
         }
 
         #[inline]
-        pub fn update(&mut self, item: &T) {
-            self.lra.update(item);
-            self.hra.update(item);
+        pub fn update_owned(&mut self, item: T) {
+            self.lra.update(&item);
+            self.hra.update_owned(item);
         }
 
         pub fn merge(&mut self, other: Self) {
@@ -697,32 +624,17 @@ pub mod req {
             self.hra.merge(other.hra);
         }
 
-        pub fn finalize(&mut self) {
-            self.lra.finalize();
-            self.hra.finalize();
-        }
-
-        pub fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
-            if quantile <= 0.5 {
-                return self.lra.estimate_quantile(quantile);
-            }
-            // Both sketches are randomized independently, so the hra estimate
-            // just above 0.5 may fall below the lra estimate just below it.
-            // Clamping to the lra median keeps the answers non-decreasing.
-            let estimate = self.hra.estimate_quantile(quantile)?;
-            let pivot = self.lra.estimate_quantile(0.5)?;
-            Some(match TotalOrd::tot_cmp(estimate, pivot).is_ge() {
-                true => estimate,
-                false => pivot,
-            })
+        /// Stop ingesting, keeping only what both sketches retained.
+        pub fn finalize(self) -> (FinalizedState<T>, FinalizedState<T>) {
+            (self.lra.finalize(), self.hra.finalize())
         }
     }
 
     impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
         #[inline]
-        pub fn update(&mut self, item: &T) {
+        pub fn update(&mut self, item: T) {
             self.compact_if_needed(0);
-            self.items.push(item.clone());
+            self.items.push(item);
             self.levels[0].size += 1;
             self.consumed_items += 1;
         }
@@ -757,6 +669,65 @@ pub mod req {
 
         fn is_compactor_full(&self, level: usize) -> bool {
             self.levels[level].size >= self.compactor_capacity()
+        }
+
+        /// Merge `other` into `self`.
+        fn merge(&mut self, other: Self) {
+            assert_eq!(self.is_hra, other.is_hra);
+            assert_eq!(self.error, other.error);
+
+            // We need a compactor for every one of `other`'s levels.
+            while self.levels.len() < other.levels.len() {
+                self.add_new_compactor();
+            }
+
+            let mut items = Vec::with_capacity(self.items.len() + other.items.len());
+            let items1 = mem::take(&mut self.items);
+            let items2 = &other.items;
+
+            let mut next_offset = 0;
+            for level in (0..self.levels.len()).rev() {
+                let l1 = self.levels[level];
+                let l2 = other.levels.get(level).copied().unwrap_or_default();
+                let comp1 = &items1[l1.offset..l1.offset + l1.size];
+                let comp2 = &items2[l2.offset..l2.offset + l2.size];
+                if level == 0 {
+                    items.extend_from_slice(comp1);
+                    items.extend_from_slice(comp2);
+                } else {
+                    let (c1, c2) = (comp1.iter().cloned(), comp2.iter().cloned());
+                    match self.is_hra {
+                        false => merge_sorted(&mut items, c1, c2, cmp_desc::<false, T>),
+                        true => merge_sorted(&mut items, c1, c2, cmp_desc::<true, T>),
+                    }
+                }
+
+                let mid_pair = |l: &Level| !l.compaction_schedule.is_multiple_of(2);
+
+                self.levels[level] = Level {
+                    offset: next_offset,
+                    size: l1.size + l2.size,
+                    compaction_schedule: l1.compaction_schedule | l2.compaction_schedule,
+                    coin: merge_coin(
+                        mid_pair(&l1),
+                        l1.coin,
+                        mid_pair(&l2),
+                        l2.coin,
+                        &mut self.rng,
+                    ),
+                };
+                next_offset += l1.size + l2.size;
+            }
+            debug_assert_eq!(next_offset, items.len());
+            self.items = items;
+
+            self.n = usize::max(self.n, other.n);
+            self.k = compute_k(self.error, self.n);
+            self.consumed_items += other.consumed_items;
+
+            for level in 0..self.levels.len() {
+                self.compact_if_needed(level);
+            }
         }
 
         /// Compact `level` if it is full.
@@ -924,7 +895,7 @@ pub mod req {
 fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
     levels: &[&[T]],
     out: &mut Vec<T>,
-) -> Vec<usize> {
+) -> Vec<u64> {
     let num_items: usize = levels.iter().map(|level| level.len()).sum();
     out.clear();
     out.reserve_exact(num_items);
@@ -940,7 +911,7 @@ fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
         .filter(|i| !is_done(*i, &cursors))
         .min_by(|i1, i2| TotalOrd::tot_cmp(next_value(*i1, &cursors), next_value(*i2, &cursors)))
     {
-        let weight = 1usize << level_idx;
+        let weight = 1u64 << level_idx;
         let cum_weight = cum_weights.last().unwrap_or(&0) + weight;
         out.push(next_value(level_idx, &cursors).clone());
         cum_weights.push(cum_weight);
@@ -950,6 +921,14 @@ fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
     debug_assert_eq!(out.len(), num_items);
     debug_assert_eq!(cum_weights.len(), num_items);
     cum_weights
+}
+
+fn merge_coin(mid1: bool, coin1: bool, mid2: bool, coin2: bool, rng: &mut SmallRng) -> bool {
+    match (mid1, mid2) {
+        (true, true) if coin1 != coin2 => rng.random(),
+        (false, true) => coin2,
+        _ => coin1,
+    }
 }
 
 /// Append the merge of two runs, both sorted by `compare`, to `vec`.
@@ -997,15 +976,14 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
     }
 
     #[inline]
-    pub fn update(&mut self, item: &T) {
+    pub fn update_owned(&mut self, item: T) {
         match self {
-            Sketch::Kll(s) => s.update(item),
-            Sketch::Req(s) => s.update(item),
-            Sketch::DoubleReq(s) => s.update(item),
+            Sketch::Kll(s) => s.update_owned(item),
+            Sketch::Req(s) => s.update_owned(item),
+            Sketch::DoubleReq(s) => s.update_owned(item),
         }
     }
 
-    /// Merge the finalized `other` into `self`.
     pub fn merge(&mut self, other: Self) {
         match (self, other) {
             (Sketch::Kll(a), Sketch::Kll(b)) => a.merge(b),
@@ -1015,20 +993,49 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
         }
     }
 
-    pub fn finalize(&mut self) {
+    pub fn finalize(self) -> FinalizedSketch<T> {
         match self {
-            Sketch::Kll(s) => s.finalize(),
-            Sketch::Req(s) => s.finalize(),
-            Sketch::DoubleReq(s) => s.finalize(),
+            Sketch::Kll(s) => FinalizedSketch::Single(s.finalize()),
+            Sketch::Req(s) => FinalizedSketch::Single(s.finalize()),
+            Sketch::DoubleReq(s) => {
+                let (lra, hra) = s.finalize();
+                FinalizedSketch::Double(lra, hra)
+            },
         }
     }
+}
 
-    pub fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
-        match self {
-            Sketch::Kll(s) => s.estimate_quantile(quantile),
-            Sketch::Req(s) => s.estimate_quantile(quantile),
-            Sketch::DoubleReq(s) => s.estimate_quantile(quantile),
+/// A [`Sketch`] that has stopped ingesting, holding only what it retained.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum FinalizedSketch<T: fmt::Debug + Clone + TotalOrd> {
+    Single(FinalizedState<T>),
+    /// A relative-error pair, accurate at the low and the high end respectively.
+    Double(FinalizedState<T>, FinalizedState<T>),
+}
+
+impl<T: fmt::Debug + Clone + TotalOrd> FinalizedSketch<T> {
+    pub fn estimate_quantile(&self, quantile: f64) -> PolarsResult<Option<&T>> {
+        let (lra, hra) = match self {
+            Self::Single(state) => return state.estimate_quantile(quantile),
+            Self::Double(lra, hra) => (lra, hra),
+        };
+        if quantile <= 0.5 {
+            return lra.estimate_quantile(quantile);
         }
+        // Both sketches are randomized independently, so the hra estimate just
+        // above 0.5 may fall below the lra estimate just below it. Clamping to
+        // the lra median keeps the answers non-decreasing.
+        let (Some(estimate), Some(pivot)) = (
+            hra.estimate_quantile(quantile)?,
+            lra.estimate_quantile(0.5)?,
+        ) else {
+            return Ok(None);
+        };
+        Ok(Some(match TotalOrd::tot_cmp(estimate, pivot).is_ge() {
+            true => estimate,
+            false => pivot,
+        }))
     }
 }
 
@@ -1080,11 +1087,10 @@ mod tests {
                             a.update(v);
                             b.update(v);
                         }
-                        a.finalize();
-                        b.finalize();
-                        QUANTILES
-                            .iter()
-                            .all(|q| a.estimate_quantile(*q) == b.estimate_quantile(*q))
+                        let (a, b) = (a.finalize(), b.finalize());
+                        QUANTILES.iter().all(|q| {
+                            a.estimate_quantile(*q).unwrap() == b.estimate_quantile(*q).unwrap()
+                        })
                     })
                     .count();
                 assert!(agreed <= 2, "{} clones agreed {agreed}/10 times", $name);
