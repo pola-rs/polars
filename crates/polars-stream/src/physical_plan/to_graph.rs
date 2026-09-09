@@ -5,7 +5,7 @@ use parking_lot::Mutex;
 use polars_core::config;
 use polars_core::prelude::PlRandomState;
 use polars_core::schema::{Schema, SchemaRef};
-use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
+use polars_error::{PolarsResult, polars_ensure, polars_err};
 use polars_expr::groups::new_hash_grouper;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr};
 use polars_expr::reduce::into_reduction;
@@ -227,6 +227,7 @@ fn to_graph_rec<'a>(
             selectors,
             input,
             extend_original,
+            rechunk_input,
         } => {
             let input_schema = input.output_schema(ctx.phys_sm);
             let phys_selectors = selectors
@@ -239,6 +240,7 @@ fn to_graph_rec<'a>(
                     phys_selectors,
                     node.output_schema(0).clone(),
                     *extend_original,
+                    *rechunk_input,
                 ),
                 [(input_key, input.port)],
             )
@@ -1529,9 +1531,7 @@ fn to_graph_rec<'a>(
                                 {
                                     Ok(None)
                                 },
-                                Err(err) => polars_bail!(
-                                    ComputeError: "caught exception during execution of a Python source, exception: {err}"
-                                ),
+                                Err(err) => Err(err.into()),
                             }
                         })?;
 

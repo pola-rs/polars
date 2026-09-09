@@ -272,6 +272,12 @@ def test_rolling_kurtosis() -> None:
     )
 
 
+@pytest.mark.parametrize("rolling_fn", ["rolling_skew", "rolling_kurtosis"])
+def test_rolling_skew_kurtosis_empty_28515(rolling_fn: str) -> None:
+    result = getattr(pl.Series("x", [], dtype=pl.Int32), rolling_fn)(window_size=3)
+    assert_series_equal(result, pl.Series("x", [], dtype=pl.Float64))
+
+
 @pytest.mark.parametrize("time_zone", [None, "America/Chicago"])
 @pytest.mark.parametrize(
     ("rolling_fn", "expected_values", "expected_dtype"),
@@ -2342,6 +2348,32 @@ def test_rolling_rank_closed_left_26147() -> None:
         x_ranked=pl.Series([1.0, 2.0]),
         x_flipped_ranked=pl.Series([2.0, 1.0]),
     )
+    assert_frame_equal(actual, expected)
+
+
+def test_rolling_rank_by_null_in_shared_window() -> None:
+    # All `by` values are equal, so every row is ranked against the same
+    # window. A null in that window must only null out its own row.
+    df = pl.DataFrame(
+        {"index": [0, 0, 0, 0], "x": [1, 2, None, 4], "y": [1, 2, 4, None]}
+    )
+    actual = df.with_columns(
+        x_ranked=pl.col("x").rolling_rank_by("index", window_size="4i"),
+        y_ranked=pl.col("y").rolling_rank_by("index", window_size="4i"),
+    )
+    expected = df.with_columns(
+        x_ranked=pl.Series([1.0, 2.0, None, 3.0]),
+        y_ranked=pl.Series([1.0, 2.0, 3.0, None]),
+    )
+    assert_frame_equal(actual, expected)
+
+
+def test_rolling_rank_by_unsorted_by() -> None:
+    df = pl.DataFrame({"index": [3, 1, 2], "x": [30, None, 20]})
+    actual = df.with_columns(
+        x_ranked=pl.col("x").rolling_rank_by("index", window_size="3i"),
+    )
+    expected = df.with_columns(x_ranked=pl.Series([2.0, None, 1.0]))
     assert_frame_equal(actual, expected)
 
 

@@ -128,6 +128,8 @@ def _defer(
     Takes a function that produces a `DataFrame` but defers execution until the
     `LazyFrame` is collected.
 
+    .. engine-support:: in-memory, streaming, distributed
+
     Parameters
     ----------
     function

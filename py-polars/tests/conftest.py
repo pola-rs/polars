@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import io
-from pathlib import PosixPath
+import os
+import sys
+import tempfile
+from pathlib import Path, PosixPath
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import pytest
@@ -19,6 +22,123 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Run all queries by default of the distributed engine",
     )
+
+
+_xdist_crash_config: pytest.Config | None = None
+_xdist_crash_log_dir: tempfile.TemporaryDirectory[str] | None = None
+
+# How much of a crashed worker's captured output we echo, in bytes.
+_XDIST_CRASH_OUTPUT_LIMIT = 64 * 1024
+
+
+def _crash_log_path(log_dir: str | Path, worker_id: str, stream: str) -> Path:
+    return Path(log_dir) / f"{worker_id}.{stream}"
+
+
+def _capture_to_file(capman: Any, stream: str, path: Path) -> None:
+    """Redirect pytest's fd-level capture of `stream` to a persistent file."""
+    capture = getattr(capman._global_capturing, stream, None)
+    tmpfile = getattr(capture, "tmpfile", None)
+    targetfd = getattr(capture, "targetfd", None)
+    if tmpfile is None or targetfd is None:
+        return  # Not capturing this stream at fd level (`-s`, `--capture=sys`).
+
+    # This is rather hacky but the tempfile pytest creates is passed to multiple
+    # places before now, so it would be too late to replace that file object
+    # with something we control. So we instead change the underlying file
+    # descriptors to point out our path of choice.
+    with path.open("wb+", buffering=0) as f:
+        os.dup2(f.fileno(), tmpfile.fileno())
+        os.dup2(f.fileno(), targetfd)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    # Stash the config so `pytest_handlecrashitem` (whose hookspec only receives
+    # crashitem/report/sched) can reach the capture manager to bypass capturing.
+    global _xdist_crash_config
+    _xdist_crash_config = config
+
+    workerinput = getattr(config, "workerinput", None)
+    if workerinput is None:
+        return  # Controller (or no xdist).
+
+    log_dir = workerinput.get("polars_crash_log_dir")
+    worker_id = workerinput.get("workerid")
+    capman = config.pluginmanager.getplugin("capturemanager")
+    if log_dir is None or worker_id is None or capman is None:
+        return
+
+    try:
+        for stream in ("out", "err"):
+            _capture_to_file(
+                capman, stream, _crash_log_path(log_dir, worker_id, stream)
+            )
+    except Exception as exc:
+        # Never let this break an otherwise fine test run.
+        print(f"failed to redirect fd capture: {exc!r}", file=sys.stderr)
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_configure_node(node: Any) -> None:
+    """Tell each xdist worker where to persist its captured output."""
+    global _xdist_crash_log_dir
+    if _xdist_crash_log_dir is None:
+        _xdist_crash_log_dir = tempfile.TemporaryDirectory(
+            prefix="polars-xdist-crash-", ignore_cleanup_errors=True
+        )
+    node.workerinput["polars_crash_log_dir"] = _xdist_crash_log_dir.name
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    global _xdist_crash_log_dir
+    if _xdist_crash_log_dir is not None:
+        _xdist_crash_log_dir.cleanup()
+        _xdist_crash_log_dir = None
+
+
+def _read_crash_output(worker_id: str, stream: str) -> str:
+    if _xdist_crash_log_dir is None:
+        return ""
+    path = _crash_log_path(_xdist_crash_log_dir.name, worker_id, stream)
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return ""
+    if len(data) > _XDIST_CRASH_OUTPUT_LIMIT:
+        data = b"<truncated>\n" + data[-_XDIST_CRASH_OUTPUT_LIMIT:]
+    return data.decode("utf-8", errors="replace").strip()
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_handlecrashitem(
+    crashitem: str, report: pytest.TestReport, sched: object
+) -> None:
+    """Log which test an xdist worker was running when it crashed."""
+    try:
+        worker = getattr(report, "node", None)
+        worker_id = getattr(getattr(worker, "gateway", None), "id", "?")
+        lines = [f"ERROR: xdist worker {worker_id} crashed while running {crashitem}"]
+        for stream, name in (("out", "stdout"), ("err", "stderr")):
+            output = _read_crash_output(worker_id, stream)
+            if output:
+                lines.append(f"--- {worker_id} {name} ---\n{output}")
+
+        def emit() -> None:
+            print("\n".join(lines), file=sys.stderr, flush=True)
+
+        # Suspend pytest's output capturing so the message reaches the real
+        # streams instead of being buffered (and possibly lost) on crash.
+        capman: Any = None
+        if _xdist_crash_config is not None:
+            capman = _xdist_crash_config.pluginmanager.getplugin("capturemanager")
+        if capman is not None:
+            with capman.global_and_fixture_disabled():
+                emit()
+        else:
+            emit()
+    except Exception as exc:
+        # Never let logging failures mask the underlying crash.
+        print(f"pytest_handlecrashitem logging failed: {exc!r}", file=sys.stderr)
 
 
 @pytest.fixture(autouse=True)

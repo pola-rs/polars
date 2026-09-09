@@ -19,6 +19,7 @@ impl DslPlan {
                 scratch.extend(inputs)
             },
             PipeWithSchema { input, .. } => scratch.extend(input.iter()),
+            SQL { relations, .. } => scratch.extend(relations.iter().map(|(_, plan)| plan)),
             Join {
                 input_left,
                 input_right,
@@ -46,6 +47,7 @@ impl DslPlan {
                 scratch.push(input_left);
                 scratch.push(input_right);
             },
+            Resolver { .. } => {},
         }
     }
 }

@@ -19,6 +19,10 @@ where
 {
     use arrow::array::Array;
 
+    if ca.is_empty() {
+        return Ok(ca.clone());
+    }
+
     let ca = ca.rechunk();
     let arr = ca.downcast_get(0).unwrap();
     let arr = if arr.has_nulls() {
@@ -78,6 +82,10 @@ where
     T::Native: Float + SubAssign + Pow<T::Native, Output = T::Native>,
 {
     use arrow::array::Array;
+
+    if ca.is_empty() {
+        return Ok(ca.clone());
+    }
 
     let ca = ca.rechunk();
     let arr = ca.downcast_get(0).unwrap();

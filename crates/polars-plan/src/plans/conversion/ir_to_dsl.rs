@@ -372,6 +372,14 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IC::Physical => C::Physical,
             })
         },
+        #[cfg(feature = "dtype-map")]
+        IF::MapExpr(f) => {
+            use IRMapFunction as IM;
+            use MapFunction as M;
+            F::MapExpr(match f {
+                IM::Entries => M::Entries,
+            })
+        },
         #[cfg(feature = "dtype-extension")]
         IF::Extension(f) => {
             use ExtensionFunction as E;
@@ -431,6 +439,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IL::ToArray(v) => L::ToArray(v),
                 #[cfg(feature = "list_to_struct")]
                 IL::ToStruct(list_to_struct_args) => L::ToStruct(list_to_struct_args),
+                #[cfg(feature = "dtype-map")]
+                IL::ToMap => L::ToMap,
             })
         },
         #[cfg(feature = "strings")]

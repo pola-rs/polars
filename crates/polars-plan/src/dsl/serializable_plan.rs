@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 #[cfg(feature = "pivot")]
 use polars_core::frame::PivotColumnNaming;
 use polars_utils::unique_id::UniqueId;
@@ -6,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
 use super::*;
+use crate::dsl::dsl_resolver::DslResolver;
 
 new_key_type! {
     /// A key type for identifying DataFrame nodes in a serialized DSL plan.
@@ -147,9 +150,18 @@ pub(crate) enum SerializableDslPlanNode {
         key: Arc<[PlSmallStr]>,
         maintain_order: bool,
     },
+    #[allow(clippy::upper_case_acronyms)]
+    SQL {
+        query: Arc<String>,
+        relations: Vec<(PlSmallStr, DslPlanKey)>,
+    },
     IR {
         dsl: DslPlanKey,
         version: u32,
+    },
+    Resolver {
+        resolver: Arc<DslResolver>,
+        resolver_schema: Option<SchemaRef>,
     },
 }
 
@@ -365,12 +377,31 @@ fn convert_dsl_plan_to_serializable_plan(
             key: key.clone(),
             maintain_order: *maintain_order,
         },
+        DP::SQL {
+            query,
+            relations,
+            cached_stmt: _,
+        } => SP::SQL {
+            query: query.clone(),
+            relations: relations
+                .iter()
+                .map(|(name, plan)| (name.clone(), dsl_plan_key_from_ref(plan, arenas)))
+                .collect(),
+        },
         DP::IR {
             dsl,
             version: _,
             node: _,
             opt_flags: _,
         } => convert_dsl_plan_to_serializable_plan(dsl.as_ref(), arenas),
+        DP::Resolver {
+            resolver,
+            resolver_schema,
+            resolved_cache: _,
+        } => SP::Resolver {
+            resolver: Arc::clone(resolver),
+            resolver_schema: { resolver_schema.lock().unwrap().clone() },
+        },
     }
 }
 
@@ -614,10 +645,29 @@ fn try_convert_serializable_plan_to_dsl_plan(
             key: key.clone(),
             maintain_order: *maintain_order,
         }),
+        SP::SQL { query, relations } => Ok(DP::SQL {
+            query: query.clone(),
+            relations: relations
+                .iter()
+                .map(|(name, key)| {
+                    let plan = get_dsl_plan(*key, ser_dsl_plan, arenas)?;
+                    Ok((name.clone(), Arc::unwrap_or_clone(plan)))
+                })
+                .collect::<PolarsResult<Vec<_>>>()?,
+            cached_stmt: Default::default(),
+        }),
         SP::IR {
             dsl: dsl_key,
             version: _,
         } => get_dsl_plan(*dsl_key, ser_dsl_plan, arenas).map(Arc::unwrap_or_clone),
+        SP::Resolver {
+            resolver,
+            resolver_schema,
+        } => Ok(DP::Resolver {
+            resolver: Arc::clone(resolver),
+            resolver_schema: Arc::new(Mutex::new(resolver_schema.clone())),
+            resolved_cache: Default::default(),
+        }),
     }
 }
 

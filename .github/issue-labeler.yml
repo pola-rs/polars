@@ -7,13 +7,13 @@ performance:
 regression:
   - '/regression/i'
 A-dtype-categorical:
-  - '/categorical|categories|category/i'
+  - '/categorical|categories/i'
 A-dtype-decimal:
   - '/decimal/i'
 A-dtype-object:
   - '/\bObject\b/'
 A-dtype-struct:
-  - '/\bstruct\b/i'
+  - '/\b(as_|to_)?struct\b/i'
 A-gpu:
   - '/\bgpu\b/i'
 A-ide:

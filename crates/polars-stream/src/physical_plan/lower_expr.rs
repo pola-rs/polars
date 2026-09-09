@@ -619,6 +619,7 @@ fn lower_exprs_with_ctx(
                     input: trans_input,
                     selectors: vec![explode_expr.clone()],
                     extend_original: false,
+                    rechunk_input: false,
                 };
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
                 input_streams.insert(PhysStream::first(node_key));
@@ -1650,6 +1651,7 @@ fn lower_exprs_with_ctx(
                     input: trans_input,
                     selectors: vec![func_expr.clone()],
                     extend_original: false,
+                    rechunk_input: false,
                 };
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
                 input_streams.insert(PhysStream::first(node_key));
@@ -2789,6 +2791,7 @@ fn build_select_stream_with_ctx(
         input: transformed_input,
         selectors: trans_expr_irs,
         extend_original: false,
+        rechunk_input: false,
     };
     let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
     Ok(PhysStream::first(node_key))
@@ -2879,6 +2882,7 @@ pub fn build_hstack_stream(
             input,
             selectors,
             extend_original: true,
+            rechunk_input: false,
         };
         let node_key = phys_sm.insert(PhysNode::new(output_schema, kind));
 

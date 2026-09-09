@@ -526,6 +526,7 @@ def scan_parquet(
     _deletion_files: DeletionFiles | None = None,
     _table_statistics: DataFrame | None = None,
     _row_count: tuple[int, int] | None = None,
+    _source_sizes: Sequence[int] | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a local or cloud-hosted parquet file (or files).
@@ -533,9 +534,7 @@ def scan_parquet(
     This function allows the query optimizer to push down predicates and projections to
     the scan level, typically increasing performance and reducing memory overhead.
 
-    .. versionchanged:: 0.20.4
-        * The `row_count_name` parameter was renamed `row_index_name`.
-        * The `row_count_offset` parameter was renamed `row_index_offset`.
+    .. engine-support:: in-memory, streaming, distributed
 
     Parameters
     ----------
@@ -730,6 +729,7 @@ def scan_parquet(
             deletion_files=_deletion_files,
             table_statistics=_table_statistics,
             row_count=_row_count,
+            source_sizes=_source_sizes,
         ),
     )
 

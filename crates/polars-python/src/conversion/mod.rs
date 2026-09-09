@@ -32,8 +32,8 @@ use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
 use polars_plan::dsl::default_values::IcebergDefaultFieldValues;
 use polars_plan::dsl::deletion::IcebergDeletes;
+use polars_plan::dsl::dsl_resolver::ResolvedDsl;
 use polars_utils::compression::{BrotliLevel, GzipLevel, ZstdLevel};
-use polars_utils::pl_serialize;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::python_function::PythonObject;
 use polars_utils::total_ord::{TotalEq, TotalHash};
@@ -41,11 +41,9 @@ use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::pybacked::{PyBackedBytes, PyBackedStr};
+use pyo3::pybacked::PyBackedStr;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{IntoPyDict, PyBytes, PyDict, PyList, PySequence, PyString};
-use serde::Serialize;
-use serde::de::DeserializeOwned;
+use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
 
 use crate::error::PyPolarsErr;
 use crate::expr::PyExpr;
@@ -120,6 +118,63 @@ pub(crate) fn get_lf(obj: &Bound<'_, PyAny>) -> PyResult<LazyFrame> {
     Ok(pydf.extract::<PyLazyFrame>()?.ldf.into_inner())
 }
 
+pub(crate) fn extract_py_resolved_dsl(
+    py: Python<'_>,
+    // pl.LazyFrame | tuple[pl.LazyFrame | None, polars.lazyframe_resolver.ResolvedLazyFrameProps]
+    py_resolved_lazyframe: Py<PyAny>,
+) -> PolarsResult<ResolvedDsl> {
+    let mut ret = ResolvedDsl::default();
+
+    let ResolvedDsl {
+        dsl,
+        version_key,
+        applied_filters,
+        slice_offset_applied: _,
+    } = &mut ret;
+
+    let mut py_lf: Option<Py<PyAny>> = None;
+    let mut props: Option<Py<PyAny>> = None;
+
+    if py_resolved_lazyframe
+        .getattr(py, intern!(py, "_ldf"))
+        .is_ok()
+    {
+        py_lf = Some(py_resolved_lazyframe);
+    } else {
+        let py_lf_: Py<PyAny>;
+        let props_: Py<PyAny>;
+
+        (py_lf_, props_) = py_resolved_lazyframe.extract(py)?;
+
+        if !py_lf_.is_none(py) {
+            py_lf = Some(py_lf_)
+        }
+
+        props = Some(props_);
+    }
+
+    if let Some(lf) = py_lf {
+        let plf: PyLazyFrame = lf.getattr(py, intern!(py, "_ldf"))?.extract(py)?;
+        *dsl = Some(plf.ldf.into_inner().logical_plan);
+    }
+
+    if let Some(props) = props {
+        *version_key = props
+            .getattr(py, intern!(py, "version_key"))?
+            .extract::<Option<Wrap<PlSmallStr>>>(py)?
+            .map(|x| x.0);
+
+        *applied_filters = props
+            .getattr(py, intern!(py, "applied_filters"))?
+            .bind(py)
+            .try_iter()?
+            .map(|x| x.and_then(|x| x.extract::<usize>()))
+            .collect::<PyResult<PlIndexSet<usize>>>()?;
+    }
+
+    Ok(ret)
+}
+
 pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
     let s = obj.getattr(intern!(obj.py(), "_s"))?;
     Ok(s.extract::<PySeries>()?.series.into_inner())
@@ -129,30 +184,6 @@ pub(crate) fn to_series(py: Python<'_>, s: PySeries) -> PyResult<Bound<'_, PyAny
     let series = pl_series(py).bind(py);
     let constructor = series.getattr(intern!(py, "_from_pyseries"))?;
     constructor.call1((s,))
-}
-
-pub(crate) fn serde_pickle<'py, T: Serialize>(
-    val: &T,
-    py: Python<'py>,
-) -> PyResult<Bound<'py, PyBytes>> {
-    // For pickling we set FC is false, as that is used for caching (compact is faster) and is not
-    // intended to be used across different versions.
-    let mut writer: Vec<u8> = vec![];
-    pl_serialize::SerializeOptions::default()
-        .serialize_into_writer::<_, _, false>(&mut writer, &val)
-        .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
-    Ok(PyBytes::new(py, &writer))
-}
-
-pub(crate) fn serde_unpickle<T: DeserializeOwned>(
-    val: &mut T,
-    state: &Bound<PyAny>,
-) -> PyResult<()> {
-    let bytes = state.extract::<PyBackedBytes>()?;
-    *val = pl_serialize::SerializeOptions::default()
-        .deserialize_from_reader::<_, _, false>(&*bytes)
-        .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
-    Ok(())
 }
 
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PlSmallStr> {
@@ -352,6 +383,12 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Null"))?;
                 class.call0()
             },
+            DataType::Map(key, value) => {
+                let class = pl.getattr(intern!(py, "Map"))?;
+                let key = Wrap(*key.clone());
+                let value = Wrap(*value.clone());
+                class.call1((&key, &value))
+            },
             DataType::Extension(typ, storage) => {
                 let py_storage = Wrap((**storage).clone()).into_pyobject(py)?;
                 let py_typ = pl
@@ -437,6 +474,14 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
                     "List" => DataType::List(Box::new(DataType::Null)),
                     "Array" => DataType::Array(Box::new(DataType::Null), 0),
                     "Struct" => DataType::Struct(vec![]),
+                    #[cfg(feature = "dtype-map")]
+                    "Map" => {
+                        // `Map(Null, _)` is not a valid dtype, so there is no bare
+                        // stand-in the way `List` has `List(Null)`.
+                        return Err(PyTypeError::new_err(
+                            "Map requires a key and a value type, e.g. `pl.Map(pl.String, pl.Int64)`",
+                        ));
+                    },
                     "Null" => DataType::Null,
                     #[cfg(feature = "object")]
                     "Object" => DataType::Object(OBJECT_NAME),
@@ -519,6 +564,16 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
                 let inner = inner.extract::<Wrap<DataType>>()?;
                 let size = size.extract::<usize>()?;
                 DataType::Array(Box::new(inner.0), size)
+            },
+            #[cfg(feature = "dtype-map")]
+            "Map" => {
+                let key = ob.getattr(intern!(py, "key"))?;
+                let value = ob.getattr(intern!(py, "value"))?;
+                let key = key.extract::<Wrap<DataType>>()?;
+                let value = value.extract::<Wrap<DataType>>()?;
+                let dtype = DataType::Map(Box::new(key.0), Box::new(value.0));
+                dtype.ensure_valid_map_dtype().map_err(PyPolarsErr::from)?;
+                dtype
             },
             "Struct" => {
                 let fields = ob.getattr(intern!(py, "fields"))?;

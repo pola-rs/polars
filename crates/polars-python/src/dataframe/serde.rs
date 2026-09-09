@@ -39,9 +39,11 @@ impl PyDataFrame {
     #[cfg(feature = "json")]
     pub fn serialize_json(&self, py: Python<'_>, py_f: Py<PyAny>) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
-        let writer = BufWriter::new(file);
+        let mut writer = BufWriter::new(file);
         py.enter_polars(|| {
-            serde_json::to_writer(writer, &*self.df.read())
+            self.df
+                .read()
+                .serialize_into_json(&mut writer)
                 .map_err(|err| ComputeError::new_err(err.to_string()))
         })
     }
@@ -55,7 +57,7 @@ impl PyDataFrame {
         py.enter_polars(move || {
             let mmap_read: ReaderBytes = (&mut mmap_bytes_r).into();
             let bytes = mmap_read.deref();
-            let df = serde_json::from_slice::<DataFrame>(bytes)
+            let df = DataFrame::deserialize_from_json(bytes)
                 .map_err(|err| ComputeError::new_err(err.to_string()))?;
             PyResult::Ok(df.into())
         })

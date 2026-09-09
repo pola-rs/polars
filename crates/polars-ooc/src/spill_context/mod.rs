@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
+use polars_async::executor::TaskPriority;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::tick_counter::tick_counter;
 use rand::RngExt;
@@ -62,6 +63,7 @@ struct LocalStagingArea {
     accesses: SpillQueue,
     cancellations: SpillQueue,
     too_small: SpillQueue,
+    spilled: SpillQueue,
 }
 
 #[derive(Default)]
@@ -123,6 +125,14 @@ impl SpillQueue {
         self.retain_amort = 0;
     }
 
+    pub fn unregister_all(&mut self, context_id: u64) {
+        while let Some(rt) = self.pop_back() {
+            if let Some(t) = rt.upgrade() {
+                t.unregister_from(context_id);
+            }
+        }
+    }
+
     pub fn extend_front(&mut self, tokens: Vec<RegisteredSpillToken>) {
         for token in tokens.into_iter().rev() {
             if token.is_valid() {
@@ -158,8 +168,10 @@ impl SpillContextPolicy {
     }
 }
 
-pub(crate) enum ReinsertReason {
-    Unspill,
+pub(crate) enum InsertReason {
+    Register,
+    RegisterSpilled,
+    Spill,
     Unpin,
     // The timestamps below are the original registration time.
     #[expect(dead_code)]
@@ -167,10 +179,23 @@ pub(crate) enum ReinsertReason {
     TooSmall(Timestamp),
 }
 
+pub(crate) enum PrefetchScheduleResult {
+    NothingToPrefetch,
+    NoPermitsLeft,
+    Okay,
+    StaleContext,
+}
+
+#[derive(Default)]
+struct SharedState {
+    spill_queue: SpillQueue,
+    unspill_queue: SpillQueue,
+}
+
 pub(crate) struct SpillContextInner {
     staging: ThreadLocal<Mutex<LocalStagingArea>>,
     staging_empty: AtomicBool,
-    spill_queue: Mutex<SpillQueue>,
+    shared: Mutex<SharedState>,
     stats: Arc<SpillContextStatistics>,
     policy: AtomicU8,
     refcount: AtomicU64,
@@ -183,7 +208,7 @@ impl SpillContextInner {
         Self {
             staging: ThreadLocal::default(),
             staging_empty: AtomicBool::new(true),
-            spill_queue: Mutex::default(),
+            shared: Mutex::default(),
             stats: Arc::new(SpillContextStatistics::new(name)),
             policy: AtomicU8::new(policy as u8),
             refcount: AtomicU64::new(0),
@@ -192,7 +217,7 @@ impl SpillContextInner {
     }
 
     // We need forced locking to make reset not leave orphan spillframes.
-    fn drain_staging(&self, queue: &mut SpillQueue, force_lock: bool) {
+    fn drain_staging(&self, shared: &mut SharedState, force_lock: bool) {
         if !force_lock
             && (self.staging_empty.load(Ordering::Relaxed)
                 || self.staging_empty.swap(true, Ordering::AcqRel))
@@ -203,11 +228,13 @@ impl SpillContextInner {
         let mut accesses = Vec::new();
         let mut cancellations = Vec::new();
         let mut too_small = Vec::new();
+        let mut spilled = Vec::new();
         for local in self.staging.iter() {
             let mut lock = local.lock().unwrap();
             lock.accesses.drain_into(&mut accesses);
             lock.cancellations.drain_into(&mut cancellations);
             lock.too_small.drain_into(&mut too_small);
+            lock.spilled.drain_into(&mut spilled);
         }
 
         let policy = self.policy();
@@ -216,37 +243,36 @@ impl SpillContextInner {
                 accesses.sort_by_key(|t| t.timestamp);
                 cancellations.sort_by_key(|t| t.timestamp);
                 too_small.sort_by_key(|t| t.timestamp);
+                spilled.sort_by_key(|t| t.timestamp);
             },
             SpillContextPolicy::Random => {},
         }
 
-        queue.extend_back(accesses);
+        shared.spill_queue.extend_back(accesses);
+        shared.unspill_queue.extend_back(spilled);
 
         // A cancelled spill attempt is retried with priority. A token rejected
         // for being too small would fail that same check again, so it goes on
         // the opposite end.
         if matches!(policy, SpillContextPolicy::LeastRecent) {
-            queue.extend_front(cancellations);
-            queue.extend_back(too_small);
+            shared.spill_queue.extend_front(cancellations);
+            shared.spill_queue.extend_back(too_small);
         } else {
-            queue.extend_back(cancellations);
-            queue.extend_front(too_small);
+            shared.spill_queue.extend_back(cancellations);
+            shared.spill_queue.extend_front(too_small);
         }
     }
 
     fn reset(&self, name: PlSmallStr, policy: SpillContextPolicy) {
         let ctx_id = new_context_id();
-        self.context_id.store(ctx_id, Ordering::Relaxed);
+        let old_ctx_id = self.context_id.swap(ctx_id, Ordering::Relaxed);
         self.policy.store(policy as u8, Ordering::Relaxed);
         self.stats.reset(name);
 
-        let mut queue = self.spill_queue.lock().unwrap();
-        self.drain_staging(&mut queue, true);
-        while let Some(rt) = queue.pop_back() {
-            if let Some(t) = rt.upgrade() {
-                t.unregister();
-            }
-        }
+        let mut shared = self.shared.lock().unwrap();
+        self.drain_staging(&mut shared, true);
+        shared.spill_queue.unregister_all(old_ctx_id);
+        shared.unspill_queue.unregister_all(old_ctx_id);
     }
 
     fn context_id(&self) -> u64 {
@@ -261,17 +287,17 @@ impl SpillContextInner {
         &self.stats
     }
 
-    pub(crate) fn drain_while<F: FnMut(RegisteredSpillToken) -> bool>(&self, mut f: F) {
+    pub(crate) fn drain_live_while<F: FnMut(RegisteredSpillToken) -> bool>(&self, mut f: F) {
         let mut rng = rand::rng();
         let policy = self.policy();
 
-        let mut queue = self.spill_queue.lock().unwrap();
-        self.drain_staging(&mut queue, false);
+        let mut shared = self.shared.lock().unwrap();
+        self.drain_staging(&mut shared, false);
 
         while let Some(rt) = match policy {
-            SpillContextPolicy::MostRecent => queue.pop_back(),
-            SpillContextPolicy::LeastRecent => queue.pop_front(),
-            SpillContextPolicy::Random => queue.pop_random(&mut rng),
+            SpillContextPolicy::MostRecent => shared.spill_queue.pop_back(),
+            SpillContextPolicy::LeastRecent => shared.spill_queue.pop_front(),
+            SpillContextPolicy::Random => shared.spill_queue.pop_random(&mut rng),
         } {
             if !f(rt) {
                 break;
@@ -279,40 +305,75 @@ impl SpillContextInner {
         }
     }
 
-    pub(crate) fn reinsert(
+    pub(crate) fn insert(
         &self,
         token: &Arc<dyn DynSpillToken>,
         reg_id: u32,
         ctx_id: u64,
-        reason: ReinsertReason,
+        reason: InsertReason,
     ) {
         let mut local = self.staging.get_or_default().lock().unwrap();
         if ctx_id != self.context_id.load(Ordering::Relaxed) {
             return;
         }
 
-        match reason {
-            ReinsertReason::Unspill | ReinsertReason::Unpin => {
-                local.accesses.push_back(RegisteredSpillToken::new(
-                    token,
-                    reg_id,
-                    Timestamp::now(),
-                ));
+        let (queue, ts) = match reason {
+            InsertReason::Register => (&mut local.accesses, Timestamp::now()),
+            InsertReason::Spill | InsertReason::RegisterSpilled => {
+                (&mut local.spilled, Timestamp::now())
             },
-            ReinsertReason::SpillCancelled(ts) => {
-                local
-                    .cancellations
-                    .push_back(RegisteredSpillToken::new(token, reg_id, ts));
-            },
-            ReinsertReason::TooSmall(ts) => {
-                local
-                    .too_small
-                    .push_back(RegisteredSpillToken::new(token, reg_id, ts));
-            },
-        }
+            InsertReason::Unpin => (&mut local.accesses, Timestamp::now()),
+            InsertReason::SpillCancelled(ts) => (&mut local.cancellations, ts),
+            InsertReason::TooSmall(ts) => (&mut local.too_small, ts),
+        };
+
+        queue.push_back(RegisteredSpillToken::new(token, reg_id, ts));
 
         if self.staging_empty.load(Ordering::Relaxed) {
             self.staging_empty.swap(false, Ordering::AcqRel);
+        }
+    }
+
+    pub(crate) fn schedule_prefetch(&self, ctx_id: u64) -> PrefetchScheduleResult {
+        let mut shared = self.shared.lock().unwrap();
+        if ctx_id != self.context_id.load(Ordering::Relaxed) {
+            return PrefetchScheduleResult::StaleContext;
+        }
+
+        self.drain_staging(&mut shared, false);
+
+        let mut prefetched = false;
+        let mm = memory_manager();
+        let mut rng = rand::rng();
+        for _ in 0..self.stats.suggested_prefetch_amount() {
+            let Some(permit) = mm.try_get_prefetch_permit() else {
+                return PrefetchScheduleResult::NoPermitsLeft;
+            };
+
+            let pop = match self.policy() {
+                SpillContextPolicy::MostRecent => shared.unspill_queue.pop_front(),
+                SpillContextPolicy::LeastRecent => shared.unspill_queue.pop_back(),
+                SpillContextPolicy::Random => shared.unspill_queue.pop_random(&mut rng),
+            };
+
+            let Some(rt) = pop else { break };
+            let Some(token) = rt.upgrade() else {
+                continue;
+            };
+
+            prefetched = true;
+            self.stats.add_prefetch_start();
+            let prefetch_fut = token.prefetch(); // Create fut outside of spawn to update statistics now.
+            polars_async::executor::spawn(TaskPriority::Low, async move {
+                prefetch_fut.await;
+                drop(permit);
+            });
+        }
+
+        if prefetched {
+            PrefetchScheduleResult::Okay
+        } else {
+            PrefetchScheduleResult::NothingToPrefetch
         }
     }
 }
@@ -351,21 +412,10 @@ impl StrongSpillContext {
         T: AsRef<SpillToken<S>>,
         S: Spillable,
     {
-        let dyn_arc = token.as_ref().upcast();
-        let reg_id = dyn_arc.register(self.downgrade(), SpillContextParam(()));
-
-        {
-            let mut local = self.0.staging.get_or_default().lock().unwrap();
-            local.accesses.push_back(RegisteredSpillToken::new(
-                &dyn_arc,
-                reg_id,
-                Timestamp::now(),
-            ));
-        }
-
-        if self.0.staging_empty.load(Ordering::Relaxed) {
-            self.0.staging_empty.swap(false, Ordering::AcqRel);
-        }
+        token
+            .as_ref()
+            .upcast()
+            .register(self.downgrade(), SpillContextParam(()));
     }
 }
 
@@ -385,6 +435,7 @@ impl Clone for StrongSpillContext {
 impl Drop for StrongSpillContext {
     fn drop(&mut self) {
         if self.0.refcount.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.0.stats().on_drop();
             SPILL_CONTEXT_REUSE_ARENA.lock().unwrap().push(self.0);
         }
     }
@@ -421,23 +472,12 @@ impl WeakSpillContext {
 pub struct SpillContextParam(pub(crate) ());
 
 impl WeakSpillContext {
-    pub fn register<T, S>(&self, token: &T, param: SpillContextParam)
+    pub fn register_no_spill_check<T, S>(&self, token: &T, param: SpillContextParam)
     where
         T: AsRef<SpillToken<S>>,
         S: Spillable,
     {
-        let dyn_arc = token.as_ref().upcast();
-        let mut local = self.0.staging.get_or_default().lock().unwrap();
-        if self.0.context_id() == self.1 {
-            local.accesses.push_back(RegisteredSpillToken::new(
-                &dyn_arc,
-                dyn_arc.register(self.clone(), param),
-                Timestamp::now(),
-            ));
-            if self.0.staging_empty.load(Ordering::Relaxed) {
-                self.0.staging_empty.swap(false, Ordering::AcqRel);
-            }
-        }
+        token.as_ref().upcast().register(self.clone(), param);
     }
 }
 

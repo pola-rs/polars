@@ -1,3 +1,4 @@
+mod canonicalize_maps;
 mod downcast;
 mod extend;
 mod null;

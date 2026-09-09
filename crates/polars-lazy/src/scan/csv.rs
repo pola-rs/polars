@@ -418,6 +418,7 @@ impl LazyFileListReader for LazyCsvReader {
                 deletion_files: None,
                 table_statistics: None,
                 row_count: None,
+                source_sizes: None,
             },
         )?
         .build()

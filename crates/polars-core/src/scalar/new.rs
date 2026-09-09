@@ -42,6 +42,27 @@ impl Scalar {
         )
     }
 
+    /// One `Map` row from its flat key and value fields.
+    #[cfg(feature = "dtype-map")]
+    pub fn new_map(keys: &Series, values: &Series) -> Self {
+        Scalar::new(
+            DataType::Map(
+                Box::new(keys.dtype().clone()),
+                Box::new(values.dtype().clone()),
+            ),
+            AnyValue::Map(crate::chunked_array::logical::pack_map_entries(
+                keys, values,
+            )),
+        )
+    }
+
+    /// For callers that already hold one row's entries, such as deserialization.
+    #[cfg(feature = "dtype-map")]
+    pub(crate) fn map_from_entries(entries: Series) -> Self {
+        let value = AnyValue::Map(entries);
+        Scalar::new(value.dtype(), value)
+    }
+
     #[cfg(feature = "dtype-array")]
     pub fn new_array(values: Series, width: usize) -> Self {
         Scalar::new(

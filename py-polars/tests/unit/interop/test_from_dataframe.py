@@ -119,7 +119,6 @@ def test_from_dataframe_chunked() -> None:
     assert result.n_chunks() == 2
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: chunking
 def test_from_dataframe_chunked_string() -> None:
     df = pl.Series("a", ["a", None, "bc", "d", None, "efg"]).to_frame()
