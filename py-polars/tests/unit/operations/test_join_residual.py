@@ -798,7 +798,7 @@ def test_non_strict_cast_equality_is_promoted(engine: str) -> None:
 
 
 def test_residual_gathers_from_a_multi_chunk_payload() -> None:
-    """The probe payload is rechunked on the first gather, not up front."""
+    """A multi-chunk probe payload is rechunked before the residual gathers from it."""
     left = pl.concat(
         [
             pl.DataFrame({"k": [1, 2, 3], "a": [10, 20, 30]}),
