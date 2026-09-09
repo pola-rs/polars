@@ -227,6 +227,7 @@ fn to_graph_rec<'a>(
             selectors,
             input,
             extend_original,
+            rechunk_input,
         } => {
             let input_schema = input.output_schema(ctx.phys_sm);
             let phys_selectors = selectors
@@ -239,6 +240,7 @@ fn to_graph_rec<'a>(
                     phys_selectors,
                     node.output_schema(0).clone(),
                     *extend_original,
+                    *rechunk_input,
                 ),
                 [(input_key, input.port)],
             )

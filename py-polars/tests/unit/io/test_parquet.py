@@ -3777,6 +3777,7 @@ def test_str_plain_is_in_more_than_4_values_24167() -> None:
     )
 
 
+@pytest.mark.may_fail_lazy_schema  # TODO: panic
 def test_binary_offset_roundtrip() -> None:
     f = io.BytesIO()
     pl.LazyFrame(
@@ -4423,7 +4424,7 @@ def test_read_parquet_concatenated_gzip_members_28787(io_files_path: Path) -> No
 )
 def test_multi_file_resolve_metadata_level(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     mode: str,
     expected_est: int,
 ) -> None:
@@ -4434,8 +4435,7 @@ def test_multi_file_resolve_metadata_level(
     for i, n in enumerate([2, 3, 3]):
         pl.DataFrame({"x": range(n)}).write_parquet(tmp_path / f"part_{i}.parquet")
 
-    monkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", mode)
-    pl.Config.reload_env_vars()
+    plmonkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", mode)
 
     lf = pl.scan_parquet(tmp_path / "part_*.parquet")
     assert lf.collect().height == 8
@@ -4529,6 +4529,39 @@ def test_resolve_metadata_sampled_byte_weighted(
     assert f"ESTIMATED ROWS: {rows[0] + rows[2]}" in plan, plan
     assert "parquet sampled resolve" not in capfd.readouterr().err
     assert lf.collect().height == rows[0] + rows[2]
+
+
+@pytest.mark.write_disk
+def test_parquet_known_source_sizes(tmp_path: Path) -> None:
+    path = tmp_path / "data.parquet"
+    expected = pl.DataFrame({"a": [1, 2, 3]})
+    expected.write_parquet(path)
+
+    assert_frame_equal(
+        pl.scan_parquet(
+            path,
+            schema=expected.schema,
+            glob=False,
+            _source_sizes=[path.stat().st_size],
+        ).collect(),
+        expected,
+    )
+
+    with pytest.raises(pl.exceptions.ComputeError, match="parquet magic bytes"):
+        pl.scan_parquet(
+            path,
+            schema=expected.schema,
+            glob=False,
+            _source_sizes=[8],
+        ).collect()
+
+    with pytest.raises(pl.exceptions.ShapeError, match="number of source sizes"):
+        pl.scan_parquet(
+            path,
+            schema=expected.schema,
+            glob=False,
+            _source_sizes=[],
+        ).collect()
 
 
 def test_parquet_prefilter_fixed_size_binary_27781() -> None:

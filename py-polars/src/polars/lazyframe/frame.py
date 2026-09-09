@@ -6169,9 +6169,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Perform a join based on one or multiple (in)equality predicates.
 
         .. engine-support:: in-memory, partially-streaming, partially-distributed
-            :partially-distributed: There is no join key to partition on, so one of
-                the two frames is broadcast to every worker in full, whatever the
-                predicates.
+            :partially-distributed: Most joins are completely distributed. If the join
+                condition forces a range join, one cast might be broadcasted.
 
         .. note::
             The row order of the input DataFrames is not preserved.
