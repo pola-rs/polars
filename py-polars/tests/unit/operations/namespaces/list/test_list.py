@@ -282,13 +282,13 @@ def test_list_concat() -> None:
     df = pl.DataFrame({"a": [[1, 2], [1], [1, 2, 3]]})
 
     out = df.select([pl.col("a").list.concat(pl.Series([[1, 2]]))])
-    assert out["a"][0].to_list() == [1, 2, 1, 2]
+    assert out["a"][0] == [1, 2, 1, 2]
 
     out = df.select([pl.col("a").list.concat([1, 4])])
-    assert out["a"][0].to_list() == [1, 2, 1, 4]
+    assert out["a"][0] == [1, 2, 1, 4]
 
     out_s = df["a"].list.concat([4, 1])
-    assert out_s[0].to_list() == [1, 2, 4, 1]
+    assert out_s[0] == [1, 2, 4, 1]
 
 
 def test_list_join() -> None:
