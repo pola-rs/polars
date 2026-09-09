@@ -347,8 +347,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             map!(misc::approx_quantile_sketch, &method, error)
         },
         #[cfg(feature = "approx_quantile")]
-        F::ApproxQuantileEstimate { return_dtype } => {
-            map_as_slice!(misc::approx_quantile_estimate, &return_dtype)
+        F::ApproxQuantileEstimate { values_dtype } => {
+            map_as_slice!(misc::approx_quantile_estimate, &values_dtype)
         },
         F::Coalesce => map_as_slice!(misc::coalesce),
         #[cfg(feature = "diff")]

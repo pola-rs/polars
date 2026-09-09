@@ -96,11 +96,17 @@ pub fn approx_quantile_sketch(
 pub fn approx_quantile_estimate(
     sketch: &Series,
     quantiles: &Series,
-    return_dtype: &DataType,
+    values_dtype: &DataType,
 ) -> PolarsResult<Series> {
     let sketch = sketch.binary().expect("incorrect dtype");
+    let quantiles_is_list = quantiles.dtype().is_list();
     if sketch.is_empty() {
-        return Ok(Series::new_empty(sketch.name().clone(), return_dtype));
+        let dtype = if quantiles_is_list {
+            DataType::List(Box::new(values_dtype.clone()))
+        } else {
+            values_dtype.clone()
+        };
+        return Ok(Series::new_empty(sketch.name().clone(), &dtype));
     }
 
     polars_ensure!(
@@ -116,12 +122,13 @@ pub fn approx_quantile_estimate(
             make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
     );
 
-    let quantiles = match quantiles.dtype().is_list() {
-        true => quantiles.strict_cast(&DataType::List(Box::new(DataType::Float64)))?,
-        false => quantiles
+    let quantiles = if quantiles_is_list {
+        quantiles.strict_cast(&DataType::List(Box::new(DataType::Float64)))?
+    } else {
+        quantiles
             .strict_cast(&DataType::Float64)?
             .to_unit_list()
-            .into_series(),
+            .into_series()
     };
     let quantiles = quantiles
         .broadcast_to(sketch.len())?
@@ -141,17 +148,19 @@ pub fn approx_quantile_estimate(
     );
     let values = quantiles_inner.cont_slice().expect("rechunk");
 
-    let items = return_dtype.inner_dtype().unwrap_or(return_dtype);
-    let estimates = match items {
-        _ if items.is_primitive_numeric() || items.is_temporal() || items.is_decimal() => {
-            let physical = items.to_physical();
+    let estimates = match values_dtype {
+        _ if values_dtype.is_primitive_numeric()
+            || values_dtype.is_temporal()
+            || values_dtype.is_decimal() =>
+        {
+            let physical = values_dtype.to_physical();
             let estimates = with_match_physical_numeric_polars_type!(physical, |$T| {
                 let estimates = approx_quantile_estimate_inner::<<$T as PolarsNumericType>::Native>(sketch, &quantiles, values)?;
                 ChunkedArray::<$T>::from_iter_options(PlSmallStr::EMPTY, estimates.into_iter())
                     .into_series()
             });
             // SAFETY: the estimates are items the input itself held.
-            unsafe { estimates.from_physical_unchecked(items)? }
+            unsafe { estimates.from_physical_unchecked(values_dtype)? }
         },
         DataType::Boolean => {
             let estimates = approx_quantile_estimate_inner::<bool>(sketch, &quantiles, values)?;
@@ -167,12 +176,12 @@ pub fn approx_quantile_estimate(
             .into_series()
         },
         _ => {
-            polars_bail!(InvalidOperation: "`approx_quantile` operation not supported for dtype `{items}`")
+            polars_bail!(InvalidOperation: "`approx_quantile` operation not supported for dtype `{values_dtype}`")
         },
     };
 
     let estimates = quantiles.with_inner_values(&estimates);
-    let out = match return_dtype.is_list() {
+    let out = match quantiles_is_list {
         true => estimates.into_series(),
         false => estimates.get_inner(),
     };

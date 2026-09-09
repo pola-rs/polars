@@ -390,6 +390,17 @@ def test_approx_quantile_dtypes(
     assert value in s.to_list()
 
 
+def test_approx_quantile_dyn_literal_input() -> None:
+    for expr, dtype in (
+        (pl.lit(1).approx_quantile(0.5), pl.Int32),
+        (pl.lit(1.5).approx_quantile(0.5), pl.Float64),
+        (pl.lit(1).approx_quantile([0.5]), pl.List(pl.Int32)),
+    ):
+        lf = pl.LazyFrame().select(expr)
+        assert lf.collect_schema()["literal"] == dtype
+        assert lf.collect().schema["literal"] == dtype
+
+
 @pytest.mark.parametrize("method", APPROX_QUANTILE_METHODS)
 def test_approx_quantile_empty(method: ApproxQuantileMethod) -> None:
     # Matches exact quantile: no values to draw from means null, not an error.
