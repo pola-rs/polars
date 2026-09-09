@@ -432,8 +432,7 @@ pub trait SeriesTrait:
 
     /// Find the indices of elements where the null masks are different recursively.
     ///
-    /// Callers must first drop the entries that null `Map` rows retain; see
-    /// [`Series::compact_map_null_rows`].
+    /// First compact null Map rows with [`Series::compact_map_null_rows`].
     fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>);
 
     fn cast(&self, _dtype: &DataType, options: CastOptions) -> PolarsResult<Series>;

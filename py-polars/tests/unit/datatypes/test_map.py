@@ -829,7 +829,7 @@ def test_map_entries_expr_and_series() -> None:
 def arrow_map_retaining_entries(
     keys: list[str], values: list[int], offsets: list[int], valid: list[bool]
 ) -> pl.Series:
-    """Build a Map whose null rows still span entries, as Arrow permits."""
+    """Build an Arrow Map with entries under null rows."""
     pa = pytest.importorskip("pyarrow")
     entries = pa.StructArray.from_arrays(
         [pa.array(keys, pa.large_string()), pa.array(values, pa.int64())],
@@ -848,7 +848,7 @@ def arrow_map_retaining_entries(
 
 
 def retaining_null_row_map() -> pl.Series:
-    """Rows `null` and `{b: 2, c: 3}`, where the null row still spans entry `a`."""
+    """Rows `null` and `{b: 2, c: 3}`, with entry `a` hidden under the null row."""
     return arrow_map_retaining_entries(
         ["a", "b", "c"], [1, 2, 3], [0, 1, 3], [False, True]
     )
@@ -870,8 +870,7 @@ def test_map_null_row_hides_retained_entries() -> None:
 
 
 def test_map_null_row_strict_cast_inside_a_container() -> None:
-    # Strict casts compare a Map against its cast output through physical arrays, where
-    # the retained entries would look like a length mismatch.
+    # Hidden entries must not cause length mismatches in strict-cast validity checks.
     s = retaining_null_row_map()
     entries = [None, [{"key": "b", "value": 2}, {"key": "c", "value": 3}]]
 
@@ -887,7 +886,7 @@ def test_map_null_row_strict_cast_inside_a_container() -> None:
 
 def test_map_null_row_strict_cast_reaches_a_nested_map() -> None:
     pa = pytest.importorskip("pyarrow")
-    # The inner map of `{p: null, q: {b: 2, c: 3}}`, whose null row spans entry `a`.
+    # Inner maps of `{p: null, q: {b: 2, c: 3}}`, with `a` hidden under `p`.
     inner = retaining_null_row_map().rename("value").to_arrow()
     keys = pa.array(["p", "q"], pa.large_string())
     outer_entries = pa.StructArray.from_arrays([keys, inner], names=["key", "value"])
@@ -925,7 +924,7 @@ def test_map_null_row_compaction_survives_slicing() -> None:
     )
     assert s.to_list() == [None, {"b": 2, "c": 3}, None, {"e": 5}]
 
-    # Slicing leaves the offsets starting past the first retained entry.
+    # Include slices with nonzero offsets.
     for offset, length in [(0, 4), (1, 3), (2, 2), (1, 1)]:
         sliced = s.slice(offset, length)
         expected = [
@@ -1364,8 +1363,7 @@ def test_map_null_row_keeping_its_entries() -> None:
     # Rescaling a Decimal key is the cast that revalidates the entries.
     assert s.cast(RESCALED_MAP).to_list() == [None, LIVE_ROW]
 
-    # A value cast preserves live entries and drops hidden ones,
-    # the output stays exportable.
+    # Value casts drop hidden entries and remain exportable.
     widened = s.cast(pl.Map(pl.Decimal(10, 2), pl.Float64))
     assert widened.to_list() == [None, {Decimal("2.50"): 2.0}]
     assert widened.to_arrow().values.null_count == 0
@@ -1440,8 +1438,7 @@ def test_map_null_row_entries_survive_nesting(
     rescaled_dtype: pl.DataType,
     expected: list[Any],
 ) -> None:
-    # Nested null propagation must preserve entry validity before the cast drops hidden
-    # entries and rescales the Decimal keys.
+    # Entry validity must survive nested null propagation before key rescaling.
     nested = nest(_map_with_null_row_keeping_its_entries())
     assert nested.cast(rescaled_dtype).to_list() == expected
 

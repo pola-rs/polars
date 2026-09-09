@@ -4,13 +4,13 @@ use crate::chunked_array::logical::{
 };
 use crate::prelude::*;
 
-/// What [`map_pass`] applies to every `Map` it reaches.
+/// Operation applied to each nested Map.
 #[cfg(feature = "dtype-map")]
 #[derive(Clone, Copy)]
 enum MapPass {
     /// Deduplicate keys using first-position/last-value semantics.
     Canonicalize,
-    /// Drop the entries that null rows retain.
+    /// Drop entries under null rows.
     CompactNullRows,
 }
 
@@ -28,11 +28,9 @@ impl Series {
         }
     }
 
-    /// Drop the entries that null rows retain, in all nested `Map`s. Returns `None` if
-    /// unchanged.
+    /// Drop entries under null Map rows at every depth; return `None` if unchanged.
     ///
-    /// Operations that recurse through physical arrays cannot tell Map storage from a list,
-    /// so they must not be handed the entries that the Map accessors hide.
+    /// Aligns physical child layouts for strict-cast validity comparisons.
     pub fn compact_map_null_rows(&self) -> PolarsResult<Option<Series>> {
         #[cfg(feature = "dtype-map")]
         {
@@ -55,7 +53,7 @@ fn map_pass(series: &Series, pass: MapPass) -> PolarsResult<Option<Series>> {
         DataType::Map(_, _) => {
             let map = series.map().unwrap();
 
-            // Parent keys are row-encoded, so reach nested maps first.
+            // Visit children first so canonicalization row-encodes normalized keys.
             let nested = map_pass(map.storage(), pass)?;
             let storage = nested.as_ref().unwrap_or(map.storage());
             let changed = match pass {

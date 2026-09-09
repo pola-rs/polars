@@ -73,9 +73,8 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
         return Ok(());
     }
 
-    // Null Map rows may retain entries that the cast dropped from `output`, and
-    // `find_validity_mismatch` recurses through physical arrays, where Map storage is
-    // indistinguishable from a list. Compact them at every depth so both sides line up.
+    // Match the cast's compacted Map layout at every depth: physical validity comparison
+    // cannot distinguish Map storage from lists.
     #[cfg(feature = "dtype-map")]
     let compacted = input.compact_map_null_rows()?;
     #[cfg(feature = "dtype-map")]

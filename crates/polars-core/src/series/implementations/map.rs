@@ -233,9 +233,8 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
     }
 
     fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
-        // `handle_casting_failures` compares a cast's input against its output, so `other`
-        // is same-length but not necessarily the same dtype, or even a Map. It compacts the
-        // entries retained by null rows beforehand, at every depth.
+        // `other` is same-length cast output and may have a different dtype.
+        // `handle_casting_failures` compacts null Map rows at every depth first.
         let other = other.try_map().map_or(other, |map| map.storage());
         self.0.storage().find_validity_mismatch(other, idxs)
     }
