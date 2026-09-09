@@ -729,4 +729,36 @@ mod test {
                 .equals_missing(expected.map().unwrap().storage())
         );
     }
+
+    #[test]
+    fn unsafe_set_inner_dtype_relabels_valid_storage() {
+        let map = three_row_map();
+        let container = Series::new(PlSmallStr::from_static("c"), &[map.storage().clone()]);
+        let mut container = container.list().unwrap().clone();
+        // SAFETY: the storage comes from a valid Map.
+        unsafe { container.set_inner_dtype(map.dtype().clone()) };
+
+        let inner = container.get_inner();
+        let inner = inner.map().unwrap();
+        assert_eq!(inner.keys().null_count(), 0);
+        assert_eq!(inner.keys().len(), 5);
+
+        // Relabelling also accepts an already-logical inner dtype.
+        let mut list = container.clone();
+        // SAFETY: the storage is unchanged and valid for the same dtype.
+        unsafe { list.set_inner_dtype(map.dtype().clone()) };
+        assert_eq!(list.inner_dtype(), map.dtype());
+        #[cfg(feature = "dtype-array")]
+        {
+            let mut array = list
+                .cast(&DataType::Array(Box::new(map.dtype().clone()), map.len()))
+                .unwrap()
+                .array()
+                .unwrap()
+                .clone();
+            // SAFETY: as above.
+            unsafe { array.set_inner_dtype(map.dtype().clone()) };
+            assert_eq!(array.inner_dtype(), map.dtype());
+        }
+    }
 }
