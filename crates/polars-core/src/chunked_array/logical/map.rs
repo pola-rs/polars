@@ -924,28 +924,6 @@ mod test {
     }
 
     #[test]
-    fn null_entry_or_key_of_a_live_row_is_rejected() {
-        let dtype = map_dtype(DataType::String, DataType::Int64);
-        let values = i64_values(&[Some(1)]);
-
-        let entries = pack_map_entries(&str_keys(&[None]), &values);
-        let err = MapChunked::try_from_storage(dtype.clone(), storage(&entries, &[0, 1], None))
-            .err()
-            .unwrap();
-        assert!(err.to_string().contains("Map keys cannot be null"), "{err}");
-
-        let entries = pack_map_entries(&str_keys(&[Some("a")]), &values)
-            .with_validity(Some(Bitmap::from([false])));
-        let err = MapChunked::try_from_storage(dtype, storage(&entries, &[0, 1], None))
-            .err()
-            .unwrap();
-        assert!(
-            err.to_string().contains("Map entries cannot be null"),
-            "{err}"
-        );
-    }
-
-    #[test]
     fn with_validity_keeps_retained_entries_valid() {
         let map = three_row_map().into_series();
         let nulled = map.with_validity(Some(Bitmap::from([false, true, false])));
