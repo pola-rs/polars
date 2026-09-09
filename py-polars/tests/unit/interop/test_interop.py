@@ -1502,12 +1502,20 @@ def test_month_day_nano_from_ffi_15969(plmonkeypatch: PlMonkeyPatch) -> None:
 
 def test_schema_to_arrow_15563() -> None:
     assert pl.Schema({"x": pl.String}).to_arrow() == pa.schema(
-        [pa.field("x", pa.string_view())]
+        [pa.field("x", pa.large_string())]
     )
 
     assert pl.Schema({"x": pl.String}).to_arrow(
-        compat_level=CompatLevel.oldest()
-    ) == pa.schema([pa.field("x", pa.large_string())])
+        compat_level=CompatLevel.newest()
+    ) == pa.schema([pa.field("x", pa.string_view())])
+
+
+def test_schema_to_arrow_matches_dataframe_to_arrow_28777() -> None:
+    # Schema.to_arrow() and DataFrame.to_arrow() must agree on the default
+    # compat level, otherwise schemas derived from the two methods are
+    # inconsistent (e.g. string_view vs. large_string).
+    df = pl.DataFrame({"x": ["a", "b", "c"]})
+    assert df.schema.to_arrow() == df.to_arrow().schema
 
 
 def test_0_width_df_roundtrip() -> None:
