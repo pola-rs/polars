@@ -4511,3 +4511,28 @@ def test_empty_join_result_with_chunked_array_29093() -> None:
     result = lhs.join(rhs, on="x")
     expected = pl.DataFrame(schema={"x": pl.Int64, "y": pl.Array(pl.Int64, 3)})
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full"])
+@pytest.mark.parametrize("coalesce", [True, False])
+def test_merge_join_coalesce_right_payload_name_collision(
+    how: JoinStrategy, coalesce: bool
+) -> None:
+    # The right payload `a` shares its name with the left key, which the merge join
+    # must not confuse with its own key `b`.
+    left = pl.LazyFrame({"a": [1, 2, 3], "p": [10, 20, 30]}).sort("a")
+    right = pl.LazyFrame({"b": [1, 2, 4], "a": [7, 8, 9]}).sort("b")
+    q = left.join(
+        right,
+        left_on="a",
+        right_on="b",
+        how=how,
+        coalesce=coalesce,
+        maintain_order="left_right",
+    )
+
+    assert_frame_equal(
+        q.collect(engine="streaming"),
+        q.collect(engine="in-memory"),
+        check_row_order=False,
+    )

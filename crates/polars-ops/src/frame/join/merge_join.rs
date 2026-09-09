@@ -244,6 +244,8 @@ pub fn gather_and_postprocess(
         (gather_left, gather_right) = (gather_probe, gather_build);
     }
 
+    let left_keys_coalesced_away = should_coalesce && matches!(args.how, JoinType::Right);
+
     // Remove non-payload columns
     for col in left
         .columns()
@@ -266,10 +268,14 @@ pub fn gather_and_postprocess(
         .cloned()
         .collect_vec()
     {
-        if left_on.contains(&col) && should_coalesce {
+        if right_on.contains(&col) && should_coalesce {
             continue;
         }
-        let renamed = match left.schema().contains(&col) {
+        // A right column takes the suffix only if it collides with a left column that
+        // survives coalescing, which drops the left keys on a right join.
+        let collides =
+            left.schema().contains(&col) && !(left_keys_coalesced_away && left_on.contains(&col));
+        let renamed = match collides {
             true => Cow::Owned(format_pl_smallstr!("{}{}", col, args.suffix())),
             false => Cow::Borrowed(&col),
         };
@@ -313,14 +319,14 @@ pub fn gather_and_postprocess(
     if should_coalesce {
         match args.how {
             JoinType::Inner | JoinType::Left => {
-                for c in left_on {
+                for c in right_on {
                     if right.schema().contains(c) {
                         right.drop_in_place(c.as_str())?;
                     }
                 }
             },
             JoinType::Right => {
-                for c in right_on {
+                for c in left_on {
                     if left.schema().contains(c) {
                         left.drop_in_place(c.as_str())?;
                     }
