@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fmt::{Debug, Formatter};
 use std::fs::File;
 use std::sync::Arc;
