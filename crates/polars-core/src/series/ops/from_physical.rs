@@ -13,6 +13,18 @@ impl Series {
     ///
     /// Errors for unsupported dtypes.
     pub fn try_from_physical(&self, dtype: &DataType) -> PolarsResult<Series> {
+        // These are physical types themselves, so the recursion would pass them through
+        // untouched rather than reach an arm that rejects them.
+        polars_ensure!(
+            !dtype.contains_objects(),
+            InvalidOperation:
+            "cannot restore `{dtype}` from its physical representation: objects are process-local"
+        );
+        polars_ensure!(
+            !dtype.contains_unknown(),
+            InvalidOperation: "cannot restore an unknown dtype from its physical representation"
+        );
+
         let physical = dtype.to_physical();
         polars_ensure!(
             self.dtype() == &physical,
@@ -92,14 +104,6 @@ unsafe fn try_from_physical_rec(series: &Series, dtype: &DataType) -> PolarsResu
             );
             unsafe { series.from_physical_unchecked(dtype) }
         },
-        #[cfg(feature = "object")]
-        D::Object(_) => polars_bail!(
-            InvalidOperation:
-            "cannot restore `{dtype}` from its physical representation: objects are process-local"
-        ),
-        D::Unknown(_) => polars_bail!(
-            InvalidOperation: "cannot restore an unknown dtype from its physical representation"
-        ),
         D::Date | D::Datetime(_, _) | D::Duration(_) | D::Time => unsafe {
             series.from_physical_unchecked(dtype)
         },
@@ -114,6 +118,28 @@ mod test {
     use arrow::array::PrimitiveArray;
 
     use crate::prelude::*;
+
+    #[test]
+    fn try_from_physical_rejects_objects_and_unknown() {
+        // Both are their own physical type, so the recursion would hand the Series back
+        // untouched; only the guard up front rejects them.
+        let s = Series::new(PlSmallStr::from_static("x"), &[1i64]);
+
+        #[cfg(feature = "object")]
+        {
+            let dtype = DataType::List(Box::new(DataType::Object("x")));
+            let err = s.try_from_physical(&dtype).unwrap_err();
+            assert!(
+                err.to_string().contains("objects are process-local"),
+                "{err}"
+            );
+        }
+
+        let err = s
+            .try_from_physical(&DataType::Unknown(UnknownKind::Any))
+            .unwrap_err();
+        assert!(err.to_string().contains("unknown dtype"), "{err}");
+    }
 
     #[cfg(feature = "dtype-extension")]
     #[test]
