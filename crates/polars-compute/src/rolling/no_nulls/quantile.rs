@@ -243,30 +243,39 @@ fn rolling_apply_weighted_quantile<T, Fo>(
     min_periods: usize,
     det_offsets_fn: Fo,
     weights: &[f64],
-    wsum: f64,
+    _wsum: f64,
 ) -> ArrayRef
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
     T: Debug + NativeType + Mul<Output = T> + Sub<Output = T> + NumCast + ToPrimitive + Zero,
 {
     assert_eq!(weights.len(), window_size);
-    // Keep nonzero weights and their indices to know which values we need each iteration.
-    let nz_idx_wts: Vec<_> = weights.iter().enumerate().filter(|x| x.1 != &0.0).collect();
-    let mut buf = vec![(T::zero(), 0.0); nz_idx_wts.len()];
     let len = values.len();
+    let mut buf = vec![(T::zero(), 0.0); window_size];
     let out = (0..len)
         .map(|idx| {
-            // Don't need end. Window size is constant and we computed offsets from start above.
-            let (start, _) = det_offsets_fn(idx, window_size, len);
+            let (start, end) = det_offsets_fn(idx, window_size, len);
+
+            // During the expanding phase (start == 0, end < window_size), only
+            // the last `end` weights correspond to actual values in the window.
+            // The weight at index `i` applies to the value at `start + i`; when
+            // the window is truncated at the leading edge, entries beyond `end`
+            // would read future data. Use the trailing slice of weights and
+            // normalize by its own sum so the quantile is well-defined.
+            let window_len = end - start;
+            let w_start = window_size - window_len;
+            let active_wsum: f64 = weights[w_start..].iter().sum();
 
             // Sorting is not ideal, see https://github.com/tobiasschoch/wquantile for something faster
             unsafe {
                 buf.iter_mut()
-                    .zip(nz_idx_wts.iter())
-                    .for_each(|(b, (i, w))| *b = (*values.get_unchecked(i + start), **w));
+                    .zip(weights[w_start..].iter().enumerate())
+                    .for_each(|(b, (i, w))| {
+                        *b = (*values.get_unchecked(start + i), *w);
+                    });
             }
-            buf.sort_unstable_by(|&a, &b| a.0.tot_cmp(&b.0));
-            compute_wq(&buf, p, wsum, method)
+            buf[..window_len].sort_unstable_by(|&a, &b| a.0.tot_cmp(&b.0));
+            compute_wq(&buf[..window_len], p, active_wsum, method)
         })
         .collect_trusted::<Vec<T>>();
 
@@ -313,6 +322,23 @@ mod test {
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, Some(2.5), None]);
+    }
+
+    #[test]
+    fn test_weighted_rolling_median_expanding() {
+        // Weighted rolling median must only observe values up to the current
+        // index during the expanding phase, matching the unweighted path.
+        // Reported in #29170.
+        let values = &[1.0, 2.0, 3.0];
+        let weights = [1.0, 1.0, 1.0];
+        let pars = Some(RollingFnParams::Quantile(RollingQuantileParams {
+            prob: 0.5,
+            method: Linear,
+        }));
+        let out = rolling_quantile(values, 3, 1, false, Some(&weights), pars).unwrap();
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[Some(1.0), Some(1.5), Some(2.0)]);
     }
 
     #[test]
