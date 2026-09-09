@@ -927,6 +927,10 @@ pub(super) fn convert_functions(
                 (polars_compute::approx_quantile::MIN_ERROR..1.0).contains(&error),
                 InvalidOperation: "`error` must be in the range [2^-32, 1) (got: {error})"
             );
+            polars_ensure!(
+                e[1].is_scalar(ctx.arena),
+                ShapeMismatch: "'quantile' must be a scalar value"
+            );
             let quantile = match ctx.arena.get(e[1].node()) {
                 AExpr::Literal(LiteralValue::Series(s)) if s.len() == 1 => s.get(0).ok(),
                 AExpr::Literal(
