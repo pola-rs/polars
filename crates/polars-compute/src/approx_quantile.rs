@@ -215,8 +215,8 @@ pub mod kll {
             self.0.update(item);
         }
 
-        pub fn merge(&mut self, other: Self) {
-            self.0.merge(other.0);
+        pub fn merge(&mut self, other: &Self) {
+            self.0.merge(&other.0);
         }
 
         /// Stop ingesting, keeping only what this sketch retained.
@@ -353,7 +353,7 @@ pub mod kll {
         }
 
         /// Merge `other` into `self`.
-        fn merge(&mut self, other: Self) {
+        fn merge(&mut self, other: &Self) {
             // `k` is a function of the error, so k₁ = k₂ ⇒ ε₁ = ε₂.
             assert_eq!(self.k, other.k);
 
@@ -583,9 +583,9 @@ pub mod req {
             self.0.update(item);
         }
 
-        pub fn merge(&mut self, other: Self) {
+        pub fn merge(&mut self, other: &Self) {
             assert_eq!(self.0.is_hra, other.0.is_hra);
-            self.0.merge(other.0);
+            self.0.merge(&other.0);
         }
 
         /// Stop ingesting, keeping only what this sketch retained.
@@ -619,9 +619,9 @@ pub mod req {
             self.hra.update_owned(item);
         }
 
-        pub fn merge(&mut self, other: Self) {
-            self.lra.merge(other.lra);
-            self.hra.merge(other.hra);
+        pub fn merge(&mut self, other: &Self) {
+            self.lra.merge(&other.lra);
+            self.hra.merge(&other.hra);
         }
 
         /// Stop ingesting, keeping only what both sketches retained.
@@ -672,7 +672,7 @@ pub mod req {
         }
 
         /// Merge `other` into `self`.
-        fn merge(&mut self, other: Self) {
+        fn merge(&mut self, other: &Self) {
             assert_eq!(self.is_hra, other.is_hra);
             assert_eq!(self.error, other.error);
 
@@ -984,7 +984,7 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
         }
     }
 
-    pub fn merge(&mut self, other: Self) {
+    pub fn merge(&mut self, other: &Self) {
         match (self, other) {
             (Sketch::Kll(a), Sketch::Kll(b)) => a.merge(b),
             (Sketch::Req(a), Sketch::Req(b)) => a.merge(b),

@@ -50,7 +50,7 @@ where
                     .into_par_iter()
                     .map(|(offset, len)| build(&items[offset..offset + len]))
                     .reduce_with(|mut acc, sketch| {
-                        acc.merge(sketch);
+                        acc.merge(&sketch);
                         acc
                     })
             })
