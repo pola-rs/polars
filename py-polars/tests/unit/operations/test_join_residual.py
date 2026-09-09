@@ -200,7 +200,9 @@ def test_residual_degenerate_inputs(
 @pytest.mark.parametrize("engine", ENGINES)
 @pytest.mark.parametrize("suffix", ["_right", "_R"])
 @pytest.mark.parametrize("coalesce", [True, False])
-def test_residual_suffix_and_coalesce(engine: EngineType, suffix: str, coalesce: bool) -> None:
+def test_residual_suffix_and_coalesce(
+    engine: EngineType, suffix: str, coalesce: bool
+) -> None:
     left = pl.LazyFrame({"k": [1, 1, 2], "v": [10, 20, 30]})
     right = pl.LazyFrame({"k": [1, 2, 2], "v": [15, 5, 99]})
     predicate = pl.col(f"v{suffix}") < pl.col("v")
