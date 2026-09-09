@@ -215,11 +215,26 @@ impl GroupBySinkState {
                     }
 
                     // Store cold keys.
-                    // TODO: don't always gather, if majority cold simply store all and remember offsets into it.
                     if !cold_idxs.is_empty() {
-                        unsafe {
-                            let cold_keys = hash_keys.gather_unchecked(&cold_idxs);
-                            let cold_df = df.take_slice_unchecked_impl(&cold_idxs, false);
+                        let mut cold_keys = hash_keys;
+                        let mut cold_df = df;
+
+                        // 75% or more cold, don't gather.
+                        if cold_idxs.len() as u64 >= cold_df.height() as u64 * 3 / 4 {
+                            unsafe {
+                                cold_keys.gen_idxs_per_partition_subset(
+                                    &cold_idxs,
+                                    &partitioner,
+                                    &mut local.morsel_idxs_values_per_p,
+                                    &mut local.sketch_per_p,
+                                    true,
+                                );
+                            }
+                        } else {
+                            unsafe {
+                                cold_keys = cold_keys.gather_unchecked(&cold_idxs);
+                                cold_df = cold_df.take_slice_unchecked_impl(&cold_idxs, false);
+                            }
 
                             cold_keys.gen_idxs_per_partition(
                                 &partitioner,
@@ -227,12 +242,13 @@ impl GroupBySinkState {
                                 &mut local.sketch_per_p,
                                 true,
                             );
-                            local
-                                .morsel_idxs_offsets_per_p
-                                .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
-                            let sf = SpillFrame::new(cold_df, spill_ctx).await;
-                            local.cold_morsels.push((input_idx, seq, cold_keys, sf));
                         }
+
+                        local
+                            .morsel_idxs_offsets_per_p
+                            .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
+                        let sf = SpillFrame::new(cold_df, spill_ctx).await;
+                        local.cold_morsels.push((input_idx, seq, cold_keys, sf));
                     }
 
                     // If we have too many evicted rows, flush them.

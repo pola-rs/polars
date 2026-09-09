@@ -1326,9 +1326,6 @@ def test_parquet_nested_struct_17933() -> None:
     test_round_trip(df)
 
 
-# This is fixed with POLARS_FORCE_MULTISCAN=1. Without it we have
-# first_metadata.unwrap() on None.
-@pytest.mark.may_fail_auto_streaming
 def test_parquet_pyarrow_map() -> None:
     xs = [
         [
@@ -2866,7 +2863,7 @@ def test_struct_list_statistics_20510() -> None:
     assert_frame_equal(result, df.filter(pl.col("name") == "b"))
 
 
-def test_required_masked_skip_values_20809(plmonkeypatch: PlMonkeyPatch) -> None:
+def test_required_masked_skip_values_20809() -> None:
     df = pl.DataFrame(
         [pl.Series("a", list(range(20)) + [42] * 15), pl.Series("b", range(35))]
     )
@@ -2876,7 +2873,6 @@ def test_required_masked_skip_values_20809(plmonkeypatch: PlMonkeyPatch) -> None
     df.write_parquet(f)
 
     f.seek(0)
-    plmonkeypatch.setenv("POLARS_PQ_PREFILTERED_MASK", "pre")
     df1 = (
         pl.scan_parquet(f, parallel="prefiltered")
         .filter(pl.col.b.is_in(needle))
@@ -3004,6 +3000,28 @@ def test_nested_deprecated_int96_timestamps_21332() -> None:
         pl.read_parquet(f),
         df,
     )
+
+
+def test_int96_timestamps_respect_scan_schema_time_unit_29184() -> None:
+    f = io.BytesIO()
+
+    values = [
+        datetime(9999, 12, 31, 23, 59, 59, 999999),
+        datetime(1000, 1, 1),
+        datetime(2024, 6, 1, 12),
+        None,
+    ]
+    df = pl.DataFrame({"a": values, "b": [{"t": v} for v in values]})
+
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        use_deprecated_int96_timestamps=True,
+        store_schema=False,
+    )
+
+    f.seek(0)
+    assert_frame_equal(pl.scan_parquet(f, schema=df.collect_schema()).collect(), df)
 
 
 def test_final_masked_optional_iteration_21378() -> None:
@@ -4511,6 +4529,39 @@ def test_resolve_metadata_sampled_byte_weighted(
     assert f"ESTIMATED ROWS: {rows[0] + rows[2]}" in plan, plan
     assert "parquet sampled resolve" not in capfd.readouterr().err
     assert lf.collect().height == rows[0] + rows[2]
+
+
+@pytest.mark.write_disk
+def test_parquet_known_source_sizes(tmp_path: Path) -> None:
+    path = tmp_path / "data.parquet"
+    expected = pl.DataFrame({"a": [1, 2, 3]})
+    expected.write_parquet(path)
+
+    assert_frame_equal(
+        pl.scan_parquet(
+            path,
+            schema=expected.schema,
+            glob=False,
+            _source_sizes=[path.stat().st_size],
+        ).collect(),
+        expected,
+    )
+
+    with pytest.raises(pl.exceptions.ComputeError, match="parquet magic bytes"):
+        pl.scan_parquet(
+            path,
+            schema=expected.schema,
+            glob=False,
+            _source_sizes=[8],
+        ).collect()
+
+    with pytest.raises(pl.exceptions.ShapeError, match="number of source sizes"):
+        pl.scan_parquet(
+            path,
+            schema=expected.schema,
+            glob=False,
+            _source_sizes=[],
+        ).collect()
 
 
 def test_parquet_prefilter_fixed_size_binary_27781() -> None:
