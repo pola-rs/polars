@@ -139,9 +139,6 @@ pub trait DataFrameJoinOps: IntoDf {
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
 
-        // Backstop: a non-equality match condition combined with a join type whose
-        // implementation does not yet track unmatched rows must not silently produce
-        // inner-join results.
         polars_ensure!(
             args.how.supports_non_equi_options(&options),
             InvalidOperation:
@@ -163,7 +160,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 _check_rechunk,
                 _verbose,
             )?;
-            return predicate.apply(joined);
+            return predicate.apply(joined, true);
         }
 
         #[cfg(feature = "cross_join")]

@@ -52,7 +52,6 @@ pub enum IrPropsDescription {
         how: String,
         left_on: Vec<String>,
         right_on: Vec<String>,
-        /// Extra match condition on top of the keys.
         residual: Option<Vec<String>>,
         nulls_equal: bool,
         coalesce: String,

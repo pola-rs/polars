@@ -191,9 +191,13 @@ pub trait CrossJoinFilter: Send + Sync {
     /// Evaluates the filter predicate on `df`, returning a boolean mask.
     fn evaluate(&self, df: &DataFrame) -> PolarsResult<BooleanChunked>;
 
-    fn apply(&self, df: DataFrame) -> PolarsResult<DataFrame> {
+    fn apply(&self, df: DataFrame, parallel: bool) -> PolarsResult<DataFrame> {
         let mask = self.evaluate(&df)?;
-        df.filter_seq(&mask)
+        if parallel {
+            df.filter(&mask)
+        } else {
+            df.filter_seq(&mask)
+        }
     }
 }
 
@@ -391,8 +395,7 @@ impl JoinType {
         matches!(self, JoinType::Inner | JoinType::Left | JoinType::Right)
     }
 
-    /// Whether the physical join implementations can execute this `how` with the given
-    /// (already-resolved) match-condition algorithm without silently dropping it.
+    /// Whether the physical join implementations can execute this `how`
     pub fn supports_non_equi_options(&self, options: &Option<JoinTypeOptions>) -> bool {
         // A residual is only ever attached to an inner join; see `JoinTypeOptionsIR::Equi`.
         if matches!(options, Some(JoinTypeOptions::Residual(_))) {
