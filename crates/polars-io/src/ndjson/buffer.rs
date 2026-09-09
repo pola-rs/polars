@@ -323,7 +323,15 @@ fn deserialize_all<'a>(
                     .iter()
                     .map(|field| {
                         if let Some(value) = document.get(field.name.as_str()) {
-                            deserialize_all(value, &field.dtype, ignore_errors)
+                            deserialize_all(value, &field.dtype, ignore_errors).map_err(|e| {
+                                e.context(
+                                    format!(
+                                        "error deserializing JSON field `{}` of struct",
+                                        field.name.as_str()
+                                    )
+                                    .into(),
+                                )
+                            })
                         } else {
                             Ok(AnyValue::Null)
                         }
