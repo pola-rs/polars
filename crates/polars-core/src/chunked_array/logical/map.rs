@@ -600,15 +600,12 @@ fn canonical_map_indices(
         let (start, end) = offsets.start_end(row);
 
         // Reject null entries/keys in live rows; skip them in null rows.
-        let dirty_row = nulls.filter(|nulls| {
-            nulls.entry_nulls_in(start, end - start) > 0
-                || nulls.key_nulls_in(start, end - start) > 0
-        });
-        if let Some(nulls) = dirty_row
-            && row_validity.is_none_or(|v| v.get_bit(row))
-        {
+        let entry_nulls = nulls.map_or(0, |n| n.entry_nulls_in(start, end - start));
+        let key_nulls = nulls.map_or(0, |n| n.key_nulls_in(start, end - start));
+        let dirty_row = nulls.filter(|_| entry_nulls > 0 || key_nulls > 0);
+        if dirty_row.is_some() && row_validity.is_none_or(|v| v.get_bit(row)) {
             polars_ensure!(
-                nulls.entry_nulls_in(start, end - start) == 0,
+                entry_nulls == 0,
                 InvalidOperation: "Map entries cannot be null"
             );
             polars_bail!(InvalidOperation: "Map keys cannot be null");
