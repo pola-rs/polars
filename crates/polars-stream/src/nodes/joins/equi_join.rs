@@ -42,7 +42,7 @@ struct ResidualColumn {
 /// One side of the candidate pairs: the rows to gather from, and the indices into them.
 struct ResidualSide<'a> {
     payload: &'a DataFrame,
-    matches: &'a mut Vec<IdxSize>,
+    matches: &'a mut [IdxSize],
 }
 
 /// A match condition on top of the equi keys, applied to candidate pairs.
@@ -86,18 +86,17 @@ impl ResidualPredicate {
         Ok(Self { expr, columns })
     }
 
-    /// Drops the candidate pairs the predicate rejects.
+    /// Compacts the candidate pairs the predicate accepts to the front of both slices.
     ///
-    /// `probe_match` keeps earlier survivors in front, so only its tail from `probe_start`
-    /// is touched. Both vectors are compacted in step and stay parallel.
+    /// `build` and `probe` describe the same pairs positionally. Returns how many
+    /// survived, which the caller truncates its own buffers to.
     async fn retain_matches(
         &self,
         left_is_build: bool,
         build: ResidualSide<'_>,
         probe: ResidualSide<'_>,
-        probe_start: usize,
         state: &ExecutionState,
-    ) -> PolarsResult<()> {
+    ) -> PolarsResult<usize> {
         let ResidualSide {
             payload: build_payload,
             matches: build_match,
@@ -108,10 +107,7 @@ impl ResidualPredicate {
         } = probe;
 
         let n = build_match.len();
-        assert_eq!(n, probe_match.len() - probe_start);
-        if n == 0 {
-            return Ok(());
-        }
+        assert_eq!(n, probe_match.len());
 
         // `probe_subset` can hand back far more candidates than the morsel limit, so the
         // gathered predicate inputs are bounded here instead.
@@ -130,10 +126,7 @@ impl ResidualPredicate {
                     let (payload, idxs) = if column.is_left == left_is_build {
                         (build_payload, &build_match[start..end])
                     } else {
-                        (
-                            probe_payload,
-                            &probe_match[probe_start + start..probe_start + end],
-                        )
+                        (probe_payload, &probe_match[start..end])
                     };
                     // Payload columns already carry their output name.
                     unsafe { payload.columns()[column.index].take_slice_unchecked(idxs) }
@@ -157,17 +150,14 @@ impl ResidualPredicate {
             // `kept <= start + i`, so this never overwrites a candidate still to be read.
             for i in keep.true_idx_iter() {
                 build_match[kept] = build_match[start + i];
-                probe_match[probe_start + kept] = probe_match[probe_start + start + i];
+                probe_match[kept] = probe_match[start + i];
                 kept += 1;
             }
 
             start = end;
         }
 
-        build_match.truncate(kept);
-        probe_match.truncate(probe_start + kept);
-
-        Ok(())
+        Ok(kept)
     }
 }
 
@@ -1115,9 +1105,11 @@ impl ProbeState {
                                 matches_before_limit,
                             ) as usize;
 
-                            if let Some(residual) = &params.residual {
+                            if let Some(residual) = &params.residual
+                                && !table_match.is_empty()
+                            {
                                 rechunk_once(&mut payload, &mut payload_rechunked);
-                                residual
+                                let kept = residual
                                     .retain_matches(
                                         params.left_is_build.unwrap(),
                                         ResidualSide {
@@ -1126,12 +1118,13 @@ impl ProbeState {
                                         },
                                         ResidualSide {
                                             payload: &payload,
-                                            matches: &mut probe_match,
+                                            matches: &mut probe_match[probe_start..],
                                         },
-                                        probe_start,
                                         &state.in_memory_exec_state,
                                     )
                                     .await?;
+                                table_match.truncate(kept);
+                                probe_match.truncate(probe_start + kept);
                             }
 
                             if table_match.is_empty() {
@@ -1453,6 +1446,13 @@ impl EquiJoinNode {
         let right_payload_schema =
             Arc::new(select_schema(&right_input_schema, &right_payload_select));
 
+        // Unmatched-row bookkeeping would count a candidate before the residual runs, and
+        // the ordered probe would evaluate it a partition group at a time.
+        assert!(
+            residual.is_none()
+                || (matches!(args.how, JoinType::Inner)
+                    && args.maintain_order == MaintainOrderJoin::None)
+        );
         let residual = residual
             .map(|(expr, schema)| {
                 ResidualPredicate::new(expr, &schema, &left_payload_schema, &right_payload_schema)

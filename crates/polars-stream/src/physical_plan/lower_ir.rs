@@ -1210,8 +1210,8 @@ pub fn lower_ir(
             #[cfg(not(feature = "asof_join"))]
             let use_streaming_asof_join = false;
 
-            // A non-equality match condition is only handled natively by the range-join
-            // node; anything else falls back to the in-memory engine.
+            // A non-equality match condition is native to the range-join node, and to the
+            // equi join as a residual; anything else falls back to the in-memory engine.
             let match_condition_supported =
                 options.is_pure_equi() || options.has_residual() || args.how.is_range();
 

@@ -1229,14 +1229,12 @@ fn to_graph_rec<'a>(
                         (right_input_key, input_right.port),
                     ],
                 ),
-                _ => {
+                EquiJoin { ref residual, .. } => {
                     // Compiled against a narrow frame of exactly the columns it reads, in
                     // the order the node gathers them.
-                    let residual = match &node.kind {
-                        EquiJoin {
-                            residual: Some(residual),
-                            ..
-                        } => {
+                    let residual = residual
+                        .as_ref()
+                        .map(|residual| {
                             let mut names =
                                 aexpr_to_leaf_names_iter(residual.node(), ctx.expr_arena)
                                     .cloned()
@@ -1246,14 +1244,12 @@ fn to_graph_rec<'a>(
 
                             let residual_schema =
                                 Arc::new(output_schema.try_project(names.iter())?);
-                            let residual = residual.clone();
-                            Some((
-                                create_stream_expr(&residual, ctx, &residual_schema)?,
+                            PolarsResult::Ok((
+                                create_stream_expr(residual, ctx, &residual_schema)?,
                                 residual_schema,
                             ))
-                        },
-                        _ => None,
-                    };
+                        })
+                        .transpose()?;
 
                     ctx.graph.add_node(
                         nodes::joins::equi_join::EquiJoinNode::new(
@@ -1275,6 +1271,7 @@ fn to_graph_rec<'a>(
                         ],
                     )
                 },
+                _ => unreachable!(),
             }
         },
 
