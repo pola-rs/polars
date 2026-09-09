@@ -2351,6 +2351,32 @@ def test_rolling_rank_closed_left_26147() -> None:
     assert_frame_equal(actual, expected)
 
 
+def test_rolling_rank_by_null_in_shared_window() -> None:
+    # All `by` values are equal, so every row is ranked against the same
+    # window. A null in that window must only null out its own row.
+    df = pl.DataFrame(
+        {"index": [0, 0, 0, 0], "x": [1, 2, None, 4], "y": [1, 2, 4, None]}
+    )
+    actual = df.with_columns(
+        x_ranked=pl.col("x").rolling_rank_by("index", window_size="4i"),
+        y_ranked=pl.col("y").rolling_rank_by("index", window_size="4i"),
+    )
+    expected = df.with_columns(
+        x_ranked=pl.Series([1.0, 2.0, None, 3.0]),
+        y_ranked=pl.Series([1.0, 2.0, 3.0, None]),
+    )
+    assert_frame_equal(actual, expected)
+
+
+def test_rolling_rank_by_unsorted_by() -> None:
+    df = pl.DataFrame({"index": [3, 1, 2], "x": [30, None, 20]})
+    actual = df.with_columns(
+        x_ranked=pl.col("x").rolling_rank_by("index", window_size="3i"),
+    )
+    expected = df.with_columns(x_ranked=pl.Series([2.0, None, 1.0]))
+    assert_frame_equal(actual, expected)
+
+
 def test_rolling_cov_no_panic_26741() -> None:
     result = (
         pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [1, 2, 3]})

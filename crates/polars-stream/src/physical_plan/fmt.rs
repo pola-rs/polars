@@ -213,6 +213,7 @@ fn visualize_plan_rec(
             input,
             selectors,
             extend_original,
+            rechunk_input: _,
         } => {
             let label = if *extend_original {
                 "with-columns"

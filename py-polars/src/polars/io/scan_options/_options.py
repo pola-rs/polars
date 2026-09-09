@@ -58,3 +58,4 @@ class ScanOptions:
     table_statistics: DataFrame | None = None
     # (physical, deleted)
     row_count: tuple[int, int] | None = None
+    source_sizes: Sequence[int] | None = None
