@@ -1,7 +1,7 @@
 use std::ptr::NonNull;
 
 use super::*;
-use crate::chunked_array::array::{array_values, collect_array_chunk};
+use crate::chunked_array::array::collect_array_chunk;
 use crate::chunked_array::list::iterator::AmortizedListIter;
 use crate::series::amortized_iter::{AmortSeries, ArrayBox, unstable_series_container_and_ptr};
 
@@ -52,7 +52,10 @@ impl ArrayChunked {
         // we create the series container from the inner array
         // so that the container has the proper dtype.
         let arr = self.downcast_iter().next().unwrap();
-        let inner_values = array_values(arr);
+        // Only the type of the values matters here: the container is a placeholder whose array is
+        // swapped out on every step, so the values are handed over in whatever representation they
+        // are in rather than being written out one list per element to seed it.
+        let inner_values = arr.values().to_boxed();
 
         let inner_dtype = self.inner_dtype();
         let iter_dtype = match inner_dtype {

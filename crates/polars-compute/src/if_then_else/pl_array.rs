@@ -104,17 +104,27 @@ pub trait IfThenElseKernel: StaticArray {
         }
 
         // Neither side is an array to hand back once `if_false` repeats one element too: both are
-        // the single value the kernel writes out.
-        match if_false.scalar_value().flatten() {
-            Some(if_false) => {
-                Self::if_then_else_flat_broadcast_both(&mask.to_flat(), if_true, if_false)
-            },
-            None => Self::if_then_else_flat_broadcast_true(
-                &mask.to_flat(),
-                if_true,
-                &if_false.to_flat(),
-            ),
+        // the single value the kernel writes out, which the two-value kernel does once for a mask
+        // that repeats a single bit.
+        if let Some(if_false) = if_false.scalar_value().flatten() {
+            return Self::if_then_else_broadcast_both(mask, if_true, if_false);
         }
+
+        // A mask that is set everywhere picks `if_true` at every element, so the one value is
+        // written out once and the result repeats it rather than holding a slot per element.
+        if mask.scalar_value() == Some(true) {
+            let single = Bitmap::new_with_value(true, 1);
+            // `if_false` is never read through a set bit; it is here because the kernel takes an
+            // array, and one element of it is as good as any other.
+            let unpicked = if_false.new_from_index_typed(0, 1);
+            let element =
+                Self::if_then_else_flat_broadcast_true(&single, if_true, &unpicked.to_flat());
+            debug_assert_eq!(element.len(), 1);
+
+            return element.new_from_index_typed(0, mask.len());
+        }
+
+        Self::if_then_else_flat_broadcast_true(&mask.to_flat(), if_true, &if_false.to_flat())
     }
 
     /// As [`Self::if_then_else`], with a single value standing for every element of `if_false`.
@@ -131,16 +141,23 @@ pub trait IfThenElseKernel: StaticArray {
         }
 
         // Neither side is an array to hand back once `if_true` repeats one element too.
-        match if_true.scalar_value().flatten() {
-            Some(if_true) => {
-                Self::if_then_else_flat_broadcast_both(&mask.to_flat(), if_true, if_false)
-            },
-            None => Self::if_then_else_flat_broadcast_false(
-                &mask.to_flat(),
-                &if_true.to_flat(),
-                if_false,
-            ),
+        if let Some(if_true) = if_true.scalar_value().flatten() {
+            return Self::if_then_else_broadcast_both(mask, if_true, if_false);
         }
+
+        // As above, with the sides the other way around: a mask that is unset everywhere picks
+        // `if_false` at every element.
+        if mask.scalar_value() == Some(false) {
+            let single = Bitmap::new_with_value(false, 1);
+            let unpicked = if_true.new_from_index_typed(0, 1);
+            let element =
+                Self::if_then_else_flat_broadcast_false(&single, &unpicked.to_flat(), if_false);
+            debug_assert_eq!(element.len(), 1);
+
+            return element.new_from_index_typed(0, mask.len());
+        }
+
+        Self::if_then_else_flat_broadcast_false(&mask.to_flat(), &if_true.to_flat(), if_false)
     }
 
     /// As [`Self::if_then_else`], with a single value standing for either side.

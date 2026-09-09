@@ -21,11 +21,16 @@ where
         .downcast_ref::<PlPrimitiveArray<T>>()
         .unwrap();
 
-    // Two ways for every element to sum to the same total: the values repeat one value, so any
-    // `width` of them add up alike, or the elements all read the one list. Either way the total is
-    // worked out once over a single width and repeated, rather than the values being written out
-    // one list per element first.
-    let repeated = if let Some(value) = values.scalar_value_ignore_validity() {
+    // Three ways for every element to sum to the same total: a list of no values at all adds up
+    // to nothing, the values repeat one value, so any `width` of them add up alike, or the
+    // elements all read the one list. Either way the total is worked out once over a single width
+    // and repeated, rather than the values being written out one list per element first.
+    //
+    // A width of zero is settled here rather than below, where the step over the lists would be
+    // no step at all.
+    let repeated = if width == 0 {
+        Some(sum_slice::<T, S>(&[]))
+    } else if let Some(value) = values.scalar_value_ignore_validity() {
         Some(sum_repeated::<T, S>(value, width))
     } else if arr.values_are_scalar() {
         Some(sum_slice::<T, S>(

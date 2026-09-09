@@ -56,9 +56,7 @@ where
                 return None;
             }
 
-            let row = values
-                .clone()
-                .sliced(current_offset as usize, (*end - current_offset) as usize);
+            let row = values.sliced(current_offset as usize, (*end - current_offset) as usize);
             row.min_ignore_nan_kernel()
         })
         .collect()
@@ -182,9 +180,7 @@ where
                 return None;
             }
 
-            let row = values
-                .clone()
-                .sliced(current_offset as usize, (*end - current_offset) as usize);
+            let row = values.sliced(current_offset as usize, (*end - current_offset) as usize);
             row.max_ignore_nan_kernel()
         })
         .collect()

@@ -309,11 +309,22 @@ pub trait ListNameSpaceImpl: AsList {
             return IdxCa::full_null(ca.name().clone(), ca.len());
         }
 
+        // Every element of the one chunk covers the one range, so they are all that range's
+        // length: the answer is the single slot that says so, and neither the offsets nor the
+        // lengths are ever written out one per element.
+        if ca.chunks().len() == 1
+            && let Some(range) = ca.downcast_get(0).unwrap().scalar_offsets()
+        {
+            let arr = PlPrimitiveArray::new_scalar(range.len() as IdxSize, ca.len())
+                .with_validity(ca_validity);
+            return IdxCa::with_chunk(ca.name().clone(), arr);
+        }
+
         let mut lengths = Vec::with_capacity(ca.len());
         ca.downcast_iter()
             .for_each(|arr| match arr.scalar_offsets() {
-                // Every element covers the one range, so they are all that range's length; the offsets
-                // are never written out one per element to say so.
+                // As above, for one of several chunks: the lengths of the other chunks are written
+                // out, so this one's are too.
                 Some(range) => lengths.resize(lengths.len() + arr.len(), range.len() as IdxSize),
                 None => {
                     let offsets = arr
