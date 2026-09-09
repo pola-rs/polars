@@ -39,6 +39,12 @@ struct ResidualColumn {
     index: usize,
 }
 
+/// One side of the candidate pairs: the rows to gather from, and the indices into them.
+struct ResidualSide<'a> {
+    payload: &'a DataFrame,
+    matches: &'a mut Vec<IdxSize>,
+}
+
 /// A match condition on top of the equi keys, applied to candidate pairs.
 struct ResidualPredicate {
     expr: StreamExpr,
@@ -87,13 +93,20 @@ impl ResidualPredicate {
     async fn retain_matches(
         &self,
         left_is_build: bool,
-        build_payload: &DataFrame,
-        build_match: &mut Vec<IdxSize>,
-        probe_payload: &DataFrame,
-        probe_match: &mut Vec<IdxSize>,
+        build: ResidualSide<'_>,
+        probe: ResidualSide<'_>,
         probe_start: usize,
         state: &ExecutionState,
     ) -> PolarsResult<()> {
+        let ResidualSide {
+            payload: build_payload,
+            matches: build_match,
+        } = build;
+        let ResidualSide {
+            payload: probe_payload,
+            matches: probe_match,
+        } = probe;
+
         let n = build_match.len();
         assert_eq!(n, probe_match.len() - probe_start);
         if n == 0 {
@@ -1107,10 +1120,14 @@ impl ProbeState {
                                 residual
                                     .retain_matches(
                                         params.left_is_build.unwrap(),
-                                        &p.payload,
-                                        &mut table_match,
-                                        &payload,
-                                        &mut probe_match,
+                                        ResidualSide {
+                                            payload: &p.payload,
+                                            matches: &mut table_match,
+                                        },
+                                        ResidualSide {
+                                            payload: &payload,
+                                            matches: &mut probe_match,
+                                        },
                                         probe_start,
                                         &state.in_memory_exec_state,
                                     )
