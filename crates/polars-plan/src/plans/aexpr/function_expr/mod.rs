@@ -252,7 +252,7 @@ pub enum IRFunctionExpr {
     },
     #[cfg(feature = "approx_quantile")]
     ApproxQuantileEstimate {
-        return_dtype: DataType,
+        values_dtype: DataType,
     },
     Coalesce,
     #[cfg(feature = "diff")]
@@ -624,7 +624,7 @@ impl Hash for IRFunctionExpr {
                 error.to_bits().hash(state);
             },
             #[cfg(feature = "approx_quantile")]
-            ApproxQuantileEstimate { return_dtype } => return_dtype.hash(state),
+            ApproxQuantileEstimate { values_dtype } => values_dtype.hash(state),
             Coalesce => {},
             #[cfg(feature = "pct_change")]
             PctChange => {},

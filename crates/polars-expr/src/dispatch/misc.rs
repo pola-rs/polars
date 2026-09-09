@@ -55,14 +55,14 @@ pub(super) fn approx_quantile_sketch(
 #[cfg(feature = "approx_quantile")]
 pub(super) fn approx_quantile_estimate(
     s: &[Column],
-    return_dtype: &DataType,
+    values_dtype: &DataType,
 ) -> PolarsResult<Column> {
     assert_eq!(s.len(), 2);
     let sketch = s[0].as_materialized_series();
     let out = polars_ops::prelude::approx_quantile_estimate(
         sketch,
         s[1].as_materialized_series(),
-        return_dtype,
+        values_dtype,
     )?;
     Ok(out.into_column())
 }
