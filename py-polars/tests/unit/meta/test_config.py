@@ -17,6 +17,8 @@ from polars.exceptions import AttributeRemovedError
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from tests.conftest import PlMonkeyPatch
+
 
 @pytest.fixture(autouse=True)
 def _environ() -> Iterator[None]:
@@ -1022,10 +1024,10 @@ def test_removed_set_auto_structify() -> None:
         pl.Config.set_auto_structify(True)  # type: ignore[attr-defined]
 
 
-def test_auto_structify_env_var_removed_28776(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_auto_structify_env_var_removed_28776(plmonkeypatch: PlMonkeyPatch) -> None:
     # `POLARS_AUTO_STRUCTIFY` used to be the mechanism behind the now-removed
     # `Config.set_auto_structify`. Setting it directly must no longer have any effect.
-    monkeypatch.setenv("POLARS_AUTO_STRUCTIFY", "1")
+    plmonkeypatch.setenv("POLARS_AUTO_STRUCTIFY", "1")
     df = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})
     result = df.select(pl.all())
 

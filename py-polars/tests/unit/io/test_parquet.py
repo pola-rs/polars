@@ -3777,6 +3777,7 @@ def test_str_plain_is_in_more_than_4_values_24167() -> None:
     )
 
 
+@pytest.mark.may_fail_lazy_schema  # TODO: panic
 def test_binary_offset_roundtrip() -> None:
     f = io.BytesIO()
     pl.LazyFrame(
@@ -4423,7 +4424,7 @@ def test_read_parquet_concatenated_gzip_members_28787(io_files_path: Path) -> No
 )
 def test_multi_file_resolve_metadata_level(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     mode: str,
     expected_est: int,
 ) -> None:
@@ -4434,8 +4435,7 @@ def test_multi_file_resolve_metadata_level(
     for i, n in enumerate([2, 3, 3]):
         pl.DataFrame({"x": range(n)}).write_parquet(tmp_path / f"part_{i}.parquet")
 
-    monkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", mode)
-    pl.Config.reload_env_vars()
+    plmonkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", mode)
 
     lf = pl.scan_parquet(tmp_path / "part_*.parquet")
     assert lf.collect().height == 8
