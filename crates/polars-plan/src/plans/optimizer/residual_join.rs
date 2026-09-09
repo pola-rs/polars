@@ -211,6 +211,31 @@ fn try_fuse(
 ///
 /// Keys are returned in their input namespaces, renamed where a coalescing join would
 /// otherwise drop the right payload column, or where two keys would share a name.
+/// Whether an expression is safe to evaluate on every input row.
+///
+/// A promoted key runs on all rows of its input, not only on the candidate pairs the
+/// filter would have seen, so it must not fail or draw randomly on rows the query
+/// excludes. Fallibility is tracked per known function and does not cover every way an
+/// expression can raise, so this accepts only operations that cannot.
+fn is_promotable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    let mut stack: UnitVec<Node> = unitvec![node];
+
+    while let Some(node) = stack.pop() {
+        let ae = expr_arena.get(node);
+        let total = match ae {
+            AExpr::Column(_) | AExpr::Literal(_) => true,
+            AExpr::Cast { options, .. } => !options.is_strict(),
+            _ => false,
+        };
+        if !total {
+            return false;
+        }
+        ae.children_rev(&mut stack);
+    }
+
+    true
+}
+
 fn try_as_key_pair(
     minterm: Node,
     expr_arena: &mut Arena<AExpr>,
@@ -252,6 +277,10 @@ fn try_as_key_pair(
         (ExprOrigin::Right, ExprOrigin::Left) => (right, left),
         _ => return Ok(None),
     };
+
+    if !is_promotable(left_node, expr_arena) || !is_promotable(right_node, expr_arena) {
+        return Ok(None);
+    }
 
     // The right side is in the join's output namespace, where a name can belong to a
     // different input column than the one it shares a name with.

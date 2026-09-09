@@ -749,3 +749,53 @@ def test_residual_not_native_when_order_is_preserved(maintain_order: str) -> Non
         q.collect(engine="streaming"),
         reference(left, right, predicate, on="k", maintain_order=maintain_order),
     )
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_nondeterministic_equality_is_not_promoted(engine: str) -> None:
+    """A key is drawn once per input row; the filter draws once per candidate pair."""
+    left = pl.LazyFrame({"k": [0, 1], "a": [list(range(10)), list(range(10, 20))]})
+    right = pl.LazyFrame({"k": [0] * 10 + [1] * 10, "b": range(20)})
+    predicate = pl.col("a").list.sample(n=1).list.first() == pl.col("b")
+    q = left.join(right, on="k", maintain_order="left_right").filter(predicate)
+
+    assert_fused(q)
+    left_keys, _ = join_keys(q)
+    assert "sample" not in left_keys
+
+    # Promotion pins the height at one row per key; per-pair sampling does not.
+    assert len({q.collect(engine=engine).height for _ in range(30)}) > 1
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_strict_regex_equality_is_not_promoted(engine: str) -> None:
+    """An invalid pattern on an unmatched row must not be evaluated."""
+    left = pl.LazyFrame({"k": [1, 2], "pat": ["x", "["]})
+    right = pl.LazyFrame({"k": [1], "b": [True]})
+    predicate = pl.lit("x").str.contains(pl.col("pat")) == pl.col("b")
+    q = left.join(right, on="k").filter(predicate)
+
+    assert_frame_equal(
+        q.collect(engine=engine), reference(left, right, predicate, on="k")
+    )
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+def test_non_strict_cast_equality_is_promoted(engine: str) -> None:
+    left = pl.LazyFrame({"k": [1, 1], "a": [10, 20]})
+    right = pl.LazyFrame({"k": [1, 1], "b": [10, 99]})
+    predicate = pl.col("a").cast(pl.Int32, strict=False) == pl.col("b").cast(
+        pl.Int32, strict=False
+    )
+    q = left.join(right, on="k").filter(predicate)
+
+    assert_not_fused(q)
+    left_keys, right_keys = join_keys(q)
+    assert "cast" in left_keys
+    assert "cast" in right_keys
+
+    assert_frame_equal(
+        q.collect(engine=engine),
+        reference(left, right, predicate, on="k"),
+        check_row_order=False,
+    )
