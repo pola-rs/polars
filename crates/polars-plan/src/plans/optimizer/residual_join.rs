@@ -20,11 +20,11 @@ use crate::plans::{
 };
 use crate::utils::{aexpr_to_leaf_names_iter, rename_columns};
 
-/// Visit every node reachable from `root` once, parents before their inputs.
-fn for_each_ir_node(
+/// Fuse `Filter(join)` predicates that span both inputs into the join's match condition.
+pub(super) fn fuse_residual_predicates(
     root: Node,
     ir_arena: &mut Arena<IR>,
-    mut visit: impl FnMut(Node, &mut Arena<IR>) -> PolarsResult<()>,
+    expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<()> {
     let mut stack: UnitVec<Node> = unitvec![root];
     let mut seen = PlHashSet::default();
@@ -33,22 +33,12 @@ fn for_each_ir_node(
         if !seen.insert(node) {
             continue;
         }
+        // Read the inputs before fusing, which replaces what `node` holds.
         ir_arena.get(node).copy_inputs(&mut stack);
-        visit(node, ir_arena)?;
+        try_fuse(node, ir_arena, expr_arena)?;
     }
 
     Ok(())
-}
-
-/// Fuse `Filter(join)` predicates that span both inputs into the join's match condition.
-pub(super) fn fuse_residual_predicates(
-    root: Node,
-    ir_arena: &mut Arena<IR>,
-    expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<()> {
-    for_each_ir_node(root, ir_arena, |node, ir_arena| {
-        try_fuse(node, ir_arena, expr_arena)
-    })
 }
 
 /// A residual is only sound on an inner equi join, and a slice must stay above the filter
@@ -63,7 +53,7 @@ fn is_fusable_join(options: &JoinOptionsIR) -> bool {
 }
 
 /// Elementwise and infallible, so the join can evaluate it per candidate pair.
-fn is_fusable_predicate(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+fn can_fuse_predicate(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     let mut group = ExprPushdownGroup::Pushable;
     group.update_with_expr_rec(expr_arena.get(node), expr_arena, None);
 
@@ -80,7 +70,7 @@ fn try_fuse(
     let IR::Filter { input, predicate } = ir_arena.get(node) else {
         return Ok(());
     };
-    let (input, predicate) = (*input, predicate.clone());
+    let (input, predicate) = (*input, predicate.node());
 
     let IR::Join {
         input_left,
@@ -98,10 +88,10 @@ fn try_fuse(
         (*input_left, *input_right, schema.clone(), options.clone());
 
     // A single unfusable term leaves the whole filter alone.
-    let minterms = MintermIter::new(predicate.node(), expr_arena).collect::<Vec<_>>();
+    let minterms = MintermIter::new(predicate, expr_arena).collect::<Vec<_>>();
     if !minterms
         .iter()
-        .all(|node| is_fusable_predicate(*node, expr_arena))
+        .all(|node| can_fuse_predicate(*node, expr_arena))
     {
         return Ok(());
     }
@@ -114,21 +104,19 @@ fn try_fuse(
 
     let mut left_key_names: PlHashSet<PlSmallStr> = options
         .options
-        .key_pairs()
-        .into_iter()
-        .flatten()
-        .map(|(left, _)| left.output_name().clone())
+        .left_on()
+        .map(|key| key.output_name().clone())
         .collect();
     let mut right_key_names: PlHashSet<PlSmallStr> = options
         .options
-        .key_pairs()
-        .into_iter()
-        .flatten()
-        .map(|(_, right)| right.output_name().clone())
+        .right_on()
+        .map(|key| key.output_name().clone())
         .collect();
+
+    // Classify every minterm before rebuilding the two predicates from them.
     let mut promoted: Vec<(ExprIR, ExprIR)> = Vec::new();
-    let mut fused: Option<Node> = None;
-    let mut kept: Option<Node> = None;
+    let mut fused: UnitVec<Node> = unitvec![];
+    let mut kept: UnitVec<Node> = unitvec![];
     for minterm in minterms {
         // Coalescing on an inner join keeps the left name, so no right-join callback.
         let origin = ExprOrigin::get_expr_origin(
@@ -142,38 +130,43 @@ fn try_fuse(
 
         // Anything reading a single input is the existing pushdown's job.
         if !matches!(origin, ExprOrigin::Both) {
-            kept = Some(match kept.take() {
-                None => minterm,
-                Some(acc) => combine_by_and(acc, minterm, expr_arena),
-            });
+            kept.push(minterm);
             continue;
         }
 
         // An equality is cheaper as a key than as a residual.
-        if let Some(pair) = try_as_key_pair(
+        if let Some(pair) = as_key_pair(
             minterm,
             expr_arena,
             &left_schema,
             &right_schema,
             &options.args,
-            &suffix,
             &right_names,
-            &mut left_key_names,
-            &mut right_key_names,
         )? {
-            promoted.push(pair);
+            promoted.push(name_key_pair(
+                pair,
+                &options.args,
+                &left_schema,
+                &right_schema,
+                &mut left_key_names,
+                &mut right_key_names,
+            ));
             continue;
         }
 
-        fused = Some(match fused.take() {
-            None => minterm,
-            Some(acc) => combine_by_and(acc, minterm, expr_arena),
-        });
+        fused.push(minterm);
     }
 
-    if fused.is_none() && promoted.is_empty() {
+    if fused.is_empty() && promoted.is_empty() {
         return Ok(());
     }
+
+    let fused = fused
+        .into_iter()
+        .reduce(|left, right| combine_by_and(left, right, expr_arena));
+    let kept = kept
+        .into_iter()
+        .reduce(|left, right| combine_by_and(left, right, expr_arena));
 
     let options_mut = Arc::make_mut(&mut options);
     for (left, right) in promoted {
@@ -214,7 +207,7 @@ fn try_fuse(
 /// filter would have seen, so it must not fail or draw randomly on rows the query
 /// excludes. Fallibility is tracked per known function and does not cover every way an
 /// expression can raise, so this accepts only operations that cannot.
-fn is_promotable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+fn can_promote_key(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     expr_arena.iter(node).all(|(_, ae)| match ae {
         AExpr::Column(_) | AExpr::Literal(_) => true,
         AExpr::Cast { options, .. } => !options.is_strict(),
@@ -222,20 +215,17 @@ fn is_promotable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     })
 }
 
-/// Rewrite a both-sided equality minterm into a join key pair, if it is one.
+/// Read a both-sided equality minterm as a join key pair, if it is one.
 ///
-/// Keys are returned in their input namespaces, renamed where a coalescing join would
-/// otherwise drop the right payload column, or where two keys would share a name.
-fn try_as_key_pair(
+/// Keys come back in their input namespaces, carrying whatever name their expression
+/// gives them; [`name_key_pair`] settles the collisions that leaves.
+fn as_key_pair(
     minterm: Node,
     expr_arena: &mut Arena<AExpr>,
     left_schema: &Schema,
     right_schema: &Schema,
     args: &JoinArgs,
-    suffix: &str,
     right_names: &PlIndexMap<PlSmallStr, PlSmallStr>,
-    left_key_names: &mut PlHashSet<PlSmallStr>,
-    right_key_names: &mut PlHashSet<PlSmallStr>,
 ) -> PolarsResult<Option<(ExprIR, ExprIR)>> {
     // Validation counts the rows per key, which a promoted equality would change.
     if args.validation.needs_checks() {
@@ -258,6 +248,7 @@ fn try_as_key_pair(
         return Ok(None);
     }
 
+    let suffix = args.suffix();
     let left_origin =
         ExprOrigin::get_expr_origin(left, expr_arena, left_schema, right_schema, suffix, None)?;
     let right_origin =
@@ -268,7 +259,7 @@ fn try_as_key_pair(
         _ => return Ok(None),
     };
 
-    if !is_promotable(left_node, expr_arena) || !is_promotable(right_node, expr_arena) {
+    if !can_promote_key(left_node, expr_arena) || !can_promote_key(right_node, expr_arena) {
         return Ok(None);
     }
 
@@ -281,8 +272,8 @@ fn try_as_key_pair(
     }
     let right_node = rename_columns(right_node, expr_arena, right_names);
 
-    let mut left_key = ExprIR::from_node(left_node, expr_arena);
-    let mut right_key = ExprIR::from_node(right_node, expr_arena);
+    let left_key = ExprIR::from_node(left_node, expr_arena);
+    let right_key = ExprIR::from_node(right_node, expr_arena);
 
     // Key pairs are matched without coercion.
     if left_key.field(left_schema, expr_arena)?.dtype
@@ -291,11 +282,26 @@ fn try_as_key_pair(
         return Ok(None);
     }
 
+    Ok(Some((left_key, right_key)))
+}
+
+/// Aliases a promoted key pair away from the names already spoken for.
+///
+/// The taken sets grow as pairs are named, so two promotions cannot land on one name.
+fn name_key_pair(
+    (mut left_key, mut right_key): (ExprIR, ExprIR),
+    args: &JoinArgs,
+    left_schema: &Schema,
+    right_schema: &Schema,
+    left_key_names: &mut PlHashSet<PlSmallStr>,
+    right_key_names: &mut PlHashSet<PlSmallStr>,
+) -> (ExprIR, ExprIR) {
     if !left_key_names.insert(left_key.output_name().clone()) {
         let name = unique_key_name(left_key.output_name(), left_key_names, left_schema);
         left_key = ExprIR::new(left_key.node(), OutputName::Alias(name.clone()));
         left_key_names.insert(name);
     }
+
     // Coalescing drops the right payload column that shares a name with a right key.
     let right_name = right_key.output_name().clone();
     if args.should_coalesce() || !right_key_names.insert(right_name.clone()) {
@@ -303,7 +309,8 @@ fn try_as_key_pair(
         right_key = ExprIR::new(right_key.node(), OutputName::Alias(name.clone()));
         right_key_names.insert(name);
     }
-    Ok(Some((left_key, right_key)))
+
+    (left_key, right_key)
 }
 
 fn unique_key_name(base: &str, taken: &PlHashSet<PlSmallStr>, schema: &Schema) -> PlSmallStr {
@@ -313,7 +320,7 @@ fn unique_key_name(base: &str, taken: &PlHashSet<PlSmallStr>, schema: &Schema) -
         .unwrap()
 }
 
-/// Maps each right input column reachable in the join's output to its output name.
+/// Maps each right column reachable in the join's output back to its input name.
 ///
 /// A coalescing join drops the right key columns, and the rest take the join suffix where
 /// they collide with a left column, so an output name need not be the input name.
