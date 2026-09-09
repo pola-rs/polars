@@ -169,5 +169,8 @@ pub fn array_to_unit_list(array: Box<dyn PlArray>) -> PlListArray {
     }
 
     // Every element covers the one value at its own position, so the offsets count up by one.
-    PlListArray::new(array, (0..=length as u64).collect(), length, None)
+    //
+    // SAFETY: those offsets are one per element plus the end of the last, ascending, and they end
+    // at the length of the values — which is what a pass over them would have to check.
+    unsafe { PlListArray::new_unchecked(array, (0..=length as u64).collect(), length, None) }
 }

@@ -6,7 +6,9 @@ use polars_array::{Flat, PlBitmap, PlBitmapRef, PlPrimitiveArray};
 use polars_buffer::Buffer;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
 
-use super::{PlTotalEqKernel, PlTotalOrdKernel, TotalEqKernel, TotalOrdKernel};
+use super::{
+    IN_PLACE_COMPARISON_LIMIT, PlTotalEqKernel, PlTotalOrdKernel, TotalEqKernel, TotalOrdKernel,
+};
 
 /// The values of a chunk as a flat array of their own, which is what the [`Flat`] kernels take.
 #[inline]
@@ -110,6 +112,21 @@ where
     broadcast_kernels! {
         tot_eq_kernel_broadcast: TotalEq::tot_eq, TotalEqKernel::tot_eq_kernel_broadcast;
         tot_ne_kernel_broadcast: TotalEq::tot_ne, TotalEqKernel::tot_ne_kernel_broadcast;
+    }
+
+    /// The values are compared where they lie: see [`PlTotalEqKernel::tot_eq_missing_all`].
+    fn tot_eq_missing_all(&self, other: &Self) -> bool {
+        assert_eq!(self.len(), other.len());
+
+        // Past this many values the written-out comparison earns its allocation back, and it is
+        // the vectorised kernel that reads them.
+        if self.len() > IN_PLACE_COMPARISON_LIMIT {
+            return self.tot_eq_missing_kernel(other).unset_bits() == 0;
+        }
+
+        self.iter()
+            .zip(other.iter())
+            .all(|(lhs, rhs)| lhs.tot_eq(&rhs))
     }
 }
 

@@ -63,23 +63,26 @@ pub fn fixed_size_list_to_list(
     // The one list every element of a scalar chunk reads lies in one range, which the offsets of
     // the lists repeat rather than write out.
     if from.scalar_value_ignore_validity().is_some() {
-        return Ok(PlListArray::new_broadcast(
-            values,
-            Buffer::from(vec![0, width]),
-            from.len(),
-            validity,
-        ));
+        // SAFETY: the values are the one list every element reads, cast one for one, so the two
+        // offsets are the range it covers — which is scalar for however many elements read it.
+        return Ok(unsafe {
+            PlListArray::new_broadcast_unchecked(
+                values,
+                Buffer::from(vec![0, width]),
+                from.len(),
+                validity,
+            )
+        });
     }
 
     let offsets = (0..=from.len() as u64)
         .map(|element| element * width)
         .collect::<Vec<_>>();
-    Ok(PlListArray::new(
-        values,
-        Buffer::from(offsets),
-        from.len(),
-        validity,
-    ))
+
+    // SAFETY: the values hold the width of every element laid end to end, cast one for one, and
+    // the offsets count up by that width: one per element plus the end of the last, ascending,
+    // ending exactly where the values do. Checking that back is a pass over them for nothing.
+    Ok(unsafe { PlListArray::new_unchecked(values, Buffer::from(offsets), from.len(), validity) })
 }
 
 /// Reads every element of a list array as a list of `width` values, erroring on another count.

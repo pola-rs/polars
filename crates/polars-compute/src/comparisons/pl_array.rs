@@ -7,7 +7,7 @@ use polars_array::{
 };
 use polars_utils::total_ord::TotalEq;
 
-use super::{PlTotalEqKernel, TotalEqKernel, TotalOrdKernel};
+use super::{IN_PLACE_COMPARISON_LIMIT, PlTotalEqKernel, TotalEqKernel, TotalOrdKernel};
 
 /// The validity mask of a flat array, which holds one bit per element like its every other buffer.
 fn flat_validity<A: PlArray>(array: &Flat<A>) -> Option<&Bitmap> {
@@ -163,6 +163,19 @@ macro_rules! impl_pl_total_eq_kernel {
                         },
                     }
                 }
+                /// The values are compared where they lie: see [`PlTotalEqKernel::tot_eq_missing_all`].
+                fn tot_eq_missing_all(&self, other: &Self) -> bool {
+                    assert_eq!(self.len(), other.len());
+
+                    // Past this many values the written-out comparison earns its allocation back,
+                    // and it is the vectorised kernel that reads them.
+                    if self.len() > IN_PLACE_COMPARISON_LIMIT {
+                        return self.tot_eq_missing_kernel(other).unset_bits() == 0;
+                    }
+
+                    self.iter().zip(other.iter()).all(|(lhs, rhs)| lhs.tot_eq(&rhs))
+                }
+
             }
         )*
     };

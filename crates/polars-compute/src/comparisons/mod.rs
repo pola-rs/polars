@@ -123,6 +123,14 @@ fn or_not_mask(q: PlBitmap, mask: &Bitmap) -> PlBitmap {
     }
 }
 
+/// How many values [`PlTotalEqKernel::tot_eq_missing_all`] compares where they lie before it is
+/// worth writing the comparison out instead.
+///
+/// The written-out path allocates a mask and counts its bits for an answer that is one bool; the
+/// vectorised kernel behind it only earns that back over enough values, and the elements of a
+/// nested array are usually a handful.
+pub(crate) const IN_PLACE_COMPARISON_LIMIT: usize = 64;
+
 /// The answer for every element at once, held in the single bit that says it.
 #[inline]
 fn repeated(value: bool, length: usize) -> PlBitmap {
@@ -248,6 +256,18 @@ pub trait PlTotalEqKernel: Sized {
                 }))
             },
         }
+    }
+
+    /// Whether every element of `self` equals the one at its index in `other`, a null equalling a
+    /// null and nothing else.
+    ///
+    /// This is what a caller that wants the single bit asks for, rather than the mask: one element
+    /// of a nested array against its counterpart, say, which is a handful of values at a time and
+    /// once per element of the array above. The default writes the comparison out and counts the
+    /// bits of it; an array whose values can be compared where they lie overrides it, since the
+    /// allocation is the whole cost at that size.
+    fn tot_eq_missing_all(&self, other: &Self) -> bool {
+        self.tot_eq_missing_kernel(other).unset_bits() == 0
     }
 
     fn tot_eq_missing_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {

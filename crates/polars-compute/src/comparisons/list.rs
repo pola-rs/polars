@@ -3,17 +3,20 @@
 use polars_array::{PlArray, PlBitmap, PlBitmapRef, PlListArray};
 
 use super::dyn_array::with_array_pair;
-use super::{Condense, PlTotalEqKernel, condense_one, repeated};
+use super::{PlTotalEqKernel, repeated};
 
-/// Compares the lists of `$lhs` against `$rhs`'s, element for element, with `$op` over the values
-/// of each pair.
+/// Compares the lists of `$lhs` against `$rhs`'s, element for element.
+///
+/// `$mismatch` is the bit an element gets when its two lists hold no pair of values to compare at
+/// all — differing in length, or in the type under them — and it is what turns equality into
+/// inequality: the answer for a pair that *does* compare is flipped by it in turn.
 ///
 /// The values of both sides are downcast once, ahead of the walk over the elements: an element is
 /// then a slice of a concrete array, which is a clone of its buffers and nothing more. Reading it
 /// as a `&dyn PlArray` instead costs a box and a dispatch of its own, once per element.
 macro_rules! compare_values {
-    ($lhs:expr, $rhs:expr, $how:expr, $op:path, $mismatch:expr $(,)?) => {{
-        let (lhs, rhs, how, mismatch) = ($lhs, $rhs, $how, $mismatch);
+    ($lhs:expr, $rhs:expr, $mismatch:expr $(,)?) => {{
+        let (lhs, rhs, mismatch) = ($lhs, $rhs, $mismatch);
         let length = lhs.len();
 
         // Lists of different value types hold no pair of values to compare.
@@ -41,7 +44,9 @@ macro_rules! compare_values {
                         )
                     };
 
-                    condense_one(&$op(&l, &r), how)
+                    // The two lists answer with the one bit the caller wants, so nothing is
+                    // written out per element — see `PlTotalEqKernel::tot_eq_missing_all`.
+                    PlTotalEqKernel::tot_eq_missing_all(&l, &r) != mismatch
                 };
 
                 // Both sides hold the one range every element of them covers, and neither is null
@@ -73,8 +78,8 @@ macro_rules! compare_values {
 
 /// Compares the lists of `$lhs` against the single list `$rhs`, per [`compare_values`].
 macro_rules! compare_scalar {
-    ($lhs:expr, $rhs:expr, $how:expr, $op:path, $mismatch:expr $(,)?) => {{
-        let (lhs, rhs, how, mismatch) = ($lhs, $rhs, $how, $mismatch);
+    ($lhs:expr, $rhs:expr, $mismatch:expr $(,)?) => {{
+        let (lhs, rhs, mismatch) = ($lhs, $rhs, $mismatch);
         let length = lhs.len();
 
         // Lists of different value types hold no pair of values to compare.
@@ -97,7 +102,8 @@ macro_rules! compare_scalar {
                     // SAFETY: as in `compare_values`.
                     let l = unsafe { lhs_values.sliced_unchecked(l.start, l.len()) };
 
-                    condense_one(&$op(&l, rhs_values), how)
+                    // As in `compare_values`: the one bit, not a mask to read it off.
+                    PlTotalEqKernel::tot_eq_missing_all(&l, rhs_values) != mismatch
                 };
 
                 // Every element covers the one range the offsets hold and none of them is null,
@@ -130,43 +136,19 @@ impl PlTotalEqKernel for PlListArray {
 
     fn tot_eq_kernel(&self, other: &Self) -> PlBitmap {
         assert_eq!(self.len(), other.len());
-        compare_values!(
-            self,
-            other,
-            Condense::All,
-            PlTotalEqKernel::tot_eq_missing_kernel,
-            false,
-        )
+        compare_values!(self, other, false)
     }
 
     fn tot_ne_kernel(&self, other: &Self) -> PlBitmap {
         assert_eq!(self.len(), other.len());
-        compare_values!(
-            self,
-            other,
-            Condense::Any,
-            PlTotalEqKernel::tot_ne_missing_kernel,
-            true,
-        )
+        compare_values!(self, other, true)
     }
 
     fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
-        compare_scalar!(
-            self,
-            &**other,
-            Condense::All,
-            PlTotalEqKernel::tot_eq_missing_kernel,
-            false,
-        )
+        compare_scalar!(self, &**other, false)
     }
 
     fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
-        compare_scalar!(
-            self,
-            &**other,
-            Condense::Any,
-            PlTotalEqKernel::tot_ne_missing_kernel,
-            true,
-        )
+        compare_scalar!(self, &**other, true)
     }
 }
