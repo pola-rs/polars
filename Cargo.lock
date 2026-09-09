@@ -3177,7 +3177,6 @@ dependencies = [
  "bigdecimal",
  "bytemuck",
  "chrono",
- "either",
  "fast-float2",
  "half",
  "hashbrown 0.17.1",
