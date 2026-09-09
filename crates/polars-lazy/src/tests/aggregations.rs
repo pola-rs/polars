@@ -598,3 +598,72 @@ fn test_anonymous_function_returns_scalar_all_null_20679() {
 
     assert_eq!(grouped_df.columns()[1].dtype(), &DataType::Null);
 }
+
+#[cfg(feature = "approx_quantile")]
+mod approx_quantile {
+    use polars_compute::approx_quantile::ApproxQuantileMethod;
+
+    use super::*;
+
+    #[test]
+    fn approx_quantile_method_auto_resolves_correctly() {
+        use ApproxQuantileMethod::*;
+
+        let series = |values: &[f64]| Series::new(PlSmallStr::EMPTY, values);
+        let imploded_series = |values: &[f64]| lit(series(values).implode().unwrap().into_series());
+        let list_scalar = |values: &[f64]| {
+            Expr::Literal(
+                LiteralValue::Series(SpecialEq::new(series(values)))
+                    .implode()
+                    .unwrap(),
+            )
+        };
+
+        for (name, quantile, expected) in [
+            ("0.5", lit(0.5), KLL),
+            ("0.01", lit(0.01), ReqSketch { hra: false }),
+            ("0.99", lit(0.99), ReqSketch { hra: true }),
+            // A single value, a one-element series, an imploded list and a list
+            // scalar all describe the same quantiles.
+            ("series [0.5]", lit(series(&[0.5])), KLL),
+            ("imploded [0.5]", imploded_series(&[0.5]), KLL),
+            ("list scalar [0.5]", list_scalar(&[0.5]), KLL),
+            (
+                "imploded [0.99]",
+                imploded_series(&[0.99]),
+                ReqSketch { hra: true },
+            ),
+            (
+                "list scalar [0.99]",
+                list_scalar(&[0.99]),
+                ReqSketch { hra: true },
+            ),
+            (
+                "list scalar [0.01, 0.99]",
+                list_scalar(&[0.01, 0.99]),
+                DoubleReqSketch,
+            ),
+            // A quantile that is only known at runtime has to cover both tails.
+            ("runtime quantile", col("q"), DoubleReqSketch),
+        ] {
+            let plan = df!("a" => [1.0], "q" => [0.5])
+                .unwrap()
+                .lazy()
+                .select([col("a").approx_quantile(quantile, 0.001, false, Auto)])
+                .to_alp()
+                .unwrap();
+
+            let IR::Select { expr, .. } = plan.lp_arena.get(plan.lp_top) else {
+                panic!("expected a select")
+            };
+            let method = match plan.expr_arena.get(expr[0].node()) {
+                AExpr::Function {
+                    function: IRFunctionExpr::ApproxQuantile { method, .. },
+                    ..
+                } => method,
+                ae => panic!("expected an approx_quantile function, got {ae:?}"),
+            };
+            assert_eq!(*method, expected, "{name}");
+        }
+    }
+}
