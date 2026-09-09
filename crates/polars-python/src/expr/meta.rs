@@ -1,4 +1,4 @@
-use polars::prelude::Schema;
+use polars::prelude::{Expr, Schema};
 use pyo3::prelude::*;
 
 use crate::PyExpr;
@@ -104,6 +104,10 @@ impl PyExpr {
             .meta()
             .is_row_separable()
             .map_err(PyPolarsErr::from)?)
+    }
+
+    fn meta_is_scalar_literal(&self) -> bool {
+        matches!(&self.inner, Expr::Literal(lv) if lv.is_scalar())
     }
 
     fn compute_tree_format(
