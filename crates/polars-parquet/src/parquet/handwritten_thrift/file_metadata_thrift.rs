@@ -41,8 +41,19 @@ fn read_list<T>(
     prot: &mut ThriftSliceInputProtocol<'_>,
     mut read_one: impl FnMut(&mut ThriftSliceInputProtocol<'_>) -> ParquetResult<T>,
 ) -> ParquetResult<Vec<T>> {
+    // `read_list_begin` rejects sizes above `i32::MAX`, but `i32::MAX` of
+    // any non-trivial element would still be many GB. Bound the up-front
+    // capacity by the bytes still available: every list element occupies
+    // at least one byte on the wire.
     let list = prot.read_list_begin()?;
-    let mut v = Vec::with_capacity(list.size.max(0) as usize);
+    let declared = list.size.max(0) as usize;
+    let bound = declared.min(prot.bytes_remaining());
+    let mut v: Vec<T> = Vec::new();
+    if v.try_reserve_exact(bound).is_err() {
+        return Err(crate::parquet::error::ParquetError::oos(format!(
+            "cannot allocate Thrift list of {declared} elements",
+        )));
+    }
     for _ in 0..list.size {
         v.push(read_one(prot)?);
     }
