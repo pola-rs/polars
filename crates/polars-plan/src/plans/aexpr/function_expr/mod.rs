@@ -250,9 +250,13 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "approx_unique")]
     ApproxNUnique,
     #[cfg(feature = "approx_quantile")]
-    ApproxQuantile {
+    ApproxQuantileSketch {
         method: ApproxQuantileMethod,
         error: f64,
+    },
+    #[cfg(feature = "approx_quantile")]
+    ApproxQuantileEstimate {
+        return_dtype: DataType,
     },
     Coalesce,
     #[cfg(feature = "diff")]
@@ -629,10 +633,12 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => {},
             #[cfg(feature = "approx_quantile")]
-            ApproxQuantile { method, error } => {
+            ApproxQuantileSketch { method, error } => {
                 method.hash(state);
                 error.to_bits().hash(state);
             },
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantileEstimate { return_dtype } => return_dtype.hash(state),
             Coalesce => {},
             #[cfg(feature = "pct_change")]
             PctChange => {},
@@ -879,7 +885,9 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => "approx_n_unique",
             #[cfg(feature = "approx_quantile")]
-            ApproxQuantile { .. } => "approx_quantile",
+            ApproxQuantileSketch { .. } => "approx_quantile_sketch",
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantileEstimate { .. } => "approx_quantile_estimate",
             Coalesce => "coalesce",
             #[cfg(feature = "diff")]
             Diff(_) => "diff",
@@ -1213,9 +1221,11 @@ impl IRFunctionExpr {
                 FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
             },
             #[cfg(feature = "approx_quantile")]
-            F::ApproxQuantile { .. } => {
+            F::ApproxQuantileSketch { .. } => {
                 FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
             },
+            #[cfg(feature = "approx_quantile")]
+            F::ApproxQuantileEstimate { .. } => FunctionOptions::elementwise(),
             F::Coalesce => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION)
                 .with_supertyping(Default::default()),
