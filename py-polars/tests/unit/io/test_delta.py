@@ -1452,3 +1452,22 @@ def test_scan_delta_predicate_pushdown_struct_is_not_null(
     # must not be pruned.
     assert_frame_equal(out, df, check_row_order=False)
     assert "skipping 1 / 2 files" not in err
+
+
+@pytest.mark.write_disk
+def test_scan_delta_deltatable_string_storage_options(tmp_path: Path) -> None:
+    storage_options = {
+        "connect_timeout": "30s",
+        "timeout": "120s",
+        "max_retries": "20",
+        "retry_timeout": "600s",
+        "backoff_config.init_backoff": "500ms",
+        "backoff_config.max_backoff": "20s",
+        "backoff_config.base": "2.0",
+    }
+    df = pl.DataFrame({"x": [1]})
+    df.write_delta(tmp_path)
+    delta_table = DeltaTable(str(tmp_path), storage_options=storage_options)
+
+    result = pl.scan_delta(delta_table).collect()
+    assert_frame_equal(result, df)
