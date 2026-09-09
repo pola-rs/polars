@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -10,7 +11,10 @@ import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
-ENGINES = ["in-memory", "streaming"]
+if TYPE_CHECKING:
+    from polars._typing import EngineType
+
+ENGINES: list[EngineType] = ["in-memory", "streaming"]
 
 
 def assert_fused(lf: pl.LazyFrame) -> None:
@@ -59,7 +63,7 @@ def frames() -> tuple[pl.LazyFrame, pl.LazyFrame]:
 
 @pytest.mark.parametrize("engine", ENGINES)
 def test_residual_matches_unfused_reference(
-    frames: tuple[pl.LazyFrame, pl.LazyFrame], engine: str
+    frames: tuple[pl.LazyFrame, pl.LazyFrame], engine: EngineType
 ) -> None:
     left, right = frames
     q = left.join(right, on="k").filter(pl.col("b") < pl.col("a"))
@@ -93,7 +97,7 @@ def test_residual_native_streaming_path(
     ],
 )
 def test_residual_expressions(
-    frames: tuple[pl.LazyFrame, pl.LazyFrame], predicate: pl.Expr, engine: str
+    frames: tuple[pl.LazyFrame, pl.LazyFrame], predicate: pl.Expr, engine: EngineType
 ) -> None:
     left, right = frames
     q = left.join(right, on="k").filter(predicate)
@@ -105,7 +109,7 @@ def test_residual_expressions(
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_composite_and_duplicate_keys(engine: str) -> None:
+def test_residual_composite_and_duplicate_keys(engine: EngineType) -> None:
     left = pl.LazyFrame(
         {
             "k1": [1, 1, 1, 2, 2],
@@ -131,7 +135,7 @@ def test_residual_composite_and_duplicate_keys(engine: str) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_string_keys(engine: str) -> None:
+def test_residual_string_keys(engine: EngineType) -> None:
     left = pl.LazyFrame({"k": ["x", "x", "y", "z"], "a": [1, 2, 3, 4]})
     right = pl.LazyFrame({"k": ["x", "y", "y", "w"], "b": [2, 1, 9, 0]})
     q = left.join(right, on="k").filter(pl.col("b") < pl.col("a"))
@@ -146,7 +150,7 @@ def test_residual_string_keys(engine: str) -> None:
 
 @pytest.mark.parametrize("engine", ENGINES)
 @pytest.mark.parametrize("nulls_equal", [True, False])
-def test_residual_null_keys_and_values(engine: str, nulls_equal: bool) -> None:
+def test_residual_null_keys_and_values(engine: EngineType, nulls_equal: bool) -> None:
     left = pl.LazyFrame({"k": [1, None, 2, None], "a": [10, 20, None, 40]})
     right = pl.LazyFrame({"k": [1, None, 2], "b": [1, 5, None]})
     predicate = pl.col("b") < pl.col("a")
@@ -172,7 +176,7 @@ def test_residual_null_keys_and_values(engine: str, nulls_equal: bool) -> None:
     ],
 )
 def test_residual_degenerate_inputs(
-    engine: str, left_k: list[int], right_k: list[int], predicate_true: bool
+    engine: EngineType, left_k: list[int], right_k: list[int], predicate_true: bool
 ) -> None:
     left = pl.LazyFrame(
         {"k": left_k, "a": [1] * len(left_k)}, schema={"k": pl.Int64, "a": pl.Int64}
@@ -196,7 +200,7 @@ def test_residual_degenerate_inputs(
 @pytest.mark.parametrize("engine", ENGINES)
 @pytest.mark.parametrize("suffix", ["_right", "_R"])
 @pytest.mark.parametrize("coalesce", [True, False])
-def test_residual_suffix_and_coalesce(engine: str, suffix: str, coalesce: bool) -> None:
+def test_residual_suffix_and_coalesce(engine: EngineType, suffix: str, coalesce: bool) -> None:
     left = pl.LazyFrame({"k": [1, 1, 2], "v": [10, 20, 30]})
     right = pl.LazyFrame({"k": [1, 2, 2], "v": [15, 5, 99]})
     predicate = pl.col(f"v{suffix}") < pl.col("v")
@@ -211,7 +215,7 @@ def test_residual_suffix_and_coalesce(engine: str, suffix: str, coalesce: bool) 
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_only_columns_dropped_by_select(engine: str) -> None:
+def test_residual_only_columns_dropped_by_select(engine: EngineType) -> None:
     """`v`/`v_right` are read only by the residual, so they must survive to the join."""
     left = pl.LazyFrame({"k": [1, 1, 2], "v": [10, 20, 30], "keep": ["a", "b", "c"]})
     right = pl.LazyFrame({"k": [1, 2, 2], "v": [15, 5, 99]})
@@ -227,7 +231,7 @@ def test_residual_only_columns_dropped_by_select(engine: str) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_suffix_dropped_when_collision_disappears(engine: str) -> None:
+def test_residual_suffix_dropped_when_collision_disappears(engine: EngineType) -> None:
     """Pruning the left `v` un-suffixes the right one; the residual must follow."""
     left = pl.LazyFrame({"k": [1, 1, 2], "v": [99, 99, 99], "x": [10, 20, 30]})
     right = pl.LazyFrame({"k": [1, 2, 2], "v": [15, 5, 99]})
@@ -243,7 +247,7 @@ def test_residual_suffix_dropped_when_collision_disappears(engine: str) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_reads_right_key(engine: str) -> None:
+def test_residual_reads_right_key(engine: EngineType) -> None:
     """The right key must survive even though nothing else projects it.
 
     Predicate pushdown may rewrite `k_right` to `k` and push it to one side, so this
@@ -265,7 +269,7 @@ def test_residual_reads_right_key(engine: str) -> None:
 @pytest.mark.parametrize(
     "maintain_order", ["none", "left", "right", "left_right", "right_left"]
 )
-def test_residual_maintain_order(engine: str, maintain_order: str) -> None:
+def test_residual_maintain_order(engine: EngineType, maintain_order: str) -> None:
     left = pl.LazyFrame({"k": [1, 2, 1, 3, 2], "a": [10, 20, 30, 40, 50]})
     right = pl.LazyFrame({"k": [1, 2, 2, 3], "b": [5, 15, 45, 5]})
     predicate = pl.col("b") < pl.col("a")
@@ -292,7 +296,7 @@ def test_residual_maintain_order(engine: str, maintain_order: str) -> None:
 
 @pytest.mark.parametrize("engine", ENGINES)
 @pytest.mark.parametrize("build_side", ["force_left", "force_right"])
-def test_residual_forced_build_side(engine: str, build_side: str) -> None:
+def test_residual_forced_build_side(engine: EngineType, build_side: str) -> None:
     left = pl.LazyFrame({"k": [1, 1, 2, 3], "a": [10, 20, 30, 40]})
     right = pl.LazyFrame({"k": [1, 2, 2, 4], "b": [5, 15, 45, 0]})
     predicate = pl.col("b") < pl.col("a")
@@ -306,7 +310,7 @@ def test_residual_forced_build_side(engine: str, build_side: str) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_many_morsels_and_skew(engine: str) -> None:
+def test_residual_many_morsels_and_skew(engine: EngineType) -> None:
     """More rows than one morsel, plus a key whose duplicate list exceeds the limit."""
     n = 60_000
     left = pl.LazyFrame({"k": [0] * n + list(range(n)), "a": list(range(2 * n))})
@@ -323,7 +327,7 @@ def test_residual_many_morsels_and_skew(engine: str) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_rejected_batch_followed_by_accepted(engine: str) -> None:
+def test_residual_rejected_batch_followed_by_accepted(engine: EngineType) -> None:
     """Leading candidates are all rejected; later survivors must still be emitted."""
     n = 20_000
     left = pl.LazyFrame({"k": [1] * n + [2] * n, "a": [0] * n + [100] * n})
@@ -356,7 +360,7 @@ def test_residual_not_fused_while_join_stays_outer(how: str) -> None:
 
 @pytest.mark.parametrize("engine", ENGINES)
 @pytest.mark.parametrize("how", ["left", "right", "full"])
-def test_residual_outer_join_reduced_to_inner(engine: str, how: str) -> None:
+def test_residual_outer_join_reduced_to_inner(engine: EngineType, how: str) -> None:
     """Rejecting null-extended rows turns the join inner, which may then fuse."""
     left = pl.LazyFrame({"k": [1, 2, 3], "a": [10, 20, 30]})
     right = pl.LazyFrame({"k": [1, 2, 4], "b": [5, 25, 0]})
@@ -384,7 +388,7 @@ def test_residual_not_fused_for_non_elementwise_predicates() -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_slice_ordering(engine: str) -> None:
+def test_residual_slice_ordering(engine: EngineType) -> None:
     left = pl.LazyFrame({"k": [1, 1, 2, 2], "a": [10, 20, 30, 40]})
     right = pl.LazyFrame({"k": [1, 2], "b": [15, 5]})
     predicate = pl.col("b") < pl.col("a")
@@ -405,7 +409,7 @@ def test_residual_slice_ordering(engine: str) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_validation_still_errors(engine: str) -> None:
+def test_residual_validation_still_errors(engine: EngineType) -> None:
     """Validation runs on the keys; a residual rejecting the pair does not excuse it."""
     left = pl.LazyFrame({"k": [1, 2], "a": [10, 20]})
     right = pl.LazyFrame({"k": [1, 1, 2], "b": [99, 99, 99]})
@@ -417,7 +421,7 @@ def test_residual_validation_still_errors(engine: str) -> None:
 
 @pytest.mark.parametrize("engine", ENGINES)
 @pytest.mark.parametrize("join_order", [True, False])
-def test_residual_with_join_order(engine: str, join_order: bool) -> None:
+def test_residual_with_join_order(engine: EngineType, join_order: bool) -> None:
     a = pl.LazyFrame({"k": [1, 2, 3], "x": [1, 2, 3]})
     b = pl.LazyFrame({"k": [1, 2, 3], "y": [3, 2, 1]})
     c = pl.LazyFrame({"k": [1, 2, 3], "z": [1, 1, 1]})
@@ -432,7 +436,7 @@ def test_residual_with_join_order(engine: str, join_order: bool) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_shared_join_with_distinct_predicates(engine: str) -> None:
+def test_residual_shared_join_with_distinct_predicates(engine: EngineType) -> None:
     """One join feeding two filters must not have either fused into the other."""
     left = pl.LazyFrame({"k": [1, 1, 2, 2], "a": [10, 20, 30, 40]})
     right = pl.LazyFrame({"k": [1, 2], "b": [15, 35]})
@@ -515,7 +519,7 @@ def eq_frames() -> tuple[pl.LazyFrame, pl.LazyFrame]:
 
 @pytest.mark.parametrize("engine", ENGINES)
 def test_equality_becomes_join_key(
-    eq_frames: tuple[pl.LazyFrame, pl.LazyFrame], engine: str
+    eq_frames: tuple[pl.LazyFrame, pl.LazyFrame], engine: EngineType
 ) -> None:
     left, right = eq_frames
     predicate = pl.col("a") == pl.col("b")
@@ -535,7 +539,7 @@ def test_equality_becomes_join_key(
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_equality_key_rejects_nulls(engine: str) -> None:
+def test_equality_key_rejects_nulls(engine: EngineType) -> None:
     left = pl.LazyFrame(
         {"k": [1, 1, 2], "a": [None, 5, None]}, schema_overrides={"a": pl.Int64}
     )
@@ -555,7 +559,7 @@ def test_equality_key_rejects_nulls(engine: str) -> None:
 
 @pytest.mark.parametrize("engine", ENGINES)
 def test_equality_not_promoted_when_join_matches_nulls(
-    eq_frames: tuple[pl.LazyFrame, pl.LazyFrame], engine: str
+    eq_frames: tuple[pl.LazyFrame, pl.LazyFrame], engine: EngineType
 ) -> None:
     """`==` rejects a null pair, so it cannot become a key that matches them."""
     left, right = eq_frames
@@ -572,7 +576,7 @@ def test_equality_not_promoted_when_join_matches_nulls(
 
 @pytest.mark.parametrize("engine", ENGINES)
 @pytest.mark.parametrize("nulls_equal", [False, True])
-def test_eq_missing_matches_the_join(engine: str, nulls_equal: bool) -> None:
+def test_eq_missing_matches_the_join(engine: EngineType, nulls_equal: bool) -> None:
     left = pl.LazyFrame(
         {"k": [1, 1, 2], "a": [None, 5, None]}, schema_overrides={"a": pl.Int64}
     )
@@ -595,7 +599,7 @@ def test_eq_missing_matches_the_join(engine: str, nulls_equal: bool) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_float_equality_becomes_join_key(engine: str) -> None:
+def test_float_equality_becomes_join_key(engine: EngineType) -> None:
     """`==` and a key pair agree on NaN, so floats promote like any other dtype."""
     nan = float("nan")
     left = pl.LazyFrame({"k": [1, 1, 2], "a": [1.5, nan, nan]})
@@ -613,7 +617,7 @@ def test_float_equality_becomes_join_key(engine: str) -> None:
 
 @pytest.mark.parametrize("engine", ENGINES)
 def test_equality_promoted_and_rest_stays_residual(
-    eq_frames: tuple[pl.LazyFrame, pl.LazyFrame], engine: str
+    eq_frames: tuple[pl.LazyFrame, pl.LazyFrame], engine: EngineType
 ) -> None:
     left, right = eq_frames
     predicate = (pl.col("a") == pl.col("b")) & (pl.col("a") + pl.col("b") > 40)
@@ -630,7 +634,7 @@ def test_equality_promoted_and_rest_stays_residual(
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_equality_promoted_with_suffixed_column(engine: str) -> None:
+def test_equality_promoted_with_suffixed_column(engine: EngineType) -> None:
     left = pl.LazyFrame({"k": [1, 1, 2], "a": [10, 20, 30]})
     right = pl.LazyFrame({"k": [1, 1, 2], "a": [10, 99, 30]})
     predicate = pl.col("a") == pl.col("a_right")
@@ -646,7 +650,7 @@ def test_equality_promoted_with_suffixed_column(engine: str) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_several_equalities_sharing_a_left_column(engine: str) -> None:
+def test_several_equalities_sharing_a_left_column(engine: EngineType) -> None:
     left = pl.LazyFrame({"k": [1, 1, 2], "a": [10, 20, 30]})
     right = pl.LazyFrame({"k": [1, 1, 2], "b": [10, 20, 30], "c": [10, 99, 30]})
     predicate = (pl.col("a") == pl.col("b")) & (pl.col("a") == pl.col("c"))
@@ -663,7 +667,7 @@ def test_several_equalities_sharing_a_left_column(engine: str) -> None:
 
 @pytest.mark.parametrize("engine", ENGINES)
 def test_equality_promoted_without_coalesce(
-    eq_frames: tuple[pl.LazyFrame, pl.LazyFrame], engine: str
+    eq_frames: tuple[pl.LazyFrame, pl.LazyFrame], engine: EngineType
 ) -> None:
     left, right = eq_frames
     predicate = pl.col("a") == pl.col("b")
@@ -679,7 +683,7 @@ def test_equality_promoted_without_coalesce(
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_equality_resolves_suffixed_output_column(engine: str) -> None:
+def test_equality_resolves_suffixed_output_column(engine: EngineType) -> None:
     """An output name can belong to a different column than it shares a name with."""
     left = pl.LazyFrame({"k": [1, 1], "v": [10, 20]})
     right = pl.LazyFrame({"v_right": [1, 1], "v": [10, 20]})
@@ -705,7 +709,7 @@ def test_equality_resolves_suffixed_output_column(engine: str) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_promoted_key_keeps_right_payload_in_merge_join(engine: str) -> None:
+def test_promoted_key_keeps_right_payload_in_merge_join(engine: EngineType) -> None:
     """Sorted inputs take the merge join, which coalesces by name."""
     left = pl.LazyFrame({"k": [1, 1, 2], "v": [10, 20, 30]}).sort("k", "v")
     right = pl.LazyFrame({"k": [1, 1, 2], "v": [10, 99, 30]}).sort("k", "v")
@@ -719,7 +723,7 @@ def test_promoted_key_keeps_right_payload_in_merge_join(engine: str) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_fallible_inside_list_eval_is_not_promoted(engine: str) -> None:
+def test_fallible_inside_list_eval_is_not_promoted(engine: EngineType) -> None:
     """A key is evaluated on every row, so a nested fallible cast must block it."""
     left = pl.LazyFrame({"k": [1, 2], "a": [["1"], ["bad"]]})
     right = pl.LazyFrame({"k": [1], "b": [[1]]})
@@ -748,7 +752,7 @@ def test_residual_not_native_when_order_is_preserved(maintain_order: str) -> Non
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_nondeterministic_equality_is_not_promoted(engine: str) -> None:
+def test_nondeterministic_equality_is_not_promoted(engine: EngineType) -> None:
     """A key is drawn once per input row; the filter draws once per candidate pair."""
     left = pl.LazyFrame({"k": [0, 1], "a": [list(range(10)), list(range(10, 20))]})
     right = pl.LazyFrame({"k": [0] * 10 + [1] * 10, "b": range(20)})
@@ -764,7 +768,7 @@ def test_nondeterministic_equality_is_not_promoted(engine: str) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_strict_regex_equality_is_not_promoted(engine: str) -> None:
+def test_strict_regex_equality_is_not_promoted(engine: EngineType) -> None:
     """An invalid pattern on an unmatched row must not be evaluated."""
     left = pl.LazyFrame({"k": [1, 2], "pat": ["x", "["]})
     right = pl.LazyFrame({"k": [1], "b": [True]})
@@ -777,7 +781,7 @@ def test_strict_regex_equality_is_not_promoted(engine: str) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_non_strict_cast_equality_is_promoted(engine: str) -> None:
+def test_non_strict_cast_equality_is_promoted(engine: EngineType) -> None:
     left = pl.LazyFrame({"k": [1, 1], "a": [10, 20]})
     right = pl.LazyFrame({"k": [1, 1], "b": [10, 99]})
     predicate = pl.col("a").cast(pl.Int32, strict=False) == pl.col("b").cast(
