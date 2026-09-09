@@ -1,23 +1,25 @@
 use std::collections::VecDeque;
-use std::sync::Arc;
 
-use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
 
 use super::compute_node_prelude::*;
-use crate::nodes::in_memory_source::InMemorySourceNode;
+use crate::morsel::SourceToken;
 
 // A lot of the code in this module is similar to that in `negative_slice`.
 
 /// The buffer is put in the in the enum rather than as state in the node itself to make illegal
 /// states impossible to represent: `Done` cannot accidentally leak data that way.
 enum ReverseState {
-    Buffering(VecDeque<SpillFrame>),
-    Emitting {
-        frames: VecDeque<SpillFrame>,
-        seq: MorselSeq,
-    },
+    Buffering(Buffer),
+    Emitting { buffer: Buffer, seq: MorselSeq },
     Done,
+}
+
+#[derive(Default)]
+struct Buffer {
+    frames: VecDeque<SpillFrame>,
+    total_len: usize,
 }
 
 pub struct ReverseNode {
@@ -28,7 +30,7 @@ pub struct ReverseNode {
 impl ReverseNode {
     pub fn new() -> ReverseNode {
         ReverseNode {
-            state: ReverseState::Buffering(VecDeque::new()),
+            state: ReverseState::Buffering(Buffer::default()),
             spill_ctx: MostRecentSpillContext::new("reverse".into()),
         }
     }
@@ -43,29 +45,33 @@ impl ComputeNode for ReverseNode {
         &mut self,
         recv: &mut [PortState],
         send: &mut [PortState],
-        state: &StreamingExecutionState,
+        _state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         // Stop streaming if downstream says it is done.
         if send[0] == PortState::Done {
             self.state = ReverseState::Done;
         }
+
+        // TODO: There must be a more elegant way to merge the matches! and match
+
         if matches!(
             (recv[0], &self.state),
             (PortState::Done, ReverseState::Buffering(_))
         ) {
             // Just received the last morsels.
             // Transition to becoming a source if there is anything to feed.
-            let ReverseState::Buffering(frames) =
+            let ReverseState::Buffering(buffer) =
                 core::mem::replace(&mut self.state, ReverseState::Done)
             else {
                 unreachable!()
             };
-            if !frames.is_empty() {
+            if buffer.total_len > 0 {
                 self.state = ReverseState::Emitting {
-                    frames,
+                    buffer,
                     seq: MorselSeq::default(),
                 }
             }
+            // setting self to 'done' is done later.
         }
 
         match &mut self.state {
@@ -73,12 +79,12 @@ impl ComputeNode for ReverseNode {
                 recv[0] = PortState::Ready;
                 send[0] = PortState::Blocked;
             },
-            ReverseState::Emitting { frames, seq: _ } => {
+            ReverseState::Emitting { buffer, seq: _ } => {
                 recv[0] = PortState::Done;
                 // InMemorySource has implemented a hack for compatibility with
                 // nodes downstream that require at least one input.
                 // Do we need to copy this?
-                send[0] = if frames.is_empty() {
+                send[0] = if buffer.total_len == 0 {
                     PortState::Done
                 } else {
                     PortState::Ready
@@ -98,9 +104,49 @@ impl ComputeNode for ReverseNode {
         scope: &'s TaskScope<'s, 'env>,
         recv_ports: &mut [Option<RecvPort<'_>>],
         send_ports: &mut [Option<SendPort<'_>>],
-        state: &'s StreamingExecutionState,
+        _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        todo!()
+        // Very similar to [super::negative_slice::NegativeSliceNode].
+        assert!(recv_ports.is_empty() && send_ports.len() == 1);
+        match &mut self.state {
+            ReverseState::Buffering(buffer) => {
+                let mut recv = recv_ports[0].take().unwrap().serial();
+                assert!(send_ports[0].is_none());
+                let spill_ctx = self.spill_ctx.clone();
+                join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+                    while let Ok(morsel) = recv.recv().await {
+                        buffer.total_len += morsel.height();
+                        let sf = morsel.into_sf();
+                        spill_ctx.register(&sf).await;
+                        buffer.frames.push_back(sf);
+                    }
+                    Ok(())
+                }));
+            },
+            ReverseState::Emitting { buffer, seq } => {
+                let mut sender = send_ports[0].take().unwrap().serial();
+                join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
+                    let source_token = SourceToken::new();
+                    let wait_group = WaitGroup::default();
+                    while let Some(sf) = buffer.frames.pop_back() {
+                        buffer.total_len -= sf.height();
+                        let df = sf.into_df().await.reverse();
+                        let mut morsel = Morsel::new_unregistered(df, *seq, source_token.clone());
+                        *seq = seq.successor();
+                        morsel.set_consume_token(wait_group.token());
+                        if sender.send(morsel).await.is_err() {
+                            break;
+                        }
+                        wait_group.wait().await;
+                        if source_token.stop_requested() {
+                            break;
+                        }
+                    }
+                    Ok(())
+                }));
+            },
+            ReverseState::Done => unreachable!(),
+        }
     }
 }
