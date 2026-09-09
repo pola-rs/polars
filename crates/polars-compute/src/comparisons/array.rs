@@ -105,7 +105,7 @@ fn fsl_compare_scalar(
     if width != rhs.len() || lhs.values().array_type() != rhs.array_type() {
         return repeated(mismatch, length);
     }
-    if width == 0 {
+    if width == 0 || length == 0 {
         return repeated(!mismatch, length);
     }
 
@@ -115,12 +115,9 @@ fn fsl_compare_scalar(
         return repeated(bit.get(0), length);
     }
 
-    // Every element's list is compared against the scalar's, which is read again for each.
-    let lhs = lhs.to_flat();
-    let values = lhs.as_array().values();
-    PlBitmap::from_iter((0..length).map(|i| {
-        let mut element = values.to_boxed();
-        element.slice(i * width, width);
-        condense(inner(&*element, rhs), 1, width, how).get(0)
-    }))
+    // A chunk that repeats the scalar's list holds it once and reads it for every element, which
+    // is what makes the comparison against it the one over a pair of chunks: a single kernel call
+    // over `length * width` values, rather than one call — and a bitmap of its own — per element.
+    let rhs = PlFixedSizeListArray::new_broadcast(rhs.to_boxed(), width, length, None);
+    fsl_compare_values(lhs, &rhs, how, inner, mismatch)
 }

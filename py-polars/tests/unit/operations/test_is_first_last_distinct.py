@@ -156,3 +156,39 @@ def test_is_first_last_distinct_all_null(dtypes: PolarsDataType) -> None:
     s = pl.Series([None, None, None], dtype=dtypes)
     assert s.is_first_distinct().to_list() == [True, False, False]
     assert s.is_last_distinct().to_list() == [False, False, True]
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        (7, pl.Int64),
+        (7, pl.Int32),
+        (2.5, pl.Float64),
+        (True, pl.Boolean),
+        ("hello", pl.String),
+        (b"hello", pl.Binary),
+        (7, pl.Datetime("us")),
+        (None, pl.Int64),
+        (None, pl.String),
+    ],
+)
+def test_distinct_of_a_repeated_element(value: Any, dtype: PolarsDataType) -> None:
+    # A chunk that repeats a single element answers the whole `distinct` family without
+    # one element being hashed, so the answers must match the ones read off a chunk that
+    # holds every element in a slot of its own.
+    for length in (1, 2, 5):
+        flat = pl.Series("a", [value] * length, dtype=dtype).to_frame()
+        repeated = (
+            pl.select(pl.repeat(value, length, dtype=dtype))
+            .to_series()
+            .rename("a")
+            .to_frame()
+        )
+
+        for expr in (
+            pl.col("a").is_first_distinct(),
+            pl.col("a").is_last_distinct(),
+            pl.col("a").is_unique(),
+            pl.col("a").is_duplicated(),
+        ):
+            assert_frame_equal(repeated.select(expr), flat.select(expr))

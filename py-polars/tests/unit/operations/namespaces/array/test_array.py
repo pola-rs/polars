@@ -26,6 +26,40 @@ def test_arr_min_max() -> None:
     assert s_with_null.arr.min().to_list() == [2, None, 3]
 
 
+def test_arr_reduce_null_element_with_values() -> None:
+    # An element can be null while the values under it are not, which is what a gather
+    # with a null index and a broadcast masked by `when` both leave behind: a null
+    # element holds no values to read, whatever the values under it say.
+    gathered = pl.Series(
+        "a", [[1, 2], [3, 4], [5, 6]], dtype=pl.Array(pl.Int64, 2)
+    ).gather([0, None, 2])
+    broadcast = pl.select(
+        pl.when(pl.Series("m", [True, False, True])).then(
+            pl.repeat([1, 2], 3, dtype=pl.Array(pl.Int64, 2))
+        )
+    ).to_series()
+
+    for s in (gathered, broadcast):
+        first_value = 1 if s is broadcast else 5
+        last_value = 2 if s is broadcast else 6
+        assert s.arr.min().to_list() == [1, None, first_value]
+        assert s.arr.max().to_list() == [2, None, last_value]
+        assert s.arr.first().to_list() == [1, None, first_value]
+        assert s.arr.last().to_list() == [2, None, last_value]
+        assert s.arr.get(0, null_on_oob=True).to_list() == [1, None, first_value]
+        assert s.arr.get(-1, null_on_oob=True).to_list() == [2, None, last_value]
+        assert s.arr.get(
+            pl.Series([0, 0, 1], dtype=pl.Int64), null_on_oob=True
+        ).to_list() == [1, None, last_value]
+
+
+def test_arr_reduce_zero_width() -> None:
+    # An element of no values at all reduces to nothing.
+    s = pl.Series("a", [[], []], dtype=pl.Array(pl.Int64, 0))
+    assert s.arr.min().to_list() == [None, None]
+    assert s.arr.max().to_list() == [None, None]
+
+
 def test_arr_mean_median_var_std() -> None:
     s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
     assert s.arr.mean().to_list() == [1.5, 3.5]

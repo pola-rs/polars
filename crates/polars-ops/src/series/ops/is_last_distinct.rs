@@ -8,6 +8,8 @@ use polars_core::utils::NoNull;
 use polars_core::with_match_physical_float_polars_type;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
+use super::distinct::{only, repeated_element_len};
+
 pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
     // fast path.
     if s.is_empty() {
@@ -71,6 +73,11 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
 }
 
 fn is_last_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
+    // The last element of a chunk that repeats a single one is the only one distinct in it.
+    if let Some(length) = repeated_element_len(ca) {
+        return only(ca.name().clone(), length, length - 1);
+    }
+
     let mut out = MutableBitmap::with_capacity(ca.len());
     out.extend_constant(ca.len(), false);
 
@@ -115,6 +122,11 @@ fn is_last_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
 }
 
 fn is_last_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
+    // The last element of a chunk that repeats a single one is the only one distinct in it.
+    if let Some(length) = repeated_element_len(ca) {
+        return only(ca.name().clone(), length, length - 1);
+    }
+
     let tmp = ca.rechunk();
     let arr = tmp.downcast_as_array();
     let mut unique = PlHashSet::new();
@@ -132,6 +144,11 @@ where
     T::Native: TotalHash + TotalEq + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
+    // The last element of a chunk that repeats a single one is the only one distinct in it.
+    if let Some(length) = repeated_element_len(ca) {
+        return only(ca.name().clone(), length, length - 1);
+    }
+
     let tmp = ca.rechunk();
     let arr = tmp.downcast_as_array();
     let mut unique = PlHashSet::new();

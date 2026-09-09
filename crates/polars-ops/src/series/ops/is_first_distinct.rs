@@ -6,12 +6,20 @@ use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_core::with_match_physical_float_polars_type;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
+
+use super::distinct::{only, repeated_element_len};
+
 fn is_first_distinct_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
 where
     T: PolarsNumericType,
     T::Native: TotalHash + TotalEq + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
+    // The first element of a chunk that repeats a single one is the only one distinct in it.
+    if let Some(length) = repeated_element_len(ca) {
+        return only(ca.name().clone(), length, 0);
+    }
+
     let mut unique = PlHashSet::new();
     let chunks = ca.downcast_iter().map(|arr| -> PlBooleanArray {
         arr.into_iter()
@@ -23,6 +31,11 @@ where
 }
 
 fn is_first_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
+    // The first element of a chunk that repeats a single one is the only one distinct in it.
+    if let Some(length) = repeated_element_len(ca) {
+        return only(ca.name().clone(), length, 0);
+    }
+
     let mut unique = PlHashSet::new();
     let chunks = ca.downcast_iter().map(|arr| -> PlBooleanArray {
         arr.into_iter()

@@ -6,6 +6,8 @@ use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
+use super::distinct::repeated_element_len;
+
 // If invert is true then this is an `is_duplicated`.
 fn is_unique_ca<'a, T>(ca: &'a ChunkedArray<T>, invert: bool) -> BooleanChunked
 where
@@ -13,6 +15,12 @@ where
     T::Physical<'a>: TotalHash + TotalEq + Copy + ToTotalOrd,
     <Option<T::Physical<'a>> as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
+    // Every element of a chunk that repeats a single one occurs as often as the chunk is long, so
+    // none of them occurs just once.
+    if let Some(length) = repeated_element_len(ca) {
+        return BooleanChunked::full(ca.name().clone(), invert, length);
+    }
+
     let len = ca.len();
     let mut idx_key = PlHashMap::new();
 

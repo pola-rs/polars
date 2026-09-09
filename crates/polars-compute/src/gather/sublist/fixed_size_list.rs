@@ -3,7 +3,7 @@
 use arrow::legacy::index::IndexToUsize;
 use polars_array::bitmap::combine_validities_and;
 use polars_array::builder::new_full_null_like;
-use polars_array::{PlArray, PlFixedSizeListArray, PlPrimitiveArray};
+use polars_array::{PlArray, PlBitmapRef, PlFixedSizeListArray, PlPrimitiveArray};
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::IdxSize;
 
@@ -13,6 +13,19 @@ use crate::gather::take_unchecked;
 #[inline]
 fn position_in(index: i64, width: usize) -> Option<usize> {
     index.negative_to_usize(width)
+}
+
+/// `out` masked off wherever `mask` leaves an element null, on top of the mask it carries itself.
+///
+/// An element that is null holds no values, whatever the values under it read as, so it holds no
+/// value at any index either.
+fn masked_off(out: Box<dyn PlArray>, mask: Option<PlBitmapRef<'_>>) -> Box<dyn PlArray> {
+    if mask.is_none() {
+        return out;
+    }
+
+    let validity = combine_validities_and(out.validity(), mask);
+    out.with_validity(validity)
 }
 
 /// Returns the value at `index` within every element of `arr`.
@@ -38,7 +51,8 @@ pub fn sub_fixed_size_list_get_literal(
     // value at `offset` within that one element is the answer at every element in turn, in `O(1)`.
     if let Some(values) = arr.scalar_value_ignore_validity() {
         // SAFETY: `offset` is within the width, which is how many values the one element holds.
-        return Ok(unsafe { values.new_from_index_unchecked(offset, arr.len()) });
+        let out = unsafe { values.new_from_index_unchecked(offset, arr.len()) };
+        return Ok(masked_off(out, arr.validity()));
     }
 
     let indices = (0..arr.len())
@@ -47,7 +61,8 @@ pub fn sub_fixed_size_list_get_literal(
         .collect::<Vec<_>>();
 
     // SAFETY: every index lands within the element it is read for.
-    Ok(unsafe { take_unchecked(arr.values(), &PlPrimitiveArray::from_vec(indices)) })
+    let out = unsafe { take_unchecked(arr.values(), &PlPrimitiveArray::from_vec(indices)) };
+    Ok(masked_off(out, arr.validity()))
 }
 
 /// Returns the value at the index `index` holds for it within every element of `arr`.
@@ -105,5 +120,6 @@ pub fn sub_fixed_size_list_get(
     }
 
     // SAFETY: every index lands within the element it is read for.
-    Ok(unsafe { take_unchecked(arr.values(), &indices) })
+    let out = unsafe { take_unchecked(arr.values(), &indices) };
+    Ok(masked_off(out, arr.validity()))
 }
