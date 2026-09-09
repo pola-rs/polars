@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::Schema;
 use polars_ops::frame::JoinArgs;
-use polars_utils::aliases::{PlHashSet, PlIndexMap};
+use polars_utils::aliases::{PlIndexMap, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::pl_str::PlSmallStr;
@@ -27,7 +27,7 @@ pub(super) fn fuse_residual_predicates(
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<()> {
     let mut stack: UnitVec<Node> = unitvec![root];
-    let mut seen = PlHashSet::default();
+    let mut seen = PlIndexSet::default();
 
     while let Some(node) = stack.pop() {
         if !seen.insert(node) {
@@ -102,12 +102,12 @@ fn try_fuse(
 
     let right_names = right_output_to_input(&left_schema, &right_schema, &options, expr_arena)?;
 
-    let mut left_key_names: PlHashSet<PlSmallStr> = options
+    let mut left_key_names: PlIndexSet<PlSmallStr> = options
         .options
         .left_on()
         .map(|key| key.output_name().clone())
         .collect();
-    let mut right_key_names: PlHashSet<PlSmallStr> = options
+    let mut right_key_names: PlIndexSet<PlSmallStr> = options
         .options
         .right_on()
         .map(|key| key.output_name().clone())
@@ -292,8 +292,8 @@ fn name_key_pair(
     args: &JoinArgs,
     left_schema: &Schema,
     right_schema: &Schema,
-    left_key_names: &mut PlHashSet<PlSmallStr>,
-    right_key_names: &mut PlHashSet<PlSmallStr>,
+    left_key_names: &mut PlIndexSet<PlSmallStr>,
+    right_key_names: &mut PlIndexSet<PlSmallStr>,
 ) -> (ExprIR, ExprIR) {
     if !left_key_names.insert(left_key.output_name().clone()) {
         let name = unique_key_name(left_key.output_name(), left_key_names, left_schema);
@@ -312,7 +312,7 @@ fn name_key_pair(
     (left_key, right_key)
 }
 
-fn unique_key_name(base: &str, taken: &PlHashSet<PlSmallStr>, schema: &Schema) -> PlSmallStr {
+fn unique_key_name(base: &str, taken: &PlIndexSet<PlSmallStr>, schema: &Schema) -> PlSmallStr {
     (0..)
         .map(|i| format_pl_smallstr!("__POLARS_JOIN_KEY_{i}_{base}"))
         .find(|name| !taken.contains(name) && !schema.contains(name))
@@ -329,7 +329,7 @@ fn right_output_to_input(
     options: &JoinOptionsIR,
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<PlIndexMap<PlSmallStr, PlSmallStr>> {
-    let mut coalesced: PlHashSet<PlSmallStr> = PlHashSet::default();
+    let mut coalesced: PlIndexSet<PlSmallStr> = PlIndexSet::default();
     if options.args.should_coalesce() {
         for key in options.options.right_on() {
             coalesced.insert(key.field(right_schema, expr_arena)?.name);

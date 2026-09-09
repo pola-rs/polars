@@ -147,10 +147,7 @@ impl ResidualPredicate {
                 None => mask.values().clone(),
             };
 
-            // SAFETY: `keep` holds one bit per pair in the batch, so `start + i < end`,
-            // and `end <= n`. `kept` starts the batch at most at `start` and advances once
-            // per surviving pair, so `kept <= start + i`: the write trails the read and
-            // never clobbers a pair still to be inspected.
+            // SAFETY: We are in bounds
             for i in keep.true_idx_iter() {
                 debug_assert!(start + i < end);
                 debug_assert!(kept <= start + i);
