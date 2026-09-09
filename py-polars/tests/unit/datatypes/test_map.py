@@ -1204,6 +1204,8 @@ def test_map_to_numpy_and_rows() -> None:
         lambda s: s.to_frame().rows(),
         lambda s: s.to_frame().row(0),
         lambda s: s.to_frame().to_dicts(),
+        lambda s: s.to_frame().map_rows(lambda row: row),
+        lambda s: s.to_frame().map_rows(lambda row: row, return_dtype=pl.Int64),
     ],
 )
 def test_map_nested_key_conversion_is_an_error_not_a_panic(
