@@ -465,6 +465,7 @@ where
         rechunk: _,
         cache: _,
         glob: _,
+        expand_paths: _,
         hidden_file_prefix: _,
         projection: _,
         column_mapping: _,

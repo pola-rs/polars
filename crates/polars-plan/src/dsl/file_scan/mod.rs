@@ -569,6 +569,7 @@ pub struct UnifiedScanArgs {
     pub rechunk: bool,
     pub cache: bool,
     pub glob: bool,
+    pub expand_paths: bool,
     /// Files with these prefixes will not be read.
     pub hidden_file_prefix: Option<Arc<[PlSmallStr]>>,
 
@@ -621,6 +622,7 @@ impl Default for UnifiedScanArgs {
             rechunk: false,
             cache: false,
             glob: true,
+            expand_paths: true,
             hidden_file_prefix: None,
             projection: None,
             column_mapping: None,

@@ -104,6 +104,7 @@ def read_parquet(
     memory_map: bool = True,
     include_file_paths: str | None = None,
     missing_columns: Literal["insert", "raise"] = "raise",
+    _expand_paths: bool = True,
 ) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
@@ -286,6 +287,7 @@ def read_parquet(
         glob=glob,
         include_file_paths=include_file_paths,
         missing_columns=missing_columns,
+        _expand_paths=_expand_paths,
     )
 
     if columns is not None:
@@ -521,6 +523,7 @@ def scan_parquet(
     missing_columns: Literal["insert", "raise"] = "raise",
     extra_columns: Literal["ignore", "raise"] = "raise",
     cast_options: ScanCastOptions | None = None,
+    _expand_paths: bool = True,
     _column_mapping: ColumnMapping | None = None,
     _default_values: DefaultFieldValues | None = None,
     _deletion_files: DeletionFiles | None = None,
@@ -712,6 +715,7 @@ def scan_parquet(
             missing_columns=missing_columns,
             include_file_paths=include_file_paths,
             glob=glob,
+            expand_paths=_expand_paths,
             hidden_file_prefix=(
                 [hidden_file_prefix]
                 if isinstance(hidden_file_prefix, str)

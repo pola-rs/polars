@@ -325,6 +325,7 @@ fn expand_python_dataset(
                 rechunk,
                 cache,
                 glob: _,
+                expand_paths: _,
                 hidden_file_prefix: _hidden_file_prefix @ None,
                 projection: _projection @ None,
                 column_mapping,
