@@ -21,13 +21,13 @@ def assert_not_fused(lf: pl.LazyFrame) -> None:
     assert "RESIDUAL" not in lf.explain()
 
 
-def assert_native_streaming(lf: pl.LazyFrame) -> None:
-    """The residual reached the streaming hash join rather than a fallback filter."""
+def assert_residual_native(lf: pl.LazyFrame, native: bool = True) -> None:
+    """Whether the residual reached the streaming hash join or a fallback filter."""
     plan = lf.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     assert plan is not None
     assert "equi-join" in plan
-    assert "residual:" in plan
-    assert "filter" not in plan
+    assert ("residual:" in plan) == native
+    assert ("filter" in plan) != native
 
 
 def reference(
@@ -77,7 +77,7 @@ def test_residual_native_streaming_path(
 ) -> None:
     left, right = frames
     q = left.join(right, on="k").filter(pl.col("b") < pl.col("a"))
-    assert_native_streaming(q)
+    assert_residual_native(q)
 
 
 @pytest.mark.parametrize("engine", ENGINES)
@@ -740,11 +740,7 @@ def test_residual_not_native_when_order_is_preserved(maintain_order: str) -> Non
     predicate = pl.col("a") < pl.col("b")
     q = left.join(right, on="k", maintain_order=maintain_order).filter(predicate)  # type: ignore[arg-type]
 
-    plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
-    assert plan is not None
-    assert "residual:" not in plan
-    assert "filter" in plan
-
+    assert_residual_native(q, native=False)
     assert_frame_equal(
         q.collect(engine="streaming"),
         reference(left, right, predicate, on="k", maintain_order=maintain_order),
@@ -815,7 +811,7 @@ def test_residual_gathers_from_a_multi_chunk_payload() -> None:
     predicate = pl.col("a") < pl.col("b")
     q = left.lazy().join(right.lazy(), on="k").filter(predicate)
 
-    assert_native_streaming(q)
+    assert_residual_native(q)
     assert_frame_equal(
         q.collect(engine="streaming"),
         reference(left.lazy(), right.lazy(), predicate, on="k"),

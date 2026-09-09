@@ -12,6 +12,7 @@ use polars_utils::{format_pl_smallstr, unitvec};
 use super::join_utils::ExprOrigin;
 use super::predicate_pushdown::utils::{combine_by_and, contains_dynamic_pred};
 use crate::dsl::Operator;
+use crate::plans::iterator::ArenaExprIter;
 use crate::plans::options::JoinTypeOptionsIR;
 use crate::plans::{
     AExpr, ExprIR, ExprPushdownGroup, IR, JoinOptionsIR, JoinType, MintermIter, OutputName,
@@ -207,10 +208,6 @@ fn try_fuse(
     Ok(())
 }
 
-/// Rewrite a both-sided equality minterm into a join key pair, if it is one.
-///
-/// Keys are returned in their input namespaces, renamed where a coalescing join would
-/// otherwise drop the right payload column, or where two keys would share a name.
 /// Whether an expression is safe to evaluate on every input row.
 ///
 /// A promoted key runs on all rows of its input, not only on the candidate pairs the
@@ -218,24 +215,17 @@ fn try_fuse(
 /// excludes. Fallibility is tracked per known function and does not cover every way an
 /// expression can raise, so this accepts only operations that cannot.
 fn is_promotable(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-    let mut stack: UnitVec<Node> = unitvec![node];
-
-    while let Some(node) = stack.pop() {
-        let ae = expr_arena.get(node);
-        let total = match ae {
-            AExpr::Column(_) | AExpr::Literal(_) => true,
-            AExpr::Cast { options, .. } => !options.is_strict(),
-            _ => false,
-        };
-        if !total {
-            return false;
-        }
-        ae.children_rev(&mut stack);
-    }
-
-    true
+    expr_arena.iter(node).all(|(_, ae)| match ae {
+        AExpr::Column(_) | AExpr::Literal(_) => true,
+        AExpr::Cast { options, .. } => !options.is_strict(),
+        _ => false,
+    })
 }
 
+/// Rewrite a both-sided equality minterm into a join key pair, if it is one.
+///
+/// Keys are returned in their input namespaces, renamed where a coalescing join would
+/// otherwise drop the right payload column, or where two keys would share a name.
 fn try_as_key_pair(
     minterm: Node,
     expr_arena: &mut Arena<AExpr>,

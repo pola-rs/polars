@@ -158,24 +158,19 @@ pub fn is_prop<P: Fn(&AExpr) -> bool>(
 ///
 /// `inputs_rev` skips these subtrees, so a walk over inputs alone never sees them.
 fn evaluates_fallible(ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
-    let mut stack: UnitVec<Node> = unitvec![];
-
-    match ae {
-        AExpr::Eval { evaluation, .. } => stack.push(*evaluation),
+    let roots: UnitVec<Node> = match ae {
+        AExpr::Eval { evaluation, .. } => unitvec![*evaluation],
         #[cfg(feature = "dtype-struct")]
-        AExpr::StructEval { evaluation, .. } => stack.extend(evaluation.iter().map(ExprIR::node)),
+        AExpr::StructEval { evaluation, .. } => evaluation.iter().map(ExprIR::node).collect(),
         _ => return false,
-    }
+    };
 
-    while let Some(node) = stack.pop() {
-        let ae = expr_arena.get(node);
-        if ae.is_fallible_top_level(expr_arena) || evaluates_fallible(ae, expr_arena) {
-            return true;
-        }
-        ae.children_rev(&mut stack);
-    }
-
-    false
+    // `iter` walks children rather than inputs, so it descends into nested evaluations.
+    roots.iter().any(|root| {
+        expr_arena
+            .iter(*root)
+            .any(|(_, ae)| ae.is_fallible_top_level(expr_arena))
+    })
 }
 
 /// Checks if the top-level expression node is elementwise. If this is the case, then `stack` will

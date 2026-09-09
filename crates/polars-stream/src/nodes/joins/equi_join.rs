@@ -158,6 +158,14 @@ impl ResidualPredicate {
     }
 }
 
+/// Rechunks on the first gather from `payload`, which a morsel with no matches skips.
+fn rechunk_once(payload: &mut DataFrame, rechunked: &mut bool) {
+    if !*rechunked {
+        payload.rechunk_mut();
+        *rechunked = true;
+    }
+}
+
 struct EquiJoinParams {
     left_is_build: Option<bool>,
     preserve_order_build: bool,
@@ -961,7 +969,7 @@ impl ProbeState {
             let hash_keys =
                 select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
             let mut payload = select_payload(df, payload_selector);
-            let mut payload_rechunked = false; // We don't eagerly rechunk because there might be no matches.
+            let mut payload_rechunked = false;
             let mut total_matches = 0;
 
             // Use selectivity estimate to reserve for morsel builders.
@@ -1045,10 +1053,7 @@ impl ProbeState {
                             if probe_match.len() >= probe_limit as usize
                                 || probe_group_start == probe_partitions.len()
                             {
-                                if !payload_rechunked {
-                                    payload.rechunk_mut();
-                                    payload_rechunked = true;
-                                }
+                                rechunk_once(&mut payload, &mut payload_rechunked);
                                 probe_out.gather_extend(
                                     &payload,
                                     &probe_match,
@@ -1098,10 +1103,7 @@ impl ProbeState {
                             ) as usize;
 
                             if let Some(residual) = &params.residual {
-                                if !payload_rechunked {
-                                    payload.rechunk_mut();
-                                    payload_rechunked = true;
-                                }
+                                rechunk_once(&mut payload, &mut payload_rechunked);
                                 residual
                                     .retain_matches(
                                         params.left_is_build.unwrap(),
@@ -1135,10 +1137,7 @@ impl ProbeState {
                             };
 
                             if probe_match.len() >= probe_limit as usize {
-                                if !payload_rechunked {
-                                    payload.rechunk_mut();
-                                    payload_rechunked = true;
-                                }
+                                rechunk_once(&mut payload, &mut payload_rechunked);
                                 probe_out.gather_extend(
                                     &payload,
                                     &probe_match,
@@ -1160,9 +1159,7 @@ impl ProbeState {
                 }
 
                 if !probe_match.is_empty() {
-                    if !payload_rechunked {
-                        payload.rechunk_mut();
-                    }
+                    rechunk_once(&mut payload, &mut payload_rechunked);
                     probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
                     probe_match.clear();
                     let out_morsel = new_morsel(&mut build_out, &mut probe_out);
