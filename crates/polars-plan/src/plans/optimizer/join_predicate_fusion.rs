@@ -21,7 +21,7 @@ use crate::plans::{
 use crate::utils::{aexpr_to_leaf_names_iter, rename_columns};
 
 /// Fuse `Filter(join)` predicates that span both inputs into the join's match condition.
-pub(super) fn fuse_residual_predicates(
+pub(super) fn fuse_predicates(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
@@ -41,14 +41,14 @@ pub(super) fn fuse_residual_predicates(
     Ok(())
 }
 
-/// A residual is only sound on an inner equi join, and a slice must stay above the filter
+/// A fused predicate is only sound on an inner equi join, and a slice must stay above the filter
 /// that feeds it.
 fn is_fusable_join(options: &JoinOptionsIR) -> bool {
     matches!(options.args.how, JoinType::Inner)
         && options.args.slice.is_none()
         && matches!(
             &options.options,
-            JoinTypeOptionsIR::Equi { on, residual: None } if !on.is_empty()
+            JoinTypeOptionsIR::Equi { on, fused_predicate: None } if !on.is_empty()
         )
 }
 
@@ -133,7 +133,7 @@ fn try_fuse(
             continue;
         }
 
-        // An equality is cheaper as a key than as a residual.
+        // An equality is cheaper as a key than as a fused predicate.
         if let Some(pair) = as_key_pair(
             minterm,
             expr_arena,
@@ -174,7 +174,7 @@ fn try_fuse(
     if let Some(fused) = fused {
         options_mut
             .options
-            .set_residual(ExprIR::from_node(fused, expr_arena));
+            .set_fused_predicate(ExprIR::from_node(fused, expr_arena));
     }
     let join = IR::Join {
         input_left,

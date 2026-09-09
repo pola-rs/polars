@@ -631,9 +631,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                             JoinType::Cross if options.is_non_equi() => {
                                 return Err(PyNotImplementedError::new_err("nested loop join"));
                             },
-                            _ if options.options.has_residual() => {
+                            _ if options.options.has_fused_predicate() => {
                                 return Err(PyNotImplementedError::new_err(
-                                    "join with a residual predicate",
+                                    "join with a fused predicate",
                                 ));
                             },
                             _ => name.into_any().unbind(),

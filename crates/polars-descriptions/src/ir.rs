@@ -52,7 +52,7 @@ pub enum IrPropsDescription {
         how: String,
         left_on: Vec<String>,
         right_on: Vec<String>,
-        residual: Option<Vec<String>>,
+        fused_predicate: Option<Vec<String>>,
         nulls_equal: bool,
         coalesce: String,
         maintain_order: String,

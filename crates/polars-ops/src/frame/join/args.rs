@@ -248,7 +248,7 @@ pub enum JoinTypeOptions {
     IEJoin(IEJoinOptions),
     Cross(CrossJoinOptions),
     /// A predicate fused into an equi join's match condition, on top of its keys.
-    Residual(CrossJoinOptions),
+    FusedPredicate(CrossJoinOptions),
 }
 
 impl Display for JoinType {

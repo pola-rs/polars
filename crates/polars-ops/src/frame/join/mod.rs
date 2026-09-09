@@ -140,9 +140,9 @@ pub trait DataFrameJoinOps: IntoDf {
         let left_df = self.to_df();
 
         // This join has no per-candidate match condition, so it filters after the fact.
-        if let Some(JoinTypeOptions::Residual(residual_options)) = &options {
+        if let Some(JoinTypeOptions::FusedPredicate(fused_options)) = &options {
             debug_assert!(args.slice.is_none());
-            let predicate = residual_options.predicate.clone();
+            let predicate = fused_options.predicate.clone();
             let joined = self._join_impl(
                 other,
                 selected_left,

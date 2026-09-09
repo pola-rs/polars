@@ -1153,7 +1153,7 @@ fn to_graph_rec<'a>(
             left_on,
             right_on,
             args,
-            residual: _,
+            fused_predicate: _,
         }
         | SemiAntiJoin {
             input_left,
@@ -1229,24 +1229,27 @@ fn to_graph_rec<'a>(
                         (right_input_key, input_right.port),
                     ],
                 ),
-                EquiJoin { ref residual, .. } => {
+                EquiJoin {
+                    ref fused_predicate,
+                    ..
+                } => {
                     // Compiled against a narrow frame of exactly the columns it reads, in
                     // the order the node gathers them.
-                    let residual = residual
+                    let fused_predicate = fused_predicate
                         .as_ref()
-                        .map(|residual| {
+                        .map(|fused_predicate| {
                             let mut names =
-                                aexpr_to_leaf_names_iter(residual.node(), ctx.expr_arena)
+                                aexpr_to_leaf_names_iter(fused_predicate.node(), ctx.expr_arena)
                                     .cloned()
                                     .collect::<Vec<_>>();
                             names.sort_unstable();
                             names.dedup();
 
-                            let residual_schema =
+                            let fused_predicate_schema =
                                 Arc::new(output_schema.try_project(names.iter())?);
                             PolarsResult::Ok((
-                                create_stream_expr(residual, ctx, &residual_schema)?,
-                                residual_schema,
+                                create_stream_expr(fused_predicate, ctx, &fused_predicate_schema)?,
+                                fused_predicate_schema,
                             ))
                         })
                         .transpose()?;
@@ -1261,7 +1264,7 @@ fn to_graph_rec<'a>(
                             output_schema,
                             left_key_selectors,
                             right_key_selectors,
-                            residual,
+                            fused_predicate,
                             args,
                             ctx.num_pipelines,
                         )?,

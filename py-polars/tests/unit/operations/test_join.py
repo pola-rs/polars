@@ -1686,7 +1686,7 @@ def test_join_where_predicate_type_coercion_21009() -> None:
 
     plan = q1.explain().splitlines()
     assert plan[0].strip().startswith("INNER JOIN")
-    assert plan[1].strip().startswith("RESIDUAL")
+    assert plan[1].strip().startswith("FUSED PREDICATE")
 
     q2 = left_frame.join_where(
         right_frame,
@@ -1696,7 +1696,7 @@ def test_join_where_predicate_type_coercion_21009() -> None:
 
     plan = q2.explain().splitlines()
     assert plan[0].strip().startswith("INNER JOIN")
-    assert plan[1].strip().startswith("RESIDUAL")
+    assert plan[1].strip().startswith("FUSED PREDICATE")
 
     assert_frame_equal(q1.collect(), q2.collect())
 
@@ -2649,7 +2649,7 @@ def test_join_filter_pushdown_inner_join() -> None:
         'LEFT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("a"), col("b").alias("__POLARS_JOIN_KEY_0_b")]',
     ]
-    assert "RESIDUAL" not in plan
+    assert "FUSED PREDICATE" not in plan
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)

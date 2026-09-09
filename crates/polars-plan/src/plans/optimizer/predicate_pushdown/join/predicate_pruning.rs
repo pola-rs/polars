@@ -566,7 +566,7 @@ pub fn try_rewrite_join_type(
         );
         // Important
         assert!(
-            matches!(existing, JoinTypeOptionsIR::Equi { ref on, residual: None } if on.is_empty())
+            matches!(existing, JoinTypeOptionsIR::Equi { ref on, fused_predicate: None } if on.is_empty())
         );
 
         Ok(())
@@ -1082,7 +1082,7 @@ fn try_rewrite_outer_join_algorithm(
         JoinTypeOptionsIR::CrossAndFilter { predicate },
     );
     assert!(
-        matches!(existing, JoinTypeOptionsIR::Equi { ref on, residual: None } if on.is_empty())
+        matches!(existing, JoinTypeOptionsIR::Equi { ref on, fused_predicate: None } if on.is_empty())
     );
     Ok(())
 }

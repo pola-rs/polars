@@ -248,13 +248,17 @@ impl<'a> IRDisplay<'a> {
                     write!(f, "\n{:indent$}END {name} JOIN", "")
                 } else {
                     let how = &options.args.how;
-                    let residual = match options.options.residual() {
-                        Some(residual) => {
-                            format!("\n{:indent$}RESIDUAL: {}", "", self.display_expr(residual))
+                    let fused_predicate = match options.options.fused_predicate() {
+                        Some(fused_predicate) => {
+                            format!(
+                                "\n{:indent$}FUSED PREDICATE: {}",
+                                "",
+                                self.display_expr(fused_predicate)
+                            )
                         },
                         None => String::new(),
                     };
-                    write!(f, "{:indent$}{how} JOIN:{build_side}{residual}", "")?;
+                    write!(f, "{:indent$}{how} JOIN:{build_side}{fused_predicate}", "")?;
                     write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
                     self.with_root(*input_left)
                         ._format(f, sub_indent, seen_caches)?;
@@ -1056,9 +1060,9 @@ pub fn write_ir_non_recursive(
                 write!(f, "{:indent$}{how} JOIN", "")?;
                 write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
                 write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on}", "")?;
-                if let Some(residual) = options.options.residual() {
-                    let residual = residual.display(expr_arena);
-                    write!(f, "\n{:indent$}RESIDUAL: {residual}", "")?;
+                if let Some(fused_predicate) = options.options.fused_predicate() {
+                    let fused_predicate = fused_predicate.display(expr_arena);
+                    write!(f, "\n{:indent$}FUSED PREDICATE: {fused_predicate}", "")?;
                 }
             }
 

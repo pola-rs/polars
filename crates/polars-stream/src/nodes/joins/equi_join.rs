@@ -32,27 +32,27 @@ use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
-/// Where one of the residual's input columns is found at probe time.
-struct ResidualColumn {
+/// Where one of the fused predicate's input columns is found at probe time.
+struct FusedColumn {
     is_left: bool,
     /// Index into that side's payload.
     index: usize,
 }
 
 /// One side of the candidate pairs: the rows to gather from, and the indices into them.
-struct ResidualSide<'a> {
+struct MatchSide<'a> {
     payload: &'a DataFrame,
     matches: &'a mut [IdxSize],
 }
 
 /// A match condition on top of the equi keys, applied to candidate pairs.
-struct ResidualPredicate {
+struct FusedPredicate {
     expr: StreamExpr,
     /// The columns the predicate reads, in the order it was compiled against.
-    columns: Vec<ResidualColumn>,
+    columns: Vec<FusedColumn>,
 }
 
-impl ResidualPredicate {
+impl FusedPredicate {
     fn new(
         expr: StreamExpr,
         schema: &Schema,
@@ -64,19 +64,19 @@ impl ResidualPredicate {
             .map(|name| {
                 // Payload schemas are keyed by output name.
                 let column = if let Some(index) = left_payload_schema.index_of(name) {
-                    ResidualColumn {
+                    FusedColumn {
                         is_left: true,
                         index,
                     }
                 } else if let Some(index) = right_payload_schema.index_of(name) {
-                    ResidualColumn {
+                    FusedColumn {
                         is_left: false,
                         index,
                     }
                 } else {
                     polars_bail!(
                         ColumnNotFound:
-                        "join residual reads '{name}', which the join does not output"
+                        "fused predicate reads '{name}', which the join does not output"
                     )
                 };
                 Ok(column)
@@ -93,15 +93,15 @@ impl ResidualPredicate {
     async fn retain_matches(
         &self,
         left_is_build: bool,
-        build: ResidualSide<'_>,
-        probe: ResidualSide<'_>,
+        build: MatchSide<'_>,
+        probe: MatchSide<'_>,
         state: &ExecutionState,
     ) -> PolarsResult<usize> {
-        let ResidualSide {
+        let MatchSide {
             payload: build_payload,
             matches: build_match,
         } = build;
-        let ResidualSide {
+        let MatchSide {
             payload: probe_payload,
             matches: probe_match,
         } = probe;
@@ -189,7 +189,7 @@ struct EquiJoinParams {
     left_payload_schema: Arc<Schema>,
     right_payload_schema: Arc<Schema>,
     args: JoinArgs,
-    residual: Option<ResidualPredicate>,
+    fused_predicate: Option<FusedPredicate>,
     random_state: PlRandomState,
     sample_limit: usize,
 }
@@ -942,7 +942,7 @@ impl ProbeState {
         let probe_limit = get_ideal_morsel_size() as IdxSize;
         let mark_matches = params.emit_unmatched_build();
         let emit_unmatched = params.emit_unmatched_probe();
-        assert!(params.residual.is_none() || (!mark_matches && !emit_unmatched));
+        assert!(params.fused_predicate.is_none() || (!mark_matches && !emit_unmatched));
 
         let (key_selectors, payload_selector, build_payload_schema, probe_payload_schema);
         if params.left_is_build.unwrap() {
@@ -1110,18 +1110,18 @@ impl ProbeState {
                                 matches_before_limit,
                             ) as usize;
 
-                            if let Some(residual) = &params.residual
+                            if let Some(fused_predicate) = &params.fused_predicate
                                 && !table_match.is_empty()
                             {
                                 rechunk_once(&mut payload, &mut payload_rechunked);
-                                let kept = residual
+                                let kept = fused_predicate
                                     .retain_matches(
                                         params.left_is_build.unwrap(),
-                                        ResidualSide {
+                                        MatchSide {
                                             payload: &p.payload,
                                             matches: &mut table_match,
                                         },
-                                        ResidualSide {
+                                        MatchSide {
                                             payload: &payload,
                                             matches: &mut probe_match[probe_start..],
                                         },
@@ -1378,7 +1378,7 @@ impl EquiJoinNode {
         output_schema: Arc<Schema>,
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
-        residual: Option<(StreamExpr, Arc<Schema>)>,
+        fused_predicate: Option<(StreamExpr, Arc<Schema>)>,
         args: JoinArgs,
         num_pipelines: usize,
     ) -> PolarsResult<Self> {
@@ -1451,16 +1451,16 @@ impl EquiJoinNode {
         let right_payload_schema =
             Arc::new(select_schema(&right_input_schema, &right_payload_select));
 
-        // Unmatched-row bookkeeping would count a candidate before the residual runs, and
+        // Unmatched-row bookkeeping would count a candidate before the fused predicate runs, and
         // the ordered probe would evaluate it a partition group at a time.
         assert!(
-            residual.is_none()
+            fused_predicate.is_none()
                 || (matches!(args.how, JoinType::Inner)
                     && args.maintain_order == MaintainOrderJoin::None)
         );
-        let residual = residual
+        let fused_predicate = fused_predicate
             .map(|(expr, schema)| {
-                ResidualPredicate::new(expr, &schema, &left_payload_schema, &right_payload_schema)
+                FusedPredicate::new(expr, &schema, &left_payload_schema, &right_payload_schema)
             })
             .transpose()?;
 
@@ -1479,7 +1479,7 @@ impl EquiJoinNode {
                 left_payload_schema,
                 right_payload_schema,
                 args,
-                residual,
+                fused_predicate,
                 random_state: PlRandomState::default(),
                 sample_limit,
             },

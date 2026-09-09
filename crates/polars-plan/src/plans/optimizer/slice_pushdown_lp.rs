@@ -504,7 +504,7 @@ impl SlicePushDown {
                 },
                 Some(state),
             ) if !matches!(options.options, JoinTypeOptionsIR::CrossAndFilter { .. })
-                && !options.options.has_residual() =>
+                && !options.options.has_fused_predicate() =>
             {
                 if let Some(existing_slice) = &mut Arc::make_mut(&mut options).args.slice {
                     return if let Some(combined) = combine_outer_inner_slice(

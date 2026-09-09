@@ -515,13 +515,13 @@ pub fn phys_props(
             left_on,
             right_on,
             args,
-            residual,
+            fused_predicate,
         } => (
             PhysicalPropsDescription::EquiJoin {
                 how: format!("{}", args.how),
                 left_on: fmt_exprs(left_on, expr_arena),
                 right_on: fmt_exprs(right_on, expr_arena),
-                residual: residual
+                fused_predicate: fused_predicate
                     .as_ref()
                     .map(|r| fmt_exprs(std::slice::from_ref(r), expr_arena)),
                 nulls_equal: args.nulls_equal,

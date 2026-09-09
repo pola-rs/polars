@@ -463,7 +463,7 @@ pub enum PhysNodeKind {
         args: JoinArgs,
         /// Extra match condition, in the join's output namespace, applied per candidate
         /// pair. See `JoinTypeOptionsIR::Equi`.
-        residual: Option<ExprIR>,
+        fused_predicate: Option<ExprIR>,
     },
 
     MergeJoin {

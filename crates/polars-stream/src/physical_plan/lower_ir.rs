@@ -1069,9 +1069,9 @@ pub fn lower_ir(
             let mut tmp_right_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let args = options.args.clone();
             let options = options.options.clone();
-            // Only the hash equi join evaluates a residual natively; other strategies get
+            // Only the hash equi join evaluates a fused predicate natively; other strategies get
             // a `Filter` on top, and the in-memory fallback applies it from `options`.
-            let mut residual = options.residual().cloned();
+            let mut fused_predicate = options.fused_predicate().cloned();
             #[cfg(feature = "asof_join")]
             let asof_options = || match args.how {
                 JoinType::AsOf(ref asof_options) => asof_options,
@@ -1211,9 +1211,9 @@ pub fn lower_ir(
             let use_streaming_asof_join = false;
 
             // A non-equality match condition is native to the range-join node, and to the
-            // equi join as a residual; anything else falls back to the in-memory engine.
+            // equi join as a fused predicate; anything else falls back to the in-memory engine.
             let match_condition_supported =
-                options.is_pure_equi() || options.has_residual() || args.how.is_range();
+                options.is_pure_equi() || options.has_fused_predicate() || args.how.is_range();
 
             if (args.how.is_equi()
                 || args.how.is_semi_anti()
@@ -1383,9 +1383,9 @@ pub fn lower_ir(
                         },
                     )),
                     _ if args.how.is_equi() => {
-                        // Only the unordered probe evaluates a residual in bulk.
+                        // Only the unordered probe evaluates a fused predicate in bulk.
                         let native = match args.maintain_order {
-                            MaintainOrderJoin::None => residual.take(),
+                            MaintainOrderJoin::None => fused_predicate.take(),
                             _ => None,
                         };
                         phys_sm.insert(PhysNode::new(
@@ -1396,7 +1396,7 @@ pub fn lower_ir(
                                 left_on: trans_left_on,
                                 right_on: trans_right_on,
                                 args: args.clone(),
-                                residual: native,
+                                fused_predicate: native,
                             },
                         ))
                     },
@@ -1412,11 +1412,16 @@ pub fn lower_ir(
                 };
                 let mut stream = PhysStream::first(node);
                 // Anything the join did not take over is applied as a filter instead.
-                if let Some(residual) = residual {
-                    // A residual join never carries a slice.
+                if let Some(fused_predicate) = fused_predicate {
+                    // A fused predicate join never carries a slice.
                     debug_assert!(args.slice.is_none());
                     stream = build_filter_stream(
-                        stream, residual, expr_arena, phys_sm, expr_cache, ctx,
+                        stream,
+                        fused_predicate,
+                        expr_arena,
+                        phys_sm,
+                        expr_cache,
+                        ctx,
                     )?;
                 }
                 if let Some((offset, len)) = args.slice {

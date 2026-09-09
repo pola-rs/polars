@@ -1,4 +1,4 @@
-"""Tests for predicates fused into an inner join as its residual match condition."""
+"""Tests for predicates fused into an inner join as part of its match condition."""
 
 from __future__ import annotations
 
@@ -18,19 +18,19 @@ ENGINES: list[EngineType] = ["in-memory", "streaming"]
 
 
 def assert_fused(lf: pl.LazyFrame) -> None:
-    assert "RESIDUAL" in lf.explain()
+    assert "FUSED PREDICATE" in lf.explain()
 
 
 def assert_not_fused(lf: pl.LazyFrame) -> None:
-    assert "RESIDUAL" not in lf.explain()
+    assert "FUSED PREDICATE" not in lf.explain()
 
 
-def assert_residual_native(lf: pl.LazyFrame, native: bool = True) -> None:
-    """Whether the residual reached the streaming hash join or a fallback filter."""
+def assert_fused_native(lf: pl.LazyFrame, native: bool = True) -> None:
+    """Whether the predicate reached the streaming hash join or a fallback filter."""
     plan = lf.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     assert plan is not None
     assert "equi-join" in plan
-    assert ("residual:" in plan) == native
+    assert ("fused predicate:" in plan) == native
     assert ("filter" in plan) != native
 
 
@@ -62,7 +62,7 @@ def frames() -> tuple[pl.LazyFrame, pl.LazyFrame]:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_matches_unfused_reference(
+def test_fused_matches_unfused_reference(
     frames: tuple[pl.LazyFrame, pl.LazyFrame], engine: EngineType
 ) -> None:
     left, right = frames
@@ -76,12 +76,12 @@ def test_residual_matches_unfused_reference(
     )
 
 
-def test_residual_native_streaming_path(
+def test_fused_native_streaming_path(
     frames: tuple[pl.LazyFrame, pl.LazyFrame],
 ) -> None:
     left, right = frames
     q = left.join(right, on="k").filter(pl.col("b") < pl.col("a"))
-    assert_residual_native(q)
+    assert_fused_native(q)
 
 
 @pytest.mark.parametrize("engine", ENGINES)
@@ -96,7 +96,7 @@ def test_residual_native_streaming_path(
         pl.col("a").cast(pl.Float64) > pl.col("b").cast(pl.Float64),
     ],
 )
-def test_residual_expressions(
+def test_fused_expressions(
     frames: tuple[pl.LazyFrame, pl.LazyFrame], predicate: pl.Expr, engine: EngineType
 ) -> None:
     left, right = frames
@@ -109,7 +109,7 @@ def test_residual_expressions(
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_composite_and_duplicate_keys(engine: EngineType) -> None:
+def test_fused_composite_and_duplicate_keys(engine: EngineType) -> None:
     left = pl.LazyFrame(
         {
             "k1": [1, 1, 1, 2, 2],
@@ -135,7 +135,7 @@ def test_residual_composite_and_duplicate_keys(engine: EngineType) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_string_keys(engine: EngineType) -> None:
+def test_fused_string_keys(engine: EngineType) -> None:
     left = pl.LazyFrame({"k": ["x", "x", "y", "z"], "a": [1, 2, 3, 4]})
     right = pl.LazyFrame({"k": ["x", "y", "y", "w"], "b": [2, 1, 9, 0]})
     q = left.join(right, on="k").filter(pl.col("b") < pl.col("a"))
@@ -150,7 +150,7 @@ def test_residual_string_keys(engine: EngineType) -> None:
 
 @pytest.mark.parametrize("engine", ENGINES)
 @pytest.mark.parametrize("nulls_equal", [True, False])
-def test_residual_null_keys_and_values(engine: EngineType, nulls_equal: bool) -> None:
+def test_fused_null_keys_and_values(engine: EngineType, nulls_equal: bool) -> None:
     left = pl.LazyFrame({"k": [1, None, 2, None], "a": [10, 20, None, 40]})
     right = pl.LazyFrame({"k": [1, None, 2], "b": [1, 5, None]})
     predicate = pl.col("b") < pl.col("a")
@@ -175,7 +175,7 @@ def test_residual_null_keys_and_values(engine: EngineType, nulls_equal: bool) ->
         ([], [], True),  # both empty
     ],
 )
-def test_residual_degenerate_inputs(
+def test_fused_degenerate_inputs(
     engine: EngineType, left_k: list[int], right_k: list[int], predicate_true: bool
 ) -> None:
     left = pl.LazyFrame(
@@ -200,7 +200,7 @@ def test_residual_degenerate_inputs(
 @pytest.mark.parametrize("engine", ENGINES)
 @pytest.mark.parametrize("suffix", ["_right", "_R"])
 @pytest.mark.parametrize("coalesce", [True, False])
-def test_residual_suffix_and_coalesce(
+def test_fused_suffix_and_coalesce(
     engine: EngineType, suffix: str, coalesce: bool
 ) -> None:
     left = pl.LazyFrame({"k": [1, 1, 2], "v": [10, 20, 30]})
@@ -217,8 +217,8 @@ def test_residual_suffix_and_coalesce(
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_only_columns_dropped_by_select(engine: EngineType) -> None:
-    """`v`/`v_right` are read only by the residual, so they must survive to the join."""
+def test_fused_only_columns_dropped_by_select(engine: EngineType) -> None:
+    """`v`/`v_right` are read only by the predicate, so they must reach the join."""
     left = pl.LazyFrame({"k": [1, 1, 2], "v": [10, 20, 30], "keep": ["a", "b", "c"]})
     right = pl.LazyFrame({"k": [1, 2, 2], "v": [15, 5, 99]})
     predicate = pl.col("v_right") < pl.col("v")
@@ -233,8 +233,8 @@ def test_residual_only_columns_dropped_by_select(engine: EngineType) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_suffix_dropped_when_collision_disappears(engine: EngineType) -> None:
-    """Pruning the left `v` un-suffixes the right one; the residual must follow."""
+def test_fused_suffix_dropped_when_collision_disappears(engine: EngineType) -> None:
+    """Pruning the left `v` un-suffixes the right one; the predicate must follow."""
     left = pl.LazyFrame({"k": [1, 1, 2], "v": [99, 99, 99], "x": [10, 20, 30]})
     right = pl.LazyFrame({"k": [1, 2, 2], "v": [15, 5, 99]})
     predicate = pl.col("v_right") < pl.col("x")
@@ -249,7 +249,7 @@ def test_residual_suffix_dropped_when_collision_disappears(engine: EngineType) -
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_reads_right_key(engine: EngineType) -> None:
+def test_fused_reads_right_key(engine: EngineType) -> None:
     """The right key must survive even though nothing else projects it.
 
     Predicate pushdown may rewrite `k_right` to `k` and push it to one side, so this
@@ -271,7 +271,7 @@ def test_residual_reads_right_key(engine: EngineType) -> None:
 @pytest.mark.parametrize(
     "maintain_order", ["none", "left", "right", "left_right", "right_left"]
 )
-def test_residual_maintain_order(engine: EngineType, maintain_order: str) -> None:
+def test_fused_maintain_order(engine: EngineType, maintain_order: str) -> None:
     left = pl.LazyFrame({"k": [1, 2, 1, 3, 2], "a": [10, 20, 30, 40, 50]})
     right = pl.LazyFrame({"k": [1, 2, 2, 3], "b": [5, 15, 45, 5]})
     predicate = pl.col("b") < pl.col("a")
@@ -298,7 +298,7 @@ def test_residual_maintain_order(engine: EngineType, maintain_order: str) -> Non
 
 @pytest.mark.parametrize("engine", ENGINES)
 @pytest.mark.parametrize("build_side", ["force_left", "force_right"])
-def test_residual_forced_build_side(engine: EngineType, build_side: str) -> None:
+def test_fused_forced_build_side(engine: EngineType, build_side: str) -> None:
     left = pl.LazyFrame({"k": [1, 1, 2, 3], "a": [10, 20, 30, 40]})
     right = pl.LazyFrame({"k": [1, 2, 2, 4], "b": [5, 15, 45, 0]})
     predicate = pl.col("b") < pl.col("a")
@@ -312,7 +312,7 @@ def test_residual_forced_build_side(engine: EngineType, build_side: str) -> None
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_many_morsels_and_skew(engine: EngineType) -> None:
+def test_fused_many_morsels_and_skew(engine: EngineType) -> None:
     """More rows than one morsel, plus a key whose duplicate list exceeds the limit."""
     n = 60_000
     left = pl.LazyFrame({"k": [0] * n + list(range(n)), "a": list(range(2 * n))})
@@ -329,7 +329,7 @@ def test_residual_many_morsels_and_skew(engine: EngineType) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_rejected_batch_followed_by_accepted(engine: EngineType) -> None:
+def test_fused_rejected_batch_followed_by_accepted(engine: EngineType) -> None:
     """Leading candidates are all rejected; later survivors must still be emitted."""
     n = 20_000
     left = pl.LazyFrame({"k": [1] * n + [2] * n, "a": [0] * n + [100] * n})
@@ -345,7 +345,7 @@ def test_residual_rejected_batch_followed_by_accepted(engine: EngineType) -> Non
 
 
 @pytest.mark.parametrize("how", ["left", "right", "full"])
-def test_residual_not_fused_while_join_stays_outer(how: str) -> None:
+def test_fused_not_fused_while_join_stays_outer(how: str) -> None:
     """Keeping null-extended rows leaves the join outer, so it cannot fuse."""
     left = pl.LazyFrame({"k": [1, 2, 3], "a": [10, 20, 30]})
     right = pl.LazyFrame({"k": [1, 2, 4], "b": [5, 25, 0]})
@@ -362,7 +362,7 @@ def test_residual_not_fused_while_join_stays_outer(how: str) -> None:
 
 @pytest.mark.parametrize("engine", ENGINES)
 @pytest.mark.parametrize("how", ["left", "right", "full"])
-def test_residual_outer_join_reduced_to_inner(engine: EngineType, how: str) -> None:
+def test_fused_outer_join_reduced_to_inner(engine: EngineType, how: str) -> None:
     """Rejecting null-extended rows turns the join inner, which may then fuse."""
     left = pl.LazyFrame({"k": [1, 2, 3], "a": [10, 20, 30]})
     right = pl.LazyFrame({"k": [1, 2, 4], "b": [5, 25, 0]})
@@ -377,7 +377,7 @@ def test_residual_outer_join_reduced_to_inner(engine: EngineType, how: str) -> N
     )
 
 
-def test_residual_not_fused_for_non_elementwise_predicates() -> None:
+def test_fused_not_fused_for_non_elementwise_predicates() -> None:
     left = pl.LazyFrame({"k": [1, 1, 2], "a": [10, 20, 30]})
     right = pl.LazyFrame({"k": [1, 2, 2], "b": [5, 15, 45]})
 
@@ -390,7 +390,7 @@ def test_residual_not_fused_for_non_elementwise_predicates() -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_slice_ordering(engine: EngineType) -> None:
+def test_fused_slice_ordering(engine: EngineType) -> None:
     left = pl.LazyFrame({"k": [1, 1, 2, 2], "a": [10, 20, 30, 40]})
     right = pl.LazyFrame({"k": [1, 2], "b": [15, 5]})
     predicate = pl.col("b") < pl.col("a")
@@ -411,8 +411,8 @@ def test_residual_slice_ordering(engine: EngineType) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_validation_still_errors(engine: EngineType) -> None:
-    """Validation runs on the keys; a residual rejecting the pair does not excuse it."""
+def test_fused_validation_still_errors(engine: EngineType) -> None:
+    """Validation runs on the keys; a rejected pair does not excuse a duplicate key."""
     left = pl.LazyFrame({"k": [1, 2], "a": [10, 20]})
     right = pl.LazyFrame({"k": [1, 1, 2], "b": [99, 99, 99]})
     q = left.join(right, on="k", validate="m:1").filter(pl.col("b") < pl.col("a"))
@@ -423,7 +423,7 @@ def test_residual_validation_still_errors(engine: EngineType) -> None:
 
 @pytest.mark.parametrize("engine", ENGINES)
 @pytest.mark.parametrize("join_order", [True, False])
-def test_residual_with_join_order(engine: EngineType, join_order: bool) -> None:
+def test_fused_with_join_order(engine: EngineType, join_order: bool) -> None:
     a = pl.LazyFrame({"k": [1, 2, 3], "x": [1, 2, 3]})
     b = pl.LazyFrame({"k": [1, 2, 3], "y": [3, 2, 1]})
     c = pl.LazyFrame({"k": [1, 2, 3], "z": [1, 1, 1]})
@@ -438,7 +438,7 @@ def test_residual_with_join_order(engine: EngineType, join_order: bool) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_residual_shared_join_with_distinct_predicates(engine: EngineType) -> None:
+def test_fused_shared_join_with_distinct_predicates(engine: EngineType) -> None:
     """One join feeding two filters must not have either fused into the other."""
     left = pl.LazyFrame({"k": [1, 1, 2, 2], "a": [10, 20, 30, 40]})
     right = pl.LazyFrame({"k": [1, 2], "b": [15, 35]})
@@ -457,18 +457,18 @@ def test_residual_shared_join_with_distinct_predicates(engine: EngineType) -> No
     assert_frame_equal(q.collect(engine=engine), expected, check_row_order=False)
 
 
-def test_residual_optimization_is_idempotent() -> None:
-    """Optimizing the same plan repeatedly must not lose or duplicate the residual."""
+def test_fused_optimization_is_idempotent() -> None:
+    """Optimizing the same plan repeatedly must not lose or duplicate the predicate."""
     left = pl.LazyFrame({"k": [1, 1, 2], "a": [10, 20, 30]})
     right = pl.LazyFrame({"k": [1, 2], "b": [15, 5]})
     predicate = pl.col("b") < pl.col("a")
     q = left.join(right, on="k").filter(predicate)
 
-    assert q.explain().count("RESIDUAL") == 1
+    assert q.explain().count("FUSED PREDICATE") == 1
     assert q.explain() == q.explain()
 
     roundtripped = pl.LazyFrame.deserialize(q.serialize())
-    assert roundtripped.explain().count("RESIDUAL") == 1
+    assert roundtripped.explain().count("FUSED PREDICATE") == 1
     assert_frame_equal(
         roundtripped.collect(),
         reference(left, right, predicate, on="k"),
@@ -476,14 +476,14 @@ def test_residual_optimization_is_idempotent() -> None:
     )
 
 
-def test_residual_unfused_when_predicate_pushdown_disabled() -> None:
+def test_fused_unfused_when_predicate_pushdown_disabled() -> None:
     left = pl.LazyFrame({"k": [1, 1, 2], "a": [10, 20, 30]})
     right = pl.LazyFrame({"k": [1, 2], "b": [15, 5]})
     predicate = pl.col("b") < pl.col("a")
     q = left.join(right, on="k").filter(predicate)
 
     unfused = q.explain(optimizations=pl.QueryOptFlags(predicate_pushdown=False))
-    assert "RESIDUAL" not in unfused
+    assert "FUSED PREDICATE" not in unfused
     assert "FILTER" in unfused
 
     assert_frame_equal(
@@ -618,7 +618,7 @@ def test_float_equality_becomes_join_key(engine: EngineType) -> None:
 
 
 @pytest.mark.parametrize("engine", ENGINES)
-def test_equality_promoted_and_rest_stays_residual(
+def test_equality_promoted_and_rest_stays_fused(
     eq_frames: tuple[pl.LazyFrame, pl.LazyFrame], engine: EngineType
 ) -> None:
     left, right = eq_frames
@@ -739,14 +739,14 @@ def test_fallible_inside_list_eval_is_not_promoted(engine: EngineType) -> None:
 
 
 @pytest.mark.parametrize("maintain_order", ["left", "right", "left_right"])
-def test_residual_not_native_when_order_is_preserved(maintain_order: str) -> None:
-    """The ordered probe would evaluate the residual a group at a time."""
+def test_fused_not_native_when_order_is_preserved(maintain_order: str) -> None:
+    """The ordered probe would evaluate the fused predicate a group at a time."""
     left = pl.LazyFrame({"k": [1, 1, 2], "a": [1, 5, 9]})
     right = pl.LazyFrame({"k": [1, 2, 2], "b": [3, 4, 7]})
     predicate = pl.col("a") < pl.col("b")
     q = left.join(right, on="k", maintain_order=maintain_order).filter(predicate)  # type: ignore[arg-type]
 
-    assert_residual_native(q, native=False)
+    assert_fused_native(q, native=False)
     assert_frame_equal(
         q.collect(engine="streaming"),
         reference(left, right, predicate, on="k", maintain_order=maintain_order),
@@ -803,8 +803,8 @@ def test_non_strict_cast_equality_is_promoted(engine: EngineType) -> None:
     )
 
 
-def test_residual_gathers_from_a_multi_chunk_payload() -> None:
-    """A multi-chunk probe payload is rechunked before the residual gathers from it."""
+def test_fused_gathers_from_a_multi_chunk_payload() -> None:
+    """A multi-chunk probe payload is rechunked before the predicate gathers from it."""
     left = pl.concat(
         [
             pl.DataFrame({"k": [1, 2, 3], "a": [10, 20, 30]}),
@@ -817,7 +817,7 @@ def test_residual_gathers_from_a_multi_chunk_payload() -> None:
     predicate = pl.col("a") < pl.col("b")
     q = left.lazy().join(right.lazy(), on="k").filter(predicate)
 
-    assert_residual_native(q)
+    assert_fused_native(q)
     assert_frame_equal(
         q.collect(engine="streaming"),
         reference(left.lazy(), right.lazy(), predicate, on="k"),

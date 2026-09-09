@@ -806,16 +806,16 @@ fn visualize_plan_rec(
                 args,
             );
             if let PhysNodeKind::EquiJoin {
-                residual: Some(residual),
+                fused_predicate: Some(fused_predicate),
                 ..
             } = &phys_sm[node_key].kind
             {
-                let residual = fmt_exprs_to_label(
-                    std::slice::from_ref(residual),
+                let fused_predicate = fmt_exprs_to_label(
+                    std::slice::from_ref(fused_predicate),
                     expr_arena,
                     FormatExprStyle::NoAliases,
                 );
-                label.push_str(&format!("\nresidual: {residual}"));
+                label.push_str(&format!("\nfused predicate: {fused_predicate}"));
             }
             (label, &[*input_left, *input_right][..])
         },

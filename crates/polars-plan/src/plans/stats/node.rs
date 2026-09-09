@@ -206,7 +206,11 @@ pub(super) fn node_stats_with_cache(
             ..
         } => {
             // As-of, inequality and range matches are not modelled.
-            let JoinTypeOptionsIR::Equi { on, residual } = &options.options else {
+            let JoinTypeOptionsIR::Equi {
+                on,
+                fused_predicate,
+            } = &options.options
+            else {
                 return None;
             };
             let left = node_stats_with_cache(*input_left, ir_arena, expr_arena, cache)?;
@@ -235,13 +239,13 @@ pub(super) fn node_stats_with_cache(
 
             // Only narrows `filtered`; an estimated selectivity is not an upper bound, so
             // `max_rows` and the key-domain columns are carried over untouched.
-            let stats = match residual {
+            let stats = match fused_predicate {
                 None => stats,
-                Some(residual) => {
+                Some(fused_predicate) => {
                     let filtered = apply_predicate(
                         stats.filtered,
                         stats.unfiltered,
-                        residual.node(),
+                        fused_predicate.node(),
                         expr_arena,
                         stats.columns.as_deref(),
                     );

@@ -147,7 +147,7 @@ mod tests {
             args: JoinArgs::default(),
             options: JoinTypeOptionsIR::Equi {
                 on: Vec::new(),
-                residual: None,
+                fused_predicate: None,
             },
         })
     }

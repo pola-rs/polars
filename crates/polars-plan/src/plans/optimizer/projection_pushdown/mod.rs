@@ -898,22 +898,23 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     has_cross_filter = true;
                 }
 
-                // A residual reads output columns the final projection may not ask for.
-                let residual_names: Vec<PlSmallStr> = options
+                // A fused predicate reads output columns the final projection may not ask for.
+                let fused_predicate_names: Vec<PlSmallStr> = options
                     .options
-                    .residual()
-                    .map(|residual| {
-                        aexpr_to_leaf_names_iter(residual.node(), self.expr_arena)
+                    .fused_predicate()
+                    .map(|fused_predicate| {
+                        aexpr_to_leaf_names_iter(fused_predicate.node(), self.expr_arena)
                             .cloned()
                             .collect()
                     })
                     .unwrap_or_default();
-                let reads_in_residual = |name: &PlSmallStr| residual_names.contains(name);
+                let reads_in_fused_predicate =
+                    |name: &PlSmallStr| fused_predicate_names.contains(name);
 
                 // Add accumulated projections
                 for output_name in output_schema_arc
                     .iter_names()
-                    .filter(|name| is_projected_in_output(name) || reads_in_residual(name))
+                    .filter(|name| is_projected_in_output(name) || reads_in_fused_predicate(name))
                     .chain(pred_used_names_iter.into_iter().flatten())
                 {
                     match ExprOrigin::get_column_origin(
@@ -986,13 +987,13 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             return false;
                         };
 
-                        // Coalescing drops the right key, so a residual reading it counts
+                        // Coalescing drops the right key, so a fused predicate reading it counts
                         // as a use.
                         let projected = if input_schema_left.contains(name.as_str()) {
                             let name = format_pl_smallstr!("{}{}", name, options.args.suffix());
-                            is_projected_in_output(&name) || reads_in_residual(&name)
+                            is_projected_in_output(&name) || reads_in_fused_predicate(&name)
                         } else {
-                            is_projected_in_output(name) || reads_in_residual(name)
+                            is_projected_in_output(name) || reads_in_fused_predicate(name)
                         };
 
                         !projected
@@ -1046,11 +1047,11 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 // Narrowing an input can remove a name collision, dropping the suffix
                 // from the right column. The map below covers only projected names, so a
-                // column read solely by the residual is renamed here.
-                if !residual_names.is_empty() {
+                // column read solely by the fused predicate is renamed here.
+                if !fused_predicate_names.is_empty() {
                     let mut renames: PlIndexMap<PlSmallStr, PlSmallStr> = PlIndexMap::default();
 
-                    for name in residual_names.iter() {
+                    for name in fused_predicate_names.iter() {
                         if output_schema_arc.contains(name) {
                             continue;
                         }
@@ -1063,15 +1064,15 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                     if !renames.is_empty() {
                         let JoinTypeOptionsIR::Equi {
-                            residual: Some(residual),
+                            fused_predicate: Some(fused_predicate),
                             ..
                         } = &mut Arc::make_mut(options).options
                         else {
                             unreachable!()
                         };
 
-                        residual.set_node(rename_columns(
-                            residual.node(),
+                        fused_predicate.set_node(rename_columns(
+                            fused_predicate.node(),
                             self.expr_arena,
                             &renames,
                         ));
