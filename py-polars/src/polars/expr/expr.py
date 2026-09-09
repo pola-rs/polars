@@ -4202,8 +4202,8 @@ class Expr(metaclass=_Meta):
         partition_by: IntoExpr | Iterable[IntoExpr] | None = None,
         *more_exprs: IntoExpr,
         order_by: IntoExpr | Iterable[IntoExpr] | None = None,
-        descending: bool = False,
-        nulls_last: bool = False,
+        descending: bool | Sequence[bool] = False,
+        nulls_last: bool | Sequence[bool] = False,
         mapping_strategy: WindowMappingStrategy = "group_to_rows",
     ) -> Expr:
         """
@@ -4231,10 +4231,12 @@ class Expr(metaclass=_Meta):
             :func:`cum_sum` or :func:`diff`.
         descending
             In case 'order_by' is given, indicate whether to order in
-            ascending or descending order.
+            ascending or descending order. Accepts a single boolean or a
+            list of booleans matching the number of `order_by` columns.
         nulls_last
             In case 'order_by' is given, indicate whether to order
-            the nulls in last position.
+            the nulls in last position. Accepts a single boolean or a
+            list of booleans matching the number of `order_by` columns.
         mapping_strategy: {'group_to_rows', 'join', 'explode'}
             - group_to_rows
                 If the aggregation results in multiple values per group, map them back
@@ -4417,6 +4419,11 @@ class Expr(metaclass=_Meta):
             order_by_pyexprs = parse_into_list_of_expressions(order_by)
         else:
             order_by_pyexprs = None
+
+        if isinstance(descending, bool):
+            descending = [descending]
+        if isinstance(nulls_last, bool):
+            nulls_last = [nulls_last]
 
         return wrap_expr(
             self._pyexpr.over(
