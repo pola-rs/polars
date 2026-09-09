@@ -602,6 +602,17 @@ impl Series {
                 match map_dtype {
                     #[cfg(feature = "dtype-map")]
                     Some(dtype) => {
+                        use crate::chunked_array::logical::{
+                            CanonicalizeMode, canonicalize_map_storage,
+                        };
+
+                        // Reject live null entries/keys and compact hidden ones.
+                        // Trust the producer's key uniqueness, as Arrow does.
+                        let storage =
+                            canonicalize_map_storage(&storage, CanonicalizeMode::NullsOnly)?
+                                .unwrap_or(storage);
+                        // SAFETY: dtype and imported children are valid; null entries/keys
+                        // have been removed.
                         Ok(
                             unsafe { MapChunked::from_storage_unchecked(dtype, storage) }
                                 .into_series(),

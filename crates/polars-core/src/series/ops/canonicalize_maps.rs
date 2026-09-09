@@ -1,5 +1,5 @@
 #[cfg(feature = "dtype-map")]
-use crate::chunked_array::logical::canonicalize_map_storage;
+use crate::chunked_array::logical::{CanonicalizeMode, canonicalize_map_storage};
 use crate::prelude::*;
 
 impl Series {
@@ -30,7 +30,7 @@ fn canonicalize_maps_rec(series: &Series) -> PolarsResult<Option<Series>> {
             // Parent keys are row-encoded, so canonicalize nested maps first.
             let nested = canonicalize_maps_rec(map.storage())?;
             let storage = nested.as_ref().unwrap_or(map.storage());
-            let deduped = canonicalize_map_storage(storage)?;
+            let deduped = canonicalize_map_storage(storage, CanonicalizeMode::Full)?;
 
             match deduped.or(nested) {
                 None => Ok(None),

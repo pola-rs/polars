@@ -1264,3 +1264,71 @@ def test_map_sort_by_categorical_keys() -> None:
 
     grouped = df.with_columns(g=1).group_by("g").agg(pl.col("x").sort_by("m", "y"))
     assert grouped["x"].to_list() == [[3, 2, 1]]
+
+
+def test_map_null_entry_of_a_live_row_is_rejected() -> None:
+    # Only hidden null entries or keys may be dropped.
+    entries = pl.Series("m", [[None, {"key": "a", "value": 1}]], dtype=ENTRIES)
+    with pytest.raises(InvalidOperationError, match="Map entries cannot be null"):
+        entries.cast(MAP)
+
+    keys = pl.Series("m", [[{"key": None, "value": 1}]], dtype=ENTRIES)
+    with pytest.raises(InvalidOperationError, match="Map keys cannot be null"):
+        keys.cast(MAP)
+
+
+def _list_of_entries_with_null_row(keys: list[str | None]) -> pl.Series:
+    """A `List(Struct)` with an entry retained under its first, null row."""
+    pa = pytest.importorskip("pyarrow")
+    # `pa.MapArray.from_arrays` rejects null keys, so build the list by hand.
+    entries = pa.StructArray.from_arrays(
+        [pa.array(keys, type=pa.string()), pa.array([1, 2], type=pa.int64())],
+        ["key", "value"],
+    )
+    arr = pa.ListArray.from_arrays(
+        pa.array([0, 1, 2], type=pa.int32()),
+        entries,
+        mask=pa.array([True, False]),
+    )
+    return pl.from_arrow(pa.table({"m": arr}))["m"]  # type: ignore[index]
+
+
+@pytest.mark.parametrize("keys", [[None, "b"], ["a", "b"]], ids=["invalid", "valid"])
+def test_map_hidden_entry_is_compacted_by_the_list_cast(keys: list[str | None]) -> None:
+    # List(Struct) null propagation causes hidden entries to be dropped during casting.
+    # Map import preserves valid hidden entries (test_map_null_row_keeping_its_entries).
+    # Neither path may export null entries or keys.
+    s = _list_of_entries_with_null_row(keys).cast(MAP)
+    exported = s.to_arrow()
+    assert exported.offsets.to_pylist() == [0, 0, 1]
+    assert exported.values.null_count == 0
+    assert exported.keys.null_count == 0
+    assert s.to_list() == [None, {"b": 2}]
+
+
+def test_map_ipc_round_trip_keeps_duplicate_keys_with_valid_storage() -> None:
+    pa = pytest.importorskip("pyarrow")
+    tbl = pa.table(
+        {"m": pa.array([[("a", 1), ("a", 2)]], type=pa.map_(pa.string(), pa.int64()))}
+    )
+    s = pl.from_arrow(tbl)["m"]  # type: ignore[index]
+    out = pl.read_ipc(_ipc_buffer(s))["m"]
+    # IPC import trusts key uniqueness while validating storage.
+    assert out.cast(ENTRIES).to_list() == [
+        [{"key": "a", "value": 1}, {"key": "a", "value": 2}]
+    ]
+    exported = out.to_arrow()
+    assert exported.keys.null_count == 0
+    assert exported.offsets.to_pylist() == [0, 2]
+
+
+def test_map_decimal_rescale_collapsing_keys_deduplicates() -> None:
+    # A key-changing cast re-establishes key uniqueness.
+    s = pl.Series(
+        "m",
+        [{Decimal("1.50"): 1, Decimal("1.54"): 2}],
+        pl.Map(pl.Decimal(10, 2), pl.Int64),
+    )
+    rescaled = s.cast(pl.Map(pl.Decimal(10, 1), pl.Int64))
+    assert rescaled.to_list() == [{Decimal("1.5"): 2}]
+    assert rescaled.to_arrow().offsets.to_pylist() == [0, 1]
