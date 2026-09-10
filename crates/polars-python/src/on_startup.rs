@@ -198,10 +198,6 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
             });
             Box::new(object) as Box<dyn Any>
         });
-        let pyobject_converter = Arc::new(|av: AnyValue| {
-            let object = Python::attach(|py| Wrap(av).into_py_any(py).unwrap());
-            Box::new(object) as Box<dyn Any>
-        });
         fn object_array_getter(arr: &dyn Array, idx: usize) -> Option<AnyValue<'_>> {
             let arr = arr
                 .as_any()
@@ -289,13 +285,20 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
         registry::register_object_builder(
             object_builder,
             object_converter,
-            pyobject_converter,
             physical_dtype,
             Arc::new(object_array_getter),
             Arc::new(with_gil),
         );
 
         use crate::dataset::dataset_provider_funcs;
+
+        polars_plan::dsl::dsl_resolver::python::PY_DSL_RESOLVER_VTABLE.get_or_init(|| {
+            polars_plan::dsl::dsl_resolver::python::PyDslResolverVTable {
+                extract_schema: dataset_provider_funcs::extract_schema,
+                to_py_plexpr: crate::expr::expr_to_py_plexpr,
+                extract_py_resolved_dsl: crate::conversion::extract_py_resolved_dsl,
+            }
+        });
 
         polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
             name: dataset_provider_funcs::name,

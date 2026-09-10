@@ -17,6 +17,7 @@ pub mod prefetch {
     /// # Safety
     ///
     /// This should only be called with pointers to valid memory.
+    #[inline]
     unsafe fn prefetch_l2_impl(ptr: *const u8) {
         _ = ptr; // Silence unused - not always used on all platforms.
 

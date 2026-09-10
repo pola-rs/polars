@@ -37,6 +37,7 @@ class ScanOptions:
 
     # For path expansion
     glob: bool = True
+    expand_paths: bool = True
     hidden_file_prefix: Sequence[str] | None = None
 
     # Hive
@@ -58,3 +59,4 @@ class ScanOptions:
     table_statistics: DataFrame | None = None
     # (physical, deleted)
     row_count: tuple[int, int] | None = None
+    source_sizes: Sequence[int] | None = None

@@ -288,6 +288,7 @@ impl<'provider, Edge> NodeEdgesProvider<Edge> for SliceEdgeProvider<'provider, E
 struct Inputs<T>(T);
 
 impl<'a, Edge> Collection<Edge> for Inputs<SliceEdgeProvider<'a, Edge>> {
+    #[inline]
     fn len(&self) -> usize {
         self.0.input_range.len()
     }
@@ -305,6 +306,7 @@ impl<'a, Edge> Collection<Edge> for Inputs<SliceEdgeProvider<'a, Edge>> {
 struct Outputs<T>(T);
 
 impl<'a, Edge> Collection<Edge> for Outputs<SliceEdgeProvider<'a, Edge>> {
+    #[inline]
     fn len(&self) -> usize {
         self.0.output_idxs.len()
     }

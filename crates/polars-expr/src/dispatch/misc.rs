@@ -1,3 +1,5 @@
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use polars_core::prelude::*;
@@ -34,6 +36,47 @@ pub(super) fn reverse(s: &Column) -> PolarsResult<Column> {
 pub(super) fn approx_n_unique(s: &Column) -> PolarsResult<Column> {
     s.approx_n_unique()
         .map(|v| Column::new_scalar(s.name().clone(), Scalar::new(IDX_DTYPE, v.into()), 1))
+}
+
+#[cfg(feature = "approx_quantile")]
+pub(super) fn approx_quantile(
+    s: &[Column],
+    method: &ApproxQuantileMethod,
+    error: f64,
+) -> PolarsResult<Column> {
+    assert_eq!(s.len(), 2);
+    let input = s[0].as_materialized_series();
+    let mut quantile = s[1].as_materialized_series();
+    polars_ensure!(!quantile.is_empty(), ComputeError:
+        "the 'quantile' expression input should produce a single quantile or a list of quantiles, \
+        got an empty input"
+    );
+    polars_ensure!(quantile.len() == 1, ComputeError:
+        "polars does not support varying approximate quantiles yet, \
+        make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
+    );
+
+    // A list input asks for several quantiles at once, and comes back as a list.
+    let is_list = quantile.dtype().is_list();
+    let inner_s;
+    if is_list {
+        let list = quantile.list()?;
+        inner_s = list
+            .get_as_series(0)
+            .ok_or_else(|| polars_err!(ComputeError: "`quantile` should not be null"))?;
+        quantile = &inner_s;
+    }
+
+    let out = polars_ops::prelude::approx_quantile(input, quantile, error, method)?;
+    let name = input.name().clone();
+    let sc = match is_list {
+        true => Scalar::new(
+            DataType::List(Box::new(out.dtype().clone())),
+            AnyValue::List(out),
+        ),
+        false => Scalar::new(out.dtype().clone(), out.get(0)?.into_static()),
+    };
+    Ok(sc.into_column(name))
 }
 
 #[cfg(feature = "diff")]
@@ -695,7 +738,7 @@ pub(super) fn log(columns: &[Column]) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
     assert_eq!(columns.len(), 2);
-    Column::apply_broadcasting_binary_elementwise(&columns[0], &columns[1], Series::log)
+    Column::try_apply_broadcasting_binary_elementwise(&columns[0], &columns[1], Series::log)
 }
 
 #[cfg(feature = "log")]

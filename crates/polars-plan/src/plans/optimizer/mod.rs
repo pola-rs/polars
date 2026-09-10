@@ -19,8 +19,10 @@ mod flatten_union;
 mod fused;
 mod join_build_side;
 mod join_order;
+mod join_predicate_fusion;
 mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
+pub mod call_dsl_resolvers;
 mod expand_datasets;
 #[cfg(feature = "python")]
 pub use expand_datasets::{ExpandedPythonScan, PyScanResolveThreadPool};
@@ -82,6 +84,7 @@ pub(crate) fn pushdown_maintain_errors() -> bool {
     std::env::var("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS").as_deref() == Ok("1")
 }
 
+#[recursive::recursive]
 pub fn optimize(
     mut root: Node,
     opt_flags: OptFlags,
@@ -142,8 +145,9 @@ pub fn optimize(
     if comm_subplan_elim {
         feature_gated!("cse", {
             let members = get_or_init_members!();
-            if (members.has_sink_multiple || members.has_joins_or_unions)
-                && members.has_duplicate_scans()
+            if ((members.has_sink_multiple || members.has_joins_or_unions)
+                && members.has_duplicate_scans())
+                || members.has_cse_equivalent_resolvers()
             {
                 if verbose {
                     eprintln!("found multiple sources; run comm_subplan_elim")
@@ -213,6 +217,12 @@ pub fn optimize(
     // before projection pushdown so projections follow the final join order.
     if opt_flags.join_order() && get_or_init_members!().has_joins_or_unions {
         root = join_order::join_order(root, ir_arena, expr_arena)?;
+    }
+
+    // After join ordering, and before projection pushdown drops what only the fused predicate
+    // reads.
+    if opt_flags.predicate_pushdown() && get_or_init_members!().has_joins_or_unions {
+        join_predicate_fusion::fuse_predicates(root, ir_arena, expr_arena)?;
     }
 
     if opt_flags.projection_pushdown() {
@@ -310,6 +320,14 @@ pub fn optimize(
     }
 
     expand_datasets::expand_datasets(root, ir_arena, expr_arena, apply_scan_predicate_to_scan_ir)?;
+
+    call_dsl_resolvers::call_dsl_resolvers(
+        root,
+        ir_arena,
+        expr_arena,
+        opt_flags,
+        apply_scan_predicate_to_scan_ir,
+    )?;
 
     prune_parquet_metadata(root, ir_arena, expr_arena);
 
