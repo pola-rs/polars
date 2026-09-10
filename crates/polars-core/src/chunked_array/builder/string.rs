@@ -44,6 +44,21 @@ impl<T: ViewType + ?Sized> BinViewChunkedBuilder<T> {
         self.chunk_builder.push_value(v.as_ref().to_bytes());
     }
 
+    /// Appends a value of type `T`, leaving the validity mask untouched.
+    ///
+    /// A builder every value is pushed onto this way keeps no mask at all, and the array it
+    /// freezes into holds none — which is the right answer for a loop that produces no null. See
+    /// [`PlBinaryViewArrayBuilder::push_value_ignore_validity`].
+    ///
+    /// A builder must not see both this and [`append_value`](Self::append_value) or
+    /// [`append_null`](Self::append_null): the bits would then stand for some of the elements and
+    /// not others.
+    #[inline]
+    pub fn append_value_ignore_validity<S: AsRef<T>>(&mut self, v: S) {
+        self.chunk_builder
+            .push_value_ignore_validity(v.as_ref().to_bytes());
+    }
+
     /// Appends a null slot into the builder
     #[inline]
     pub fn append_null(&mut self) {

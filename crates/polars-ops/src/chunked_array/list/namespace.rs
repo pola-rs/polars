@@ -602,8 +602,11 @@ pub trait ListNameSpaceImpl: AsList {
             1 => {
                 if let Some(n) = n.get(0) {
                     unsafe {
-                        // SAFETY: `sample_n` doesn't change the dtype
-                        ca.try_apply_amortized_same_type(|s| {
+                        // SAFETY: `sample_n` doesn't change the dtype.
+                        //
+                        // Every element is sampled on its own even where they all read the one
+                        // list: an unseeded sample answers differently every time it is asked.
+                        ca.try_apply_amortized_same_type_per_element(|s| {
                             s.as_ref()
                                 .sample_n(n as usize, with_replacement, shuffle, seed)
                         })
@@ -676,8 +679,10 @@ pub trait ListNameSpaceImpl: AsList {
             1 => {
                 if let Some(fraction) = fraction.get(0) {
                     unsafe {
-                        // SAFETY: `sample_n` doesn't change the dtype
-                        ca.try_apply_amortized_same_type(|s| {
+                        // SAFETY: `sample_n` doesn't change the dtype.
+                        //
+                        // As in `lst_sample_n`: a sample is taken per element, not once.
+                        ca.try_apply_amortized_same_type_per_element(|s| {
                             let n = (s.as_ref().len() as f64 * fraction) as usize;
                             s.as_ref().sample_n(n, with_replacement, shuffle, seed)
                         })

@@ -85,6 +85,40 @@ pub fn hor_str_concat(
         })
         .collect();
 
+    // Without a null anywhere every row concatenates one value per column, so the values are
+    // read without a mask consulted per element — and the answer carries no mask either, rather
+    // than one bit set per row for a result that has no null in it.
+    // A column of no elements is one the broadcast reads nothing out of, and it is the one shape
+    // this leaves to the walk below — where `ignore_nulls` decides what a row with nothing in it
+    // gets. Without a null there is nothing for it to decide.
+    if cas.iter().all(|ca| ca.null_count() == 0 && !ca.is_empty()) {
+        let mut values: Vec<_> = cas
+            .iter()
+            .map(|ca| match ca.len() {
+                1 => ColumnIter::Broadcast(ca.get(0).unwrap()),
+                _ => ColumnIter::Iter(ca.iter().map(|value| value.unwrap())),
+            })
+            .collect();
+
+        let mut buf = String::with_capacity(1024);
+        for _row in 0..len {
+            for (i, col) in values.iter_mut().enumerate() {
+                if i > 0 {
+                    buf.push_str(delimiter);
+                }
+                buf.push_str(match col {
+                    ColumnIter::Iter(i) => i.next().unwrap(),
+                    ColumnIter::Broadcast(value) => value,
+                });
+            }
+
+            builder.append_value_ignore_validity(&buf);
+            buf.clear();
+        }
+
+        return Ok(builder.finish());
+    }
+
     // Build concatenated string.
     let mut buf = String::with_capacity(1024);
     for _row in 0..len {

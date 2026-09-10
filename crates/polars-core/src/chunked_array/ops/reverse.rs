@@ -71,8 +71,18 @@ impl ChunkReverse for ListChunked {
         if self.is_empty() {
             return self.clone();
         };
-        let ca: Self = self.series_iter().rev().collect_trusted();
-        ca.with_name(self.name().clone())
+
+        // Read out of the chunks by index, rather than collected back from a `Series` per element:
+        // a collect carries no inner type of its own, so a column of nothing but nulls came back
+        // as a `List(Null)` — the elements alone do not say what is under them.
+        let idx = IdxCa::from_vec(
+            PlSmallStr::EMPTY,
+            (0..self.len() as IdxSize).rev().collect(),
+        );
+        // SAFETY: every index is below the length.
+        let mut ca = unsafe { self.take_unchecked(&idx) };
+        ca.rename(self.name().clone());
+        ca
     }
 }
 

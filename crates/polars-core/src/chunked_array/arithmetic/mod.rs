@@ -51,7 +51,9 @@ fn concat_binview(a: &PlBinaryViewArray, b: &PlBinaryViewArray) -> PlBinaryViewA
     let mut scratch = vec![];
     for (a, b) in a.values_iter().zip(b.values_iter()) {
         concat_binary_arrs(a, b, &mut scratch);
-        mutable.push_value(&scratch)
+        // The mask both sides combine into is applied to the views below, so the loop keeps
+        // none of its own — see `PlBinaryViewArrayBuilder::push_value_ignore_validity`.
+        mutable.push_value_ignore_validity(&scratch)
     }
 
     mutable.freeze().with_validity(validity)

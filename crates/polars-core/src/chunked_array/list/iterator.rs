@@ -164,7 +164,68 @@ impl ListChunked {
         }
     }
 
-    /// Apply a closure `F` elementwise.
+    /// The number of elements every one of which reads the one list this array holds, if that is
+    /// how it holds them: a single chunk whose offsets repeat one range, with no null element to
+    /// read anything else for.
+    ///
+    /// A closure applied element by element then only has to see that one list: its answer is the
+    /// answer for every element, and the array of them repeats it rather than holding a copy per
+    /// element. See [`apply_amortized_same_type`](Self::apply_amortized_same_type).
+    fn repeats_one_list(&self) -> Option<usize> {
+        let [chunk] = self.chunks().as_slice() else {
+            return None;
+        };
+        let arr = chunk.as_any().downcast_ref::<PlListArray>()?;
+
+        (arr.len() > 1 && arr.null_count() == 0 && arr.scalar_offsets().is_some())
+            .then_some(arr.len())
+    }
+
+    /// `length` elements over the single list `out`, which every one of them reads.
+    ///
+    /// The values hold that list once, however many elements repeat it, and the inner type stays
+    /// the one this array already names — the caller having applied a closure that keeps it.
+    fn repeat_one_answer(&self, out: &Series, length: usize) -> Self {
+        let arr = PlListArray::new_scalar(to_arr(out), length);
+        let mut ca = ChunkedArray::from_chunk_iter_and_field(self.field.clone(), [arr]);
+
+        // Every element reads the one list, so they are all empty or none of them is.
+        if !out.is_empty() {
+            ca.set_fast_explode();
+        }
+        ca
+    }
+
+    /// [`repeat_one_answer`](Self::repeat_one_answer), for a closure that changed the inner type:
+    /// the answer says what is under the lists now.
+    fn repeat_one_answer_of_dtype(&self, out: &Series, length: usize) -> Self {
+        let arr = PlListArray::new_scalar(to_arr(out), length);
+
+        // SAFETY: the values are the answer itself, so the inner type is the one it carries.
+        let mut ca = unsafe {
+            ListChunked::from_chunks_and_dtype_unchecked(
+                self.name().clone(),
+                vec![Box::new(arr)],
+                DataType::List(Box::new(out.dtype().clone())),
+            )
+        };
+
+        if !out.is_empty() {
+            ca.set_fast_explode();
+        }
+        ca
+    }
+
+    /// The one list every element reads, for [`repeats_one_list`](Self::repeats_one_list) to have
+    /// answered `Some`.
+    fn one_list(&self) -> AmortSeries {
+        self.amortized_iter()
+            .next()
+            .flatten()
+            .expect("an array that repeats one list holds it, and holds it for every element")
+    }
+
+    /// Applies a closure `F` elementwise.
     #[must_use]
     pub fn apply_amortized_generic<F, K, V>(&self, f: F) -> ChunkedArray<V>
     where
@@ -376,6 +437,14 @@ impl ListChunked {
         if self.is_empty() {
             return self.clone();
         }
+
+        // The one list every element reads is mapped once, and the answer is that one list
+        // repeated: `f` runs once rather than once per element, and the elements share it.
+        if let Some(length) = self.repeats_one_list() {
+            let out = f(self.one_list());
+            return self.repeat_one_answer(&out, length);
+        }
+
         let mut fast_explode = self.null_count() == 0;
         let elements = self
             .amortized_iter()
@@ -406,6 +475,13 @@ impl ListChunked {
         if self.is_empty() {
             return Ok(self.clone());
         }
+
+        // As in `apply_amortized_same_type`, with the dtype the one answer came back as.
+        if let Some(length) = self.repeats_one_list() {
+            let out = f(self.one_list())?;
+            return Ok(self.repeat_one_answer_of_dtype(&out, length));
+        }
+
         let mut fast_explode = self.null_count() == 0;
         let mut ca: ListChunked = {
             self.amortized_iter()
@@ -436,6 +512,34 @@ impl ListChunked {
     /// # Safety
     /// The closure `F` must return the same dtype as the input.
     pub unsafe fn try_apply_amortized_same_type<F>(&self, mut f: F) -> PolarsResult<Self>
+    where
+        F: FnMut(AmortSeries) -> PolarsResult<Series>,
+    {
+        // As in `apply_amortized_same_type`: one list mapped once, the answer shared.
+        if !self.is_empty()
+            && let Some(length) = self.repeats_one_list()
+        {
+            let out = f(self.one_list())?;
+            return Ok(self.repeat_one_answer(&out, length));
+        }
+
+        // SAFETY: the caller's guarantee is the one this asks for.
+        unsafe { self.try_apply_amortized_same_type_per_element(f) }
+    }
+
+    /// [`try_apply_amortized_same_type`](Self::try_apply_amortized_same_type), applying `f` to
+    /// every element even where they all read the one list.
+    ///
+    /// This is what an `f` that answers differently on the same list from one call to the next
+    /// asks for — one that samples without a seed, say. An `f` that does not should take the
+    /// method above, which then only calls it once.
+    ///
+    /// # Safety
+    /// The closure `F` must return the same dtype as the input.
+    pub unsafe fn try_apply_amortized_same_type_per_element<F>(
+        &self,
+        mut f: F,
+    ) -> PolarsResult<Self>
     where
         F: FnMut(AmortSeries) -> PolarsResult<Series>,
     {

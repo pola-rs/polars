@@ -152,11 +152,14 @@ pub fn primitive_to_binview<T: NativeType + SerPrimitive>(
             .with_validity(from.validity().map(PlBitmap::from));
     }
 
+    // Every value is written, whether or not it is an element: the mask of the input says which
+    // of them are, and it is applied to the views once rather than set a bit at a time inside the
+    // loop — which is what `push_value` would do, for a mask this then replaces.
     let values = from.flat_values().unwrap();
     let mut builder = PlBinaryViewArrayBuilder::with_capacity(values.len());
     for &value in values.iter() {
         write(value, &mut scratch);
-        builder.push_value(&scratch);
+        builder.push_value_ignore_validity(&scratch);
     }
     builder
         .freeze()
@@ -293,7 +296,9 @@ pub fn decimal_to_utf8view(from: &PlPrimitiveArray<i128>, from_scale: usize) -> 
         let values = from.flat_values().unwrap();
         let mut builder = PlBinaryViewArrayBuilder::with_capacity(values.len());
         for &value in values.iter() {
-            builder.push_value(
+            // As in `primitive_to_binview`: the mask of the input is applied to the views below,
+            // so the loop keeps none of its own.
+            builder.push_value_ignore_validity(
                 fmt_buf
                     .format_dec128(value, from_scale, false, false)
                     .as_bytes(),

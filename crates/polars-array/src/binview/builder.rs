@@ -57,6 +57,23 @@ impl PlBinaryViewArrayBuilder {
         self.validity.extend_constant(1, true);
     }
 
+    /// Appends `value` as an element of its own, leaving the validity mask untouched.
+    ///
+    /// The mask a caller of this builds itself — `with_validity` on the frozen array, say, out of
+    /// the mask of the input it read the values off. It stays out of the loop that way: a builder
+    /// this is pushed onto keeps no mask at all, where `push_value` sets a bit per element for a
+    /// mask the caller then throws away.
+    ///
+    /// A builder must not see both this and a call that does maintain the mask
+    /// ([`push_value`](Self::push_value), [`push_null`](Self::push_null), the
+    /// [`StaticArrayBuilder`] methods): the bits would then stand for some of the elements and not
+    /// others.
+    #[inline]
+    pub fn push_value_ignore_validity(&mut self, value: &[u8]) {
+        let view = self.copy_value(value);
+        self.views.push(view);
+    }
+
     /// Appends a null.
     pub fn push_null(&mut self) {
         self.views.push(View::default());

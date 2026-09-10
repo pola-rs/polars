@@ -84,6 +84,36 @@ impl ArrayChunked {
         }
     }
 
+    /// The number of elements every one of which reads the one list this array holds, if that is
+    /// how it holds them: a single chunk whose values are that one list, with no null element to
+    /// read anything else for.
+    ///
+    /// A closure applied element by element then only has to see that one list — see
+    /// [`apply_amortized_same_type`](Self::apply_amortized_same_type).
+    fn repeats_one_list(&self) -> Option<usize> {
+        let [chunk] = self.chunks().as_slice() else {
+            return None;
+        };
+        let arr = chunk.as_any().downcast_ref::<PlFixedSizeListArray>()?;
+
+        (arr.len() > 1 && arr.null_count() == 0 && arr.values_are_scalar()).then_some(arr.len())
+    }
+
+    /// The one list every element reads, for [`repeats_one_list`](Self::repeats_one_list) to have
+    /// answered `Some`.
+    fn one_list(&self) -> AmortSeries {
+        self.amortized_iter()
+            .next()
+            .flatten()
+            .expect("an array that repeats one list holds it, and holds it for every element")
+    }
+
+    /// `length` elements over the single list `out`, which every one of them reads.
+    fn repeat_one_answer(&self, out: &Series, length: usize) -> Self {
+        let arr = PlFixedSizeListArray::new_broadcast(to_arr(out), self.width(), length, None);
+        ChunkedArray::from_chunk_iter_and_field(self.field.clone(), [arr])
+    }
+
     pub fn try_apply_amortized_to_list<F>(&self, mut f: F) -> PolarsResult<ListChunked>
     where
         F: FnMut(AmortSeries) -> PolarsResult<Series>,
@@ -134,6 +164,14 @@ impl ArrayChunked {
         if self.is_empty() {
             return self.clone();
         }
+
+        // The one list every element reads is mapped once, and the answer is that one list
+        // repeated: `f` runs once rather than once per element, and the elements share it.
+        if let Some(length) = self.repeats_one_list() {
+            let out = f(self.one_list());
+            return self.repeat_one_answer(&out, length);
+        }
+
         let elements = self
             .amortized_iter()
             .map(|opt_v| {
@@ -158,6 +196,13 @@ impl ArrayChunked {
         if self.is_empty() {
             return Ok(self.clone());
         }
+
+        // As in `apply_amortized_same_type`: one list mapped once, the answer shared.
+        if let Some(length) = self.repeats_one_list() {
+            let out = f(self.one_list())?;
+            return Ok(self.repeat_one_answer(&out, length));
+        }
+
         let elements = self
             .amortized_iter()
             .map(|opt_v| {
