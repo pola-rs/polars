@@ -1,6 +1,6 @@
 //! macros that define the extraction of `week`, `weekday`, `year`, `hour` etc. from one value.
 #[cfg(feature = "dtype-date")]
-use arrow::temporal_conversions::date32_to_datetime_opt;
+use arrow::temporal_conversions::date32_to_date_opt;
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time_opt;
 use chrono::{Datelike, Timelike};
@@ -9,14 +9,18 @@ use super::super::windows::calendar::*;
 use super::*;
 
 trait PolarsIso {
-    fn week(&self) -> i8;
+    /// The ISO week number, 1 through 53.
+    ///
+    /// Named apart from `week` because `NaiveDate` has an inherent `week(Weekday)` of its own that
+    /// would shadow it.
+    fn iso_week_number(&self) -> i8;
     fn iso_year(&self) -> i32;
     /// The day of the week as Monday = 1 through Sunday = 7.
     fn weekday_number(&self) -> i8;
 }
 
 impl PolarsIso for NaiveDateTime {
-    fn week(&self) -> i8 {
+    fn iso_week_number(&self) -> i8 {
         self.iso_week().week().try_into().unwrap()
     }
     fn iso_year(&self) -> i32 {
@@ -28,7 +32,7 @@ impl PolarsIso for NaiveDateTime {
 }
 
 impl PolarsIso for NaiveDate {
-    fn week(&self) -> i8 {
+    fn iso_week_number(&self) -> i8 {
         self.iso_week().week().try_into().unwrap()
     }
     fn iso_year(&self) -> i32 {
@@ -75,33 +79,41 @@ macro_rules! to_calendar_value {
     };
 }
 
-// Dates
+// Dates. Every one of these reads a field of the day itself, so the day is all that is worked
+// out: `date32_to_date_opt` is one day-count conversion where `date32_to_datetime_opt` goes on to
+// build the midnight time of day that none of them looks at.
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(date_to_iso_week, week, date32_to_datetime_opt, i32, i8);
+to_temporal_unit!(
+    date_to_iso_week,
+    iso_week_number,
+    date32_to_date_opt,
+    i32,
+    i8
+);
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(date_to_iso_year, iso_year, date32_to_datetime_opt, i32, i32);
+to_temporal_unit!(date_to_iso_year, iso_year, date32_to_date_opt, i32, i32);
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(date_to_year, year, date32_to_datetime_opt, i32, i32);
+to_temporal_unit!(date_to_year, year, date32_to_date_opt, i32, i32);
 #[cfg(feature = "dtype-date")]
 to_boolean_temporal_unit!(
     date_to_is_leap_year,
     year,
     is_leap_year,
-    date32_to_datetime_opt,
+    date32_to_date_opt,
     i32
 );
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(date_to_month, month, date32_to_datetime_opt, i32, i8);
+to_temporal_unit!(date_to_month, month, date32_to_date_opt, i32, i8);
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(date_to_day, day, date32_to_datetime_opt, i32, i8);
+to_temporal_unit!(date_to_day, day, date32_to_date_opt, i32, i8);
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(date_to_ordinal, ordinal, date32_to_datetime_opt, i32, i16);
+to_temporal_unit!(date_to_ordinal, ordinal, date32_to_date_opt, i32, i16);
 #[cfg(feature = "dtype-date")]
 to_calendar_value!(
     date_to_days_in_month,
     dt,
     days_in_month(dt.year(), dt.month() as u8),
-    date32_to_datetime_opt,
+    date32_to_date_opt,
     i32,
     i8
 );
@@ -146,7 +158,7 @@ datetime_field! {
     datetime_second, dt, dt.second() as i8, i8;
     datetime_nanosecond, dt, dt.nanosecond() as i32, i32;
     datetime_weekday, dt, dt.weekday_number(), i8;
-    datetime_iso_week, dt, dt.week(), i8;
+    datetime_iso_week, dt, dt.iso_week_number(), i8;
     datetime_iso_year, dt, dt.iso_year(), i32;
     datetime_ordinal, dt, dt.ordinal() as i16, i16;
     datetime_is_leap_year, dt, is_leap_year(dt.year()), bool;

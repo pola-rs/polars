@@ -1510,7 +1510,9 @@ def test_sort_nested_column_that_repeats_one_element(
     # are all the same one are in order already, so the chunk is its own answer: 285 ms
     # over 2M repeated structs, and 618 ms over 2M repeated lists, went to nothing.
     n = 200_000
-    repeated = pl.select(pl.repeat(pl.lit(value, dtype=dtype), n).alias("a")).to_series()
+    repeated = pl.select(
+        pl.repeat(pl.lit(value, dtype=dtype), n).alias("a")
+    ).to_series()
     assert repeated.n_chunks() == 1
     flat = pl.Series("a", [value] * n, dtype=dtype)
 
@@ -1527,8 +1529,8 @@ def test_sort_nested_column_that_repeats_one_element(
         pl.DataFrame({"a": flat}).sort("a", **kwargs, maintain_order=True),
     )
 
-    # The one element is still held once, rather than one slot per element: the sort answers
-    # with the chunk it was given.
+    # The one element is still held once, rather than one slot per element: the
+    # sort answers with the chunk it was given.
     assert sorted_repeated.estimated_size() == repeated.estimated_size()
     assert repeated.estimated_size() <= flat.estimated_size()
 
@@ -1544,13 +1546,17 @@ def test_sort_nested_column_that_repeats_one_element(
 def test_sort_nested_column_of_one_element_is_not_taken_as_repeated(
     value: Any, dtype: PolarsDataType
 ) -> None:
-    # A single element is trivially in order, but says nothing about a second one, so the
-    # repeated-element answer must not be read off a column that holds only the one.
+    # A single element is trivially in order, but says nothing about a second one,
+    # so the repeated-element answer must not be read off a column holding one.
     one = pl.Series("a", [value], dtype=dtype)
     assert_series_equal(one.sort(), one)
     assert_series_equal(one.arg_sort(), pl.Series("a", [0], dtype=pl.get_index_type()))
 
     # A column whose elements differ still sorts by comparing them.
     two = pl.Series("a", [value, None], dtype=dtype)
-    assert_series_equal(two.sort(nulls_last=True), pl.Series("a", [value, None], dtype=dtype))
-    assert_series_equal(two.sort(nulls_last=False), pl.Series("a", [None, value], dtype=dtype))
+    assert_series_equal(
+        two.sort(nulls_last=True), pl.Series("a", [value, None], dtype=dtype)
+    )
+    assert_series_equal(
+        two.sort(nulls_last=False), pl.Series("a", [None, value], dtype=dtype)
+    )

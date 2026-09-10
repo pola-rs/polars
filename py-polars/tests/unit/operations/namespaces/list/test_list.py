@@ -1603,7 +1603,18 @@ def test_eval_over_one_repeated_list_keeps_sampling_per_element(
 )
 @pytest.mark.parametrize(
     "reduction",
-    ["mean", "median", "std", "var", "min", "max", "sum", "arg_min", "arg_max", "n_unique"],
+    [
+        "mean",
+        "median",
+        "std",
+        "var",
+        "min",
+        "max",
+        "sum",
+        "arg_min",
+        "arg_max",
+        "n_unique",
+    ],
 )
 def test_reduce_one_repeated_list_once(
     value: Any, dtype: pl.DataType, reduction: str

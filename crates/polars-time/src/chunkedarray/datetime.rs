@@ -10,24 +10,15 @@ use polars_ops::chunked_array::datetime::replace_time_zone;
 
 use super::*;
 
-/// Reads a timestamp in `time_unit` as the instant it stands for.
-fn timestamp_to_datetime(time_unit: TimeUnit) -> fn(i64) -> Option<NaiveDateTime> {
-    match time_unit {
-        TimeUnit::Nanoseconds => timestamp_ns_to_datetime_opt,
-        TimeUnit::Microseconds => timestamp_us_to_datetime_opt,
-        TimeUnit::Milliseconds => timestamp_ms_to_datetime_opt,
-    }
-}
-
-/// Extracts one field of the local wall time of every element.
+/// Extracts one field of the local wall time of every element, reading the instants with
+/// `$to_datetime` — the conversion the column's timestamp unit asks for.
 ///
 /// A column that names a time zone has that zone's offset applied as each instant is read, in the
 /// same pass the field is taken in — rather than the wall times being written out as a column of
 /// their own first and then read back.
-macro_rules! extract {
-    ($ca:expr, $field:expr) => {{
+macro_rules! extract_with {
+    ($ca:expr, $field:expr, $to_datetime:path) => {{
         let ca = $ca;
-        let to_datetime = timestamp_to_datetime(ca.time_unit());
 
         #[cfg(feature = "timezones")]
         if let DataType::Datetime(_, Some(time_zone)) = ca.dtype() {
@@ -36,14 +27,30 @@ macro_rules! extract {
                 .expect("a column's time zone is validated when it is set");
 
             return unary_elementwise(ca.physical(), move |opt| {
-                opt.and_then(to_datetime)
+                opt.and_then($to_datetime)
                     .map(|instant| $field(tz.from_utc_datetime(&instant).naive_local()))
             });
         }
 
         unary_elementwise(ca.physical(), move |opt| {
-            opt.and_then(to_datetime).map($field)
+            opt.and_then($to_datetime).map($field)
         })
+    }};
+}
+
+/// [`extract_with`], over whichever conversion the column's timestamp unit asks for.
+///
+/// The unit is dispatched on here, once per column, rather than its conversion being picked as a
+/// `fn` pointer that the loop then calls indirectly once per element: the conversion is cheap
+/// enough that a call it cannot inline costs about a third as much again as the work it does.
+macro_rules! extract {
+    ($ca:expr, $field:expr) => {{
+        let ca = $ca;
+        match ca.time_unit() {
+            TimeUnit::Nanoseconds => extract_with!(ca, $field, timestamp_ns_to_datetime_opt),
+            TimeUnit::Microseconds => extract_with!(ca, $field, timestamp_us_to_datetime_opt),
+            TimeUnit::Milliseconds => extract_with!(ca, $field, timestamp_ms_to_datetime_opt),
+        }
     }};
 }
 

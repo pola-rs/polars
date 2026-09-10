@@ -34,11 +34,34 @@ pub fn date32_to_datetime(v: i32) -> NaiveDateTime {
     date32_to_datetime_opt(v).expect("invalid or out-of-range datetime")
 }
 
+/// The instant `count` sub-second units after the epoch, where `per_day` of them make up a day and
+/// `per_second` of them a second.
+///
+/// The day the count falls in and the time of day within it are worked out separately, which is
+/// what makes this cheap: adding a [`TimeDelta`] onto the epoch datetime instead carries the
+/// general date-and-time arithmetic, and a field extraction over a column spends some 2.4x the
+/// instructions per element on it.
+#[inline]
+fn timestamp_to_datetime_opt(count: i64, per_day: i64, per_second: i64) -> Option<NaiveDateTime> {
+    let days = i32::try_from(count.div_euclid(per_day)).ok()?;
+    // A whole day of sub-second units need not fit in a `u32`; the seconds and the sub-second
+    // remainder that come out of it do.
+    let rem = count.rem_euclid(per_day);
+
+    let date = date32_to_date_opt(days)?;
+    let time = NaiveTime::from_num_seconds_from_midnight_opt(
+        (rem / per_second) as u32,
+        (rem % per_second) as u32 * (NANOSECONDS / per_second) as u32,
+    )?;
+
+    Some(date.and_time(time))
+}
+
 /// converts a `i32` representing a `date32` to [`NaiveDateTime`]
 #[inline]
 pub fn date32_to_datetime_opt(v: i32) -> Option<NaiveDateTime> {
-    let delta = TimeDelta::try_days(v.into())?;
-    unix_epoch().checked_add_signed(delta)
+    // A date is midnight of the day it names, so there is no time of day to work out.
+    Some(date32_to_date_opt(v)?.and_time(NaiveTime::MIN))
 }
 
 /// converts a `i32` representing a `date32` to [`NaiveDate`]
@@ -50,7 +73,7 @@ pub fn date32_to_date(days: i32) -> NaiveDate {
 /// converts a `i32` representing a `date32` to [`NaiveDate`]
 #[inline]
 pub fn date32_to_date_opt(days: i32) -> Option<NaiveDate> {
-    NaiveDate::from_num_days_from_ce_opt(EPOCH_DAYS_FROM_CE + days)
+    NaiveDate::from_num_days_from_ce_opt(EPOCH_DAYS_FROM_CE.checked_add(days)?)
 }
 
 /// converts a `i64` representing a `date64` to [`NaiveDateTime`]
@@ -165,8 +188,7 @@ pub fn timestamp_ms_to_datetime(v: i64) -> NaiveDateTime {
 /// converts a `i64` representing a `timestamp(ms)` to [`NaiveDateTime`]
 #[inline]
 pub fn timestamp_ms_to_datetime_opt(v: i64) -> Option<NaiveDateTime> {
-    let delta = TimeDelta::try_milliseconds(v)?;
-    unix_epoch().checked_add_signed(delta)
+    timestamp_to_datetime_opt(v, MILLISECONDS_IN_DAY, MILLISECONDS)
 }
 
 /// converts a `i64` representing a `timestamp(us)` to [`NaiveDateTime`]
@@ -178,8 +200,7 @@ pub fn timestamp_us_to_datetime(v: i64) -> NaiveDateTime {
 /// converts a `i64` representing a `timestamp(us)` to [`NaiveDateTime`]
 #[inline]
 pub fn timestamp_us_to_datetime_opt(v: i64) -> Option<NaiveDateTime> {
-    let delta = TimeDelta::microseconds(v);
-    unix_epoch().checked_add_signed(delta)
+    timestamp_to_datetime_opt(v, MICROSECONDS_IN_DAY, MICROSECONDS)
 }
 
 /// converts a `i64` representing a `timestamp(ns)` to [`NaiveDateTime`]
@@ -191,8 +212,7 @@ pub fn timestamp_ns_to_datetime(v: i64) -> NaiveDateTime {
 /// converts a `i64` representing a `timestamp(ns)` to [`NaiveDateTime`]
 #[inline]
 pub fn timestamp_ns_to_datetime_opt(v: i64) -> Option<NaiveDateTime> {
-    let delta = TimeDelta::nanoseconds(v);
-    unix_epoch().checked_add_signed(delta)
+    timestamp_to_datetime_opt(v, NANOSECONDS_IN_DAY, NANOSECONDS)
 }
 
 /// Converts a timestamp in `time_unit` and `timezone` into [`chrono::DateTime`].
@@ -308,4 +328,133 @@ pub fn parse_offset_tz(timezone: &str) -> PolarsResult<chrono_tz::Tz> {
     timezone
         .parse::<chrono_tz::Tz>()
         .map_err(|_| polars_err!(InvalidOperation: "timezone \"{timezone}\" cannot be parsed"))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    /// The `TimeDelta` arithmetic the conversions below replaced, kept as the reference they are
+    /// checked against: they read the day and the time of day separately instead, which is
+    /// cheaper but has its own boundaries to get right.
+    fn reference(count: i64, per_second: i64) -> Option<NaiveDateTime> {
+        let delta = TimeDelta::new(
+            count.div_euclid(per_second),
+            (count.rem_euclid(per_second) * (NANOSECONDS / per_second)) as u32,
+        )?;
+        unix_epoch().checked_add_signed(delta)
+    }
+
+    /// Both `i64` extremes, both edges of the representable window, a stride across the whole
+    /// range, and every count around the epoch and the day boundaries either side of it — where
+    /// the euclidean split changes sign.
+    fn check_unit(
+        name: &str,
+        convert: fn(i64) -> Option<NaiveDateTime>,
+        per_day: i64,
+        any_out_of_range: bool,
+    ) {
+        let per_second = per_day / SECONDS_IN_DAY;
+        let mut out_of_range = 0;
+        let mut check = |count: i64| {
+            assert_eq!(
+                convert(count),
+                reference(count, per_second),
+                "{name} conversion disagrees at {count}"
+            );
+            out_of_range += usize::from(convert(count).is_none());
+        };
+
+        for count in (i64::MIN..i64::MIN + 500).chain(i64::MAX - 500..i64::MAX) {
+            check(count);
+        }
+        check(i64::MAX);
+
+        // The edges of the window, found by bisecting on whether the count is representable.
+        for (mut inside, mut outside) in [(0i64, i64::MIN), (0i64, i64::MAX)] {
+            while inside.abs_diff(outside) > 1 {
+                let middle = inside + (outside - inside) / 2;
+                if convert(middle).is_some() {
+                    inside = middle;
+                } else {
+                    outside = middle;
+                }
+            }
+            for count in inside.saturating_sub(500)..inside.saturating_add(500) {
+                check(count);
+            }
+        }
+
+        let mut count = i64::MIN;
+        while count < i64::MAX - (1 << 45) {
+            check(count);
+            count += 1 << 45;
+        }
+        for count in -20_000i64..20_000 {
+            check(count);
+        }
+        for day in [-2i64, -1, 1, 2] {
+            for offset in -500..500 {
+                check(day * per_day + offset);
+            }
+        }
+
+        // Every `i64` nanosecond count lands inside the datetime range, so `ns` has no `None`
+        // boundary to check; the other two do, and it is the interesting part of the split.
+        assert_eq!(
+            out_of_range > 0,
+            any_out_of_range,
+            "{name}: {out_of_range} counts were out of range"
+        );
+    }
+
+    #[test]
+    fn timestamp_conversions_agree_with_adding_a_time_delta() {
+        check_unit(
+            "ms",
+            timestamp_ms_to_datetime_opt,
+            MILLISECONDS_IN_DAY,
+            true,
+        );
+        check_unit(
+            "us",
+            timestamp_us_to_datetime_opt,
+            MICROSECONDS_IN_DAY,
+            true,
+        );
+        check_unit(
+            "ns",
+            timestamp_ns_to_datetime_opt,
+            NANOSECONDS_IN_DAY,
+            false,
+        );
+    }
+
+    /// A date is midnight of the day it names, whichever way round it is worked out — including at
+    /// the `i32` extremes, where the day count added to the epoch overflows.
+    #[test]
+    fn date32_conversions_agree_with_adding_a_time_delta() {
+        let reference =
+            |days: i32| unix_epoch().checked_add_signed(TimeDelta::try_days(days.into())?);
+
+        let mut out_of_range = 0;
+        for days in (i32::MIN..i32::MIN + 1_000)
+            .chain(-500_000..500_000)
+            .chain(i32::MAX - 1_000..i32::MAX)
+            .chain([i32::MAX])
+        {
+            assert_eq!(
+                date32_to_datetime_opt(days),
+                reference(days),
+                "date32 conversion disagrees at {days}"
+            );
+            assert_eq!(
+                date32_to_date_opt(days),
+                reference(days).map(|instant| instant.date()),
+                "date32_to_date_opt disagrees at {days}"
+            );
+            out_of_range += usize::from(reference(days).is_none());
+        }
+        assert!(out_of_range > 0);
+    }
 }
