@@ -83,12 +83,31 @@ fn partition_nulls<'a, T: Copy>(
     (partitioned, validity)
 }
 
+/// How many elements a sort has to cover before it is handed to the thread pool.
+///
+/// `RAYON.install` injects a job and blocks on a latch whether or not the closure finds anything to
+/// split, which costs about 18 us on this machine — so a sort the calling thread would finish in
+/// less than that can only lose by asking for help. A sequential sort of this many `i64`s takes
+/// some 10 us, and one of this many row encodings — whose comparison is an order of magnitude
+/// dearer — some 200 us, so neither can repay the pool below it.
+///
+/// Above it this says nothing about whether the pool is worth asking: for cheap comparisons the
+/// two only break even around 16K elements. This is the floor under which parallelism cannot help,
+/// not the point at which it starts to.
+const PARALLEL_SORT_LIMIT: usize = 1024;
+
+/// Whether a sort of `len` elements is worth handing to the thread pool, having been allowed to.
+#[inline]
+pub(crate) fn sort_in_parallel(len: usize, parallel: bool) -> bool {
+    parallel && len >= PARALLEL_SORT_LIMIT && RAYON.current_num_threads() > 1
+}
+
 pub(crate) fn sort_by_branch<T, C>(slice: &mut [T], descending: bool, cmp: C, parallel: bool)
 where
     T: Send,
     C: Send + Sync + Fn(&T, &T) -> Ordering,
 {
-    if parallel {
+    if sort_in_parallel(slice.len(), parallel) {
         RAYON.install(|| match descending {
             true => slice.par_sort_by(|a, b| cmp(b, a)),
             false => slice.par_sort_by(cmp),
@@ -121,7 +140,7 @@ where
     T: Send,
     C: Send + Sync + Fn(&T, &T) -> Ordering,
 {
-    if options.multithreaded {
+    if sort_in_parallel(slice.len(), options.multithreaded) {
         RAYON.install(|| match options.descending {
             true => slice.par_sort_unstable_by(|a, b| cmp(b, a)),
             false => slice.par_sort_unstable_by(cmp),
@@ -960,6 +979,26 @@ pub unsafe fn perfect_sort(idx: &[(IdxSize, IdxSize)], out: &mut Vec<IdxSize>) {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+
+    #[test]
+    fn a_sort_below_the_parallel_limit_is_not_handed_to_the_pool() {
+        use super::{PARALLEL_SORT_LIMIT, sort_in_parallel};
+
+        // `list.sort` sorts every element of the column on its own, so a column of a million
+        // three-element lists asked the pool a million times and spent 14 s where the calling
+        // thread would have taken 0.2 s.
+        assert!(!sort_in_parallel(0, true));
+        assert!(!sort_in_parallel(3, true));
+        assert!(!sort_in_parallel(PARALLEL_SORT_LIMIT - 1, true));
+
+        // Above the limit it is the caller's `multithreaded` that decides, and a pool of one
+        // thread is never worth the trip.
+        assert!(!sort_in_parallel(PARALLEL_SORT_LIMIT, false));
+        assert_eq!(
+            sort_in_parallel(PARALLEL_SORT_LIMIT, true),
+            crate::runtime::RAYON.current_num_threads() > 1,
+        );
+    }
 
     #[test]
     fn test_arg_sort() {

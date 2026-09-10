@@ -895,6 +895,32 @@ def test_list_ordering() -> None:
     )
 
 
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_sorting_many_small_lists(descending: bool, nulls_last: bool) -> None:
+    # Every element is sorted on its own, so this used to ask the thread pool once per
+    # element: 14 s over a million three-element lists, against 0.2 s on the calling
+    # thread. Enough rows here that a per-element trip to the pool would be felt.
+    rows = [[(i * 7) % 5, None, (i * 3) % 5] for i in range(20_000)]
+    s = pl.Series("a", rows, dtype=pl.List(pl.Int64))
+
+    def expected(row: list[int | None]) -> list[int | None]:
+        values = sorted((v for v in row if v is not None), reverse=descending)
+        return [*values, None] if nulls_last else [None, *values]
+
+    assert_series_equal(
+        s.list.sort(descending=descending, nulls_last=nulls_last),
+        pl.Series("a", [expected(row) for row in rows], dtype=pl.List(pl.Int64)),
+    )
+
+    # The fixed-width side sorts through the same per-element path.
+    arr = s.cast(pl.Array(pl.Int64, 3))
+    assert_series_equal(
+        arr.arr.sort(descending=descending, nulls_last=nulls_last),
+        pl.Series("a", [expected(row) for row in rows], dtype=pl.Array(pl.Int64, 3)),
+    )
+
+
 def test_list_get_logical_type() -> None:
     s = pl.Series(
         "a",

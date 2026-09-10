@@ -264,7 +264,7 @@ pub(crate) fn arg_sort_row_fmt(
     let rows_encoded = _get_rows_encoded(by, &[descending], &[nulls_last])?;
     let mut items: Vec<_> = rows_encoded.iter().enumerate_idx().collect();
 
-    if parallel {
+    if super::sort_in_parallel(items.len(), parallel) {
         RAYON.install(|| items.par_sort_by(|a, b| a.1.cmp(b.1)));
     } else {
         items.sort_by(|a, b| a.1.cmp(b.1));
