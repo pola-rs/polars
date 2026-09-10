@@ -101,6 +101,21 @@ where
     }
 }
 
+/// `arg_sort`s `idx` over the elements `element` reads, which has the representation of the array
+/// behind it already resolved.
+fn arg_sort_bytes<'a, F>(idx: &mut [IdxSize], options: SortOptions, element: F)
+where
+    F: Fn(usize) -> &'a [u8] + Send + Sync,
+{
+    let cmp = |a: &IdxSize, b: &IdxSize| element(*a as usize).tot_cmp(&element(*b as usize));
+
+    if options.maintain_order {
+        sort_by_branch(idx, options.descending, cmp, options.multithreaded);
+    } else {
+        sort_unstable_by_branch(idx, options, cmp);
+    }
+}
+
 fn sort_unstable_by_branch<T, C>(slice: &mut [T], options: SortOptions, cmp: C)
 where
     T: Send,
@@ -621,24 +636,22 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
         let arr = ca.downcast_as_array();
         let mut idx = (0..(arr.len() as IdxSize)).collect::<Vec<_>>();
 
-        let argsort = |args| {
-            if options.maintain_order {
-                sort_by_branch(
-                    args,
-                    options.descending,
-                    |a, b| unsafe {
-                        let a = arr.value_unchecked(*a as usize);
-                        let b = arr.value_unchecked(*b as usize);
-                        a.tot_cmp(&b)
-                    },
-                    options.multithreaded,
-                );
-            } else {
-                sort_unstable_by_branch(args, options, |a, b| unsafe {
-                    let a = arr.value_unchecked(*a as usize);
-                    let b = arr.value_unchecked(*b as usize);
-                    a.tot_cmp(&b)
-                });
+        // Which representation the offsets are in is resolved here rather than at every
+        // comparison: `value_unchecked` folds the index onto the offsets it holds, and a sort
+        // asks for two elements per comparison — some 40M of them over a million rows — so that
+        // fold costs about as much again as comparing the bytes it hands back.
+        let values = arr.values().as_slice();
+        let argsort = |args: &mut [IdxSize]| {
+            // Offsets that cover the one range every element reads leave them all the same bytes,
+            // so every comparison answers `Equal` and the indices are already sorted. Otherwise
+            // they hold one start per element, and an element is the run between two of them.
+            if let Some(offsets) = arr.flat_offsets() {
+                let offsets = offsets.as_slice();
+                arg_sort_bytes(args, options, |i| unsafe {
+                    let start = *offsets.get_unchecked(i) as usize;
+                    let end = *offsets.get_unchecked(i + 1) as usize;
+                    values.get_unchecked(start..end)
+                })
             }
         };
 
