@@ -176,9 +176,8 @@ where
         Some(weights) => {
             let wsum = weights
                 .iter()
-                .map(|v| {
+                .inspect(|v| {
                     debug_assert!(v.is_sign_positive(), "weights have to be positive");
-                    v
                 })
                 .sum();
             polars_ensure!(
