@@ -143,18 +143,22 @@ impl GroupsIdx {
         self.into_iter()
     }
 
+    #[inline(always)]
     pub fn all(&self) -> &[IdxVec] {
         &self.all
     }
 
+    #[inline(always)]
     pub fn first(&self) -> &[IdxSize] {
         &self.first
     }
 
+    #[inline(always)]
     pub(crate) fn len(&self) -> usize {
         self.first.len()
     }
 
+    #[inline(always)]
     pub(crate) unsafe fn get_unchecked(&self, index: usize) -> BorrowIdxItem<'_> {
         let first = *self.first.get_unchecked(index);
         let all = self.all.get_unchecked(index);

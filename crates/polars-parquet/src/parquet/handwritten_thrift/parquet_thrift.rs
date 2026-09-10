@@ -458,6 +458,7 @@ pub(crate) trait ThriftCompactInputProtocol<'a> {
     }
 
     /// Read an `i32`.
+    #[inline]
     fn read_i32(&mut self) -> ThriftProtocolResult<i32> {
         Ok(self.read_zig_zag()? as _)
     }

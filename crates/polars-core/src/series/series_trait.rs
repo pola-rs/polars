@@ -227,6 +227,7 @@ pub trait SeriesTrait:
     }
 
     /// Get datatype of series.
+    #[inline(always)]
     fn dtype(&self) -> &DataType {
         self._dtype()
     }

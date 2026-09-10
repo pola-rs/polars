@@ -65,6 +65,7 @@ impl ScalarColumn {
         self.scalar.dtype()
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.length
     }
