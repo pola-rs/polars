@@ -25,7 +25,7 @@ pub trait IndexMapping {
         self.len() == 0
     }
     fn len(&self) -> usize;
-    
+
     #[inline(always)]
     fn get(&self, idx: u32) -> Option<Self::Output> {
         ((idx as usize) < self.len()).then(|| unsafe { self.get_unchecked(idx) })

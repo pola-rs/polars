@@ -344,7 +344,7 @@ trait IntoBytes {
 trait TrivialIntoBytes: AsRef<[u8]> {}
 impl<T: TrivialIntoBytes> IntoBytes for T {
     type AsRefT = Self;
-    
+
     #[inline(always)]
     fn into_bytes(self) -> Self {
         self
@@ -357,7 +357,7 @@ impl TrivialIntoBytes for String {}
 impl TrivialIntoBytes for &str {}
 impl<'a> IntoBytes for Cow<'a, str> {
     type AsRefT = Cow<'a, [u8]>;
-    
+
     #[inline]
     fn into_bytes(self) -> Cow<'a, [u8]> {
         match self {
