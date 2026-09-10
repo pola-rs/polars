@@ -122,6 +122,74 @@ def test_fast_path_vs_slow_path(datetimes: list[datetime], every: str) -> None:
     assert_series_equal(result, expected)
 
 
+@pytest.mark.parametrize("time_zone", [None, "UTC"])
+@pytest.mark.parametrize("every", ["1h", "1d", "1mo"])
+def test_truncate_sortedness(time_zone: str | None, every: str) -> None:
+    s = (
+        pl.Series(
+            "t", [datetime(2014, 10, 25, 12) + timedelta(hours=h) for h in range(4)]
+        )
+        .dt.replace_time_zone(time_zone)
+        .sort()
+    )
+    result = s.dt.truncate(every)
+    assert result.flags["SORTED_ASC"]
+    assert not result.flags["SORTED_DESC"]
+
+
+# The streaming engine derives sortedness from the values themselves, so it may report
+# this genuinely sorted result as sorted regardless of what truncation claims.
+@pytest.mark.may_fail_auto_streaming
+@pytest.mark.parametrize("every", ["1h", "1d", "1mo"])
+def test_truncate_sortedness_tz_aware_is_conservative(every: str) -> None:
+    # Truncation floors on the local clock, so a time zone that changes offset can turn
+    # ascending instants into descending ones.
+    s = (
+        pl.Series(
+            "t", [datetime(2014, 10, 25, 12) + timedelta(hours=h) for h in range(4)]
+        )
+        .dt.replace_time_zone("Asia/Magadan")
+        .sort()
+    )
+    result = s.dt.truncate(every)
+
+    assert not result.flags["SORTED_ASC"]
+    assert not result.flags["SORTED_DESC"]
+
+
+def test_truncate_sortedness_backwards_transition_28560() -> None:
+    # `Asia/Magadan` moved from +12 to +10 on 2014-10-26, so the local clock repeats and
+    # ascending instants truncate to descending ones.
+    s = (
+        pl.Series(
+            "t", [datetime(2014, 10, 25, 12) + timedelta(hours=h) for h in range(4)]
+        )
+        .dt.replace_time_zone("UTC")
+        .sort()
+        .dt.convert_time_zone("Asia/Magadan")
+    )
+    result = s.dt.truncate("1h")
+
+    assert not result.is_sorted()
+    assert result.sort().to_list() == sorted(result.to_list())
+
+
+@pytest.mark.parametrize("as_date", [False, True])
+def test_truncate_per_row_every_is_not_sorted(as_date: bool) -> None:
+    # A per-row `every` can floor a later timestamp into an earlier bucket, so ordering
+    # is not preserved even without a time zone.
+    s = pl.Series("t", [datetime(2020, 2, 5, 6), datetime(2020, 2, 6, 7)]).sort()
+    if as_date:
+        s = s.dt.date()
+    assert s.flags["SORTED_ASC"]
+
+    result = s.dt.truncate(pl.Series(["1d", "1mo"]))
+
+    assert result[1] < result[0]
+    assert not result.flags["SORTED_ASC"]
+    assert result.sort().to_list() == sorted(result.to_list())
+
+
 @pytest.mark.parametrize("as_date", [False, True])
 def test_truncate_unequal_length_22018(as_date: bool) -> None:
     s = pl.Series([datetime(2088, 8, 8, 8, 8, 8, 8)] * 2)
