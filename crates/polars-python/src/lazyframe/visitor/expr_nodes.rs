@@ -12,14 +12,14 @@ use polars_ops::prelude::RankMethod;
 use polars_ops::series::SearchSortedSide;
 use polars_ops::series::{ClosedInterval, InterpolationMethod};
 use polars_plan::dsl::DateRangeArgs;
-#[cfg(feature = "cutqcut")]
-use polars_plan::plans::{FractionSpec, IRBinMethod, IntervalSpec};
 use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
     IRBooleanFunction, IRCorrelationMethod, IRFunctionExpr, IRListFunction, IRPowFunction,
     IRRandomMethod, IRRangeFunction, IRRollingFunction, IRRollingFunctionBy, IRStringFunction,
     IRStructFunction, IRTemporalFunction,
 };
+#[cfg(feature = "cutqcut")]
+use polars_plan::plans::{FractionSpec, IRBinMethod, IntervalSpec};
 use polars_plan::prelude::{
     AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PlanCallback, WindowMapping,
 };
