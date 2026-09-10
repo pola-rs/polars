@@ -532,7 +532,14 @@ impl Series {
     ///
     /// # Safety
     ///
-    /// This can lead to invalid memory access in downstream code.
+    /// Payloads must be safe to read as `dtype`: categorical codes in range for every
+    /// non-null slot, and Maps satisfying the `MapChunked` storage safety contract. Null
+    /// entries or keys under null rows are allowed and compacted; those in live rows are
+    /// errors. Unsafe payloads can cause invalid memory access downstream.
+    ///
+    /// # Key uniqueness
+    /// Not required for safety. Whole-row transformations preserve existing uniqueness;
+    /// key-changing transformations must use validated construction.
     pub unsafe fn from_physical_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
         debug_assert!(!self.dtype().is_logical(), "{:?}", self.dtype());
 
@@ -576,7 +583,7 @@ impl Series {
                 })
             },
 
-            (D::Int32, D::Date) => feature_gated!("dtype-time", Ok(self.clone().into_date())),
+            (D::Int32, D::Date) => feature_gated!("dtype-date", Ok(self.clone().into_date())),
             (D::Int64, D::Datetime(tu, tz)) => feature_gated!(
                 "dtype-datetime",
                 Ok(self.clone().into_datetime(*tu, tz.clone()))
@@ -609,7 +616,12 @@ impl Series {
 
             #[cfg(feature = "dtype-map")]
             (D::List(_), D::Map(_, _)) => {
+                use crate::chunked_array::logical::{CanonicalizeMode, canonicalize_map_storage};
+
                 let storage = self.from_physical_unchecked(&dtype.map_storage_dtype().unwrap())?;
+                // Repair hidden nulls from dtype-blind propagation; reject live ones.
+                let storage = canonicalize_map_storage(&storage, CanonicalizeMode::NullsOnly)?
+                    .unwrap_or(storage);
                 Ok(MapChunked::from_storage_unchecked(dtype.clone(), storage).into_series())
             },
             #[cfg(feature = "dtype-extension")]
@@ -1124,6 +1136,7 @@ impl Default for Series {
 impl Deref for Series {
     type Target = dyn SeriesTrait;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.0.as_ref()
     }
