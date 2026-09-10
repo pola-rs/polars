@@ -96,8 +96,8 @@ impl ComputeNode for ReverseNode {
         _state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
+        assert!(recv_ports.len() == 1 && send_ports.len() == 1);
         // Very similar to [super::negative_slice::NegativeSliceNode].
-        assert!(recv_ports.is_empty() && send_ports.len() == 1);
         match &mut self.state {
             ReverseState::Buffering(buffer) => {
                 let mut recv = recv_ports[0].take().unwrap().serial();
@@ -114,6 +114,7 @@ impl ComputeNode for ReverseNode {
                 }));
             },
             ReverseState::Emitting { buffer, seq } => {
+                assert!(recv_ports[0].is_none());
                 let mut sender = send_ports[0].take().unwrap().serial();
                 join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
                     let source_token = SourceToken::new();
