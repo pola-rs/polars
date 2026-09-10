@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use polars_async::primitives::wait_group::WaitGroup;
-use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
+use polars_ooc::{LeastRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
 
 use super::compute_node_prelude::*;
 use crate::morsel::SourceToken;
@@ -24,14 +24,15 @@ struct Buffer {
 
 pub struct ReverseNode {
     state: ReverseState,
-    spill_ctx: MostRecentSpillContext,
+    /// Frames are emitted back-to-front, so it's best to spill the ones we received first
+    spill_ctx: LeastRecentSpillContext,
 }
 
 impl ReverseNode {
     pub fn new() -> ReverseNode {
         ReverseNode {
             state: ReverseState::Buffering(Buffer::default()),
-            spill_ctx: MostRecentSpillContext::new("reverse".into()),
+            spill_ctx: LeastRecentSpillContext::new("reverse".into()),
         }
     }
 }
