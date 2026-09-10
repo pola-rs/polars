@@ -3,7 +3,7 @@ use std::sync::Arc;
 use num_traits::AsPrimitive;
 use parking_lot::Mutex;
 use polars_core::config;
-use polars_core::prelude::PlRandomState;
+use polars_core::prelude::{InitHashMaps, PlHashSet, PlIndexSet, PlRandomState};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::{PolarsResult, polars_ensure, polars_err};
 use polars_expr::groups::new_hash_grouper;
@@ -40,6 +40,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderB
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::joins::merge_join::MergeJoinNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
+use crate::physical_plan::lower_group_by::augmented_group_by_input_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 fn has_potential_recurring_entrance(node: Node, arena: &Arena<AExpr>) -> bool {
@@ -939,6 +940,7 @@ fn to_graph_rec<'a>(
         GroupBy {
             inputs,
             key_per_input,
+            fused_agg_inputs_per_input,
             aggs_per_input,
         } => {
             let mut key_ports = Vec::new();
@@ -947,8 +949,14 @@ fn to_graph_rec<'a>(
             let mut reductions_per_input = Vec::new();
             let mut grouped_reductions = Vec::new();
             let mut grouped_reduction_cols = Vec::new();
+            let mut payload_per_input = Vec::new();
             let mut has_order_sensitive_agg = false;
-            for ((input, key), aggs) in inputs.iter().zip(key_per_input).zip(aggs_per_input) {
+            for (((input, key), fused), aggs) in inputs
+                .iter()
+                .zip(key_per_input)
+                .zip(fused_agg_inputs_per_input)
+                .zip(aggs_per_input)
+            {
                 let input_key = to_graph_rec(input.node, ctx)?;
                 key_ports.push((input_key, input.port));
 
@@ -962,6 +970,17 @@ fn to_graph_rec<'a>(
                     .try_collect_vec()?;
                 key_selectors_per_input.push(key_selectors);
 
+                // The fused expressions only reference input columns, so they are built
+                // against the un-augmented schema.
+                let fused_selectors = fused
+                    .iter()
+                    .map(|e| create_stream_expr(e, ctx, input_schema))
+                    .try_collect_vec()?;
+                let augmented_schema =
+                    augmented_group_by_input_schema(input_schema, fused, ctx.expr_arena)?;
+                let fused_names: PlHashSet<PlSmallStr> =
+                    fused.iter().map(|e| e.output_name().clone()).collect();
+
                 let mut reductions_for_this_input = Vec::new();
                 for agg in aggs {
                     has_order_sensitive_agg |= matches!(
@@ -974,8 +993,8 @@ fn to_graph_rec<'a>(
                         )
                     );
                     let (reduction, input_nodes) =
-                        into_reduction(agg.node(), ctx.expr_arena, input_schema, true)?;
-                    let cols = input_nodes
+                        into_reduction(agg.node(), ctx.expr_arena, &augmented_schema, true)?;
+                    let cols: Vec<PlSmallStr> = input_nodes
                         .iter()
                         .map(|node| {
                             let AExpr::Column(col) = ctx.expr_arena.get(*node) else {
@@ -989,6 +1008,44 @@ fn to_graph_rec<'a>(
                     grouped_reduction_cols.push(cols);
                 }
 
+                // Columns of the input which must be kept (and spilled): every non-fused
+                // reduction input, plus the leaves the fused expressions are computed from.
+                let mut stored_cols = PlIndexSet::new();
+                let mut gather_cols = PlIndexSet::new();
+                let mut direct_reductions = Vec::new();
+                let mut fused_reductions = Vec::new();
+                for red_idx in &reductions_for_this_input {
+                    let cols = &grouped_reduction_cols[*red_idx];
+                    let touches_fused = cols.iter().any(|c| fused_names.contains(c));
+                    if touches_fused {
+                        fused_reductions.push(*red_idx);
+                    } else {
+                        direct_reductions.push(*red_idx);
+                    }
+                    for col in cols {
+                        if fused_names.contains(col) {
+                            continue;
+                        }
+                        stored_cols.insert(col.clone());
+                        if touches_fused {
+                            gather_cols.insert(col.clone());
+                        }
+                    }
+                }
+                for e in fused {
+                    for leaf in aexpr_to_leaf_names_iter(e.node(), ctx.expr_arena) {
+                        stored_cols.insert(leaf.clone());
+                        gather_cols.insert(leaf.clone());
+                    }
+                }
+
+                payload_per_input.push(nodes::group_by::InputPayload {
+                    stored_cols: stored_cols.into_iter().collect(),
+                    direct_reductions,
+                    fused_selectors,
+                    gather_cols: gather_cols.into_iter().collect(),
+                    fused_reductions,
+                });
                 reductions_per_input.push(reductions_for_this_input);
             }
 
@@ -1003,6 +1060,7 @@ fn to_graph_rec<'a>(
                     reductions_per_input,
                     grouper,
                     grouped_reduction_cols,
+                    payload_per_input,
                     grouped_reductions,
                     node.output_schema(0).clone(),
                     PlRandomState::default(),

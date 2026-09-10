@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_async::executor;
-use polars_core::prelude::{IntoColumn, PlHashSet, PlRandomState};
+use polars_core::prelude::{Column, IntoColumn, PlRandomState};
 use polars_core::runtime::{ASYNC, RAYON};
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
@@ -15,7 +15,6 @@ use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::sparse_init_vec::SparseInitVec;
-use polars_utils::vec::reuse_vec;
 use polars_utils::{IdxSize, UnitVec};
 use rayon::prelude::*;
 use tokio::sync::mpsc::{Receiver, channel};
@@ -123,11 +122,100 @@ impl LocalGroupBySinkState {
     }
 }
 
+/// Which columns of an input's morsels are kept (and spilled), and how the reductions of
+/// that input read them.
+pub struct InputPayload {
+    /// The input columns which must be kept.
+    pub stored_cols: Vec<PlSmallStr>,
+    /// The subset of `stored_cols` needed to evaluate `fused_selectors` and the
+    /// `fused_reductions`.
+    pub gather_cols: Vec<PlSmallStr>,
+    /// Elementwise expressions evaluated inside the node on only the rows being reduced,
+    /// so that their output never enters the spilled cold morsels.
+    pub fused_selectors: Vec<StreamExpr>,
+
+    /// Reductions whose input columns are all in `stored_cols`.
+    pub direct_reductions: Vec<usize>,
+    /// Reductions with at least one input column produced by `fused_selectors`. A single
+    /// subset is shared by all input columns of one update call, so such a reduction reads
+    /// all of its inputs from the materialized frame.
+    pub fused_reductions: Vec<usize>,
+}
+
+impl InputPayload {
+    /// Materializes the fused columns for rows `idxs` of `df`.
+    async fn materialize_fused<'a>(
+        &self,
+        df: &DataFrame,
+        idxs: &'a [IdxSize],
+        identity_idxs: &'a mut Vec<IdxSize>,
+        exec_state: &ExecutionState,
+    ) -> PolarsResult<Option<(DataFrame, &'a [IdxSize])>> {
+        if self.fused_reductions.is_empty() || idxs.is_empty() {
+            return Ok(None);
+        }
+
+        let mut eval_df = unsafe { df.select_unchecked(&self.gather_cols) }?;
+        // 75% or more of the rows, don't gather.
+        let subset = if idxs.len() as u64 >= df.height() as u64 * 3 / 4 {
+            idxs
+        } else {
+            eval_df = unsafe { eval_df.take_slice_unchecked_impl(idxs, false) };
+            identity_idxs.extend(identity_idxs.len() as IdxSize..idxs.len() as IdxSize);
+            &identity_idxs[..idxs.len()]
+        };
+
+        for selector in &self.fused_selectors {
+            let c = selector
+                .evaluate_preserve_len_broadcast(&eval_df, exec_state)
+                .await?;
+            unsafe { eval_df.push_column_unchecked(c.rechunk()) };
+        }
+        Ok(Some((eval_df, subset)))
+    }
+
+    /// Feeds rows `idxs` of `df` to every reduction of this input. The direct reductions
+    /// read `df` itself, the fused ones a frame materialized for those rows only.
+    #[allow(clippy::too_many_arguments)]
+    async fn update_reductions<'a>(
+        &self,
+        df: &DataFrame,
+        idxs: &'a [IdxSize],
+        identity_idxs: &'a mut Vec<IdxSize>,
+        grouped_reduction_cols: &[Vec<PlSmallStr>],
+        reductions: &mut [Box<dyn GroupedReduction>],
+        exec_state: &ExecutionState,
+        mut update: impl FnMut(&mut dyn GroupedReduction, &[&Column], &[IdxSize]) -> PolarsResult<()>,
+    ) -> PolarsResult<()> {
+        let fused_frame = self
+            .materialize_fused(df, idxs, identity_idxs, exec_state)
+            .await?;
+        let direct = (&self.direct_reductions, df, idxs);
+        let fused = fused_frame
+            .as_ref()
+            .map(|(fused_df, subset)| (&self.fused_reductions, fused_df, *subset));
+
+        for (red_idxs, src_df, subset) in std::iter::once(direct).chain(fused) {
+            let mut in_cols = Vec::new();
+            for red_idx in red_idxs {
+                in_cols.clear();
+                in_cols.extend(
+                    grouped_reduction_cols[*red_idx]
+                        .iter()
+                        .map(|col| src_df.column(col).unwrap()),
+                );
+                update(&mut *reductions[*red_idx], &in_cols, subset)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 struct GroupBySinkState {
     key_selectors_per_input: Vec<Vec<StreamExpr>>,
     reductions_per_input: Vec<Vec<usize>>,
+    payload_per_input: Vec<InputPayload>,
     grouper: Box<dyn Grouper>,
-    uniq_grouped_reduction_cols_per_input: Vec<Vec<PlSmallStr>>,
     grouped_reduction_cols: Vec<Vec<PlSmallStr>>,
     grouped_reductions: Vec<Box<dyn GroupedReduction>>,
     locals: Vec<LocalGroupBySinkState>,
@@ -148,7 +236,7 @@ impl GroupBySinkState {
         for (mut recv, local) in receivers.into_iter().zip(&mut self.locals) {
             let key_selectors_per_input = &self.key_selectors_per_input;
             let reductions_per_input = &self.reductions_per_input;
-            let uniq_grouped_reduction_cols_per_input = &self.uniq_grouped_reduction_cols_per_input;
+            let payload_per_input = &self.payload_per_input;
             let grouped_reduction_cols = &self.grouped_reduction_cols;
             let random_state = &self.random_state;
             let partitioner = self.partitioner.clone();
@@ -157,7 +245,7 @@ impl GroupBySinkState {
                 let mut hot_idxs = Vec::new();
                 let mut hot_group_idxs = Vec::new();
                 let mut cold_idxs = Vec::new();
-                let mut in_cols = Vec::new();
+                let mut identity_idxs: Vec<IdxSize> = Vec::new();
                 while let Some((input_idx, morsel)) = recv.recv().await {
                     // Compute hot group indices from key.
                     let seq = morsel.seq().to_u64();
@@ -184,35 +272,35 @@ impl GroupBySinkState {
                         has_order_sensitive_agg,
                     );
 
-                    // Drop columns not used for reductions (key-only columns).
-                    let uniq_grouped_reduction_cols =
-                        &uniq_grouped_reduction_cols_per_input[input_idx];
-                    if uniq_grouped_reduction_cols.len() < df.width() {
-                        df = unsafe { df.select_unchecked(uniq_grouped_reduction_cols.as_slice()) }
-                            .unwrap();
+                    // Drop columns which are neither reduction inputs nor fused sources.
+                    let payload = &payload_per_input[input_idx];
+                    if payload.stored_cols.len() < df.width() {
+                        df = unsafe { df.select_unchecked(&payload.stored_cols) }.unwrap();
                     }
                     df.rechunk_mut(); // For gathers.
 
                     // Update hot reductions.
                     for red_idx in &reductions_per_input[input_idx] {
-                        let cols = &grouped_reduction_cols[*red_idx];
-                        let reduction = &mut local.hot_grouped_reductions[*red_idx];
-                        for col in cols {
-                            in_cols.push(df.column(col).unwrap());
-                        }
-                        unsafe {
-                            // SAFETY: we resize the reduction to the number of groups beforehand.
-                            reduction.resize(hot_grouper.num_groups());
-                            reduction.update_groups_while_evicting(
-                                &in_cols,
-                                &hot_idxs,
-                                &hot_group_idxs,
-                                seq,
-                            )?;
-                        }
-                        in_cols.clear();
-                        in_cols = in_cols.into_iter().map(|_| unreachable!()).collect(); // Clear lifetimes.
+                        local.hot_grouped_reductions[*red_idx].resize(hot_grouper.num_groups());
                     }
+                    payload
+                        .update_reductions(
+                            &df,
+                            &hot_idxs,
+                            &mut identity_idxs,
+                            grouped_reduction_cols,
+                            &mut local.hot_grouped_reductions,
+                            &state.in_memory_exec_state,
+                            |reduction, in_cols, subset| unsafe {
+                                reduction.update_groups_while_evicting(
+                                    in_cols,
+                                    subset,
+                                    &hot_group_idxs,
+                                    seq,
+                                )
+                            },
+                        )
+                        .await?;
 
                     // Store cold keys.
                     if !cold_idxs.is_empty() {
@@ -265,7 +353,10 @@ impl GroupBySinkState {
         }
     }
 
-    fn combine_locals(&mut self) -> PolarsResult<Vec<GroupByPartition>> {
+    fn combine_locals(
+        &mut self,
+        exec_state: &ExecutionState,
+    ) -> PolarsResult<Vec<GroupByPartition>> {
         // Finalize pre-aggregations.
         RAYON.install(|| {
             self.locals
@@ -319,6 +410,7 @@ impl GroupBySinkState {
         let locals = &self.locals;
         let grouper_template = &self.grouper;
         let reductions_per_input = &self.reductions_per_input;
+        let payload_per_input = &self.payload_per_input;
         let grouped_reductions_template = &self.grouped_reductions;
         let grouped_reduction_cols = &self.grouped_reduction_cols;
 
@@ -361,7 +453,7 @@ impl GroupBySinkState {
                     // Insert morsels.
                     let mut skip_drop_attempt = false;
                     let mut group_idxs = Vec::new();
-                    let mut in_cols = Vec::new();
+                    let mut identity_idxs: Vec<IdxSize> = Vec::new();
                     for (l, l_morsels) in locals.iter().zip(morsels_per_local) {
                         // Try to help with dropping.
                         if !skip_drop_attempt {
@@ -387,23 +479,29 @@ impl GroupBySinkState {
                                 );
 
                                 for red_idx in &reductions_per_input[*input_idx] {
-                                    let cols = &grouped_reduction_cols[*red_idx];
-                                    let reduction = &mut p_reductions[*red_idx];
-                                    for col in cols {
-                                        in_cols.push(morsel_df.column(col).unwrap());
-                                    }
-                                    reduction.resize(p_grouper.num_groups());
-                                    reduction.update_groups_subset(
-                                        &in_cols,
-                                        p_morsel_idxs,
-                                        &group_idxs,
-                                        *seq_id,
-                                    )?;
-                                    in_cols = reuse_vec(in_cols);
+                                    p_reductions[*red_idx].resize(p_grouper.num_groups());
                                 }
+
+                                payload_per_input[*input_idx]
+                                    .update_reductions(
+                                        &morsel_df,
+                                        p_morsel_idxs,
+                                        &mut identity_idxs,
+                                        grouped_reduction_cols,
+                                        &mut p_reductions,
+                                        exec_state,
+                                        |reduction, in_cols, subset| {
+                                            reduction.update_groups_subset(
+                                                in_cols,
+                                                subset,
+                                                &group_idxs,
+                                                *seq_id,
+                                            )
+                                        },
+                                    )
+                                    .await?;
                             }
                         }
-                        in_cols = reuse_vec(in_cols);
 
                         if let Some(l) = Arc::into_inner(l_morsels) {
                             // If we're the last thread to process this set of morsels we're probably
@@ -556,6 +654,7 @@ impl GroupByNode {
         grouper: Box<dyn Grouper>,
         // grouped_reductions[k] is passed input cols grouped_reduction_cols[k].
         grouped_reduction_cols: Vec<Vec<PlSmallStr>>,
+        payload_per_input: Vec<InputPayload>,
         grouped_reductions: Vec<Box<dyn GroupedReduction>>,
         output_schema: Arc<Schema>,
         random_state: PlRandomState,
@@ -567,17 +666,6 @@ impl GroupByNode {
             .unwrap_or(DEFAULT_HOT_TABLE_SIZE);
         let num_inputs = key_selectors_per_input.len();
         let num_partitions = num_pipelines;
-        let uniq_grouped_reduction_cols_per_input = reductions_per_input
-            .iter()
-            .map(|rs| {
-                rs.iter()
-                    .flat_map(|k| grouped_reduction_cols[*k].iter())
-                    .cloned()
-                    .collect::<PlHashSet<_>>()
-                    .into_iter()
-                    .collect_vec()
-            })
-            .collect_vec();
         let locals = (0..num_pipelines)
             .map(|_| {
                 let reductions = grouped_reductions.iter().map(|gr| gr.new_empty()).collect();
@@ -595,10 +683,10 @@ impl GroupByNode {
             state: GroupByState::Sink(GroupBySinkState {
                 key_selectors_per_input,
                 reductions_per_input,
+                payload_per_input,
                 grouped_reductions,
                 grouper,
                 random_state,
-                uniq_grouped_reduction_cols_per_input,
                 grouped_reduction_cols,
                 locals,
                 partitioner,
@@ -639,7 +727,7 @@ impl ComputeNode for GroupByNode {
                 else {
                     unreachable!()
                 };
-                let partitions = sink.combine_locals()?;
+                let partitions = sink.combine_locals(&state.in_memory_exec_state)?;
                 let dfs = RAYON.install(|| {
                     partitions
                         .into_par_iter()
