@@ -25,6 +25,7 @@ impl private::PrivateSeries for SeriesWrap<DateChunked> {
         Cow::Owned(self.0.field())
     }
 
+    #[inline]
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
@@ -166,6 +167,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
         self.0.physical().chunk_lengths()
     }
 
+    #[inline]
     fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
@@ -275,6 +277,7 @@ impl SeriesTrait for SeriesWrap<DateChunked> {
             .into_series()
     }
 
+    #[inline]
     fn len(&self) -> usize {
         self.0.len()
     }

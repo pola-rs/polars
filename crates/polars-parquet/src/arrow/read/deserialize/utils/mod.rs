@@ -89,6 +89,7 @@ impl<'a, D: Decoder> State<'a, D> {
         })
     }
 
+    #[inline]
     pub fn decode(
         self,
         decoder: &mut D,

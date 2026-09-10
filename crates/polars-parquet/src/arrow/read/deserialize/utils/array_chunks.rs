@@ -25,6 +25,7 @@ impl<'a, B: AlignedBytes> ArrayChunks<'a, B> {
         Some(Self { bytes })
     }
 
+    #[inline(always)]
     pub(crate) unsafe fn get_unchecked(&self, at: usize) -> B {
         B::from_unaligned(*unsafe { self.bytes.get_unchecked(at) })
     }

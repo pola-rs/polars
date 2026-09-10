@@ -47,10 +47,12 @@ macro_rules! encode_unsigned {
         impl FixedLengthEncoding for $t {
             type Encoded = [u8; $n];
 
+            #[inline(always)]
             fn encode(self) -> [u8; $n] {
                 self.to_be_bytes()
             }
 
+            #[inline(always)]
             fn decode(encoded: Self::Encoded) -> Self {
                 Self::from_be_bytes(encoded)
             }
@@ -70,6 +72,7 @@ macro_rules! encode_signed {
         impl FixedLengthEncoding for $t {
             type Encoded = [u8; $n];
 
+            #[inline(always)]
             fn encode(self) -> [u8; $n] {
                 #[cfg(target_endian = "big")]
                 {
@@ -82,6 +85,7 @@ macro_rules! encode_signed {
                 b
             }
 
+            #[inline(always)]
             fn decode(mut encoded: Self::Encoded) -> Self {
                 // Toggle top "sign" bit
                 encoded[0] ^= 0x80;
@@ -116,6 +120,7 @@ impl FixedLengthEncoding for pf16 {
 impl FixedLengthEncoding for f32 {
     type Encoded = [u8; 4];
 
+    #[inline]
     fn encode(self) -> [u8; 4] {
         // https://github.com/rust-lang/rust/blob/9c20b2a8cc7588decb6de25ac6a7912dcef24d65/library/core/src/num/f32.rs#L1176-L1260
         let s = canonical_f32(self).to_bits() as i32;
@@ -123,6 +128,7 @@ impl FixedLengthEncoding for f32 {
         val.encode()
     }
 
+    #[inline]
     fn decode(encoded: Self::Encoded) -> Self {
         let bits = i32::decode(encoded);
         let val = bits ^ (((bits >> 31) as u32) >> 1) as i32;
@@ -133,6 +139,7 @@ impl FixedLengthEncoding for f32 {
 impl FixedLengthEncoding for f64 {
     type Encoded = [u8; 8];
 
+    #[inline]
     fn encode(self) -> [u8; 8] {
         // https://github.com/rust-lang/rust/blob/9c20b2a8cc7588decb6de25ac6a7912dcef24d65/library/core/src/num/f32.rs#L1176-L1260
         let s = canonical_f64(self).to_bits() as i64;
@@ -140,6 +147,7 @@ impl FixedLengthEncoding for f64 {
         val.encode()
     }
 
+    #[inline]
     fn decode(encoded: Self::Encoded) -> Self {
         let bits = i64::decode(encoded);
         let val = bits ^ (((bits >> 63) as u64) >> 1) as i64;

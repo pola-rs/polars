@@ -45,6 +45,7 @@ use crate::series::IsSorted;
 use crate::series::implementations::SeriesWrap;
 use crate::utils::{Container, NoNull};
 
+#[inline]
 fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
 }

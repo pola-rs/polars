@@ -15,7 +15,7 @@ pub(super) struct PredicateDedupState {
     min_terms: ScratchIndexSet<CanonicalExprId>,
 }
 
-fn combine_by_and(left: Node, right: Node, arena: &mut Arena<AExpr>) -> Node {
+pub(crate) fn combine_by_and(left: Node, right: Node, arena: &mut Arena<AExpr>) -> Node {
     arena.add(AExpr::BinaryExpr {
         left,
         op: Operator::And,

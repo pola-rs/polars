@@ -360,6 +360,7 @@ impl DataType {
     }
 
     /// Get the inner data type of a nested type.
+    #[inline]
     pub fn inner_dtype(&self) -> Option<&DataType> {
         match self {
             DataType::List(inner) => Some(inner),
@@ -755,6 +756,7 @@ impl DataType {
     }
 
     /// Check if this [`DataType`] is a boolean.
+    #[inline]
     pub fn is_bool(&self) -> bool {
         matches!(self, DataType::Boolean)
     }
@@ -1016,6 +1018,7 @@ impl DataType {
 
     /// Check if this [`DataType`] is a basic floating point type (excludes Decimal).
     /// Note, this also includes `Unknown(UnknownKind::Float)`.
+    #[inline]
     pub fn is_float(&self) -> bool {
         matches!(
             self,
@@ -1027,6 +1030,7 @@ impl DataType {
     }
 
     /// Check if this [`DataType`] is an integer. Note, this also includes `Unknown(UnknownKind::Int)`.
+    #[inline]
     pub fn is_integer(&self) -> bool {
         matches!(
             self,
@@ -1221,6 +1225,23 @@ impl DataType {
         };
         key.ensure_valid_map_key()?;
         value.ensure_valid_map_value()
+    }
+
+    /// Validate every `Map` nested in this dtype. Unlike [`Self::ensure_valid_map_dtype`],
+    /// this accepts dtypes that are not a `Map` themselves.
+    #[cfg(feature = "dtype-map")]
+    pub fn ensure_valid_map_dtypes(&self) -> PolarsResult<()> {
+        // Keep it cheap for non-Map dtypes.
+        if !self.contains_map() {
+            return Ok(());
+        }
+
+        self.try_visit_with(|dtype| {
+            if dtype.is_map() {
+                dtype.ensure_valid_map_dtype()?;
+            }
+            Ok(())
+        })
     }
 
     pub fn is_extension(&self) -> bool {
@@ -1807,6 +1828,7 @@ pub fn unpack_dtypes(dtype: &DataType, include_compound_types: bool) -> PlHashSe
 pub struct CompatLevel(pub(crate) u16);
 
 impl CompatLevel {
+    #[inline]
     pub const fn newest() -> CompatLevel {
         CompatLevel(1)
     }

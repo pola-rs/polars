@@ -1,4 +1,5 @@
 use super::*;
+use crate::chunked_array::ops::sort::arg_sort_multiple::argsort_multiple_row_fmt;
 use crate::prelude::*;
 
 unsafe impl IntoSeries for MapChunked {
@@ -8,24 +9,28 @@ unsafe impl IntoSeries for MapChunked {
 }
 
 impl SeriesWrap<MapChunked> {
-    /// Re-wrap a storage series produced by an operation that preserves the key
-    /// uniqueness invariant, i.e. one that only adds, removes or reorders whole rows.
-    fn rewrap(&self, storage: Series) -> Series {
-        unsafe { MapChunked::from_storage_unchecked(self.0.dtype().clone(), storage) }.into_series()
+    /// # Safety
+    /// `storage` must satisfy [`MapChunked::with_storage_unchecked`].
+    unsafe fn rewrap(&self, storage: Series) -> Series {
+        unsafe { self.0.with_storage_unchecked(storage) }.into_series()
     }
 
-    fn apply_on_storage<F>(&self, apply: F) -> Series
+    /// # Safety
+    /// `apply` must only add, remove, or reorder whole rows.
+    unsafe fn apply_on_storage<F>(&self, apply: F) -> Series
     where
         F: FnOnce(&Series) -> Series,
     {
-        self.rewrap(apply(self.0.storage()))
+        unsafe { self.rewrap(apply(self.0.storage())) }
     }
 
-    fn try_apply_on_storage<F>(&self, apply: F) -> PolarsResult<Series>
+    /// # Safety
+    /// See [`Self::apply_on_storage`].
+    unsafe fn try_apply_on_storage<F>(&self, apply: F) -> PolarsResult<Series>
     where
         F: Fn(&Series) -> PolarsResult<Series>,
     {
-        Ok(self.rewrap(apply(self.0.storage())?))
+        Ok(unsafe { self.rewrap(apply(self.0.storage())?) })
     }
 }
 
@@ -51,7 +56,8 @@ impl private::PrivateSeries for SeriesWrap<MapChunked> {
     }
 
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
-        self.0.storage().into_total_ord_inner()
+        // Report the logical dtype rather than the unsupported List storage dtype.
+        invalid_operation_panic!(into_total_ord_inner, self)
     }
 
     fn vec_hash(
@@ -78,7 +84,8 @@ impl private::PrivateSeries for SeriesWrap<MapChunked> {
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         assert!(self._dtype() == other.dtype());
-        self.try_apply_on_storage(|s| s.zip_with_same_type(mask, other.map()?.storage()))
+        // SAFETY: picks whole rows from two Maps that have the same dtype.
+        unsafe { self.try_apply_on_storage(|s| s.zip_with_same_type(mask, other.map()?.storage())) }
     }
 
     #[cfg(feature = "algorithm_group_by")]
@@ -86,7 +93,8 @@ impl private::PrivateSeries for SeriesWrap<MapChunked> {
         let list = self.0.storage().agg_list(groups);
         let mut list = list.list().unwrap().clone();
 
-        list.set_inner_dtype(self.dtype().clone());
+        // SAFETY: `agg_list` gathers whole rows, preserving the Map storage contract.
+        unsafe { list.set_inner_dtype(self.dtype().clone()) };
         list.into_series()
     }
 
@@ -95,7 +103,17 @@ impl private::PrivateSeries for SeriesWrap<MapChunked> {
         by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
-        self.0.storage().arg_sort_multiple(by, options)
+        // Multi-column sorting of nested dtypes uses row encoding.
+        let mut columns = Vec::with_capacity(by.len() + 1);
+        columns.push(self.0.clone().into_series().into_column());
+        columns.extend(by.iter().cloned());
+
+        argsort_multiple_row_fmt(
+            &columns,
+            options.descending.clone(),
+            options.nulls_last.clone(),
+            options.multithreaded,
+        )
     }
 }
 
@@ -122,17 +140,22 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
         self.0.storage().chunks()
     }
 
+    /// # Safety
+    /// Mutations must preserve the dtype and [`MapChunked`] storage safety contract.
+    /// Preserving key uniqueness also requires keeping keys and their row membership.
     unsafe fn chunks_mut(&mut self) -> &mut Vec<PlArrayRef> {
         self.0.storage_mut().chunks_mut()
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
-        self.apply_on_storage(|s| s.slice(offset, length))
+        // SAFETY: a slice is a contiguous range of whole rows.
+        unsafe { self.apply_on_storage(|s| s.slice(offset, length)) }
     }
 
     fn split_at(&self, offset: i64) -> (Series, Series) {
         let (left, right) = self.0.storage().split_at(offset);
-        (self.rewrap(left), self.rewrap(right))
+        // SAFETY: both halves are contiguous ranges of whole rows.
+        unsafe { (self.rewrap(left), self.rewrap(right)) }
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
@@ -161,23 +184,28 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
-        self.try_apply_on_storage(|s| s.filter(filter))
+        // SAFETY: keeps a subset of whole rows.
+        unsafe { self.try_apply_on_storage(|s| s.filter(filter)) }
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        self.try_apply_on_storage(|s| s.take(indices))
+        // SAFETY: a gather picks whole rows.
+        unsafe { self.try_apply_on_storage(|s| s.take(indices)) }
     }
 
     unsafe fn take_unchecked(&self, idx: &IdxCa) -> Series {
-        self.apply_on_storage(|s| s.take_unchecked(idx))
+        // SAFETY: a gather picks whole rows; `idx` is in bounds by our own contract.
+        unsafe { self.apply_on_storage(|s| s.take_unchecked(idx)) }
     }
 
     fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
-        self.try_apply_on_storage(|s| s.take_slice(indices))
+        // SAFETY: a gather picks whole rows.
+        unsafe { self.try_apply_on_storage(|s| s.take_slice(indices)) }
     }
 
     unsafe fn take_slice_unchecked(&self, idx: &[IdxSize]) -> Series {
-        self.apply_on_storage(|s| s.take_slice_unchecked(idx))
+        // SAFETY: a gather picks whole rows; `idx` is in bounds by our own contract.
+        unsafe { self.apply_on_storage(|s| s.take_slice_unchecked(idx)) }
     }
 
     fn len(&self) -> usize {
@@ -185,24 +213,28 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        self.apply_on_storage(|s| s.rechunk())
+        // SAFETY: only concatenates chunks, keeping every row as it is.
+        unsafe { self.apply_on_storage(|s| s.rechunk()) }
     }
 
     fn with_validity(&self, validity: Option<PlBitmap>) -> Series {
-        self.apply_on_storage(move |s| s.with_validity(validity))
+        // SAFETY: only row validity changes; entries remain intact.
+        unsafe { self.apply_on_storage(move |s| s.with_validity(validity)) }
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
-        self.apply_on_storage(|s| s.new_from_index(index, length))
+        // SAFETY: repeats one whole row.
+        unsafe { self.apply_on_storage(|s| s.new_from_index(index, length)) }
     }
 
     fn deposit(&self, validity: &PlBitmap) -> Series {
-        self.apply_on_storage(|s| s.deposit(validity))
+        // SAFETY: gathers whole rows and pads with nulls.
+        unsafe { self.apply_on_storage(|s| s.deposit(validity)) }
     }
 
     fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
-        // `handle_casting_failures` compares a cast's input against its output, so `other`
-        // is same-length but not necessarily the same dtype, or even a Map.
+        // `other` is same-length cast output and may have a different dtype.
+        // `handle_casting_failures` compacts null Map rows at every depth first.
         let other = other.try_map().map_or(other, |map| map.storage());
         self.0.storage().find_validity_mismatch(other, idxs)
     }
@@ -236,11 +268,13 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
     }
 
     fn reverse(&self) -> Series {
-        self.apply_on_storage(|s| s.reverse())
+        // SAFETY: reorders whole rows.
+        unsafe { self.apply_on_storage(|s| s.reverse()) }
     }
 
     fn shift(&self, periods: i64) -> Series {
-        self.apply_on_storage(|s| s.shift(periods))
+        // SAFETY: reorders whole rows and pads with nulls.
+        unsafe { self.apply_on_storage(|s| s.shift(periods)) }
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
@@ -281,16 +315,18 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
 
     fn trim_lists_to_normalized_offsets(&self) -> Option<Series> {
         let trimmed = self.0.storage().trim_lists_to_normalized_offsets()?;
-        Some(self.rewrap(trimmed))
+        // SAFETY: drops entry slots that no row refers to, keeping every row as it is.
+        Some(unsafe { self.rewrap(trimmed) })
     }
 
     fn propagate_nulls(&self) -> Option<Series> {
-        let propagated = self.0.storage().propagate_nulls()?;
-        Some(self.rewrap(propagated))
+        // List propagation would null entries retained by null Map rows.
+        self.0.propagate_nulls().map(IntoSeries::into_series)
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
-        self.try_apply_on_storage(|s| s.sort_with(options))
+        // SAFETY: reorders whole rows.
+        unsafe { self.try_apply_on_storage(|s| s.sort_with(options)) }
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
@@ -298,7 +334,8 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
     }
 
     fn unique(&self) -> PolarsResult<Series> {
-        self.try_apply_on_storage(|s| s.unique())
+        // SAFETY: keeps a subset of whole rows.
+        unsafe { self.try_apply_on_storage(|s| s.unique()) }
     }
 
     #[cfg(feature = "algorithm_group_by")]

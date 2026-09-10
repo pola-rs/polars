@@ -8,6 +8,7 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
     fn _field(&self) -> Cow<'_, Field> {
         Cow::Borrowed(self.0.ref_field())
     }
+    #[inline]
     fn _dtype(&self) -> &DataType {
         self.0.ref_field().dtype()
     }
@@ -107,6 +108,7 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
     fn chunk_lengths(&self) -> ChunkLenIter<'_> {
         self.0.chunk_lengths()
     }
+    #[inline]
     fn name(&self) -> &PlSmallStr {
         self.0.name()
     }
@@ -174,6 +176,7 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         self.0.deposit(validity).into_series()
     }
 
+    #[inline]
     fn len(&self) -> usize {
         self.0.len()
     }

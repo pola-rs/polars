@@ -19,6 +19,7 @@ use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::options::JoinOptionsIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, IR, IRAggExpr};
 use polars_plan::prelude::FunctionFlags;
+use polars_plan::utils::aexpr_to_leaf_names_iter;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
@@ -1154,6 +1155,7 @@ fn to_graph_rec<'a>(
             left_on,
             right_on,
             args,
+            fused_predicate: _,
         }
         | SemiAntiJoin {
             input_left,
@@ -1229,24 +1231,52 @@ fn to_graph_rec<'a>(
                         (right_input_key, input_right.port),
                     ],
                 ),
-                _ => ctx.graph.add_node(
-                    nodes::joins::equi_join::EquiJoinNode::new(
-                        left_input_schema,
-                        right_input_schema,
-                        left_key_schema,
-                        right_key_schema,
-                        unique_key_schema,
-                        output_schema,
-                        left_key_selectors,
-                        right_key_selectors,
-                        args,
-                        ctx.num_pipelines,
-                    )?,
-                    [
-                        (left_input_key, input_left.port),
-                        (right_input_key, input_right.port),
-                    ],
-                ),
+                EquiJoin {
+                    ref fused_predicate,
+                    ..
+                } => {
+                    // Compiled against a narrow frame of exactly the columns it reads, in
+                    // the order the node gathers them.
+                    let fused_predicate = fused_predicate
+                        .as_ref()
+                        .map(|fused_predicate| {
+                            let mut names =
+                                aexpr_to_leaf_names_iter(fused_predicate.node(), ctx.expr_arena)
+                                    .cloned()
+                                    .collect::<Vec<_>>();
+                            names.sort_unstable();
+                            names.dedup();
+
+                            let fused_predicate_schema =
+                                Arc::new(output_schema.try_project(names.iter())?);
+                            PolarsResult::Ok((
+                                create_stream_expr(fused_predicate, ctx, &fused_predicate_schema)?,
+                                fused_predicate_schema,
+                            ))
+                        })
+                        .transpose()?;
+
+                    ctx.graph.add_node(
+                        nodes::joins::equi_join::EquiJoinNode::new(
+                            left_input_schema,
+                            right_input_schema,
+                            left_key_schema,
+                            right_key_schema,
+                            unique_key_schema,
+                            output_schema,
+                            left_key_selectors,
+                            right_key_selectors,
+                            fused_predicate,
+                            args,
+                            ctx.num_pipelines,
+                        )?,
+                        [
+                            (left_input_key, input_left.port),
+                            (right_input_key, input_right.port),
+                        ],
+                    )
+                },
+                _ => unreachable!(),
             }
         },
 

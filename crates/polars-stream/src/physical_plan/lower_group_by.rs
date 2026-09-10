@@ -991,6 +991,7 @@ pub fn try_build_streaming_group_by(
                 left_on: trans_keys.clone(),
                 right_on: trans_keys,
                 args,
+                fused_predicate: None,
             },
         ));
         post_select_input = PhysStream::first(join_key);

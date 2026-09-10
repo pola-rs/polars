@@ -154,6 +154,25 @@ pub fn is_prop<P: Fn(&AExpr) -> bool>(
     true
 }
 
+/// Whether `ae` runs a nested evaluation that can fail.
+///
+/// `inputs_rev` skips these subtrees, so a walk over inputs alone never sees them.
+fn evaluates_fallible(ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
+    let roots: UnitVec<Node> = match ae {
+        AExpr::Eval { evaluation, .. } => unitvec![*evaluation],
+        #[cfg(feature = "dtype-struct")]
+        AExpr::StructEval { evaluation, .. } => evaluation.iter().map(ExprIR::node).collect(),
+        _ => return false,
+    };
+
+    // `iter` walks children rather than inputs, so it descends into nested evaluations.
+    roots.iter().any(|root| {
+        expr_arena
+            .iter(*root)
+            .any(|(_, ae)| ae.is_fallible_top_level(expr_arena))
+    })
+}
+
 /// Checks if the top-level expression node is elementwise. If this is the case, then `stack` will
 /// be extended further with any nested expression nodes.
 pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {
@@ -228,7 +247,7 @@ impl ExprPushdownGroup {
         match self {
             ExprPushdownGroup::Pushable | ExprPushdownGroup::Fallible => {
                 // Downgrade to unpushable if fallible
-                if ae.is_fallible_top_level(expr_arena) {
+                if ae.is_fallible_top_level(expr_arena) || evaluates_fallible(ae, expr_arena) {
                     *self = ExprPushdownGroup::Fallible;
                 }
 

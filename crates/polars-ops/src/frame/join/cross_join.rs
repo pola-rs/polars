@@ -190,7 +190,7 @@ pub(super) fn fused_cross_filter(
                 unsafe { joined.hstack_mut_unchecked(&right_columns) };
 
                 if !emit_unmatched_left {
-                    cross_join_options.predicate.apply(joined)
+                    cross_join_options.predicate.apply(joined, false)
                 } else {
                     let mask = cross_join_options.predicate.evaluate(&joined)?;
 

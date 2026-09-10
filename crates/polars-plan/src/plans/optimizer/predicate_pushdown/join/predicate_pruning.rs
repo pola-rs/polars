@@ -565,7 +565,9 @@ pub fn try_rewrite_join_type(
             },
         );
         // Important
-        assert!(matches!(existing, JoinTypeOptionsIR::Equi { ref on } if on.is_empty()));
+        assert!(
+            matches!(existing, JoinTypeOptionsIR::Equi { ref on, fused_predicate: None } if on.is_empty())
+        );
 
         Ok(())
     })()?;
@@ -1079,7 +1081,9 @@ fn try_rewrite_outer_join_algorithm(
         &mut Arc::make_mut(options).options,
         JoinTypeOptionsIR::CrossAndFilter { predicate },
     );
-    assert!(matches!(existing, JoinTypeOptionsIR::Equi { ref on } if on.is_empty()));
+    assert!(
+        matches!(existing, JoinTypeOptionsIR::Equi { ref on, fused_predicate: None } if on.is_empty())
+    );
     Ok(())
 }
 
