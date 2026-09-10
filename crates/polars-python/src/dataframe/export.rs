@@ -28,16 +28,18 @@ impl PyDataFrame {
         if idx >= df.height() {
             return Err(PyPolarsErr::from(polars_err!(oob = idx, df.height())).into());
         }
-        PyTuple::new(
-            py,
-            df.columns().iter().map(|s| match s.dtype() {
+        let row = df
+            .columns()
+            .iter()
+            .map(|s| match s.dtype() {
                 DataType::Object(_) => {
                     let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
-                    obj.into_py_any(py).unwrap()
+                    obj.into_py_any(py)
                 },
-                _ => Wrap(s.get(idx).unwrap()).into_py_any(py).unwrap(),
-            }),
-        )
+                _ => Wrap(s.get(idx).unwrap()).into_py_any(py),
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        PyTuple::new(py, row)
     }
 
     #[cfg(feature = "object")]
@@ -53,27 +55,28 @@ impl PyDataFrame {
         } else {
             &df
         };
-        PyList::new(
-            py,
-            (0..df.height()).map(|idx| {
-                PyTuple::new(
-                    py,
-                    df.columns().iter().map(|c| match c.dtype() {
+        let mut row = Vec::with_capacity(df.width());
+        let rows = (0..df.height())
+            .map(|idx| {
+                row.clear();
+                for c in df.columns() {
+                    row.push(match c.dtype() {
                         DataType::Null => py.None(),
                         DataType::Object(_) => {
                             let obj: Option<&ObjectValue> = c.get_object(idx).map(|any| any.into());
-                            obj.into_py_any(py).unwrap()
+                            obj.into_py_any(py)?
                         },
                         _ => {
                             // SAFETY: we are in bounds.
                             let av = unsafe { c.get_unchecked(idx) };
-                            Wrap(av).into_py_any(py).unwrap()
+                            Wrap(av).into_py_any(py)?
                         },
-                    }),
-                )
-                .unwrap()
-            }),
-        )
+                    });
+                }
+                PyTuple::new(py, &row)
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        PyList::new(py, rows)
     }
 
     #[allow(clippy::wrong_self_convention)]

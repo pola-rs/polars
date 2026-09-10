@@ -1102,6 +1102,23 @@ impl DataType {
         value.ensure_valid_map_value()
     }
 
+    /// Validate every `Map` nested in this dtype. Unlike [`Self::ensure_valid_map_dtype`],
+    /// this accepts dtypes that are not a `Map` themselves.
+    #[cfg(feature = "dtype-map")]
+    pub fn ensure_valid_map_dtypes(&self) -> PolarsResult<()> {
+        // Keep it cheap for non-Map dtypes.
+        if !self.contains_map() {
+            return Ok(());
+        }
+
+        self.try_visit_with(|dtype| {
+            if dtype.is_map() {
+                dtype.ensure_valid_map_dtype()?;
+            }
+            Ok(())
+        })
+    }
+
     pub fn is_extension(&self) -> bool {
         #[cfg(feature = "dtype-extension")]
         {
