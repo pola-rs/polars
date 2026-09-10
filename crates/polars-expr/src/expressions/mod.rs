@@ -583,10 +583,24 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
+    /// The number of values [`flat_naive`](Self::flat_naive) hands out, which the group indices
+    /// are indices into.
     fn flat_naive_length(&self) -> usize {
         match &self.state {
             AggState::NotAggregated(c) => c.len(),
-            AggState::AggregatedList(c) => c.list().unwrap().inner_length(),
+            AggState::AggregatedList(c) => {
+                // What the elements cover between them, summed the way `det_groups_from_list`
+                // walks them — not `inner_length`, which is the values buffer's own length: a
+                // chunk whose elements all read the one range holds that range once, and would
+                // understate by a factor of the length what `flat_naive` explodes it to.
+                let list = c
+                    .list()
+                    .expect("impl error, should be a list at this point");
+
+                list.downcast_iter()
+                    .flat_map(|arr| (0..arr.len()).map(|i| arr.value_length(i)))
+                    .sum()
+            },
             AggState::AggregatedScalar(c) => c.len(),
             AggState::LiteralScalar(_) => 1,
         }

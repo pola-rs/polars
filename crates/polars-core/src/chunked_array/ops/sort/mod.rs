@@ -102,6 +102,47 @@ pub(crate) fn sort_in_parallel(len: usize, parallel: bool) -> bool {
     parallel && len >= PARALLEL_SORT_LIMIT && RAYON.current_num_threads() > 1
 }
 
+/// Whether `ca` holds its elements as one chunk that repeats a single one of them.
+///
+/// Every element of such a chunk is the same one — the same value throughout, or a null
+/// throughout — so they already stand in every order at once: sorting it answers with the chunk
+/// itself, and `arg_sort` with `0..len`.
+///
+/// `Struct`, `List`, `Array` and `Map` are the ones that have to be told. A sort of theirs is a
+/// row encoding of the whole column that is then sorted, and the encoding writes one row per
+/// element whatever the column holds; the flat sorts read this off the sorted flag such a chunk
+/// carries instead — see `sort_with_fast_path`.
+pub(crate) fn repeats_one_element<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
+    let [chunk] = ca.chunks().as_slice() else {
+        return false;
+    };
+
+    ca.len() > 1 && chunk.is_scalar()
+}
+
+/// `0..length`: what an `arg_sort` over elements that are all the same one answers, in the order
+/// they are already in.
+pub(crate) fn arg_sort_identity(name: PlSmallStr, length: usize) -> IdxCa {
+    IdxCa::with_chunk(
+        name,
+        PlPrimitiveArray::from_vec((0..length as IdxSize).collect::<Vec<IdxSize>>()),
+    )
+}
+
+/// `ca` under the sorted flag `options` asks for, which every order of one repeated element meets.
+pub(crate) fn sorted_flag_of<T: PolarsDataType>(
+    ca: &ChunkedArray<T>,
+    options: SortOptions,
+) -> ChunkedArray<T> {
+    let mut out = ca.clone();
+    out.set_sorted_flag(if options.descending {
+        IsSorted::Descending
+    } else {
+        IsSorted::Ascending
+    });
+    out
+}
+
 pub(crate) fn sort_by_branch<T, C>(slice: &mut [T], descending: bool, cmp: C, parallel: bool)
 where
     T: Send,
@@ -722,6 +763,14 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
 impl ChunkSort<StructType> for StructChunked {
     fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<StructType> {
         options.multithreaded &= RAYON.current_num_threads() > 1;
+
+        // Elements that are all the same one are in order already, so the chunk is its own answer
+        // — rather than the whole column being row encoded and those rows sorted against each
+        // other. See `repeats_one_element`.
+        if repeats_one_element(self) {
+            return sorted_flag_of(self, options);
+        }
+
         let idx = self.arg_sort(options);
         let mut out = unsafe { self.take_unchecked(&idx) };
 
@@ -739,6 +788,11 @@ impl ChunkSort<StructType> for StructChunked {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        // As in `sort_with`: one repeated element leaves every element where it is.
+        if repeats_one_element(self) {
+            return arg_sort_identity(self.name().clone(), self.len());
+        }
+
         let bin = self.get_row_encoded(options).unwrap();
         bin.arg_sort(SortOptions {
             maintain_order: options.maintain_order,
@@ -751,6 +805,12 @@ impl ChunkSort<StructType> for StructChunked {
 impl ChunkSort<ListType> for ListChunked {
     fn sort_with(&self, mut options: SortOptions) -> ListChunked {
         options.multithreaded &= RAYON.current_num_threads() > 1;
+
+        // As in `StructChunked::sort_with`: one repeated element is its own answer.
+        if repeats_one_element(self) {
+            return sorted_flag_of(self, options);
+        }
+
         let idx = self.arg_sort(options);
         let mut out = unsafe { self.take_unchecked(&idx) };
 
@@ -768,6 +828,10 @@ impl ChunkSort<ListType> for ListChunked {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        if repeats_one_element(self) {
+            return arg_sort_identity(self.name().clone(), self.len());
+        }
+
         let bin = _get_rows_encoded_ca(
             self.name().clone(),
             &[self.clone().into_column()],
