@@ -1,10 +1,8 @@
 //! macros that define the extraction of `week`, `weekday`, `year`, `hour` etc. from one value.
+#[cfg(feature = "dtype-date")]
+use arrow::temporal_conversions::date32_to_datetime_opt;
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time_opt;
-use arrow::temporal_conversions::{
-    date32_to_datetime_opt, timestamp_ms_to_datetime_opt, timestamp_ns_to_datetime_opt,
-    timestamp_us_to_datetime_opt,
-};
 use chrono::{Datelike, Timelike};
 
 use super::super::windows::calendar::*;
@@ -116,83 +114,33 @@ to_temporal_unit!(
     i32
 );
 
-#[cfg(feature = "dtype-datetime")]
-to_boolean_temporal_unit!(
-    datetime_to_is_leap_year_ns,
-    year,
-    is_leap_year,
-    timestamp_ns_to_datetime_opt,
-    i64
-);
-#[cfg(feature = "dtype-datetime")]
-to_boolean_temporal_unit!(
-    datetime_to_is_leap_year_us,
-    year,
-    is_leap_year,
-    timestamp_us_to_datetime_opt,
-    i64
-);
-#[cfg(feature = "dtype-datetime")]
-to_boolean_temporal_unit!(
-    datetime_to_is_leap_year_ms,
-    year,
-    is_leap_year,
-    timestamp_ms_to_datetime_opt,
-    i64
-);
-
-#[cfg(feature = "dtype-datetime")]
-to_calendar_value!(
-    datetime_to_days_in_month_ns,
-    dt,
-    days_in_month(dt.year(), dt.month() as u8),
-    timestamp_ns_to_datetime_opt,
-    i64,
-    i8
-);
-#[cfg(feature = "dtype-datetime")]
-to_calendar_value!(
-    datetime_to_days_in_month_us,
-    dt,
-    days_in_month(dt.year(), dt.month() as u8),
-    timestamp_us_to_datetime_opt,
-    i64,
-    i8
-);
-#[cfg(feature = "dtype-datetime")]
-to_calendar_value!(
-    datetime_to_days_in_month_ms,
-    dt,
-    days_in_month(dt.year(), dt.month() as u8),
-    timestamp_ms_to_datetime_opt,
-    i64,
-    i8
-);
-
-/// Defines the same extraction over each of the three timestamp units a datetime column can be in.
-macro_rules! datetime_units {
-    ($($ns:ident, $us:ident, $ms:ident, $method:ident, $out:ty;)*) => {
+/// Defines the extraction of one field of the wall time an instant stands for.
+///
+/// The instant is read once, by whichever conversion the column's timestamp unit asks for, and
+/// every field is taken off it — so a field costs one function per field, not one per unit.
+macro_rules! datetime_field {
+    ($($name:ident, $dt:ident, $expr:expr, $out:ty;)*) => {
         $(
             #[cfg(feature = "dtype-datetime")]
-            to_temporal_unit!($ns, $method, timestamp_ns_to_datetime_opt, i64, $out);
-            #[cfg(feature = "dtype-datetime")]
-            to_temporal_unit!($us, $method, timestamp_us_to_datetime_opt, i64, $out);
-            #[cfg(feature = "dtype-datetime")]
-            to_temporal_unit!($ms, $method, timestamp_ms_to_datetime_opt, i64, $out);
+            pub(crate) fn $name($dt: NaiveDateTime) -> $out {
+                $expr
+            }
         )*
     };
 }
 
-datetime_units! {
-    datetime_to_year_ns, datetime_to_year_us, datetime_to_year_ms, year, i32;
-    datetime_to_month_ns, datetime_to_month_us, datetime_to_month_ms, month, i8;
-    datetime_to_day_ns, datetime_to_day_us, datetime_to_day_ms, day, i8;
-    datetime_to_hour_ns, datetime_to_hour_us, datetime_to_hour_ms, hour, i8;
-    datetime_to_minute_ns, datetime_to_minute_us, datetime_to_minute_ms, minute, i8;
-    datetime_to_second_ns, datetime_to_second_us, datetime_to_second_ms, second, i8;
-    datetime_to_nanosecond_ns, datetime_to_nanosecond_us, datetime_to_nanosecond_ms, nanosecond, i32;
-    datetime_to_weekday_ns, datetime_to_weekday_us, datetime_to_weekday_ms, weekday_number, i8;
-    datetime_to_iso_week_ns, datetime_to_iso_week_us, datetime_to_iso_week_ms, week, i8;
-    datetime_to_ordinal_ns, datetime_to_ordinal_us, datetime_to_ordinal_ms, ordinal, i16;
-    datetime_to_iso_year_ns, datetime_to_iso_year_us, datetime_to_iso_year_ms, iso_year, i32;
+datetime_field! {
+    datetime_year, dt, dt.year(), i32;
+    datetime_month, dt, dt.month() as i8, i8;
+    datetime_day, dt, dt.day() as i8, i8;
+    datetime_hour, dt, dt.hour() as i8, i8;
+    datetime_minute, dt, dt.minute() as i8, i8;
+    datetime_second, dt, dt.second() as i8, i8;
+    datetime_nanosecond, dt, dt.nanosecond() as i32, i32;
+    datetime_weekday, dt, dt.weekday_number(), i8;
+    datetime_iso_week, dt, dt.week(), i8;
+    datetime_iso_year, dt, dt.iso_year(), i32;
+    datetime_ordinal, dt, dt.ordinal() as i16, i16;
+    datetime_is_leap_year, dt, is_leap_year(dt.year()), bool;
+    datetime_days_in_month, dt, days_in_month(dt.year(), dt.month() as u8) as i8, i8;
 }

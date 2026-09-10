@@ -1608,3 +1608,61 @@ def test_offset_by_boundary_value_succeeds_series_29017() -> None:
     assert result.dt.year().item() == 262142
     assert result.dt.month().item() == 1
     assert result.dt.day().item() == 1
+
+
+@pytest.mark.parametrize(
+    "time_zone",
+    ["UTC", "Asia/Kathmandu", "America/New_York", "Europe/Amsterdam", "Australia/Sydney"],
+)
+@pytest.mark.parametrize("time_unit", ["us", "ns", "ms"])
+@pytest.mark.parametrize(
+    "attribute",
+    [
+        "year",
+        "month",
+        "day",
+        "hour",
+        "minute",
+        "second",
+        "nanosecond",
+        "weekday",
+        "week",
+        "ordinal_day",
+        "iso_year",
+        "is_leap_year",
+        "days_in_month",
+    ],
+)
+def test_dt_extraction_in_time_zone(
+    attribute: str, time_zone: str, time_unit: TimeUnit
+) -> None:
+    # A field of a zoned column is read off the instant with the zone's offset applied,
+    # rather than off a column of local wall times written out first: the two have to
+    # answer alike, across the DST boundaries where the offset moves.
+    naive = pl.datetime_range(
+        datetime(2024, 3, 9),
+        datetime(2024, 11, 4),
+        interval="7h13m",
+        time_unit=time_unit,
+        eager=True,
+    ).alias("a")
+    zoned = naive.dt.replace_time_zone("UTC").dt.convert_time_zone(time_zone)
+
+    assert_series_equal(
+        getattr(zoned.dt, attribute)(),
+        getattr(zoned.dt.replace_time_zone(None).dt, attribute)(),
+    )
+
+
+@pytest.mark.parametrize("time_unit", ["us", "ns", "ms"])
+def test_dt_extraction_keeps_nulls_and_out_of_range(time_unit: TimeUnit) -> None:
+    s = pl.Series("a", [datetime(2024, 2, 29, 13, 45, 7), None], dtype=pl.Datetime(time_unit))
+    assert s.dt.year().to_list() == [2024, None]
+    assert s.dt.month().to_list() == [2, None]
+    assert s.dt.day().to_list() == [29, None]
+    assert s.dt.hour().to_list() == [13, None]
+    assert s.dt.minute().to_list() == [45, None]
+    assert s.dt.second().to_list() == [7, None]
+    assert s.dt.weekday().to_list() == [4, None]
+    assert s.dt.is_leap_year().to_list() == [True, None]
+    assert s.dt.days_in_month().to_list() == [29, None]

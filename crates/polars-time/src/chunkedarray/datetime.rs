@@ -1,5 +1,8 @@
-use std::borrow::Cow;
-
+use arrow::temporal_conversions::{
+    timestamp_ms_to_datetime_opt, timestamp_ns_to_datetime_opt, timestamp_us_to_datetime_opt,
+};
+#[cfg(feature = "timezones")]
+use chrono::TimeZone as _;
 use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 #[cfg(feature = "timezones")]
@@ -7,34 +10,40 @@ use polars_ops::chunked_array::datetime::replace_time_zone;
 
 use super::*;
 
-/// The column read as its local wall time, in its own time zone.
-fn local(ca: &DatetimeChunked) -> Cow<'_, DatetimeChunked> {
-    match ca.dtype() {
-        #[cfg(feature = "timezones")]
-        DataType::Datetime(_, Some(_)) => Cow::Owned(
-            polars_ops::chunked_array::replace_time_zone(
-                ca,
-                None,
-                &StringChunked::new("".into(), ["raise"]),
-                NonExistent::Raise,
-            )
-            .expect("Removing time zone is infallible"),
-        ),
-        _ => Cow::Borrowed(ca),
+/// Reads a timestamp in `time_unit` as the instant it stands for.
+fn timestamp_to_datetime(time_unit: TimeUnit) -> fn(i64) -> Option<NaiveDateTime> {
+    match time_unit {
+        TimeUnit::Nanoseconds => timestamp_ns_to_datetime_opt,
+        TimeUnit::Microseconds => timestamp_us_to_datetime_opt,
+        TimeUnit::Milliseconds => timestamp_ms_to_datetime_opt,
     }
 }
 
-/// Extracts one field of the local wall time of every element, per the column's timestamp unit.
+/// Extracts one field of the local wall time of every element.
+///
+/// A column that names a time zone has that zone's offset applied as each instant is read, in the
+/// same pass the field is taken in — rather than the wall times being written out as a column of
+/// their own first and then read back.
 macro_rules! extract {
-    ($ca:expr, $ns:ident, $us:ident, $ms:ident) => {{
+    ($ca:expr, $field:expr) => {{
         let ca = $ca;
-        let f = match ca.time_unit() {
-            TimeUnit::Nanoseconds => $ns,
-            TimeUnit::Microseconds => $us,
-            TimeUnit::Milliseconds => $ms,
-        };
-        let ca_local = local(ca);
-        unary_elementwise(ca_local.physical(), |opt| opt.and_then(f))
+        let to_datetime = timestamp_to_datetime(ca.time_unit());
+
+        #[cfg(feature = "timezones")]
+        if let DataType::Datetime(_, Some(time_zone)) = ca.dtype() {
+            let tz = time_zone
+                .to_chrono()
+                .expect("a column's time zone is validated when it is set");
+
+            return unary_elementwise(ca.physical(), move |opt| {
+                opt.and_then(to_datetime)
+                    .map(|instant| $field(tz.from_utc_datetime(&instant).naive_local()))
+            });
+        }
+
+        unary_elementwise(ca.physical(), move |opt| {
+            opt.and_then(to_datetime).map($field)
+        })
     }};
 }
 
@@ -42,32 +51,17 @@ pub trait DatetimeMethods: AsDatetime {
     /// Extract month from underlying NaiveDateTime representation.
     /// Returns the year number in the calendar date.
     fn year(&self) -> Int32Chunked {
-        extract!(
-            self.as_datetime(),
-            datetime_to_year_ns,
-            datetime_to_year_us,
-            datetime_to_year_ms
-        )
+        extract!(self.as_datetime(), datetime_year)
     }
 
     /// Extract year from underlying NaiveDate representation.
     /// Returns whether the year is a leap year.
     fn is_leap_year(&self) -> BooleanChunked {
-        extract!(
-            self.as_datetime(),
-            datetime_to_is_leap_year_ns,
-            datetime_to_is_leap_year_us,
-            datetime_to_is_leap_year_ms
-        )
+        extract!(self.as_datetime(), datetime_is_leap_year)
     }
 
     fn iso_year(&self) -> Int32Chunked {
-        extract!(
-            self.as_datetime(),
-            datetime_to_iso_year_ns,
-            datetime_to_iso_year_us,
-            datetime_to_iso_year_ms
-        )
+        extract!(self.as_datetime(), datetime_iso_year)
     }
 
     /// Extract quarter from underlying NaiveDateTime representation.
@@ -82,45 +76,25 @@ pub trait DatetimeMethods: AsDatetime {
     ///
     /// The return value ranges from 1 to 12.
     fn month(&self) -> Int8Chunked {
-        extract!(
-            self.as_datetime(),
-            datetime_to_month_ns,
-            datetime_to_month_us,
-            datetime_to_month_ms
-        )
+        extract!(self.as_datetime(), datetime_month)
     }
 
     /// Returns the number of days in the month of the underlying NaiveDateTime
     /// representation.
     fn days_in_month(&self) -> Int8Chunked {
-        extract!(
-            self.as_datetime(),
-            datetime_to_days_in_month_ns,
-            datetime_to_days_in_month_us,
-            datetime_to_days_in_month_ms
-        )
+        extract!(self.as_datetime(), datetime_days_in_month)
     }
 
     /// Extract ISO weekday from underlying NaiveDateTime representation.
     /// Returns the weekday number where monday = 1 and sunday = 7
     fn weekday(&self) -> Int8Chunked {
-        extract!(
-            self.as_datetime(),
-            datetime_to_weekday_ns,
-            datetime_to_weekday_us,
-            datetime_to_weekday_ms
-        )
+        extract!(self.as_datetime(), datetime_weekday)
     }
 
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
     fn week(&self) -> Int8Chunked {
-        extract!(
-            self.as_datetime(),
-            datetime_to_iso_week_ns,
-            datetime_to_iso_week_us,
-            datetime_to_iso_week_ms
-        )
+        extract!(self.as_datetime(), datetime_iso_week)
     }
 
     /// Extract day from underlying NaiveDateTime representation.
@@ -128,69 +102,39 @@ pub trait DatetimeMethods: AsDatetime {
     ///
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
     fn day(&self) -> Int8Chunked {
-        extract!(
-            self.as_datetime(),
-            datetime_to_day_ns,
-            datetime_to_day_us,
-            datetime_to_day_ms
-        )
+        extract!(self.as_datetime(), datetime_day)
     }
 
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
     fn hour(&self) -> Int8Chunked {
-        extract!(
-            self.as_datetime(),
-            datetime_to_hour_ns,
-            datetime_to_hour_us,
-            datetime_to_hour_ms
-        )
+        extract!(self.as_datetime(), datetime_hour)
     }
 
     /// Extract minute from underlying NaiveDateTime representation.
     /// Returns the minute number from 0 to 59.
     fn minute(&self) -> Int8Chunked {
-        extract!(
-            self.as_datetime(),
-            datetime_to_minute_ns,
-            datetime_to_minute_us,
-            datetime_to_minute_ms
-        )
+        extract!(self.as_datetime(), datetime_minute)
     }
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the second number from 0 to 59.
     fn second(&self) -> Int8Chunked {
-        extract!(
-            self.as_datetime(),
-            datetime_to_second_ns,
-            datetime_to_second_us,
-            datetime_to_second_ms
-        )
+        extract!(self.as_datetime(), datetime_second)
     }
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the number of nanoseconds since the whole non-leap second.
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
     fn nanosecond(&self) -> Int32Chunked {
-        extract!(
-            self.as_datetime(),
-            datetime_to_nanosecond_ns,
-            datetime_to_nanosecond_us,
-            datetime_to_nanosecond_ms
-        )
+        extract!(self.as_datetime(), datetime_nanosecond)
     }
 
     /// Returns the day of year starting from 1.
     ///
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
     fn ordinal(&self) -> Int16Chunked {
-        extract!(
-            self.as_datetime(),
-            datetime_to_ordinal_ns,
-            datetime_to_ordinal_us,
-            datetime_to_ordinal_ms
-        )
+        extract!(self.as_datetime(), datetime_ordinal)
     }
 
     fn parse_from_str_slice(
