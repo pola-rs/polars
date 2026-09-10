@@ -3,7 +3,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    Field, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet, SortMultipleOptions,
+    Field, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions,
 };
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
@@ -17,7 +17,7 @@ use polars_plan::plans::{
     AExpr, CanonicalExprId, CanonicalExprMap, IR, IRAggExpr, IRFunctionExpr, write_group_by,
 };
 use polars_plan::prelude::{GroupbyOptions, *};
-use polars_plan::utils::{aexpr_to_leaf_names_iter, rename_columns};
+use polars_plan::utils::rename_columns;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, unique_column_name};
