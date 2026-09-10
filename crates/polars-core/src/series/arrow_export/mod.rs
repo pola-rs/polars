@@ -47,12 +47,8 @@ macro_rules! primitive_to_boxed_with_logical {
 /// chunk already spans exactly its child.
 fn normalize_map_entries(arr: &ListArray<i64>) -> Option<ListArray<i64>> {
     #[cfg(feature = "dtype-map")]
-    {
-        use crate::chunked_array::logical::{compact_null_rows_chunk, hidden_entry_count};
-
-        if hidden_entry_count(arr) > 0 {
-            return compact_null_rows_chunk(arr);
-        }
+    if let Some(compacted) = crate::chunked_array::logical::compact_null_rows_chunk(arr) {
+        return Some(compacted);
     }
 
     let offsets = arr.offsets();

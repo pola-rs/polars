@@ -419,26 +419,6 @@ fn windowed_entries_array(arr: &LargeListArray) -> ArrayRef {
     }
 }
 
-/// Count entries under null rows using an allocation-free scan of validity runs.
-pub(crate) fn hidden_entry_count(arr: &LargeListArray) -> usize {
-    let Some(validity) = arr.validity().filter(|v| v.unset_bits() > 0) else {
-        return 0;
-    };
-    let offsets = arr.offsets();
-
-    let mut validity = validity.iter();
-    let mut hidden = 0;
-    let mut row = 0;
-    while validity.num_remaining() > 0 {
-        row += validity.take_leading_ones();
-        let end = row + validity.take_leading_zeros();
-        hidden += (offsets[end] - offsets[row]) as usize;
-        row = end;
-    }
-
-    hidden
-}
-
 /// Mask the windowed entries by row validity; `None` if no null row spans an entry.
 ///
 /// Scans validity runs once, allocating only once a null row is found to span entries.
@@ -757,9 +737,9 @@ fn canonical_map_indices(
         return None;
     }
 
-    let n_live_entries = offsets.range() as usize - hidden_entry_count(arr);
-    let mut key_idx = Vec::with_capacity(n_live_entries);
-    let mut value_idx = Vec::with_capacity(n_live_entries);
+    let capacity = offsets.range() as usize;
+    let mut key_idx = Vec::with_capacity(capacity);
+    let mut value_idx = Vec::with_capacity(capacity);
     let mut new_offsets = Vec::with_capacity(offsets.len());
     new_offsets.push(0i64);
 
