@@ -130,11 +130,7 @@ pub fn approx_quantile_estimate(
             .to_unit_list()
             .into_series()
     };
-    let quantiles = quantiles
-        .broadcast_to(sketch.len())?
-        .list()?
-        .rechunk()
-        .into_owned();
+    let quantiles = quantiles.broadcast_to(sketch.len())?.list()?.to_owned();
     polars_ensure!(
         !quantiles.has_nulls(),
         ComputeError: "`quantile` should not be null",
@@ -146,8 +142,6 @@ pub fn approx_quantile_estimate(
         !quantiles_inner.has_nulls(),
         ComputeError: "`quantile` should not contain null values",
     );
-    let values = quantiles_inner.cont_slice().expect("rechunk");
-
     let estimates = match values_dtype {
         _ if values_dtype.is_primitive_numeric()
             || values_dtype.is_temporal()
@@ -155,7 +149,7 @@ pub fn approx_quantile_estimate(
         {
             let physical = values_dtype.to_physical();
             let estimates = with_match_physical_numeric_polars_type!(physical, |$T| {
-                let estimates = approx_quantile_estimate_inner::<<$T as PolarsNumericType>::Native>(sketch, &quantiles, values)?;
+                let estimates = approx_quantile_estimate_inner::<<$T as PolarsNumericType>::Native>(sketch, &quantiles, quantiles_inner)?;
                 ChunkedArray::<$T>::from_iter_options(PlSmallStr::EMPTY, estimates.into_iter())
                     .into_series()
             });
@@ -163,12 +157,14 @@ pub fn approx_quantile_estimate(
             unsafe { estimates.from_physical_unchecked(values_dtype)? }
         },
         DataType::Boolean => {
-            let estimates = approx_quantile_estimate_inner::<bool>(sketch, &quantiles, values)?;
+            let estimates =
+                approx_quantile_estimate_inner::<bool>(sketch, &quantiles, quantiles_inner)?;
             BooleanChunked::from_iter_options(PlSmallStr::EMPTY, estimates.into_iter())
                 .into_series()
         },
         DataType::String => {
-            let estimates = approx_quantile_estimate_inner::<String>(sketch, &quantiles, values)?;
+            let estimates =
+                approx_quantile_estimate_inner::<String>(sketch, &quantiles, quantiles_inner)?;
             StringChunked::from_iter_options(
                 PlSmallStr::EMPTY,
                 estimates.iter().map(|v| v.as_deref()),
@@ -194,17 +190,20 @@ fn approx_quantile_estimate_inner<
 >(
     sketch: &BinaryChunked,
     quantiles: &ListChunked,
-    values: &[f64],
+    values: &Float64Chunked,
 ) -> PolarsResult<Vec<Option<T>>> {
     let mut out = Vec::with_capacity(values.len());
-    let offsets = quantiles.downcast_as_array().offsets();
-    for ((offset, len), blob) in Iterator::zip(offsets.offset_and_length_iter(), sketch.iter()) {
+    let mut values = values.no_null_iter();
+    let lengths = quantiles
+        .downcast_iter()
+        .flat_map(|arr| arr.offsets().lengths());
+    for (blob, len) in Iterator::zip(sketch.iter(), lengths) {
         let sketch: Option<FinalizedSketch<T>> = blob
             .map(pl_serialize::deserialize_from_reader::<_, _, false>)
             .transpose()?;
-        for quantile in &values[offset..offset + len] {
+        for quantile in values.by_ref().take(len) {
             let estimate = match &sketch {
-                Some(sketch) => sketch.estimate_quantile(*quantile)?.cloned(),
+                Some(sketch) => sketch.estimate_quantile(quantile)?.cloned(),
                 None => None,
             };
             out.push(estimate);
