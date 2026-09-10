@@ -41,6 +41,14 @@ impl ComputeNode for ReverseNode {
         "reverse"
     }
 
+    fn is_memory_intensive_pipeline_blocker(&self) -> bool {
+        match &self.state {
+            ReverseState::Buffering(..) => true,
+            ReverseState::Emitting { .. } => false,
+            ReverseState::Done => false,
+        }
+    }
+
     fn update_state(
         &mut self,
         recv: &mut [PortState],
@@ -72,7 +80,8 @@ impl ComputeNode for ReverseNode {
                 recv[0] = PortState::Done;
                 // InMemorySource has implemented a hack for compatibility with
                 // nodes downstream that require at least one input.
-                // Do we need to copy this?
+                // This is not needed here.
+
                 send[0] = if buffer.total_len == 0 {
                     PortState::Done
                 } else {
