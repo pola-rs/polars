@@ -1,9 +1,6 @@
-use std::borrow::Cow;
-
 #[cfg(feature = "approx_quantile")]
 use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
-use polars_core::frame::column::ScalarColumn;
 use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use polars_core::prelude::*;
 use polars_core::scalar::Scalar;
@@ -61,19 +58,10 @@ pub(super) fn approx_quantile_estimate(
 ) -> PolarsResult<Column> {
     assert_eq!(s.len(), 2);
     let quantiles = s[1].as_materialized_series();
+    let sketch = s[0].as_materialized_series();
 
-    // Estimating against a broadcast sketch would deserialize the same sketch once per row.
-    let sketch = match s[0].as_scalar_column() {
-        Some(c) => Cow::Owned(c.as_single_value_series()),
-        None => Cow::Borrowed(s[0].as_materialized_series()),
-    };
-
-    let out = polars_ops::prelude::approx_quantile_estimate(&sketch, quantiles, values_dtype)?;
-    if out.len() < s[0].len() {
-        Ok(ScalarColumn::from_single_value_series(out, s[0].len()).into())
-    } else {
-        Ok(out.into_column())
-    }
+    let out = polars_ops::prelude::approx_quantile_estimate(sketch, quantiles, values_dtype)?;
+    Ok(out.into_column())
 }
 
 #[cfg(feature = "diff")]
