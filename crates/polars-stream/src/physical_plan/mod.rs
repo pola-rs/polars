@@ -462,6 +462,9 @@ pub enum PhysNodeKind {
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
         args: JoinArgs,
+        /// Extra match condition, in the join's output namespace, applied per candidate
+        /// pair. See `JoinTypeOptionsIR::Equi`.
+        fused_predicate: Option<ExprIR>,
     },
 
     MergeJoin {

@@ -19,6 +19,7 @@ mod flatten_union;
 mod fused;
 mod join_build_side;
 mod join_order;
+mod join_predicate_fusion;
 mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
 pub mod call_dsl_resolvers;
@@ -216,6 +217,12 @@ pub fn optimize(
     // before projection pushdown so projections follow the final join order.
     if opt_flags.join_order() && get_or_init_members!().has_joins_or_unions {
         root = join_order::join_order(root, ir_arena, expr_arena)?;
+    }
+
+    // After join ordering, and before projection pushdown drops what only the fused predicate
+    // reads.
+    if opt_flags.predicate_pushdown() && get_or_init_members!().has_joins_or_unions {
+        join_predicate_fusion::fuse_predicates(root, ir_arena, expr_arena)?;
     }
 
     if opt_flags.projection_pushdown() {
