@@ -864,3 +864,14 @@ def test_when_otherwise_broadcast_28969(
         {"t": [1 if x else 2 for x in input]}, schema={"t": pl.Int64}
     )
     assert_frame_equal(out, expected)
+
+
+def test_when_then_masked_arm_repeated_column_29255() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [10, 20, 30, 40]})
+    out = df.select(
+        pl.when(pl.col("a") > 2)
+        .then(pl.col("a") + pl.col("a"))
+        .otherwise(pl.col("b") * pl.col("b") + pl.col("a"))
+    )
+    expected = pl.DataFrame({"a": [101, 402, 6, 8]})
+    assert_frame_equal(out, expected)
