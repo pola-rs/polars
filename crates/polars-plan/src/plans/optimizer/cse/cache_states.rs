@@ -315,6 +315,7 @@ pub(crate) fn set_cache_states(
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
         for (cache_id, v) in cache_schema_and_children.into_iter().rev() {
             pred_pd.streaming = v.streaming;
+            let mut shared_optimized = false;
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple distinct predicates, the caches carry different filters
             // above them (predicate pushdown was blocked by the cache nodes). Removing the caches
@@ -388,15 +389,16 @@ pub(crate) fn set_cache_states(
                 let keep_cost = if remove_caches && removal_cost.is_some() {
                     let child = *v.children.first().unwrap();
                     // Pushdown does not descend into caches, so the child below one may
-                    // still hold cross joins, which cost as cross products. Cost an
-                    // optimized copy, as the removal copies are costed.
+                    // still hold cross joins, which cost as cross products. Optimize it
+                    // for costing and reuse it if the caches stay. The removal copies
+                    // have already been prepared independently.
                     //
                     // The narrowing that keeping the caches applies is not priced here.
-                    let probe = deep_copy_ir_delete_cache_id(child, cache_id, lp_arena, expr_arena);
-                    let lp = lp_arena.take(probe);
+                    let lp = lp_arena.take(child);
                     let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
-                    lp_arena.replace(probe, lp);
-                    subplan_cost(probe, lp_arena, expr_arena)
+                    lp_arena.replace(child, lp);
+                    shared_optimized = true;
+                    subplan_cost(child, lp_arena, expr_arena)
                         .map(|c| c.work + v.cache_nodes.len() as f64 * c.rows)
                 } else {
                     None
@@ -488,29 +490,30 @@ pub(crate) fn set_cache_states(
 
                     lp_arena.replace(filter_node, new_lp);
                 }
-            } else if let Some(narrowed) = narrow_shared_subplan(
-                &v.children,
-                &v.parents,
-                pushdown_maintain_errors,
-                lp_arena,
-                expr_arena,
-            ) {
-                let start_lp = lp_arena.take(narrowed);
-                let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
-                lp_arena.replace(narrowed, lp);
-                for &cache in &v.cache_nodes {
-                    let IR::Cache { input, .. } = lp_arena.get_mut(cache) else {
-                        unreachable!()
-                    };
-                    *input = narrowed;
-                }
             } else {
                 let child = *v.children.first().unwrap();
-                let child_lp = lp_arena.take(child);
-                let lp = pred_pd.optimize(child_lp, lp_arena, expr_arena)?;
-                lp_arena.replace(child, lp.clone());
-                for &child in &v.children[1..] {
-                    lp_arena.replace(child, lp.clone());
+                let input = narrow_shared_subplan(
+                    &v.children,
+                    &v.parents,
+                    pushdown_maintain_errors,
+                    lp_arena,
+                    expr_arena,
+                )
+                .unwrap_or(child);
+                // Only new bounds need another pass if costing already optimized the child.
+                if input != child || !shared_optimized {
+                    let lp = lp_arena.take(input);
+                    let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
+                    lp_arena.replace(input, lp);
+                }
+                for &cache in &v.cache_nodes {
+                    let IR::Cache {
+                        input: cache_input, ..
+                    } = lp_arena.get_mut(cache)
+                    else {
+                        unreachable!()
+                    };
+                    *cache_input = input;
                 }
             }
         }
