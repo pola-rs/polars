@@ -662,6 +662,7 @@ pub fn phys_props(
             },
             vec![input_left.node, input_right.node],
         ),
+        PhysNodeKind::Reverse { input } => (PhysicalPropsDescription::Reverse, vec![input.node]),
         PhysNodeKind::InMemoryJoin {
             input_left,
             input_right,
