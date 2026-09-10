@@ -369,7 +369,10 @@ pub fn resolve_join(
         match &options.args.how {
             #[cfg(feature = "asof_join")]
             JoinType::AsOf(_) => JoinTypeOptionsIR::AsOf { on },
-            _ => JoinTypeOptionsIR::Equi { on },
+            _ => JoinTypeOptionsIR::Equi {
+                on,
+                fused_predicate: None,
+            },
         }
     };
 
@@ -659,8 +662,12 @@ fn build_upcast_node_list(
                             right.to_dtype(&ToFieldContext::new(expr_arena, schema_merged))?;
                         if dtype_left != dtype_right {
                             // Ensure that we have a lossless cast between the two types.
-                            let dt = if dtype_left.is_primitive_numeric()
-                                || dtype_right.is_primitive_numeric()
+                            // Decimal has no lossless numeric upcast.
+                            let either_decimal =
+                                dtype_left.is_decimal() || dtype_right.is_decimal();
+                            let dt = if !either_decimal
+                                && (dtype_left.is_primitive_numeric()
+                                    || dtype_right.is_primitive_numeric())
                             {
                                 get_numeric_upcast_supertype_lossless(&dtype_left, &dtype_right)
                                     .ok_or(PolarsError::SchemaMismatch(

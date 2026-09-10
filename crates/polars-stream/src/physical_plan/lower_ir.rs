@@ -15,6 +15,7 @@ use polars_expr::dispatch::function_expr_to_udf;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_ops::frame::JoinType;
+use polars_ops::prelude::MaintainOrderJoin;
 use polars_plan::constants::get_literal_name;
 use polars_plan::dsl::default_values::DefaultFieldValues;
 use polars_plan::dsl::deletion::DeletionFilesList;
@@ -758,13 +759,15 @@ pub fn lower_ir(
                         // time; it only takes source 0's footer as its
                         // initial hint.
                         metadata_per_source,
-                        bytes_per_source: _,
+                        bytes_per_source,
                     } => Arc::new(
                         crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
                             options: Arc::new(options.clone()),
                             first_metadata: metadata_per_source.first_metadata().cloned(),
+                            bytes_per_source: bytes_per_source.clone(),
                             pipeline_budget: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
+                            file_read_context: std::sync::OnceLock::new(),
                             io_metrics: std::sync::OnceLock::new(),
                         },
                     ) as _,
@@ -1053,6 +1056,8 @@ pub fn lower_ir(
             #[cfg(feature = "iejoin")]
             const RANGE_JOIN_PREFER_DESCENDING: bool = false;
 
+            options.ensure_executable()?;
+
             #[allow(unused_mut)]
             let (mut input_left, mut input_right) = (*input_left, *input_right);
             let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);
@@ -1065,6 +1070,9 @@ pub fn lower_ir(
             let mut tmp_right_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let args = options.args.clone();
             let options = options.options.clone();
+            // Only the hash equi join evaluates a fused predicate natively; other strategies get
+            // a `Filter` on top, and the in-memory fallback applies it from `options`.
+            let mut fused_predicate = options.fused_predicate().cloned();
             #[cfg(feature = "asof_join")]
             let asof_options = || match args.how {
                 JoinType::AsOf(ref asof_options) => asof_options,
@@ -1203,9 +1211,10 @@ pub fn lower_ir(
             #[cfg(not(feature = "asof_join"))]
             let use_streaming_asof_join = false;
 
-            // A non-equality match condition is only handled natively by the range-join
-            // node; anything else falls back to the in-memory engine.
-            let match_condition_supported = options.is_pure_equi() || args.how.is_range();
+            // A non-equality match condition is native to the range-join node, and to the
+            // equi join as a fused predicate; anything else falls back to the in-memory engine.
+            let match_condition_supported =
+                options.is_pure_equi() || options.has_fused_predicate() || args.how.is_range();
 
             if (args.how.is_equi()
                 || args.how.is_semi_anti()
@@ -1374,16 +1383,24 @@ pub fn lower_ir(
                             output_bool: false,
                         },
                     )),
-                    _ if args.how.is_equi() => phys_sm.insert(PhysNode::new(
-                        output_schema,
-                        PhysNodeKind::EquiJoin {
-                            input_left: trans_input_left,
-                            input_right: trans_input_right,
-                            left_on: trans_left_on,
-                            right_on: trans_right_on,
-                            args: args.clone(),
-                        },
-                    )),
+                    _ if args.how.is_equi() => {
+                        // Only the unordered probe evaluates a fused predicate in bulk.
+                        let native = match args.maintain_order {
+                            MaintainOrderJoin::None => fused_predicate.take(),
+                            _ => None,
+                        };
+                        phys_sm.insert(PhysNode::new(
+                            output_schema,
+                            PhysNodeKind::EquiJoin {
+                                input_left: trans_input_left,
+                                input_right: trans_input_right,
+                                left_on: trans_left_on,
+                                right_on: trans_right_on,
+                                args: args.clone(),
+                                fused_predicate: native,
+                            },
+                        ))
+                    },
                     _ if args.how.is_cross() => phys_sm.insert(PhysNode::new(
                         output_schema,
                         PhysNodeKind::CrossJoin {
@@ -1395,6 +1412,19 @@ pub fn lower_ir(
                     _ => unreachable!(),
                 };
                 let mut stream = PhysStream::first(node);
+                // Anything the join did not take over is applied as a filter instead.
+                if let Some(fused_predicate) = fused_predicate {
+                    // A fused predicate join never carries a slice.
+                    debug_assert!(args.slice.is_none());
+                    stream = build_filter_stream(
+                        stream,
+                        fused_predicate,
+                        expr_arena,
+                        phys_sm,
+                        expr_cache,
+                        ctx,
+                    )?;
+                }
                 if let Some((offset, len)) = args.slice {
                     stream = build_slice_stream(stream, offset, len, phys_sm);
                 }
@@ -1435,8 +1465,14 @@ pub fn lower_ir(
             // by with an aggregate for each column.
             let input_schema = phys_input.output_schema(phys_sm);
             if input_schema.is_empty() {
-                // Can't group (or have duplicates) if dataframe has zero-width.
-                return Ok(phys_input);
+                // With zero width every row is identical to every other row, so
+                // at most a single row remains. This matches the zero-width case
+                // of `DataFrame::unique_impl`.
+                let mut stream = build_slice_stream(phys_input, 0, 1, phys_sm);
+                if let Some((offset, length)) = options.slice {
+                    stream = build_slice_stream(stream, offset, length, phys_sm);
+                }
+                return Ok(stream);
             }
 
             // Create the key expressions.
@@ -1792,6 +1828,10 @@ pub fn lower_ir(
                     }
                 },
             }
+        },
+        IR::Resolver { resolved_ir, .. } => {
+            let node = resolved_ir.expect("IR::Resolver not resolved at lower_ir");
+            return lower_ir!(node);
         },
         IR::Invalid => unreachable!(),
     };

@@ -13,7 +13,7 @@ use polars_parquet::read::{self, ColumnChunkMetadata, FileMetadata, Filter, RowG
 use rayon::prelude::*;
 
 use super::mmap::mmap_columns;
-use super::utils::materialize_empty_df;
+use super::utils::{canonicalize_parquet_maps, materialize_empty_df};
 use super::{ParallelStrategy, mmap};
 use crate::RowIndex;
 use crate::hive::materialize_hive_partitions;
@@ -38,10 +38,8 @@ fn assert_dtypes(dtype: &ArrowDataType) {
         // This should have been converted to a LargeList
         D::List(_) => unreachable!(),
 
-        // This should have been converted to a LargeList(Struct(_))
-        D::Map(_, _) => unreachable!(),
-
         // Recursive checks
+        D::Map(entries, _) => assert_dtypes(&entries.dtype),
         D::Dictionary(_, dtype, _) => assert_dtypes(dtype),
         D::Extension(ext) => assert_dtypes(&ext.inner),
         D::LargeList(inner) => assert_dtypes(&inner.dtype),
@@ -115,7 +113,8 @@ fn column_idx_to_series(
     }
     let columns = mmap_columns(store, field_md);
     let (arrays, pred_true_mask) = mmap::to_deserializer(columns, field.clone(), filter)?;
-    let series = Series::try_from((field, arrays))?;
+    let mut series = Series::try_from((field, arrays))?;
+    canonicalize_parquet_maps(&mut series)?;
 
     Ok((series, pred_true_mask))
 }
@@ -497,37 +496,4 @@ pub fn calc_prefilter_cost(mask: &arrow::bitmap::Bitmap) -> f64 {
     // Closer to 0: pre-filtering is probably better.
     // Closer to 1: post-filtering is probably better.
     (num_edges / rg_len).clamp(0.0, 1.0)
-}
-
-#[derive(Clone, Copy)]
-pub enum PrefilterMaskSetting {
-    Auto,
-    Pre,
-    Post,
-}
-
-impl PrefilterMaskSetting {
-    pub fn init_from_env() -> Self {
-        std::env::var("POLARS_PQ_PREFILTERED_MASK").map_or(Self::Auto, |v| match &v[..] {
-            "auto" => Self::Auto,
-            "pre" => Self::Pre,
-            "post" => Self::Post,
-            _ => panic!("Invalid `POLARS_PQ_PREFILTERED_MASK` value '{v}'."),
-        })
-    }
-
-    pub fn should_prefilter(&self, prefilter_cost: f64, dtype: &ArrowDataType) -> bool {
-        match self {
-            Self::Auto => {
-                // Prefiltering is only expensive for nested types so we make the cut-off quite
-                // high.
-                let is_nested = dtype.is_nested();
-
-                // We empirically selected these numbers.
-                !is_nested && prefilter_cost <= 0.01
-            },
-            Self::Pre => true,
-            Self::Post => false,
-        }
-    }
 }

@@ -1,6 +1,8 @@
 #[cfg(feature = "iejoin")]
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::rolling::{QuantileMethod, RollingFnParams};
 use polars_core::chunked_array::ops::FillNullStrategy;
 #[cfg(feature = "string_normalize")]
@@ -1125,6 +1127,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Extension(_) => {
                     return Err(PyNotImplementedError::new_err("extension expr"));
                 },
+                IRFunctionExpr::MapExpr(f) => {
+                    return Err(PyNotImplementedError::new_err(format!("{f}")));
+                },
                 IRFunctionExpr::ListExpr(listfun) => match listfun {
                     IRListFunction::Concat => (PyListFunction::Concat,).into_py_any(py),
                     #[cfg(feature = "is_in")]
@@ -1201,6 +1206,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         names.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                     )
                         .into_py_any(py),
+                    IRListFunction::ToMap => {
+                        return Err(PyNotImplementedError::new_err(format!("{listfun}")));
+                    },
                 },
                 IRFunctionExpr::Bitwise(bitwisefun) => {
                     let py_function = match bitwisefun {
@@ -1889,6 +1897,17 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 } => ("value_counts", sort, parallel, name.as_str(), normalize).into_py_any(py),
                 IRFunctionExpr::UniqueCounts => ("unique_counts",).into_py_any(py),
                 IRFunctionExpr::ApproxNUnique => ("approx_n_unique",).into_py_any(py),
+                #[cfg(feature = "approx_quantile")]
+                IRFunctionExpr::ApproxQuantile { method, error } => {
+                    let method = match method {
+                        ApproxQuantileMethod::Auto => "auto",
+                        ApproxQuantileMethod::KLL => "kll",
+                        ApproxQuantileMethod::ReqSketch { hra: false } => "req_lo",
+                        ApproxQuantileMethod::ReqSketch { hra: true } => "req_hi",
+                        ApproxQuantileMethod::DoubleReqSketch => "req_both",
+                    };
+                    ("approx_quantile", method, error).into_py_any(py)
+                },
                 IRFunctionExpr::Coalesce => ("coalesce",).into_py_any(py),
                 IRFunctionExpr::Diff(null_behaviour) => (
                     "diff",

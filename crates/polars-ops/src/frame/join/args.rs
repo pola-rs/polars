@@ -191,9 +191,13 @@ pub trait CrossJoinFilter: Send + Sync {
     /// Evaluates the filter predicate on `df`, returning a boolean mask.
     fn evaluate(&self, df: &DataFrame) -> PolarsResult<BooleanChunked>;
 
-    fn apply(&self, df: DataFrame) -> PolarsResult<DataFrame> {
+    fn apply(&self, df: DataFrame, parallel: bool) -> PolarsResult<DataFrame> {
         let mask = self.evaluate(&df)?;
-        df.filter_seq(&mask)
+        if parallel {
+            df.filter(&mask)
+        } else {
+            df.filter_seq(&mask)
+        }
     }
 }
 
@@ -243,16 +247,8 @@ pub enum JoinTypeOptions {
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
     Cross(CrossJoinOptions),
-}
-
-impl JoinTypeOptions {
-    pub fn is_iejoin(&self) -> bool {
-        match self {
-            #[cfg(feature = "iejoin")]
-            Self::IEJoin(_) => true,
-            _ => false,
-        }
-    }
+    /// A predicate fused into an equi join's match condition, on top of its keys.
+    FusedPredicate(CrossJoinOptions),
 }
 
 impl Display for JoinType {
@@ -387,19 +383,6 @@ impl JoinType {
     /// Joins supported in join where with non-equi conditions
     pub fn supports_non_equi(&self) -> bool {
         matches!(self, JoinType::Inner | JoinType::Left | JoinType::Right)
-    }
-
-    /// Whether the physical join implementations can execute this `how` with the given
-    /// (already-resolved) match-condition algorithm without silently dropping it.
-    pub fn supports_non_equi_options(&self, options: &Option<JoinTypeOptions>) -> bool {
-        options.is_none()
-            || matches!(self, JoinType::Inner | JoinType::Cross)
-            || self.is_ie()
-            || self.is_range()
-            || (matches!(self, JoinType::Left | JoinType::Right)
-                && options.as_ref().map(|o| o.is_iejoin()).unwrap_or(false))
-            || (matches!(self, JoinType::Left)
-                && matches!(options, Some(JoinTypeOptions::Cross(_))))
     }
 }
 

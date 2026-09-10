@@ -20,7 +20,12 @@ where
 
         let search_val = std::iter::once(Some(T::Native::nan()));
         let idx = binary_search_ca(ca, search_val, SearchSortedSide::Left, false)[0] as usize;
-        idx.saturating_sub(1)
+        let candidate = idx.saturating_sub(1);
+        if ca.get(candidate).is_none() {
+            maybe_max_idx
+        } else {
+            candidate
+        }
     }
 
     fn float_arg_max_sorted_descending(&self) -> usize {
@@ -36,7 +41,12 @@ where
 
         let search_val = std::iter::once(Some(T::Native::nan()));
         let idx = binary_search_ca(ca, search_val, SearchSortedSide::Right, true)[0] as usize;
-        if idx == ca.len() { idx - 1 } else { idx }
+        let candidate = if idx == ca.len() { idx - 1 } else { idx };
+        if ca.get(candidate).is_none() {
+            maybe_max_idx
+        } else {
+            candidate
+        }
     }
 }
 

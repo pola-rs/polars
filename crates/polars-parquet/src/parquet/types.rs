@@ -212,9 +212,11 @@ impl NativeType for [u32; 3] {
 
     #[inline]
     fn ord(&self, other: &Self) -> std::cmp::Ordering {
-        int96_to_i64_ns(*self)
-            .unwrap_or(i64::MAX)
-            .ord(&int96_to_i64_ns(*other).unwrap_or(i64::MAX))
+        // An INT96 timestamp is a Julian day (index 2) plus nanoseconds-of-day (indices 1, 0),
+        // so comparing those lexicographically is exact chronological order. Converting to
+        // nanoseconds first would clamp out-of-range values to i64::MAX, misordering them.
+        let key = |x: &[u32; 3]| (x[2], x[1], x[0]);
+        key(self).cmp(&key(other))
     }
 }
 

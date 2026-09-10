@@ -14,6 +14,9 @@ use polars_error::abort::register_polars_abort_mechanism;
 use polars_ffi::version_0::SeriesExport;
 use polars_plan::plans::python_df_to_rust;
 use polars_utils::python_convert_registry::{FromPythonConvertRegistry, PythonConvertRegistry};
+use polars_utils::version::{
+    set_polars_lib_build_commit, set_polars_lib_name, set_polars_lib_version,
+};
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use pyo3::types::PyCFunction;
@@ -111,6 +114,10 @@ static WARN_FUNCTION: OnceLock<Py<PyAny>> = OnceLock::new();
 pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_function: Py<PyAny>) {
     // TODO: should we throw an error if we try to initialize while already initialized?
     POLARS_REGISTRY_INIT_LOCK.get_or_init(|| {
+        set_polars_lib_name("Polars (python)");
+        set_polars_lib_version(crate::PYPOLARS_VERSION);
+        set_polars_lib_build_commit(crate::PYPOLARS_BUILD_COMMIT);
+
         WARN_FUNCTION.set(warn_function).unwrap();
         set_polars_allow_extension(true);
 
@@ -189,10 +196,6 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
             let object = Python::attach(|py| ObjectValue {
                 inner: Wrap(av).into_py_any(py).unwrap(),
             });
-            Box::new(object) as Box<dyn Any>
-        });
-        let pyobject_converter = Arc::new(|av: AnyValue| {
-            let object = Python::attach(|py| Wrap(av).into_py_any(py).unwrap());
             Box::new(object) as Box<dyn Any>
         });
         fn object_array_getter(arr: &dyn Array, idx: usize) -> Option<AnyValue<'_>> {
@@ -282,13 +285,20 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
         registry::register_object_builder(
             object_builder,
             object_converter,
-            pyobject_converter,
             physical_dtype,
             Arc::new(object_array_getter),
             Arc::new(with_gil),
         );
 
         use crate::dataset::dataset_provider_funcs;
+
+        polars_plan::dsl::dsl_resolver::python::PY_DSL_RESOLVER_VTABLE.get_or_init(|| {
+            polars_plan::dsl::dsl_resolver::python::PyDslResolverVTable {
+                extract_schema: dataset_provider_funcs::extract_schema,
+                to_py_plexpr: crate::expr::expr_to_py_plexpr,
+                extract_py_resolved_dsl: crate::conversion::extract_py_resolved_dsl,
+            }
+        });
 
         polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
             name: dataset_provider_funcs::name,

@@ -631,6 +631,11 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                             JoinType::Cross if options.is_non_equi() => {
                                 return Err(PyNotImplementedError::new_err("nested loop join"));
                             },
+                            _ if options.options.has_fused_predicate() => {
+                                return Err(PyNotImplementedError::new_err(
+                                    "join with a fused predicate",
+                                ));
+                            },
                             _ => name.into_any().unbind(),
                         },
                         options.args.nulls_equal,
@@ -820,6 +825,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         IR::UnoptimizedDispatch { .. } => Err(PyNotImplementedError::new_err(
             "Not expecting to see a UnoptimizedDispatch node",
+        )),
+        IR::Resolver { .. } => Err(PyNotImplementedError::new_err(
+            "not implemented: IR::Resolver to Python conversion",
         )),
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }

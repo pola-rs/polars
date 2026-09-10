@@ -71,6 +71,7 @@ impl DeletionFilesProvider {
         match deletion_files {
             Some(DeletionFilesList::Iceberg(paths)) => feature_gated!("parquet", {
                 let reader_builder = ParquetReaderBuilder {
+                    bytes_per_source: None,
                     first_metadata: None,
                     options: Arc::new(polars_io::prelude::ParquetOptions {
                         schema: Some(Arc::new(Schema::from_iter([
@@ -84,6 +85,7 @@ impl DeletionFilesProvider {
                     }),
                     pipeline_budget: std::sync::OnceLock::new(),
                     shared_prefetch_wait_group_slot: Default::default(),
+                    file_read_context: std::sync::OnceLock::new(),
                     io_metrics: io_metrics.map(OnceLock::from).unwrap_or_default(),
                 };
 

@@ -14,7 +14,11 @@ import pytest
 
 import polars as pl
 import polars._plr as plr
-from polars._utils.monitoring import MONITORING_ENV_VAR
+from polars._utils.monitoring import (
+    MONITORING_ENV_VAR,
+    MONITORING_ORGANIZATION_ENV_VAR,
+    MONITORING_WORKSPACE_ENV_VAR,
+)
 from polars.lazyframe.engine import StreamingEngine
 from tests.unit.conftest import mock_module_import
 
@@ -68,6 +72,102 @@ def test_config_enable_monitoring() -> None:
         _sample_lf().collect()
 
     assert observer.on_query_started.call_count == 2
+
+
+def test_config_enable_monitoring_workspace() -> None:
+    """The configured workspace is handed to the observer on construction."""
+    module, _ = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        pl.Config.enable_monitoring(workspace="my-workspace")
+        assert os.environ[MONITORING_WORKSPACE_ENV_VAR] == "my-workspace"
+
+        _sample_lf().collect()
+        module.QueryCloudObserver.assert_called_with(workspace="my-workspace")
+
+        # re-enabling without a workspace goes back to the default workspace
+        pl.Config.enable_monitoring()
+        assert MONITORING_WORKSPACE_ENV_VAR not in os.environ
+
+        _sample_lf().collect()
+        module.QueryCloudObserver.assert_called_with()
+
+        # disabling monitoring clears the workspace as well
+        pl.Config.enable_monitoring(workspace="my-workspace")
+        pl.Config.enable_monitoring(False)
+        assert MONITORING_WORKSPACE_ENV_VAR not in os.environ
+
+
+def test_config_enable_monitoring_organization() -> None:
+    """The configured organization is handed to the observer on construction."""
+    module, _ = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        pl.Config.enable_monitoring(organization="my-org")
+        assert os.environ[MONITORING_ORGANIZATION_ENV_VAR] == "my-org"
+        assert MONITORING_WORKSPACE_ENV_VAR not in os.environ
+
+        _sample_lf().collect()
+        module.QueryCloudObserver.assert_called_with(organization="my-org")
+
+        # workspace and organization are passed together
+        pl.Config.enable_monitoring(workspace="my-workspace", organization="my-org")
+        _sample_lf().collect()
+        module.QueryCloudObserver.assert_called_with(
+            workspace="my-workspace", organization="my-org"
+        )
+
+        # re-enabling without an organization goes back to the default organization
+        pl.Config.enable_monitoring()
+        assert MONITORING_ORGANIZATION_ENV_VAR not in os.environ
+
+        _sample_lf().collect()
+        module.QueryCloudObserver.assert_called_with()
+
+        # disabling monitoring clears the organization as well
+        pl.Config.enable_monitoring(organization="my-org")
+        pl.Config.enable_monitoring(False)
+        assert MONITORING_ORGANIZATION_ENV_VAR not in os.environ
+
+
+def test_config_scope_monitoring_organization() -> None:
+    """The organization is restored together with the other Config options."""
+    module, _ = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        pl.Config.enable_monitoring(organization="outer-org")
+
+        with pl.Config():
+            pl.Config.enable_monitoring(organization="inner-org")
+            _sample_lf().collect()
+            module.QueryCloudObserver.assert_called_with(organization="inner-org")
+
+        assert os.environ[MONITORING_ORGANIZATION_ENV_VAR] == "outer-org"
+        _sample_lf().collect()
+        module.QueryCloudObserver.assert_called_with(organization="outer-org")
+
+
+def test_config_scope_monitoring_workspace() -> None:
+    """The workspace is restored together with the other Config options."""
+    module, _ = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        pl.Config.enable_monitoring(workspace="outer-workspace")
+
+        with pl.Config():
+            pl.Config.enable_monitoring(workspace="inner-workspace")
+            _sample_lf().collect()
+            module.QueryCloudObserver.assert_called_with(workspace="inner-workspace")
+
+        assert os.environ[MONITORING_WORKSPACE_ENV_VAR] == "outer-workspace"
+        _sample_lf().collect()
+        module.QueryCloudObserver.assert_called_with(workspace="outer-workspace")
+
+
+def test_engine_monitoring_uses_configured_workspace() -> None:
+    """An engine-level override still reports to the configured workspace."""
+    module, _ = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        pl.Config.enable_monitoring(workspace="my-workspace")
+        _sample_lf().collect(engine=StreamingEngine(monitoring=True))
+
+    module.QueryCloudObserver.assert_called_with(workspace="my-workspace")
 
 
 def test_collect_calls_observer() -> None:
@@ -161,7 +261,6 @@ def test_engine_monitoring_requires_polars_cloud(
         StreamingEngine(monitoring=True)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_in_memory_engine_monitoring() -> None:
     module, observer = fake_cloud_observer()
     with mock_module_import("polars_cloud", module, replace_if_exists=True):
@@ -306,7 +405,6 @@ def test_no_monitoring_no_observer() -> None:
     module.QueryCloudObserver.assert_not_called()
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_in_memory_engine_planned_without_physical() -> None:
     """The in-memory engine is observed with an IR-only planned query.
 

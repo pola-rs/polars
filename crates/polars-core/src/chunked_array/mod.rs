@@ -239,6 +239,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.get_flags().can_fast_explode_list()
     }
 
+    #[inline]
     pub fn get_flags(&self) -> StatisticsFlags {
         self.flags.get()
     }
@@ -297,12 +298,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 0
             } else {
                 // nulls are all at the end
-                self.null_count()
+                self.len() - self.null_count()
             };
 
             debug_assert!(
                 // If we are lucky this catches something.
-                unsafe { self.get_unchecked(out) }.is_some(),
+                unsafe { self.get_unchecked(out) }.is_none(),
                 "incorrect sorted flag"
             );
 
@@ -492,11 +493,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         &mut self.chunks
     }
 
-    /// Returns true if contains a single chunk and has no null values
-    pub fn is_optimal_aligned(&self) -> bool {
-        self.chunks.len() == 1 && self.null_count() == 0
-    }
-
     /// Create a new [`ChunkedArray`] from self, where the chunks are replaced.
     ///
     /// # Safety
@@ -506,6 +502,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Get data type of [`ChunkedArray`].
+    #[inline(always)]
     pub fn dtype(&self) -> &DataType {
         self.field.dtype()
     }
@@ -515,11 +512,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Name of the [`ChunkedArray`].
+    #[inline]
     pub fn name(&self) -> &PlSmallStr {
         self.field.name()
     }
 
     /// Get a reference to the field.
+    #[inline(always)]
     pub fn ref_field(&self) -> &Field {
         &self.field
     }
@@ -1082,6 +1081,37 @@ impl ValueSize for BinaryOffsetChunked {
             .iter()
             .fold(0usize, |acc, arr| acc + arr.get_values_size())
     }
+}
+
+/// Re-chunk `values` so that its chunk lengths match `chunk_lens`.
+///
+/// The sum of `chunk_lens` must equal `values.len()`. Returns a clone when the chunks
+/// already line up, so passing already-aligned values costs nothing.
+pub(crate) fn align_inner_chunks(
+    chunk_lens: impl Iterator<Item = usize>,
+    values: &Series,
+) -> Series {
+    let chunk_lens = chunk_lens.collect::<Vec<_>>();
+
+    if chunk_lens.len() == values.chunks().len()
+        && chunk_lens
+            .iter()
+            .zip(values.chunks())
+            .all(|(len, arr)| *len == arr.len())
+    {
+        return values.clone();
+    }
+
+    let mut values = values.rechunk();
+    let chunks = unsafe { values.chunks_mut() };
+    let mut arr = chunks.pop().unwrap();
+    chunks.extend(chunk_lens.into_iter().map(|len| {
+        let chunk;
+        (chunk, arr) = arr.split_at_boxed(len);
+        chunk
+    }));
+    assert!(arr.is_empty());
+    values
 }
 
 pub(crate) fn to_primitive<T: PolarsNumericType>(

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars_utils::itertools::Itertools;
 
 use super::IR;
+use crate::dsl::dsl_resolver::DslResolverTrait;
 use crate::plans::ExprIR;
 #[cfg(feature = "python")]
 use crate::plans::{PythonOptions, PythonPredicate};
@@ -412,6 +413,35 @@ impl IR {
                     return false;
                 };
                 l_operation == r_operation && l_arg_map == r_arg_map
+            },
+            IR::Resolver {
+                resolver,
+                resolver_schema: _,
+                projection,
+                slice,
+                filters,
+                filter_drop_columns_idx: _,
+                resolved_dsl: _,
+                resolved_ir: _,
+            } => {
+                let IR::Resolver {
+                    resolver: r_resolver,
+                    resolver_schema: _,
+                    projection: r_projection,
+                    slice: r_slice,
+                    filters: r_filters,
+                    filter_drop_columns_idx: _,
+                    resolved_dsl: _,
+                    resolved_ir: _,
+                } = other
+                else {
+                    return false;
+                };
+
+                projection == r_projection
+                    && slice == r_slice
+                    && expr_iter_eq!(filters.iter(), r_filters.iter())
+                    && resolver.cse_eq(r_resolver).ok() == Some(true)
             },
             IR::Invalid => unreachable!("cannot compare `IR::Invalid`"),
         }

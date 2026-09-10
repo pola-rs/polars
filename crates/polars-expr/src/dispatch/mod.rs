@@ -112,6 +112,8 @@ mod extension;
 mod groups_dispatch;
 mod horizontal;
 mod list;
+#[cfg(feature = "dtype-map")]
+mod map;
 mod misc;
 mod pow;
 #[cfg(feature = "random")]
@@ -148,6 +150,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "dtype-extension")]
         F::Extension(func) => extension::function_expr_to_udf(func),
         F::ListExpr(func) => list::function_expr_to_udf(func),
+        #[cfg(feature = "dtype-map")]
+        F::MapExpr(func) => map::function_expr_to_udf(func),
         #[cfg(feature = "strings")]
         F::StringExpr(func) => strings::function_expr_to_udf(func),
         #[cfg(feature = "dtype-struct")]
@@ -338,6 +342,10 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::Reverse => map!(misc::reverse),
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => map!(misc::approx_n_unique),
+        #[cfg(feature = "approx_quantile")]
+        F::ApproxQuantile { method, error } => {
+            map_as_slice!(misc::approx_quantile, &method, error)
+        },
         F::Coalesce => map_as_slice!(misc::coalesce),
         #[cfg(feature = "diff")]
         F::Diff(null_behavior) => map_as_slice!(misc::diff, null_behavior),

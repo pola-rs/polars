@@ -10,18 +10,21 @@ struct CompareRow<'a> {
 }
 
 impl PartialEq for CompareRow<'_> {
+    #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes
     }
 }
 
 impl Ord for CompareRow<'_> {
+    #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
         self.bytes.cmp(other.bytes)
     }
 }
 
 impl PartialOrd for CompareRow<'_> {
+    #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }

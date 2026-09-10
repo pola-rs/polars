@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import EngineType
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -76,7 +77,7 @@ def test_sink_forwards_optimizations(lf: pl.LazyFrame) -> None:
 
 
 def test_collect_all_async_honors_engine_affinity(
-    monkeypatch: pytest.MonkeyPatch, lf: pl.LazyFrame
+    plmonkeypatch: PlMonkeyPatch, lf: pl.LazyFrame
 ) -> None:
     seen: list[Any] = []
     original = plr.collect_all_with_callback
@@ -85,9 +86,8 @@ def test_collect_all_async_honors_engine_affinity(
         seen.append(engine)
         return original(lfs, engine, optflags, callback)
 
-    monkeypatch.setattr(plr, "collect_all_with_callback", spy)
-    monkeypatch.setenv("POLARS_ENGINE_AFFINITY", "streaming")
-    plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
+    plmonkeypatch.setattr(plr, "collect_all_with_callback", spy)
+    plmonkeypatch.setenv("POLARS_ENGINE_AFFINITY", "streaming")
 
     async def run() -> None:
         await pl.collect_all_async([lf])
@@ -138,18 +138,16 @@ def test_select_engine_invalid_raises() -> None:
         _select_engine("bogus")  # type: ignore[arg-type]
 
 
-def test_select_engine_honors_affinity(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_ENGINE_AFFINITY", "streaming")
-    plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
+def test_select_engine_honors_affinity(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_ENGINE_AFFINITY", "streaming")
 
     assert _select_engine("auto").name == "streaming"
     # an explicit engine still wins over the affinity
     assert _select_engine("in-memory").name == "in-memory"
 
 
-def test_eager_engine_ignores_affinity(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_ENGINE_AFFINITY", "streaming")
-    plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
+def test_eager_engine_ignores_affinity(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_ENGINE_AFFINITY", "streaming")
 
     # internal eager operations always run in-memory
     assert _eager_engine().name == "in-memory"

@@ -65,13 +65,13 @@ ARROW_DRIVER_REGISTRY: Final[dict[str, list[ArrowDriverProperties]]] = {
             "minimum_version": None,
         }
     ],
-    "oracledb": [
+    "oracledb_proxy": [
         {
             "fetch_all": "fetch_df_all",
             "fetch_batches": "fetch_df_batches",
             "exact_batch_size": True,
             "repeat_batch_calls": False,
-            "minimum_version": "3.0.0",
+            "minimum_version": None,  # set on the proxy object (3.4.0)
         }
     ],
     "snowflake": [
