@@ -114,6 +114,12 @@ impl ListChunked {
 
     /// Convert the datatype of the list into the physical datatype.
     pub fn to_physical_repr(&self) -> Cow<'_, ListChunked> {
+        // As in `ArrayChunked::to_physical_repr`: the inner type alone says whether the values
+        // change, and asking it costs nothing.
+        if !self.inner_dtype().is_logical() {
+            return Cow::Borrowed(self);
+        }
+
         let Cow::Owned(physical_repr) = self.get_inner().to_physical_repr() else {
             return Cow::Borrowed(self);
         };

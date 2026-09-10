@@ -170,14 +170,34 @@ fn condense_one(values: &PlBitmap, how: Condense) -> bool {
 }
 
 /// Condenses `values`, holding `width` bits per element, into one bit per element.
+///
+/// The two ways of condensing are dispatched between here rather than inside the loop below: the
+/// element's bit is read off a zero count with a couple of instructions, and a branch on `how` at
+/// every one of them costs about as much again.
 #[cfg(feature = "dtype-array")]
 fn condense(values: PlBitmap, length: usize, width: usize, how: Condense) -> PlBitmap {
+    match how {
+        Condense::All => condense_by(values, length, width, |zeros, _| zeros == 0),
+        Condense::Any => condense_by(values, length, width, |zeros, width| zeros < width),
+    }
+}
+
+/// [`condense`], with the bit an element's zero count condenses to given as a closure that the one
+/// loop below inlines.
+#[cfg(feature = "dtype-array")]
+#[inline]
+fn condense_by(
+    values: PlBitmap,
+    length: usize,
+    width: usize,
+    bit: impl Fn(usize, usize) -> bool,
+) -> PlBitmap {
     debug_assert!(width > 0);
 
     // One bit says the same of every value under every element, so it says the same of every
     // element in turn — however many values each of them covers.
-    if let Some(bit) = values.scalar_value() {
-        return repeated(how.apply(if bit { 0 } else { width }, width), length);
+    if let Some(set) = values.scalar_value() {
+        return repeated(bit(if set { 0 } else { width }, width), length);
     }
 
     let values = values.into_bitmap();
@@ -186,7 +206,7 @@ fn condense(values: PlBitmap, length: usize, width: usize, how: Condense) -> PlB
     let (slice, offset, _len) = values.as_slice();
     PlBitmap::from_bitmap(
         (0..length)
-            .map(|i| how.apply(count_zeros(slice, offset + i * width, width), width))
+            .map(|i| bit(count_zeros(slice, offset + i * width, width), width))
             .collect(),
     )
 }

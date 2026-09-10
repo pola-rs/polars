@@ -1,7 +1,3 @@
-#[cfg(feature = "dtype-array")]
-use crate::chunked_array::array::array_values;
-#[cfg(feature = "dtype-array")]
-use crate::chunked_array::builder::get_fixed_size_list_builder;
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::NoNull;
@@ -138,36 +134,18 @@ impl ChunkReverse for ArrayChunked {
         if let Some(ca) = reverses_to_itself(self) {
             return ca;
         }
-        if !self.inner_dtype().is_primitive_numeric() {
-            todo!("reverse for FixedSizeList with non-numeric dtypes not yet supported")
-        }
-        let ca = self.rechunk();
-        let arr = ca.downcast_as_array();
-        let values = array_values(arr);
-        let values = &*values;
 
-        let mut builder =
-            get_fixed_size_list_builder(ca.inner_dtype(), ca.len(), ca.width(), ca.name().clone())
-                .expect("not yet supported");
-
-        // SAFETY, we are within bounds
-        unsafe {
-            if arr.null_count() == 0 {
-                for i in (0..arr.len()).rev() {
-                    builder.push_unchecked(values, i)
-                }
-            } else {
-                let validity = arr.validity().unwrap();
-                for i in (0..arr.len()).rev() {
-                    if validity.get_unchecked(i) {
-                        builder.push_unchecked(values, i)
-                    } else {
-                        builder.push_null()
-                    }
-                }
-            }
-        }
-        builder.finish()
+        // Read out of the chunks by index, as `ListChunked` does: the builder this used to push
+        // into only exists for a numeric inner type, so every other one — a string, a boolean, a
+        // list, a struct — reached a `todo!()` and panicked.
+        let idx = IdxCa::from_vec(
+            PlSmallStr::EMPTY,
+            (0..self.len() as IdxSize).rev().collect(),
+        );
+        // SAFETY: every index is below the length.
+        let mut ca = unsafe { self.take_unchecked(&idx) };
+        ca.rename(self.name().clone());
+        ca
     }
 }
 

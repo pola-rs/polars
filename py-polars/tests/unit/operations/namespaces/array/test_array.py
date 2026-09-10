@@ -1263,3 +1263,31 @@ def test_array_idx_size_limit_eval(capfd: Any, plmonkeypatch: PlMonkeyPatch) -> 
 
     captured = capfd.readouterr().err
     assert "IdxSize limit hit; chunking branch hit" in captured
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.String,
+        pl.Boolean,
+        pl.Binary,
+        pl.List(pl.Int64),
+        pl.Struct({"x": pl.Int64}),
+    ],
+)
+def test_array_reverse_non_numeric_inner(dtype: pl.DataType) -> None:
+    # The column is reversed by reading its elements out by index; it used to
+    # be pushed into a builder that only exists for a numeric inner type, and
+    # panicked for every other one.
+    s = pl.Series("a", [None, None, None], dtype=pl.Array(dtype, 2))
+    out = s.reverse()
+
+    assert out.dtype == s.dtype
+    assert out.to_list() == [None, None, None]
+
+
+def test_array_reverse_non_numeric_inner_values() -> None:
+    s = pl.Series("a", [["a", "b"], ["c", "d"], None], dtype=pl.Array(pl.String, 2))
+
+    assert s.reverse().to_list() == [None, ["c", "d"], ["a", "b"]]
+    assert s.reverse().dtype == s.dtype

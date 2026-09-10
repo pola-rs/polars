@@ -139,6 +139,14 @@ impl ArrayChunked {
 
     /// Convert the datatype of the array into the physical datatype.
     pub fn to_physical_repr(&self) -> Cow<'_, ArrayChunked> {
+        // Whether the values change is a question about the inner type alone, so it is asked of
+        // the type rather than of the values: `get_inner` writes them out one list per element,
+        // which for an inner type that is already physical is a copy of the whole column for an
+        // answer of "nothing to do" — and a chunk that repeats one list pays it in full.
+        if !self.inner_dtype().is_logical() {
+            return Cow::Borrowed(self);
+        }
+
         let Cow::Owned(physical_repr) = self.get_inner().to_physical_repr() else {
             return Cow::Borrowed(self);
         };

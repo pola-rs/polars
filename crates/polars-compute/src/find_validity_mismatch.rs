@@ -114,6 +114,26 @@ fn find_validity_mismatch_list_list(
     right: &PlListArray,
     idxs: &mut Vec<IdxSize>,
 ) {
+    // Both sides repeat the one range every element of them reads, so the two lists are read
+    // against each other once: either they agree about every value, and no element is reported, or
+    // they disagree somewhere every element reads, and all of them are — neither side is written
+    // out one list per element to say so.
+    if let (Some(l), Some(r)) = (left.scalar_offsets(), right.scalar_offsets())
+        && l.len() == r.len()
+    {
+        let mut nested_idxs = Vec::new();
+        find_validity_mismatch(
+            &*left.values().sliced(l.start, l.len()),
+            &*right.values().sliced(r.start, r.len()),
+            &mut nested_idxs,
+        );
+
+        if !nested_idxs.is_empty() {
+            idxs.extend(0..left.len() as IdxSize);
+        }
+        return;
+    }
+
     // The values are read against each other one slot per value, and the range every element covers
     // is read off `left`; an array whose elements share one range holds neither.
     let left = left.to_flat();
