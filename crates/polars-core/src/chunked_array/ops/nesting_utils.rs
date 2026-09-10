@@ -4,7 +4,7 @@ use polars_utils::IdxSize;
 
 use super::ListChunked;
 use crate::chunked_array::flags::StatisticsFlags;
-use crate::prelude::{ChunkedArray, FalseT, PolarsDataType};
+use crate::prelude::{ArrayRef, ChunkedArray, DataType, FalseT, PlSmallStr, PolarsDataType};
 use crate::series::Series;
 use crate::series::implementations::null::NullChunked;
 use crate::utils::align_chunks_binary_ca_series;
@@ -375,51 +375,99 @@ impl ChunkNestingUtils for super::StructChunked {
     }
 }
 
-/// Propagate through [`Series`] to respect logical dtypes. Arrow recursion treats Map
-/// storage as a list and would null entries retained by null Map rows.
+/// Build a container child, compacting null Map rows left by shallow propagation.
+///
+/// # Safety
+/// `chunks` must satisfy [`Series::from_chunks_and_dtype_unchecked`] for `dtype`, except
+/// that Map null rows may still span entries.
+unsafe fn container_child(
+    name: PlSmallStr,
+    chunks: Vec<ArrayRef>,
+    dtype: &DataType,
+) -> (Series, bool) {
+    #[cfg(feature = "dtype-map")]
+    {
+        // SAFETY: forwarded from this function's own contract.
+        unsafe { crate::chunked_array::logical::compacted_child_series(name, chunks, dtype) }
+    }
+    #[cfg(not(feature = "dtype-map"))]
+    {
+        // SAFETY: forwarded from this function's own contract.
+        let s = unsafe { Series::from_chunks_and_dtype_unchecked(name, chunks, dtype) };
+        (s, false)
+    }
+}
+
+/// Propagate through logical dtypes, emptying null Map rows instead of nulling entries.
 trait PropagateValuesNulls: Sized {
     fn values_propagate_nulls(&self) -> Option<Self>;
 }
 
 impl PropagateValuesNulls for ListChunked {
     fn values_propagate_nulls(&self) -> Option<Self> {
-        let values = self.get_inner().propagate_nulls()?;
-        Some(self.with_inner_values(&values))
+        let chunks = self.downcast_iter().map(|c| c.values().clone()).collect();
+        // SAFETY: the chunks are this list's own child.
+        let (values, compacted) =
+            unsafe { container_child(self.name().clone(), chunks, self.inner_dtype()) };
+
+        let propagated = values.propagate_nulls();
+        if !compacted && propagated.is_none() {
+            return None;
+        }
+        Some(self.with_inner_values(propagated.as_ref().unwrap_or(&values)))
     }
 }
 
 #[cfg(feature = "dtype-array")]
 impl PropagateValuesNulls for super::ArrayChunked {
     fn values_propagate_nulls(&self) -> Option<Self> {
-        let values = self.get_inner().propagate_nulls()?;
-        Some(self.with_inner_values(&values))
+        let chunks = self.downcast_iter().map(|c| c.values().clone()).collect();
+        // SAFETY: the chunks are this array's own child.
+        let (values, compacted) =
+            unsafe { container_child(self.name().clone(), chunks, self.inner_dtype()) };
+
+        let propagated = values.propagate_nulls();
+        if !compacted && propagated.is_none() {
+            return None;
+        }
+        Some(self.with_inner_values(propagated.as_ref().unwrap_or(&values)))
     }
 }
 
 #[cfg(feature = "dtype-struct")]
 impl PropagateValuesNulls for super::StructChunked {
     fn values_propagate_nulls(&self) -> Option<Self> {
-        let fields = self.fields_as_series();
-        let mut new_fields = Vec::with_capacity(fields.len());
+        let struct_fields = self.struct_fields().to_vec();
+        let mut new_fields = Vec::with_capacity(struct_fields.len());
         let mut changed = false;
-        for field in &fields {
-            let new_field = field.propagate_nulls();
-            changed |= new_field.is_some();
-            new_fields.push(new_field);
+        for (i, field) in struct_fields.iter().enumerate() {
+            let chunks = self
+                .downcast_iter()
+                .map(|chunk| chunk.values()[i].clone())
+                .collect();
+            // SAFETY: the chunks are this struct's own field.
+            let (child, compacted) =
+                unsafe { container_child(field.name.clone(), chunks, &field.dtype) };
+            changed |= compacted;
+
+            match child.propagate_nulls() {
+                Some(propagated) => {
+                    changed = true;
+                    new_fields.push(propagated);
+                },
+                None => new_fields.push(child),
+            }
         }
 
         if !changed {
             return None;
         }
 
-        // Field names, lengths, and outer validity are unchanged, so this cannot fail.
-        let mut new_fields = new_fields.into_iter();
-        let out = self
-            .try_apply_fields(|field| {
-                Ok(new_fields.next().unwrap().unwrap_or_else(|| field.clone()))
-            })
+        // Use repaired fields; `try_apply_fields` would reconstruct uncompacted Maps.
+        let out = Self::from_series(self.name().clone(), self.len(), new_fields.iter())
             .expect("propagating nulls keeps the struct fields");
-        Some(out)
+        // Restore outer validity without repeating propagation.
+        Some(out.with_outer_validity_from(self))
     }
 }
 

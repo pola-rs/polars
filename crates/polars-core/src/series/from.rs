@@ -79,7 +79,8 @@ impl Series {
     ///
     /// - `Categorical` / `Enum`: every non-null code names a category;
     /// - `Object`: chunks originate from this process;
-    /// - `Map`: storage satisfies the `MapChunked` storage safety contract. Keys may repeat.
+    /// - `Map`: storage satisfies the `MapChunked` storage safety contract, including null
+    ///   rows spanning no entries. Keys may repeat.
     pub unsafe fn from_chunks_and_dtype_unchecked(
         name: PlSmallStr,
         chunks: Vec<ArrayRef>,
@@ -610,8 +611,8 @@ impl Series {
                             CanonicalizeMode, canonicalize_map_storage,
                         };
 
-                        // Reject live null entries/keys and compact hidden ones.
-                        // Trust the producer's key uniqueness, as Arrow does.
+                        // Empty null rows (potentially copying Arrow buffers) and reject
+                        // live null entries/keys. Trust the producer's key uniqueness.
                         let storage =
                             canonicalize_map_storage(&storage, CanonicalizeMode::NullsOnly)?
                                 .unwrap_or(storage);

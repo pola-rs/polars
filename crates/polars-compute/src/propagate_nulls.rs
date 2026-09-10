@@ -28,7 +28,8 @@ pub fn propagate_nulls_list<O: Offset>(arr: &ListArray<O>) -> Option<ListArray<O
 
 /// Propagate nulls one level down.
 ///
-/// Callers handle deeper levels to preserve logical invariants, such as Map entries.
+/// Full recursion would null the entries under null Map rows, which the Map storage
+/// contract forbids. Callers handle the deeper levels, emptying Map children instead.
 pub fn propagate_nulls_list_shallow<O: Offset>(arr: &ListArray<O>) -> Option<ListArray<O>> {
     propagate_nulls_list_impl(arr, false)
 }

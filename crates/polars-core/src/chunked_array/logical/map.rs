@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::offset::{Offsets, OffsetsBuffer};
 use polars_compute::filter::filter_with_bitmap;
@@ -23,10 +21,11 @@ use crate::prelude::*;
 /// 2. Child arrays are valid over their entire extent, including outside the list offsets:
 ///    categorical codes in range, no `Object`.
 /// 3. Entries and keys have no nulls anywhere in the child arrays.
+/// 4. Null rows span no entries: `offsets[i] == offsets[i + 1]` for every null row.
 ///
-/// Map values are nullable. [`Self::entries`], [`Self::keys`] and [`Self::values`] skip
-/// entries retained by null rows. Repairs drop null entries or keys; removing their
-/// validity masks would expose arbitrary payloads.
+/// Map values are nullable. Null rows own no entries, so flat accessors can read the whole
+/// offset window. Repairs drop offending entries rather than clearing their validity, which
+/// would expose arbitrary payloads.
 ///
 /// # Canonical semantics
 ///
@@ -51,6 +50,10 @@ impl MapChunked {
         debug_assert!(
             dtype.ensure_valid_map_dtype().is_ok(),
             "invalid Map dtype: {dtype}"
+        );
+        debug_assert!(
+            null_rows_are_empty(&storage),
+            "Map null rows must span no entries"
         );
         Self { dtype, storage }
     }
@@ -98,11 +101,12 @@ impl MapChunked {
         self.dtype.as_map().unwrap().1
     }
 
-    /// Raw storage, including entries hidden by null rows or slicing.
+    /// The raw `List(Struct {key, value})` storage.
     ///
-    /// Entries and keys remain non-null by contract. Flat accessors skip hidden entries;
-    /// [`Self::live_storage`] gives null rows empty windows.
-    pub(crate) fn storage(&self) -> &Series {
+    /// Entries and keys are non-null and null rows span no entries, so the offset windows
+    /// hold exactly the live entries. Slicing can still leave entries outside the windows,
+    /// as it does for any [`ListChunked`].
+    pub fn storage(&self) -> &Series {
         &self.storage
     }
 
@@ -121,6 +125,10 @@ impl MapChunked {
             storage.dtype(),
             self.storage.dtype(),
             "operation on Map storage changed its dtype",
+        );
+        debug_assert!(
+            null_rows_are_empty(&storage),
+            "Map null rows must span no entries"
         );
         Self {
             dtype: self.dtype.clone(),
@@ -163,18 +171,20 @@ impl MapChunked {
         map_av(unsafe { self.storage.get_unchecked(i) })
     }
 
-    /// Keys of all entries in live rows, flattened in row order.
+    /// Keys of all entries, flattened in row order.
     pub fn keys(&self) -> Series {
-        self.live_entry_field(&MAP_KEY_NAME)
+        self.entry_field(&MAP_KEY_NAME)
     }
 
-    /// Values of all entries in live rows, flattened in row order.
+    /// Values of all entries, flattened in row order.
     pub fn values(&self) -> Series {
-        self.live_entry_field(&MAP_VALUE_NAME)
+        self.entry_field(&MAP_VALUE_NAME)
     }
 
-    /// Flatten one entry field over live rows without filtering the other field.
-    fn live_entry_field(&self, name: &PlSmallStr) -> Series {
+    /// Flatten one entry field without touching the other.
+    ///
+    /// Slices each chunk's offset window; nested fields may also propagate nulls.
+    fn entry_field(&self, name: &PlSmallStr) -> Series {
         let storage = self.storage.list().unwrap();
         let DataType::Struct(fields) = storage.inner_dtype() else {
             unreachable!("map entries are a struct")
@@ -193,24 +203,20 @@ impl MapChunked {
                     .as_any()
                     .downcast_ref::<StructArray>()
                     .expect("map entries are a struct");
-                let field = entries.values()[i].clone();
-                match live_entry_mask(arr) {
-                    Some(mask) => filter_with_bitmap(field.as_ref(), &mask),
-                    None => field,
-                }
+                entries.values()[i].clone()
             })
             .collect();
 
-        // SAFETY: the chunks are one entry field, filtered to the entries of live rows.
+        // SAFETY: the chunks are one entry field, windowed to the list offsets.
         unsafe { Series::from_chunks_and_dtype_unchecked(name.clone(), chunks, fields[i].dtype()) }
     }
 
-    /// Replace live entry values.
+    /// Replace entry values.
     ///
-    /// Requires one value per live entry, in [`Self::values`] order, and a valid Map
-    /// value dtype. This also applies to list-valued entries.
+    /// Requires one value per entry, in [`Self::values`] order, and a valid Map value
+    /// dtype. This also applies to list-valued entries.
     ///
-    /// Preserves row count, validity, live keys and entry order. Drops hidden entries
+    /// Preserves row count, validity, keys and entry order. Drops entries sliced away
     /// and may rebase offsets.
     pub fn with_values(&self, values: &Series) -> PolarsResult<Self> {
         let dtype = DataType::Map(
@@ -219,8 +225,8 @@ impl MapChunked {
         );
         dtype.ensure_valid_map_dtype()?;
 
-        let storage = self.live_storage();
-        let keys = unpack_map_entries(&windowed_entries(&storage)).0;
+        let storage = self.storage.list().unwrap();
+        let keys = unpack_map_entries(&windowed_entries(storage)).0;
         polars_ensure!(
             values.len() == keys.len(),
             ShapeMismatch:
@@ -228,48 +234,42 @@ impl MapChunked {
             keys.len(),
             values.len(),
         );
-        let storage = repack_map_storage(&storage, &keys, values).into_series();
+        let storage = repack_map_storage(storage, &keys, values).into_series();
 
-        // SAFETY: live keys and row assignments are preserved; replacements have a valid
-        // Map value dtype. Only hidden entries are dropped.
+        // SAFETY: keys and row assignments are preserved; replacements have a valid Map
+        // value dtype.
         Ok(unsafe { Self::from_storage_unchecked(dtype, storage) })
     }
 
     /// Propagate nulls within entry children without changing row or entry validity.
     pub(crate) fn propagate_nulls(&self) -> Option<Self> {
         let storage = self.storage.list().unwrap();
-        let (keys, values) = unpack_map_entries(&windowed_entries(storage));
-
-        let new_keys = keys.propagate_nulls();
-        let new_values = values.propagate_nulls();
-        if new_keys.is_none() && new_values.is_none() {
-            return None;
-        }
-        let keys = new_keys.unwrap_or(keys);
-        let values = new_values.unwrap_or(values);
+        // Construct without implicit propagation so its changes are reported, not
+        // discarded when a subsequent propagation call returns `None`.
+        // SAFETY: chunks are slices of this Map's non-null entry structs.
+        let entries = unsafe {
+            StructChunked::from_chunks_and_dtype_unchecked(
+                storage.name().clone(),
+                storage
+                    .downcast_iter()
+                    .map(windowed_entries_array)
+                    .collect(),
+                storage.inner_dtype().clone(),
+            )
+        };
+        let entries = entries.propagate_nulls()?.into_series();
+        let (keys, values) = unpack_map_entries(&entries);
         let storage = repack_map_storage(storage, &keys, &values).into_series();
 
         // SAFETY: only values below nested nulls change; layout and key semantics remain.
         Some(unsafe { self.with_storage_unchecked(storage) })
     }
 
-    /// All entries in live rows, flattened in row order.
+    /// All entries, flattened in row order.
     ///
-    /// Excludes entries retained by null rows or sliced away.
+    /// Excludes entries sliced away.
     pub fn entries(&self) -> Series {
-        windowed_entries(&self.live_storage())
-    }
-
-    /// Storage with empty windows for null rows.
-    ///
-    /// Preserves row count, validity and live entries. Borrows if no compaction is needed.
-    /// Mutating the returned [`Cow`] affects only its owned copy.
-    pub fn live_storage(&self) -> Cow<'_, ListChunked> {
-        let storage = self.storage.list().unwrap();
-        match compact_null_map_rows(storage) {
-            Some(compacted) => Cow::Owned(compacted),
-            None => Cow::Borrowed(storage),
-        }
+        windowed_entries(self.storage.list().unwrap())
     }
 
     pub fn cast_with_options(
@@ -283,14 +283,14 @@ impl MapChunked {
 
         match dtype {
             DataType::Map(key, value) => self.cast_entries(key, value, options),
-            DataType::List(_) => self.live_storage().cast_with_options(dtype, options),
+            DataType::List(_) => self.storage.cast_with_options(dtype, options),
             _ => polars_bail!(InvalidOperation: "cannot cast `{}` to `{dtype}`", self.dtype),
         }
     }
 
-    /// Cast live entry children, preserving row count and outer validity.
+    /// Cast the entry children, preserving row count and outer validity.
     ///
-    /// Drops hidden entries and may rebase offsets. Key casts may merge duplicate keys.
+    /// Drops entries sliced away and may rebase offsets. Key casts may merge duplicate keys.
     fn cast_entries(
         &self,
         to_key: &DataType,
@@ -306,7 +306,7 @@ impl MapChunked {
 
         let dtype = DataType::Map(Box::new(to_key.clone()), Box::new(to_value.clone()));
         dtype.ensure_valid_map_dtype()?;
-        let storage = try_apply_map_entries(&self.live_storage(), |key, value| {
+        let storage = try_apply_map_entries(self.storage.list().unwrap(), |key, value| {
             // `Series::cast_with_options` only short-circuits an identity cast for
             // primitives, so a nested key or value would be rebuilt for nothing.
             let key = if cast_key {
@@ -334,8 +334,7 @@ impl MapChunked {
             // Decimal rescaling can merge distinct keys even when schemas match.
             Ok(Self::try_from_storage(dtype, storage)?.into_series())
         } else {
-            // SAFETY: live keys and row assignments are preserved; cast values remain valid.
-            // Only hidden entries are dropped.
+            // SAFETY: keys and row assignments are preserved; cast values remain valid.
             Ok(unsafe { Self::from_storage_unchecked(dtype, storage) }.into_series())
         }
     }
@@ -425,39 +424,60 @@ fn windowed_entries_array(arr: &LargeListArray) -> ArrayRef {
     }
 }
 
-/// Mask windowed entries by row validity; `None` if all belong to live rows.
-fn live_entry_mask(arr: &LargeListArray) -> Option<Bitmap> {
-    let validity = arr.validity().filter(|v| v.unset_bits() > 0)?;
+/// Count entries under null rows using an allocation-free scan of validity runs.
+fn hidden_entry_count(arr: &LargeListArray) -> usize {
+    let Some(validity) = arr.validity().filter(|v| v.unset_bits() > 0) else {
+        return 0;
+    };
     let offsets = arr.offsets();
-    let null_rows = !validity;
-    if null_rows.true_idx_iter().all(|i| offsets.length_at(i) == 0) {
+
+    let mut validity = validity.iter();
+    let mut hidden = 0;
+    let mut row = 0;
+    while validity.num_remaining() > 0 {
+        row += validity.take_leading_ones();
+        let end = row + validity.take_leading_zeros();
+        hidden += (offsets[end] - offsets[row]) as usize;
+        row = end;
+    }
+
+    hidden
+}
+
+/// Whether every null row of Map storage spans no entries.
+fn null_rows_are_empty(storage: &Series) -> bool {
+    storage
+        .list()
+        .expect("map storage is a list")
+        .downcast_iter()
+        .all(|arr| hidden_entry_count(arr) == 0)
+}
+
+/// Filter out entries under null rows and rebuild offsets; `None` if unchanged.
+fn compact_null_rows_chunk(arr: &LargeListArray) -> Option<LargeListArray> {
+    if hidden_entry_count(arr) == 0 {
         return None;
     }
+    let validity = arr.validity().expect("hidden entries need a null row");
+    let offsets = arr.offsets();
 
     // Fill live runs between null-row windows in bulk.
     let first = *offsets.first() as usize;
     let n_entries = offsets.range() as usize;
     let mut mask = BitmapBuilder::with_capacity(n_entries);
-    for i in null_rows.true_idx_iter() {
+    for i in (!validity).true_idx_iter() {
         let (start, end) = offsets.start_end(i);
         mask.extend_constant(start - first - mask.len(), true);
         mask.extend_constant(end - start, false);
     }
     mask.extend_constant(n_entries - mask.len(), true);
 
-    Some(mask.freeze())
-}
-
-/// Drop entries under null rows; `None` if unchanged.
-fn drop_null_row_entries(arr: &LargeListArray) -> Option<LargeListArray> {
-    let mask = live_entry_mask(arr)?;
     let entries = windowed_entries_array(arr);
-    let entries = filter_with_bitmap(entries.as_ref(), &mask);
+    let entries = filter_with_bitmap(entries.as_ref(), &mask.freeze());
 
-    let validity = arr.validity().expect("a masked chunk has null rows");
     let live_lengths = validity
         .iter()
-        .zip(arr.offsets().lengths())
+        .zip(offsets.lengths())
         .map(|(valid, len)| if valid { len } else { 0 });
     let offsets = Offsets::try_from_lengths(live_lengths)
         .expect("live lengths sum to at most the entry count");
@@ -470,15 +490,18 @@ fn drop_null_row_entries(arr: &LargeListArray) -> Option<LargeListArray> {
     ))
 }
 
-/// Drop entries under null rows; `None` if unchanged.
-///
+/// Empty null rows before wrapping raw storage as a Map; `None` if unchanged.
 /// Rebuilt chunks have trimmed children and zero-based offsets.
 pub(crate) fn compact_null_map_rows(storage: &ListChunked) -> Option<ListChunked> {
+    if storage.null_count() == 0 {
+        return None;
+    }
+
     // Allocate only after the first changed chunk.
     let mut new_chunks: Option<Vec<ArrayRef>> = None;
 
     for (i, chunk) in storage.downcast_iter().enumerate() {
-        match drop_null_row_entries(chunk) {
+        match compact_null_rows_chunk(chunk) {
             Some(dropped) => new_chunks
                 .get_or_insert_with(|| storage.chunks()[..i].to_vec())
                 .push(dropped.boxed()),
@@ -500,7 +523,56 @@ pub(crate) fn compact_null_map_rows(storage: &ListChunked) -> Option<ListChunked
     })
 }
 
-/// Flatten entries within each chunk's offsets, including those retained by null rows.
+/// Build a container child, compacting null Map rows and reporting whether it changed.
+///
+/// Skip implicit Struct propagation so the caller can track and retain its repairs.
+///
+/// # Safety
+/// `chunks` must satisfy [`Series::from_chunks_and_dtype_unchecked`] for `dtype`, except
+/// that Map null rows may still span entries.
+pub(crate) unsafe fn compacted_child_series(
+    name: PlSmallStr,
+    chunks: Vec<ArrayRef>,
+    dtype: &DataType,
+) -> (Series, bool) {
+    match dtype {
+        DataType::Map(_, _) => {
+            let storage = unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    name,
+                    chunks,
+                    &dtype.map_storage_dtype().unwrap(),
+                )
+            };
+            let compacted = compact_null_map_rows(storage.list().unwrap());
+            let changed = compacted.is_some();
+            let storage = compacted.map_or(storage, IntoSeries::into_series);
+            // SAFETY: the caller's payloads are valid and null rows now span no entries.
+            let map = unsafe { MapChunked::from_storage_unchecked(dtype.clone(), storage) };
+            (map.into_series(), changed)
+        },
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(typ, inner) => {
+            let (storage, changed) = unsafe { compacted_child_series(name, chunks, inner) };
+            (storage.into_extension(typ.clone()), changed)
+        },
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(_) => {
+            // SAFETY: same layout requirements as `Series::from_chunks_and_dtype_unchecked`.
+            let ca = unsafe {
+                StructChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
+            };
+            (ca.into_series(), false)
+        },
+        _ => {
+            // SAFETY: forwarded from this function's own contract.
+            let s = unsafe { Series::from_chunks_and_dtype_unchecked(name, chunks, dtype) };
+            (s, false)
+        },
+    }
+}
+
+/// Flatten entries within each chunk's offsets.
 /// Unlike [`ListChunked::get_inner`], excludes sliced-away entries.
 fn windowed_entries(storage: &ListChunked) -> Series {
     let chunks = storage
@@ -596,8 +668,8 @@ fn map_av(av: AnyValue<'_>) -> AnyValue<'_> {
     }
 }
 
-/// Both modes reject live null entries/keys and compact hidden ones. Callers must validate
-/// the dtype and child payloads separately.
+/// Both modes empty null rows and reject null entries or keys in live rows. Callers must
+/// validate the dtype and child payloads separately.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CanonicalizeMode {
     /// Also deduplicate keys within each row.
@@ -606,11 +678,13 @@ pub(crate) enum CanonicalizeMode {
     NullsOnly,
 }
 
-/// Remove hidden null entries/keys and reject live ones. [`CanonicalizeMode::Full`] also
-/// deduplicates keys, keeping each key's first position and last value.
+/// Canonicalize raw Map storage. [`CanonicalizeMode::Full`] also deduplicates keys,
+/// keeping each key's first position and last value.
 ///
-/// Hidden means under a null row or outside the list offsets. Valid entries under null rows
-/// are retained. Null payloads are never exposed; dtype and payload validity are not checked.
+/// Empty null rows. Reject null entries/keys in live rows; drop them elsewhere.
+/// Callers must validate the dtype and child payloads.
+///
+/// Filter for null-row compaction alone; gather for entry/key nulls or deduplication.
 ///
 /// Returns `None` if unchanged; use [`Series::canonicalize_maps`] to also reach maps
 /// nested inside the keys or values.
@@ -670,28 +744,27 @@ impl EntryNulls<'_> {
     fn key_nulls_in(&self, start: usize, len: usize) -> usize {
         self.keys.map_or(0, |v| v.null_count_range(start, len))
     }
-
-    fn is_null(&self, i: usize) -> bool {
-        self.entries.is_some_and(|v| !v.get_bit(i)) || self.keys.is_some_and(|v| !v.get_bit(i))
-    }
 }
 
 fn has_unset_bits(validity: Option<&Bitmap>) -> bool {
     validity.is_some_and(|v| v.unset_bits() > 0)
 }
 
-/// Build take indices for deduplication or null removal; return `None` if unchanged.
+/// Build take indices for deduplication, null removal or emptying null rows; return `None`
+/// if unchanged.
 ///
-/// `keys` contains row encodings in [`CanonicalizeMode::Full`]; `nulls` tracks child nulls.
-/// Gathering visits only row windows, dropping entries outside them.
+/// `keys` contains row encodings in [`CanonicalizeMode::Full`]; `nulls` tracks child nulls;
+/// `hidden` is the [`hidden_entry_count`]. Gathering visits only the windows of live rows,
+/// dropping every other entry.
 fn canonical_map_indices(
     arr: &LargeListArray,
     keys: Option<&BinaryArray<i64>>,
     nulls: Option<EntryNulls<'_>>,
+    hidden: usize,
 ) -> PolarsResult<Option<CanonicalMapIndices>> {
     let offsets = arr.offsets();
 
-    if nulls.is_none() {
+    if nulls.is_none() && hidden == 0 {
         let Some(keys) = keys else {
             return Ok(None);
         };
@@ -707,33 +780,34 @@ fn canonical_map_indices(
     }
 
     let row_validity = arr.validity();
-    let n_entries = offsets.range() as usize;
-    let mut key_idx = Vec::with_capacity(n_entries);
-    let mut value_idx = Vec::with_capacity(n_entries);
+    let n_live_entries = offsets.range() as usize - hidden;
+    let mut key_idx = Vec::with_capacity(n_live_entries);
+    let mut value_idx = Vec::with_capacity(n_live_entries);
     let mut new_offsets = Vec::with_capacity(offsets.len());
     new_offsets.push(0i64);
 
     let mut slots = PlHashMap::new();
     for row in 0..arr.len() {
+        // Null rows own no entries, so their whole window is dropped.
+        if row_validity.is_some_and(|v| !v.get_bit(row)) {
+            new_offsets.push(key_idx.len() as i64);
+            continue;
+        }
         let (start, end) = offsets.start_end(row);
 
-        // Reject null entries/keys in live rows; skip them in null rows.
-        let entry_nulls = nulls.map_or(0, |n| n.entry_nulls_in(start, end - start));
-        let key_nulls = nulls.map_or(0, |n| n.key_nulls_in(start, end - start));
-        let dirty_row = nulls.filter(|_| entry_nulls > 0 || key_nulls > 0);
-        if dirty_row.is_some() && row_validity.is_none_or(|v| v.get_bit(row)) {
+        if let Some(nulls) = nulls {
             polars_ensure!(
-                entry_nulls == 0,
+                nulls.entry_nulls_in(start, end - start) == 0,
                 InvalidOperation: "Map entries cannot be null"
             );
-            polars_bail!(InvalidOperation: "Map keys cannot be null");
+            polars_ensure!(
+                nulls.key_nulls_in(start, end - start) == 0,
+                InvalidOperation: "Map keys cannot be null"
+            );
         }
 
         slots.clear();
         for i in start..end {
-            if dirty_row.is_some_and(|nulls| nulls.is_null(i)) {
-                continue;
-            }
             match keys {
                 Some(keys) => {
                     let key = unsafe { keys.value_unchecked(i) };
@@ -814,8 +888,15 @@ fn canonicalize_list_chunk(
         keys: key_arr.validity(),
     };
     let dirty = has_unset_bits(nulls.entries) || has_unset_bits(nulls.keys);
+    let hidden = hidden_entry_count(arr);
     if !dirty && mode == CanonicalizeMode::NullsOnly {
-        return Ok(None);
+        if hidden == 0 {
+            return Ok(None);
+        }
+        // Whole null-row windows are the only defect, so filter them out instead of
+        // building take indices and row encodings.
+        let compacted = compact_null_rows_chunk(arr).expect("hidden entries need compaction");
+        return Ok(Some(compacted.boxed()));
     }
 
     let encoded = match mode {
@@ -836,7 +917,7 @@ fn canonicalize_list_chunk(
         .as_ref()
         .map(|ca| ca.downcast_iter().next().unwrap());
 
-    let Some(indices) = canonical_map_indices(arr, encoded, dirty.then_some(nulls))? else {
+    let Some(indices) = canonical_map_indices(arr, encoded, dirty.then_some(nulls), hidden)? else {
         return Ok(None);
     };
     Ok(Some(gather_entries(arr, entries, indices)))
@@ -850,6 +931,8 @@ mod test {
     use arrow::offset::OffsetsBuffer;
 
     use super::*;
+    use crate::frame::column::Column;
+    use crate::scalar::Scalar;
 
     fn map_dtype(key: DataType, value: DataType) -> DataType {
         DataType::Map(Box::new(key), Box::new(value))
@@ -863,7 +946,7 @@ mod test {
         Series::new(MAP_VALUE_NAME.clone(), values)
     }
 
-    /// Build storage with explicit offsets and validity to test hidden entries.
+    /// Build raw storage with explicit offsets and validity, bypassing every repair.
     fn storage(entries: &Series, offsets: &[i64], row_validity: Option<&[bool]>) -> Series {
         let entries = entries.rechunk();
         let values = entries.chunks()[0].clone();
@@ -893,7 +976,7 @@ mod test {
             .to_vec()
     }
 
-    /// Whole-child length, including entries outside the offsets.
+    /// Whole-child length, including any entries left outside the offsets by slicing.
     fn child_len(storage: &Series) -> usize {
         storage.list().unwrap().get_inner().len()
     }
@@ -1016,7 +1099,7 @@ mod test {
     }
 
     #[test]
-    fn valid_entries_under_a_null_row_are_retained() {
+    fn valid_entries_under_a_null_row_are_dropped() {
         let keys = str_keys(&[Some("a"), Some("b")]);
         let values = i64_values(&[Some(1), Some(2)]);
         let storage = storage(
@@ -1027,24 +1110,21 @@ mod test {
         let dtype = map_dtype(DataType::String, DataType::Int64);
         let map = MapChunked::try_from_storage(dtype, storage).unwrap();
 
-        assert_eq!(list_offsets(map.storage()), [0, 1, 2]);
+        assert_eq!(list_offsets(map.storage()), [0, 0, 1]);
+        assert_eq!(child_len(map.storage()), 1);
         assert_eq!(map.storage().null_count(), 1);
         assert!(matches!(map.get_any_value(0).unwrap(), AnyValue::Null));
-        // Retained entries stay hidden from flat access.
         assert_eq!(str_values(&map.keys()), [Some("b".to_owned())]);
-        let live = map.live_storage().into_owned().into_series();
-        assert_eq!(list_offsets(&live), [0, 0, 1]);
-        assert_eq!(child_len(&live), 1);
     }
 
     #[test]
-    fn with_validity_keeps_retained_entries_valid() {
+    fn with_validity_empties_nulled_rows() {
         let map = three_row_map().into_series();
         let nulled = map.with_validity(Some(Bitmap::from([false, true, false])));
         let nulled = nulled.map().unwrap();
 
         assert_eq!(nulled.storage().null_count(), 2);
-        assert_eq!(list_offsets(nulled.storage()), [0, 2, 3, 5]);
+        assert_eq!(list_offsets(nulled.storage()), [0, 0, 1, 1]);
         assert_no_null_entries_or_keys(nulled.storage());
         assert_eq!(str_values(&nulled.keys()), [Some("c".to_owned())]);
 
@@ -1062,8 +1142,8 @@ mod test {
         let nulled = map.with_validity(Some(Bitmap::from([false, true, false])));
         let nulled = nulled.map().unwrap();
 
-        // Rows 0 and 2 keep their entries in storage; only row 1's `c` is live.
-        assert_eq!(child_len(nulled.storage()), 5);
+        // Nulling rows 0 and 2 dropped their entries; only row 1's `c` is left.
+        assert_eq!(child_len(nulled.storage()), 1);
         assert_eq!(str_values(&nulled.keys()), [Some("c".to_owned())]);
 
         let out = nulled.with_values(&i64_values(&[Some(30)])).unwrap();
@@ -1120,8 +1200,8 @@ mod test {
     }
 
     #[test]
-    fn from_physical_unchecked_compacts_nulled_hidden_entries() {
-        // Simulate dtype-blind propagation nulling a hidden entry and its key.
+    fn from_physical_unchecked_repairs_entries_nulled_under_a_null_row() {
+        // Simulate dtype-blind propagation nulling the entry and key of a null row.
         let keys = str_keys(&[None, Some("b")]);
         let values = i64_values(&[None, Some(2)]);
         let entries =
@@ -1132,6 +1212,7 @@ mod test {
         let map = unsafe { nulled.from_physical_unchecked(&dtype) }.unwrap();
         let map = map.map().unwrap();
         assert_eq!(list_offsets(map.storage()), [0, 0, 1]);
+        assert_eq!(child_len(map.storage()), 1);
         assert_no_null_entries_or_keys(map.storage());
         assert_eq!(str_values(&map.keys()), [Some("b".to_owned())]);
 
@@ -1253,6 +1334,81 @@ mod test {
                 );
             }
         }
+    }
+
+    #[test]
+    fn compact_null_map_rows_is_noop_on_canonical_storage() {
+        let map = three_row_map();
+        assert!(compact_null_map_rows(map.storage().list().unwrap()).is_none());
+
+        let dtype = map_dtype(DataType::String, DataType::Int64);
+        let nulls = Series::full_null(PlSmallStr::from_static("m"), 3, &dtype);
+        assert!(compact_null_map_rows(nulls.map().unwrap().storage().list().unwrap()).is_none());
+
+        let sliced = map.into_series().slice(1, 2);
+        assert!(
+            compact_null_map_rows(sliced.map().unwrap().storage().list().unwrap()).is_none(),
+            "entries outside the offsets are not hidden by null rows"
+        );
+    }
+
+    #[test]
+    fn deposit_pads_with_empty_null_rows() {
+        let map = three_row_map().into_series();
+        let deposited = map.deposit(&Bitmap::from([true, false, true, false, true]));
+        let deposited = deposited.map().unwrap();
+
+        assert_eq!(deposited.len(), 5);
+        assert_eq!(deposited.storage().null_count(), 2);
+        assert_eq!(list_offsets(deposited.storage()), [0, 2, 2, 3, 3, 5]);
+        assert_eq!(child_len(deposited.storage()), 5);
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    #[test]
+    fn agg_first_on_a_scalar_empties_empty_group_rows() {
+        let scalar = Column::new_scalar(
+            PlSmallStr::from_static("m"),
+            Scalar::new(
+                three_row_map().dtype().clone(),
+                three_row_map()
+                    .into_series()
+                    .slice(0, 1)
+                    .get(0)
+                    .unwrap()
+                    .into_static(),
+            ),
+            2,
+        );
+        let groups = GroupsType::new_slice(vec![[0, 1], [1, 0], [1, 1]], false, false);
+
+        let agg = unsafe { scalar.agg_first(&groups) };
+        let agg = agg.as_materialized_series().map().unwrap();
+        assert_eq!(agg.storage().null_count(), 1);
+        assert_eq!(list_offsets(agg.storage()), [0, 2, 2, 4]);
+        assert_eq!(child_len(agg.storage()), 4);
+    }
+
+    #[cfg(all(feature = "algorithm_group_by", feature = "dtype-struct"))]
+    #[test]
+    fn agg_first_on_a_struct_scalar_propagates_the_empty_group_nulls() {
+        let inner = Series::new(PlSmallStr::from_static("f"), [1i64]);
+        let value =
+            StructChunked::from_series(PlSmallStr::from_static("s"), 1, [&inner].into_iter())
+                .unwrap()
+                .into_series();
+        let scalar = Column::new_scalar(
+            PlSmallStr::from_static("s"),
+            Scalar::new(value.dtype().clone(), value.get(0).unwrap().into_static()),
+            2,
+        );
+        let groups = GroupsType::new_slice(vec![[0, 1], [1, 0]], false, false);
+
+        let agg = unsafe { scalar.agg_first(&groups) };
+        let agg = agg.as_materialized_series();
+        assert_eq!(agg.null_count(), 1);
+        // The outer null must reach the field, as it would for a non-scalar column.
+        assert_eq!(agg.struct_().unwrap().fields_as_series()[0].null_count(), 1);
     }
 
     #[test]

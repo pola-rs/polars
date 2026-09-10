@@ -1,18 +1,6 @@
 #[cfg(feature = "dtype-map")]
-use crate::chunked_array::logical::{
-    CanonicalizeMode, canonicalize_map_storage, compact_null_map_rows,
-};
+use crate::chunked_array::logical::{CanonicalizeMode, canonicalize_map_storage};
 use crate::prelude::*;
-
-/// Operation applied to each nested Map.
-#[cfg(feature = "dtype-map")]
-#[derive(Clone, Copy)]
-enum MapPass {
-    /// Deduplicate keys using first-position/last-value semantics.
-    Canonicalize,
-    /// Drop entries under null rows.
-    CompactNullRows,
-}
 
 impl Series {
     /// Canonicalize all nested `Map`s bottom-up using first-position/last-value
@@ -20,21 +8,7 @@ impl Series {
     pub fn canonicalize_maps(&self) -> PolarsResult<Option<Series>> {
         #[cfg(feature = "dtype-map")]
         {
-            map_pass(self, MapPass::Canonicalize)
-        }
-        #[cfg(not(feature = "dtype-map"))]
-        {
-            Ok(None)
-        }
-    }
-
-    /// Drop entries under null Map rows at every depth; return `None` if unchanged.
-    ///
-    /// Aligns physical child layouts for strict-cast validity comparisons.
-    pub fn compact_map_null_rows(&self) -> PolarsResult<Option<Series>> {
-        #[cfg(feature = "dtype-map")]
-        {
-            map_pass(self, MapPass::CompactNullRows)
+            canonicalize_maps_rec(self)
         }
         #[cfg(not(feature = "dtype-map"))]
         {
@@ -44,7 +18,7 @@ impl Series {
 }
 
 #[cfg(feature = "dtype-map")]
-fn map_pass(series: &Series, pass: MapPass) -> PolarsResult<Option<Series>> {
+fn canonicalize_maps_rec(series: &Series) -> PolarsResult<Option<Series>> {
     if !series.dtype().contains_map() {
         return Ok(None);
     }
@@ -54,14 +28,9 @@ fn map_pass(series: &Series, pass: MapPass) -> PolarsResult<Option<Series>> {
             let map = series.map().unwrap();
 
             // Visit children first so canonicalization row-encodes normalized keys.
-            let nested = map_pass(map.storage(), pass)?;
+            let nested = canonicalize_maps_rec(map.storage())?;
             let storage = nested.as_ref().unwrap_or(map.storage());
-            let changed = match pass {
-                MapPass::Canonicalize => canonicalize_map_storage(storage, CanonicalizeMode::Full)?,
-                MapPass::CompactNullRows => {
-                    compact_null_map_rows(storage.list().unwrap()).map(IntoSeries::into_series)
-                },
-            };
+            let changed = canonicalize_map_storage(storage, CanonicalizeMode::Full)?;
 
             match changed.or(nested) {
                 None => Ok(None),
@@ -73,13 +42,13 @@ fn map_pass(series: &Series, pass: MapPass) -> PolarsResult<Option<Series>> {
         },
         DataType::List(_) => {
             let ca = series.list().unwrap();
-            Ok(map_pass(&ca.get_inner(), pass)?
+            Ok(canonicalize_maps_rec(&ca.get_inner())?
                 .map(|values| ca.with_inner_values(&values).into_series()))
         },
         #[cfg(feature = "dtype-array")]
         DataType::Array(_, _) => {
             let ca = series.array().unwrap();
-            Ok(map_pass(&ca.get_inner(), pass)?
+            Ok(canonicalize_maps_rec(&ca.get_inner())?
                 .map(|values| ca.with_inner_values(&values).into_series()))
         },
         #[cfg(feature = "dtype-struct")]
@@ -91,7 +60,7 @@ fn map_pass(series: &Series, pass: MapPass) -> PolarsResult<Option<Series>> {
             let mut new_fields = Vec::with_capacity(fields.len());
             let mut changed = false;
             for field in &fields {
-                let new_field = map_pass(field, pass)?;
+                let new_field = canonicalize_maps_rec(field)?;
                 changed |= new_field.is_some();
                 new_fields.push(new_field);
             }
@@ -109,10 +78,8 @@ fn map_pass(series: &Series, pass: MapPass) -> PolarsResult<Option<Series>> {
             Ok(Some(out.into_series()))
         },
         #[cfg(feature = "dtype-extension")]
-        DataType::Extension(typ, _) => {
-            Ok(map_pass(series.ext().unwrap().storage(), pass)?
-                .map(|s| s.into_extension(typ.clone())))
-        },
+        DataType::Extension(typ, _) => Ok(canonicalize_maps_rec(series.ext().unwrap().storage())?
+            .map(|s| s.into_extension(typ.clone()))),
         _ => Ok(None),
     }
 }

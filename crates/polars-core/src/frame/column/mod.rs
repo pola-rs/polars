@@ -714,13 +714,10 @@ impl Column {
                     scalar.into_nulls().into_column()
                 } else {
                     let validity = indices.rechunk_validity();
-                    let series = scalar.take_materialized_series();
-                    let name = series.name().clone();
-                    let dtype = series.dtype().clone();
-                    let mut chunks = series.into_chunks();
-                    assert_eq!(chunks.len(), 1);
-                    chunks[0] = chunks[0].with_validity(validity);
-                    unsafe { Series::from_chunks_and_dtype_unchecked(name, chunks, &dtype) }
+                    // Use dtype-aware validity updates to preserve Map/Struct invariants.
+                    scalar
+                        .take_materialized_series()
+                        .with_validity(validity)
                         .into_column()
                 }
             },
@@ -800,14 +797,9 @@ impl Column {
                 };
                 validity.extend_trusted_len_iter(iter);
 
-                let mut s = scalar_col.take_materialized_series().rechunk();
-                // SAFETY: We perform a compute_len afterwards.
-                let chunks = unsafe { s.chunks_mut() };
-                let arr = &mut chunks[0];
-                *arr = arr.with_validity(validity.into_opt_validity());
-                s.compute_len();
-
-                s.into_column()
+                // Use dtype-aware validity updates to preserve Map/Struct invariants.
+                let s = scalar_col.take_materialized_series().rechunk();
+                s.with_validity(validity.into_opt_validity()).into_column()
             },
         }
     }

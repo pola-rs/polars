@@ -5,6 +5,7 @@ import math
 from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from itertools import accumulate
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -19,7 +20,11 @@ if TYPE_CHECKING:
     from typing import IO
 
 MAP = pl.Map(pl.String, pl.Int64)
+FLOAT_MAP = pl.Map(pl.String, pl.Float64)
 ENTRIES = pl.List(pl.Struct({"key": pl.String, "value": pl.Int64}))
+
+MAP_EXTENSION_NAME = "testing.map_container"
+pl.register_extension_type(MAP_EXTENSION_NAME, pl.Extension)
 
 
 class _CustomMapping(Mapping[str, Any]):
@@ -829,18 +834,13 @@ def test_map_entries_expr_and_series() -> None:
 def arrow_map_retaining_entries(
     keys: list[str], values: list[int], offsets: list[int], valid: list[bool]
 ) -> pl.Series:
-    """Build an Arrow Map with entries under null rows."""
+    """Use PyArrow's standard constructor to retain entries under null rows."""
     pa = pytest.importorskip("pyarrow")
-    entries = pa.StructArray.from_arrays(
-        [pa.array(keys, pa.large_string()), pa.array(values, pa.int64())],
-        names=["key", "value"],
-    )
-    map_type = pa.map_(pa.field("key", pa.large_string(), nullable=False), pa.int64())
-    arr = pa.Array.from_buffers(
-        map_type,
-        len(valid),
-        [pa.array(valid).buffers()[1], pa.array(offsets, pa.int32()).buffers()[1]],
-        children=[entries],
+    arr = pa.MapArray.from_arrays(
+        pa.array(offsets, pa.int32()),
+        pa.array(keys, pa.large_string()),
+        pa.array(values, pa.int64()),
+        mask=pa.array([not v for v in valid]),
     )
     s = pl.from_arrow(arr)
     assert isinstance(s, pl.Series)
@@ -848,15 +848,63 @@ def arrow_map_retaining_entries(
 
 
 def retaining_null_row_map() -> pl.Series:
-    """Rows `null` and `{b: 2, c: 3}`, with entry `a` hidden under the null row."""
+    """Rows `null` and `{b: 2, c: 3}`, with entry `a` under the null row on input."""
     return arrow_map_retaining_entries(
         ["a", "b", "c"], [1, 2, 3], [0, 1, 3], [False, True]
     )
 
 
-def test_map_null_row_hides_retained_entries() -> None:
+@pytest.mark.parametrize("n", [0, 1, 7, 8, 9, 63, 64, 65, 127, 128, 129])
+@pytest.mark.parametrize("skip", [0, 1, 3, 9])
+@pytest.mark.parametrize("pattern", ["valid", "null", "alternating", "runs"])
+def test_map_null_row_compaction_validity_runs(n: int, skip: int, pattern: str) -> None:
+    pa = pytest.importorskip("pyarrow")
+    lengths = [i % 3 for i in range(n + skip)]
+    offsets = list(accumulate(lengths, initial=0))
+    valid = [
+        pattern == "valid"
+        or (pattern == "alternating" and i % 2 == 0)
+        or (pattern == "runs" and (i // 17) % 2 == 0)
+        for i in range(n + skip)
+    ]
+    keys = [str(i) for i in range(offsets[-1])]
+    values = list(range(offsets[-1]))
+    arr = pa.MapArray.from_arrays(
+        pa.array(offsets, pa.int32()),
+        pa.array(keys, pa.large_string()),
+        pa.array(values, pa.int64()),
+        mask=pa.array([not v for v in valid], pa.bool_()),
+    )
+    # Slice before import to exercise nonzero bitmap and list offsets.
+    result = pl.from_arrow(arr.slice(skip, n))
+    expected = [
+        {keys[j]: values[j] for j in range(offsets[i], offsets[i + 1])}
+        if valid[i]
+        else None
+        for i in range(skip, skip + n)
+    ]
+    assert result.to_list() == expected
+    exported = result.to_arrow()
+    out_offsets = exported.offsets.to_pylist()
+    first, last = out_offsets[0], out_offsets[-1]
+    # Unchanged chunks may retain entries outside the sliced offset window.
+    assert [offset - first for offset in out_offsets] == list(
+        accumulate((len(row) if row is not None else 0 for row in expected), initial=0)
+    )
+    assert exported.keys.slice(first, last - first).to_pylist() == [
+        key for row in expected if row for key in row
+    ]
+
+
+def test_map_import_empties_a_null_row_that_spans_entries() -> None:
     s = retaining_null_row_map()
     assert s.to_list() == [None, {"b": 2, "c": 3}]
+    # The import dropped entry `a`, so the null row spans nothing.
+    assert s.to_arrow().offsets.to_pylist() == [0, 0, 2]
+    assert s.to_arrow().values.to_pylist() == [
+        {"key": "b", "value": 2},
+        {"key": "c", "value": 3},
+    ]
 
     expected = [None, [{"key": "b", "value": 2}, {"key": "c", "value": 3}]]
     for out in (s.map.entries(), s.cast(ENTRIES)):
@@ -870,7 +918,7 @@ def test_map_null_row_hides_retained_entries() -> None:
 
 
 def test_map_null_row_strict_cast_inside_a_container() -> None:
-    # Hidden entries must not cause length mismatches in strict-cast validity checks.
+    # Null rows span no entries, so strict-cast validity checks compare like for like.
     s = retaining_null_row_map()
     entries = [None, [{"key": "b", "value": 2}, {"key": "c", "value": 3}]]
 
@@ -886,7 +934,7 @@ def test_map_null_row_strict_cast_inside_a_container() -> None:
 
 def test_map_null_row_strict_cast_reaches_a_nested_map() -> None:
     pa = pytest.importorskip("pyarrow")
-    # Inner maps of `{p: null, q: {b: 2, c: 3}}`, with `a` hidden under `p`.
+    # Inner maps of `{p: null, q: {b: 2, c: 3}}`, with `a` under `p` on input.
     inner = retaining_null_row_map().rename("value").to_arrow()
     keys = pa.array(["p", "q"], pa.large_string())
     outer_entries = pa.StructArray.from_arrays([keys, inner], names=["key", "value"])
@@ -915,7 +963,7 @@ def test_map_null_row_strict_cast_reaches_a_nested_map() -> None:
 
 
 def test_map_null_row_compaction_survives_slicing() -> None:
-    # Rows 0 and 2 are null but still span entries `a` and `d`.
+    # Rows 0 and 2 arrive null while still spanning entries `a` and `d`.
     s = arrow_map_retaining_entries(
         ["a", "b", "c", "d", "e"],
         [1, 2, 3, 4, 5],
@@ -1329,18 +1377,17 @@ def test_map_nested_key_conversion_is_an_error_not_a_panic(
 
 
 def _map_with_null_row_keeping_its_entries() -> pl.Series:
-    """An Arrow Map with entries retained under a null row."""
+    """An Arrow Map whose null row still spans an entry on input."""
     pa = pytest.importorskip("pyarrow")
 
     keys = pa.array([Decimal("1.50"), Decimal("2.50")], type=pa.decimal128(10, 2))
     values = pa.array([1, 2], type=pa.int64())
-    arr = pa.MapArray.from_arrays(pa.array([0, 1, 2], type=pa.int32()), keys, values)
-    # Mark row 0 null while the offsets keep pointing at its entry.
-    arr = pa.Array.from_buffers(
-        arr.type,
-        2,
-        [pa.py_buffer(bytes([0b10])), arr.buffers()[1]],
-        children=[arr.values],
+    # The mask nulls row 0 while the offsets keep pointing at its entry.
+    arr = pa.MapArray.from_arrays(
+        pa.array([0, 1, 2], type=pa.int32()),
+        keys,
+        values,
+        mask=pa.array([True, False]),
     )
     return pl.from_arrow(pa.table({"m": arr}))["m"]  # type: ignore[index]
 
@@ -1352,18 +1399,16 @@ LIVE_ROW = {Decimal("2.500"): 2}
 
 
 def test_map_null_row_keeping_its_entries() -> None:
-    # Arrow lets a null row keep its entries instead of being empty, and other producers
-    # do that. Null propagation must not null those entries: it runs before casting and
-    # row encoding, and nulling them breaks the non-null entry invariant.
+    # Arrow may retain entries under null rows; import drops them without nulling keys.
     s = _map_with_null_row_keeping_its_entries()
     assert s.dtype == DEC_MAP
-    assert s.to_arrow().offsets.to_pylist() == [0, 1, 2]
+    assert s.to_arrow().offsets.to_pylist() == [0, 0, 1]
     assert s.to_list() == [None, {Decimal("2.50"): 2}]
 
     # Rescaling a Decimal key is the cast that revalidates the entries.
     assert s.cast(RESCALED_MAP).to_list() == [None, LIVE_ROW]
 
-    # Value casts drop hidden entries and remain exportable.
+    # Value casts remain exportable.
     widened = s.cast(pl.Map(pl.Decimal(10, 2), pl.Float64))
     assert widened.to_list() == [None, {Decimal("2.50"): 2.0}]
     assert widened.to_arrow().values.null_count == 0
@@ -1373,8 +1418,8 @@ def test_map_null_row_keeping_its_entries() -> None:
     assert s.to_frame().sort("m")["m"].to_list() == [None, {Decimal("2.50"): 2}]
 
 
-def test_map_sliced_null_row_leaves_its_entries_outside_the_window() -> None:
-    # Slicing away the null row leaves its entry in the child, before the offsets.
+def test_map_sliced_null_row_spans_nothing() -> None:
+    # The null row was emptied on import, so slicing it away leaves nothing behind.
     sliced = _map_with_null_row_keeping_its_entries().slice(1, 1)
     assert sliced.to_list() == [{Decimal("2.50"): 2}]
 
@@ -1382,6 +1427,202 @@ def test_map_sliced_null_row_leaves_its_entries_outside_the_window() -> None:
     assert exported.offsets.to_pylist() == [0, 1]
     assert exported.keys.to_pylist() == [Decimal("2.50")]
     assert sliced.cast(RESCALED_MAP).to_list() == [LIVE_ROW]
+
+
+def test_map_slicing_leaves_live_entries_outside_the_window() -> None:
+    # Slicing past a live row may leave its entries outside the offsets, as with List.
+    s = pl.Series("m", [{Decimal("1.50"): 1}, {Decimal("2.50"): 2}], dtype=DEC_MAP)
+    sliced = s.slice(1, 1)
+    assert sliced.to_list() == [{Decimal("2.50"): 2}]
+
+    for out in (
+        sliced.cast(pl.Map(pl.Decimal(10, 2), pl.Float64)),
+        sliced.cast(RESCALED_MAP),
+    ):
+        exported = out.to_arrow()
+        assert exported.offsets.to_pylist() == [0, 1]
+        assert exported.keys.to_pylist() == [Decimal("2.50")]
+    assert sliced.map.entries().to_arrow().offsets.to_pylist() == [0, 1]
+
+
+def test_map_null_rows_written_in_place_span_no_entries() -> None:
+    # Several paths null a Map row without touching its offsets. These are the ones an
+    # expression can reach; `deposit` and the empty-group aggregation of a scalar
+    # column are covered by the Rust tests in `logical::map`.
+    s = pl.Series("m", [{"a": 1, "b": 2}, {"c": 3}, {"d": 4, "e": 5}], dtype=MAP)
+    df = pl.DataFrame({"m": s, "keep": [True, False, True]})
+
+    masked = df.select(
+        pl.when(pl.col("keep")).then(pl.col("m")).otherwise(None)
+    ).to_series()
+    assert masked.to_list() == [{"a": 1, "b": 2}, None, {"d": 4, "e": 5}]
+    assert masked.to_arrow().offsets.to_pylist() == [0, 2, 2, 4]
+
+    shifted = s.shift(1)
+    assert shifted.to_list() == [None, {"a": 1, "b": 2}, {"c": 3}]
+    assert shifted.to_arrow().offsets.to_pylist() == [0, 0, 2, 3]
+
+    # A broadcast scalar gathered with null indices nulls rows of the materialized copy.
+    gathered = pl.DataFrame({"i": [0, None, 0, None]}).select(
+        pl.lit(s.slice(0, 1)).first().gather(pl.col("i"))
+    )["m"]
+    assert gathered.to_list() == [{"a": 1, "b": 2}, None, {"a": 1, "b": 2}, None]
+    assert gathered.to_arrow().offsets.to_pylist() == [0, 2, 2, 4, 4]
+
+
+def test_map_null_rows_in_a_container_span_no_entries() -> None:
+    s = pl.Series("m", [{"a": 1.0, "b": 2.0}, {"c": 3.0}], dtype=FLOAT_MAP)
+    df = pl.DataFrame({"m": s, "keep": [False, True]})
+
+    # `to_arrow` alone does not propagate nulls into the container's child; the cast
+    # does.
+    nulled = df.select(
+        pl.when(pl.col("keep")).then(pl.col("m")).otherwise(None).implode()
+    ).to_series()
+    exported = nulled.cast(pl.List(FLOAT_MAP)).to_arrow()
+    assert exported.values.offsets.to_pylist() == [0, 0, 1]
+    assert exported.to_pylist() == [[None, [("c", 3.0)]]]
+
+    # Nulling the outer `List` row must reach the Map rows it spans.
+    lists = (
+        df.group_by("keep", maintain_order=True)
+        .agg("m")
+        .with_columns(outer_keep=pl.Series([False, True]))
+    )
+    outer_nulled = lists.select(
+        pl.when(pl.col("outer_keep")).then(pl.col("m")).otherwise(None)
+    ).to_series()
+    exported = outer_nulled.cast(pl.List(FLOAT_MAP)).to_arrow()
+    assert exported.to_pylist() == [None, [[("c", 3.0)]]]
+    assert exported.values.offsets.to_pylist() == [0, 0, 1]
+
+    struct_nulled = df.select(
+        pl.when(pl.col("keep")).then(pl.struct("m")).otherwise(None)
+    ).to_series()
+    exported = struct_nulled.cast(pl.Struct({"m": FLOAT_MAP})).to_arrow()
+    assert exported.to_pylist() == [None, {"m": [("c", 3.0)]}]
+    assert exported.field("m").offsets.to_pylist() == [0, 0, 1]
+
+    # Two array rows, so the nulled row is not the whole column.
+    wide = pl.Series(
+        "m",
+        [{"a": 1.0, "b": 2.0}, {"c": 3.0}, {"d": 4.0}, {"e": 5.0}],
+        dtype=FLOAT_MAP,
+    )
+    arrays = (
+        pl.DataFrame({"m": wide, "g": [1, 1, 2, 2]})
+        .group_by("g", maintain_order=True)
+        .agg("m")
+        .with_columns(
+            pl.col("m").cast(pl.Array(FLOAT_MAP, 2)), keep=pl.Series([False, True])
+        )
+    )
+    array_nulled = arrays.select(
+        pl.when(pl.col("keep")).then(pl.col("m")).otherwise(None)
+    ).to_series()
+    exported = array_nulled.cast(pl.Array(FLOAT_MAP, 2)).to_arrow()
+    assert exported.to_pylist() == [None, [[("d", 4.0)], [("e", 5.0)]]]
+    assert exported.values.offsets.to_pylist() == [0, 0, 0, 1, 2]
+
+
+def _outer_nulled_container(inner: pl.Series) -> pl.Series:
+    """Group `inner` into a two-row `List` and null the first row."""
+    lists = (
+        pl.DataFrame({"c": inner, "g": [1, 2]})
+        .group_by("g", maintain_order=True)
+        .agg("c")
+        .with_columns(keep=pl.Series([False, True]))
+    )
+    return lists.select(
+        pl.when(pl.col("keep")).then(pl.col("c")).otherwise(None)
+    ).to_series()
+
+
+def test_map_nested_container_is_compact_in_the_physical_tree() -> None:
+    # Inspect physical descendants: reconstructing children could mask lost repairs.
+    s = pl.Series("m", [{"a": 1.0, "b": 2.0}, {"c": 3.0}], dtype=FLOAT_MAP)
+    # Rows `{}` and `{c: 3, d: 4}`: nulling row 0 leaves this second field alone.
+    other = pl.Series("other", [{}, {"c": 3.0, "d": 4.0}], dtype=FLOAT_MAP)
+    structs = pl.DataFrame({"m": s, "other": other}).select(pl.struct("m", "other"))[
+        "m"
+    ]
+
+    exported = (
+        _outer_nulled_container(structs)
+        .cast(pl.List(pl.Struct({"m": FLOAT_MAP, "other": FLOAT_MAP})))
+        .to_arrow()
+    )
+    assert exported.to_pylist() == [
+        None,
+        [{"m": [("c", 3.0)], "other": [("c", 3.0), ("d", 4.0)]}],
+    ]
+    assert exported.values.field("m").offsets.to_pylist() == [0, 0, 1]
+    assert exported.values.field("other").offsets.to_pylist() == [0, 0, 2]
+
+
+@pytest.mark.parametrize("container", ["list", "array", "struct"])
+@pytest.mark.parametrize("cast_to_entries", [False, True], ids=["identity", "entries"])
+def test_map_propagation_keeps_repaired_entry_children(
+    container: str, cast_to_entries: bool
+) -> None:
+    pa = pytest.importorskip("pyarrow")
+    inner = pa.MapArray.from_arrays([0, 2, 3], ["a", "b", "c"], [1, 2, 3])
+    mask = pa.array([True, False])
+    value_dtype: pl.DataType
+    if container == "struct":
+        values = pa.StructArray.from_arrays([inner], names=["m"], mask=mask)
+        value_dtype = pl.Struct({"m": ENTRIES})
+    elif container == "array":
+        values = pa.FixedSizeListArray.from_arrays(inner, 1, mask=mask)
+        value_dtype = pl.Array(ENTRIES, 1)
+    else:
+        values = pa.ListArray.from_arrays([0, 1, 2], inner, mask=mask)
+        value_dtype = pl.List(ENTRIES)
+
+    s = pl.from_arrow(pa.MapArray.from_arrays([0, 2], ["x", "y"], values))
+    target = (
+        pl.List(pl.Struct({"key": pl.String, "value": value_dtype}))
+        if cast_to_entries
+        else s.dtype
+    )
+    result = s.cast(target)
+    if not cast_to_entries:
+        assert result.to_list() == s.to_list()
+
+    # Inspect the physical tree without reconstructing children, which could repair
+    # them and hide a discarded propagation result.
+    exported_values = result.to_arrow().values.field("value")
+    exported_inner = (
+        exported_values.field("m") if container == "struct" else exported_values.values
+    )
+    assert exported_inner.is_null().to_pylist() == [True, False]
+    assert exported_inner.offsets.to_pylist() == [0, 0, 1]
+    assert exported_inner.values.to_pylist() == [{"key": "c", "value": 3}]
+
+
+@pytest.mark.parametrize("wrap_in_struct", [False, True], ids=["map", "struct-of-map"])
+def test_map_extension_container_null_rows_span_no_entries(
+    wrap_in_struct: bool,
+) -> None:
+    # `Extension` forwards propagation to its storage, so a Map under an extension
+    # must be repaired the same way.
+    rows: list[Any] = [{"a": 1.0, "b": 2.0}, {"c": 3.0}]
+    storage: pl.DataType = FLOAT_MAP
+    live = [("c", 3.0)]
+    if wrap_in_struct:
+        rows = [{"m": row} for row in rows]
+        storage = pl.Struct({"m": FLOAT_MAP})
+        live = {"m": live}  # type: ignore[assignment]
+    ext = pl.Extension(name=MAP_EXTENSION_NAME, storage=storage)
+
+    exported = (
+        _outer_nulled_container(pl.Series("c", rows, dtype=ext))
+        .cast(pl.List(ext))
+        .to_arrow()
+    )
+    assert exported.to_pylist() == [None, [live]]
+    inner = exported.values.field("m") if wrap_in_struct else exported.values
+    assert inner.offsets.to_pylist() == [0, 0, 1]
 
 
 def test_map_sort_by_categorical_keys() -> None:
@@ -1433,18 +1674,19 @@ def test_map_sort_by_categorical_keys() -> None:
         ),
     ],
 )
-def test_map_null_row_entries_survive_nesting(
+def test_map_null_rows_survive_nesting(
     nest: Callable[[pl.Series], pl.Series],
     rescaled_dtype: pl.DataType,
     expected: list[Any],
 ) -> None:
-    # Entry validity must survive nested null propagation before key rescaling.
+    # Nested null propagation must empty Map rows rather than null their entries, which
+    # the key rescaling below would then reject.
     nested = nest(_map_with_null_row_keeping_its_entries())
     assert nested.cast(rescaled_dtype).to_list() == expected
 
 
 def test_map_null_entry_of_a_live_row_is_rejected() -> None:
-    # Only hidden null entries or keys may be dropped.
+    # Only null entries or keys that no live row owns may be dropped.
     entries = pl.Series("m", [[None, {"key": "a", "value": 1}]], dtype=ENTRIES)
     with pytest.raises(InvalidOperationError, match="Map entries cannot be null"):
         entries.cast(MAP)
@@ -1455,7 +1697,7 @@ def test_map_null_entry_of_a_live_row_is_rejected() -> None:
 
 
 def _list_of_entries_with_null_row(keys: list[str | None]) -> pl.Series:
-    """A `List(Struct)` with an entry retained under its first, null row."""
+    """A `List(Struct)` whose first, null row still spans an entry."""
     pa = pytest.importorskip("pyarrow")
     # `pa.MapArray.from_arrays` rejects null keys, so build the list by hand.
     entries = pa.StructArray.from_arrays(
@@ -1472,9 +1714,8 @@ def _list_of_entries_with_null_row(keys: list[str | None]) -> pl.Series:
 
 @pytest.mark.parametrize("keys", [[None, "b"], ["a", "b"]], ids=["invalid", "valid"])
 def test_map_hidden_entry_is_compacted_by_the_list_cast(keys: list[str | None]) -> None:
-    # List(Struct) null propagation causes hidden entries to be dropped during casting.
-    # Map import preserves valid hidden entries (test_map_null_row_keeping_its_entries).
-    # Neither path may export null entries or keys.
+    # `List(Struct)` null propagation may null the entry under a null row, so the cast
+    # must drop it rather than carry a null entry or key into the Map.
     s = _list_of_entries_with_null_row(keys).cast(MAP)
     exported = s.to_arrow()
     assert exported.offsets.to_pylist() == [0, 0, 1]
