@@ -110,6 +110,12 @@ pub fn approx_quantile_estimate(
     }
 
     polars_ensure!(
+        !quantiles.is_empty(),
+        ComputeError:
+            "the 'quantile' expression input should produce a single quantile or a list of quantiles, \
+            got an empty input"
+    );
+    polars_ensure!(
         quantiles.len() == 1 || quantiles.len() == sketch.len(),
         ComputeError:
             "polars does not support varying approximate quantiles, \
