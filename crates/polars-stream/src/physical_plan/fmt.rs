@@ -259,7 +259,6 @@ fn visualize_plan_rec(
             from_ref(input),
         ),
         PhysNodeKind::Reverse { input } => ("reverse".to_owned(), from_ref(input)),
-
         PhysNodeKind::NegativeSlice {
             input,
             offset,
