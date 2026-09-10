@@ -501,6 +501,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Get data type of [`ChunkedArray`].
+    #[inline(always)]
     pub fn dtype(&self) -> &DataType {
         self.field.dtype()
     }
@@ -515,6 +516,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Get a reference to the field.
+    #[inline(always)]
     pub fn ref_field(&self) -> &Field {
         &self.field
     }

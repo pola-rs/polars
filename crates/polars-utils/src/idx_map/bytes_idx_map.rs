@@ -14,6 +14,7 @@ struct Key {
 }
 
 impl Key {
+    #[inline]
     unsafe fn get<'k>(&self, key_data: &'k [Vec<u8>]) -> &'k [u8] {
         let buf = unsafe { key_data.get_unchecked(self.key_buffer as usize) };
         unsafe { buf.get_unchecked(self.key_offset..self.key_offset + self.key_length as usize) }

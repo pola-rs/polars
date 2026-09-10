@@ -307,6 +307,7 @@ macro_rules! impl_dyn_series {
                 self.0.deposit(validity).into_series()
             }
 
+            #[inline(always)]
             fn len(&self) -> usize {
                 self.0.len()
             }

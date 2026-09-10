@@ -16,6 +16,7 @@ use polars_utils::slice::Slice2Uninit;
 
 use crate::row::RowEncodingOptions;
 
+#[inline(always)]
 pub fn len_from_item(value: Option<usize>, opt: RowEncodingOptions) -> usize {
     debug_assert!(opt.contains(RowEncodingOptions::NO_ORDER));
 

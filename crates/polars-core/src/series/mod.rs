@@ -1124,6 +1124,7 @@ impl Default for Series {
 impl Deref for Series {
     type Target = dyn SeriesTrait;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.0.as_ref()
     }

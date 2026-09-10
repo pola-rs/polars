@@ -398,6 +398,7 @@ unsafe impl Zeroable for View {}
 unsafe impl Pod for View {}
 
 impl PartialEq for View {
+    #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.as_u128() == other.as_u128()
     }
@@ -412,6 +413,7 @@ impl TotalOrd for View {
 }
 
 impl TotalEq for View {
+    #[inline(always)]
     fn tot_eq(&self, other: &Self) -> bool {
         self.eq(other)
     }

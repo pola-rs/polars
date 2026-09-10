@@ -18,6 +18,7 @@ pub struct CollectionWrap<T: ?Sized, C: Collection<T>> {
 }
 
 impl<T: ?Sized, C: Collection<T>> CollectionWrap<T, C> {
+    #[inline(always)]
     pub fn new(inner: C) -> Self {
         Self {
             inner,

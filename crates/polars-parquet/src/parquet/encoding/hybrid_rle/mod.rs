@@ -65,10 +65,12 @@ impl<'a> HybridRleDecoder<'a> {
         }
     }
 
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.num_values
     }
 
+    #[inline(always)]
     pub fn num_bits(&self) -> usize {
         self.num_bits
     }
