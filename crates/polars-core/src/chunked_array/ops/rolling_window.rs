@@ -102,6 +102,10 @@ mod inner_mod {
             let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name().clone(), self.len());
 
             if let Some(weights) = options.weights {
+                debug_assert!(
+                    weights.iter().all(|&w| !(w < 0.0)),
+                    "implementation error: rolling weights should not be negative"
+                );
                 let weights_series =
                     Float64Chunked::new(PlSmallStr::from_static("weights"), &weights).into_series();
 

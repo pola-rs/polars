@@ -188,6 +188,9 @@ where
 {
     weights
         .iter()
-        .map(|v| NumCast::from(*v).unwrap())
+        .map(|v| {
+            debug_assert!(v.is_sign_positive(), "weights have to be positive");
+            NumCast::from(*v).unwrap()
+        })
         .collect::<Vec<_>>()
 }
