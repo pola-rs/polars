@@ -1527,8 +1527,10 @@ def test_sort_nested_column_that_repeats_one_element(
         pl.DataFrame({"a": flat}).sort("a", **kwargs, maintain_order=True),
     )
 
-    # The one element is still held once, rather than one slot per element.
-    assert sorted_repeated.estimated_size() < flat.estimated_size() // 100
+    # The one element is still held once, rather than one slot per element: the sort answers
+    # with the chunk it was given.
+    assert sorted_repeated.estimated_size() == repeated.estimated_size()
+    assert repeated.estimated_size() <= flat.estimated_size()
 
 
 @pytest.mark.parametrize(

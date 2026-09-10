@@ -266,23 +266,23 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
         // SAFETY, we do no t change the lengths
         unsafe {
             self.downcast_iter_mut().for_each(|arr| {
-                // Each chunk is mapped in whatever representation it is in: mapping the slots a
-                // buffer holds leaves it in that representation, so a scalar values buffer has
-                // its one value mapped once and it still stands for every element.
-                let values = arr.flat_or_scalar_values_mut();
-                match values.get_mut_slice() {
-                    Some(slice) => slice.iter_mut().for_each(|v| *v = f(*v)),
-                    // The buffer is shared with another array, so it cannot be written over.
-                    None => {
-                        *values = values
-                            .as_slice()
-                            .iter()
-                            .copied()
-                            .map(f)
-                            .collect::<Vec<_>>()
-                            .into()
-                    },
+                // Each chunk is mapped in whatever representation it is in: mapping the slots the
+                // values hold leaves them in that representation, so a scalar chunk has its one
+                // value mapped once and it still stands for every element.
+                if let Some(slots) = arr.flat_or_scalar_values_mut() {
+                    slots.iter_mut().for_each(|v| *v = f(*v));
+                    return;
                 }
+
+                // The values are shared with another array, so they cannot be written over: the
+                // chunk is built anew, in the representation it is already in.
+                let length = arr.len();
+                let validity = arr.validity().map(PlBitmap::from);
+                let mapped = match arr.scalar_value_ignore_validity() {
+                    Some(value) => PlPrimitiveArray::new_scalar(f(value), length),
+                    None => PlPrimitiveArray::from_vec(arr.values_iter().map(f).collect()),
+                };
+                *arr = mapped.with_validity(validity);
             })
         };
         // can be in any order now

@@ -213,10 +213,13 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         }
     }
 
-    /// The backing values buffer, whichever representation it is in.
+    /// The values slots this array holds, if no other array shares them.
+    ///
+    /// One slot per element if the values are flat, and the single slot every element reads if
+    /// they are scalar: writing over them leaves the array in the representation it is in.
     #[inline]
-    pub fn flat_or_scalar_values_mut(&mut self) -> &mut Buffer<T> {
-        &mut self.values
+    pub fn flat_or_scalar_values_mut(&mut self) -> Option<&mut [T]> {
+        self.values.get_mut_slice()
     }
 
     /// The backing values buffer, if it holds one slot per element.

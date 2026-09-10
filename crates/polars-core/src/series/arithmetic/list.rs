@@ -794,24 +794,22 @@ mod inner {
                         self.swapped,
                     );
 
-                    // The values are written one slot at a time, so the buffer has to hold one
-                    // slot per value: writing into the single slot of a buffer that repeats one
-                    // value would write into every element that reads it, so such a buffer is
-                    // laid out here. `flat_values_mut` cannot say which case this is — a buffer
-                    // of a *single* slot reads as repeated however it was built, which is exactly
-                    // what a broadcast over one value leaves — so the length is what is asked.
-                    if arr_lhs.flat_or_scalar_values_mut().len() != n_values {
+                    // The values are written one slot at a time, so they have to hold one slot per
+                    // value: writing into the single slot a repeated value lives in would write
+                    // into every element that reads it, so such values are laid out here.
+                    // `flat_values_mut` cannot say which case this is — values of a *single* slot
+                    // read as repeated however they were built, which is exactly what a broadcast
+                    // over one value leaves — so the representation is what is asked.
+                    if !arr_lhs.values_are_flat() {
                         let values: Vec<T::Native> = arr_lhs.values_iter().collect();
                         let validity = arr_lhs.validity().map(PlBitmap::from);
                         arr_lhs = PlPrimitiveArray::from_vec(values).with_validity(validity);
                     }
 
-                    let buffer = arr_lhs.flat_or_scalar_values_mut();
-                    assert_eq!(buffer.len(), n_values);
-
-                    let arr_lhs_mut_slice = buffer
-                        .get_mut_slice()
+                    let arr_lhs_mut_slice = arr_lhs
+                        .flat_or_scalar_values_mut()
                         .expect("the chunk it was read out of has been dropped");
+                    assert_eq!(arr_lhs_mut_slice.len(), n_values);
 
                     with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
                         for (i, l_range) in OffsetsBuffer::<i64>::leaf_ranges_iter(offsets_lhs).enumerate()
