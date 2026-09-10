@@ -1248,17 +1248,18 @@ def test_array_get_broadcast_26217() -> None:
 def test_array_idx_size_limit_eval(capfd: Any, plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     plmonkeypatch.setenv("POLARS_ARRAY_EVAL_IDX_SIZE_LIMIT", "20")
-    s = pl.Series([None])
     width = 19
-    s = s.new_from_index(0, width)
+    # The rows have to differ: a chunk whose rows all read the one list is evaluated
+    # over a single row, which never reaches the batching this covers.
+    rows = [[i] * width for i in range(4)]
     assert (
-        pl.Series("a", [s, s, s, s], dtype=pl.Array(pl.Null, width))
+        pl.Series("a", rows, dtype=pl.Array(pl.Int64, width))
         .to_frame()
         .select(pl.col("a").arr.eval(pl.element().len() * pl.element()))
         .head(1)
         .item()
         .to_list()
-        == [None] * width
+        == [0] * width
     )
 
     captured = capfd.readouterr().err

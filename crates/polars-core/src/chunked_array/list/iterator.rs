@@ -171,7 +171,10 @@ impl ListChunked {
     /// A closure applied element by element then only has to see that one list: its answer is the
     /// answer for every element, and the array of them repeats it rather than holding a copy per
     /// element. See [`apply_amortized_same_type`](Self::apply_amortized_same_type).
-    fn repeats_one_list(&self) -> Option<usize> {
+    ///
+    /// Only work that answers the same way twice may be shared like this: an unseeded sample has
+    /// to be taken per element even here.
+    pub fn repeats_one_list(&self) -> Option<usize> {
         let [chunk] = self.chunks().as_slice() else {
             return None;
         };

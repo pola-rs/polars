@@ -34,6 +34,7 @@ pub struct EvalExpr {
     evaluation_is_scalar: bool,
     evaluation_is_elementwise: bool,
     evaluation_is_fallible: bool,
+    evaluation_is_deterministic: bool,
 }
 
 impl EvalExpr {
@@ -48,6 +49,7 @@ impl EvalExpr {
         evaluation_is_scalar: bool,
         evaluation_is_elementwise: bool,
         evaluation_is_fallible: bool,
+        evaluation_is_deterministic: bool,
     ) -> Self {
         Self {
             input,
@@ -59,6 +61,7 @@ impl EvalExpr {
             evaluation_is_scalar,
             evaluation_is_elementwise,
             evaluation_is_fallible,
+            evaluation_is_deterministic,
         }
     }
 
@@ -73,6 +76,20 @@ impl EvalExpr {
             let name = self.output_field.name.clone();
             return Ok(Column::full_null(name, ca.len(), self.output_field.dtype()));
         }
+
+        // Fast path: every element reads the one list the chunk holds, so the evaluation only has
+        // to see that list. It is run over a single element and every element gets that one
+        // answer. Otherwise the values are written out one list per element for the groups to be
+        // cut out of: 4M rows repeating one list of three paid 576 ms for
+        // `list.eval(element().sort())`.
+        if self.evaluation_is_deterministic
+            && let Some(length) = ca.repeats_one_list()
+        {
+            let one = ca.slice(0, 1);
+            let out = self.evaluate_on_list_chunked(&one, state, is_agg)?;
+            return out.broadcast_owned_to(length);
+        }
+
         let ca = ca
             .trim_lists_to_normalized_offsets()
             .map_or(Cow::Borrowed(ca), Cow::Owned);
@@ -270,6 +287,16 @@ impl EvalExpr {
         if ca.null_count() == ca.len() {
             let name = self.output_field.name.clone();
             return Ok(Column::full_null(name, ca.len(), self.output_field.dtype()));
+        }
+
+        // As in `evaluate_on_list_chunked`: one list read once, its answer shared by every
+        // element that reads it.
+        if self.evaluation_is_deterministic
+            && let Some(length) = ca.repeats_one_list()
+        {
+            let one = ca.slice(0, 1);
+            let out = self.evaluate_on_array_chunked(&one, state, as_list, is_agg)?;
+            return out.broadcast_owned_to(length);
         }
 
         let df = DataFrame::empty_with_height(ca.len());

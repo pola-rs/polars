@@ -18,6 +18,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import EngineType, PolarsDataType
 
 
@@ -1486,3 +1488,78 @@ def test_list_to_struct_outer_nulls_28210() -> None:
             },
         ),
     )
+
+
+def _repeats_one_list(value: Any, dtype: pl.DataType, n: int) -> pl.Series:
+    """`n` elements every one of which reads the one list, held once."""
+    s = pl.select(pl.repeat(pl.lit(value, dtype=dtype), n).alias("a")).to_series()
+    assert s.n_chunks() == 1
+    return s
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        ([1, 2, 3], pl.List(pl.Int64)),
+        ([1, None, 3], pl.List(pl.Int64)),
+        ([], pl.List(pl.Int64)),
+        (["a", "b"], pl.List(pl.String)),
+        ([[1], [2]], pl.List(pl.List(pl.Int64))),
+        ([1, 2, 3], pl.Array(pl.Int64, 3)),
+        ([1, None, 3], pl.Array(pl.Int64, 3)),
+        (["a", "b", "c"], pl.Array(pl.String, 3)),
+    ],
+)
+@pytest.mark.parametrize(
+    "make_expr",
+    [
+        lambda ns: ns.eval(pl.element().sort()),
+        lambda ns: ns.eval(pl.element().cum_sum().cast(pl.String)),
+        lambda ns: ns.eval(pl.element().filter(pl.element().is_not_null())),
+        lambda ns: ns.eval(pl.element() != pl.element().first()),
+        lambda ns: ns.agg(pl.element().n_unique()),
+        lambda ns: ns.agg(pl.element().first()),
+        lambda ns: ns.unique(),
+        lambda ns: ns.reverse(),
+    ],
+)
+def test_eval_over_one_repeated_list(
+    value: Any, dtype: pl.DataType, make_expr: Callable[[Any], pl.Expr]
+) -> None:
+    # The evaluation runs over a single element and every element gets that one answer;
+    # it used to write the values out one list per element to cut the groups out of.
+    n = 4
+    col = pl.col("a")
+    expr = make_expr(col.arr if dtype.base_type() == pl.Array else col.list)
+    repeated = _repeats_one_list(value, dtype, n)
+    flat = pl.Series("a", [value] * n, dtype=dtype)
+
+    def answer(s: pl.Series) -> pl.Series | str:
+        try:
+            return pl.DataFrame([s]).select(expr).to_series()
+        except Exception as exc:
+            # Not every expression is defined on every inner type; the two have to agree
+            # on that as well.
+            return f"{type(exc).__name__}: {exc}"
+
+    one, many = answer(repeated), answer(flat)
+    if isinstance(many, str):
+        assert one == many
+    else:
+        assert isinstance(one, pl.Series)
+        assert_series_equal(one, many)
+
+
+@pytest.mark.parametrize("dtype", [pl.List(pl.Int64), pl.Array(pl.Int64, 5)])
+def test_eval_over_one_repeated_list_keeps_sampling_per_element(
+    dtype: pl.DataType,
+) -> None:
+    # An unseeded sample answers differently every time it is asked, so it has to be
+    # asked once per element even where they all read the one list.
+    col = pl.col("a")
+    ns = col.arr if dtype.base_type() == pl.Array else col.list
+    s = _repeats_one_list([1, 2, 3, 4, 5], dtype, 40)
+    out = (
+        pl.DataFrame([s]).select(ns.eval(pl.element().shuffle())).to_series().to_list()
+    )
+    assert len({tuple(row) for row in out}) > 1
