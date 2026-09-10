@@ -229,23 +229,41 @@ impl ListChunked {
     }
 
     /// Applies a closure `F` elementwise.
+    ///
+    /// Only a closure that answers the same way twice may be applied this way: where every element
+    /// reads the one list, `f` sees it once and the answer stands for all of them.
     #[must_use]
-    pub fn apply_amortized_generic<F, K, V>(&self, f: F) -> ChunkedArray<V>
+    pub fn apply_amortized_generic<F, K, V>(&self, mut f: F) -> ChunkedArray<V>
     where
         V: PolarsDataType,
         F: FnMut(Option<AmortSeries>) -> Option<K> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
+        // The one list every element reads is mapped once and the answer repeated, rather than
+        // that same list being read — and reduced — once per element. See `repeats_one_list`.
+        if let Some(length) = self.repeats_one_list() {
+            return repeat_one_answer(self.name().clone(), f(Some(self.one_list())), length);
+        }
+
         // TODO! make an amortized iter that does not flatten
         self.amortized_iter().map(f).collect_ca(self.name().clone())
     }
 
-    pub fn try_apply_amortized_generic<F, K, V>(&self, f: F) -> PolarsResult<ChunkedArray<V>>
+    pub fn try_apply_amortized_generic<F, K, V>(&self, mut f: F) -> PolarsResult<ChunkedArray<V>>
     where
         V: PolarsDataType,
         F: FnMut(Option<AmortSeries>) -> PolarsResult<Option<K>> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
+        // As in `apply_amortized_generic`: the one list is mapped once and the answer repeated.
+        if let Some(length) = self.repeats_one_list() {
+            return Ok(repeat_one_answer(
+                self.name().clone(),
+                f(Some(self.one_list()))?,
+                length,
+            ));
+        }
+
         // TODO! make an amortized iter that does not flatten
         self.amortized_iter()
             .map(f)
@@ -572,6 +590,23 @@ impl ListChunked {
         }
         Ok(ca)
     }
+}
+
+/// `length` elements that all read the one answer `value`, held once rather than copied per
+/// element: what a closure applied to an array that repeats a single list comes back as.
+pub(crate) fn repeat_one_answer<K, V>(
+    name: PlSmallStr,
+    value: Option<K>,
+    length: usize,
+) -> ChunkedArray<V>
+where
+    V: PolarsDataType,
+    V::Array: ArrayFromIter<Option<K>>,
+{
+    let one: V::Array = std::iter::once(value).collect_arr();
+    let field = Arc::new(Field::new(name, V::get_static_dtype()));
+
+    ChunkedArray::from_chunk_iter_and_field(field, [one.new_from_index_typed(0, length)])
 }
 
 fn to_arr(s: &Series) -> PlArrayRef {

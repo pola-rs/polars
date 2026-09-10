@@ -1589,3 +1589,48 @@ def test_eval_over_one_repeated_list_keeps_sampling_per_element(
         pl.DataFrame([s]).select(ns.eval(pl.element().shuffle())).to_series().to_list()
     )
     assert len({tuple(row) for row in out}) > 1
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        ([1.0, 2.0, 3.0], pl.List(pl.Float64)),
+        ([1, None, 3], pl.List(pl.Int64)),
+        ([], pl.List(pl.Int64)),
+        ([1.0, 2.0, 3.0], pl.Array(pl.Float64, 3)),
+        ([1, None, 3], pl.Array(pl.Int64, 3)),
+    ],
+)
+@pytest.mark.parametrize(
+    "reduction",
+    ["mean", "median", "std", "var", "min", "max", "sum", "arg_min", "arg_max", "n_unique"],
+)
+def test_reduce_one_repeated_list_once(
+    value: Any, dtype: pl.DataType, reduction: str
+) -> None:
+    # The one list every element reads is reduced once and the answer repeated; it used
+    # to be read — and reduced — once per element, which is what the size below catches.
+    n = 100_000
+    repeated = _repeats_one_list(value, dtype, n)
+    flat = pl.Series("a", [value] * n, dtype=dtype)
+    col = pl.col("a")
+    ns = col.arr if dtype.base_type() == pl.Array else col.list
+    if not hasattr(ns, reduction):
+        pytest.skip(f"no `{reduction}` on this namespace")
+    expr = getattr(ns, reduction)()
+
+    def answer(s: pl.Series) -> pl.Series | str:
+        try:
+            return pl.DataFrame([s]).select(expr).to_series()
+        except Exception as exc:
+            return f"{type(exc).__name__}: {exc}"
+
+    one, many = answer(repeated), answer(flat)
+    if isinstance(many, str):
+        assert one == many
+        return
+
+    assert isinstance(one, pl.Series)
+    assert_series_equal(one, many)
+    # One answer held once, not one slot per element.
+    assert one.estimated_size() < many.estimated_size() // 100

@@ -106,104 +106,76 @@ pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> Polar
     let mut out = {
         match inner_dtype {
             Boolean => {
-                let out: IdxCa = ca
-                    .amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                    .collect();
+                let out: IdxCa =
+                    ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum().ok()));
                 out.into_series()
             },
             UInt8 => {
-                let out: Int64Chunked = ca
-                    .amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                    .collect();
+                let out: Int64Chunked =
+                    ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum().ok()));
                 out.into_series()
             },
             UInt16 => {
-                let out: Int64Chunked = ca
-                    .amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                    .collect();
+                let out: Int64Chunked =
+                    ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum().ok()));
                 out.into_series()
             },
             UInt32 => {
-                let out: UInt32Chunked = ca
-                    .amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                    .collect();
+                let out: UInt32Chunked =
+                    ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum().ok()));
                 out.into_series()
             },
             UInt64 => {
-                let out: UInt64Chunked = ca
-                    .amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                    .collect();
+                let out: UInt64Chunked =
+                    ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum().ok()));
                 out.into_series()
             },
             #[cfg(feature = "dtype-u128")]
             UInt128 => {
-                let out: UInt128Chunked = ca
-                    .amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                    .collect();
+                let out: UInt128Chunked =
+                    ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum().ok()));
                 out.into_series()
             },
             Int8 => {
-                let out: Int64Chunked = ca
-                    .amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                    .collect();
+                let out: Int64Chunked =
+                    ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum().ok()));
                 out.into_series()
             },
             Int16 => {
-                let out: Int64Chunked = ca
-                    .amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                    .collect();
+                let out: Int64Chunked =
+                    ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum().ok()));
                 out.into_series()
             },
             Int32 => {
-                let out: Int32Chunked = ca
-                    .amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                    .collect();
+                let out: Int32Chunked =
+                    ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum().ok()));
                 out.into_series()
             },
             Int64 => {
-                let out: Int64Chunked = ca
-                    .amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                    .collect();
+                let out: Int64Chunked =
+                    ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum().ok()));
                 out.into_series()
             },
             #[cfg(feature = "dtype-i128")]
             Int128 => {
-                let out: Int128Chunked = ca
-                    .amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                    .collect();
+                let out: Int128Chunked =
+                    ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum().ok()));
                 out.into_series()
             },
             #[cfg(feature = "dtype-f16")]
             Float16 => {
-                let out: Float16Chunked = ca
-                    .amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                    .collect();
+                let out: Float16Chunked =
+                    ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum().ok()));
                 out.into_series()
             },
             Float32 => {
-                let out: Float32Chunked = ca
-                    .amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                    .collect();
+                let out: Float32Chunked =
+                    ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum().ok()));
                 out.into_series()
             },
             Float64 => {
-                let out: Float64Chunked = ca
-                    .amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().sum().ok()))
-                    .collect();
+                let out: Float64Chunked =
+                    ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum().ok()));
                 out.into_series()
             },
             _ => {

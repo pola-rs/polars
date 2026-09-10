@@ -2,7 +2,7 @@ use std::ptr::NonNull;
 
 use super::*;
 use crate::chunked_array::array::collect_array_chunk;
-use crate::chunked_array::list::iterator::AmortizedListIter;
+use crate::chunked_array::list::iterator::{AmortizedListIter, repeat_one_answer};
 use crate::series::amortized_iter::{AmortSeries, ArrayBox, unstable_series_container_and_ptr};
 
 impl ArrayChunked {
@@ -254,28 +254,44 @@ impl ArrayChunked {
     }
 
     /// Apply a closure `F` elementwise.
+    ///
+    /// Only a closure that answers the same way twice may be applied this way: where every element
+    /// reads the one list, `f` sees it once and the answer stands for all of them.
     #[must_use]
-    pub fn apply_amortized_generic<F, K, V>(&self, f: F) -> ChunkedArray<V>
+    pub fn apply_amortized_generic<F, K, V>(&self, mut f: F) -> ChunkedArray<V>
     where
         V: PolarsDataType,
         F: FnMut(Option<AmortSeries>) -> Option<K> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
+        // The one list every element reads is mapped once and the answer repeated, rather than
+        // that same list being read — and reduced — once per element. See `repeats_one_list`.
+        if let Some(length) = self.repeats_one_list() {
+            return repeat_one_answer(self.name().clone(), f(Some(self.one_list())), length);
+        }
+
         self.amortized_iter().map(f).collect_ca(self.name().clone())
     }
 
     /// Try apply a closure `F` elementwise.
-    pub fn try_apply_amortized_generic<F, K, V>(&self, f: F) -> PolarsResult<ChunkedArray<V>>
+    pub fn try_apply_amortized_generic<F, K, V>(&self, mut f: F) -> PolarsResult<ChunkedArray<V>>
     where
         V: PolarsDataType,
         F: FnMut(Option<AmortSeries>) -> PolarsResult<Option<K>> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
-        {
-            self.amortized_iter()
-                .map(f)
-                .try_collect_ca(self.name().clone())
+        // As in `apply_amortized_generic`: the one list is mapped once and the answer repeated.
+        if let Some(length) = self.repeats_one_list() {
+            return Ok(repeat_one_answer(
+                self.name().clone(),
+                f(Some(self.one_list()))?,
+                length,
+            ));
         }
+
+        self.amortized_iter()
+            .map(f)
+            .try_collect_ca(self.name().clone())
     }
 
     pub fn for_each_amortized<F>(&self, f: F)

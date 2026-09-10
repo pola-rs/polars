@@ -98,11 +98,9 @@ pub(super) fn std_with_nulls(ca: &ArrayChunked, ddof: u8) -> PolarsResult<Series
             out.into_duration(*tu).into_series()
         },
         _ => {
-            let out: Float64Chunked = {
-                ca.amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().std(ddof)))
-                    .collect()
-            };
+            let out: Float64Chunked = ca
+                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().std(ddof)))
+                .with_name(ca.name().clone());
             out.into_series()
         },
     };
