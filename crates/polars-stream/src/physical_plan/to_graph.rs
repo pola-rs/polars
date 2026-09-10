@@ -970,12 +970,6 @@ fn to_graph_rec<'a>(
                     .try_collect_vec()?;
                 key_selectors_per_input.push(key_selectors);
 
-                // The fused expressions only reference input columns, so they are built
-                // against the un-augmented schema.
-                let fused_selectors = fused
-                    .iter()
-                    .map(|e| create_stream_expr(e, ctx, input_schema))
-                    .try_collect_vec()?;
                 let augmented_schema =
                     augmented_group_by_input_schema(input_schema, fused, ctx.expr_arena)?;
                 let fused_names: PlHashSet<PlSmallStr> =
@@ -1039,11 +1033,18 @@ fn to_graph_rec<'a>(
                     }
                 }
 
+                let gather_cols: Vec<PlSmallStr> = gather_cols.into_iter().collect();
+                let gather_schema = Arc::new(input_schema.try_project(gather_cols.iter())?);
+                let fused_selectors = fused
+                    .iter()
+                    .map(|e| create_stream_expr(e, ctx, &gather_schema))
+                    .try_collect_vec()?;
+
                 payload_per_input.push(nodes::group_by::InputPayload {
                     stored_cols: stored_cols.into_iter().collect(),
                     direct_reductions,
                     fused_selectors,
-                    gather_cols: gather_cols.into_iter().collect(),
+                    gather_cols,
                     fused_reductions,
                 });
                 reductions_per_input.push(reductions_for_this_input);
