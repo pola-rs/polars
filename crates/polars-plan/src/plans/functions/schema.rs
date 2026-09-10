@@ -45,26 +45,64 @@ impl FunctionIR {
                 Ok(Cow::Owned(Arc::new(schema)))
             },
             Rechunk => Ok(Cow::Borrowed(input_schema)),
-            Unnest { columns, separator } => {
+            Unnest {
+                columns,
+                separator,
+                max_depth,
+            } => {
                 #[cfg(feature = "dtype-struct")]
                 {
+                    fn unnest_fields(
+                        flds: &[Field],
+                        prefix: &str,
+                        separator: Option<&str>,
+                        remaining_depth: Option<usize>,
+                        schema: &mut Schema,
+                    ) {
+                        for fld in flds {
+                            let fld_name = match separator {
+                                None => fld.name().clone(),
+                                Some(sep) => {
+                                    polars_utils::format_pl_smallstr!("{prefix}{sep}{}", fld.name())
+                                },
+                            };
+
+                            // Check if we should recurse: remaining_depth is None (unlimited) or > 1
+                            let should_recurse = match remaining_depth {
+                                None => true,
+                                Some(d) => d > 1,
+                            };
+
+                            if should_recurse {
+                                if let DataType::Struct(inner_flds) = fld.dtype() {
+                                    let next_depth = remaining_depth.map(|d| d - 1);
+                                    unnest_fields(
+                                        inner_flds, &fld_name, separator, next_depth, schema,
+                                    );
+                                    continue;
+                                }
+                            }
+                            schema.with_column(fld_name, fld.dtype().clone());
+                        }
+                    }
+
                     let mut new_schema = Schema::with_capacity(input_schema.len() * 2);
                     for (name, dtype) in input_schema.iter() {
                         if columns.iter().any(|item| item == name) {
+                            // max_depth=Some(0) means no-op, keep the column as-is
+                            if *max_depth == Some(0) {
+                                new_schema.with_column(name.clone(), dtype.clone());
+                                continue;
+                            }
                             match dtype {
                                 DataType::Struct(flds) => {
-                                    for fld in flds {
-                                        let fld_name = match separator {
-                                            None => fld.name().clone(),
-                                            Some(sep) => {
-                                                polars_utils::format_pl_smallstr!(
-                                                    "{name}{sep}{}",
-                                                    fld.name()
-                                                )
-                                            },
-                                        };
-                                        new_schema.with_column(fld_name, fld.dtype().clone());
-                                    }
+                                    unnest_fields(
+                                        flds,
+                                        name,
+                                        separator.as_ref().map(|s| s.as_str()),
+                                        *max_depth,
+                                        &mut new_schema,
+                                    );
                                 },
                                 DataType::Unknown(_) => {
                                     // pass through unknown
