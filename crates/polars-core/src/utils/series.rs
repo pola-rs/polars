@@ -65,11 +65,12 @@ pub fn check_is_valid_struct_cast(
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
     check_is_valid_struct_cast(input.dtype(), output.dtype(), output.name())?;
 
-    // Casting to a Map merges duplicate keys, so its entries are not positionally
-    // comparable with the input's -- which `find_validity_mismatch` requires. Strictness
-    // still holds, since the key and value child casts run with the same options.
+    // Map entries are not positionally comparable with a cast's -- which
+    // `find_validity_mismatch` requires -- because casting merges duplicate keys and drops
+    // the entries that no live row owns. Strictness still holds, since a Map is nested, so
+    // its key and value child casts run with the same options.
     #[cfg(feature = "dtype-map")]
-    if output.dtype().contains_map() {
+    if input.dtype().contains_map() || output.dtype().contains_map() {
         return Ok(());
     }
 

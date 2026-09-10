@@ -1,5 +1,4 @@
 use super::*;
-use crate::chunked_array::logical::compact_null_map_rows;
 use crate::chunked_array::ops::sort::arg_sort_multiple::argsort_multiple_row_fmt;
 use crate::prelude::*;
 
@@ -17,8 +16,7 @@ impl SeriesWrap<MapChunked> {
     }
 
     /// # Safety
-    /// `apply` must only add, remove, or reorder whole rows; anything that can null a row
-    /// uses [`Self::apply_on_storage_compacting`] instead.
+    /// `apply` must only add, remove, reorder or null whole rows.
     unsafe fn apply_on_storage<F>(&self, apply: F) -> Series
     where
         F: FnOnce(&Series) -> Series,
@@ -34,34 +32,6 @@ impl SeriesWrap<MapChunked> {
     {
         Ok(unsafe { self.rewrap(apply(self.0.storage())?) })
     }
-
-    /// Like [`Self::apply_on_storage`], but empties the rows `apply` nulled.
-    ///
-    /// Repair raw storage before wrapping it as a Map.
-    ///
-    /// # Safety
-    /// `apply` must only add, remove, reorder or null whole rows.
-    unsafe fn apply_on_storage_compacting<F>(&self, apply: F) -> Series
-    where
-        F: FnOnce(&Series) -> Series,
-    {
-        unsafe { self.rewrap(compact_storage(apply(self.0.storage()))) }
-    }
-
-    /// # Safety
-    /// See [`Self::apply_on_storage_compacting`].
-    unsafe fn try_apply_on_storage_compacting<F>(&self, apply: F) -> PolarsResult<Series>
-    where
-        F: Fn(&Series) -> PolarsResult<Series>,
-    {
-        Ok(unsafe { self.rewrap(compact_storage(apply(self.0.storage())?)) })
-    }
-}
-
-/// Empty any null rows that still span entries.
-fn compact_storage(storage: Series) -> Series {
-    let compacted = compact_null_map_rows(storage.list().unwrap()).map(IntoSeries::into_series);
-    compacted.unwrap_or(storage)
 }
 
 impl private::PrivateSeries for SeriesWrap<MapChunked> {
@@ -114,13 +84,8 @@ impl private::PrivateSeries for SeriesWrap<MapChunked> {
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         assert!(self._dtype() == other.dtype());
-        // SAFETY: picks whole rows from two Maps that have the same dtype. A unit-length
-        // null on either side nulls rows in place, so the result is compacted.
-        unsafe {
-            self.try_apply_on_storage_compacting(|s| {
-                s.zip_with_same_type(mask, other.map()?.storage())
-            })
-        }
+        // SAFETY: picks whole rows from two Maps that have the same dtype.
+        unsafe { self.try_apply_on_storage(|s| s.zip_with_same_type(mask, other.map()?.storage())) }
     }
 
     #[cfg(feature = "algorithm_group_by")]
@@ -176,9 +141,8 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
     }
 
     /// # Safety
-    /// Mutations must preserve the dtype and [`MapChunked`] storage safety contract,
-    /// including leaving null rows with empty windows. Preserving key uniqueness also
-    /// requires keeping keys and their row membership.
+    /// Mutations must preserve the dtype and [`MapChunked`] storage safety contract.
+    /// Preserving key uniqueness also requires keeping keys and their row membership.
     unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         self.0.storage_mut().chunks_mut()
     }
@@ -254,8 +218,8 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
     }
 
     fn with_validity(&self, validity: Option<Bitmap>) -> Series {
-        // SAFETY: only row validity changes; newly nulled rows are emptied.
-        unsafe { self.apply_on_storage_compacting(move |s| s.with_validity(validity)) }
+        // SAFETY: only row validity changes; nulled rows keep their entries hidden.
+        unsafe { self.apply_on_storage(move |s| s.with_validity(validity)) }
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
@@ -264,15 +228,19 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
     }
 
     fn deposit(&self, validity: &Bitmap) -> Series {
-        // SAFETY: gathers whole rows; compaction empties rows masked null by padding.
-        unsafe { self.apply_on_storage_compacting(|s| s.deposit(validity)) }
+        // SAFETY: gathers whole rows and pads with nulls.
+        unsafe { self.apply_on_storage(|s| s.deposit(validity)) }
     }
 
     fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
-        // `other` is same-length cast output, possibly with a different dtype.
-        // Both inputs must have recursively propagated nulls and empty null Map rows.
-        let other = other.try_map().map_or(other, |map| map.storage());
-        self.0.storage().find_validity_mismatch(other, idxs)
+        // `other` is same-length cast output, possibly with a different dtype. Both inputs
+        // must have recursively propagated nulls, and entries that no live row owns would
+        // misalign the children, so compare compacted storage.
+        let live = other
+            .try_map()
+            .map(|map| map.live_storage().into_owned().into_series());
+        let other = live.as_ref().unwrap_or(other);
+        self.0.live_storage().find_validity_mismatch(other, idxs)
     }
 
     fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
@@ -356,7 +324,6 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
     }
 
     fn propagate_nulls(&self) -> Option<Series> {
-        // Null rows are empty; only entry children need propagation.
         self.0.propagate_nulls().map(IntoSeries::into_series)
     }
 

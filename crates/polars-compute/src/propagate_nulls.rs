@@ -23,22 +23,7 @@ pub fn propagate_nulls(arr: &dyn Array) -> Option<Box<dyn Array>> {
 }
 
 pub fn propagate_nulls_list<O: Offset>(arr: &ListArray<O>) -> Option<ListArray<O>> {
-    propagate_nulls_list_impl(arr, true)
-}
-
-/// Propagate nulls one level down.
-///
-/// Full recursion would null the entries under null Map rows, which the Map storage
-/// contract forbids. Callers handle the deeper levels, emptying Map children instead.
-pub fn propagate_nulls_list_shallow<O: Offset>(arr: &ListArray<O>) -> Option<ListArray<O>> {
-    propagate_nulls_list_impl(arr, false)
-}
-
-fn propagate_nulls_list_impl<O: Offset>(arr: &ListArray<O>, recurse: bool) -> Option<ListArray<O>> {
     let Some(validity) = arr.validity() else {
-        if !recurse {
-            return None;
-        }
         return propagate_nulls(arr.values().as_ref()).map(|values| {
             ListArray::new(arr.dtype().clone(), arr.offsets().clone(), values, None)
         });
@@ -100,7 +85,11 @@ fn propagate_nulls_list_impl<O: Offset>(arr: &ListArray<O>, recurse: bool) -> Op
         new_values = Some(arr.values().with_validity(Some(new_child_validity)));
     }
 
-    let Some(values) = descend(new_values, recurse) else {
+    let Some(values) = new_values
+        .as_ref()
+        .and_then(|v| propagate_nulls(v.as_ref()))
+        .or(new_values)
+    else {
         // Nothing was changed. Return the original array.
         return None;
     };
@@ -113,30 +102,8 @@ fn propagate_nulls_list_impl<O: Offset>(arr: &ListArray<O>, recurse: bool) -> Op
     ))
 }
 
-fn descend(values: Option<Box<dyn Array>>, recurse: bool) -> Option<Box<dyn Array>> {
-    if !recurse {
-        return values;
-    }
-    values
-        .as_ref()
-        .and_then(|v| propagate_nulls(v.as_ref()))
-        .or(values)
-}
-
 pub fn propagate_nulls_fsl(arr: &FixedSizeListArray) -> Option<FixedSizeListArray> {
-    propagate_nulls_fsl_impl(arr, true)
-}
-
-/// See [`propagate_nulls_list_shallow`].
-pub fn propagate_nulls_fsl_shallow(arr: &FixedSizeListArray) -> Option<FixedSizeListArray> {
-    propagate_nulls_fsl_impl(arr, false)
-}
-
-fn propagate_nulls_fsl_impl(arr: &FixedSizeListArray, recurse: bool) -> Option<FixedSizeListArray> {
     let Some(validity) = arr.validity() else {
-        if !recurse {
-            return None;
-        }
         return propagate_nulls(arr.values().as_ref())
             .map(|values| FixedSizeListArray::new(arr.dtype().clone(), arr.len(), values, None));
     };
@@ -203,7 +170,11 @@ fn propagate_nulls_fsl_impl(arr: &FixedSizeListArray, recurse: bool) -> Option<F
         new_values = Some(arr.values().with_validity(Some(new_child_validity)));
     }
 
-    let Some(values) = descend(new_values, recurse) else {
+    let Some(values) = new_values
+        .as_ref()
+        .and_then(|v| propagate_nulls(v.as_ref()))
+        .or(new_values)
+    else {
         // Nothing was changed. Return the original array.
         return None;
     };
@@ -218,19 +189,7 @@ fn propagate_nulls_fsl_impl(arr: &FixedSizeListArray, recurse: bool) -> Option<F
 }
 
 pub fn propagate_nulls_struct(arr: &StructArray) -> Option<StructArray> {
-    propagate_nulls_struct_impl(arr, true)
-}
-
-/// See [`propagate_nulls_list_shallow`].
-pub fn propagate_nulls_struct_shallow(arr: &StructArray) -> Option<StructArray> {
-    propagate_nulls_struct_impl(arr, false)
-}
-
-fn propagate_nulls_struct_impl(arr: &StructArray, recurse: bool) -> Option<StructArray> {
     let Some(validity) = arr.validity() else {
-        if !recurse {
-            return None;
-        }
         let mut new_values = Vec::new();
         for (i, field_array) in arr.values().iter().enumerate() {
             if let Some(field_array) = propagate_nulls(field_array.as_ref()) {
@@ -267,7 +226,11 @@ fn propagate_nulls_struct_impl(arr: &StructArray, recurse: bool) -> Option<Struc
             Some(v) => Some(field_array.with_validity(Some(v & validity))),
         };
 
-        let Some(new_field_array) = descend(new_field_array, recurse) else {
+        let Some(new_field_array) = new_field_array
+            .as_ref()
+            .and_then(|v| propagate_nulls(v.as_ref()))
+            .or(new_field_array)
+        else {
             // Nothing was changed. Return the original array.
             continue;
         };
@@ -289,7 +252,11 @@ fn propagate_nulls_struct_impl(arr: &StructArray, recurse: bool) -> Option<Struc
             Some(v) => Some(field_array.with_validity(Some(v & validity))),
         };
 
-        descend(new_field_array, recurse).unwrap_or_else(|| field_array.clone())
+        new_field_array
+            .as_ref()
+            .and_then(|v| propagate_nulls(v.as_ref()))
+            .or(new_field_array)
+            .unwrap_or_else(|| field_array.clone())
     }));
 
     Some(StructArray::new(

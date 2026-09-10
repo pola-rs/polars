@@ -714,7 +714,7 @@ impl Column {
                     scalar.into_nulls().into_column()
                 } else {
                     let validity = indices.rechunk_validity();
-                    // Use dtype-aware validity updates to preserve Map/Struct invariants.
+                    // Use dtype-aware validity updates so Struct fields see the nulls.
                     scalar
                         .take_materialized_series()
                         .with_validity(validity)
@@ -797,7 +797,7 @@ impl Column {
                 };
                 validity.extend_trusted_len_iter(iter);
 
-                // Use dtype-aware validity updates to preserve Map/Struct invariants.
+                // Use dtype-aware validity updates so Struct fields see the nulls.
                 let s = scalar_col.take_materialized_series().rechunk();
                 s.with_validity(validity.into_opt_validity()).into_column()
             },
