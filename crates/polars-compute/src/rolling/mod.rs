@@ -84,19 +84,33 @@ fn det_offsets_center(i: Idx, window_size: WindowSize, len: Len) -> (usize, usiz
     )
 }
 
+/// Compute the validity for a rolling aggregation.
+///
+/// `weights` may only be passed if the weights as a whole don't sum to zero; the caller is
+/// expected to reject that up front, since it makes the aggregation undefined everywhere.
 fn create_validity<Fo>(
     min_periods: usize,
     len: usize,
     window_size: usize,
     det_offsets_fn: Fo,
+    weights: Option<&[f64]>,
+    centered: bool,
 ) -> Option<MutableBitmap>
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
 {
-    if min_periods > 1 {
-        let mut validity = MutableBitmap::with_capacity(len);
-        validity.extend_constant(len, true);
+    // Short path:
+    // If there are no zero weights, then there can be no invalid values due to weights.
+    let weights = weights.filter(|w| w.contains(&0.0));
 
+    if min_periods <= 1 && weights.is_none() {
+        return None;
+    }
+
+    let mut validity = MutableBitmap::with_capacity(len);
+    validity.extend_constant(len, true);
+
+    if min_periods > 1 {
         // Set the null values at the boundaries
 
         // Head.
@@ -117,11 +131,50 @@ where
                 break;
             }
         }
-
-        Some(validity)
-    } else {
-        None
     }
+
+    // ASSUMPTION: the sum of *all* weights is not 0.
+    // This should be caught by the DSL.
+    // This only leaves an invalid possibility if a truncated window's sums are zero,
+    // so only the truncated windows have to be checked.
+    // This can only happen at boundaries (start/end).
+    if let Some(weights) = weights {
+        // `None` if the window isn't truncated, so that the scan knows where to stop.
+        let covers_only_zero_weights = |i: usize| {
+            let (start, end) = det_offsets_fn(i, window_size, len);
+            let win_len = end - start;
+            if win_len == window_size {
+                // Full-size window
+                None
+            } else {
+                let weights_start =
+                    no_nulls::det_weights_start(centered, window_size, i, start, win_len);
+                let window_weights = &weights[weights_start..weights_start + win_len];
+                Some(window_weights.iter().all(|&w| w == 0.0))
+            }
+        };
+
+        // Head.
+        for i in 0..len {
+            let Some(only_zeros) = covers_only_zero_weights(i) else {
+                break;
+            };
+            if only_zeros {
+                validity.set(i, false)
+            }
+        }
+        // Tail.
+        for i in (0..len).rev() {
+            let Some(only_zeros) = covers_only_zero_weights(i) else {
+                break;
+            };
+            if only_zeros {
+                validity.set(i, false)
+            }
+        }
+    }
+
+    Some(validity)
 }
 
 // Parameters allowed for rolling operations.
