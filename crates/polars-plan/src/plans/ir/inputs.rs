@@ -1,5 +1,6 @@
 use std::iter;
 
+use polars_buffer::Buffer;
 use polars_utils::itertools::Itertools;
 
 use super::*;
@@ -90,6 +91,7 @@ impl IR {
             },
 
             UnoptimizedDispatch { .. } => Exprs::Empty,
+            Resolver { filters, .. } => Exprs::slice(filters),
             Invalid => unreachable!(),
         }
     }
@@ -150,6 +152,13 @@ impl IR {
             },
 
             UnoptimizedDispatch { .. } => ExprsMut::Empty,
+            Resolver { filters, .. } => {
+                if filters.get_mut_slice().is_none() {
+                    *filters = Buffer::from_iter(filters.iter().cloned());
+                }
+
+                ExprsMut::slice(filters.get_mut_slice().unwrap())
+            },
             Invalid => unreachable!(),
         }
     }
@@ -196,6 +205,7 @@ impl IR {
                 ..
             } => Inputs::double(*input_left, *input_right),
             UnoptimizedDispatch { inputs, .. } => Inputs::slice(inputs),
+            Resolver { resolved_ir, .. } => Inputs::Slice(resolved_ir.as_slice().iter().copied()),
             Invalid => unreachable!(),
         }
     }
@@ -234,6 +244,7 @@ impl IR {
                 ..
             } => InputsMut::double(input_left, input_right),
             UnoptimizedDispatch { inputs, .. } => InputsMut::slice(inputs),
+            Resolver { resolved_ir, .. } => InputsMut::slice(resolved_ir.as_mut_slice()),
             Invalid => unreachable!(),
         }
     }
@@ -387,6 +398,22 @@ impl<'a> Exprs<'a> {
                 .chain(on.iter().map(pair_rhs as _)),
         )
     }
+
+    /// [`Self::pair_sides`], then `extra` if there is one.
+    pub(crate) fn pair_sides_then(on: &'a [(ExprIR, ExprIR)], extra: Option<&'a ExprIR>) -> Self {
+        if extra.is_none() {
+            return Self::pair_sides(on);
+        }
+        Self::Boxed(Box::new(
+            on.iter()
+                .map(pair_lhs as fn(&'a (ExprIR, ExprIR)) -> &'a ExprIR)
+                .chain(
+                    on.iter()
+                        .map(pair_rhs as fn(&'a (ExprIR, ExprIR)) -> &'a ExprIR),
+                )
+                .chain(extra),
+        ))
+    }
 }
 
 fn pair_lhs((lhs, _): &(ExprIR, ExprIR)) -> &ExprIR {
@@ -439,8 +466,17 @@ impl<'a> ExprsMut<'a> {
     /// Collects the borrows because two disjoint `&mut` iterators over one slice of pairs
     /// cannot be built in safe Rust.
     pub(crate) fn pair_sides(on: &'a mut [(ExprIR, ExprIR)]) -> Self {
+        Self::pair_sides_then(on, None)
+    }
+
+    /// [`Self::pair_sides`], then `extra` if there is one. Must match
+    /// [`Exprs::pair_sides_then`].
+    pub(crate) fn pair_sides_then(
+        on: &'a mut [(ExprIR, ExprIR)],
+        extra: Option<&'a mut ExprIR>,
+    ) -> Self {
         let (lhs, rhs): (Vec<_>, Vec<_>) = on.iter_mut().map(|(l, r)| (l, r)).unzip();
-        Self::Boxed(Box::new(lhs.into_iter().chain(rhs)))
+        Self::Boxed(Box::new(lhs.into_iter().chain(rhs).chain(extra)))
     }
 }
 

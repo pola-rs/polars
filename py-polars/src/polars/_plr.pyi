@@ -7,6 +7,7 @@ from numpy.typing import NDArray
 from polars._typing import ArrowSchemaExportable
 from polars.io.iceberg._sink import IcebergSinkState
 from polars.io.scan_options._options import ScanOptions
+from polars.lazyframe.resolver._resolver import LazyFrameResolver
 
 # This file mirrors all the definitions made in the polars-python Rust API.
 
@@ -67,6 +68,7 @@ IndexOrder: TypeAlias = Literal["fortran", "c"]
 QuantileMethod: TypeAlias = Literal[
     "lower", "higher", "nearest", "linear", "midpoint", "equiprobable"
 ]
+ApproxQuantileMethod: TypeAlias = Literal["auto", "kll", "req_lo", "req_hi", "req_both"]
 RankMethod: TypeAlias = Literal["min", "max", "average", "dense", "ordinal", "random"]
 Roll: TypeAlias = Literal["raise", "forward", "backward"]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
@@ -900,6 +902,8 @@ class PyLazyFrame:
     @staticmethod
     def new_from_dataset_object(dataset_object: Any) -> PyLazyFrame: ...
     @staticmethod
+    def from_lazyframe_resolver(resolver: LazyFrameResolver) -> PyLazyFrame: ...
+    @staticmethod
     def scan_from_python_function_arrow_schema(
         schema: Any,
         scan_fn: Any,
@@ -1367,6 +1371,13 @@ class PyExpr:
     ) -> PyExpr: ...
     def is_sorted(self, descending: bool | None, nulls_last: bool | None) -> PyExpr: ...
     def approx_n_unique(self) -> PyExpr: ...
+    def approx_quantile(
+        self,
+        quantile: float | Sequence[float] | PyExpr,
+        method: ApproxQuantileMethod,
+        error: float,
+        use_formal_bound: bool,
+    ) -> PyExpr: ...
     def is_first_distinct(self) -> PyExpr: ...
     def is_last_distinct(self) -> PyExpr: ...
     def explode(self, *, empty_as_null: bool, keep_nulls: bool) -> PyExpr: ...
@@ -2443,7 +2454,9 @@ def check_length(check: bool) -> None: ...
 def get_engine_affinity() -> EngineType: ...
 def config_reload_env_vars() -> None: ...
 def config_reload_env_var(var: str) -> None: ...
-def set_query_monitoring(enable: bool) -> None: ...
+def set_query_monitoring(
+    enable: bool, workspace: str | None = None, organization: str | None = None
+) -> None: ...
 
 # functions.when
 class PyWhen:

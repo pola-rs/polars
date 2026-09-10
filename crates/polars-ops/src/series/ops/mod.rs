@@ -1,5 +1,7 @@
 #[cfg(feature = "abs")]
 mod abs;
+#[cfg(feature = "approx_quantile")]
+mod approx_quantile;
 pub mod arg_min_max;
 #[cfg(feature = "cutqcut")]
 mod binning;
@@ -70,6 +72,8 @@ pub(crate) mod various;
 
 #[cfg(feature = "abs")]
 pub use abs::*;
+#[cfg(feature = "approx_quantile")]
+pub use approx_quantile::*;
 pub use arg_min_max::ArgAgg;
 #[cfg(feature = "cutqcut")]
 pub use binning::*;

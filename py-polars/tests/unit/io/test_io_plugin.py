@@ -56,7 +56,7 @@ def test_defer_validate_true() -> None:
 
 
 @pytest.mark.may_fail_cloud
-@pytest.mark.may_fail_auto_streaming  # IO plugin validate=False schema mismatch
+@pytest.mark.may_fail_lazy_schema  # reason: validate_schema=False
 def test_defer_validate_false() -> None:
     lf = pl.defer(
         lambda: pl.DataFrame({"a": np.ones(3)}),

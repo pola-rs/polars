@@ -26,15 +26,6 @@ pub struct PolarsObjectStoreError {
     pub source: object_store::Error,
 }
 
-impl PolarsObjectStoreError {
-    pub fn from_url(base_url: &PlRefPath) -> impl FnOnce(object_store::Error) -> Self {
-        |error| Self {
-            base_url: base_url.clone(),
-            source: error,
-        }
-    }
-}
-
 impl Display for PolarsObjectStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(

@@ -1,22 +1,7 @@
-use std::rc::Rc;
-
 use polars_compute::find_validity_mismatch::find_validity_mismatch;
 use polars_compute::gather::take_unchecked;
 
 use crate::prelude::*;
-use crate::series::amortized_iter::AmortSeries;
-
-/// A utility that allocates an [`AmortSeries`]. The applied function can then use that
-/// series container to save heap allocations and swap arrow arrays.
-pub fn with_unstable_series<F, T>(dtype: &DataType, f: F) -> T
-where
-    F: Fn(&mut AmortSeries) -> T,
-{
-    let container = Series::full_null(PlSmallStr::EMPTY, 0, dtype);
-    let mut us = AmortSeries::new(Rc::new(container));
-
-    f(&mut us)
-}
 
 pub fn check_is_valid_struct_cast(
     input_dtype: &DataType,
@@ -99,10 +84,10 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
     let failures = input.take_slice(&idxs[..num_failures.min(10)])?;
 
     let additional_info = match (input.dtype(), output.dtype()) {
-        (DataType::String, DataType::Date | DataType::Datetime(_, _)) => {
+        (DataType::String, DataType::Date | DataType::Datetime(_, _) | DataType::Time) => {
             "\n\nYou might want to try:\n\
             - setting `strict=False` to set values that cannot be converted to `null`\n\
-            - using `str.strptime`, `str.to_date`, or `str.to_datetime` and providing a format string"
+            - using `str.strptime`, `str.to_date`, `str.to_datetime`, or `str.to_time` and providing a format string"
         },
         #[cfg(feature = "dtype-categorical")]
         (DataType::String, DataType::Enum(_, _)) => {

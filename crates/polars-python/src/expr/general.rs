@@ -4,6 +4,8 @@ use std::ops::Neg;
 use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 #[cfg(feature = "cutqcut")]
 use polars_plan::dsl::{BinMethod, BinOptions, FractionSpec, IntervalSpec};
@@ -609,6 +611,36 @@ impl PyExpr {
     #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self) -> Self {
         self.inner.clone().approx_n_unique().into()
+    }
+
+    #[cfg(feature = "approx_quantile")]
+    fn approx_quantile(
+        &self,
+        quantile: Bound<'_, PyAny>,
+        method: Wrap<ApproxQuantileMethod>,
+        error: f64,
+        use_formal_bound: bool,
+    ) -> PyResult<Self> {
+        let quantile = if let Ok(expr) = quantile.extract::<PyExpr>() {
+            expr.inner
+        } else if let Ok(q) = quantile.extract::<f64>() {
+            lit(q)
+        } else if let Ok(qs) = quantile.extract::<Vec<f64>>() {
+            let s = Series::new(PlSmallStr::from_static("literal"), qs.as_slice())
+                .implode()
+                .map_err(PyPolarsErr::from)?
+                .into_series();
+            lit(s)
+        } else {
+            return Err(pyo3::exceptions::PyTypeError::new_err(
+                "`quantile` must be a float, a list of floats, or an expression",
+            ));
+        };
+        Ok(self
+            .inner
+            .clone()
+            .approx_quantile(quantile, error, use_formal_bound, method.0)
+            .into())
     }
 
     fn is_first_distinct(&self) -> Self {

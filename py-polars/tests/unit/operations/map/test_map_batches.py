@@ -43,7 +43,6 @@ def test_map_no_dtype_set_8531() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_error_on_reducing_map() -> None:
     df = pl.DataFrame(
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
@@ -113,6 +112,7 @@ def test_ufunc_args() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_lazy_schema  # reason: validate_output_schema=False
 def test_lazy_map_schema() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
 

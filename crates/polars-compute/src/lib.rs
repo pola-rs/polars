@@ -2,6 +2,8 @@
 
 use arrow::types::NativeType;
 
+#[cfg(feature = "approx_quantile")]
+pub mod approx_quantile;
 pub mod arithmetic;
 pub mod arity;
 pub mod binview_index_map;
