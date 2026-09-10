@@ -463,12 +463,26 @@ def test_approx_quantile_null_quantile() -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.Float64, pl.List(pl.Float64)])
-def test_approx_quantile_non_scalar_quantile(dtype: PolarsDataType) -> None:
+def test_approx_quantile_empty_quantile(dtype: PolarsDataType) -> None:
     df = pl.DataFrame(schema={"a": pl.Float64, "q": dtype})
-    with pytest.raises(
-        ComputeError, match="does not support varying approximate quantiles"
-    ):
+    with pytest.raises(ComputeError, match="got an empty input"):
         df.select(pl.col("a").approx_quantile(pl.col("q")))
+
+
+@pytest.mark.parametrize(
+    ("quantile", "expected"),
+    [
+        (pl.lit(pl.Series([0.5])), 3.0),
+        (pl.lit(pl.Series([[0.1, 0.9]])), [1.0, 5.0]),
+    ],
+)
+def test_approx_quantile_series_literal_quantile(
+    quantile: pl.Expr, expected: float | list[float]
+) -> None:
+    # A one-row Series literal is broadcast like a scalar.
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0, 5.0]})
+    out = df.select(pl.col("a").approx_quantile(quantile))
+    assert out.to_series().to_list() == [expected]
 
 
 def test_quantile_null_quantile() -> None:
