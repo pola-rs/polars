@@ -3,6 +3,38 @@ use num_traits::Zero;
 use super::*;
 
 impl<T: PolarsCategoricalType> CategoricalChunked<T> {
+    /// Returns `(to_rank, from_rank)`, ranking only the categories present in `self` so
+    /// this stays cheap even when the shared `Categories` mapping holds far more
+    /// categories than this column uses. `from_rank` is the inverse of `to_rank`.
+    fn lexical_rank_mapping(&self) -> (Vec<T::Native>, Vec<T::Native>) {
+        let mapping = self.get_mapping();
+        let upper_bound = mapping.num_cats_upper_bound();
+
+        let mut present = vec![false; upper_bound];
+        for arr in self.physical().downcast_iter() {
+            for cat in arr.non_null_values_iter() {
+                present[cat.as_cat() as usize] = true;
+            }
+        }
+
+        let mut from_rank: Vec<T::Native> = (0..upper_bound as u32)
+            .filter(|&c| present[c as usize])
+            .map(T::Native::from_cat)
+            .collect();
+        // SAFETY: every id in `from_rank` came from a category id actually present in the
+        // column, so it is guaranteed to have a string value in the mapping.
+        from_rank.sort_unstable_by_key(|cat_id| unsafe {
+            mapping.cat_to_str_unchecked(cat_id.as_cat())
+        });
+
+        let mut to_rank = vec![T::Native::zero(); upper_bound];
+        for (rank, cat_id) in from_rank.iter().enumerate() {
+            to_rank[cat_id.as_cat() as usize] = T::Native::from_cat(rank as u32);
+        }
+
+        (to_rank, from_rank)
+    }
+
     #[must_use]
     pub fn sort_with(&self, options: SortOptions) -> CategoricalChunked<T> {
         if !self.uses_lexical_ordering() {
@@ -13,46 +45,17 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
             };
         }
 
-        let mut vals = self
+        // map -> sort -> unmap (see #28774): an ordinary integer sort on the rank
+        // reproduces the lexical order without a string compare per pair.
+        let (to_rank, from_rank) = self.lexical_rank_mapping();
+        let ranks = self
             .physical()
-            .iter()
-            .zip(self.iter_str())
-            .collect_trusted::<Vec<_>>();
+            .apply(|opt_cat| opt_cat.map(|cat| to_rank[cat.as_cat() as usize]));
+        let sorted_ranks = ranks.sort_with(options);
+        let cats =
+            sorted_ranks.apply(|opt_rank| opt_rank.map(|rank| from_rank[rank.as_cat() as usize]));
 
-        sort_unstable_by_branch(vals.as_mut_slice(), options, |a, b| a.1.cmp(&b.1));
-
-        let mut cats = Vec::with_capacity(self.len());
-        let mut validity =
-            (self.null_count() > 0).then(|| BitmapBuilder::with_capacity(self.len()));
-
-        if self.null_count() > 0 && !options.nulls_last {
-            cats.resize(self.null_count(), T::Native::zero());
-            if let Some(validity) = &mut validity {
-                validity.extend_constant(self.null_count(), false);
-            }
-        }
-
-        let valid_slice = if options.descending {
-            &vals[..self.len() - self.null_count()]
-        } else {
-            &vals[self.null_count()..]
-        };
-        cats.extend(valid_slice.iter().map(|(idx, _v)| idx.unwrap()));
-        if let Some(validity) = &mut validity {
-            validity.extend_constant(self.len() - self.null_count(), true);
-        }
-
-        if self.null_count() > 0 && options.nulls_last {
-            cats.resize(self.len(), T::Native::zero());
-            if let Some(validity) = &mut validity {
-                validity.extend_constant(self.null_count(), false);
-            }
-        }
-
-        let arr = PrimitiveArray::from_vec(cats).with_validity(validity.map(|v| v.freeze()));
-        let cats = ChunkedArray::with_chunk(self.name().clone(), arr);
-
-        // SAFETY: we only reordered the indexes so we are still in bounds.
+        // SAFETY: we only reordered and relabeled within the existing set of category ids.
         unsafe {
             CategoricalChunked::<T>::from_cats_and_dtype_unchecked(cats, self.dtype().clone())
         }
@@ -73,16 +76,13 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
     /// Retrieve the indexes needed to sort this array.
     pub fn arg_sort(&self, options: SortOptions) -> IdxCa {
         if self.uses_lexical_ordering() {
-            let iters = [self.iter_str()];
-            arg_sort::arg_sort(
-                self.name().clone(),
-                iters,
-                options,
-                self.physical().null_count(),
-                self.len(),
-                IsSorted::Not,
-                false,
-            )
+            // Only the resulting index order matters here, so no need to unmap back
+            // to category ids.
+            let (to_rank, _) = self.lexical_rank_mapping();
+            let ranks = self
+                .physical()
+                .apply(|opt_cat| opt_cat.map(|cat| to_rank[cat.as_cat() as usize]));
+            ranks.arg_sort(options)
         } else {
             self.physical().arg_sort(options)
         }
@@ -99,14 +99,14 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
             args_validate(self.physical(), by, &options.nulls_last, "nulls_last")?;
             let mut count: IdxSize = 0;
 
-            // we use bytes to save a monomorphisized str impl
-            // as bytes already is used for binary and string sorting
+            let (to_rank, _) = self.lexical_rank_mapping();
             let vals: Vec<_> = self
-                .iter_str()
-                .map(|v| {
+                .physical()
+                .iter()
+                .map(|opt_cat| {
                     let i = count;
                     count += 1;
-                    (i, v.map(|v| v.as_bytes()))
+                    (i, opt_cat.map(|cat| to_rank[cat.as_cat() as usize]))
                 })
                 .collect_trusted();
 
@@ -182,6 +182,89 @@ mod test {
         let out = out.column("cat")?;
         let cat = out.as_materialized_series().cat8()?;
         assert_order(cat, &["b", "c", "a", "a"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_cat_lexical_sort_partial_mapping() -> PolarsResult<()> {
+        // The shared `Categories` mapping may hold categories this particular column never
+        // uses; the ranking must be built only from what is physically present, and must
+        // not be thrown off by the extra entries.
+        let cats = Categories::new(
+            PlSmallStr::EMPTY,
+            PlSmallStr::EMPTY,
+            CategoricalPhysical::U8,
+        );
+        let dtype = DataType::from_categories(cats);
+
+        let _superset = Series::new(PlSmallStr::EMPTY, &["z", "y", "x", "w", "v"]).cast(&dtype)?;
+
+        let s = Series::new(PlSmallStr::EMPTY, &["c", "b", "a", "d"]).cast(&dtype)?;
+        let ca = s.cat8()?;
+
+        let out = ca.sort(false);
+        assert_order(&out, &["a", "b", "c", "d"]);
+
+        let out = ca.sort(true);
+        assert_order(&out, &["d", "c", "b", "a"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_cat_lexical_sort_matches_string_sort() -> PolarsResult<()> {
+        // Categorical.sort() must reproduce the same order as sorting the plain strings,
+        // including duplicates and nulls, across every combination of descending/nulls_last.
+        let data: &[Option<&str>] = &[
+            Some("banana"),
+            Some("apple"),
+            None,
+            Some("apple"),
+            Some("cherry"),
+            None,
+            Some("banana"),
+            Some("apple"),
+        ];
+
+        let cats = Categories::new(
+            PlSmallStr::EMPTY,
+            PlSmallStr::EMPTY,
+            CategoricalPhysical::U8,
+        );
+        let str_s = Series::new(PlSmallStr::EMPTY, data);
+        let cat_s = str_s.cast(&DataType::from_categories(cats))?;
+        let cat_ca = cat_s.cat8()?;
+
+        for descending in [false, true] {
+            for nulls_last in [false, true] {
+                let opts = SortOptions {
+                    descending,
+                    nulls_last,
+                    multithreaded: true,
+                    maintain_order: false,
+                    limit: None,
+                };
+
+                let str_sorted = str_s.str()?.sort_with(opts);
+                let cat_sorted = cat_ca.sort_with(opts).cast(&DataType::String)?;
+                assert_eq!(
+                    cat_sorted.str()?.iter().collect::<Vec<_>>(),
+                    str_sorted.iter().collect::<Vec<_>>(),
+                    "sort_with mismatch (descending={descending}, nulls_last={nulls_last})",
+                );
+
+                let str_arg = str_s.str()?.arg_sort(opts);
+                let cat_arg = cat_ca.arg_sort(opts);
+                let via_str_arg = str_s.take(&str_arg)?;
+                let via_cat_arg = cat_s.take(&cat_arg)?.cast(&DataType::String)?;
+                assert_eq!(
+                    via_cat_arg.str()?.iter().collect::<Vec<_>>(),
+                    via_str_arg.str()?.iter().collect::<Vec<_>>(),
+                    "arg_sort mismatch (descending={descending}, nulls_last={nulls_last})",
+                );
+            }
+        }
 
         Ok(())
     }
