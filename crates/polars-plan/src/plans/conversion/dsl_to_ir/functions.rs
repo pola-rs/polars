@@ -764,6 +764,13 @@ pub(super) fn convert_functions(
             use RollingFunction as R;
             use aexpr::IRRollingFunction as IR;
 
+            for w in options.weights.iter().flatten() {
+                polars_ensure!(
+                    w.is_sign_positive(),
+                    InvalidOperation: "Weights for rolling windows need to be positive."
+                );
+            }
+
             I::RollingExpr {
                 function: match function {
                     R::Min => IR::Min,
