@@ -387,7 +387,16 @@ pub(crate) fn set_cache_states(
                 // materialized rows for every reference that reads and filters them.
                 let keep_cost = if remove_caches && removal_cost.is_some() {
                     let child = *v.children.first().unwrap();
-                    subplan_cost(child, lp_arena, expr_arena)
+                    // Pushdown does not descend into caches, so the child below one may
+                    // still hold cross joins, which cost as cross products. Cost an
+                    // optimized copy, as the removal copies are costed.
+                    //
+                    // The narrowing that keeping the caches applies is not priced here.
+                    let probe = deep_copy_ir_delete_cache_id(child, cache_id, lp_arena, expr_arena);
+                    let lp = lp_arena.take(probe);
+                    let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
+                    lp_arena.replace(probe, lp);
+                    subplan_cost(probe, lp_arena, expr_arena)
                         .map(|c| c.work + v.cache_nodes.len() as f64 * c.rows)
                 } else {
                     None
