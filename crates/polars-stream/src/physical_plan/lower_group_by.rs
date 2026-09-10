@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{
-    Field, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions,
-};
+use polars_core::prelude::{Field, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_err};
