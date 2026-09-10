@@ -239,6 +239,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.get_flags().can_fast_explode_list()
     }
 
+    #[inline]
     pub fn get_flags(&self) -> StatisticsFlags {
         self.flags.get()
     }
@@ -511,6 +512,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Name of the [`ChunkedArray`].
+    #[inline]
     pub fn name(&self) -> &PlSmallStr {
         self.field.name()
     }

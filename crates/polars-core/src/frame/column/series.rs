@@ -46,6 +46,7 @@ impl SeriesColumn {
         None
     }
 
+    #[inline]
     pub fn take(self) -> Series {
         self.inner
     }

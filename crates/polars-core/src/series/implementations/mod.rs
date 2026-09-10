@@ -59,6 +59,7 @@ impl<T: PolarsDataType> Deref for SeriesWrap<ChunkedArray<T>> {
 }
 
 unsafe impl<T: PolarsPhysicalType> IntoSeries for ChunkedArray<T> {
+    #[inline]
     fn into_series(self) -> Series {
         T::ca_into_series(self)
     }
@@ -75,6 +76,7 @@ macro_rules! impl_dyn_series {
                 Cow::Borrowed(self.0.ref_field())
             }
 
+            #[inline]
             fn _dtype(&self) -> &DataType {
                 self.0.ref_field().dtype()
             }

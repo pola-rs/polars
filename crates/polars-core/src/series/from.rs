@@ -1113,6 +1113,7 @@ unsafe impl IntoSeries for Series {
         true
     }
 
+    #[inline]
     fn into_series(self) -> Series {
         self
     }

@@ -56,10 +56,12 @@ impl<V> BytesIndexMap<V> {
         self.tuples.reserve(additional);
     }
 
+    #[inline]
     pub fn len(&self) -> IdxSize {
         self.tuples.len() as IdxSize
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.tuples.is_empty()
     }

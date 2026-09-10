@@ -8,6 +8,7 @@ use crate::parquet::page::{
     CompressedDataPage, CompressedPage, DataPage, DataPageHeader, DictPage, Page,
 };
 
+#[inline]
 fn decompress_v1(
     compressed: &[u8],
     compression: Compression,
@@ -221,6 +222,7 @@ pub struct DataPageItem {
 }
 
 impl DataPageItem {
+    #[inline]
     pub fn num_values(&self) -> usize {
         self.page.num_values()
     }
