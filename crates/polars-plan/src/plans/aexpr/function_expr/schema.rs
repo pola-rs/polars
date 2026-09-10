@@ -233,12 +233,11 @@ impl IRFunctionExpr {
             ApproxQuantileSketch { .. } => mapper.with_dtype(DataType::Binary),
             #[cfg(feature = "approx_quantile")]
             ApproxQuantileEstimate { values_dtype } => {
-                let dtype = if mapper.args()[1].dtype().is_list() {
-                    DataType::List(Box::new(values_dtype.clone()))
-                } else {
-                    values_dtype.clone()
-                };
-                mapper.with_dtype(dtype)
+                let quantiles_are_list = mapper.args()[1].dtype().is_list();
+                mapper.map_dtype(|dtype| match quantiles_are_list {
+                    true => DataType::List(Box::new(dtype.clone())),
+                    false => values_dtype.clone(),
+                })
             },
             #[cfg(feature = "hist")]
             Hist {

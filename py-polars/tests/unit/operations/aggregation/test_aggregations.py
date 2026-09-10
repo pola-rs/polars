@@ -525,6 +525,7 @@ def test_approx_quantile_is_monotone(method: ApproxQuantileMethod) -> None:
     assert list(results) == sorted(results)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("method", APPROX_QUANTILE_METHODS)
 def test_approx_quantile_is_monotone_around_median(
     method: ApproxQuantileMethod,
@@ -554,6 +555,7 @@ def test_approx_quantile_smallest_error(method: ApproxQuantileMethod) -> None:
     assert got.to_list() == [0.0, 50.0, 99.0]
 
 
+@pytest.mark.slow
 def test_approx_quantile_protected_tail_is_exact() -> None:
     # This is what picking a method buys: `req_lo` keeps the low ranks exact and
     # `req_hi` the high ranks, where `kll` spreads its error evenly instead.
@@ -583,6 +585,7 @@ def _rank(quantile: float, n: int) -> int:
     return math.floor(quantile * (n - 1) + 0.5)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("method", APPROX_QUANTILE_METHODS)
 def test_approx_quantile_group_by_is_exact(method: ApproxQuantileMethod) -> None:
     # Enough rows and groups to spill a streaming hot table, so this covers the
