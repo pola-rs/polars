@@ -879,6 +879,7 @@ def test_map_null_row_export_compaction_validity_runs(
     )
     # Slice before import to exercise nonzero bitmap and list offsets.
     result = pl.from_arrow(arr.slice(skip, n))
+    assert isinstance(result, pl.Series)
     expected = [
         {keys[j]: values[j] for j in range(offsets[i], offsets[i + 1])}
         if valid[i]
@@ -1490,7 +1491,9 @@ def test_map_strict_cast_ignores_values_hidden_by_a_null_row() -> None:
     # The same payload as a `List(Struct)`, where propagation nulls the hidden entry.
     entries = pa.StructArray.from_arrays([keys, values], names=["key", "value"])
     lst = pa.ListArray.from_arrays(pa.array([0, 1, 2], pa.int32()), entries, mask=mask)
-    assert pl.from_arrow(lst).cast(MAP).to_list() == [None, {"b": 7}]  # type: ignore[union-attr]
+    from_list = pl.from_arrow(lst)
+    assert isinstance(from_list, pl.Series)
+    assert from_list.cast(MAP).to_list() == [None, {"b": 7}]
 
 
 def test_map_sliced_export_rebases_offsets() -> None:
@@ -1669,6 +1672,7 @@ def test_map_propagation_keeps_repaired_entry_children(
         value_dtype = pl.List(ENTRIES)
 
     s = pl.from_arrow(pa.MapArray.from_arrays([0, 2], ["x", "y"], values))
+    assert isinstance(s, pl.Series)
     target = (
         pl.List(pl.Struct({"key": pl.String, "value": value_dtype}))
         if cast_to_entries
