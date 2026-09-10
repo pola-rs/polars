@@ -192,3 +192,49 @@ def test_distinct_of_a_repeated_element(value: Any, dtype: PolarsDataType) -> No
             pl.col("a").is_duplicated(),
         ):
             assert_frame_equal(repeated.select(expr), flat.select(expr))
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        ([1, 2, 3], pl.List(pl.Int64)),
+        ([], pl.List(pl.Int64)),
+        ([None, None], pl.List(pl.Int64)),
+        (["a", None], pl.List(pl.String)),
+        ([1, 2], pl.Array(pl.Int64, 2)),
+        ([None, None], pl.Array(pl.Int64, 2)),
+        (["a", "b"], pl.Array(pl.String, 2)),
+        ({"x": 1, "y": "a"}, pl.Struct({"x": pl.Int64, "y": pl.String})),
+        ({"x": None, "y": None}, pl.Struct({"x": pl.Int64, "y": pl.String})),
+        (None, pl.List(pl.Int64)),
+        (None, pl.Struct({"x": pl.Int64})),
+    ],
+)
+def test_distinct_of_a_repeated_nested_element(
+    value: Any, dtype: PolarsDataType
+) -> None:
+    # The nested arms of the `distinct` family group on the rows to find their answer,
+    # which for a nested type row-encodes the whole column first. A chunk that repeats a
+    # single element is answered off the representation instead, and has to answer the
+    # same thing as a chunk holding every element in a slot of its own.
+    for length in (1, 2, 5):
+        flat = pl.Series("a", [value] * length, dtype=dtype).to_frame()
+        one = pl.Series("a", [value], dtype=dtype)
+        repeated = (
+            pl.DataFrame({"i": range(length)})
+            .with_columns(pl.lit(one).first().alias("a"))
+            .drop("i")
+        )
+
+        for expr in (
+            pl.col("a").is_unique(),
+            pl.col("a").is_duplicated(),
+        ):
+            assert_frame_equal(repeated.select(expr), flat.select(expr))
+
+        if not isinstance(dtype, pl.Array):
+            for expr in (
+                pl.col("a").is_first_distinct(),
+                pl.col("a").is_last_distinct(),
+            ):
+                assert_frame_equal(repeated.select(expr), flat.select(expr))

@@ -7,7 +7,7 @@ use polars_core::series::BitRepr;
 use polars_core::with_match_physical_float_polars_type;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
-use super::distinct::{only, repeated_element_len};
+use super::distinct::{only, repeated_element_len, repeated_element_len_series};
 
 fn is_first_distinct_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
 where
@@ -105,6 +105,13 @@ fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
 }
 
 fn is_first_distinct_by_groups(s: &Series) -> PolarsResult<BooleanChunked> {
+    // The first element of a chunk that repeats a single one is the only one distinct in it, and
+    // the representation says so: grouping the rows to find that out reads — and hashes — every
+    // one of them, which for a nested type is a row encoding of the whole column first.
+    if let Some(length) = repeated_element_len_series(s) {
+        return Ok(only(s.name().clone(), length, 0));
+    }
+
     let groups = s.group_tuples(true, false)?;
     let first = groups.take_group_firsts();
     let mut out = MutableBitmap::with_capacity(s.len());

@@ -6,7 +6,7 @@ use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
-use super::distinct::repeated_element_len;
+use super::distinct::{repeated_element_len, repeated_element_len_series};
 
 // If invert is true then this is an `is_duplicated`.
 fn is_unique_ca<'a, T>(ca: &'a ChunkedArray<T>, invert: bool) -> BooleanChunked
@@ -47,6 +47,13 @@ where
 }
 
 fn is_unique_nested(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
+    // Every element of a chunk that repeats a single one occurs as often as the chunk is long, so
+    // none of them occurs just once — and the encoding below, which writes out a row per element
+    // before a single one is hashed, is never reached.
+    if let Some(length) = repeated_element_len_series(s) {
+        return Ok(BooleanChunked::full(s.name().clone(), invert, length));
+    }
+
     let encoded = encode_rows_unordered(&[s.clone().into_column()])?.into_series();
     let ca = encoded.binary_offset().unwrap();
     Ok(is_unique_ca(ca, invert).with_name(s.name().clone()))
@@ -88,6 +95,13 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
         #[cfg(feature = "dtype-struct")]
         Struct(_) => {
             let ca = s.struct_().unwrap().clone();
+
+            // As in `is_unique_nested`: every row of a chunk that repeats a single one occurs as
+            // often as the chunk is long, so the pass over the unnested frame is never made.
+            if let Some(length) = repeated_element_len(&ca) {
+                return Ok(BooleanChunked::full(s.name().clone(), invert, length));
+            }
+
             let df = ca.unnest();
             return if invert {
                 df.is_duplicated()

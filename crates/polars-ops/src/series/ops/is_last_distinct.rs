@@ -8,7 +8,7 @@ use polars_core::utils::NoNull;
 use polars_core::with_match_physical_float_polars_type;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
-use super::distinct::{only, repeated_element_len};
+use super::distinct::{only, repeated_element_len, repeated_element_len_series};
 
 pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
     // fast path.
@@ -161,6 +161,12 @@ where
 }
 
 fn is_last_distinct_by_groups(s: &Series) -> PolarsResult<BooleanChunked> {
+    // As in `is_first_distinct_by_groups`: the last element of a chunk that repeats a single one
+    // is the only one distinct in it, without a row of it being encoded or hashed.
+    if let Some(length) = repeated_element_len_series(s) {
+        return Ok(only(s.name().clone(), length, length - 1));
+    }
+
     let groups = s.group_tuples(true, false)?;
     // SAFETY: all groups have at least a single member
     let last = unsafe { groups.take_group_lasts() };
