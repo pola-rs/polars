@@ -169,12 +169,17 @@ fn uniform_interval_breaks(
         let Some((min, max)) = f.f64()?.min_max() else {
             return Ok(None);
         };
-        let breaks: Vec<f64> = (1..=n_breaks)
-            .map(|i| {
-                let t = i as f64 / n_bins as f64;
-                min * (1.0 - t) + max * t
-            })
-            .collect();
+        let breaks: Vec<f64> = if min == max {
+            // Special case so that we match the integer path -- we would round otherwise
+            vec![min; n_breaks]
+        } else {
+            (1..=n_breaks)
+                .map(|i| {
+                    let t = i as f64 / n_bins as f64;
+                    min * (1.0 - t) + max * t
+                })
+                .collect()
+        };
         return Float64Chunked::from_vec(s.name().clone(), breaks)
             .into_series()
             .cast(dtype)

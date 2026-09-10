@@ -5006,7 +5006,7 @@ class Expr(metaclass=_Meta):
         intervals
             Strictly ascending breakpoints, or a positive integer giving the number of
             equal-width bins over `[min, max]`. Explicit breakpoints may have any
-            orderable data type; an integer requires numeric input.
+            orderable (non-nested) data type; an integer requires numeric input.
         labels
             One label per bin, or `False` to return the integer bin index.
         include_intervals
@@ -5025,8 +5025,19 @@ class Expr(metaclass=_Meta):
         Notes
         -----
         Explicit breakpoints make this elementwise. An integer derives breakpoints from
-        the data, so bins are computed per group in group and window contexts. Reported
-        boundaries use the data type in which values were compared.
+        the data, so bins are computed per group in group and window contexts.
+
+        For input that is not floating point, a breakpoint derived from an integer is
+        rounded to a value the input's data type can hold: up for left-closed bins, down
+        for right-closed ones, so that membership still matches
+        `min + (i + 1) / n * (max - min)` exactly. Reported boundaries are those
+        rounded values -- `[0, 3]` into two bins reports `2`, or `1` under
+        `right_closed`, rather than `1.5` -- while membership is `{0, 1}` and
+        `{2, 3}` either way.
+
+        For floating-point input, equal-width breakpoints are computed in `Float64`
+        and then cast to the input data type. Bins use these rounded breakpoints, so
+        membership near a boundary can differ between floating-point data types.
 
         See Also
         --------
@@ -5091,9 +5102,10 @@ class Expr(metaclass=_Meta):
         Parameters
         ----------
         quantiles
-            Strictly ascending quantiles in `[0, 1]`, or a positive integer giving the
-            number of bins. Input must be numeric. For quantile `q`, the value of the
-            breakpoint is the sorted value at `floor(q * (len - 1))`.
+            Non-decreasing quantiles in `[0, 1]`, or a positive integer giving the
+            number of bins. Two equal quantiles delimit an empty bin. Input must be
+            numeric. For quantile `q`, the value of the breakpoint is the sorted value
+            at `floor(q * (len - 1))`.
         labels
             One label per bin, or `False` to return the integer bin index.
         include_intervals
@@ -5165,6 +5177,9 @@ class Expr(metaclass=_Meta):
         """
         Bin values by their position in sorted order.
 
+        Input must have an orderable data type; nested types (List, Array, and Struct)
+        are not supported.
+
         .. engine-support:: in-memory, streaming
 
         .. warning::
@@ -5174,9 +5189,9 @@ class Expr(metaclass=_Meta):
         Parameters
         ----------
         ranks
-            Strictly ascending cumulative fractions in `[0, 1]`, or a positive integer
-            giving the number of near-equal-sized bins. For an integer, earlier bins
-            receive any remainder.
+            Non-decreasing cumulative fractions in `[0, 1]`, or a positive integer
+            giving the number of near-equal-sized bins. Two equal fractions delimit an
+            empty bin. For an integer, earlier bins receive any remainder.
         labels
             One label per bin, or `False` to return the integer bin index.
         include_intervals

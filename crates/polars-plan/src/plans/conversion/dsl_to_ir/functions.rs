@@ -8,7 +8,7 @@ use super::expr_to_ir::ExprToIRContext;
 use super::*;
 use crate::constants::get_literal_name;
 #[cfg(feature = "cutqcut")]
-use crate::dsl::{BinMethod, IntervalSpec};
+use crate::dsl::{BinMethod, BinOptions, DslIntervalSpec};
 use crate::dsl::{Expr, FunctionExpr};
 use crate::plans::conversion::dsl_to_ir::expr_to_ir::to_expr_irs;
 use crate::plans::{AExpr, IRFunctionExpr};
@@ -1041,7 +1041,7 @@ pub(super) fn convert_functions(
             include_breaks,
         },
         #[cfg(feature = "cutqcut")]
-        F::Bin(mut options) => {
+        F::Bin(options) => {
             let input_dtype = e[0].dtype(ctx.schema, ctx.arena)?.clone();
             let name = options.method.name();
 
@@ -1056,35 +1056,59 @@ pub(super) fn convert_functions(
                     InvalidOperation: "`{}` requires an orderable input, got `{}`", name, input_dtype
                 );
             }
-            if let BinMethod::Intervals { spec, .. } = &mut options.method
-                && let IntervalSpec::Breaks(input_breaks) = spec
-            {
-                let breaks = if input_dtype.is_numeric() && input_breaks.dtype().is_numeric() {
-                    let opts = (SuperTypeFlags::default()
-                        & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING)
-                        .into();
-                    let supertype =
-                        try_get_supertype_with_options(&input_dtype, input_breaks.dtype(), opts)?;
 
-                    if input_dtype != supertype {
-                        let node = ctx.arena.add(AExpr::Cast {
-                            expr: e[0].node(),
-                            dtype: supertype.clone(),
-                            options: CastOptions::Strict,
-                        });
-                        e[0] = ExprIR::new(node, e[0].output_name_inner().clone());
-                    }
+            let BinOptions {
+                method,
+                labels,
+                include_intervals,
+            } = options;
+            let method = match method {
+                BinMethod::Intervals { spec, right_closed } => IRBinMethod::Intervals {
+                    spec: match spec {
+                        DslIntervalSpec::Count(n_bins) => IntervalSpec::Count(n_bins),
+                        DslIntervalSpec::Breaks(input_breaks) => {
+                            let breaks =
+                                if input_dtype.is_numeric() && input_breaks.dtype().is_numeric() {
+                                    let opts = (SuperTypeFlags::default()
+                                        & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING)
+                                        .into();
+                                    let supertype = try_get_supertype_with_options(
+                                        &input_dtype,
+                                        input_breaks.dtype(),
+                                        opts,
+                                    )?;
 
-                    input_breaks.cast(&supertype)?
-                } else {
-                    // Take care to not convert Enum to String.
-                    input_breaks.strict_cast(&input_dtype)?
-                };
+                                    if input_dtype != supertype {
+                                        let node = ctx.arena.add(AExpr::Cast {
+                                            expr: e[0].node(),
+                                            dtype: supertype.clone(),
+                                            options: CastOptions::Strict,
+                                        });
+                                        e[0] = ExprIR::new(node, e[0].output_name_inner().clone());
+                                    }
 
-                *spec = IntervalSpec::from_breaks(breaks).context(name)?;
-            }
+                                    input_breaks.cast(&supertype)?
+                                } else {
+                                    // Take care to not convert Enum to String.
+                                    input_breaks.strict_cast(&input_dtype)?
+                                };
 
-            I::Bin(options)
+                            IntervalSpec::from_breaks(breaks).context(name)?
+                        },
+                    },
+                    right_closed,
+                },
+                BinMethod::Quantiles { spec, right_closed } => {
+                    IRBinMethod::Quantiles { spec, right_closed }
+                },
+                BinMethod::Ranks { spec } => IRBinMethod::Ranks { spec },
+            };
+
+            I::Bin(IRBinOptions {
+                method,
+                labels,
+                include_intervals,
+            })
         },
         #[cfg(feature = "rle")]
         F::RLE => I::RLE,

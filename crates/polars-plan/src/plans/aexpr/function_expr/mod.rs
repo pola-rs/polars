@@ -1,6 +1,8 @@
 #[cfg(feature = "dtype-array")]
 mod array;
 mod binary;
+#[cfg(feature = "cutqcut")]
+mod binning;
 #[cfg(feature = "bitwise")]
 mod bitwise;
 mod boolean;
@@ -62,6 +64,8 @@ pub use random::IRRandomMethod;
 use schema::FieldsMapper;
 
 pub use self::binary::IRBinaryFunction;
+#[cfg(feature = "cutqcut")]
+pub use self::binning::{FractionSpec, IRBinMethod, IRBinOptions, IntervalSpec};
 #[cfg(feature = "bitwise")]
 pub use self::bitwise::IRBitwiseFunction;
 pub use self::boolean::IRBooleanFunction;
@@ -92,8 +96,6 @@ pub use self::struct_::IRStructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::IRTrigonometricFunction;
 use super::*;
-#[cfg(feature = "cutqcut")]
-pub use crate::dsl::{BinMethod, BinOptions, FractionSpec, IntervalSpec};
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
@@ -319,7 +321,7 @@ pub enum IRFunctionExpr {
         include_breaks: bool,
     },
     #[cfg(feature = "cutqcut")]
-    Bin(BinOptions),
+    Bin(IRBinOptions),
     #[cfg(feature = "rle")]
     RLE,
     #[cfg(feature = "rle")]
@@ -1252,9 +1254,9 @@ impl IRFunctionExpr {
             F::QCut { .. } => FunctionOptions::length_preserving()
                 .with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY),
             #[cfg(feature = "cutqcut")]
-            F::Bin(BinOptions {
+            F::Bin(IRBinOptions {
                 method:
-                    BinMethod::Intervals {
+                    IRBinMethod::Intervals {
                         spec: IntervalSpec::Breaks(_),
                         ..
                     },
@@ -1263,20 +1265,20 @@ impl IRFunctionExpr {
                 FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY)
             },
             #[cfg(feature = "cutqcut")]
-            F::Bin(BinOptions {
+            F::Bin(IRBinOptions {
                 method:
-                    BinMethod::Intervals {
+                    IRBinMethod::Intervals {
                         spec: IntervalSpec::Count(_),
                         ..
                     }
-                    | BinMethod::Quantiles { .. },
+                    | IRBinMethod::Quantiles { .. },
                 ..
             }) => FunctionOptions::length_preserving().with_flags(|f| {
                 f | FunctionFlags::PASS_NAME_TO_APPLY | FunctionFlags::NON_ORDER_OBSERVING
             }),
             #[cfg(feature = "cutqcut")]
-            F::Bin(BinOptions {
-                method: BinMethod::Ranks { .. },
+            F::Bin(IRBinOptions {
+                method: IRBinMethod::Ranks { .. },
                 ..
             }) => FunctionOptions::length_preserving()
                 .with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY),

@@ -8,7 +8,7 @@ use polars::series::ops::NullBehavior;
 use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 #[cfg(feature = "cutqcut")]
-use polars_plan::dsl::{BinMethod, BinOptions, FractionSpec, IntervalSpec};
+use polars_plan::dsl::{BinMethod, BinOptions, DslIntervalSpec, FractionSpec};
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
 use polars_plan::plans::{
     AExprSorted, ExprToIRContext, RowEncodingVariant, node_to_expr, to_expr_ir,
@@ -256,22 +256,20 @@ impl PyExpr {
         labels: Option<Vec<PyBackedStr>>,
         include_intervals: bool,
         right_closed: bool,
-    ) -> PyResult<Self> {
+    ) -> Self {
         let breaks = intervals.series.into_inner();
-        Ok(self
-            .inner
+
+        self.inner
             .clone()
             .bin(BinOptions {
                 method: BinMethod::Intervals {
-                    spec: IntervalSpec::from_breaks(breaks)
-                        .context("bin_intervals")
-                        .map_err(PyPolarsErr::from)?,
+                    spec: DslIntervalSpec::from_breaks(breaks),
                     right_closed,
                 },
                 labels: labels.map(strings_to_pl_smallstr),
                 include_intervals,
             })
-            .into())
+            .into()
     }
 
     #[cfg(feature = "cutqcut")]
@@ -288,7 +286,7 @@ impl PyExpr {
             .clone()
             .bin(BinOptions {
                 method: BinMethod::Intervals {
-                    spec: IntervalSpec::from_count(n_bins)
+                    spec: DslIntervalSpec::from_count(n_bins)
                         .context("bin_intervals")
                         .map_err(PyPolarsErr::from)?,
                     right_closed,

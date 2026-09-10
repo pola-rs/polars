@@ -263,9 +263,23 @@ def test_numeric_only_ops_reject_non_numeric(op: BinOp, dtype: PolarsDataType) -
 
 
 @pytest.mark.parametrize("op", BIN_OPS)
-@pytest.mark.parametrize("value", [{"x": 1}, [1, 2]], ids=["struct", "list"])
-def test_all_ops_reject_unorderable_input(op: BinOp, value: Any) -> None:
-    lf = pl.LazyFrame({"a": [value, value]})
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        ({"x": 1}, None),
+        ([1, 2], None),
+        ([1, 2], pl.Array(pl.Int64, 2)),
+    ],
+    ids=["struct", "list", "array"],
+)
+def test_all_ops_reject_nested_input(
+    op: BinOp, value: Any, dtype: PolarsDataType | None
+) -> None:
+    # Nested types do sort, so rejecting them is a decision rather than a limitation:
+    # the boundaries a struct or list bin would report are more confusing than useful.
+    # Open this up if it is actually asked for.
+    schema = {"a": dtype} if dtype is not None else None
+    lf = pl.LazyFrame({"a": [value, value]}, schema=schema)
 
     with pytest.raises(
         InvalidOperationError, match=r"requires a(n orderable| numeric) input"

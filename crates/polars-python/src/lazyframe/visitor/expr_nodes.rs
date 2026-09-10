@@ -13,7 +13,7 @@ use polars_ops::series::SearchSortedSide;
 use polars_ops::series::{ClosedInterval, InterpolationMethod};
 use polars_plan::dsl::DateRangeArgs;
 #[cfg(feature = "cutqcut")]
-use polars_plan::dsl::{BinMethod, FractionSpec, IntervalSpec};
+use polars_plan::plans::{FractionSpec, IRBinMethod, IntervalSpec};
 use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
     IRBooleanFunction, IRCorrelationMethod, IRFunctionExpr, IRListFunction, IRPowFunction,
@@ -2010,7 +2010,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         .map(|l| l.iter().map(|s| s.as_str()).collect::<Vec<_>>());
                     let include_intervals = options.include_intervals;
                     match &options.method {
-                        BinMethod::Intervals { spec, right_closed } => match spec {
+                        IRBinMethod::Intervals { spec, right_closed } => match spec {
                             IntervalSpec::Breaks(breaks) => (
                                 "bin_intervals",
                                 PySeries::new((**breaks).clone()),
@@ -2028,7 +2028,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                             )
                                 .into_py_any(py),
                         },
-                        BinMethod::Quantiles { spec, right_closed } => match spec {
+                        IRBinMethod::Quantiles { spec, right_closed } => match spec {
                             FractionSpec::Explicit(probs) => (
                                 "bin_quantiles",
                                 probs.to_vec(),
@@ -2046,7 +2046,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                             )
                                 .into_py_any(py),
                         },
-                        BinMethod::Ranks { spec } => match spec {
+                        IRBinMethod::Ranks { spec } => match spec {
                             FractionSpec::Explicit(fractions) => {
                                 ("bin_ranks", fractions.to_vec(), labels, include_intervals)
                                     .into_py_any(py)

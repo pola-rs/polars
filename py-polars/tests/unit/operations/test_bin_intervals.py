@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from fractions import Fraction
 from typing import Any
 
 import pytest
@@ -139,6 +140,36 @@ def test_bin_intervals_enum_string_breakpoint_is_cast() -> None:
     assert s.bin_intervals(["apple"], labels=False).to_list() == [1, 0]
 
 
+def test_bin_intervals_enum_list_breakpoints_use_declaration_order() -> None:
+    dtype = pl.Enum(["zebra", "apple", "mango"])
+    s = pl.Series("a", ["mango", "zebra", "apple"], dtype=dtype)
+
+    # A plain list arrives as a String Series, in which these breakpoints decrease.
+    # Ordering is a property of the dtype the breakpoints end up in, so it can only be
+    # checked after the cast to the Enum, where zebra < apple.
+    result = s.bin_intervals(["zebra", "apple"], labels=False)
+
+    assert result.to_list() == [2, 1, 2]
+
+
+def test_bin_intervals_enum_decreasing_list_breakpoints_raise() -> None:
+    dtype = pl.Enum(["zebra", "apple", "mango"])
+    s = pl.Series("a", ["mango", "zebra", "apple"], dtype=dtype)
+
+    # Ascending lexically, but apple > zebra in declaration order.
+    with pytest.raises(ComputeError, match="non-decreasing"):
+        s.bin_intervals(["apple", "zebra"], labels=False)
+
+
+def test_bin_intervals_categorical_decreasing_list_breakpoints_raise() -> None:
+    s = pl.Series("a", ["mango", "zebra", "apple"], dtype=pl.Categorical)
+
+    # The very list that is ordered for the Enum above is not for a Categorical, which
+    # sorts lexically. Validation after the cast still rejects it.
+    with pytest.raises(ComputeError, match="non-decreasing"):
+        s.bin_intervals(["zebra", "apple"], labels=False)
+
+
 def test_bin_intervals_enum_unknown_breakpoint_raises() -> None:
     dtype = pl.Enum(["zebra", "apple", "mango"])
     s = pl.Series("a", ["mango", "zebra"], dtype=dtype)
@@ -275,12 +306,62 @@ def test_bin_intervals_uniform_spans_the_full_width(
     assert result.to_list() == [0, 1, 2]
 
 
-def test_bin_intervals_uniform_with_no_span() -> None:
-    s = pl.Series("a", [7, 7, 7])
+@pytest.mark.parametrize(
+    "dtype", [pl.Int64, pl.Float32, pl.Float64, pl.Decimal(None, 2)]
+)
+@pytest.mark.parametrize("right_closed", [False, True])
+def test_bin_intervals_uniform_with_no_span(
+    dtype: pl.DataType, right_closed: bool
+) -> None:
+    # -7 over five bins, not 7 over four: with a power-of-two `t` the interpolation is
+    # exact even over a zero-width span, so it would pass without the guard. Here
+    # `-7 * (1 - 0.2) + -7 * 0.2` is -7.000000000000001, which drops the column out of
+    # the first bin when right-closed.
+    s = pl.Series("a", [-7, -7, -7]).cast(dtype)
 
-    result = s.bin_intervals(4, labels=False, include_intervals=True)
+    result = s.bin_intervals(
+        5, labels=False, include_intervals=True, right_closed=right_closed
+    )
 
-    # Every threshold lands on `min`, so the whole column falls into the last bin.
-    assert result.struct["bin"].to_list() == [3, 3, 3]
-    assert result.struct["left"].to_list() == [7, 7, 7]
-    assert result.struct["right"].to_list() == [None, None, None]
+    # Every threshold lands on `min`, whatever the dtype. So -7 sits at or above every
+    # bin start and takes the last bin when left-closed, and at or below every bin end
+    # and takes the first when right-closed.
+    seven = s[0]
+    assert result.struct["bin"].to_list() == [0 if right_closed else 4] * 3
+    assert result.struct["left"].to_list() == [None if right_closed else seven] * 3
+    assert result.struct["right"].to_list() == [seven if right_closed else None] * 3
+
+
+@pytest.mark.parametrize(
+    ("dtype", "lo", "hi"),
+    [
+        (pl.Int8, -50, 50),
+        (pl.Int64, -50, 50),
+        (pl.UInt8, 0, 100),
+        (pl.Int64, 0, 7),
+    ],
+)
+@pytest.mark.parametrize("n_bins", [1, 2, 3, 7, 10])
+@pytest.mark.parametrize("right_closed", [False, True])
+def test_bin_intervals_uniform_integer_membership_is_exact(
+    dtype: pl.DataType, lo: int, hi: int, n_bins: int, right_closed: bool
+) -> None:
+    values = list(range(lo, hi + 1))
+    s = pl.Series("a", values, dtype=dtype)
+
+    result = s.bin_intervals(n_bins, labels=False, right_closed=right_closed).to_list()
+
+    # Integer thresholds round the exact breakpoints, but only as far as membership
+    # allows, so bins must still agree with the rationals the formula asks for.
+    breaks = [lo + Fraction(i, n_bins) * (hi - lo) for i in range(1, n_bins)]
+    if right_closed:
+        expected = [
+            next((i for i, b in enumerate(breaks) if v <= b), n_bins - 1)
+            for v in values
+        ]
+    else:
+        expected = [
+            max((i + 1 for i, b in enumerate(breaks) if v >= b), default=0)
+            for v in values
+        ]
+    assert result == expected

@@ -13,7 +13,6 @@ use crate::utils::Wrap;
 ///
 /// Always free of nulls and non-decreasing.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Debug)]
 pub struct Breaks(Series);
 
@@ -32,6 +31,10 @@ impl Breaks {
             );
         }
         Ok(Self(breaks))
+    }
+
+    pub fn into_series(self) -> Series {
+        self.0
     }
 }
 
@@ -59,9 +62,8 @@ impl Fractions {
     }
 }
 
-/// How interval binning delimits its bins.
+/// How interval binning delimits its bins, with its breakpoints resolved.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Debug, Hash)]
 pub enum IntervalSpec {
     /// Explicit breakpoints.
