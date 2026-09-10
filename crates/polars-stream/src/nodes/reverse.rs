@@ -52,26 +52,15 @@ impl ComputeNode for ReverseNode {
             self.state = ReverseState::Done;
         }
 
-        // TODO: There must be a more elegant way to merge the matches! and match
-
-        if matches!(
-            (recv[0], &self.state),
-            (PortState::Done, ReverseState::Buffering(_))
-        ) {
-            // Just received the last morsels.
-            // Transition to becoming a source if there is anything to feed.
-            let ReverseState::Buffering(buffer) =
-                core::mem::replace(&mut self.state, ReverseState::Done)
-            else {
-                unreachable!()
-            };
-            if buffer.total_len > 0 {
+        if recv[0] == PortState::Done {
+            if let ReverseState::Buffering(buffer) = &mut self.state {
+                // Stop buffering and become a source.
+                // If it is empty it is handled further down.
                 self.state = ReverseState::Emitting {
-                    buffer,
+                    buffer: core::mem::take(buffer),
                     seq: MorselSeq::default(),
-                }
+                };
             }
-            // setting self to 'done' is done later.
         }
 
         match &mut self.state {
