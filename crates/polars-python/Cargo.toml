@@ -34,6 +34,8 @@ polars-utils = { workspace = true, features = ["python"] }
 
 arboard = { workspace = true, optional = true }
 arrow = { workspace = true }
+arrow-array = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
 bincode = { workspace = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }
@@ -42,7 +44,11 @@ chrono-tz = { workspace = true }
 color-backtrace = { workspace = true, optional = true }
 either = { workspace = true }
 flate2 = { workspace = true }
+futures = { workspace = true, optional = true }
 hashbrown = { workspace = true }
+iceberg = { workspace = true, optional = true }
+iceberg-kms-aws = { workspace = true, optional = true }
+iceberg-storage-opendal = { workspace = true, features = ["opendal-azdls", "opendal-gcs", "opendal-s3"], optional = true }
 itoa = { workspace = true }
 libc = { workspace = true }
 ndarray = { workspace = true }
@@ -56,6 +62,7 @@ rmp-serde = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true, optional = true }
 slotmap = { workspace = true }
+tokio = { workspace = true, features = ["sync"], optional = true }
 uuid = { workspace = true }
 
 [dependencies.polars]
@@ -147,6 +154,15 @@ catalog = ["polars-lazy/catalog"]
 parquet = ["polars/parquet", "polars-parquet", "polars-mem-engine/parquet"]
 ipc = ["polars/ipc", "polars-mem-engine/ipc"]
 ipc_streaming = ["polars/ipc_streaming"]
+iceberg = [
+  "dep:arrow-array",
+  "dep:async-trait",
+  "dep:futures",
+  "dep:iceberg",
+  "dep:iceberg-kms-aws",
+  "dep:iceberg-storage-opendal",
+  "dep:tokio",
+]
 is_in = ["polars/is_in"]
 json = [
   "polars/serde",
@@ -301,6 +317,7 @@ fast_alloc = ["polars-ooc/fast_alloc"]
 
 full_functionality = [
   "async",
+  "iceberg",
   "pymethods",
   "optimizations",
   "io",

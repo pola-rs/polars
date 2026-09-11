@@ -29,6 +29,8 @@ pub mod extension;
 pub mod file;
 #[cfg(feature = "pymethods")]
 pub mod functions;
+#[cfg(feature = "iceberg")]
+pub mod iceberg;
 pub mod interop;
 pub mod io;
 pub mod lazyframe;
