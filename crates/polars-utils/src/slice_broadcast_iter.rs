@@ -247,3 +247,196 @@ impl<T> ExactSizeIterator for SliceBroadcastIter<'_, T> {
 impl<T> FusedIterator for SliceBroadcastIter<'_, T> {}
 
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    /// The two modes of the iterator, against the elements each of them stands for.
+    fn modes(n: usize) -> Vec<(&'static str, SliceBroadcastIter<'static, usize>, Vec<usize>)> {
+        // Leaked so both modes borrow for the same lifetime; the tests are the only owner.
+        let flat: &'static [usize] = Vec::leak((0..n).collect::<Vec<_>>());
+        let one: &'static usize = Box::leak(Box::new(7usize));
+
+        vec![
+            ("flat", SliceBroadcastIter::new(flat), flat.to_vec()),
+            (
+                "broadcast",
+                SliceBroadcastIter::repeat(one, n),
+                vec![*one; n],
+            ),
+        ]
+    }
+
+    #[test]
+    fn walks_the_elements_it_stands_for() {
+        for n in [0usize, 1, 2, 3, 8, 65] {
+            for (mode, iter, elements) in modes(n) {
+                assert_eq!(iter.len(), n, "{mode} of {n}");
+                assert_eq!(iter.size_hint(), (n, Some(n)), "{mode} of {n}");
+                assert_eq!(iter.is_empty(), n == 0, "{mode} of {n}");
+                assert_eq!(iter.clone().count(), n, "{mode} of {n}");
+                assert_eq!(
+                    iter.clone().last().copied(),
+                    elements.last().copied(),
+                    "{mode} of {n}",
+                );
+
+                let front: Vec<usize> = iter.clone().copied().collect();
+                assert_eq!(front, elements, "{mode} of {n}");
+                let back: Vec<usize> = iter.clone().rev().copied().collect();
+                assert_eq!(back, elements.iter().rev().copied().collect::<Vec<_>>());
+
+                // `fold` and `rfold` hoist the mode out of the loop, so they are walks of
+                // their own rather than `next`/`next_back` under another name.
+                let folded = iter.clone().fold(Vec::new(), |mut acc, v| {
+                    acc.push(*v);
+                    acc
+                });
+                assert_eq!(folded, elements, "{mode} of {n}");
+                let rfolded = iter.clone().rfold(Vec::new(), |mut acc, v| {
+                    acc.push(*v);
+                    acc
+                });
+                assert_eq!(
+                    rfolded,
+                    elements.iter().rev().copied().collect::<Vec<_>>(),
+                    "{mode} of {n}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn walking_from_both_ends_meets_in_the_middle() {
+        for n in [0usize, 1, 2, 3, 8, 65] {
+            for (mode, mut iter, elements) in modes(n) {
+                let (mut front, mut back) = (Vec::new(), Vec::new());
+                let mut take_front = true;
+                while let Some(v) = match take_front {
+                    true => iter.next(),
+                    false => iter.next_back(),
+                } {
+                    match take_front {
+                        true => front.push(*v),
+                        false => back.push(*v),
+                    }
+                    take_front = !take_front;
+                }
+
+                back.reverse();
+                front.extend(back);
+                assert_eq!(front, elements, "{mode} of {n}");
+                assert_eq!(iter.len(), 0, "{mode} of {n}");
+                // The iterator is fused: it stays empty however it is asked again.
+                assert_eq!(iter.next(), None, "{mode} of {n}");
+                assert_eq!(iter.next_back(), None, "{mode} of {n}");
+            }
+        }
+    }
+
+    #[test]
+    fn skipping_leaves_the_same_elements_the_reference_does() {
+        for n in [0usize, 1, 2, 3, 8, 65] {
+            for k in 0..n + 2 {
+                for (mode, mut iter, elements) in modes(n) {
+                    let mut reference = elements.iter().copied();
+                    assert_eq!(
+                        iter.nth(k).copied(),
+                        reference.nth(k),
+                        "{mode} of {n}, nth({k})",
+                    );
+                    assert_eq!(iter.len(), reference.len(), "{mode} of {n}, nth({k})");
+                    assert_eq!(
+                        iter.copied().collect::<Vec<_>>(),
+                        reference.collect::<Vec<_>>(),
+                        "{mode} of {n}, nth({k})",
+                    );
+                }
+
+                for (mode, mut iter, elements) in modes(n) {
+                    let mut reference = elements.iter().copied();
+                    assert_eq!(
+                        iter.nth_back(k).copied(),
+                        reference.nth_back(k),
+                        "{mode} of {n}, nth_back({k})",
+                    );
+                    assert_eq!(iter.len(), reference.len(), "{mode} of {n}, nth_back({k})");
+                    assert_eq!(
+                        iter.copied().collect::<Vec<_>>(),
+                        reference.collect::<Vec<_>>(),
+                        "{mode} of {n}, nth_back({k})",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn random_access_reads_what_is_left_to_yield() {
+        for n in [1usize, 2, 3, 8, 65] {
+            for consumed in 0..n {
+                for (mode, mut iter, elements) in modes(n) {
+                    for _ in 0..consumed {
+                        iter.next();
+                    }
+
+                    let left = &elements[consumed..];
+                    assert_eq!(iter.len(), left.len(), "{mode} of {n} less {consumed}");
+                    for (i, expected) in left.iter().enumerate() {
+                        assert_eq!(iter.get(i), Some(expected), "{mode} of {n}, get({i})");
+                        // SAFETY: `i` is below the number of elements left to yield.
+                        assert_eq!(unsafe { iter.get_unchecked(i) }, expected);
+                    }
+                    assert_eq!(iter.get(left.len()), None, "{mode} of {n} less {consumed}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn split_hands_over_what_is_left_to_yield() {
+        for n in [0usize, 1, 2, 8] {
+            for (mode, mut iter, elements) in modes(n) {
+                if n > 0 {
+                    iter.next();
+                }
+                let left = match n {
+                    0 => &elements[..],
+                    _ => &elements[1..],
+                };
+
+                match iter.split() {
+                    Ok(slice) => assert_eq!(slice, left, "{mode} of {n}"),
+                    Err((item, remaining)) => {
+                        assert_eq!(remaining, left.len(), "{mode} of {n}");
+                        assert!(left.iter().all(|v| v == item), "{mode} of {n}");
+                    },
+                }
+            }
+        }
+    }
+
+    /// The collects that write into reserved room take a trusted iterator at its word, so the
+    /// length it reports has to hold after every way of walking part of it.
+    #[test]
+    fn the_reported_length_is_the_number_of_elements_left() {
+        for n in [0usize, 1, 2, 3, 8, 65] {
+            for (mode, iter, _) in modes(n) {
+                for step in [0usize, 1, 2, n / 2, n] {
+                    let mut walked = iter.clone();
+                    for _ in 0..step {
+                        walked.next();
+                    }
+                    let reported = walked.size_hint();
+                    let left = walked.count();
+                    assert_eq!(
+                        reported,
+                        (left, Some(left)),
+                        "{mode} of {n} after {step} steps",
+                    );
+                }
+            }
+        }
+    }
+}
