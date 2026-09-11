@@ -455,7 +455,10 @@ pub fn phys_props(
             let pre_slice = pre_slice.as_ref().map(|x| x.to_signed_offset_len());
             (
                 PhysicalPropsDescription::MultiScan {
-                    scan_type: file_reader_builder.reader_name().to_string(),
+                    scan_type: match file_reader_builder.reader_name() {
+                        Ok(x) => x.to_string(),
+                        Err(e) => format!("(error fetching scan type: {e:?})"),
+                    },
                     num_sources: scan_sources.len(),
                     first_source: scan_sources
                         .first()

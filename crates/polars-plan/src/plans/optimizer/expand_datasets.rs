@@ -436,6 +436,10 @@ fn expand_python_dataset(
 
                 FileScanDsl::ExpandedPaths { name } => FileScanIR::ExpandedPaths { name },
 
+                FileScanDsl::ExternalReaderBuilder { external } => {
+                    FileScanIR::ExternalReaderBuilder { external }
+                },
+
                 FileScanDsl::Anonymous {
                     options,
                     function,

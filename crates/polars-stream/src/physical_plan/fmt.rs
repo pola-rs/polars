@@ -550,7 +550,11 @@ fn visualize_plan_rec(
             file_schema: _,
             disable_morsel_split: _,
         } => {
-            let mut out = format!("multi-scan[{}]", file_reader_builder.reader_name());
+            let reader_name = match file_reader_builder.reader_name() {
+                Ok(x) => x.to_string(),
+                Err(e) => format!("(error fetching reader name: {e:?})"),
+            };
+            let mut out = format!("multi-scan[{reader_name}]");
             let mut f = EscapeLabel(&mut out);
 
             write!(f, "\n{} source", scan_sources.len()).unwrap();

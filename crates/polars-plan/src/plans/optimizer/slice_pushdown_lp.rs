@@ -384,6 +384,8 @@ impl SlicePushDown {
 
                     FileScanIR::ExpandedPaths { .. } => false,
 
+                    FileScanIR::ExternalReaderBuilder { .. } => true,
+
                     // TODO: This can be `true` after Anonymous scan dispatches to new-streaming.
                     FileScanIR::Anonymous { .. } => state.offset == 0,
                 } =>

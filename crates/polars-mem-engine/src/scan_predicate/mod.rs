@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use arrow::bitmap::Bitmap;
 pub use functions::{create_scan_predicate, initialize_scan_predicate};
+use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{AnyValue, Column, Field, GroupPositions, PlHashMap, PlIndexSet};
 use polars_core::scalar::Scalar;
@@ -15,6 +16,7 @@ use polars_expr::state::ExecutionState;
 use polars_io::predicates::{
     ColumnPredicates, ScanIOPredicate, SkipBatchPredicate, SpecializedColumnPredicate,
 };
+use polars_plan::plans::expr_ir::ExprIR;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
 
@@ -22,6 +24,8 @@ use polars_utils::{IdxSize, format_pl_smallstr};
 #[derive(Clone)]
 pub struct ScanPredicate {
     pub predicate: Arc<dyn PhysicalExpr>,
+
+    pub predicate_minterm_eirs: Option<Buffer<ExprIR>>,
 
     /// Column names that are used in the predicate.
     pub live_columns: Arc<PlIndexSet<PlSmallStr>>,
@@ -161,6 +165,7 @@ impl ScanPredicate {
 
         Self {
             predicate,
+            predicate_minterm_eirs: self.predicate_minterm_eirs.clone(),
             live_columns: Arc::new(live_columns),
             skip_batch_predicate,
             column_predicates: self.column_predicates.clone(), // Q? Maybe this should cull
@@ -186,25 +191,30 @@ impl ScanPredicate {
         &self,
         skip_batch_predicate: Option<&Arc<dyn SkipBatchPredicate>>,
         schema: SchemaRef,
-    ) -> ScanIOPredicate {
-        ScanIOPredicate {
-            predicate: phys_expr_to_io_expr(self.predicate.clone()),
-            live_columns: self.live_columns.clone(),
-            skip_batch_predicate: skip_batch_predicate
-                .cloned()
-                .or_else(|| self.to_dyn_skip_batch_predicate(schema)),
-            column_predicates: Arc::new(ColumnPredicates {
-                predicates: self
-                    .column_predicates
-                    .predicates
-                    .iter()
-                    .map(|(n, (p, s))| (n.clone(), (phys_expr_to_io_expr(p.clone()), s.clone())))
-                    .collect(),
-                is_sumwise_complete: self.column_predicates.is_sumwise_complete,
-            }),
-            hive_predicate: self.hive_predicate.clone().map(phys_expr_to_io_expr),
-            hive_predicate_is_full_predicate: self.hive_predicate_is_full_predicate,
-        }
+    ) -> (ScanIOPredicate, Option<Buffer<ExprIR>>) {
+        (
+            ScanIOPredicate {
+                predicate: phys_expr_to_io_expr(self.predicate.clone()),
+                live_columns: self.live_columns.clone(),
+                skip_batch_predicate: skip_batch_predicate
+                    .cloned()
+                    .or_else(|| self.to_dyn_skip_batch_predicate(schema)),
+                column_predicates: Arc::new(ColumnPredicates {
+                    predicates: self
+                        .column_predicates
+                        .predicates
+                        .iter()
+                        .map(|(n, (p, s))| {
+                            (n.clone(), (phys_expr_to_io_expr(p.clone()), s.clone()))
+                        })
+                        .collect(),
+                    is_sumwise_complete: self.column_predicates.is_sumwise_complete,
+                }),
+                hive_predicate: self.hive_predicate.clone().map(phys_expr_to_io_expr),
+                hive_predicate_is_full_predicate: self.hive_predicate_is_full_predicate,
+            },
+            self.predicate_minterm_eirs.clone(),
+        )
     }
 }
 

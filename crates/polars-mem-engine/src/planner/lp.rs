@@ -492,6 +492,7 @@ fn create_physical_plan_impl(
                         &mut expr_conversion_state,
                         create_skip_batch_predicate,
                         false,
+                        false,
                     )
                 })
                 .transpose()?;

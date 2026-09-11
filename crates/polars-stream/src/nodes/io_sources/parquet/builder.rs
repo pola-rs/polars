@@ -4,12 +4,14 @@ use std::sync::Arc;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_buffer::Buffer;
 use polars_core::config;
+use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency::get_request_budget;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
 use polars_io::utils::byte_source::{self, DynByteSourceBuilder, FileReadContext};
 use polars_plan::dsl::ScanSource;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::super::shared::pipeline_budget::PipelineBudget;
 use super::{FileReader, ParquetFileReader};
@@ -42,11 +44,11 @@ impl std::fmt::Debug for ParquetReaderBuilder {
 }
 
 impl FileReaderBuilder for ParquetReaderBuilder {
-    fn reader_name(&self) -> &str {
-        "parquet"
+    fn reader_name(&self) -> PolarsResult<PlSmallStr> {
+        Ok(PlSmallStr::from_static("parquet"))
     }
 
-    fn reader_capabilities(&self) -> ReaderCapabilities {
+    fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities> {
         use ReaderCapabilities as RC;
 
         let mut capabilities = RC::ROW_INDEX
@@ -61,7 +63,8 @@ impl FileReaderBuilder for ParquetReaderBuilder {
         ) {
             capabilities |= RC::FULL_FILTER;
         }
-        capabilities
+
+        Ok(capabilities)
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
@@ -131,7 +134,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
         scan_source_idx: usize,
-    ) -> Box<dyn FileReader> {
+    ) -> PolarsResult<Box<dyn FileReader>> {
         use crate::nodes::io_sources::parquet::RowGroupPrefetchSync;
 
         let scan_source = source;
@@ -204,6 +207,6 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             init_data: None,
         };
 
-        Box::new(reader) as Box<dyn FileReader>
+        Ok(Box::new(reader) as Box<dyn FileReader>)
     }
 }
