@@ -17,6 +17,10 @@ if TYPE_CHECKING:
 
 ON = pl.QueryOptFlags(join_order=True)
 OFF = pl.QueryOptFlags(join_order=False)
+# Pushdown normally folds a leaf's filter into its scan; disabling it leaves the
+# filter where this pass meets it.
+ON_NO_PPD = pl.QueryOptFlags(join_order=True, predicate_pushdown=False)
+OFF_NO_PPD = pl.QueryOptFlags(join_order=False, predicate_pushdown=False)
 
 
 def star_frames(tmp_path: Path) -> dict[str, pl.LazyFrame]:
@@ -920,3 +924,119 @@ def test_two_keys_reading_one_column_count_it_once(tmp_path: Path) -> None:
     on = two.collect(optimizations=ON)
     assert on.height > 0
     assert_frame_equal(off.sort(pl.all()), on.sort(pl.all()))
+
+
+def test_filter_on_a_leaf_is_estimated(tmp_path: Path) -> None:
+    # Pushdown usually folds such a filter into the scan. When something above blocks
+    # it, the filter reaches this pass sitting on the leaf, and the leaf has to be
+    # measured through it: dim_a keeps one row, dim_b all twenty.
+    lf = star_query(star_frames(tmp_path))
+
+    assert_reordered(
+        lf,
+        ["fact", "dim_b", "dim_a"],
+        ["fact", "dim_a", "dim_b"],
+        on_flags=ON_NO_PPD,
+        off_flags=OFF_NO_PPD,
+    )
+
+
+def repeated_dimension_frames(tmp_path: Path) -> dict[str, pl.LazyFrame]:
+    """Three dimensions sharing every column name, as a repeated dimension does."""
+    fact = pl.DataFrame(
+        {
+            "k_x": [i % 50 for i in range(1000)],
+            "k_y": [i % 20 for i in range(1000)],
+            "k_z": [i % 50 for i in range(1000)],
+            "f_val": list(range(1000)),
+        }
+    )
+
+    def dim(n: int) -> pl.DataFrame:
+        return pl.DataFrame(
+            {
+                "d_key": list(range(n)),
+                "d_grp": [i % 5 for i in range(n)],
+                "d_flag": [i == 7 for i in range(n)],
+            }
+        )
+
+    return write_scans(tmp_path, fact=fact, dim_x=dim(50), dim_y=dim(5), dim_z=dim(50))
+
+
+def test_repeated_dimension_filters_stay_on_their_own_relation(tmp_path: Path) -> None:
+    # Each relation carries a different filter on identically named columns. Carried
+    # above the joins instead, the predicates could no longer be told apart, and the
+    # cluster was abandoned rather than reordered.
+    frames = repeated_dimension_frames(tmp_path)
+    lf = (
+        frames["fact"]
+        .join(
+            frames["dim_x"].filter(pl.col("d_grp") == 0),
+            left_on="k_x",
+            right_on="d_key",
+            coalesce=False,
+        )
+        .join(
+            frames["dim_y"].filter(pl.col("d_grp") == 1),
+            left_on="k_y",
+            right_on="d_key",
+            coalesce=False,
+            suffix="_y",
+        )
+        .join(
+            frames["dim_z"].filter(pl.col("d_flag")),
+            left_on="k_z",
+            right_on="d_key",
+            coalesce=False,
+            suffix="_z",
+        )
+    )
+
+    plan = lf.explain(optimizations=ON_NO_PPD)
+    # The cluster forms: its leaves are renamed apart, which only happens once they
+    # are candidates for reordering.
+    assert plan != lf.explain(optimizations=OFF_NO_PPD)
+    # Every filter reaches its own relation rather than the joined chain.
+    lines = [line.strip() for line in plan.splitlines()]
+    for dim in ("dim_x", "dim_y", "dim_z"):
+        scan = next(i for i, line in enumerate(lines) if f"{dim}.parquet" in line)
+        assert any(line.startswith("FILTER") for line in lines[scan - 3 : scan]), dim
+
+    assert_frame_equal(
+        lf.collect(optimizations=OFF_NO_PPD).sort(pl.all()),
+        lf.collect(optimizations=ON_NO_PPD).sort(pl.all()),
+    )
+
+
+def test_filter_above_a_rename_on_a_leaf(tmp_path: Path) -> None:
+    # The two filters are written in different namespaces: the inner one reads
+    # `a_val`, the outer one the `v` the rename produces. Both belong to one leaf,
+    # and a predicate moved to the wrong side of the rename reads a column that is
+    # not there.
+    frames = star_frames(tmp_path)
+    # `star_frames`' dim_a carries a flag; this needs a column to compare and rename.
+    frames |= write_scans(
+        tmp_path,
+        dim_a=pl.DataFrame({"a_key": list(range(50)), "a_val": list(range(50))}),
+    )
+    narrowed = (
+        frames["dim_a"]
+        .filter(pl.col("a_val") > 0)
+        .rename({"a_val": "v"})
+        .filter(pl.col("v") > 47)
+    )
+    lf = (
+        frames["fact"]
+        .join(frames["dim_b"], left_on="f_dim_b", right_on="b_key", coalesce=False)
+        .join(narrowed, left_on="f_dim_a", right_on="a_key", coalesce=False)
+    )
+
+    reordered = assert_reordered(
+        lf,
+        ["fact", "dim_b", "dim_a"],
+        ["fact", "dim_a", "dim_b"],
+        on_flags=ON_NO_PPD,
+        off_flags=OFF_NO_PPD,
+    )
+    assert "v" in reordered.columns
