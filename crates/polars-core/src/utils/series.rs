@@ -1,4 +1,6 @@
-use polars_compute::find_validity_mismatch::find_validity_mismatch;
+use polars_compute::find_validity_mismatch::{
+    find_validity_mismatch, find_validity_mismatch_shallow,
+};
 use polars_compute::gather::take_unchecked;
 
 use crate::prelude::*;
@@ -65,23 +67,27 @@ pub fn check_is_valid_struct_cast(
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
     check_is_valid_struct_cast(input.dtype(), output.dtype(), output.name())?;
 
-    // Casting to a Map merges duplicate keys, so its entries are not positionally
-    // comparable with the input's -- which `find_validity_mismatch` requires. Strictness
-    // still holds, since the key and value child casts run with the same options.
-    #[cfg(feature = "dtype-map")]
-    if output.dtype().contains_map() {
-        return Ok(());
-    }
-
-    // Match the cast's compacted Map layout at every depth: physical validity comparison
-    // cannot distinguish Map storage from lists.
-    #[cfg(feature = "dtype-map")]
-    let compacted = input.compact_map_null_rows()?;
-    #[cfg(feature = "dtype-map")]
-    let input = compacted.as_ref().unwrap_or(input);
-
     let mut idxs = Vec::new();
-    input.find_validity_mismatch(output, &mut idxs);
+
+    #[cfg(feature = "dtype-map")]
+    let maps_involved = input.dtype().contains_map() || output.dtype().contains_map();
+    #[cfg(not(feature = "dtype-map"))]
+    let maps_involved = false;
+
+    if maps_involved {
+        // Map entries are not positionally comparable with a cast's -- which
+        // `find_validity_mismatch` requires -- because casting merges duplicate keys and
+        // drops the entries that no live row owns. Rows still line up, and strictness holds
+        // below, since a Map is nested, so its key and value child casts run with the same
+        // options.
+        find_validity_mismatch_shallow(
+            input.rechunk_validity().as_ref(),
+            output.rechunk_validity().as_ref(),
+            &mut idxs,
+        );
+    } else {
+        input.find_validity_mismatch(output, &mut idxs);
+    }
 
     if idxs.is_empty() {
         return Ok(());

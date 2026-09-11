@@ -1,10 +1,34 @@
 use arrow::array::{Array, FixedSizeListArray, ListArray, StructArray};
+use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::Offset;
 use polars_utils::IdxSize;
 use polars_utils::itertools::Itertools;
 
 use crate::cast::CastOptionsImpl;
+
+/// Find the indices where two validities disagree, without recursing into children.
+pub fn find_validity_mismatch_shallow(
+    left: Option<&Bitmap>,
+    right: Option<&Bitmap>,
+    idxs: &mut Vec<IdxSize>,
+) {
+    match (left, right) {
+        (None, None) => {},
+        (Some(l), Some(r)) => {
+            if l != r {
+                let mismatches = arrow::bitmap::xor(l, r);
+                idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+            }
+        },
+        (Some(v), _) | (_, Some(v)) => {
+            if v.unset_bits() > 0 {
+                let mismatches = !v;
+                idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+            }
+        },
+    }
+}
 
 /// Find the indices of the values where the validity mismatches.
 ///
@@ -24,21 +48,7 @@ pub fn find_validity_mismatch(left: &dyn Array, right: &dyn Array, idxs: &mut Ve
     // NOTE: This is done always, even if left and right have different nestings. This is
     // intentional and needed.
     let original_idxs_length = idxs.len();
-    match (left.validity(), right.validity()) {
-        (None, None) => {},
-        (Some(l), Some(r)) => {
-            if l != r {
-                let mismatches = arrow::bitmap::xor(l, r);
-                idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-            }
-        },
-        (Some(v), _) | (_, Some(v)) => {
-            if v.unset_bits() > 0 {
-                let mismatches = !v;
-                idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-            }
-        },
-    }
+    find_validity_mismatch_shallow(left.validity(), right.validity(), idxs);
 
     let left = left.as_any();
     let right = right.as_any();

@@ -357,31 +357,41 @@ impl StructChunked {
             .iter()
             .map(func)
             .collect::<PolarsResult<Vec<_>>>()?;
-        Self::from_series(self.name().clone(), self.len(), fields.iter()).map(|mut ca| {
-            assert_eq!(ca.len(), self.len());
-            if self.null_count > 0 {
-                if ca
-                    .chunk_lengths()
-                    .zip(self.chunk_lengths())
-                    .all(|(l, r)| l == r)
-                {
-                    // SAFETY: only null_count adjusted, recalculated afterwards.
-                    for (new, this) in unsafe { ca.downcast_iter_mut() }.zip(self.downcast_iter()) {
-                        new.set_validity(this.validity().cloned())
-                    }
-                } else {
-                    let mut slf_validity = self.rechunk_validity().unwrap();
-                    // SAFETY: only null_count adjusted, recalculated afterwards.
-                    for new in unsafe { ca.downcast_iter_mut() } {
-                        let this_validity;
-                        (this_validity, slf_validity) = slf_validity.split_at(new.len());
-                        new.set_validity((this_validity.unset_bits() > 0).then_some(this_validity));
-                    }
-                }
-                ca.compute_len();
+        let ca = Self::from_series(self.name().clone(), self.len(), fields.iter())?;
+        assert_eq!(ca.len(), self.len());
+        Ok(ca.with_outer_validity_from(self))
+    }
+
+    /// Copy `other`'s outer validity, without propagating it into the fields.
+    ///
+    /// # Panics
+    /// If `other` has a different length.
+    fn with_outer_validity_from(mut self, other: &Self) -> Self {
+        assert_eq!(self.len(), other.len());
+        if other.null_count == 0 {
+            return self;
+        }
+
+        if self
+            .chunk_lengths()
+            .zip(other.chunk_lengths())
+            .all(|(l, r)| l == r)
+        {
+            // SAFETY: only null_count adjusted, recalculated afterwards.
+            for (new, this) in unsafe { self.downcast_iter_mut() }.zip(other.downcast_iter()) {
+                new.set_validity(this.validity().cloned())
             }
-            ca
-        })
+        } else {
+            let mut other_validity = other.rechunk_validity().unwrap();
+            // SAFETY: only null_count adjusted, recalculated afterwards.
+            for new in unsafe { self.downcast_iter_mut() } {
+                let this_validity;
+                (this_validity, other_validity) = other_validity.split_at(new.len());
+                new.set_validity((this_validity.unset_bits() > 0).then_some(this_validity));
+            }
+        }
+        self.compute_len();
+        self
     }
 
     pub fn get_row_encoded_array(&self, options: SortOptions) -> PolarsResult<BinaryArray<i64>> {
