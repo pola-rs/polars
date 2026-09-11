@@ -1244,7 +1244,7 @@ def test_predicate_pushdown_auto_disable_strict() -> None:
     assert plan.index("FILTER") > plan.index("MARKER")
 
 
-@pytest.mark.may_fail_auto_streaming  # IO plugin validate=False schema mismatch
+@pytest.mark.may_fail_lazy_schema  # reason: declared-schema
 def test_predicate_pushdown_map_elements_io_plugin_22860() -> None:
     def generator(
         with_columns: list[str] | None,
@@ -1794,6 +1794,18 @@ def test_filter_constraint_nested_scalar_no_panic() -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [[1, 2]], "b": [1]}))
 
 
+def test_filter_constraint_column_with_its_own_order() -> None:
+    # An enum compares by its declared categories, so a bound on it does not order
+    # the way the string literals do: under z < a < m, `== "z"` and `>= "m"` cannot
+    # both hold and neither comparison may be dropped.
+    dtype = pl.Enum(["z", "a", "m"])
+    lf = pl.LazyFrame({"key": pl.Series(["z", "a", "m"], dtype=dtype), "v": [1, 2, 3]})
+
+    q = lf.filter((pl.col("key") == "z") & (pl.col("key") >= "m"))
+    assert q.explain().count('col("key")') == 2
+    assert q.collect().is_empty()
+
+
 def test_predicate_pushdown_after_collect_schema_26882() -> None:
     # Resolving schema mid-build caches DSL->IR conversion with schema-only `opt_flags`
     # (eg: no predicate pushdown); subsequent `collect` should NOT skip optimisations
@@ -1895,3 +1907,16 @@ def test_or_factoring_skips_nondeterminism_in_eval_body() -> None:
 
     plan = query.explain()
     assert plan.count("shuffle") == 2, plan
+
+
+def test_predicate_pushdown_fallible_inside_list_eval() -> None:
+    lf = pl.LazyFrame({"k": [1, 2], "a": [["1"], ["bad"]]})
+
+    q = lf.filter(pl.col("k") == 1).filter(
+        pl.col("a").list.eval(pl.element().cast(pl.Int64)).list.first() == 1
+    )
+
+    plan = q.explain()
+    assert plan.index("list.eval") < plan.index('FILTER col("k")')
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"k": [1], "a": [["1"]]}))

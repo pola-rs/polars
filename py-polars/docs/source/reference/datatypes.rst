@@ -49,6 +49,7 @@ Nested
 
     Array
     List
+    Map
     Field
     Struct
 

@@ -21,6 +21,8 @@ mod regime;
 
 use std::num::NonZeroU64;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering::Relaxed;
 use std::time::{Duration, Instant};
 
 pub use admission::{InFlightBudget, InFlightPermit, InFlightStats};
@@ -157,11 +159,71 @@ pub fn get_floor_request_budget() -> u64 {
         .max(1)
 }
 
+/// Windowed round-trip time of 0-byte metadata (HEAD) requests.
+/// Diagnostic only, not to be used for BDP estimation.
+#[derive(Debug)]
+pub struct HeadRttChannel {
+    min_ns: AtomicU64,
+    sum_ns: AtomicU64,
+    count: AtomicU64,
+    /// Never reset, unlike `count`: distinguishes the first request of the process from
+    /// the first of a window.
+    total: AtomicU64,
+}
+
+/// One control tick's worth of [`HeadRttChannel`] observations.
+#[derive(Clone, Copy, Debug)]
+pub struct HeadRttWindow {
+    pub min: Option<Duration>,
+    pub avg: Option<Duration>,
+    pub count: u64,
+}
+
+impl HeadRttChannel {
+    fn new() -> Self {
+        Self {
+            min_ns: AtomicU64::new(u64::MAX),
+            sum_ns: AtomicU64::new(0),
+            count: AtomicU64::new(0),
+            total: AtomicU64::new(0),
+        }
+    }
+
+    /// Hot path: four relaxed ops, no queue.
+    fn record(&self, rtt: Duration) {
+        let ns = rtt.as_nanos() as u64;
+        self.min_ns.fetch_min(ns, Relaxed);
+        self.sum_ns.fetch_add(ns, Relaxed);
+        self.count.fetch_add(1, Relaxed);
+
+        if self.total.fetch_add(1, Relaxed) == 0 && polars_config::config().verbose() {
+            eprintln!(
+                "[InFlightConcurrency]: observed first RTT sample (metadata): {} ms",
+                rtt.as_millis()
+            );
+        }
+    }
+
+    /// Read and reset.
+    fn take(&self) -> HeadRttWindow {
+        let min_ns = self.min_ns.swap(u64::MAX, Relaxed);
+        let sum_ns = self.sum_ns.swap(0, Relaxed);
+        let count = self.count.swap(0, Relaxed);
+
+        HeadRttWindow {
+            min: (min_ns != u64::MAX).then(|| Duration::from_nanos(min_ns)),
+            avg: (count > 0).then(|| Duration::from_nanos(sum_ns / count)),
+            count,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ConcurrencyController {
     config: ControllerConfig,
     sample_queue: Arc<ArrayQueue<IoSample>>,
     samples_dropped: Arc<RelaxedCell<u64>>,
+    head_rtt: Arc<HeadRttChannel>,
     inflight_budget: Arc<InFlightBudget>,
     _control_task: tokio::task::JoinHandle<()>,
 }
@@ -170,6 +232,7 @@ impl ConcurrencyController {
     pub fn new(config: ControllerConfig, pacing_budget: Option<PacingBudget>) -> Self {
         let sample_queue = Arc::new(ArrayQueue::new(SAMPLE_QUEUE_CAPACITY));
         let samples_dropped = Arc::new(RelaxedCell::new_u64(0));
+        let head_rtt = Arc::new(HeadRttChannel::new());
 
         let inflight_budget = Arc::new(InFlightBudget::new(
             config.init_byte_budget,
@@ -181,6 +244,7 @@ impl ConcurrencyController {
         let control_task = Self::spawn_control_loop(
             sample_queue.clone(),
             samples_dropped.clone(),
+            head_rtt.clone(),
             inflight_budget.clone(),
             config.clone(),
             pacing_budget,
@@ -190,6 +254,7 @@ impl ConcurrencyController {
             config,
             sample_queue,
             samples_dropped,
+            head_rtt,
             inflight_budget,
             _control_task: control_task,
         }
@@ -199,12 +264,17 @@ impl ConcurrencyController {
         &self.config
     }
 
-    /// Record a completed IO. Hot path.
+    /// Record IO for a completed data request. Hot path.
     pub fn record_io(&self, sample: IoSample) {
         if self.sample_queue.push(sample).is_err() {
             // Queue full: drop. Samples are statistics is considered acceptable.
             self.samples_dropped.fetch_add(1);
         }
+    }
+
+    /// Record the round-trip time of a completed 0-byte metadata request. Hot path.
+    pub fn record_head_rtt(&self, rtt: Duration) {
+        self.head_rtt.record(rtt);
     }
 
     pub fn inflight_budget(&self) -> &Arc<InFlightBudget> {
@@ -218,6 +288,7 @@ impl ConcurrencyController {
     fn spawn_control_loop(
         sample_queue: Arc<ArrayQueue<IoSample>>,
         samples_dropped: Arc<RelaxedCell<u64>>,
+        head_rtt: Arc<HeadRttChannel>,
         admission: Arc<InFlightBudget>,
         config: ControllerConfig,
         pacing_budget: Option<PacingBudget>,
@@ -296,6 +367,9 @@ impl ConcurrencyController {
                     }
                 }
 
+                // Drained every tick. Diagnostic only.
+                let head_rtt_window = head_rtt.take();
+
                 // Log snapshot.
                 if std::env::var("POLARS_LOG_CONCURRENCY").is_ok() {
                     let stats = admission.stats();
@@ -305,6 +379,9 @@ impl ConcurrencyController {
                         bw_avg={:.1} MB/s, \
                         rtt_min={:.1} ms, \
                         rtt_avg={:.1} ms, \
+                        head_rtt_min={:.1} ms, \
+                        head_rtt_avg={:.1} ms, \
+                        head_n={}, \
                         bdp_obs={:.1} MB, \
                         bytes_budget={:.1} MB, \
                         bytes_in_use={:.1} MB, \
@@ -318,6 +395,9 @@ impl ConcurrencyController {
                         signal.map_or(0.0, |s| s.bw_avg_bps) / 1e6,
                         signal.map_or(0, |s| s.ttfb_min.as_millis()),
                         signal.map_or(0, |s| s.ttfb_avg.as_millis()),
+                        head_rtt_window.min.map_or(0.0, |d| d.as_secs_f64() * 1e3),
+                        head_rtt_window.avg.map_or(0.0, |d| d.as_secs_f64() * 1e3),
+                        head_rtt_window.count,
                         signal.map_or(0, |s| s.bdp_bytes()) as f64 / 1e6,
                         stats.bytes_budget as f64 / 1e6,
                         stats.bytes_in_use as f64 / 1e6,

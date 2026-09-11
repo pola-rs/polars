@@ -26,6 +26,9 @@ pub enum ColumnTransform {
     ListValuesMapping { values_selector: ColumnSelector },
     #[cfg(feature = "dtype-array")]
     FixedSizeListValuesMapping { values_selector: ColumnSelector },
+    /// Construct a map column by applying a column selector onto the value child.
+    #[cfg(feature = "dtype-map")]
+    MapValuesMapping { value_selector: ColumnSelector },
 }
 
 impl ColumnTransform {
@@ -67,6 +70,22 @@ impl ColumnTransform {
                     )?
                     .with_outer_validity(struct_ca.rechunk_validity())
                     .into_series(),
+                )
+            },
+
+            #[cfg(feature = "dtype-map")]
+            TF::MapValuesMapping { value_selector } => {
+                let input_s = input._get_backing_series();
+                let map_ca = input_s.map().unwrap();
+
+                let values: Column = map_ca.values().into_column();
+                let len = values.len();
+                let values = value_selector.select_from_columns(&[values], len)?;
+
+                input._to_new_from_backing(
+                    map_ca
+                        .with_values(values.as_materialized_series())?
+                        .into_series(),
                 )
             },
 
@@ -130,7 +149,8 @@ impl ColumnTransform {
                     unsafe { ListChunked::from_chunks(input_list_ca.name().clone(), out_chunks) };
 
                 // Ensure logical types are restored.
-                out.set_inner_dtype(values_output_dtype.unwrap());
+                // SAFETY: chunks retain the selector's output dtype and valid values.
+                unsafe { out.set_inner_dtype(values_output_dtype.unwrap()) };
 
                 // Casts on the values should not affect outer NULLs.
                 out.retain_flags_from(&input_list_ca, StatisticsFlags::CAN_FAST_EXPLODE_LIST);
@@ -203,7 +223,8 @@ impl ColumnTransform {
                     unsafe { ArrayChunked::from_chunks(input_array_ca.name().clone(), out_chunks) };
 
                 // Ensure logical types are restored.
-                out.set_inner_dtype(values_output_dtype.unwrap());
+                // SAFETY: chunks retain the selector's output dtype and valid values.
+                unsafe { out.set_inner_dtype(values_output_dtype.unwrap()) };
 
                 input._to_new_from_backing(out.into_series())
             },

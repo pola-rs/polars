@@ -317,6 +317,7 @@ impl LiteralValue {
         }
     }
 
+    #[inline]
     pub fn is_scalar(&self) -> bool {
         !matches!(self, LiteralValue::Series(_) | LiteralValue::Range { .. })
     }

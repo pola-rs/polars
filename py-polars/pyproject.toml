@@ -73,7 +73,7 @@ fsspec = ["fsspec"]
 
 # Other I/O
 deltalake = ["deltalake >= 1.0.0, != 1.5.*"]
-iceberg = ["pyiceberg >= 0.9.0"]
+iceberg = ["pyiceberg >= 0.12.0"]
 
 # Other
 async = ["gevent"]
@@ -283,6 +283,9 @@ addopts = [
   "--strict-markers",
   "--import-mode=importlib",
   "--dist=loadgroup",
+  # A hard worker crash (e.g. a segfault) hangs under `--dist=loadgroup` when
+  # xdist tries to restart the worker and re-run the crashed group.
+  "--max-worker-restart=0",
   # Default to running fast tests only. To run ALL tests, run: pytest -m ""
   "-m not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only",
 ]
@@ -294,8 +297,8 @@ markers = [
   "release: Tests that should be run on a Polars release build.",
   "slow: Tests with a longer than average runtime.",
   "write_disk: Tests that write to disk",
-  "may_fail_auto_streaming: Test that may fail when automatically using the streaming engine for all lazy queries.",
   "may_fail_cloud: Test that may fail when automatically using the cloud distributed engine for all lazy queries.",
+  "may_fail_lazy_schema: Test whose lazy queries may have a `collect_schema()` that disagrees with the schema of the collected DataFrame.",
   "may_fail_strict: Test that may fail strict mode.",
 ]
 filterwarnings = [

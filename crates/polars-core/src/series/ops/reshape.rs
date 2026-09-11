@@ -68,7 +68,8 @@ impl Series {
                 .iter()
                 .map(|arr| array_to_unit_list(arr.clone())),
         );
-        ca.set_inner_dtype(self.dtype().clone());
+        // SAFETY: each list wraps an unchanged, valid element of `self`.
+        unsafe { ca.set_inner_dtype(self.dtype().clone()) };
         ca.set_fast_explode();
         ca
     }

@@ -62,6 +62,7 @@ flag_getter_setters! {
     (SORT_COLLAPSE, get_sort_collapse, set_sort_collapse, clear=true)
     (PARTITION_HIVE, get_pre_partition_hive, set_pre_partition_hive, clear=true)
     (JOIN_ORDER, get_join_order, set_join_order, clear=true)
+    (ROW_ESTIMATE, get_row_estimate, set_row_estimate, clear=true)
 
     (EAGER, get_eager, set_eager, clear=true)
     (STREAMING, get_streaming, set_streaming, clear=true)

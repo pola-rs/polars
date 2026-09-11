@@ -64,16 +64,19 @@ impl RowGroupMetadata {
         self.column_lookup.get(root_name).map(|x| x.as_slice())
     }
 
+    #[inline]
     pub fn parquet_columns(&self) -> &[ColumnChunkMetadata] {
         &self.columns
     }
 
     /// Number of rows in this row group.
+    #[inline]
     pub fn num_rows(&self) -> usize {
         self.num_rows
     }
 
     /// Total byte size of all uncompressed column data in this row group.
+    #[inline]
     pub fn total_byte_size(&self) -> usize {
         self.total_byte_size
     }

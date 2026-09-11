@@ -174,7 +174,7 @@ fn test_drop_table() {
     "#;
     let actual = ctx.execute(sql);
     assert!(actual.is_ok());
-    let res = ctx.execute("SELECT * FROM df");
+    let res = ctx.execute("SELECT * FROM df").and_then(|lf| lf.collect());
     assert!(res.is_err());
 }
 
@@ -601,7 +601,7 @@ fn test_compound_invalid_1() {
 fn test_compound_invalid_2() {
     let mut ctx = prepare_compound_join_context();
     let sql = "SELECT * FROM df1 INNER JOIN df2 ON df1.a = df2.a AND b";
-    let _ = ctx.execute(sql).unwrap();
+    let _ = ctx.execute(sql).unwrap().collect().unwrap();
 }
 
 #[test]

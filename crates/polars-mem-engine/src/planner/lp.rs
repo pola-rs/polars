@@ -708,6 +708,8 @@ fn create_physical_plan_impl(
             schema,
             ..
         } => {
+            options.ensure_executable()?;
+
             let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
             let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
 
@@ -852,6 +854,10 @@ fn create_physical_plan_impl(
             Ok(Box::new(exec))
         },
         UnoptimizedDispatch { .. } => get_streaming_executor_builder()(root, lp_arena, expr_arena),
+        Resolver { resolved_ir, .. } => {
+            let node = resolved_ir.expect("IR::Resolver not resolved at create_physical_plan_impl");
+            recurse!(node, state)
+        },
         Invalid => unreachable!(),
     }
 }

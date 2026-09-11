@@ -145,6 +145,14 @@ pub(super) fn convert_functions(
                 C::Physical => IC::Physical,
             })
         },
+        #[cfg(feature = "dtype-map")]
+        F::MapExpr(map_function) => {
+            use IRMapFunction as IM;
+            use MapFunction as M;
+            I::MapExpr(match map_function {
+                M::Entries => IM::Entries,
+            })
+        },
         #[cfg(feature = "dtype-extension")]
         F::Extension(extension_function) => {
             use ExtensionFunction as E;
@@ -210,6 +218,8 @@ pub(super) fn convert_functions(
                 L::ToArray(v) => IL::ToArray(v),
                 #[cfg(feature = "list_to_struct")]
                 L::ToStruct(list_to_struct_args) => IL::ToStruct(list_to_struct_args),
+                #[cfg(feature = "dtype-map")]
+                L::ToMap => IL::ToMap,
             })
         },
         #[cfg(feature = "strings")]
@@ -907,6 +917,36 @@ pub(super) fn convert_functions(
         F::UniqueCounts => I::UniqueCounts,
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => I::ApproxNUnique,
+        #[cfg(feature = "approx_quantile")]
+        F::ApproxQuantile {
+            method,
+            error,
+            use_formal_bound,
+        } => {
+            polars_ensure!(
+                (polars_compute::approx_quantile::MIN_ERROR..1.0).contains(&error),
+                InvalidOperation: "`error` must be in the range [2^-32, 1) (got: {error})"
+            );
+            let quantiles: Option<Vec<f64>> = match ctx.arena.get(e[1].node()) {
+                AExpr::Literal(LiteralValue::Series(s)) => s
+                    .list()
+                    .ok()
+                    .and_then(|ca| ca.get_as_series(0))
+                    .and_then(|s| s.cast(&DataType::Float64).ok())
+                    .and_then(|s| s.f64().ok()?.iter().collect()),
+                AExpr::Literal(lv) => lv
+                    .to_any_value()
+                    .and_then(|av| av.extract())
+                    .map(|q| vec![q]),
+                _ => None,
+            };
+            let method = method.resolve(quantiles.as_deref());
+            let error = match use_formal_bound {
+                true => error,
+                false => method.empirical_error_to_formal(error),
+            };
+            I::ApproxQuantile { method, error }
+        },
         F::Coalesce => I::Coalesce,
         #[cfg(feature = "diff")]
         F::Diff(n) => {

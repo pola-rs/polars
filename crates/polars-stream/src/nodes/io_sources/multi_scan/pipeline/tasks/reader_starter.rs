@@ -419,6 +419,7 @@ async fn start_reader_impl(
         missing_columns_policy,
         forbid_extra_columns,
         num_pipelines,
+        max_concurrent_scans,
         disable_morsel_split,
         last_morsel_pipelines,
         verbose,
@@ -694,6 +695,7 @@ async fn start_reader_impl(
                 first_morsel,
                 first_morsel_position,
                 num_pipelines,
+                max_concurrent_scans,
             }
             .run();
 

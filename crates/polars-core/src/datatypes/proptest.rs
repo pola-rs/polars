@@ -41,12 +41,13 @@ bitflags::bitflags! {
         const LIST = 1 << 16;
         const ARRAY = 1 << 17;
         const STRUCT = 1 << 18;
+        const MAP = 1 << 19;
     }
 }
 
 impl DataTypeArbitrarySelection {
     pub fn nested() -> Self {
-        Self::LIST | Self::ARRAY | Self::STRUCT
+        Self::LIST | Self::ARRAY | Self::STRUCT | Self::MAP
     }
 }
 
@@ -133,6 +134,17 @@ pub fn dtypes_strategy(
                 options.struct_fields_range.clone(),
             )
             .boxed(),
+            #[cfg(feature = "dtype-map")]
+            _ if selection == S::MAP => {
+                let mut key_options = (*options).clone();
+                key_options.allowed_dtypes &= !(S::NULL | S::OBJECT);
+
+                dtype_map_strategy(
+                    dtypes_strategy(Rc::new(key_options), nesting_level + 1),
+                    dtypes_strategy(Rc::clone(&options), nesting_level + 1),
+                )
+                .boxed()
+            },
             _ => unreachable!(),
         }
     })
@@ -265,6 +277,14 @@ fn dtype_struct_strategy(
 
         DataType::Struct(fields)
     })
+}
+
+#[cfg(feature = "dtype-map")]
+fn dtype_map_strategy(
+    key: impl Strategy<Value = DataType>,
+    value: impl Strategy<Value = DataType>,
+) -> impl Strategy<Value = DataType> {
+    (key, value).prop_map(|(key, value)| DataType::Map(Box::new(key), Box::new(value)))
 }
 
 // AnyValue Strategies

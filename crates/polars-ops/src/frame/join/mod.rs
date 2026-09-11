@@ -51,6 +51,11 @@ use rayon::prelude::*;
 use self::cross_join::fused_cross_filter;
 use super::IntoDf;
 
+/// Reduces monomorphization: rayon plumbing is instantiated per `R`, not per closure.
+pub(crate) fn par_map_collect<R: Send>(n: usize, f: &(dyn Fn(usize) -> R + Sync)) -> Vec<R> {
+    RAYON.install(|| (0..n).into_par_iter().map(f).collect())
+}
+
 pub trait DataFrameJoinOps: IntoDf {
     /// Generic join method. Can be used to join on multiple columns.
     ///
@@ -134,15 +139,21 @@ pub trait DataFrameJoinOps: IntoDf {
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
 
-        // Backstop: a non-equality match condition combined with a join type whose
-        // implementation does not yet track unmatched rows must not silently produce
-        // inner-join results.
-        polars_ensure!(
-            args.how.supports_non_equi_options(&options),
-            InvalidOperation:
-            "'{}' join is not supported with non-equi join conditions",
-            args.how,
-        );
+        // This join has no per-candidate match condition, so it filters after the fact.
+        if let Some(JoinTypeOptions::FusedPredicate(fused_options)) = &options {
+            debug_assert!(args.slice.is_none());
+            let predicate = fused_options.predicate.clone();
+            let joined = self._join_impl(
+                other,
+                selected_left,
+                selected_right,
+                args,
+                None,
+                _check_rechunk,
+                _verbose,
+            )?;
+            return predicate.apply(joined, true);
+        }
 
         #[cfg(feature = "cross_join")]
         if let Some(JoinTypeOptions::Cross(cross_options)) = &options {

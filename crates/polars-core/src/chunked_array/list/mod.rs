@@ -3,8 +3,7 @@ pub(super) mod iterator;
 
 use std::borrow::Cow;
 
-use polars_utils::itertools::Itertools;
-
+use super::align_inner_chunks;
 use crate::prelude::*;
 
 impl ListChunked {
@@ -16,13 +15,17 @@ impl ListChunked {
         }
     }
 
+    /// Relabel the inner dtype, checking its physical representation.
+    ///
+    /// # Safety
+    /// The values must be valid for `dtype`, see [`Self::to_logical`].
+    ///
     /// # Panics
     /// Panics if the physical representation of `dtype` differs the physical
     /// representation of the existing inner `dtype`.
-    pub fn set_inner_dtype(&mut self, dtype: DataType) {
+    pub unsafe fn set_inner_dtype(&mut self, dtype: DataType) {
         assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
-        let field = Arc::make_mut(&mut self.field);
-        field.coerce(DataType::List(Box::new(dtype)));
+        unsafe { self.to_logical(dtype) }
     }
 
     pub fn set_fast_explode(&mut self) {
@@ -33,14 +36,17 @@ impl ListChunked {
         self.get_fast_explode_list()
     }
 
-    /// Set the logical type of the [`ListChunked`].
+    /// Relabel the inner dtype without changing values.
     ///
     /// # Safety
-    /// The caller must ensure that the logical type given fits the physical type of the array.
+    /// Physical representations must match, and the values must be safe to read as
+    /// `inner_dtype`: categorical codes in range for every non-null slot, and nested Maps
+    /// satisfying the `MapChunked` storage safety contract. Dtype-blind null propagation may
+    /// violate the Map contract.
     pub unsafe fn to_logical(&mut self, inner_dtype: DataType) {
-        debug_assert_eq!(&inner_dtype.to_physical(), self.inner_dtype());
+        debug_assert_eq!(inner_dtype.to_physical(), self.inner_dtype().to_physical());
         let fld = Arc::make_mut(&mut self.field);
-        fld.coerce(DataType::List(Box::new(inner_dtype)))
+        fld.set_dtype(DataType::List(Box::new(inner_dtype)))
     }
 
     /// Convert the datatype of the list into the physical datatype.
@@ -195,31 +201,8 @@ impl ListChunked {
             assert_eq!(values.len(), self.inner_length());
         }
 
-        // Align the chunks of the lists inner values and the values series.
-        fn align_inner_chunks(ca: &'_ ListChunked, values: &'_ Series) -> Series {
-            if ca.chunks().len() == values.chunks().len()
-                && ca
-                    .downcast_iter()
-                    .map(|arr| arr.values().len())
-                    .zip(values.chunks().iter().map(|arr| arr.len()))
-                    .all_equal()
-            {
-                return values.clone();
-            }
-
-            let mut values = values.rechunk();
-            let chunks = unsafe { values.chunks_mut() };
-            let mut arr = chunks.pop().unwrap();
-            chunks.extend(ca.downcast_iter().map(|ca_arr| {
-                let chunk;
-                (chunk, arr) = arr.split_at_boxed(ca_arr.values().len());
-                chunk
-            }));
-            assert!(arr.is_empty());
-            values
-        }
-
-        let values = align_inner_chunks(self, values);
+        // Align the chunks of the list's inner values and the values series.
+        let values = align_inner_chunks(self.downcast_iter().map(|arr| arr.values().len()), values);
         let values_dtype = values.dtype().clone();
 
         let chunks = self

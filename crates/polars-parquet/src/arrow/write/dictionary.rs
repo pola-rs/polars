@@ -386,7 +386,7 @@ fn serialize_keys_range<K: DictionaryKey>(
     array: &DictionaryArray<K>,
     type_: &PrimitiveType,
     nested: &[Nested],
-    statistics: Option<ParquetStatistics>,
+    mut statistics: Option<ParquetStatistics>,
     options: WriteOptions,
 ) -> PolarsResult<Page> {
     let mut buffer = vec![];
@@ -412,11 +412,17 @@ fn serialize_keys_range<K: DictionaryKey>(
         (nested::num_values(nested), nested[0].len())
     };
 
+    let null_count = validity.as_ref().map_or(0, Bitmap::unset_bits);
+
+    if let Some(statistics) = statistics.as_mut() {
+        statistics.null_count = options.statistics.null_count.then_some(null_count as i64);
+    }
+
     utils::build_plain_page(
         buffer,
         num_values,
         num_rows,
-        array.null_count(),
+        null_count,
         repetition_levels_byte_length,
         definition_levels_byte_length,
         statistics,
@@ -435,12 +441,11 @@ macro_rules! dyn_prim {
             primitive_encode_plain::<$from, $to>(values, EncodeNullability::new(false), vec![]);
 
         let stats: Option<ParquetStatistics> = if !$options.statistics.is_empty() {
-            let mut stats = primitive_build_statistics::<$from, $to>(
+            let stats = primitive_build_statistics::<$from, $to>(
                 values,
                 $type_.clone(),
                 &$options.statistics,
             );
-            stats.null_count = Some($array.null_count() as i64);
             Some(stats.serialize())
         } else {
             None
@@ -462,7 +467,7 @@ pub fn array_to_pages<K: DictionaryKey>(
     match encoding {
         Encoding::PlainDictionary | Encoding::RleDictionary => {
             // write DictPage
-            let (dict_page, mut statistics): (_, Option<ParquetStatistics>) = match array
+            let (dict_page, statistics): (_, Option<ParquetStatistics>) = match array
                 .values()
                 .dtype()
                 .to_storage()
@@ -601,10 +606,6 @@ pub fn array_to_pages<K: DictionaryKey>(
                     )
                 },
             };
-
-            if let Some(stats) = &mut statistics {
-                stats.null_count = Some(array.null_count() as i64)
-            }
 
             // write DataPages pointing to DictPage
             let data_pages = serialize_keys(array, type_, nested, statistics, options);

@@ -170,6 +170,7 @@ pub enum PhysNodeKind {
         input: PhysStream,
         selectors: Vec<ExprIR>,
         extend_original: bool,
+        rechunk_input: bool,
     },
 
     InputIndependentSelect {
@@ -425,7 +426,11 @@ pub enum PhysNodeKind {
         inputs: Vec<PhysStream>,
         // Must have the same schema when applied for each input.
         key_per_input: Vec<Vec<ExprIR>>,
-        // Must be a 'simple' expression, a singular column feeding into a single aggregate, or Len.
+        // Elementwise expressions evaluated inside the group-by node, producing derived
+        // columns which `aggs_per_input` may reference in addition to the input columns.
+        fused_agg_inputs_per_input: Vec<Vec<ExprIR>>,
+        // Must be a 'simple' expression, a singular column (of the input or of
+        // `fused_agg_inputs_per_input`) feeding into a single aggregate, or Len.
         aggs_per_input: Vec<Vec<ExprIR>>,
     },
 
@@ -461,6 +466,9 @@ pub enum PhysNodeKind {
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
         args: JoinArgs,
+        /// Extra match condition, in the join's output namespace, applied per candidate
+        /// pair. See `JoinTypeOptionsIR::Equi`.
+        fused_predicate: Option<ExprIR>,
     },
 
     MergeJoin {
@@ -919,6 +927,25 @@ fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNo
     });
 }
 
+/// Sets `rechunk_input` on any `Select` node directly feeding into a `GroupBy`.
+///
+/// The group-by consumes the selected key/aggregation columns in bulk, so it is
+/// worth paying for a rechunk of the select's output to get contiguous inputs.
+fn rechunk_group_by_inputs(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+    visit_nodes_mut(roots, phys_sm, |key, phys_sm| {
+        let PhysNodeKind::GroupBy { inputs, .. } = phys_sm[key].kind() else {
+            return;
+        };
+
+        let input_nodes: Vec<PhysNodeKey> = inputs.iter().map(|i| i.node).collect();
+        for input_node in input_nodes {
+            if let PhysNodeKind::Select { rechunk_input, .. } = phys_sm[input_node].kind_mut() {
+                *rechunk_input = true;
+            }
+        }
+    });
+}
+
 pub fn build_physical_plan(
     root: Node,
     ir_arena: &mut Arena<IR>,
@@ -943,5 +970,9 @@ pub fn build_physical_plan(
     insert_multiplexers(vec![phys_root.node], phys_sm);
     split_multiplexers(vec![phys_root.node], phys_sm);
     fuse_drops(vec![phys_root.node], phys_sm);
+
+    // TODO: remove this after fusing pre-select into group-by node.
+    rechunk_group_by_inputs(vec![phys_root.node], phys_sm);
+
     Ok(phys_root.node)
 }

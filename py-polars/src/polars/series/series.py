@@ -111,6 +111,7 @@ from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
 from polars.series.ext import ExtensionNameSpace
 from polars.series.list import ListNameSpace
+from polars.series.map import MapNameSpace
 from polars.series.plotting import SeriesPlot
 from polars.series.string import StringNameSpace
 from polars.series.struct import StructNameSpace
@@ -130,6 +131,8 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
+        ApproxQuantileErrorBound,
+        ApproxQuantileMethod,
         ArrayLike,
         ClosedInterval,
         ComparisonOperator,
@@ -283,6 +286,7 @@ class Series(metaclass=_Meta):
         "dt",
         "ext",
         "list",
+        "map",
         "plot",
         "str",
         "struct",
@@ -428,6 +432,11 @@ class Series(metaclass=_Meta):
     def struct(self) -> StructNameSpace:
         """Create an object namespace of all struct related methods."""
         return StructNameSpace(self)
+
+    @property
+    def map(self) -> MapNameSpace:
+        """Create an object namespace of all map related methods."""
+        return MapNameSpace(self)
 
     @property
     def ext(self) -> ExtensionNameSpace:
@@ -8175,8 +8184,7 @@ class Series(metaclass=_Meta):
         This operation is only allowed for numeric types of the same size.
         For lower bits numbers, you can safely use the cast operation.
 
-        Either `signed` or `dtype` can be specified.
-        Defaults to `signed=True` otherwise.
+        Exactly one of `signed` or `dtype` must be specified.
 
         Parameters
         ----------
@@ -9658,6 +9666,100 @@ class Series(metaclass=_Meta):
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
         """
         return self._s.approx_n_unique()
+
+    @unstable()
+    def approx_quantile(
+        self,
+        quantile: float | list_[float],
+        *,
+        method: ApproxQuantileMethod = "auto",
+        error: float = 0.001,
+        error_tightness: ApproxQuantileErrorBound = "empirical",
+    ) -> PythonLiteral | list_[PythonLiteral]:
+        """
+        Compute approximate quantile(s) of this Series.
+
+        Parameters
+        ----------
+        quantile
+            A single quantile or a list of quantiles.
+        method
+            Specifies which approximate-quantile algorithm is to be used.
+            When set to 'auto', polars will use KLL if the quantiles are all
+            in `[0.05, 0.95]` or one of the REQ variants if any of the quantiles
+            falls outside of the middle range.
+
+            When set to `'kll'`, Polars will use the KLL method. This is generally
+            the most efficient algorithm. In this case, the `error` will specify
+            the absolute maximum error of the *rank* of the quantile value that is
+            returned. This will break down at the edges of the domain (e.g., when
+            the quantile is 95% or greater).
+
+            In the cases that you need to retain the accuracy at the edges of the
+            domain, use `'req_lo'` (for quantiles close to `0`), `'req_hi'` (for
+            quantiles close to `1`), or `'req_both'` which computes a REQ sketch for
+            both variants.
+
+        error
+            The allowed rank error as a factor of the length of the Series.
+            For example: if `error=0.01`, and the approximate quantile is computed
+            over 1000 rows, the rank of the returned quantile value is (with probability
+            >99.7%) guaranteed to be at most 10 rows apart from the actual quantile.
+
+        error_tightness
+            The accuracy of the approximate-quantile algorithms is calibrated on
+            shuffled inputs. However, the error bound is not mathematically sound for
+            all possible inputs (e.g., if any of them has an adversarially "bad" order).
+            Set this value to `'formal'` to use a (looser) mathematically-sound error
+            bound, in return for slower performance.
+
+        Notes
+        -----
+        * As long as your data can fit in RAM, it is always more efficient to use the
+          regular :meth:`quantile` function instead.
+
+        * NaN values are regarded as larger than any finite number (and equal to one
+          another). As a result, ``NaN`` values are treated as the largest values when
+          computing quantiles, which can lead to surprising results.
+
+          For example, the median of ``[1.0, 2.0, NaN, NaN, NaN, 6.0, 7.0]`` is ``7.0``,
+          not ``4.0``. To exclude ``NaN`` values from the calculation, use
+          :func:`Expr.drop_nans`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", range(10_000))
+
+        >>> # Get the approximate median
+        >>> s.approx_quantile(0.5)  # doctest: +SKIP
+        5000
+
+        >>> # Allow for a large error (10% of the rank)
+        >>> s.approx_quantile(0.5, error=0.1)  # doctest: +SKIP
+        5006
+
+        >>> # Get several quantiles at once
+        >>> s.approx_quantile([0.25, 0.75])  # doctest: +SKIP
+        [2500, 7499]
+
+        >>> # Explicitly use an algorithm that is accurate at the high tail
+        >>> s.approx_quantile(0.999, method="req_hi", error=0.1)  # doctest: +SKIP
+        9989
+        """
+        out = (
+            self.to_frame()
+            .select_seq(
+                F.col(self.name).approx_quantile(
+                    quantile,
+                    method=method,
+                    error=error,
+                    error_tightness=error_tightness,
+                )
+            )
+            .to_series()
+        )
+        # A list of quantiles comes back as a single list element.
+        return out.item().to_list() if isinstance(quantile, list) else out.item()
 
     def _row_encode(
         self,

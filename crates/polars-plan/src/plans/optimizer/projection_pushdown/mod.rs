@@ -6,7 +6,7 @@ use std::sync::Arc;
 use edge::Edge;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, DataType, ScratchIndexMap, ScratchIndexSet};
+use polars_core::prelude::{Column, DataType, PlIndexMap, ScratchIndexMap, ScratchIndexSet};
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
 use polars_ops::frame::{JoinCoalesce, JoinType};
@@ -684,14 +684,15 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     input_names_projection.extend(min_dtype_size_col(input_schema.iter()).cloned());
                 }
 
-                input_names_projection
-                    .sort_unstable_by_key(|name| input_schema.index_of(name).unwrap_or(usize::MAX));
-
                 let output_schema_arc = output_schema;
 
                 let has_dropped_input_column = input_names_projection.len() != input_schema.len();
 
                 if exprs.len() != orig_exprs_len || has_dropped_input_column {
+                    input_names_projection.sort_by_cached_key(|name| {
+                        input_schema.index_of(name).unwrap_or(usize::MAX)
+                    });
+
                     let output_schema = Arc::make_mut(output_schema_arc);
                     let mut orig_schema = mem::take(output_schema);
 
@@ -898,10 +899,23 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     has_cross_filter = true;
                 }
 
+                // A fused predicate reads output columns the final projection may not ask for.
+                let fused_predicate_names: Vec<PlSmallStr> = options
+                    .options
+                    .fused_predicate()
+                    .map(|fused_predicate| {
+                        aexpr_to_leaf_names_iter(fused_predicate.node(), self.expr_arena)
+                            .cloned()
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let reads_in_fused_predicate =
+                    |name: &PlSmallStr| fused_predicate_names.contains(name);
+
                 // Add accumulated projections
                 for output_name in output_schema_arc
                     .iter_names()
-                    .filter(|name| is_projected_in_output(name))
+                    .filter(|name| is_projected_in_output(name) || reads_in_fused_predicate(name))
                     .chain(pred_used_names_iter.into_iter().flatten())
                 {
                     match ExprOrigin::get_column_origin(
@@ -974,11 +988,13 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             return false;
                         };
 
+                        // Coalescing drops the right key, so a fused predicate reading it counts
+                        // as a use.
                         let projected = if input_schema_left.contains(name.as_str()) {
                             let name = format_pl_smallstr!("{}{}", name, options.args.suffix());
-                            is_projected_in_output(&name)
+                            is_projected_in_output(&name) || reads_in_fused_predicate(&name)
                         } else {
-                            is_projected_in_output(name)
+                            is_projected_in_output(name) || reads_in_fused_predicate(name)
                         };
 
                         !projected
@@ -1029,6 +1045,40 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 let opt_projected_names = out_edge.compute_projected_names(output_schema_arc);
 
                 *output_schema_arc = new_output_schema;
+
+                // Narrowing an input can remove a name collision, dropping the suffix
+                // from the right column. The map below covers only projected names, so a
+                // column read solely by the fused predicate is renamed here.
+                if !fused_predicate_names.is_empty() {
+                    let mut renames: PlIndexMap<PlSmallStr, PlSmallStr> = PlIndexMap::default();
+
+                    for name in fused_predicate_names.iter() {
+                        if output_schema_arc.contains(name) {
+                            continue;
+                        }
+                        let Some(stripped) = name.strip_suffix(options.args.suffix().as_str())
+                        else {
+                            continue;
+                        };
+                        renames.insert(name.clone(), PlSmallStr::from_str(stripped));
+                    }
+
+                    if !renames.is_empty() {
+                        let JoinTypeOptionsIR::Equi {
+                            fused_predicate: Some(fused_predicate),
+                            ..
+                        } = &mut Arc::make_mut(options).options
+                        else {
+                            unreachable!()
+                        };
+
+                        fused_predicate.set_node(rename_columns(
+                            fused_predicate.node(),
+                            self.expr_arena,
+                            &renames,
+                        ));
+                    }
+                }
 
                 if let Some(projected_names) = &opt_projected_names {
                     let orig_to_new_name_map = self.rename_map.get();
@@ -2063,6 +2113,35 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 post_project_and_return!()
             },
 
+            IR::Resolver {
+                projection,
+                filters,
+                filter_drop_columns_idx,
+                resolved_ir,
+                ..
+            } => {
+                if resolved_ir.is_some() {
+                    edges.swap_input_output(0, 0);
+                    return;
+                }
+
+                let (projected_names, _) = projected_names_subset_or_return!();
+
+                let len_before_added_names = projected_names.len();
+
+                *filter_drop_columns_idx = Some(len_before_added_names);
+
+                for eir in filters.iter() {
+                    for name in aexpr_to_leaf_names_iter(eir.node(), self.expr_arena) {
+                        projected_names.insert(name.clone());
+                    }
+                }
+
+                *projection = Some(projected_names.iter().cloned().collect());
+
+                reuse_names_alloc(edges);
+            },
+
             IR::Invalid => unreachable!(),
         };
     }
@@ -2165,27 +2244,14 @@ fn set_scan_projection(scan_ir: &mut IR, projection_schema: Arc<Schema>) {
 
 /// Create a dummy column with small memory footprint.
 fn small_dummy_column(name: PlSmallStr, height: usize) -> Column {
-    // Prefer 0-field struct if possible, as it doesn't need validity allocation.
+    // Prefer 0-field struct if possible, as it doesn't need validity allocation when
+    // materialized.
     #[cfg(feature = "dtype-struct")]
-    {
-        use arrow::array::StructArray;
-        use arrow::datatypes::ArrowDataType;
-        use polars_core::prelude::{IntoColumn, StructChunked};
-
-        unsafe {
-            StructChunked::from_chunks(
-                name,
-                vec![StructArray::new(ArrowDataType::Struct(vec![]), height, vec![], None).boxed()],
-            )
-        }
-        .into_column()
-    }
-    // Null column if we don't have struct available. For <=67108864 rows it uses a global zero
-    // buffer, otherwise it will allocate for validity.
+    let dtype = DataType::Struct(Vec::new());
     #[cfg(not(feature = "dtype-struct"))]
-    {
-        Column::full_null(name, height, &DataType::Null)
-    }
+    let dtype = DataType::Null;
+
+    Column::full_null(name, height, &dtype)
 }
 
 /// Returns `Some(ExprIR)` if `ir` is `select(len())`.

@@ -43,7 +43,7 @@ pub(crate) mod private {
 
     use super::*;
     use crate::chunked_array::flags::StatisticsFlags;
-    use crate::chunked_array::ops::compare_inner::{TotalEqInner, TotalOrdInner};
+    use crate::chunked_array::ops::compare_inner::TotalOrdInner;
 
     pub trait PrivateSeriesNumeric {
         /// Return a bit representation
@@ -74,8 +74,6 @@ pub(crate) mod private {
 
         fn _set_flags(&mut self, flags: StatisticsFlags);
 
-        #[expect(clippy::wrong_self_convention)]
-        fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a>;
         #[expect(clippy::wrong_self_convention)]
         fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a>;
 
@@ -229,6 +227,7 @@ pub trait SeriesTrait:
     }
 
     /// Get datatype of series.
+    #[inline(always)]
     fn dtype(&self) -> &DataType {
         self._dtype()
     }
@@ -433,6 +432,8 @@ pub trait SeriesTrait:
     fn deposit(&self, validity: &Bitmap) -> Series;
 
     /// Find the indices of elements where the null masks are different recursively.
+    ///
+    /// First compact null Map rows with [`Series::compact_map_null_rows`].
     fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>);
 
     fn cast(&self, _dtype: &DataType, options: CastOptions) -> PolarsResult<Series>;

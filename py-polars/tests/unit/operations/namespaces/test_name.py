@@ -47,6 +47,29 @@ def test_name_prefix_suffix() -> None:
     )
 
 
+def test_name_strip_prefix_suffix() -> None:
+    df = pl.DataFrame(
+        schema={
+            "prefix_prefix_a_suffix_suffix": pl.Int32,
+            "b": pl.String,
+        },
+    )
+
+    assert df.select(
+        pl.all().name.strip_prefix("prefix_").name.strip_suffix("_suffix"),
+    ).schema == {
+        "prefix_a_suffix": pl.Int32,
+        "b": pl.String,
+    }
+
+    assert (
+        df.select(
+            pl.all().name.strip_prefix("").name.strip_suffix(""),
+        ).schema
+        == df.schema
+    )
+
+
 def test_name_replace() -> None:
     df = pl.DataFrame(
         schema={"n_foo": pl.Int32, "n_bar": pl.String, "misc?": pl.Float64},

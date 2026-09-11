@@ -24,7 +24,6 @@ use crate::plans::{AExpr, IR};
 mod cluster;
 mod enumerate;
 mod rebuild;
-mod stats;
 
 /// Reorder joins throughout the plan, returning the new root.
 pub(super) fn join_order(

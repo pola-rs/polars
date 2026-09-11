@@ -43,7 +43,7 @@ impl AExpr {
                 falsy,
                 predicate,
             } => {
-                container.extend([*predicate, *truthy, *falsy]);
+                container.extend([*truthy, *falsy, *predicate]);
             },
             AnonymousFunction { input, .. }
             | Function { input, .. }
