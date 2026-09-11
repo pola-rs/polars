@@ -37,7 +37,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use chrono::Utc;
+use jiff::Timestamp;
 use object_store::ClientOptions;
 use object_store::client::{
     HttpClient, HttpConnector, HttpError, HttpErrorKind, HttpRequest, HttpResponse, HttpService,
@@ -557,7 +557,7 @@ impl AdaptiveRateController {
                 "[http rate_limit #{}_{} {}] ..cut (anchored): rate: {:.1}, success_rate: {:.1}, last_max: {:.1}",
                 self.id,
                 self.label,
-                Utc::now(),
+                Timestamp::now(),
                 state.rate(),
                 state.success_rate.unwrap_or_default(),
                 state.last_max().unwrap_or_default(),
@@ -714,7 +714,7 @@ impl AdaptiveRateController {
                     elapsed: {:.1}s, win_admit: {}, win_deny: {}, win_success: {}, win_throttle: {},  q_depth: {}",
                 self.id,
                 self.label,
-                Utc::now(),
+                Timestamp::now(),
                 verdict,
                 state.rate(),
                 state.success_rate.unwrap_or_default(),

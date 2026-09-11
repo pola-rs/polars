@@ -4,8 +4,8 @@ use arrow::legacy::kernels::convert_to_naive_local;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
-use chrono::NaiveDateTime;
-use chrono_tz::UTC;
+use jiff::civil::DateTime as NaiveDateTime;
+use jiff::tz::TimeZone as Tz;
 use polars_core::chunked_array::ops::arity::try_binary_elementwise;
 use polars_core::prelude::*;
 
@@ -17,16 +17,16 @@ pub fn replace_time_zone(
 ) -> PolarsResult<DatetimeChunked> {
     let from_time_zone = datetime.time_zone().clone().unwrap_or(TimeZone::UTC);
 
-    let from_tz = from_time_zone.to_chrono()?;
+    let from_tz = from_time_zone.to_jiff_tz()?;
 
     let to_tz = if let Some(tz) = time_zone {
-        tz.to_chrono()?
+        tz.to_jiff_tz()?
     } else {
-        chrono_tz::UTC
+        Tz::UTC
     };
 
     if (from_tz == to_tz)
-        & ((from_tz == UTC) | ((ambiguous.len() == 1) & (ambiguous.get(0) == Some("raise"))))
+        & ((from_tz == Tz::UTC) | ((ambiguous.len() == 1) & (ambiguous.get(0) == Some("raise"))))
     {
         let mut out = datetime
             .phys
@@ -91,8 +91,8 @@ pub fn impl_replace_time_zone_fast(
     ambiguous: Option<&str>,
     timestamp_to_datetime: fn(i64) -> NaiveDateTime,
     datetime_to_timestamp: fn(NaiveDateTime) -> i64,
-    from_tz: &chrono_tz::Tz,
-    to_tz: &chrono_tz::Tz,
+    from_tz: &Tz,
+    to_tz: &Tz,
 ) -> PolarsResult<Int64Chunked> {
     match ambiguous {
         Some(ambiguous) => datetime.phys.try_apply_nonnull_values_generic(|timestamp| {
@@ -118,8 +118,8 @@ pub fn impl_replace_time_zone(
     non_existent: NonExistent,
     timestamp_to_datetime: fn(i64) -> NaiveDateTime,
     datetime_to_timestamp: fn(NaiveDateTime) -> i64,
-    from_tz: &chrono_tz::Tz,
-    to_tz: &chrono_tz::Tz,
+    from_tz: &Tz,
+    to_tz: &Tz,
 ) -> PolarsResult<Int64Chunked> {
     match ambiguous.len() {
         1 => {

@@ -72,7 +72,7 @@ impl CsvSerializer {
                                     .datetime_format
                                     .as_deref()
                                     .unwrap_or("%FT%H:%M:%S.%3f%z"),
-                                tz.parse::<Tz>().ok(),
+                                Tz::get(tz.as_str()).ok(),
                             ),
                             _ => (
                                 options
@@ -92,7 +92,7 @@ impl CsvSerializer {
                                     .datetime_format
                                     .as_deref()
                                     .unwrap_or("%FT%H:%M:%S.%6f%z"),
-                                tz.parse::<Tz>().ok(),
+                                Tz::get(tz.as_str()).ok(),
                             ),
                             _ => (
                                 options
@@ -112,7 +112,7 @@ impl CsvSerializer {
                                     .datetime_format
                                     .as_deref()
                                     .unwrap_or("%FT%H:%M:%S.%9f%z"),
-                                tz.parse::<Tz>().ok(),
+                                Tz::get(tz.as_str()).ok(),
                             ),
                             _ => (
                                 options
@@ -189,7 +189,7 @@ impl CsvSerializer {
                 Arc::as_ref(&self.options),
                 c.dtype(),
                 self.datetime_formats[i].as_str(),
-                self.time_zones[i],
+                self.time_zones[i].clone(),
             )?)
         }
 

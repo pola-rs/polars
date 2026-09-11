@@ -16,13 +16,11 @@ description = "Minimal implementation of the Arrow specification forked from arr
 bitflags = { workspace = true }
 bytemuck = { workspace = true, features = ["must_cast"] }
 bytes = { workspace = true }
-chrono = { workspace = true }
-# for timezone support
-chrono-tz = { workspace = true, optional = true }
 dyn-clone = { version = "1" }
 either = { workspace = true }
 half = { workspace = true, optional = false, features = ["num-traits", "bytemuck"] }
 hashbrown = { workspace = true }
+jiff = { workspace = true }
 num-traits = { workspace = true }
 polars-buffer = { workspace = true }
 polars-error = { workspace = true }
@@ -87,7 +85,7 @@ full = [
   "compute",
   "serde",
   # parses timezones used in timestamp conversions
-  "chrono-tz",
+  "timezones",
 ]
 io_ipc = ["arrow-format", "polars-error/arrow-format"]
 io_ipc_compression = ["lz4", "zstd", "io_ipc"]
@@ -124,9 +122,7 @@ dsl-schema = ["dep:schemars", "polars-schema/dsl-schema", "polars-utils/dsl-sche
 simd = []
 
 # polars-arrow
-timezones = [
-  "chrono-tz",
-]
+timezones = []
 dtype-array = []
 dtype-decimal = ["atoi_simd", "itoa"]
 bigidx = ["polars-utils/bigidx"]

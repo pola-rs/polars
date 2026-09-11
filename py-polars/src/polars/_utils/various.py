@@ -368,26 +368,27 @@ def _cast_repr_strings_with_schema(
         if tp is not None:
             if tp.base_type() == Datetime:
                 tp_base = Datetime(tp.time_unit)  # type: ignore[union-attr]
-                d = F.col(c).str.replace(r"[A-Z ]+$", "")
-                cast_cols[c] = (
-                    F.when(d.str.len_bytes() == 19)
-                    .then(d + ".000000000")
-                    .otherwise(d + "000000000")
-                    .str.slice(0, 29)
-                    .str.strptime(tp_base, "%Y-%m-%d %H:%M:%S.%9f")
+                # Strip a trailing tz suffix - either the current
+                # "+01:00" style, an older pasted-in repr's bracketed
+                # "+01:00[Europe/Paris]" style, or an even older " CET"-style
+                # abbreviation - the remaining wall-clock part is re-localized
+                # below via `replace_time_zone`. `%.f` parses a variable-width
+                # (or absent) fractional part directly, so no manual padding
+                # to a fixed digit count is needed.
+                d = F.col(c).str.replace(
+                    r"([A-Z ]+|[+-]\d{2}(:\d{2}){1,2}(\[[^\]]*\])?)$", ""
                 )
+                # An older pasted-in repr separates the date/time with a
+                # space rather than the current "T"; normalize so a single
+                # format string parses both.
+                d = d.str.replace(r"^(\d{4}-\d{2}-\d{2}) ", "${1}T")
+                cast_cols[c] = d.str.strptime(tp_base, "%Y-%m-%dT%H:%M:%S%.f")
                 if getattr(tp, "time_zone", None) is not None:
                     cast_cols[c] = cast_cols[c].dt.replace_time_zone(tp.time_zone)  # type: ignore[union-attr]
             elif tp == Date:
                 cast_cols[c] = F.col(c).str.strptime(tp, "%Y-%m-%d")  # type: ignore[arg-type]
             elif tp == Time:
-                cast_cols[c] = (
-                    F.when(F.col(c).str.len_bytes() == 8)
-                    .then(F.col(c) + ".000000000")
-                    .otherwise(F.col(c) + "000000000")
-                    .str.slice(0, 18)
-                    .str.strptime(tp, "%H:%M:%S.%9f")  # type: ignore[arg-type]
-                )
+                cast_cols[c] = F.col(c).str.strptime(tp, "%H:%M:%S%.f")  # type: ignore[arg-type]
             elif tp == Duration:
                 cast_cols[c] = (
                     F.col(c)

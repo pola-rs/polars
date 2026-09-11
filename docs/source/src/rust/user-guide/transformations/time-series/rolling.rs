@@ -1,5 +1,5 @@
 // --8<-- [start:setup]
-use chrono::prelude::*;
+use jiff::civil::Date as NaiveDate;
 use polars::io::prelude::*;
 use polars::prelude::*;
 // --8<-- [end:setup]
@@ -45,14 +45,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:group_by_dyn]
     let time = polars::time::date_range(
         "time".into(),
-        NaiveDate::from_ymd_opt(2021, 1, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap(),
-        NaiveDate::from_ymd_opt(2021, 12, 31)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap(),
+        NaiveDate::new(2021, 1, 1).unwrap().at(0, 0, 0, 0),
+        NaiveDate::new(2021, 12, 31).unwrap().at(0, 0, 0, 0),
         Duration::parse("1d"),
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
@@ -104,14 +98,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:group_by_roll]
     let time = polars::time::date_range(
         "time".into(),
-        NaiveDate::from_ymd_opt(2021, 12, 16)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap(),
-        NaiveDate::from_ymd_opt(2021, 12, 16)
-            .unwrap()
-            .and_hms_opt(3, 0, 0)
-            .unwrap(),
+        NaiveDate::new(2021, 12, 16).unwrap().at(0, 0, 0, 0),
+        NaiveDate::new(2021, 12, 16).unwrap().at(3, 0, 0, 0),
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Milliseconds,

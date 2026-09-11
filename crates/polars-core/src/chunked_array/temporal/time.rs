@@ -1,7 +1,6 @@
 use std::fmt::Write;
 
 use arrow::temporal_conversions::{NANOSECONDS, time64ns_to_time};
-use chrono::Timelike;
 
 use super::*;
 use crate::prelude::*;
@@ -14,20 +13,15 @@ pub fn time_to_time64ns(time: &NaiveTime) -> i64 {
         + time.minute() as i64 * SECONDS_IN_MINUTE
         + time.second() as i64)
         * NANOSECONDS
-        + time.nanosecond() as i64
+        + time.subsec_nanosecond() as i64
 }
 
 impl TimeChunked {
     /// Convert from Time into String with the given format.
-    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    /// See [jiff strftime/strptime](https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html).
     pub fn to_string(&self, format: &str) -> StringChunked {
         let mut ca: StringChunked = self.physical().apply_kernel_cast(&|arr| {
             let mut buf = String::new();
-            let format = if format == "iso" || format == "iso:strict" {
-                "%T%.9f"
-            } else {
-                format
-            };
             let mut mutarr = MutablePlString::with_capacity(arr.len());
 
             for opt in arr.into_iter() {
@@ -35,8 +29,8 @@ impl TimeChunked {
                     None => mutarr.push_null(),
                     Some(v) => {
                         buf.clear();
-                        let timefmt = time64ns_to_time(*v).format(format);
-                        write!(buf, "{timefmt}").unwrap();
+                        let time = time64ns_to_time(*v);
+                        write!(buf, "{}", time.strftime(format)).unwrap();
                         mutarr.push_value(&buf)
                     },
                 }
@@ -50,7 +44,7 @@ impl TimeChunked {
     }
 
     /// Convert from Time into String with the given format.
-    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    /// See [jiff strftime/strptime](https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html).
     ///
     /// Alias for `to_string`.
     pub fn strftime(&self, format: &str) -> StringChunked {
