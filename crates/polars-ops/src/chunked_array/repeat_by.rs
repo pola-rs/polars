@@ -43,12 +43,35 @@ fn repeat_chunk(arr: &dyn PlArray, by: &PlPrimitiveArray<IdxSize>) -> PlListArra
     offsets.push(0);
     let mut validity = BitmapBuilder::with_capacity(by.len());
 
+    // The values are appended by the index that picks them, in blocks, rather than one call per
+    // element: `subslice_extend_repeated` resolves the builder's array type and downcasts `arr` to
+    // it once per repeat of every element, which is all a single-element subslice costs. The
+    // indices are gathered into a block first and handed over together, so the walk pays that once
+    // per block instead; the block is flushed by length, so an element repeated a great many times
+    // does not hold all of its indices at once.
+    const BLOCK: usize = 8192;
+    let mut idxs: Vec<IdxSize> = Vec::with_capacity(BLOCK);
+    let mut length = 0u64;
+
     for (idx, n_repeat) in by.iter().enumerate() {
         validity.push(n_repeat.is_some());
         if let Some(repeats) = n_repeat {
-            values.subslice_extend_repeated(arr, idx, 1, repeats as usize, ShareStrategy::Always);
+            for _ in 0..repeats {
+                idxs.push(idx as IdxSize);
+                if idxs.len() == BLOCK {
+                    // SAFETY: every index is an element of `arr`, which `by` is aligned with.
+                    unsafe { values.gather_extend(arr, &idxs, ShareStrategy::Always) };
+                    idxs.clear();
+                }
+            }
+            length += idxsize_to_u64(repeats);
         }
-        offsets.push(values.len() as u64);
+        offsets.push(length);
+    }
+
+    if !idxs.is_empty() {
+        // SAFETY: every index is an element of `arr`, which `by` is aligned with.
+        unsafe { values.gather_extend(arr, &idxs, ShareStrategy::Always) };
     }
 
     PlListArray::new(
