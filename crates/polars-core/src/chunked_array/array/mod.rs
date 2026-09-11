@@ -29,16 +29,29 @@ pub(crate) fn array_values(arr: &PlFixedSizeListArray) -> PlArrayRef {
 }
 
 /// Returns `arr` with its values replaced, keeping its width and validity mask.
+///
+/// The replacement stands for the values it replaces one for one, so it is in the
+/// representation they were in: one element's values where `arr` repeats a single element, and
+/// one element's values per element otherwise.
 pub(crate) fn array_with_values(
     arr: &PlFixedSizeListArray,
     values: PlArrayRef,
 ) -> PlFixedSizeListArray {
+    assert_eq!(arr.values().len(), values.len());
     let (width, length) = (arr.width(), arr.len());
-    assert_eq!(values.len(), width * length);
+    let values_are_scalar = arr.values_are_scalar();
+    let validity = arr.validity().map(PlBitmap::from);
 
-    // SAFETY: just checked that the values hold `width` values for every element.
-    unsafe { PlFixedSizeListArray::new_unchecked(values, width, length, None) }
-        .with_validity(arr.validity().map(PlBitmap::from))
+    // SAFETY: only the values are replaced, by an array of the same length, so they still hold
+    // the width of every element in the representation they were taken out in.
+    let out = unsafe {
+        if values_are_scalar {
+            PlFixedSizeListArray::new_broadcast_unchecked(values, width, length, None)
+        } else {
+            PlFixedSizeListArray::new_unchecked(values, width, length, None)
+        }
+    };
+    out.with_validity(validity)
 }
 
 /// Lays `elements` out as the chunk of an [`ArrayChunked`] of `width` and `inner_dtype`.
@@ -200,7 +213,13 @@ impl ArrayChunked {
     pub unsafe fn from_physical_unchecked(&self, to_inner_dtype: DataType) -> PolarsResult<Self> {
         debug_assert!(!self.inner_dtype().is_logical());
 
-        let chunks = self.downcast_iter().map(array_values).collect();
+        // The values are re-tagged one for one, so they are taken as they are laid out: a chunk
+        // that repeats a single array holds that one array's values rather than a copy of them
+        // per element, and `array_with_values` puts the re-tagged ones back the same way.
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| arr.values().to_boxed())
+            .collect();
 
         let inner = unsafe {
             Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, chunks, self.inner_dtype())
@@ -268,6 +287,9 @@ impl ArrayChunked {
     }
 
     /// Ignore the list indices and apply `func` to the inner type as [`Series`].
+    ///
+    /// `func` is handed the values of one element for a chunk that repeats a single array,
+    /// since every element reads the same ones, and its answer is repeated in turn.
     pub fn apply_to_inner(
         &self,
         func: &dyn Fn(Series) -> PolarsResult<Series>,
@@ -281,7 +303,7 @@ impl ArrayChunked {
         let elements = unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 self.name().clone(),
-                vec![array_values(arr)],
+                vec![arr.values().to_boxed()],
                 ca.inner_dtype(),
             )
         };
