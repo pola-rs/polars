@@ -119,7 +119,26 @@ impl PhysicalExpr for ColumnExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let c = self.evaluate(df, state)?;
-        Ok(AggregationContext::new(c, Cow::Borrowed(groups), false))
+
+        // When a column expression is called inside a `{list,arr}.{eval,agg}` expression, the
+        // `state.element` is `Some`. The group indexes into a flattened version state.element.
+        // Each row valid in the `state.element` corresponds to a row in the `df` which is provided
+        // as a scalar.
+        if let Some((_, Some(validity))) = state.element.as_ref() {
+            // Filter to only the valid outer rows to match the group count.
+            //
+            // @Speed: We could cache this, but I think it is not needed.
+            let mask = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, validity.clone());
+            let c = c.filter(&mask)?;
+            return Ok(AggregationContext::new(c, Cow::Borrowed(groups), true));
+        }
+
+        let aggregated = state.element.is_some();
+        Ok(AggregationContext::new(
+            c,
+            Cow::Borrowed(groups),
+            aggregated,
+        ))
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

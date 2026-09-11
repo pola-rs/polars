@@ -563,6 +563,11 @@ fn create_physical_expr_inner(
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let evaluation_is_scalar = is_scalar_ae(evaluation, expr_arena);
             let evaluation_is_elementwise = is_elementwise_rec(evaluation, expr_arena);
+            let evaluation_has_column_refs = has_aexpr(
+                evaluation,
+                expr_arena,
+                |ae| matches!(ae, AExpr::Column(name) if *name != get_pl_element_name()),
+            );
             // @NOTE: This is actually also something the downstream apply code should care about.
             let mut pd_group = ExprPushdownGroup::Pushable;
             pd_group.update_with_expr_rec(expr_arena.get(evaluation), expr_arena, None);
@@ -591,6 +596,7 @@ fn create_physical_expr_inner(
                 is_scalar,
                 evaluation_is_scalar,
                 evaluation_is_elementwise,
+                evaluation_has_column_refs,
                 evaluation_is_fallible,
             )))
         },
