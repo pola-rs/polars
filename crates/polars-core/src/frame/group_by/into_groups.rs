@@ -22,8 +22,13 @@ pub trait IntoGroupsType {
     }
 }
 
-/// The groups of a chunked array whose one chunk repeats a single value: they are one group.
-fn scalar_groups<T: PolarsDataType>(ca: &ChunkedArray<T>) -> Option<GroupsType> {
+/// The groups of a chunked array whose one chunk repeats a single element: they are one group.
+///
+/// Every element of such a chunk is the same one — the same value throughout, or a null
+/// throughout — so they all fall in the group the first of them opens, without one of them being
+/// hashed. For a nested type that is worth the most: its groups are otherwise read off a row
+/// encoding of the whole column, written out before a single row is hashed.
+pub(crate) fn scalar_groups<T: PolarsDataType>(ca: &ChunkedArray<T>) -> Option<GroupsType> {
     let [chunk] = ca.chunks().as_slice() else {
         return None;
     };
@@ -354,6 +359,12 @@ impl IntoGroupsType for ListChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
+        // One element repeated is one group, whatever the length — and the row encoding below,
+        // which writes a row per element before a single one is hashed, is never reached.
+        if let Some(groups) = scalar_groups(self) {
+            return Ok(groups);
+        }
+
         multithreaded &= RAYON.current_num_threads() > 1;
         let by = &[self.clone().into_column()];
         let ca = if multithreaded {
@@ -375,6 +386,11 @@ impl IntoGroupsType for ArrayChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
+        // As in `ListChunked::group_tuples`: one repeated element is one group.
+        if let Some(groups) = scalar_groups(self) {
+            return Ok(groups);
+        }
+
         multithreaded &= RAYON.current_num_threads() > 1;
         let by = &[self.clone().into_column()];
         let ca = if multithreaded {

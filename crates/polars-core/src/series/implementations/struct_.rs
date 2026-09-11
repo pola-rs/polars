@@ -1,5 +1,7 @@
 use super::*;
 use crate::chunked_array::StructChunked;
+#[cfg(feature = "algorithm_group_by")]
+use crate::frame::group_by::scalar_groups;
 use crate::prelude::row_encode::{
     _get_rows_encoded_ca, _get_rows_encoded_ca_unordered, encode_rows_unordered,
 };
@@ -102,6 +104,11 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
                     monotonic: true,
                 })
             }
+        } else if let Some(groups) = scalar_groups(&self.0) {
+            // One element repeated is one group, whatever the length — and the row encoding
+            // below, which writes a row per element before a single one is hashed, is never
+            // reached. See `scalar_groups`.
+            Ok(groups)
         } else {
             let ca = self.0.get_row_encoded(Default::default())?;
             ca.group_tuples(multithreaded, sorted)
