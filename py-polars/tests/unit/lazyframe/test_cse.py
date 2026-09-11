@@ -1675,12 +1675,17 @@ def test_cspe_with_pushable_filters_scan_19479(tmp_path: Path) -> None:
     assert "CACHE[id:" not in result.explain()
 
 
-def wide_subplan_referenced(tmp_path: Path, n: int) -> pl.LazyFrame:
+def wide_subplan_referenced(
+    tmp_path: Path, n: int, *, cross: bool = False
+) -> pl.LazyFrame:
     """`n` branches over one join-and-aggregate subplan, each with its own predicate.
 
     The predicates are all pushable, so the caches are removable; whether removing
     them is worth `n` copies of the join is the question. Written to parquet because
     the cost model reads its row counts from scan metadata.
+
+    With `cross`, the join is written as a cross join plus an equality, the form
+    predicate pushdown rewrites into an equi join.
     """
     rows = 20_000
     pl.DataFrame(
@@ -1694,12 +1699,14 @@ def wide_subplan_referenced(tmp_path: Path, n: int) -> pl.LazyFrame:
         {"key": list(range(100)), "name": [f"n{i}" for i in range(100)]}
     ).write_parquet(tmp_path / "dim.parquet")
 
-    base = (
-        pl.scan_parquet(tmp_path / "fact.parquet")
-        .join(pl.scan_parquet(tmp_path / "dim.parquet"), on="key")
-        .group_by("grp", "name")
-        .agg(pl.col("val").sum())
+    fact = pl.scan_parquet(tmp_path / "fact.parquet")
+    dim = pl.scan_parquet(tmp_path / "dim.parquet")
+    joined = (
+        fact.join(dim, how="cross").filter(pl.col("key") == pl.col("key_right"))
+        if cross
+        else fact.join(dim, on="key")
     )
+    base = joined.group_by("grp", "name").agg(pl.col("val").sum())
     return pl.concat(
         [base.filter(pl.col("grp") == i).select("name", "val") for i in range(n)]
     )
@@ -1721,6 +1728,24 @@ def test_cspe_reference_count_drives_cache_removal(
 ) -> None:
     q = wide_subplan_referenced(tmp_path, references)
     assert q.explain().count("CACHE[id:") == caches
+
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_cross_join_subplan_is_costed_after_pushdown(tmp_path: Path) -> None:
+    # The subplan sits under the cache as a cross join, since pushdown does not
+    # descend into caches. Costed in that form its join prices as a cross product,
+    # which no shared subplan can beat.
+    q = wide_subplan_referenced(tmp_path, 8, cross=True)
+
+    plan = q.explain()
+    assert plan.count("CACHE[id:") == 8
+    # The shared subplan is joined once, not once per branch.
+    assert plan.count("INNER JOIN:") == 1
 
     assert_frame_equal(
         q.collect(),
