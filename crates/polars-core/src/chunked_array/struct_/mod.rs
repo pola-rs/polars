@@ -366,7 +366,7 @@ impl StructChunked {
     ///
     /// # Panics
     /// If `other` has a different length.
-    pub(crate) fn with_outer_validity_from(mut self, other: &Self) -> Self {
+    fn with_outer_validity_from(mut self, other: &Self) -> Self {
         assert_eq!(self.len(), other.len());
         if other.null_count == 0 {
             return self;

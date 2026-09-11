@@ -21,7 +21,7 @@ use crate::prelude::*;
 /// 1. The storage dtype is the [`DataType::map_storage_dtype`] of a Map dtype that passes
 ///    [`DataType::ensure_valid_map_dtype`].
 /// 2. Child arrays are valid over their entire extent, including outside the list offsets:
-///    categorical codes in range, no `Object`.
+///    categorical codes in range for every non-null slot, no `Object`.
 /// 3. Entries and keys are non-null within the offset window of every non-null row of every
 ///    chunk.
 ///
@@ -221,16 +221,17 @@ impl MapChunked {
         );
         dtype.ensure_valid_map_dtype()?;
 
-        let storage = self.live_storage();
-        let keys = unpack_map_entries(&windowed_entries(&storage)).0;
-        polars_ensure!(
-            values.len() == keys.len(),
-            ShapeMismatch:
-            "Map values must have one element per entry: expected {}, got {}",
-            keys.len(),
-            values.len(),
-        );
-        let storage = repack_map_storage(&storage, &keys, values).into_series();
+        let storage = try_apply_map_entries(&self.live_storage(), |keys, _| {
+            polars_ensure!(
+                values.len() == keys.len(),
+                ShapeMismatch:
+                "Map values must have one element per entry: expected {}, got {}",
+                keys.len(),
+                values.len(),
+            );
+            Ok((keys.clone(), values.clone()))
+        })?
+        .into_series();
 
         // SAFETY: live keys and row assignments are preserved; replacements have a valid
         // Map value dtype. Only entries no live row owns are dropped.
@@ -543,25 +544,28 @@ fn windowed_entries(storage: &ListChunked) -> Series {
     }
 }
 
-/// Rebuild Map storage from flat fields with one element per windowed entry.
+/// Transform the flat entry fields and rebuild the original Map storage.
 ///
-/// Preserves entry and list validity. Only the outer rows are rebuilt: entries nested inside
-/// the new fields keep their own offsets.
-fn repack_map_storage(storage: &ListChunked, keys: &Series, values: &Series) -> ListChunked {
+/// Also accepts `List(Struct {key, value})` that is not Map storage yet, whose entries and
+/// keys may be null. Preserves entry and list validity and row lengths. Only the outer rows
+/// are rebuilt: entries nested inside the new fields keep their own offsets. The transform
+/// must preserve the windowed entry count; its returned fields determine the output dtype.
+pub(crate) fn try_apply_map_entries(
+    storage: &ListChunked,
+    f: impl FnOnce(&Series, &Series) -> PolarsResult<(Series, Series)>,
+) -> PolarsResult<ListChunked> {
     let entries = windowed_entries(storage);
-    assert_eq!(
-        keys.len(),
-        entries.len(),
-        "map keys must have one element per entry"
-    );
-    assert_eq!(
-        values.len(),
-        entries.len(),
-        "map values must have one element per entry"
+    let (key, value) = try_unpack_map_entries(&entries)?;
+
+    let entries_len = entries.len();
+    let (key, value) = f(&key, &value)?;
+    polars_ensure!(
+        key.len() == entries_len && value.len() == entries_len,
+        ShapeMismatch: "Map entry transform changed the entry count from {entries_len} to ({}, {})",
+        key.len(), value.len(),
     );
 
-    let packed = pack_map_entries(keys, values);
-    let mut packed = packed.struct_().unwrap().clone();
+    let mut packed = pack_map_entries(&key, &value).struct_().unwrap().clone();
     packed.zip_outer_validity(entries.struct_().expect("map entries are a struct"));
     let packed = packed.into_series();
 
@@ -582,36 +586,13 @@ fn repack_map_storage(storage: &ListChunked, keys: &Series, values: &Series) -> 
         .collect();
 
     // SAFETY: the list dtype is derived from the packed entries.
-    unsafe {
+    Ok(unsafe {
         ListChunked::from_chunks_and_dtype_unchecked(
             storage.name().clone(),
             chunks,
             DataType::List(Box::new(entries_dtype)),
         )
-    }
-}
-
-/// Transform the flat entry fields and rebuild the original Map storage.
-///
-/// Also accepts `List(Struct {key, value})` that is not Map storage yet, whose entries and
-/// keys may be null. Preserves validity and row lengths. The transform must preserve the
-/// windowed entry count; its returned fields determine the output dtype.
-pub(crate) fn try_apply_map_entries(
-    storage: &ListChunked,
-    f: impl FnOnce(&Series, &Series) -> PolarsResult<(Series, Series)>,
-) -> PolarsResult<ListChunked> {
-    let entries = windowed_entries(storage);
-    let (key, value) = try_unpack_map_entries(&entries)?;
-
-    let entries_len = entries.len();
-    let (key, value) = f(&key, &value)?;
-    polars_ensure!(
-        key.len() == entries_len && value.len() == entries_len,
-        ShapeMismatch: "Map entry transform changed the entry count from {entries_len} to ({}, {})",
-        key.len(), value.len(),
-    );
-
-    Ok(repack_map_storage(storage, &key, &value))
+    })
 }
 
 fn map_av(av: AnyValue<'_>) -> AnyValue<'_> {

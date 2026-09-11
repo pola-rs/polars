@@ -471,8 +471,8 @@ impl ToArrowConverter {
         use arrow::offset::OffsetsBuffer;
 
         let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
-        // Arrow's MAP entries and keys are non-nullable and its offsets start at zero, so
-        // normalize before the child is read: everything no live row owns is dropped.
+        // Arrow's MAP entries and keys are non-nullable, and entries that no live row owns
+        // may be null, so normalize before the child is read: those entries are dropped.
         let normalized = normalize_map_entries(arr);
         let arr = normalized.as_ref().unwrap_or(arr);
 
