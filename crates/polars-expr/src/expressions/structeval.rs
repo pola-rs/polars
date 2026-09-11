@@ -102,7 +102,9 @@ impl StructEvalExpr {
         match acs[base_ac_idx].agg_state() {
             AggState::AggregatedList(s) => {
                 let aggregated = acs.iter().any(|ac| ac.is_aggregated());
-                let ca = s.list().unwrap();
+                // The closure ignores the values it is handed and computes over the whole
+                // column, so the list layout has to be laid out flat to line up against it.
+                let ca = s.list().unwrap().to_flat_layout();
                 let input_len = s.len();
 
                 let out = ca.apply_to_inner(&|_| {

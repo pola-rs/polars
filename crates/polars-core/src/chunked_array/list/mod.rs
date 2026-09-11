@@ -209,19 +209,39 @@ impl ListChunked {
         self.downcast_iter().map(|c| c.values().len()).sum()
     }
 
+    /// This chunked array with the one range a scalar chunk repeats written out, a range per
+    /// element.
+    ///
+    /// [`ListChunked::apply_to_inner`] hands its closure the values of a *single* element for such
+    /// a chunk, since every element reads the same ones. A closure that ignores what it is handed
+    /// and computes over the whole column instead returns one value per element of the flat
+    /// layout, so it has to be given that layout to line up against.
+    pub fn to_flat_layout(&self) -> ListChunked {
+        let ca = self.rechunk();
+        let arr = ca.downcast_as_array().to_flat().into_owned().into_array();
+
+        // SAFETY: flattening a chunk changes how it is laid out, not what it holds.
+        unsafe {
+            ListChunked::from_chunks_and_dtype_unchecked(
+                ca.name().clone(),
+                vec![arr.into_boxed()],
+                ca.dtype().clone(),
+            )
+        }
+    }
+
     /// Ignore the list indices and apply `func` to the inner type as [`Series`].
+    ///
+    /// `func` is handed the values of one element for a chunk that repeats a single list, and its
+    /// answer is repeated in turn — see [`ListChunked::to_flat_layout`] for the callers that
+    /// cannot take that.
     pub fn apply_to_inner(
         &self,
         func: &dyn Fn(Series) -> PolarsResult<Series>,
     ) -> PolarsResult<ListChunked> {
         // generated Series will have wrong length otherwise.
         let ca = self.rechunk();
-        // The values are handed over one list per element: `func` maps them one for one, and a
-        // caller may read that layout off the array itself rather than off the values it is
-        // handed — see the closures in `polars-expr` that ignore them. So the single range a
-        // scalar chunk repeats is written out here, as `array_values` does for a fixed size list.
-        let arr = ca.downcast_as_array().to_flat();
-        let arr = arr.as_ref().as_array();
+        let arr = ca.downcast_as_array();
 
         // SAFETY:
         // Inner dtype is passed correctly

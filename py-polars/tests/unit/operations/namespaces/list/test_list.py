@@ -1685,3 +1685,38 @@ def test_eval_over_a_literal_in_an_aggregation_keeps_it_a_literal(
         out = q.collect(engine=engine)
         assert out.schema == schema, f"{engine} disagrees with the query's schema"
         assert out["o"].to_list() == expected, f"{engine}"
+
+
+@pytest.mark.parametrize(
+    ("value", "match", "expected"),
+    [
+        ([1, 2, 3], 1, 1),
+        ([1, 1, 1], 1, 3),
+        ([1, 2, 3], 9, 0),
+        ([None, 1], None, 1),
+        ([], 1, 0),
+    ],
+)
+def test_list_count_matches_over_a_chunk_that_repeats_one_list(
+    value: list[Any], match: Any, expected: int
+) -> None:
+    # `apply_to_inner` hands its closure the values of a single element for such a
+    # chunk, since every element reads the same ones — it wrote the one list out per
+    # element instead, which cost 9.4 ms per million three-element lists where the
+    # flat column cost 1.8 ms.
+    n = 200_000
+    dtype = pl.List(pl.Int64)
+    repeated = pl.select(
+        pl.repeat(pl.lit(value, dtype=dtype), n).alias("a")
+    ).to_series()
+    assert repeated.n_chunks() == 1
+    flat = pl.Series("a", [value] * n, dtype=dtype)
+
+    counts = repeated.list.count_matches(match)
+    assert_series_equal(
+        counts, pl.Series("a", [expected] * n, dtype=pl.get_index_type())
+    )
+    assert_series_equal(counts, flat.list.count_matches(match))
+
+    # The counts are the one count repeated, rather than one slot per element.
+    assert counts.estimated_size() < flat.list.count_matches(match).estimated_size()
