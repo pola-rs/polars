@@ -21,6 +21,7 @@ use polars_plan::plans::IRCorrelationMethod;
 use polars_plan::plans::{AExprSorted, DynamicPredWeakRef, RowEncodingVariant};
 use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 
 #[cfg(feature = "abs")]
@@ -711,6 +712,9 @@ pub fn as_struct(cols: &[Column]) -> PolarsResult<Column> {
 }
 
 pub fn as_list(s: &mut [Column]) -> PolarsResult<Column> {
+    let length = broadcast_len(s.iter())?;
+    s[0].broadcast_in_place_to(length)?;
+
     let first = s[0].to_unit_list();
     let other: Vec<Column> = s[1..].iter().map(Column::to_unit_list).collect();
 
