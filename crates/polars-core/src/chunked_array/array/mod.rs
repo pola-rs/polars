@@ -273,7 +273,14 @@ impl ArrayChunked {
         let chunks = self
             .downcast_iter()
             .zip(values.into_chunks())
-            .map(|(ca_arr, v_arr)| array_with_values(ca_arr, v_arr).into_boxed())
+            .map(|(ca_arr, v_arr)| {
+                // `values` holds one element's worth of values per element, which is the flat
+                // layout: a chunk that repeats a single array holds them once, and is written
+                // out here for the two to line up. `array_with_values` puts the replacement
+                // back in the representation it takes the values out in.
+                let flat = ca_arr.to_flat();
+                array_with_values(flat.as_array(), v_arr).into_boxed()
+            })
             .collect::<Vec<_>>();
 
         // SAFETY: the chunks' inner dtype is derived from `values`' own chunks.
@@ -326,5 +333,39 @@ impl ArrayChunked {
                 DataType::Array(Box::new(out.dtype().clone()), self.width()),
             )
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    /// [`ArrayChunked::with_inner_values`] is handed one element's worth of values per element,
+    /// which a chunk that repeats a single array does not hold: `array_with_values` reads its
+    /// replacement in the representation it takes the old values out in, so the chunk is
+    /// written out flat first for the two to line up.
+    #[test]
+    fn with_inner_values_over_a_chunk_that_repeats_one_array() {
+        let element = Series::new(PlSmallStr::from_static("a"), [1i64, 2, 3]);
+        let repeated = ArrayChunked::full(PlSmallStr::from_static("a"), &element, 4);
+        assert!(repeated.downcast_as_array().values_are_scalar());
+        assert_eq!(repeated.inner_length(), 12);
+
+        let values = repeated.get_inner();
+        assert_eq!(values.len(), repeated.inner_length());
+
+        let doubled = &values * 2;
+        let out = repeated.with_inner_values(&doubled);
+
+        assert_eq!(out.len(), repeated.len());
+        assert_eq!(out.width(), 3);
+        assert_eq!(
+            out.get_inner()
+                .i64()
+                .unwrap()
+                .into_no_null_iter()
+                .collect::<Vec<_>>(),
+            vec![2i64, 4, 6, 2, 4, 6, 2, 4, 6, 2, 4, 6],
+        );
     }
 }
