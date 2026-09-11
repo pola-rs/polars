@@ -53,5 +53,7 @@ unknown-git = "deny"
 allow-git = [
   "https://github.com/apache/arrow-rs-object-store",
   "https://github.com/apache/iceberg-rust",
+  # Temporary development dependency for apache/iceberg-rust#3173.
+  "https://github.com/zakariya-s/iceberg-rust",
   "https://github.com/pola-rs/jemallocator",
 ]

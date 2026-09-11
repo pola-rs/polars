@@ -2478,6 +2478,7 @@ class IcebergBatchIterator:
 def _scan_iceberg_rust(
     metadata_location: str,
     kms_client: Any,
+    kms_properties: dict[str, str],
     storage_properties: dict[str, str],
     snapshot_id: int | None,
     columns: pylist[str] | None,

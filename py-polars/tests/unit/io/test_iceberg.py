@@ -16,7 +16,9 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal as D
 from functools import partial
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import pyarrow as pa
@@ -71,7 +73,7 @@ from polars.io.iceberg._dataset import (
     IcebergScanTableSerializer,
     IcebergTableWrap,
     _convert_iceberg_to_rust_storage_options,
-    _load_kms_client,
+    _load_kms_config,
     _NativeIcebergScanData,
     _RustIcebergScanData,
 )
@@ -88,6 +90,9 @@ from tests.unit.io.conftest import normalize_path_separator_pl
 from tests.unit.io.test_scan_row_deletion import write_position_deletes  # noqa: F401
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
     from tests.unit.io.test_scan_row_deletion import (
         WritePositionDeletes,
@@ -170,6 +175,38 @@ class _KmsWithRequiredArgument:
         pass
 
 
+@pytest.fixture
+def iceberg_kms_endpoint() -> Iterator[
+    tuple[str, list[tuple[str | None, dict[str, Any]]], dict[str, str]]
+]:
+    calls: list[tuple[str | None, dict[str, Any]]] = []
+    response = {
+        "Plaintext": base64.b64encode(
+            bytes.fromhex("fa501fc8fcba0566490e925879392260")
+        ).decode(),
+        "KeyId": "master-1",
+        "EncryptionAlgorithm": "SYMMETRIC_DEFAULT",
+    }
+
+    class KmsHandler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            calls.append((self.headers.get("X-Amz-Target"), json.loads(body)))
+            self.send_response(400 if "__type" in response else 200)
+            self.send_header("Content-Type", "application/x-amz-json-1.1")
+            self.end_headers()
+            self.wfile.write(json.dumps(response).encode())
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), KmsHandler) as server:
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"http://127.0.0.1:{server.server_port}", calls, response
+        finally:
+            server.shutdown()
+            thread.join()
+
+
 @pytest.mark.parametrize(
     ("location", "properties", "expected"),
     [
@@ -197,10 +234,12 @@ class _KmsWithRequiredArgument:
             {
                 "bearer_token": "token",
                 "google_service_account_key": '{"type":"service_account"}',
+                "google_url": "http://localhost:9000",
             },
             {
                 "gcs.oauth2.token": "token",
                 "gcs.credentials-json": '{"type":"service_account"}',
+                "gcs.service.host": "http://localhost:9000",
             },
         ),
         (
@@ -436,7 +475,7 @@ class TestIcebergScanIO:
         table.config = {"py-kms-impl": kms_impl}
 
         with pytest.raises(error, match=match):
-            _load_kms_client(table)
+            _load_kms_config(table)
 
     def test_kms_implementation_is_not_loaded_from_table_metadata(
         self, iceberg_path: str
@@ -444,9 +483,87 @@ class TestIcebergScanIO:
         table = StaticTable.from_metadata(iceberg_path)
         table.metadata.properties["py-kms-impl"] = f"{__name__}._TestKmsClient"
 
-        assert _load_kms_client(table) is None
+        assert _load_kms_config(table) is None
 
-    def test_scan_iceberg_encrypted_manifest_list(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("source", ["catalog", "config", "storage_options"])
+    def test_native_kms_configuration(self, iceberg_path: str, source: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        properties = {"encryption.kms-type": "aws", "region_name": "us-east-1"}
+        storage_options = None
+        if source == "catalog":
+            table.catalog.properties.update(properties)
+        elif source == "config":
+            table.config = properties
+        else:
+            storage_options = properties
+
+        assert _load_kms_config(table, storage_options) is None
+        table.metadata.properties.update(
+            {
+                "encryption.key-id": "master-1",
+                "encryption.kms-type": "untrusted",
+                "kms.endpoint": "https://untrusted.invalid",
+                "region_name": "untrusted",
+            }
+        )
+        config = _load_kms_config(table, storage_options)
+        assert config is not None
+        assert config.client is None
+        assert config.properties["encryption.kms-type"] == "aws"
+        assert config.properties["region_name"] == "us-east-1"
+        assert "kms.endpoint" not in config.properties
+
+    @pytest.mark.parametrize("kms_type", ["azure", "gcp", "unknown"])
+    def test_unsupported_native_kms(self, iceberg_path: str, kms_type: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.metadata.properties["encryption.key-id"] = "master-1"
+        table.config = {"encryption.kms-type": kms_type}
+
+        with pytest.raises(NotImplementedError, match="unsupported Iceberg KMS type"):
+            pl.scan_iceberg(table).collect()
+
+    def test_conflicting_kms_configuration(self, iceberg_path: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.config = {
+            "encryption.kms-type": "aws",
+            "py-kms-impl": f"{__name__}._TestKmsClient",
+        }
+        with pytest.raises(ValueError, match="configure only one"):
+            pl.scan_iceberg(table).collect()
+
+    def test_native_kms_configuration_precedence(self, iceberg_path: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.metadata.properties["encryption.key-id"] = "master-1"
+        table.catalog.properties.update(
+            {"encryption.kms-type": "aws", "region_name": "catalog"}
+        )
+        table.config = {"region_name": "config"}
+        config = _load_kms_config(table)
+        assert config is not None
+        assert config.properties["region_name"] == "config"
+        config = _load_kms_config(table, {"region_name": "explicit"})
+        assert config is not None
+        assert config.properties["region_name"] == "explicit"
+
+    def test_native_kms_incremental_scan_rejected(self, iceberg_path: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.metadata.properties["encryption.key-id"] = "master-1"
+        table.config = {"encryption.kms-type": "aws"}
+        with pytest.raises(NotImplementedError, match="incremental append scans"):
+            pl.scan_iceberg(table, from_snapshot_id_exclusive=1).collect()
+
+    @pytest.mark.parametrize("kms_type", ["python", "aws", "aws_env", "aws_denied"])
+    @pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+    def test_scan_iceberg_encrypted_manifest_list(
+        self,
+        tmp_path: Path,
+        kms_type: str,
+        engine: EngineType,
+        monkeypatch: pytest.MonkeyPatch,
+        iceberg_kms_endpoint: tuple[
+            str, list[tuple[str | None, dict[str, Any]]], dict[str, str]
+        ],
+    ) -> None:
         encrypted_manifest_list = base64.b64decode(
             "QUdTMQAAEABXKS6sSdvAI1/Y6ZmcgsSzcoqU1EVH5O6E7ZkX0tVDI97pdaxn6Xgw"
             "0m6azbtPWA/cEwCWlsHB177bKeJvESJh9V5ot0aTdqWyeKzj7YxrQ28LaKLkM3Hq6"
@@ -554,12 +671,57 @@ class TestIcebergScanIO:
         metadata_path.write_text(json.dumps(metadata), encoding="utf8")
 
         instance_count = len(_TestKmsClient.instances)
-        result = pl.scan_iceberg(
+        endpoint, calls, response = iceberg_kms_endpoint
+        storage_options = (
+            {"py-kms-impl": f"{__name__}._TestKmsClient"}
+            if kms_type == "python"
+            else {
+                "encryption.kms-type": "aws",
+                "kms.endpoint": endpoint,
+                "region_name": "us-east-1",
+                "aws_access_key_id": "test",
+                "aws_secret_access_key": "test",
+            }
+        )
+        if kms_type == "aws_env":
+            monkeypatch.setenv(
+                "AWS_ACCESS_KEY_ID", storage_options.pop("aws_access_key_id")
+            )
+            monkeypatch.setenv(
+                "AWS_SECRET_ACCESS_KEY", storage_options.pop("aws_secret_access_key")
+            )
+            monkeypatch.setenv("AWS_REGION", storage_options.pop("region_name"))
+        q = pl.scan_iceberg(
             format_file_uri_iceberg(str(metadata_path)),
-            storage_options={"py-kms-impl": f"{__name__}._TestKmsClient"},
-        ).collect()
+            storage_options=storage_options,
+        )
+        if kms_type == "aws_denied":
+            response.clear()
+            response.update({"__type": "AccessDeniedException", "message": "denied"})
+            with pytest.raises(
+                pl.exceptions.ComputeError, match="AWS KMS Decrypt failed"
+            ):
+                q.collect(engine=engine)
+            assert len(calls) == 1
+            assert len(_TestKmsClient.instances) == instance_count
+            return
+
+        result = q.collect(engine=engine)
 
         assert_frame_equal(result, pl.DataFrame(schema={"x": pl.Int64}))
+        if kms_type in {"aws", "aws_env"}:
+            assert len(_TestKmsClient.instances) == instance_count
+            assert calls == [
+                (
+                    "TrentService.Decrypt",
+                    {
+                        "CiphertextBlob": "WVMIPwafypGJRgXOICFKcL+m8K4B40gEIJFsgC7rlitqN9PUpDeT19OZPs8=",
+                        "KeyId": "master-1",
+                        "EncryptionAlgorithm": "SYMMETRIC_DEFAULT",
+                    },
+                )
+            ]
+            return
         assert len(_TestKmsClient.instances) == instance_count + 1
         assert _TestKmsClient.instances[-1].calls == [
             (

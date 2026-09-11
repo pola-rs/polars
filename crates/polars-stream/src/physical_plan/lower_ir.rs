@@ -816,7 +816,7 @@ pub fn lower_ir(
                             .python_scan()
                             .expect("should be python scan");
 
-                        python_dataset_scan_to_reader_builder(expanded_scan)
+                        python_dataset_scan_to_reader_builder(expanded_scan)?
                     },
 
                     #[cfg(feature = "scan_lines")]

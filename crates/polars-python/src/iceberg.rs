@@ -3,6 +3,7 @@ use std::fmt;
 use std::mem::ManuallyDrop;
 use std::sync::Arc;
 
+use ::iceberg::encryption::kms::KmsClientFactory;
 use ::iceberg::encryption::{GeneratedKey, KeyManagementClient, SensitiveBytes};
 use ::iceberg::io::{FileIO, FileIOBuilder};
 use ::iceberg::scan::ArrowRecordBatchStream;
@@ -11,6 +12,7 @@ use ::iceberg::table::Table;
 use ::iceberg::{Error, ErrorKind, NamespaceIdent, Result, Runtime, TableIdent};
 use arrow_array::RecordBatch;
 use futures::StreamExt;
+use iceberg_kms_aws::AwsKmsClientFactory;
 use iceberg_storage_opendal::OpenDalResolvingStorageFactory;
 use polars_core::prelude::{DataFrame, IntoColumn, PolarsResult, Series};
 use polars_core::utils::arrow::ffi;
@@ -131,10 +133,12 @@ impl IcebergBatchIterator {
 }
 
 #[pyfunction]
+#[pyo3(signature = (metadata_location, kms_client, kms_properties, storage_properties, snapshot_id, columns, n_rows, batch_size))]
 pub fn _scan_iceberg_rust(
     py: Python<'_>,
     metadata_location: String,
-    kms_client: Py<PyAny>,
+    kms_client: Option<Py<PyAny>>,
+    kms_properties: HashMap<String, String>,
     storage_properties: HashMap<String, String>,
     snapshot_id: Option<i64>,
     columns: Option<Vec<String>>,
@@ -151,6 +155,7 @@ pub fn _scan_iceberg_rust(
     let stream = py
         .detach(|| {
             polars_core::runtime::ASYNC.block_on(async move {
+                let kms_client = load_kms_client(kms_client, &kms_properties).await?;
                 let file_io = file_io_for_location(&metadata_location, storage_properties)?;
                 let metadata = TableMetadata::read_from(&file_io, &metadata_location).await?;
                 let table = Table::builder()
@@ -161,7 +166,7 @@ pub fn _scan_iceberg_rust(
                         "encrypted_scan".into(),
                     ))
                     .file_io(file_io)
-                    .kms_client(Arc::new(PythonKmsClient::new(kms_client)))
+                    .kms_client(kms_client)
                     .runtime(Runtime::try_current()?)
                     .readonly(true)
                     .build()?;
@@ -188,6 +193,27 @@ pub fn _scan_iceberg_rust(
             }),
         },
     )
+}
+
+async fn load_kms_client(
+    python_client: Option<Py<PyAny>>,
+    properties: &HashMap<String, String>,
+) -> Result<Arc<dyn KeyManagementClient>> {
+    if let Some(client) = python_client {
+        return Ok(Arc::new(PythonKmsClient::new(client)));
+    }
+
+    match properties.get("encryption.kms-type").map(String::as_str) {
+        Some("aws") => {
+            AwsKmsClientFactory::new()
+                .create_kms_client(properties)
+                .await
+        },
+        _ => Err(Error::new(
+            ErrorKind::FeatureUnsupported,
+            "native Iceberg KMS support requires encryption.kms-type=aws",
+        )),
+    }
 }
 
 fn file_io_for_location(
@@ -358,6 +384,19 @@ mod tests {
                 .collect::<Vec<_>>(),
             [Some("a"), Some("b"), Some("c")]
         );
+    }
+
+    #[test]
+    fn test_native_kms_requires_supported_provider() {
+        for properties in [
+            HashMap::new(),
+            HashMap::from([("encryption.kms-type".into(), "azure".into())]),
+        ] {
+            let error = polars_core::runtime::ASYNC
+                .block_on(load_kms_client(None, &properties))
+                .unwrap_err();
+            assert_eq!(error.kind(), ErrorKind::FeatureUnsupported);
+        }
     }
 
     #[test]

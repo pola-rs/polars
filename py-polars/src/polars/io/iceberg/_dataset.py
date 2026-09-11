@@ -403,12 +403,18 @@ class IcebergScanResolver:
         }
 
         if (
-            kms_client := _load_kms_client(tbl, self.table.iceberg_storage_properties)
+            kms_config := _load_kms_config(tbl, self.table.iceberg_storage_properties)
         ) is not None:
+            if is_incremental:
+                msg = (
+                    "incremental append scans with Iceberg encryption are not supported"
+                )
+                raise NotImplementedError(msg)
             return _RustIcebergScanData(
                 metadata_location=tbl.metadata_location,
                 projected_iceberg_schema=projected_iceberg_schema,
-                kms_client=kms_client,
+                kms_client=kms_config.client,
+                kms_properties=kms_config.properties,
                 storage_properties=_rust_iceberg_storage_properties(
                     tbl, self.table.iceberg_storage_properties
                 ),
@@ -674,10 +680,16 @@ class _PyIcebergScanData(_ResolvedScanDataBase):
         return self.lf
 
 
-def _load_kms_client(
+@dataclass(kw_only=True)
+class _IcebergKmsConfig:
+    properties: dict[str, str]
+    client: Any = None
+
+
+def _load_kms_config(
     table: pyiceberg.table.Table,
     storage_properties: StorageOptionsDict | None = None,
-) -> Any | None:
+) -> _IcebergKmsConfig | None:
     kms_properties: dict[str, Any] = {}
 
     if (catalog := getattr(table, "catalog", None)) is not None:
@@ -687,6 +699,20 @@ def _load_kms_client(
     kms_properties.update(storage_properties or {})
 
     kms_impl = kms_properties.get("py-kms-impl")
+    kms_type = kms_properties.get("encryption.kms-type")
+    if kms_type is not None:
+        if kms_impl is not None:
+            msg = "configure only one of 'encryption.kms-type' and 'py-kms-impl'"
+            raise ValueError(msg)
+        if "encryption.key-id" not in table.metadata.properties:
+            return None
+        if kms_type != "aws":
+            msg = f"unsupported Iceberg KMS type: {kms_type!r}; expected 'aws'"
+            raise NotImplementedError(msg)
+        issue_unstable_warning("encrypted Iceberg scans are considered unstable.")
+        return _IcebergKmsConfig(
+            properties={key: str(value) for key, value in kms_properties.items()}
+        )
     if kms_impl is None:
         return None
     issue_unstable_warning("encrypted Iceberg scans are considered unstable.")
@@ -730,12 +756,13 @@ def _load_kms_client(
         raise TypeError(msg)
 
     initialize({**kms_properties, **table.metadata.properties})
-    return kms_client
+    return _IcebergKmsConfig(properties={}, client=kms_client)
 
 
 def _scan_iceberg_rust_impl(
     metadata_location: str,
     kms_client: Any,
+    kms_properties: dict[str, str],
     storage_properties: dict[str, str],
     snapshot_id: int | None,
     with_columns: list[str] | None = None,
@@ -749,6 +776,7 @@ def _scan_iceberg_rust_impl(
     batches = _plr._scan_iceberg_rust(
         metadata_location,
         kms_client,
+        kms_properties,
         storage_properties,
         snapshot_id,
         with_columns,
@@ -763,6 +791,7 @@ class _RustIcebergScanData(_ResolvedScanDataBase):
     metadata_location: str
     projected_iceberg_schema: pyiceberg.schema.Schema
     kms_client: Any
+    kms_properties: dict[str, str]
     storage_properties: dict[str, str]
     snapshot_id: int | None
     with_columns: list[str] | None
@@ -776,6 +805,7 @@ class _RustIcebergScanData(_ResolvedScanDataBase):
             _scan_iceberg_rust_impl,
             self.metadata_location,
             self.kms_client,
+            self.kms_properties,
             self.storage_properties,
             self.snapshot_id,
             with_columns=self.with_columns,
@@ -862,7 +892,7 @@ def _convert_iceberg_to_rust_storage_options(
         "s3.role-arn": "client.assume-role.arn",
         "s3.role-session-name": "client.assume-role.session-name",
         "s3.anonymous": "s3.allow-anonymous",
-        "gcs.service.host": "gcs.service.path",
+        "gcs.service.path": "gcs.service.host",
     }
 
     scheme = location.partition(":")[0].lower()
@@ -890,7 +920,7 @@ def _convert_iceberg_to_rust_storage_options(
                 "bearer_token": "gcs.oauth2.token",
                 "google_service_account_key": "gcs.credentials-json",
                 "service_account_key": "gcs.credentials-json",
-                "google_url": "gcs.service.path",
+                "google_url": "gcs.service.host",
             }
         )
     elif scheme in {"abfs", "abfss", "wasb", "wasbs"}:
