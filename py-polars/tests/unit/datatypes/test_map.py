@@ -162,6 +162,25 @@ def test_map_strict_cast_failure_reports_value_column() -> None:
         s.cast(pl.Map(pl.String, pl.Int64), strict=True)
 
 
+def test_map_strict_cast_still_checks_outer_row_validity() -> None:
+    # A Map anywhere in the dtype skips the entry comparison, not the row comparison.
+    m = pl.Series("m", [{"a": 1}], dtype=pl.Map(pl.String, pl.Int64))
+    x = pl.Series("x", [None], dtype=pl.Int64)
+
+    with_map = pl.DataFrame([m, x]).to_struct("s")
+    without_map = pl.DataFrame([x]).to_struct("s")
+    for s in (with_map, without_map):
+        with pytest.raises(InvalidOperationError, match="conversion from `struct"):
+            s.cast(pl.String, strict=True)
+
+
+def test_map_strict_cast_checks_a_null_row_of_a_struct_field() -> None:
+    m = pl.Series("m", [None], dtype=pl.Map(pl.String, pl.Int64))
+    s = pl.DataFrame([m]).to_struct("s")
+    with pytest.raises(InvalidOperationError, match="conversion from `struct"):
+        s.cast(pl.String, strict=True)
+
+
 def test_map_concat_requires_matching_dtypes() -> None:
     left = pl.Series("m", [{"a": 1}], dtype=pl.Map(pl.String, pl.Int32))
     right = pl.Series("m", [{"b": 2}], dtype=pl.Map(pl.String, pl.Int64))

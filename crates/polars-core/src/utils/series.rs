@@ -1,4 +1,6 @@
-use polars_compute::find_validity_mismatch::find_validity_mismatch;
+use polars_compute::find_validity_mismatch::{
+    find_validity_mismatch, find_validity_mismatch_shallow,
+};
 use polars_compute::gather::take_unchecked;
 
 use crate::prelude::*;
@@ -65,17 +67,27 @@ pub fn check_is_valid_struct_cast(
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
     check_is_valid_struct_cast(input.dtype(), output.dtype(), output.name())?;
 
-    // Map entries are not positionally comparable with a cast's -- which
-    // `find_validity_mismatch` requires -- because casting merges duplicate keys and drops
-    // the entries that no live row owns. Strictness still holds, since a Map is nested, so
-    // its key and value child casts run with the same options.
-    #[cfg(feature = "dtype-map")]
-    if input.dtype().contains_map() || output.dtype().contains_map() {
-        return Ok(());
-    }
-
     let mut idxs = Vec::new();
-    input.find_validity_mismatch(output, &mut idxs);
+
+    #[cfg(feature = "dtype-map")]
+    let maps_involved = input.dtype().contains_map() || output.dtype().contains_map();
+    #[cfg(not(feature = "dtype-map"))]
+    let maps_involved = false;
+
+    if maps_involved {
+        // Map entries are not positionally comparable with a cast's -- which
+        // `find_validity_mismatch` requires -- because casting merges duplicate keys and
+        // drops the entries that no live row owns. Rows still line up, and strictness holds
+        // below, since a Map is nested, so its key and value child casts run with the same
+        // options.
+        find_validity_mismatch_shallow(
+            input.rechunk_validity().as_ref(),
+            output.rechunk_validity().as_ref(),
+            &mut idxs,
+        );
+    } else {
+        input.find_validity_mismatch(output, &mut idxs);
+    }
 
     if idxs.is_empty() {
         return Ok(());

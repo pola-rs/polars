@@ -266,6 +266,27 @@ impl MapChunked {
         }
     }
 
+    /// Set row validity, emptying the rows that turn from null to valid.
+    ///
+    /// A null row's entries are unconstrained, so revealing them as they stand could expose a
+    /// null entry or key. Rows that stay null keep their entries where they were.
+    pub(crate) fn with_row_validity(&self, validity: Option<Bitmap>) -> Self {
+        let revives_rows = match self.storage.rechunk_validity() {
+            None => false,
+            Some(old) => match &validity {
+                None => old.unset_bits() > 0,
+                Some(new) => arrow::bitmap::and_not(new, &old).set_bits() > 0,
+            },
+        };
+        let storage = if revives_rows {
+            Cow::Owned(self.live_storage().into_owned().into_series())
+        } else {
+            Cow::Borrowed(&self.storage)
+        };
+        // SAFETY: only row validity changes, and no revived row owns an entry.
+        unsafe { self.with_storage_unchecked(storage.with_validity(validity)) }
+    }
+
     pub fn cast_with_options(
         &self,
         dtype: &DataType,
@@ -1124,6 +1145,60 @@ mod test {
         // The same null in a live row must be rejected.
         let corrupt = storage(&entries, &[0, 1, 2], None);
         assert!(unsafe { corrupt.from_physical_unchecked(&dtype) }.is_err());
+    }
+
+    /// Row 0 null over a nulled entry and key, row 1 `{b: 2}`.
+    fn map_with_nulled_entries_under_a_null_row() -> MapChunked {
+        let keys = str_keys(&[None, Some("b")]);
+        let values = i64_values(&[None, Some(2)]);
+        let entries =
+            pack_map_entries(&keys, &values).with_validity(Some(Bitmap::from([false, true])));
+        let storage = storage(&entries, &[0, 1, 2], Some(&[false, true]));
+        let dtype = map_dtype(DataType::String, DataType::Int64);
+        unsafe { storage.from_physical_unchecked(&dtype) }
+            .unwrap()
+            .map()
+            .unwrap()
+            .clone()
+    }
+
+    #[test]
+    fn with_validity_empties_a_revived_row() {
+        let map = map_with_nulled_entries_under_a_null_row();
+        let revived = map.into_series().with_validity(None);
+        let revived = revived.map().unwrap();
+
+        assert_eq!(revived.null_count(), 0);
+        assert_no_live_null_entries_or_keys(revived);
+        assert_eq!(list_offsets(revived.storage()), [0, 0, 1]);
+        assert_eq!(str_values(&revived.keys()), [Some("b".to_owned())]);
+        // The revived row reads as an empty map, not as a null.
+        let AnyValue::Map(row) = revived.get_any_value(0).unwrap() else {
+            panic!("revived row is not a map");
+        };
+        assert_eq!(row.len(), 0);
+
+        // Arrow export checks the non-nullable MAP key field.
+        let exported = revived
+            .clone()
+            .into_series()
+            .rechunk()
+            .to_arrow(0, CompatLevel::newest());
+        assert_eq!(exported.len(), 2);
+    }
+
+    #[test]
+    fn with_validity_that_only_adds_nulls_keeps_the_entries() {
+        let map = map_with_nulled_entries_under_a_null_row();
+        let offsets = list_offsets(map.storage());
+        let nulled = map
+            .into_series()
+            .with_validity(Some(Bitmap::from([false, false])));
+        let nulled = nulled.map().unwrap();
+
+        assert_eq!(nulled.null_count(), 2);
+        assert_eq!(list_offsets(nulled.storage()), offsets);
+        assert_eq!(child_len(nulled.storage()), 2);
     }
 
     /// Simulate a live Arrow row with a null entry/key; PyArrow aborts on this input.
