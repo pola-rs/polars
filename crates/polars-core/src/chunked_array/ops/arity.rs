@@ -279,10 +279,13 @@ where
             }
         }
 
+        // The element iterators are `TrustedLen`, so the collect writes straight into the room
+        // it reserves and drives them by `fold` — which is where one that walks either flat or
+        // scalar values resolves which it is. See `vec_from_trusted_len_iter`.
         if arr.null_count() == 0 {
-            arr.values_iter().map(|x| op(Some(x))).collect_arr()
+            arr.values_iter().map(|x| op(Some(x))).collect_arr_trusted()
         } else {
-            arr.iter().map(&op).collect_arr()
+            arr.iter().map(&op).collect_arr_trusted()
         }
     });
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
@@ -300,12 +303,12 @@ where
     if ca.has_nulls() {
         let iter = ca
             .downcast_iter()
-            .map(|arr| arr.iter().map(&mut op).collect_arr());
+            .map(|arr| arr.iter().map(&mut op).collect_arr_trusted());
         ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
     } else {
         let iter = ca
             .downcast_iter()
-            .map(|arr| arr.values_iter().map(|x| op(Some(x))).collect_arr());
+            .map(|arr| arr.values_iter().map(|x| op(Some(x))).collect_arr_trusted());
         ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
     }
 }
@@ -349,7 +352,7 @@ where
         }
 
         let validity = arr.validity().map(PlBitmap::from);
-        let arr: V::Array = arr.values_iter().map(&op).collect_arr();
+        let arr: V::Array = arr.values_iter().map(&op).collect_arr_trusted();
         arr.with_validity_typed(validity)
     });
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
@@ -373,7 +376,7 @@ where
 
     let iter = ca.downcast_iter().map(|arr| {
         let validity = arr.validity().map(PlBitmap::from);
-        let arr: V::Array = arr.values_iter().map(&mut op).collect_arr();
+        let arr: V::Array = arr.values_iter().map(&mut op).collect_arr_trusted();
         arr.with_validity_typed(validity)
     });
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
