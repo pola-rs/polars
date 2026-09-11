@@ -14,7 +14,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 pub use skip_batches::*;
 
-use super::evaluate::{constant_evaluate, into_column};
+use super::evaluate::constant_evaluate;
 use super::{AExpr, LiteralValue};
 
 /// Statistics-frame dtype of a column's `<col>_nc` (null-count) column.
@@ -48,8 +48,8 @@ fn get_binary_expr_col_and_lv<'a>(
     (Option<Cow<'a, LiteralValue>>, Node),
 )> {
     match (
-        into_column(left, expr_arena),
-        into_column(right, expr_arena),
+        expr_arena.get(left).as_column(),
+        expr_arena.get(right).as_column(),
         constant_evaluate(left, expr_arena, schema, 0),
         constant_evaluate(right, expr_arena, schema, 0),
     ) {
