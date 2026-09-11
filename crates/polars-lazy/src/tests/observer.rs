@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use polars_core::SINGLE_LOCK;
 use polars_core::query_result::QueryResult;
+use polars_descriptions::IrPropsDescription;
 use polars_observer::{
     NoopQueryMetrics, PlannedQuery, QueryMetricsSnapshotter, QueryObserver, QueryObserverFactory,
     register_query_observer_factory,
@@ -14,6 +15,9 @@ use super::*;
 struct Planned {
     ir_len: usize,
     has_physical: bool,
+    /// `(explain_name, explain_detail)` extracted from an `IrPropsDescription::PythonScan`
+    /// node, if the plan contains one.
+    python_scan_explain: Option<(Option<String>, Option<String>)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -50,9 +54,18 @@ impl QueryObserver for ObserverMock {
     }
 
     fn on_query_planned(&self, query: PlannedQuery) -> Box<dyn Any + Send> {
+        let python_scan_explain = query.ir.iter().find_map(|node| match &node.properties {
+            IrPropsDescription::PythonScan {
+                explain_name,
+                explain_detail,
+                ..
+            } => Some((explain_name.clone(), explain_detail.clone())),
+            _ => None,
+        });
         self.log.lock().unwrap().push(Event::Planned(Planned {
             ir_len: query.ir.len(),
             has_physical: query.physical.is_some(),
+            python_scan_explain,
         }));
         Box::new(CloseGuard {
             log: self.log.clone(),
@@ -259,5 +272,87 @@ mod tests {
     #[test]
     fn noop_metrics_snapshot_empty() {
         assert!(NoopQueryMetrics.snapshot().is_empty());
+    }
+
+    /// Build a `PythonScan` `LazyFrame` directly from the DSL with the given
+    /// explain fields. The scan has no real Python `scan_fn`, so it plans but
+    /// cannot execute.
+    #[cfg(feature = "python")]
+    fn python_scan_lf(
+        explain_name: Option<PlSmallStr>,
+        explain_detail: Option<PlSmallStr>,
+    ) -> LazyFrame {
+        use either::Either;
+        use polars_plan::dsl::SpecialEq;
+        use polars_plan::dsl::python_dsl::{PythonOptionsDsl, PythonScanSource};
+
+        let schema: SchemaRef = Arc::new(Schema::default());
+        let options = PythonOptionsDsl {
+            scan_fn: None,
+            schema_fn: Some(SpecialEq::new(Arc::new(Either::Right(schema)))),
+            python_source: PythonScanSource::IOPlugin,
+            validate_schema: false,
+            is_pure: true,
+            explain_name,
+            explain_detail,
+        };
+        DslPlan::PythonScan { options }.into()
+    }
+
+    /// Run `lf` through the observer-instrumented in-memory engine and return the
+    /// recorded event log. Execution panics after planning because the plan has
+    /// no Python `scan_fn`; the observer's `on_query_planned` has already fired by
+    /// then. The unwind is caught inside the lock (with the panic hook silenced)
+    /// so `SINGLE_LOCK` is not poisoned for other tests.
+    #[cfg(feature = "python")]
+    fn run_observed_python_scan(lf: LazyFrame) -> Vec<Event> {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+
+        let _guard = SINGLE_LOCK.lock().unwrap();
+        let log: Log = Arc::new(Mutex::new(Vec::new()));
+        register_query_observer_factory(Some(Arc::new(ObserverMock { log: log.clone() })));
+
+        let flags = lf.get_current_optimizations() | OptFlags::QUERY_MONITORING;
+        let lf = lf.with_optimizations(flags);
+
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            lf.collect_with_engine(Engine::InMemory)
+        }));
+        std::panic::set_hook(prev_hook);
+
+        register_query_observer_factory(None);
+        log.lock().unwrap().clone()
+    }
+
+    #[cfg(feature = "python")]
+    fn planned(events: &[Event]) -> &Planned {
+        events
+            .iter()
+            .find_map(|e| match e {
+                Event::Planned(planned) => Some(planned),
+                _ => None,
+            })
+            .expect("no Planned event")
+    }
+
+    /// End-to-end: the `explain_name`/`explain_detail` of a `PythonScan` reach the
+    /// description handed to the `QueryObserver` (and default to `None` when unset).
+    #[cfg(feature = "python")]
+    #[test]
+    fn observer_receives_python_scan_explain_fields() {
+        let events = run_observed_python_scan(python_scan_lf(
+            Some(PlSmallStr::from_static("my_plugin")),
+            Some(PlSmallStr::from_static("scanning foo")),
+        ));
+        assert_eq!(
+            planned(&events).python_scan_explain,
+            Some((Some("my_plugin".into()), Some("scanning foo".into()))),
+            "observer did not receive the PythonScan explain fields: {events:?}"
+        );
+
+        let events = run_observed_python_scan(python_scan_lf(None, None));
+        assert_eq!(planned(&events).python_scan_explain, Some((None, None)));
     }
 }
