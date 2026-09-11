@@ -110,6 +110,19 @@ pub trait SeriesMethods: SeriesSealed {
 }
 
 fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
+    // A chunk that repeats one element is answered for by any two of its elements: they are all
+    // the same one, so every adjacent pair sits the same way round, and its nulls — all of them
+    // or none — are already where either `nulls_last` wants them. Two is what the rest of this
+    // function is handed, which turns its work from `O(n)` into `O(1)` without changing what
+    // that work is: a `Struct` row-encodes two rows instead of the column, the pairwise
+    // fallback compares one pair instead of `n - 1`, and a dtype with no ordering of its own
+    // still reaches the comparison that rejects it.
+    let scalar_pair = match s.chunks().as_slice() {
+        [chunk] if chunk.is_scalar() && s.len() > 2 => Some(s.slice(0, 2)),
+        _ => None,
+    };
+    let s = scalar_pair.as_ref().unwrap_or(s);
+
     let null_count = s.null_count();
 
     if (options.descending
