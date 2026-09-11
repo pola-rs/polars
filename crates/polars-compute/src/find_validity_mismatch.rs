@@ -237,6 +237,27 @@ fn find_validity_mismatch_list_fsl(
     right: &PlFixedSizeListArray,
     idxs: &mut Vec<IdxSize>,
 ) {
+    // As in the two same-shape pairs above: both sides hold the one list every element of them
+    // reads, so the two lists are read against each other once. Either they agree about every
+    // value, and no element is reported, or they disagree somewhere every element reads, and all
+    // of them are — neither side is written out one list per element to say so.
+    if let Some(range) = left.scalar_offsets()
+        && right.values_are_scalar()
+        && range.len() == right.width()
+    {
+        let mut nested_idxs = Vec::new();
+        find_validity_mismatch(
+            &*left.values().sliced(range.start, range.len()),
+            right.values(),
+            &mut nested_idxs,
+        );
+
+        if !nested_idxs.is_empty() {
+            idxs.extend(0..left.len() as IdxSize);
+        }
+        return;
+    }
+
     let right = right.to_flat();
     let right = right.as_array();
 

@@ -1372,3 +1372,32 @@ def test_array_contains_over_a_chunk_that_repeats_one_array(
 
     # The answer is the one bit repeated, rather than one slot per element.
     assert answer.estimated_size() < flat.arr.contains(needle).estimated_size()
+
+
+def test_strict_cast_from_array_to_list_over_a_repeated_element() -> None:
+    # A strict cast checks its answer against its input with `find_validity_mismatch`,
+    # whose list-against-array arm wrote both sides out flat where the two same-shape
+    # arms read the one element such a chunk repeats. It cost 14 ms per million
+    # three-element arrays, against 0.3 ms for the flat column it holds less than.
+    n = 200_000
+    dtype = pl.Array(pl.Int64, 3)
+    repeated = pl.select(
+        pl.repeat(pl.lit([1, 2, 3], dtype=dtype), n).alias("a")
+    ).to_series()
+    flat = pl.Series("a", [[1, 2, 3]] * n, dtype=dtype)
+
+    for target in (pl.List(pl.Int64), pl.List(pl.Float64)):
+        assert_series_equal(repeated.cast(target), flat.cast(target))
+        assert (
+            repeated.cast(target).estimated_size() < flat.cast(target).estimated_size()
+        )
+
+    # A strict cast that cannot hold its values still reports the failure.
+    strings = pl.select(
+        pl.repeat(pl.lit(["a", "b"], dtype=pl.Array(pl.String, 2)), n).alias("a")
+    ).to_series()
+    with pytest.raises(
+        InvalidOperationError, match=r"failed in column 'a' for 200000 out of 200000"
+    ):
+        strings.cast(pl.List(pl.Int64))
+    assert strings.cast(pl.List(pl.Int64), strict=False).to_list() == [[None, None]] * n
