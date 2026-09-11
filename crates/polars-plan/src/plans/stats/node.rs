@@ -3,6 +3,7 @@
 //! Anything that cannot be estimated yields `None` rather than a guess, so a caller
 //! can tell "no estimate" apart from "estimated to be small".
 
+use std::cmp::Ordering;
 use std::sync::Arc;
 
 use polars_utils::aliases::InitHashMaps;
@@ -664,15 +665,20 @@ pub fn key_domain(
         // domain makes a selective dimension look like it multiplies the rows it
         // filters.
         _ => {
-            let (side, side_key) = if left.unfiltered <= right.unfiltered {
-                (left, left_key)
-            } else {
-                (right, right_key)
+            let side_domain = |side: &NodeStats, side_key: Option<&PlSmallStr>| {
+                let rows = side.unfiltered;
+                side_key
+                    .and_then(|name| side.int_domain(name))
+                    .map_or(rows, |range| rows.min(range))
             };
-            let rows = side.unfiltered;
-            let estimate = side_key
-                .and_then(|name| side.int_domain(name))
-                .map_or(rows, |range| rows.min(range));
+            let estimate = match left.unfiltered.partial_cmp(&right.unfiltered) {
+                Some(Ordering::Less) => side_domain(left, left_key),
+                Some(Ordering::Greater) => side_domain(right, right_key),
+                // Neither side is the smaller one. Take the domain that holds both,
+                // so the estimate does not depend on which way round the join is
+                // written.
+                _ => side_domain(left, left_key).max(side_domain(right, right_key)),
+            };
             // A known distinct count on either side is a lower bound, since every
             // value it holds is in the domain.
             left_ndv
@@ -782,6 +788,34 @@ mod tests {
         assert_eq!(domain, 73_049.0);
         // 28.8M * 2922 / 73049, well under the fact table it filters.
         assert!((out - 1_152_055.0).abs() < 50.0, "got {out}");
+    }
+
+    /// Equal row counts leave neither side the smaller one, so the estimate must not
+    /// depend on which way round the join happens to be written.
+    #[test]
+    fn equal_row_counts_estimate_the_same_domain_either_way() {
+        let narrow = leaf(1_000_000.0, 1_000_000.0).with_column(
+            "k",
+            ScanColumnStats {
+                int_range: Some((0, 99)),
+                ..Default::default()
+            },
+        );
+        let wide = leaf(1_000_000.0, 1_000_000.0).with_column(
+            "k",
+            ScanColumnStats {
+                int_range: Some((0, 999_999)),
+                ..Default::default()
+            },
+        );
+
+        let forwards = key_domain(&narrow, Some(&key("k")), &wide, Some(&key("k")));
+        let backwards = key_domain(&wide, Some(&key("k")), &narrow, Some(&key("k")));
+
+        assert_eq!(forwards, backwards);
+        // The domain holds both sides, so the join reproduces its input rather than
+        // multiplying it ten-thousand-fold.
+        assert_eq!(forwards, 1_000_000.0);
     }
 
     /// Once the filtered dimension is folded in, the remaining joins must not
