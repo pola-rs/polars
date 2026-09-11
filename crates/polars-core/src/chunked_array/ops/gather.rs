@@ -142,6 +142,25 @@ where
         }
 
         if has_nulls {
+            // Both axes of the chunk are resolved once, ahead of the walk: the values as the
+            // slice they are laid out in and the mask as the one bit per element it holds.
+            // `get_unchecked` resolves each of them again for every index read instead.
+            if let (Some(values), Some(validity)) = (
+                target.as_slice(),
+                target
+                    .validity()
+                    .and_then(|validity| validity.flat_bitmap()),
+            ) {
+                let mask = BitMask::from_bitmap(validity);
+                return it
+                    .map(|i| {
+                        let i = i as usize;
+                        mask.get_bit_unchecked(i)
+                            .then(|| values.get_unchecked(i).clone())
+                    })
+                    .collect_arr_trusted();
+            }
+
             it.map(|i| target.get_unchecked(i as usize))
                 .collect_arr_trusted()
         } else if let Some(values) = target.as_slice() {

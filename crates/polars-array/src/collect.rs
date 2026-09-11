@@ -6,6 +6,7 @@ use arrow::bitmap::BitmapBuilder;
 use arrow::trusted_len::TrustedLen;
 use arrow::types::NativeType;
 use polars_buffer::Buffer;
+use polars_utils::vec::PushUnchecked;
 
 use crate::bitmap::PlBitmap;
 use crate::static_array::StaticArray;
@@ -200,12 +201,25 @@ impl<T: NativeType> ArrayFromIter<Option<T>> for PlPrimitiveArray<T> {
             .expect("a trusted-length iterator knows how many elements it has left");
 
         // The value of a null element is undetermined, so it is left at the default; the mask is
-        // built alongside, into room reserved with the values.
+        // built alongside, into room reserved with the values. Both are reserved once, ahead of
+        // the walk, and written to unchecked: the iterator yields exactly as many items as the
+        // room holds.
+        //
+        // This one walks the iterator itself rather than handing it to `vec_from_trusted_len_iter`
+        // as a `map` that pushes the bit on the way past. Folding a mask builder through a closure
+        // keeps its word and its bit count live across the whole walk, which halves the loop's
+        // instructions-per-cycle: gathering a million elements out of a chunk with a mask cost 2.5
+        // times the cycles of the same gather without one, for 1.3 times the instructions.
         let mut validity = BitmapBuilder::with_capacity(length);
-        let values = vec_from_trusted_len_iter(iter.map(|item| {
-            validity.push(item.is_some());
-            item.unwrap_or_default()
-        }));
+        let mut values = Vec::with_capacity(length);
+        // SAFETY: room for `length` values and as many bits was just reserved, and a `TrustedLen`
+        // iterator yields exactly as many items as its size hint says.
+        unsafe {
+            for item in iter {
+                values.push_unchecked(item.unwrap_or_default());
+                validity.push_unchecked(item.is_some());
+            }
+        }
 
         Self::new(
             Buffer::from(values),
