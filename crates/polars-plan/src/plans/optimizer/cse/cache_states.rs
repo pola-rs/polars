@@ -388,12 +388,8 @@ pub(crate) fn set_cache_states(
                 // materialized rows for every reference that reads and filters them.
                 let keep_cost = if remove_caches && removal_cost.is_some() {
                     let child = *v.children.first().unwrap();
-                    // Pushdown does not descend into caches, so the child below one may
-                    // still hold cross joins, which cost as cross products. Optimize it
-                    // for costing and reuse it if the caches stay. The removal copies
-                    // have already been prepared independently.
-                    //
-                    // The narrowing that keeping the caches applies is not priced here.
+                    // Caches block pushdown, so their children may still contain cross joins.
+                    // Range selectivity is unknown, so common bounds are applied after costing.
                     let lp = lp_arena.take(child);
                     let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
                     lp_arena.replace(child, lp);
@@ -500,7 +496,6 @@ pub(crate) fn set_cache_states(
                     expr_arena,
                 )
                 .unwrap_or(child);
-                // Only new bounds need another pass if costing already optimized the child.
                 if input != child || !shared_optimized {
                     let lp = lp_arena.take(input);
                     let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
