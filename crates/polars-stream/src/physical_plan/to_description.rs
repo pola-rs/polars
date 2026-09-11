@@ -493,14 +493,18 @@ pub fn phys_props(
         PhysNodeKind::GroupBy {
             inputs,
             key_per_input,
+            fused_agg_inputs_per_input,
             aggs_per_input,
-            ..
         } => (
             PhysicalPropsDescription::GroupBy {
                 num_inputs: inputs.len(),
                 key_per_input: key_per_input
                     .iter()
                     .map(|k| fmt_exprs(k, expr_arena))
+                    .collect(),
+                fused_agg_inputs_per_input: fused_agg_inputs_per_input
+                    .iter()
+                    .map(|f| fmt_exprs(f, expr_arena))
                     .collect(),
                 aggs_per_input: aggs_per_input
                     .iter()
