@@ -980,10 +980,12 @@ def test_list_eval_col_ref_compare_7210() -> None:
 
 def test_list_agg_col_ref_count_above_7210() -> None:
     # #7210: count how many list elements exceed a per-row threshold column.
-    df = pl.DataFrame({"vals": [[1, 5, 3, 8], [2, 9, 1]], "thr": [3, 5]})
+    df = pl.DataFrame({"vals": [[1, 5, 3, 8], [2, 9, 1]], "threshold": [3, 5]})
     assert_frame_equal(
         df.select(
-            pl.col("vals").list.agg((pl.element() > pl.col("thr")).sum()).alias("n")
+            pl.col("vals")
+            .list.agg((pl.element() > pl.col("threshold")).sum())
+            .alias("n")
         ),
         pl.DataFrame({"n": [2, 1]}, schema={"n": pl.UInt32}),
     )
