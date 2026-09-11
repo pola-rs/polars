@@ -1072,6 +1072,30 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             allow_duplicates,
             include_breaks,
         },
+        #[cfg(feature = "cutqcut")]
+        IF::Bin(IRBinOptions {
+            method,
+            labels,
+            include_intervals,
+        }) => F::Bin(BinOptions {
+            method: match method {
+                IRBinMethod::Intervals { spec, right_closed } => BinMethod::Intervals {
+                    spec: match spec {
+                        IntervalSpec::Breaks(breaks) => {
+                            DslIntervalSpec::Breaks(breaks.into_series())
+                        },
+                        IntervalSpec::Count(n_bins) => DslIntervalSpec::Count(n_bins),
+                    },
+                    right_closed,
+                },
+                IRBinMethod::Quantiles { spec, right_closed } => {
+                    BinMethod::Quantiles { spec, right_closed }
+                },
+                IRBinMethod::Ranks { spec } => BinMethod::Ranks { spec },
+            },
+            labels,
+            include_intervals,
+        }),
         #[cfg(feature = "rle")]
         IF::RLE => F::RLE,
         #[cfg(feature = "rle")]

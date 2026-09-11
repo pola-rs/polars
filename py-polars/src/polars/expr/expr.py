@@ -15,6 +15,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
+    Literal,
     NoReturn,
     TypeVar,
 )
@@ -4980,6 +4981,270 @@ class Expr(metaclass=_Meta):
                 quantiles, labels, left_closed, allow_duplicates, include_breaks
             )
 
+        return wrap_expr(pyexpr)
+
+    @unstable()
+    def bin_intervals(
+        self,
+        intervals: Sequence[Any] | Series | int,
+        *,
+        labels: Sequence[str_] | Literal[False],
+        include_intervals: bool = False,
+        right_closed: bool = False,
+    ) -> Expr:
+        """
+        Bin values into discrete intervals delimited by breakpoints.
+
+        .. engine-support:: in-memory, streaming
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        intervals
+            Strictly ascending breakpoints, or a positive integer giving the number of
+            equal-width bins over `[min, max]`. Explicit breakpoints may have any
+            orderable (non-nested) data type; an integer requires numeric input.
+        labels
+            One label per bin, or `False` to return the integer bin index.
+        include_intervals
+            Return a struct with fields `bin`, `left`, and `right`. The first bin's left
+            and last bin's right boundary are null.
+        right_closed
+            Use right-closed `(left, right]` rather than left-closed `[left, right)`
+            bins.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Enum`, or :class:`UInt32` if `labels` is
+            `False`, or :class:`Struct` if `include_intervals` is set.
+
+        Notes
+        -----
+        Explicit breakpoints make this elementwise. An integer derives breakpoints from
+        the data, so bins are computed per group in group and window contexts.
+
+        For input that is not floating point, a breakpoint derived from an integer is
+        rounded to a value the input's data type can hold: up for left-closed bins, down
+        for right-closed ones, so that membership still matches
+        `min + (i + 1) / n * (max - min)` exactly. Reported boundaries are those
+        rounded values -- `[0, 3]` into two bins reports `2`, or `1` under
+        `right_closed`, rather than `1.5` -- while membership is `{0, 1}` and
+        `{2, 3}` either way.
+
+        For floating-point input, equal-width breakpoints are computed in `Float64`
+        and then cast to the input data type. Bins use these rounded breakpoints, so
+        membership near a boundary can differ between floating-point data types.
+
+        See Also
+        --------
+        bin_ranks
+        bin_quantiles
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [-2, -1, 0, 1, 2]})
+        >>> df.with_columns(
+        ...     pl.col("foo")
+        ...     .bin_intervals([-1, 1], labels=["a", "b", "c"])
+        ...     .alias("bin")
+        ... )
+        shape: (5, 2)
+        ┌─────┬──────┐
+        │ foo ┆ bin  │
+        │ --- ┆ ---  │
+        │ i64 ┆ enum │
+        ╞═════╪══════╡
+        │ -2  ┆ a    │
+        │ -1  ┆ b    │
+        │ 0   ┆ b    │
+        │ 1   ┆ c    │
+        │ 2   ┆ c    │
+        └─────┴──────┘
+        """
+        labels_arg = None if labels is False else list(labels)
+        if isinstance(intervals, int):
+            pyexpr = self._pyexpr.bin_intervals_uniform(
+                intervals, labels_arg, include_intervals, right_closed
+            )
+        else:
+            breaks = (
+                intervals
+                if isinstance(intervals, pl.Series)
+                else pl.Series("breaks", intervals)
+            )
+            pyexpr = self._pyexpr.bin_intervals(
+                breaks._s, labels_arg, include_intervals, right_closed
+            )
+        return wrap_expr(pyexpr)
+
+    @unstable()
+    def bin_quantiles(
+        self,
+        quantiles: Sequence[float] | int,
+        *,
+        labels: Sequence[str_] | Literal[False],
+        include_intervals: bool = False,
+        right_closed: bool = False,
+    ) -> Expr:
+        """
+        Bin values into discrete intervals delimited by quantiles of the data.
+
+        .. engine-support:: in-memory, streaming
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        quantiles
+            Non-decreasing quantiles in `[0, 1]`, or a positive integer giving the
+            number of bins. Two equal quantiles delimit an empty bin. Input must be
+            numeric. For quantile `q`, the value of the breakpoint is the sorted value
+            at `floor(q * (len - 1))`.
+        labels
+            One label per bin, or `False` to return the integer bin index.
+        include_intervals
+            Return a struct with fields `bin`, `left`, and `right`. The first bin's left
+            and last bin's right boundary are null.
+        right_closed
+            Use right-closed `(left, right]` rather than left-closed `[left, right)`
+            bins.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Enum`, or :class:`UInt32` if `labels` is
+            `False`, or :class:`Struct` if `include_intervals` is set.
+
+        Notes
+        -----
+        Breakpoints are input values and are computed per group in group and window
+        contexts. The integer form is computed directly rather than by expanding it to
+        potentially inexact floating-point quantiles.
+
+        See Also
+        --------
+        bin_intervals
+        bin_ranks
+
+        Examples
+        --------
+        Unlike :meth:`bin_ranks`, equal values remain in the same bin. Here, the first
+        bin is empty because the first breakpoint is `1`.
+
+        >>> df = pl.DataFrame({"x": [1, 1, 2, 2]})
+        >>> df.with_columns(
+        ...     pl.col("x")
+        ...     .bin_quantiles([0.25, 0.75], labels=["low", "mid", "high"])
+        ...     .alias("bin")
+        ... )
+        shape: (4, 2)
+        ┌─────┬──────┐
+        │ x   ┆ bin  │
+        │ --- ┆ ---  │
+        │ i64 ┆ enum │
+        ╞═════╪══════╡
+        │ 1   ┆ mid  │
+        │ 1   ┆ mid  │
+        │ 2   ┆ high │
+        │ 2   ┆ high │
+        └─────┴──────┘
+        """
+        labels_arg = None if labels is False else list(labels)
+        if isinstance(quantiles, int):
+            pyexpr = self._pyexpr.bin_quantiles_uniform(
+                quantiles, labels_arg, include_intervals, right_closed
+            )
+        else:
+            pyexpr = self._pyexpr.bin_quantiles(
+                list(quantiles), labels_arg, include_intervals, right_closed
+            )
+        return wrap_expr(pyexpr)
+
+    @unstable()
+    def bin_ranks(
+        self,
+        ranks: Sequence[float] | int,
+        *,
+        labels: Sequence[str_] | Literal[False],
+        include_intervals: bool = False,
+    ) -> Expr:
+        """
+        Bin values by their position in sorted order.
+
+        Input must have an orderable data type; nested types (List, Array, and Struct)
+        are not supported.
+
+        .. engine-support:: in-memory, streaming
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        ranks
+            Non-decreasing cumulative fractions in `[0, 1]`, or a positive integer
+            giving the number of near-equal-sized bins. Two equal fractions delimit an
+            empty bin. For an integer, earlier bins receive any remainder.
+        labels
+            One label per bin, or `False` to return the integer bin index.
+        include_intervals
+            Return a struct with fields `bin`, `left`, and `right`. Boundaries are input
+            values, not ranks; the first bin's left and last bin's right boundary are
+            null.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Enum`, or :class:`UInt32` if `labels` is
+            `False`, or :class:`Struct` if `include_intervals` is set.
+
+        Notes
+        -----
+        Membership is positional, so equal values may be split across adjacent bins in
+        input order. Bins are computed per group in group and window contexts.
+
+        See Also
+        --------
+        bin_intervals
+        bin_quantiles
+
+        Examples
+        --------
+        Unlike :meth:`bin_quantiles`, rank bins may split equal values. Here, the bins
+        contain 25%, 50%, and 25% of the values.
+
+        >>> df = pl.DataFrame({"x": [1, 1, 2, 2]})
+        >>> df.with_columns(
+        ...     pl.col("x")
+        ...     .bin_ranks([0.25, 0.75], labels=["low", "mid", "high"])
+        ...     .alias("bin")
+        ... )
+        shape: (4, 2)
+        ┌─────┬──────┐
+        │ x   ┆ bin  │
+        │ --- ┆ ---  │
+        │ i64 ┆ enum │
+        ╞═════╪══════╡
+        │ 1   ┆ low  │
+        │ 1   ┆ mid  │
+        │ 2   ┆ mid  │
+        │ 2   ┆ high │
+        └─────┴──────┘
+        """
+        labels_arg = None if labels is False else list(labels)
+        if isinstance(ranks, int):
+            pyexpr = self._pyexpr.bin_ranks_uniform(
+                ranks, labels_arg, include_intervals
+            )
+        else:
+            pyexpr = self._pyexpr.bin_ranks(list(ranks), labels_arg, include_intervals)
         return wrap_expr(pyexpr)
 
     def rle(self) -> Expr:

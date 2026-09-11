@@ -18,6 +18,8 @@ use polars_plan::plans::{
     IRRandomMethod, IRRangeFunction, IRRollingFunction, IRRollingFunctionBy, IRStringFunction,
     IRStructFunction, IRTemporalFunction,
 };
+#[cfg(feature = "cutqcut")]
+use polars_plan::plans::{FractionSpec, IRBinMethod, IntervalSpec};
 use polars_plan::prelude::{
     AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PlanCallback, WindowMapping,
 };
@@ -2000,6 +2002,62 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     include_breaks,
                 )
                     .into_py_any(py),
+                #[cfg(feature = "cutqcut")]
+                IRFunctionExpr::Bin(options) => {
+                    let labels = options
+                        .labels
+                        .as_ref()
+                        .map(|l| l.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+                    let include_intervals = options.include_intervals;
+                    match &options.method {
+                        IRBinMethod::Intervals { spec, right_closed } => match spec {
+                            IntervalSpec::Breaks(breaks) => (
+                                "bin_intervals",
+                                PySeries::new((**breaks).clone()),
+                                labels,
+                                include_intervals,
+                                right_closed,
+                            )
+                                .into_py_any(py),
+                            IntervalSpec::Count(n_bins) => (
+                                "bin_intervals_uniform",
+                                n_bins.get(),
+                                labels,
+                                include_intervals,
+                                right_closed,
+                            )
+                                .into_py_any(py),
+                        },
+                        IRBinMethod::Quantiles { spec, right_closed } => match spec {
+                            FractionSpec::Explicit(probs) => (
+                                "bin_quantiles",
+                                probs.to_vec(),
+                                labels,
+                                include_intervals,
+                                right_closed,
+                            )
+                                .into_py_any(py),
+                            FractionSpec::Count(n_bins) => (
+                                "bin_quantiles_uniform",
+                                n_bins.get(),
+                                labels,
+                                include_intervals,
+                                right_closed,
+                            )
+                                .into_py_any(py),
+                        },
+                        IRBinMethod::Ranks { spec } => match spec {
+                            FractionSpec::Explicit(fractions) => {
+                                ("bin_ranks", fractions.to_vec(), labels, include_intervals)
+                                    .into_py_any(py)
+                            },
+                            FractionSpec::Count(n_bins) => {
+                                ("bin_ranks_uniform", n_bins.get(), labels, include_intervals)
+                                    .into_py_any(py)
+                            },
+                        },
+                    }
+                },
                 #[cfg(feature = "rle")]
                 IRFunctionExpr::RLE => ("rle",).into_py_any(py),
                 #[cfg(feature = "rle")]
