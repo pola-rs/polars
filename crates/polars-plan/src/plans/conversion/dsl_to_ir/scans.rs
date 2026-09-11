@@ -196,7 +196,11 @@ pub(super) async fn dsl_to_ir(
                 .unwrap();
         }
 
-        let ir = if sources.is_empty() && !matches!(&(*scan_type), FileScanDsl::Anonymous { .. }) {
+        let ir = if sources.is_empty()
+            && !matches!(
+                &(*scan_type),
+                FileScanDsl::Anonymous { .. } | FileScanDsl::ExternalReaderBuilder { .. }
+            ) {
             IR::DataFrameScan {
                 df: Arc::new(DataFrame::empty_with_schema(&file_info.schema)),
                 schema: file_info.schema,

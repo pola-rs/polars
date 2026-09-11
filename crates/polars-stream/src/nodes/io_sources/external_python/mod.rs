@@ -93,6 +93,12 @@ impl FileReaderBuilder for PythonFileReaderBuilder {
         })
     }
 
+    fn downcast_as_external_python_reader(
+        &self,
+    ) -> Option<&polars_io::external_reader::python::PythonFileReaderBuilder> {
+        Some(&self.builder)
+    }
+
     fn is_external_python_reader(&self) -> bool {
         true
     }

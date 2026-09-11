@@ -3,7 +3,7 @@ use std::fmt::{self, Display, Formatter, Write};
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
-use polars_utils::aliases::{InitHashMaps as _, PlIndexSet};
+use polars_utils::aliases::{InitHashMaps as _, PlIndexMap, PlIndexSet};
 use polars_utils::format_list_truncated;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
@@ -70,6 +70,7 @@ impl AsExpr for ExprIR {
 fn write_scan(
     f: &mut dyn fmt::Write,
     name: &str,
+    scan_type: Option<&FileScanIR>,
     sources: &ScanSources,
     indent: usize,
     n_columns: usize,
@@ -86,6 +87,23 @@ fn write_scan(
         "",
         ScanSourcesDisplay(sources),
     )?;
+
+    if let Some(FileScanIR::ExternalReaderBuilder { external }) = scan_type {
+        let props = match external.explain_properties() {
+            Ok(x) => x,
+            Err(e) => PlIndexMap::from_iter([(
+                "Error:".into(),
+                format!("failed explain_properties(): {e:?}"),
+            )]),
+        };
+
+        let indent = indent + INDENT_INCREMENT;
+
+        for (k, v) in props {
+            write!(f, "\n")?;
+            write!(EscapeLabel(f), "{:indent$}{k}: {v}", "")?;
+        }
+    }
 
     let total_columns = total_columns - usize::from(row_index.is_some());
     if n_columns != usize::MAX {
@@ -840,6 +858,7 @@ pub fn write_ir_non_recursive(
             write_scan(
                 f,
                 &header_name,
+                None,
                 &ScanSources::default(),
                 indent,
                 n_columns,
@@ -898,6 +917,7 @@ pub fn write_ir_non_recursive(
             write_scan(
                 f,
                 (&**scan_type).into(),
+                Some(&**scan_type),
                 sources,
                 indent,
                 n_columns,

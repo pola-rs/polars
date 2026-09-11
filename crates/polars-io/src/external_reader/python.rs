@@ -1,8 +1,12 @@
 use std::sync::Arc;
 
+use polars_error::PolarsResult;
+use polars_utils::aliases::PlIndexMap;
 use polars_utils::python_function::PythonObject;
+use pyo3::types::{PyAnyMethods, PyDict};
 use pyo3::{
     Borrowed, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyErr, PyResult,
+    Python, intern,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -21,6 +25,31 @@ impl PythonFileReaderBuilder {
 
     pub fn builder(&self) -> &Arc<PythonObject> {
         &self.builder
+    }
+
+    pub fn explain_properties(&self) -> PolarsResult<PlIndexMap<String, String>> {
+        Python::attach(|py| {
+            let properties: Py<PyDict> = self
+                .builder
+                .call_method0(py, intern!(py, "explain_properties"))?
+                .extract(py)?;
+
+            let properties = properties.bind(py);
+
+            let mut ret = PlIndexMap::default();
+
+            for (k, v) in properties
+                .try_iter()?
+                .zip(properties.call_method0(intern!(py, "values"))?.try_iter()?)
+            {
+                let k: String = k?.extract()?;
+                let v: String = v?.extract()?;
+
+                ret.insert(k, v);
+            }
+
+            Ok(ret)
+        })
     }
 }
 
