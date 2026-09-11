@@ -1049,6 +1049,16 @@ def test_list_agg_col_ref_group_by() -> None:
     )
 
 
+def test_list_eval_col_ref_append() -> None:
+    # A length-changing evaluation (`append`) referencing an outer column. Named columns
+    # inside `list.eval` used to raise; they now resolve to the per-row outer value.
+    df = pl.DataFrame({"A": ["a", "b"], "B": [["a", "b"], ["c", "d"]]})
+    assert_frame_equal(
+        df.select(pl.col("B").list.eval(pl.element().append(pl.col("A")))),
+        pl.DataFrame({"B": [["a", "b", "a"], ["c", "d", "b"]]}),
+    )
+
+
 def test_list_eval_col_ref_string() -> None:
     df = pl.DataFrame({"x": [["a", "b"], ["c"]], "y": ["_1", "_2"]})
     assert_frame_equal(
