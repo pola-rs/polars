@@ -587,27 +587,60 @@ impl PhysicalExpr for EvalExpr {
         let mut input = self.input.evaluate_on_groups(df, groups, state)?;
         input.groups();
 
+        // Every variant below the cumulative one answers one element per element of the column it
+        // is given, so a literal stays a literal: `F(lit) = lit`. Without that, a literal list
+        // under a group-by becomes a one-element non-aggregated column that the groups then
+        // index as if it held one element each — `agg(lit([1, 2]).list.eval(element()))` came
+        // back as `[[1, 2], [1, 2]]` for a group of two, against the `List(Int64)` the same
+        // query's schema and the streaming engine both say.
+        let preserve_literal = true;
+        let returns_scalar = input.agg_state().is_scalar();
+
         match self.variant {
             EvalVariant::List => {
                 let input_col = input.flat_naive();
                 let out = self.evaluate_on_list_chunked(input_col.list()?, state, false)?;
-                input.with_values(out, false, Some(&self.expr))?;
+                input.with_values_and_args(
+                    out,
+                    false,
+                    Some(&self.expr),
+                    preserve_literal,
+                    returns_scalar,
+                )?;
             },
             EvalVariant::ListAgg => {
                 let input_col = input.flat_naive();
                 let out = self.evaluate_on_list_chunked(input_col.list()?, state, true)?;
-                input.with_values(out, false, Some(&self.expr))?;
+                input.with_values_and_args(
+                    out,
+                    false,
+                    Some(&self.expr),
+                    preserve_literal,
+                    returns_scalar,
+                )?;
             },
             EvalVariant::Array { as_list } => feature_gated!("dtype-array", {
                 let arr_col = input.flat_naive();
                 let out =
                     self.evaluate_on_array_chunked(arr_col.array()?, state, as_list, false)?;
-                input.with_values(out, false, Some(&self.expr))?;
+                input.with_values_and_args(
+                    out,
+                    false,
+                    Some(&self.expr),
+                    preserve_literal,
+                    returns_scalar,
+                )?;
             }),
             EvalVariant::ArrayAgg => feature_gated!("dtype-array", {
                 let arr_col = input.flat_naive();
                 let out = self.evaluate_on_array_chunked(arr_col.array()?, state, true, true)?;
-                input.with_values(out, false, Some(&self.expr))?;
+                input.with_values_and_args(
+                    out,
+                    false,
+                    Some(&self.expr),
+                    preserve_literal,
+                    returns_scalar,
+                )?;
             }),
             EvalVariant::Cumulative { min_samples } => {
                 let mut builder = AnonymousOwnedListBuilder::new(

@@ -1645,3 +1645,43 @@ def test_reduce_one_repeated_list_once(
     assert_series_equal(one, many)
     # One answer held once, not one slot per element.
     assert one.estimated_size() < many.estimated_size() // 100
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype", "evaluation"),
+    [
+        ([1, 2], pl.List(pl.Int64), pl.element()),
+        ([1, 2], pl.List(pl.Int64), pl.element() * 2),
+        ([1, 2], pl.List(pl.Int64), pl.element().cast(pl.Int8)),
+        ([1, 2], pl.List(pl.Int64), pl.element().sort(descending=True)),
+        ([], pl.List(pl.Int64), pl.element()),
+        (None, pl.List(pl.Int64), pl.element()),
+        ([1, 2], pl.Array(pl.Int64, 2), pl.element()),
+        ([1, 2], pl.Array(pl.Int64, 2), pl.element().cast(pl.Int8)),
+        (None, pl.Array(pl.Int64, 2), pl.element()),
+    ],
+)
+@pytest.mark.parametrize("agg", [False, True])
+def test_eval_over_a_literal_in_an_aggregation_keeps_it_a_literal(
+    value: Any, dtype: PolarsDataType, evaluation: pl.Expr, agg: bool
+) -> None:
+    # An evaluation answers one element per element, so a literal stays a literal:
+    # `F(lit) = lit`. Read as a one-element column instead, the group indices take it
+    # as holding one element each, and a group of two came back holding the literal
+    # twice — under a dtype one level more nested than the query's own schema says.
+    ns = "list" if isinstance(dtype, pl.List) else "arr"
+    inner = getattr(pl.lit(value, dtype=dtype), ns)
+    expr = (inner.agg(evaluation.sum()) if agg else inner.eval(evaluation)).alias("o")
+
+    q = (
+        pl.LazyFrame({"k": [0, 0, 1, 1, 2, 2]})
+        .group_by("k", maintain_order=True)
+        .agg(expr)
+    )
+    schema = q.collect_schema()
+    expected = pl.select(expr).to_series().to_list() * 3
+
+    for engine in ("in-memory", "streaming"):
+        out = q.collect(engine=engine)
+        assert out.schema == schema, f"{engine} disagrees with the query's schema"
+        assert out["o"].to_list() == expected, f"{engine}"
