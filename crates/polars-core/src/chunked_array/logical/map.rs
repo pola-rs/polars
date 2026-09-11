@@ -1168,7 +1168,7 @@ mod test {
         let revived = map.into_series().with_validity(None);
         let revived = revived.map().unwrap();
 
-        assert_eq!(revived.null_count(), 0);
+        assert_eq!(revived.storage().null_count(), 0);
         assert_no_live_null_entries_or_keys(revived);
         assert_eq!(list_offsets(revived.storage()), [0, 0, 1]);
         assert_eq!(str_values(&revived.keys()), [Some("b".to_owned())]);
@@ -1196,7 +1196,7 @@ mod test {
             .with_validity(Some(Bitmap::from([false, false])));
         let nulled = nulled.map().unwrap();
 
-        assert_eq!(nulled.null_count(), 2);
+        assert_eq!(nulled.storage().null_count(), 2);
         assert_eq!(list_offsets(nulled.storage()), offsets);
         assert_eq!(child_len(nulled.storage()), 2);
     }
