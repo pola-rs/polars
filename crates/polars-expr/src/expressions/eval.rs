@@ -10,9 +10,9 @@ use polars_core::frame::DataFrame;
 #[cfg(feature = "dtype-array")]
 use polars_core::prelude::ArrayChunked;
 use polars_core::prelude::{
-    _set_check_length, ChunkCast, ChunkExpandAtIndex, ChunkExplode, ChunkNestingUtils, Column,
-    Field, GroupPositions, GroupsIndicator, GroupsType, IdxCa, IntoColumn, ListBuilderTrait,
-    ListChunked,
+    _set_check_length, BooleanChunked, ChunkCast, ChunkExpandAtIndex, ChunkExplode,
+    ChunkNestingUtils, Column, Field, GroupPositions, GroupsIndicator, GroupsType, IdxCa,
+    IntoColumn, ListBuilderTrait, ListChunked,
 };
 use polars_core::schema::Schema;
 use polars_core::series::Series;
@@ -33,7 +33,9 @@ pub struct EvalExpr {
     is_scalar: bool,
     evaluation_is_scalar: bool,
     evaluation_is_elementwise: bool,
-    evaluation_has_column_refs: bool,
+    /// Names of the outer-frame columns referenced by the evaluation (deduplicated). Empty when
+    /// the evaluation only uses `pl.element()`.
+    evaluation_column_refs: Arc<[PlSmallStr]>,
     evaluation_is_fallible: bool,
 }
 
@@ -48,7 +50,7 @@ impl EvalExpr {
         is_scalar: bool,
         evaluation_is_scalar: bool,
         evaluation_is_elementwise: bool,
-        evaluation_has_column_refs: bool,
+        evaluation_column_refs: Arc<[PlSmallStr]>,
         evaluation_is_fallible: bool,
     ) -> Self {
         Self {
@@ -60,8 +62,24 @@ impl EvalExpr {
             is_scalar,
             evaluation_is_scalar,
             evaluation_is_elementwise,
-            evaluation_has_column_refs,
+            evaluation_column_refs,
             evaluation_is_fallible,
+        }
+    }
+
+    /// Build the frame with null list elements removed.
+    fn build_named_column_reference_df<'a>(
+        &self,
+        outer_df: &'a DataFrame,
+        validity: Option<&Bitmap>,
+    ) -> PolarsResult<Cow<'a, DataFrame>> {
+        match validity {
+            Some(validity) => {
+                let projected = outer_df.select(self.evaluation_column_refs.iter().cloned())?;
+                let mask = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, validity.clone());
+                projected.filter(&mask).map(Cow::Owned)
+            },
+            None => Ok(Cow::Borrowed(outer_df)),
         }
     }
 
@@ -166,7 +184,7 @@ impl EvalExpr {
         // When the eval_expr references outer columns we must use evaluate_on_groups so that
         // ColumnExpr can look up per-row values from outer_df.
         if self.evaluation_is_elementwise
-            && !self.evaluation_has_column_refs
+            && self.evaluation_column_refs.is_empty()
             && !may_fail_on_masked_out_elements
         {
             let mut state = state.clone();
@@ -187,7 +205,7 @@ impl EvalExpr {
 
         // Broadcasting for column references in evaluation expression.
         let (ca, flattened, flattened_len, validity) =
-            if self.evaluation_has_column_refs && ca.len() == 1 && outer_df.height() != 1 {
+            if !self.evaluation_column_refs.is_empty() && ca.len() == 1 && outer_df.height() != 1 {
                 let ca: Cow<ListChunked> = Cow::Owned(ca.new_from_index(0, outer_df.height()));
                 // SAFETY: see the equivalent call above.
                 unsafe { _set_check_length(false) };
@@ -224,11 +242,16 @@ impl EvalExpr {
         let groups = Cow::Owned(groups.into_sliceable());
 
         let mut state = state.clone();
-        state.element = Arc::new(Some((flattened, validity.clone())));
-
-        let mut ac = self
-            .evaluation
-            .evaluate_on_groups(outer_df, &groups, &state)?;
+        let mut ac = if self.evaluation_column_refs.is_empty() {
+            state.element = Arc::new(Some((flattened, validity.clone())));
+            self.evaluation
+                .evaluate_on_groups(outer_df, &groups, &state)?
+        } else {
+            let aligned = self.build_named_column_reference_df(outer_df, validity.as_ref())?;
+            state.element = Arc::new(Some((flattened, None)));
+            self.evaluation
+                .evaluate_on_groups(aligned.as_ref(), &groups, &state)?
+        };
 
         // Update the groups.
         if self.evaluation_is_scalar || is_agg {
@@ -371,7 +394,7 @@ impl EvalExpr {
 
         // Fast path: fully elementwise expression without masked out values or column references.
         if self.evaluation_is_elementwise
-            && !self.evaluation_has_column_refs
+            && self.evaluation_column_refs.is_empty()
             && !may_fail_on_masked_out_elements
         {
             assert!(!self.evaluation_is_scalar);
@@ -404,7 +427,7 @@ impl EvalExpr {
 
         // Broadcasting for column references in evaluation expression.
         let (ca, flattened, validity) =
-            if self.evaluation_has_column_refs && ca.len() == 1 && outer_df.height() != 1 {
+            if !self.evaluation_column_refs.is_empty() && ca.len() == 1 && outer_df.height() != 1 {
                 let ca: Cow<ArrayChunked> = Cow::Owned(ca.new_from_index(0, outer_df.height()));
                 // SAFETY: see the equivalent call above.
                 unsafe { _set_check_length(false) };
@@ -432,11 +455,17 @@ impl EvalExpr {
         let groups = Cow::Owned(groups.into_sliceable());
 
         let mut state = state.clone();
-        state.element = Arc::new(Some((flattened, validity.clone())));
-
-        let mut ac = self
-            .evaluation
-            .evaluate_on_groups(outer_df, &groups, &state)?;
+        // See the list path: align the outer frame once for column references.
+        let mut ac = if self.evaluation_column_refs.is_empty() {
+            state.element = Arc::new(Some((flattened, validity.clone())));
+            self.evaluation
+                .evaluate_on_groups(outer_df, &groups, &state)?
+        } else {
+            let aligned = self.build_named_column_reference_df(outer_df, validity.as_ref())?;
+            state.element = Arc::new(Some((flattened, None)));
+            self.evaluation
+                .evaluate_on_groups(&aligned, &groups, &state)?
+        };
 
         ac.groups(); // Update the groups.
 
@@ -609,7 +638,10 @@ impl PhysicalExpr for EvalExpr {
                 self.evaluate_on_array_chunked(arr, df, state, true, true)
             }),
             EvalVariant::Cumulative { min_samples } => {
-                assert!(!self.evaluation_has_column_refs, "disallowed during lowering");
+                assert!(
+                    self.evaluation_column_refs.is_empty(),
+                    "disallowed during lowering"
+                );
                 self.evaluate_cumulative_eval(input.as_materialized_series(), min_samples, state)
             },
         }?;
@@ -626,7 +658,7 @@ impl PhysicalExpr for EvalExpr {
         input.groups();
 
         // When the evaluation expression references outer columns and we are nested inside an
-        // evaluation expresion (i.e. state.element is Some), the inner `input` groups index into
+        // evaluation expression (i.e. state.element is Some), the inner `input` groups index into
         // the flattened element space, not into `df` rows.
         //
         // To fix this, we build a per-element outer-frame by gathering for each inner group, the
@@ -634,52 +666,61 @@ impl PhysicalExpr for EvalExpr {
         // right value.
         //
         // @Speed: We could cache this, but I think it is not needed.
-        let expanded_df_for_col_refs =
-            if self.evaluation_has_column_refs && state.element.is_some() && df.height() > 0 {
-                let input_groups = input.groups();
-                let flat_len = input_groups.num_elements();
-                if flat_len == 0 {
-                    None
-                } else {
-                    // `Some(idx)` -> outer list had nulls, group k maps to df row idx[k].
-                    // `None`      -> no outer validity, group k maps to df row k (identity), so we
-                    //                avoid materializing `0..df.height()`.
-                    let valid_row_indices: Option<Vec<IdxSize>> = match state.element.as_ref() {
-                        Some((_, Some(outer_validity))) => Some(
-                            outer_validity
-                                .true_idx_iter()
-                                .map(|i| i as IdxSize)
-                                .collect(),
-                        ),
-                        _ => None,
-                    };
-
-                    // For each group k with [start, len], repeat its outer row `len` times
-                    // at positions start..start+len in the gather array.
-                    let mut gather = vec![0 as IdxSize; flat_len];
-                    for (k, group) in input_groups.iter().enumerate() {
-                        let row = valid_row_indices
-                            .as_ref()
-                            .and_then(|idx| idx.get(k).copied())
-                            .unwrap_or(k as IdxSize);
-                        match group {
-                            GroupsIndicator::Slice([s, l]) => {
-                                gather[s as usize..s as usize + l as usize].fill(row);
-                            },
-                            GroupsIndicator::Idx((_, all)) => {
-                                for &pos in all.iter() {
-                                    gather[pos as usize] = row;
-                                }
-                            },
-                        }
-                    }
-
-                    let gather_ca = IdxCa::from_vec(PlSmallStr::EMPTY, gather);
-                    Some(df.take(&gather_ca)?)
-                }
-            } else {
+        let expanded_df_for_col_refs = if !self.evaluation_column_refs.is_empty()
+            && state.element.is_some()
+            && df.height() > 0
+        {
+            let input_groups = input.groups();
+            let flat_len = input_groups.num_elements();
+            if flat_len == 0 {
                 None
-            };
+            } else {
+                // `Some(idx)` -> outer list had nulls, group k maps to df row idx[k].
+                // `None`      -> no outer validity, group k maps to df row k (identity), so we
+                //                avoid materializing `0..df.height()`.
+                let valid_row_indices: Option<Vec<IdxSize>> = match state.element.as_ref() {
+                    Some((_, Some(outer_validity))) => Some(
+                        outer_validity
+                            .true_idx_iter()
+                            .map(|i| i as IdxSize)
+                            .collect(),
+                    ),
+                    _ => None,
+                };
+
+                // For each group k with [start, len], repeat its outer row `len` times
+                // at positions start..start+len in the gather array.
+                let mut gather = vec![0 as IdxSize; flat_len];
+                for (k, group) in input_groups.iter().enumerate() {
+                    let row = match valid_row_indices.as_ref() {
+                        // No outer validity: group k maps to df row k (identity).
+                        None => k as IdxSize,
+                        // Outer nulls: group k maps to the k-th valid df row. The number of
+                        // groups equals the number of valid rows, so `idx[k]` is in bounds;
+                        // index directly so a broken invariant fails loudly instead of
+                        // silently substituting the wrong row.
+                        Some(idx) => idx[k],
+                    };
+                    match group {
+                        GroupsIndicator::Slice([s, l]) => {
+                            gather[s as usize..s as usize + l as usize].fill(row);
+                        },
+                        GroupsIndicator::Idx((_, all)) => {
+                            for &pos in all.iter() {
+                                gather[pos as usize] = row;
+                            }
+                        },
+                    }
+                }
+
+                // Gather only the referenced columns rather than the whole frame.
+                let gather_ca = IdxCa::from_vec(PlSmallStr::EMPTY, gather);
+                let projected = df.select(self.evaluation_column_refs.iter().cloned())?;
+                Some(projected.take(&gather_ca)?)
+            }
+        } else {
+            None
+        };
         let inner_df = expanded_df_for_col_refs.as_ref().unwrap_or(df);
 
         match self.variant {
@@ -713,7 +754,10 @@ impl PhysicalExpr for EvalExpr {
                 input.with_values(out, false, Some(&self.expr))?;
             }),
             EvalVariant::Cumulative { min_samples } => {
-                assert!(!self.evaluation_has_column_refs, "disallowed during lowering");
+                assert!(
+                    self.evaluation_column_refs.is_empty(),
+                    "disallowed during lowering"
+                );
 
                 let mut builder = AnonymousOwnedListBuilder::new(
                     self.output_field.name().clone(),
