@@ -289,7 +289,9 @@ def test_len_null_count_comparison_optimized(
     ],
 )
 def test_len_cmp_head_insertion(op: str, n: int, expected_head_len: int) -> None:
-    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]})
+    # Filter first so the inserted slice isn't collapsed directly into the
+    # `DataFrameScan` (which would elide the `SLICE` node from the plan entirely).
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]}).filter(pl.col("a") > 0)
     expr = getattr(pl.len(), op)(n)
     result_lf = lf.select(expr.alias("out"))
 
