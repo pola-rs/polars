@@ -1,10 +1,6 @@
 use super::*;
 
-pub fn join<T: SortedJoinKey>(
-    left: &[T],
-    right: &[T],
-    left_offset: IdxSize,
-) -> InnerJoinIds {
+pub fn join<T: SortedJoinKey>(left: &[T], right: &[T], left_offset: IdxSize) -> InnerJoinIds {
     if left.is_empty() || right.is_empty() {
         return (vec![], vec![]);
     }

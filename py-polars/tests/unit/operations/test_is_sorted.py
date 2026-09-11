@@ -628,8 +628,9 @@ def test_is_sorted_flag_respects_null_placement() -> None:
 def test_is_sorted_repeated_element(
     dtype: pl.DataType, value: Any, descending: bool, nulls_last: bool
 ) -> None:
-    # A chunk repeating one element is answered off two of its elements rather than all of them.
-    # The answer, and the error for a dtype with no ordering, have to be the flat column's.
+    # A chunk repeating one element is answered off two of its elements rather than
+    # all of them. The answer, and the error for a dtype with no ordering, have to be
+    # the flat column's.
     one = pl.Series("a", [value], dtype=dtype)
     repeated = one.new_from_index(0, 8)
     flat = pl.Series("a", [value] * 8, dtype=dtype)
@@ -637,7 +638,7 @@ def test_is_sorted_repeated_element(
     def answer(s: pl.Series) -> Any:
         try:
             return s.is_sorted(descending=descending, nulls_last=nulls_last)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return f"{type(exc).__name__}: {exc}"
 
     assert answer(repeated) == answer(flat)
