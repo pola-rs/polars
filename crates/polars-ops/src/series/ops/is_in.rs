@@ -68,6 +68,12 @@ where
     let offsets = other.offsets()?;
     let inner = other.get_inner();
     let inner: &ChunkedArray<T> = inner.as_ref().as_ref();
+    // The values are read one element of the haystack after another, and `ChunkedArray::get`
+    // resolves the chunk every one of them sits in and downcasts it again — which is most of
+    // what reading one costs. The array is the single chunk of the flat one above, so it is
+    // resolved once here instead. Every `start + i` the loops below read is in bounds of it,
+    // since the offsets index its values.
+    let inner = inner.downcast_as_array();
     let validity = other.rechunk_validity();
 
     let mut ca: BooleanChunked = if ca_in.len() == 1 && other.len() != 1 {
@@ -81,7 +87,8 @@ where
                 for (start, length) in offsets.offset_and_length_iter() {
                     let mut is_in = false;
                     for i in 0..length {
-                        is_in |= value.to_total_ord() == inner.get(start + i).to_total_ord();
+                        is_in |= value.to_total_ord()
+                            == unsafe { inner.get_unchecked(start + i) }.to_total_ord();
                     }
                     builder.push(is_in);
                 }
@@ -103,7 +110,8 @@ where
                 for (value, (start, length)) in ca_in.iter().zip(offsets.offset_and_length_iter()) {
                     let mut is_in = false;
                     for i in 0..length {
-                        is_in |= value.to_total_ord() == inner.get(start + i).to_total_ord();
+                        is_in |= value.to_total_ord()
+                            == unsafe { inner.get_unchecked(start + i) }.to_total_ord();
                     }
                     builder.push(is_in);
                 }
@@ -121,7 +129,8 @@ where
                     let mut is_in = false;
                     if value.is_some() {
                         for i in 0..length {
-                            is_in |= value.to_total_ord() == inner.get(start + i).to_total_ord();
+                            is_in |= value.to_total_ord()
+                                == unsafe { inner.get_unchecked(start + i) }.to_total_ord();
                         }
                     }
                     builder.push(is_in);
@@ -160,8 +169,14 @@ where
     for<'b> <T::Physical<'b> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
     let width = other.width();
-    let inner = other.get_inner();
+    let rechunked = other.rechunk();
+    let inner = rechunked.get_inner();
     let inner: &ChunkedArray<T> = inner.as_ref().as_ref();
+    // As in `is_in_helper_list_ca`: the chunk a value sits in and its array type are resolved
+    // once here rather than by `ChunkedArray::get` for every value read. Every
+    // `i * width + j` the loops below read is in bounds of it, since the values hold the width
+    // of every element laid end to end.
+    let inner = inner.downcast_as_array();
     let validity = other.rechunk_validity();
 
     let mut ca: BooleanChunked = if ca_in.len() == 1 && other.len() != 1 {
@@ -175,7 +190,8 @@ where
                 for i in 0..other.len() {
                     let mut is_in = false;
                     for j in 0..width {
-                        is_in |= value.to_total_ord() == inner.get(i * width + j).to_total_ord();
+                        is_in |= value.to_total_ord()
+                            == unsafe { inner.get_unchecked(i * width + j) }.to_total_ord();
                     }
                     builder.push(is_in);
                 }
@@ -197,7 +213,8 @@ where
                 for (i, value) in ca_in.iter().enumerate() {
                     let mut is_in = false;
                     for j in 0..width {
-                        is_in |= value.to_total_ord() == inner.get(i * width + j).to_total_ord();
+                        is_in |= value.to_total_ord()
+                            == unsafe { inner.get_unchecked(i * width + j) }.to_total_ord();
                     }
                     builder.push(is_in);
                 }
@@ -215,8 +232,8 @@ where
                     let mut is_in = false;
                     if value.is_some() {
                         for j in 0..width {
-                            is_in |=
-                                value.to_total_ord() == inner.get(i * width + j).to_total_ord();
+                            is_in |= value.to_total_ord()
+                                == unsafe { inner.get_unchecked(i * width + j) }.to_total_ord();
                         }
                     }
                     builder.push(is_in);
