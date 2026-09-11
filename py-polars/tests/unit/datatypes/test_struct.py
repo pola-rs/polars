@@ -1343,6 +1343,30 @@ def test_cast_to_struct_needs_field_14083() -> None:
         pl.Series([1], dtype=pl.Int32).cast(pl.Struct({"a": pl.UInt8, "b": pl.UInt8}))
 
 
+@pytest.mark.parametrize(
+    "cast_fn",
+    [
+        lambda lf: lf.select(
+            pl.col("s").cast(pl.Struct({"x": pl.Int64, "y": pl.Int64}))
+        ),
+        lambda lf: lf.cast({"s": pl.Struct({"x": pl.Int64, "y": pl.Int64})}),
+    ],
+)
+def test_struct_cast_strict_field_mismatch_28587(
+    cast_fn: Callable[[pl.LazyFrame], pl.LazyFrame],
+) -> None:
+    lf = pl.LazyFrame({"s": [{"a": 1, "b": 2}]})
+
+    with pytest.raises(InvalidOperationError, match="field name mismatch"):
+        cast_fn(lf).collect()
+
+    # non-strict is unaffected, still fills unmatched fields with null
+    result = lf.select(
+        pl.col("s").cast(pl.Struct({"x": pl.Int64, "y": pl.Int64}), strict=False)
+    )
+    assert result.collect().to_series().to_list() == [{"x": None, "y": None}]
+
+
 @pytest.mark.filterwarnings("ignore:Comparisons with None always result in null.")
 def test_zip_outer_validity_infinite_recursion_21267() -> None:
     s = pl.Series("x", [None, None], pl.Struct({"f": pl.Null}))
