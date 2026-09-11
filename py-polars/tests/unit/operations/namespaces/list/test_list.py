@@ -1720,3 +1720,50 @@ def test_list_count_matches_over_a_chunk_that_repeats_one_list(
 
     # The counts are the one count repeated, rather than one slot per element.
     assert counts.estimated_size() < flat.list.count_matches(match).estimated_size()
+
+
+@pytest.mark.parametrize(
+    ("value", "needle", "expected"),
+    [
+        ([1, 2, 3], 1, True),
+        ([1, 2, 3], 9, False),
+        ([], 1, False),
+        ([None, 1], None, True),
+    ],
+)
+def test_list_contains_over_a_chunk_that_repeats_one_list(
+    value: list[Any], needle: Any, expected: bool
+) -> None:
+    # `is_in` wrote the container's offsets out, one range per element, where such a
+    # chunk holds the one range every element covers. Over a million repeated
+    # three-element lists it cost 9.6 ms where the flat column cost 2.3 ms -- more work
+    # over strictly less data.
+    n = 200_000
+    dtype = pl.List(pl.Int64)
+    repeated = _repeats_one_list(value, dtype, n)
+    flat = pl.Series("a", [value] * n, dtype=dtype)
+
+    answer = repeated.list.contains(needle)
+    assert_series_equal(answer, pl.Series("a", [expected] * n))
+    assert_series_equal(answer, flat.list.contains(needle))
+
+    # The answer is the one bit repeated, rather than one slot per element.
+    assert answer.estimated_size() < flat.list.contains(needle).estimated_size()
+
+
+@pytest.mark.parametrize("dtype", [pl.List(pl.Int64), pl.Array(pl.Int64, 3)])
+def test_is_in_reads_a_container_in_the_layout_it_is_in(dtype: pl.DataType) -> None:
+    # The needle is a column of its own, so every element is looked for in the element
+    # of the container beside it -- which is the one list a repeated chunk holds.
+    n = 300
+    value = [1, 2, 3]
+    needles = pl.Series("n", [(i % 5) for i in range(n)], dtype=pl.Int64)
+    for container in (
+        _repeats_one_list(value, dtype, n),
+        pl.Series("a", [value] * n, dtype=dtype),
+        pl.concat([_repeats_one_list(value, dtype, n + 4)]).slice(2, n),
+    ):
+        df = pl.DataFrame({"a": container, "n": needles})
+        assert df.select(pl.col("n").is_in(pl.col("a")))["n"].to_list() == [
+            (i % 5) in value for i in range(n)
+        ]

@@ -1342,3 +1342,33 @@ def test_array_cast_keeps_a_repeated_array_repeated() -> None:
     target = pl.Array(pl.Datetime("us"), 2)
     assert_series_equal(repeated.cast(target), flat.cast(target))
     assert repeated.cast(target).estimated_size() < flat.cast(target).estimated_size()
+
+
+@pytest.mark.parametrize(
+    ("value", "needle", "expected"),
+    [
+        ([1, 2, 3], 1, True),
+        ([1, 2, 3], 9, False),
+        ([None, 1, None], None, True),
+    ],
+)
+def test_array_contains_over_a_chunk_that_repeats_one_array(
+    value: list[Any], needle: Any, expected: bool
+) -> None:
+    # `is_in` read the container through `get_inner`, which writes the one array such a
+    # chunk repeats out once per element -- more work over strictly less data. Over a
+    # million repeated three-element arrays it cost 9.2 ms where the flat column cost
+    # 2.3 ms.
+    n = 200_000
+    dtype = pl.Array(pl.Int64, 3)
+    repeated = pl.select(
+        pl.repeat(pl.lit(value, dtype=dtype), n).alias("a")
+    ).to_series()
+    flat = pl.Series("a", [value] * n, dtype=dtype)
+
+    answer = repeated.arr.contains(needle)
+    assert_series_equal(answer, pl.Series("a", [expected] * n))
+    assert_series_equal(answer, flat.arr.contains(needle))
+
+    # The answer is the one bit repeated, rather than one slot per element.
+    assert answer.estimated_size() < flat.arr.contains(needle).estimated_size()
