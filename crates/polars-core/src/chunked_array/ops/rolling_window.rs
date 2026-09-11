@@ -117,7 +117,7 @@ mod inner_mod {
 
             if let Some(weights) = options.weights {
                 debug_assert!(
-                    weights.iter().all(|&w| !(w < 0.0)),
+                    weights.iter().all(|&w| w.is_sign_positive()),
                     "implementation error: rolling weights should not be negative"
                 );
                 let weights_series =
