@@ -23,6 +23,13 @@ pub trait FileReaderBuilder: Debug + Send + Sync + 'static {
 
     fn set_io_metrics(&self, _io_metrics: Arc<IOMetrics>) {}
 
+    #[cfg(feature = "python")]
+    fn downcast_as_external_python_reader(
+        &self,
+    ) -> Option<&polars_io::external_reader::python::PythonFileReaderBuilder> {
+        None
+    }
+
     fn is_external_python_reader(&self) -> bool {
         false
     }

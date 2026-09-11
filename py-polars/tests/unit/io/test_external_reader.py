@@ -556,3 +556,31 @@ def test_external_reader_with_resolver_use_case() -> None:
     assert_frame_equal(
         q.collect(), pl.DataFrame({"x": [3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 5]})
     )
+
+
+def test_external_reader_explain() -> None:
+    class ReaderBuilder(FileReaderBuilder):
+        def build_file_reader(self, source: str | bytes) -> FileReader:
+            msg = "unreachable"
+            raise NotImplementedError(msg)
+
+        def explain_properties(self) -> dict[str, str]:
+            return {
+                "explain_property_key": "explain_property_value",
+            }
+
+    q = pl.scan_external_reader(ReaderBuilder(), sources=[], schema={})
+    plan = q.explain()
+
+    assert (
+        plan
+        == """\
+ExternalReaderBuilder SCAN []
+  explain_property_key: explain_property_value
+PROJECT */0 COLUMNS"""
+    )
+
+    phys_graph = q.show_graph(raw_output=True)
+    assert "explain_property_key: explain_property_value" in phys_graph
+
+    assert q.collect().shape == (0, 0)

@@ -1,3 +1,6 @@
+use polars_error::PolarsResult;
+use polars_utils::aliases::PlIndexMap;
+
 #[cfg(feature = "python")]
 pub mod python;
 
@@ -10,4 +13,14 @@ pub enum ExternalReaderBuilder {
     /// Unimplemented. Placeholder to avoid empty enum when Python feature is
     /// disabled.
     Rust(()),
+}
+
+impl ExternalReaderBuilder {
+    pub fn explain_properties(&self) -> PolarsResult<PlIndexMap<String, String>> {
+        match self {
+            #[cfg(feature = "python")]
+            ExternalReaderBuilder::Python(x) => x.explain_properties(),
+            ExternalReaderBuilder::Rust(()) => unimplemented!(),
+        }
+    }
 }

@@ -31,6 +31,10 @@ class FileReaderBuilder(abc.ABC):
     def build_file_reader(self, source: str | bytes) -> FileReader:
         """Build a file reader for the given source."""
 
+    def explain_properties(self) -> dict[str, str]:
+        """Properties to display in IR explain."""
+        return {}
+
 
 class FileReader(abc.ABC):
     """

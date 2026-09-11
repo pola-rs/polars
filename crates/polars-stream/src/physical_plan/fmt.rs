@@ -557,6 +557,21 @@ fn visualize_plan_rec(
             let mut out = format!("multi-scan[{reader_name}]");
             let mut f = EscapeLabel(&mut out);
 
+            #[cfg(feature = "python")]
+            if let Some(builder) = file_reader_builder.downcast_as_external_python_reader() {
+                let props = match builder.explain_properties() {
+                    Ok(x) => x,
+                    Err(e) => polars_utils::aliases::PlIndexMap::from_iter([(
+                        "Error:".into(),
+                        format!("failed explain_properties(): {e:?}"),
+                    )]),
+                };
+
+                for (k, v) in props {
+                    write!(f, "\n{k}: {v}").unwrap();
+                }
+            }
+
             write!(f, "\n{} source", scan_sources.len()).unwrap();
 
             if scan_sources.len() != 1 {

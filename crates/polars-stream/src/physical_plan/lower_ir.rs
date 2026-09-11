@@ -662,7 +662,10 @@ pub fn lower_ir(
             };
 
             if (scan_sources.is_empty()
-                && !matches!(scan_type.as_ref(), FileScanIR::Anonymous { .. }))
+                && !matches!(
+                    scan_type.as_ref(),
+                    FileScanIR::Anonymous { .. } | FileScanIR::ExternalReaderBuilder { .. }
+                ))
                 || unified_scan_args
                     .pre_slice
                     .as_ref()
