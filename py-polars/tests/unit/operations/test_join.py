@@ -4542,17 +4542,19 @@ def test_merge_join_coalesce_right_payload_name_collision(
 
 @pytest.mark.parametrize("how", ["inner", "left", "semi"])
 def test_join_sorted_float_key_with_nan(how: JoinStrategy) -> None:
-    # A key column flagged sorted takes a merge join rather than a hash join, and that merge
-    # compared its keys with `PartialOrd`: `NaN` matched nothing, so every row holding one was
-    # dropped (`inner`) or handed a null (`left`). Polars sorts `NaN` after every number and
-    # alongside every other `NaN`, so a run of them joins like a run of any other equal key.
+    # A key column flagged sorted takes a merge join rather than a hash join, and that
+    # merge compared its keys with `PartialOrd`: `NaN` matched nothing, so every row
+    # holding one was dropped (`inner`) or handed a null (`left`). Polars sorts `NaN`
+    # after every number and alongside every other `NaN`, so a run of them joins like a
+    # run of any other equal key.
     nan = float("nan")
     rows = {"a": [1.0, 2.0, nan, nan], "x": [1, 2, 3, 4]}
     right = pl.DataFrame({"a": [1.0, nan, nan], "y": [10, 20, 30]})
 
     sorted_key = pl.DataFrame(rows).sort("a")
     assert sorted_key["a"].flags["SORTED_ASC"]
-    # The same rows without the flag go the hash-join way, and that is the answer to match.
+    # The same rows without the flag go the hash-join way, and that is the answer to
+    # match.
     unflagged = pl.DataFrame(rows)
     assert not unflagged["a"].flags["SORTED_ASC"]
 
@@ -4563,9 +4565,41 @@ def test_join_sorted_float_key_with_nan(how: JoinStrategy) -> None:
 
 
 def test_join_repeated_nan_key() -> None:
-    # `pl.repeat` builds a column in the scalar representation, which carries the sorted flag,
-    # so this reaches the merge join without a `sort` in sight.
+    # `pl.repeat` builds a column in the scalar representation, which carries the
+    # sorted flag, so this reaches the merge join without a `sort` in sight.
     nan = float("nan")
     left = pl.select(a=pl.repeat(nan, 4), x=pl.int_range(4))
     right = pl.DataFrame({"a": [nan, nan], "y": [10, 20]})
     assert left.join(right, on="a", how="inner").height == 8
+
+
+@pytest.mark.parametrize("how", ["semi", "anti"])
+@pytest.mark.parametrize(
+    ("dtype", "key"),
+    [
+        (pl.Int64, 7),
+        (pl.Float64, 7.5),
+        (pl.UInt32, 7),
+        (pl.Boolean, True),
+    ],
+)
+def test_semi_anti_join_repeated_key(how: Any, dtype: pl.DataType, key: Any) -> None:
+    # The keys are handed to the hash join as slices, which a column holding one key for
+    # every row has no run of. Past the small-frame paths it used to panic with "the
+    # chunks were written out flat first" instead of writing that key out first.
+    n = 500
+    repeated = pl.select(a=pl.repeat(pl.lit(key, dtype=dtype), n), i=pl.int_range(n))
+    flat = pl.DataFrame({"a": pl.Series([key] * n, dtype=dtype), "i": range(n)})
+    right = pl.DataFrame({"a": pl.Series([key], dtype=dtype)})
+
+    assert_frame_equal(
+        repeated.join(right, on="a", how=how),
+        flat.join(right, on="a", how=how),
+    )
+    # And with the repeated key on the side the hash table is built from.
+    assert_frame_equal(
+        flat.join(pl.select(a=pl.repeat(pl.lit(key, dtype=dtype), 3)), on="a", how=how),
+        flat.join(
+            pl.DataFrame({"a": pl.Series([key] * 3, dtype=dtype)}), on="a", how=how
+        ),
+    )

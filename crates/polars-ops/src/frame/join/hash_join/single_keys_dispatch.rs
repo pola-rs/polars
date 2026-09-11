@@ -725,24 +725,17 @@ where
     <Option<T::Native> as ToTotalOrd>::TotalOrdItem: Send + Sync + DirtyHash + IsNull,
 {
     let n_threads = RAYON.current_num_threads();
-    let splitted_a = split(left, n_threads);
-    let splitted_b = split(right, n_threads);
     match (
         left.null_count(),
         right.null_count(),
         left.chunks().len(),
         right.chunks().len(),
     ) {
-        (0, 0, 1, 1) => {
-            let keys_a = chunks_as_slices(&splitted_a);
-            let keys_b = chunks_as_slices(&splitted_b);
-            if anti {
-                hash_join_tuples_left_anti(keys_a, keys_b, nulls_equal)
-            } else {
-                hash_join_tuples_left_semi(keys_a, keys_b, nulls_equal)
-            }
-        },
+        // The keys are handed over as slices, which a chunk that repeats a single key has no
+        // run of: `split_flat` writes those out first, as the other dispatchers do.
         (0, 0, _, _) => {
+            let splitted_a = split_flat(left, n_threads);
+            let splitted_b = split_flat(right, n_threads);
             let keys_a = chunks_as_slices(&splitted_a);
             let keys_b = chunks_as_slices(&splitted_b);
             if anti {
@@ -752,6 +745,8 @@ where
             }
         },
         _ => {
+            let splitted_a = split(left, n_threads);
+            let splitted_b = split(right, n_threads);
             let keys_a = get_arrays(&splitted_a);
             let keys_b = get_arrays(&splitted_b);
             if anti {
