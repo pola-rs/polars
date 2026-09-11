@@ -61,9 +61,7 @@ def test_cumulative_eval_named_column_reference_not_allowed() -> None:
         pl.exceptions.InvalidOperationError,
         match="does not support named column references",
     ):
-        df.select(
-            pl.col("x").cumulative_eval(pl.element().sum() + pl.col("y").first())
-        )
+        df.select(pl.col("x").cumulative_eval(pl.element().sum() + pl.col("y").first()))
 
 
 def test_cumulative_eval_length_preserving_streaming_25293() -> None:
