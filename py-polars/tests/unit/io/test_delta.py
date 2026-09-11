@@ -21,7 +21,7 @@ from polars.io.cloud._utils import NoPickleOption
 from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
 )
-from polars.io.delta._dataset import DeltaDataset
+from polars.io.delta._scan_resolver import DeltaScanResolver
 from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
 from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_frame_not_equal
@@ -35,8 +35,8 @@ def delta_table_path(io_files_path: Path) -> Path:
     return io_files_path / "delta-table"
 
 
-def new_pl_delta_dataset(source: str | DeltaTable) -> DeltaDataset:
-    return DeltaDataset(
+def new_pl_delta_scan_resolver(source: str | DeltaTable) -> DeltaScanResolver:
+    return DeltaScanResolver(
         table_=NoPickleOption(source if isinstance(source, DeltaTable) else None),
         table_uri_=source if not isinstance(source, DeltaTable) else None,
         version=None,
@@ -825,7 +825,7 @@ def test_scan_delta_schema_evolution_nested_struct_field_19915(tmp_path: Path) -
 def test_scan_delta_storage_options_from_delta_table(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch
 ) -> None:
-    import polars.io.delta._dataset
+    import polars.io.delta._scan_resolver
 
     storage_options_checked = False
 
@@ -845,7 +845,9 @@ def test_scan_delta_storage_options_from_delta_table(
         return pl.scan_parquet(*a, **kw)
 
     plmonkeypatch.setattr(
-        polars.io.delta._dataset, "scan_parquet", assert_scan_parquet_storage_options
+        polars.io.delta._scan_resolver,
+        "scan_parquet",
+        assert_scan_parquet_storage_options,
     )
 
     df = pl.DataFrame({"a": ["test"], "properties": [{"property_key": {"item": 1}}]})
@@ -1227,13 +1229,13 @@ def test_delta_dataset_does_not_pickle_table_object(tmp_path: Path) -> None:
     df = pl.DataFrame({"row_index": [0, 1, 2, 3, 4]})
     df.write_delta(tmp_path)
 
-    dataset = new_pl_delta_dataset(DeltaTable(tmp_path))
+    resolver = new_pl_delta_scan_resolver(DeltaTable(tmp_path))
 
-    assert dataset.table_.get() is not None
-    dataset = pickle.loads(pickle.dumps(dataset))
-    assert dataset.table_.get() is None
+    assert resolver.table_.get() is not None
+    resolver = pickle.loads(pickle.dumps(resolver))
+    assert resolver.table_.get() is None
 
-    assert_frame_equal(dataset.to_dataset_scan()[0].collect(), df)
+    assert_frame_equal(resolver.lazy().collect(), df)
 
 
 @pytest.mark.parametrize("use_pyarrow", [True, False])
@@ -1293,7 +1295,8 @@ def test_scan_delta_collect_without_version_scans_latest(
     capture = capfd.readouterr().err
 
     assert (
-        "DeltaDataset: to_dataset_scan(): early return (version_key = '1')" in capture
+        "DeltaScanResolver: to_dataset_scan(): early return (version_key = '1')"
+        in capture
     )
 
 
