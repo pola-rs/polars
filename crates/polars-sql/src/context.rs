@@ -27,7 +27,7 @@ use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::sql_expr::{
-    order_by_sort_options, parse_sql_array, parse_sql_equality_operands, parse_sql_expr,
+    convert_int_literal_for_string, order_by_sort_options, parse_sql_array, parse_sql_expr,
     resolve_compound_identifier, to_sql_interface_err,
 };
 use crate::sql_visitors::{
@@ -3591,9 +3591,25 @@ fn determine_left_right_join_on(
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     // parse, removing any aliases that may have been added by `resolve_column`
     // (called inside `parse_sql_expr`) as we need the actual/underlying col
-    let (left_on, right_on) =
-        parse_sql_equality_operands(expr_left, expr_right, ctx, Some(join_schema))?;
-    let (left_on, right_on) = (strip_join_aliases(left_on), strip_join_aliases(right_on));
+    let left_on = strip_join_aliases(parse_sql_expr(expr_left, ctx, Some(join_schema))?);
+    let right_on = strip_join_aliases(parse_sql_expr(expr_right, ctx, Some(join_schema))?);
+
+    // an operand's dtype comes from the table it names; the merged schema keeps the left
+    // dtype for a column name that exists in both tables
+    let operand_schema = |expr: &SQLExpr| -> &Schema {
+        match (
+            expr_refers_to_table(expr, &tbl_left.name),
+            expr_refers_to_table(expr, &tbl_right.name),
+        ) {
+            (true, false) => &tbl_left.schema,
+            (false, true) => &tbl_right.schema,
+            _ => join_schema,
+        }
+    };
+    let (left_on, right_on) = convert_int_literal_for_string(
+        (left_on, operand_schema(expr_left)),
+        (right_on, operand_schema(expr_right)),
+    );
 
     // a constant operand is a literal, or any other expression referencing no column (such as
     // `UPPER('it')`); it can be evaluated against either input, so it has no table affinity

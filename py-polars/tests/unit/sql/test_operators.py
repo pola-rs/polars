@@ -157,6 +157,17 @@ def test_join_key_string_compared_with_integer_literal() -> None:
     )
     assert res.rows() == [("13", 2)]
 
+    # a clashing column name with a different dtype per table
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2], "x": ["13", "31"]}),
+        "b": pl.DataFrame({"k": [1, 2], "x": [13, 31]}),
+    }
+    res = pl.SQLContext(frames=frames).execute(
+        "SELECT a.k, a.x, b.x AS bx FROM a JOIN b ON a.k = b.k AND b.x = 13 AND a.x = 13",
+        eager=True,
+    )
+    assert res.rows() == [(1, "13", 13)]
+
 
 @pytest.mark.parametrize(
     "in_clause",

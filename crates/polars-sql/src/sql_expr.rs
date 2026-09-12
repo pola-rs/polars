@@ -1083,28 +1083,15 @@ impl SQLExprVisitor<'_> {
         })
     }
 
-    /// `str_expr = 13` compares against the string '13'.
     fn convert_int_literal_for_string(&self, lhs: Expr, rhs: Expr) -> (Expr, Expr) {
-        match (&lhs, &rhs) {
-            (Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))), other)
-                if self.is_string_expr(other) =>
-            {
-                (lit(n.to_string()), rhs)
-            },
-            (other, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))))
-                if self.is_string_expr(other) =>
-            {
-                (lhs, lit(n.to_string()))
-            },
-            _ => (lhs, rhs),
-        }
-    }
-
-    /// Whether `expr` is known to be `String`; false if the dtype cannot be resolved.
-    fn is_string_expr(&self, expr: &Expr) -> bool {
         let empty = Schema::default();
         let schema = self.active_schema.unwrap_or(&empty);
-        matches!(expr.to_field(schema), Ok(fld) if fld.dtype == DataType::String)
+        convert_int_literal_for_string((lhs, schema), (rhs, schema))
+    }
+
+    fn is_string_expr(&self, expr: &Expr) -> bool {
+        let empty = Schema::default();
+        is_string_expr(expr, self.active_schema.unwrap_or(&empty))
     }
 
     /// Visit a SQL literal.
@@ -1667,18 +1654,30 @@ pub(crate) fn parse_sql_expr(
     visitor.visit_expr(expr)
 }
 
-/// Parse the two operands of an equality (eg: a join key pair), applying the same
-/// literal coercion as `=` in an expression.
-pub(crate) fn parse_sql_equality_operands(
-    left: &SQLExpr,
-    right: &SQLExpr,
-    ctx: &mut SQLContext,
-    active_schema: Option<&Schema>,
-) -> PolarsResult<(Expr, Expr)> {
-    let mut visitor = SQLExprVisitor { ctx, active_schema };
-    let lhs = visitor.visit_expr(left)?;
-    let rhs = visitor.visit_expr(right)?;
-    Ok(visitor.convert_int_literal_for_string(lhs, rhs))
+/// Whether `expr` is known to be `String`; false if the dtype cannot be resolved.
+fn is_string_expr(expr: &Expr, schema: &Schema) -> bool {
+    matches!(expr.to_field(schema), Ok(fld) if fld.dtype == DataType::String)
+}
+
+/// `str_expr = 13` compares against the string '13'; each operand's dtype is
+/// resolved against its own schema.
+pub(crate) fn convert_int_literal_for_string(
+    (lhs, lhs_schema): (Expr, &Schema),
+    (rhs, rhs_schema): (Expr, &Schema),
+) -> (Expr, Expr) {
+    match (&lhs, &rhs) {
+        (Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))), other)
+            if is_string_expr(other, rhs_schema) =>
+        {
+            (lit(n.to_string()), rhs)
+        },
+        (other, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))))
+            if is_string_expr(other, lhs_schema) =>
+        {
+            (lhs, lit(n.to_string()))
+        },
+        _ => (lhs, rhs),
+    }
 }
 
 pub(crate) fn parse_sql_array(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsResult<Series> {
