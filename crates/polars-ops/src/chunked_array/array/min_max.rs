@@ -53,14 +53,64 @@ where
                 .as_slice()
                 .chunks_exact(width)
                 .map(|sl| slice_agg(sl).unwrap())
-                .collect_arr(),
+                .collect_arr_trusted(),
         };
     }
 
-    (0..values.len())
-        .step_by(width)
-        .map(|start| arr_agg(&values.sliced(start, width)))
-        .collect_arr()
+    // A value under the rows is null, so the mask has to be consulted. It — and the values — are
+    // read once here, leaving each row a slice of a buffer and a run of bits to reduce, rather
+    // than an array to build, walk and drop per row.
+    let validity = values
+        .validity()
+        .expect("a null value is one the mask marks as not being there");
+    let Some(validity) = validity.flat_bitmap() else {
+        // One bit stands for every value, and it says none of them is there, so no row holds a
+        // value to reduce and every element reduces to nothing.
+        return PlPrimitiveArray::new_full_null(length);
+    };
+
+    // Every row is `width` copies of the one value the buffer holds, so it reduces to that value
+    // wherever the mask leaves it an element at all, and to nothing where it leaves none.
+    if let Some(value) = values.scalar_value_ignore_validity() {
+        let reduced = slice_agg(&[value]).expect("a row of one value reduces to that value");
+        return (0..length)
+            .map(|row| {
+                let nulls = validity.null_count_range(row * width, width);
+                (nulls < width).then_some(reduced)
+            })
+            .collect_arr_trusted();
+    }
+
+    // One row per element and one slot per value: a row is the run of the values buffer it
+    // already is, and the values of it that are there are read out into `row` to be reduced as a
+    // slice of their own — which is what keeps the kernel off a mask it would walk a bit at a time.
+    let mut row = Vec::with_capacity(width);
+    values
+        .flat_values()
+        .unwrap()
+        .as_slice()
+        .chunks_exact(width)
+        .enumerate()
+        .map(|(index, row_values)| {
+            let start = index * width;
+            match validity.null_count_range(start, width) {
+                // Nothing under this row is null, so it reduces as the slice it is.
+                0 => slice_agg(row_values),
+                // Nothing under it is there at all, so it reduces to nothing.
+                nulls if nulls == width => None,
+                // Some values are there and some are not, so the ones that are are taken aside.
+                _ => {
+                    row.clear();
+                    row.extend(
+                        (0..width)
+                            .filter(|offset| validity.get_bit(start + offset))
+                            .map(|offset| row_values[offset]),
+                    );
+                    slice_agg(&row)
+                },
+            }
+        })
+        .collect_arr_trusted()
 }
 
 pub(super) enum AggType {

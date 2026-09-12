@@ -87,6 +87,49 @@ def test_arr_reduce_repeated_element() -> None:
     assert repeated.head(0).arr.min().to_list() == []
 
 
+def test_arr_reduce_repeated_values_under_a_flat_mask() -> None:
+    # The values under the rows can repeat a single slot while the mask over them holds one
+    # bit each, which is what a `when` over a repeated column leaves: a row reduces to the one
+    # value wherever the mask leaves it a value at all, and to nothing where it leaves none.
+    flags = [True, True, True, False, False, False, True, False, True]
+    inner = pl.select(pl.when(pl.Series(flags)).then(pl.repeat(7, 9)).alias("a")).to_series()
+    assert inner.estimated_size() < 9 * 8  # the values are still the one slot they repeat
+
+    s = inner.reshape((3, 3))
+    assert s.arr.min().to_list() == [7, None, 7]
+    assert s.arr.max().to_list() == [7, None, 7]
+
+    # A mask that marks every value as null leaves no row anything to reduce.
+    none = pl.select(
+        pl.when(pl.Series([False] * 9)).then(pl.repeat(7, 9)).alias("a")
+    ).to_series()
+    assert none.reshape((3, 3)).arr.min().to_list() == [None] * 3
+    assert none.reshape((3, 3)).arr.max().to_list() == [None] * 3
+
+
+@pytest.mark.parametrize("width", [1, 3, 8, 17])
+def test_arr_reduce_nulls_among_the_values(width: int) -> None:
+    # A row whose values are partly null reduces over the ones that are there, whichever
+    # representation the chunk it is read out of is in.
+    rows = [
+        [None if (i * width + j) % 3 == 0 else (i * width + j) % 11 for j in range(width)]
+        for i in range(12)
+    ]
+    s = pl.Series("a", rows, dtype=pl.Array(pl.Int64, width))
+    expected_min = [min((v for v in row if v is not None), default=None) for row in rows]
+    expected_max = [max((v for v in row if v is not None), default=None) for row in rows]
+
+    padded = pl.concat([s.head(1), s, s.head(1)])
+    shapes = {
+        "flat": s,
+        "sliced": padded.slice(1, s.len()),
+        "chunked": pl.concat([s.head(5), s.tail(7)], rechunk=False),
+    }
+    for name, shape in shapes.items():
+        assert shape.arr.min().to_list() == expected_min, name
+        assert shape.arr.max().to_list() == expected_max, name
+
+
 def test_arr_reduce_zero_width() -> None:
     # An element of no values at all reduces to nothing.
     s = pl.Series("a", [[], []], dtype=pl.Array(pl.Int64, 0))
