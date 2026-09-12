@@ -80,6 +80,106 @@ def test_equal_not_equal() -> None:
     }
 
 
+def test_string_compared_with_integer_literals() -> None:
+    # integer literals tested for (in)equality against a string are compared as strings
+    df = pl.DataFrame({"phone": ["13-123", "31-456", "22-789", "22"]})
+    res = df.sql(
+        """
+        SELECT phone
+        FROM self
+        WHERE SUBSTRING(phone, 1, 2) IN (13, 31)
+           OR phone = 22
+           OR 13 <> SUBSTRING(phone, 1, 2)
+        ORDER BY phone
+        """
+    )
+    assert res.to_series().to_list() == ["13-123", "22", "22-789", "31-456"]
+
+    res = df.sql("SELECT phone FROM self WHERE phone NOT IN (22, 13)")
+    assert res.to_series().to_list() == ["13-123", "31-456", "22-789"]
+
+    # aggregate / non-literal IN lists take the OR-chain path
+    res = df.sql(
+        """
+        SELECT
+          MAX(phone) IN (31, 13) AS agg_in,
+          MIN(phone) IN (31, MAX(phone)) AS agg_in_expr
+        FROM self
+        """
+    )
+    assert res.row(0) == (False, False)
+    res = df.sql("SELECT phone IN (22, LEFT(phone, 2)) AS x FROM self")
+    assert res.to_series().to_list() == [False, False, False, True]
+
+
+@pytest.mark.parametrize(
+    ("condition", "keeps_rows"),
+    [
+        ("1 = 1", True),
+        ("1 = 1.0", True),
+        ("'13' = 13", True),
+        ("('13' = 13)", True),
+        ("'13' <> 13", False),
+        ("1 < 2 AND 'a' = 'b'", False),
+        ("NULL = NULL", False),
+        ("NULL IS NULL", True),
+    ],
+)
+def test_constant_where_condition(condition: str, keeps_rows: bool) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    res = df.sql(f"SELECT a FROM self WHERE {condition}")
+    assert res.height == (3 if keeps_rows else 0)
+
+
+@pytest.mark.parametrize(
+    ("condition", "expected"),
+    [
+        ("ROW_NUMBER() OVER () <= 2", [1, 2]),
+        ("COUNT(1) > 1", [1, 2, 3]),
+        ("COLUMNS('^a$') > 1", [2, 3]),
+    ],
+)
+def test_where_condition_without_column_names(
+    condition: str, expected: list[int]
+) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    res = df.sql(f"SELECT a FROM self WHERE {condition}")
+    assert res.to_series().to_list() == expected
+
+
+def test_join_key_string_compared_with_integer_literal() -> None:
+    frames = {
+        "a": pl.DataFrame({"s": ["13", "31", "22"]}),
+        "b": pl.DataFrame({"k": [1, 2]}),
+    }
+    res = pl.SQLContext(frames=frames).execute(
+        "SELECT s, k FROM a JOIN b ON a.s = 13 AND b.k = 2", eager=True
+    )
+    assert res.rows() == [("13", 2)]
+
+    # a clashing column name with a different dtype per table
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2], "x": ["13", "31"]}),
+        "b": pl.DataFrame({"k": [1, 2], "x": [13, 31]}),
+    }
+    res = pl.SQLContext(frames=frames).execute(
+        "SELECT a.k, a.x, b.x AS bx FROM a JOIN b ON a.k = b.k AND b.x = 13 AND a.x = 13",
+        eager=True,
+    )
+    assert res.rows() == [(1, "13", 13)]
+
+    # a nested comparison inside a join key operand resolves against its own table too
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2], "x": ["13", "31"], "flag": [True, True]}),
+        "b": pl.DataFrame({"k": [1, 2], "x": [13, 31]}),
+    }
+    res = pl.SQLContext(frames=frames).execute(
+        "SELECT a.k FROM a JOIN b ON a.k = b.k AND a.flag = (b.x = 13)",
+        eager=True,
+    )
+    assert res.rows() == [(1,)]
+
+
 @pytest.mark.parametrize(
     "in_clause",
     [
