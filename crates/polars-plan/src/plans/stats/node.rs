@@ -3,7 +3,6 @@
 //! Anything that cannot be estimated yields `None` rather than a guess, so a caller
 //! can tell "no estimate" apart from "estimated to be small".
 
-use std::cmp::Ordering;
 use std::sync::Arc;
 
 use polars_utils::aliases::InitHashMaps;
@@ -647,8 +646,10 @@ pub fn composite_key_domain(parts: impl Iterator<Item = f64>, max_rows: f64) -> 
 ///
 /// With distinct counts for both sides the domain is the larger of the two: every
 /// value one side holds is in the domain, whether or not the other side has it.
-/// Without them, row counts bound the domain from above and are tight only on the
-/// unique side, so the smaller relation is assumed to hold the key uniquely.
+/// Without them the side repeating the key least describes it alone, bounded by its
+/// integer range where it has one and by its row count otherwise. Sides that repeat
+/// it equally - two without a range among them - fall back to the smaller relation,
+/// whose key is likelier to be unique.
 pub fn key_domain(
     left: &NodeStats,
     left_key: Option<&PlSmallStr>,
@@ -660,9 +661,7 @@ pub fn key_domain(
     let domain = match (left_ndv, right_ndv) {
         (Some(l), Some(r)) => l.max(r),
         // The side that repeats the key least describes the domain: it is the one
-        // closest to holding each value once. The other side's bound covers the
-        // values it happens to hold, and letting it decide makes a selective
-        // dimension look like it multiplies the rows it filters.
+        // closest to holding each value once.
         _ => {
             let bound = |side: &NodeStats, side_key: Option<&PlSmallStr>| {
                 // `int_domain` is already bounded by the side's own rows.
@@ -671,19 +670,17 @@ pub fn key_domain(
                     .unwrap_or(side.unfiltered)
             };
             let (left_bound, right_bound) = (bound(left, left_key), bound(right, right_key));
-            // Distinct values per row, at most one. The side nearest to holding the
-            // key uniquely describes the domain; the other repeats values and says
-            // less about how many there are.
-            let per_row = |bound: f64, rows: f64| bound / rows.max(MIN_CARDINALITY);
-            let left_first = match per_row(left_bound, left.unfiltered)
-                .total_cmp(&per_row(right_bound, right.unfiltered))
+            // Distinct values per row, cross multiplied rather than divided.
+            let left_ratio = left_bound * right.unfiltered;
+            let right_ratio = right_bound * left.unfiltered;
+            let estimate = if left_ratio > right_ratio
+                // Nothing tells the two apart, so prefer the smaller relation.
+                || (left_ratio == right_ratio && left.unfiltered <= right.unfiltered)
             {
-                Ordering::Greater => true,
-                Ordering::Less => false,
-                // Equally repeated, so fall back to the smaller relation.
-                Ordering::Equal => left.unfiltered <= right.unfiltered,
+                left_bound
+            } else {
+                right_bound
             };
-            let estimate = if left_first { left_bound } else { right_bound };
             // A known distinct count on either side is a lower bound, since every
             // value it holds is in the domain.
             left_ndv
@@ -714,6 +711,17 @@ mod tests {
             self.columns = Some(Arc::new(map));
             self
         }
+    }
+
+    /// A leaf whose join key carries an integer range.
+    fn leaf_with_range(rows: f64, range: (i128, i128)) -> NodeStats {
+        leaf(rows, rows).with_column(
+            "k",
+            ScanColumnStats {
+                int_range: Some(range),
+                ..Default::default()
+            },
+        )
     }
 
     /// A leaf whose join key has a known distinct count.
@@ -770,21 +778,14 @@ mod tests {
     }
 
     /// A fact table's key range says which values it holds, not how many distinct
-    /// values the dimension it joins has. Bounding the shared domain by it made a
-    /// selective dimension look like it multiplied the rows it filters, so the order
-    /// left it until last.
+    /// values the dimension it joins has, so it must not bound the shared domain: a
+    /// selective dimension has to shrink the fact table rather than multiply it.
     #[test]
     fn a_facts_key_range_does_not_bound_the_dimensions_domain() {
         // store_sales spans about five years of date keys, a range far narrower than
         // date_dim's row count.
-        let store_sales = leaf(28_800_991.0, 28_800_991.0).with_column(
-            "k",
-            ScanColumnStats {
-                int_range: Some((2_450_816, 2_452_642)),
-                ..Default::default()
-            },
-        );
-        // Renaming the leaf apart leaves it without statistics of its own.
+        let store_sales = leaf_with_range(28_800_991.0, (2_450_816, 2_452_642));
+        // Renamed apart, the dimension carries no statistics of its own.
         let date_dim = leaf(73_049.0, 2_922.0);
 
         let domain = key_domain(&store_sales, Some(&key("k")), &date_dim, Some(&key("k")));
@@ -795,25 +796,14 @@ mod tests {
         assert!((out - 1_152_055.0).abs() < 50.0, "got {out}");
     }
 
-    /// A dimension a shade larger than the table it joins still holds the key
-    /// uniquely. Row counts alone misread which side that is, and the fact's narrow
-    /// range then decides the domain, so the dimension looks like it multiplies the
-    /// rows it filters.
+    /// A dimension one row larger than the table it joins still holds the key
+    /// uniquely, so it describes the domain however the two compare in size.
     #[test]
     fn the_least_repeated_side_describes_the_domain() {
-        let ranged = |rows: f64, range: (i128, i128)| {
-            leaf(rows, rows).with_column(
-                "k",
-                ScanColumnStats {
-                    int_range: Some(range),
-                    ..Default::default()
-                },
-            )
-        };
         // The fact repeats 100 keys over a million rows; the dimension is one row
         // larger and holds a million distinct ones.
-        let fact = ranged(1_000_000.0, (0, 99));
-        let dim = ranged(1_000_001.0, (0, 1_000_000));
+        let fact = leaf_with_range(1_000_000.0, (0, 99));
+        let dim = leaf_with_range(1_000_001.0, (0, 1_000_000));
 
         let domain = key_domain(&fact, Some(&key("k")), &dim, Some(&key("k")));
         assert_eq!(domain, 1_000_001.0);
@@ -827,27 +817,14 @@ mod tests {
     /// depend on which way round the join happens to be written.
     #[test]
     fn equal_row_counts_estimate_the_same_domain_either_way() {
-        let narrow = leaf(1_000_000.0, 1_000_000.0).with_column(
-            "k",
-            ScanColumnStats {
-                int_range: Some((0, 99)),
-                ..Default::default()
-            },
-        );
-        let wide = leaf(1_000_000.0, 1_000_000.0).with_column(
-            "k",
-            ScanColumnStats {
-                int_range: Some((0, 999_999)),
-                ..Default::default()
-            },
-        );
+        let narrow = leaf_with_range(1_000_000.0, (0, 99));
+        let wide = leaf_with_range(1_000_000.0, (0, 999_999));
 
         let forwards = key_domain(&narrow, Some(&key("k")), &wide, Some(&key("k")));
         let backwards = key_domain(&wide, Some(&key("k")), &narrow, Some(&key("k")));
 
         assert_eq!(forwards, backwards);
-        // The domain holds both sides, so the join reproduces its input rather than
-        // multiplying it ten-thousand-fold.
+        // The domain holds both sides, so the join reproduces its input.
         assert_eq!(forwards, 1_000_000.0);
     }
 
@@ -1023,27 +1000,19 @@ mod tests {
     /// domain below it.
     #[test]
     fn a_one_sided_distinct_count_survives_the_range_fallback() {
-        // 100 values wide, but nothing says how many of them the fact table holds.
-        let fact = leaf(1_000_000.0, 1_000_000.0).with_column(
-            "k",
-            ScanColumnStats {
-                int_range: Some((0, 99)),
-                ..Default::default()
-            },
-        );
+        // 100 values wide over a million rows, so the fact repeats its key heavily.
+        let fact = leaf_with_range(1_000_000.0, (0, 99));
         let dim = leaf_with_ndv(800.0, 800.0, "k", 500);
 
-        // The dimension's rows are the estimate and its 500 known distinct keys a
-        // lower bound on it. Either way the narrow range on the other side does not
-        // drag the domain below what the dimension holds.
+        // The dimension describes the domain, and its 500 known distinct keys are a
+        // lower bound on it. Either way the fact's narrow range does not drag the
+        // domain below what the dimension holds.
         assert_eq!(
             key_domain(&fact, Some(&key("k")), &dim, Some(&key("k"))),
             800.0
         );
-        // Without a distinct count anywhere, the smaller side's rows are the
-        // estimate, and the range on the other side does not narrow them: bounding
-        // the domain by the values the fact holds would make this join multiply the
-        // fact table by eight rather than reproduce it.
+        // The same holds with no distinct count anywhere: a relation whose key is
+        // unknown still repeats it less than the fact does.
         let opaque = leaf(800.0, 800.0);
         assert_eq!(
             key_domain(&fact, Some(&key("k")), &opaque, Some(&key("k"))),
