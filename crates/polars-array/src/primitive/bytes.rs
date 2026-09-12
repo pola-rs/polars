@@ -112,6 +112,42 @@ pub(crate) fn extend_subslice<B: AlignedBytes>(
     }
 }
 
+/// Appends the run of `length` values of `other` starting at `start`, `repeats` times over.
+///
+/// The run is read out of `other` once; every copy after that is taken from the ones already
+/// written, doubling the run each time, so `repeats` copies of a short run cost a handful of long
+/// copies rather than one short copy each.
+#[inline(never)]
+pub(crate) fn extend_subslice_run_repeated<B: AlignedBytes>(
+    values: &mut Vec<B>,
+    other: ValuesBytes<'_, B>,
+    start: usize,
+    length: usize,
+    repeats: usize,
+) {
+    let total = length
+        .checked_mul(repeats)
+        .expect("the values to append overflow a `usize`");
+    values.reserve(total);
+
+    // Every element of the array reads the same value, so the whole run is that one value.
+    if let ValuesBytes::Scalar(value) = other {
+        values.resize(values.len() + total, value);
+        return;
+    }
+
+    if total == 0 {
+        return;
+    }
+
+    let run = values.len();
+    extend_subslice(values, other, start, length);
+    while values.len() - run < total {
+        let take = (total - (values.len() - run)).min(values.len() - run);
+        values.extend_from_within(values.len() - take..);
+    }
+}
+
 /// Appends each of the `length` values of `other` starting at `start` `repeats` times over.
 #[inline(never)]
 pub(crate) fn extend_subslice_each_repeated<B: AlignedBytes>(

@@ -59,6 +59,12 @@ impl<'a, 'f, A: ?Sized> ArrayList<'a, 'f, A> {
         (0..self.len()).map(move |index| get(index % count))
     }
 
+    /// The single array the concatenation lays down over and over, and how many times over, if
+    /// there is only one of them to lay down more than once.
+    fn one_repeated(&self) -> Option<(&'a A, usize)> {
+        (self.count == 1 && self.repeats > 1).then(|| (self.at(0), self.repeats))
+    }
+
     /// The array at `index`, which is where a reader composed onto this one starts.
     fn at(&self, index: usize) -> &'a A {
         (self.get)(index)
@@ -339,8 +345,22 @@ fn concatenate_primitive_impl<T: NativeType>(
     // Copying the values out is what the concatenation comes down to, and it reads nothing of
     // them but their bytes, so it is taken over the byte class of `T` rather than over `T`.
     let mut values = Vec::with_capacity(length);
-    for array in list.iter() {
-        bytes::extend_subslice(&mut values, array.values_bytes(), 0, array.len());
+    match list.one_repeated() {
+        // One array laid down over and over: its values are read once and the run of them is
+        // doubled, rather than the array being read again for every repeat — which is one short
+        // copy per repeat where the array holds few values, and most of what the copying costs.
+        Some((array, repeats)) => bytes::extend_subslice_run_repeated(
+            &mut values,
+            array.values_bytes(),
+            0,
+            array.len(),
+            repeats,
+        ),
+        None => {
+            for array in list.iter() {
+                bytes::extend_subslice(&mut values, array.values_bytes(), 0, array.len());
+            }
+        },
     }
 
     // SAFETY: the values hold one slot per element of the concatenation, and the mask is the one
@@ -380,18 +400,33 @@ fn concatenate_boolean_impl(list: ArrayList<'_, '_, PlBooleanArray>) -> PlBoolea
         .validities(length, null_count)
         .map(PlBitmap::from_bitmap);
 
-    let mut values = BitmapBuilder::with_capacity(length);
-    for array in list.iter().filter(|array| !array.is_empty()) {
+    // One pass over the distinct arrays is what the concatenation is made of; the copies of them
+    // hold the same bits over again.
+    let mut pass = BitmapBuilder::with_capacity(length);
+    for array in list.distinct().filter(|array| !array.is_empty()) {
         if let Some(array_values) = array.flat_values() {
-            values.extend_from_bitmap(array_values);
+            pass.extend_from_bitmap(array_values);
         } else if let Some(value) = array.scalar_value_ignore_validity() {
-            values.extend_constant(array.len(), value);
+            pass.extend_constant(array.len(), value);
         }
+    }
+
+    // The copies after the first are taken from the bits already written and the run doubles,
+    // rather than the pass being laid down once per repeat — which is one short copy per repeat
+    // where the pass holds few bits.
+    let mut values = pass.freeze();
+    let total = values.len() * list.repeats;
+    while values.len() < total {
+        let take = (total - values.len()).min(values.len());
+        let mut builder = BitmapBuilder::with_capacity(values.len() + take);
+        builder.extend_from_bitmap(&values);
+        builder.extend_from_bitmap(&values.clone().sliced(0, take));
+        values = builder.freeze();
     }
 
     // SAFETY: the values hold one bit per element of the concatenation, and the mask is the one
     // `concatenate_validities_with` built for that many elements.
-    unsafe { PlBooleanArray::new_unchecked(values.freeze(), length, validity) }
+    unsafe { PlBooleanArray::new_unchecked(values, length, validity) }
 }
 
 /// Concatenates `arrays`, in order, into a single [`PlBinaryArray`] over the bytes they cover.
@@ -552,10 +587,13 @@ fn concatenate_binview_impl(list: ArrayList<'_, '_, PlBinaryViewArray>) -> PlBin
     }
 
     // Every copy of the distinct arrays holds the same elements over again, which is the pass that
-    // was just built, repeated.
-    let pass = views.len();
-    for _ in 1..list.repeats {
-        views.extend_from_within(..pass);
+    // was just built, repeated. Each copy is taken from the ones already written and the run
+    // doubles, rather than the pass being laid down once per repeat — which is one short copy per
+    // repeat where the pass holds few views.
+    let total = views.len() * list.repeats;
+    while views.len() < total {
+        let take = (total - views.len()).min(views.len());
+        views.extend_from_within(..take);
     }
 
     // SAFETY: the views hold one slot per element, each rebased onto the buffers of the array it
@@ -990,4 +1028,74 @@ fn concatenate_primitive_as<T: NativeType>(
 ) -> Option<Box<dyn PlArray>> {
     let get = try_downcast_get::<PlPrimitiveArray<T>>(list)?;
     Some(Box::new(concatenate_primitive_impl(list.read_as(&get))))
+}
+
+#[cfg(test)]
+mod test {
+    use arrow::bitmap::Bitmap;
+
+    use super::*;
+
+    /// The copies a repeated concatenation lays down are taken from the ones already written,
+    /// doubling the run — which has to leave the same elements in the same order as reading the
+    /// array out once per copy does, whatever the run's length is against the number of copies.
+    #[test]
+    fn repeating_an_array_lays_its_elements_down_in_order() {
+        for length in [1usize, 2, 3, 7, 8, 65] {
+            for repeats in [0usize, 1, 2, 3, 5, 16] {
+                let values: Vec<i32> = (0..length as i32).collect();
+                let expected: Vec<i32> = values
+                    .iter()
+                    .cycle()
+                    .take(length * repeats)
+                    .copied()
+                    .collect();
+
+                let primitive = PlPrimitiveArray::from_vec(values.clone());
+                let out = concatenate_repeated(&primitive, repeats).unwrap();
+                let out = out
+                    .as_any()
+                    .downcast_ref::<PlPrimitiveArray<i32>>()
+                    .unwrap();
+                assert_eq!(out.len(), expected.len(), "{length} x {repeats}");
+                assert_eq!(
+                    out.iter().collect::<Vec<_>>(),
+                    expected.iter().map(|v| Some(*v)).collect::<Vec<_>>(),
+                    "primitive {length} x {repeats}",
+                );
+
+                // The bits of a boolean array and the views of a string array are written out the
+                // same way, and neither holds one slot per byte for a copy to be a plain `memcpy`.
+                let boolean = PlBooleanArray::from_values(
+                    values.iter().map(|v| v % 3 == 0).collect::<Bitmap>(),
+                );
+                let out = concatenate_repeated(&boolean, repeats).unwrap();
+                let out = out.as_any().downcast_ref::<PlBooleanArray>().unwrap();
+                assert_eq!(
+                    out.iter().collect::<Vec<_>>(),
+                    expected
+                        .iter()
+                        .map(|v| Some(v % 3 == 0))
+                        .collect::<Vec<_>>(),
+                    "boolean {length} x {repeats}",
+                );
+
+                let strings = PlBinaryViewArray::from_values_iter(
+                    values.iter().map(|v| format!("value {v}")),
+                );
+                let out = concatenate_repeated(&strings, repeats).unwrap();
+                let out = out.as_any().downcast_ref::<PlBinaryViewArray>().unwrap();
+                assert_eq!(
+                    out.values_iter()
+                        .map(|v| String::from_utf8(v.to_vec()).unwrap())
+                        .collect::<Vec<_>>(),
+                    expected
+                        .iter()
+                        .map(|v| format!("value {v}"))
+                        .collect::<Vec<_>>(),
+                    "binview {length} x {repeats}",
+                );
+            }
+        }
+    }
 }
