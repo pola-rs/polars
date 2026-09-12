@@ -180,6 +180,31 @@ impl<T: NativeType> ArrayFromIter<T> for PlPrimitiveArray<T> {
         let values: Vec<T> = iter.into_iter().collect::<Result<_, E>>()?;
         Ok(Self::from_vec(values))
     }
+
+    /// A walk that can stop early cannot hand its elements to `for_each`, so what the trusted
+    /// length saves here is the other half: the capacity is not compared against the length once
+    /// per element.
+    #[inline]
+    fn try_arr_from_iter_trusted<E, I>(iter: I) -> Result<Self, E>
+    where
+        I: IntoIterator<Item = Result<T, E>>,
+        I::IntoIter: TrustedLen,
+    {
+        let iter = iter.into_iter();
+        let length = iter
+            .size_hint()
+            .1
+            .expect("a trusted-length iterator knows how many elements it has left");
+
+        let mut values = Vec::with_capacity(length);
+        for item in iter {
+            // SAFETY: room for `length` values was just reserved, and a `TrustedLen` iterator
+            // yields no more items than its size hint says.
+            unsafe { values.push_unchecked(item?) };
+        }
+
+        Ok(Self::from_vec(values))
+    }
 }
 
 impl<T: NativeType> ArrayFromIter<Option<T>> for PlPrimitiveArray<T> {
@@ -226,6 +251,41 @@ impl<T: NativeType> ArrayFromIter<Option<T>> for PlPrimitiveArray<T> {
             length,
             validity.into_opt_validity().map(PlBitmap::from_bitmap),
         )
+    }
+
+    /// As the one above, a fallible walk keeps the capacity check off the loop but not the branch
+    /// `for_each` would have resolved once.
+    #[inline]
+    fn try_arr_from_iter_trusted<E, I>(iter: I) -> Result<Self, E>
+    where
+        I: IntoIterator<Item = Result<Option<T>, E>>,
+        I::IntoIter: TrustedLen,
+    {
+        let iter = iter.into_iter();
+        let length = iter
+            .size_hint()
+            .1
+            .expect("a trusted-length iterator knows how many elements it has left");
+
+        // The value of a null element is undetermined, so it is left at the default; the mask is
+        // built alongside, into room reserved with the values.
+        let mut validity = BitmapBuilder::with_capacity(length);
+        let mut values = Vec::with_capacity(length);
+        for item in iter {
+            let item = item?;
+            // SAFETY: room for `length` values and as many bits was just reserved, and a
+            // `TrustedLen` iterator yields no more items than its size hint says.
+            unsafe {
+                values.push_unchecked(item.unwrap_or_default());
+                validity.push_unchecked(item.is_some());
+            }
+        }
+
+        Ok(Self::new(
+            Buffer::from(values),
+            length,
+            validity.into_opt_validity().map(PlBitmap::from_bitmap),
+        ))
     }
 
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<T>, E>>>(

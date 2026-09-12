@@ -1,5 +1,6 @@
 use std::ops::Range;
 
+use arrow::trusted_len::TrustedLen;
 use arrow::types::NativeType;
 use polars_array::bitmap::combine_validities_and;
 use polars_compute::min_max::MinMaxKernel;
@@ -17,7 +18,7 @@ fn row_of<T: NativeType>(
 }
 
 /// The range of the values buffer every element `offset` holds the ends of covers.
-fn rows_of(offset: &[u64]) -> impl Iterator<Item = Range<usize>> + '_ {
+fn rows_of(offset: &[u64]) -> impl TrustedLen<Item = Range<usize>> + '_ {
     offset
         .windows(2)
         .map(|window| window[0] as usize..window[1] as usize)
@@ -42,7 +43,7 @@ where
             // SAFETY: the offsets of a list array cover its values, and an empty row reduces to
             // nothing, which is what the kernel answers of an empty slice.
             .map(|range| unsafe { slice.get_unchecked(range) }.min_ignore_nan_kernel())
-            .collect();
+            .collect_arr_trusted();
     }
 
     let mut running_offset = offset[0];
@@ -59,7 +60,7 @@ where
             let row = values.sliced(current_offset as usize, (*end - current_offset) as usize);
             row.min_ignore_nan_kernel()
         })
-        .collect()
+        .collect_arr_trusted()
 }
 
 /// Reduces each list of `arr` to one element, in whatever representation each part is in.
@@ -166,7 +167,7 @@ where
             // SAFETY: the offsets of a list array cover its values, and an empty row reduces to
             // nothing, which is what the kernel answers of an empty slice.
             .map(|range| unsafe { slice.get_unchecked(range) }.max_ignore_nan_kernel())
-            .collect();
+            .collect_arr_trusted();
     }
 
     let mut running_offset = offset[0];
@@ -183,7 +184,7 @@ where
             let row = values.sliced(current_offset as usize, (*end - current_offset) as usize);
             row.max_ignore_nan_kernel()
         })
-        .collect()
+        .collect_arr_trusted()
 }
 
 /// Reduces each list of `arr` to one element, in whatever representation each part is in.

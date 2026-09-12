@@ -216,7 +216,7 @@ where
                 .filter(|sl| !sl.is_empty())
                 .map(|sl| sum_slice::<_, S>(sl) / NumCast::from(sl.len()).unwrap())
         })
-        .collect()
+        .collect_arr_trusted()
 }
 
 /// The average of each list of `arr`, in whatever representation each part is in.
@@ -258,7 +258,7 @@ where
                 let count = (window[1] - window[0]) as usize;
                 (count > 0).then(|| divide_by_count::<S>(sum_repeated::<T, S>(value, count), count))
             })
-            .collect(),
+            .collect_arr_trusted(),
         None => mean_between_offsets::<_, S>(
             values.flat_values().expect("the values are not repeated"),
             offsets,

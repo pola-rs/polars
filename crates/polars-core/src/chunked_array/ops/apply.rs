@@ -36,10 +36,10 @@ where
             }
 
             if arr.null_count() == 0 {
-                let out: U::Array = arr.values_iter().map(&op).collect_arr();
+                let out: U::Array = arr.values_iter().map(&op).collect_arr_trusted();
                 out.with_validity_typed(arr.validity().map(PlBitmap::from))
             } else {
-                let out: U::Array = arr.iter().map(|opt| opt.map(&op)).collect_arr();
+                let out: U::Array = arr.iter().map(|opt| opt.map(&op)).collect_arr_trusted();
                 out.with_validity_typed(arr.validity().map(PlBitmap::from))
             }
         });
@@ -60,10 +60,10 @@ where
     {
         let iter = self.downcast_iter().map(|arr| {
             if arr.null_count() == 0 {
-                let out: U::Array = arr.values_iter().map(&mut op).collect_arr();
+                let out: U::Array = arr.values_iter().map(&mut op).collect_arr_trusted();
                 out.with_validity_typed(arr.validity().map(PlBitmap::from))
             } else {
-                let out: U::Array = arr.iter().map(|opt| opt.map(&mut op)).collect_arr();
+                let out: U::Array = arr.iter().map(|opt| opt.map(&mut op)).collect_arr_trusted();
                 out.with_validity_typed(arr.validity().map(PlBitmap::from))
             }
         });
@@ -83,13 +83,13 @@ where
     {
         let iter = self.downcast_iter().map(|arr| {
             let arr = if arr.null_count() == 0 {
-                let out: U::Array = arr.values_iter().map(&mut op).try_collect_arr()?;
+                let out: U::Array = arr.values_iter().map(&mut op).try_collect_arr_trusted()?;
                 out.with_validity_typed(arr.validity().map(PlBitmap::from))
             } else {
                 let out: U::Array = arr
                     .iter()
                     .map(|opt| opt.map(&mut op).transpose())
-                    .try_collect_arr()?;
+                    .try_collect_arr_trusted()?;
                 out.with_validity_typed(arr.validity().map(PlBitmap::from))
             };
             Ok(arr)
