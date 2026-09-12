@@ -86,7 +86,12 @@ unique_counts = []
 is_between = []
 is_close = []
 approx_unique = []
-approx_quantile = ["polars-compute/approx_quantile"]
+approx_quantile = [
+  "polars-compute/approx_quantile",
+  "polars-compute/serde",
+  "polars-utils/serde",
+  "dep:serde",
+]
 business = ["dtype-date", "chrono"]
 fused = []
 cutqcut = ["dtype-categorical", "dtype-struct"]

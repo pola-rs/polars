@@ -2,6 +2,8 @@
 mod any_all;
 #[cfg(feature = "approx_unique")]
 mod approx_n_unique;
+#[cfg(feature = "approx_quantile")]
+mod approx_quantile;
 #[cfg(feature = "bitwise")]
 mod bitwise;
 mod convert;

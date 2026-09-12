@@ -656,12 +656,21 @@ mod approx_quantile {
             let IR::Select { expr, .. } = plan.lp_arena.get(plan.lp_top) else {
                 panic!("expected a select")
             };
-            let method = match plan.expr_arena.get(expr[0].node()) {
+            // The estimate is lowered over a sketch, which carries the method.
+            let sketch = match plan.expr_arena.get(expr[0].node()) {
                 AExpr::Function {
-                    function: IRFunctionExpr::ApproxQuantile { method, .. },
+                    input,
+                    function: IRFunctionExpr::ApproxQuantileEstimate { .. },
+                    ..
+                } => input[0].node(),
+                ae => panic!("expected an approx_quantile estimate, got {ae:?}"),
+            };
+            let method = match plan.expr_arena.get(sketch) {
+                AExpr::Function {
+                    function: IRFunctionExpr::ApproxQuantileSketch { method, .. },
                     ..
                 } => method,
-                ae => panic!("expected an approx_quantile function, got {ae:?}"),
+                ae => panic!("expected an approx_quantile sketch, got {ae:?}"),
             };
             assert_eq!(*method, expected, "{name}");
         }

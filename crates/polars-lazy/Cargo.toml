@@ -233,7 +233,7 @@ bitwise = [
   "polars-ops/bitwise",
 ]
 approx_unique = ["polars-plan/approx_unique", "polars-expr/approx_unique", "polars-stream?/approx_unique"]
-approx_quantile = ["polars-plan/approx_quantile", "polars-expr/approx_quantile"]
+approx_quantile = ["polars-plan/approx_quantile", "polars-expr/approx_quantile", "polars-stream?/approx_quantile"]
 is_in = ["polars-plan/is_in", "polars-ops/is_in", "polars-expr/is_in", "polars-stream?/is_in"]
 repeat_by = ["polars-expr/repeat_by"]
 round_series = ["polars-expr/round_series", "polars-ops/round_series"]
