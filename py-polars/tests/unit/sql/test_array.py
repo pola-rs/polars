@@ -1,13 +1,141 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("height", [0, 3])
+def test_array_value(engine: EngineType, height: int) -> None:
+    df = pl.DataFrame({"x": [1, None, 3], "y": [0.5, 1.5, 2.5]}).head(height)
+    query = df.lazy().sql(
+        """
+        SELECT ARRAY_VALUE(1, x) AS leading,
+               ARRAY_VALUE(x, 1) AS trailing,
+               ARRAY_VALUE(x, y + 1) AS mixed,
+               ARRAY_VALUE(NULL, x) AS nullable,
+               ARRAY_VALUE(x) AS unit
+        FROM self
+        """
+    )
+    expected = pl.DataFrame(
+        {
+            "leading": [[1, 1], [1, None], [1, 3]],
+            "trailing": [[1, 1], [None, 1], [3, 1]],
+            "mixed": [[1.0, 1.5], [None, 2.5], [3.0, 3.5]],
+            "nullable": [[None, 1], [None, None], [None, 3]],
+            "unit": [[1], [None], [3]],
+        },
+        schema={
+            "leading": pl.Array(pl.Int64, 2),
+            "trailing": pl.Array(pl.Int64, 2),
+            "mixed": pl.Array(pl.Float64, 2),
+            "nullable": pl.Array(pl.Int64, 2),
+            "unit": pl.Array(pl.Int64, 1),
+        },
+    ).head(height)
+    assert query.collect_schema() == expected.schema
+    assert_frame_equal(query.collect(engine=engine), expected)
+
+
+@pytest.mark.parametrize("height", [None, 0, 3])
+def test_array_value_literals(height: int | None) -> None:
+    sql = """
+        SELECT ARRAY_VALUE(1, 2) AS a, ARRAY_VALUE(NULL) AS n,
+               ARRAY_VALUE(ARRAY_VALUE(1, 2), ARRAY_VALUE(3, 4)) AS nested,
+               ARRAY_VALUE([1, 2], ARRAY[3, 4]) AS lists,
+               ARRAY_VALUE(COALESCE(NULL, [1, 2])) AS composed,
+               ARRAY_VALUE(1 IN (1, 2)) AS membership
+    """
+    result = (
+        pl.sql(sql).collect()
+        if height is None
+        else pl.DataFrame({"row": range(height)}).sql(f"{sql} FROM self")
+    )
+    rows = 1 if height is None else height
+    expected = pl.DataFrame(
+        {
+            "a": [[1, 2]] * rows,
+            "n": [[None]] * rows,
+            "nested": [[[1, 2], [3, 4]]] * rows,
+            "lists": [[[1, 2], [3, 4]]] * rows,
+            "composed": [[[1, 2]]] * rows,
+            "membership": [[True]] * rows,
+        },
+        schema={
+            "a": pl.Array(pl.Int32, 2),
+            "n": pl.Array(pl.Null, 1),
+            "nested": pl.Array(pl.Int32, (2, 2)),
+            "lists": pl.Array(pl.List(pl.Int64), 2),
+            "composed": pl.Array(pl.List(pl.Int64), 1),
+            "membership": pl.Array(pl.Boolean, 1),
+        },
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "value"),
+    [
+        (pl.List(pl.Int64), [1, 2]),
+        (pl.Array(pl.Int64, 2), [1, 2]),
+        (pl.Struct({"field": pl.Int64}), {"field": 1}),
+    ],
+)
+def test_array_value_nested(dtype: pl.DataType, value: Any) -> None:
+    df = pl.DataFrame({"x": [value, None]}, schema={"x": dtype})
+    result = df.sql("SELECT ARRAY_VALUE(x, x) AS a FROM self")
+    expected = pl.DataFrame(
+        {"a": [[value, value], [None, None]]},
+        schema={"a": pl.Array(dtype, 2)},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_array_value_inner_product() -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0], "y": [3.0, None]})
+    query = df.lazy().sql(
+        """
+        SELECT ARRAY_INNER_PRODUCT(
+            ARRAY_VALUE(x, y), ARRAY_VALUE(0.5, 2.0)
+        ) AS score FROM self
+        """
+    )
+    assert_frame_equal(query.collect(), pl.DataFrame({"score": [6.5, 1.0]}))
+    assert ".arr.dot([" in query.explain(optimized=False)
+
+
+def test_array_value_aggregates() -> None:
+    df = pl.DataFrame({"g": ["a", "a", "b"], "x": [1, 2, 3]})
+    result = df.sql(
+        "SELECT g, ARRAY_VALUE(SUM(x), MAX(x)) AS a FROM self GROUP BY g ORDER BY g"
+    )
+    expected = pl.DataFrame(
+        {"g": ["a", "b"], "a": [[3, 2], [3, 3]]},
+        schema={"g": pl.String, "a": pl.Array(pl.Int64, 2)},
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("arguments", ["", "COLUMNS(*)", "COLUMNS(*) + 1"])
+def test_array_value_invalid_arguments(arguments: str) -> None:
+    df = pl.DataFrame({"x": [1], "y": [2]})
+    message = (
+        "at least one argument"
+        if not arguments
+        else "cannot expand to multiple expressions"
+    )
+    with pytest.raises(SQLSyntaxError, match=message):
+        df.sql(f"SELECT ARRAY_VALUE({arguments}) FROM self")
 
 
 @pytest.mark.parametrize(

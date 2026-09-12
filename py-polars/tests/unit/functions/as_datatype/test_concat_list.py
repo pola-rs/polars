@@ -274,9 +274,21 @@ def test_list_function_w_scalars() -> None:
     assert_frame_equal(result.collect(), pl.DataFrame(expected))
     assert result.collect().schema == result.collect_schema()
 
+    result = df.select(lit_a=pl.list(pl.lit(3), pl.col("a")))
+    expected = {"lit_a": [[3, 1], [3, 2], [3, None]]}
+    assert_frame_equal(result.collect(), pl.DataFrame(expected))
+    assert result.collect().schema == result.collect_schema()
+
     result = df.select(literals=pl.list(pl.lit(1), pl.lit(2)))
     expected = {"literals": [[1, 2]]}
     assert_frame_equal(
         result.collect(), pl.DataFrame(expected, schema={"literals": pl.List(pl.Int32)})
     )
     assert result.collect().schema == result.collect_schema()
+
+
+def test_list_function_broadcast_empty() -> None:
+    df = pl.DataFrame(schema={"a": pl.Float64})
+    result = df.select(pl.list(pl.lit(0.0), pl.col("a")))
+
+    assert_frame_equal(result, pl.DataFrame(schema={"literal": pl.List(pl.Float64)}))

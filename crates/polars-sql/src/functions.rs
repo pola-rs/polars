@@ -11,8 +11,8 @@ use polars_lazy::prelude::{RankMethod, RankOptions};
 use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::series::RoundMode;
 use polars_plan::dsl::functions::{
-    as_struct, coalesce, col, cols, concat_str, element, int_range, len, lit, max_horizontal,
-    min_horizontal, when,
+    as_list, as_struct, coalesce, col, cols, concat_str, element, int_range, len, lit,
+    max_horizontal, min_horizontal, when,
 };
 use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
 use polars_plan::prelude::StrptimeOptions;
@@ -739,6 +739,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT ARRAY_INNER_PRODUCT(col1, col2) FROM df;
     /// ```
     ArrayInnerProduct,
+    /// SQL 'array_value' function.
+    /// Constructs a fixed-size Array with one element per argument.
+    /// ```sql
+    /// SELECT ARRAY_VALUE(col1, col2, 1) FROM df;
+    /// ```
+    ArrayValue,
     /// SQL 'unnest' function.
     /// Unnest/explodes an array column into multiple rows.
     /// ```sql
@@ -829,6 +835,7 @@ impl PolarsSQLFunctions {
             "array_to_string",
             "array_unique",
             "array_upper",
+            "array_value",
             "asin",
             "asind",
             "atan",
@@ -1078,6 +1085,7 @@ impl PolarsSQLFunctions {
             "array_to_string" => Self::ArrayToString,
             "array_unique" => Self::ArrayUnique,
             "array_upper" => Self::ArrayMax,
+            "array_value" => Self::ArrayValue,
             "unnest" => Self::Explode,
 
             // ----
@@ -1687,6 +1695,25 @@ impl SQLFunctionVisitor<'_> {
             ArraySum => self.visit_unary(|e| e.list().sum()),
             ArrayToString => self.visit_arr_to_string(),
             ArrayUnique => self.visit_unary(|e| e.list().eval(element().unique_stable())),
+            ArrayValue => self.try_visit_variadic(|exprs| {
+                if exprs.is_empty() {
+                    polars_bail!(SQLSyntax: "ARRAY_VALUE requires at least one argument");
+                }
+                if exprs.iter().any(|e| e.clone().meta().has_multiple_outputs()) {
+                    polars_bail!(SQLSyntax: "ARRAY_VALUE arguments cannot expand to multiple expressions");
+                }
+                // Convert SQL List literals from one-row Series to Scalars,
+                // including composed arguments, to preserve FROM height.
+                let expr = as_list(exprs)?.try_map_expr(|e| match e {
+                    Expr::Literal(LiteralValue::Series(s))
+                        if s.len() == 1 && matches!(s.dtype(), DataType::List(_)) =>
+                    {
+                        Ok(lit(Scalar::new(s.dtype().clone(), s.get(0)?.into_static())))
+                    },
+                    e => Ok(e),
+                })?;
+                Ok(expr.list().to_array(exprs.len()))
+            }),
             Explode => self.visit_unary(|e| {
                 e.explode(ExplodeOptions {
                     empty_as_null: true,
