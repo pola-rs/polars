@@ -977,14 +977,15 @@ impl SQLExprVisitor<'_> {
         negated: bool,
     ) -> PolarsResult<Expr> {
         polars_ensure!(!list.is_empty(), SQLSyntax: "IN list must not be empty");
-        let mut membership: Option<Expr> = None;
-        for e in list {
+        let mut elements = list.iter();
+        let first = self.visit_expr(elements.next().unwrap())?;
+        let (lhs, rhs) = self.convert_int_literal_for_string(expr.clone(), first);
+        let mut membership = lhs.eq(rhs);
+        for e in elements {
             let e = self.visit_expr(e)?;
             let (lhs, rhs) = self.convert_int_literal_for_string(expr.clone(), e);
-            let eq = lhs.eq(rhs);
-            membership = Some(membership.map_or(eq.clone(), |m| m.or(eq)));
+            membership = membership.or(lhs.eq(rhs));
         }
-        let membership = membership.unwrap();
         Ok(if negated {
             membership.not()
         } else {
@@ -1015,7 +1016,7 @@ impl SQLExprVisitor<'_> {
             }
         }
         if elems.dtype().is_integer()
-            && dtype_expr_match.is_some_and(|expr| self.is_string_expr(expr))
+            && dtype_expr_match.is_some_and(|expr| self.expr_dtype(expr) == Some(DataType::String))
         {
             return elems.cast(&DataType::String);
         }
@@ -1071,7 +1072,7 @@ impl SQLExprVisitor<'_> {
         if matches!(
             polars_type,
             DataType::Date | DataType::Time | DataType::Datetime(_, _)
-        ) && self.is_string_expr(&expr)
+        ) && self.expr_dtype(&expr) == Some(DataType::String)
             && let Some(parsed) = parse_string_as_temporal(expr.clone(), &polars_type, strict)
         {
             return Ok(parsed);
@@ -1087,11 +1088,6 @@ impl SQLExprVisitor<'_> {
         let empty = Schema::default();
         let schema = self.active_schema.unwrap_or(&empty);
         convert_int_literal_for_string((lhs, schema), (rhs, schema))
-    }
-
-    fn is_string_expr(&self, expr: &Expr) -> bool {
-        let empty = Schema::default();
-        is_string_expr(expr, self.active_schema.unwrap_or(&empty))
     }
 
     /// Visit a SQL literal.

@@ -2147,7 +2147,7 @@ impl SQLContext {
             };
 
             // shortcut filter evaluation for a constant condition (eg: "WHERE 1 = 1")
-            if let Some(satisfied) = evaluate_constant_predicate(self, expr, &schema)? {
+            if let Some(satisfied) = evaluate_constant_predicate(self, expr)? {
                 return Ok(if satisfied == (filter_mode == FilterMode::KeepTrue) {
                     lf
                 } else {
@@ -2215,8 +2215,7 @@ impl SQLContext {
         join_type: JoinType,
     ) -> PolarsResult<LazyFrame> {
         if let JoinConstraint::On(expr) = constraint {
-            let join_schema = build_join_schema(tbl_left, tbl_right)?;
-            if let Some(satisfied) = evaluate_constant_predicate(self, expr, &join_schema)? {
+            if let Some(satisfied) = evaluate_constant_predicate(self, expr)? {
                 let builder = tbl_left
                     .frame
                     .clone()
@@ -3591,19 +3590,24 @@ fn determine_left_right_join_on(
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     // parse, removing any aliases that may have been added by `resolve_column`
     // (called inside `parse_sql_expr`) as we need the actual/underlying col
+    let left_refs = (
+        expr_refers_to_table(expr_left, &tbl_left.name),
+        expr_refers_to_table(expr_left, &tbl_right.name),
+    );
+    let right_refs = (
+        expr_refers_to_table(expr_right, &tbl_left.name),
+        expr_refers_to_table(expr_right, &tbl_right.name),
+    );
     // an operand's dtypes come from the table it names; the merged schema keeps the left
     // dtype for a column name that exists in both tables
-    let operand_schema = |expr: &SQLExpr| -> &Schema {
-        match (
-            expr_refers_to_table(expr, &tbl_left.name),
-            expr_refers_to_table(expr, &tbl_right.name),
-        ) {
+    let operand_schema = |refs: (bool, bool)| -> &Schema {
+        match refs {
             (true, false) => &tbl_left.schema,
             (false, true) => &tbl_right.schema,
             _ => join_schema,
         }
     };
-    let (left_schema, right_schema) = (operand_schema(expr_left), operand_schema(expr_right));
+    let (left_schema, right_schema) = (operand_schema(left_refs), operand_schema(right_refs));
     let left_on = strip_join_aliases(parse_sql_expr(expr_left, ctx, Some(left_schema))?);
     let right_on = strip_join_aliases(parse_sql_expr(expr_right, ctx, Some(right_schema))?);
     let (left_on, right_on) =
@@ -3619,14 +3623,6 @@ fn determine_left_right_join_on(
     // ------------------------------------------------------------------
     // simple/typical case: can fully resolve SQL-level table references
     // ------------------------------------------------------------------
-    let left_refs = (
-        expr_refers_to_table(expr_left, &tbl_left.name),
-        expr_refers_to_table(expr_left, &tbl_right.name),
-    );
-    let right_refs = (
-        expr_refers_to_table(expr_right, &tbl_left.name),
-        expr_refers_to_table(expr_right, &tbl_right.name),
-    );
     // if the SQL-level references unambiguously indicate table ownership, we're done
     match (left_refs, right_refs) {
         // standard: left expr → left table, right expr → right table
@@ -3732,8 +3728,8 @@ fn process_join_on(
     }
 }
 
-/// Parse a non-equi join condition into a `join_where` predicate over the joined frame,
-/// where right-table columns that also exist in the left table carry a suffix.
+/// Parse a join condition other than a plain equality into a `join_where` predicate over
+/// the joined frame, where right-table columns that also exist in the left table carry a suffix.
 fn process_join_predicate(
     ctx: &mut SQLContext,
     sql_expr: &SQLExpr,
@@ -3743,14 +3739,12 @@ fn process_join_predicate(
     let suffix = format!(":{}", tbl_right.name);
     let conflicts = |name: &str| tbl_left.schema.contains(name) && tbl_right.schema.contains(name);
 
-    let mut joined_schema = Schema::clone(&tbl_left.schema);
-    for (name, dtype) in tbl_right.schema.iter() {
-        let name = if conflicts(name) {
-            PlSmallStr::from_string(format!("{name}{suffix}"))
-        } else {
-            name.clone()
-        };
-        joined_schema.insert(name, dtype.clone());
+    let mut joined_schema = build_join_schema(tbl_left, tbl_right)?;
+    for (name, dtype) in tbl_right.schema.iter().filter(|(name, _)| conflicts(name)) {
+        joined_schema.insert(
+            PlSmallStr::from_string(format!("{name}{suffix}")),
+            dtype.clone(),
+        );
     }
 
     // `right_table.col` -> `col:right_table` when the name is also a left column
@@ -3864,15 +3858,11 @@ fn suffix_conflicting_columns(
 /// Evaluate a condition that does not depend on the input frame (eg: `1 = 1`) to a
 /// definite true/false verdict; SQL treats an unknown (NULL) condition the same as
 /// false for matching. Returns `None` for any other condition.
-fn evaluate_constant_predicate(
-    ctx: &mut SQLContext,
-    expr: &SQLExpr,
-    schema: &Schema,
-) -> PolarsResult<Option<bool>> {
+fn evaluate_constant_predicate(ctx: &mut SQLContext, expr: &SQLExpr) -> PolarsResult<Option<bool>> {
     if expr_references_any_column(expr) || expr_contains_subquery(expr) {
         return Ok(None);
     }
-    let predicate = parse_sql_expr(expr, ctx, Some(schema))?;
+    let predicate = parse_sql_expr(expr, ctx, None)?;
     // only literals and operations over them; anything reading the frame (a selector,
     // `len()`, an aggregation or window) has no value without it
     let is_constant = predicate.into_iter().all(|e| {
