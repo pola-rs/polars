@@ -1,54 +1,33 @@
-use arrow::array::{Array, NullArray};
-use arrow::bitmap::Bitmap;
+//! The equality kernels over a [`PlNullArray`], every element of which is the same null.
 
-use super::{TotalEqKernel, TotalOrdKernel};
+use polars_array::{PlArray, PlBitmap, PlBitmapRef, PlNullArray};
 
-impl TotalEqKernel for NullArray {
-    type Scalar = Box<dyn Array>;
+use super::{PlTotalEqKernel, repeated};
 
-    fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
-        assert!(self.len() == other.len());
-        Bitmap::new_with_value(true, self.len())
+impl PlTotalEqKernel for PlNullArray {
+    type Scalar = Box<dyn PlArray>;
+
+    fn validity_mask(&self) -> Option<PlBitmapRef<'_>> {
+        // Every element of a null array is null, which its mask says in a single bit.
+        Some(self.validity())
     }
 
-    fn tot_ne_kernel(&self, other: &Self) -> Bitmap {
-        assert!(self.len() == other.len());
-        Bitmap::new_zeroed(self.len())
+    fn tot_eq_kernel(&self, other: &Self) -> PlBitmap {
+        assert_eq!(self.len(), other.len());
+        // There is no value under a null to read, so the answer is the same for every element.
+        repeated(true, self.len())
     }
 
-    fn tot_eq_kernel_broadcast(&self, _other: &Self::Scalar) -> Bitmap {
-        todo!()
+    fn tot_ne_kernel(&self, other: &Self) -> PlBitmap {
+        assert_eq!(self.len(), other.len());
+        repeated(false, self.len())
     }
 
-    fn tot_ne_kernel_broadcast(&self, _other: &Self::Scalar) -> Bitmap {
-        todo!()
-    }
-}
-
-impl TotalOrdKernel for NullArray {
-    type Scalar = Box<dyn Array>;
-
-    fn tot_lt_kernel(&self, _other: &Self) -> Bitmap {
-        unimplemented!()
+    fn tot_eq_kernel_broadcast(&self, _other: &Self::Scalar) -> PlBitmap {
+        todo!("comparison of a null array against a scalar")
     }
 
-    fn tot_le_kernel(&self, _other: &Self) -> Bitmap {
-        unimplemented!()
-    }
-
-    fn tot_lt_kernel_broadcast(&self, _other: &Self::Scalar) -> Bitmap {
-        unimplemented!()
-    }
-
-    fn tot_le_kernel_broadcast(&self, _other: &Self::Scalar) -> Bitmap {
-        unimplemented!()
-    }
-
-    fn tot_gt_kernel_broadcast(&self, _other: &Self::Scalar) -> Bitmap {
-        unimplemented!()
-    }
-
-    fn tot_ge_kernel_broadcast(&self, _other: &Self::Scalar) -> Bitmap {
-        unimplemented!()
+    fn tot_ne_kernel_broadcast(&self, _other: &Self::Scalar) -> PlBitmap {
+        todo!("comparison of a null array against a scalar")
     }
 }

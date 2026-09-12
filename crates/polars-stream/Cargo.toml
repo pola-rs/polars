@@ -34,6 +34,7 @@ tokio = { workspace = true, features = ["sync"] }
 uuid = { workspace = true }
 
 arrow = { workspace = true }
+polars-array = { workspace = true }
 polars-async = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }

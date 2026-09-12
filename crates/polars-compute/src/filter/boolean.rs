@@ -55,7 +55,9 @@ pub fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
     assert_eq!(values.len(), mask.len());
     let mask_bits_set = mask.set_bits();
 
-    // Fast path: values is all-0s or all-1s.
+    // Fast path: values is all-0s or all-1s, so every surviving element holds the same bit. This
+    // is the Arrow boundary kernel, whose contract is one bit per element, so that bit is written
+    // out here; a caller that can hold it as a single bit goes through `filter::pl_array` instead.
     if let Some(num_values_bits) = values.lazy_set_bits() {
         if num_values_bits == 0 || num_values_bits == values.len() {
             return Bitmap::new_with_value(num_values_bits == values.len(), mask_bits_set);

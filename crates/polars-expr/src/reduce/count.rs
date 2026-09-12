@@ -68,7 +68,7 @@ impl GroupedReduction for CountReduce {
                     self.evicted_counts.push(*grp);
                     *grp = 0;
                 }
-                *grp += valid.get_bit_unchecked(*i as usize) as u64;
+                *grp += valid.get_unchecked(*i as usize) as u64;
             }
         } else {
             for (_, g) in subset.iter().zip(group_idxs) {
@@ -191,7 +191,7 @@ impl GroupedReduction for NullCountReduce {
                     self.evicted_counts.push(*grp);
                     *grp = 0;
                 }
-                *grp += (!valid.get_bit_unchecked(*i as usize)) as u64;
+                *grp += (!valid.get_unchecked(*i as usize)) as u64;
             }
         } else {
             for (_, g) in subset.iter().zip(group_idxs) {

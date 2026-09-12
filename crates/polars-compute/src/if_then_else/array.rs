@@ -2,9 +2,9 @@ use arrow::array::builder::{ShareStrategy, StaticArrayBuilder, make_builder};
 use arrow::array::{Array, ArrayCollectIterExt, FixedSizeListArray, FixedSizeListArrayBuilder};
 use arrow::bitmap::Bitmap;
 
-use super::{IfThenElseKernel, if_then_else_extend};
+use super::{IfThenElseArrowKernel, if_then_else_extend};
 
-impl IfThenElseKernel for FixedSizeListArray {
+impl IfThenElseArrowKernel for FixedSizeListArray {
     type Scalar<'a> = Box<dyn Array>;
 
     fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self {

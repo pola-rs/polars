@@ -21,7 +21,7 @@ use crate::io::ipc::write2::array::primitive::write_native_type_iter;
 use crate::io::write_owned::WriteBytesOwned;
 use crate::offset::OffsetsBuffer;
 use crate::types::Offset;
-use crate::{match_integer_type, with_match_primitive_type_full};
+use crate::{match_integer_type, with_match_primitive_type};
 
 pub struct IpcBatchSerializationContext<'a> {
     pub ipc_message: &'a mut dyn WriteBytesOwned,
@@ -69,7 +69,7 @@ pub fn write_array(
             write_bitmap(ctx, array.validity())?;
             write_bitmap(ctx, Some(array.values()))?;
         },
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let array: &PrimitiveArray<$T> = array.as_any().downcast_ref().unwrap();
             write_primitive(ctx, array)?;
         }),

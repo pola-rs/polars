@@ -48,26 +48,55 @@ fn bitonic_mask<T: PolarsNumericType>(
     };
 
     let chunks = ca.downcast_iter().map(|arr| {
-        let values = arr.values();
-        let true_range_start = if let Some(f_a) = f_a {
-            values.partition_point(|x| !apply::<T>(f_a, *x, rhs))
-        } else {
-            0
+        let length = arr.len();
+
+        // Where the run of elements the two functions both hold at starts and ends. Every element
+        // of a chunk whose values are stored in the scalar representation is the one value it
+        // repeats — `full` builds exactly such a chunk and flags it sorted — so the two bounds
+        // are read off that one value rather than searched for over values written out first.
+        let (true_range_start, true_range_end) = match arr.scalar_value_ignore_validity() {
+            Some(value) => {
+                let holds = f_a.is_none_or(|f_a| apply::<T>(f_a, value, rhs))
+                    && f_d.is_none_or(|f_d| apply::<T>(f_d, value, rhs));
+
+                if holds { (0, length) } else { (length, length) }
+            },
+            None => {
+                let values = arr.flat_values().expect("the values are not repeated");
+                let start = match f_a {
+                    Some(f_a) => values.partition_point(|x| !apply::<T>(f_a, *x, rhs)),
+                    None => 0,
+                };
+                let end = match f_d {
+                    Some(f_d) => {
+                        start + values[start..].partition_point(|x| apply::<T>(f_d, *x, rhs))
+                    },
+                    None => length,
+                };
+
+                (start, end)
+            },
         };
-        let true_range_end = if let Some(f_d) = f_d {
-            true_range_start
-                + values[true_range_start..].partition_point(|x| apply::<T>(f_d, *x, rhs))
-        } else {
-            values.len()
-        };
-        let mut mask = BitmapBuilder::with_capacity(arr.len());
-        mask.extend_constant(true_range_start, invert);
-        mask.extend_constant(true_range_end - true_range_start, !invert);
-        mask.extend_constant(arr.len() - true_range_end, invert);
+
         logical_extend(true_range_start, invert);
         logical_extend(true_range_end - true_range_start, !invert);
-        logical_extend(arr.len() - true_range_end, invert);
-        BooleanArray::from_data_default(mask.freeze(), None)
+        logical_extend(length - true_range_end, invert);
+
+        // The mask is three runs at most, so a chunk that falls entirely inside or entirely
+        // outside the range says the same of every element: that is the single bit it repeats,
+        // and it is not written out one bit per element.
+        if true_range_start == 0 && true_range_end == length {
+            return PlBooleanArray::new_scalar(!invert, length);
+        }
+        if true_range_start == true_range_end {
+            return PlBooleanArray::new_scalar(invert, length);
+        }
+
+        let mut mask = BitmapBuilder::with_capacity(length);
+        mask.extend_constant(true_range_start, invert);
+        mask.extend_constant(true_range_end - true_range_start, !invert);
+        mask.extend_constant(length - true_range_end, invert);
+        PlBooleanArray::from_values(mask.freeze())
     });
 
     let mut ca = BooleanChunked::from_chunk_iter(ca.name().clone(), chunks);
@@ -79,7 +108,7 @@ impl<T, Rhs> ChunkCompareEq<Rhs> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     Rhs: ToPrimitive,
-    T::Array: TotalOrdKernel<Scalar = T::Native> + TotalEqKernel<Scalar = T::Native>,
+    Flat<T::Array>: TotalOrdKernel<Scalar = T::Native> + TotalEqKernel<Scalar = T::Native>,
 {
     type Item = BooleanChunked;
 
@@ -90,7 +119,9 @@ where
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => bitonic_mask(self, fa, fd, &rhs, false),
             (IsSorted::Descending, 0) => bitonic_mask(self, fd, fa, &rhs, false),
-            _ => arity::unary_mut_values(self, |arr| arr.tot_eq_kernel_broadcast(&rhs).into()),
+            _ => arity::unary_elementwise_mut_values_flat(self, |arr| {
+                arr.tot_eq_kernel_broadcast(&rhs).into()
+            }),
         }
     }
 
@@ -99,7 +130,7 @@ where
             self.equal(rhs)
         } else {
             let rhs: T::Native = NumCast::from(rhs).unwrap();
-            arity::unary_mut_with_options(self, |arr| {
+            arity::unary_elementwise_mut_with_options_flat(self, |arr| {
                 arr.tot_eq_missing_kernel_broadcast(&rhs).into()
             })
         }
@@ -112,7 +143,9 @@ where
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => bitonic_mask(self, fa, fd, &rhs, true),
             (IsSorted::Descending, 0) => bitonic_mask(self, fd, fa, &rhs, true),
-            _ => arity::unary_mut_values(self, |arr| arr.tot_ne_kernel_broadcast(&rhs).into()),
+            _ => arity::unary_elementwise_mut_values_flat(self, |arr| {
+                arr.tot_ne_kernel_broadcast(&rhs).into()
+            }),
         }
     }
 
@@ -121,7 +154,7 @@ where
             self.not_equal(rhs)
         } else {
             let rhs: T::Native = NumCast::from(rhs).unwrap();
-            arity::unary_mut_with_options(self, |arr| {
+            arity::unary_elementwise_mut_with_options_flat(self, |arr| {
                 arr.tot_ne_missing_kernel_broadcast(&rhs).into()
             })
         }
@@ -132,7 +165,7 @@ impl<T, Rhs> ChunkCompareIneq<Rhs> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     Rhs: ToPrimitive,
-    T::Array: TotalOrdKernel<Scalar = T::Native> + TotalEqKernel<Scalar = T::Native>,
+    Flat<T::Array>: TotalOrdKernel<Scalar = T::Native> + TotalEqKernel<Scalar = T::Native>,
 {
     type Item = BooleanChunked;
 
@@ -143,7 +176,9 @@ where
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => bitonic_mask(self, fa, fd, &rhs, false),
             (IsSorted::Descending, 0) => bitonic_mask(self, fd, fa, &rhs, false),
-            _ => arity::unary_mut_values(self, |arr| arr.tot_gt_kernel_broadcast(&rhs).into()),
+            _ => arity::unary_elementwise_mut_values_flat(self, |arr| {
+                arr.tot_gt_kernel_broadcast(&rhs).into()
+            }),
         }
     }
 
@@ -154,7 +189,9 @@ where
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => bitonic_mask(self, fa, fd, &rhs, false),
             (IsSorted::Descending, 0) => bitonic_mask(self, fd, fa, &rhs, false),
-            _ => arity::unary_mut_values(self, |arr| arr.tot_ge_kernel_broadcast(&rhs).into()),
+            _ => arity::unary_elementwise_mut_values_flat(self, |arr| {
+                arr.tot_ge_kernel_broadcast(&rhs).into()
+            }),
         }
     }
 
@@ -165,7 +202,9 @@ where
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => bitonic_mask(self, fa, fd, &rhs, false),
             (IsSorted::Descending, 0) => bitonic_mask(self, fd, fa, &rhs, false),
-            _ => arity::unary_mut_values(self, |arr| arr.tot_lt_kernel_broadcast(&rhs).into()),
+            _ => arity::unary_elementwise_mut_values_flat(self, |arr| {
+                arr.tot_lt_kernel_broadcast(&rhs).into()
+            }),
         }
     }
 
@@ -176,7 +215,9 @@ where
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => bitonic_mask(self, fa, fd, &rhs, false),
             (IsSorted::Descending, 0) => bitonic_mask(self, fd, fa, &rhs, false),
-            _ => arity::unary_mut_values(self, |arr| arr.tot_le_kernel_broadcast(&rhs).into()),
+            _ => arity::unary_elementwise_mut_values_flat(self, |arr| {
+                arr.tot_le_kernel_broadcast(&rhs).into()
+            }),
         }
     }
 }
@@ -188,19 +229,19 @@ macro_rules! binary_eq_ineq_impl {
             type Item = BooleanChunked;
 
             fn equal(&self, rhs: &[u8]) -> BooleanChunked {
-                arity::unary_mut_values(self, |arr| arr.tot_eq_kernel_broadcast(rhs).into())
+                arity::unary_elementwise_mut_values_flat(self, |arr| arr.tot_eq_kernel_broadcast(rhs).into())
             }
 
             fn equal_missing(&self, rhs: &[u8]) -> BooleanChunked {
-                arity::unary_mut_with_options(self, |arr| arr.tot_eq_missing_kernel_broadcast(rhs).into())
+                arity::unary_elementwise_mut_with_options_flat(self, |arr| arr.tot_eq_missing_kernel_broadcast(rhs).into())
             }
 
             fn not_equal(&self, rhs: &[u8]) -> BooleanChunked {
-                arity::unary_mut_values(self, |arr| arr.tot_ne_kernel_broadcast(rhs).into())
+                arity::unary_elementwise_mut_values_flat(self, |arr| arr.tot_ne_kernel_broadcast(rhs).into())
             }
 
             fn not_equal_missing(&self, rhs: &[u8]) -> BooleanChunked {
-                arity::unary_mut_with_options(self, |arr| arr.tot_ne_missing_kernel_broadcast(rhs).into())
+                arity::unary_elementwise_mut_with_options_flat(self, |arr| arr.tot_ne_missing_kernel_broadcast(rhs).into())
             }
         }
 
@@ -208,19 +249,19 @@ macro_rules! binary_eq_ineq_impl {
             type Item = BooleanChunked;
 
             fn gt(&self, rhs: &[u8]) -> BooleanChunked {
-                arity::unary_mut_values(self, |arr| arr.tot_gt_kernel_broadcast(rhs).into())
+                arity::unary_elementwise_mut_values_flat(self, |arr| arr.tot_gt_kernel_broadcast(rhs).into())
             }
 
             fn gt_eq(&self, rhs: &[u8]) -> BooleanChunked {
-                arity::unary_mut_values(self, |arr| arr.tot_ge_kernel_broadcast(rhs).into())
+                arity::unary_elementwise_mut_values_flat(self, |arr| arr.tot_ge_kernel_broadcast(rhs).into())
             }
 
             fn lt(&self, rhs: &[u8]) -> BooleanChunked {
-                arity::unary_mut_values(self, |arr| arr.tot_lt_kernel_broadcast(rhs).into())
+                arity::unary_elementwise_mut_values_flat(self, |arr| arr.tot_lt_kernel_broadcast(rhs).into())
             }
 
             fn lt_eq(&self, rhs: &[u8]) -> BooleanChunked {
-                arity::unary_mut_values(self, |arr| arr.tot_le_kernel_broadcast(rhs).into())
+                arity::unary_elementwise_mut_values_flat(self, |arr| arr.tot_le_kernel_broadcast(rhs).into())
             }
         }
         )+
@@ -233,19 +274,27 @@ impl ChunkCompareEq<&str> for StringChunked {
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_eq_kernel_broadcast(rhs).into())
+        arity::unary_elementwise_mut_values_flat(self, |arr| {
+            arr.tot_eq_kernel_broadcast(rhs).into()
+        })
     }
 
     fn equal_missing(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_with_options(self, |arr| arr.tot_eq_missing_kernel_broadcast(rhs).into())
+        arity::unary_elementwise_mut_with_options_flat(self, |arr| {
+            arr.tot_eq_missing_kernel_broadcast(rhs).into()
+        })
     }
 
     fn not_equal(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_ne_kernel_broadcast(rhs).into())
+        arity::unary_elementwise_mut_values_flat(self, |arr| {
+            arr.tot_ne_kernel_broadcast(rhs).into()
+        })
     }
 
     fn not_equal_missing(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_with_options(self, |arr| arr.tot_ne_missing_kernel_broadcast(rhs).into())
+        arity::unary_elementwise_mut_with_options_flat(self, |arr| {
+            arr.tot_ne_missing_kernel_broadcast(rhs).into()
+        })
     }
 }
 
@@ -253,19 +302,27 @@ impl ChunkCompareIneq<&str> for StringChunked {
     type Item = BooleanChunked;
 
     fn gt(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_gt_kernel_broadcast(rhs).into())
+        arity::unary_elementwise_mut_values_flat(self, |arr| {
+            arr.tot_gt_kernel_broadcast(rhs).into()
+        })
     }
 
     fn gt_eq(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_ge_kernel_broadcast(rhs).into())
+        arity::unary_elementwise_mut_values_flat(self, |arr| {
+            arr.tot_ge_kernel_broadcast(rhs).into()
+        })
     }
 
     fn lt(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_lt_kernel_broadcast(rhs).into())
+        arity::unary_elementwise_mut_values_flat(self, |arr| {
+            arr.tot_lt_kernel_broadcast(rhs).into()
+        })
     }
 
     fn lt_eq(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_mut_values(self, |arr| arr.tot_le_kernel_broadcast(rhs).into())
+        arity::unary_elementwise_mut_values_flat(self, |arr| {
+            arr.tot_le_kernel_broadcast(rhs).into()
+        })
     }
 }
 

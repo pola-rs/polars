@@ -3,7 +3,6 @@ use arrow::datatypes::{
     DTYPE_CATEGORICAL_LEGACY, DTYPE_CATEGORICAL_NEW, DTYPE_ENUM_VALUES_LEGACY,
     DTYPE_ENUM_VALUES_NEW, IntegerType,
 };
-use polars_compute::cast::CastOptionsImpl;
 
 use self::categorical::CategoricalDecoder;
 use self::nested::deserialize::utils::freeze_validity;
@@ -175,12 +174,8 @@ pub fn columns_to_iter_recursive(
                     let arrays = arrays
                         .into_iter()
                         .map(|arr| {
-                            polars_compute::cast::cast(
-                                arr.as_ref(),
-                                field.dtype(),
-                                CastOptionsImpl::default(),
-                            )
-                            .unwrap()
+                            polars_compute::cast::cast_to_dictionary(arr.as_ref(), field.dtype())
+                                .unwrap()
                         })
                         .collect();
 

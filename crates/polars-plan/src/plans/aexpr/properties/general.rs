@@ -524,3 +524,45 @@ pub(crate) fn predicate_non_null_column_outputs(
         }
     }
 }
+
+/// Whether the top-level node answers the same thing every time it is asked the same question.
+///
+/// A node that does not — an unseeded `sample` or `shuffle` — has to be asked once per row even
+/// where every row poses the same question, so a caller that would otherwise ask once and share
+/// the answer has to check this first. See [`is_deterministic_rec`].
+fn is_deterministic_top_level(ae: &AExpr) -> bool {
+    match ae {
+        // A UDF is opaque: nothing here says whether it answers the same way twice.
+        AExpr::AnonymousFunction { .. } => false,
+
+        #[cfg(feature = "random")]
+        AExpr::Function {
+            function: IRFunctionExpr::Random { seed, .. },
+            ..
+        } => seed.is_some(),
+
+        #[cfg(feature = "ffi_plugin")]
+        AExpr::Function {
+            function: IRFunctionExpr::FfiPlugin { .. },
+            ..
+        } => false,
+
+        _ => true,
+    }
+}
+
+fn is_deterministic(stack: &mut UnitVec<Node>, ae: &AExpr, _expr_arena: &Arena<AExpr>) -> bool {
+    if !is_deterministic_top_level(ae) {
+        return false;
+    }
+    // `children_rev` rather than `inputs_rev`: a nested `Eval`'s evaluation is not one of its
+    // inputs, and an unseeded sample under one counts all the same.
+    ae.children_rev(stack);
+    true
+}
+
+/// Whether the whole expression rooted at `node` answers the same thing every time it is asked
+/// the same question.
+pub fn is_deterministic_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    property_rec(node, expr_arena, is_deterministic)
+}

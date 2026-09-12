@@ -13,9 +13,21 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
     assert!(align_of::<T::Native>() == align_of::<U::Native>());
 
     let chunks = ca.downcast_iter().map(|array| {
-        let buf = array.values().clone();
-        let reinterpreted_buf = Buffer::try_transmute::<U::Native>(buf).unwrap();
-        PrimitiveArray::from_data_default(reinterpreted_buf, array.validity().cloned())
+        let length = array.len();
+        // The values are handed over as they are, so a scalar chunk stays one value.
+        let out = match array.scalar_value_ignore_validity() {
+            Some(value) => PlPrimitiveArray::new_broadcast(
+                Buffer::try_transmute::<U::Native>(Buffer::from(vec![value])).unwrap(),
+                length,
+                None,
+            ),
+            None => PlPrimitiveArray::new(
+                Buffer::try_transmute::<U::Native>(array.flat_values().unwrap().clone()).unwrap(),
+                length,
+                None,
+            ),
+        };
+        out.with_validity(array.validity().map(PlBitmap::from))
     });
 
     ChunkedArray::from_chunk_iter(ca.name().clone(), chunks)

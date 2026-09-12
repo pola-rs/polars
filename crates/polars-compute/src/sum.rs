@@ -1,13 +1,15 @@
+use std::borrow::Cow;
 use std::ops::Add;
 #[cfg(feature = "simd")]
 use std::simd::Select;
 #[cfg(feature = "simd")]
 use std::simd::prelude::*;
 
-use arrow::array::{Array, PrimitiveArray};
+use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::types::NativeType;
 use num_traits::Zero;
+use polars_array::PlPrimitiveArray;
 use polars_utils::float16::pf16;
 
 macro_rules! wrapping_impl {
@@ -23,7 +25,8 @@ macro_rules! wrapping_impl {
 
 /// Performs addition that wraps around on overflow.
 ///
-/// Differs from num::WrappingAdd in that this is also implemented for floats.
+/// Differs from num::WrappingAdd in that this is also implemented for floats, which have no
+/// overflow to wrap around: they add algebraically, letting a run of additions be reassociated.
 pub trait WrappingAdd: Sized {
     /// Wrapping (modular) addition. Computes `self + other`, wrapping around at
     /// the boundary of the type.
@@ -44,9 +47,10 @@ wrapping_impl!(WrappingAdd, wrapping_add, i64);
 wrapping_impl!(WrappingAdd, wrapping_add, isize);
 wrapping_impl!(WrappingAdd, wrapping_add, i128);
 
+// `pf16` has no algebraic addition of its own; it is summed through the `f32` kernel anyway.
 wrapping_impl!(WrappingAdd, add, pf16);
-wrapping_impl!(WrappingAdd, add, f32);
-wrapping_impl!(WrappingAdd, add, f64);
+wrapping_impl!(WrappingAdd, algebraic_add, f32);
+wrapping_impl!(WrappingAdd, algebraic_add, f64);
 
 #[cfg(feature = "simd")]
 const STRIPE: usize = 16;
@@ -170,34 +174,72 @@ impl WrappingSum for pf16 {
     }
 }
 
-pub trait WrappingSum: Sized {
+/// Adding up a slice of values, wrapping around on overflow.
+pub trait WrappingSum: WrappingAdd + Zero + Sized {
     fn wrapping_sum(vals: &[Self]) -> Self;
     fn wrapping_sum_with_validity(vals: &[Self], mask: &BitMask) -> Self;
 }
 
-pub fn wrapping_sum_arr<T>(arr: &PrimitiveArray<T>) -> T
+/// The validity mask of `arr` laid out one bit per element, or `None` where every element is valid.
+fn flat_mask_of<T: NativeType>(arr: &PlPrimitiveArray<T>, count: usize) -> Option<Cow<'_, Bitmap>> {
+    (count < arr.len()).then(|| {
+        arr.validity()
+            .expect("a mask that leaves an element null is present")
+            .to_flat()
+    })
+}
+
+/// Adds up every non-null element of `arr`, wrapping around on overflow.
+pub fn wrapping_sum_arr<T>(arr: &PlPrimitiveArray<T>) -> T
 where
     T: NativeType + WrappingSum,
 {
-    let validity = arr.validity().filter(|_| arr.null_count() > 0);
-    if let Some(mask) = validity {
-        WrappingSum::wrapping_sum_with_validity(arr.values(), &BitMask::from_bitmap(mask))
-    } else {
-        WrappingSum::wrapping_sum(arr.values())
+    let count = arr.len() - arr.null_count();
+    if count == 0 {
+        return T::zero();
+    }
+
+    // A chunk that repeats one value adds that value up once per non-null element, which for an
+    // integer is a single multiplication rather than a pass over the chunk. A float still pays a
+    // pass, but a float chunk is summed by [`crate::float_sum`] instead.
+    if let Some(value) = arr.scalar_value_ignore_validity() {
+        return repeat_wrapping_add(value, count);
+    }
+
+    let values = arr.flat_values().unwrap();
+
+    match flat_mask_of(arr, count) {
+        Some(mask) => WrappingSum::wrapping_sum_with_validity(values, &BitMask::from_bitmap(&mask)),
+        None => WrappingSum::wrapping_sum(values),
     }
 }
 
-pub fn wrapping_sum_arr_upcast<T, S>(arr: &PrimitiveArray<T>) -> S
+/// As [`wrapping_sum_arr`], accumulating into the wider type `S`.
+pub fn wrapping_sum_arr_upcast<T, S>(arr: &PlPrimitiveArray<T>) -> S
 where
     T: NativeType + Zero + Into<S>,
     S: Zero + WrappingAdd + Copy,
 {
-    let validity = arr.validity().filter(|_| arr.null_count() > 0);
-    if let Some(mask) = validity {
-        wrapping_sum_with_mask_scalar_upcast(arr.values(), &BitMask::from_bitmap(mask))
-    } else {
-        arr.values()
-            .iter()
-            .fold(S::zero(), |a, b| a.wrapping_add(&(*b).into()))
+    let count = arr.len() - arr.null_count();
+    if count == 0 {
+        return S::zero();
     }
+
+    if let Some(value) = arr.scalar_value_ignore_validity() {
+        return repeat_wrapping_add(value.into(), count);
+    }
+
+    let values = arr.flat_values().unwrap();
+
+    match flat_mask_of(arr, count) {
+        Some(mask) => wrapping_sum_with_mask_scalar_upcast(values, &BitMask::from_bitmap(&mask)),
+        None => values
+            .iter()
+            .fold(S::zero(), |a, b| a.wrapping_add(&(*b).into())),
+    }
+}
+
+/// `value` added to itself `count` times, wrapping around on overflow.
+fn repeat_wrapping_add<T: Zero + WrappingAdd + Copy>(value: T, count: usize) -> T {
+    (0..count).fold(T::zero(), |total, _| total.wrapping_add(&value))
 }

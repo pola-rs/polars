@@ -8,21 +8,18 @@ pub struct ListNullChunkedBuilder {
 impl ListNullChunkedBuilder {
     pub fn new(name: PlSmallStr, capacity: usize) -> Self {
         ListNullChunkedBuilder {
-            builder: LargeListNullBuilder::with_capacity(capacity),
+            builder: LargeListNullBuilder::with_capacity(PlNullArrayBuilder::new(), capacity),
             name,
         }
     }
 
     pub(crate) fn append(&mut self, s: &Series) {
-        let value_builder = self.builder.mut_values();
-        value_builder.extend_nulls(s.len());
-        self.builder.try_push_valid().unwrap();
+        self.append_with_len(s.len())
     }
 
     pub(crate) fn append_with_len(&mut self, len: usize) {
-        let value_builder = self.builder.mut_values();
-        value_builder.extend_nulls(len);
-        self.builder.try_push_valid().unwrap();
+        self.builder.values_mut().extend_nulls(len);
+        self.builder.finish_row();
     }
 }
 
@@ -35,14 +32,14 @@ impl ListBuilderTrait for ListNullChunkedBuilder {
 
     #[inline]
     fn append_null(&mut self) {
-        self.builder.push_null();
+        self.builder.extend_nulls(1);
     }
 
     fn finish(&mut self) -> ListChunked {
         unsafe {
             ListChunked::from_chunks_and_dtype_unchecked(
                 self.name.clone(),
-                vec![self.builder.as_box()],
+                vec![Box::new(self.builder.freeze_reset())],
                 DataType::List(Box::new(DataType::Null)),
             )
         }

@@ -59,8 +59,9 @@ pub fn _arg_bottom_k(
         .map(|(idx, bytes)| CompareRow { idx, bytes })
         .collect::<Vec<_>>();
 
+    let parallel = super::sort_in_parallel(rows.len(), sort_options.multithreaded);
     let sorted = if k >= from_n_rows {
-        match (sort_options.multithreaded, sort_options.maintain_order) {
+        match (parallel, sort_options.maintain_order) {
             (true, true) => RAYON.install(|| {
                 rows.par_sort();
             }),
@@ -73,7 +74,7 @@ pub fn _arg_bottom_k(
         &rows
     } else if sort_options.maintain_order {
         // todo: maybe there is some more efficient method, comparable to select_nth_unstable
-        if sort_options.multithreaded {
+        if parallel {
             RAYON.install(|| {
                 rows.par_sort();
             })
@@ -84,7 +85,7 @@ pub fn _arg_bottom_k(
     } else {
         // todo: possible multi threaded `select_nth_unstable`?
         let (lower, _el, _upper) = rows.select_nth_unstable(k);
-        if sort_options.multithreaded {
+        if super::sort_in_parallel(lower.len(), sort_options.multithreaded) {
             RAYON.install(|| {
                 lower.par_sort_unstable();
             })

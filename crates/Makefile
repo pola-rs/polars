@@ -46,8 +46,10 @@ miri:  ## Run miri
 .PHONY: test
 test:  ## Run tests
 	cargo test --all-features \
+		-p polars-array \
 		-p polars-compute \
 		-p polars-core \
+		-p polars-dtype \
 		-p polars-io \
 		-p polars-lazy \
 		-p polars-ops \
@@ -65,6 +67,7 @@ nextest:  ## Run tests with nextest
 	cargo nextest run --all-features \
 		-p polars-compute \
 		-p polars-core \
+		-p polars-dtype \
 		-p polars-io \
 		-p polars-lazy \
 		-p polars-ops \

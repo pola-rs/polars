@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use arrow::bitmap::BitmapBuilder;
 use arrow::trusted_len::TrustMyLength;
 use num_traits::{Num, NumCast};
 use polars_compute::rolling::QuantileMethod;
@@ -804,7 +804,7 @@ impl Column {
                 // SAFETY: We perform a compute_len afterwards.
                 let chunks = unsafe { s.chunks_mut() };
                 let arr = &mut chunks[0];
-                *arr = arr.with_validity(validity.into_opt_validity());
+                *arr = arr.with_validity(validity.into_opt_validity().map(PlBitmap::from_bitmap));
                 s.compute_len();
 
                 s.into_column()
@@ -1174,8 +1174,11 @@ impl Column {
             }
 
             let mut prev_idx = end - start;
+            // The values are read as a slice, so a chunk that is not laid out flat is written out
+            // first — see `StaticArray::to_flat`.
             for chunk in arg_unique.downcast_iter() {
-                for &idx in chunk.values().as_slice().iter().rev() {
+                let chunk = chunk.to_flat();
+                for &idx in chunk.as_slice().iter().rev() {
                     values.extend(start + idx..start + prev_idx);
                     prev_idx = idx;
                 }
@@ -1320,7 +1323,7 @@ impl Column {
         self.as_materialized_series().shift(periods).into()
     }
 
-    pub fn with_validity(&self, validity: Option<Bitmap>) -> Column {
+    pub fn with_validity(&self, validity: Option<PlBitmap>) -> Column {
         match self {
             Column::Series(s) => Column::from(s.with_validity(validity)),
             Column::Scalar(s) => match validity {
@@ -1330,15 +1333,13 @@ impl Column {
         }
     }
 
-    pub fn mask(&self, validity: &Bitmap) -> Column {
-        if validity.len() == 1 {
-            if validity.get_bit(0) {
-                self.clone()
-            } else {
-                Self::full_null(self.name().clone(), self.len(), self.dtype())
-            }
-        } else {
-            Column::from(self.as_materialized_series().mask(validity))
+    pub fn mask(&self, validity: &PlBitmap) -> Column {
+        // A mask that repeats a single bit says the same of every element: it either leaves the
+        // column alone or nulls all of it out, without materializing the column behind a scalar.
+        match validity.scalar_value() {
+            Some(true) => self.clone(),
+            Some(false) => Self::full_null(self.name().clone(), self.len(), self.dtype()),
+            None => Column::from(self.as_materialized_series().mask(validity)),
         }
     }
 
@@ -1912,13 +1913,13 @@ impl Column {
             .map(Column::from)
     }
 
-    pub fn deposit(&self, validity: &Bitmap) -> Column {
+    pub fn deposit(&self, validity: &PlBitmap) -> Column {
         self.as_materialized_series()
             .deposit(validity)
             .into_column()
     }
 
-    pub fn rechunk_validity(&self) -> Option<Bitmap> {
+    pub fn rechunk_validity(&self) -> Option<PlBitmap> {
         // @scalar-opt
         self.as_materialized_series().rechunk_validity()
     }

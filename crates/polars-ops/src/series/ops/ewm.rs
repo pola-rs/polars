@@ -24,19 +24,19 @@ macro_rules! dispatch_ewm_kernel {
                 let $xs = $s.f16().unwrap();
                 let $alpha = $options.alpha.as_();
                 let result = $kernel;
-                Series::try_from(($s.name().clone(), Box::new(result) as ArrayRef))
+                Ok(Float16Chunked::with_chunk($s.name().clone(), result).into_series())
             },
             DataType::Float32 => {
                 let $xs = $s.f32().unwrap();
                 let $alpha = $options.alpha as f32;
                 let result = $kernel;
-                Series::try_from(($s.name().clone(), Box::new(result) as ArrayRef))
+                Ok(Float32Chunked::with_chunk($s.name().clone(), result).into_series())
             },
             DataType::Float64 => {
                 let $xs = $s.f64().unwrap();
                 let $alpha = $options.alpha;
                 let result = $kernel;
-                Series::try_from(($s.name().clone(), Box::new(result) as ArrayRef))
+                Ok(Float64Chunked::with_chunk($s.name().clone(), result).into_series())
             },
             dt => polars_bail!(opq = $fallback, dt),
         }
@@ -78,7 +78,7 @@ pub fn ewm_std(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.min_periods,
                 options.ignore_nulls,
             );
-            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
+            Ok(Float16Chunked::with_chunk(s.name().clone(), result).into_series())
         },
         DataType::Float32 => {
             let xs = s.f32().unwrap();
@@ -90,7 +90,7 @@ pub fn ewm_std(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.min_periods,
                 options.ignore_nulls,
             );
-            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
+            Ok(Float32Chunked::with_chunk(s.name().clone(), result).into_series())
         },
         DataType::Float64 => {
             let xs = s.f64().unwrap();
@@ -102,7 +102,7 @@ pub fn ewm_std(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.min_periods,
                 options.ignore_nulls,
             );
-            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
+            Ok(Float64Chunked::with_chunk(s.name().clone(), result).into_series())
         },
         dt => {
             let casted = s.cast(&DataType::Float64)?;
@@ -128,7 +128,7 @@ pub fn ewm_var(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.min_periods,
                 options.ignore_nulls,
             );
-            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
+            Ok(Float16Chunked::with_chunk(s.name().clone(), result).into_series())
         },
         DataType::Float32 => {
             let xs = s.f32().unwrap();
@@ -140,7 +140,7 @@ pub fn ewm_var(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.min_periods,
                 options.ignore_nulls,
             );
-            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
+            Ok(Float32Chunked::with_chunk(s.name().clone(), result).into_series())
         },
         DataType::Float64 => {
             let xs = s.f64().unwrap();
@@ -152,7 +152,7 @@ pub fn ewm_var(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
                 options.min_periods,
                 options.ignore_nulls,
             );
-            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
+            Ok(Float64Chunked::with_chunk(s.name().clone(), result).into_series())
         },
         dt => {
             let casted = s.cast(&DataType::Float64)?;

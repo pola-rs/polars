@@ -1,0 +1,493 @@
+use std::borrow::Cow;
+
+use arrow::array::Splitable;
+use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_error::{PolarsResult, polars_ensure};
+
+use crate::broadcast::{
+    is_flat_buffer_len, is_valid_buffer_len, normalize_bitmap, scalar_buffer_len, slice_bitmap,
+};
+
+mod iterator;
+mod reference;
+mod validity;
+
+pub use iterator::PlBitmapIter;
+pub(crate) use iterator::{ValidityFold, ValidityIter};
+pub use reference::PlBitmapRef;
+pub use validity::{
+    combine_validities_and, combine_validities_and_many, combine_validities_and3, invert,
+};
+
+/// An immutable, cheaply cloneable mask of `length` bits, flat or scalar.
+#[derive(Clone)]
+pub struct PlBitmap {
+    /// Scalar: bitmap.len() == 1
+    bitmap: Bitmap,
+    length: usize,
+}
+
+impl PlBitmap {
+    /// Creates a flat [`PlBitmap`] of `length` bits backed by `bitmap`.
+    ///
+    /// # Errors
+    /// This function errors unless `bitmap` holds one bit per element.
+    pub fn try_new(bitmap: Bitmap, length: usize) -> PolarsResult<Self> {
+        polars_ensure!(
+            is_flat_buffer_len(bitmap.len(), length),
+            ComputeError:
+            "bitmap of length {} is not flat for a mask of length {}",
+            bitmap.len(), length,
+        );
+
+        Ok(Self { bitmap, length })
+    }
+
+    /// Creates a flat [`PlBitmap`] of `length` bits backed by `bitmap`.
+    #[inline]
+    pub fn new(bitmap: Bitmap, length: usize) -> Self {
+        Self::try_new(bitmap, length).unwrap()
+    }
+
+    /// Creates a flat [`PlBitmap`] of `length` bits backed by `bitmap`, without validating it.
+    ///
+    /// # Safety
+    /// `bitmap` must hold one bit per element, i.e. have `length` bits.
+    #[inline]
+    pub unsafe fn new_unchecked(bitmap: Bitmap, length: usize) -> Self {
+        debug_assert!(is_flat_buffer_len(bitmap.len(), length));
+        Self { bitmap, length }
+    }
+
+    /// Creates a [`PlBitmap`] of `length` bits backed by a `bitmap` that broadcasts over them.
+    ///
+    /// # Errors
+    /// Errors if `bitmap` is neither flat (length equal to `length`) nor scalar (length one).
+    pub fn try_new_broadcast(bitmap: Bitmap, length: usize) -> PolarsResult<Self> {
+        polars_ensure!(
+            is_valid_buffer_len(bitmap.len(), length),
+            ComputeError:
+            "bitmap of length {} is neither flat nor scalar for a mask of length {}",
+            bitmap.len(), length,
+        );
+
+        Ok(Self {
+            bitmap: normalize_bitmap(bitmap, length),
+            length,
+        })
+    }
+
+    /// Creates a [`PlBitmap`] of `length` bits backed by a `bitmap` that broadcasts over them.
+    #[inline]
+    pub fn new_broadcast(bitmap: Bitmap, length: usize) -> Self {
+        Self::try_new_broadcast(bitmap, length).unwrap()
+    }
+
+    /// Creates a [`PlBitmap`] of `length` bits backed by `bitmap`, without validating it.
+    ///
+    /// # Safety
+    /// `bitmap` must be flat or scalar for `length`, per [`is_valid_buffer_len`].
+    #[inline]
+    pub unsafe fn new_broadcast_unchecked(bitmap: Bitmap, length: usize) -> Self {
+        debug_assert!(is_valid_buffer_len(bitmap.len(), length));
+        Self {
+            bitmap: normalize_bitmap(bitmap, length),
+            length,
+        }
+    }
+
+    /// Creates an empty [`PlBitmap`].
+    #[inline]
+    pub fn new_empty() -> Self {
+        Self {
+            bitmap: Bitmap::new(),
+            length: 0,
+        }
+    }
+
+    /// Creates a flat [`PlBitmap`] holding the bits of `bitmap`.
+    #[inline]
+    pub fn from_bitmap(bitmap: Bitmap) -> Self {
+        let length = bitmap.len();
+        Self { bitmap, length }
+    }
+
+    /// Creates a [`PlBitmap`] of `length` copies of `value`, in `O(1)` memory.
+    #[inline]
+    pub fn new_scalar(value: bool, length: usize) -> Self {
+        Self {
+            bitmap: Bitmap::new_with_value(value, scalar_buffer_len(length)),
+            length,
+        }
+    }
+
+    /// The number of bits in this mask.
+    #[inline(always)]
+    pub const fn len(&self) -> usize {
+        self.length
+    }
+
+    /// Whether this mask holds no bits.
+    #[inline(always)]
+    pub const fn is_empty(&self) -> bool {
+        self.length == 0
+    }
+
+    /// The backing bitmap, if it holds one bit per element.
+    #[inline]
+    pub fn flat_bitmap(&self) -> Option<&Bitmap> {
+        // The reference borrows the bitmap this mask owns, so what it hands back outlives it.
+        self.as_ref().flat_bitmap()
+    }
+
+    /// Borrows this mask as a [`PlBitmapRef`].
+    #[inline]
+    pub fn as_ref(&self) -> PlBitmapRef<'_> {
+        // SAFETY: the bitmap is flat or scalar for `self.length`, upheld by every constructor.
+        unsafe { PlBitmapRef::new_broadcast_unchecked(&self.bitmap, self.length) }
+    }
+
+    /// Returns the backing bitmap and the logical length of this mask.
+    #[inline]
+    pub fn into_inner(self) -> (Bitmap, usize) {
+        (self.bitmap, self.length)
+    }
+
+    /// Whether the backing bitmap holds a single bit shared by every element.
+    #[inline]
+    pub fn is_scalar(&self) -> bool {
+        self.bitmap.len() == 1 && self.length > 0
+    }
+
+    /// Whether the backing bitmap holds one bit per element.
+    #[inline]
+    pub fn is_flat(&self) -> bool {
+        self.bitmap.len() == self.length
+    }
+
+    /// The bit shared by every element, if the backing bitmap holds a single bit.
+    #[inline]
+    pub fn scalar_value(&self) -> Option<bool> {
+        self.as_ref().scalar_value()
+    }
+
+    /// Returns the bit at `i`.
+    #[inline]
+    pub fn get(&self, i: usize) -> bool {
+        self.as_ref().get(i)
+    }
+
+    /// Returns the bit at `i`.
+    ///
+    /// # Safety
+    /// `i` must be smaller than `self.len()`.
+    #[inline]
+    pub unsafe fn get_unchecked(&self, i: usize) -> bool {
+        unsafe { self.as_ref().get_unchecked(i) }
+    }
+
+    /// The number of unset bits.
+    #[inline]
+    pub fn unset_bits(&self) -> usize {
+        self.as_ref().unset_bits()
+    }
+
+    /// The number of set bits.
+    #[inline]
+    pub fn set_bits(&self) -> usize {
+        self.as_ref().set_bits()
+    }
+
+    /// Returns an iterator over the bits.
+    #[inline]
+    pub fn iter(&self) -> PlBitmapIter<'_> {
+        self.as_ref().iter()
+    }
+
+    /// The number of set bits before the first unset one.
+    #[inline]
+    pub fn leading_ones(&self) -> usize {
+        self.as_ref().leading_ones()
+    }
+
+    /// The number of unset bits before the first set one.
+    #[inline]
+    pub fn leading_zeros(&self) -> usize {
+        self.as_ref().leading_zeros()
+    }
+
+    /// The number of set bits after the last unset one.
+    #[inline]
+    pub fn trailing_ones(&self) -> usize {
+        self.as_ref().trailing_ones()
+    }
+
+    /// The number of unset bits after the last set one.
+    #[inline]
+    pub fn trailing_zeros(&self) -> usize {
+        self.as_ref().trailing_zeros()
+    }
+
+    /// Returns this mask with every bit inverted, keeping the representation.
+    #[must_use]
+    pub fn not(&self) -> Self {
+        // A single bit inverts in `O(1)` and still stands for every element.
+        Self {
+            bitmap: !&self.bitmap,
+            length: self.length,
+        }
+    }
+
+    /// The `or` of two masks over the same elements, keeping a repeated bit repeated.
+    #[must_use]
+    pub fn or(&self, other: &Self) -> Self {
+        assert_eq!(self.length, other.length, "masks cover different lengths");
+
+        match (self.scalar_value(), other.scalar_value()) {
+            // Two single bits `or` to a single bit, which covers every element in turn.
+            (Some(lhs), Some(rhs)) => Self::new_scalar(lhs || rhs, self.length),
+            // A repeated set bit is set everywhere whatever the other mask holds; a repeated unset
+            // one leaves the other mask as it is, in whatever representation it is in.
+            (Some(true), None) | (None, Some(true)) => Self::new_scalar(true, self.length),
+            (Some(false), None) => other.clone(),
+            (None, Some(false)) => self.clone(),
+            (None, None) => Self::new(
+                self.flat_bitmap().expect("the bits are not repeated")
+                    | other.flat_bitmap().expect("the bits are not repeated"),
+                self.length,
+            ),
+        }
+    }
+
+    /// The `and` of two masks over the same elements, keeping a repeated bit repeated.
+    #[must_use]
+    pub fn and(&self, other: &Self) -> Self {
+        assert_eq!(self.length, other.length, "masks cover different lengths");
+
+        match (self.scalar_value(), other.scalar_value()) {
+            // Two single bits `and` to a single bit, which covers every element in turn.
+            (Some(lhs), Some(rhs)) => Self::new_scalar(lhs && rhs, self.length),
+            // A repeated unset bit is unset everywhere whatever the other mask holds; a repeated
+            // set one leaves the other mask as it is, in whatever representation it is in.
+            (Some(false), None) | (None, Some(false)) => Self::new_scalar(false, self.length),
+            (Some(true), None) => other.clone(),
+            (None, Some(true)) => self.clone(),
+            (None, None) => Self::new(
+                self.flat_bitmap().expect("the bits are not repeated")
+                    & other.flat_bitmap().expect("the bits are not repeated"),
+                self.length,
+            ),
+        }
+    }
+
+    /// The `xor` of two masks over the same elements, keeping a repeated bit repeated.
+    #[must_use]
+    pub fn xor(&self, other: &Self) -> Self {
+        assert_eq!(self.length, other.length, "masks cover different lengths");
+
+        match (self.scalar_value(), other.scalar_value()) {
+            // Two single bits `xor` to a single bit, which covers every element in turn.
+            (Some(lhs), Some(rhs)) => Self::new_scalar(lhs != rhs, self.length),
+            // A repeated unset bit leaves the other mask as it is, in whatever representation it
+            // is in; a repeated set one inverts it, which leaves that representation alone too.
+            (Some(false), None) => other.clone(),
+            (None, Some(false)) => self.clone(),
+            (Some(true), None) => other.not(),
+            (None, Some(true)) => self.not(),
+            (None, None) => Self::new(
+                self.flat_bitmap().expect("the bits are not repeated")
+                    ^ other.flat_bitmap().expect("the bits are not repeated"),
+                self.length,
+            ),
+        }
+    }
+
+    /// Returns this mask with its bits in the opposite order, keeping the representation.
+    #[must_use]
+    pub fn reversed(&self) -> Self {
+        // A single bit says the same of every element whichever way they are read, so a mask
+        // that repeats one is its own reverse and nothing is written out.
+        match self.scalar_value() {
+            Some(_) => self.clone(),
+            None => Self::from_bitmap(self.iter().rev().collect()),
+        }
+    }
+
+    /// Splits this mask into the first `offset` bits and the rest, keeping the representation.
+    ///
+    /// # Panics
+    /// Panics if `offset` exceeds `self.len()`.
+    #[must_use]
+    pub fn split_at(&self, offset: usize) -> (Self, Self) {
+        assert!(
+            offset <= self.length,
+            "split point is past the end of the mask"
+        );
+
+        // A single bit says the same of both halves, so neither of them is written out.
+        if let Some(value) = self.scalar_value() {
+            return (
+                Self::new_scalar(value, offset),
+                Self::new_scalar(value, self.length - offset),
+            );
+        }
+
+        let (head, tail) = Splitable::split_at(&self.bitmap, offset);
+        (Self::from_bitmap(head), Self::from_bitmap(tail))
+    }
+
+    /// Slices this mask in place to `length` bits starting at `offset`.
+    pub fn slice(&mut self, offset: usize, length: usize) {
+        assert!(
+            offset + length <= self.length,
+            "the offset of the new slice must be smaller than the length of the mask",
+        );
+        unsafe { self.slice_unchecked(offset, length) }
+    }
+
+    /// Slices this mask in place to `length` bits starting at `offset`.
+    ///
+    /// # Safety
+    /// `offset + length` must not exceed `self.len()`.
+    pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
+        debug_assert!(offset + length <= self.length);
+
+        unsafe { slice_bitmap(&mut self.bitmap, self.length, offset, length) };
+
+        self.length = length;
+    }
+
+    /// Returns this mask sliced to `length` bits starting at `offset`.
+    #[must_use]
+    pub fn sliced(&self, offset: usize, length: usize) -> Self {
+        let mut sliced = self.clone();
+        sliced.slice(offset, length);
+        sliced
+    }
+
+    /// Returns this mask sliced to `length` bits starting at `offset`.
+    ///
+    /// # Safety
+    /// `offset + length` must not exceed `self.len()`.
+    #[must_use]
+    pub unsafe fn sliced_unchecked(&self, offset: usize, length: usize) -> Self {
+        let mut sliced = self.clone();
+        unsafe { sliced.slice_unchecked(offset, length) };
+        sliced
+    }
+
+    /// Returns an equivalent flat mask, borrowing this one if it is already flat.
+    pub fn to_flat(&self) -> Cow<'_, Self> {
+        if self.is_flat() {
+            return Cow::Borrowed(self);
+        }
+
+        Cow::Owned(Self::from_bitmap(self.as_ref().to_flat().into_owned()))
+    }
+
+    /// Consumes this mask into the backing bitmap, keeping the scalar representation.
+    #[inline]
+    pub fn into_flat_or_scalar(self) -> Bitmap {
+        self.bitmap
+    }
+
+    /// Consumes this mask into an ordinary [`Bitmap`] holding one bit per element.
+    pub fn into_bitmap(self) -> Bitmap {
+        if self.is_flat() {
+            self.bitmap
+        } else {
+            Bitmap::new_with_value(self.bitmap.get_bit(0), self.length)
+        }
+    }
+}
+
+impl Default for PlBitmap {
+    #[inline]
+    fn default() -> Self {
+        Self::new_empty()
+    }
+}
+
+impl From<Bitmap> for PlBitmap {
+    #[inline]
+    fn from(bitmap: Bitmap) -> Self {
+        Self::from_bitmap(bitmap)
+    }
+}
+
+impl From<MutableBitmap> for PlBitmap {
+    #[inline]
+    fn from(bitmap: MutableBitmap) -> Self {
+        Self::from_bitmap(bitmap.into())
+    }
+}
+
+/// Takes ownership of the backing bitmap, preserving the representation.
+impl From<PlBitmapRef<'_>> for PlBitmap {
+    #[inline]
+    fn from(mask: PlBitmapRef<'_>) -> Self {
+        let (bitmap, length) = mask.into_inner();
+        // SAFETY: a `PlBitmapRef` upholds the same invariant.
+        unsafe { Self::new_broadcast_unchecked(bitmap.clone(), length) }
+    }
+}
+
+impl FromIterator<bool> for PlBitmap {
+    #[inline]
+    fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
+        Self::from_bitmap(Bitmap::from_iter(iter))
+    }
+}
+
+impl<'a> IntoIterator for &'a PlBitmap {
+    type Item = bool;
+    type IntoIter = PlBitmapIter<'a>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+/// Compares two masks bit-wise; the representation (flat or scalar) is irrelevant.
+impl PartialEq for PlBitmap {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.as_ref() == other.as_ref()
+    }
+}
+
+impl Eq for PlBitmap {}
+
+impl PartialEq<PlBitmapRef<'_>> for PlBitmap {
+    #[inline]
+    fn eq(&self, other: &PlBitmapRef<'_>) -> bool {
+        self.as_ref() == *other
+    }
+}
+
+impl PartialEq<PlBitmap> for PlBitmapRef<'_> {
+    #[inline]
+    fn eq(&self, other: &PlBitmap) -> bool {
+        *self == other.as_ref()
+    }
+}
+
+impl std::fmt::Debug for PlBitmap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        reference::fmt_bits(self.as_ref(), "PlBitmap", f)
+    }
+}
+
+/// Compares two validity masks over `length` elements, treating an absent mask as all valid.
+pub(crate) fn validity_eq(
+    lhs: Option<PlBitmapRef<'_>>,
+    rhs: Option<PlBitmapRef<'_>>,
+    length: usize,
+) -> bool {
+    match (lhs, rhs) {
+        (Some(lhs), Some(rhs)) => lhs == rhs,
+        (Some(mask), None) | (None, Some(mask)) => mask.set_bits() == length,
+        (None, None) => true,
+    }
+}

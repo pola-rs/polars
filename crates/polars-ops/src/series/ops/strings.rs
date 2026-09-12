@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use arrow::array::builder::StaticArrayBuilder;
-use arrow::array::{Array, Utf8ViewArrayBuilder};
-use arrow::datatypes::ArrowDataType;
+use polars_array::bitmap::PlBitmap;
+use polars_array::builder::StaticArrayBuilder;
+use polars_array::{PlArray, PlUtf8ViewArrayBuilder, StaticArray as _};
 use polars_core::prelude::{Column, DataType, IntoColumn, StringChunked};
 use polars_core::scalar::Scalar;
 use polars_error::{PolarsContext, PolarsResult};
@@ -34,10 +34,12 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
                 ));
             }
 
-            match &mut validity {
-                v @ None => *v = Some(c_validity),
-                Some(v) => *v = arrow::bitmap::and(v, &c_validity),
-            }
+            // A mask that repeats a single bit combines as that one bit; neither side is
+            // written out to `and` them.
+            validity = polars_array::bitmap::combine_validities_and(
+                validity.as_ref().map(PlBitmap::as_ref),
+                Some(c_validity.as_ref()),
+            );
         }
 
         *c = c.cast(&DataType::String)?;
@@ -85,7 +87,7 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
         return Ok(Column::new_scalar(output_name, sc, output_length));
     }
 
-    let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8View);
+    let mut builder = PlUtf8ViewArrayBuilder::new();
     builder.reserve(output_length);
 
     let mut arrays = cs
@@ -99,6 +101,29 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
         })
         .collect::<Vec<_>>();
 
+    // Every input holding one chunk that repeats a single element makes every row the same string:
+    // it is formatted once and repeated, rather than being written out per row. A mask rules that
+    // out, since it says something different about at least one row.
+    if validity.is_none()
+        && !arrays.is_empty()
+        && arrays
+            .iter()
+            .all(|(_, arr, _)| PlArray::is_scalar(*arr) && arr.len() == output_length)
+    {
+        let mut s = String::new();
+        s.push_str(&format[..insertions[0]]);
+
+        for (j, (_, arr, _)) in arrays.iter().enumerate() {
+            s.push_str(opt_str_to_string(arr.get(0)));
+            let start = insertions[j];
+            let end = insertions.get(j + 1).copied().unwrap_or(format.len());
+            s.push_str(&format[start..end]);
+        }
+
+        let sc = Scalar::from(PlSmallStr::from_str(&s));
+        return Ok(Column::new_scalar(output_name, sc, output_length));
+    }
+
     // @Performance. There is some smarter stuff that can be done with views and stuff. Don't think
     // it is worth the complexity.
 
@@ -107,9 +132,10 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
     for i in 0..output_length {
         if validity
             .as_ref()
-            .is_some_and(|v| !unsafe { v.get_bit_unchecked(i) })
+            .is_some_and(|v| !unsafe { v.get_unchecked(i) })
         {
-            unsafe { builder.push_inline_view_ignore_validity(Default::default()) };
+            // The value of a null element is undetermined, so anything at all does.
+            builder.push_value("");
 
             for (iter, arr, elem_idx) in arrays.iter_mut() {
                 *elem_idx += 1;
@@ -138,9 +164,9 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
             }
         }
 
-        builder.push_value_ignore_validity(&s);
+        builder.push_value(&s);
     }
 
-    let array = builder.freeze().with_validity(validity).to_boxed();
+    let array = builder.freeze().with_validity(validity).into_boxed();
     Ok(unsafe { StringChunked::from_chunks(output_name, vec![array]) }.into_column())
 }

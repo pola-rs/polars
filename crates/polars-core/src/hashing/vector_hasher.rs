@@ -1,6 +1,5 @@
 use std::hash::BuildHasher;
 
-use arrow::bitmap::utils::get_bit_unchecked;
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::hashing::{_boost_hash_combine, folded_multiply};
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
@@ -42,7 +41,7 @@ pub(crate) fn get_null_hash_value(random_state: &PlSeedableRandomStateQuality) -
 }
 
 fn insert_null_hash(
-    chunks: &[ArrayRef],
+    chunks: &[PlArrayRef],
     random_state: PlSeedableRandomStateQuality,
     buf: &mut Vec<u64>,
 ) {
@@ -52,10 +51,11 @@ fn insert_null_hash(
     let mut offset = 0;
     chunks.iter().for_each(|arr| {
         if arr.null_count() > 0 {
-            let validity = arr.validity().unwrap();
-            let (slice, byte_offset, _) = validity.as_slice();
-            (0..validity.len())
-                .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
+            // The mask is walked through its iterator, which reads a mask that says the same of
+            // every element without writing one bit per element out first.
+            arr.validity()
+                .unwrap()
+                .iter()
                 .zip(&mut hashes[offset..])
                 .for_each(|(valid, h)| {
                     *h = [null_h, *h][valid as usize];
@@ -86,8 +86,16 @@ fn numeric_vec_hash<T>(
     #[allow(unused_unsafe)]
     #[allow(clippy::useless_transmute)]
     ca.downcast_iter().for_each(|arr| {
+        // A chunk that repeats one value hashes it once, and that hash repeats in turn.
+        if let Some(value) = arr.scalar_value_ignore_validity() {
+            let hash = random_state.hash_one(value.to_total_ord());
+            buf.extend(std::iter::repeat_n(hash, arr.len()));
+            return;
+        }
+
         buf.extend(
-            arr.values()
+            arr.flat_values()
+                .unwrap()
                 .as_slice()
                 .iter()
                 .copied()
@@ -110,31 +118,36 @@ fn numeric_vec_hash_combine<T>(
 
     let mut offset = 0;
     ca.downcast_iter().for_each(|arr| {
+        // Combining reads one hash per element out of the buffer either way, but the value it is
+        // combined with is hashed once where the chunk repeats a single one.
+        let scalar_hash = arr
+            .scalar_value_ignore_validity()
+            .map(|value| random_state.hash_one(value.to_total_ord()));
+        let hash_of = |value: T::Native| {
+            scalar_hash.unwrap_or_else(|| random_state.hash_one(value.to_total_ord()))
+        };
+
         match arr.null_count() {
             0 => arr
-                .values()
-                .as_slice()
-                .iter()
+                .values_iter()
                 .zip(&mut hashes[offset..])
                 .for_each(|(v, h)| {
                     // Inlined from ahash. This ensures we combine with the previous state.
                     *h = folded_multiply(
                         // Be careful not to xor the hash directly with the existing hash,
                         // it would lead to 0-hashes for 2 columns containing equal values.
-                        random_state.hash_one(v.to_total_ord()) ^ folded_multiply(*h, MULTIPLE),
+                        hash_of(v) ^ folded_multiply(*h, MULTIPLE),
                         MULTIPLE,
                     );
                 }),
             _ => {
-                let validity = arr.validity().unwrap();
-                let (slice, byte_offset, _) = validity.as_slice();
-                (0..validity.len())
-                    .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
+                arr.validity()
+                    .unwrap()
+                    .iter()
                     .zip(&mut hashes[offset..])
-                    .zip(arr.values().as_slice())
+                    .zip(arr.values_iter())
                     .for_each(|((valid, h), l)| {
-                        let lh = random_state.hash_one(l.to_total_ord());
-                        let to_hash = [null_h, lh][valid as usize];
+                        let to_hash = [null_h, hash_of(l)][valid as usize];
                         *h = folded_multiply(to_hash ^ folded_multiply(*h, MULTIPLE), MULTIPLE);
                     });
             },
@@ -204,9 +217,8 @@ impl VecHash for StringChunked {
     }
 }
 
-// used in polars-pipe
-pub fn _hash_binary_array(
-    arr: &BinaryArray<i64>,
+fn hash_binary_array(
+    arr: &PlBinaryArray,
     random_state: PlSeedableRandomStateQuality,
     buf: &mut Vec<u64>,
 ) {
@@ -215,7 +227,7 @@ pub fn _hash_binary_array(
         // use the null_hash as seed to get a hash determined by `random_state` that is passed
         buf.extend(arr.values_iter().map(|v| xxh3_64_with_seed(v, null_h)))
     } else {
-        buf.extend(arr.into_iter().map(|opt_v| match opt_v {
+        buf.extend(arr.iter().map(|opt_v| match opt_v {
             Some(v) => xxh3_64_with_seed(v, null_h),
             None => null_h,
         }))
@@ -223,7 +235,7 @@ pub fn _hash_binary_array(
 }
 
 fn hash_binview_array(
-    arr: &BinaryViewArray,
+    arr: &PlBinaryViewArray,
     random_state: PlSeedableRandomStateQuality,
     buf: &mut Vec<u64>,
 ) {
@@ -232,7 +244,7 @@ fn hash_binview_array(
         // use the null_hash as seed to get a hash determined by `random_state` that is passed
         buf.extend(arr.values_iter().map(|v| xxh3_64_with_seed(v, null_h)))
     } else {
-        buf.extend(arr.into_iter().map(|opt_v| match opt_v {
+        buf.extend(arr.iter().map(|opt_v| match opt_v {
             Some(v) => xxh3_64_with_seed(v, null_h),
             None => null_h,
         }))
@@ -270,10 +282,9 @@ impl VecHash for BinaryChunked {
                         *h = _boost_hash_combine(l, *h)
                     }),
                 _ => {
-                    let validity = arr.validity().unwrap();
-                    let (slice, byte_offset, _) = validity.as_slice();
-                    (0..validity.len())
-                        .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
+                    arr.validity()
+                        .unwrap()
+                        .iter()
                         .zip(&mut hashes[offset..])
                         .zip(arr.values_iter())
                         .for_each(|((valid, h), l)| {
@@ -301,7 +312,7 @@ impl VecHash for BinaryOffsetChunked {
         buf.clear();
         buf.reserve(self.len());
         self.downcast_iter()
-            .for_each(|arr| _hash_binary_array(arr, random_state.clone(), buf));
+            .for_each(|arr| hash_binary_array(arr, random_state.clone(), buf));
         Ok(())
     }
 
@@ -323,10 +334,9 @@ impl VecHash for BinaryOffsetChunked {
                         *h = _boost_hash_combine(l, *h)
                     }),
                 _ => {
-                    let validity = arr.validity().unwrap();
-                    let (slice, byte_offset, _) = validity.as_slice();
-                    (0..validity.len())
-                        .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
+                    arr.validity()
+                        .unwrap()
+                        .iter()
                         .zip(&mut hashes[offset..])
                         .zip(arr.values_iter())
                         .for_each(|((valid, h), l)| {
@@ -414,10 +424,9 @@ impl VecHash for BooleanChunked {
                         *h = _boost_hash_combine(l, *h)
                     }),
                 _ => {
-                    let validity = arr.validity().unwrap();
-                    let (slice, byte_offset, _) = validity.as_slice();
-                    (0..validity.len())
-                        .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
+                    arr.validity()
+                        .unwrap()
+                        .iter()
                         .zip(&mut hashes[offset..])
                         .zip(arr.values())
                         .for_each(|((valid, h), l)| {

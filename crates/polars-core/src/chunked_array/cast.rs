@@ -45,11 +45,71 @@ impl From<CastOptions> for CastOptionsImpl {
     }
 }
 
+/// Casts the chunks of a [`ChunkedArray`] to `dtype`.
 pub(crate) fn cast_chunks(
+    chunks: &[PlArrayRef],
+    dtype: &DataType,
+    options: CastOptions,
+) -> PolarsResult<Vec<PlArrayRef>> {
+    let check_nulls = matches!(options, CastOptions::Strict);
+    let cast_options = options.into();
+
+    chunks
+        .iter()
+        .map(|chunk| {
+            // A chunk carries no name over its values, so what it is cast off is the type its
+            // buffers are laid out in — which is what [`cast_chunks_from`] is for.
+            let from_dtype = polars_compute::cast::physical_dtype(&**chunk);
+            let out = polars_compute::cast::cast(&**chunk, &from_dtype, dtype, cast_options)?;
+            if check_nulls && chunk.null_count() != out.null_count() {
+                // A cast that dropped an element is reported over the Arrow arrays, which is
+                // where the failing values are read back out of — and only once it has failed.
+                handle_array_casting_failures(
+                    &*polars_array::arrow::export::to_arrow(&**chunk),
+                    &*polars_array::arrow::export::to_arrow(&*out),
+                )?;
+            }
+            Ok(out)
+        })
+        .collect()
+}
+
+/// [`cast_chunks`] for chunks whose buffers hold the values of a *logical* type.
+pub(crate) fn cast_chunks_from(
+    chunks: &[PlArrayRef],
+    from_dtype: &DataType,
+    dtype: &DataType,
+    options: CastOptions,
+) -> PolarsResult<Vec<PlArrayRef>> {
+    let check_nulls = matches!(options, CastOptions::Strict);
+    let cast_options = options.into();
+
+    chunks
+        .iter()
+        .map(|chunk| {
+            let out = polars_compute::cast::cast(&**chunk, from_dtype, dtype, cast_options)?;
+            if check_nulls && chunk.null_count() != out.null_count() {
+                // As in `cast_chunks`: the failing values are read back over the Arrow arrays,
+                // and only once the cast has failed.
+                handle_array_casting_failures(
+                    &*polars_array::arrow::export::to_arrow(&**chunk),
+                    &*polars_array::arrow::export::to_arrow(&*out),
+                )?;
+            }
+            Ok(out)
+        })
+        .collect()
+}
+
+/// Casts Arrow chunks to `dtype`, which is what the boundaries where data arrives as Arrow use.
+///
+/// The chunks cross over to the arrays of `polars-array` on the way, which is what they are cast
+/// over — see [`polars_compute::cast::cast_arrow`].
+pub(crate) fn cast_arrow_chunks(
     chunks: &[ArrayRef],
     dtype: &DataType,
     options: CastOptions,
-) -> PolarsResult<Vec<ArrayRef>> {
+) -> PolarsResult<Vec<PlArrayRef>> {
     let check_nulls = matches!(options, CastOptions::Strict);
     let options = options.into();
 
@@ -57,48 +117,37 @@ pub(crate) fn cast_chunks(
     chunks
         .iter()
         .map(|arr| {
-            let out = polars_compute::cast::cast(arr.as_ref(), &arrow_dtype, options);
-            if check_nulls {
-                out.and_then(|new| {
-                    if arr.null_count() != new.null_count() {
-                        handle_array_casting_failures(&**arr, &*new)?;
-                    }
-                    Ok(new)
-                })
-            } else {
-                out
+            let out = polars_compute::cast::cast_arrow(arr.as_ref(), &arrow_dtype, options)?;
+            if check_nulls && arr.null_count() != out.null_count() {
+                // A cast that dropped an element is reported over the Arrow arrays, which is
+                // where the failing values are read back out of — and only once it has failed.
+                handle_array_casting_failures(
+                    &**arr,
+                    &*polars_array::arrow::export::to_arrow(&*out),
+                )?;
             }
+            Ok(out)
         })
         .collect::<PolarsResult<Vec<_>>>()
 }
 
 fn cast_impl_inner(
     name: PlSmallStr,
-    chunks: &[ArrayRef],
+    chunks: &[PlArrayRef],
     dtype: &DataType,
     options: CastOptions,
 ) -> PolarsResult<Series> {
     let chunks = match dtype {
+        // @NOTE: We cast to the decimal itself rather than to its physical type, as casting to
+        // the physical type would lower the scale.
         #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(_, _) => {
-            let mut chunks = cast_chunks(chunks, dtype, options)?;
-            // @NOTE: We cannot cast here as that will lower the scale.
-            for chunk in chunks.iter_mut() {
-                *chunk = std::mem::take(
-                    chunk
-                        .as_any_mut()
-                        .downcast_mut::<PrimitiveArray<i128>>()
-                        .unwrap(),
-                )
-                .to(ArrowDataType::Int128)
-                .to_boxed();
-            }
-            chunks
-        },
+        DataType::Decimal(_, _) => cast_chunks(chunks, dtype, options)?,
         _ => cast_chunks(chunks, &dtype.to_physical(), options)?,
     };
 
-    let out = Series::try_from((name, chunks))?;
+    // SAFETY: the chunks were just cast to the physical type of `dtype`.
+    let out =
+        unsafe { Series::from_chunks_and_dtype_unchecked(name, chunks, &dtype.to_physical()) };
     use DataType::*;
     let out = match dtype {
         Date => out.into_date(),
@@ -125,7 +174,7 @@ fn cast_impl_inner(
 
 fn cast_impl(
     name: PlSmallStr,
-    chunks: &[ArrayRef],
+    chunks: &[PlArrayRef],
     dtype: &DataType,
     options: CastOptions,
 ) -> PolarsResult<Series> {
@@ -135,7 +184,7 @@ fn cast_impl(
 #[cfg(feature = "dtype-struct")]
 fn cast_single_to_struct(
     name: PlSmallStr,
-    chunks: &[ArrayRef],
+    chunks: &[PlArrayRef],
     fields: &[Field],
     options: CastOptions,
 ) -> PolarsResult<Series> {
@@ -282,40 +331,47 @@ impl ChunkCast for StringChunked {
             },
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
-                let chunks = self.downcast_iter().map(|arr| {
-                    polars_compute::cast::binview_to_decimal(&arr.to_binview(), *precision, *scale)
-                        .to(ArrowDataType::Int128)
-                });
-                let ca = Int128Chunked::from_chunk_iter(self.name().clone(), chunks);
+                // The text a value does not read as a decimal reads as null, which is what this
+                // cast has always answered — even when it was asked for a strict one.
+                let chunks = cast_chunks(&self.chunks, dtype, CastOptions::NonStrict)?;
+                let ca = unsafe { Int128Chunked::from_chunks(self.name().clone(), chunks) };
                 Ok(ca.into_decimal_unchecked(*precision, *scale).into_series())
             },
             #[cfg(feature = "dtype-date")]
             DataType::Date => {
                 let result = cast_chunks(&self.chunks, dtype, options)?;
-                let out = Series::try_from((self.name().clone(), result))?;
-                Ok(out)
+                // SAFETY: the chunks were just cast to the physical type of a date.
+                Ok(unsafe {
+                    Series::from_chunks_and_dtype_unchecked(self.name().clone(), result, dtype)
+                })
             },
             #[cfg(feature = "dtype-time")]
             DataType::Time => {
                 let result = cast_chunks(&self.chunks, dtype, options)?;
-                Series::try_from((self.name().clone(), result))
+                // SAFETY: the chunks were just cast to the physical type of a time.
+                Ok(unsafe {
+                    Series::from_chunks_and_dtype_unchecked(self.name().clone(), result, dtype)
+                })
             },
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(time_unit, time_zone) => match time_zone {
                 #[cfg(feature = "timezones")]
                 Some(time_zone) => {
                     TimeZone::validate_time_zone(time_zone)?;
-                    let result = cast_chunks(
-                        &self.chunks,
-                        &Datetime(time_unit.to_owned(), Some(time_zone.clone())),
-                        options,
-                    )?;
-                    Series::try_from((self.name().clone(), result))
+                    let dtype = Datetime(time_unit.to_owned(), Some(time_zone.clone()));
+                    let result = cast_chunks(&self.chunks, &dtype, options)?;
+                    // SAFETY: the chunks were just cast to the physical type of a datetime.
+                    Ok(unsafe {
+                        Series::from_chunks_and_dtype_unchecked(self.name().clone(), result, &dtype)
+                    })
                 },
                 _ => {
-                    let result =
-                        cast_chunks(&self.chunks, &Datetime(time_unit.to_owned(), None), options)?;
-                    Series::try_from((self.name().clone(), result))
+                    let dtype = Datetime(time_unit.to_owned(), None);
+                    let result = cast_chunks(&self.chunks, &dtype, options)?;
+                    // SAFETY: as above.
+                    Ok(unsafe {
+                        Series::from_chunks_and_dtype_unchecked(self.name().clone(), result, &dtype)
+                    })
                 },
             },
             _ => cast_impl(self.name().clone(), &self.chunks, dtype, options),
@@ -331,9 +387,11 @@ impl BinaryChunked {
     /// # Safety
     /// String is not validated
     pub unsafe fn to_string_unchecked(&self) -> StringChunked {
+        // SAFETY: the caller promises the bytes are valid UTF-8, which is the invariant a
+        // `StringChunked` chunk carries.
         let chunks = self
             .downcast_iter()
-            .map(|arr| unsafe { arr.to_utf8view_unchecked() }.boxed())
+            .map(|arr| unsafe { PlUtf8ViewArray::from_binview_unchecked(arr.clone()) }.into_boxed())
             .collect();
         let field = Arc::new(Field::new(self.name().clone(), DataType::String));
 
@@ -349,7 +407,7 @@ impl StringChunked {
     pub fn as_binary(&self) -> BinaryChunked {
         let chunks = self
             .downcast_iter()
-            .map(|arr| arr.to_binview().boxed())
+            .map(|arr| arr.as_binview().to_boxed())
             .collect();
         let field = Arc::new(Field::new(self.name().clone(), DataType::Binary));
 
@@ -591,64 +649,77 @@ impl ChunkCast for ArrayChunked {
     }
 }
 
+/// Puts cast values back under the offsets and the mask of the list array they were cast out of.
+///
+/// # Safety
+/// The values must be as many as the ones `offsets` was read off, and `offsets_are_scalar` must
+/// say which representation it is in.
+unsafe fn list_with_values(
+    values: PlArrayRef,
+    offsets: polars_buffer::Buffer<u64>,
+    offsets_are_scalar: bool,
+    length: usize,
+    validity: Option<arrow::bitmap::Bitmap>,
+) -> PlListArray {
+    let validity = validity.map(|validity| PlBitmap::new_broadcast(validity, length));
+    unsafe {
+        if offsets_are_scalar {
+            PlListArray::new_broadcast_unchecked(values, offsets, length, validity)
+        } else {
+            PlListArray::new_unchecked(values, offsets, length, validity)
+        }
+    }
+}
+
 // Returns inner data type. This is needed because a cast can instantiate the dtype inner
 // values for instance with categoricals
 fn cast_list(
     ca: &ListChunked,
     child_type: &DataType,
     options: CastOptions,
-) -> PolarsResult<(ArrayRef, DataType)> {
+) -> PolarsResult<(PlArrayRef, DataType)> {
     // We still rechunk because we must bubble up a single data-type
     // TODO!: consider a version that works on chunks and merges the data-types and arrays.
     let ca = ca.rechunk();
+    // Only the values are cast: the offsets and the mask are handed over in whatever
+    // representation they came in, so a chunk whose elements all read the one list casts that
+    // list once rather than a copy of it per element.
     let arr = ca.downcast_as_array();
+    let offsets_are_scalar = arr.offsets_are_scalar();
+    let (values, offsets, length, validity) = arr.clone().into_inner();
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
-        Series::from_chunks_and_dtype_unchecked(
-            PlSmallStr::EMPTY,
-            vec![arr.values().clone()],
-            ca.inner_dtype(),
-        )
+        Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![values], ca.inner_dtype())
     };
     let new_inner = s.cast_with_options(child_type, options)?;
 
     let inner_dtype = new_inner.dtype().clone();
     debug_assert_eq!(&inner_dtype, child_type);
 
-    let new_values = new_inner.array_ref(0).clone();
+    let new_values = new_inner.rechunk().array_ref(0).clone();
 
-    let dtype = ListArray::<i64>::default_datatype(new_values.dtype().clone());
-    let new_arr = ListArray::<i64>::new(
-        dtype,
-        arr.offsets().clone(),
-        new_values,
-        arr.validity().cloned(),
-    );
-    Ok((new_arr.boxed(), inner_dtype))
+    let new_arr =
+        unsafe { list_with_values(new_values, offsets, offsets_are_scalar, length, validity) };
+    Ok((Box::new(new_arr), inner_dtype))
 }
 
 unsafe fn cast_list_unchecked(ca: &ListChunked, child_type: &DataType) -> PolarsResult<Series> {
     // TODO! add chunked, but this must correct for list offsets.
     let ca = ca.rechunk();
+    // As in `cast_list`: only the values are cast, so the offsets and the mask are handed over in
+    // the representation they came in.
     let arr = ca.downcast_as_array();
+    let offsets_are_scalar = arr.offsets_are_scalar();
+    let (values, offsets, length, validity) = arr.clone().into_inner();
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
-        Series::from_chunks_and_dtype_unchecked(
-            PlSmallStr::EMPTY,
-            vec![arr.values().clone()],
-            ca.inner_dtype(),
-        )
+        Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![values], ca.inner_dtype())
     };
     let new_inner = s.cast_unchecked(child_type)?;
-    let new_values = new_inner.array_ref(0).clone();
+    let new_values = new_inner.rechunk().array_ref(0).clone();
 
-    let dtype = ListArray::<i64>::default_datatype(new_values.dtype().clone());
-    let new_arr = ListArray::<i64>::new(
-        dtype,
-        arr.offsets().clone(),
-        new_values,
-        arr.validity().cloned(),
-    );
+    let new_arr =
+        unsafe { list_with_values(new_values, offsets, offsets_are_scalar, length, validity) };
     Ok(ListChunked::from_chunks_and_dtype_unchecked(
         ca.name().clone(),
         vec![Box::new(new_arr)],
@@ -664,31 +735,41 @@ fn cast_fixed_size_list(
     ca: &ArrayChunked,
     child_type: &DataType,
     options: CastOptions,
-) -> PolarsResult<(ArrayRef, DataType)> {
+) -> PolarsResult<(PlArrayRef, DataType)> {
     let ca = ca.rechunk();
+    // Only the values are cast: the width and the mask are handed over in whatever representation
+    // they came in, so a chunk whose elements all read the one list casts that list once rather
+    // than a copy of it per element.
     let arr = ca.downcast_as_array();
+    let values_are_scalar = arr.values_are_scalar();
+    let (values, width, length, validity) = arr.clone().into_inner();
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
-        Series::from_chunks_and_dtype_unchecked(
-            PlSmallStr::EMPTY,
-            vec![arr.values().clone()],
-            ca.inner_dtype(),
-        )
+        Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![values], ca.inner_dtype())
     };
     let new_inner = s.cast_with_options(child_type, options)?;
 
     let inner_dtype = new_inner.dtype().clone();
     debug_assert_eq!(&inner_dtype, child_type);
 
-    let new_values = new_inner.array_ref(0).clone();
+    let new_values = new_inner.rechunk().array_ref(0).clone();
 
-    let dtype = FixedSizeListArray::default_datatype(new_values.dtype().clone(), ca.width());
-    let new_arr = FixedSizeListArray::new(dtype, ca.len(), new_values, arr.validity().cloned());
+    // The values were cast one for one, so they are as many as they were: whichever
+    // representation the array they came out of was in, they are still in it.
+    let new_arr = unsafe {
+        let validity = validity.map(|validity| PlBitmap::new_broadcast(validity, length));
+        if values_are_scalar {
+            PlFixedSizeListArray::new_broadcast_unchecked(new_values, width, length, validity)
+        } else {
+            PlFixedSizeListArray::new_unchecked(new_values, width, length, validity)
+        }
+    };
     Ok((Box::new(new_arr), inner_dtype))
 }
 
 #[cfg(test)]
 mod test {
+
     use crate::chunked_array::cast::CastOptions;
     use crate::prelude::*;
 

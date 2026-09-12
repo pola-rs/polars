@@ -1,14 +1,14 @@
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 
-use arrow::array::{
-    Array, BinaryViewArray, ListArray, MutableArray, MutablePlBinary, MutablePrimitiveArray,
-    PrimitiveArray, Utf8ViewArray,
-};
-use arrow::bitmap::Bitmap;
-use arrow::compute::utils::combine_validities_and;
-use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
+use polars_array::bitmap::combine_validities_and;
+use polars_array::builder::StaticArrayBuilder;
+use polars_array::{
+    PlBinaryViewArray, PlBinaryViewArrayBuilder, PlBitmap, PlBitmapRef, PlListArray,
+    PlPrimitiveArray, PlPrimitiveArrayBuilder, PlUtf8ViewArray,
+};
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_type;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash, TotalOrdWrap};
@@ -21,30 +21,33 @@ trait MaterializeValues<K> {
     fn extend_buf<I: Iterator<Item = K>>(&mut self, values: I) -> usize;
 }
 
-impl<T> MaterializeValues<Option<T>> for MutablePrimitiveArray<T>
+impl<T> MaterializeValues<Option<T>> for PlPrimitiveArrayBuilder<T>
 where
     T: NativeType,
 {
     fn extend_buf<I: Iterator<Item = Option<T>>>(&mut self, values: I) -> usize {
-        self.extend(values);
-        self.len()
+        for value in values {
+            self.push(value);
+        }
+        StaticArrayBuilder::len(self)
     }
 }
 
-impl<T> MaterializeValues<TotalOrdWrap<Option<T>>> for MutablePrimitiveArray<T>
+impl<T> MaterializeValues<TotalOrdWrap<Option<T>>> for PlPrimitiveArrayBuilder<T>
 where
     T: NativeType,
 {
     fn extend_buf<I: Iterator<Item = TotalOrdWrap<Option<T>>>>(&mut self, values: I) -> usize {
-        self.extend(values.map(|x| x.0));
-        self.len()
+        self.extend_buf(values.map(|x| x.0))
     }
 }
 
-impl<'a> MaterializeValues<Option<&'a [u8]>> for MutablePlBinary {
+impl<'a> MaterializeValues<Option<&'a [u8]>> for PlBinaryViewArrayBuilder {
     fn extend_buf<I: Iterator<Item = Option<&'a [u8]>>>(&mut self, values: I) -> usize {
-        self.extend(values);
-        self.len()
+        for value in values {
+            self.push(value);
+        }
+        StaticArrayBuilder::len(self)
     }
 }
 
@@ -102,10 +105,11 @@ where
     }
 }
 
-fn copied_wrapper_opt<T: Copy + TotalEq + TotalHash>(
-    v: Option<&T>,
+/// The element as the key it is looked up by, which makes a float's `NaN` equal itself.
+fn wrapper_opt<T: Copy + TotalEq + TotalHash>(
+    v: Option<T>,
 ) -> <Option<T> as ToTotalOrd>::TotalOrdItem {
-    v.copied().to_total_ord()
+    v.to_total_ord()
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, IntoStaticStr)]
@@ -132,13 +136,13 @@ impl Display for SetOperation {
 }
 
 fn primitive<T>(
-    a: &PrimitiveArray<T>,
-    b: &PrimitiveArray<T>,
-    offsets_a: &[i64],
-    offsets_b: &[i64],
+    a: &PlPrimitiveArray<T>,
+    b: &PlPrimitiveArray<T>,
+    offsets_a: &[u64],
+    offsets_b: &[u64],
     set_op: SetOperation,
-    validity: Option<Bitmap>,
-) -> PolarsResult<ListArray<i64>>
+    validity: Option<PlBitmap>,
+) -> PolarsResult<PlListArray>
 where
     T: NativeType + TotalHash + TotalEq + Copy + ToTotalOrd,
     <Option<T> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
@@ -149,12 +153,12 @@ where
     let mut set = Default::default();
     let mut set2: PlIndexSet<<Option<T> as ToTotalOrd>::TotalOrdItem> = Default::default();
 
-    let mut values_out = MutablePrimitiveArray::with_capacity(std::cmp::max(
+    let mut values_out = PlPrimitiveArrayBuilder::with_capacity(std::cmp::max(
         *offsets_a.last().unwrap(),
         *offsets_b.last().unwrap(),
     ) as usize);
     let mut offsets = Vec::with_capacity(std::cmp::max(offsets_a.len(), offsets_b.len()));
-    offsets.push(0i64);
+    offsets.push(0u64);
 
     let offsets_slice = if offsets_a.len() > offsets_b.len() {
         offsets_a
@@ -170,7 +174,7 @@ where
             b.into_iter()
                 .skip(first_b as usize)
                 .take(second_b as usize - first_b as usize)
-                .map(copied_wrapper_opt),
+                .map(wrapper_opt),
         );
     }
 
@@ -194,23 +198,17 @@ where
             iter_a_broadcast
                 .by_ref()
                 .take(second_a as usize - first_a as usize)
-                .map(copied_wrapper_opt)
+                .map(wrapper_opt)
         } else {
-            iter_a
-                .by_ref()
-                .take(end_a - start_a)
-                .map(copied_wrapper_opt)
+            iter_a.by_ref().take(end_a - start_a).map(wrapper_opt)
         };
         let mut iter_b = if broadcast_rhs {
             iter_b_broadcast
                 .by_ref()
                 .take(second_b as usize - first_b as usize)
-                .map(copied_wrapper_opt)
+                .map(wrapper_opt)
         } else {
-            iter_b
-                .by_ref()
-                .take(end_b - start_b)
-                .map(copied_wrapper_opt)
+            iter_b.by_ref().take(end_b - start_b).map(wrapper_opt)
         };
 
         let offset = set_operation(
@@ -228,35 +226,37 @@ where
             assert!(iter_b.next().is_none());
         };
 
-        offsets.push(offset as i64);
+        offsets.push(offset as u64);
     }
-    let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
-    let dtype = ListArray::<i64>::default_datatype(values_out.dtype().clone());
-
-    let values: PrimitiveArray<T> = values_out.into();
-    Ok(ListArray::new(dtype, offsets, values.boxed(), validity))
+    let length = offsets.len() - 1;
+    Ok(PlListArray::new(
+        Box::new(values_out.freeze()),
+        Buffer::from(offsets),
+        length,
+        validity,
+    ))
 }
 
 fn binary(
-    a: &BinaryViewArray,
-    b: &BinaryViewArray,
-    offsets_a: &[i64],
-    offsets_b: &[i64],
+    a: &PlBinaryViewArray,
+    b: &PlBinaryViewArray,
+    offsets_a: &[u64],
+    offsets_b: &[u64],
     set_op: SetOperation,
-    validity: Option<Bitmap>,
+    validity: Option<PlBitmap>,
     as_utf8: bool,
-) -> PolarsResult<ListArray<i64>> {
+) -> PolarsResult<PlListArray> {
     let broadcast_lhs = offsets_a.len() == 2;
     let broadcast_rhs = offsets_b.len() == 2;
     let mut set: PlIndexSet<Option<&[u8]>> = Default::default();
     let mut set2: PlIndexSet<Option<&[u8]>> = Default::default();
 
-    let mut values_out = MutablePlBinary::with_capacity(std::cmp::max(
+    let mut values_out = PlBinaryViewArrayBuilder::with_capacity(std::cmp::max(
         *offsets_a.last().unwrap(),
         *offsets_b.last().unwrap(),
     ) as usize);
     let mut offsets = Vec::with_capacity(std::cmp::max(offsets_a.len(), offsets_b.len()));
-    offsets.push(0i64);
+    offsets.push(0u64);
 
     let offsets_slice = if offsets_a.len() > offsets_b.len() {
         offsets_a
@@ -323,68 +323,128 @@ fn binary(
             assert!(iter_b.next().is_none());
         };
 
-        offsets.push(offset as i64);
+        offsets.push(offset as u64);
     }
-    let offsets = unsafe { OffsetsBuffer::new_unchecked(offsets.into()) };
+    let length = offsets.len() - 1;
     let values = values_out.freeze();
 
-    if as_utf8 {
-        let values = unsafe { values.to_utf8view_unchecked() };
-        let dtype = ListArray::<i64>::default_datatype(values.dtype().clone());
-        Ok(ListArray::new(dtype, offsets, values.boxed(), validity))
+    // The values are read out of two arrays of the same type, so what went in is what comes back.
+    let values: Box<dyn PlArray> = if as_utf8 {
+        Box::new(unsafe { PlUtf8ViewArray::from_binview_unchecked(values) })
     } else {
-        let dtype = ListArray::<i64>::default_datatype(values.dtype().clone());
-        Ok(ListArray::new(dtype, offsets, values.boxed(), validity))
-    }
+        Box::new(values)
+    };
+
+    Ok(PlListArray::new(
+        values,
+        Buffer::from(offsets),
+        length,
+        validity,
+    ))
 }
 
 fn array_set_operation(
-    a: &ListArray<i64>,
-    b: &ListArray<i64>,
+    a: &PlListArray,
+    b: &PlListArray,
     set_op: SetOperation,
-) -> PolarsResult<ListArray<i64>> {
+    inner_dtype: &DataType,
+) -> PolarsResult<PlListArray> {
+    // Both sides holding the one range every element covers means every element is the same set
+    // operation over the same pair of lists: it is worked out once over a single element and
+    // repeated. The masks are left out of that and combined over the whole length after, since
+    // they are the one thing that still says something different about each element.
+    if a.offsets_are_scalar() && b.offsets_are_scalar() && a.len() > 1 {
+        let one = array_set_operation(
+            &a.sliced(0, 1).without_validity(),
+            &b.sliced(0, 1).without_validity(),
+            set_op,
+            inner_dtype,
+        )?;
+        let validity = combine_validities_and(
+            broadcast_validity(a.validity(), a.len()),
+            broadcast_validity(b.validity(), a.len()),
+        );
+
+        return Ok(one.new_from_index(0, a.len()).with_validity(validity));
+    }
+
+    // The kernels below read the offsets as a slice and walk the values one element at a time, so
+    // a chunk whose offsets repeat is written out first.
+    let a = a.to_flat();
+    let b = b.to_flat();
+
+    // `Flat` is what says these hold one range per element: the array's own `flat_offsets` asks a
+    // predicate that a list of a *single* element answers `Scalar` to, its two offsets being both
+    // one range and the range of its one element.
     let offsets_a = a.offsets().as_slice();
     let offsets_b = b.offsets().as_slice();
 
     let values_a = a.values();
     let values_b = b.values();
-    assert_eq!(values_a.dtype(), values_b.dtype());
+    assert_eq!(values_a.array_type(), values_b.array_type());
 
-    let dtype = values_b.dtype();
-    let validity = combine_validities_and(a.validity(), b.validity());
+    // A side of a single element is broadcast over the other, and so is its mask: combining the
+    // two as they come would be combining masks of different lengths.
+    let length = a.len().max(b.len());
+    let validity = combine_validities_and(
+        broadcast_validity(a.as_array().validity(), length),
+        broadcast_validity(b.as_array().validity(), length),
+    );
 
-    match dtype {
-        ArrowDataType::Utf8View => {
-            let a = values_a
-                .as_any()
-                .downcast_ref::<Utf8ViewArray>()
-                .unwrap()
-                .to_binview();
-            let b = values_b
-                .as_any()
-                .downcast_ref::<Utf8ViewArray>()
-                .unwrap()
-                .to_binview();
-
-            binary(&a, &b, offsets_a, offsets_b, set_op, validity, true)
-        },
-        ArrowDataType::BinaryView => {
-            let a = values_a.as_any().downcast_ref::<BinaryViewArray>().unwrap();
-            let b = values_b.as_any().downcast_ref::<BinaryViewArray>().unwrap();
-            binary(a, b, offsets_a, offsets_b, set_op, validity, false)
-        },
-        ArrowDataType::Boolean => {
+    match inner_dtype {
+        // The set is taken over the bytes either way; what comes back out is the strings they
+        // were, which is what `as_utf8` says.
+        DataType::String => binary(
+            downcast::<PlUtf8ViewArray>(values_a).as_binview(),
+            downcast::<PlUtf8ViewArray>(values_b).as_binview(),
+            offsets_a,
+            offsets_b,
+            set_op,
+            validity,
+            true,
+        ),
+        DataType::Binary => binary(
+            downcast(values_a),
+            downcast(values_b),
+            offsets_a,
+            offsets_b,
+            set_op,
+            validity,
+            false,
+        ),
+        DataType::Boolean => {
             polars_bail!(InvalidOperation: "boolean type not yet supported in list 'set' operations")
         },
-        _ => {
-            with_match_physical_numeric_type!(DataType::from_arrow_dtype(dtype), |$T| {
-                let a = values_a.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
-                let b = values_b.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
-
-                primitive(&a, &b, offsets_a, offsets_b, set_op, validity)
+        dtype => {
+            with_match_physical_numeric_type!(dtype, |$T| {
+                primitive(
+                    downcast::<PlPrimitiveArray<$T>>(values_a),
+                    downcast::<PlPrimitiveArray<$T>>(values_b),
+                    offsets_a,
+                    offsets_b,
+                    set_op,
+                    validity,
+                )
             })
         },
     }
+}
+
+/// The mask of a side of the operation, over the `length` the result covers.
+fn broadcast_validity(validity: Option<PlBitmapRef<'_>>, length: usize) -> Option<PlBitmapRef<'_>> {
+    let validity = validity?;
+    if validity.len() == length {
+        return Some(validity);
+    }
+
+    debug_assert_eq!(validity.len(), 1, "only a single element is broadcast");
+    let (bitmap, _) = validity.into_inner();
+    Some(PlBitmapRef::new_broadcast(bitmap, length))
+}
+
+/// The array behind a chunk whose type is already known.
+fn downcast<A: 'static>(array: &dyn PlArray) -> &A {
+    array.as_any().downcast_ref::<A>().unwrap()
 }
 
 pub fn list_set_operation(
@@ -405,12 +465,19 @@ pub fn list_set_operation(
     a.prune_empty_chunks();
     b.prune_empty_chunks();
 
+    // A chunk carries no data type of its own, so which kernel the values want is asked of the
+    // column rather than read off the array.
+    let inner_dtype = a.inner_dtype().to_physical();
+
     // we use the unsafe variant because we want to keep the nested logical types type.
     unsafe {
         arity::try_binary_unchecked_same_type(
             &a,
             &b,
-            |a, b| array_set_operation(a, b, set_op).map(|arr| arr.boxed()),
+            |a, b| {
+                array_set_operation(a, b, set_op, &inner_dtype)
+                    .map(|arr| Box::new(arr) as Box<dyn PlArray>)
+            },
             false,
             false,
         )

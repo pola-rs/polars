@@ -1,8 +1,6 @@
-use arrow::array::builder::{ShareStrategy, make_builder};
-use arrow::array::{Array, FixedSizeListArray};
 use arrow::bitmap::BitmapBuilder;
+use polars_array::builder::{PlArrayBuilder, ShareStrategy, builder_like};
 use polars_core::chunked_array::builder::fixed_size_list::get_fixed_size_list_builder;
-use polars_core::prelude::arity::unary_kernel;
 use polars_core::utils::slice_offsets;
 
 use super::min_max::AggType;
@@ -18,6 +16,8 @@ use crate::series::ArgAgg;
 
 pub fn has_inner_nulls(ca: &ArrayChunked) -> bool {
     for arr in ca.downcast_iter() {
+        // The values are what the elements read in either representation, so a null among them is
+        // a null inside an element.
         if arr.values().null_count() > 0 {
             return true;
         }
@@ -26,9 +26,7 @@ pub fn has_inner_nulls(ca: &ArrayChunked) -> bool {
 }
 
 fn get_agg(ca: &ArrayChunked, agg_type: AggType) -> Series {
-    let values = ca.get_inner();
-    let width = ca.width();
-    min_max::array_dispatch(ca.name().clone(), &values, width, agg_type)
+    min_max::array_dispatch(ca, agg_type)
 }
 
 pub trait ArrayNameSpace: AsArray {
@@ -163,48 +161,55 @@ pub trait ArrayNameSpace: AsArray {
     }
 
     fn array_slice(&self, offset: i64, length: i64) -> PolarsResult<Series> {
-        let slice_arr: ArrayChunked = unary_kernel(
-            self.as_array(),
-            move |arr: &FixedSizeListArray| -> FixedSizeListArray {
-                let length: usize = if length < 0 {
-                    (arr.size() as i64 + length).max(0)
-                } else {
-                    length
-                }
-                .try_into()
-                .expect("Length can not be larger than i64::MAX");
-                let (raw_offset, slice_len) = slice_offsets(offset, length, arr.size());
+        let ca = self.as_array();
+        let width = ca.width();
+        let length: usize = if length < 0 {
+            (width as i64 + length).max(0)
+        } else {
+            length
+        }
+        .try_into()
+        .expect("Length can not be larger than i64::MAX");
+        let (raw_offset, slice_len) = slice_offsets(offset, length, width);
 
-                let mut builder = make_builder(arr.values().dtype());
+        let chunks = ca
+            .downcast_iter()
+            .map(|arr| {
+                let values = arr.values();
+
+                // Values holding a single list are the list every element reads, so every row is
+                // sliced out of that one list rather than it being written out per element first.
+                let values_shared = arr.values_are_scalar();
+
+                let mut builder = builder_like(values);
                 builder.reserve(slice_len * arr.len());
-
                 let mut validity = BitmapBuilder::with_capacity(arr.len());
 
-                let values = arr.values().as_ref();
                 for row in 0..arr.len() {
+                    validity.push(arr.is_valid(row));
                     if !arr.is_valid(row) {
-                        validity.push(false);
+                        // A null row still holds a slot per value, undetermined though they are.
+                        builder.extend_nulls(slice_len);
                         continue;
                     }
-                    let inner_offset = row * arr.size() + raw_offset;
+                    let inner_offset = if values_shared { 0 } else { row * width } + raw_offset;
                     builder.subslice_extend(values, inner_offset, slice_len, ShareStrategy::Always);
-                    validity.push(true);
                 }
-                let values = builder.freeze_reset();
-                let sliced_dtype = match arr.dtype() {
-                    ArrowDataType::FixedSizeList(inner, _) => {
-                        ArrowDataType::FixedSizeList(inner.clone(), slice_len)
-                    },
-                    _ => unreachable!(),
-                };
-                FixedSizeListArray::new(
-                    sliced_dtype,
+
+                PlFixedSizeListArray::new(
+                    PlArrayBuilder::freeze(builder),
+                    slice_len,
                     arr.len(),
-                    values,
-                    validity.into_opt_validity(),
+                    validity.into_opt_validity().map(PlBitmap::from_bitmap),
                 )
-            },
-        );
+                .into_boxed()
+            })
+            .collect::<Vec<_>>();
+
+        // The chunks carry no logical type, so the width the slice left is named here.
+        let dtype = DataType::Array(Box::new(ca.inner_dtype().clone()), slice_len);
+        let slice_arr =
+            unsafe { ArrayChunked::from_chunks_and_dtype(ca.name().clone(), chunks, dtype) };
         Ok(slice_arr.into_series())
     }
 }
@@ -244,8 +249,7 @@ fn shift_broadcast_array(
                     } else {
                         shifted
                     };
-                    let arr = shifted.chunks()[0].as_ref();
-                    builder.push_unchecked(arr, 0);
+                    builder.push_unchecked(shifted.chunks()[0].as_ref(), 0);
                 },
                 None => builder.push_null(),
             }

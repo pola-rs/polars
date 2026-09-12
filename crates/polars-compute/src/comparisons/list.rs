@@ -1,264 +1,154 @@
-use arrow::array::{
-    Array, BinaryArray, BinaryViewArray, BooleanArray, DictionaryArray, FixedSizeBinaryArray,
-    ListArray, NullArray, PrimitiveArray, StructArray, Utf8Array, Utf8ViewArray,
-};
-use arrow::bitmap::Bitmap;
-use arrow::legacy::utils::CustomIterTools;
-use arrow::types::{Offset, days_ms, i256, months_days_ns};
-use polars_utils::float16::pf16;
+//! The equality kernels over a [`PlListArray`], whose lengths often settle them.
 
-use super::TotalEqKernel;
+use polars_array::{PlArray, PlBitmap, PlBitmapRef, PlListArray};
 
-macro_rules! compare {
-    (
-        $lhs:expr, $rhs:expr,
-        $op:path, $true_op:expr,
-        $ineq_len_rv:literal, $invalid_rv:literal
-    ) => {{
-        let lhs = $lhs;
-        let rhs = $rhs;
+use super::dyn_array::with_array_pair;
+use super::{PlTotalEqKernel, repeated};
 
-        assert_eq!(lhs.len(), rhs.len());
-        assert_eq!(lhs.dtype(), rhs.dtype());
+/// Compares the lists of `$lhs` against `$rhs`'s, element for element.
+///
+/// `$mismatch` is the bit an element gets when its two lists hold no pair of values to compare at
+/// all — differing in length, or in the type under them — and it is what turns equality into
+/// inequality: the answer for a pair that *does* compare is flipped by it in turn.
+///
+/// The values of both sides are downcast once, ahead of the walk over the elements: an element is
+/// then a slice of a concrete array, which is a clone of its buffers and nothing more. Reading it
+/// as a `&dyn PlArray` instead costs a box and a dispatch of its own, once per element.
+macro_rules! compare_values {
+    ($lhs:expr, $rhs:expr, $mismatch:expr $(,)?) => {{
+        let (lhs, rhs, mismatch) = ($lhs, $rhs, $mismatch);
+        let length = lhs.len();
 
-        macro_rules! call_binary {
-            ($T:ty) => {{
-                let lhs_values: &$T = $lhs.values().as_any().downcast_ref().unwrap();
-                let rhs_values: &$T = $rhs.values().as_any().downcast_ref().unwrap();
+        // Lists of different value types hold no pair of values to compare.
+        if lhs.values().array_type() != rhs.values().array_type() {
+            repeated(mismatch, length)
+        } else {
+            with_array_pair!(lhs.values(), rhs.values(), |lhs_values, rhs_values| {
+                // The bit an element gets from the ranges of the values its two lists cover.
+                let element = |l: std::ops::Range<usize>, r: std::ops::Range<usize>| {
+                    // Lists of different lengths hold no pair of values to compare.
+                    if l.len() != r.len() {
+                        return mismatch;
+                    }
+                    // Two empty lists are the same list, whatever the value type under them.
+                    if l.is_empty() {
+                        return !mismatch;
+                    }
 
-                (0..$lhs.len())
-                    .map(|i| {
-                        let lval = $lhs.validity().is_none_or(|v| v.get(i).unwrap());
-                        let rval = $rhs.validity().is_none_or(|v| v.get(i).unwrap());
+                    // SAFETY: the offsets of a list array are ordered and bounded by the length
+                    // of its values, so every range they hold is in bounds of them.
+                    let (l, r) = unsafe {
+                        (
+                            lhs_values.sliced_unchecked(l.start, l.len()),
+                            rhs_values.sliced_unchecked(r.start, r.len()),
+                        )
+                    };
 
-                        if !lval || !rval {
-                            return $invalid_rv;
-                        }
+                    // The two lists answer with the one bit the caller wants, so nothing is
+                    // written out per element — see `PlTotalEqKernel::tot_eq_missing_all`.
+                    PlTotalEqKernel::tot_eq_missing_all(&l, &r) != mismatch
+                };
 
-                        // SAFETY: ListArray's invariant offsets.len_proxy() == len
-                        let (lstart, lend) = unsafe { $lhs.offsets().start_end_unchecked(i) };
-                        let (rstart, rend) = unsafe { $rhs.offsets().start_end_unchecked(i) };
+                // Both sides hold the one range every element of them covers, and neither is null
+                // anywhere, so comparing those two lists once answers for every element: a single
+                // bit stands for all of them and none is written out.
+                if let (Some(l), Some(r)) = (lhs.scalar_offsets(), rhs.scalar_offsets())
+                    && lhs.null_count() == 0
+                    && rhs.null_count() == 0
+                {
+                    return repeated(element(l, r), length);
+                }
 
-                        if lend - lstart != rend - rstart {
-                            return $ineq_len_rv;
-                        }
+                PlBitmap::from_iter((0..length).map(|i| {
+                    // A null element has no list to read; the missing-aware kernel answers for it.
+                    if lhs.is_null(i) || rhs.is_null(i) {
+                        return !mismatch;
+                    }
 
-                        let mut lhs_values = lhs_values.clone();
-                        lhs_values.slice(lstart, lend - lstart);
-                        let mut rhs_values = rhs_values.clone();
-                        rhs_values.slice(rstart, rend - rstart);
+                    // SAFETY: `i` is below the length both arrays share.
+                    let (l, r) =
+                        unsafe { (lhs.value_range_unchecked(i), rhs.value_range_unchecked(i)) };
 
-                        $true_op($op(&lhs_values, &rhs_values))
-                    })
-                    .collect_trusted()
-            }};
-        }
-
-        use arrow::datatypes::{IntegerType as I, PhysicalType as PH, PrimitiveType as PR};
-        match lhs.values().dtype().to_physical_type() {
-            PH::Boolean => call_binary!(BooleanArray),
-            PH::BinaryView => call_binary!(BinaryViewArray),
-            PH::Utf8View => call_binary!(Utf8ViewArray),
-            PH::Primitive(PR::Int8) => call_binary!(PrimitiveArray<i8>),
-            PH::Primitive(PR::Int16) => call_binary!(PrimitiveArray<i16>),
-            PH::Primitive(PR::Int32) => call_binary!(PrimitiveArray<i32>),
-            PH::Primitive(PR::Int64) => call_binary!(PrimitiveArray<i64>),
-            PH::Primitive(PR::Int128) => call_binary!(PrimitiveArray<i128>),
-            PH::Primitive(PR::UInt8) => call_binary!(PrimitiveArray<u8>),
-            PH::Primitive(PR::UInt16) => call_binary!(PrimitiveArray<u16>),
-            PH::Primitive(PR::UInt32) => call_binary!(PrimitiveArray<u32>),
-            PH::Primitive(PR::UInt64) => call_binary!(PrimitiveArray<u64>),
-            PH::Primitive(PR::UInt128) => call_binary!(PrimitiveArray<u128>),
-            PH::Primitive(PR::Float16) => call_binary!(PrimitiveArray<pf16>),
-            PH::Primitive(PR::Float32) => call_binary!(PrimitiveArray<f32>),
-            PH::Primitive(PR::Float64) => call_binary!(PrimitiveArray<f64>),
-            PH::Primitive(PR::Int256) => call_binary!(PrimitiveArray<i256>),
-            PH::Primitive(PR::DaysMs) => call_binary!(PrimitiveArray<days_ms>),
-            PH::Primitive(PR::MonthDayNano) => {
-                call_binary!(PrimitiveArray<months_days_ns>)
-            },
-            PH::Primitive(PR::MonthDayMillis) => unimplemented!(),
-
-            #[cfg(feature = "dtype-array")]
-            PH::FixedSizeList => call_binary!(arrow::array::FixedSizeListArray),
-            #[cfg(not(feature = "dtype-array"))]
-            PH::FixedSizeList => todo!(
-                "Comparison of FixedSizeListArray is not supported without dtype-array feature"
-            ),
-
-            PH::Null => call_binary!(NullArray),
-            PH::FixedSizeBinary => call_binary!(FixedSizeBinaryArray),
-            PH::Binary => call_binary!(BinaryArray<i32>),
-            PH::LargeBinary => call_binary!(BinaryArray<i64>),
-            PH::Utf8 => call_binary!(Utf8Array<i32>),
-            PH::LargeUtf8 => call_binary!(Utf8Array<i64>),
-            PH::List => call_binary!(ListArray<i32>),
-            PH::LargeList => call_binary!(ListArray<i64>),
-            PH::Struct => call_binary!(StructArray),
-            PH::Union => todo!("Comparison of UnionArrays is not yet supported"),
-            PH::Map => todo!("Comparison of MapArrays is not yet supported"),
-            PH::Dictionary(I::Int8) => call_binary!(DictionaryArray<i8>),
-            PH::Dictionary(I::Int16) => call_binary!(DictionaryArray<i16>),
-            PH::Dictionary(I::Int32) => call_binary!(DictionaryArray<i32>),
-            PH::Dictionary(I::Int64) => call_binary!(DictionaryArray<i64>),
-            PH::Dictionary(I::Int128) => call_binary!(DictionaryArray<i128>),
-            PH::Dictionary(I::UInt8) => call_binary!(DictionaryArray<u8>),
-            PH::Dictionary(I::UInt16) => call_binary!(DictionaryArray<u16>),
-            PH::Dictionary(I::UInt32) => call_binary!(DictionaryArray<u32>),
-            PH::Dictionary(I::UInt64) => call_binary!(DictionaryArray<u64>),
-            PH::Dictionary(I::UInt128) => call_binary!(DictionaryArray<u128>),
+                    element(l, r)
+                }))
+            })
         }
     }};
 }
 
-macro_rules! compare_broadcast {
-    (
-        $lhs:expr, $rhs:expr,
-        $offsets:expr, $validity:expr,
-        $op:path, $true_op:expr,
-        $ineq_len_rv:literal, $invalid_rv:literal
-    ) => {{
-        let lhs = $lhs;
-        let rhs = $rhs;
+/// Compares the lists of `$lhs` against the single list `$rhs`, per [`compare_values`].
+macro_rules! compare_scalar {
+    ($lhs:expr, $rhs:expr, $mismatch:expr $(,)?) => {{
+        let (lhs, rhs, mismatch) = ($lhs, $rhs, $mismatch);
+        let length = lhs.len();
 
-        macro_rules! call_binary {
-            ($T:ty) => {{
-                let values: &$T = $lhs.as_any().downcast_ref().unwrap();
-                let scalar: &$T = $rhs.as_any().downcast_ref().unwrap();
+        // Lists of different value types hold no pair of values to compare.
+        if lhs.values().array_type() != rhs.array_type() {
+            repeated(mismatch, length)
+        } else {
+            with_array_pair!(lhs.values(), rhs, |lhs_values, rhs_values| {
+                let width = rhs_values.len();
 
-                let length = $offsets.len_proxy();
+                // The bit an element gets from the range of the values its list covers, against
+                // the single list on the other side.
+                let element = |l: std::ops::Range<usize>| {
+                    if l.len() != width {
+                        return mismatch;
+                    }
+                    if l.is_empty() {
+                        return !mismatch;
+                    }
 
-                (0..length)
-                    .map(move |i| {
-                        let v = $validity.is_none_or(|v| v.get(i).unwrap());
+                    // SAFETY: as in `compare_values`.
+                    let l = unsafe { lhs_values.sliced_unchecked(l.start, l.len()) };
 
-                        if !v {
-                            return $invalid_rv;
-                        }
+                    // As in `compare_values`: the one bit, not a mask to read it off.
+                    PlTotalEqKernel::tot_eq_missing_all(&l, rhs_values) != mismatch
+                };
 
-                        let (start, end) = unsafe { $offsets.start_end_unchecked(i) };
+                // Every element covers the one range the offsets hold and none of them is null,
+                // so the one comparison against the scalar answers for all of them.
+                if let Some(l) = lhs.scalar_offsets()
+                    && lhs.null_count() == 0
+                {
+                    return repeated(element(l), length);
+                }
 
-                        if end - start != scalar.len() {
-                            return $ineq_len_rv;
-                        }
+                PlBitmap::from_iter((0..length).map(|i| {
+                    if lhs.is_null(i) {
+                        return !mismatch;
+                    }
 
-                        // @TODO: I feel like there is a better way to do this.
-                        let mut values: $T = values.clone();
-                        <$T>::slice(&mut values, start, end - start);
-
-                        $true_op($op(&values, scalar))
-                    })
-                    .collect_trusted()
-            }};
-        }
-
-        assert_eq!(lhs.dtype(), rhs.dtype());
-
-        use arrow::datatypes::{IntegerType as I, PhysicalType as PH, PrimitiveType as PR};
-        match lhs.dtype().to_physical_type() {
-            PH::Boolean => call_binary!(BooleanArray),
-            PH::BinaryView => call_binary!(BinaryViewArray),
-            PH::Utf8View => call_binary!(Utf8ViewArray),
-            PH::Primitive(PR::Int8) => call_binary!(PrimitiveArray<i8>),
-            PH::Primitive(PR::Int16) => call_binary!(PrimitiveArray<i16>),
-            PH::Primitive(PR::Int32) => call_binary!(PrimitiveArray<i32>),
-            PH::Primitive(PR::Int64) => call_binary!(PrimitiveArray<i64>),
-            PH::Primitive(PR::Int128) => call_binary!(PrimitiveArray<i128>),
-            PH::Primitive(PR::UInt8) => call_binary!(PrimitiveArray<u8>),
-            PH::Primitive(PR::UInt16) => call_binary!(PrimitiveArray<u16>),
-            PH::Primitive(PR::UInt32) => call_binary!(PrimitiveArray<u32>),
-            PH::Primitive(PR::UInt64) => call_binary!(PrimitiveArray<u64>),
-            PH::Primitive(PR::UInt128) => call_binary!(PrimitiveArray<u128>),
-            PH::Primitive(PR::Float16) => call_binary!(PrimitiveArray<pf16>),
-            PH::Primitive(PR::Float32) => call_binary!(PrimitiveArray<f32>),
-            PH::Primitive(PR::Float64) => call_binary!(PrimitiveArray<f64>),
-            PH::Primitive(PR::Int256) => call_binary!(PrimitiveArray<i256>),
-            PH::Primitive(PR::DaysMs) => call_binary!(PrimitiveArray<days_ms>),
-            PH::Primitive(PR::MonthDayNano) => {
-                call_binary!(PrimitiveArray<months_days_ns>)
-            },
-            PH::Primitive(PR::MonthDayMillis) => unimplemented!(),
-
-            #[cfg(feature = "dtype-array")]
-            PH::FixedSizeList => call_binary!(arrow::array::FixedSizeListArray),
-            #[cfg(not(feature = "dtype-array"))]
-            PH::FixedSizeList => todo!(
-                "Comparison of FixedSizeListArray is not supported without dtype-array feature"
-            ),
-
-            PH::Null => call_binary!(NullArray),
-            PH::FixedSizeBinary => call_binary!(FixedSizeBinaryArray),
-            PH::Binary => call_binary!(BinaryArray<i32>),
-            PH::LargeBinary => call_binary!(BinaryArray<i64>),
-            PH::Utf8 => call_binary!(Utf8Array<i32>),
-            PH::LargeUtf8 => call_binary!(Utf8Array<i64>),
-            PH::List => call_binary!(ListArray<i32>),
-            PH::LargeList => call_binary!(ListArray<i64>),
-            PH::Struct => call_binary!(StructArray),
-            PH::Union => todo!("Comparison of UnionArrays is not yet supported"),
-            PH::Map => todo!("Comparison of MapArrays is not yet supported"),
-            PH::Dictionary(I::Int8) => call_binary!(DictionaryArray<i8>),
-            PH::Dictionary(I::Int16) => call_binary!(DictionaryArray<i16>),
-            PH::Dictionary(I::Int32) => call_binary!(DictionaryArray<i32>),
-            PH::Dictionary(I::Int64) => call_binary!(DictionaryArray<i64>),
-            PH::Dictionary(I::Int128) => call_binary!(DictionaryArray<i128>),
-            PH::Dictionary(I::UInt8) => call_binary!(DictionaryArray<u8>),
-            PH::Dictionary(I::UInt16) => call_binary!(DictionaryArray<u16>),
-            PH::Dictionary(I::UInt32) => call_binary!(DictionaryArray<u32>),
-            PH::Dictionary(I::UInt64) => call_binary!(DictionaryArray<u64>),
-            PH::Dictionary(I::UInt128) => call_binary!(DictionaryArray<u128>),
+                    // SAFETY: `i` is below the length of `lhs`.
+                    element(unsafe { lhs.value_range_unchecked(i) })
+                }))
+            })
         }
     }};
 }
 
-impl<O: Offset> TotalEqKernel for ListArray<O> {
-    type Scalar = Box<dyn Array>;
+impl PlTotalEqKernel for PlListArray {
+    type Scalar = Box<dyn PlArray>;
 
-    fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
-        compare!(
-            self,
-            other,
-            TotalEqKernel::tot_eq_missing_kernel,
-            |bm: Bitmap| bm.unset_bits() == 0,
-            false,
-            true
-        )
+    fn validity_mask(&self) -> Option<PlBitmapRef<'_>> {
+        self.validity()
     }
 
-    fn tot_ne_kernel(&self, other: &Self) -> Bitmap {
-        compare!(
-            self,
-            other,
-            TotalEqKernel::tot_ne_missing_kernel,
-            |bm: Bitmap| bm.set_bits() > 0,
-            true,
-            false
-        )
+    fn tot_eq_kernel(&self, other: &Self) -> PlBitmap {
+        assert_eq!(self.len(), other.len());
+        compare_values!(self, other, false)
     }
 
-    fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        compare_broadcast!(
-            self.values().as_ref(),
-            other.as_ref(),
-            self.offsets(),
-            self.validity(),
-            TotalEqKernel::tot_eq_missing_kernel,
-            |bm: Bitmap| bm.unset_bits() == 0,
-            false,
-            true
-        )
+    fn tot_ne_kernel(&self, other: &Self) -> PlBitmap {
+        assert_eq!(self.len(), other.len());
+        compare_values!(self, other, true)
     }
 
-    fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        compare_broadcast!(
-            self.values().as_ref(),
-            other.as_ref(),
-            self.offsets(),
-            self.validity(),
-            TotalEqKernel::tot_ne_missing_kernel,
-            |bm: Bitmap| bm.set_bits() > 0,
-            true,
-            false
-        )
+    fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
+        compare_scalar!(self, &**other, false)
+    }
+
+    fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
+        compare_scalar!(self, &**other, true)
     }
 }

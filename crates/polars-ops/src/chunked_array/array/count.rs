@@ -1,8 +1,5 @@
-use arrow::array::{Array, BooleanArray};
-use arrow::bitmap::Bitmap;
 use arrow::bitmap::utils::count_zeros;
 use arrow::legacy::utils::CustomIterTools;
-use polars_core::prelude::arity::unary_mut_with_options;
 
 use super::*;
 
@@ -18,23 +15,44 @@ pub fn array_count_matches(ca: &ArrayChunked, value: AnyValue) -> PolarsResult<S
 }
 
 pub(super) fn count_boolean_bits(ca: &ArrayChunked) -> IdxCa {
-    unary_mut_with_options(ca, |arr| {
-        let inner_arr = arr.values();
-        let mask = inner_arr.as_any().downcast_ref::<BooleanArray>().unwrap();
+    let chunks = ca.downcast_iter().map(|arr| {
+        let mask = arr
+            .values()
+            .as_any()
+            .downcast_ref::<PlBooleanArray>()
+            .unwrap();
         assert_eq!(mask.null_count(), 0);
-        let out = count_bits_set(mask.values(), arr.len(), arr.size());
-        IdxArr::from_data_default(out.into(), arr.validity().cloned())
-    })
+        // One count per element, and the mask of the array holds one bit per element as well.
+        let validity = arr.validity().map(PlBitmap::from);
+
+        // Every element reads the values of the one element the chunk repeats, so they all
+        // count the same: it is counted once, over that element's width, rather than the
+        // elements being laid end to end first.
+        if arr.values_are_scalar() {
+            let [count] = count_bits_set(mask.values(), 1, arr.width())[..] else {
+                unreachable!("one element was counted over")
+            };
+            return PlPrimitiveArray::new_scalar(count, arr.len()).with_validity(validity);
+        }
+
+        let out = count_bits_set(mask.values(), arr.len(), arr.width());
+        PlPrimitiveArray::from_vec(out).with_validity(validity)
+    });
+    IdxCa::from_chunk_iter(ca.name().clone(), chunks)
 }
 
-fn count_bits_set(values: &Bitmap, len: usize, width: usize) -> Vec<IdxSize> {
-    // Fast path where all bits are either set or unset.
+fn count_bits_set(values: PlBitmapRef<'_>, len: usize, width: usize) -> Vec<IdxSize> {
+    // Fast path where all bits are either set or unset, which is every scalar values buffer: the
+    // one bit it holds stands for every value, and settles every count without being written out.
     if values.unset_bits() == values.len() {
         return vec![0 as IdxSize; len];
     } else if values.unset_bits() == 0 {
         return vec![width as IdxSize; len];
     }
 
+    // A scalar mask is all set or all unset, so what is left here already holds one bit per
+    // value: this borrows it rather than writing anything out.
+    let values = values.to_flat();
     let (bits, bitmap_offset, _) = values.as_slice();
 
     (0..len)

@@ -1,18 +1,19 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
+use polars_array::PlBitmap;
+#[cfg(feature = "moment")]
+use polars_array::PlPrimitiveArray;
 use polars_compute::rolling::QuantileMethod;
-use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
+use polars_compute::unique::{AmortizedUnique, amortized_unique_like};
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
-    AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, Float64Chunked, GroupPositions,
-    GroupsType, IDX_DTYPE, IntoColumn,
+    AnyValue, BooleanChunked, ChunkCast, Column, Float64Chunked, GroupPositions, GroupsType,
+    IDX_DTYPE, IntoColumn,
 };
 use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
@@ -101,7 +102,9 @@ pub fn null_count<'a>(
     };
 
     RAYON.install(|| {
-        let validity = BitMask::from_bitmap(&validity);
+        // The groups are read one bit at a time, so the mask is written out once here.
+        let flat = validity.as_ref().to_flat();
+        let validity = BitMask::from_bitmap(&flat);
         let null_count: Vec<IdxSize> = match &**ac.groups.as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()
@@ -154,7 +157,9 @@ pub fn has_nulls<'a>(
     };
 
     RAYON.install(|| {
-        let validity = BitMask::from_bitmap(&validity);
+        // The groups are read one bit at a time, so the mask is written out once here.
+        let flat = validity.as_ref().to_flat();
+        let validity = BitMask::from_bitmap(&flat);
         let has_nulls: BooleanChunked = match &**ac.groups.as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()
@@ -355,7 +360,7 @@ pub fn bitwise_xor<'a>(
 
 pub fn drop_items<'a>(
     mut ac: AggregationContext<'a>,
-    predicate: &Bitmap,
+    predicate: &PlBitmap,
 ) -> PolarsResult<AggregationContext<'a>> {
     // No elements are filtered out.
     if predicate.unset_bits() == 0 {
@@ -407,6 +412,11 @@ pub fn drop_items<'a>(
     }
 
     ac.groups();
+    // Both branches above returned for a mask that says the same of every element, so what is
+    // left holds one bit per element and is indexed flatly below.
+    let predicate = predicate
+        .flat_bitmap()
+        .expect("a mask that is neither all set nor all unset holds one bit per element");
     let predicate = BitMask::from_bitmap(predicate);
     RAYON.install(|| {
         let positions = GroupsType::Idx(match &**ac.groups.as_ref() {
@@ -473,15 +483,19 @@ pub fn drop_nans<'a>(
     assert_eq!(inputs.len(), 1);
     let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
     ac.groups();
-    let predicate = if ac.agg_state().flat_dtype().is_float() {
+    let predicate = {
         let values = ac.flat_naive();
-        let mut values = values.is_nan().unwrap();
-        values.rechunk_mut();
-        values.downcast_as_array().values().clone()
-    } else {
-        Bitmap::new_with_value(false, 1)
+        let is_nan = if ac.agg_state().flat_dtype().is_float() {
+            let mut is_nan = values.is_nan().unwrap();
+            is_nan.rechunk_mut();
+            PlBitmap::from(is_nan.downcast_as_array().values())
+        } else {
+            // Nothing is a NaN, which is the one bit a scalar mask holds.
+            PlBitmap::new_scalar(false, values.len())
+        };
+        // What is kept is what is not a NaN; a scalar mask inverts as the single bit it holds.
+        is_nan.not()
     };
-    let predicate = !&predicate;
     drop_items(ac, &predicate)
 }
 
@@ -494,12 +508,13 @@ pub fn drop_nulls<'a>(
     assert_eq!(inputs.len(), 1);
     let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
     ac.groups();
-    let predicate = ac.flat_naive().as_ref().clone();
-    let predicate = predicate.rechunk_to_arrow(CompatLevel::newest());
-    let predicate = predicate
-        .validity()
-        .cloned()
-        .unwrap_or(Bitmap::new_with_value(true, 1));
+    let values = ac.flat_naive().as_ref().clone();
+    // Only the mask is wanted, which the series answers without its values being rechunked into
+    // an Arrow array to read it off.
+    let predicate = values
+        .rechunk_validity()
+        // No mask means nothing is null, which is the one bit a scalar mask holds.
+        .unwrap_or_else(|| PlBitmap::new_scalar(true, values.len()));
     drop_items(ac, &predicate)
 }
 
@@ -560,7 +575,7 @@ pub fn moment_agg<'a, S: Default>(
     state: &ExecutionState,
 
     insert_one: impl Fn(&mut S, f64) + Send + Sync,
-    new_from_slice: impl Fn(&PrimitiveArray<f64>, usize, usize) -> S + Send + Sync,
+    new_from_slice: impl Fn(&PlPrimitiveArray<f64>, usize, usize) -> S + Send + Sync,
     finalize: impl Fn(S) -> Option<f64> + Send + Sync,
 ) -> PolarsResult<AggregationContext<'a>> {
     assert_eq!(inputs.len(), 1);
@@ -593,28 +608,48 @@ pub fn moment_agg<'a, S: Default>(
 
     let ca = RAYON.install(|| match &**ac.groups.as_ref() {
         GroupsType::Idx(idx) => {
-            if let Some(validity) = arr.validity().filter(|v| v.unset_bits() > 0) {
-                idx.into_par_iter()
-                    .map(|(_, idx)| {
-                        let mut state = S::default();
-                        for &i in idx.iter() {
-                            if unsafe { validity.get_bit_unchecked(i as usize) } {
-                                insert_one(&mut state, arr.values()[i as usize]);
-                            }
-                        }
-                        finalize(state)
-                    })
-                    .collect::<Float64Chunked>()
-            } else {
-                idx.into_par_iter()
-                    .map(|(_, idx)| {
-                        let mut state = S::default();
-                        for &i in idx.iter() {
-                            insert_one(&mut state, arr.values()[i as usize]);
-                        }
-                        finalize(state)
-                    })
-                    .collect::<Float64Chunked>()
+            // A group's elements lie at arbitrary positions, so the representation is resolved
+            // once here rather than at every one of them: a chunk that repeats a single value
+            // folds that value in per element without the buffer ever being written out, and one
+            // that holds a slot each is read as the slice it is.
+            macro_rules! fold_groups {
+                ($value_at:expr) => {{
+                    let value_at = $value_at;
+
+                    match arr.validity().filter(|v| v.unset_bits() > 0) {
+                        Some(validity) => idx
+                            .into_par_iter()
+                            .map(|(_, idx)| {
+                                let mut state = S::default();
+                                for &i in idx.iter() {
+                                    // SAFETY: a group names elements of the chunk it groups.
+                                    if unsafe { validity.get_unchecked(i as usize) } {
+                                        insert_one(&mut state, value_at(i as usize));
+                                    }
+                                }
+                                finalize(state)
+                            })
+                            .collect::<Float64Chunked>(),
+                        None => idx
+                            .into_par_iter()
+                            .map(|(_, idx)| {
+                                let mut state = S::default();
+                                for &i in idx.iter() {
+                                    insert_one(&mut state, value_at(i as usize));
+                                }
+                                finalize(state)
+                            })
+                            .collect::<Float64Chunked>(),
+                    }
+                }};
+            }
+
+            match arr.scalar_value_ignore_validity() {
+                Some(value) => fold_groups!(|_: usize| value),
+                None => {
+                    let values = arr.flat_values().expect("the values are not repeated");
+                    fold_groups!(|i: usize| values[i])
+                },
             }
         },
         GroupsType::Slice {
@@ -707,9 +742,12 @@ pub fn unique<'a>(
         values
     };
 
-    let values = values.rechunk_to_arrow(CompatLevel::newest());
-    let values = values.as_ref();
-    let state = amortized_unique_from_dtype(values.dtype());
+    // The state is picked from the chunk it then walks, so the representation of that chunk is
+    // resolved once here rather than once per group — and a chunk that repeats one value is not
+    // written out to be walked at all.
+    let values = values.as_materialized_series().rechunk();
+    let values = &*values.chunks()[0];
+    let state = amortized_unique_like(values);
 
     struct CloneWrapper(Box<dyn AmortizedUnique>);
     impl Clone for CloneWrapper {
@@ -775,7 +813,9 @@ fn fw_bw_fill_null<'a>(
         return Ok(ac);
     };
 
-    let validity = BitMask::from_bitmap(&validity);
+    // The groups are read one bit at a time, so the mask is written out once here.
+    let flat = validity.as_ref().to_flat();
+    let validity = BitMask::from_bitmap(&flat);
     RAYON.install(|| {
         let positions = GroupsType::Idx(match &**ac.groups().as_ref() {
             GroupsType::Idx(idx) => idx

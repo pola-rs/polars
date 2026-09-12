@@ -1,7 +1,7 @@
 #![allow(clippy::unnecessary_cast)] // Clippy doesn't recognize that IdxSize and u64 can be different.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use arrow::array::{Array, View};
+use arrow::array::View;
 use polars_buffer::Buffer;
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
 use polars_utils::idx_vec::UnitVec;
@@ -68,13 +68,12 @@ impl BinviewKeyIdxTable {
     /// # Safety
     /// The views must be valid for the buffers.
     unsafe fn probe_impl<
-        'a,
         const MARK_MATCHES: bool,
         const EMIT_UNMATCHED: bool,
         const NULL_IS_VALID: bool,
     >(
         &self,
-        keys: impl Iterator<Item = (IdxSize, u64, Option<&'a View>)>,
+        keys: impl Iterator<Item = (IdxSize, u64, Option<View>)>,
         buffers: &[Buffer<u8>],
         table_match: &mut Vec<IdxSize>,
         probe_match: &mut Vec<IdxSize>,
@@ -86,7 +85,7 @@ impl BinviewKeyIdxTable {
                 self.probe_one::<MARK_MATCHES>(
                     key_idx,
                     hash,
-                    key,
+                    &key,
                     buffers,
                     table_match,
                     probe_match,
@@ -120,9 +119,9 @@ impl BinviewKeyIdxTable {
     /// # Safety
     /// The views must be valid for the buffers.
     #[allow(clippy::too_many_arguments)]
-    unsafe fn probe_dispatch<'a>(
+    unsafe fn probe_dispatch(
         &self,
-        keys: impl Iterator<Item = (IdxSize, u64, Option<&'a View>)>,
+        keys: impl Iterator<Item = (IdxSize, u64, Option<View>)>,
         buffers: &[Buffer<u8>],
         table_match: &mut Vec<IdxSize>,
         probe_match: &mut Vec<IdxSize>,
@@ -213,14 +212,16 @@ impl IdxTable for BinviewKeyIdxTable {
 
         unsafe {
             let buffers = hash_keys.keys.data_buffers();
-            let views = hash_keys.keys.views();
+            // The getter resolves the index against the buffer, so a scalar chunk hands back the
+            // one view every element reads rather than being indexed past its single slot.
+            let view_at = |idx: usize| hash_keys.keys.view_unchecked(idx);
             if let Some(validity) = hash_keys.keys.validity() {
                 for (i, subset_idx) in subset.iter().enumerate_idx() {
                     let hash = hash_keys.hashes.value_unchecked(*subset_idx as usize);
-                    let key = views.get_unchecked(*subset_idx as usize);
+                    let key = view_at(*subset_idx as usize);
                     let idx = self.idx_offset + i;
-                    if validity.get_bit_unchecked(*subset_idx as usize) {
-                        match self.idx_map.entry_view(hash, *key, buffers) {
+                    if validity.get_unchecked(*subset_idx as usize) {
+                        match self.idx_map.entry_view(hash, key, buffers) {
                             Entry::Occupied(o) => {
                                 o.into_mut().push(RelaxedCell::from(idx as u64));
                             },
@@ -235,9 +236,9 @@ impl IdxTable for BinviewKeyIdxTable {
             } else {
                 for (i, subset_idx) in subset.iter().enumerate_idx() {
                     let hash = hash_keys.hashes.value_unchecked(*subset_idx as usize);
-                    let key = views.get_unchecked(*subset_idx as usize);
+                    let key = view_at(*subset_idx as usize);
                     let idx = self.idx_offset + i;
-                    match self.idx_map.entry_view(hash, *key, buffers) {
+                    match self.idx_map.entry_view(hash, key, buffers) {
                         Entry::Occupied(o) => {
                             o.into_mut().push(RelaxedCell::from(idx as u64));
                         },
@@ -281,14 +282,16 @@ impl IdxTable for BinviewKeyIdxTable {
 
         unsafe {
             let buffers = hash_keys.keys.data_buffers();
-            let views = hash_keys.keys.views();
+            // The getter resolves the index against the buffer, so a scalar chunk hands back the
+            // one view every element reads rather than being indexed past its single slot.
+            let view_at = |idx: usize| hash_keys.keys.view_unchecked(idx);
             if let Some(validity) = hash_keys.keys.validity() {
                 let iter = subset.iter().map(|i| {
                     (
                         *i,
                         hash_keys.hashes.value_unchecked(*i as usize),
-                        if validity.get_bit_unchecked(*i as usize) {
-                            Some(views.get_unchecked(*i as usize))
+                        if validity.get_unchecked(*i as usize) {
+                            Some(view_at(*i as usize))
                         } else {
                             None
                         },
@@ -309,7 +312,7 @@ impl IdxTable for BinviewKeyIdxTable {
                     (
                         *i,
                         hash_keys.hashes.value_unchecked(*i as usize),
-                        Some(views.get_unchecked(*i as usize)),
+                        Some(view_at(*i as usize)),
                     )
                 });
                 self.probe_dispatch(

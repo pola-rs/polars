@@ -1,6 +1,5 @@
 use std::hash::Hash;
 
-use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
@@ -8,6 +7,8 @@ use polars_core::series::BitRepr;
 use polars_core::utils::NoNull;
 use polars_core::with_match_physical_float_polars_type;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
+
+use super::distinct::{only, repeated_element_len, repeated_element_len_series};
 
 pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
     // fast path.
@@ -72,6 +73,11 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
 }
 
 fn is_last_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
+    // The last element of a chunk that repeats a single one is the only one distinct in it.
+    if let Some(length) = repeated_element_len(ca) {
+        return only(ca.name().clone(), length, length - 1);
+    }
+
     let mut out = MutableBitmap::with_capacity(ca.len());
     out.extend_constant(ca.len(), false);
 
@@ -112,11 +118,15 @@ fn is_last_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
             });
     }
 
-    let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    BooleanChunked::with_chunk(ca.name().clone(), arr)
+    BooleanChunked::from_bitmap(ca.name().clone(), out.into())
 }
 
 fn is_last_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
+    // The last element of a chunk that repeats a single one is the only one distinct in it.
+    if let Some(length) = repeated_element_len(ca) {
+        return only(ca.name().clone(), length, length - 1);
+    }
+
     let tmp = ca.rechunk();
     let arr = tmp.downcast_as_array();
     let mut unique = PlHashSet::new();
@@ -134,6 +144,11 @@ where
     T::Native: TotalHash + TotalEq + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
+    // The last element of a chunk that repeats a single one is the only one distinct in it.
+    if let Some(length) = repeated_element_len(ca) {
+        return only(ca.name().clone(), length, length - 1);
+    }
+
     let tmp = ca.rechunk();
     let arr = tmp.downcast_as_array();
     let mut unique = PlHashSet::new();
@@ -146,6 +161,12 @@ where
 }
 
 fn is_last_distinct_by_groups(s: &Series) -> PolarsResult<BooleanChunked> {
+    // As in `is_first_distinct_by_groups`: the last element of a chunk that repeats a single one
+    // is the only one distinct in it, without a row of it being encoded or hashed.
+    if let Some(length) = repeated_element_len_series(s) {
+        return Ok(only(s.name().clone(), length, length - 1));
+    }
+
     let groups = s.group_tuples(true, false)?;
     // SAFETY: all groups have at least a single member
     let last = unsafe { groups.take_group_lasts() };
@@ -157,6 +178,5 @@ fn is_last_distinct_by_groups(s: &Series) -> PolarsResult<BooleanChunked> {
         unsafe { out.set_unchecked(idx as usize, true) }
     }
 
-    let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    Ok(BooleanChunked::with_chunk(s.name().clone(), arr))
+    Ok(BooleanChunked::from_bitmap(s.name().clone(), out.into()))
 }

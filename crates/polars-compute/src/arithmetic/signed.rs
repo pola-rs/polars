@@ -1,9 +1,9 @@
-use arrow::array::{PrimitiveArray as PArr, StaticArray};
 use arrow::compute::utils::{combine_validities_and, combine_validities_and3};
+use polars_array::PlBitmap;
 use polars_utils::floor_divmod::FloorDivMod;
 use strength_reduce::*;
 
-use super::PrimitiveArithmeticKernelImpl;
+use super::{PArr, POut, PrimitiveArithmeticKernelImpl};
 use crate::arity::{prim_binary_values, prim_unary_values};
 use crate::comparisons::TotalEqKernel;
 
@@ -12,27 +12,27 @@ macro_rules! impl_signed_arith_kernel {
         impl PrimitiveArithmeticKernelImpl for $T {
             type TrueDivT = f64;
 
-            fn prim_wrapping_abs(lhs: PArr<$T>) -> PArr<$T> {
+            fn prim_wrapping_abs(lhs: PArr<$T>) -> POut<$T> {
                 prim_unary_values(lhs, |x| x.wrapping_abs())
             }
 
-            fn prim_wrapping_neg(lhs: PArr<$T>) -> PArr<$T> {
+            fn prim_wrapping_neg(lhs: PArr<$T>) -> POut<$T> {
                 prim_unary_values(lhs, |x| x.wrapping_neg())
             }
 
-            fn prim_wrapping_add(lhs: PArr<$T>, other: PArr<$T>) -> PArr<$T> {
+            fn prim_wrapping_add(lhs: PArr<$T>, other: PArr<$T>) -> POut<$T> {
                 prim_binary_values(lhs, other, |a, b| a.wrapping_add(b))
             }
 
-            fn prim_wrapping_sub(lhs: PArr<$T>, other: PArr<$T>) -> PArr<$T> {
+            fn prim_wrapping_sub(lhs: PArr<$T>, other: PArr<$T>) -> POut<$T> {
                 prim_binary_values(lhs, other, |a, b| a.wrapping_sub(b))
             }
 
-            fn prim_wrapping_mul(lhs: PArr<$T>, other: PArr<$T>) -> PArr<$T> {
+            fn prim_wrapping_mul(lhs: PArr<$T>, other: PArr<$T>) -> POut<$T> {
                 prim_binary_values(lhs, other, |a, b| a.wrapping_mul(b))
             }
 
-            fn prim_wrapping_floor_div(mut lhs: PArr<$T>, mut other: PArr<$T>) -> PArr<$T> {
+            fn prim_wrapping_floor_div(mut lhs: PArr<$T>, mut other: PArr<$T>) -> POut<$T> {
                 let mask = other.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and3(
                     lhs.take_validity().as_ref(),   // Take validity so we don't
@@ -41,10 +41,10 @@ macro_rules! impl_signed_arith_kernel {
                 );
                 let ret =
                     prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_floor_div_mod(rhs).0);
-                ret.with_validity(valid)
+                ret.with_validity(valid.map(PlBitmap::from_bitmap))
             }
 
-            fn prim_wrapping_trunc_div(mut lhs: PArr<$T>, mut other: PArr<$T>) -> PArr<$T> {
+            fn prim_wrapping_trunc_div(mut lhs: PArr<$T>, mut other: PArr<$T>) -> POut<$T> {
                 let mask = other.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and3(
                     lhs.take_validity().as_ref(),   // Take validity so we don't
@@ -54,10 +54,10 @@ macro_rules! impl_signed_arith_kernel {
                 let ret = prim_binary_values(lhs, other, |lhs, rhs| {
                     if rhs != 0 { lhs.wrapping_div(rhs) } else { 0 }
                 });
-                ret.with_validity(valid)
+                ret.with_validity(valid.map(PlBitmap::from_bitmap))
             }
 
-            fn prim_wrapping_mod(mut lhs: PArr<$T>, mut other: PArr<$T>) -> PArr<$T> {
+            fn prim_wrapping_mod(mut lhs: PArr<$T>, mut other: PArr<$T>) -> POut<$T> {
                 let mask = other.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and3(
                     lhs.take_validity().as_ref(),   // Take validity so we don't
@@ -66,27 +66,27 @@ macro_rules! impl_signed_arith_kernel {
                 );
                 let ret =
                     prim_binary_values(lhs, other, |lhs, rhs| lhs.wrapping_floor_div_mod(rhs).1);
-                ret.with_validity(valid)
+                ret.with_validity(valid.map(PlBitmap::from_bitmap))
             }
 
-            fn prim_wrapping_add_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
+            fn prim_wrapping_add_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
                 prim_unary_values(lhs, |x| x.wrapping_add(rhs))
             }
 
-            fn prim_wrapping_sub_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
+            fn prim_wrapping_sub_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
                 Self::prim_wrapping_add_scalar(lhs, rhs.wrapping_neg())
             }
 
-            fn prim_wrapping_sub_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
+            fn prim_wrapping_sub_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> POut<$T> {
                 prim_unary_values(rhs, |x| lhs.wrapping_sub(x))
             }
 
-            fn prim_wrapping_mul_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
+            fn prim_wrapping_mul_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
                 let scalar_u = rhs.unsigned_abs();
                 if rhs == 0 {
                     lhs.fill_with(0)
                 } else if rhs == 1 {
-                    lhs
+                    lhs.into_array()
                 } else if scalar_u.is_power_of_two() {
                     // Power of two.
                     let shift = scalar_u.trailing_zeros();
@@ -100,13 +100,13 @@ macro_rules! impl_signed_arith_kernel {
                 }
             }
 
-            fn prim_wrapping_floor_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
+            fn prim_wrapping_floor_div_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
                 if rhs == 0 {
-                    PArr::full_null(lhs.len(), lhs.dtype().clone())
+                    POut::new_full_null(lhs.len())
                 } else if rhs == -1 {
                     Self::prim_wrapping_neg(lhs)
                 } else if rhs == 1 {
-                    lhs
+                    lhs.into_array()
                 } else {
                     let red = <$StrRed>::new(rhs.unsigned_abs());
                     prim_unary_values(lhs, |x| {
@@ -128,7 +128,7 @@ macro_rules! impl_signed_arith_kernel {
                 }
             }
 
-            fn prim_wrapping_floor_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
+            fn prim_wrapping_floor_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> POut<$T> {
                 let mask = rhs.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and(rhs.validity(), Some(&mask));
                 let ret = if lhs == 0 {
@@ -136,16 +136,16 @@ macro_rules! impl_signed_arith_kernel {
                 } else {
                     prim_unary_values(rhs, |x| lhs.wrapping_floor_div_mod(x).0)
                 };
-                ret.with_validity(valid)
+                ret.with_validity(valid.map(PlBitmap::from_bitmap))
             }
 
-            fn prim_wrapping_trunc_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
+            fn prim_wrapping_trunc_div_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
                 if rhs == 0 {
-                    PArr::full_null(lhs.len(), lhs.dtype().clone())
+                    POut::new_full_null(lhs.len())
                 } else if rhs == -1 {
                     Self::prim_wrapping_neg(lhs)
                 } else if rhs == 1 {
-                    lhs
+                    lhs.into_array()
                 } else {
                     let red = <$StrRed>::new(rhs.unsigned_abs());
                     prim_unary_values(lhs, |x| {
@@ -160,7 +160,7 @@ macro_rules! impl_signed_arith_kernel {
                 }
             }
 
-            fn prim_wrapping_trunc_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
+            fn prim_wrapping_trunc_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> POut<$T> {
                 let mask = rhs.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and(rhs.validity(), Some(&mask));
                 let ret = if lhs == 0 {
@@ -168,12 +168,12 @@ macro_rules! impl_signed_arith_kernel {
                 } else {
                     prim_unary_values(rhs, |x| if x != 0 { lhs.wrapping_div(x) } else { 0 })
                 };
-                ret.with_validity(valid)
+                ret.with_validity(valid.map(PlBitmap::from_bitmap))
             }
 
-            fn prim_wrapping_mod_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
+            fn prim_wrapping_mod_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
                 if rhs == 0 {
-                    PArr::full_null(lhs.len(), lhs.dtype().clone())
+                    POut::new_full_null(lhs.len())
                 } else if rhs == -1 || rhs == 1 {
                     lhs.fill_with(0)
                 } else {
@@ -196,7 +196,7 @@ macro_rules! impl_signed_arith_kernel {
                 }
             }
 
-            fn prim_wrapping_mod_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<$T> {
+            fn prim_wrapping_mod_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> POut<$T> {
                 let mask = rhs.tot_ne_kernel_broadcast(&0);
                 let valid = combine_validities_and(rhs.validity(), Some(&mask));
                 let ret = if lhs == 0 {
@@ -204,23 +204,23 @@ macro_rules! impl_signed_arith_kernel {
                 } else {
                     prim_unary_values(rhs, |x| lhs.wrapping_floor_div_mod(x).1)
                 };
-                ret.with_validity(valid)
+                ret.with_validity(valid.map(PlBitmap::from_bitmap))
             }
 
-            fn prim_checked_mul_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<$T> {
+            fn prim_checked_mul_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
                 super::prim_checked_mul_scalar(&lhs, rhs)
             }
 
-            fn prim_true_div(lhs: PArr<$T>, other: PArr<$T>) -> PArr<Self::TrueDivT> {
+            fn prim_true_div(lhs: PArr<$T>, other: PArr<$T>) -> POut<Self::TrueDivT> {
                 prim_binary_values(lhs, other, |a, b| a as f64 / b as f64)
             }
 
-            fn prim_true_div_scalar(lhs: PArr<$T>, rhs: $T) -> PArr<Self::TrueDivT> {
+            fn prim_true_div_scalar(lhs: PArr<$T>, rhs: $T) -> POut<Self::TrueDivT> {
                 let inv = 1.0 / rhs as f64;
                 prim_unary_values(lhs, |x| x as f64 * inv)
             }
 
-            fn prim_true_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> PArr<Self::TrueDivT> {
+            fn prim_true_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> POut<Self::TrueDivT> {
                 prim_unary_values(rhs, |x| lhs as f64 / x as f64)
             }
         }

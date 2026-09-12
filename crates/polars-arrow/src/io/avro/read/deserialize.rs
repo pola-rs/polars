@@ -10,7 +10,7 @@ use crate::array::*;
 use crate::datatypes::*;
 use crate::record_batch::RecordBatchT;
 use crate::types::months_days_ns;
-use crate::with_match_primitive_type_full;
+use crate::with_match_primitive_type;
 
 fn make_mutable(
     dtype: &ArrowDataType,
@@ -21,7 +21,7 @@ fn make_mutable(
         PhysicalType::Boolean => {
             Box::new(MutableBooleanArray::with_capacity(capacity)) as Box<dyn MutableArray>
         },
-        PhysicalType::Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
+        PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             Box::new(MutablePrimitiveArray::<$T>::with_capacity(capacity).to(dtype.clone()))
                 as Box<dyn MutableArray>
         }),

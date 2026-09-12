@@ -1,18 +1,16 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::marker::PhantomData;
 
-use arrow::array::*;
-
 use crate::prelude::*;
 use crate::utils::{index_to_chunked_index, index_to_chunked_index_rev};
 
 pub struct Chunks<'a, T> {
-    chunks: &'a [ArrayRef],
+    chunks: &'a [PlArrayRef],
     phantom: PhantomData<T>,
 }
 
 impl<'a, T> Chunks<'a, T> {
-    fn new(chunks: &'a [ArrayRef]) -> Self {
+    fn new(chunks: &'a [PlArrayRef]) -> Self {
         Chunks {
             chunks,
             phantom: PhantomData,
@@ -23,7 +21,7 @@ impl<'a, T> Chunks<'a, T> {
     pub fn get(&self, index: usize) -> Option<&'a T> {
         self.chunks.get(index).map(|arr| {
             let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const T) }
+            unsafe { &*(arr as *const dyn PlArray as *const T) }
         })
     }
 
@@ -31,7 +29,7 @@ impl<'a, T> Chunks<'a, T> {
     pub unsafe fn get_unchecked(&self, index: usize) -> &'a T {
         let arr = self.chunks.get_unchecked(index);
         let arr = &**arr;
-        &*(arr as *const dyn Array as *const T)
+        &*(arr as *const dyn PlArray as *const T)
     }
 
     pub fn len(&self) -> usize {
@@ -42,7 +40,7 @@ impl<'a, T> Chunks<'a, T> {
     pub fn last(&self) -> Option<&'a T> {
         self.chunks.last().map(|arr| {
             let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const T) }
+            unsafe { &*(arr as *const dyn PlArray as *const T) }
         })
     }
 }
@@ -64,7 +62,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.chunks.iter().map(|arr| {
             // SAFETY: T::Array guarantees this is correct.
             let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const T::Array) }
+            unsafe { &*(arr as *const dyn PlArray as *const T::Array) }
         })
     }
 
@@ -78,7 +76,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.chunks.iter_mut().map(|arr| {
             // SAFETY: T::Array guarantees this is correct.
             let arr = &mut **arr;
-            &mut *(arr as *mut dyn Array as *mut T::Array)
+            &mut *(arr as *mut dyn PlArray as *mut T::Array)
         })
     }
 
@@ -92,7 +90,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         let arr = self.chunks.get(idx)?;
         // SAFETY: T::Array guarantees this is correct.
         let arr = &**arr;
-        unsafe { Some(&*(arr as *const dyn Array as *const T::Array)) }
+        unsafe { Some(&*(arr as *const dyn PlArray as *const T::Array)) }
     }
 
     /// # Panics
@@ -110,7 +108,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         let arr = self.chunks.get_unchecked(idx);
         // SAFETY: T::Array guarantees this is correct.
         let arr = &**arr;
-        unsafe { &*(arr as *const dyn Array as *const T::Array) }
+        unsafe { &*(arr as *const dyn PlArray as *const T::Array) }
     }
 
     /// Get the index of the chunk and the index of the value in that chunk.

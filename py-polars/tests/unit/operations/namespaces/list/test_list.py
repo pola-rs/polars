@@ -18,6 +18,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import time_func
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import EngineType, PolarsDataType
 
 
@@ -893,6 +895,32 @@ def test_list_ordering() -> None:
     )
 
 
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_sorting_many_small_lists(descending: bool, nulls_last: bool) -> None:
+    # Every element is sorted on its own, so this used to ask the thread pool once per
+    # element: 14 s over a million three-element lists, against 0.2 s on the calling
+    # thread. Enough rows here that a per-element trip to the pool would be felt.
+    rows = [[(i * 7) % 5, None, (i * 3) % 5] for i in range(20_000)]
+    s = pl.Series("a", rows, dtype=pl.List(pl.Int64))
+
+    def expected(row: list[int | None]) -> list[int | None]:
+        values = sorted((v for v in row if v is not None), reverse=descending)
+        return [*values, None] if nulls_last else [None, *values]
+
+    assert_series_equal(
+        s.list.sort(descending=descending, nulls_last=nulls_last),
+        pl.Series("a", [expected(row) for row in rows], dtype=pl.List(pl.Int64)),
+    )
+
+    # The fixed-width side sorts through the same per-element path.
+    arr = s.cast(pl.Array(pl.Int64, 3))
+    assert_series_equal(
+        arr.arr.sort(descending=descending, nulls_last=nulls_last),
+        pl.Series("a", [expected(row) for row in rows], dtype=pl.Array(pl.Int64, 3)),
+    )
+
+
 def test_list_get_logical_type() -> None:
     s = pl.Series(
         "a",
@@ -1486,3 +1514,256 @@ def test_list_to_struct_outer_nulls_28210() -> None:
             },
         ),
     )
+
+
+def _repeats_one_list(value: Any, dtype: pl.DataType, n: int) -> pl.Series:
+    """`n` elements every one of which reads the one list, held once."""
+    s = pl.select(pl.repeat(pl.lit(value, dtype=dtype), n).alias("a")).to_series()
+    assert s.n_chunks() == 1
+    return s
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        ([1, 2, 3], pl.List(pl.Int64)),
+        ([1, None, 3], pl.List(pl.Int64)),
+        ([], pl.List(pl.Int64)),
+        (["a", "b"], pl.List(pl.String)),
+        ([[1], [2]], pl.List(pl.List(pl.Int64))),
+        ([1, 2, 3], pl.Array(pl.Int64, 3)),
+        ([1, None, 3], pl.Array(pl.Int64, 3)),
+        (["a", "b", "c"], pl.Array(pl.String, 3)),
+    ],
+)
+@pytest.mark.parametrize(
+    "make_expr",
+    [
+        lambda ns: ns.eval(pl.element().sort()),
+        lambda ns: ns.eval(pl.element().cum_sum().cast(pl.String)),
+        lambda ns: ns.eval(pl.element().filter(pl.element().is_not_null())),
+        lambda ns: ns.eval(pl.element() != pl.element().first()),
+        lambda ns: ns.agg(pl.element().n_unique()),
+        lambda ns: ns.agg(pl.element().first()),
+        lambda ns: ns.unique(),
+        lambda ns: ns.reverse(),
+    ],
+)
+def test_eval_over_one_repeated_list(
+    value: Any, dtype: pl.DataType, make_expr: Callable[[Any], pl.Expr]
+) -> None:
+    # The evaluation runs over a single element and every element gets that one answer;
+    # it used to write the values out one list per element to cut the groups out of.
+    n = 4
+    col = pl.col("a")
+    expr = make_expr(col.arr if dtype.base_type() == pl.Array else col.list)
+    repeated = _repeats_one_list(value, dtype, n)
+    flat = pl.Series("a", [value] * n, dtype=dtype)
+
+    def answer(s: pl.Series) -> pl.Series | str:
+        try:
+            return pl.DataFrame([s]).select(expr).to_series()
+        except Exception as exc:
+            # Not every expression is defined on every inner type; the two have to agree
+            # on that as well.
+            return f"{type(exc).__name__}: {exc}"
+
+    one, many = answer(repeated), answer(flat)
+    if isinstance(many, str):
+        assert one == many
+    else:
+        assert isinstance(one, pl.Series)
+        assert_series_equal(one, many)
+
+
+@pytest.mark.parametrize("dtype", [pl.List(pl.Int64), pl.Array(pl.Int64, 5)])
+def test_eval_over_one_repeated_list_keeps_sampling_per_element(
+    dtype: pl.DataType,
+) -> None:
+    # An unseeded sample answers differently every time it is asked, so it has to be
+    # asked once per element even where they all read the one list.
+    col = pl.col("a")
+    ns = col.arr if dtype.base_type() == pl.Array else col.list
+    s = _repeats_one_list([1, 2, 3, 4, 5], dtype, 40)
+    out = (
+        pl.DataFrame([s]).select(ns.eval(pl.element().shuffle())).to_series().to_list()
+    )
+    assert len({tuple(row) for row in out}) > 1
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        ([1.0, 2.0, 3.0], pl.List(pl.Float64)),
+        ([1, None, 3], pl.List(pl.Int64)),
+        ([], pl.List(pl.Int64)),
+        ([1.0, 2.0, 3.0], pl.Array(pl.Float64, 3)),
+        ([1, None, 3], pl.Array(pl.Int64, 3)),
+    ],
+)
+@pytest.mark.parametrize(
+    "reduction",
+    [
+        "mean",
+        "median",
+        "std",
+        "var",
+        "min",
+        "max",
+        "sum",
+        "arg_min",
+        "arg_max",
+        "n_unique",
+    ],
+)
+def test_reduce_one_repeated_list_once(
+    value: Any, dtype: pl.DataType, reduction: str
+) -> None:
+    # The one list every element reads is reduced once and the answer repeated; it used
+    # to be read — and reduced — once per element, which is what the size below catches.
+    n = 100_000
+    repeated = _repeats_one_list(value, dtype, n)
+    flat = pl.Series("a", [value] * n, dtype=dtype)
+    col = pl.col("a")
+    ns = col.arr if dtype.base_type() == pl.Array else col.list
+    if not hasattr(ns, reduction):
+        pytest.skip(f"no `{reduction}` on this namespace")
+    expr = getattr(ns, reduction)()
+
+    def answer(s: pl.Series) -> pl.Series | str:
+        try:
+            return pl.DataFrame([s]).select(expr).to_series()
+        except Exception as exc:
+            return f"{type(exc).__name__}: {exc}"
+
+    one, many = answer(repeated), answer(flat)
+    if isinstance(many, str):
+        assert one == many
+        return
+
+    assert isinstance(one, pl.Series)
+    assert_series_equal(one, many)
+    # One answer held once, not one slot per element.
+    assert one.estimated_size() < many.estimated_size() // 100
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype", "evaluation"),
+    [
+        ([1, 2], pl.List(pl.Int64), pl.element()),
+        ([1, 2], pl.List(pl.Int64), pl.element() * 2),
+        ([1, 2], pl.List(pl.Int64), pl.element().cast(pl.Int8)),
+        ([1, 2], pl.List(pl.Int64), pl.element().sort(descending=True)),
+        ([], pl.List(pl.Int64), pl.element()),
+        (None, pl.List(pl.Int64), pl.element()),
+        ([1, 2], pl.Array(pl.Int64, 2), pl.element()),
+        ([1, 2], pl.Array(pl.Int64, 2), pl.element().cast(pl.Int8)),
+        (None, pl.Array(pl.Int64, 2), pl.element()),
+    ],
+)
+@pytest.mark.parametrize("agg", [False, True])
+def test_eval_over_a_literal_in_an_aggregation_keeps_it_a_literal(
+    value: Any, dtype: PolarsDataType, evaluation: pl.Expr, agg: bool
+) -> None:
+    # An evaluation answers one element per element, so a literal stays a literal:
+    # `F(lit) = lit`. Read as a one-element column instead, the group indices take it
+    # as holding one element each, and a group of two came back holding the literal
+    # twice — under a dtype one level more nested than the query's own schema says.
+    ns = "list" if isinstance(dtype, pl.List) else "arr"
+    inner = getattr(pl.lit(value, dtype=dtype), ns)
+    expr = (inner.agg(evaluation.sum()) if agg else inner.eval(evaluation)).alias("o")
+
+    q = (
+        pl.LazyFrame({"k": [0, 0, 1, 1, 2, 2]})
+        .group_by("k", maintain_order=True)
+        .agg(expr)
+    )
+    schema = q.collect_schema()
+    expected = pl.select(expr).to_series().to_list() * 3
+
+    for engine in ("in-memory", "streaming"):
+        out = q.collect(engine=engine)
+        assert out.schema == schema, f"{engine} disagrees with the query's schema"
+        assert out["o"].to_list() == expected, f"{engine}"
+
+
+@pytest.mark.parametrize(
+    ("value", "match", "expected"),
+    [
+        ([1, 2, 3], 1, 1),
+        ([1, 1, 1], 1, 3),
+        ([1, 2, 3], 9, 0),
+        ([None, 1], None, 1),
+        ([], 1, 0),
+    ],
+)
+def test_list_count_matches_over_a_chunk_that_repeats_one_list(
+    value: list[Any], match: Any, expected: int
+) -> None:
+    # `apply_to_inner` hands its closure the values of a single element for such a
+    # chunk, since every element reads the same ones — it wrote the one list out per
+    # element instead, which cost 9.4 ms per million three-element lists where the
+    # flat column cost 1.8 ms.
+    n = 200_000
+    dtype = pl.List(pl.Int64)
+    repeated = pl.select(
+        pl.repeat(pl.lit(value, dtype=dtype), n).alias("a")
+    ).to_series()
+    assert repeated.n_chunks() == 1
+    flat = pl.Series("a", [value] * n, dtype=dtype)
+
+    counts = repeated.list.count_matches(match)
+    assert_series_equal(
+        counts, pl.Series("a", [expected] * n, dtype=pl.get_index_type())
+    )
+    assert_series_equal(counts, flat.list.count_matches(match))
+
+    # The counts are the one count repeated, rather than one slot per element.
+    assert counts.estimated_size() < flat.list.count_matches(match).estimated_size()
+
+
+@pytest.mark.parametrize(
+    ("value", "needle", "expected"),
+    [
+        ([1, 2, 3], 1, True),
+        ([1, 2, 3], 9, False),
+        ([], 1, False),
+        ([None, 1], None, True),
+    ],
+)
+def test_list_contains_over_a_chunk_that_repeats_one_list(
+    value: list[Any], needle: Any, expected: bool
+) -> None:
+    # `is_in` wrote the container's offsets out, one range per element, where such a
+    # chunk holds the one range every element covers. Over a million repeated
+    # three-element lists it cost 9.6 ms where the flat column cost 2.3 ms -- more work
+    # over strictly less data.
+    n = 200_000
+    dtype = pl.List(pl.Int64)
+    repeated = _repeats_one_list(value, dtype, n)
+    flat = pl.Series("a", [value] * n, dtype=dtype)
+
+    answer = repeated.list.contains(needle)
+    assert_series_equal(answer, pl.Series("a", [expected] * n))
+    assert_series_equal(answer, flat.list.contains(needle))
+
+    # The answer is the one bit repeated, rather than one slot per element.
+    assert answer.estimated_size() < flat.list.contains(needle).estimated_size()
+
+
+@pytest.mark.parametrize("dtype", [pl.List(pl.Int64), pl.Array(pl.Int64, 3)])
+def test_is_in_reads_a_container_in_the_layout_it_is_in(dtype: pl.DataType) -> None:
+    # The needle is a column of its own, so every element is looked for in the element
+    # of the container beside it -- which is the one list a repeated chunk holds.
+    n = 300
+    value = [1, 2, 3]
+    needles = pl.Series("n", [(i % 5) for i in range(n)], dtype=pl.Int64)
+    for container in (
+        _repeats_one_list(value, dtype, n),
+        pl.Series("a", [value] * n, dtype=dtype),
+        pl.concat([_repeats_one_list(value, dtype, n + 4)]).slice(2, n),
+    ):
+        df = pl.DataFrame({"a": container, "n": needles})
+        assert df.select(pl.col("n").is_in(pl.col("a")))["n"].to_list() == [
+            (i % 5) in value for i in range(n)
+        ]

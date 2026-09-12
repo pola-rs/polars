@@ -126,7 +126,7 @@ pub fn impl_replace_time_zone(
             let iter = datetime.phys.downcast_iter().map(|arr| {
                 let element_iter = arr.iter().map(|timestamp_opt| match timestamp_opt {
                     Some(timestamp) => {
-                        let ndt = timestamp_to_datetime(*timestamp);
+                        let ndt = timestamp_to_datetime(timestamp);
                         let res = convert_to_naive_local(
                             from_tz,
                             to_tz,

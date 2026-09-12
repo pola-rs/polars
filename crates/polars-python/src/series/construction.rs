@@ -65,7 +65,7 @@ pub fn series_from_objects(py: Python<'_>, name: PlSmallStr, objects: Vec<Object
     ObjectChunked::<ObjectValue>::new_from_vec_and_validity(
         name,
         objects,
-        validity.into_opt_validity(),
+        validity.into_opt_validity().map(PlBitmap::from),
     )
     .into_series()
 }
@@ -99,7 +99,7 @@ impl PySeries {
         let arr = numpy_array_to_arrow(array);
         if nan_is_null {
             py.enter_polars_series(|| {
-                let validity = polars_compute::nan::is_not_nan(arr.values());
+                let validity = polars_compute::nan::is_not_nan_slice(arr.values());
                 Ok(Series::from_array(name.into(), arr.with_validity(validity)))
             })
         } else {
@@ -117,7 +117,7 @@ impl PySeries {
         let arr = numpy_array_to_arrow(array);
         if nan_is_null {
             py.enter_polars_series(|| {
-                let validity = polars_compute::nan::is_not_nan(arr.values());
+                let validity = polars_compute::nan::is_not_nan_slice(arr.values());
                 Ok(Series::from_array(name.into(), arr.with_validity(validity)))
             })
         } else {
@@ -135,7 +135,7 @@ impl PySeries {
         let arr = numpy_array_to_arrow(array);
         if nan_is_null {
             py.enter_polars_series(|| {
-                let validity = polars_compute::nan::is_not_nan(arr.values());
+                let validity = polars_compute::nan::is_not_nan_slice(arr.values());
                 Ok(Series::from_array(name.into(), arr.with_validity(validity)))
             })
         } else {

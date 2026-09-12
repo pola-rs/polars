@@ -4,7 +4,7 @@ use arrow::array::builder::ArrayBuilder;
 use arrow::datatypes::IntegerType;
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
-use polars_compute::cast::utf8view_to_utf8;
+use polars_compute::cast::utf8view_to_arrow_large_utf8;
 
 use crate::prelude::*;
 
@@ -264,7 +264,7 @@ impl CategoricalArrayToArrowConverter {
                 } else {
                     // Note: Could store a once-init Utf8Array on the frozen categories to avoid
                     // building this multiple times for the oldest compat level.
-                    utf8view_to_utf8::<i64>(array).to_boxed()
+                    utf8view_to_arrow_large_utf8(array).to_boxed()
                 }
             },
         }

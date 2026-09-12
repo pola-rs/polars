@@ -102,16 +102,20 @@ pub type RankWindowDense<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyDense>;
 pub type RankWindowRandom<'a, T> = RankWindow<'a, T, IdxSize, RankPolicyRandom>;
 
 pub fn rolling_rank<T>(
-    values: &[T],
+    values: &NoNulls<PlPrimitiveArray<T>>,
     window_size: usize,
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
     params: Option<RollingFnParams>,
-) -> PolarsResult<ArrayRef>
+) -> PolarsResult<Box<dyn PlArray>>
 where
     T: NativeType + num_traits::Num,
 {
+    // The chunk becomes a slice here, once, out of the window loop; see the module docs.
+    let values = values.to_flat_values();
+    let values = values.as_slice();
+
     assert!(weights.is_none(), "weights are not supported for rank");
 
     let offset_fn = match center {

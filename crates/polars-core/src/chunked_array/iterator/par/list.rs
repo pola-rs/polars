@@ -2,9 +2,9 @@ use rayon::prelude::*;
 
 use crate::prelude::*;
 
-unsafe fn idx_to_array(idx: usize, arr: &ListArray<i64>, dtype: &DataType) -> Option<Series> {
+unsafe fn idx_to_array(idx: usize, arr: &PlListArray, dtype: &DataType) -> Option<Series> {
     if arr.is_valid(idx) {
-        Some(arr.value_unchecked(idx)).map(|arr: ArrayRef| {
+        Some(arr.value_unchecked(idx)).map(|arr: PlArrayRef| {
             Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![arr], dtype)
         })
     } else {
@@ -19,8 +19,7 @@ impl ListChunked {
             let dtype = self.inner_dtype();
             // SAFETY:
             // guarded by the type system
-            let arr = &**arr;
-            let arr = unsafe { &*(arr as *const dyn Array as *const ListArray<i64>) };
+            let arr = arr.as_any().downcast_ref::<PlListArray>().unwrap();
             (0..arr.len())
                 .into_par_iter()
                 .map(move |idx| unsafe { idx_to_array(idx, arr, dtype) })

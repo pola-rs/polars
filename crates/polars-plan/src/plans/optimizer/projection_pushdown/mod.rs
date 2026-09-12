@@ -2248,6 +2248,8 @@ fn small_dummy_column(name: PlSmallStr, height: usize) -> Column {
     // materialized.
     #[cfg(feature = "dtype-struct")]
     let dtype = DataType::Struct(Vec::new());
+    // Null column if we don't have struct available. For <=67108864 rows it uses a global zero
+    // buffer, otherwise it will allocate for validity.
     #[cfg(not(feature = "dtype-struct"))]
     let dtype = DataType::Null;
 

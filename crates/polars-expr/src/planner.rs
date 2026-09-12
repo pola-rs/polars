@@ -567,6 +567,7 @@ fn create_physical_expr_inner(
             let mut pd_group = ExprPushdownGroup::Pushable;
             pd_group.update_with_expr_rec(expr_arena.get(evaluation), expr_arena, None);
             let evaluation_is_fallible = matches!(pd_group, ExprPushdownGroup::Fallible);
+            let evaluation_is_deterministic = is_deterministic_rec(evaluation, expr_arena);
 
             let output_field = expr_arena
                 .get(expression)
@@ -592,6 +593,7 @@ fn create_physical_expr_inner(
                 evaluation_is_scalar,
                 evaluation_is_elementwise,
                 evaluation_is_fallible,
+                evaluation_is_deterministic,
             )))
         },
         #[cfg(feature = "dtype-struct")]

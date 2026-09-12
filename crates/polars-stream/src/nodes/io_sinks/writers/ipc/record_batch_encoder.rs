@@ -85,19 +85,17 @@ impl RecordBatchEncoder {
                         let rechunked = column.as_materialized_series().rechunk();
                         let dtype = rechunked.dtype();
 
-                        let array: Box<dyn Array> = arrow_converter
-                            .array_to_arrow(
-                                rechunked.chunks()[0].as_ref(),
-                                dtype,
-                                Cow::Borrowed(&arrow_field),
-                            )
-                            .unwrap();
+                        let array: Box<dyn Array> = arrow_converter.chunk_to_arrow(
+                            rechunked.chunks()[0].as_ref(),
+                            dtype,
+                            Cow::Borrowed(&arrow_field),
+                        )?;
 
-                        (array, (arrow_converter, arrow_field))
+                        PolarsResult::Ok((array, (arrow_converter, arrow_field)))
                     },
                 ),
             ) {
-                let (array, arrow_converter_and_field) = fut.await;
+                let (array, arrow_converter_and_field) = fut.await?;
                 arrow_converters.push(arrow_converter_and_field);
                 record_batch_arrow_arrays.push(array);
             }

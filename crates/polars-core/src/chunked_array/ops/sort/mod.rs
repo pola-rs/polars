@@ -29,45 +29,118 @@ use crate::runtime::RAYON;
 use crate::series::IsSorted;
 use crate::utils::NoNull;
 
-fn partition_nulls<T: Copy>(
-    values: &mut [T],
-    mut validity: Option<Bitmap>,
+/// Moves the valid values of `values` to one end and the nulls to the other.
+fn partition_nulls<'a, T: Copy>(
+    values: &'a mut [T],
+    validity: Option<PlBitmapRef<'_>>,
     options: SortOptions,
-) -> (&mut [T], Option<Bitmap>) {
-    let partitioned = if let Some(bitmap) = &validity {
-        // Partition null last first
-        let mut out_len = 0;
-        for idx in bitmap.true_idx_iter() {
-            unsafe { *values.get_unchecked_mut(out_len) = *values.get_unchecked(idx) };
-            out_len += 1;
-        }
-        let valid_count = out_len;
-        let null_count = values.len() - valid_count;
-        validity = Some(create_validity(
-            bitmap.len(),
-            bitmap.unset_bits(),
-            options.nulls_last,
-        ));
+) -> (&'a mut [T], Option<Bitmap>) {
+    let Some(mask) = validity else {
+        return (values, None);
+    };
+    debug_assert_eq!(mask.len(), values.len());
 
-        // Views are correctly partitioned.
-        if options.nulls_last {
-            &mut values[..valid_count]
-        }
-        // We need to swap the ends.
-        else {
-            // swap nulls with end
-            let mut end = values.len() - 1;
-
-            for i in 0..null_count {
-                unsafe { *values.get_unchecked_mut(end) = *values.get_unchecked(i) };
-                end = end.saturating_sub(1);
+    // A scalar mask is a single bit standing for every element: either nothing is null, in which
+    // case there is nothing to partition, or everything is.
+    let valid_count = match mask.scalar_value() {
+        Some(true) => return (values, None),
+        Some(false) => 0,
+        None => {
+            let bitmap = mask.flat_bitmap().expect("a mask is flat or scalar");
+            // Partition null last first
+            let mut out_len = 0;
+            for idx in bitmap.true_idx_iter() {
+                unsafe { *values.get_unchecked_mut(out_len) = *values.get_unchecked(idx) };
+                out_len += 1;
             }
-            &mut values[null_count..]
+            out_len
+        },
+    };
+
+    let null_count = values.len() - valid_count;
+    // The mask covers the elements of `values`, however many bits the one handed in held.
+    let validity = Some(create_validity(
+        values.len(),
+        null_count,
+        options.nulls_last,
+    ));
+
+    // Views are correctly partitioned.
+    let partitioned = if options.nulls_last {
+        &mut values[..valid_count]
+    }
+    // We need to swap the ends.
+    else {
+        // swap nulls with end
+        let mut end = values.len() - 1;
+
+        for i in 0..null_count {
+            unsafe { *values.get_unchecked_mut(end) = *values.get_unchecked(i) };
+            end = end.saturating_sub(1);
         }
-    } else {
-        values
+        &mut values[null_count..]
     };
     (partitioned, validity)
+}
+
+/// How many elements a sort has to cover before it is handed to the thread pool.
+///
+/// `RAYON.install` injects a job and blocks on a latch whether or not the closure finds anything to
+/// split, which costs about 18 us on this machine — so a sort the calling thread would finish in
+/// less than that can only lose by asking for help. A sequential sort of this many `i64`s takes
+/// some 10 us, and one of this many row encodings — whose comparison is an order of magnitude
+/// dearer — some 200 us, so neither can repay the pool below it.
+///
+/// Above it this says nothing about whether the pool is worth asking: for cheap comparisons the
+/// two only break even around 16K elements. This is the floor under which parallelism cannot help,
+/// not the point at which it starts to.
+const PARALLEL_SORT_LIMIT: usize = 1024;
+
+/// Whether a sort of `len` elements is worth handing to the thread pool, having been allowed to.
+#[inline]
+pub(crate) fn sort_in_parallel(len: usize, parallel: bool) -> bool {
+    parallel && len >= PARALLEL_SORT_LIMIT && RAYON.current_num_threads() > 1
+}
+
+/// Whether `ca` holds its elements as one chunk that repeats a single one of them.
+///
+/// Every element of such a chunk is the same one — the same value throughout, or a null
+/// throughout — so they already stand in every order at once: sorting it answers with the chunk
+/// itself, and `arg_sort` with `0..len`.
+///
+/// `Struct`, `List`, `Array` and `Map` are the ones that have to be told. A sort of theirs is a
+/// row encoding of the whole column that is then sorted, and the encoding writes one row per
+/// element whatever the column holds; the flat sorts read this off the sorted flag such a chunk
+/// carries instead — see `sort_with_fast_path`.
+pub(crate) fn repeats_one_element<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
+    let [chunk] = ca.chunks().as_slice() else {
+        return false;
+    };
+
+    ca.len() > 1 && chunk.is_scalar()
+}
+
+/// `0..length`: what an `arg_sort` over elements that are all the same one answers, in the order
+/// they are already in.
+pub(crate) fn arg_sort_identity(name: PlSmallStr, length: usize) -> IdxCa {
+    IdxCa::with_chunk(
+        name,
+        PlPrimitiveArray::from_vec((0..length as IdxSize).collect::<Vec<IdxSize>>()),
+    )
+}
+
+/// `ca` under the sorted flag `options` asks for, which every order of one repeated element meets.
+pub(crate) fn sorted_flag_of<T: PolarsDataType>(
+    ca: &ChunkedArray<T>,
+    options: SortOptions,
+) -> ChunkedArray<T> {
+    let mut out = ca.clone();
+    out.set_sorted_flag(if options.descending {
+        IsSorted::Descending
+    } else {
+        IsSorted::Ascending
+    });
+    out
 }
 
 pub(crate) fn sort_by_branch<T, C>(slice: &mut [T], descending: bool, cmp: C, parallel: bool)
@@ -75,7 +148,7 @@ where
     T: Send,
     C: Send + Sync + Fn(&T, &T) -> Ordering,
 {
-    if parallel {
+    if sort_in_parallel(slice.len(), parallel) {
         RAYON.install(|| match descending {
             true => slice.par_sort_by(|a, b| cmp(b, a)),
             false => slice.par_sort_by(cmp),
@@ -88,12 +161,27 @@ where
     }
 }
 
+/// `arg_sort`s `idx` over the elements `element` reads, which has the representation of the array
+/// behind it already resolved.
+fn arg_sort_bytes<'a, F>(idx: &mut [IdxSize], options: SortOptions, element: F)
+where
+    F: Fn(usize) -> &'a [u8] + Send + Sync,
+{
+    let cmp = |a: &IdxSize, b: &IdxSize| element(*a as usize).tot_cmp(&element(*b as usize));
+
+    if options.maintain_order {
+        sort_by_branch(idx, options.descending, cmp, options.multithreaded);
+    } else {
+        sort_unstable_by_branch(idx, options, cmp);
+    }
+}
+
 fn sort_unstable_by_branch<T, C>(slice: &mut [T], options: SortOptions, cmp: C)
 where
     T: Send,
     C: Send + Sync + Fn(&T, &T) -> Ordering,
 {
-    if options.multithreaded {
+    if sort_in_parallel(slice.len(), options.multithreaded) {
         RAYON.install(|| match options.descending {
             true => slice.par_sort_unstable_by(|a, b| cmp(b, a)),
             false => slice.par_sort_unstable_by(cmp),
@@ -155,7 +243,6 @@ macro_rules! sort_with_fast_path {
             return $ca.reverse()
         };
 
-
     }}
 }
 
@@ -172,7 +259,7 @@ macro_rules! arg_sort_fast_path {
                 (! $options.nulls_last && $ca.get(0).is_none())
                 {
                    return ChunkedArray::with_chunk($ca.name().clone(),
-                    IdxArr::from_data_default(Buffer::from((0..($ca.len() as IdxSize)).collect::<Vec<IdxSize>>()), None));
+                    PlPrimitiveArray::from_vec((0..($ca.len() as IdxSize)).collect::<Vec<IdxSize>>()));
                 }
                 // nulls are not at the right place
                 // continue w/ sorting
@@ -180,7 +267,7 @@ macro_rules! arg_sort_fast_path {
             } else {
                 // no nulls
                 return ChunkedArray::with_chunk($ca.name().clone(),
-                IdxArr::from_data_default(Buffer::from((0..($ca.len() as IdxSize )).collect::<Vec<IdxSize>>()), None));
+                PlPrimitiveArray::from_vec((0..($ca.len() as IdxSize )).collect::<Vec<IdxSize>>()));
             }
         }
     }}
@@ -216,7 +303,7 @@ where
         }
 
         ca.downcast_iter().for_each(|arr| {
-            let iter = arr.iter().filter_map(|v| v.copied());
+            let iter = arr.iter().flatten();
             vals.extend(iter);
         });
         let mut_slice = if options.nulls_last {
@@ -231,10 +318,14 @@ where
             vals.extend(std::iter::repeat_n(T::Native::default(), ca.null_count()));
         }
 
-        let arr = PrimitiveArray::new(
-            T::get_static_dtype().to_arrow(CompatLevel::newest()),
+        let arr = PlPrimitiveArray::new(
             vals.into(),
-            Some(create_validity(len, null_count, options.nulls_last)),
+            len,
+            Some(PlBitmap::from_bitmap(create_validity(
+                len,
+                null_count,
+                options.nulls_last,
+            ))),
         );
         let mut new_ca = ChunkedArray::with_chunk(ca.name().clone(), arr);
         let s = if options.descending {
@@ -254,9 +345,10 @@ where
     options.multithreaded &= RAYON.current_num_threads() > 1;
     arg_sort_fast_path!(ca, options);
     if ca.null_count() == 0 {
-        let iter = ca
-            .downcast_iter()
-            .map(|arr| arr.values().as_slice().iter().copied());
+        // The kernel reads the values as a slice, and nothing is null for it to skip, so only a
+        // chunk whose values repeat one value is written out — its mask is not read at all.
+        let views = ca.to_flat_values_chunks();
+        let iter = views.iter().map(|values| values.iter().copied());
         arg_sort::arg_sort_no_nulls(
             ca.name().clone(),
             iter,
@@ -265,9 +357,7 @@ where
             ca.is_sorted_flag(),
         )
     } else {
-        let iter = ca
-            .downcast_iter()
-            .map(|arr| arr.iter().map(|opt| opt.copied()));
+        let iter = ca.downcast_iter().map(|arr| arr.iter());
         arg_sort::arg_sort(
             ca.name().clone(),
             iter,
@@ -293,8 +383,10 @@ fn arg_sort_multiple_numeric<T: PolarsNumericType>(
 
     if no_nulls {
         let mut vals = Vec::with_capacity(ca.len());
-        for arr in ca.downcast_iter() {
-            vals.extend_trusted_len(arr.values().as_slice().iter().map(|v| {
+        // As above: the values are read as a slice and the mask is not read at all.
+        let views = ca.to_flat_values_chunks();
+        for values in &views {
+            vals.extend_trusted_len(values.iter().map(|v| {
                 let i = count;
                 count += 1;
                 (i, NonNull(*v))
@@ -304,10 +396,10 @@ fn arg_sort_multiple_numeric<T: PolarsNumericType>(
     } else {
         let mut vals = Vec::with_capacity(ca.len());
         for arr in ca.downcast_iter() {
-            vals.extend_trusted_len(arr.into_iter().map(|v| {
+            vals.extend_trusted_len(arr.iter().map(|v| {
                 let i = count;
                 count += 1;
-                (i, v.copied())
+                (i, v)
             }));
         }
         arg_sort_multiple_impl(vals, by, options)
@@ -409,26 +501,30 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         // We will sort by the views and reconstruct with sorted views. We leave the buffers as is.
         // We must rechunk to ensure that all views point into the proper buffers.
         let ca = self.rechunk();
-        let arr = ca.downcast_as_array().clone();
+        // The views are sorted and put back one per element, so a chunk that is not laid out flat
+        // is written out first — see `polars_array::arrow::bridge`.
+        let arr = ca.downcast_as_array().to_flat();
+        let length = arr.len();
 
-        let (views, buffers, validity, total_bytes_len, total_buffer_len) = arr.into_inner();
+        let (views, buffers, validity) = arr.into_owned().into_inner();
         let mut views = views.to_vec();
 
-        let (partitioned_part, validity) = partition_nulls(&mut views, validity, options);
+        // The array was written out flat, so its mask holds one bit per element.
+        let mask = validity.as_ref().map(|v| PlBitmapRef::new(v, length));
+        let (partitioned_part, validity) = partition_nulls(&mut views, mask, options);
 
         sort_unstable_by_branch(partitioned_part, options, |a, b| unsafe {
             a.get_slice_unchecked(&buffers)
                 .tot_cmp(&b.get_slice_unchecked(&buffers))
         });
 
+        // SAFETY: the views are the ones this array was taken apart into, reordered.
         let array = unsafe {
-            BinaryViewArray::new_unchecked(
-                ArrowDataType::BinaryView,
+            PlBinaryViewArray::new_unchecked(
                 views.into(),
                 buffers,
-                validity,
-                total_bytes_len,
-                total_buffer_len,
+                length,
+                validity.map(PlBitmap::from_bitmap),
             )
         };
 
@@ -505,14 +601,14 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
 
         let mut v: Vec<&[u8]> = Vec::with_capacity(self.len());
         for arr in self.downcast_iter() {
-            v.extend(arr.non_null_values_iter());
+            v.extend(arr.iter().flatten());
         }
 
         sort_impl_unstable(v.as_mut_slice(), options);
 
         let mut values = Vec::<u8>::with_capacity(self.get_values_size());
-        let mut offsets = Vec::<i64>::with_capacity(self.len() + 1);
-        let mut length_so_far = 0i64;
+        let mut offsets = Vec::<u64>::with_capacity(self.len() + 1);
+        let mut length_so_far = 0u64;
         offsets.push(length_so_far);
 
         let len = self.len();
@@ -521,29 +617,32 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
             (0, _) => {
                 for val in v {
                     values.extend_from_slice(val);
-                    length_so_far = values.len() as i64;
+                    length_so_far = values.len() as u64;
                     offsets.push(length_so_far);
                 }
                 // SAFETY: offsets are correctly created.
                 let arr = unsafe {
-                    BinaryArray::from_data_unchecked_default(offsets.into(), values.into(), None)
+                    PlBinaryArray::new_unchecked(values.into(), offsets.into(), len, None)
                 };
                 ChunkedArray::with_chunk(self.name().clone(), arr)
             },
             (_, true) => {
                 for val in v {
                     values.extend_from_slice(val);
-                    length_so_far = values.len() as i64;
+                    length_so_far = values.len() as u64;
                     offsets.push(length_so_far);
                 }
                 offsets.extend(std::iter::repeat_n(length_so_far, null_count));
 
                 // SAFETY: offsets are correctly created.
                 let arr = unsafe {
-                    BinaryArray::from_data_unchecked_default(
-                        offsets.into(),
+                    PlBinaryArray::new_unchecked(
                         values.into(),
-                        Some(create_validity(len, null_count, true)),
+                        offsets.into(),
+                        len,
+                        Some(PlBitmap::from_bitmap(create_validity(
+                            len, null_count, true,
+                        ))),
                     )
                 };
                 ChunkedArray::with_chunk(self.name().clone(), arr)
@@ -553,16 +652,19 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
 
                 for val in v {
                     values.extend_from_slice(val);
-                    length_so_far = values.len() as i64;
+                    length_so_far = values.len() as u64;
                     offsets.push(length_so_far);
                 }
 
-                // SAFETY: we pass valid UTF-8.
+                // SAFETY: offsets are correctly created.
                 let arr = unsafe {
-                    BinaryArray::from_data_unchecked_default(
-                        offsets.into(),
+                    PlBinaryArray::new_unchecked(
                         values.into(),
-                        Some(create_validity(len, null_count, false)),
+                        offsets.into(),
+                        len,
+                        Some(PlBitmap::from_bitmap(create_validity(
+                            len, null_count, false,
+                        ))),
                     )
                 };
                 ChunkedArray::with_chunk(self.name().clone(), arr)
@@ -594,24 +696,22 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
         let arr = ca.downcast_as_array();
         let mut idx = (0..(arr.len() as IdxSize)).collect::<Vec<_>>();
 
-        let argsort = |args| {
-            if options.maintain_order {
-                sort_by_branch(
-                    args,
-                    options.descending,
-                    |a, b| unsafe {
-                        let a = arr.value_unchecked(*a as usize);
-                        let b = arr.value_unchecked(*b as usize);
-                        a.tot_cmp(&b)
-                    },
-                    options.multithreaded,
-                );
-            } else {
-                sort_unstable_by_branch(args, options, |a, b| unsafe {
-                    let a = arr.value_unchecked(*a as usize);
-                    let b = arr.value_unchecked(*b as usize);
-                    a.tot_cmp(&b)
-                });
+        // Which representation the offsets are in is resolved here rather than at every
+        // comparison: `value_unchecked` folds the index onto the offsets it holds, and a sort
+        // asks for two elements per comparison — some 40M of them over a million rows — so that
+        // fold costs about as much again as comparing the bytes it hands back.
+        let values = arr.values().as_slice();
+        let argsort = |args: &mut [IdxSize]| {
+            // Offsets that cover the one range every element reads leave them all the same bytes,
+            // so every comparison answers `Equal` and the indices are already sorted. Otherwise
+            // they hold one start per element, and an element is the run between two of them.
+            if let Some(offsets) = arr.flat_offsets() {
+                let offsets = offsets.as_slice();
+                arg_sort_bytes(args, options, |i| unsafe {
+                    let start = *offsets.get_unchecked(i) as usize;
+                    let end = *offsets.get_unchecked(i + 1) as usize;
+                    values.get_unchecked(start..end)
+                })
             }
         };
 
@@ -620,12 +720,12 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
             IdxCa::from_vec(self.name().clone(), idx)
         } else {
             // This branch (almost?) never gets called as the row-encoding also encodes nulls.
-            let (partitioned_part, validity) =
-                partition_nulls(&mut idx, arr.validity().cloned(), options);
+            let length = idx.len();
+            let (partitioned_part, validity) = partition_nulls(&mut idx, arr.validity(), options);
             argsort(partitioned_part);
             IdxCa::with_chunk(
                 self.name().clone(),
-                IdxArr::from_data_default(idx.into(), validity),
+                PlPrimitiveArray::new(idx.into(), length, validity.map(PlBitmap::from_bitmap)),
             )
         }
     }
@@ -663,6 +763,14 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
 impl ChunkSort<StructType> for StructChunked {
     fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<StructType> {
         options.multithreaded &= RAYON.current_num_threads() > 1;
+
+        // Elements that are all the same one are in order already, so the chunk is its own answer
+        // — rather than the whole column being row encoded and those rows sorted against each
+        // other. See `repeats_one_element`.
+        if repeats_one_element(self) {
+            return sorted_flag_of(self, options);
+        }
+
         let idx = self.arg_sort(options);
         let mut out = unsafe { self.take_unchecked(&idx) };
 
@@ -680,6 +788,11 @@ impl ChunkSort<StructType> for StructChunked {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        // As in `sort_with`: one repeated element leaves every element where it is.
+        if repeats_one_element(self) {
+            return arg_sort_identity(self.name().clone(), self.len());
+        }
+
         let bin = self.get_row_encoded(options).unwrap();
         bin.arg_sort(SortOptions {
             maintain_order: options.maintain_order,
@@ -692,6 +805,12 @@ impl ChunkSort<StructType> for StructChunked {
 impl ChunkSort<ListType> for ListChunked {
     fn sort_with(&self, mut options: SortOptions) -> ListChunked {
         options.multithreaded &= RAYON.current_num_threads() > 1;
+
+        // As in `StructChunked::sort_with`: one repeated element is its own answer.
+        if repeats_one_element(self) {
+            return sorted_flag_of(self, options);
+        }
+
         let idx = self.arg_sort(options);
         let mut out = unsafe { self.take_unchecked(&idx) };
 
@@ -709,6 +828,10 @@ impl ChunkSort<ListType> for ListChunked {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        if repeats_one_element(self) {
+            return arg_sort_identity(self.name().clone(), self.len());
+        }
+
         let bin = _get_rows_encoded_ca(
             self.name().clone(),
             &[self.clone().into_column()],
@@ -760,11 +883,13 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             }
         }
 
+        let length = self.len();
         let mut ca = Self::from_chunk_iter(
             self.name().clone(),
-            Some(BooleanArray::from_data_default(
+            Some(PlBooleanArray::new(
                 bitmap.freeze(),
-                validity.map(|v| v.freeze()),
+                length,
+                (validity.map(|v| v.freeze())).map(PlBitmap::from_bitmap),
             )),
         );
         ca.set_sorted_flag(if options.descending {
@@ -918,6 +1043,27 @@ pub unsafe fn perfect_sort(idx: &[(IdxSize, IdxSize)], out: &mut Vec<IdxSize>) {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+
+    #[test]
+    fn a_sort_below_the_parallel_limit_is_not_handed_to_the_pool() {
+        use super::{PARALLEL_SORT_LIMIT, sort_in_parallel};
+
+        // `list.sort` sorts every element of the column on its own, so a column of a million
+        // three-element lists asked the pool a million times and spent 14 s where the calling
+        // thread would have taken 0.2 s.
+        assert!(!sort_in_parallel(0, true));
+        assert!(!sort_in_parallel(3, true));
+        assert!(!sort_in_parallel(PARALLEL_SORT_LIMIT - 1, true));
+
+        // Above the limit it is the caller's `multithreaded` that decides, and a pool of one
+        // thread is never worth the trip.
+        assert!(!sort_in_parallel(PARALLEL_SORT_LIMIT, false));
+        assert_eq!(
+            sort_in_parallel(PARALLEL_SORT_LIMIT, true),
+            crate::runtime::RAYON.current_num_threads() > 1,
+        );
+    }
+
     #[test]
     fn test_arg_sort() {
         let a = Int32Chunked::new(
@@ -937,6 +1083,7 @@ mod test {
             descending: false,
             ..Default::default()
         });
+        let idx = idx.to_flat();
         let idx = idx.cont_slice().unwrap();
 
         let expected = [2, 4, 0, 3, 7, 6, 5, 1];
@@ -946,6 +1093,7 @@ mod test {
             descending: true,
             ..Default::default()
         });
+        let idx = idx.to_flat();
         let idx = idx.cont_slice().unwrap();
         // the duplicates are in reverse order of appearance, so we cannot reverse expected
         let expected = [2, 4, 1, 5, 6, 0, 3, 7];

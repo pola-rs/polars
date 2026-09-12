@@ -71,7 +71,7 @@ impl DurationChunked {
             "iso" | "iso:strict" => {
                 let out: StringChunked =
                     self.phys
-                        .apply_nonnull_values_generic(DataType::String, |v: i64| {
+                        .apply_nonnull_values_generic_mut(DataType::String, |v: i64| {
                             s.clear();
                             iso_duration_string(&mut s, v, self.time_unit());
                             s.clone()
@@ -81,7 +81,7 @@ impl DurationChunked {
             "polars" => {
                 let out: StringChunked =
                     self.phys
-                        .apply_nonnull_values_generic(DataType::String, |v: i64| {
+                        .apply_nonnull_values_generic_mut(DataType::String, |v: i64| {
                             s.clear();
                             fmt_duration_string(&mut s, v, self.time_unit())
                                 .map_err(|e| polars_err!(ComputeError: "{:?}", e))

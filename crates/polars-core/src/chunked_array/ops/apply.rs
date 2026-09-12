@@ -2,6 +2,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::borrow::Cow;
 
+use polars_buffer::Buffer;
+
 use crate::chunked_array::arity::{unary_elementwise, unary_elementwise_values};
 use crate::chunked_array::cast::CastOptions;
 use crate::prelude::*;
@@ -14,27 +16,55 @@ where
     /// Applies a function only to the non-null elements, propagating nulls.
     pub fn apply_nonnull_values_generic<'a, U, K, F>(
         &'a self,
-        dtype: DataType,
+        // The chunks carry no logical type — the arrays of `polars-array` are physical storage
+        // only — so the collect below builds them without one.
+        _dtype: DataType,
+        op: F,
+    ) -> ChunkedArray<U>
+    where
+        U: PolarsDataType,
+        F: Fn(T::Physical<'a>) -> K,
+        U::Array: ArrayFromIter<K> + ArrayFromIter<Option<K>>,
+    {
+        let iter = self.downcast_iter().map(|arr| {
+            let length = arr.len();
+            if length > 1 {
+                if let Some(Some(value)) = arr.scalar_value() {
+                    let single: U::Array = std::iter::once(op(value)).collect_arr();
+                    return single.new_from_index_typed(0, length);
+                }
+            }
+
+            if arr.null_count() == 0 {
+                let out: U::Array = arr.values_iter().map(&op).collect_arr_trusted();
+                out.with_validity_typed(arr.validity().map(PlBitmap::from))
+            } else {
+                let out: U::Array = arr.iter().map(|opt| opt.map(&op)).collect_arr_trusted();
+                out.with_validity_typed(arr.validity().map(PlBitmap::from))
+            }
+        });
+
+        ChunkedArray::from_chunk_iter(self.name().clone(), iter)
+    }
+
+    /// [`Self::apply_nonnull_values_generic`] for an `op` that carries state between elements.
+    pub fn apply_nonnull_values_generic_mut<'a, U, K, F>(
+        &'a self,
+        _dtype: DataType,
         mut op: F,
     ) -> ChunkedArray<U>
     where
         U: PolarsDataType,
         F: FnMut(T::Physical<'a>) -> K,
-        U::Array: ArrayFromIterDtype<K> + ArrayFromIterDtype<Option<K>>,
+        U::Array: ArrayFromIter<K> + ArrayFromIter<Option<K>>,
     {
         let iter = self.downcast_iter().map(|arr| {
             if arr.null_count() == 0 {
-                let out: U::Array = arr
-                    .values_iter()
-                    .map(&mut op)
-                    .collect_arr_with_dtype(dtype.to_arrow(CompatLevel::newest()));
-                out.with_validity_typed(arr.validity().cloned())
+                let out: U::Array = arr.values_iter().map(&mut op).collect_arr_trusted();
+                out.with_validity_typed(arr.validity().map(PlBitmap::from))
             } else {
-                let out: U::Array = arr
-                    .iter()
-                    .map(|opt| opt.map(&mut op))
-                    .collect_arr_with_dtype(dtype.to_arrow(CompatLevel::newest()));
-                out.with_validity_typed(arr.validity().cloned())
+                let out: U::Array = arr.iter().map(|opt| opt.map(&mut op)).collect_arr_trusted();
+                out.with_validity_typed(arr.validity().map(PlBitmap::from))
             }
         });
 
@@ -53,14 +83,14 @@ where
     {
         let iter = self.downcast_iter().map(|arr| {
             let arr = if arr.null_count() == 0 {
-                let out: U::Array = arr.values_iter().map(&mut op).try_collect_arr()?;
-                out.with_validity_typed(arr.validity().cloned())
+                let out: U::Array = arr.values_iter().map(&mut op).try_collect_arr_trusted()?;
+                out.with_validity_typed(arr.validity().map(PlBitmap::from))
             } else {
                 let out: U::Array = arr
                     .iter()
                     .map(|opt| opt.map(&mut op).transpose())
-                    .try_collect_arr()?;
-                out.with_validity_typed(arr.validity().cloned())
+                    .try_collect_arr_trusted()?;
+                out.with_validity_typed(arr.validity().map(PlBitmap::from))
             };
             Ok(arr)
         });
@@ -76,7 +106,23 @@ where
         let chunks = self
             .downcast_iter()
             .map(|arr| {
-                let mut mutarr = MutablePlString::with_capacity(arr.len());
+                let length = arr.len();
+                if length > 1 {
+                    if let Some(element) = arr.scalar_value() {
+                        // `f` writes the answer for one element into the buffer it is handed, so
+                        // the chunk that reads one element throughout is one call and a repeat.
+                        return match element {
+                            None => PlUtf8ViewArray::new_full_null(length),
+                            Some(v) => {
+                                buf.clear();
+                                f(v, &mut buf);
+                                PlUtf8ViewArray::new_scalar(&buf, length)
+                            },
+                        };
+                    }
+                }
+
+                let mut mutarr = PlUtf8ViewArrayBuilder::with_capacity(length);
                 arr.iter().for_each(|opt| match opt {
                     None => mutarr.push_null(),
                     Some(v) => {
@@ -99,7 +145,23 @@ where
         let chunks = self
             .downcast_iter()
             .map(|arr| {
-                let mut mutarr = MutablePlString::with_capacity(arr.len());
+                let length = arr.len();
+                if length > 1 {
+                    if let Some(element) = arr.scalar_value() {
+                        // As in `apply_into_string_amortized`: one element read throughout is one
+                        // call, and the answer stands for the chunk.
+                        return match element {
+                            None => Ok(PlUtf8ViewArray::new_full_null(length)),
+                            Some(v) => {
+                                buf.clear();
+                                f(v, &mut buf)?;
+                                Ok(PlUtf8ViewArray::new_scalar(&buf, length))
+                            },
+                        };
+                    }
+                }
+
+                let mut mutarr = PlUtf8ViewArrayBuilder::with_capacity(length);
                 for opt in arr.iter() {
                     match opt {
                         None => mutarr.push_null(),
@@ -117,41 +179,48 @@ where
     }
 }
 
-fn apply_in_place_impl<S, F>(name: PlSmallStr, chunks: Vec<ArrayRef>, f: F) -> ChunkedArray<S>
+fn apply_in_place_impl<S, F>(name: PlSmallStr, chunks: Vec<PlArrayRef>, f: F) -> ChunkedArray<S>
 where
     F: Fn(S::Native) -> S::Native + Copy,
     S: PolarsNumericType,
 {
-    use arrow::Either::*;
     let chunks = chunks.into_iter().map(|arr| {
-        let owned_arr = arr
+        let typed = arr
             .as_any()
-            .downcast_ref::<PrimitiveArray<S::Native>>()
-            .unwrap()
-            .clone();
-        // Make sure we have a single ref count coming in.
+            .downcast_ref::<PlPrimitiveArray<S::Native>>()
+            .unwrap();
+
+        // A scalar chunk reads one value at every element, so `f` is applied to that value alone
+        // and what comes back stands for every element in turn.
+        if let Some(value) = typed.scalar_value_ignore_validity() {
+            let validity = typed.validity().map(PlBitmap::from);
+            return PlPrimitiveArray::new_scalar(f(value), typed.len()).with_validity(validity);
+        }
+
+        // Cloning an array bumps the reference count of its buffers rather than copying them, so
+        // dropping the chunk straight after leaves this the only handle on the values — which is
+        // what lets them be mapped where they lie. That is the whole point of this function.
+        let mut owned = typed.clone();
         drop(arr);
 
-        let compute_immutable = |arr: &PrimitiveArray<S::Native>| {
-            arrow::compute::arity::unary(
-                arr,
-                f,
-                S::get_static_dtype().to_arrow(CompatLevel::newest()),
-            )
-        };
-
-        if owned_arr.values().is_sliced() {
-            compute_immutable(&owned_arr)
-        } else {
-            match owned_arr.into_mut() {
-                Left(immutable) => compute_immutable(&immutable),
-                Right(mut mutable) => {
-                    let vals = mutable.values_mut_slice();
-                    vals.iter_mut().for_each(|v| *v = f(*v));
-                    mutable.into()
-                },
-            }
+        let values = owned
+            .flat_values_mut()
+            .expect("the chunk is flat: a scalar one returned above");
+        match values.get_mut_slice() {
+            Some(slice) => {
+                for value in slice {
+                    *value = f(*value);
+                }
+            },
+            None => {
+                // Something else still reads these values, so the mapped ones go into a buffer of
+                // their own. A sliced buffer is not this case: what is handed back above covers
+                // the elements of the array and no more.
+                let mapped: Vec<_> = values.as_slice().iter().map(|value| f(*value)).collect();
+                *values = Buffer::from(mapped);
+            },
         }
+        owned
     });
 
     ChunkedArray::from_chunk_iter(name, chunks)
@@ -196,8 +265,25 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
     {
         // SAFETY, we do no t change the lengths
         unsafe {
-            self.downcast_iter_mut()
-                .for_each(|arr| arrow::compute::arity_assign::unary(arr, f))
+            self.downcast_iter_mut().for_each(|arr| {
+                // Each chunk is mapped in whatever representation it is in: mapping the slots the
+                // values hold leaves them in that representation, so a scalar chunk has its one
+                // value mapped once and it still stands for every element.
+                if let Some(slots) = arr.flat_or_scalar_values_mut() {
+                    slots.iter_mut().for_each(|v| *v = f(*v));
+                    return;
+                }
+
+                // The values are shared with another array, so they cannot be written over: the
+                // chunk is built anew, in the representation it is already in.
+                let length = arr.len();
+                let validity = arr.validity().map(PlBitmap::from);
+                let mapped = match arr.scalar_value_ignore_validity() {
+                    Some(value) => PlPrimitiveArray::new_scalar(f(value), length),
+                    None => PlPrimitiveArray::from_vec(arr.values_iter().map(f).collect()),
+                };
+                *arr = mapped.with_validity(validity);
+            })
         };
         // can be in any order now
         self.compute_len();
@@ -215,13 +301,17 @@ where
     where
         F: Fn(T::Native) -> T::Native + Copy,
     {
-        let chunks = self
-            .data_views()
-            .zip(self.iter_validities())
-            .map(|(slice, validity)| {
-                let arr: T::Array = slice.iter().copied().map(f).collect_arr();
-                arr.with_validity(validity.cloned())
-            });
+        let chunks = self.downcast_iter().map(|arr| {
+            let validity = arr.validity().map(PlBitmap::from);
+            if let Some(value) = arr.scalar_value_ignore_validity() {
+                return PlPrimitiveArray::new_scalar(f(value), arr.len())
+                    .with_validity_typed(validity);
+            }
+
+            let flat = arr.to_flat();
+            let out: T::Array = flat.as_slice().iter().copied().map(f).collect_arr();
+            out.with_validity_typed(validity)
+        });
         ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }
 
@@ -230,8 +320,8 @@ where
         F: Fn(Option<T::Native>) -> Option<T::Native> + Copy,
     {
         let chunks = self.downcast_iter().map(|arr| {
-            let iter = arr.into_iter().map(|opt_v| f(opt_v.copied()));
-            PrimitiveArray::<T::Native>::from_trusted_len_iter(iter)
+            let out: T::Array = arr.iter().map(f).collect_arr();
+            out
         });
         Self::from_chunk_iter(self.name().clone(), chunks)
     }
@@ -248,7 +338,7 @@ where
                 // SAFETY:
                 // length asserted above
                 let item = unsafe { slice.get_unchecked_mut(idx) };
-                *item = f(opt_val.copied(), item);
+                *item = f(opt_val, item);
                 idx += 1;
             })
         });
@@ -262,22 +352,23 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
     where
         F: Fn(bool) -> bool + Copy,
     {
-        // Can just fully deduce behavior from two invocations.
+        // Can just fully deduce behavior from two invocations. A chunk of one value repeated is
+        // scalar, so the two constant branches are `O(1)` in memory.
+        let constant = |value: bool| {
+            let chunks = self
+                .downcast_iter()
+                .map(|arr| {
+                    PlBooleanArray::new_scalar(value, arr.len())
+                        .with_validity(arr.validity().map(PlBitmap::from))
+                })
+                .collect::<Vec<_>>();
+            Self::from_chunk_iter(self.name().clone(), chunks)
+        };
         match (f(false), f(true)) {
-            (false, false) => self.apply_kernel(&|arr| {
-                Box::new(
-                    BooleanArray::full(arr.len(), false, ArrowDataType::Boolean)
-                        .with_validity(arr.validity().cloned()),
-                )
-            }),
+            (false, false) => constant(false),
             (false, true) => self.clone(),
             (true, false) => !self,
-            (true, true) => self.apply_kernel(&|arr| {
-                Box::new(
-                    BooleanArray::full(arr.len(), true, ArrowDataType::Boolean)
-                        .with_validity(arr.validity().cloned()),
-                )
-            }),
+            (true, true) => constant(true),
         }
     }
 
@@ -313,9 +404,19 @@ impl StringChunked {
         F: FnMut(&'a str) -> &'a str,
     {
         let chunks = self.downcast_iter().map(|arr| {
+            let length = arr.len();
+            if length > 1 {
+                // The value `f` answers is read before the next call, which is what a scalar
+                // chunk needs: one call, and the answer copied into the one slot it stands in.
+                if let Some(value) = arr.scalar_value_ignore_validity() {
+                    return PlUtf8ViewArray::new_scalar(f(value), length)
+                        .with_validity(arr.validity().map(PlBitmap::from));
+                }
+            }
+
             let iter = arr.values_iter().map(&mut f);
-            let new = Utf8ViewArray::arr_from_iter(iter);
-            new.with_validity(arr.validity().cloned())
+            let new = PlUtf8ViewArray::arr_from_iter(iter);
+            new.with_validity(arr.validity().map(PlBitmap::from))
         });
         StringChunked::from_chunk_iter(self.name().clone(), chunks)
     }
@@ -327,9 +428,19 @@ impl BinaryChunked {
         F: FnMut(&'a [u8]) -> &'a [u8],
     {
         let chunks = self.downcast_iter().map(|arr| {
+            let length = arr.len();
+            if length > 1 {
+                // The value `f` answers is read before the next call, which is what a scalar
+                // chunk needs: one call, and the answer copied into the one slot it stands in.
+                if let Some(value) = arr.scalar_value_ignore_validity() {
+                    return PlBinaryViewArray::new_scalar(f(value), length)
+                        .with_validity(arr.validity().map(PlBitmap::from));
+                }
+            }
+
             let iter = arr.values_iter().map(&mut f);
-            let new = BinaryViewArray::arr_from_iter(iter);
-            new.with_validity(arr.validity().cloned())
+            let new = PlBinaryViewArray::arr_from_iter(iter);
+            new.with_validity(arr.validity().map(PlBitmap::from))
         });
         BinaryChunked::from_chunk_iter(self.name().clone(), chunks)
     }
@@ -407,68 +518,6 @@ impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
     }
 }
 
-impl ChunkApplyKernel<BooleanArray> for BooleanChunked {
-    fn apply_kernel(&self, f: &dyn Fn(&BooleanArray) -> ArrayRef) -> Self {
-        let chunks = self.downcast_iter().map(f).collect();
-        unsafe { Self::from_chunks(self.name().clone(), chunks) }
-    }
-
-    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&BooleanArray) -> ArrayRef) -> ChunkedArray<S>
-    where
-        S: PolarsDataType,
-    {
-        let chunks = self.downcast_iter().map(f).collect();
-        unsafe { ChunkedArray::<S>::from_chunks(self.name().clone(), chunks) }
-    }
-}
-
-impl<T> ChunkApplyKernel<PrimitiveArray<T::Native>> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    fn apply_kernel(&self, f: &dyn Fn(&PrimitiveArray<T::Native>) -> ArrayRef) -> Self {
-        self.apply_kernel_cast(&f)
-    }
-    fn apply_kernel_cast<S>(
-        &self,
-        f: &dyn Fn(&PrimitiveArray<T::Native>) -> ArrayRef,
-    ) -> ChunkedArray<S>
-    where
-        S: PolarsDataType,
-    {
-        let chunks = self.downcast_iter().map(f).collect();
-        unsafe { ChunkedArray::from_chunks(self.name().clone(), chunks) }
-    }
-}
-
-impl ChunkApplyKernel<Utf8ViewArray> for StringChunked {
-    fn apply_kernel(&self, f: &dyn Fn(&Utf8ViewArray) -> ArrayRef) -> Self {
-        self.apply_kernel_cast(&f)
-    }
-
-    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&Utf8ViewArray) -> ArrayRef) -> ChunkedArray<S>
-    where
-        S: PolarsDataType,
-    {
-        let chunks = self.downcast_iter().map(f).collect();
-        unsafe { ChunkedArray::from_chunks(self.name().clone(), chunks) }
-    }
-}
-
-impl ChunkApplyKernel<BinaryViewArray> for BinaryChunked {
-    fn apply_kernel(&self, f: &dyn Fn(&BinaryViewArray) -> ArrayRef) -> Self {
-        self.apply_kernel_cast(&f)
-    }
-
-    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&BinaryViewArray) -> ArrayRef) -> ChunkedArray<S>
-    where
-        S: PolarsDataType,
-    {
-        let chunks = self.downcast_iter().map(f).collect();
-        unsafe { ChunkedArray::from_chunks(self.name().clone(), chunks) }
-    }
-}
-
 impl<'a> ChunkApply<'a, Series> for ListChunked {
     type FuncRet = Series;
 
@@ -515,11 +564,18 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
     {
         assert!(slice.len() >= self.len());
 
+        // The chunks carry no logical type, so the inner dtype is taken from this array.
+        let inner_dtype = self.inner_dtype().to_physical();
         let mut idx = 0;
         self.downcast_iter().for_each(|arr| {
             arr.iter().for_each(|opt_val| {
-                let opt_val = opt_val
-                    .map(|arrayref| Series::try_from((PlSmallStr::EMPTY, arrayref)).unwrap());
+                let opt_val = opt_val.map(|values| unsafe {
+                    Series::from_chunks_and_dtype_unchecked(
+                        PlSmallStr::EMPTY,
+                        vec![values],
+                        &inner_dtype,
+                    )
+                });
 
                 // SAFETY:
                 // length asserted above

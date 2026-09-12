@@ -1,7 +1,7 @@
 //! Row format as defined in `arrow-rs`.
 //! This currently partially implements that format only for needed types.
 //! For completeness sake the format as defined by `arrow-rs` is as followed:
-//! Converts [`ArrayRef`] columns into a [row-oriented](self) format.
+//! Converts [`PlArray`](polars_array::PlArray) columns into a [row-oriented](self) format.
 //!
 //! ## Overview
 //!
@@ -276,9 +276,6 @@ mod row;
 mod utils;
 pub(crate) mod variable;
 mod widths;
-
-use arrow::array::*;
-pub type ArrayRef = Box<dyn Array>;
 
 pub use encode::{
     convert_columns, convert_columns_amortized, convert_columns_amortized_no_order,

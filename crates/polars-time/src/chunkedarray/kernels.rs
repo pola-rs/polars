@@ -1,67 +1,69 @@
-//! macros that define kernels for extracting
-//! `week`, `weekday`, `year`, `hour` etc. from primitive arrays.
-use arrow::array::{BooleanArray, PrimitiveArray};
+//! macros that define the extraction of `week`, `weekday`, `year`, `hour` etc. from one value.
+#[cfg(feature = "dtype-date")]
+use arrow::temporal_conversions::date32_to_date_opt;
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time_opt;
-use arrow::temporal_conversions::{
-    date32_to_datetime_opt, timestamp_ms_to_datetime_opt, timestamp_ns_to_datetime_opt,
-    timestamp_us_to_datetime_opt,
-};
 use chrono::{Datelike, Timelike};
 
 use super::super::windows::calendar::*;
 use super::*;
 
 trait PolarsIso {
-    fn week(&self) -> i8;
+    /// The ISO week number, 1 through 53.
+    ///
+    /// Named apart from `week` because `NaiveDate` has an inherent `week(Weekday)` of its own that
+    /// would shadow it.
+    fn iso_week_number(&self) -> i8;
     fn iso_year(&self) -> i32;
+    /// The day of the week as Monday = 1 through Sunday = 7.
+    fn weekday_number(&self) -> i8;
 }
 
 impl PolarsIso for NaiveDateTime {
-    fn week(&self) -> i8 {
+    fn iso_week_number(&self) -> i8 {
         self.iso_week().week().try_into().unwrap()
     }
     fn iso_year(&self) -> i32 {
         self.iso_week().year()
+    }
+    fn weekday_number(&self) -> i8 {
+        self.weekday().number_from_monday().try_into().unwrap()
     }
 }
 
 impl PolarsIso for NaiveDate {
-    fn week(&self) -> i8 {
+    fn iso_week_number(&self) -> i8 {
         self.iso_week().week().try_into().unwrap()
     }
     fn iso_year(&self) -> i32 {
         self.iso_week().year()
     }
+    fn weekday_number(&self) -> i8 {
+        self.weekday().number_from_monday().try_into().unwrap()
+    }
 }
 
+/// Each of these carries the timestamp conversion as well as the field, and is called once per
+/// element by the elementwise applies below. `#[inline]` is what lets the conversion and the
+/// chrono arithmetic behind it fold into the caller's loop, as they did when these were kernels
+/// over a whole chunk: without it `date.year` over a million dates costs some 15% more
+/// instructions.
 macro_rules! to_temporal_unit {
     ($name: ident, $chrono_method: ident, $to_datetime_fn: expr,
     $primitive_in: ty,
-    $primitive_out: ty,
-    $dtype_out:expr) => {
-        pub(crate) fn $name(arr: &PrimitiveArray<$primitive_in>) -> ArrayRef {
-            Box::new(PrimitiveArray::<$primitive_out>::from_trusted_len_iter(
-                arr.iter().map(|opt_value| {
-                    opt_value.and_then(|&value| {
-                        $to_datetime_fn(value).map(|dt| dt.$chrono_method() as $primitive_out)
-                    })
-                }),
-            )) as ArrayRef
+    $primitive_out: ty) => {
+        #[inline]
+        pub(crate) fn $name(value: $primitive_in) -> Option<$primitive_out> {
+            $to_datetime_fn(value).map(|dt| dt.$chrono_method() as $primitive_out)
         }
     };
 }
 
 macro_rules! to_boolean_temporal_unit {
     ($name: ident, $chrono_method: ident, $boolean_method: ident, $to_datetime_fn: expr, $dtype_in: ty) => {
-        pub(crate) fn $name(arr: &PrimitiveArray<$dtype_in>) -> ArrayRef {
-            Box::new(BooleanArray::from_trusted_len_iter(arr.iter().map(
-                |opt_value| {
-                    opt_value.and_then(|&value| {
-                        $to_datetime_fn(value).map(|dt| $boolean_method(dt.$chrono_method()))
-                    })
-                },
-            )))
+        #[inline]
+        pub(crate) fn $name(value: $dtype_in) -> Option<bool> {
+            $to_datetime_fn(value).map(|dt| $boolean_method(dt.$chrono_method()))
         }
     };
 }
@@ -69,242 +71,96 @@ macro_rules! to_boolean_temporal_unit {
 macro_rules! to_calendar_value {
     ($name: ident, $dt: ident, $expr: expr, $to_datetime_fn: expr,
     $primitive_in: ty,
-    $primitive_out: ty,
-    $dtype_out:expr) => {
-        pub(crate) fn $name(arr: &PrimitiveArray<$primitive_in>) -> ArrayRef {
-            Box::new(PrimitiveArray::<$primitive_out>::from_trusted_len_iter(
-                arr.iter().map(|opt_value| {
-                    opt_value.and_then(|&value| {
-                        $to_datetime_fn(value).map(|$dt| $expr as $primitive_out)
-                    })
-                }),
-            )) as ArrayRef
+    $primitive_out: ty) => {
+        #[inline]
+        pub(crate) fn $name(value: $primitive_in) -> Option<$primitive_out> {
+            $to_datetime_fn(value).map(|$dt| $expr as $primitive_out)
         }
     };
 }
 
-// Dates
+// Dates. Every one of these reads a field of the day itself, so the day is all that is worked
+// out: `date32_to_date_opt` is one day-count conversion where `date32_to_datetime_opt` goes on to
+// build the midnight time of day that none of them looks at.
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
     date_to_iso_week,
-    week,
-    date32_to_datetime_opt,
+    iso_week_number,
+    date32_to_date_opt,
     i32,
-    i8,
-    ArrowDataType::Int8
+    i8
 );
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(
-    date_to_iso_year,
-    iso_year,
-    date32_to_datetime_opt,
-    i32,
-    i32,
-    ArrowDataType::Int32
-);
+to_temporal_unit!(date_to_iso_year, iso_year, date32_to_date_opt, i32, i32);
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(
-    date_to_year,
-    year,
-    date32_to_datetime_opt,
-    i32,
-    i32,
-    ArrowDataType::Int32
-);
+to_temporal_unit!(date_to_year, year, date32_to_date_opt, i32, i32);
 #[cfg(feature = "dtype-date")]
 to_boolean_temporal_unit!(
     date_to_is_leap_year,
     year,
     is_leap_year,
-    date32_to_datetime_opt,
+    date32_to_date_opt,
     i32
 );
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(
-    date_to_month,
-    month,
-    date32_to_datetime_opt,
-    i32,
-    i8,
-    ArrowDataType::Int8
-);
+to_temporal_unit!(date_to_month, month, date32_to_date_opt, i32, i8);
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(
-    date_to_day,
-    day,
-    date32_to_datetime_opt,
-    i32,
-    i8,
-    ArrowDataType::Int8
-);
+to_temporal_unit!(date_to_day, day, date32_to_date_opt, i32, i8);
 #[cfg(feature = "dtype-date")]
-to_temporal_unit!(
-    date_to_ordinal,
-    ordinal,
-    date32_to_datetime_opt,
-    i32,
-    i16,
-    ArrowDataType::Int16
-);
+to_temporal_unit!(date_to_ordinal, ordinal, date32_to_date_opt, i32, i16);
 #[cfg(feature = "dtype-date")]
 to_calendar_value!(
     date_to_days_in_month,
     dt,
     days_in_month(dt.year(), dt.month() as u8),
-    date32_to_datetime_opt,
+    date32_to_date_opt,
     i32,
-    i8,
-    ArrowDataType::Int8
+    i8
 );
 
 // Times
 #[cfg(feature = "dtype-time")]
-to_temporal_unit!(
-    time_to_hour,
-    hour,
-    time64ns_to_time_opt,
-    i64,
-    i8,
-    ArrowDataType::Int8
-);
+to_temporal_unit!(time_to_hour, hour, time64ns_to_time_opt, i64, i8);
 #[cfg(feature = "dtype-time")]
-to_temporal_unit!(
-    time_to_minute,
-    minute,
-    time64ns_to_time_opt,
-    i64,
-    i8,
-    ArrowDataType::Int8
-);
+to_temporal_unit!(time_to_minute, minute, time64ns_to_time_opt, i64, i8);
 #[cfg(feature = "dtype-time")]
-to_temporal_unit!(
-    time_to_second,
-    second,
-    time64ns_to_time_opt,
-    i64,
-    i8,
-    ArrowDataType::Int8
-);
+to_temporal_unit!(time_to_second, second, time64ns_to_time_opt, i64, i8);
 #[cfg(feature = "dtype-time")]
 to_temporal_unit!(
     time_to_nanosecond,
     nanosecond,
     time64ns_to_time_opt,
     i64,
-    i32,
-    ArrowDataType::Int32
+    i32
 );
 
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_ordinal_ns,
-    ordinal,
-    timestamp_ns_to_datetime_opt,
-    i64,
-    i16,
-    ArrowDataType::Int16
-);
+/// Defines the extraction of one field of the wall time an instant stands for.
+///
+/// The instant is read once, by whichever conversion the column's timestamp unit asks for, and
+/// every field is taken off it — so a field costs one function per field, not one per unit.
+macro_rules! datetime_field {
+    ($($name:ident, $dt:ident, $expr:expr, $out:ty;)*) => {
+        $(
+            #[cfg(feature = "dtype-datetime")]
+            pub(crate) fn $name($dt: NaiveDateTime) -> $out {
+                $expr
+            }
+        )*
+    };
+}
 
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_ordinal_ms,
-    ordinal,
-    timestamp_ms_to_datetime_opt,
-    i64,
-    i16,
-    ArrowDataType::Int16
-);
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_ordinal_us,
-    ordinal,
-    timestamp_us_to_datetime_opt,
-    i64,
-    i16,
-    ArrowDataType::Int16
-);
-
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_iso_year_ns,
-    iso_year,
-    timestamp_ns_to_datetime_opt,
-    i64,
-    i32,
-    ArrowDataType::Int32
-);
-
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_iso_year_us,
-    iso_year,
-    timestamp_us_to_datetime_opt,
-    i64,
-    i32,
-    ArrowDataType::Int32
-);
-
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_iso_year_ms,
-    iso_year,
-    timestamp_ms_to_datetime_opt,
-    i64,
-    i32,
-    ArrowDataType::Int32
-);
-#[cfg(feature = "dtype-datetime")]
-to_boolean_temporal_unit!(
-    datetime_to_is_leap_year_ns,
-    year,
-    is_leap_year,
-    timestamp_ns_to_datetime_opt,
-    i64
-);
-#[cfg(feature = "dtype-datetime")]
-to_boolean_temporal_unit!(
-    datetime_to_is_leap_year_us,
-    year,
-    is_leap_year,
-    timestamp_us_to_datetime_opt,
-    i64
-);
-#[cfg(feature = "dtype-datetime")]
-to_boolean_temporal_unit!(
-    datetime_to_is_leap_year_ms,
-    year,
-    is_leap_year,
-    timestamp_ms_to_datetime_opt,
-    i64
-);
-
-#[cfg(feature = "dtype-datetime")]
-to_calendar_value!(
-    datetime_to_days_in_month_ns,
-    dt,
-    days_in_month(dt.year(), dt.month() as u8),
-    timestamp_ns_to_datetime_opt,
-    i64,
-    i8,
-    ArrowDataType::Int8
-);
-#[cfg(feature = "dtype-datetime")]
-to_calendar_value!(
-    datetime_to_days_in_month_us,
-    dt,
-    days_in_month(dt.year(), dt.month() as u8),
-    timestamp_us_to_datetime_opt,
-    i64,
-    i8,
-    ArrowDataType::Int8
-);
-#[cfg(feature = "dtype-datetime")]
-to_calendar_value!(
-    datetime_to_days_in_month_ms,
-    dt,
-    days_in_month(dt.year(), dt.month() as u8),
-    timestamp_ms_to_datetime_opt,
-    i64,
-    i8,
-    ArrowDataType::Int8
-);
+datetime_field! {
+    datetime_year, dt, dt.year(), i32;
+    datetime_month, dt, dt.month() as i8, i8;
+    datetime_day, dt, dt.day() as i8, i8;
+    datetime_hour, dt, dt.hour() as i8, i8;
+    datetime_minute, dt, dt.minute() as i8, i8;
+    datetime_second, dt, dt.second() as i8, i8;
+    datetime_nanosecond, dt, dt.nanosecond() as i32, i32;
+    datetime_weekday, dt, dt.weekday_number(), i8;
+    datetime_iso_week, dt, dt.iso_week_number(), i8;
+    datetime_iso_year, dt, dt.iso_year(), i32;
+    datetime_ordinal, dt, dt.ordinal() as i16, i16;
+    datetime_is_leap_year, dt, is_leap_year(dt.year()), bool;
+    datetime_days_in_month, dt, days_in_month(dt.year(), dt.month() as u8) as i8, i8;
+}

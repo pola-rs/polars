@@ -4,16 +4,20 @@ use super::super::mean::MeanWindow;
 use super::*;
 
 pub fn rolling_mean<T>(
-    values: &[T],
+    values: &NoNulls<PlPrimitiveArray<T>>,
     window_size: usize,
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
     _params: Option<RollingFnParams>,
-) -> PolarsResult<ArrayRef>
+) -> PolarsResult<Box<dyn PlArray>>
 where
     T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
 {
+    // The chunk becomes a slice here, once, out of the window loop; see the module docs.
+    let values = values.to_flat_values();
+    let values = values.as_slice();
+
     let offset_fn = match center {
         true => det_offsets_center,
         false => det_offsets,

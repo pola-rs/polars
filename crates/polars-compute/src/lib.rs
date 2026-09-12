@@ -1,4 +1,5 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
+//! The compute kernels of Polars.
 
 use arrow::types::NativeType;
 
@@ -30,12 +31,13 @@ pub mod if_then_else;
 pub mod min_max;
 pub mod moment;
 pub mod nan;
-pub mod propagate_dictionary;
+mod nesting;
 pub mod propagate_nulls;
-pub mod rebuild_list;
 pub mod rolling;
+pub mod set;
 pub mod size;
 pub mod sum;
+pub mod take_agg;
 pub mod trim_lists_to_normalized_offsets;
 pub mod unique;
 

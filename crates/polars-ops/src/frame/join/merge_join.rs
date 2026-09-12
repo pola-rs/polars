@@ -2,8 +2,7 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::iter::repeat_n;
 
-use arrow::array::Array;
-use arrow::array::builder::ShareStrategy;
+use polars_array::builder::ShareStrategy;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;

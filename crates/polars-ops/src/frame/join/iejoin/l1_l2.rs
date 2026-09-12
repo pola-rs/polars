@@ -22,13 +22,15 @@ where
     assert_eq!(order.null_count(), 0);
     assert_eq!(ca.chunks().len(), 1);
     let arr = ca.downcast_get(0).unwrap();
-    // Even if there are nulls, they will not be selected by order.
-    let values = arr.values().as_slice();
+    // Only a values buffer that repeats one value is written out: the mask is not read here, since
+    // even if there are nulls, they will not be selected by order.
+    let flat = arr.to_flat_values();
+    let values = flat.as_slice();
 
     let mut array: Vec<L1Item<T::Native>> = Vec::with_capacity(ca.len());
 
     for order_arr in order.downcast_iter() {
-        for index in order_arr.values().as_slice().iter().copied() {
+        for index in order_arr.values_iter() {
             debug_assert!(arr.get(index as usize).is_some());
             let value = unsafe { *values.get_unchecked(index as usize) };
             let row_index = if index < right_df_offset {
@@ -66,8 +68,9 @@ where
     let mut prev_value = T::Native::default();
 
     let arr = ca.downcast_get(0).unwrap();
-    // Even if there are nulls, they will not be selected by order.
-    let values = arr.values().as_slice();
+    // As above: the mask is not read, so only a repeated values buffer is written out.
+    let flat = arr.to_flat_values();
+    let values = flat.as_slice();
 
     for (i, l1_index) in order.iter().copied().enumerate() {
         debug_assert!(arr.get(l1_index as usize).is_some());

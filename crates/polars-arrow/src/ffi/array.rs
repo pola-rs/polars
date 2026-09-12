@@ -11,7 +11,7 @@ use crate::bitmap::utils::bytes_for;
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::ffi::schema::get_child;
 use crate::types::{NativeType, PrimitiveType, months_days_ns};
-use crate::{ffi, match_integer_type, with_match_primitive_type_full};
+use crate::{ffi, match_integer_type, with_match_primitive_type};
 
 /// Reads a valid `ffi` interface into a `Box<dyn Array>`
 /// # Errors
@@ -25,7 +25,7 @@ pub unsafe fn try_from<A: ArrowArrayRef>(array: A) -> PolarsResult<Box<dyn Array
         Primitive(PrimitiveType::MonthDayNano) => {
             Box::new(PrimitiveArray::<months_days_ns>::try_from_ffi(array)?)
         },
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             Box::new(PrimitiveArray::<$T>::try_from_ffi(array)?)
         }),
         Utf8 => Box::new(Utf8Array::<i32>::try_from_ffi(array)?),

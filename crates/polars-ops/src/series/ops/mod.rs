@@ -13,6 +13,7 @@ mod cum_agg;
 mod cut;
 #[cfg(feature = "diff")]
 mod diff;
+mod distinct;
 mod eager;
 #[cfg(feature = "ewma")]
 mod ewm;

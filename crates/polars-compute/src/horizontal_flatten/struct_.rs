@@ -1,88 +1,52 @@
-use super::*;
+use polars_array::{PlArray, PlBitmap, PlBooleanArray, PlStructArray};
 
-/// # Safety
-/// All preconditions in [`super::horizontal_flatten_unchecked`]
-pub(super) unsafe fn horizontal_flatten_unchecked(
-    arrays: &[StructArray],
+use super::horizontal_flatten;
+use crate::nesting::downcast;
+
+/// Lays struct arrays out end to end, a field at a time.
+pub(super) fn flatten_structs(
+    arrays: &[Box<dyn PlArray>],
     widths: &[usize],
     output_height: usize,
-) -> StructArray {
-    // For StructArrays, we perform the flatten operation individually for every field in the struct
-    // as well as on the outer validity. We then construct the result array from the individual
-    // result parts.
-
-    let dtype = arrays[0].dtype();
-
-    let field_arrays: Vec<&[Box<dyn Array>]> = arrays
-        .iter()
-        .inspect(|x| debug_assert_eq!(x.dtype(), dtype))
-        .map(|x| x.values())
-        .collect::<Vec<_>>();
-
-    let n_fields = field_arrays[0].len();
-
-    let mut scratch = Vec::with_capacity(field_arrays.len());
-    // Safety: We can take by index as all struct arrays have the same columns names in the same
-    // order.
-    // Note: `field_arrays` can be empty for 0-field structs.
-    let field_arrays = (0..n_fields)
+    out_len: usize,
+) -> PlStructArray {
+    // A field array holds one element per element of the struct it belongs to, so it is as wide
+    // and as long as that struct: which of the two the flatten reads it as is the same either way.
+    let mut field = Vec::with_capacity(arrays.len());
+    let fields: Vec<Box<dyn PlArray>> = (0..downcast::<PlStructArray>(&*arrays[0]).num_fields())
         .map(|i| {
-            scratch.clear();
-            scratch.extend(field_arrays.iter().map(|v| v[i].clone()));
-
-            super::horizontal_flatten_unchecked(&scratch, widths, output_height)
-        })
-        .collect::<Vec<_>>();
-
-    let validity = if arrays.iter().any(|x| x.validity().is_some()) {
-        let max_height = output_height * widths.iter().fold(0usize, |a, b| a.max(*b));
-        let mut shared_validity = None;
-
-        // We need to create BooleanArrays from the Bitmaps for dispatch.
-        let validities: Vec<BooleanArray> = arrays
-            .iter()
-            .map(|x| {
-                x.validity().cloned().unwrap_or_else(|| {
-                    if shared_validity.is_none() {
-                        shared_validity = Some(Bitmap::new_with_value(true, max_height))
-                    };
-                    // We have to slice to exact length to pass an assertion.
-                    shared_validity.clone().unwrap().sliced(0, x.len())
-                })
-            })
-            .map(|x| BooleanArray::from_inner_unchecked(ArrowDataType::Boolean, x, None))
-            .collect::<Vec<_>>();
-
-        Some(
-            super::horizontal_flatten_unchecked_impl_generic::<BooleanArray>(
-                &validities,
-                widths,
-                output_height,
-                &ArrowDataType::Boolean,
-            )
-            .as_any()
-            .downcast_ref::<BooleanArray>()
-            .unwrap()
-            .values()
-            .clone(),
-        )
-    } else {
-        None
-    };
-
-    StructArray::new(
-        dtype.clone(),
-        if n_fields == 0 {
-            output_height * widths.iter().copied().sum::<usize>()
-        } else {
-            debug_assert_eq!(
-                field_arrays[0].len(),
-                output_height * widths.iter().copied().sum::<usize>()
+            field.clear();
+            field.extend(
+                arrays
+                    .iter()
+                    .map(|array| downcast::<PlStructArray>(&**array).field(i).to_boxed()),
             );
+            horizontal_flatten(&field, widths, output_height)
+        })
+        .collect();
 
-            field_arrays[0].len()
-        },
-        field_arrays,
-        validity,
-    )
+    let validity = arrays
+        .iter()
+        .any(|array| array.validity().is_some())
+        .then(|| {
+            let masks: Vec<Box<dyn PlArray>> = arrays
+                .iter()
+                .map(|array| {
+                    let mask = match array.validity() {
+                        // Every element of this array is there, however many that is.
+                        None => PlBooleanArray::new_scalar(true, array.len()),
+                        Some(validity) => PlBooleanArray::from_pl_bitmap(validity.into()),
+                    };
+                    Box::new(mask) as Box<dyn PlArray>
+                })
+                .collect();
+
+            let flattened = horizontal_flatten(&masks, widths, output_height);
+            downcast::<PlBooleanArray>(&*flattened)
+                .values()
+                .to_flat_or_scalar()
+        });
+
+    // A struct of no fields carries nothing but its length, which the widths still say.
+    PlStructArray::new(fields, out_len, None).with_validity(validity.map(PlBitmap::from_bitmap))
 }

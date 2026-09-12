@@ -1,18 +1,21 @@
 use std::sync::{Arc, OnceLock};
 
-#[cfg(feature = "python")]
-use arrow::array::ListArray;
-use arrow::array::{Array, BooleanArray};
+use arrow::bitmap::MutableBitmap;
 use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_array::PlBitmap;
 use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
 use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{BooleanChunked, ChunkAgg, DataType, NamedFrom, PlIndexMap};
+#[cfg(feature = "python")]
+use polars_core::prelude::{PlBooleanArray, PlListArray};
 use polars_core::schema::{Schema, SchemaRef};
+#[cfg(feature = "python")]
 use polars_core::series::Series;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_error::{PolarsResult, feature_gated, polars_bail, polars_err};
+#[cfg(feature = "python")]
+use polars_error::polars_err;
+use polars_error::{PolarsResult, feature_gated, polars_bail};
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};
@@ -57,7 +60,7 @@ pub enum DeletionFilesProvider {
     DeltaDeletionVector {
         provider: DeltaDeletionVectorProvider,
         selected_paths: Buffer<PlRefPath>,
-        cache: Arc<tokio::sync::OnceCell<Option<ListArray<i64>>>>,
+        cache: Arc<tokio::sync::OnceCell<Option<PlListArray>>>,
     },
 }
 
@@ -410,7 +413,7 @@ impl DeletionFilesProvider {
                                 let arr = list.value(scan_source_idx);
                                 let bool_arr = arr
                                     .as_any()
-                                    .downcast_ref::<BooleanArray>()
+                                    .downcast_ref::<PlBooleanArray>()
                                     .ok_or_else(|| {
                                         polars_err!(ComputeError:
                                             "expected boolean array in Delta deletion vector")
@@ -585,7 +588,7 @@ impl ExternalFilterMask {
                     // We are past any row deletions
                     len
                 } else {
-                    let mask = mask.clone().sliced(phys_offset, mask.len() - phys_offset);
+                    let mask = mask.sliced(phys_offset, mask.len() - phys_offset);
                     nth_set_bit_extend(&mask, len - 1).saturating_add(1)
                 };
 
@@ -610,13 +613,11 @@ impl ExternalFilterMask {
         phys_slice
     }
 
-    fn get_mask(&self) -> Bitmap {
-        match self {
-            Self::Iceberg { mask } => mask.rechunk().downcast_get(0).unwrap().values().clone(),
-            Self::DeltaDeletionVector { mask } => {
-                mask.rechunk().downcast_get(0).unwrap().values().clone()
-            },
-        }
+    /// The mask, in whichever representation it is in: one repeated bit deletes every row or none.
+    fn get_mask(&self) -> PlBitmap {
+        let (Self::Iceberg { mask } | Self::DeltaDeletionVector { mask }) = self;
+
+        PlBitmap::from(mask.rechunk().downcast_as_array().values())
     }
 
     pub fn len(&self) -> usize {
@@ -628,11 +629,16 @@ impl ExternalFilterMask {
 }
 
 /// Calculates the nth set bit as though `mask` were extended infinitely with trues.
-fn nth_set_bit_extend(mask: &Bitmap, n: usize) -> usize {
+fn nth_set_bit_extend(mask: &PlBitmap, n: usize) -> usize {
     if let Some(n_additional) = n.checked_sub(mask.set_bits()) {
-        mask.len().saturating_add(n_additional)
-    } else {
-        BitMask::from_bitmap(mask).nth_set_bit_idx(n, 0).unwrap()
+        return mask.len().saturating_add(n_additional);
+    }
+
+    match mask.flat_bitmap() {
+        Some(bitmap) => BitMask::from_bitmap(bitmap).nth_set_bit_idx(n, 0).unwrap(),
+        // Every bit of a repeated mask is set here — an unset one leaves no set bit for `n` to
+        // count to, which the subtraction above already answered — so the `n`th of them is at `n`.
+        None => n,
     }
 }
 
@@ -643,7 +649,6 @@ fn load_iceberg_puffin_deletes(
     {
         use std::sync::LazyLock;
 
-        use arrow::array::UInt64Array;
         use polars_error::constants::LENGTH_LIMIT_MSG;
         use polars_error::polars_ensure;
         use polars_utils::index::idxsize_try_from;
@@ -686,12 +691,11 @@ fn load_iceberg_puffin_deletes(
                     ComputeError: LENGTH_LIMIT_MSG
                 );
 
-                let indices = indices.rechunk();
-                let indices: &UInt64Array = indices.chunks()[0].as_any().downcast_ref().unwrap();
+                let indices = indices.u64()?;
 
                 let mut filter_mask = MutableBitmap::from_len_set(filter_mask_len as usize);
 
-                for idx in indices.non_null_values_iter() {
+                for idx in indices.iter().flatten() {
                     let idx = usize::try_from(idx).unwrap();
                     filter_mask.set(idx, false);
                 }

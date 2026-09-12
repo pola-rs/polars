@@ -1,0 +1,316 @@
+use std::borrow::Cow;
+
+use arrow::bitmap::Bitmap;
+use polars_error::{PolarsResult, polars_ensure};
+
+use crate::array::PlArray;
+use crate::array_type::PlArrayType;
+use crate::bitmap::{PlBitmap, PlBitmapRef, combine_validities_and, validity_eq};
+use crate::broadcast::{slice_validity, try_validity_covering, validity_covering_unchecked};
+use crate::builder::new_full_null_like;
+use crate::flat::Flat;
+
+mod builder;
+
+pub use builder::PlStructArrayBuilder;
+
+/// An immutable, cheaply cloneable sequence of `length` optional rows, one value per field array.
+#[derive(Clone)]
+pub struct PlStructArray {
+    /// Scalar: every field is scalar
+    fields: Vec<Box<dyn PlArray>>,
+    length: usize,
+    /// Scalar: validity.len() == 1
+    validity: Option<Bitmap>,
+}
+
+impl PlStructArray {
+    /// Creates a [`PlStructArray`] out of its internal components.
+    ///
+    /// # Errors
+    /// Errors unless every field holds `length` elements and `validity` covers `length` of them.
+    pub fn try_new(
+        fields: Vec<Box<dyn PlArray>>,
+        length: usize,
+        validity: Option<PlBitmap>,
+    ) -> PolarsResult<Self> {
+        let validity = try_validity_covering(validity, length)?;
+        validate_fields(&fields, length)?;
+
+        Ok(Self {
+            fields,
+            length,
+            validity,
+        })
+    }
+
+    /// Creates a [`PlStructArray`] out of its internal components.
+    #[inline]
+    pub fn new(fields: Vec<Box<dyn PlArray>>, length: usize, validity: Option<PlBitmap>) -> Self {
+        Self::try_new(fields, length, validity).unwrap()
+    }
+
+    /// Creates a flat [`PlStructArray`] out of its internal components without validating them.
+    ///
+    /// # Safety
+    /// Every field must hold `length` elements, and `validity` must cover `length` bits.
+    #[inline]
+    pub unsafe fn new_unchecked(
+        fields: Vec<Box<dyn PlArray>>,
+        length: usize,
+        validity: Option<PlBitmap>,
+    ) -> Self {
+        let validity = validity_covering_unchecked(validity, length);
+        if cfg!(debug_assertions) {
+            assert!(fields.iter().all(|field| field.len() == length));
+        }
+
+        Self {
+            fields,
+            length,
+            validity,
+        }
+    }
+
+    /// Creates an empty [`PlStructArray`] without fields.
+    #[inline]
+    pub fn new_empty() -> Self {
+        Self {
+            fields: Vec::new(),
+            length: 0,
+            validity: None,
+        }
+    }
+
+    /// Creates a fully valid [`PlStructArray`] from `fields`, taking its length from them.
+    pub fn from_fields(fields: Vec<Box<dyn PlArray>>) -> Self {
+        let length = fields
+            .first()
+            .expect("cannot infer the length of a struct array without fields")
+            .len();
+        Self::new(fields, length, None)
+    }
+
+    /// Creates a [`PlStructArray`] of `length` nulls over `fields`, in `O(1)` extra memory.
+    #[inline]
+    pub fn new_full_null(fields: Vec<Box<dyn PlArray>>, length: usize) -> Self {
+        Self::new(fields, length, Some(PlBitmap::new_scalar(false, length)))
+    }
+
+    /// The field arrays, each holding [`Self::len`] elements.
+    #[inline]
+    pub fn fields(&self) -> &[Box<dyn PlArray>] {
+        &self.fields
+    }
+
+    /// The number of field arrays.
+    #[inline]
+    pub fn num_fields(&self) -> usize {
+        self.fields.len()
+    }
+
+    /// The field array at `i`.
+    #[inline]
+    pub fn field(&self, i: usize) -> &dyn PlArray {
+        &*self.fields[i]
+    }
+
+    /// Consumes this array into its internal components.
+    #[inline]
+    pub fn into_inner(self) -> (Vec<Box<dyn PlArray>>, usize, Option<Bitmap>) {
+        (self.fields, self.length, self.validity)
+    }
+
+    /// The validity mask, if any element may be null.
+    #[inline]
+    pub fn validity(&self) -> Option<PlBitmapRef<'_>> {
+        // SAFETY: the mask is flat or scalar for `self.length`, upheld by every constructor.
+        self.validity
+            .as_ref()
+            .map(|validity| unsafe { PlBitmapRef::new_broadcast_unchecked(validity, self.length) })
+    }
+
+    /// Whether the validity mask holds a single bit shared by every element.
+    #[inline]
+    pub fn validity_is_scalar(&self) -> bool {
+        self.validity().is_some_and(|v| v.is_scalar())
+    }
+
+    /// Slices this array in place to `length` elements starting at `offset`.
+    ///
+    /// # Safety
+    /// `offset + length` must not exceed `self.len()`.
+    pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
+        debug_assert!(offset + length <= self.length);
+
+        // Each field slices itself, keeping whichever representation it is in.
+        for field in self.fields.iter_mut() {
+            unsafe { field.slice_unchecked(offset, length) };
+        }
+
+        unsafe { slice_validity(&mut self.validity, self.length, offset, length) };
+
+        self.length = length;
+    }
+
+    /// Creates a [`PlStructArray`] of `length` copies of the row at `index`.
+    ///
+    /// # Safety
+    /// `index` must be smaller than `self.len()`.
+    pub unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Self {
+        debug_assert!(index < self.length);
+
+        let is_null = unsafe { self.is_null_unchecked(index) };
+
+        // The field values of a null row are undetermined, so they are repeated as they are found:
+        // it is the mask that makes every row of the result null.
+        let fields = self
+            .fields
+            .iter()
+            .map(|field| unsafe {
+                if is_null {
+                    // The row is masked off in the field it is repeated out of, which holds this
+                    // array's elements rather than the result's — and there is at least one of
+                    // them, since `index` is in bounds — so the mask is a single bit either way.
+                    field
+                        .with_validity(Some(PlBitmap::new_scalar(false, field.len())))
+                        .new_from_index_unchecked(index, length)
+                } else {
+                    field.new_from_index_unchecked(index, length)
+                }
+            })
+            .collect();
+
+        let validity = is_null.then(|| PlBitmap::new_scalar(false, length));
+
+        // SAFETY: every field repeated one element `length` times, so it holds `length` elements,
+        // and the mask covers exactly that many.
+        unsafe { Self::new_unchecked(fields, length, validity) }
+    }
+
+    /// Whether every backing buffer of this array holds one slot per element.
+    #[inline]
+    pub fn is_flat(&self) -> bool {
+        !self.validity_is_scalar()
+    }
+
+    /// Whether this array is a single row repeated over its length, in `O(1)` memory.
+    #[inline]
+    pub fn is_scalar(&self) -> bool {
+        self.validity().is_none_or(|validity| validity.is_scalar())
+            && self.fields.iter().all(|field| field.is_scalar())
+    }
+
+    /// Returns this array in the flat representation, writing out a scalar validity mask.
+    #[must_use]
+    pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
+        if let Some(flat) = self.as_flat() {
+            return Cow::Borrowed(flat);
+        }
+
+        let validity = self
+            .validity()
+            .map(|validity| PlBitmap::from_bitmap(validity.to_flat().into_owned()));
+
+        // SAFETY: the fields are untouched and still hold `length` elements each, and the mask was
+        // just written out to one bit per element.
+        let array = unsafe { Self::new_unchecked(self.fields.clone(), self.length, validity) };
+
+        // SAFETY: the mask is flat, and a struct array has no other buffer of its own.
+        Cow::Owned(unsafe { Flat::new(array) })
+    }
+
+    /// Borrows this array as a flat one, or `None` if its validity mask is scalar.
+    #[inline]
+    pub fn as_flat(&self) -> Option<&Flat<Self>> {
+        // SAFETY: `is_flat` is exactly the invariant of `Flat`.
+        self.is_flat().then(|| unsafe { Flat::new_ref(self) })
+    }
+}
+
+crate::impl_array_methods!(PlStructArray);
+
+/// Returns `field` with `mask` merged into its validity, so that masked-out rows are ignored.
+fn masked(field: &dyn PlArray, mask: PlBitmapRef<'_>) -> Box<dyn PlArray> {
+    // Both masks come in whichever representation they are in, and `and`ing them keeps a repeated
+    // bit repeated: a field that is null throughout, or valid throughout, is masked in `O(1)`.
+    let validity = combine_validities_and(field.validity(), Some(mask))
+        .expect("a mask was handed in, so the combination is one too");
+    field.with_validity(Some(validity))
+}
+
+impl Default for PlStructArray {
+    #[inline]
+    fn default() -> Self {
+        Self::new_empty()
+    }
+}
+
+/// Compares two arrays row-wise, disregarding representation and the fields of null rows.
+impl PartialEq for PlStructArray {
+    fn eq(&self, other: &Self) -> bool {
+        if self.length != other.length || self.fields.len() != other.fields.len() {
+            return false;
+        }
+
+        if !validity_eq(self.validity(), other.validity(), self.length) {
+            return false;
+        }
+
+        // Every row is null on both sides, so every field value is undetermined and there is
+        // nothing left to compare. This is also what keeps comparing two fully null scalar arrays
+        // `O(1)`.
+        if self.length > 0 && self.null_count() == self.length {
+            return true;
+        }
+
+        // Comparing the fields is `O(1)` for scalar fields, so a scalar array is never walked row
+        // by row.
+        let mask = self.has_nulls().then(|| self.validity().unwrap());
+        std::iter::zip(&self.fields, &other.fields).all(|(lhs, rhs)| match mask {
+            Some(mask) => masked(&**lhs, mask) == masked(&**rhs, mask),
+            None => lhs == rhs,
+        })
+    }
+}
+
+impl Eq for PlStructArray {}
+
+impl std::fmt::Debug for PlStructArray {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The fields format their own scalar representation, so this never materializes one.
+        let mut s = f.debug_struct("PlStructArray");
+        s.field("length", &self.length);
+        if let Some(validity) = self.validity() {
+            s.field("validity", &validity);
+        }
+        s.field("fields", &self.fields).finish()
+    }
+}
+
+crate::impl_pl_array! {
+    PlStructArray,
+    PlArrayType::Struct,
+    fn new_full_null_like_self(&self, length: usize) -> Box<dyn PlArray> {
+        let fields = self
+            .fields
+            .iter()
+            .map(|field| new_full_null_like(&**field, length))
+            .collect();
+        Box::new(Self::new_full_null(fields, length))
+    }
+}
+
+/// Checks that every field of a struct array of `length` elements has that many elements itself.
+fn validate_fields(fields: &[Box<dyn PlArray>], length: usize) -> PolarsResult<()> {
+    for (i, field) in fields.iter().enumerate() {
+        polars_ensure!(
+            field.len() == length,
+            ComputeError:
+            "field {} has {} elements, but the struct array has length {}",
+            i, field.len(), length,
+        );
+    }
+
+    Ok(())
+}

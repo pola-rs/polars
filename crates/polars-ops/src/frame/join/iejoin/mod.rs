@@ -636,7 +636,10 @@ fn iejoin_tuples(
         y_ordered_by_x.len() - y_ordered_by_x.null_count(),
     );
     let l2_order = l2_order.rechunk();
-    let l2_order = l2_order.downcast_as_array().values().as_slice();
+    // The order is read for its indices alone, so only a values buffer that repeats one index is
+    // written out; an `arg_sort` leaves none of them null for the mask to say anything about.
+    let l2_order_flat = l2_order.downcast_as_array().to_flat_values();
+    let l2_order = l2_order_flat.as_slice();
 
     let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(x.dtype(), |$T| {
          ie_join_impl_t::<$T>(
@@ -734,9 +737,10 @@ fn piecewise_merge_join_tuples(
             .as_ref()
             .is_none_or(|order| order.chunks().len() == 1)
     );
-    let left_order = left_order
+    let left_order_flat = left_order
         .as_ref()
-        .map(|order| order.downcast_get(0).unwrap().values().as_slice());
+        .map(|order| order.downcast_as_array().to_flat_values());
+    let left_order = left_order_flat.as_ref().map(|order| order.as_slice());
 
     let (right_ordered, right_order) = get_sorted(right, descending);
     debug_assert!(
@@ -744,9 +748,10 @@ fn piecewise_merge_join_tuples(
             .as_ref()
             .is_none_or(|order| order.chunks().len() == 1)
     );
-    let right_order = right_order
+    let right_order_flat = right_order
         .as_ref()
-        .map(|order| order.downcast_get(0).unwrap().values().as_slice());
+        .map(|order| order.downcast_as_array().to_flat_values());
+    let right_order = right_order_flat.as_ref().map(|order| order.as_slice());
 
     let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(left_ordered.dtype(), |$T| {
         match op {

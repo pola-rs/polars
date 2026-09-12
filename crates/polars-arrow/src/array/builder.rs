@@ -10,7 +10,7 @@ use crate::array::null::NullArrayBuilder;
 use crate::array::struct_::StructArrayBuilder;
 use crate::array::{Array, PrimitiveArrayBuilder};
 use crate::datatypes::{ArrowDataType, PhysicalType};
-use crate::with_match_primitive_type_full;
+use crate::with_match_primitive_type;
 
 /// Used for arrays which can share buffers with input arrays to appends,
 /// gathers, etc.
@@ -342,7 +342,7 @@ pub fn make_builder(dtype: &ArrowDataType) -> Box<dyn ArrayBuilder> {
     match dtype.to_physical_type() {
         Null => Box::new(NullArrayBuilder::new(dtype.clone())),
         Boolean => Box::new(BooleanArrayBuilder::new(dtype.clone())),
-        Primitive(prim_t) => with_match_primitive_type_full!(prim_t, |$T| {
+        Primitive(prim_t) => with_match_primitive_type!(prim_t, |$T| {
             Box::new(PrimitiveArrayBuilder::<$T>::new(dtype.clone()))
         }),
         LargeBinary => Box::new(BinaryArrayBuilder::<i64>::new(dtype.clone())),

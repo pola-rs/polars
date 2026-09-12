@@ -12,7 +12,8 @@
 //! - otherwise the length of the block as a `u8`
 use std::mem::MaybeUninit;
 
-use arrow::array::{BinaryViewArray, MutableBinaryViewArray};
+use polars_array::builder::StaticArrayBuilder;
+use polars_array::{PlBinaryViewArray, PlBinaryViewArrayBuilder, PlBitmap};
 use polars_utils::slice::Slice2Uninit;
 
 use crate::row::RowEncodingOptions;
@@ -208,7 +209,7 @@ unsafe fn decoded_len(
 pub(crate) unsafe fn decode_binview(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
-) -> BinaryViewArray {
+) -> PlBinaryViewArray {
     let descending = opt.contains(RowEncodingOptions::DESCENDING);
     let (non_empty_sentinel, continuation_token) = if descending {
         (!NON_EMPTY_SENTINEL, !BLOCK_CONTINUATION_TOKEN)
@@ -219,7 +220,7 @@ pub(crate) unsafe fn decode_binview(
     let null_sentinel = opt.null_sentinel();
     let validity = decode_opt_nulls(rows, null_sentinel);
 
-    let mut mutable = MutableBinaryViewArray::with_capacity(rows.len());
+    let mut mutable = PlBinaryViewArrayBuilder::with_capacity(rows.len());
 
     let mut scratch = vec![];
     for row in rows {
@@ -244,9 +245,12 @@ pub(crate) unsafe fn decode_binview(
         if descending {
             scratch.iter_mut().for_each(|o| *o = !*o)
         }
-        mutable.push_value_ignore_validity(&scratch);
+        // The validity is decoded in one pass of its own above, so every value is pushed as a
+        // valid one and the mask replaced wholesale below.
+        mutable.push_value(&scratch);
     }
 
-    let out: BinaryViewArray = mutable.into();
-    out.with_validity(validity)
+    mutable
+        .freeze()
+        .with_validity(validity.map(PlBitmap::from_bitmap))
 }

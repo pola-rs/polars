@@ -1,8 +1,8 @@
-use arrow::array::{Array, LIST_VALUES_NAME};
-use arrow::datatypes::{ArrowDataType, Field as ArrowField};
+use arrow::array::LIST_VALUES_NAME;
+use polars_array::PlBitmap;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::chunked_array::flags::StatisticsFlags;
-use polars_core::prelude::{Column, DataType, IntoColumn};
+use polars_core::prelude::{Column, DataType, IntoColumn, PlArrayRef};
 use polars_core::series::{IntoSeries, Series};
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
@@ -90,7 +90,7 @@ impl ColumnTransform {
             },
 
             TF::ListValuesMapping { values_selector } => {
-                use polars_core::prelude::{LargeListArray, ListChunked};
+                use polars_core::prelude::{ListChunked, PlListArray};
 
                 let input_list_ca = input._get_backing_series().list().unwrap().clone();
 
@@ -103,15 +103,14 @@ impl ColumnTransform {
 
                 let mut values_output_dtype = None;
 
-                let mut out_chunks: Vec<Box<dyn Array>> =
+                let mut out_chunks: Vec<PlArrayRef> =
                     Vec::with_capacity(input_list_ca.chunks().len());
 
                 for list_arr in input_list_ca.downcast_iter() {
-                    let values: Box<dyn Array> = list_arr.values().clone();
                     let values: Column = unsafe {
                         Series::from_chunks_and_dtype_unchecked(
                             LIST_VALUES_NAME,
-                            vec![values],
+                            vec![list_arr.values().to_boxed()],
                             values_dtype,
                         )
                     }
@@ -124,25 +123,26 @@ impl ColumnTransform {
                         values_output_dtype = Some(values.dtype().clone());
                     }
 
-                    let values: Box<dyn Array> = values
+                    let values: PlArrayRef = values
                         .as_materialized_series()
                         .rechunk()
                         .into_chunks()
                         .pop()
                         .unwrap();
 
-                    let list_arr = LargeListArray::new(
-                        ArrowDataType::LargeList(Box::new(ArrowField::new(
-                            LIST_VALUES_NAME,
-                            values.dtype().clone(),
-                            true,
-                        ))),
-                        list_arr.offsets().clone(),
-                        values,
-                        list_arr.validity().cloned(),
-                    );
+                    // The offsets and the mask are handed over in whatever representation each is
+                    // in: only the values were mapped, and that leaves their number untouched, so
+                    // offsets holding the one range every element covers still hold it.
+                    let validity = list_arr.validity().map(PlBitmap::from);
+                    let offsets_are_scalar = list_arr.offsets_are_scalar();
+                    let (_, offsets, length, _) = list_arr.clone().into_inner();
 
-                    out_chunks.push(list_arr.boxed())
+                    let list_arr = match offsets_are_scalar {
+                        true => PlListArray::new_broadcast(values, offsets, length, validity),
+                        false => PlListArray::new(values, offsets, length, validity),
+                    };
+
+                    out_chunks.push(Box::new(list_arr))
                 }
 
                 let mut out =
@@ -160,8 +160,7 @@ impl ColumnTransform {
 
             #[cfg(feature = "dtype-array")]
             TF::FixedSizeListValuesMapping { values_selector } => {
-                use arrow::array::FixedSizeListArray;
-                use polars_core::prelude::ArrayChunked;
+                use polars_core::prelude::{ArrayChunked, PlFixedSizeListArray};
 
                 let input_array_ca = input._get_backing_series().array().unwrap().clone();
 
@@ -174,15 +173,14 @@ impl ColumnTransform {
 
                 let mut values_output_dtype = None;
 
-                let mut out_chunks: Vec<Box<dyn Array>> =
+                let mut out_chunks: Vec<PlArrayRef> =
                     Vec::with_capacity(input_array_ca.chunks().len());
 
                 for fixed_size_list_arr in input_array_ca.downcast_iter() {
-                    let values: Box<dyn Array> = fixed_size_list_arr.values().clone();
                     let values: Column = unsafe {
                         Series::from_chunks_and_dtype_unchecked(
                             LIST_VALUES_NAME,
-                            vec![values],
+                            vec![fixed_size_list_arr.values().to_boxed()],
                             values_dtype,
                         )
                     }
@@ -195,36 +193,42 @@ impl ColumnTransform {
                         values_output_dtype = Some(values.dtype().clone());
                     }
 
-                    let values: Box<dyn Array> = values
+                    let values: PlArrayRef = values
                         .as_materialized_series()
                         .rechunk()
                         .into_chunks()
                         .pop()
                         .unwrap();
 
-                    let fixed_size_list_arr = FixedSizeListArray::new(
-                        ArrowDataType::FixedSizeList(
-                            Box::new(ArrowField::new(
-                                LIST_VALUES_NAME,
-                                values.dtype().clone(),
-                                true,
-                            )),
-                            fixed_size_list_arr.size(),
-                        ),
-                        fixed_size_list_arr.len(),
-                        values,
-                        fixed_size_list_arr.validity().cloned(),
-                    );
+                    // The width and the mask are handed over in whatever representation each is
+                    // in: only the values were mapped, and that leaves their number untouched, so
+                    // values holding the one list every element reads still hold it.
+                    let validity = fixed_size_list_arr.validity().map(PlBitmap::from);
+                    let values_are_scalar = fixed_size_list_arr.values_are_scalar();
+                    let (_, width, length, _) = fixed_size_list_arr.clone().into_inner();
 
-                    out_chunks.push(fixed_size_list_arr.boxed())
+                    let fixed_size_list_arr = match values_are_scalar {
+                        true => {
+                            PlFixedSizeListArray::new_broadcast(values, width, length, validity)
+                        },
+                        false => PlFixedSizeListArray::new(values, width, length, validity),
+                    };
+
+                    out_chunks.push(Box::new(fixed_size_list_arr))
                 }
 
-                let mut out =
-                    unsafe { ArrayChunked::from_chunks(input_array_ca.name().clone(), out_chunks) };
-
-                // Ensure logical types are restored.
-                // SAFETY: chunks retain the selector's output dtype and valid values.
-                unsafe { out.set_inner_dtype(values_output_dtype.unwrap()) };
+                // The chunks carry no inner type, so the array is built with its dtype directly,
+                // which restores the logical type of the values as well.
+                let out = unsafe {
+                    ArrayChunked::from_chunks_and_dtype(
+                        input_array_ca.name().clone(),
+                        out_chunks,
+                        DataType::Array(
+                            Box::new(values_output_dtype.unwrap()),
+                            input_array_ca.width(),
+                        ),
+                    )
+                };
 
                 input._to_new_from_backing(out.into_series())
             },

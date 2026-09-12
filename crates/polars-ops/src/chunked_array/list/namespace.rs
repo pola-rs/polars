@@ -106,7 +106,7 @@ pub trait ListNameSpaceImpl: AsList {
                 }
 
                 for arr in ca.downcast_iter() {
-                    for val in arr.non_null_values_iter() {
+                    for val in arr.iter().flatten() {
                         buf.write_str(val).unwrap();
                         buf.write_str(separator).unwrap();
                     }
@@ -145,7 +145,7 @@ pub trait ListNameSpaceImpl: AsList {
                             }
 
                             for arr in ca.downcast_iter() {
-                                for val in arr.non_null_values_iter() {
+                                for val in arr.iter().flatten() {
                                     buf.write_str(val).unwrap();
                                     buf.write_str(separator).unwrap();
                                 }
@@ -309,17 +309,38 @@ pub trait ListNameSpaceImpl: AsList {
             return IdxCa::full_null(ca.name().clone(), ca.len());
         }
 
-        let mut lengths = Vec::with_capacity(ca.len());
-        ca.downcast_iter().for_each(|arr| {
-            let offsets = arr.offsets().as_slice();
-            let mut last = offsets[0];
-            for o in &offsets[1..] {
-                lengths.push((*o - last) as IdxSize);
-                last = *o;
-            }
-        });
+        // Every element of the one chunk covers the one range, so they are all that range's
+        // length: the answer is the single slot that says so, and neither the offsets nor the
+        // lengths are ever written out one per element.
+        if ca.chunks().len() == 1
+            && let Some(range) = ca.downcast_get(0).unwrap().scalar_offsets()
+        {
+            let arr = PlPrimitiveArray::new_scalar(range.len() as IdxSize, ca.len())
+                .with_validity(ca_validity);
+            return IdxCa::with_chunk(ca.name().clone(), arr);
+        }
 
-        let arr = IdxArr::from_vec(lengths).with_validity(ca_validity);
+        let mut lengths = Vec::with_capacity(ca.len());
+        ca.downcast_iter()
+            .for_each(|arr| match arr.scalar_offsets() {
+                // As above, for one of several chunks: the lengths of the other chunks are written
+                // out, so this one's are too.
+                Some(range) => lengths.resize(lengths.len() + arr.len(), range.len() as IdxSize),
+                None => {
+                    let offsets = arr
+                        .flat_offsets()
+                        .expect("the elements cover ranges of their own");
+                    let mut last = offsets[0];
+                    for o in &offsets[1..] {
+                        lengths.push((*o - last) as IdxSize);
+                        last = *o;
+                    }
+                },
+            });
+
+        // The lengths are written out one per element, but the mask carries over as it is: one
+        // that repeats a single bit stays that single bit.
+        let arr = PlPrimitiveArray::from_vec(lengths).with_validity(ca_validity);
         IdxCa::with_chunk(ca.name().clone(), arr)
     }
 
@@ -338,9 +359,10 @@ pub trait ListNameSpaceImpl: AsList {
             .map(|arr| sublist_get(arr, idx))
             .collect::<Vec<_>>();
 
-        let s = Series::try_from((ca.name().clone(), chunks)).unwrap();
         // SAFETY: every element in list has dtype equal to its inner type
-        unsafe { s.from_physical_unchecked(ca.inner_dtype()) }
+        Ok(unsafe {
+            Series::from_chunks_and_dtype_unchecked(ca.name().clone(), chunks, ca.inner_dtype())
+        })
     }
 
     #[cfg(feature = "list_gather")]
@@ -580,8 +602,11 @@ pub trait ListNameSpaceImpl: AsList {
             1 => {
                 if let Some(n) = n.get(0) {
                     unsafe {
-                        // SAFETY: `sample_n` doesn't change the dtype
-                        ca.try_apply_amortized_same_type(|s| {
+                        // SAFETY: `sample_n` doesn't change the dtype.
+                        //
+                        // Every element is sampled on its own even where they all read the one
+                        // list: an unseeded sample answers differently every time it is asked.
+                        ca.try_apply_amortized_same_type_per_element(|s| {
                             s.as_ref()
                                 .sample_n(n as usize, with_replacement, shuffle, seed)
                         })
@@ -654,8 +679,10 @@ pub trait ListNameSpaceImpl: AsList {
             1 => {
                 if let Some(fraction) = fraction.get(0) {
                     unsafe {
-                        // SAFETY: `sample_n` doesn't change the dtype
-                        ca.try_apply_amortized_same_type(|s| {
+                        // SAFETY: `sample_n` doesn't change the dtype.
+                        //
+                        // As in `lst_sample_n`: a sample is taken per element, not once.
+                        ca.try_apply_amortized_same_type_per_element(|s| {
                             let n = (s.as_ref().len() as f64 * fraction) as usize;
                             s.as_ref().sample_n(n, with_replacement, shuffle, seed)
                         })

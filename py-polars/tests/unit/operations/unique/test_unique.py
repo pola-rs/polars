@@ -421,3 +421,67 @@ def test_sliced_unique_maintain_order_27841() -> None:
     expected = pl.DataFrame({"id": ["b", "c", "d", "e"], "value": [1, 2, 3, 4]})
 
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        (7, pl.Int64),
+        (1.5, pl.Float64),
+        ("hello world", pl.String),
+        (b"hello world", pl.Binary),
+        (True, pl.Boolean),
+        (False, pl.Boolean),
+        (date(2021, 6, 15), pl.Date),
+        ([1, 2], pl.List(pl.Int64)),
+        ([1, 2], pl.Array(pl.Int64, 2)),
+        ({"x": 1, "y": "a"}, pl.Struct({"x": pl.Int64, "y": pl.String})),
+        (None, pl.Int64),
+        (None, pl.String),
+        (None, pl.Boolean),
+    ],
+)
+def test_distinct_family_over_a_chunk_that_repeats_one_element(
+    value: Any, dtype: pl.DataType
+) -> None:
+    # Every element of such a chunk is the same one, so there is exactly one distinct
+    # element and it is the first: 5.8 ms of hashing a million equal strings went to
+    # nothing. The string and boolean paths never consulted the sorted flag either,
+    # so they paid it even for a flat column that is sorted.
+    n = 200_000
+    repeated = pl.select(
+        pl.repeat(pl.lit(value, dtype=dtype), n).alias("a")
+    ).to_series()
+    assert repeated.n_chunks() == 1
+    flat = pl.Series("a", [value] * n, dtype=dtype)
+
+    one = pl.Series("a", [value], dtype=dtype)
+    assert repeated.n_unique() == 1
+    assert_series_equal(repeated.unique(), one)
+    assert_series_equal(repeated.unique(maintain_order=True), one)
+    assert_series_equal(
+        repeated.arg_unique(), pl.Series("a", [0], dtype=pl.get_index_type())
+    )
+
+    # The flat column holding the same values answers the same way.
+    assert flat.n_unique() == 1
+    assert_series_equal(flat.unique(maintain_order=True), one)
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [(7, pl.Int64), ("a", pl.String), (b"a", pl.Binary), (True, pl.Boolean)],
+)
+def test_distinct_family_of_one_element_is_not_taken_as_repeated(
+    value: Any, dtype: pl.DataType
+) -> None:
+    # A single element says nothing about a second one, so a column holding one must
+    # not be read as a column that repeats it.
+    two = pl.Series("a", [value, None], dtype=dtype)
+    assert two.n_unique() == 2
+    assert_series_equal(
+        two.unique(maintain_order=True), pl.Series("a", [value, None], dtype=dtype)
+    )
+    assert_series_equal(
+        two.arg_unique(), pl.Series("a", [0, 1], dtype=pl.get_index_type())
+    )

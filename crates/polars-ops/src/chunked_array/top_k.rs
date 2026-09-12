@@ -1,4 +1,4 @@
-use arrow::array::{BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray, View};
+use arrow::array::View;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
 use polars_core::downcast_as_macro_arg_physical;
@@ -59,7 +59,10 @@ fn top_k_bool_impl(
         out_len -= extra;
     }
 
-    let arr = BooleanArray::from_data_default(bm.freeze(), validity);
+    let values = bm.freeze();
+    // One bit was pushed per element, and `first_n_valid_mask` holds one per element as well.
+    let length = values.len();
+    let arr = PlBooleanArray::new(values, length, validity.map(PlBitmap::from_bitmap));
     ChunkedArray::with_chunk_like(ca, arr)
 }
 
@@ -75,8 +78,28 @@ where
     let mut nnca = ca.drop_nulls();
     nnca.rechunk_mut();
     let chunk = nnca.downcast_into_iter().next().unwrap();
-    let (_, buffer, _) = chunk.into_inner();
-    let mut vec = buffer.to_vec();
+
+    // Reconstruct output (with nulls at the end).
+    let out_len = k.min(ca.len());
+    let non_null_count = ca.len() - ca.null_count();
+    let validity = first_n_valid_mask(non_null_count, out_len);
+
+    // Every element of a chunk whose values repeat one value is that value, so the largest `k` of
+    // them are it as well: the answer repeats it too, rather than the buffer being written out
+    // and partitioned to find what it already holds.
+    if let Some(value) = chunk.scalar_value_ignore_validity().filter(|_| out_len > 0) {
+        let arr = PlPrimitiveArray::new_scalar(value, out_len)
+            .with_validity(validity.map(PlBitmap::from_bitmap));
+        return ChunkedArray::with_chunk_like(ca, arr);
+    }
+
+    // Nothing is null here — `nnca` dropped them — so the mask is not read at all, whatever
+    // representation it is in.
+    let mut vec = chunk
+        .flat_values()
+        .expect("the values are not repeated")
+        .clone()
+        .to_vec();
 
     // Partition.
     if k < vec.len() {
@@ -87,13 +110,9 @@ where
         }
     }
 
-    // Reconstruct output (with nulls at the end).
-    let out_len = k.min(ca.len());
-    let non_null_count = ca.len() - ca.null_count();
     vec.resize(out_len, T::Native::default());
-    let validity = first_n_valid_mask(non_null_count, out_len);
 
-    let arr = PrimitiveArray::from_vec(vec).with_validity_typed(validity);
+    let arr = PlPrimitiveArray::from_vec(vec).with_validity(validity.map(PlBitmap::from_bitmap));
     ChunkedArray::with_chunk_like(ca, arr)
 }
 
@@ -110,8 +129,28 @@ fn top_k_binary_impl(
     let mut nnca = ca.drop_nulls();
     nnca.rechunk_mut();
     let chunk = nnca.downcast_into_iter().next().unwrap();
+
+    // Reconstruct output (with nulls at the end).
+    let out_len = k.min(ca.len());
+    let non_null_count = ca.len() - ca.null_count();
+    let validity = first_n_valid_mask(non_null_count, out_len);
+
+    // As in `top_k_num_impl`: views that repeat one view are every element's, so the largest `k`
+    // of them are that view as well.
+    if chunk.views_are_scalar() && out_len > 0 {
+        let arr = chunk
+            .new_from_index(0, out_len)
+            .with_validity(validity.map(PlBitmap::from_bitmap));
+        return ChunkedArray::with_chunk_like(ca, arr);
+    }
+
+    // Nothing is null here, so the mask is not read at all whatever representation it is in.
     let buffers = chunk.data_buffers().clone();
-    let mut views = chunk.into_views();
+    let mut views = chunk
+        .flat_views()
+        .expect("the views are not repeated")
+        .clone()
+        .to_vec();
 
     // Partition.
     if k < views.len() {
@@ -130,19 +169,16 @@ fn top_k_binary_impl(
         }
     }
 
-    // Reconstruct output (with nulls at the end).
-    let out_len = k.min(ca.len());
-    let non_null_count = ca.len() - ca.null_count();
     views.resize(out_len, View::default());
-    let validity = first_n_valid_mask(non_null_count, out_len);
 
+    // SAFETY: the views were taken from `buffers` and only reordered, and there is one per
+    // element, as there is one validity bit per element.
     let arr = unsafe {
-        BinaryViewArray::new_unchecked_unknown_md(
-            ArrowDataType::BinaryView,
+        PlBinaryViewArray::new_unchecked(
             views.into(),
             buffers,
-            validity,
-            None,
+            out_len,
+            validity.map(PlBitmap::from_bitmap),
         )
     };
     ChunkedArray::with_chunk_like(ca, arr)

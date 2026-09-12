@@ -1,3 +1,4 @@
+use polars_compute::rolling;
 use polars_core::prelude::*;
 #[cfg(feature = "moment")]
 use {
@@ -17,27 +18,19 @@ where
     T: PolarsFloatType,
     T::Native: Float + SubAssign + Pow<T::Native, Output = T::Native>,
 {
-    use arrow::array::Array;
-
     if ca.is_empty() {
         return Ok(ca.clone());
     }
 
     let ca = ca.rechunk();
-    let arr = ca.downcast_get(0).unwrap();
-    let arr = if arr.has_nulls() {
-        polars_compute::rolling::nulls::rolling_skew(arr, window_size, min_periods, center, params)
-    } else {
-        let values = arr.values();
-        polars_compute::rolling::no_nulls::rolling_skew(
-            values,
-            window_size,
-            min_periods,
-            center,
-            params,
-        )?
-    };
-    Ok(unsafe { ca.with_chunks(vec![arr]) })
+    let out = rolling::dispatch::rolling_skew(
+        ca.downcast_as_array(),
+        window_size,
+        min_periods,
+        center,
+        params,
+    )?;
+    Ok(unsafe { ca.with_chunks(vec![out]) })
 }
 
 #[cfg(feature = "moment")]
@@ -81,33 +74,19 @@ where
     T: PolarsFloatType,
     T::Native: Float + SubAssign + Pow<T::Native, Output = T::Native>,
 {
-    use arrow::array::Array;
-
     if ca.is_empty() {
         return Ok(ca.clone());
     }
 
     let ca = ca.rechunk();
-    let arr = ca.downcast_get(0).unwrap();
-    let arr = if arr.has_nulls() {
-        polars_compute::rolling::nulls::rolling_kurtosis(
-            arr,
-            window_size,
-            min_periods,
-            center,
-            params,
-        )
-    } else {
-        let values = arr.values();
-        polars_compute::rolling::no_nulls::rolling_kurtosis(
-            values,
-            window_size,
-            min_periods,
-            center,
-            params,
-        )?
-    };
-    Ok(unsafe { ca.with_chunks(vec![arr]) })
+    let out = rolling::dispatch::rolling_kurtosis(
+        ca.downcast_as_array(),
+        window_size,
+        min_periods,
+        center,
+        params,
+    )?;
+    Ok(unsafe { ca.with_chunks(vec![out]) })
 }
 
 #[cfg(feature = "moment")]

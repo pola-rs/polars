@@ -1,15 +1,39 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::error::Error;
 
-use arrow::array::{Array, MutablePlString, StaticArray};
-use arrow::compute::utils::combine_validities_and;
-use polars_error::PolarsResult;
+use polars_array::bitmap::combine_validities_and;
+use polars_array::builder::StaticArrayBuilder;
+use polars_array::{Flat, PlArray, PlBitmap, PlBitmapRef, PlUtf8ViewArrayBuilder, StaticArray};
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter};
-use crate::prelude::{ChunkedArray, CompatLevel, PolarsDataType, Series, StringChunked};
+use crate::prelude::{ChunkedArray, PlArrayRef, PolarsDataType, StringChunked};
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned, align_chunks_ternary};
+
+/// Returns `ret` masked off wherever either input has a null, on top of its own mask.
+#[inline]
+fn mask_with_inputs<A: StaticArray>(
+    ret: A,
+    lhs: Option<PlBitmapRef<'_>>,
+    rhs: Option<PlBitmapRef<'_>>,
+) -> A {
+    // The combined mask covers the inputs' elements, which is what `ret` holds too: a kernel that
+    // handed back a result of a different height than its inputs panics here.
+    let inputs = combine_validities_and(lhs, rhs);
+    let validity = combine_validities_and(inputs.as_ref().map(PlBitmap::as_ref), ret.validity());
+    ret.with_validity_typed(validity)
+}
+
+/// The height of an elementwise operation over two columns of these lengths, or `None` if unequal.
+#[inline]
+pub fn broadcast_height(lhs: usize, rhs: usize) -> Option<usize> {
+    match (lhs, rhs) {
+        (lhs, rhs) if lhs == rhs => Some(lhs),
+        (length, 1) | (1, length) => Some(length),
+        _ => None,
+    }
+}
 
 #[macro_export]
 macro_rules! binary_output_height {
@@ -59,6 +83,14 @@ impl<A1, R, T: FnMut(A1) -> R> UnaryFnMut<A1> for T {
     type Ret = R;
 }
 
+pub trait UnaryFn<A1>: Fn(A1) -> Self::Ret {
+    type Ret;
+}
+
+impl<A1, R, T: Fn(A1) -> R> UnaryFn<A1> for T {
+    type Ret = R;
+}
+
 // We need this helper because for<'a> notation can't yet be applied properly
 // on the return type.
 pub trait TernaryFnMut<A1, A2, A3>: FnMut(A1, A2, A3) -> Self::Ret {
@@ -79,16 +111,138 @@ impl<A1, A2, R, T: FnMut(A1, A2) -> R> BinaryFnMut<A1, A2> for T {
     type Ret = R;
 }
 
+pub trait BinaryFn<A1, A2>: Fn(A1, A2) -> Self::Ret {
+    type Ret;
+}
+
+impl<A1, A2, R, T: Fn(A1, A2) -> R> BinaryFn<A1, A2> for T {
+    type Ret = R;
+}
+
 /// Applies a kernel that produces `Array` types.
 #[inline]
 pub fn unary_kernel<T, V, F, Arr>(ca: &ChunkedArray<T>, op: F) -> ChunkedArray<V>
 where
     T: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
-    Arr: Array,
+    Arr: StaticArray,
     F: FnMut(&T::Array) -> Arr,
 {
     let iter = ca.downcast_iter().map(op);
+    ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
+}
+
+/// Applies an elementwise flat kernel to one chunk, leaving a scalar chunk scalar.
+#[inline]
+fn elementwise_flat<A, Arr, F>(arr: &A, op: &mut F) -> Arr
+where
+    A: StaticArray,
+    Arr: StaticArray,
+    F: FnMut(&Flat<A>) -> Arr,
+{
+    if let Some(flat) = arr.as_flat() {
+        return op(flat);
+    }
+
+    let length = arr.len();
+    if !PlArray::is_scalar(arr) || length < 2 {
+        // Only some of the buffers hold a single slot, so there is no one element standing for
+        // the rest; a chunk of a single element has nothing to save either.
+        return op(&arr.to_flat());
+    }
+
+    // Sliced down to the one element the chunk repeats, which leaves every buffer holding the
+    // single slot it already held, and is therefore flat as well as `O(1)`.
+    let mut single = arr.clone();
+    single.slice(0, 1);
+
+    let out = op(&single.to_flat());
+    debug_assert_eq!(
+        out.len(),
+        1,
+        "an elementwise kernel answers one element with one"
+    );
+
+    out.new_from_index_typed(0, length)
+}
+
+/// [`elementwise_binary_flat`] for a kernel that reads its chunks in either representation.
+#[inline]
+fn elementwise_binary<A, B, Arr, F>(lhs: &A, rhs: &B, op: &mut F) -> Arr
+where
+    A: StaticArray,
+    B: StaticArray,
+    Arr: StaticArray,
+    F: FnMut(&A, &B) -> Arr,
+{
+    // The chunks are aligned, so the two lengths are the same one.
+    let length = lhs.len();
+    if length < 2 || !PlArray::is_scalar(lhs) || !PlArray::is_scalar(rhs) {
+        return op(lhs, rhs);
+    }
+
+    // Sliced down to the one element the chunks repeat, which leaves every buffer holding the
+    // single slot it already held, and is therefore `O(1)`.
+    let (mut lhs, mut rhs) = (lhs.clone(), rhs.clone());
+    lhs.slice(0, 1);
+    rhs.slice(0, 1);
+
+    let out = op(&lhs, &rhs);
+    debug_assert_eq!(
+        out.len(),
+        1,
+        "an elementwise kernel answers one element with one"
+    );
+
+    out.new_from_index_typed(0, length)
+}
+
+/// [`elementwise_flat`] for a kernel that reads two chunks of the same height at once.
+#[inline]
+fn elementwise_binary_flat<A, B, Arr, F>(lhs: &A, rhs: &B, op: &mut F) -> Arr
+where
+    A: StaticArray,
+    B: StaticArray,
+    Arr: StaticArray,
+    F: FnMut(&Flat<A>, &Flat<B>) -> Arr,
+{
+    if let (Some(lhs), Some(rhs)) = (lhs.as_flat(), rhs.as_flat()) {
+        return op(lhs, rhs);
+    }
+
+    // The chunks are aligned, so the two lengths are the same one.
+    let length = lhs.len();
+    if length < 2 || !PlArray::is_scalar(lhs) || !PlArray::is_scalar(rhs) {
+        return op(&lhs.to_flat(), &rhs.to_flat());
+    }
+
+    let (mut lhs, mut rhs) = (lhs.clone(), rhs.clone());
+    lhs.slice(0, 1);
+    rhs.slice(0, 1);
+
+    let out = op(&lhs.to_flat(), &rhs.to_flat());
+    debug_assert_eq!(
+        out.len(),
+        1,
+        "an elementwise kernel answers one element with one"
+    );
+
+    out.new_from_index_typed(0, length)
+}
+
+/// Applies an elementwise flat kernel: this is [`unary_kernel`] over the backing buffers.
+#[inline]
+pub fn unary_elementwise_kernel_flat<T, V, F, Arr>(
+    ca: &ChunkedArray<T>,
+    mut op: F,
+) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: StaticArray,
+    F: FnMut(&Flat<T::Array>) -> Arr,
+{
+    let iter = ca.downcast_iter().map(|arr| elementwise_flat(arr, &mut op));
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
@@ -98,7 +252,7 @@ pub fn unary_kernel_owned<T, V, F, Arr>(ca: ChunkedArray<T>, op: F) -> ChunkedAr
 where
     T: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
-    Arr: Array,
+    Arr: StaticArray,
     F: FnMut(T::Array) -> Arr,
 {
     let name = ca.name().clone();
@@ -107,7 +261,39 @@ where
 }
 
 #[inline]
-pub fn unary_elementwise<'a, T, V, F>(ca: &'a ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
+pub fn unary_elementwise<'a, T, V, F>(ca: &'a ChunkedArray<T>, op: F) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    V: PolarsDataType,
+    F: UnaryFn<Option<T::Physical<'a>>>,
+    V::Array: ArrayFromIter<<F as UnaryFn<Option<T::Physical<'a>>>>::Ret>,
+{
+    let iter = ca.downcast_iter().map(|arr| {
+        let length = arr.len();
+        if length > 1 {
+            if let Some(element) = arr.scalar_value() {
+                // The chunk reads the same element throughout, null or not, so one call answers
+                // it and the result repeats that single element — its own mask included.
+                let single: V::Array = std::iter::once(op(element)).collect_arr();
+                return single.new_from_index_typed(0, length);
+            }
+        }
+
+        // The element iterators are `TrustedLen`, so the collect writes straight into the room
+        // it reserves and drives them by `fold` — which is where one that walks either flat or
+        // scalar values resolves which it is. See `vec_from_trusted_len_iter`.
+        if arr.null_count() == 0 {
+            arr.values_iter().map(|x| op(Some(x))).collect_arr_trusted()
+        } else {
+            arr.iter().map(&op).collect_arr_trusted()
+        }
+    });
+    ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
+}
+
+/// [`unary_elementwise`] for an `op` that carries state from one element to the next.
+#[inline]
+pub fn unary_elementwise_mut<'a, T, V, F>(ca: &'a ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
 where
     T: PolarsDataType,
     V: PolarsDataType,
@@ -117,12 +303,12 @@ where
     if ca.has_nulls() {
         let iter = ca
             .downcast_iter()
-            .map(|arr| arr.iter().map(&mut op).collect_arr());
+            .map(|arr| arr.iter().map(&mut op).collect_arr_trusted());
         ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
     } else {
         let iter = ca
             .downcast_iter()
-            .map(|arr| arr.values_iter().map(|x| op(Some(x))).collect_arr());
+            .map(|arr| arr.values_iter().map(|x| op(Some(x))).collect_arr_trusted());
         ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
     }
 }
@@ -145,7 +331,39 @@ where
 }
 
 #[inline]
-pub fn unary_elementwise_values<'a, T, V, F>(ca: &'a ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
+pub fn unary_elementwise_values<'a, T, V, F>(ca: &'a ChunkedArray<T>, op: F) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    V: PolarsDataType,
+    F: UnaryFn<T::Physical<'a>>,
+    V::Array: ArrayFromIter<<F as UnaryFn<T::Physical<'a>>>::Ret>,
+{
+    if ca.null_count() == ca.len() {
+        return ChunkedArray::with_chunk(ca.name().clone(), V::full_null_array(ca.len()));
+    }
+
+    let iter = ca.downcast_iter().map(|arr| {
+        let length = arr.len();
+        if length > 1 {
+            if let Some(Some(value)) = arr.scalar_value() {
+                let single: V::Array = std::iter::once(op(value)).collect_arr();
+                return single.new_from_index_typed(0, length);
+            }
+        }
+
+        let validity = arr.validity().map(PlBitmap::from);
+        let arr: V::Array = arr.values_iter().map(&op).collect_arr_trusted();
+        arr.with_validity_typed(validity)
+    });
+    ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
+}
+
+/// [`unary_elementwise_values`] for an `op` that carries state from one element to the next.
+#[inline]
+pub fn unary_elementwise_values_mut<'a, T, V, F>(
+    ca: &'a ChunkedArray<T>,
+    mut op: F,
+) -> ChunkedArray<V>
 where
     T: PolarsDataType,
     V: PolarsDataType,
@@ -153,16 +371,12 @@ where
     V::Array: ArrayFromIter<<F as UnaryFnMut<T::Physical<'a>>>::Ret>,
 {
     if ca.null_count() == ca.len() {
-        let arr = V::Array::full_null(
-            ca.len(),
-            V::get_static_dtype().to_arrow(CompatLevel::newest()),
-        );
-        return ChunkedArray::with_chunk(ca.name().clone(), arr);
+        return ChunkedArray::with_chunk(ca.name().clone(), V::full_null_array(ca.len()));
     }
 
     let iter = ca.downcast_iter().map(|arr| {
-        let validity = arr.validity().cloned();
-        let arr: V::Array = arr.values_iter().map(&mut op).collect_arr();
+        let validity = arr.validity().map(PlBitmap::from);
+        let arr: V::Array = arr.values_iter().map(&mut op).collect_arr_trusted();
         arr.with_validity_typed(validity)
     });
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
@@ -180,15 +394,14 @@ where
     V::Array: ArrayFromIter<K>,
 {
     if ca.null_count() == ca.len() {
-        let arr = V::Array::full_null(
-            ca.len(),
-            V::get_static_dtype().to_arrow(CompatLevel::newest()),
-        );
-        return Ok(ChunkedArray::with_chunk(ca.name().clone(), arr));
+        return Ok(ChunkedArray::with_chunk(
+            ca.name().clone(),
+            V::full_null_array(ca.len()),
+        ));
     }
 
     let iter = ca.downcast_iter().map(|arr| {
-        let validity = arr.validity().cloned();
+        let validity = arr.validity().map(PlBitmap::from);
         let arr: V::Array = arr.values_iter().map(&mut op).try_collect_arr()?;
         Ok(arr.with_validity_typed(validity))
     });
@@ -204,12 +417,30 @@ pub fn unary_mut_values<T, V, F, Arr>(ca: &ChunkedArray<T>, mut op: F) -> Chunke
 where
     T: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
-    Arr: Array + StaticArray,
+    Arr: StaticArray,
     F: FnMut(&T::Array) -> Arr,
 {
     let iter = ca
         .downcast_iter()
-        .map(|arr| op(arr).with_validity_typed(arr.validity().cloned()));
+        .map(|arr| op(arr).with_validity_typed(arr.validity().map(PlBitmap::from)));
+    ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
+}
+
+/// Applies an elementwise flat kernel, putting the input's validity mask back on the result.
+#[inline]
+pub fn unary_elementwise_mut_values_flat<T, V, F, Arr>(
+    ca: &ChunkedArray<T>,
+    mut op: F,
+) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: StaticArray,
+    F: FnMut(&Flat<T::Array>) -> Arr,
+{
+    let iter = ca.downcast_iter().map(|arr| {
+        elementwise_flat(arr, &mut op).with_validity_typed(arr.validity().map(PlBitmap::from))
+    });
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
@@ -219,10 +450,26 @@ pub fn unary_mut_with_options<T, V, F, Arr>(ca: &ChunkedArray<T>, op: F) -> Chun
 where
     T: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
-    Arr: Array + StaticArray,
+    Arr: StaticArray,
     F: FnMut(&T::Array) -> Arr,
 {
     ChunkedArray::from_chunk_iter(ca.name().clone(), ca.downcast_iter().map(op))
+}
+
+/// Applies an elementwise flat kernel, leaving the result's own validity mask alone.
+#[inline]
+pub fn unary_elementwise_mut_with_options_flat<T, V, F, Arr>(
+    ca: &ChunkedArray<T>,
+    mut op: F,
+) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: StaticArray,
+    F: FnMut(&Flat<T::Array>) -> Arr,
+{
+    let iter = ca.downcast_iter().map(|arr| elementwise_flat(arr, &mut op));
+    ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
 #[inline]
@@ -233,7 +480,7 @@ pub fn try_unary_mut_with_options<T, V, F, Arr, E>(
 where
     T: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
-    Arr: Array + StaticArray,
+    Arr: StaticArray,
     F: FnMut(&T::Array) -> Result<Arr, E>,
     E: Error,
 {
@@ -361,9 +608,7 @@ where
 {
     if lhs.null_count() == lhs.len() || rhs.null_count() == rhs.len() {
         let len = lhs.len().min(rhs.len());
-        let arr = V::Array::full_null(len, V::get_static_dtype().to_arrow(CompatLevel::newest()));
-
-        return ChunkedArray::with_chunk(lhs.name().clone(), arr);
+        return ChunkedArray::with_chunk(lhs.name().clone(), V::full_null_array(len));
     }
 
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
@@ -405,19 +650,20 @@ where
         .downcast_iter()
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| {
-            let mut mutarr = MutablePlString::with_capacity(lhs_arr.len());
+            let mut builder = PlUtf8ViewArrayBuilder::with_capacity(lhs_arr.len());
             lhs_arr
                 .iter()
                 .zip(rhs_arr.iter())
                 .for_each(|(lhs_opt, rhs_opt)| match (lhs_opt, rhs_opt) {
-                    (None, _) | (_, None) => mutarr.push_null(),
+                    // SAFETY: every value pushed is the UTF-8 of the `String` it was built in.
+                    (None, _) | (_, None) => unsafe { builder.inner_mut() }.push_null(),
                     (Some(lhs_val), Some(rhs_val)) => {
                         buf.clear();
                         op(lhs_val, rhs_val, &mut buf);
-                        mutarr.push_value(&buf)
+                        unsafe { builder.inner_mut() }.push_value(buf.as_bytes())
                     },
                 });
-            mutarr.freeze()
+            builder.freeze()
         });
     ChunkedArray::from_chunk_iter(lhs.name().clone(), iter)
 }
@@ -437,7 +683,7 @@ where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
-    Arr: Array + StaticArray,
+    Arr: StaticArray,
     F: FnMut(&T::Array, &U::Array) -> Arr,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
@@ -446,9 +692,33 @@ where
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| {
             let ret = op(lhs_arr, rhs_arr);
-            let inp_val = combine_validities_and(lhs_arr.validity(), rhs_arr.validity());
-            let val = combine_validities_and(inp_val.as_ref(), ret.validity());
-            ret.with_validity_typed(val)
+            mask_with_inputs(ret, lhs_arr.validity(), rhs_arr.validity())
+        });
+    ChunkedArray::from_chunk_iter(name, iter)
+}
+
+/// Applies an elementwise binary flat kernel, masking off every element either side is null at.
+#[inline]
+pub fn binary_elementwise_mut_values_flat<T, U, V, F, Arr>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+    name: PlSmallStr,
+) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: StaticArray,
+    F: FnMut(&Flat<T::Array>, &Flat<U::Array>) -> Arr,
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let iter = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| {
+            let ret = elementwise_binary_flat(lhs_arr, rhs_arr, &mut op);
+            mask_with_inputs(ret, lhs_arr.validity(), rhs_arr.validity())
         });
     ChunkedArray::from_chunk_iter(name, iter)
 }
@@ -465,7 +735,7 @@ where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
-    Arr: Array,
+    Arr: StaticArray,
     F: FnMut(&T::Array, &U::Array) -> Arr,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
@@ -487,7 +757,7 @@ where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
-    Arr: Array,
+    Arr: StaticArray,
     F: FnMut(&T::Array, &U::Array) -> Result<Arr, E>,
     E: Error,
 {
@@ -497,6 +767,50 @@ where
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr));
     ChunkedArray::try_from_chunk_iter(name, iter)
+}
+
+/// Applies an elementwise binary kernel written against the flat representation.
+pub fn binary_elementwise_kernel_flat<T, U, V, F, Arr>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+    name: PlSmallStr,
+) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: StaticArray,
+    F: FnMut(&Flat<T::Array>, &Flat<U::Array>) -> Arr,
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let iter = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| elementwise_binary_flat(lhs_arr, rhs_arr, &mut op));
+    ChunkedArray::from_chunk_iter(name, iter)
+}
+
+/// Applies an elementwise binary kernel that reads its chunks in either representation.
+pub fn binary_elementwise_kernel<T, U, V, F, Arr>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+    name: PlSmallStr,
+) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: StaticArray,
+    F: FnMut(&T::Array, &U::Array) -> Arr,
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let iter = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| elementwise_binary(lhs_arr, rhs_arr, &mut op));
+    ChunkedArray::from_chunk_iter(name, iter)
 }
 
 /// Applies a kernel that produces `Array` types.
@@ -509,7 +823,7 @@ where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
-    Arr: Array,
+    Arr: StaticArray,
     F: FnMut(&T::Array, &U::Array) -> Arr,
 {
     binary_mut_with_options(lhs, rhs, op, lhs.name().clone())
@@ -525,7 +839,7 @@ where
     L: PolarsDataType,
     R: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
-    Arr: Array,
+    Arr: StaticArray,
     F: FnMut(L::Array, R::Array) -> Arr,
 {
     let name = lhs.name().clone();
@@ -547,7 +861,7 @@ where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
-    Arr: Array,
+    Arr: StaticArray,
     F: FnMut(&T::Array, &U::Array) -> Result<Arr, E>,
     E: Error,
 {
@@ -574,7 +888,7 @@ pub unsafe fn binary_unchecked_same_type<T, U, F>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    F: FnMut(&T::Array, &U::Array) -> Box<dyn Array>,
+    F: FnMut(&T::Array, &U::Array) -> PlArrayRef,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let chunks = lhs
@@ -594,56 +908,6 @@ where
     ca
 }
 
-pub fn try_unary_to_series<T, F>(ca: &ChunkedArray<T>, op: F) -> PolarsResult<Series>
-where
-    T: PolarsDataType,
-    F: FnMut(&T::Array) -> PolarsResult<Box<dyn Array>>,
-{
-    let chunks = ca
-        .downcast_iter()
-        .map(op)
-        .collect::<PolarsResult<Vec<_>>>()?;
-    Series::try_from((ca.name().clone(), chunks))
-}
-
-pub fn binary_to_series<T, U, F>(
-    lhs: &ChunkedArray<T>,
-    rhs: &ChunkedArray<U>,
-    mut op: F,
-) -> PolarsResult<Series>
-where
-    T: PolarsDataType,
-    U: PolarsDataType,
-    F: FnMut(&T::Array, &U::Array) -> Box<dyn Array>,
-{
-    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
-    let chunks = lhs
-        .downcast_iter()
-        .zip(rhs.downcast_iter())
-        .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
-        .collect::<Vec<_>>();
-    Series::try_from((lhs.name().clone(), chunks))
-}
-
-pub fn try_binary_to_series<T, U, F>(
-    lhs: &ChunkedArray<T>,
-    rhs: &ChunkedArray<U>,
-    mut op: F,
-) -> PolarsResult<Series>
-where
-    T: PolarsDataType,
-    U: PolarsDataType,
-    F: FnMut(&T::Array, &U::Array) -> PolarsResult<Box<dyn Array>>,
-{
-    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
-    let chunks = lhs
-        .downcast_iter()
-        .zip(rhs.downcast_iter())
-        .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
-        .collect::<PolarsResult<Vec<_>>>()?;
-    Series::try_from((lhs.name().clone(), chunks))
-}
-
 /// Applies a kernel that produces `ArrayRef` of the same type.
 ///
 /// # Safety
@@ -659,7 +923,7 @@ pub unsafe fn try_binary_unchecked_same_type<T, U, F, E>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    F: FnMut(&T::Array, &U::Array) -> Result<Box<dyn Array>, E>,
+    F: FnMut(&T::Array, &U::Array) -> Result<PlArrayRef, E>,
     E: Error,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
@@ -758,6 +1022,35 @@ where
 pub fn broadcast_binary_elementwise<T, U, V, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
+    op: F,
+) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    V: PolarsDataType,
+    F: for<'a> BinaryFn<Option<T::Physical<'a>>, Option<U::Physical<'a>>>,
+    V::Array: for<'a> ArrayFromIter<
+        <F as BinaryFn<Option<T::Physical<'a>>, Option<U::Physical<'a>>>>::Ret,
+    >,
+{
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    // A side that repeats one element is read once and handed to the unary walk over the other.
+    // A column of one element repeats it by definition, so this subsumes the length-one case.
+    match (lhs.scalar_value(), rhs.scalar_value()) {
+        (Some(a), _) if rhs.len() == length => {
+            unary_elementwise(rhs, |b| op(a.clone(), b)).with_name(lhs.name().clone())
+        },
+        (_, Some(b)) => unary_elementwise(lhs, |a| op(a, b.clone())),
+        _ => binary_elementwise(lhs, rhs, op),
+    }
+}
+
+/// [`broadcast_binary_elementwise`] for an `op` that carries state between elements.
+pub fn broadcast_binary_elementwise_mut<T, U, V, F>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
     mut op: F,
 ) -> ChunkedArray<V>
 where
@@ -769,15 +1062,14 @@ where
         <F as BinaryFnMut<Option<T::Physical<'a>>, Option<U::Physical<'a>>>>::Ret,
     >,
 {
-    match (lhs.len(), rhs.len()) {
-        (1, _) => {
-            let a = unsafe { lhs.get_unchecked(0) };
-            unary_elementwise(rhs, |b| op(a.clone(), b)).with_name(lhs.name().clone())
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    match (lhs.scalar_value(), rhs.scalar_value()) {
+        (Some(a), _) if rhs.len() == length => {
+            unary_elementwise_mut(rhs, |b| op(a.clone(), b)).with_name(lhs.name().clone())
         },
-        (_, 1) => {
-            let b = unsafe { rhs.get_unchecked(0) };
-            unary_elementwise(lhs, |a| op(a, b.clone()))
-        },
+        (_, Some(b)) => unary_elementwise_mut(lhs, |a| op(a, b.clone())),
         _ => binary_elementwise(lhs, rhs, op),
     }
 }
@@ -794,15 +1086,15 @@ where
     F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>) -> Result<Option<K>, E>,
     V::Array: ArrayFromIter<Option<K>>,
 {
-    match (lhs.len(), rhs.len()) {
-        (1, _) => {
-            let a = unsafe { lhs.get_unchecked(0) };
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    // See [`broadcast_binary_elementwise`] for what the two scalar arms are.
+    match (lhs.scalar_value(), rhs.scalar_value()) {
+        (Some(a), _) if rhs.len() == length => {
             Ok(try_unary_elementwise(rhs, |b| op(a.clone(), b))?.with_name(lhs.name().clone()))
         },
-        (_, 1) => {
-            let b = unsafe { rhs.get_unchecked(0) };
-            try_unary_elementwise(lhs, |a| op(a, b.clone()))
-        },
+        (_, Some(b)) => try_unary_elementwise(lhs, |a| op(a, b.clone())),
         _ => try_binary_elementwise(lhs, rhs, op),
     }
 }
@@ -810,37 +1102,34 @@ where
 pub fn broadcast_binary_elementwise_values<T, U, V, F, K>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
-    mut op: F,
+    op: F,
 ) -> ChunkedArray<V>
 where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType,
-    F: for<'a> FnMut(T::Physical<'a>, U::Physical<'a>) -> K,
+    F: for<'a> Fn(T::Physical<'a>, U::Physical<'a>) -> K,
     V::Array: ArrayFromIter<K>,
 {
-    if lhs.null_count() == lhs.len() || rhs.null_count() == rhs.len() {
-        let min = lhs.len().min(rhs.len());
-        let max = lhs.len().max(rhs.len());
-        let len = if min == 1 { max } else { min };
-        let arr = V::Array::full_null(len, V::get_static_dtype().to_arrow(CompatLevel::newest()));
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
 
-        return ChunkedArray::with_chunk(lhs.name().clone(), arr);
+    if lhs.null_count() == lhs.len() || rhs.null_count() == rhs.len() {
+        return ChunkedArray::with_chunk(lhs.name().clone(), V::full_null_array(length));
     }
 
-    match (lhs.len(), rhs.len()) {
-        (1, _) => {
-            let a = unsafe { lhs.value_unchecked(0) };
+    // See [`broadcast_binary_elementwise`] for what the two scalar arms are. Neither side is
+    // fully null here, so a side that repeats one element repeats a value rather than a null.
+    match (lhs.scalar_value(), rhs.scalar_value()) {
+        (Some(Some(a)), _) if rhs.len() == length => {
             unary_elementwise_values(rhs, |b| op(a.clone(), b)).with_name(lhs.name().clone())
         },
-        (_, 1) => {
-            let b = unsafe { rhs.value_unchecked(0) };
-            unary_elementwise_values(lhs, |a| op(a, b.clone()))
-        },
+        (_, Some(Some(b))) => unary_elementwise_values(lhs, |a| op(a, b.clone())),
         _ => binary_elementwise_values(lhs, rhs, op),
     }
 }
 
+/// Applies a binary kernel to the chunks of `lhs` and `rhs`, routing a scalar side to its kernel.
 pub fn apply_binary_kernel_broadcast<'l, 'r, L, R, O, K, LK, RK>(
     lhs: &'l ChunkedArray<L>,
     rhs: &'r ChunkedArray<R>,
@@ -857,40 +1146,27 @@ where
     RK: Fn(&L::Array, R::Physical<'r>) -> O::Array,
 {
     let name = lhs.name();
-    let out = match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => binary(lhs, rhs, |lhs, rhs| kernel(lhs, rhs)),
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    // The broadcast paths come first, so that a side that is one value repeated reaches the
+    // kernel as that value. What is left is the path over two chunks of the same length.
+    let out = match (lhs.scalar_value(), rhs.scalar_value()) {
         // broadcast right path
-        (_, 1) => {
-            let opt_rhs = rhs.get(0);
-            match opt_rhs {
-                None => {
-                    let arr = O::Array::full_null(
-                        lhs.len(),
-                        O::get_static_dtype().to_arrow(CompatLevel::newest()),
-                    );
-                    ChunkedArray::<O>::with_chunk(lhs.name().clone(), arr)
-                },
-                Some(rhs) => unary_kernel(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
-            }
+        (_, Some(rhs)) if lhs.len() == length => match rhs {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(rhs) => unary_kernel(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
         },
-        (1, _) => {
-            let opt_lhs = lhs.get(0);
-            match opt_lhs {
-                None => {
-                    let arr = O::Array::full_null(
-                        rhs.len(),
-                        O::get_static_dtype().to_arrow(CompatLevel::newest()),
-                    );
-                    ChunkedArray::<O>::with_chunk(lhs.name().clone(), arr)
-                },
-                Some(lhs) => unary_kernel(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr)),
-            }
+        (Some(lhs), _) => match lhs {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(lhs) => unary_kernel(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr)),
         },
-        _ => panic!("Cannot apply operation on arrays of different lengths"),
+        _ => binary_mut_with_options(lhs, rhs, |lhs, rhs| kernel(lhs, rhs), name.clone()),
     };
     out.with_name(name.clone())
 }
 
+/// [`apply_binary_kernel_broadcast`] for a kernel that takes its chunks by value.
 pub fn apply_binary_kernel_broadcast_owned<L, R, O, K, LK, RK>(
     lhs: ChunkedArray<L>,
     rhs: ChunkedArray<R>,
@@ -907,36 +1183,68 @@ where
     for<'a> RK: Fn(L::Array, R::Physical<'a>) -> O::Array,
 {
     let name = lhs.name().to_owned();
-    let out = match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => binary_owned(lhs, rhs, kernel),
-        // broadcast right path
-        (_, 1) => {
-            let opt_rhs = rhs.get(0);
-            match opt_rhs {
-                None => {
-                    let arr = O::Array::full_null(
-                        lhs.len(),
-                        O::get_static_dtype().to_arrow(CompatLevel::newest()),
-                    );
-                    ChunkedArray::<O>::with_chunk(lhs.name().clone(), arr)
-                },
-                Some(rhs) => unary_kernel_owned(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
-            }
-        },
-        (1, _) => {
-            let opt_lhs = lhs.get(0);
-            match opt_lhs {
-                None => {
-                    let arr = O::Array::full_null(
-                        rhs.len(),
-                        O::get_static_dtype().to_arrow(CompatLevel::newest()),
-                    );
-                    ChunkedArray::<O>::with_chunk(lhs.name().clone(), arr)
-                },
-                Some(lhs) => unary_kernel_owned(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr)),
-            }
-        },
-        _ => panic!("Cannot apply operation on arrays of different lengths"),
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    // See [`apply_binary_kernel_broadcast`] for what the two broadcast paths are. The scalar
+    // check is a borrow, so it is taken before either side is moved into a kernel.
+    let lhs_repeats = lhs.scalar_value().is_some();
+    let rhs_repeats = rhs.scalar_value().is_some();
+
+    // broadcast right path
+    let out = if rhs_repeats && lhs.len() == length {
+        match rhs.scalar_value().unwrap() {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(rhs) => unary_kernel_owned(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
+        }
+    } else if lhs_repeats {
+        match lhs.scalar_value().unwrap() {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(lhs) => unary_kernel_owned(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr)),
+        }
+    } else {
+        binary_owned(lhs, rhs, kernel)
     };
     out.with_name(name)
+}
+
+/// [`apply_binary_kernel_broadcast`] for a kernel written against the flat representation.
+pub fn apply_binary_kernel_broadcast_flat<'l, 'r, L, R, O, K, LK, RK>(
+    lhs: &'l ChunkedArray<L>,
+    rhs: &'r ChunkedArray<R>,
+    kernel: K,
+    lhs_broadcast_kernel: LK,
+    rhs_broadcast_kernel: RK,
+) -> ChunkedArray<O>
+where
+    L: PolarsDataType,
+    R: PolarsDataType,
+    O: PolarsDataType,
+    K: Fn(&Flat<L::Array>, &Flat<R::Array>) -> O::Array,
+    LK: Fn(L::Physical<'l>, &Flat<R::Array>) -> O::Array,
+    RK: Fn(&Flat<L::Array>, R::Physical<'r>) -> O::Array,
+{
+    let name = lhs.name();
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    // The broadcast paths come first, so that a side repeating a single value reaches the kernel
+    // as that value rather than being written out. What is left is the `(flat, flat)` path.
+    let out = match (lhs.scalar_value(), rhs.scalar_value()) {
+        // broadcast right path
+        (_, Some(rhs)) if lhs.len() == length => match rhs {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(rhs) => {
+                unary_elementwise_kernel_flat(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone()))
+            },
+        },
+        (Some(lhs), _) => match lhs {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(lhs) => {
+                unary_elementwise_kernel_flat(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr))
+            },
+        },
+        _ => binary_elementwise_kernel_flat(lhs, rhs, |lhs, rhs| kernel(lhs, rhs), name.clone()),
+    };
+    out.with_name(name.clone())
 }

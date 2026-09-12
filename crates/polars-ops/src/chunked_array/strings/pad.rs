@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use polars_core::prelude::arity::broadcast_binary_elementwise;
+use polars_core::prelude::arity::broadcast_binary_elementwise_mut;
 use polars_core::prelude::{StringChunked, UInt64Chunked};
 
 fn pad_fn<'a>(
@@ -67,7 +67,7 @@ pub(super) fn zfill<'a>(ca: &'a StringChunked, length: &'a UInt64Chunked) -> Str
     fn infer<F: for<'a> FnMut(Option<&'a str>, Option<u64>) -> Option<&'a str>>(f: F) -> F where {
         f
     }
-    broadcast_binary_elementwise(
+    broadcast_binary_elementwise_mut(
         ca,
         length,
         infer(|opt_s, opt_len| zfill_fn(opt_s, opt_len, &mut buf)),
@@ -84,7 +84,7 @@ pub(super) fn pad_start<'a>(
     fn infer<F: for<'a> FnMut(Option<&'a str>, Option<u64>) -> Option<&'a str>>(f: F) -> F where {
         f
     }
-    broadcast_binary_elementwise(
+    broadcast_binary_elementwise_mut(
         ca,
         length,
         infer(|opt_s, opt_len| pad_fn(opt_s, opt_len, &mut buf, fill_char, true)),
@@ -101,7 +101,7 @@ pub(super) fn pad_end<'a>(
     fn infer<F: for<'a> FnMut(Option<&'a str>, Option<u64>) -> Option<&'a str>>(f: F) -> F where {
         f
     }
-    broadcast_binary_elementwise(
+    broadcast_binary_elementwise_mut(
         ca,
         length,
         infer(|opt_s, opt_len| pad_fn(opt_s, opt_len, &mut buf, fill_char, false)),

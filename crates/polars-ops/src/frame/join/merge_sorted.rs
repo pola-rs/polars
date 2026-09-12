@@ -90,22 +90,28 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
 
             let mut validity = None;
             if lhs.has_nulls() || rhs.has_nulls() {
-                use arrow::bitmap::Bitmap;
+                // A side with no mask is valid throughout, which is the single bit it takes to
+                // say so rather than one written out per element.
+                let lhs_validity = (lhs.rechunk_validity())
+                    .unwrap_or_else(|| PlBitmap::new_scalar(true, lhs.len()));
+                let rhs_validity = (rhs.rechunk_validity())
+                    .unwrap_or_else(|| PlBitmap::new_scalar(true, rhs.len()));
 
-                let lhs_validity = lhs
-                    .rechunk_validity()
-                    .unwrap_or(Bitmap::new_with_value(true, lhs.len()));
-                let rhs_validity = rhs
-                    .rechunk_validity()
-                    .unwrap_or(Bitmap::new_with_value(true, rhs.len()));
-
-                let lhs_validity = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, lhs_validity);
-                let rhs_validity = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, rhs_validity);
+                let lhs_validity = BooleanChunked::with_chunk(
+                    PlSmallStr::EMPTY,
+                    PlBooleanArray::from_pl_bitmap(lhs_validity),
+                );
+                let rhs_validity = BooleanChunked::with_chunk(
+                    PlSmallStr::EMPTY,
+                    PlBooleanArray::from_pl_bitmap(rhs_validity),
+                );
 
                 let mut merged_validity = merge_ca(&lhs_validity, &rhs_validity, merge_indicator);
                 merged_validity.rechunk_mut();
 
-                validity = Some(merged_validity.downcast_as_array().values().clone());
+                // The merged mask is handed over in whatever representation it is in: one that
+                // repeats a single bit says the same of every element without being written out.
+                validity = Some(PlBitmap::from(merged_validity.downcast_as_array().values()));
             }
 
             let new_fields = lhs
@@ -164,6 +170,7 @@ fn merge_ca<'a, T>(
 ) -> ChunkedArray<T>
 where
     T: PolarsDataType + 'static,
+    T::Array: ArrayFromIter<Option<T::Physical<'a>>>,
 {
     let dtype = a.dtype().clone();
 

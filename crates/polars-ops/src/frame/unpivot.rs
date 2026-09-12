@@ -1,5 +1,6 @@
-use arrow::array::{MutableArray, MutablePlString};
-use arrow::compute::concatenate::concatenate_unchecked;
+use polars_array::builder::StaticArrayBuilder as _;
+use polars_array::concatenate::concatenate;
+use polars_array::{PlUtf8ViewArrayBuilder, StaticArray as _};
 use polars_core::datatypes::{DataType, PlSmallStr};
 use polars_core::frame::DataFrame;
 use polars_core::frame::column::Column;
@@ -128,7 +129,7 @@ pub trait UnpivotDF: IntoDf {
         let st = merge_dtypes_many(dtypes.iter())?;
 
         // The column name of the variable that is unpivoted
-        let mut variable_col = MutablePlString::with_capacity(len * on.len() + 1);
+        let mut variable_col = PlUtf8ViewArrayBuilder::with_capacity(len * on.len() + 1);
         // prepare ids
         let ids_ = unsafe { self_.select_unchecked(index.as_slice())? };
         let mut ids = ids_.clone();
@@ -146,7 +147,9 @@ pub trait UnpivotDF: IntoDf {
         let columns = self_.columns();
 
         for value_column_name in &on {
-            variable_col.extend_constant(len, Some(value_column_name.as_str()));
+            for _ in 0..len {
+                variable_col.push_value(value_column_name.as_str());
+            }
             // ensure we go via the schema so we are O(1)
             // self.column() is linear
             // together with this loop that would make it O^2 over `on`
@@ -157,14 +160,15 @@ pub trait UnpivotDF: IntoDf {
             )?;
             values.extend_from_slice(value_col.as_materialized_series().chunks())
         }
-        let values_arr = concatenate_unchecked(&values)?;
+        let values = values.iter().map(|arr| &**arr).collect::<Vec<_>>();
+        let values_arr = concatenate(&values)?;
         // SAFETY:
         // The given dtype is correct
         let values_col =
             unsafe { Series::from_chunks_and_dtype_unchecked(value_name, vec![values_arr], &st) }
                 .into();
 
-        let variable_arr = variable_col.as_box();
+        let variable_arr = variable_col.freeze().into_boxed();
         // SAFETY:
         // The given dtype is correct
         let variable_col = unsafe {

@@ -1,89 +1,85 @@
-use arrow::array::{
-    Array, BinaryArray, BinaryViewArray, BooleanArray, DictionaryArray, FixedSizeBinaryArray,
-    ListArray, NullArray, PrimitiveArray, StructArray, Utf8Array, Utf8ViewArray,
-};
-use arrow::bitmap::Bitmap;
-use arrow::types::{days_ms, i256, months_days_ns};
-use polars_utils::float16::pf16;
+//! The equality kernels a nested array recurses into its children through, over a `&dyn PlArray`.
 
-use crate::comparisons::TotalEqKernel;
+use polars_array::{PlArray, PlBitmap};
 
-macro_rules! call_binary {
-    ($T:ty, $lhs:expr, $rhs:expr, $op:path) => {{
-        let lhs: &$T = $lhs.as_any().downcast_ref().unwrap();
-        let rhs: &$T = $rhs.as_any().downcast_ref().unwrap();
-        $op(lhs, rhs)
-    }};
+use super::PlTotalEqKernel;
+
+pub(super) fn downcast<A: PlArray + 'static>(array: &dyn PlArray) -> &A {
+    array
+        .as_any()
+        .downcast_ref()
+        .expect("the array type dispatched on names the array")
 }
 
-macro_rules! compare {
-    ($lhs:expr, $rhs:expr, $op:path) => {{
-        let lhs = $lhs;
-        let rhs = $rhs;
+/// Resolves the array type both sides share, once, and runs `$body` over them downcast to it.
+///
+/// The dispatch is what a `&dyn PlArray` costs, so a caller that reads many elements out of one
+/// pair of arrays runs its whole walk inside the body rather than coming back through here for
+/// every element.
+macro_rules! with_array_pair {
+    ($lhs_array:expr, $rhs_array:expr, |$lhs:ident, $rhs:ident| $body:expr $(,)?) => {{
+        let (lhs, rhs) = ($lhs_array, $rhs_array);
+        assert_eq!(
+            lhs.array_type(),
+            rhs.array_type(),
+            "a nested comparison reached children of different array types",
+        );
 
-        assert_eq!(lhs.dtype(), rhs.dtype());
+        macro_rules! call_binary {
+            ($A:ty) => {{
+                let $lhs = $crate::comparisons::dyn_array::downcast::<$A>(lhs);
+                let $rhs = $crate::comparisons::dyn_array::downcast::<$A>(rhs);
+                $body
+            }};
+        }
 
-        use arrow::datatypes::{IntegerType as I, PhysicalType as PH, PrimitiveType as PR};
-        match lhs.dtype().to_physical_type() {
-            PH::Boolean => call_binary!(BooleanArray, lhs, rhs, $op),
-            PH::BinaryView => call_binary!(BinaryViewArray, lhs, rhs, $op),
-            PH::Utf8View => call_binary!(Utf8ViewArray, lhs, rhs, $op),
-            PH::Primitive(PR::Int8) => call_binary!(PrimitiveArray<i8>, lhs, rhs, $op),
-            PH::Primitive(PR::Int16) => call_binary!(PrimitiveArray<i16>, lhs, rhs, $op),
-            PH::Primitive(PR::Int32) => call_binary!(PrimitiveArray<i32>, lhs, rhs, $op),
-            PH::Primitive(PR::Int64) => call_binary!(PrimitiveArray<i64>, lhs, rhs, $op),
-            PH::Primitive(PR::Int128) => call_binary!(PrimitiveArray<i128>, lhs, rhs, $op),
-            PH::Primitive(PR::UInt8) => call_binary!(PrimitiveArray<u8>, lhs, rhs, $op),
-            PH::Primitive(PR::UInt16) => call_binary!(PrimitiveArray<u16>, lhs, rhs, $op),
-            PH::Primitive(PR::UInt32) => call_binary!(PrimitiveArray<u32>, lhs, rhs, $op),
-            PH::Primitive(PR::UInt64) => call_binary!(PrimitiveArray<u64>, lhs, rhs, $op),
-            PH::Primitive(PR::UInt128) => call_binary!(PrimitiveArray<u128>, lhs, rhs, $op),
-            PH::Primitive(PR::Float16) => call_binary!(PrimitiveArray<pf16>, lhs, rhs, $op),
-            PH::Primitive(PR::Float32) => call_binary!(PrimitiveArray<f32>, lhs, rhs, $op),
-            PH::Primitive(PR::Float64) => call_binary!(PrimitiveArray<f64>, lhs, rhs, $op),
-            PH::Primitive(PR::Int256) => call_binary!(PrimitiveArray<i256>, lhs, rhs, $op),
-            PH::Primitive(PR::DaysMs) => call_binary!(PrimitiveArray<days_ms>, lhs, rhs, $op),
-            PH::Primitive(PR::MonthDayNano) => {
-                call_binary!(PrimitiveArray<months_days_ns>, lhs, rhs, $op)
-            },
-            PH::Primitive(PR::MonthDayMillis) => unimplemented!(),
-
+        use ::polars_array::PlArrayType as A;
+        match lhs.array_type() {
+            A::Null => call_binary!(::polars_array::PlNullArray),
+            A::Boolean => call_binary!(::polars_array::PlBooleanArray),
+            // Dispatched on the element type the array type names, not on the concrete array,
+            // so that the arms are exactly the primitives a `PlArrayType::Primitive` can hold.
+            A::Primitive(primitive) => ::arrow::with_match_primitive_type!(primitive, |$T| {
+                let $lhs = $crate::comparisons::dyn_array::downcast::<
+                    ::polars_array::PlPrimitiveArray<$T>,
+                >(lhs);
+                let $rhs = $crate::comparisons::dyn_array::downcast::<
+                    ::polars_array::PlPrimitiveArray<$T>,
+                >(rhs);
+                $body
+            }),
+            A::Binary => call_binary!(::polars_array::PlBinaryArray),
+            A::BinaryView => call_binary!(::polars_array::PlBinaryViewArray),
+            A::Utf8View => call_binary!(::polars_array::PlUtf8ViewArray),
+            A::FixedSizeBinary => call_binary!(::polars_array::PlFixedSizeBinaryArray),
+            A::Struct => call_binary!(::polars_array::PlStructArray),
+            A::List => call_binary!(::polars_array::PlListArray),
             #[cfg(feature = "dtype-array")]
-            PH::FixedSizeList => call_binary!(arrow::array::FixedSizeListArray, lhs, rhs, $op),
+            A::FixedSizeList => call_binary!(::polars_array::PlFixedSizeListArray),
             #[cfg(not(feature = "dtype-array"))]
-            PH::FixedSizeList => todo!(
-                "Comparison of FixedSizeListArray is not supported without dtype-array feature"
+            A::FixedSizeList => todo!(
+                "comparison of a fixed-size-list array is not supported without the dtype-array \
+                 feature"
             ),
-
-            PH::Null => call_binary!(NullArray, lhs, rhs, $op),
-            PH::FixedSizeBinary => call_binary!(FixedSizeBinaryArray, lhs, rhs, $op),
-            PH::Binary => call_binary!(BinaryArray<i32>, lhs, rhs, $op),
-            PH::LargeBinary => call_binary!(BinaryArray<i64>, lhs, rhs, $op),
-            PH::Utf8 => call_binary!(Utf8Array<i32>, lhs, rhs, $op),
-            PH::LargeUtf8 => call_binary!(Utf8Array<i64>, lhs, rhs, $op),
-            PH::List => call_binary!(ListArray<i32>, lhs, rhs, $op),
-            PH::LargeList => call_binary!(ListArray<i64>, lhs, rhs, $op),
-            PH::Struct => call_binary!(StructArray, lhs, rhs, $op),
-            PH::Union => todo!("Comparison of UnionArrays is not yet supported"),
-            PH::Map => todo!("Comparison of MapArrays is not yet supported"),
-            PH::Dictionary(I::Int8) => call_binary!(DictionaryArray<i8>, lhs, rhs, $op),
-            PH::Dictionary(I::Int16) => call_binary!(DictionaryArray<i16>, lhs, rhs, $op),
-            PH::Dictionary(I::Int32) => call_binary!(DictionaryArray<i32>, lhs, rhs, $op),
-            PH::Dictionary(I::Int64) => call_binary!(DictionaryArray<i64>, lhs, rhs, $op),
-            PH::Dictionary(I::Int128) => call_binary!(DictionaryArray<i128>, lhs, rhs, $op),
-            PH::Dictionary(I::UInt8) => call_binary!(DictionaryArray<u8>, lhs, rhs, $op),
-            PH::Dictionary(I::UInt16) => call_binary!(DictionaryArray<u16>, lhs, rhs, $op),
-            PH::Dictionary(I::UInt32) => call_binary!(DictionaryArray<u32>, lhs, rhs, $op),
-            PH::Dictionary(I::UInt64) => call_binary!(DictionaryArray<u64>, lhs, rhs, $op),
-            PH::Dictionary(I::UInt128) => call_binary!(DictionaryArray<u128>, lhs, rhs, $op),
+            array_type @ A::Object { .. } => {
+                unimplemented!("polars-compute: comparison of a nested {array_type:?}")
+            },
         }
     }};
 }
 
-pub fn array_tot_eq_missing_kernel(lhs: &dyn Array, rhs: &dyn Array) -> Bitmap {
-    compare!(lhs, rhs, TotalEqKernel::tot_eq_missing_kernel)
+pub(super) use with_array_pair;
+
+/// Whether both sides hold the same element, reading a null as a value equal only to itself.
+pub fn pl_array_tot_eq_missing_kernel(lhs: &dyn PlArray, rhs: &dyn PlArray) -> PlBitmap {
+    with_array_pair!(lhs, rhs, |lhs, rhs| PlTotalEqKernel::tot_eq_missing_kernel(
+        lhs, rhs
+    ))
 }
 
-pub fn array_tot_ne_missing_kernel(lhs: &dyn Array, rhs: &dyn Array) -> Bitmap {
-    compare!(lhs, rhs, TotalEqKernel::tot_ne_missing_kernel)
+/// Whether the two sides differ, reading a null as a value equal only to itself.
+pub fn pl_array_tot_ne_missing_kernel(lhs: &dyn PlArray, rhs: &dyn PlArray) -> PlBitmap {
+    with_array_pair!(lhs, rhs, |lhs, rhs| PlTotalEqKernel::tot_ne_missing_kernel(
+        lhs, rhs
+    ))
 }

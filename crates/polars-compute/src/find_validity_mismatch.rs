@@ -1,22 +1,18 @@
-use arrow::array::{Array, FixedSizeListArray, ListArray, StructArray};
-use arrow::datatypes::ArrowDataType;
-use arrow::types::Offset;
+//! Finding the elements two chunks disagree about being null.
+
+use arrow::bitmap::Bitmap;
+use polars_array::{
+    PlArray, PlArrayType, PlBitmapRef, PlFixedSizeListArray, PlListArray, PlStructArray,
+};
 use polars_utils::IdxSize;
-use polars_utils::itertools::Itertools;
 
-use crate::cast::CastOptionsImpl;
+use crate::nesting::{covered_range, downcast};
 
-/// Find the indices of the values where the validity mismatches.
+/// Appends the indices of the elements `left` and `right` disagree about being null.
 ///
-/// This is done recursively, meaning that a validity mismatch at a deeper level will result as at
-/// the level above at the corresponding index.
-///
-/// This procedure requires that
-/// - Nulls are propagated recursively
-/// - Lists to be
-///     - trimmed to normalized offsets
-///     - have the same number of child elements below each element (even nulls)
-pub fn find_validity_mismatch(left: &dyn Array, right: &dyn Array, idxs: &mut Vec<IdxSize>) {
+/// # Panics
+/// Panics unless `left` and `right` hold the same number of elements.
+pub fn find_validity_mismatch(left: &dyn PlArray, right: &dyn PlArray, idxs: &mut Vec<IdxSize>) {
     assert_eq!(left.len(), right.len());
 
     // Handle the top-level.
@@ -24,89 +20,32 @@ pub fn find_validity_mismatch(left: &dyn Array, right: &dyn Array, idxs: &mut Ve
     // NOTE: This is done always, even if left and right have different nestings. This is
     // intentional and needed.
     let original_idxs_length = idxs.len();
-    match (left.validity(), right.validity()) {
-        (None, None) => {},
-        (Some(l), Some(r)) => {
-            if l != r {
-                let mismatches = arrow::bitmap::xor(l, r);
-                idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-            }
-        },
-        (Some(v), _) | (_, Some(v)) => {
-            if v.unset_bits() > 0 {
-                let mismatches = !v;
-                idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
-            }
-        },
-    }
-
-    let left = left.as_any();
-    let right = right.as_any();
+    extend_mismatches(idxs, left.len(), left.validity(), right.validity());
 
     let pre_nesting_length = idxs.len();
-    // (Struct, Struct)
-    if let (Some(left), Some(right)) = (
-        left.downcast_ref::<StructArray>(),
-        right.downcast_ref::<StructArray>(),
-    ) {
-        assert_eq!(left.fields().len(), right.fields().len());
-        for (l, r) in left.values().iter().zip(right.values().iter()) {
-            find_validity_mismatch(l.as_ref(), r.as_ref(), idxs);
-        }
-    }
+    match (left.array_type(), right.array_type()) {
+        (PlArrayType::Struct, PlArrayType::Struct) => {
+            let left: &PlStructArray = downcast(left);
+            let right: &PlStructArray = downcast(right);
 
-    // (List, List)
-    if let (Some(left), Some(right)) = (
-        left.downcast_ref::<ListArray<i32>>(),
-        right.downcast_ref::<ListArray<i32>>(),
-    ) {
-        find_validity_mismatch_list_list_nested(left, right, idxs);
-    }
-    if let (Some(left), Some(right)) = (
-        left.downcast_ref::<ListArray<i64>>(),
-        right.downcast_ref::<ListArray<i64>>(),
-    ) {
-        find_validity_mismatch_list_list_nested(left, right, idxs);
-    }
-
-    // (FixedSizeList, FixedSizeList)
-    if let (Some(left), Some(right)) = (
-        left.downcast_ref::<FixedSizeListArray>(),
-        right.downcast_ref::<FixedSizeListArray>(),
-    ) {
-        assert_eq!(left.size(), right.size());
-        find_validity_mismatch_fsl_fsl_nested(
-            left.values().as_ref(),
-            right.values().as_ref(),
-            left.size(),
-            idxs,
-        )
-    }
-
-    // (List, Array) / (Array, List)
-    if let (Some(left), Some(right)) = (
-        left.downcast_ref::<ListArray<i32>>(),
-        right.downcast_ref::<FixedSizeListArray>(),
-    ) {
-        find_validity_mismatch_list_fsl_impl(left, right, idxs);
-    }
-    if let (Some(left), Some(right)) = (
-        left.downcast_ref::<ListArray<i64>>(),
-        right.downcast_ref::<FixedSizeListArray>(),
-    ) {
-        find_validity_mismatch_list_fsl_impl(left, right, idxs);
-    }
-    if let (Some(right), Some(left)) = (
-        left.downcast_ref::<FixedSizeListArray>(),
-        right.downcast_ref::<ListArray<i32>>(),
-    ) {
-        find_validity_mismatch_list_fsl_impl(left, right, idxs);
-    }
-    if let (Some(right), Some(left)) = (
-        left.downcast_ref::<FixedSizeListArray>(),
-        right.downcast_ref::<ListArray<i64>>(),
-    ) {
-        find_validity_mismatch_list_fsl_impl(left, right, idxs);
+            assert_eq!(left.num_fields(), right.num_fields());
+            for (left, right) in left.fields().iter().zip(right.fields()) {
+                find_validity_mismatch(&**left, &**right, idxs);
+            }
+        },
+        (PlArrayType::List, PlArrayType::List) => {
+            find_validity_mismatch_list_list(downcast(left), downcast(right), idxs)
+        },
+        (PlArrayType::FixedSizeList, PlArrayType::FixedSizeList) => {
+            find_validity_mismatch_fsl_fsl(downcast(left), downcast(right), idxs)
+        },
+        (PlArrayType::List, PlArrayType::FixedSizeList) => {
+            find_validity_mismatch_list_fsl(downcast(left), downcast(right), idxs)
+        },
+        (PlArrayType::FixedSizeList, PlArrayType::List) => {
+            find_validity_mismatch_list_fsl(downcast(right), downcast(left), idxs)
+        },
+        _ => {},
     }
 
     if pre_nesting_length == idxs.len() {
@@ -115,9 +54,163 @@ pub fn find_validity_mismatch(left: &dyn Array, right: &dyn Array, idxs: &mut Ve
     idxs[original_idxs_length..].sort_unstable();
 }
 
-fn find_validity_mismatch_fsl_fsl_nested(
-    left: &dyn Array,
-    right: &dyn Array,
+/// Appends the indices at which two validity masks over `length` elements disagree.
+fn extend_mismatches(
+    idxs: &mut Vec<IdxSize>,
+    length: usize,
+    left: Option<PlBitmapRef<'_>>,
+    right: Option<PlBitmapRef<'_>>,
+) {
+    match (left, right) {
+        (None, None) => return,
+        // One side says every element is valid, and the other holds a mask that says so too.
+        (Some(mask), None) | (None, Some(mask)) if mask.unset_bits() == 0 => return,
+        _ => {},
+    }
+
+    // A mask that says the same of every element — or that is not there at all — is a single bit
+    // against the other's. Two of them either agree about every element or disagree about every
+    // one, and neither is ever read.
+    let scalar =
+        |mask: Option<PlBitmapRef<'_>>| mask.map_or(Some(true), |mask| mask.scalar_value());
+    if let (Some(left), Some(right)) = (scalar(left), scalar(right)) {
+        if left != right {
+            idxs.extend(0..length as IdxSize);
+        }
+        return;
+    }
+
+    // At least one of the two holds one bit per element, which is the side the answer is read off.
+    // An absent mask is the one that says every element is valid, as is a scalar mask of a set
+    // bit: either way the other side says the same thing of every element, so the elements the two
+    // disagree about are the ones the flat mask says the opposite of — which is that mask itself,
+    // or its inverse, and never a mask written out from a single bit.
+    let mismatches = match (left, right) {
+        (Some(left), Some(right)) => match (left.flat_bitmap(), right.flat_bitmap()) {
+            (Some(left), Some(right)) => arrow::bitmap::xor(left, right),
+            (Some(flat), None) => disagreements_with(flat, right.scalar_value().unwrap()),
+            (None, Some(flat)) => disagreements_with(flat, left.scalar_value().unwrap()),
+            (None, None) => unreachable!("two scalar masks are answered for above"),
+        },
+        (Some(mask), None) | (None, Some(mask)) => disagreements_with(
+            mask.flat_bitmap()
+                .expect("a scalar mask against an absent one is answered for above"),
+            true,
+        ),
+        (None, None) => unreachable!("two absent masks are both a single bit"),
+    };
+
+    idxs.extend(mismatches.true_idx_iter().map(|i| i as IdxSize));
+}
+
+/// The elements `flat` disagrees about with a side that says `valid` of every one of them.
+fn disagreements_with(flat: &Bitmap, valid: bool) -> Bitmap {
+    if valid { !flat } else { flat.clone() }
+}
+
+/// Reports a disagreement under an element of `left` at that element.
+fn find_validity_mismatch_list_list(
+    left: &PlListArray,
+    right: &PlListArray,
+    idxs: &mut Vec<IdxSize>,
+) {
+    // Both sides repeat the one range every element of them reads, so the two lists are read
+    // against each other once: either they agree about every value, and no element is reported, or
+    // they disagree somewhere every element reads, and all of them are — neither side is written
+    // out one list per element to say so.
+    if let (Some(l), Some(r)) = (left.scalar_offsets(), right.scalar_offsets())
+        && l.len() == r.len()
+    {
+        let mut nested_idxs = Vec::new();
+        find_validity_mismatch(
+            &*left.values().sliced(l.start, l.len()),
+            &*right.values().sliced(r.start, r.len()),
+            &mut nested_idxs,
+        );
+
+        if !nested_idxs.is_empty() {
+            idxs.extend(0..left.len() as IdxSize);
+        }
+        return;
+    }
+
+    // The values are read against each other one slot per value, and the range every element covers
+    // is read off `left`; an array whose elements share one range holds neither.
+    let left = left.to_flat();
+    let left = left.as_array();
+    let right = right.to_flat();
+
+    let mut nested_idxs = Vec::new();
+    find_validity_mismatch(left.values(), right.as_array().values(), &mut nested_idxs);
+
+    if nested_idxs.is_empty() {
+        return;
+    }
+
+    assert_eq!(covered_range(left), 0..left.values().len());
+
+    // @TODO: Optimize. This is only used on the error path so it is find, right?
+    let mut j = 0;
+    for i in 0..left.len() {
+        // SAFETY: `i` is an index of `left`.
+        let end = unsafe { left.value_range_unchecked(i) }.end;
+
+        if j < nested_idxs.len() && (nested_idxs[j] as usize) < end {
+            idxs.push(i as IdxSize);
+            j += 1;
+
+            // Loop over remaining items in same element.
+            while j < nested_idxs.len() && (nested_idxs[j] as usize) < end {
+                j += 1;
+            }
+        }
+
+        if j == nested_idxs.len() {
+            break;
+        }
+    }
+}
+
+/// Reports a disagreement under an element of two arrays of the same width at that element.
+fn find_validity_mismatch_fsl_fsl(
+    left: &PlFixedSizeListArray,
+    right: &PlFixedSizeListArray,
+    idxs: &mut Vec<IdxSize>,
+) {
+    assert_eq!(left.width(), right.width());
+    let width = left.width();
+
+    // Both sides hold the one list every element of them reads, so the two lists are read against
+    // each other once: either they agree about every value, and no element is reported, or they
+    // disagree somewhere every element reads, and all of them are — neither side is written out
+    // one list per element to say so.
+    if left.values_are_scalar() && right.values_are_scalar() {
+        let mut nested_idxs = Vec::new();
+        find_validity_mismatch(left.values(), right.values(), &mut nested_idxs);
+
+        if !nested_idxs.is_empty() {
+            idxs.extend(0..left.len() as IdxSize);
+        }
+        return;
+    }
+
+    // A value is mapped back onto the element above it by its position, which needs the values of
+    // both sides laid out one list per element.
+    let left = left.to_flat();
+    let right = right.to_flat();
+
+    find_validity_mismatch_nested(
+        left.as_array().values(),
+        right.as_array().values(),
+        width,
+        idxs,
+    )
+}
+
+/// Reports a disagreement between two values arrays of `size` values per element, once each.
+fn find_validity_mismatch_nested(
+    left: &dyn PlArray,
+    right: &dyn PlArray,
     size: usize,
     idxs: &mut Vec<IdxSize>,
 ) {
@@ -138,73 +231,63 @@ fn find_validity_mismatch_fsl_fsl_nested(
     }
 }
 
-fn find_validity_mismatch_list_list_nested<O: Offset>(
-    left: &ListArray<O>,
-    right: &ListArray<O>,
+/// Reports a disagreement between a list array and a fixed size list array of the same widths.
+fn find_validity_mismatch_list_fsl(
+    left: &PlListArray,
+    right: &PlFixedSizeListArray,
     idxs: &mut Vec<IdxSize>,
 ) {
-    let mut nested_idxs = Vec::new();
-    find_validity_mismatch(
-        left.values().as_ref(),
-        right.values().as_ref(),
-        &mut nested_idxs,
-    );
+    // As in the two same-shape pairs above: both sides hold the one list every element of them
+    // reads, so the two lists are read against each other once. Either they agree about every
+    // value, and no element is reported, or they disagree somewhere every element reads, and all
+    // of them are — neither side is written out one list per element to say so.
+    if let Some(range) = left.scalar_offsets()
+        && right.values_are_scalar()
+        && range.len() == right.width()
+    {
+        let mut nested_idxs = Vec::new();
+        find_validity_mismatch(
+            &*left.values().sliced(range.start, range.len()),
+            right.values(),
+            &mut nested_idxs,
+        );
 
-    if nested_idxs.is_empty() {
+        if !nested_idxs.is_empty() {
+            idxs.extend(0..left.len() as IdxSize);
+        }
         return;
     }
 
-    assert_eq!(left.offsets().first().to_usize(), 0);
-    assert_eq!(left.offsets().range().to_usize(), left.values().len());
+    let right = right.to_flat();
+    let right = right.as_array();
 
-    // @TODO: Optimize. This is only used on the error path so it is find, right?
-    let mut j = 0;
-    for (i, (start, length)) in left.offsets().offset_and_length_iter().enumerate_idx() {
-        if j < nested_idxs.len() && (nested_idxs[j] as usize) < start + length {
-            idxs.push(i);
-            j += 1;
-
-            // Loop over remaining items in same element.
-            while j < nested_idxs.len() && (nested_idxs[j] as usize) < start + length {
-                j += 1;
-            }
-        }
-
-        if j == nested_idxs.len() {
-            break;
-        }
-    }
-}
-
-fn find_validity_mismatch_list_fsl_impl<O: Offset>(
-    left: &ListArray<O>,
-    right: &FixedSizeListArray,
-    idxs: &mut Vec<IdxSize>,
-) {
     if left.validity().is_none() && right.validity().is_none() {
-        find_validity_mismatch_fsl_fsl_nested(
-            left.values().as_ref(),
-            right.values().as_ref(),
-            right.size(),
+        let left = left.to_flat();
+
+        find_validity_mismatch_nested(
+            left.as_array().values(),
+            right.values(),
+            right.width(),
             idxs,
         );
         return;
     }
 
-    let (ArrowDataType::List(f) | ArrowDataType::LargeList(f)) = left.dtype() else {
-        unreachable!();
-    };
-    let left = crate::cast::cast_list_to_fixed_size_list(
-        left,
-        f,
-        right.size(),
-        CastOptionsImpl::default(),
-    )
-    .unwrap();
-    find_validity_mismatch_fsl_fsl_nested(
-        left.values().as_ref(),
-        right.values().as_ref(),
-        right.size(),
+    // The lists of a null element hold no values of their own, so lining the two sides up value for
+    // value means filling those in — which is what the cast to a fixed width does. This only runs
+    // once a cast has already failed.
+    let left =
+        crate::cast::list_to_fixed_size_list(left, right.width(), |values| Ok(values.to_boxed()))
+            .unwrap();
+    // The cast hands back the elements in whatever representation it reads them out in, and a
+    // chunk that repeats a single list comes back repeating one list's values: they are written
+    // out for the two sides to line up value for value, as the right side already was.
+    let left = left.to_flat();
+
+    find_validity_mismatch_nested(
+        left.as_array().values(),
+        right.values(),
+        right.width(),
         idxs,
     )
 }

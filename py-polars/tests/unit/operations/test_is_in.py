@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Collection
 from datetime import date
 from decimal import Decimal as D
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -802,3 +802,40 @@ def test_is_in_non_nested_container() -> None:
         match=r"(?s)cannot check for List\(Int64\) values in Int64 data.*container dtype \(Int64\) must be nested",
     ):
         df.select(pl.col("a").is_in(pl.col("b")))
+
+
+@pytest.mark.parametrize("nulls_equal", [True, False])
+@pytest.mark.parametrize(
+    "dtype", [pl.List(pl.Int64), pl.Array(pl.Int64, 2), pl.List(pl.String)]
+)
+def test_is_in_container_chunks(dtype: pl.DataType, nulls_equal: bool) -> None:
+    # The chunk a value of the container sits in is resolved once per container, not
+    # once per value read, so a container of several chunks or a sliced one has to
+    # answer the way the single flat chunk of the same elements does.
+    rows: list[list[Any] | None]
+    if dtype == pl.List(pl.String):
+        rows = [["a", "b"], ["c", "d"], [None, "e"], None, ["f", "f"]]
+        needles = ["a", "d", "e", "a", "g"]
+    else:
+        rows = [[1, 2], [3, 4], [None, 5], None, [6, 6]]
+        needles = [1, 4, 5, 1, 7]
+
+    flat = pl.Series("h", rows, dtype=dtype)
+    chunked = pl.concat(
+        [pl.Series("h", [row], dtype=dtype) for row in rows], rechunk=False
+    )
+    assert chunked.n_chunks() == len(rows)
+
+    needle = pl.Series("n", needles)
+    expected = pl.DataFrame({"h": flat, "n": needle}).select(
+        pl.col("n").is_in(pl.col("h"), nulls_equal=nulls_equal)
+    )
+    pad = pl.Series("h", rows[:1], dtype=dtype)
+    sliced = pl.concat([pad, flat, pad]).slice(1, len(rows))
+    for container in (chunked, sliced):
+        assert_frame_equal(
+            pl.DataFrame({"h": container, "n": needle}).select(
+                pl.col("n").is_in(pl.col("h"), nulls_equal=nulls_equal)
+            ),
+            expected,
+        )

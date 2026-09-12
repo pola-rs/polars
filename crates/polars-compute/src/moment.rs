@@ -29,12 +29,35 @@
 
 #![allow(clippy::collapsible_else_if)]
 
-use arrow::array::{Array, PrimitiveArray};
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
+use polars_array::PlPrimitiveArray;
+use polars_array::bitmap::combine_validities_and;
 use polars_utils::algebraic_ops::*;
 
 const CHUNK_SIZE: usize = 128;
+
+/// The weight of `arr`, which is its number of non-null elements.
+fn weight_of<T: NativeType>(arr: &PlPrimitiveArray<T>) -> f64 {
+    (arr.len() - arr.null_count()) as f64
+}
+
+/// The weight of `x` and `y` taken together: the number of elements at which neither is null.
+fn joint_weight_of<T: NativeType, U: NativeType>(
+    x: &PlPrimitiveArray<T>,
+    y: &PlPrimitiveArray<U>,
+) -> f64 {
+    let nulls = combine_validities_and(x.validity(), y.validity())
+        .map_or(0, |validity| validity.unset_bits());
+    (x.len() - nulls) as f64
+}
+
+/// How far a repeated value deviates from the mean of the chunk that repeats it: zero.
+#[inline]
+#[expect(clippy::eq_op)]
+fn deviation_of(mean: f64) -> f64 {
+    mean - mean
+}
 
 #[derive(Default, Clone)]
 #[repr(C)] // For serialization, don't change struct member order.
@@ -65,6 +88,19 @@ pub struct PearsonState {
 }
 
 impl VarState {
+    /// The state of `weight` copies of `mean`.
+    fn repeated(mean: f64, weight: f64) -> Self {
+        let deviation = deviation_of(mean);
+        let mut state = Self {
+            weight,
+            mean,
+            dp: deviation * deviation * weight,
+        };
+        // A chunk whose every element is null weighs nothing and has no mean at all.
+        state.clear_zero_weight_nan();
+        state
+    }
+
     fn new(x: &[f64]) -> Self {
         if x.is_empty() {
             return Self::default();
@@ -135,6 +171,20 @@ impl CovState {
         self.weight
     }
 
+    /// The state of `weight` copies of the pair `(mean_x, mean_y)`; see [`VarState::repeated`].
+    fn repeated(mean_x: f64, mean_y: f64, weight: f64) -> Self {
+        if weight == 0.0 {
+            return Self::default();
+        }
+
+        Self {
+            weight,
+            mean_x,
+            mean_y,
+            dp_xy: deviation_of(mean_x) * deviation_of(mean_y) * weight,
+        }
+    }
+
     fn new(x: &[f64], y: &[f64]) -> Self {
         assert!(x.len() == y.len());
         if x.is_empty() {
@@ -202,6 +252,24 @@ impl CovState {
 impl PearsonState {
     pub fn weight(&self) -> f64 {
         self.weight
+    }
+
+    /// The state of `weight` copies of the pair `(mean_x, mean_y)`; see [`VarState::repeated`].
+    fn repeated(mean_x: f64, mean_y: f64, weight: f64) -> Self {
+        if weight == 0.0 {
+            return Self::default();
+        }
+
+        let dx = deviation_of(mean_x);
+        let dy = deviation_of(mean_y);
+        Self {
+            weight,
+            mean_x,
+            mean_y,
+            dp_xx: dx * dx * weight,
+            dp_xy: dx * dy * weight,
+            dp_yy: dy * dy * weight,
+        }
     }
 
     fn new(x: &[f64], y: &[f64]) -> Self {
@@ -289,6 +357,20 @@ pub struct SkewState {
 }
 
 impl SkewState {
+    /// The state of `weight` copies of `mean`; see [`VarState::repeated`].
+    fn repeated(mean: f64, weight: f64) -> Self {
+        let d = deviation_of(mean);
+        let d2 = d * d;
+        let mut state = Self {
+            weight,
+            mean,
+            m2: d2 * weight,
+            m3: d * d2 * weight,
+        };
+        state.clear_zero_weight_nan();
+        state
+    }
+
     fn new(x: &[f64]) -> Self {
         Self::from_iter(x.iter().copied(), x.len())
     }
@@ -326,21 +408,22 @@ impl SkewState {
         }
     }
 
-    pub fn from_array(arr: &PrimitiveArray<f64>, start: usize, length: usize) -> Self {
-        let validity = arr.validity().cloned();
-        let validity = validity
-            .map(|v| v.sliced(start, length))
-            .filter(|v| v.unset_bits() > 0);
+    /// The state of the `length` elements of `arr` starting at `start`, folded in one pass.
+    pub fn from_array(arr: &PlPrimitiveArray<f64>, start: usize, length: usize) -> Self {
+        // Slicing preserves the representation, so a range of a chunk that repeats one value
+        // repeats it too and is read in `O(1)` below.
+        let arr = arr.clone().sliced(start, length);
 
-        match validity {
-            None => Self::new(&arr.values().as_slice()[start..][..length]),
-            Some(validity) => {
-                let iter = arr.values()[start..][..length].iter().copied();
-                let iter = iter
-                    .zip(validity.iter())
-                    .filter_map(|(x, v)| v.then_some(x));
-                Self::from_iter(iter, validity.set_bits())
-            },
+        // Every element of a chunk that repeats one value is that value, whatever the range's
+        // length, so the whole range weighs in at once.
+        if let Some(value) = arr.scalar_value_ignore_validity() {
+            return Self::repeated(value, weight_of(&arr));
+        }
+
+        if arr.has_nulls() {
+            Self::from_iter(arr.iter().flatten(), arr.len() - arr.null_count())
+        } else {
+            Self::from_iter(arr.values_iter(), arr.len())
         }
     }
 
@@ -426,6 +509,21 @@ pub struct KurtosisState {
 }
 
 impl KurtosisState {
+    /// The state of `weight` copies of `mean`; see [`VarState::repeated`].
+    fn repeated(mean: f64, weight: f64) -> Self {
+        let d = deviation_of(mean);
+        let d2 = d * d;
+        let mut state = Self {
+            weight,
+            mean,
+            m2: d2 * weight,
+            m3: d * d2 * weight,
+            m4: d2 * d2 * weight,
+        };
+        state.clear_zero_weight_nan();
+        state
+    }
+
     pub fn new(x: &[f64]) -> Self {
         Self::from_iter(x.iter().copied(), x.len())
     }
@@ -458,21 +556,18 @@ impl KurtosisState {
         }
     }
 
-    pub fn from_array(arr: &PrimitiveArray<f64>, start: usize, length: usize) -> Self {
-        let validity = arr.validity().cloned();
-        let validity = validity
-            .map(|v| v.sliced(start, length))
-            .filter(|v| v.unset_bits() > 0);
+    /// The state of the `length` elements of `arr` starting at `start`, folded in one pass.
+    pub fn from_array(arr: &PlPrimitiveArray<f64>, start: usize, length: usize) -> Self {
+        let arr = arr.clone().sliced(start, length);
 
-        match validity {
-            None => Self::new(&arr.values().as_slice()[start..][..length]),
-            Some(validity) => {
-                let iter = arr.values()[start..][..length].iter().copied();
-                let iter = iter
-                    .zip(validity.iter())
-                    .filter_map(|(x, v)| v.then_some(x));
-                Self::from_iter(iter, validity.set_bits())
-            },
+        if let Some(value) = arr.scalar_value_ignore_validity() {
+            return Self::repeated(value, weight_of(&arr));
+        }
+
+        if arr.has_nulls() {
+            Self::from_iter(arr.iter().flatten(), arr.len() - arr.null_count())
+        } else {
+            Self::from_iter(arr.values_iter(), arr.len())
         }
     }
 
@@ -623,97 +718,123 @@ where
     }
 }
 
-pub fn var<T>(arr: &PrimitiveArray<T>) -> VarState
+pub fn var<T>(arr: &PlPrimitiveArray<T>) -> VarState
 where
     T: NativeType + AsPrimitive<f64>,
 {
+    // Every element of a chunk that repeats one value is that value, which is therefore the
+    // chunk's mean: the whole chunk weighs in at once, without an element of it being walked.
+    if let Some(value) = arr.scalar_value_ignore_validity() {
+        return VarState::repeated(value.as_(), weight_of(arr));
+    }
+
     let mut out = VarState::default();
     if arr.has_nulls() {
-        chunk_as_float(arr.non_null_values_iter(), |chunk| {
+        chunk_as_float(arr.iter().flatten(), |chunk| {
             out.combine(&VarState::new(chunk))
         });
     } else {
-        chunk_as_float(arr.values().iter().copied(), |chunk| {
+        chunk_as_float(arr.values_iter(), |chunk| {
             out.combine(&VarState::new(chunk))
         });
     }
     out
 }
 
-pub fn cov<T, U>(x: &PrimitiveArray<T>, y: &PrimitiveArray<U>) -> CovState
+pub fn cov<T, U>(x: &PlPrimitiveArray<T>, y: &PlPrimitiveArray<U>) -> CovState
 where
     T: NativeType + AsPrimitive<f64>,
     U: NativeType + AsPrimitive<f64>,
 {
     assert!(x.len() == y.len());
+
+    // Two chunks that each repeat one value are each their own mean, and the pair weighs in at
+    // the elements where both of them are non-null.
+    if let (Some(x_value), Some(y_value)) = (
+        x.scalar_value_ignore_validity(),
+        y.scalar_value_ignore_validity(),
+    ) {
+        return CovState::repeated(x_value.as_(), y_value.as_(), joint_weight_of(x, y));
+    }
+
     let mut out = CovState::default();
     if x.has_nulls() || y.has_nulls() {
         chunk_as_float_binary(
-            x.iter()
-                .zip(y.iter())
-                .filter_map(|(l, r)| l.copied().zip(r.copied())),
+            x.iter().zip(y.iter()).filter_map(|(l, r)| l.zip(r)),
             |l, r| out.combine(&CovState::new(l, r)),
         );
     } else {
-        chunk_as_float_binary(
-            x.values().iter().copied().zip(y.values().iter().copied()),
-            |l, r| out.combine(&CovState::new(l, r)),
-        );
+        chunk_as_float_binary(x.values_iter().zip(y.values_iter()), |l, r| {
+            out.combine(&CovState::new(l, r))
+        });
     }
     out
 }
 
-pub fn pearson_corr<T, U>(x: &PrimitiveArray<T>, y: &PrimitiveArray<U>) -> PearsonState
+pub fn pearson_corr<T, U>(x: &PlPrimitiveArray<T>, y: &PlPrimitiveArray<U>) -> PearsonState
 where
     T: NativeType + AsPrimitive<f64>,
     U: NativeType + AsPrimitive<f64>,
 {
     assert!(x.len() == y.len());
+
+    if let (Some(x_value), Some(y_value)) = (
+        x.scalar_value_ignore_validity(),
+        y.scalar_value_ignore_validity(),
+    ) {
+        return PearsonState::repeated(x_value.as_(), y_value.as_(), joint_weight_of(x, y));
+    }
+
     let mut out = PearsonState::default();
     if x.has_nulls() || y.has_nulls() {
         chunk_as_float_binary(
-            x.iter()
-                .zip(y.iter())
-                .filter_map(|(l, r)| l.copied().zip(r.copied())),
+            x.iter().zip(y.iter()).filter_map(|(l, r)| l.zip(r)),
             |l, r| out.combine(&PearsonState::new(l, r)),
         );
     } else {
-        chunk_as_float_binary(
-            x.values().iter().copied().zip(y.values().iter().copied()),
-            |l, r| out.combine(&PearsonState::new(l, r)),
-        );
+        chunk_as_float_binary(x.values_iter().zip(y.values_iter()), |l, r| {
+            out.combine(&PearsonState::new(l, r))
+        });
     }
     out
 }
 
-pub fn skew<T>(arr: &PrimitiveArray<T>) -> SkewState
+pub fn skew<T>(arr: &PlPrimitiveArray<T>) -> SkewState
 where
     T: NativeType + AsPrimitive<f64>,
 {
+    if let Some(value) = arr.scalar_value_ignore_validity() {
+        return SkewState::repeated(value.as_(), weight_of(arr));
+    }
+
     let mut out = SkewState::default();
     if arr.has_nulls() {
-        chunk_as_float(arr.non_null_values_iter(), |chunk| {
+        chunk_as_float(arr.iter().flatten(), |chunk| {
             out.combine(&SkewState::new(chunk))
         });
     } else {
-        chunk_as_float(arr.values().iter().copied(), |chunk| {
+        chunk_as_float(arr.values_iter(), |chunk| {
             out.combine(&SkewState::new(chunk))
         });
     }
     out
 }
 
-pub fn kurtosis<T>(arr: &PrimitiveArray<T>) -> KurtosisState
+pub fn kurtosis<T>(arr: &PlPrimitiveArray<T>) -> KurtosisState
 where
     T: NativeType + AsPrimitive<f64>,
 {
+    if let Some(value) = arr.scalar_value_ignore_validity() {
+        return KurtosisState::repeated(value.as_(), weight_of(arr));
+    }
+
     let mut out = KurtosisState::default();
     if arr.has_nulls() {
-        chunk_as_float(arr.non_null_values_iter(), |chunk| {
+        chunk_as_float(arr.iter().flatten(), |chunk| {
             out.combine(&KurtosisState::new(chunk))
         });
     } else {
-        chunk_as_float(arr.values().iter().copied(), |chunk| {
+        chunk_as_float(arr.values_iter(), |chunk| {
             out.combine(&KurtosisState::new(chunk))
         });
     }

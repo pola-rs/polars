@@ -1,5 +1,4 @@
 use arrow::array::ValueSize;
-use arrow::legacy::kernels::string::*;
 #[cfg(feature = "string_encoding")]
 use base64::Engine as _;
 #[cfg(feature = "string_encoding")]
@@ -212,7 +211,7 @@ pub trait StringNameSpaceImpl: AsString {
                     })
                 } else {
                     with_regex_cache(|reg_cache| {
-                        Ok(broadcast_binary_elementwise(
+                        Ok(broadcast_binary_elementwise_mut(
                             ca,
                             pat,
                             infer_re_match(|src, pat| {
@@ -272,13 +271,23 @@ pub trait StringNameSpaceImpl: AsString {
     /// Get the length of the string values as number of chars.
     fn str_len_chars(&self) -> UInt32Chunked {
         let ca = self.as_string();
-        ca.apply_kernel_cast(&string_len_chars)
+        unary_elementwise_values(ca, |s| s.chars().count() as u32)
     }
 
     /// Get the length of the string values as number of bytes.
     fn str_len_bytes(&self) -> UInt32Chunked {
         let ca = self.as_string();
-        ca.apply_kernel_cast(&utf8view_len_bytes)
+        // The length of a value is held in its view, so the lengths come straight off the views
+        // buffer: resolving each view to the string it stands for would read bytes this never
+        // touches, and would chase a view that does not hold its own into a data buffer.
+        unary_mut_values(ca, |arr| match arr.scalar_views() {
+            // Every element reads the one view, so they are all the length it holds.
+            Some(view) => PlPrimitiveArray::new_scalar(view.length, arr.len()),
+            None => {
+                let views = arr.flat_views().expect("views are flat or scalar");
+                PlPrimitiveArray::from_vec(views.iter().map(|view| view.length).collect())
+            },
+        })
     }
 
     /// Pad the start of the string until it reaches the given length.

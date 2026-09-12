@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
-use arrow::array::BooleanArray;
 use arrow::bitmap::BitmapBuilder;
+use polars_array::bitmap::combine_validities_and;
 use polars_core::prelude::arity::{unary_elementwise, unary_elementwise_values};
 use polars_core::prelude::*;
 use polars_core::{with_match_categorical_physical_type, with_match_physical_numeric_polars_type};
@@ -58,9 +58,43 @@ where
     for<'b> T::Physical<'b>: TotalHash + TotalEq + ToTotalOrd + Copy,
     for<'b> <T::Physical<'b> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
-    let offsets = other.offsets()?;
+    // `get_inner` hands over the values as they are, and a chunk that repeats a single list holds
+    // that one list rather than a copy of it per element. The offsets are read the same way: the
+    // one range every element of such a chunk covers is repeated rather than written out, which
+    // is what `element_range` answers.
+    let rechunked = other.rechunk();
+    let other = &rechunked;
+    let chunk = other.downcast_as_array();
+    let scalar_range = chunk.scalar_offsets();
+    let flat_offsets = chunk.flat_offsets().cloned();
+    let element_range = |element: usize| -> (usize, usize) {
+        match &scalar_range {
+            Some(range) => (range.start, range.len()),
+            None => {
+                let offsets = flat_offsets
+                    .as_ref()
+                    .expect("offsets that are not scalar are flat");
+                // SAFETY: the flat offsets hold one start per element plus the end of the last,
+                // and `element` is an element of the chunk they belong to.
+                let (start, end) = unsafe {
+                    (
+                        *offsets.get_unchecked(element),
+                        *offsets.get_unchecked(element + 1),
+                    )
+                };
+                (start as usize, (end - start) as usize)
+            },
+        }
+    };
+
     let inner = other.get_inner();
     let inner: &ChunkedArray<T> = inner.as_ref().as_ref();
+    // The values are read one element of the haystack after another, and `ChunkedArray::get`
+    // resolves the chunk every one of them sits in and downcasts it again — which is most of
+    // what reading one costs. The array is the single chunk of the flat one above, so it is
+    // resolved once here instead. Every `start + i` the loops below read is in bounds of it,
+    // since the offsets index its values.
+    let inner = inner.downcast_as_array();
     let validity = other.rechunk_validity();
 
     let mut ca: BooleanChunked = if ca_in.len() == 1 && other.len() != 1 {
@@ -69,48 +103,76 @@ where
         match value {
             None if !nulls_equal => BooleanChunked::full_null(PlSmallStr::EMPTY, other.len()),
             value => {
+                // Every element of a chunk that repeats a single list reads the same values, so
+                // the one needle is looked for in them once and the bit it answers stands for
+                // every element.
+                if let Some(range) = scalar_range.clone() {
+                    let mut is_in = false;
+                    for i in range {
+                        is_in |= value.to_total_ord()
+                            == unsafe { inner.get_unchecked(i) }.to_total_ord();
+                    }
+
+                    let result =
+                        PlBooleanArray::new_scalar(is_in, other.len()).with_validity(validity);
+                    return Ok(BooleanChunked::from_chunk_iter(
+                        ca_in.name().clone(),
+                        [result],
+                    ));
+                }
+
                 let mut builder = BitmapBuilder::with_capacity(other.len());
 
-                for (start, length) in offsets.offset_and_length_iter() {
+                for element in 0..other.len() {
+                    let (start, length) = element_range(element);
                     let mut is_in = false;
                     for i in 0..length {
-                        is_in |= value.to_total_ord() == inner.get(start + i).to_total_ord();
+                        is_in |= value.to_total_ord()
+                            == unsafe { inner.get_unchecked(start + i) }.to_total_ord();
                     }
                     builder.push(is_in);
                 }
 
                 let values = builder.freeze();
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                // One bit was pushed per element, and the mask holds one bit per element as well.
+                let length = values.len();
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             },
         }
     } else {
-        assert_eq!(ca_in.len(), offsets.len_proxy());
+        assert_eq!(ca_in.len(), other.len());
         {
             if nulls_equal {
                 let mut builder = BitmapBuilder::with_capacity(ca_in.len());
 
-                for (value, (start, length)) in ca_in.iter().zip(offsets.offset_and_length_iter()) {
+                for (element, value) in ca_in.iter().enumerate() {
+                    let (start, length) = element_range(element);
                     let mut is_in = false;
                     for i in 0..length {
-                        is_in |= value.to_total_ord() == inner.get(start + i).to_total_ord();
+                        is_in |= value.to_total_ord()
+                            == unsafe { inner.get_unchecked(start + i) }.to_total_ord();
                     }
                     builder.push(is_in);
                 }
 
                 let values = builder.freeze();
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                // One bit was pushed per element, and the mask holds one bit per element as well.
+                let length = values.len();
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             } else {
                 let mut builder = BitmapBuilder::with_capacity(ca_in.len());
 
-                for (value, (start, length)) in ca_in.iter().zip(offsets.offset_and_length_iter()) {
+                for (element, value) in ca_in.iter().enumerate() {
                     let mut is_in = false;
                     if value.is_some() {
+                        let (start, length) = element_range(element);
                         for i in 0..length {
-                            is_in |= value.to_total_ord() == inner.get(start + i).to_total_ord();
+                            is_in |= value.to_total_ord()
+                                == unsafe { inner.get_unchecked(start + i) }.to_total_ord();
                         }
                     }
                     builder.push(is_in);
@@ -118,13 +180,17 @@ where
 
                 let values = builder.freeze();
 
-                let validity = match (validity, ca_in.rechunk_validity()) {
-                    (None, None) => None,
-                    (Some(v), None) | (None, Some(v)) => Some(v),
-                    (Some(l), Some(r)) => Some(arrow::bitmap::and(&l, &r)),
-                };
+                // A mask that repeats a single bit combines as that one bit, without either
+                // side being written out first.
+                let ca_validity = ca_in.rechunk_validity();
+                let validity = combine_validities_and(
+                    validity.as_ref().map(PlBitmap::as_ref),
+                    ca_validity.as_ref().map(PlBitmap::as_ref),
+                );
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                // One bit was pushed per element, and the mask holds one bit per element as well.
+                let length = values.len();
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             }
         }
@@ -145,8 +211,35 @@ where
     for<'b> <T::Physical<'b> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
     let width = other.width();
-    let inner = other.get_inner();
+    let rechunked = other.rechunk();
+    let chunk = rechunked.downcast_as_array();
+    // The values are taken as they are laid out: a chunk that repeats a single array holds that
+    // one array's values rather than a copy of them per element, which `get_inner` would write
+    // out — more work over strictly less data. Every element then reads the same width of
+    // values, which is what `start` answers.
+    let values_are_scalar = chunk.values_are_scalar();
+    let start = |element: usize| {
+        if values_are_scalar {
+            0
+        } else {
+            element * width
+        }
+    };
+    // SAFETY: the values of the chunk hold the array's inner dtype, which is what they are read
+    // back as here.
+    let inner = unsafe {
+        Series::from_chunks_and_dtype_unchecked(
+            PlSmallStr::EMPTY,
+            vec![chunk.values().to_boxed()],
+            rechunked.inner_dtype(),
+        )
+    };
     let inner: &ChunkedArray<T> = inner.as_ref().as_ref();
+    // As in `is_in_helper_list_ca`: the chunk a value sits in and its array type are resolved
+    // once here rather than by `ChunkedArray::get` for every value read. Every
+    // `start(i) + j` the loops below read is in bounds of it, since the values hold the width of
+    // every element the chunk reads.
+    let inner = inner.downcast_as_array();
     let validity = other.rechunk_validity();
 
     let mut ca: BooleanChunked = if ca_in.len() == 1 && other.len() != 1 {
@@ -155,19 +248,40 @@ where
         match value {
             None if !nulls_equal => BooleanChunked::full_null(PlSmallStr::EMPTY, other.len()),
             value => {
+                // Every element of a chunk that repeats a single array reads the same values, so
+                // the one needle is looked for in them once and the bit it answers stands for
+                // every element.
+                if values_are_scalar {
+                    let mut is_in = false;
+                    for j in 0..width {
+                        is_in |= value.to_total_ord()
+                            == unsafe { inner.get_unchecked(j) }.to_total_ord();
+                    }
+
+                    let result =
+                        PlBooleanArray::new_scalar(is_in, other.len()).with_validity(validity);
+                    return Ok(BooleanChunked::from_chunk_iter(
+                        ca_in.name().clone(),
+                        [result],
+                    ));
+                }
+
                 let mut builder = BitmapBuilder::with_capacity(other.len());
 
                 for i in 0..other.len() {
                     let mut is_in = false;
                     for j in 0..width {
-                        is_in |= value.to_total_ord() == inner.get(i * width + j).to_total_ord();
+                        is_in |= value.to_total_ord()
+                            == unsafe { inner.get_unchecked(i * width + j) }.to_total_ord();
                     }
                     builder.push(is_in);
                 }
 
                 let values = builder.freeze();
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                // One bit was pushed per element, and the mask holds one bit per element as well.
+                let length = values.len();
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             },
         }
@@ -179,15 +293,19 @@ where
 
                 for (i, value) in ca_in.iter().enumerate() {
                     let mut is_in = false;
+                    let start = start(i);
                     for j in 0..width {
-                        is_in |= value.to_total_ord() == inner.get(i * width + j).to_total_ord();
+                        is_in |= value.to_total_ord()
+                            == unsafe { inner.get_unchecked(start + j) }.to_total_ord();
                     }
                     builder.push(is_in);
                 }
 
                 let values = builder.freeze();
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                // One bit was pushed per element, and the mask holds one bit per element as well.
+                let length = values.len();
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             } else {
                 let mut builder = BitmapBuilder::with_capacity(ca_in.len());
@@ -195,9 +313,10 @@ where
                 for (i, value) in ca_in.iter().enumerate() {
                     let mut is_in = false;
                     if value.is_some() {
+                        let start = start(i);
                         for j in 0..width {
-                            is_in |=
-                                value.to_total_ord() == inner.get(i * width + j).to_total_ord();
+                            is_in |= value.to_total_ord()
+                                == unsafe { inner.get_unchecked(start + j) }.to_total_ord();
                         }
                     }
                     builder.push(is_in);
@@ -205,13 +324,17 @@ where
 
                 let values = builder.freeze();
 
-                let validity = match (validity, ca_in.rechunk_validity()) {
-                    (None, None) => None,
-                    (Some(v), None) | (None, Some(v)) => Some(v),
-                    (Some(l), Some(r)) => Some(arrow::bitmap::and(&l, &r)),
-                };
+                // A mask that repeats a single bit combines as that one bit, without either
+                // side being written out first.
+                let ca_validity = ca_in.rechunk_validity();
+                let validity = combine_validities_and(
+                    validity.as_ref().map(PlBitmap::as_ref),
+                    ca_validity.as_ref().map(PlBitmap::as_ref),
+                );
 
-                let result = BooleanArray::new(ArrowDataType::Boolean, values, validity);
+                // One bit was pushed per element, and the mask holds one bit per element as well.
+                let length = values.len();
+                let result = PlBooleanArray::new(values, length, validity);
                 BooleanChunked::from_chunk_iter(PlSmallStr::EMPTY, [result])
             }
         }
@@ -630,11 +753,11 @@ fn is_in_row_encoded(
 
     let mut validity = other.rechunk_validity();
     if !nulls_equal {
-        validity = match (validity, s.rechunk_validity()) {
-            (None, None) => None,
-            (Some(v), None) | (None, Some(v)) => Some(v),
-            (Some(l), Some(r)) => Some(arrow::bitmap::and(&l, &r)),
-        };
+        let s_validity = s.rechunk_validity();
+        validity = combine_validities_and(
+            validity.as_ref().map(PlBitmap::as_ref),
+            s_validity.as_ref().map(PlBitmap::as_ref),
+        );
     }
 
     assert_eq!(mask.null_count(), 0);

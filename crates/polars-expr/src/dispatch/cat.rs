@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_core::chunked_array::from::import_arrow_chunks;
 use polars_core::datatypes::DataType;
 use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::prelude::*;
@@ -32,8 +33,12 @@ pub fn function_expr_to_udf(func: IRCategoricalFunction) -> SpecialEq<Arc<dyn Co
 // For global, this is the global indexes.
 fn _get_cat_phys_map(col: &Column) -> (StringChunked, Series) {
     let mapping = col.dtype().cat_mapping().unwrap();
-    let cats =
-        unsafe { StringChunked::from_chunks(col.name().clone(), vec![mapping.to_arrow(true)]) };
+    let cats = unsafe {
+        StringChunked::from_chunks(
+            col.name().clone(),
+            import_arrow_chunks(vec![mapping.to_arrow(true)]),
+        )
+    };
     let mut phys = col.to_physical_repr();
     if phys.dtype() != &IDX_DTYPE {
         phys = phys.cast(&IDX_DTYPE).unwrap();
@@ -48,6 +53,8 @@ fn apply_to_cats<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
 where
     F: FnMut(StringChunked) -> ChunkedArray<T>,
     T: PolarsPhysicalType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
+    T::Array:
+        for<'a> ArrayFromIter<T::Physical<'a>> + for<'a> ArrayFromIter<Option<T::Physical<'a>>>,
 {
     let (categories, phys) = _get_cat_phys_map(c);
     let result = op(categories);

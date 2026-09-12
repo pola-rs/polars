@@ -1,9 +1,9 @@
 /// Functionality shared between list and array arithmetic implementations.
-use arrow::array::{Array, PrimitiveArray};
-use arrow::compute::utils::combine_validities_and;
 use num_traits::Zero;
+use polars_array::PlPrimitiveArray;
+use polars_array::bitmap::combine_validities_and;
 use polars_compute::arithmetic::ArithmeticKernel;
-use polars_compute::comparisons::TotalEqKernel;
+use polars_compute::comparisons::PlTotalEqKernel;
 use polars_error::PolarsResult;
 use polars_utils::float::IsFloat;
 
@@ -57,19 +57,22 @@ impl NumericOp {
     /// the denominator is 0.
     pub(super) fn prepare_numeric_op_side_validities<T: PolarsNumericType>(
         &self,
-        lhs: &mut PrimitiveArray<T::Native>,
-        rhs: &mut PrimitiveArray<T::Native>,
+        lhs: &mut PlPrimitiveArray<T::Native>,
+        rhs: &mut PlPrimitiveArray<T::Native>,
         swapped: bool,
     ) where
-        PrimitiveArray<T::Native>: polars_compute::comparisons::TotalEqKernel<Scalar = T::Native>,
+        PlPrimitiveArray<T::Native>:
+            polars_compute::comparisons::PlTotalEqKernel<Scalar = T::Native>,
         T::Native: Zero + IsFloat,
     {
         if !T::Native::is_float() {
             match self {
                 Self::Div | Self::Rem | Self::FloorDiv => {
                     let target = if swapped { lhs } else { rhs };
+                    // A chunk that repeats one value answers this in `O(1)`, and the mask that
+                    // comes back repeats one bit in turn.
                     let ne_0 = target.tot_ne_kernel_broadcast(&T::Native::zero());
-                    let validity = combine_validities_and(target.validity(), Some(&ne_0));
+                    let validity = combine_validities_and(target.validity(), Some(ne_0.as_ref()));
                     target.set_validity(validity);
                 },
                 _ => {},
@@ -81,7 +84,7 @@ impl NumericOp {
     /// Panics if:
     /// * lhs.len() != rhs.len()
     /// * dtype is not numeric.
-    pub(super) fn apply_series(&self, lhs: &Series, rhs: &Series) -> Box<dyn Array> {
+    pub(super) fn apply_series(&self, lhs: &Series, rhs: &Series) -> PlArrayRef {
         assert_eq!(lhs.len(), rhs.len());
         debug_assert_eq!(lhs.dtype(), rhs.dtype());
 
@@ -92,18 +95,21 @@ impl NumericOp {
             let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
             let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
 
-            let lhs = lhs.downcast_get(0).unwrap();
-            let rhs = rhs.downcast_get(0).unwrap();
+            // The kernels read the chunks in whatever representation they are in, so a chunk
+            // that repeats a single value is operated on once rather than written out; the
+            // clones are a refcount bump per backing buffer.
+            let lhs = lhs.downcast_get(0).unwrap().clone();
+            let rhs = rhs.downcast_get(0).unwrap().clone();
 
-            Box::new(self.apply_arithmetic_kernel::<$T>(lhs.clone(), rhs.clone()))
+            self.apply_arithmetic_kernel::<$T>(lhs, rhs).into_boxed()
         })
     }
 
     fn apply_arithmetic_kernel<T: PolarsNumericType>(
         &self,
-        lhs: PrimitiveArray<T::Native>,
-        rhs: PrimitiveArray<T::Native>,
-    ) -> PrimitiveArray<T::Native> {
+        lhs: PlPrimitiveArray<T::Native>,
+        rhs: PlPrimitiveArray<T::Native>,
+    ) -> PlPrimitiveArray<T::Native> {
         match self {
             Self::Add => ArithmeticKernel::wrapping_add(lhs, rhs),
             Self::Sub => ArithmeticKernel::wrapping_sub(lhs, rhs),
@@ -119,10 +125,10 @@ impl NumericOp {
     /// a scalar.
     pub(super) fn apply_array_to_scalar<T: PolarsNumericType>(
         &self,
-        arr_lhs: PrimitiveArray<T::Native>,
+        arr_lhs: PlPrimitiveArray<T::Native>,
         r: T::Native,
         swapped: bool,
-    ) -> PrimitiveArray<T::Native> {
+    ) -> PlPrimitiveArray<T::Native> {
         match self {
             Self::Add => ArithmeticKernel::wrapping_add_scalar(arr_lhs, r),
             Self::Sub => {
@@ -212,4 +218,76 @@ pub(super) enum Broadcast {
     Right,
     #[allow(clippy::enum_variant_names)]
     NoBroadcast,
+}
+
+/// Whether every element of `s` reads the one element its single chunk repeats.
+fn repeats_one_element(s: &Series) -> bool {
+    let [chunk] = s.chunks().as_slice() else {
+        return false;
+    };
+
+    s.len() > 1 && chunk.is_scalar()
+}
+
+/// `s` with every chunk of its lists laid out one range of values per element.
+///
+/// The machinery below reads a side's offsets and its leaf values apart from one another, and
+/// each read writes out a chunk that repeats a single list to get at what it is after. Writing it
+/// out here leaves both reads borrowing it, which is one copy of the values rather than two.
+pub(super) fn flatten_list_chunks(s: Series) -> Series {
+    let Ok(ca) = s.list() else {
+        return s;
+    };
+    if ca.is_flat() {
+        return s;
+    }
+
+    let mut ca = ca.clone();
+    ca.flatten_mut();
+    ca.into_series()
+}
+
+/// The answer of the one pair of elements both sides repeat, repeated in turn.
+///
+/// The operation is elementwise, so where each side hands every element the same one — a chunk
+/// that repeats a single element, or a single element broadcast over the other side — every
+/// element of the answer is the answer of that one pair. It is worked out once, over a couple of
+/// rows of each side, and the answer stands for the whole column rather than being written out
+/// per element: `op` is the arithmetic the caller would otherwise run over both sides in full.
+///
+/// Each side keeps two rows rather than one where it has them: which side broadcasts over which
+/// is read off their lengths, and a pair of single rows would read as neither side broadcasting
+/// — a different reading of the same two elements, which divides by a leaf value rather than by
+/// the one scalar behind it and so rounds the last bit of a float differently.
+pub(super) fn repeat_one_answer(
+    lhs: &Series,
+    rhs: &Series,
+    op: impl FnOnce(&Series, &Series) -> PolarsResult<Series>,
+) -> Option<PolarsResult<Series>> {
+    // The two sides line up element for element, or one of them is the single element the other
+    // reads against every one of its own. Anything else is a length the caller has to reject.
+    let length = match (lhs.len(), rhs.len()) {
+        (left, right) if left == right => left,
+        (1, right) => right,
+        (left, 1) => left,
+        _ => return None,
+    };
+
+    // Nothing is saved by working out the answer of as many rows as there are.
+    if length < 3 {
+        return None;
+    }
+
+    // Every element of each side has to read the same one, either because the side repeats it or
+    // because the side is it.
+    let reads_one = |s: &Series| s.len() == 1 || repeats_one_element(s);
+    if !reads_one(lhs) || !reads_one(rhs) {
+        return None;
+    }
+
+    // Two rows of a side that has them, one of a side that is one: the same reading of which side
+    // broadcasts as the full lengths give, over a pair of elements rather than all of them.
+    let rows = |s: &Series| s.slice(0, s.len().min(2));
+    let out = op(&rows(lhs), &rows(rhs));
+    Some(out.and_then(|out| out.slice(0, 1).broadcast_owned_to(length)))
 }

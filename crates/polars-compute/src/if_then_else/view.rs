@@ -8,7 +8,7 @@ use arrow::datatypes::ArrowDataType;
 use polars_buffer::Buffer;
 use polars_utils::aliases::{InitHashMaps, PlHashSet};
 
-use super::IfThenElseKernel;
+use super::IfThenElseArrowKernel;
 use crate::if_then_else::scalar::if_then_else_broadcast_both_scalar_64;
 
 // Makes a buffer and a set of views into that buffer from a set of strings.
@@ -41,7 +41,7 @@ fn has_duplicate_buffers(bufs: &[Buffer<u8>]) -> bool {
     has_duplicate_buffers
 }
 
-impl IfThenElseKernel for BinaryViewArray {
+impl IfThenElseArrowKernel for BinaryViewArray {
     type Scalar<'a> = &'a [u8];
 
     fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self {
@@ -194,12 +194,15 @@ impl IfThenElseKernel for BinaryViewArray {
     }
 }
 
-impl IfThenElseKernel for Utf8ViewArray {
+impl IfThenElseArrowKernel for Utf8ViewArray {
     type Scalar<'a> = &'a str;
 
     fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self {
-        let ret =
-            IfThenElseKernel::if_then_else(mask, &if_true.to_binview(), &if_false.to_binview());
+        let ret = IfThenElseArrowKernel::if_then_else(
+            mask,
+            &if_true.to_binview(),
+            &if_false.to_binview(),
+        );
         unsafe { ret.to_utf8view_unchecked() }
     }
 
@@ -208,7 +211,7 @@ impl IfThenElseKernel for Utf8ViewArray {
         if_true: Self::Scalar<'_>,
         if_false: &Self,
     ) -> Self {
-        let ret = IfThenElseKernel::if_then_else_broadcast_true(
+        let ret = IfThenElseArrowKernel::if_then_else_broadcast_true(
             mask,
             if_true.as_bytes(),
             &if_false.to_binview(),
@@ -221,7 +224,7 @@ impl IfThenElseKernel for Utf8ViewArray {
         if_true: &Self,
         if_false: Self::Scalar<'_>,
     ) -> Self {
-        let ret = IfThenElseKernel::if_then_else_broadcast_false(
+        let ret = IfThenElseArrowKernel::if_then_else_broadcast_false(
             mask,
             &if_true.to_binview(),
             if_false.as_bytes(),
@@ -235,7 +238,7 @@ impl IfThenElseKernel for Utf8ViewArray {
         if_true: Self::Scalar<'_>,
         if_false: Self::Scalar<'_>,
     ) -> Self {
-        let ret: BinaryViewArray = IfThenElseKernel::if_then_else_broadcast_both(
+        let ret: BinaryViewArray = IfThenElseArrowKernel::if_then_else_broadcast_both(
             dtype,
             mask,
             if_true.as_bytes(),

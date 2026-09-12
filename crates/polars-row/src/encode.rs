@@ -1,13 +1,13 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::mem::MaybeUninit;
 
-use arrow::array::{
-    Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray, ListArray,
-    PrimitiveArray, StructArray, UInt8Array, UInt16Array, UInt32Array, Utf8Array, Utf8ViewArray,
+use arrow::datatypes::{ArrowDataType, PhysicalType};
+use arrow::types::{NativeType, PrimitiveType};
+use arrow::with_match_primitive_type;
+use polars_array::{
+    PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmapRef, PlBooleanArray,
+    PlFixedSizeListArray, PlListArray, PlPrimitiveArray, PlStructArray, PlUtf8ViewArray,
 };
-use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
-use arrow::types::{NativeType, Offset};
 use polars_dtype::categorical::CatNative;
 use polars_utils::float16::pf16;
 
@@ -16,13 +16,20 @@ use crate::fixed::{boolean, decimal, numeric};
 use crate::row::{RowEncodingOptions, RowsEncoded};
 use crate::variable::{binary, no_order, utf8};
 use crate::widths::RowWidths;
-use crate::{
-    ArrayRef, RowEncodingCategoricalContext, RowEncodingContext, with_match_arrow_primitive_type,
-};
+use crate::{RowEncodingCategoricalContext, RowEncodingContext};
+
+/// Downcasts an array whose [`PlArrayType`] has already been matched on.
+#[inline]
+fn downcast<A: PlArray>(array: &dyn PlArray) -> &A {
+    array
+        .as_any()
+        .downcast_ref()
+        .expect("the array type identifies the concrete array")
+}
 
 pub fn convert_columns(
     num_rows: usize,
-    columns: &[ArrayRef],
+    columns: &[Box<dyn PlArray>],
     opts: &[RowEncodingOptions],
     dicts: &[Option<RowEncodingContext>],
 ) -> RowsEncoded {
@@ -38,7 +45,7 @@ pub fn convert_columns(
 
 pub fn convert_columns_no_order(
     num_rows: usize,
-    columns: &[ArrayRef],
+    columns: &[Box<dyn PlArray>],
     dicts: &[Option<RowEncodingContext>],
 ) -> RowsEncoded {
     let mut rows = RowsEncoded::new(vec![], vec![]);
@@ -48,7 +55,7 @@ pub fn convert_columns_no_order(
 
 pub fn convert_columns_amortized_no_order(
     num_rows: usize,
-    columns: &[ArrayRef],
+    columns: &[Box<dyn PlArray>],
     dicts: &[Option<RowEncodingContext>],
     rows: &mut RowsEncoded,
 ) {
@@ -66,7 +73,7 @@ const ENCODE_ROW_TILE: usize = 1024;
 
 pub fn convert_columns_amortized<'a>(
     num_rows: usize,
-    columns: &[ArrayRef],
+    columns: &[Box<dyn PlArray>],
     fields: impl IntoIterator<Item = (RowEncodingOptions, Option<&'a RowEncodingContext>)> + Clone,
     rows: &mut RowsEncoded,
 ) {
@@ -144,19 +151,25 @@ pub fn convert_columns_amortized<'a>(
     };
 }
 
-fn list_num_column_bytes<O: Offset>(
-    array: &dyn Array,
+/// The range of the values array every element of `array` covers.
+fn value_ranges(array: &PlListArray) -> impl ExactSizeIterator<Item = std::ops::Range<usize>> {
+    // SAFETY: every index is below the length the iterator counts up to.
+    (0..array.len()).map(|i| unsafe { array.value_range_unchecked(i) })
+}
+
+fn list_num_column_bytes(
+    array: &dyn PlArray,
     opt: RowEncodingOptions,
     dicts: Option<&RowEncodingContext>,
     row_widths: &mut RowWidths,
     masked_out_max_width: &mut usize,
 ) -> Encoder {
-    let array = array.as_any().downcast_ref::<ListArray<O>>().unwrap();
+    let array = downcast::<PlListArray>(array);
     let values = array.values();
 
     let mut list_row_widths = RowWidths::new(values.len());
     let encoder = get_encoder(
-        values.as_ref(),
+        values,
         opt.into_nested(),
         dicts,
         &mut list_row_widths,
@@ -164,38 +177,34 @@ fn list_num_column_bytes<O: Offset>(
     );
 
     match array.validity() {
-        None => row_widths.push_iter(array.offsets().offset_and_length_iter().map(
-            |(offset, length)| {
+        None => row_widths.push_iter(value_ranges(array).map(|range| {
+            let length = range.len();
+            let mut sum = 0;
+            for i in range {
+                sum += list_row_widths.get(i);
+            }
+            1 + length + sum
+        })),
+        Some(validity) => row_widths.push_iter(value_ranges(array).zip(validity.iter()).map(
+            |(range, is_valid)| {
+                let length = range.len();
+                if !is_valid {
+                    if length > 0 {
+                        for i in range {
+                            *masked_out_max_width =
+                                (*masked_out_max_width).max(list_row_widths.get(i));
+                        }
+                    }
+                    return 1;
+                }
+
                 let mut sum = 0;
-                for i in offset..offset + length {
+                for i in range {
                     sum += list_row_widths.get(i);
                 }
                 1 + length + sum
             },
         )),
-        Some(validity) => row_widths.push_iter(
-            array
-                .offsets()
-                .offset_and_length_iter()
-                .zip(validity.iter())
-                .map(|((offset, length), is_valid)| {
-                    if !is_valid {
-                        if length > 0 {
-                            for i in offset..offset + length {
-                                *masked_out_max_width =
-                                    (*masked_out_max_width).max(list_row_widths.get(i));
-                            }
-                        }
-                        return 1;
-                    }
-
-                    let mut sum = 0;
-                    for i in offset..offset + length {
-                        sum += list_row_widths.get(i);
-                    }
-                    1 + length + sum
-                }),
-        ),
     };
 
     Encoder {
@@ -208,9 +217,9 @@ fn list_num_column_bytes<O: Offset>(
 }
 
 fn biniter_num_column_bytes(
-    array: &dyn Array,
+    array: &dyn PlArray,
     iter: impl ExactSizeIterator<Item = usize>,
-    validity: Option<&Bitmap>,
+    validity: Option<PlBitmapRef<'_>>,
     opt: RowEncodingOptions,
     row_widths: &mut RowWidths,
 ) -> Encoder {
@@ -241,9 +250,9 @@ fn biniter_num_column_bytes(
 }
 
 fn striter_num_column_bytes(
-    array: &dyn Array,
+    array: &dyn PlArray,
     iter: impl ExactSizeIterator<Item = usize>,
-    validity: Option<&Bitmap>,
+    validity: Option<PlBitmapRef<'_>>,
     opt: RowEncodingOptions,
     row_widths: &mut RowWidths,
 ) -> Encoder {
@@ -272,28 +281,57 @@ fn striter_num_column_bytes(
     }
 }
 
+/// The array written out, if it holds one child that every one of its elements shares.
+// Reading a shared child in place would mean the *child's* encoder writing one row per element of
+// the parent rather than per element of its own: `encode_array` is handed one offset per child
+// slot, and there are `len` times as many of those as the shared child holds. This is what the
+// Arrow export used to do for every array, not just these.
+fn write_out_shared_child(array: &dyn PlArray) -> Option<Box<dyn PlArray>> {
+    match array.array_type() {
+        PlArrayType::List => {
+            let array = downcast::<PlListArray>(array);
+            (!array.offsets_are_flat())
+                .then(|| Box::new(array.to_flat().into_owned().into_array()) as Box<dyn PlArray>)
+        },
+        PlArrayType::FixedSizeList => {
+            let array = downcast::<PlFixedSizeListArray>(array);
+            (!array.values_are_flat())
+                .then(|| Box::new(array.to_flat().into_owned().into_array()) as Box<dyn PlArray>)
+        },
+        // Every field of a struct array holds one element per row whatever its mask looks like, and
+        // the remaining array types have no child.
+        _ => None,
+    }
+}
+
 /// Get the encoder for a specific array.
 fn get_encoder(
-    array: &dyn Array,
+    array: &dyn PlArray,
     opt: RowEncodingOptions,
     dict: Option<&RowEncodingContext>,
     row_widths: &mut RowWidths,
     masked_out_max_width: &mut usize,
 ) -> Encoder {
-    use ArrowDataType as D;
-    let dtype = array.dtype();
+    use PlArrayType as A;
+
+    if let Some(array) = write_out_shared_child(array) {
+        return get_encoder(&*array, opt, dict, row_widths, masked_out_max_width);
+    }
+
+    let array_type = array.array_type();
 
     // Fast path: column has a fixed size encoding
-    if let Some(size) = fixed_size(dtype, opt, dict) {
+    if let Some(size) = fixed_size_of_array(array, opt, dict) {
         row_widths.push_constant(size);
-        let state = match dtype {
-            D::FixedSizeList(_, width) => {
-                let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+        let state = match array_type {
+            A::FixedSizeList => {
+                let dc_array = downcast::<PlFixedSizeListArray>(array);
+                let width = dc_array.width();
 
-                debug_assert_eq!(array.values().len(), array.len() * width);
-                let mut nested_row_widths = RowWidths::new(array.values().len());
+                debug_assert_eq!(dc_array.values().len(), dc_array.len() * width);
+                let mut nested_row_widths = RowWidths::new(dc_array.values().len());
                 let nested_encoder = get_encoder(
-                    array.values().as_ref(),
+                    dc_array.values(),
                     opt.into_nested(),
                     dict,
                     &mut nested_row_widths,
@@ -301,20 +339,20 @@ fn get_encoder(
                 );
                 Some(EncoderState::FixedSizeList(
                     Box::new(nested_encoder),
-                    *width,
+                    width,
                     nested_row_widths,
                 ))
             },
-            D::Struct(_) => {
-                let struct_array = array.as_any().downcast_ref::<StructArray>().unwrap();
+            A::Struct => {
+                let struct_array = downcast::<PlStructArray>(array);
 
                 Some(EncoderState::Struct(match dict {
                     None => struct_array
-                        .values()
+                        .fields()
                         .iter()
                         .map(|array| {
                             get_encoder(
-                                array.as_ref(),
+                                &**array,
                                 opt.into_nested(),
                                 None,
                                 &mut RowWidths::new(row_widths.num_rows()),
@@ -323,12 +361,12 @@ fn get_encoder(
                         })
                         .collect(),
                     Some(RowEncodingContext::Struct(dicts)) => struct_array
-                        .values()
+                        .fields()
                         .iter()
                         .zip(dicts)
                         .map(|(array, dict)| {
                             get_encoder(
-                                array.as_ref(),
+                                &**array,
                                 opt,
                                 dict.as_ref(),
                                 &mut RowWidths::new(row_widths.num_rows()),
@@ -351,10 +389,11 @@ fn get_encoder(
 
     // Non-fixed-size categorical path.
     if let Some(RowEncodingContext::Categorical(ctx)) = dict {
-        match dtype {
-            D::UInt8 => {
+        /// The width of the string each category key stands for, which is what is encoded.
+        macro_rules! cat_str_lengths {
+            ($T:ty) => {{
                 assert!(opt.is_ordered() && !ctx.is_enum);
-                let dc_array = array.as_any().downcast_ref::<UInt8Array>().unwrap();
+                let dc_array = downcast::<PlPrimitiveArray<$T>>(array);
                 return striter_num_column_bytes(
                     array,
                     dc_array.values_iter().map(|cat| {
@@ -367,61 +406,36 @@ fn get_encoder(
                     opt,
                     row_widths,
                 );
-            },
-            D::UInt16 => {
-                assert!(opt.is_ordered() && !ctx.is_enum);
-                let dc_array = array.as_any().downcast_ref::<UInt16Array>().unwrap();
-                return striter_num_column_bytes(
-                    array,
-                    dc_array.values_iter().map(|cat| {
-                        ctx.mapping
-                            .cat_to_str(cat.as_cat())
-                            .map(|s| s.len())
-                            .unwrap_or(0)
-                    }),
-                    dc_array.validity(),
-                    opt,
-                    row_widths,
-                );
-            },
-            D::UInt32 => {
-                assert!(opt.is_ordered() && !ctx.is_enum);
-                let dc_array = array.as_any().downcast_ref::<UInt32Array>().unwrap();
-                return striter_num_column_bytes(
-                    array,
-                    dc_array.values_iter().map(|cat| {
-                        ctx.mapping
-                            .cat_to_str(cat.as_cat())
-                            .map(|s| s.len())
-                            .unwrap_or(0)
-                    }),
-                    dc_array.validity(),
-                    opt,
-                    row_widths,
-                );
-            },
+            }};
+        }
+
+        match array_type {
+            A::Primitive(PrimitiveType::UInt8) => cat_str_lengths!(u8),
+            A::Primitive(PrimitiveType::UInt16) => cat_str_lengths!(u16),
+            A::Primitive(PrimitiveType::UInt32) => cat_str_lengths!(u32),
             _ => {
                 // Fall through to below, should be nested type containing categorical.
-                debug_assert!(dtype.is_nested())
+                debug_assert!(matches!(array_type, A::Struct | A::List | A::FixedSizeList))
             },
         }
     }
 
-    match dtype {
-        D::FixedSizeList(_, width) => {
-            let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+    match array_type {
+        A::FixedSizeList => {
+            let array = downcast::<PlFixedSizeListArray>(array);
+            let width = array.width();
 
             debug_assert_eq!(array.values().len(), array.len() * width);
             let mut nested_row_widths = RowWidths::new(array.values().len());
             let nested_encoder = get_encoder(
-                array.values().as_ref(),
+                array.values(),
                 opt.into_nested(),
                 dict,
                 &mut nested_row_widths,
                 masked_out_max_width,
             );
 
-            let mut fsl_row_widths = nested_row_widths.collapse_chunks(*width, array.len());
+            let mut fsl_row_widths = nested_row_widths.collapse_chunks(width, array.len());
             fsl_row_widths.push_constant(1); // validity byte
 
             row_widths.push(&fsl_row_widths);
@@ -429,21 +443,21 @@ fn get_encoder(
                 array: array.to_boxed(),
                 state: Some(Box::new(EncoderState::FixedSizeList(
                     Box::new(nested_encoder),
-                    *width,
+                    width,
                     nested_row_widths,
                 ))),
             }
         },
-        D::Struct(_) => {
-            let array = array.as_any().downcast_ref::<StructArray>().unwrap();
+        A::Struct => {
+            let array = downcast::<PlStructArray>(array);
 
-            let mut nested_encoders = Vec::with_capacity(array.values().len());
+            let mut nested_encoders = Vec::with_capacity(array.fields().len());
             row_widths.push_constant(1); // validity byte
             match dict {
                 None => {
-                    for array in array.values() {
+                    for array in array.fields() {
                         let encoder = get_encoder(
-                            array.as_ref(),
+                            &**array,
                             opt.into_nested(),
                             None,
                             row_widths,
@@ -453,9 +467,9 @@ fn get_encoder(
                     }
                 },
                 Some(RowEncodingContext::Struct(dicts)) => {
-                    for (array, dict) in array.values().iter().zip(dicts) {
+                    for (array, dict) in array.fields().iter().zip(dicts) {
                         let encoder = get_encoder(
-                            array.as_ref(),
+                            &**array,
                             opt.into_nested(),
                             dict.as_ref(),
                             row_widths,
@@ -472,101 +486,62 @@ fn get_encoder(
             }
         },
 
-        D::List(_) => {
-            list_num_column_bytes::<i32>(array, opt, dict, row_widths, masked_out_max_width)
-        },
-        D::LargeList(_) => {
-            list_num_column_bytes::<i64>(array, opt, dict, row_widths, masked_out_max_width)
-        },
+        A::List => list_num_column_bytes(array, opt, dict, row_widths, masked_out_max_width),
 
-        D::BinaryView => {
-            let dc_array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+        A::BinaryView => {
+            let dc_array = downcast::<PlBinaryViewArray>(array);
             biniter_num_column_bytes(
                 array,
-                dc_array.views().iter().map(|v| v.length as usize),
+                view_lengths(dc_array),
                 dc_array.validity(),
                 opt,
                 row_widths,
             )
         },
-        D::Binary => {
-            let dc_array = array.as_any().downcast_ref::<BinaryArray<i32>>().unwrap();
+        A::Binary => {
+            let dc_array = downcast::<PlBinaryArray>(array);
             biniter_num_column_bytes(
                 array,
-                dc_array.offsets().lengths(),
-                dc_array.validity(),
-                opt,
-                row_widths,
-            )
-        },
-        D::LargeBinary => {
-            let dc_array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
-            biniter_num_column_bytes(
-                array,
-                dc_array.offsets().lengths(),
+                value_lengths(dc_array),
                 dc_array.validity(),
                 opt,
                 row_widths,
             )
         },
 
-        D::Utf8View => {
-            let dc_array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+        A::Utf8View => {
+            let dc_array = downcast::<PlUtf8ViewArray>(array);
             striter_num_column_bytes(
                 array,
-                dc_array.views().iter().map(|v| v.length as usize),
-                dc_array.validity(),
-                opt,
-                row_widths,
-            )
-        },
-        D::Utf8 => {
-            let dc_array = array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
-            striter_num_column_bytes(
-                array,
-                dc_array.offsets().lengths(),
-                dc_array.validity(),
-                opt,
-                row_widths,
-            )
-        },
-        D::LargeUtf8 => {
-            let dc_array = array.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
-            striter_num_column_bytes(
-                array,
-                dc_array.offsets().lengths(),
-                dc_array.validity(),
+                view_lengths(dc_array.as_binview()),
+                dc_array.as_binview().validity(),
                 opt,
                 row_widths,
             )
         },
 
-        D::Union(_) => unreachable!(),
-        D::Map(_, _) => unreachable!(),
-        D::Extension(_) => unreachable!(),
-        D::Unknown => unreachable!(),
-
-        // All non-physical types
-        D::Timestamp(_, _)
-        | D::Date32
-        | D::Date64
-        | D::Time32(_)
-        | D::Time64(_)
-        | D::Duration(_)
-        | D::Interval(_)
-        | D::Dictionary(_, _, _)
-        | D::Decimal(_, _)
-        | D::Decimal32(_, _)
-        | D::Decimal64(_, _)
-        | D::Decimal256(_, _) => unreachable!(),
+        A::FixedSizeBinary => unreachable!(),
+        A::Object { .. } => unreachable!(),
 
         // Should be fixed size type
-        _ => unreachable!(),
+        A::Null | A::Boolean | A::Primitive(_) => unreachable!(),
     }
 }
 
+/// The number of bytes every element of `array` holds, read off the views.
+fn view_lengths(array: &PlBinaryViewArray) -> impl ExactSizeIterator<Item = usize> {
+    // SAFETY: every index is below the length the iterator counts up to.
+    (0..array.len()).map(|i| unsafe { array.view_unchecked(i) }.length as usize)
+}
+
+/// The number of bytes every element of `array` holds, read off the offsets.
+fn value_lengths(array: &PlBinaryArray) -> impl ExactSizeIterator<Item = usize> {
+    // SAFETY: every index is below the length the iterator counts up to.
+    (0..array.len()).map(|i| unsafe { array.value_length_unchecked(i) })
+}
+
 struct Encoder {
-    array: Box<dyn Array>,
+    array: Box<dyn PlArray>,
 
     /// State contains nested encoders and extra information needed to encode.
     state: Option<Box<EncoderState>>,
@@ -611,7 +586,7 @@ unsafe fn encode_bins<'a>(
 
 unsafe fn encode_cat_array<T: NativeType + FixedLengthEncoding + CatNative>(
     buffer: &mut [MaybeUninit<u8>],
-    keys: &PrimitiveArray<T>,
+    keys: &PlPrimitiveArray<T>,
     opt: RowEncodingOptions,
     ctx: &RowEncodingCategoricalContext,
     offsets: &mut [usize],
@@ -622,7 +597,7 @@ unsafe fn encode_cat_array<T: NativeType + FixedLengthEncoding + CatNative>(
         utf8::encode_str(
             buffer,
             keys.iter()
-                .map(|k| k.map(|&cat| ctx.mapping.cat_to_str_unchecked(cat.as_cat()))),
+                .map(|k| k.map(|cat| ctx.mapping.cat_to_str_unchecked(cat.as_cat()))),
             opt,
             offsets,
         );
@@ -631,54 +606,55 @@ unsafe fn encode_cat_array<T: NativeType + FixedLengthEncoding + CatNative>(
 
 unsafe fn encode_flat_array(
     buffer: &mut [MaybeUninit<u8>],
-    array: &dyn Array,
+    array: &dyn PlArray,
     opt: RowEncodingOptions,
     dict: Option<&RowEncodingContext>,
     offsets: &mut [usize],
 ) {
-    use ArrowDataType as D;
+    use PlArrayType as A;
+    let array_type = array.array_type();
 
     if let Some(RowEncodingContext::Categorical(ctx)) = dict {
-        match array.dtype() {
-            D::UInt8 => {
-                let keys = array.as_any().downcast_ref::<PrimitiveArray<u8>>().unwrap();
-                encode_cat_array(buffer, keys, opt, ctx, offsets);
-            },
-            D::UInt16 => {
-                let keys = array
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<u16>>()
-                    .unwrap();
-                encode_cat_array(buffer, keys, opt, ctx, offsets);
-            },
-            D::UInt32 => {
-                let keys = array
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<u32>>()
-                    .unwrap();
-                encode_cat_array(buffer, keys, opt, ctx, offsets);
-            },
+        match array_type {
+            A::Primitive(PrimitiveType::UInt8) => encode_cat_array(
+                buffer,
+                downcast::<PlPrimitiveArray<u8>>(array),
+                opt,
+                ctx,
+                offsets,
+            ),
+            A::Primitive(PrimitiveType::UInt16) => encode_cat_array(
+                buffer,
+                downcast::<PlPrimitiveArray<u16>>(array),
+                opt,
+                ctx,
+                offsets,
+            ),
+            A::Primitive(PrimitiveType::UInt32) => encode_cat_array(
+                buffer,
+                downcast::<PlPrimitiveArray<u32>>(array),
+                opt,
+                ctx,
+                offsets,
+            ),
             _ => unreachable!(),
         };
         return;
     }
 
-    match array.dtype() {
-        D::Null => {},
-        D::Boolean => {
-            let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
+    match array_type {
+        A::Null => {},
+        A::Boolean => {
+            let array = downcast::<PlBooleanArray>(array);
             boolean::encode_bool(buffer, array.iter(), opt, offsets);
         },
 
-        dt if dt.is_numeric() => {
-            if matches!(dt, D::Int128) {
+        A::Primitive(primitive) => {
+            if primitive == PrimitiveType::Int128 {
                 if let Some(RowEncodingContext::Decimal(precision)) = dict {
                     decimal::encode(
                         buffer,
-                        array
-                            .as_any()
-                            .downcast_ref::<PrimitiveArray<i128>>()
-                            .unwrap(),
+                        downcast::<PlPrimitiveArray<i128>>(array),
                         opt,
                         offsets,
                         *precision,
@@ -687,61 +663,29 @@ unsafe fn encode_flat_array(
                 }
             }
 
-            with_match_arrow_primitive_type!(dt, |$T| {
-                let array = array.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
-                numeric::encode(buffer, array, opt, offsets);
+            with_match_primitive_type!(primitive, |$T| {
+                numeric::encode(buffer, downcast::<PlPrimitiveArray<$T>>(array), opt, offsets);
             })
         },
 
-        D::Binary => {
-            let array = array.as_any().downcast_ref::<BinaryArray<i32>>().unwrap();
+        A::Binary => {
+            let array = downcast::<PlBinaryArray>(array);
             encode_bins(buffer, array.iter(), opt, offsets);
         },
-        D::LargeBinary => {
-            let array = array.as_any().downcast_ref::<BinaryArray<i64>>().unwrap();
+        A::BinaryView => {
+            let array = downcast::<PlBinaryViewArray>(array);
             encode_bins(buffer, array.iter(), opt, offsets);
         },
-        D::BinaryView => {
-            let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
-            encode_bins(buffer, array.iter(), opt, offsets);
-        },
-        D::Utf8 => {
-            let array = array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
-            encode_strs(buffer, array.iter(), opt, offsets);
-        },
-        D::LargeUtf8 => {
-            let array = array.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
-            encode_strs(buffer, array.iter(), opt, offsets);
-        },
-        D::Utf8View => {
-            let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+        A::Utf8View => {
+            let array = downcast::<PlUtf8ViewArray>(array);
             encode_strs(buffer, array.iter(), opt, offsets);
         },
 
-        // Lexical ordered Categorical are cast to PrimitiveArray above.
-        D::Dictionary(_, _, _) => todo!(),
+        A::FixedSizeBinary => todo!(),
+        A::Object { .. } => todo!(),
 
-        D::FixedSizeBinary(_) => todo!(),
-        D::Decimal(_, _) => todo!(),
-        D::Decimal32(_, _) => todo!(),
-        D::Decimal64(_, _) => todo!(),
-        D::Decimal256(_, _) => todo!(),
-
-        D::Union(_) => todo!(),
-        D::Map(_, _) => todo!(),
-        D::Extension(_) => todo!(),
-        D::Unknown => todo!(),
-
-        // All are non-physical types.
-        D::Timestamp(_, _)
-        | D::Date32
-        | D::Date64
-        | D::Time32(_)
-        | D::Time64(_)
-        | D::Duration(_)
-        | D::Interval(_) => unreachable!(),
-
-        _ => unreachable!(),
+        // Handled by the encoder's state, which holds the nested encoders.
+        A::Struct | A::List | A::FixedSizeList => unreachable!(),
     }
 }
 
@@ -778,12 +722,7 @@ unsafe fn encode_array(
 
     match state.as_ref() {
         EncoderState::List(nested_encoder, nested_row_widths) => {
-            // @TODO: make more general.
-            let array = encoder
-                .array
-                .as_any()
-                .downcast_ref::<ListArray<i64>>()
-                .unwrap();
+            let array = downcast::<PlListArray>(encoder.array.as_ref());
 
             scratches.clear();
 
@@ -798,10 +737,8 @@ unsafe fn encode_array(
 
             match array.validity() {
                 None => {
-                    for (i, (offset, length)) in
-                        array.offsets().offset_and_length_iter().enumerate()
-                    {
-                        for j in offset..offset + length {
+                    for (i, range) in value_ranges(array).enumerate() {
+                        for j in range {
                             buffer[offsets[i]] = MaybeUninit::new(list_continuation_token);
                             offsets[i] += 1;
 
@@ -813,26 +750,25 @@ unsafe fn encode_array(
                     }
                 },
                 Some(validity) => {
-                    for (i, ((offset, length), is_valid)) in array
-                        .offsets()
-                        .offset_and_length_iter()
-                        .zip(validity.iter())
-                        .enumerate()
+                    for (i, (range, is_valid)) in
+                        value_ranges(array).zip(validity.iter()).enumerate()
                     {
                         if !is_valid {
                             buffer[offsets[i]] = MaybeUninit::new(list_null_sentinel);
                             offsets[i] += 1;
 
                             // Values might have been masked out.
-                            if length > 0 {
-                                nested_offsets
-                                    .extend(std::iter::repeat_n(masked_out_write_offset, length));
+                            if !range.is_empty() {
+                                nested_offsets.extend(std::iter::repeat_n(
+                                    masked_out_write_offset,
+                                    range.len(),
+                                ));
                             }
 
                             continue;
                         }
 
-                        for j in offset..offset + length {
+                        for j in range {
                             buffer[offsets[i]] = MaybeUninit::new(list_continuation_token);
                             offsets[i] += 1;
 
@@ -923,7 +859,7 @@ unsafe fn encode_array(
 
 unsafe fn encode_validity(
     buffer: &mut [MaybeUninit<u8>],
-    validity: Option<&Bitmap>,
+    validity: Option<PlBitmapRef<'_>>,
     opt: RowEncodingOptions,
     row_starts: &mut [usize],
 ) {
@@ -949,44 +885,121 @@ unsafe fn encode_validity(
     }
 }
 
+/// The width the row encoding of one value of `primitive` takes, if it has one.
+fn fixed_size_primitive(
+    primitive: PrimitiveType,
+    dict: Option<&RowEncodingContext>,
+) -> Option<usize> {
+    use PrimitiveType as P;
+    use numeric::FixedLengthEncoding;
+
+    Some(match primitive {
+        P::UInt8 => u8::ENCODED_LEN,
+        P::UInt16 => u16::ENCODED_LEN,
+        P::UInt32 => u32::ENCODED_LEN,
+        P::UInt64 => u64::ENCODED_LEN,
+        P::UInt128 => u128::ENCODED_LEN,
+
+        P::Int8 => i8::ENCODED_LEN,
+        P::Int16 => i16::ENCODED_LEN,
+        P::Int32 => i32::ENCODED_LEN,
+        P::Int64 => i64::ENCODED_LEN,
+        P::Int128 => match dict {
+            None => i128::ENCODED_LEN,
+            Some(RowEncodingContext::Decimal(precision)) => decimal::len_from_precision(*precision),
+            _ => unreachable!(),
+        },
+
+        P::Float16 => pf16::ENCODED_LEN,
+        P::Float32 => f32::ENCODED_LEN,
+        P::Float64 => f64::ENCODED_LEN,
+
+        P::Int256 | P::DaysMs | P::MonthDayNano | P::MonthDayMillis => return None,
+    })
+}
+
+/// Whether `dict` makes the encoding variable-width whatever the representation says.
+fn dict_is_variable_width(opt: RowEncodingOptions, dict: Option<&RowEncodingContext>) -> bool {
+    matches!(dict, Some(RowEncodingContext::Categorical(ctx)) if !ctx.is_enum && opt.is_ordered())
+}
+
+/// [`fixed_size`] for an array, whose children and width are read off the array itself.
+fn fixed_size_of_array(
+    array: &dyn PlArray,
+    opt: RowEncodingOptions,
+    dict: Option<&RowEncodingContext>,
+) -> Option<usize> {
+    use PlArrayType as A;
+
+    if dict_is_variable_width(opt, dict) {
+        return None;
+    }
+
+    Some(match array.array_type() {
+        A::Null => 0,
+        A::Boolean => 1,
+        A::Primitive(primitive) => fixed_size_primitive(primitive, dict)?,
+        A::FixedSizeList => {
+            let array = downcast::<PlFixedSizeListArray>(array);
+            1 + array.width() * fixed_size_of_array(array.values(), opt, dict)?
+        },
+        A::Struct => {
+            let fields = downcast::<PlStructArray>(array).fields();
+            let mut sum = 0;
+            match dict {
+                None => {
+                    for field in fields {
+                        sum += fixed_size_of_array(&**field, opt, None)?;
+                    }
+                },
+                Some(RowEncodingContext::Struct(dicts)) => {
+                    for (field, dict) in fields.iter().zip(dicts) {
+                        sum += fixed_size_of_array(&**field, opt, dict.as_ref())?;
+                    }
+                },
+                _ => unreachable!(),
+            }
+            1 + sum
+        },
+        _ => return None,
+    })
+}
+
+/// The width the row encoding of one value of `dtype` takes, if it has one.
 pub fn fixed_size(
     dtype: &ArrowDataType,
     opt: RowEncodingOptions,
     dict: Option<&RowEncodingContext>,
 ) -> Option<usize> {
     use ArrowDataType as D;
-    use numeric::FixedLengthEncoding;
 
-    if let Some(RowEncodingContext::Categorical(ctx)) = dict {
-        // If ordered categorical (non-enum) we encode strings, otherwise physical.
-        if !ctx.is_enum && opt.is_ordered() {
-            return None;
-        }
+    if dict_is_variable_width(opt, dict) {
+        return None;
     }
 
     Some(match dtype {
         D::Null => 0,
         D::Boolean => 1,
 
-        D::UInt8 => u8::ENCODED_LEN,
-        D::UInt16 => u16::ENCODED_LEN,
-        D::UInt32 => u32::ENCODED_LEN,
-        D::UInt64 => u64::ENCODED_LEN,
-        D::UInt128 => u128::ENCODED_LEN,
-
-        D::Int8 => i8::ENCODED_LEN,
-        D::Int16 => i16::ENCODED_LEN,
-        D::Int32 => i32::ENCODED_LEN,
-        D::Int64 => i64::ENCODED_LEN,
-        D::Int128 => match dict {
-            None => i128::ENCODED_LEN,
-            Some(RowEncodingContext::Decimal(precision)) => decimal::len_from_precision(*precision),
-            _ => unreachable!(),
+        D::UInt8
+        | D::UInt16
+        | D::UInt32
+        | D::UInt64
+        | D::UInt128
+        | D::Int8
+        | D::Int16
+        | D::Int32
+        | D::Int64
+        | D::Int128
+        | D::Float16
+        | D::Float32
+        | D::Float64 => {
+            let PhysicalType::Primitive(primitive) = dtype.to_physical_type() else {
+                unreachable!("every arm above is a primitive")
+            };
+            fixed_size_primitive(primitive, dict)?
         },
 
-        D::Float16 => pf16::ENCODED_LEN,
-        D::Float32 => f32::ENCODED_LEN,
-        D::Float64 => f64::ENCODED_LEN,
         D::FixedSizeList(f, width) => 1 + width * fixed_size(f.dtype(), opt, dict)?,
         D::Struct(fs) => match dict {
             None => {
@@ -1011,6 +1024,7 @@ pub fn fixed_size(
 
 #[cfg(test)]
 mod tests {
+    use arrow::array::Array;
     use arrow::array::proptest::{
         ArrayArbitraryOptions, ArrowDataTypeArbitraryOptions, ArrowDataTypeArbitrarySelection,
         array_with_options,
@@ -1034,10 +1048,15 @@ mod tests {
     }
 
     proptest::proptest! {
+        /// The arrays are generated as Arrow ones; the import hands the buffers over unchanged.
         #[test]
         fn test_encode_arrays
             (arrays in arrays())
          {
+            let arrays = arrays
+                .iter()
+                .map(|array| polars_array::arrow::import::from_arrow(&**array))
+                .collect::<Vec<_>>();
             let dicts: Vec<Option<RowEncodingContext>> = (0..arrays.len()).map(|_| None).collect();
             convert_columns_no_order(arrays[0].len(), &arrays, &dicts);
         }

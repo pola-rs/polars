@@ -1,0 +1,605 @@
+use std::borrow::Cow;
+use std::ops::Range;
+
+use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_buffer::Buffer;
+use polars_error::{PolarsResult, polars_ensure};
+
+use crate::array_type::PlArrayType;
+use crate::bitmap::{PlBitmap, PlBitmapRef};
+use crate::broadcast::{
+    assert_broadcastable, broadcast_index, is_flat_offsets_len, is_scalar_offsets_len,
+    normalize_offsets, scalar_buffer_len, scalar_offsets_len, slice_offsets, slice_validity,
+    try_validity_covering, validity_covering_unchecked,
+};
+use crate::flat::Flat;
+
+mod builder;
+mod flat;
+mod iterator;
+
+pub use builder::PlBinaryArrayBuilder;
+pub use iterator::{PlBinaryIter, PlBinaryValues, PlBinaryValuesIter};
+
+/// An immutable, cheaply cloneable sequence of `length` optional byte strings.
+#[derive(Clone)]
+pub struct PlBinaryArray {
+    values: Buffer<u8>,
+    /// Scalar: offsets.len() == 2
+    offsets: Buffer<u64>,
+    length: usize,
+    /// Scalar: validity.len() == 1
+    validity: Option<Bitmap>,
+}
+
+impl PlBinaryArray {
+    /// Creates a flat [`PlBinaryArray`] out of its internal components.
+    ///
+    /// # Errors
+    /// Errors unless `offsets` holds `length + 1` non-decreasing offsets within `values`.
+    pub fn try_new(
+        values: Buffer<u8>,
+        offsets: Buffer<u64>,
+        length: usize,
+        validity: Option<PlBitmap>,
+    ) -> PolarsResult<Self> {
+        let validity = try_validity_covering(validity, length)?;
+        polars_ensure!(
+            is_flat_offsets_len(offsets.len(), length),
+            ComputeError:
+            "offsets buffer of length {} is not flat for a binary array of length {}: it needs one \
+             offset per element plus the end of the last",
+            offsets.len(), length,
+        );
+
+        validate_offsets(&values, &offsets)?;
+
+        Ok(Self {
+            values,
+            offsets,
+            length,
+            validity,
+        })
+    }
+
+    /// Creates a flat [`PlBinaryArray`] out of its internal components.
+    #[inline]
+    pub fn new(
+        values: Buffer<u8>,
+        offsets: Buffer<u64>,
+        length: usize,
+        validity: Option<PlBitmap>,
+    ) -> Self {
+        Self::try_new(values, offsets, length, validity).unwrap()
+    }
+
+    /// Creates a flat [`PlBinaryArray`] out of its internal components without validating them.
+    ///
+    /// # Safety
+    /// `offsets` and `validity` must both be flat and valid for `length` elements.
+    #[inline]
+    pub unsafe fn new_unchecked(
+        values: Buffer<u8>,
+        offsets: Buffer<u64>,
+        length: usize,
+        validity: Option<PlBitmap>,
+    ) -> Self {
+        let validity = validity_covering_unchecked(validity, length);
+        if cfg!(debug_assertions) {
+            assert!(is_flat_offsets_len(offsets.len(), length));
+            assert!(offsets.windows(2).all(|window| window[0] <= window[1]));
+            assert!(offsets[offsets.len() - 1] <= values.len() as u64);
+        }
+
+        Self {
+            values,
+            offsets,
+            length,
+            validity,
+        }
+    }
+
+    /// Creates a scalar [`PlBinaryArray`] of `length` elements out of its internal components.
+    ///
+    /// # Errors
+    /// Errors unless `offsets` is scalar for `length`, non-decreasing and within `values`.
+    pub fn try_new_broadcast(
+        values: Buffer<u8>,
+        offsets: Buffer<u64>,
+        length: usize,
+        validity: Option<PlBitmap>,
+    ) -> PolarsResult<Self> {
+        let validity = try_validity_covering(validity, length)?;
+        polars_ensure!(
+            is_scalar_offsets_len(offsets.len(), length),
+            ComputeError:
+            "offsets buffer of length {} is not the single range the {} elements of a broadcast \
+             binary array share: it needs the two offsets standing for that range",
+            offsets.len(), length,
+        );
+
+        validate_offsets(&values, &offsets)?;
+
+        Ok(Self {
+            values,
+            offsets: normalize_offsets(offsets, length),
+            length,
+            validity,
+        })
+    }
+
+    /// Creates a scalar [`PlBinaryArray`] of `length` elements out of its internal components.
+    #[inline]
+    pub fn new_broadcast(
+        values: Buffer<u8>,
+        offsets: Buffer<u64>,
+        length: usize,
+        validity: Option<PlBitmap>,
+    ) -> Self {
+        Self::try_new_broadcast(values, offsets, length, validity).unwrap()
+    }
+
+    /// Creates a scalar [`PlBinaryArray`] of `length` elements without validating them.
+    ///
+    /// # Safety
+    /// `offsets` and `validity` must both be scalar and valid for `length` elements.
+    #[inline]
+    pub unsafe fn new_broadcast_unchecked(
+        values: Buffer<u8>,
+        offsets: Buffer<u64>,
+        length: usize,
+        validity: Option<PlBitmap>,
+    ) -> Self {
+        let validity = validity_covering_unchecked(validity, length);
+        if cfg!(debug_assertions) {
+            assert!(is_scalar_offsets_len(offsets.len(), length));
+            assert!(offsets.windows(2).all(|window| window[0] <= window[1]));
+            assert!(offsets[offsets.len() - 1] <= values.len() as u64);
+        }
+
+        Self {
+            values,
+            offsets: normalize_offsets(offsets, length),
+            length,
+            validity,
+        }
+    }
+
+    /// Creates an empty [`PlBinaryArray`].
+    #[inline]
+    pub fn new_empty() -> Self {
+        Self {
+            values: Buffer::new(),
+            // The end of the last element of an empty array, which is always needed.
+            offsets: Buffer::zeroed(1),
+            length: 0,
+            validity: None,
+        }
+    }
+
+    /// Creates a fully valid, flat [`PlBinaryArray`] from `values` and `offsets`.
+    pub fn from_offsets(values: Buffer<u8>, offsets: Buffer<u64>) -> Self {
+        let length = offsets
+            .len()
+            .checked_sub(1)
+            .expect("a binary array needs at least one offset");
+        Self::new(values, offsets, length, None)
+    }
+
+    /// Creates a fully valid, flat [`PlBinaryArray`] holding `values`, in order.
+    pub fn from_values_iter<V: AsRef<[u8]>, I: IntoIterator<Item = V>>(values: I) -> Self {
+        let values = values.into_iter();
+        let (lower, _) = values.size_hint();
+
+        let mut bytes = Vec::new();
+        let mut offsets = Vec::with_capacity(lower + 1);
+        offsets.push(0);
+
+        for value in values {
+            bytes.extend_from_slice(value.as_ref());
+            offsets.push(bytes.len() as u64);
+        }
+
+        let length = offsets.len() - 1;
+        // SAFETY: the offsets are the ends of the values appended so far: ordered, one per element
+        // plus the end of the last, ending at the length of the bytes they were built over.
+        unsafe { Self::new_unchecked(Buffer::from(bytes), Buffer::from(offsets), length, None) }
+    }
+
+    /// Creates a [`PlBinaryArray`] of `length` copies of `value`, in the memory of that one value.
+    #[inline]
+    pub fn new_scalar(value: &[u8], length: usize) -> Self {
+        // There is no element for the bytes to be shared by when there are no elements at all,
+        // which is why an empty array is the one that keeps nothing of the value it repeats: no
+        // bytes, and no range over them either.
+        if length == 0 {
+            return Self::new_empty();
+        }
+
+        Self {
+            values: Buffer::from(value.to_vec()),
+            offsets: Buffer::from_owner([0, value.len() as u64]),
+            length,
+            validity: None,
+        }
+    }
+
+    /// Creates a [`PlBinaryArray`] of `length` nulls.
+    #[inline]
+    pub fn new_full_null(length: usize) -> Self {
+        Self {
+            values: Buffer::new(),
+            offsets: Buffer::zeroed(scalar_offsets_len(length)),
+            length,
+            validity: Some(Bitmap::new_zeroed(scalar_buffer_len(length))),
+        }
+    }
+
+    /// The backing values buffer, holding the bytes the offsets cut the elements out of.
+    #[inline(always)]
+    pub const fn values(&self) -> &Buffer<u8> {
+        &self.values
+    }
+
+    /// The backing offsets buffer, if it holds the range of every element, laid end to end.
+    #[inline]
+    pub fn flat_offsets(&self) -> Option<&Buffer<u64>> {
+        (!self.offsets_are_scalar()).then_some(&self.offsets)
+    }
+
+    /// The range of [`Self::values`] every element covers, if the offsets hold one range.
+    #[inline]
+    pub fn scalar_offsets(&self) -> Option<Range<usize>> {
+        // SAFETY: a scalar offsets buffer holds two slots, so both are in bounds.
+        self.offsets_are_scalar().then(|| unsafe {
+            // Every offset of an array that upholds its invariants fits in a `usize`.
+            *self.offsets.get_unchecked(0) as usize..*self.offsets.get_unchecked(1) as usize
+        })
+    }
+
+    /// The bytes every element of this array reads, if the offsets hold a single range.
+    #[inline]
+    pub fn scalar_value_ignore_validity(&self) -> Option<&[u8]> {
+        // SAFETY: the range comes from the offsets, so it is in bounds of the values.
+        self.scalar_offsets()
+            .map(|range| unsafe { self.values.get_unchecked(range) })
+    }
+
+    /// Consumes this array into its internal components.
+    #[inline]
+    pub fn into_inner(self) -> (Buffer<u8>, Buffer<u64>, usize, Option<Bitmap>) {
+        (self.values, self.offsets, self.length, self.validity)
+    }
+
+    /// The validity mask, if any element may be null.
+    #[inline]
+    pub fn validity(&self) -> Option<PlBitmapRef<'_>> {
+        // SAFETY: the mask is flat or scalar for `self.length`, upheld by every constructor.
+        self.validity
+            .as_ref()
+            .map(|validity| unsafe { PlBitmapRef::new_broadcast_unchecked(validity, self.length) })
+    }
+
+    /// Whether the offsets hold one range that every element of this array shares.
+    #[inline]
+    pub fn offsets_are_scalar(&self) -> bool {
+        // The offsets hold one slot more than the starts that are flat or scalar for this array's
+        // length, so the two of a scalar array are a single start and the end of it. An array of
+        // no elements holds the one offset it starts at and no range at all, and is flat.
+        self.offsets.len() == 2 && self.length > 0
+    }
+
+    /// Whether the offsets hold the range of every element, laid end to end.
+    #[inline]
+    pub fn offsets_are_flat(&self) -> bool {
+        // The offsets are never empty, and hold the start of every element plus the end of the
+        // last. This is spelled as the predicate the iterators resolve their own representation
+        // with, rather than as the subtraction it comes down to for an array that upholds its
+        // invariants: a caller that asserts this ahead of a walk is then asserting the very
+        // condition the walk branches on, which folds the branch — and the tag it reads, and the
+        // step it computes — out of the loop.
+        is_flat_offsets_len(self.offsets.len(), self.length)
+    }
+
+    /// Whether the validity mask holds a single bit shared by every element.
+    #[inline]
+    pub fn validity_is_scalar(&self) -> bool {
+        self.validity().is_some_and(|v| v.is_scalar())
+    }
+
+    /// Whether the offsets hold the range of every element and the mask one bit per element.
+    #[inline]
+    pub fn is_flat(&self) -> bool {
+        self.offsets_are_flat() && self.validity().is_none_or(|validity| validity.is_flat())
+    }
+
+    /// Whether this array is scalar throughout: one value repeated [`Self::len`] times.
+    #[inline]
+    pub fn is_scalar(&self) -> bool {
+        self.offsets_are_scalar() && self.validity().is_none_or(|v| v.is_scalar())
+    }
+
+    /// The single element every element equals, if this array's own buffers both hold one slot.
+    #[inline]
+    pub fn scalar_value(&self) -> Option<Option<&[u8]>> {
+        let is_shared = self.offsets.len() == 2
+            && self
+                .validity
+                .as_ref()
+                .is_none_or(|validity| validity.len() == 1);
+
+        // SAFETY: the array is not empty, so element 0 is in bounds.
+        (is_shared && self.length > 0).then(|| unsafe { self.get_unchecked(0) })
+    }
+
+    /// The range of [`Self::values`] the element at `i` covers.
+    #[inline]
+    pub fn value_range(&self, i: usize) -> Range<usize> {
+        assert!(i < self.length, "index out of bounds");
+        unsafe { self.value_range_unchecked(i) }
+    }
+
+    /// The range of [`Self::values`] the element at `i` covers.
+    ///
+    /// # Safety
+    /// `i` must be smaller than `self.len()`.
+    #[inline]
+    pub unsafe fn value_range_unchecked(&self, i: usize) -> Range<usize> {
+        debug_assert!(i < self.length);
+
+        // Scalar offsets hold the one range every element covers, so they are read at slot zero.
+        let i = broadcast_index(i, self.offsets.len() - 1);
+
+        // SAFETY: the offsets hold one slot more than the starts `broadcast_index` maps onto, so
+        // `i + 1` is in bounds, and every offset fits in a `usize`.
+        unsafe {
+            let start = *self.offsets.get_unchecked(i) as usize;
+            let end = *self.offsets.get_unchecked(i + 1) as usize;
+            start..end
+        }
+    }
+
+    /// The number of bytes in the element at `i`.
+    #[inline]
+    pub fn value_length(&self, i: usize) -> usize {
+        self.value_range(i).len()
+    }
+
+    /// The number of bytes in the element at `i`.
+    ///
+    /// # Safety
+    /// `i` must be smaller than `self.len()`.
+    #[inline]
+    pub unsafe fn value_length_unchecked(&self, i: usize) -> usize {
+        unsafe { self.value_range_unchecked(i) }.len()
+    }
+
+    /// Returns the bytes of the element at `i`.
+    #[inline]
+    pub fn value(&self, i: usize) -> &[u8] {
+        assert!(i < self.length, "index out of bounds");
+        unsafe { self.value_unchecked(i) }
+    }
+
+    /// Returns the bytes of the element at `i`.
+    ///
+    /// # Safety
+    /// `i` must be smaller than `self.len()`.
+    #[inline]
+    pub unsafe fn value_unchecked(&self, i: usize) -> &[u8] {
+        let range = unsafe { self.value_range_unchecked(i) };
+        // SAFETY: the offsets are ordered and bounded by the length of the values buffer.
+        unsafe { self.values.get_unchecked(range) }
+    }
+
+    /// Returns an iterator over the elements, ignoring validity.
+    #[inline]
+    pub fn values_iter(&self) -> PlBinaryValuesIter<'_> {
+        PlBinaryValuesIter::new(&self.values, &self.offsets, self.length)
+    }
+
+    /// Returns an iterator over the optional elements.
+    #[inline]
+    pub fn iter(&self) -> PlBinaryIter<'_> {
+        PlBinaryIter::new(&self.values, &self.offsets, self.validity(), self.length)
+    }
+
+    /// Iterates `length` elements, repeating a scalar array's one value and ignoring validity.
+    #[inline]
+    pub fn broadcast_values_iter(&self, length: usize) -> PlBinaryValuesIter<'_> {
+        assert_broadcastable(self.length, length);
+        // SAFETY: an array of one element holds the one range that element covers, which is scalar
+        // for any length; otherwise `length` is the length the offsets are already valid for.
+        PlBinaryValuesIter::new(&self.values, &self.offsets, length)
+    }
+
+    /// Slices this array in place to `length` elements starting at `offset`.
+    ///
+    /// # Safety
+    /// `offset + length` must not exceed `self.len()`.
+    pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
+        debug_assert!(offset + length <= self.length);
+
+        // The bytes the offsets point into are left as they are; see `slice_offsets`.
+        unsafe {
+            slice_offsets(&mut self.offsets, self.length, offset, length);
+            slice_validity(&mut self.validity, self.length, offset, length);
+        }
+
+        self.length = length;
+    }
+
+    /// Creates a [`PlBinaryArray`] of `length` copies of the element at `index`.
+    ///
+    /// # Safety
+    /// `index` must be smaller than `self.len()`.
+    pub unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Self {
+        debug_assert!(index < self.length);
+
+        // The bytes of a null element are undetermined, so they are not carried over: it is the
+        // mask that makes every element of the result null, over no bytes at all.
+        if unsafe { self.is_null_unchecked(index) } {
+            return Self::new_full_null(length);
+        }
+
+        if length == 0 {
+            return Self::new_empty();
+        }
+
+        // Nothing is copied: the values are cloned as they are, and the two offsets every element
+        // of the result shares are the ones of the element being repeated.
+        let range = unsafe { self.value_range_unchecked(index) };
+
+        Self {
+            values: self.values.clone(),
+            offsets: Buffer::from_owner([range.start as u64, range.end as u64]),
+            length,
+            validity: None,
+        }
+    }
+
+    /// Returns an equivalent flat array, borrowing this one if it is already flat.
+    pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
+        if let Some(flat) = self.as_flat() {
+            return Cow::Borrowed(flat);
+        }
+
+        let validity = self
+            .validity()
+            .map(|validity| PlBitmap::from_bitmap(validity.to_flat().into_owned()));
+
+        let (values, offsets) = if self.offsets_are_flat() {
+            (self.values.clone(), self.offsets.clone())
+        } else if self.length == 0
+            || self.offsets[0] == self.offsets[1]
+            || self.null_count() == self.length
+        {
+            // Every element is the empty byte string, or is null and therefore holds an
+            // undetermined one: no value is written out, and the offsets all point at the same
+            // place. That place is the start of the values rather than the range every element
+            // covered, which is the same empty byte string.
+            (self.values.clone(), Buffer::zeroed(self.length + 1))
+        } else {
+            // The one value every element covers, written out once per element.
+            let range = unsafe { self.value_range_unchecked(0) };
+            // SAFETY: the range comes from the offsets, so it is in bounds of the values.
+            let element = unsafe { self.values.get_unchecked(range.clone()) };
+
+            let flat_len = self.length.checked_mul(range.len()).expect(
+                "the values of the flat counterpart of the binary array overflow a `usize`",
+            );
+            let mut values = Vec::with_capacity(flat_len);
+            for _ in 0..self.length {
+                values.extend_from_slice(element);
+            }
+
+            let offsets = (0..=self.length as u64)
+                .map(|i| i * range.len() as u64)
+                .collect::<Vec<_>>();
+
+            (Buffer::from(values), Buffer::from(offsets))
+        };
+
+        // SAFETY: the offsets are ordered, one per element plus the end of the last, and within the
+        // values; the mask is the flat counterpart of one valid for this array's length. That
+        Cow::Owned(unsafe {
+            Flat::new(Self::new_unchecked(values, offsets, self.length, validity))
+        })
+    }
+
+    /// Borrows this array as a [`Flat`] one, if it is already flat.
+    #[inline]
+    pub fn as_flat(&self) -> Option<&Flat<Self>> {
+        // SAFETY: the offsets of a flat array hold the range of every element, and its mask one
+        // bit per element.
+        self.is_flat().then(|| unsafe { Flat::new_ref(self) })
+    }
+}
+
+crate::impl_array_methods!(PlBinaryArray, &[u8]);
+
+impl Default for PlBinaryArray {
+    #[inline]
+    fn default() -> Self {
+        Self::new_empty()
+    }
+}
+
+impl<V: AsRef<[u8]>> FromIterator<Option<V>> for PlBinaryArray {
+    fn from_iter<I: IntoIterator<Item = Option<V>>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let (lower, _) = iter.size_hint();
+
+        let mut bytes = Vec::new();
+        let mut offsets = Vec::with_capacity(lower + 1);
+        offsets.push(0);
+        let mut validity = BitmapBuilder::with_capacity(lower);
+
+        for value in iter {
+            // The value of a null element is undetermined, so nothing is written out for it: it
+            // covers the empty byte string that ends the element before it.
+            if let Some(value) = value.as_ref() {
+                bytes.extend_from_slice(value.as_ref());
+            }
+            offsets.push(bytes.len() as u64);
+            validity.push(value.is_some());
+        }
+
+        let length = offsets.len() - 1;
+        // SAFETY: the offsets are the ends of the values appended so far, ending at the length of
+        // the bytes they were built over, and the mask holds one bit per element.
+        unsafe {
+            Self::new_unchecked(
+                Buffer::from(bytes),
+                Buffer::from(offsets),
+                length,
+                validity.into_opt_validity().map(PlBitmap::from_bitmap),
+            )
+        }
+    }
+}
+
+crate::impl_into_iterator!(PlBinaryArray, PlBinaryIter<'a>);
+
+crate::impl_array_eq!(PlBinaryArray, |lhs, rhs| lhs.iter().eq(rhs.iter()));
+
+impl std::fmt::Debug for PlBinaryArray {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The buffers are listed as they are backed, which is two offsets and one value's worth of
+        // bytes for a scalar array: this never materializes a length that is unbounded by the
+        // memory use.
+        let mut s = f.debug_struct("PlBinaryArray");
+        s.field("length", &self.length);
+        if let Some(validity) = self.validity() {
+            s.field("validity", &validity);
+        }
+        s.field("offsets", &self.offsets.as_slice());
+        s.field("values", &self.values.as_slice()).finish()
+    }
+}
+
+crate::impl_pl_array!(PlBinaryArray, PlArrayType::Binary);
+
+/// Checks that `offsets` are monotonically non-decreasing and stay within `values`.
+fn validate_offsets(values: &Buffer<u8>, offsets: &Buffer<u64>) -> PolarsResult<()> {
+    // The offsets are ordered, so checking the last one against the values covers them all —
+    // including that every one of them fits in a `usize`.
+    for (i, window) in offsets.windows(2).enumerate() {
+        polars_ensure!(
+            window[0] <= window[1],
+            ComputeError:
+            "offset {} of the binary array is {}, which is smaller than the offset {} before it",
+            i + 1, window[1], window[0],
+        );
+    }
+
+    let last = offsets[offsets.len() - 1];
+    polars_ensure!(
+        last <= values.len() as u64,
+        ComputeError:
+        "the last offset of the binary array is {}, which exceeds the length {} of its values",
+        last, values.len(),
+    );
+
+    Ok(())
+}

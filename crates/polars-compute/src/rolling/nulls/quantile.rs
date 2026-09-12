@@ -115,13 +115,13 @@ impl<
 }
 
 pub fn rolling_quantile<T>(
-    arr: &PrimitiveArray<T>,
+    arr: &PlPrimitiveArray<T>,
     window_size: usize,
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
     params: Option<RollingFnParams>,
-) -> ArrayRef
+) -> Box<dyn PlArray>
 where
     T: NativeType
         + IsFloat
@@ -137,6 +137,10 @@ where
         + PartialOrd
         + Sub<Output = T>,
 {
+    // The window machines walk the values as a slice and read the mask bit by bit, so the chunk
+    // is laid out here, once at the top, and only a buffer that repeats is written out.
+    let arr = arr.to_flat();
+
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
     }
@@ -165,8 +169,8 @@ where
     }
     */
     rolling_apply_agg_window::<QuantileWindow<T>, _, _, _>(
-        arr.values().as_slice(),
-        arr.validity().as_ref().unwrap(),
+        arr.as_slice(),
+        arr.validity().unwrap(),
         window_size,
         min_periods,
         offset_fn,
@@ -176,18 +180,18 @@ where
 
 #[cfg(test)]
 mod test {
-    use arrow::datatypes::ArrowDataType;
-    use polars_buffer::Buffer;
+    use polars_array::PlBitmap;
 
     use super::*;
+    use crate::rolling::flat_chunk;
 
     #[test]
     fn test_rolling_median_nulls() {
-        let buf = Buffer::from(vec![1.0, 2.0, 3.0, 4.0]);
-        let arr = &PrimitiveArray::new(
-            ArrowDataType::Float64,
-            buf,
-            Some(Bitmap::from(&[true, false, true, true])),
+        let arr = &flat_chunk(
+            vec![1.0f64, 2.0, 3.0, 4.0],
+            Some(PlBitmap::from_bitmap(Bitmap::from(&[
+                true, false, true, true,
+            ]))),
         );
         let med_pars = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: 0.5,
@@ -195,39 +199,34 @@ mod test {
         }));
 
         let out = rolling_quantile(arr, 2, 2, false, None, med_pars);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[None, None, None, Some(3.5)]);
 
         let out = rolling_quantile(arr, 2, 1, false, None, med_pars);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(3.0), Some(3.5)]);
 
         let out = rolling_quantile(arr, 4, 1, false, None, med_pars);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(2.0), Some(3.0)]);
 
         let out = rolling_quantile(arr, 4, 1, true, None, med_pars);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[Some(1.0), Some(2.0), Some(3.0), Some(3.5)]);
 
         let out = rolling_quantile(arr, 4, 4, true, None, med_pars);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[None, None, None, None]);
     }
 
     #[test]
     fn test_rolling_quantile_nulls_limits() {
         // compare quantiles to corresponding min/max/median values
-        let buf = Buffer::<f64>::from(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
-        let values = &PrimitiveArray::new(
-            ArrowDataType::Float64,
-            buf,
-            Some(Bitmap::from(&[true, false, false, true, true])),
+        let values = &flat_chunk(
+            vec![1.0f64, 2.0, 3.0, 4.0, 5.0],
+            Some(PlBitmap::from_bitmap(Bitmap::from(&[
+                true, false, false, true, true,
+            ]))),
         );
 
         let methods = vec![
@@ -245,11 +244,9 @@ mod test {
                 method,
             }));
             let out1 = rolling_min(values, 2, 1, false, None, None);
-            let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-            let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+            let out1 = elements_of::<f64>(&*out1);
             let out2 = rolling_quantile(values, 2, 1, false, None, min_pars);
-            let out2 = out2.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-            let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+            let out2 = elements_of::<f64>(&*out2);
             assert_eq!(out1, out2);
 
             let max_pars = Some(RollingFnParams::Quantile(RollingQuantileParams {
@@ -257,11 +254,9 @@ mod test {
                 method,
             }));
             let out1 = rolling_max(values, 2, 1, false, None, None);
-            let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-            let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+            let out1 = elements_of::<f64>(&*out1);
             let out2 = rolling_quantile(values, 2, 1, false, None, max_pars);
-            let out2 = out2.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-            let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+            let out2 = elements_of::<f64>(&*out2);
             assert_eq!(out1, out2);
         }
     }

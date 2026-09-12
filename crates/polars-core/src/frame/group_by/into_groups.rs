@@ -22,6 +22,27 @@ pub trait IntoGroupsType {
     }
 }
 
+/// The groups of a chunked array whose one chunk repeats a single element: they are one group.
+///
+/// Every element of such a chunk is the same one — the same value throughout, or a null
+/// throughout — so they all fall in the group the first of them opens, without one of them being
+/// hashed. For a nested type that is worth the most: its groups are otherwise read off a row
+/// encoding of the whole column, written out before a single row is hashed.
+pub(crate) fn scalar_groups<T: PolarsDataType>(ca: &ChunkedArray<T>) -> Option<GroupsType> {
+    let [chunk] = ca.chunks().as_slice() else {
+        return None;
+    };
+    if chunk.is_empty() || !chunk.is_scalar() {
+        return None;
+    }
+
+    Some(GroupsType::new_slice(
+        vec![[0, ca.len() as IdxSize]],
+        false,
+        true,
+    ))
+}
+
 fn group_multithreaded<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
     // TODO! change to something sensible
     ca.len() > 1000 && RAYON.current_num_threads() > 1
@@ -38,16 +59,13 @@ where
 
         // use the arrays as iterators
         if ca.null_count() == 0 {
-            let keys = ca
-                .downcast_iter()
-                .map(|arr| arr.values().as_slice())
-                .collect::<Vec<_>>();
+            // The values are read as slices, and nothing is null for the mask to mark, so only a
+            // chunk whose values repeat one value is written out.
+            let views = ca.to_flat_values_chunks();
+            let keys = views.iter().map(|values| values.as_slice()).collect();
             group_by_threaded_slice(keys, n_partitions, sorted)
         } else {
-            let keys = ca
-                .downcast_iter()
-                .map(|arr| arr.iter().map(|o| o.copied()))
-                .collect::<Vec<_>>();
+            let keys = ca.downcast_iter().map(|arr| arr.iter()).collect::<Vec<_>>();
             group_by_threaded_iter(&keys, n_partitions, sorted)
         }
     } else if !ca.has_nulls() {
@@ -70,7 +88,13 @@ where
         if arr.is_empty() {
             return GroupsSlice::default();
         }
-        let mut values = arr.values().as_slice();
+        // One value repeated is one group; `to_flat` below would write out one slot per element
+        // first, which is the whole array this representation exists not to hold.
+        if arr.is_scalar() {
+            return vec![[0, arr.len() as IdxSize]];
+        }
+        let arr = arr.to_flat();
+        let mut values = arr.as_slice();
         let null_count = arr.null_count();
         let length = values.len();
 
@@ -146,6 +170,11 @@ where
     <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash,
 {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
+        // One value repeated is one group, whatever the length.
+        if let Some(groups) = scalar_groups(self) {
+            return Ok(groups);
+        }
+
         // sorted path
         if self.is_sorted_ascending_flag() || self.is_sorted_descending_flag() {
             // don't have to pass `sorted` arg, GroupSlice is always sorted.
@@ -226,6 +255,11 @@ impl IntoGroupsType for BinaryChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
+        // One value repeated is one group, whatever the length.
+        if let Some(groups) = scalar_groups(self) {
+            return Ok(groups);
+        }
+
         if self.is_sorted_any() && !self.has_nulls() && self.n_chunks() == 1 {
             let arr = self.downcast_get(0).unwrap();
             let values = arr.values_iter();
@@ -325,6 +359,12 @@ impl IntoGroupsType for ListChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
+        // One element repeated is one group, whatever the length — and the row encoding below,
+        // which writes a row per element before a single one is hashed, is never reached.
+        if let Some(groups) = scalar_groups(self) {
+            return Ok(groups);
+        }
+
         multithreaded &= RAYON.current_num_threads() > 1;
         let by = &[self.clone().into_column()];
         let ca = if multithreaded {
@@ -346,6 +386,11 @@ impl IntoGroupsType for ArrayChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
+        // As in `ListChunked::group_tuples`: one repeated element is one group.
+        if let Some(groups) = scalar_groups(self) {
+            return Ok(groups);
+        }
+
         multithreaded &= RAYON.current_num_threads() > 1;
         let by = &[self.clone().into_column()];
         let ca = if multithreaded {

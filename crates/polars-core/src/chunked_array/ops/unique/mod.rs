@@ -21,7 +21,7 @@ fn finish_is_unique_helper(
     for idx in unique_idx {
         unsafe { values.set_unchecked(idx as usize, setter) }
     }
-    let arr = BooleanArray::from_data_default(values.into(), None);
+    let arr = PlBooleanArray::new(values.into(), len as usize, None);
     arr.into()
 }
 
@@ -61,6 +61,16 @@ impl<T: PolarsObject> ChunkUnique for ObjectChunked<T> {
     }
 }
 
+/// Whether this chunked array is one chunk that repeats a single element.
+///
+/// Every element of such a chunk is the same one — the same value throughout, or a null
+/// throughout — so it has exactly one distinct element, and the whole distinct family is
+/// answered off the first of them without hashing a single one. See also
+/// [`scalar_groups`](crate::frame::group_by::scalar_groups).
+fn is_scalar_chunk<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
+    matches!(ca.chunks().as_slice(), [chunk] if !chunk.is_empty() && chunk.is_scalar())
+}
+
 fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<IdxSize>
 where
     T: ToTotalOrd,
@@ -78,9 +88,13 @@ where
 
 macro_rules! arg_unique_ca {
     ($ca:expr) => {{
-        match $ca.has_nulls() {
-            false => arg_unique($ca.no_null_iter(), $ca.len()),
-            _ => arg_unique($ca.iter(), $ca.len()),
+        if is_scalar_chunk($ca) {
+            vec![0]
+        } else {
+            match $ca.has_nulls() {
+                false => arg_unique($ca.no_null_iter(), $ca.len()),
+                _ => arg_unique($ca.iter(), $ca.len()),
+            }
         }
     }};
 }
@@ -97,28 +111,30 @@ where
         if self.is_empty() {
             return Ok(self.clone());
         }
+        if is_scalar_chunk(self) {
+            return Ok(self.slice(0, 1));
+        }
         match self.is_sorted_flag() {
             IsSorted::Ascending | IsSorted::Descending => {
                 if self.null_count() > 0 {
-                    let mut arr = MutablePrimitiveArray::with_capacity(self.len());
+                    let mut iter = self.iter();
+                    let arr: T::Array = match iter.next() {
+                        None => T::Array::new_empty(),
+                        Some(first) => {
+                            // The elements are sorted, so an element is unique exactly where it
+                            // differs from the one before it.
+                            let mut last = first.to_total_ord();
+                            std::iter::once(first)
+                                .chain(iter.filter(move |opt_val| {
+                                    let opt_val_tot_ord = opt_val.to_total_ord();
+                                    let out = opt_val_tot_ord != last;
+                                    last = opt_val_tot_ord;
+                                    out
+                                }))
+                                .collect_arr()
+                        },
+                    };
 
-                    if !self.is_empty() {
-                        let mut iter = self.iter();
-                        let last = iter.next().unwrap();
-                        arr.push(last);
-                        let mut last = last.to_total_ord();
-
-                        let to_extend = iter.filter(|opt_val| {
-                            let opt_val_tot_ord = opt_val.to_total_ord();
-                            let out = opt_val_tot_ord != last;
-                            last = opt_val_tot_ord;
-                            out
-                        });
-
-                        arr.extend(to_extend);
-                    }
-
-                    let arr: PrimitiveArray<T::Native> = arr.into();
                     Ok(ChunkedArray::with_chunk(self.name().clone(), arr))
                 } else {
                     let mask = self.not_equal_missing(&self.shift(1));
@@ -140,6 +156,9 @@ where
         // prevent stackoverflow repeated sorted.unique call
         if self.is_empty() {
             return Ok(0);
+        }
+        if is_scalar_chunk(self) {
+            return Ok(1);
         }
         match self.is_sorted_flag() {
             IsSorted::Ascending | IsSorted::Descending => {
@@ -215,6 +234,9 @@ impl ChunkUnique for StringChunked {
 
 impl ChunkUnique for BinaryChunked {
     fn unique(&self) -> PolarsResult<Self> {
+        if is_scalar_chunk(self) {
+            return Ok(self.slice(0, 1));
+        }
         match self.null_count() {
             0 => {
                 let mut set =
@@ -246,6 +268,9 @@ impl ChunkUnique for BinaryChunked {
     }
 
     fn n_unique(&self) -> PolarsResult<usize> {
+        if is_scalar_chunk(self) {
+            return Ok(1);
+        }
         let mut set: PlHashSet<&[u8]> = PlHashSet::new();
         if self.null_count() > 0 {
             for arr in self.downcast_iter() {
@@ -280,6 +305,9 @@ impl ChunkUnique for BinaryChunked {
 
 impl ChunkUnique for BinaryOffsetChunked {
     fn unique(&self) -> PolarsResult<Self> {
+        if is_scalar_chunk(self) {
+            return Ok(self.slice(0, 1));
+        }
         match self.null_count() {
             0 => {
                 let mut set =
@@ -305,6 +333,9 @@ impl ChunkUnique for BinaryOffsetChunked {
     }
 
     fn n_unique(&self) -> PolarsResult<usize> {
+        if is_scalar_chunk(self) {
+            return Ok(1);
+        }
         let mut set: PlHashSet<&[u8]> = PlHashSet::new();
         if self.null_count() > 0 {
             for arr in self.downcast_iter() {
@@ -341,6 +372,10 @@ impl ChunkUnique for BooleanChunked {
     fn unique(&self) -> PolarsResult<Self> {
         use polars_compute::unique::RangedUniqueKernel;
 
+        if is_scalar_chunk(self) {
+            return Ok(self.slice(0, 1));
+        }
+
         let mut state = BooleanUniqueKernelState::new();
 
         for arr in self.downcast_iter() {
@@ -351,9 +386,10 @@ impl ChunkUnique for BooleanChunked {
             }
         }
 
-        let unique = state.finalize_unique();
-
-        Ok(Self::with_chunk(self.name().clone(), unique))
+        Ok(Self::with_chunk(
+            self.name().clone(),
+            state.finalize_unique(),
+        ))
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {

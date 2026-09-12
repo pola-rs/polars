@@ -1,8 +1,10 @@
 use std::fmt;
 
 use arrow::array::Array;
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use arrow::bitmap::BitmapBuilder;
 use arrow::datatypes::ArrowDataType;
+use polars_array::PlBitmap;
+use polars_array::bitmap::combine_validities_and;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr};
@@ -100,9 +102,16 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
 
         bm.reserve(true_mask.len());
         for chunk in true_mask.downcast_iter() {
-            match chunk.validity() {
-                None => bm.extend_from_bitmap(chunk.values()),
-                Some(v) => bm.extend_from_bitmap(&(chunk.values() & v)),
+            // What is appended is the values `and` the mask, which are combined as the single bit
+            // they stand for where either is scalar.
+            let bits = combine_validities_and(Some(chunk.values()), chunk.validity())
+                .expect("the values mask is always there");
+
+            match bits.scalar_value() {
+                // One bit standing for the whole chunk is extended over it, not written out.
+                Some(bit) => bm.extend_constant(bits.len(), bit),
+                // What is left holds one bit per element already, so this borrows it as it is.
+                None => bm.extend_from_bitmap(&bits.as_ref().to_flat()),
             }
         }
     }
@@ -140,11 +149,15 @@ fn predicate_values_to_series(
     );
 
     if timestamp_units_differ {
-        let values = polars_compute::cast::cast(
-            values,
-            source_arrow_dtype,
-            polars_compute::cast::CastOptionsImpl::default(),
-        )?;
+        // The values are the counts the source unit holds, which is what stamping the source type
+        // onto them says: the import is what then reads them in the target unit.
+        let mut values = values.to_boxed();
+        assert_eq!(
+            values.dtype().to_physical_type(),
+            source_arrow_dtype.to_physical_type(),
+            "the statistics of a {source_arrow_dtype:?} column cannot be read as one",
+        );
+        *values.dtype_mut() = source_arrow_dtype.clone();
         Series::try_from((name, values))
     } else {
         Series::from_chunk_and_dtype(name, values.to_boxed(), dtype)
@@ -267,9 +280,11 @@ pub trait SkipBatchPredicate: Send + Sync {
         // * Each column is length = 1
         // * We have an IndexSet, so each column name is unique
         let df = unsafe { DataFrame::new_unchecked(1, columns) };
-        Ok(self.evaluate_with_stat_df(&df)?.get_bit(0))
+        Ok(self.evaluate_with_stat_df(&df)?.get(0))
     }
-    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap>;
+
+    /// One bit per row of `df`, saying whether that batch can be skipped.
+    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<PlBitmap>;
 }
 
 #[derive(Clone)]
@@ -300,7 +315,7 @@ impl SkipBatchPredicate for PhysicalExprWithConstCols<Arc<dyn SkipBatchPredicate
         self.child.schema()
     }
 
-    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap> {
+    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<PlBitmap> {
         let mut df = df.clone();
         for (name, scalar) in self.constants.iter() {
             df.with_column(Column::new_scalar(

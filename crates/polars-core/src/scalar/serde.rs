@@ -222,10 +222,10 @@ impl TryFrom<Scalar> for SerializableScalar {
             #[cfg(feature = "dtype-struct")]
             AnyValue::Struct(idx, arr, fields) => {
                 assert!(idx < arr.len());
-                assert_eq!(arr.values().len(), fields.len());
+                assert_eq!(arr.fields().len(), fields.len());
 
                 Self::Struct(
-                    arr.values()
+                    arr.fields()
                         .iter()
                         .zip(fields.iter())
                         .map(|(arr, field)| {
@@ -319,7 +319,8 @@ impl TryFrom<SerializableScalar> for Scalar {
             } => Self::new_categorical(value.as_str(), name, namespace, physical)?,
             #[cfg(feature = "dtype-categorical")]
             S::Enum { value, categories } => {
-                Self::new_enum(value, categories.str()?.rechunk().downcast_as_array())?
+                let categories = categories.str()?.rechunk();
+                Self::new_enum(value, categories.downcast_as_array())?
             },
             #[cfg(feature = "dtype-struct")]
             S::Struct(scs) => {

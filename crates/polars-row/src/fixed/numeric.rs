@@ -2,10 +2,9 @@
 use std::fmt::Debug;
 use std::mem::MaybeUninit;
 
-use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
-use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
+use polars_array::{PlBitmap, PlPrimitiveArray};
 use polars_utils::float16::pf16;
 use polars_utils::slice::*;
 use polars_utils::total_ord::{canonical_f16, canonical_f32, canonical_f64};
@@ -156,21 +155,27 @@ impl FixedLengthEncoding for f64 {
     }
 }
 
+/// Writes one row per element of `arr`.
 pub unsafe fn encode<T: NativeType + FixedLengthEncoding>(
     buffer: &mut [MaybeUninit<u8>],
-    arr: &PrimitiveArray<T>,
+    arr: &PlPrimitiveArray<T>,
     opt: RowEncodingOptions,
     offsets: &mut [usize],
 ) {
-    if arr.null_count() == 0 {
-        crate::fixed::numeric::encode_slice(buffer, arr.values().as_slice(), opt, offsets)
-    } else {
-        crate::fixed::numeric::encode_iter(
+    if arr.null_count() != 0 {
+        return crate::fixed::numeric::encode_iter(buffer, arr.iter(), opt, offsets);
+    }
+
+    // Every row of a scalar chunk holds the same value, so it is encoded once and copied into
+    // each of them.
+    match arr.scalar_value_ignore_validity() {
+        Some(value) => crate::fixed::numeric::encode_repeated(buffer, value, opt, offsets),
+        None => crate::fixed::numeric::encode_slice(
             buffer,
-            arr.into_iter().map(|v| v.copied()),
+            arr.flat_values().unwrap().as_slice(),
             opt,
             offsets,
-        )
+        ),
     }
 }
 
@@ -231,6 +236,19 @@ pub(crate) unsafe fn encode_slice<T: FixedLengthEncoding>(
     }
 }
 
+/// [`encode_slice`] for one value that every row holds.
+pub(crate) unsafe fn encode_repeated<T: FixedLengthEncoding>(
+    buffer: &mut [MaybeUninit<u8>],
+    value: T,
+    opt: RowEncodingOptions,
+    row_starts: &mut [usize],
+) {
+    let descending = opt.contains(RowEncodingOptions::DESCENDING);
+    for offset in row_starts.iter_mut() {
+        encode_value(&value, offset, descending, buffer);
+    }
+}
+
 pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEncoding>(
     buffer: &mut [MaybeUninit<u8>],
     input: I,
@@ -245,11 +263,10 @@ pub(crate) unsafe fn encode_iter<I: Iterator<Item = Option<T>>, T: FixedLengthEn
 pub(crate) unsafe fn decode_primitive<T: NativeType + FixedLengthEncoding>(
     rows: &mut [&[u8]],
     opt: RowEncodingOptions,
-) -> PrimitiveArray<T>
+) -> PlPrimitiveArray<T>
 where
     T::Encoded: FromSlice,
 {
-    let dtype: ArrowDataType = T::PRIMITIVE.into();
     let mut has_nulls = false;
     let descending = opt.contains(RowEncodingOptions::DESCENDING);
     let null_sentinel = opt.null_sentinel();
@@ -283,7 +300,11 @@ where
     let increment_len = T::ENCODED_LEN;
 
     increment_row_counter(rows, increment_len);
-    PrimitiveArray::new(dtype, values.into(), validity)
+    PlPrimitiveArray::new(
+        values.into(),
+        rows.len(),
+        validity.map(PlBitmap::from_bitmap),
+    )
 }
 
 unsafe fn increment_row_counter(rows: &mut [&[u8]], fixed_size: usize) {

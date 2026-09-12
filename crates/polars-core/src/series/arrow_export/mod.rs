@@ -15,7 +15,6 @@ pub mod categorical;
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use polars_compute::cast::cast_unchecked;
 use polars_error::{PolarsError, PolarsResult, polars_ensure, polars_err};
 
 use crate::prelude::{
@@ -91,8 +90,8 @@ impl Series {
                 categorical_converter
             },
         }
-        .array_to_arrow(
-            self.chunks().get(chunk_idx).unwrap().as_ref(),
+        .chunk_to_arrow(
+            &**self.chunks().get(chunk_idx).unwrap(),
             self.dtype(),
             output_arrow_field,
         )
@@ -113,6 +112,40 @@ pub struct ToArrowConverter {
 }
 
 impl ToArrowConverter {
+    /// Exports one chunk of a [`Series`], crossing it over to Arrow first.
+    pub fn chunk_to_arrow<'a>(
+        &mut self,
+        chunk: &dyn polars_array::PlArray,
+        dtype: &DataType,
+        arrow_field: Cow<'a, ArrowField>,
+    ) -> PolarsResult<Box<dyn Array>> {
+        // An object chunk has no Arrow counterpart: it is exported as the fixed size binary array
+        // of its pointers directly.
+        #[cfg(feature = "object")]
+        if let DataType::Object(_) = dtype {
+            use crate::chunked_array::object::builder::object_series_to_arrow_array;
+
+            let series = unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    PlSmallStr::EMPTY,
+                    vec![chunk.to_boxed()],
+                    dtype,
+                )
+            };
+            let out = object_series_to_arrow_array(&series);
+            if !arrow_field.is_nullable {
+                ensure_no_nulls(&*out)?;
+            }
+            return Ok(out);
+        }
+
+        self.array_to_arrow(
+            &*polars_array::arrow::export::to_arrow(chunk),
+            dtype,
+            arrow_field,
+        )
+    }
+
     /// Returns an error if `output_arrow_field` was provided and does not match the output data type.
     pub fn array_to_arrow<'a>(
         &mut self,
@@ -145,15 +178,17 @@ impl ToArrowConverter {
                 use arrow::array::StructArray;
                 let arr: &StructArray = array.as_any().downcast_ref().unwrap();
 
+                // An exported chunk names its fields after their index, so the names the output
+                // field asks for are checked against the Polars dtype, which is what carries them.
                 polars_ensure!(
-                    arrow_struct_fields.len() == arr.fields().len()
+                    arrow_struct_fields.len() == struct_fields.len()
                     && arrow_struct_fields
                         .iter()
-                        .zip(arr.fields())
+                        .zip(struct_fields)
                         .all(|(l, r)| l.name() == r.name()),
                     SchemaMismatch:
                     "to_arrow() conversion failed: struct field names mismatch: {:?} != expected: {:?}",
-                    arrow_field.dtype(), arr.dtype()
+                    arrow_field.dtype(), polars_dtype.to_arrow(CompatLevel::newest())
                 );
 
                 let mut arrow_dtype = to_owned_dtype(arrow_field);
@@ -335,7 +370,7 @@ impl ToArrowConverter {
                 let out = object_series_to_arrow_array(&unsafe {
                     Series::from_chunks_and_dtype_unchecked(
                         PlSmallStr::EMPTY,
-                        vec![array.to_boxed()],
+                        vec![polars_array::arrow::import::from_arrow(array)],
                         polars_dtype,
                     )
                 });
@@ -346,18 +381,26 @@ impl ToArrowConverter {
             },
             (DataType::String, ArrowDataType::Utf8View) => array.to_boxed(),
             (DataType::String, ArrowDataType::LargeUtf8) => {
-                cast_unchecked(array, &ArrowDataType::LargeUtf8).unwrap()
+                use polars_compute::cast::utf8view_to_arrow_large_utf8;
+
+                let array: &arrow::array::Utf8ViewArray = array.as_any().downcast_ref().unwrap();
+
+                utf8view_to_arrow_large_utf8(array).boxed()
             },
             (DataType::Binary, ArrowDataType::BinaryView) => array.to_boxed(),
             (DataType::Binary, ArrowDataType::LargeBinary) => {
-                cast_unchecked(array, &ArrowDataType::LargeBinary).unwrap()
-            },
-            (DataType::Binary, ArrowDataType::FixedSizeBinary(row_width)) => {
-                use polars_compute::cast::binview_to_fixed_binary;
+                use polars_compute::cast::binview_to_arrow_large_binary;
 
                 let array: &BinaryViewArray = array.as_any().downcast_ref().unwrap();
 
-                binview_to_fixed_binary(array, *row_width)?.boxed()
+                binview_to_arrow_large_binary(array).boxed()
+            },
+            (DataType::Binary, ArrowDataType::FixedSizeBinary(row_width)) => {
+                use polars_compute::cast::binview_to_arrow_fixed_size_binary;
+
+                let array: &BinaryViewArray = array.as_any().downcast_ref().unwrap();
+
+                binview_to_arrow_fixed_size_binary(array, *row_width)?.boxed()
             },
             (DataType::Binary, ArrowDataType::Extension(_)) => {
                 let arrow_dtype = to_owned_dtype(arrow_field);

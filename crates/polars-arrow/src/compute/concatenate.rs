@@ -10,7 +10,7 @@ use crate::bitmap::{Bitmap, BitmapBuilder};
 use crate::datatypes::PhysicalType;
 use crate::offset::Offsets;
 use crate::types::{NativeType, Offset};
-use crate::with_match_primitive_type_full;
+use crate::with_match_primitive_type;
 
 /// Concatenate multiple [`Array`] of the same type into a single [`Array`].
 pub fn concatenate(arrays: &[&dyn Array]) -> PolarsResult<Box<dyn Array>> {
@@ -90,7 +90,7 @@ pub fn concatenate_unchecked<A: AsRef<dyn Array>>(arrays: &[A]) -> PolarsResult<
         Null => Ok(Box::new(concatenate_null(arrays))),
         Boolean => Ok(Box::new(concatenate_bool(arrays))),
         Primitive(ptype) => {
-            with_match_primitive_type_full!(ptype, |$T| {
+            with_match_primitive_type!(ptype, |$T| {
                 Ok(Box::new(concatenate_primitive::<$T, _>(arrays)))
             })
         },

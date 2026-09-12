@@ -5,7 +5,6 @@ mod numeric;
 
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
-use arrow::compute::utils::combine_validities_and;
 use num_traits::{Num, NumCast, ToPrimitive};
 pub use numeric::ArithmeticChunked;
 
@@ -44,15 +43,17 @@ impl Add<&str> for &StringChunked {
     }
 }
 
-fn concat_binview(a: &BinaryViewArray, b: &BinaryViewArray) -> BinaryViewArray {
-    let validity = combine_validities_and(a.validity(), b.validity());
+fn concat_binview(a: &PlBinaryViewArray, b: &PlBinaryViewArray) -> PlBinaryViewArray {
+    let validity = polars_array::bitmap::combine_validities_and(a.validity(), b.validity());
 
-    let mut mutable = MutableBinaryViewArray::with_capacity(a.len());
+    let mut mutable = polars_array::PlBinaryViewArrayBuilder::with_capacity(a.len());
 
     let mut scratch = vec![];
     for (a, b) in a.values_iter().zip(b.values_iter()) {
         concat_binary_arrs(a, b, &mut scratch);
-        mutable.push_value(&scratch)
+        // The mask both sides combine into is applied to the views below, so the loop keeps
+        // none of its own — see `PlBinaryViewArrayBuilder::push_value_ignore_validity`.
+        mutable.push_value_ignore_validity(&scratch)
     }
 
     mutable.freeze().with_validity(validity)
@@ -62,6 +63,23 @@ impl Add for &BinaryChunked {
     type Output = BinaryChunked;
 
     fn add(self, rhs: Self) -> Self::Output {
+        // Two sides that each read one value throughout concatenate that pair once, and the
+        // answer is that one value repeated.
+        if let Some(length) = arity::broadcast_height(self.len(), rhs.len()) {
+            if length > 1 {
+                if let (Some(lhs), Some(rhs)) = (self.scalar_value(), rhs.scalar_value()) {
+                    return match (lhs, rhs) {
+                        (Some(lhs), Some(rhs)) => {
+                            let mut buf = vec![];
+                            concat_binary_arrs(lhs, rhs, &mut buf);
+                            BinaryChunked::full(self.name().clone(), &buf, length)
+                        },
+                        _ => BinaryChunked::full_null(self.name().clone(), length),
+                    };
+                }
+            }
+        }
+
         // broadcasting path rhs
         if rhs.len() == 1 {
             let rhs = rhs.get(0);
@@ -95,7 +113,9 @@ impl Add for &BinaryChunked {
             };
         }
 
-        arity::binary(self, rhs, concat_binview)
+        // `concat_binview` reads both sides through their broadcasting iterators, so neither is
+        // written out; two chunks that each repeat one value are concatenated once.
+        arity::binary_elementwise_kernel(self, rhs, concat_binview, self.name().clone())
     }
 }
 
@@ -111,21 +131,22 @@ impl Add<&[u8]> for &BinaryChunked {
     type Output = BinaryChunked;
 
     fn add(self, rhs: &[u8]) -> Self::Output {
-        let arr = BinaryViewArray::from_slice_values([rhs]);
+        let arr = PlBinaryViewArray::from_values_iter([rhs]);
         let rhs: BinaryChunked = arr.into();
         self.add(&rhs)
     }
 }
 
-fn add_boolean(a: &BooleanArray, b: &BooleanArray) -> PrimitiveArray<IdxSize> {
-    let validity = combine_validities_and(a.validity(), b.validity());
+fn add_boolean(a: &PlBooleanArray, b: &PlBooleanArray) -> PlPrimitiveArray<IdxSize> {
+    let validity = polars_array::bitmap::combine_validities_and(a.validity(), b.validity());
 
     let values = a
         .values_iter()
         .zip(b.values_iter())
         .map(|(a, b)| a as IdxSize + b as IdxSize)
         .collect::<Vec<_>>();
-    PrimitiveArray::from_data_default(values.into(), validity)
+    let length = values.len();
+    PlPrimitiveArray::new(values.into(), length, validity)
 }
 
 impl Add for &BooleanChunked {

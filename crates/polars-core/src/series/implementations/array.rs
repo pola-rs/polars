@@ -1,10 +1,8 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use arrow::bitmap::Bitmap;
-
 use self::compare_inner::TotalOrdInner;
-use self::sort::arg_sort_row_fmt;
+use self::sort::{arg_sort_identity, arg_sort_row_fmt, repeats_one_element, sorted_flag_of};
 use super::{IsSorted, StatisticsFlags, private};
 use crate::chunked_array::AsSinglePtr;
 use crate::chunked_array::cast::CastOptions;
@@ -100,10 +98,10 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         self.0.name()
     }
 
-    fn chunks(&self) -> &Vec<ArrayRef> {
+    fn chunks(&self) -> &Vec<PlArrayRef> {
         self.0.chunks()
     }
-    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<PlArrayRef> {
         self.0.chunks_mut()
     }
     fn shrink_to_fit(&mut self) {
@@ -111,6 +109,14 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        // Elements that are all the same one are in order already, so every one of them stays
+        // where it is — rather than the whole column being row encoded and those rows sorted
+        // against each other. See `repeats_one_element`.
+        if repeats_one_element(&self.0) {
+            // `arg_sort_row_fmt` collects its indices without a name; keep that.
+            return arg_sort_identity(PlSmallStr::EMPTY, self.0.len());
+        }
+
         let slf = (*self).clone();
         let slf = slf.into_column();
         arg_sort_row_fmt(
@@ -123,6 +129,11 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        // As in `arg_sort`: one repeated element is its own answer.
+        if repeats_one_element(&self.0) {
+            return Ok(sorted_flag_of(&self.0, options).into_series());
+        }
+
         let idxs = self.arg_sort(options);
         let mut result = unsafe { self.take_unchecked(&idxs) };
         result.set_sorted_flag(if options.descending {
@@ -177,7 +188,7 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         self.0.take_unchecked(indices).into_series()
     }
 
-    fn deposit(&self, validity: &Bitmap) -> Series {
+    fn deposit(&self, validity: &PlBitmap) -> Series {
         self.0.deposit(validity).into_series()
     }
 
@@ -189,7 +200,7 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         self.0.rechunk().into_owned().into_series()
     }
 
-    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+    fn with_validity(&self, validity: Option<PlBitmap>) -> Series {
         self.0.clone().with_validity(validity).into_series()
     }
 

@@ -1,5 +1,4 @@
-use arrow::array::{Utf8Array, ValueSize};
-use polars_compute::cast::utf8_to_utf8view;
+use arrow::array::ValueSize;
 use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 use polars_utils::broadcast::broadcast_len;
@@ -39,12 +38,10 @@ pub fn str_join(ca: &StringChunked, delimiter: &str, ignore_nulls: bool) -> Stri
         }
     });
 
-    let buf = buf.into_bytes();
     assert!(capacity >= buf.len());
-    let offsets = vec![0, buf.len() as i64];
-    let arr = unsafe { Utf8Array::from_data_unchecked_default(offsets.into(), buf.into(), None) };
-    // conversion is cheap with one value.
-    let arr = utf8_to_utf8view(&arr);
+    // The one element of the result is the whole buffer, which is what a scalar array of length
+    // one holds.
+    let arr = PlUtf8ViewArray::new_scalar(&buf, 1);
     StringChunked::with_chunk(ca.name().clone(), arr)
 }
 
@@ -87,6 +84,40 @@ pub fn hor_str_concat(
             _ => ColumnIter::Iter(ca.iter()),
         })
         .collect();
+
+    // Without a null anywhere every row concatenates one value per column, so the values are
+    // read without a mask consulted per element — and the answer carries no mask either, rather
+    // than one bit set per row for a result that has no null in it.
+    // A column of no elements is one the broadcast reads nothing out of, and it is the one shape
+    // this leaves to the walk below — where `ignore_nulls` decides what a row with nothing in it
+    // gets. Without a null there is nothing for it to decide.
+    if cas.iter().all(|ca| ca.null_count() == 0 && !ca.is_empty()) {
+        let mut values: Vec<_> = cas
+            .iter()
+            .map(|ca| match ca.len() {
+                1 => ColumnIter::Broadcast(ca.get(0).unwrap()),
+                _ => ColumnIter::Iter(ca.iter().map(|value| value.unwrap())),
+            })
+            .collect();
+
+        let mut buf = String::with_capacity(1024);
+        for _row in 0..len {
+            for (i, col) in values.iter_mut().enumerate() {
+                if i > 0 {
+                    buf.push_str(delimiter);
+                }
+                buf.push_str(match col {
+                    ColumnIter::Iter(i) => i.next().unwrap(),
+                    ColumnIter::Broadcast(value) => value,
+                });
+            }
+
+            builder.append_value_ignore_validity(&buf);
+            buf.clear();
+        }
+
+        return Ok(builder.finish());
+    }
 
     // Build concatenated string.
     let mut buf = String::with_capacity(1024);

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import calendar
+import random
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
@@ -1608,3 +1610,166 @@ def test_offset_by_boundary_value_succeeds_series_29017() -> None:
     assert result.dt.year().item() == 262142
     assert result.dt.month().item() == 1
     assert result.dt.day().item() == 1
+
+
+@pytest.mark.parametrize(
+    "time_zone",
+    [
+        "UTC",
+        "Asia/Kathmandu",
+        "America/New_York",
+        "Europe/Amsterdam",
+        "Australia/Sydney",
+    ],
+)
+@pytest.mark.parametrize("time_unit", ["us", "ns", "ms"])
+@pytest.mark.parametrize(
+    "attribute",
+    [
+        "year",
+        "month",
+        "day",
+        "hour",
+        "minute",
+        "second",
+        "nanosecond",
+        "weekday",
+        "week",
+        "ordinal_day",
+        "iso_year",
+        "is_leap_year",
+        "days_in_month",
+    ],
+)
+def test_dt_extraction_in_time_zone(
+    attribute: str, time_zone: str, time_unit: TimeUnit
+) -> None:
+    # A field of a zoned column is read off the instant with the zone's offset applied,
+    # rather than off a column of local wall times written out first: the two have to
+    # answer alike, across the DST boundaries where the offset moves.
+    naive = pl.datetime_range(
+        datetime(2024, 3, 9),
+        datetime(2024, 11, 4),
+        interval="7h13m",
+        time_unit=time_unit,
+        eager=True,
+    ).alias("a")
+    zoned = naive.dt.replace_time_zone("UTC").dt.convert_time_zone(time_zone)
+
+    assert_series_equal(
+        getattr(zoned.dt, attribute)(),
+        getattr(zoned.dt.replace_time_zone(None).dt, attribute)(),
+    )
+
+
+DATE_FIELDS: list[tuple[str, Callable[[date], object]]] = [
+    ("year", lambda d: d.year),
+    ("month", lambda d: d.month),
+    ("day", lambda d: d.day),
+    ("ordinal_day", lambda d: d.timetuple().tm_yday),
+    ("weekday", lambda d: d.isoweekday()),
+    ("week", lambda d: d.isocalendar()[1]),
+    (
+        "iso_year",
+        lambda d: d.isocalendar()[0],
+    ),
+    ("quarter", lambda d: (d.month - 1) // 3 + 1),
+    ("is_leap_year", lambda d: calendar.isleap(d.year)),
+    ("days_in_month", lambda d: calendar.monthrange(d.year, d.month)[1]),
+]
+
+
+@pytest.mark.parametrize(("field", "expected"), DATE_FIELDS)
+def test_date_extraction_matches_the_calendar(
+    field: str, expected: Callable[[date], object]
+) -> None:
+    # The day the count names is worked out without building a time of day for
+    # it, so the fields are checked against the calendar itself over the whole
+    # range `date` can hold, its ends included.
+    epoch = date(1970, 1, 1)
+    low = (date(1, 1, 1) - epoch).days
+    high = (date(9999, 12, 31) - epoch).days
+    rng = random.Random(0)
+    days = sorted(
+        {low, low + 1, -1, 0, 1, high - 1, high}
+        | {rng.randint(low, high) for _ in range(500)}
+    )
+    dates = [epoch + timedelta(days=d) for d in days]
+
+    s = pl.Series("a", days, dtype=pl.Int32).cast(pl.Date)
+    assert s.to_list() == dates
+    assert getattr(s.dt, field)().to_list() == [expected(d) for d in dates]
+
+
+@pytest.mark.parametrize(("field", "expected"), DATE_FIELDS)
+@pytest.mark.parametrize("time_unit", ["us", "ns", "ms"])
+def test_datetime_date_fields_match_the_calendar(
+    field: str, expected: Callable[[date], object], time_unit: TimeUnit
+) -> None:
+    # As above, for the date half of an instant: the day and the time of day are
+    # worked out separately, so the day has to come out right either side of the
+    # epoch.
+    per_second = {"ms": 10**3, "us": 10**6, "ns": 10**9}[time_unit]
+    rng = random.Random(1)
+    # `i64` nanoseconds only reach 1677..2262; the others outrun `datetime`.
+    span = 9 * 10**18 // per_second
+    low = max(
+        -span, int((datetime(1, 1, 1) - datetime(1970, 1, 1)).total_seconds()) + 1
+    )
+    high = min(
+        span, int((datetime(9999, 12, 31) - datetime(1970, 1, 1)).total_seconds())
+    )
+    seconds = sorted(
+        {low, low + 1, -86_401, -86_400, -1, 0, 1, 86_400, high - 1, high}
+        | {rng.randint(low, high) for _ in range(300)}
+    )
+    instants = [datetime(1970, 1, 1) + timedelta(seconds=sec) for sec in seconds]
+
+    s = pl.Series("a", [sec * per_second for sec in seconds], dtype=pl.Int64).cast(
+        pl.Datetime(time_unit)
+    )
+    assert getattr(s.dt, field)().to_list() == [expected(d) for d in instants]
+
+
+@pytest.mark.parametrize("time_unit", ["us", "ns", "ms"])
+def test_datetime_time_fields_match_the_clock(time_unit: TimeUnit) -> None:
+    per_second = {"ms": 10**3, "us": 10**6, "ns": 10**9}[time_unit]
+    rng = random.Random(2)
+    # Either side of the epoch, so the split into a day and a time of day has to
+    # floor rather than truncate for the time to stay in 00:00:00..23:59:59.
+    seconds = sorted(
+        {-86_401, -86_400, -86_399, -1, 0, 1, 86_399, 86_400}
+        | {rng.randint(-(10**8), 10**8) for _ in range(300)}
+    )
+    instants = [datetime(1970, 1, 1) + timedelta(seconds=sec) for sec in seconds]
+
+    s = pl.Series("a", [sec * per_second for sec in seconds], dtype=pl.Int64).cast(
+        pl.Datetime(time_unit)
+    )
+    assert s.dt.hour().to_list() == [d.hour for d in instants]
+    assert s.dt.minute().to_list() == [d.minute for d in instants]
+    assert s.dt.second().to_list() == [d.second for d in instants]
+
+
+def test_date_extraction_out_of_range_is_null() -> None:
+    # A day count the calendar cannot hold answers null rather than wrapping.
+    s = pl.Series("a", [-(2**31), -(2**30), 0, 2**30, 2**31 - 1], dtype=pl.Int32).cast(
+        pl.Date
+    )
+    assert s.dt.year().to_list() == [None, None, 1970, None, None]
+
+
+@pytest.mark.parametrize("time_unit", ["us", "ns", "ms"])
+def test_dt_extraction_keeps_nulls_and_out_of_range(time_unit: TimeUnit) -> None:
+    s = pl.Series(
+        "a", [datetime(2024, 2, 29, 13, 45, 7), None], dtype=pl.Datetime(time_unit)
+    )
+    assert s.dt.year().to_list() == [2024, None]
+    assert s.dt.month().to_list() == [2, None]
+    assert s.dt.day().to_list() == [29, None]
+    assert s.dt.hour().to_list() == [13, None]
+    assert s.dt.minute().to_list() == [45, None]
+    assert s.dt.second().to_list() == [7, None]
+    assert s.dt.weekday().to_list() == [4, None]
+    assert s.dt.is_leap_year().to_list() == [True, None]
+    assert s.dt.days_in_month().to_list() == [29, None]

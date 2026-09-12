@@ -1,6 +1,4 @@
 mod any_value;
-use arrow::compute::concatenate::concatenate_validities;
-use arrow::compute::utils::combine_validities_and;
 pub mod flatten;
 pub(crate) mod series;
 mod supertype;
@@ -178,8 +176,9 @@ impl<T: PolarsDataType> Container for ChunkedArray<T> {
     }
 
     fn iter_chunks(&self) -> impl Iterator<Item = Self> {
+        // The chunks carry no logical type, so it is taken from this array.
         self.downcast_iter()
-            .map(|arr| Self::with_chunk(self.name().clone(), arr.clone()))
+            .map(|arr| Self::from_chunk_iter_like(self, [arr.clone()]))
     }
 
     fn should_rechunk(&self) -> bool {
@@ -462,84 +461,6 @@ macro_rules! match_arrow_dtype_apply_macro_ca {
         }
     }};
 }
-
-#[macro_export]
-macro_rules! with_match_physical_numeric_type {(
-    $dtype:expr, | $_:tt $T:ident | $($body:tt)*
-) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    #[cfg(feature = "dtype-f16")]
-    use polars_utils::float16::pf16;
-    use $crate::datatypes::DataType::*;
-    match $dtype {
-        #[cfg(feature = "dtype-i8")]
-        Int8 => __with_ty__! { i8 },
-        #[cfg(feature = "dtype-i16")]
-        Int16 => __with_ty__! { i16 },
-        Int32 => __with_ty__! { i32 },
-        Int64 => __with_ty__! { i64 },
-        #[cfg(feature = "dtype-i128")]
-        Int128 => __with_ty__! { i128 },
-        #[cfg(feature = "dtype-u8")]
-        UInt8 => __with_ty__! { u8 },
-        #[cfg(feature = "dtype-u16")]
-        UInt16 => __with_ty__! { u16 },
-        UInt32 => __with_ty__! { u32 },
-        UInt64 => __with_ty__! { u64 },
-        #[cfg(feature = "dtype-u128")]
-        UInt128 => __with_ty__! { u128 },
-        #[cfg(feature = "dtype-f16")]
-        Float16 => __with_ty__! { pf16 },
-        Float32 => __with_ty__! { f32 },
-        Float64 => __with_ty__! { f64 },
-        dt => panic!("not implemented for dtype {:?}", dt),
-    }
-})}
-
-#[macro_export]
-macro_rules! with_match_physical_integer_type {(
-    $dtype:expr, | $_:tt $T:ident | $($body:tt)*
-) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    #[cfg(feature = "dtype-f16")]
-    use polars_utils::float16::pf16;
-    use $crate::datatypes::DataType::*;
-    match $dtype {
-        #[cfg(feature = "dtype-i8")]
-        Int8 => __with_ty__! { i8 },
-        #[cfg(feature = "dtype-i16")]
-        Int16 => __with_ty__! { i16 },
-        Int32 => __with_ty__! { i32 },
-        Int64 => __with_ty__! { i64 },
-        #[cfg(feature = "dtype-i128")]
-        Int128 => __with_ty__! { i128 },
-        #[cfg(feature = "dtype-u8")]
-        UInt8 => __with_ty__! { u8 },
-        #[cfg(feature = "dtype-u16")]
-        UInt16 => __with_ty__! { u16 },
-        UInt32 => __with_ty__! { u32 },
-        UInt64 => __with_ty__! { u64 },
-        #[cfg(feature = "dtype-u128")]
-        UInt128 => __with_ty__! { u128 },
-        dt => panic!("not implemented for dtype {:?}", dt),
-    }
-})}
-
-#[macro_export]
-macro_rules! with_match_physical_float_type {(
-    $dtype:expr, | $_:tt $T:ident | $($body:tt)*
-) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use polars_utils::float16::pf16;
-    use $crate::datatypes::DataType::*;
-    match $dtype {
-        #[cfg(feature = "dtype-f16")]
-        Float16 => __with_ty__! { pf16 },
-        Float32 => __with_ty__! { f32 },
-        Float64 => __with_ty__! { f64 },
-        dt => panic!("not implemented for dtype {:?}", dt),
-    }
-})}
 
 #[macro_export]
 macro_rules! with_match_physical_float_polars_type {(
@@ -1170,15 +1091,18 @@ where
 pub fn binary_concatenate_validities<'a, T, B>(
     left: &'a ChunkedArray<T>,
     right: &'a ChunkedArray<B>,
-) -> Option<Bitmap>
+) -> Option<PlBitmap>
 where
     B: PolarsDataType,
     T: PolarsDataType,
 {
     let (left, right) = align_chunks_binary(left, right);
-    let left_validity = concatenate_validities(left.chunks());
-    let right_validity = concatenate_validities(right.chunks());
-    combine_validities_and(left_validity.as_ref(), right_validity.as_ref())
+    let left_validity = left.rechunk_validity();
+    let right_validity = right.rechunk_validity();
+    polars_array::bitmap::combine_validities_and(
+        left_validity.as_ref().map(PlBitmap::as_ref),
+        right_validity.as_ref().map(PlBitmap::as_ref),
+    )
 }
 
 /// Convenience for `x.into_iter().map(Into::into).collect()` using an `into_vec()` function.
@@ -1259,13 +1183,13 @@ pub(crate) fn index_to_chunked_index_rev<
 
 pub fn first_null<'a, I>(iter: I) -> Option<usize>
 where
-    I: Iterator<Item = &'a dyn Array>,
+    I: Iterator<Item = &'a dyn PlArray>,
 {
     let mut offset = 0;
     for arr in iter {
         if let Some(mask) = arr.validity() {
             let len_mask = mask.len();
-            let n = mask.leading_ones();
+            let n = leading_ones(&mask);
             if n < len_mask {
                 return Some(offset + n);
             }
@@ -1279,13 +1203,13 @@ where
 
 pub fn first_non_null<'a, I>(iter: I) -> Option<usize>
 where
-    I: Iterator<Item = &'a dyn Array>,
+    I: Iterator<Item = &'a dyn PlArray>,
 {
     let mut offset = 0;
     for arr in iter {
         if let Some(mask) = arr.validity() {
             let len_mask = mask.len();
-            let n = mask.leading_zeros();
+            let n = leading_zeros(&mask);
             if n < len_mask {
                 return Some(offset + n);
             }
@@ -1299,7 +1223,7 @@ where
 
 pub fn last_non_null<'a, I>(iter: I, len: usize) -> Option<usize>
 where
-    I: DoubleEndedIterator<Item = &'a dyn Array>,
+    I: DoubleEndedIterator<Item = &'a dyn PlArray>,
 {
     if len == 0 {
         return None;
@@ -1308,7 +1232,7 @@ where
     for arr in iter.rev() {
         if let Some(mask) = arr.validity() {
             let len_mask = mask.len();
-            let n = mask.trailing_zeros();
+            let n = trailing_zeros(&mask);
             if n < len_mask {
                 return Some(len - offset - n - 1);
             }
@@ -1320,17 +1244,42 @@ where
     None
 }
 
+/// The number of set bits `mask` starts with.
+fn leading_ones(mask: &PlBitmapRef<'_>) -> usize {
+    match mask.scalar_value() {
+        Some(true) => mask.len(),
+        Some(false) => 0,
+        // A mask over no elements has nothing to count, whatever its backing bitmap holds.
+        None => mask.flat_bitmap().map_or(0, Bitmap::leading_ones),
+    }
+}
+
+/// The number of unset bits `mask` starts with — see [`leading_ones`].
+fn leading_zeros(mask: &PlBitmapRef<'_>) -> usize {
+    match mask.scalar_value() {
+        Some(true) => 0,
+        Some(false) => mask.len(),
+        None => mask.flat_bitmap().map_or(0, Bitmap::leading_zeros),
+    }
+}
+
+/// The number of unset bits `mask` ends with — see [`leading_ones`].
+fn trailing_zeros(mask: &PlBitmapRef<'_>) -> usize {
+    match mask.scalar_value() {
+        Some(true) => 0,
+        Some(false) => mask.len(),
+        None => mask.flat_bitmap().map_or(0, Bitmap::trailing_zeros),
+    }
+}
+
 pub fn coalesce_nulls_columns(a: &Column, b: &Column) -> (Column, Column) {
     if a.null_count() > 0 || b.null_count() > 0 {
         let mut a = a.as_materialized_series().rechunk();
         let mut b = b.as_materialized_series().rechunk();
         for (arr_a, arr_b) in unsafe { a.chunks_mut().iter_mut().zip(b.chunks_mut()) } {
-            let validity = match (arr_a.validity(), arr_b.validity()) {
-                (None, Some(b)) => Some(b.clone()),
-                (Some(a), Some(b)) => Some(a & b),
-                (Some(a), None) => Some(a.clone()),
-                (None, None) => None,
-            };
+            let validity =
+                polars_array::bitmap::combine_validities_and(arr_a.validity(), arr_b.validity());
+            let validity = validity;
             *arr_a = arr_a.with_validity(validity.clone());
             *arr_b = arr_b.with_validity(validity);
         }

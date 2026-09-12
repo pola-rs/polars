@@ -1,24 +1,23 @@
 use std::convert::identity;
 
-use arrow::array::{Array, BooleanArray, PrimitiveArray};
 use arrow::bitmap::binary_fold;
-use arrow::datatypes::ArrowDataType;
-use arrow::legacy::utils::CustomIterTools;
+use arrow::types::NativeType;
+use polars_array::{PlBitmap, PlBooleanArray, PlPrimitiveArray};
 use polars_utils::float16::pf16;
 
-use crate::boolean::{all, any};
+use crate::boolean::{all, any, flat_validity};
 
 pub trait BitwiseKernel {
     type Scalar;
 
-    fn count_ones(&self) -> PrimitiveArray<u32>;
-    fn count_zeros(&self) -> PrimitiveArray<u32>;
+    fn count_ones(&self) -> PlPrimitiveArray<u32>;
+    fn count_zeros(&self) -> PlPrimitiveArray<u32>;
 
-    fn leading_ones(&self) -> PrimitiveArray<u32>;
-    fn leading_zeros(&self) -> PrimitiveArray<u32>;
+    fn leading_ones(&self) -> PlPrimitiveArray<u32>;
+    fn leading_zeros(&self) -> PlPrimitiveArray<u32>;
 
-    fn trailing_ones(&self) -> PrimitiveArray<u32>;
-    fn trailing_zeros(&self) -> PrimitiveArray<u32>;
+    fn trailing_ones(&self) -> PlPrimitiveArray<u32>;
+    fn trailing_zeros(&self) -> PlPrimitiveArray<u32>;
 
     fn reduce_and(&self) -> Option<Self::Scalar>;
     fn reduce_or(&self) -> Option<Self::Scalar>;
@@ -29,108 +28,135 @@ pub trait BitwiseKernel {
     fn bit_xor(lhs: Self::Scalar, rhs: Self::Scalar) -> Self::Scalar;
 }
 
+/// The counts of an array, taken once for a scalar values buffer and one by one for a flat one.
+fn count_values<T, I, F>(
+    scalar_value: Option<T>,
+    values: I,
+    length: usize,
+    validity: Option<PlBitmap>,
+    op: F,
+) -> PlPrimitiveArray<u32>
+where
+    I: Iterator<Item = T>,
+    F: Fn(T) -> u32,
+{
+    match scalar_value {
+        Some(value) => PlPrimitiveArray::new_scalar(op(value), length),
+        None => PlPrimitiveArray::from_vec(values.map(op).collect()),
+    }
+    .with_validity(validity)
+}
+
+/// The value every element of `arr` reads and its non-null count, if its values are one slot.
+#[inline]
+fn repeated_value<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Option<(T, usize)> {
+    let count = arr.len() - arr.null_count();
+    arr.scalar_value_ignore_validity()
+        .filter(|_| count > 0)
+        .map(|v| (v, count))
+}
+
+/// As [`repeated_value`], for a boolean array.
+#[inline]
+fn repeated_bit(arr: &PlBooleanArray) -> Option<(bool, usize)> {
+    let count = arr.len() - arr.null_count();
+    arr.scalar_value_ignore_validity()
+        .filter(|_| count > 0)
+        .map(|v| (v, count))
+}
+
+/// Counts the bits of every value of a primitive array with `$count`, keeping a scalar chunk so.
+macro_rules! count_bits {
+    ($arr:expr, $count:ident, $to_bits:expr) => {{
+        let arr = $arr;
+        count_values(
+            arr.scalar_value_ignore_validity(),
+            arr.values_iter(),
+            arr.len(),
+            arr.validity().map(PlBitmap::from),
+            |v| $to_bits(v).$count(),
+        )
+    }};
+}
+
+/// Folds the non-null values of a primitive array over their bits.
+macro_rules! reduce_bits {
+    ($arr:expr, $to_bits:expr, $from_bits:expr, $op:expr) => {{
+        let arr = $arr;
+        if arr.has_nulls() {
+            arr.iter()
+                .flatten()
+                .map($to_bits)
+                .reduce($op)
+                .map($from_bits)
+        } else {
+            arr.values_iter().map($to_bits).reduce($op).map($from_bits)
+        }
+    }};
+}
+
 macro_rules! impl_bitwise_kernel {
     ($(($T:ty, $to_bits:expr, $from_bits:expr)),+ $(,)?) => {
         $(
-        impl BitwiseKernel for PrimitiveArray<$T> {
+        impl BitwiseKernel for PlPrimitiveArray<$T> {
             type Scalar = $T;
 
             #[inline(never)]
-            fn count_ones(&self) -> PrimitiveArray<u32> {
-                PrimitiveArray::new(
-                    ArrowDataType::UInt32,
-                    self.values_iter()
-                        .map(|&v| $to_bits(v).count_ones())
-                        .collect_trusted::<Vec<_>>()
-                        .into(),
-                    self.validity().cloned(),
-                )
+            fn count_ones(&self) -> PlPrimitiveArray<u32> {
+                count_bits!(self, count_ones, $to_bits)
             }
 
             #[inline(never)]
-            fn count_zeros(&self) -> PrimitiveArray<u32> {
-                PrimitiveArray::new(
-                    ArrowDataType::UInt32,
-                    self.values_iter()
-                        .map(|&v| $to_bits(v).count_zeros())
-                        .collect_trusted::<Vec<_>>()
-                        .into(),
-                    self.validity().cloned(),
-                )
+            fn count_zeros(&self) -> PlPrimitiveArray<u32> {
+                count_bits!(self, count_zeros, $to_bits)
             }
 
             #[inline(never)]
-            fn leading_ones(&self) -> PrimitiveArray<u32> {
-                PrimitiveArray::new(
-                    ArrowDataType::UInt32,
-                    self.values_iter()
-                        .map(|&v| $to_bits(v).leading_ones())
-                        .collect_trusted::<Vec<_>>()
-                        .into(),
-                    self.validity().cloned(),
-                )
+            fn leading_ones(&self) -> PlPrimitiveArray<u32> {
+                count_bits!(self, leading_ones, $to_bits)
             }
 
             #[inline(never)]
-            fn leading_zeros(&self) -> PrimitiveArray<u32> {
-                PrimitiveArray::new(
-                    ArrowDataType::UInt32,
-                    self.values_iter()
-                        .map(|&v| $to_bits(v).leading_zeros())
-                        .collect_trusted::<Vec<_>>()
-                        .into(),
-                    self.validity().cloned(),
-                )
+            fn leading_zeros(&self) -> PlPrimitiveArray<u32> {
+                count_bits!(self, leading_zeros, $to_bits)
             }
 
             #[inline(never)]
-            fn trailing_ones(&self) -> PrimitiveArray<u32> {
-                PrimitiveArray::new(
-                    ArrowDataType::UInt32,
-                    self.values_iter()
-                        .map(|&v| $to_bits(v).trailing_ones())
-                        .collect_trusted::<Vec<_>>()
-                        .into(),
-                    self.validity().cloned(),
-                )
+            fn trailing_ones(&self) -> PlPrimitiveArray<u32> {
+                count_bits!(self, trailing_ones, $to_bits)
             }
 
             #[inline(never)]
-            fn trailing_zeros(&self) -> PrimitiveArray<u32> {
-                PrimitiveArray::new(
-                    ArrowDataType::UInt32,
-                    self.values().iter()
-                        .map(|&v| $to_bits(v).trailing_zeros())
-                        .collect_trusted::<Vec<_>>()
-                        .into(),
-                    self.validity().cloned(),
-                )
+            fn trailing_zeros(&self) -> PlPrimitiveArray<u32> {
+                count_bits!(self, trailing_zeros, $to_bits)
             }
 
+            // `and` and `or` are idempotent, so an array that repeats one value reduces to that
+            // value without a single element being walked.
             #[inline(never)]
             fn reduce_and(&self) -> Option<Self::Scalar> {
-                if !self.has_nulls() {
-                    self.values_iter().copied().map($to_bits).reduce(|a, b| a & b).map($from_bits)
-                } else {
-                    self.non_null_values_iter().map($to_bits).reduce(|a, b| a & b).map($from_bits)
+                match repeated_value(self) {
+                    Some((value, _)) => Some(value),
+                    None => reduce_bits!(self, $to_bits, $from_bits, |a, b| a & b),
                 }
             }
 
             #[inline(never)]
             fn reduce_or(&self) -> Option<Self::Scalar> {
-                if !self.has_nulls() {
-                    self.values_iter().copied().map($to_bits).reduce(|a, b| a | b).map($from_bits)
-                } else {
-                    self.non_null_values_iter().map($to_bits).reduce(|a, b| a | b).map($from_bits)
+                match repeated_value(self) {
+                    Some((value, _)) => Some(value),
+                    None => reduce_bits!(self, $to_bits, $from_bits, |a, b| a | b),
                 }
             }
 
+            // `xor` cancels in pairs, so an even number of copies of one value leaves nothing of
+            // it and an odd number leaves a single copy.
             #[inline(never)]
             fn reduce_xor(&self) -> Option<Self::Scalar> {
-                if !self.has_nulls() {
-                    self.values_iter().copied().map($to_bits).reduce(|a, b| a ^ b).map($from_bits)
-                } else {
-                    self.non_null_values_iter().map($to_bits).reduce(|a, b| a ^ b).map($from_bits)
+                match repeated_value(self) {
+                    Some((value, count)) if count % 2 == 1 => Some(value),
+                    Some((value, _)) => Some($from_bits($to_bits(value) ^ $to_bits(value))),
+                    None => reduce_bits!(self, $to_bits, $from_bits, |a, b| a ^ b),
                 }
             }
 
@@ -172,50 +198,48 @@ impl_bitwise_kernel! {
     (i128, identity, identity),
 }
 
-impl BitwiseKernel for BooleanArray {
+impl BitwiseKernel for PlBooleanArray {
     type Scalar = bool;
 
     #[inline(never)]
-    fn count_ones(&self) -> PrimitiveArray<u32> {
-        PrimitiveArray::new(
-            ArrowDataType::UInt32,
-            self.values_iter()
-                .map(u32::from)
-                .collect_trusted::<Vec<_>>()
-                .into(),
-            self.validity().cloned(),
+    fn count_ones(&self) -> PlPrimitiveArray<u32> {
+        count_values(
+            self.scalar_value_ignore_validity(),
+            self.values_iter(),
+            self.len(),
+            self.validity().map(PlBitmap::from),
+            u32::from,
         )
     }
 
     #[inline(never)]
-    fn count_zeros(&self) -> PrimitiveArray<u32> {
-        PrimitiveArray::new(
-            ArrowDataType::UInt32,
-            self.values_iter()
-                .map(|v| u32::from(!v))
-                .collect_trusted::<Vec<_>>()
-                .into(),
-            self.validity().cloned(),
+    fn count_zeros(&self) -> PlPrimitiveArray<u32> {
+        count_values(
+            self.scalar_value_ignore_validity(),
+            self.values_iter(),
+            self.len(),
+            self.validity().map(PlBitmap::from),
+            |v| u32::from(!v),
         )
     }
 
     #[inline(always)]
-    fn leading_ones(&self) -> PrimitiveArray<u32> {
+    fn leading_ones(&self) -> PlPrimitiveArray<u32> {
         self.count_ones()
     }
 
     #[inline(always)]
-    fn leading_zeros(&self) -> PrimitiveArray<u32> {
+    fn leading_zeros(&self) -> PlPrimitiveArray<u32> {
         self.count_zeros()
     }
 
     #[inline(always)]
-    fn trailing_ones(&self) -> PrimitiveArray<u32> {
+    fn trailing_ones(&self) -> PlPrimitiveArray<u32> {
         self.count_ones()
     }
 
     #[inline(always)]
-    fn trailing_zeros(&self) -> PrimitiveArray<u32> {
+    fn trailing_zeros(&self) -> PlPrimitiveArray<u32> {
         self.count_zeros()
     }
 
@@ -230,19 +254,28 @@ impl BitwiseKernel for BooleanArray {
     }
 
     fn reduce_xor(&self) -> Option<Self::Scalar> {
+        // As for the primitive arrays: an even number of copies of one bit cancels to `false`,
+        // and an odd number leaves that bit.
+        if let Some((value, count)) = repeated_bit(self) {
+            return Some(value && count % 2 == 1);
+        }
         if self.len() == self.null_count() {
-            None
-        } else if !self.has_nulls() {
-            Some(self.values().set_bits() % 2 == 1)
-        } else {
-            let nonnull_parity = binary_fold(
-                self.values(),
-                self.validity().unwrap(),
-                |lhs, rhs| lhs & rhs,
-                0,
-                |a, b| a ^ b,
-            );
-            Some(nonnull_parity.count_ones() % 2 == 1)
+            return None;
+        }
+
+        // A scalar bitmap is what the two checks above have already answered for: either it
+        // cancels to a parity, or every element under it is null.
+        let values = self.flat_values()?;
+
+        match flat_validity(self) {
+            Some(validity) => {
+                let nonnull_parity =
+                    binary_fold(values, validity, |lhs, rhs| lhs & rhs, 0, |a, b| a ^ b);
+                Some(nonnull_parity.count_ones() % 2 == 1)
+            },
+            // Either there is no mask, or it marks every element valid: a scalar mask that marks
+            // them all null is what the check above has caught.
+            None => Some(values.set_bits() % 2 == 1),
         }
     }
 

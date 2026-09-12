@@ -59,11 +59,15 @@ impl ComputeNode for EwmNode {
                 unsafe {
                     let c = df.columns_mut_retain_schema().get_mut(0).unwrap();
 
+                    // The kernel is a recurrence over every element it sees, so the morsel is
+                    // read as the one chunk to fold the state over in order. A scalar chunk stays
+                    // in `O(1)` memory throughout: the kernel iterates it where it lies.
+                    let rechunked = c.as_materialized_series().rechunk();
+                    let updated = self.state.ewm_state_update(&*rechunked.chunks()[0]);
+
                     *c = Series::from_chunks_and_dtype_unchecked(
                         c.name().clone(),
-                        vec![self.state.ewm_state_update(
-                            c.as_materialized_series().rechunk().chunks()[0].as_ref(),
-                        )],
+                        vec![updated],
                         c.dtype(),
                     )
                     .into_column()

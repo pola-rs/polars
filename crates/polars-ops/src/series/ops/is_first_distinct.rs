@@ -1,35 +1,46 @@
 use std::hash::Hash;
 
-use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::legacy::bit_util::*;
-use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::series::BitRepr;
 use polars_core::with_match_physical_float_polars_type;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
+
+use super::distinct::{only, repeated_element_len, repeated_element_len_series};
+
 fn is_first_distinct_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
 where
     T: PolarsNumericType,
     T::Native: TotalHash + TotalEq + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
+    // The first element of a chunk that repeats a single one is the only one distinct in it.
+    if let Some(length) = repeated_element_len(ca) {
+        return only(ca.name().clone(), length, 0);
+    }
+
     let mut unique = PlHashSet::new();
-    let chunks = ca.downcast_iter().map(|arr| -> BooleanArray {
+    let chunks = ca.downcast_iter().map(|arr| -> PlBooleanArray {
         arr.into_iter()
             .map(|opt_v| unique.insert(opt_v.to_total_ord()))
-            .collect_trusted()
+            .collect_arr_trusted()
     });
 
     BooleanChunked::from_chunk_iter(ca.name().clone(), chunks)
 }
 
 fn is_first_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
+    // The first element of a chunk that repeats a single one is the only one distinct in it.
+    if let Some(length) = repeated_element_len(ca) {
+        return only(ca.name().clone(), length, 0);
+    }
+
     let mut unique = PlHashSet::new();
-    let chunks = ca.downcast_iter().map(|arr| -> BooleanArray {
+    let chunks = ca.downcast_iter().map(|arr| -> PlBooleanArray {
         arr.into_iter()
             .map(|opt_v| unique.insert(opt_v))
-            .collect_trusted()
+            .collect_arr_trusted()
     });
 
     BooleanChunked::from_chunk_iter(ca.name().clone(), chunks)
@@ -44,36 +55,63 @@ fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
     } else {
         let ca = ca.rechunk();
         let arr = ca.downcast_as_array();
-        if ca.null_count() == 0 {
-            let (true_index, false_index) =
-                find_first_true_false_no_null(arr.values().chunks::<u64>());
-            if let Some(idx) = true_index {
-                out.set(idx, true)
-            }
-            if let Some(idx) = false_index {
-                out.set(idx, true)
-            }
-        } else {
-            let (true_index, false_index, null_index) = find_first_true_false_null(
-                arr.values().chunks::<u64>(),
-                arr.validity().unwrap().chunks::<u64>(),
-            );
-            if let Some(idx) = true_index {
-                out.set(idx, true)
-            }
-            if let Some(idx) = false_index {
-                out.set(idx, true)
-            }
-            if let Some(idx) = null_index {
-                out.set(idx, true)
-            }
+
+        // A mask that leaves some but not every element null holds one bit per element: the case
+        // where it leaves every one of them null is settled above, and where it leaves none the
+        // mask says nothing the search has to read.
+        let validity = (arr.null_count() > 0).then(|| {
+            arr.validity()
+                .expect("a null element carries a mask")
+                .flat_bitmap()
+                .expect("a mask that leaves some but not every element null holds one bit each")
+        });
+
+        let firsts = match (arr.flat_values(), validity) {
+            // The values hold one bit per element, so the search reads them as words.
+            (Some(values), None) => {
+                let (t, f) = find_first_true_false_no_null(values.chunks::<u64>());
+                [t, f, None]
+            },
+            (Some(values), Some(validity)) => {
+                let (t, f, n) =
+                    find_first_true_false_null(values.chunks::<u64>(), validity.chunks::<u64>());
+                [t, f, n]
+            },
+            // The values repeat one bit, so every element carries that one value where it is
+            // valid: the first valid element is the only one that is distinct in it, and the
+            // first null the only one that is distinct as a null. The buffer is never written out.
+            (None, validity) => {
+                let value = arr
+                    .scalar_value_ignore_validity()
+                    .expect("the values are not flat");
+                // `null_count` is neither zero nor `len` here, so both are in bounds when there
+                // is a mask at all.
+                let first_valid = validity.map_or(0, |validity| validity.leading_zeros());
+                let carrier = Some(first_valid);
+
+                [
+                    carrier.filter(|_| value),
+                    carrier.filter(|_| !value),
+                    validity.map(|validity| validity.leading_ones()),
+                ]
+            },
+        };
+
+        for idx in firsts.into_iter().flatten() {
+            out.set(idx, true)
         }
     }
-    let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    BooleanChunked::with_chunk(ca.name().clone(), arr)
+    BooleanChunked::from_bitmap(ca.name().clone(), out.into())
 }
 
 fn is_first_distinct_by_groups(s: &Series) -> PolarsResult<BooleanChunked> {
+    // The first element of a chunk that repeats a single one is the only one distinct in it, and
+    // the representation says so: grouping the rows to find that out reads — and hashes — every
+    // one of them, which for a nested type is a row encoding of the whole column first.
+    if let Some(length) = repeated_element_len_series(s) {
+        return Ok(only(s.name().clone(), length, 0));
+    }
+
     let groups = s.group_tuples(true, false)?;
     let first = groups.take_group_firsts();
     let mut out = MutableBitmap::with_capacity(s.len());
@@ -84,8 +122,7 @@ fn is_first_distinct_by_groups(s: &Series) -> PolarsResult<BooleanChunked> {
         unsafe { out.set_unchecked(idx as usize, true) }
     }
 
-    let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    Ok(BooleanChunked::with_chunk(s.name().clone(), arr))
+    Ok(BooleanChunked::from_bitmap(s.name().clone(), out.into()))
 }
 
 pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {

@@ -21,7 +21,7 @@ pub struct NullChunked {
     length: usize,
     // we still need chunks as many series consumers expect
     // chunks to be there
-    chunks: Vec<ArrayRef>,
+    chunks: Vec<PlArrayRef>,
 }
 
 impl NullChunked {
@@ -33,10 +33,7 @@ impl NullChunked {
         Self {
             name,
             length: len,
-            chunks: vec![Box::new(arrow::array::NullArray::new(
-                ArrowDataType::Null,
-                len,
-            ))],
+            chunks: vec![Box::new(PlNullArray::new(len))],
         }
     }
 
@@ -59,7 +56,7 @@ impl PrivateSeriesNumeric for NullChunked {
 
 impl PrivateSeries for NullChunked {
     fn compute_len(&mut self) {
-        fn inner(chunks: &[ArrayRef]) -> usize {
+        fn inner(chunks: &[PlArrayRef]) -> usize {
             match chunks.len() {
                 // fast path
                 1 => chunks[0].len(),
@@ -186,10 +183,10 @@ impl SeriesTrait for NullChunked {
         self.name = name
     }
 
-    fn chunks(&self) -> &Vec<ArrayRef> {
+    fn chunks(&self) -> &Vec<PlArrayRef> {
         &self.chunks
     }
-    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<PlArrayRef> {
         &mut self.chunks
     }
 
@@ -213,7 +210,7 @@ impl SeriesTrait for NullChunked {
         NullChunked::new(self.name.clone(), indices.len()).into_series()
     }
 
-    fn deposit(&self, validity: &Bitmap) -> Series {
+    fn deposit(&self, validity: &PlBitmap) -> Series {
         assert_eq!(validity.set_bits(), 0);
         self.clone().into_series()
     }
@@ -230,7 +227,7 @@ impl SeriesTrait for NullChunked {
         NullChunked::new(self.name.clone(), self.len()).into_series()
     }
 
-    fn with_validity(&self, _validity: Option<Bitmap>) -> Series {
+    fn with_validity(&self, _validity: Option<PlBitmap>) -> Series {
         self.clone().into_series()
     }
 
