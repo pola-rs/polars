@@ -646,10 +646,10 @@ pub fn composite_key_domain(parts: impl Iterator<Item = f64>, max_rows: f64) -> 
 ///
 /// With distinct counts for both sides the domain is the larger of the two: every
 /// value one side holds is in the domain, whether or not the other side has it.
-/// Without them the side repeating the key least describes it alone, bounded by its
-/// integer range where it has one and by its row count otherwise. Sides that repeat
-/// it equally - two without a range among them - fall back to the smaller relation,
-/// whose key is likelier to be unique.
+/// Without them a value range stands in for a distinct count. When both sides have
+/// one, the side repeating the key least describes the domain alone. Otherwise the
+/// ranges cannot be compared, and the smaller relation describes it - by its own
+/// range where it has one, and by its row count otherwise.
 pub fn key_domain(
     left: &NodeStats,
     left_key: Option<&PlSmallStr>,
@@ -660,26 +660,28 @@ pub fn key_domain(
     let right_ndv = right_key.and_then(|name| right.distinct_count_key(name));
     let domain = match (left_ndv, right_ndv) {
         (Some(l), Some(r)) => l.max(r),
-        // The side that repeats the key least describes the domain: it is the one
-        // closest to holding each value once.
         _ => {
-            let bound = |side: &NodeStats, side_key: Option<&PlSmallStr>| {
-                // `int_domain` is already bounded by the side's own rows.
-                side_key
-                    .and_then(|name| side.int_domain(name))
-                    .unwrap_or(side.unfiltered)
-            };
-            let (left_bound, right_bound) = (bound(left, left_key), bound(right, right_key));
-            // Distinct values per row, cross multiplied rather than divided.
-            let left_ratio = left_bound * right.unfiltered;
-            let right_ratio = right_bound * left.unfiltered;
-            let estimate = if left_ratio > right_ratio
-                // Nothing tells the two apart, so prefer the smaller relation.
-                || (left_ratio == right_ratio && left.unfiltered <= right.unfiltered)
-            {
-                left_bound
-            } else {
-                right_bound
+            // `int_domain` is already bounded by the side's own rows.
+            let left_range = left_key.and_then(|name| left.int_domain(name));
+            let right_range = right_key.and_then(|name| right.int_domain(name));
+            let estimate = match (left_range, right_range) {
+                // Distinct values per row, cross multiplied rather than divided. The
+                // side closest to holding each value once describes the domain; on a
+                // tie prefer the smaller relation, whose key is likelier to be unique.
+                (Some(l), Some(r)) => {
+                    let (l_per_row, r_per_row) = (l * right.unfiltered, r * left.unfiltered);
+                    if l_per_row > r_per_row
+                        || (l_per_row == r_per_row && left.unfiltered <= right.unfiltered)
+                    {
+                        l
+                    } else {
+                        r
+                    }
+                },
+                // A missing range is not evidence that the key is unique, so it must
+                // not win the comparison above.
+                _ if left.unfiltered <= right.unfiltered => left_range.unwrap_or(left.unfiltered),
+                _ => right_range.unwrap_or(right.unfiltered),
             };
             // A known distinct count on either side is a lower bound, since every
             // value it holds is in the domain.
@@ -807,6 +809,22 @@ mod tests {
 
         let domain = key_domain(&fact, Some(&key("k")), &dim, Some(&key("k")));
         assert_eq!(domain, 1_000_001.0);
+        assert_eq!(
+            domain,
+            key_domain(&dim, Some(&key("k")), &fact, Some(&key("k")))
+        );
+    }
+
+    /// A key with no range is unknown, not unique: the side that has one must still
+    /// describe the domain.
+    #[test]
+    fn a_missing_range_does_not_outrank_a_known_one() {
+        // Joining on a computed key loses the fact's range.
+        let fact = leaf(100_000.0, 100_000.0);
+        let dim = leaf_with_range(1_000.0, (1, 100));
+
+        let domain = key_domain(&fact, Some(&key("k")), &dim, Some(&key("k")));
+        assert_eq!(domain, 100.0);
         assert_eq!(
             domain,
             key_domain(&dim, Some(&key("k")), &fact, Some(&key("k")))
