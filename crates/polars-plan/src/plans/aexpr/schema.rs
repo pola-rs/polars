@@ -481,6 +481,53 @@ fn func_args_to_fields(input: &[ExprIR], ctx: &ToFieldContext) -> PolarsResult<V
         .collect()
 }
 
+#[cfg(feature = "dtype-struct")]
+pub(crate) fn get_struct_numeric_dtype(
+    fields: &[Field],
+    numeric: &DataType,
+    op: Operator,
+) -> PolarsResult<DataType> {
+    fields
+        .iter()
+        .map(|field| {
+            let dtype = match field.dtype() {
+                DataType::Struct(fields) => get_struct_numeric_dtype(fields, numeric, op)?,
+                DataType::Duration(_) if op == Operator::Multiply => field.dtype().clone(),
+                dtype
+                    if dtype.is_numeric()
+                        || dtype.is_null()
+                        || dtype.is_bool()
+                        || dtype.is_list()
+                        || dtype.is_array() =>
+                {
+                    let numeric = if dtype.is_bool() {
+                        numeric.clone().materialize_unknown(false)?
+                    } else {
+                        numeric.clone()
+                    };
+                    let dtype = dtype.cast_leaf(
+                        try_get_supertype(dtype.leaf_dtype(), numeric.leaf_dtype())?
+                            .materialize_unknown(false)?,
+                    );
+                    if op == Operator::TrueDivide {
+                        get_truediv_dtype(&dtype, &dtype)?
+                    } else {
+                        dtype
+                    }
+                },
+                dtype => polars_bail!(
+                    InvalidOperation:
+                    "cannot {op} a struct with non-numeric field: (field: {}, dtype: {})",
+                    field.name,
+                    dtype,
+                ),
+            };
+            Ok(Field::new(field.name.clone(), dtype))
+        })
+        .collect::<PolarsResult<Vec<_>>>()
+        .map(DataType::Struct)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn get_arithmetic_field(
     left: Node,
@@ -489,6 +536,7 @@ fn get_arithmetic_field(
     ctx: &ToFieldContext,
 ) -> PolarsResult<Field> {
     use DataType::*;
+
     let left_ae = ctx.arena.get(left);
     let right_ae = ctx.arena.get(right);
 
@@ -502,6 +550,15 @@ fn get_arithmetic_field(
     // further right_type is only determined when needed.
     let mut left_field = left_ae.to_field_impl(ctx)?;
     let right_field = right_ae.to_field_impl(ctx)?;
+    #[cfg(feature = "dtype-struct")]
+    if let (DataType::Struct(fields), numeric) | (numeric, DataType::Struct(fields)) =
+        (&left_field.dtype, &right_field.dtype)
+        && numeric.is_primitive_numeric()
+        && op.is_arithmetic()
+    {
+        left_field.set_dtype(get_struct_numeric_dtype(fields, numeric, op)?);
+        return Ok(left_field);
+    }
 
     let super_type = match op {
         Operator::Minus => {
@@ -791,20 +848,8 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             Struct(fields)
         },
         #[cfg(feature = "dtype-struct")]
-        (Struct(a), n) if n.is_numeric() => {
-            let mut fields = Vec::with_capacity(a.len());
-            for left in a.iter() {
-                let name = left.name.clone();
-                let left = left.dtype();
-                if !(left.is_numeric()) {
-                    polars_bail!(InvalidOperation:
-                        "cannot {} a struct with non-numeric field: (left: {})",
-                        "div", left)
-                };
-                let field = Field::new(name, get_truediv_dtype(left, n)?);
-                fields.push(field);
-            }
-            Struct(fields)
+        (Struct(fields), numeric) | (numeric, Struct(fields)) if numeric.is_primitive_numeric() => {
+            get_struct_numeric_dtype(fields, numeric, Operator::TrueDivide)?
         },
         (l @ List(a), r @ List(b))
             if ![a, b]
