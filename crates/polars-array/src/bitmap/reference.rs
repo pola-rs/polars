@@ -257,12 +257,28 @@ impl PartialEq for PlBitmapRef<'_> {
             return false;
         }
 
-        // Never walk two scalar masks bit by bit: their length is unbounded by their memory use.
-        if let (Some(lhs), Some(rhs)) = (self.scalar_value(), other.scalar_value()) {
-            return lhs == rhs;
+        match (self.scalar_value(), other.scalar_value()) {
+            // Never walk two scalar masks bit by bit: their length is unbounded by their memory
+            // use.
+            (Some(lhs), Some(rhs)) => lhs == rhs,
+            // A single bit says the same of every element, so the other mask equals it exactly
+            // when every one of its bits says that too: a count rather than a walk.
+            (Some(value), None) => other.holds_only(value),
+            (None, Some(value)) => self.holds_only(value),
+            // Two masks that hold one bit per element compare a word at a time.
+            (None, None) => self.bitmap == other.bitmap,
         }
+    }
+}
 
-        self.iter().eq(other.iter())
+impl PlBitmapRef<'_> {
+    /// Whether every element of this mask reads `value`.
+    fn holds_only(&self, value: bool) -> bool {
+        if value {
+            self.unset_bits() == 0
+        } else {
+            self.set_bits() == 0
+        }
     }
 }
 
@@ -288,4 +304,42 @@ pub(super) fn fmt_bits(
     }
 
     f.debug_list().entries(mask.iter()).finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use arrow::bitmap::Bitmap;
+
+    use crate::bitmap::PlBitmap;
+
+    /// Two masks compare by the bits every element reads, whatever representation they hold them
+    /// in — the flat paths take a word at a time and the scalar ones a count, so neither may
+    /// answer differently from a walk.
+    #[test]
+    fn eq_across_representations() {
+        const LENGTH: usize = 130;
+
+        let scalar = |value| PlBitmap::new_scalar(value, LENGTH);
+        let flat = |value| PlBitmap::from_bitmap(Bitmap::new_with_value(value, LENGTH));
+        let mut bits = vec![true; LENGTH];
+        bits[LENGTH - 1] = false;
+        let mixed = PlBitmap::from_bitmap(Bitmap::from_iter(bits));
+
+        for value in [false, true] {
+            assert_eq!(scalar(value), scalar(value));
+            assert_eq!(scalar(value), flat(value));
+            assert_eq!(flat(value), scalar(value));
+            assert_eq!(flat(value), flat(value));
+
+            assert_ne!(scalar(value), scalar(!value));
+            assert_ne!(scalar(value), flat(!value));
+            assert_ne!(flat(!value), scalar(value));
+            assert_ne!(mixed, scalar(value));
+            assert_ne!(scalar(value), mixed);
+        }
+
+        assert_eq!(mixed, mixed.clone());
+        assert_ne!(mixed, flat(true));
+        assert_ne!(PlBitmap::new_scalar(true, 1), PlBitmap::new_scalar(true, 2));
+    }
 }
