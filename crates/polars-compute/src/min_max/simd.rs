@@ -240,19 +240,27 @@ macro_rules! impl_min_max_kernel_int {
 
         impl_arrow_min_max_kernel!($T);
 
+        /// A nested column reduces a row at a time, handing each row's values over as a slice,
+        /// so these are called once per row of it — and they are marked to be inlined into that
+        /// walk, which they are not otherwise: this is a crate of its own, so a caller sees no
+        /// more of them than their signature, leaving both the call and the `memcpy` the
+        /// remainder of the fold ends in per row.
         impl MinMaxKernel for [$T] {
             type Scalar<'a> = $T;
 
+            #[inline]
             fn min_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
                 fold_agg_kernel::<$N, $T, _>(self, None, <$T>::MAX, |a, b| a.simd_min(b))
                     .map(|s| s.reduce_min())
             }
 
+            #[inline]
             fn max_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
                 fold_agg_kernel::<$N, $T, _>(self, None, <$T>::MIN, |a, b| a.simd_max(b))
                     .map(|s| s.reduce_max())
             }
 
+            #[inline]
             fn min_max_ignore_nan_kernel(&self) -> Option<(Self::Scalar<'_>, Self::Scalar<'_>)> {
                 fold_agg_min_max_kernel::<$N, $T, _>(
                     self,
@@ -264,14 +272,17 @@ macro_rules! impl_min_max_kernel_int {
                 .map(|(min, max)| (min.reduce_min(), max.reduce_max()))
             }
 
+            #[inline]
             fn min_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
                 self.min_ignore_nan_kernel()
             }
 
+            #[inline]
             fn max_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
                 self.max_ignore_nan_kernel()
             }
 
+            #[inline]
             fn min_max_propagate_nan_kernel(&self) -> Option<(Self::Scalar<'_>, Self::Scalar<'_>)> {
                 self.min_max_ignore_nan_kernel()
             }
@@ -322,19 +333,27 @@ macro_rules! impl_min_max_kernel_float {
 
         impl_arrow_min_max_kernel!($T);
 
+        /// A nested column reduces a row at a time, handing each row's values over as a slice,
+        /// so these are called once per row of it — and they are marked to be inlined into that
+        /// walk, which they are not otherwise: this is a crate of its own, so a caller sees no
+        /// more of them than their signature, leaving both the call and the `memcpy` the
+        /// remainder of the fold ends in per row.
         impl MinMaxKernel for [$T] {
             type Scalar<'a> = $T;
 
+            #[inline]
             fn min_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
                 fold_agg_kernel::<$N, $T, _>(self, None, <$T>::NAN, |a, b| a.simd_min(b))
                     .map(|s| s.reduce_min())
             }
 
+            #[inline]
             fn max_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
                 fold_agg_kernel::<$N, $T, _>(self, None, <$T>::NAN, |a, b| a.simd_max(b))
                     .map(|s| s.reduce_max())
             }
 
+            #[inline]
             fn min_max_ignore_nan_kernel(&self) -> Option<(Self::Scalar<'_>, Self::Scalar<'_>)> {
                 fold_agg_min_max_kernel::<$N, $T, _>(
                     self,
@@ -346,6 +365,7 @@ macro_rules! impl_min_max_kernel_float {
                 .map(|(min, max)| (min.reduce_min(), max.reduce_max()))
             }
 
+            #[inline]
             fn min_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
                 fold_agg_kernel::<$N, $T, _>(self, None, <$T>::INFINITY, |a, b| {
                     (a.simd_lt(b) | a.simd_ne(a)).select(a, b)
@@ -353,6 +373,7 @@ macro_rules! impl_min_max_kernel_float {
                 .map(|s| scalar_reduce_min_propagate_nan(s.as_array()))
             }
 
+            #[inline]
             fn max_propagate_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
                 fold_agg_kernel::<$N, $T, _>(self, None, <$T>::NEG_INFINITY, |a, b| {
                     (a.simd_gt(b) | a.simd_ne(a)).select(a, b)
@@ -360,6 +381,7 @@ macro_rules! impl_min_max_kernel_float {
                 .map(|s| scalar_reduce_max_propagate_nan(s.as_array()))
             }
 
+            #[inline]
             fn min_max_propagate_nan_kernel(&self) -> Option<(Self::Scalar<'_>, Self::Scalar<'_>)> {
                 fold_agg_min_max_kernel::<$N, $T, _>(
                     self,
