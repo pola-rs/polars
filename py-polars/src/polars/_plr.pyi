@@ -904,6 +904,13 @@ class PyLazyFrame:
     @staticmethod
     def from_lazyframe_resolver(resolver: LazyFrameResolver) -> PyLazyFrame: ...
     @staticmethod
+    def new_from_external_reader_builder(
+        sources: Any,
+        reader_builder: Any,
+        schema: Any,
+        scan_options: ScanOptions,
+    ) -> PyLazyFrame: ...
+    @staticmethod
     def scan_from_python_function_arrow_schema(
         schema: Any,
         scan_fn: Any,

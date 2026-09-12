@@ -3,7 +3,7 @@ use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyAnyMethods as _, PyDict};
 use pyo3::{Bound, IntoPyObject, Py, PyAny, PyResult, Python};
 
-#[derive(IntoPyObject)]
+#[derive(IntoPyObject, Debug)]
 pub struct PyThreadPool(
     /// polars._utils.threading.PyThreadPool
     Py<PyAny>,

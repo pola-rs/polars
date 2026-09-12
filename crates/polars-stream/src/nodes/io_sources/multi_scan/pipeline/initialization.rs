@@ -8,6 +8,7 @@ use polars_core::prelude::PlHashMap;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::metrics::IOMetrics;
+use polars_mem_engine::scan_predicate::functions::InitializeScanPredicateResult;
 use polars_mem_engine::scan_predicate::initialize_scan_predicate;
 use polars_plan::dsl::PredicateFileSkip;
 use polars_utils::row_counter::RowCounter;
@@ -36,7 +37,7 @@ pub fn initialize_multi_scan_pipeline(
     config: Arc<MultiScanConfig>,
     execution_state: StreamingExecutionState,
     io_metrics: Option<Arc<IOMetrics>>,
-) -> InitializedPipelineState {
+) -> PolarsResult<InitializedPipelineState> {
     assert!(config.num_pipelines() > 0);
 
     if config.verbose {
@@ -49,7 +50,7 @@ pub fn initialize_multi_scan_pipeline(
             max_concurrent_scans: {}, \
             disable_morsel_split: {}",
             config.sources.len(),
-            config.file_reader_builder.reader_name(),
+            config.file_reader_builder.reader_name()?,
             config.reader_capabilities(),
             config.n_readers_pre_init(),
             config.max_concurrent_scans(),
@@ -73,11 +74,11 @@ pub fn initialize_multi_scan_pipeline(
         Ok(())
     }));
 
-    InitializedPipelineState {
+    Ok(InitializedPipelineState {
         task_handle,
         phase_channel_tx,
         bridge_state,
-    }
+    })
 }
 
 async fn finish_initialize_multi_scan_pipeline(
@@ -89,12 +90,26 @@ async fn finish_initialize_multi_scan_pipeline(
     let verbose = config.verbose;
 
     let (skip_files_mask, predicate) = match config.predicate_file_skip_applied {
-        None => initialize_scan_predicate(
-            config.predicate.as_ref(),
-            config.hive_parts.as_deref(),
-            config.table_statistics.as_ref(),
-            verbose,
-        )?,
+        None => {
+            let InitializeScanPredicateResult {
+                skip_files_mask,
+                can_skip_scan_predicate,
+            } = initialize_scan_predicate(
+                config.predicate.as_ref().map(|x| &x.scan_io_predicate),
+                config.hive_parts.as_deref(),
+                config.table_statistics.as_ref(),
+                verbose,
+            )?;
+
+            (
+                skip_files_mask,
+                if can_skip_scan_predicate {
+                    None
+                } else {
+                    config.predicate.as_ref()
+                },
+            )
+        },
         Some(PredicateFileSkip {
             no_residual_predicate: false,
             original_len: _,
@@ -152,7 +167,7 @@ async fn finish_initialize_multi_scan_pipeline(
     let predicate = predicate.cloned();
 
     let num_pipelines = config.num_pipelines();
-    let reader_capabilities = config.reader_capabilities();
+    let reader_capabilities = config.reader_capabilities()?;
 
     if config.sources.first().is_some_and(|x| x.run_async())
         && reader_capabilities.contains(ReaderCapabilities::NEEDS_FILE_CACHE_INIT)
@@ -201,14 +216,15 @@ async fn finish_initialize_multi_scan_pipeline(
                     || reader_capabilities.contains(ReaderCapabilities::ROW_INDEX))
                 && (config.deletion_files.is_none()
                     || reader_capabilities.contains(ReaderCapabilities::EXTERNAL_FILTER_MASK))
-                && !ASYNC
-                    .spawn(is_compressed_source(
-                        config.sources.get(0).unwrap().into_owned()?,
-                        config.cloud_options.clone(),
-                        io_metrics.clone(),
-                    ))
-                    .await
-                    .unwrap()? =>
+                && (config.file_reader_builder.is_external_python_reader()
+                    || !ASYNC
+                        .spawn(is_compressed_source(
+                            config.sources.get(0).unwrap().into_owned()?,
+                            config.cloud_options.clone(),
+                            io_metrics.clone(),
+                        ))
+                        .await
+                        .unwrap()?) =>
         {
             if verbose {
                 eprintln!("[MultiScanTaskInit]: Single file negative slice");
@@ -367,7 +383,7 @@ async fn finish_initialize_multi_scan_pipeline(
                             scan_source.clone(),
                             cloud_options.clone(),
                             scan_source_idx,
-                        );
+                        )?;
 
                         reader.initialize().await?;
                         let opt_n_rows = reader

@@ -20,6 +20,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::{
 pub mod builder {
     use std::sync::{Arc, Mutex};
 
+    use polars_error::PolarsResult;
     use polars_utils::pl_str::PlSmallStr;
 
     use super::BatchFnReader;
@@ -35,12 +36,12 @@ pub mod builder {
     }
 
     impl FileReaderBuilder for BatchFnReaderBuilder {
-        fn reader_name(&self) -> &str {
-            &self.name
+        fn reader_name(&self) -> PolarsResult<PlSmallStr> {
+            Ok(self.name.clone())
         }
 
-        fn reader_capabilities(&self) -> ReaderCapabilities {
-            ReaderCapabilities::empty()
+        fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities> {
+            Ok(ReaderCapabilities::empty())
         }
 
         fn set_execution_state(&self, execution_state: &StreamingExecutionState) {
@@ -52,7 +53,7 @@ pub mod builder {
             _source: polars_plan::prelude::ScanSource,
             _cloud_options: Option<Arc<polars_io::cloud::CloudOptions>>,
             scan_source_idx: usize,
-        ) -> Box<dyn FileReader> {
+        ) -> PolarsResult<Box<dyn FileReader>> {
             assert_eq!(scan_source_idx, 0);
 
             let mut reader = self
@@ -64,7 +65,7 @@ pub mod builder {
 
             reader.execution_state = Some(self.execution_state.lock().unwrap().clone().unwrap());
 
-            Box::new(reader) as Box<dyn FileReader>
+            Ok(Box::new(reader) as Box<dyn FileReader>)
         }
     }
 

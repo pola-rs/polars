@@ -168,7 +168,7 @@ impl DeletionFilesProvider {
                             .enumerate()
                             .map(|(deletion_file_idx, path)| {
                                 let source = ScanSource::Path(path.clone());
-                                let mut reader = reader_builder.build_file_reader(
+                                let reader = reader_builder.build_file_reader(
                                     source,
                                     cloud_options.clone(),
                                     deletion_file_idx,
@@ -187,6 +187,7 @@ impl DeletionFilesProvider {
                                 AbortOnDropHandle::new(executor::spawn(
                                     TaskPriority::Low,
                                     async move {
+                                        let mut reader = reader?;
                                         reader.initialize().await?;
                                         PolarsResult::Ok(reader)
                                     },
@@ -624,6 +625,10 @@ impl ExternalFilterMask {
             Self::Iceberg { mask } => mask.len(),
             Self::DeltaDeletionVector { mask } => mask.len(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 

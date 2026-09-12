@@ -3,6 +3,7 @@ use polars::prelude::python_dsl::PythonScanSource;
 use polars::prelude::{ColumnMapping, PredicateFileSkip};
 use polars_core::prelude::IdxSize;
 use polars_io::cloud::CloudOptions;
+use polars_io::external_reader::ExternalReaderBuilder;
 #[cfg(feature = "asof_join")]
 use polars_ops::prelude::AsofStrategy;
 use polars_ops::prelude::JoinType;
@@ -54,6 +55,12 @@ fn scan_type_to_pyobject(
         FileScanIR::Lines { name } => Ok(("lines", name.as_str()).into_py_any(py)?),
         FileScanIR::ExpandedPaths { name } => {
             Ok(("expanded-paths", name.as_str()).into_py_any(py)?)
+        },
+        FileScanIR::ExternalReaderBuilder { external } => match external {
+            ExternalReaderBuilder::Python(object) => {
+                Ok(("external-reader", object).into_py_any(py)?)
+            },
+            ExternalReaderBuilder::Rust(()) => unreachable!(),
         },
         FileScanIR::PythonDataset { .. } => {
             Err(PyNotImplementedError::new_err("python dataset scan"))
