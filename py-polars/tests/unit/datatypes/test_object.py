@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import numpy as np
@@ -10,6 +11,9 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
 
 
 def test_series_init_instantiated_object() -> None:
@@ -309,3 +313,34 @@ def test_implode_object_raises() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError, match="nested objects"):
         df.select(pl.col("obj").implode())
+
+
+def _object_key_frame(name: str) -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            "k": [1, 2],
+            "o": pl.Series("o", [object(), object()], dtype=pl.Object),
+            name: [3, 4],
+        }
+    )
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_join_on_object_key_raises(engine: EngineType) -> None:
+    lhs, rhs = _object_key_frame("a"), _object_key_frame("b")
+
+    for how in ("inner", "left", "semi", "anti"):
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError,
+            match="cannot row encode dtype 'object'",
+        ):
+            lhs.join(rhs, on=["k", "o"], how=how).collect(engine=engine)  # type: ignore[arg-type]
+
+
+def test_unique_maintain_order_on_object_key_raises() -> None:
+    lf = _object_key_frame("a")
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError, match="cannot row encode dtype 'object'"
+    ):
+        lf.unique(subset=["k", "o"], maintain_order=True).collect(engine="streaming")
