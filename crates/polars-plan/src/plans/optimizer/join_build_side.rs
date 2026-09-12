@@ -42,8 +42,11 @@ pub(super) fn set_join_build_sides(
             continue;
         }
         let (left, right) = (*input_left, *input_right);
-        let is_cross = options.args.how.is_cross();
-        let Some(side) = build_side(left, right, is_cross, ir_arena, expr_arena) else {
+        // An equi join samples its inputs as it runs and picks the smaller itself, so
+        // a preference drawn from an estimate would override a measurement. A cross
+        // join has no such path and builds its left input when nothing names a side.
+        let may_estimate = options.args.how.is_cross();
+        let Some(side) = build_side(left, right, may_estimate, ir_arena, expr_arena) else {
             continue;
         };
         let IR::Join { options, .. } = ir_arena.get_mut(node) else {
@@ -57,25 +60,25 @@ pub(super) fn set_join_build_sides(
 /// do not settle it.
 ///
 /// Both sides are measured by the same quantity: their row bounds where both have
-/// one, and the row estimates otherwise. A bound against an estimate can name the
+/// one, and their row estimates otherwise. A bound against an estimate can name the
 /// larger input, since a filter narrows the estimate and leaves the bound alone.
+/// Without `may_estimate` a missing bound settles nothing.
 fn build_side(
     left: Node,
     right: Node,
-    is_cross: bool,
+    may_estimate: bool,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
 ) -> Option<JoinBuildSide> {
-    let (left_stats, left_width) = side(left, ir_arena, expr_arena)?;
-    let (right_stats, right_width) = side(right, ir_arena, expr_arena)?;
-    let (left_rows, right_rows) = match (left_stats.max_rows(), right_stats.max_rows()) {
+    let (left_stats, left_width) = side_stats(left, ir_arena, expr_arena)?;
+    let left_bound = left_stats.max_rows();
+    if left_bound.is_none() && !may_estimate {
+        return None;
+    }
+    let (right_stats, right_width) = side_stats(right, ir_arena, expr_arena)?;
+    let (left_rows, right_rows) = match (left_bound, right_stats.max_rows()) {
         (Some(left_rows), Some(right_rows)) => (left_rows, right_rows),
-        // Only a cross join settles this on an estimate. An equi join samples its
-        // inputs while it runs and picks the smaller one itself, and a preference
-        // from here replaces that measurement rather than informing it. A cross
-        // join has no such path: without a preference it builds its left input
-        // whatever size that is.
-        _ if is_cross => (left_stats.filtered, right_stats.filtered),
+        _ if may_estimate => (left_stats.filtered, right_stats.filtered),
         _ => return None,
     };
     let (left, right) = (left_rows * left_width, right_rows * right_width);
@@ -89,7 +92,11 @@ fn build_side(
 }
 
 /// Statistics of one input of the join, and the bytes one of its rows takes.
-fn side(node: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<(NodeStats, f64)> {
+fn side_stats(
+    node: Node,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> Option<(NodeStats, f64)> {
     let stats = node_stats(node, ir_arena, expr_arena)?;
     let schema = ir_arena.get(node).schema(ir_arena);
     let width = row_width(&schema, &stats);

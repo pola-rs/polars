@@ -91,8 +91,7 @@ def cross_join_build_side(plan: str) -> str | None:
 def test_cross_join_builds_the_one_row_side_over_an_unbounded_side(
     lopsided: tuple[pl.LazyFrame, pl.LazyFrame],
 ) -> None:
-    # An equi join has no row bound, so the sides can only be compared by estimate.
-    # Without a preference the cross join builds its left input, whatever its size.
+    # An equi join has no row bound, so only the estimates can be compared here.
     big, small = lopsided
     joined = big.join(small, on="k")
     scalar = big.select(pl.col("v").sum())
@@ -112,31 +111,30 @@ def test_cross_join_builds_the_one_row_side_over_an_unbounded_side(
 
 def test_cross_join_prefers_the_row_bound_over_the_estimate(tmp_path: Path) -> None:
     # Every predicate passes, but each is credited a flat selectivity, so the
-    # estimate puts the right side three orders of magnitude below its real size.
-    # The bounds are known here, and they are what the sides are compared by.
+    # estimate puts the right side two orders of magnitude below the left one.
     tmp_path.mkdir(exist_ok=True)
-    pl.DataFrame({"a": range(100)}).write_parquet(tmp_path / "small.parquet")
-    pl.DataFrame({"b": range(10_000), "c": range(10_000)}).write_parquet(
+    pl.DataFrame({"a": range(10)}).write_parquet(tmp_path / "small.parquet")
+    pl.DataFrame({"b": range(1_000), "c": range(1_000)}).write_parquet(
         tmp_path / "big.parquet"
     )
     small = pl.scan_parquet(tmp_path / "small.parquet")
     big = pl.scan_parquet(tmp_path / "big.parquet").filter(
         pl.col("b") >= 0,
-        pl.col("b") < 10_000,
+        pl.col("b") < 1_000,
         pl.col("c") >= 0,
-        pl.col("c") < 10_000,
+        pl.col("c") < 1_000,
         pl.col("b") != -1,
     )
 
     q = small.join(big.select("b"), how="cross")
     assert cross_join_build_side(q.explain()) == "PreferLeft"
-    assert q.collect(engine="streaming").height == 1_000_000
+    assert q.collect(engine="streaming").height == 10_000
 
 
 def test_no_cross_join_build_side_for_similar_sizes(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
     for name in ("a", "b"):
-        pl.DataFrame({name: range(1_000)}).write_parquet(tmp_path / f"{name}.parquet")
+        pl.DataFrame({name: range(100)}).write_parquet(tmp_path / f"{name}.parquet")
     a = pl.scan_parquet(tmp_path / "a.parquet")
     b = pl.scan_parquet(tmp_path / "b.parquet")
     assert cross_join_build_side(a.join(b, how="cross").explain()) is None
