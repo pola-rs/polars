@@ -708,20 +708,7 @@ impl SQLExprVisitor<'_> {
             op,
             SQLBinaryOperator::Eq | SQLBinaryOperator::NotEq | SQLBinaryOperator::Spaceship
         ) {
-            // `str_expr = 13` compares against the string '13'
-            match (&lhs, &rhs) {
-                (Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))), other)
-                    if self.is_string_expr(other) =>
-                {
-                    lhs = lit(n.to_string())
-                },
-                (other, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))))
-                    if self.is_string_expr(other) =>
-                {
-                    rhs = lit(n.to_string())
-                },
-                _ => {},
-            }
+            (lhs, rhs) = self.convert_int_literal_for_string(lhs, rhs);
         }
 
         if matches!(op, SQLBinaryOperator::Plus | SQLBinaryOperator::Minus)
@@ -990,13 +977,14 @@ impl SQLExprVisitor<'_> {
         negated: bool,
     ) -> PolarsResult<Expr> {
         polars_ensure!(!list.is_empty(), SQLSyntax: "IN list must not be empty");
-        let mut elements = list.iter();
-        let first = self.visit_expr(elements.next().unwrap())?;
-        let mut membership = expr.clone().eq(first);
-        for e in elements {
+        let mut membership: Option<Expr> = None;
+        for e in list {
             let e = self.visit_expr(e)?;
-            membership = membership.or(expr.clone().eq(e));
+            let (lhs, rhs) = self.convert_int_literal_for_string(expr.clone(), e);
+            let eq = lhs.eq(rhs);
+            membership = Some(membership.map_or(eq.clone(), |m| m.or(eq)));
         }
+        let membership = membership.unwrap();
         Ok(if negated {
             membership.not()
         } else {
@@ -1093,6 +1081,23 @@ impl SQLExprVisitor<'_> {
         } else {
             expr.cast(polars_type)
         })
+    }
+
+    /// `str_expr = 13` compares against the string '13'.
+    fn convert_int_literal_for_string(&self, lhs: Expr, rhs: Expr) -> (Expr, Expr) {
+        match (&lhs, &rhs) {
+            (Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))), other)
+                if self.is_string_expr(other) =>
+            {
+                (lit(n.to_string()), rhs)
+            },
+            (other, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))))
+                if self.is_string_expr(other) =>
+            {
+                (lhs, lit(n.to_string()))
+            },
+            _ => (lhs, rhs),
+        }
     }
 
     /// Whether `expr` is known to be `String`; false if the dtype cannot be resolved.

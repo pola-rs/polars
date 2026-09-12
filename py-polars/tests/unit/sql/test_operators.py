@@ -98,6 +98,38 @@ def test_string_compared_with_integer_literals() -> None:
     res = df.sql("SELECT phone FROM self WHERE phone NOT IN (22, 13)")
     assert res.to_series().to_list() == ["13-123", "31-456", "22-789"]
 
+    # aggregate / non-literal IN lists take the OR-chain path
+    res = df.sql(
+        """
+        SELECT
+          MAX(phone) IN (31, 13) AS agg_in,
+          MIN(phone) IN (31, MAX(phone)) AS agg_in_expr
+        FROM self
+        """
+    )
+    assert res.row(0) == (False, False)
+    res = df.sql("SELECT phone IN (22, LEFT(phone, 2)) AS x FROM self")
+    assert res.to_series().to_list() == [False, False, False, True]
+
+
+@pytest.mark.parametrize(
+    ("condition", "keeps_rows"),
+    [
+        ("1 = 1", True),
+        ("1 = 1.0", True),
+        ("'13' = 13", True),
+        ("('13' = 13)", True),
+        ("'13' <> 13", False),
+        ("1 < 2 AND 'a' = 'b'", False),
+        ("NULL = NULL", False),
+        ("NULL IS NULL", True),
+    ],
+)
+def test_constant_where_condition(condition: str, keeps_rows: bool) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    res = df.sql(f"SELECT a FROM self WHERE {condition}")
+    assert res.height == (3 if keeps_rows else 0)
+
 
 @pytest.mark.parametrize(
     "in_clause",

@@ -2146,28 +2146,14 @@ impl SQLContext {
                 Some(s) => s,
             };
 
-            // shortcut filter evaluation if given expression is just TRUE or FALSE
-            let (all_true, all_false) = match expr {
-                SQLExpr::Value(ValueWithSpan {
-                    value: SQLValue::Boolean(b),
-                    ..
-                }) => (*b, !*b),
-                SQLExpr::BinaryOp { left, op, right } => match (&**left, &**right, op) {
-                    (SQLExpr::Value(a), SQLExpr::Value(b), SQLBinaryOperator::Eq) => {
-                        (a.value == b.value, a.value != b.value)
-                    },
-                    (SQLExpr::Value(a), SQLExpr::Value(b), SQLBinaryOperator::NotEq) => {
-                        (a.value != b.value, a.value == b.value)
-                    },
-                    _ => (false, false),
-                },
-                _ => (false, false),
-            };
-            let removing = filter_mode == FilterMode::RemoveTrue;
-            if (all_true && !removing) || (all_false && removing) {
-                return Ok(lf);
-            } else if (all_false && !removing) || (all_true && removing) {
-                return Ok(lf.clear());
+            // shortcut filter evaluation for a constant condition (eg: "WHERE 1 = 1")
+            if !expr_references_any_column(expr) && !expr_contains_subquery(expr) {
+                let satisfied = evaluate_constant_predicate(self, expr)?;
+                return Ok(if satisfied == (filter_mode == FilterMode::KeepTrue) {
+                    lf
+                } else {
+                    lf.clear()
+                });
             }
 
             // Lower eligible `[NOT] EXISTS` / `[NOT] IN (subquery)` conjuncts
@@ -2233,7 +2219,7 @@ impl SQLContext {
             // A subquery references no column of its own, so it needs excluding here
             // as well as it would otherwise read as a constant predicate.
             if !expr_references_any_column(expr) && !expr_contains_subquery(expr) {
-                let satisfied = evaluate_constant_join_predicate(self, expr)?;
+                let satisfied = evaluate_constant_predicate(self, expr)?;
                 let builder = tbl_left
                     .frame
                     .clone()
@@ -3863,21 +3849,15 @@ fn suffix_conflicting_columns(
     })
 }
 
-/// Evaluate a column-free (constant) join ON-expression to a definite true/false
-/// verdict; SQL treats an unknown (NULL) condition the same as false for matching.
-fn evaluate_constant_join_predicate(ctx: &mut SQLContext, expr: &SQLExpr) -> PolarsResult<bool> {
+/// Evaluate a column-free (constant) condition to a definite true/false verdict;
+/// SQL treats an unknown (NULL) condition the same as false for matching.
+fn evaluate_constant_predicate(ctx: &mut SQLContext, expr: &SQLExpr) -> PolarsResult<bool> {
     let predicate = parse_sql_expr(expr, ctx, None)?;
     let df = DataFrame::empty()
         .lazy()
-        .select([predicate
-            .cast(DataType::Boolean)
-            .alias("_constant_join_predicate")])
+        .select([predicate.cast(DataType::Boolean).alias("predicate")])
         .collect()?;
-    Ok(df
-        .column("_constant_join_predicate")?
-        .bool()?
-        .get(0)
-        .unwrap_or(false))
+    Ok(df.column("predicate")?.bool()?.get(0).unwrap_or(false))
 }
 
 fn process_join_constraint(
