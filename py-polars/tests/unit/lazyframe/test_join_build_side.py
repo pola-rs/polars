@@ -77,3 +77,64 @@ def test_explicit_build_side_is_not_overridden(
     big, small = lopsided
     q = big.join(small, on="k", build_side="force_left")
     assert "BUILD SIDE: ForceLeft" in q.explain()
+
+
+def cross_join_build_side(plan: str) -> str | None:
+    """The build side of the one cross join in `plan`, read off the line below it."""
+    lines = plan.splitlines()
+    heads = [i for i, line in enumerate(lines) if line.strip() == "CROSS JOIN:"]
+    assert len(heads) == 1, f"expected one cross join, found {len(heads)}"
+    below = lines[heads[0] + 1].strip()
+    return below.removeprefix("BUILD SIDE: ") if below.startswith("BUILD SIDE:") else None
+
+
+def test_cross_join_builds_the_one_row_side_over_an_unbounded_side(
+    lopsided: tuple[pl.LazyFrame, pl.LazyFrame],
+) -> None:
+    # An equi join has no row bound, so only the estimates can be compared here.
+    big, small = lopsided
+    joined = big.join(small, on="k")
+    scalar = big.select(pl.col("v").sum())
+
+    assert cross_join_build_side(joined.join(scalar, how="cross").explain()) == (
+        "PreferRight"
+    )
+    assert cross_join_build_side(scalar.join(joined, how="cross").explain()) == (
+        "PreferLeft"
+    )
+
+    forwards = joined.join(scalar, how="cross").collect(engine="streaming")
+    backwards = scalar.join(joined, how="cross").collect(engine="streaming")
+    assert forwards.height == 100
+    assert backwards.height == 100
+
+
+def test_cross_join_prefers_the_row_bound_over_the_estimate(tmp_path: Path) -> None:
+    # Every predicate passes, but each is credited a flat selectivity, so the
+    # estimate puts the right side two orders of magnitude below the left one.
+    tmp_path.mkdir(exist_ok=True)
+    pl.DataFrame({"a": range(10)}).write_parquet(tmp_path / "small.parquet")
+    pl.DataFrame({"b": range(1_000), "c": range(1_000)}).write_parquet(
+        tmp_path / "big.parquet"
+    )
+    small = pl.scan_parquet(tmp_path / "small.parquet")
+    big = pl.scan_parquet(tmp_path / "big.parquet").filter(
+        pl.col("b") >= 0,
+        pl.col("b") < 1_000,
+        pl.col("c") >= 0,
+        pl.col("c") < 1_000,
+        pl.col("b") != -1,
+    )
+
+    q = small.join(big.select("b"), how="cross")
+    assert cross_join_build_side(q.explain()) == "PreferLeft"
+    assert q.collect(engine="streaming").height == 10_000
+
+
+def test_no_cross_join_build_side_for_similar_sizes(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    for name in ("a", "b"):
+        pl.DataFrame({name: range(100)}).write_parquet(tmp_path / f"{name}.parquet")
+    a = pl.scan_parquet(tmp_path / "a.parquet")
+    b = pl.scan_parquet(tmp_path / "b.parquet")
+    assert cross_join_build_side(a.join(b, how="cross").explain()) is None

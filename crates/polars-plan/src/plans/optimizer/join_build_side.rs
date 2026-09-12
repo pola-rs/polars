@@ -42,7 +42,11 @@ pub(super) fn set_join_build_sides(
             continue;
         }
         let (left, right) = (*input_left, *input_right);
-        let Some(side) = build_side(left, right, ir_arena, expr_arena) else {
+        // An equi join samples its inputs as it runs and picks the smaller itself, so
+        // a preference drawn from an estimate would override a measurement. A cross
+        // join has no such path and builds its left input when nothing names a side.
+        let may_estimate = options.args.how.is_cross();
+        let Some(side) = build_side(left, right, may_estimate, ir_arena, expr_arena) else {
             continue;
         };
         let IR::Join { options, .. } = ir_arena.get_mut(node) else {
@@ -54,14 +58,30 @@ pub(super) fn set_join_build_sides(
 
 /// The side to prefer building the hash table from, or `None` if the statistics
 /// do not settle it.
+///
+/// Both sides are measured by the same quantity: their row bounds where both have
+/// one, and their row estimates otherwise. A bound against an estimate can name the
+/// larger input, since a filter narrows the estimate and leaves the bound alone.
+/// Without `may_estimate` a missing bound settles nothing.
 fn build_side(
     left: Node,
     right: Node,
+    may_estimate: bool,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
 ) -> Option<JoinBuildSide> {
-    let left = side_bytes(left, ir_arena, expr_arena)?;
-    let right = side_bytes(right, ir_arena, expr_arena)?;
+    let (left_stats, left_width) = side_stats(left, ir_arena, expr_arena)?;
+    let left_bound = left_stats.max_rows();
+    if left_bound.is_none() && !may_estimate {
+        return None;
+    }
+    let (right_stats, right_width) = side_stats(right, ir_arena, expr_arena)?;
+    let (left_rows, right_rows) = match (left_bound, right_stats.max_rows()) {
+        (Some(left_rows), Some(right_rows)) => (left_rows, right_rows),
+        _ if may_estimate => (left_stats.filtered, right_stats.filtered),
+        _ => return None,
+    };
+    let (left, right) = (left_rows * left_width, right_rows * right_width);
     if left * LOPSIDED_FACTOR <= right {
         Some(JoinBuildSide::PreferLeft)
     } else if right * LOPSIDED_FACTOR <= left {
@@ -71,12 +91,16 @@ fn build_side(
     }
 }
 
-/// An upper bound on the bytes one input of the join holds.
-fn side_bytes(node: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<f64> {
+/// Statistics of one input of the join, and the bytes one of its rows takes.
+fn side_stats(
+    node: Node,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> Option<(NodeStats, f64)> {
     let stats = node_stats(node, ir_arena, expr_arena)?;
-    let rows = stats.max_rows()?;
     let schema = ir_arena.get(node).schema(ir_arena);
-    Some(rows * row_width(&schema, &stats))
+    let width = row_width(&schema, &stats);
+    Some((stats, width))
 }
 
 /// Bytes one row of `schema` takes, from the statistics where they describe a
