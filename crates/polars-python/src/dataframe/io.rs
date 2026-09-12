@@ -6,6 +6,7 @@ use polars::io::RowIndex;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
 use polars::prelude::*;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use super::PyDataFrame;
@@ -26,16 +27,21 @@ impl PyDataFrame {
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
-        assert!(infer_schema_length != Some(0));
+        if schema.is_none() && infer_schema_length == Some(0) {
+            return Err(PyValueError::new_err(
+                "cannot infer schema when infer_schema_length is 0 and no schema is provided",
+            ));
+        }
+
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
         py.enter_polars_df(move || {
-            let mut reader = JsonReader::new(mmap_bytes_r)
-                .with_json_format(JsonFormat::Json)
-                .infer_schema_len(infer_schema_length.and_then(NonZeroUsize::new));
+            let mut reader = JsonReader::new(mmap_bytes_r).with_json_format(JsonFormat::Json);
 
             if let Some(schema) = schema {
                 reader = reader.with_schema(Arc::new(schema.0));
+            } else {
+                reader = reader.infer_schema_len(infer_schema_length.and_then(NonZeroUsize::new));
             }
 
             if let Some(schema) = schema_overrides.as_ref() {
