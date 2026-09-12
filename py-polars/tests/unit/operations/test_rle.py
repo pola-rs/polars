@@ -36,3 +36,21 @@ def test_rle_id() -> None:
 def test_empty_rle_21787() -> None:
     assert pl.Series("a", [], pl.Int64).rle().is_empty()
     assert pl.Series("a", [], pl.Int64).rle_id().is_empty()
+
+
+def test_rle_over_a_column_of_several_chunks() -> None:
+    # A morsel of the streaming engine is a slice of the frame it comes from, which
+    # may cross a chunk boundary of it: the values the runs are gathered from are
+    # read off a single chunk.
+    values = [i % 3 for i in range(33)]
+    s = pl.Series("a", values)
+    chunked = pl.concat([s.slice(0, 1), s.slice(1, 32)], rechunk=False)
+    assert chunked.n_chunks() == 2
+
+    lf = pl.DataFrame([chunked]).lazy()
+    expected = pl.DataFrame([s]).lazy().select(pl.col("a").rle())
+    for engine in ("in-memory", "streaming"):
+        assert_frame_equal(
+            lf.select(pl.col("a").rle()).collect(engine=engine),  # type: ignore[arg-type]
+            expected.collect(engine=engine),  # type: ignore[arg-type]
+        )

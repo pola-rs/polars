@@ -199,14 +199,12 @@ impl ComputeNode for RleNode {
                             values.push_any_value(last);
                         }
 
-                        // Actually gather the remaining values.
-                        unsafe {
-                            values.gather_extend(
-                                column.as_materialized_series(),
-                                &idxs,
-                                ShareStrategy::Always,
-                            )
-                        };
+                        // Actually gather the remaining values. A morsel is a slice of the
+                        // frame it came from, which may cross a chunk boundary of it, so the
+                        // values are gathered from a single chunk of them — `rechunk` hands back
+                        // the one chunk a morsel already holds without copying it.
+                        let source = column.as_materialized_series().rechunk();
+                        unsafe { values.gather_extend(&source, &idxs, ShareStrategy::Always) };
                         drop(df_pin);
 
                         let lengths = Series::new(
