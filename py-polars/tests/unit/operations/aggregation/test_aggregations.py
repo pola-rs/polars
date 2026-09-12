@@ -458,6 +458,25 @@ def test_approx_quantile_empty_quantile(dtype: PolarsDataType) -> None:
         df.select(pl.col("a").approx_quantile(pl.col("q")))
 
 
+def test_quantile_null_quantile() -> None:
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0]})
+    with pytest.raises(ComputeError, match="quantile expression contains null values"):
+        df.select(pl.col("a").quantile(pl.lit(None, dtype=pl.List(pl.Float64))))
+
+
+@pytest.mark.parametrize("dtype", [pl.Float64, pl.List(pl.Float64)])
+def test_quantile_empty_quantile(dtype: PolarsDataType) -> None:
+    df = pl.DataFrame(schema={"a": pl.Float64, "q": dtype})
+    with pytest.raises(ComputeError, match="got an empty input"):
+        df.select(pl.col("a").quantile(pl.col("q")))
+
+
+def test_quantile_empty_quantile_group_by() -> None:
+    df = pl.DataFrame(schema={"g": pl.Int64, "a": pl.Float64, "q": pl.Float64})
+    with pytest.raises(ComputeError, match="got an empty input"):
+        df.group_by("g").agg(pl.col("a").quantile(pl.col("q")))
+
+
 @pytest.mark.parametrize("method", APPROX_QUANTILE_METHODS)
 @pytest.mark.parametrize("quantile", [-0.1, 1.1])
 def test_approx_quantile_out_of_range(
