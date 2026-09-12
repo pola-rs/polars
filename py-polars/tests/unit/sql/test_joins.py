@@ -1990,10 +1990,16 @@ def test_join_on_pattern_predicates(join_type: str) -> None:
         """,
         compare_with="duckdb",
     )
-    with pytest.raises(SQLInterfaceError, match="references both"):
-        pl.SQLContext(frames=frames).execute(
-            f"""
-            SELECT * FROM customer {join_type} JOIN orders
-              ON c_key = o_key AND customer.c_name IN (orders.c_name, 'a')
-            """
-        ).collect()
+    # the same clashing column name on both sides of one predicate
+    assert_sql_matches(
+        frames,
+        query=f"""
+            SELECT c_key, orders.c_name AS o_name
+            FROM customer
+            {join_type} JOIN orders
+              ON c_key = o_key AND customer.c_name < orders.c_name
+              AND orders.c_name NOT IN (customer.c_name, 'y')
+            ORDER BY 1, 2
+        """,
+        compare_with="duckdb",
+    )

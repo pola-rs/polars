@@ -6,6 +6,7 @@
 //! - all Polars SQL keywords [`all_keywords`]
 //! - all Polars SQL functions [`all_functions`]
 
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::ops::Div;
 
@@ -707,10 +708,19 @@ impl SQLExprVisitor<'_> {
             op,
             SQLBinaryOperator::Eq | SQLBinaryOperator::NotEq | SQLBinaryOperator::Spaceship
         ) {
-            if let Some(e) = self.int_literal_as_string(&rhs, &lhs) {
-                rhs = e;
-            } else if let Some(e) = self.int_literal_as_string(&lhs, &rhs) {
-                lhs = e;
+            // `str_expr = 13` compares against the string '13'
+            match (&lhs, &rhs) {
+                (Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))), other)
+                    if self.is_string_expr(other) =>
+                {
+                    lhs = lit(n.to_string())
+                },
+                (other, Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))))
+                    if self.is_string_expr(other) =>
+                {
+                    rhs = lit(n.to_string())
+                },
+                _ => {},
             }
         }
 
@@ -1083,19 +1093,6 @@ impl SQLExprVisitor<'_> {
         } else {
             expr.cast(polars_type)
         })
-    }
-
-    /// `str_expr = 13`: an integer literal tested for equality against a String
-    /// expression is compared as the string '13'.
-    fn int_literal_as_string(&self, literal: &Expr, other: &Expr) -> Option<Expr> {
-        match literal {
-            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))
-                if self.is_string_expr(other) =>
-            {
-                Some(lit(n.to_string()))
-            },
-            _ => None,
-        }
     }
 
     /// Whether `expr` is known to be `String`; false if the dtype cannot be resolved.
@@ -1528,7 +1525,6 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
 struct DecimalLiteral {
     mantissa: i128,
     scale: u32,
-    has_point: bool,
 }
 
 impl DecimalLiteral {
@@ -1544,7 +1540,6 @@ impl DecimalLiteral {
         Some(Self {
             mantissa: format!("{int_part}{frac_part}").parse().ok()?,
             scale: frac_part.len() as u32,
-            has_point: s.contains('.'),
         })
     }
 
@@ -1571,62 +1566,51 @@ impl DecimalLiteral {
                     _ => None,
                 }
             },
-            SQLExpr::BinaryOp { left, op, right } => {
-                Self::combine(Self::eval(left)?, op, Self::eval(right)?)
-            },
+            SQLExpr::BinaryOp { left, op, right } => Self::combine(left, op, right),
             _ => None,
         }
     }
 
-    fn combine(l: Self, op: &SQLBinaryOperator, r: Self) -> Option<Self> {
-        let has_point = l.has_point || r.has_point;
-        match op {
-            SQLBinaryOperator::Plus | SQLBinaryOperator::Minus => {
-                let scale = l.scale.max(r.scale);
-                let (l, r) = (l.rescale(scale)?, r.rescale(scale)?);
-                let mantissa = if *op == SQLBinaryOperator::Plus {
-                    l.checked_add(r)?
-                } else {
-                    l.checked_sub(r)?
-                };
-                Some(Self {
-                    mantissa,
-                    scale,
-                    has_point,
-                })
-            },
-            SQLBinaryOperator::Multiply => Some(Self {
+    fn combine(left: &SQLExpr, op: &SQLBinaryOperator, right: &SQLExpr) -> Option<Self> {
+        if !matches!(
+            op,
+            SQLBinaryOperator::Plus | SQLBinaryOperator::Minus | SQLBinaryOperator::Multiply
+        ) {
+            return None;
+        }
+        let (l, r) = (Self::eval(left)?, Self::eval(right)?);
+        if *op == SQLBinaryOperator::Multiply {
+            return Some(Self {
                 mantissa: l.mantissa.checked_mul(r.mantissa)?,
                 scale: l.scale + r.scale,
-                has_point,
-            }),
-            _ => None,
+            });
         }
+        let scale = l.scale.max(r.scale);
+        let (l, r) = (l.rescale(scale)?, r.rescale(scale)?);
+        let mantissa = if *op == SQLBinaryOperator::Plus {
+            l.checked_add(r)?
+        } else {
+            l.checked_sub(r)?
+        };
+        Some(Self { mantissa, scale })
     }
 
     fn to_f64(&self) -> f64 {
-        let digits = self.mantissa.unsigned_abs().to_string();
-        let digits = format!("{:0>width$}", digits, width = self.scale as usize + 1);
-        let (int_part, frac_part) = digits.split_at(digits.len() - self.scale as usize);
-        let sign = if self.mantissa < 0 { "-" } else { "" };
-        format!("{sign}{int_part}.{frac_part}").parse().unwrap()
+        format!("{}e-{}", self.mantissa, self.scale)
+            .parse()
+            .unwrap()
     }
 }
 
-/// Evaluate arithmetic between numeric literals exactly, so that `.06 + 0.01` yields the
-/// float nearest to 0.07 (as it would in decimal SQL) rather than accumulating float error.
-/// Integer-only arithmetic is left to the engine.
+/// Evaluate `+`/`-`/`*` between numeric literals exactly; integer-only arithmetic is
+/// left to the engine.
 fn fold_decimal_literal_arithmetic(
     left: &SQLExpr,
     op: &SQLBinaryOperator,
     right: &SQLExpr,
 ) -> Option<Expr> {
-    let value = DecimalLiteral::combine(
-        DecimalLiteral::eval(left)?,
-        op,
-        DecimalLiteral::eval(right)?,
-    )?;
-    value.has_point.then(|| lit(value.to_f64()))
+    let value = DecimalLiteral::combine(left, op, right)?;
+    (value.scale > 0).then(|| lit(value.to_f64()))
 }
 
 pub(crate) fn interval_to_duration(interval: &Interval, fixed: bool) -> PolarsResult<Duration> {
@@ -1636,7 +1620,7 @@ pub(crate) fn interval_to_duration(interval: &Interval, fixed: bool) -> PolarsRe
     {
         polars_bail!(SQLSyntax: "unsupported interval syntax ('{}')", interval)
     }
-    let s = match (&*interval.value, &interval.leading_field) {
+    let s: Cow<str> = match (&*interval.value, &interval.leading_field) {
         (SQLExpr::UnaryOp { .. }, _) => {
             polars_bail!(SQLSyntax: "unary ops are not valid on interval strings; found {}", interval.value)
         },
@@ -1646,7 +1630,7 @@ pub(crate) fn interval_to_duration(interval: &Interval, fixed: bool) -> PolarsRe
                 ..
             }),
             None,
-        ) => s.clone(),
+        ) => Cow::Borrowed(s),
         // "INTERVAL '3' MONTH" and "INTERVAL 3 MONTH": the value is a bare count of the unit
         (
             SQLExpr::Value(ValueWithSpan {
@@ -1654,7 +1638,7 @@ pub(crate) fn interval_to_duration(interval: &Interval, fixed: bool) -> PolarsRe
                 ..
             }),
             Some(unit),
-        ) if n.bytes().all(|b| b.is_ascii_digit()) => format!("{n} {unit}"),
+        ) if n.bytes().all(|b| b.is_ascii_digit()) => Cow::Owned(format!("{n} {unit}")),
         _ => polars_bail!(SQLSyntax: "invalid interval {:?}", interval),
     };
     if s.contains('-') {

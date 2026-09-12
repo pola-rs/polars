@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::ops::Deref;
+use std::ops::{ControlFlow, Deref};
 use std::sync::{Arc, RwLock};
 
 use polars_core::frame::row::Row;
@@ -20,7 +20,7 @@ use sqlparser::ast::{
     OrderByKind, Query, RenameSelectItem, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
     TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
-    ValueWithSpan, Values, Visit, WildcardAdditionalOptions, WindowSpec,
+    ValueWithSpan, Values, Visit, WildcardAdditionalOptions, WindowSpec, visit_expressions_mut,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -34,7 +34,6 @@ use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
     expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
     expr_refers_to_table, sql_expr_cols_all_in_schema, statement_registers_table,
-    table_qualified_columns,
 };
 use crate::subquery::{LowerScope, SubqueryBindings, desugar_quantified_subqueries};
 use crate::table_functions::PolarsTableFunctions;
@@ -3695,9 +3694,9 @@ fn determine_left_right_join_on(
 /// Returns `(left_on, right_on, join_where_predicates)`.
 ///
 /// - Equi-conditions (`=`) are returned as paired `left_on`/`right_on` entries.
-/// - Non-equi conditions (`<`, `<=`, `>`, `>=`, `!=`) are returned as `join_where` predicates
-///   that reference columns using their merged-schema names (right columns that conflict with the
-///   left schema are suffixed).
+/// - Any other condition is returned as a `join_where` predicate that references columns
+///   using their merged-schema names (right columns that conflict with the left schema are
+///   suffixed).
 fn process_join_on(
     ctx: &mut SQLContext,
     sql_expr: &SQLExpr,
@@ -3728,91 +3727,52 @@ fn process_join_on(
                 )?;
                 Ok((l, r, vec![]))
             },
-            SQLBinaryOperator::Lt
-            | SQLBinaryOperator::LtEq
-            | SQLBinaryOperator::Gt
-            | SQLBinaryOperator::GtEq
-            | SQLBinaryOperator::NotEq => {
-                let join_schema = build_join_schema(tbl_left, tbl_right)?;
-                let suffix = format!(":{}", tbl_right.name);
-
-                // Parse both operands and suffix each independently based on whether
-                // it references the right table (preserving SQL operand order).
-                let lhs = suffix_if_right_table(
-                    parse_sql_expr(left, ctx, Some(&join_schema))?,
-                    left,
-                    tbl_left,
-                    tbl_right,
-                    &suffix,
-                );
-                let rhs = suffix_if_right_table(
-                    parse_sql_expr(right, ctx, Some(&join_schema))?,
-                    right,
-                    tbl_left,
-                    tbl_right,
-                    &suffix,
-                );
-
-                let polars_op = match op {
-                    SQLBinaryOperator::Lt => Operator::Lt,
-                    SQLBinaryOperator::LtEq => Operator::LtEq,
-                    SQLBinaryOperator::Gt => Operator::Gt,
-                    SQLBinaryOperator::GtEq => Operator::GtEq,
-                    SQLBinaryOperator::NotEq => Operator::NotEq,
-                    _ => unreachable!(),
-                };
-                let predicate = Expr::BinaryExpr {
-                    left: Arc::new(lhs),
-                    op: polars_op,
-                    right: Arc::new(rhs),
-                };
-                Ok((vec![], vec![], vec![predicate]))
-            },
-            _ => polars_bail!(
-                SQLInterface: "unsupported join constraint operator '{:?}'", op
-            ),
+            _ => process_join_predicate(ctx, sql_expr, tbl_left, tbl_right),
         },
         SQLExpr::Nested(expr) => process_join_on(ctx, expr, tbl_left, tbl_right),
-        // Any other predicate (LIKE, IN, IS NULL, OR, ...) is evaluated on the joined frame.
-        _ => {
-            let join_schema = build_join_schema(tbl_left, tbl_right)?;
-            let suffix = format!(":{}", tbl_right.name);
-            let predicate = parse_sql_expr(sql_expr, ctx, Some(&join_schema))?;
-            let predicate =
-                suffix_right_table_columns(predicate, sql_expr, tbl_left, tbl_right, &suffix)?;
-            Ok((vec![], vec![], vec![predicate]))
-        },
+        _ => process_join_predicate(ctx, sql_expr, tbl_left, tbl_right),
     }
 }
 
-/// Rename the columns that `sql_expr` references as `right_table.col` to their merged-schema
-/// (suffixed) names when the same column also exists in the left table.
-fn suffix_right_table_columns(
-    expr: Expr,
+/// Parse a non-equi join condition into a `join_where` predicate over the joined frame,
+/// where right-table columns that also exist in the left table carry a suffix.
+fn process_join_predicate(
+    ctx: &mut SQLContext,
     sql_expr: &SQLExpr,
     tbl_left: &TableInfo,
     tbl_right: &TableInfo,
-    suffix: &str,
-) -> PolarsResult<Expr> {
-    let right_cols = table_qualified_columns(sql_expr, &tbl_right.name);
-    let left_cols = table_qualified_columns(sql_expr, &tbl_left.name);
-    let conflicts = |name: &str| {
-        right_cols.contains(name)
-            && tbl_left.schema.contains(name)
-            && tbl_right.schema.contains(name)
-    };
-    if let Some(name) = left_cols.iter().find(|name| conflicts(name)) {
-        polars_bail!(
-            SQLInterface: "unsupported join condition: references both '{}.{}' and '{}.{}'",
-            tbl_left.name, name, tbl_right.name, name
-        )
+) -> PolarsResult<(Vec<Expr>, Vec<Expr>, Vec<Expr>)> {
+    let suffix = format!(":{}", tbl_right.name);
+    let conflicts = |name: &str| tbl_left.schema.contains(name) && tbl_right.schema.contains(name);
+
+    let mut joined_schema = Schema::clone(&tbl_left.schema);
+    for (name, dtype) in tbl_right.schema.iter() {
+        let name = if conflicts(name) {
+            PlSmallStr::from_string(format!("{name}{suffix}"))
+        } else {
+            name.clone()
+        };
+        joined_schema.insert(name, dtype.clone());
     }
-    Ok(strip_join_aliases(expr).map_expr(|e| match e {
-        Expr::Column(ref name) if conflicts(name) => {
-            Expr::Column(PlSmallStr::from_string(format!("{name}{suffix}")))
-        },
-        other => other,
-    }))
+
+    // `right_table.col` -> `col:right_table` when the name is also a left column
+    let mut sql_expr = sql_expr.clone();
+    let _ = visit_expressions_mut(&mut sql_expr, |e| {
+        if let SQLExpr::CompoundIdentifier(idents) = e
+            && idents.len() >= 2
+            && idents[0].value == tbl_right.name
+            && conflicts(&idents[1].value)
+        {
+            let suffixed = Ident::new(format!("{}{suffix}", idents[1].value));
+            idents.splice(0..2, [suffixed]);
+            if idents.len() == 1 {
+                *e = SQLExpr::Identifier(idents.pop().unwrap());
+            }
+        }
+        ControlFlow::<()>::Continue(())
+    });
+    let predicate = strip_join_aliases(parse_sql_expr(&sql_expr, ctx, Some(&joined_schema))?);
+    Ok((vec![], vec![], vec![predicate]))
 }
 
 /// Replace aggregates over pre-aggregation columns with references to hoisted
@@ -3901,41 +3861,6 @@ fn suffix_conflicting_columns(
         },
         other => other,
     })
-}
-
-/// Suffix conflicting column names in `expr` if the SQL-level expression references the right
-/// table. Uses table qualifiers first, falling back to schema membership when unqualified.
-fn suffix_if_right_table(
-    expr: Expr,
-    sql_expr: &SQLExpr,
-    tbl_left: &TableInfo,
-    tbl_right: &TableInfo,
-    suffix: &str,
-) -> Expr {
-    // Strip any alias added by resolve_column
-    let expr = match expr {
-        Expr::Alias(inner, _) => Arc::unwrap_or_clone(inner),
-        e => e,
-    };
-
-    let refs_left = expr_refers_to_table(sql_expr, &tbl_left.name);
-    let refs_right = expr_refers_to_table(sql_expr, &tbl_right.name);
-
-    let is_right = if refs_right && !refs_left {
-        true
-    } else if refs_left {
-        false
-    } else {
-        // Unqualified: check schema membership
-        !expr_cols_all_in_schema(&expr, &tbl_left.schema)
-            && expr_cols_all_in_schema(&expr, &tbl_right.schema)
-    };
-
-    if is_right {
-        suffix_conflicting_columns(expr, tbl_left, tbl_right, suffix)
-    } else {
-        expr
-    }
 }
 
 /// Evaluate a column-free (constant) join ON-expression to a definite true/false
