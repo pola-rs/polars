@@ -1,4 +1,5 @@
 use std::ops::{Add, Sub};
+use std::sync::Arc;
 
 use polars_core::chunked_array::ops::{FillNullStrategy, SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
@@ -12,10 +13,10 @@ use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::series::RoundMode;
 use polars_plan::dsl::functions::{
     as_struct, coalesce, col, cols, concat_str, element, int_range, len, lit, max_horizontal,
-    min_horizontal, when,
+    min_horizontal, repeat, when,
 };
 use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
-use polars_plan::prelude::StrptimeOptions;
+use polars_plan::prelude::{StrptimeOptions, has_expr};
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
@@ -2011,6 +2012,24 @@ impl SQLFunctionVisitor<'_> {
         }
     }
 
+    fn is_input_independent_scalar(expr: &Expr) -> PolarsResult<bool> {
+        if has_expr(expr, |e| {
+            matches!(
+                e,
+                Expr::Column(_)
+                    | Expr::Selector(_)
+                    | Expr::Element
+                    | Expr::Agg(_)
+                    | Expr::Len
+                    | Expr::SubPlan(_, _)
+            )
+        }) {
+            Ok(false)
+        } else {
+            expr.clone().meta().is_scalar()
+        }
+    }
+
     fn parse_array_inner_product_arg(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
         // Keep ordinary SQL arrays List-backed. Only direct literals in this
         // function become scalar Arrays so native arr.dot can broadcast them.
@@ -2022,6 +2041,25 @@ impl SQLFunctionVisitor<'_> {
         let values = parse_sql_array(array_expr, self.ctx)?;
         let width = values.len();
         Ok(self.apply_filter(lit(Scalar::new_array(values, width))))
+    }
+
+    fn parse_aggregate_expr(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        let mut parsed = parse_sql_expr(expr, self.ctx, self.active_schema)?;
+        let mut literal = &mut parsed;
+        // Preserve casts and their error behavior while normalizing SQL List literals.
+        while let Expr::Cast { expr, .. } = literal {
+            literal = Arc::make_mut(expr);
+        }
+        if let Expr::Literal(LiteralValue::Series(series)) = literal
+            && series.len() == 1
+            && matches!(series.dtype(), DataType::List(_))
+        {
+            *literal = lit(Scalar::new(
+                series.dtype().clone(),
+                series.get(0)?.into_static(),
+            ));
+        }
+        Ok(parsed)
     }
 
     fn visit_array_inner_product(&mut self) -> PolarsResult<Expr> {
@@ -2213,7 +2251,11 @@ impl SQLFunctionVisitor<'_> {
         let (args, is_distinct, clauses) = extract_args_and_clauses(self.func)?;
         match args.as_slice() {
             [FunctionArgExpr::Expr(sql_expr)] => {
-                let base = self.parse_sql_arg(sql_expr)?;
+                let mut base = self.parse_aggregate_expr(sql_expr)?;
+                if Self::is_input_independent_scalar(&base)? {
+                    base = repeat(base, len());
+                }
+                let base = self.apply_filter(base);
                 let base = self.apply_aggregate_clauses(
                     base,
                     is_distinct,
@@ -2516,13 +2558,24 @@ impl SQLFunctionVisitor<'_> {
         let mut nulls_last = Vec::with_capacity(order_by.len());
 
         for ob in order_by {
-            // Note: ORDER BY exprs share their length with the (possibly filtered) base,
-            // so they have to go through `parse_sql_arg` to apply any active FILTER.
-            by.push(self.parse_sql_arg(&ob.expr)?);
+            let by_expr = self.parse_aggregate_expr(&ob.expr)?;
+            // Literal keys cannot distinguish rows and require no evaluation.
+            if matches!(&by_expr, Expr::Literal(value) if value.is_scalar()) {
+                continue;
+            }
+            by.push(if Self::is_input_independent_scalar(&by_expr)? {
+                // Scalar keys match values after FILTER and DISTINCT.
+                repeat(by_expr, expr.clone().len())
+            } else {
+                self.apply_filter(by_expr)
+            });
 
             let options = order_by_sort_options(&ob.options);
             nulls_last.push(options.nulls_last);
             descending.push(options.descending);
+        }
+        if by.is_empty() {
+            return Ok(expr);
         }
         Ok(expr.sort_by(
             by,
