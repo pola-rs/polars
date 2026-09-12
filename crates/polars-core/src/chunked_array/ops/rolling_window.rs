@@ -52,12 +52,22 @@ mod inner_mod {
     use crate::prelude::*;
 
     /// utility
-    fn check_input(window_size: usize, min_periods: usize) -> PolarsResult<()> {
+    fn check_input(
+        window_size: usize,
+        min_periods: usize,
+        weights: Option<&Vec<f64>>,
+    ) -> PolarsResult<()> {
         polars_ensure!(
             min_periods <= window_size,
             ComputeError: "`window_size`: {} should be >= `min_periods`: {}",
             window_size, min_periods
         );
+        for w in weights.into_iter().flatten() {
+            polars_ensure!(
+                w.is_sign_positive(),
+                InvalidOperation: "Weights for rolling windows need to be positive."
+            );
+        }
         Ok(())
     }
 
@@ -83,7 +93,11 @@ mod inner_mod {
             f: &dyn Fn(&Series) -> PolarsResult<Series>,
             mut options: RollingOptionsFixedWindow,
         ) -> PolarsResult<Series> {
-            check_input(options.window_size, options.min_periods)?;
+            check_input(
+                options.window_size,
+                options.min_periods,
+                options.weights.as_ref(),
+            )?;
 
             let ca = self.rechunk();
             if options.weights.is_some() && !self.dtype().is_float() {
@@ -102,6 +116,10 @@ mod inner_mod {
             let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name().clone(), self.len());
 
             if let Some(weights) = options.weights {
+                debug_assert!(
+                    weights.iter().all(|&w| w.is_sign_positive()),
+                    "implementation error: rolling weights should not be negative"
+                );
                 let weights_series =
                     Float64Chunked::new(PlSmallStr::from_static("weights"), &weights).into_series();
 

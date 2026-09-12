@@ -174,7 +174,12 @@ where
             )
         },
         Some(weights) => {
-            let wsum = weights.iter().sum();
+            let wsum = weights
+                .iter()
+                .inspect(|v| {
+                    debug_assert!(v.is_sign_positive(), "weights have to be positive");
+                })
+                .sum();
             polars_ensure!(
                 wsum != 0.0,
                 ComputeError: "Weighted quantile is undefined if weights sum to 0"
