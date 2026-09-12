@@ -5,27 +5,12 @@ edition = "2021"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/pola-rs/pyo3-polars"
-description = "Proc-macro's for pyo3-polars"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Deprecated compatibility re-export of the Polars expression-plugin macro"
 
 [lib]
 proc-macro = true
 
-[[test]]
-name = "tests"
-path = "tests/run.rs"
-
 [dependencies]
-arrow = { workspace = true }
-polars-core = { workspace = true, features = ["allow_unused"] }
-polars-ffi = { workspace = true }
-polars-plan = { workspace = true, features = ["allow_unused"] }
+polars-plugin-derive = { workspace = true }
 proc-macro2 = "1.0"
 quote = "1.0"
-syn = { version = "2", features = ["full", "extra-traits"] }
-
-[dev-dependencies]
-polars-python = { workspace = true, features = ["full"] }
-pyo3-polars = { workspace = true, features = ["derive"] }
-trybuild = { version = "1", features = ["diff"] }

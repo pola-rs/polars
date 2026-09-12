@@ -110,7 +110,9 @@ doctest:  ## Check that documentation builds
 # disable object-store CRC64NVME and DNS
 .PHONY: publish
 publish:  ## Publish Polars crates
-	cargo c  -p polars-error \
+	cargo c  -p polars-plugin-derive \
+	 -p polars-plugin \
+	 -p polars-error \
 	 -p polars-buffer \
 	 -p polars-config \
 	 -p polars-async \
@@ -137,6 +139,7 @@ publish:  ## Publish Polars crates
 	 -p polars-sql \
 	 -p polars
 
+	cargo publish --allow-dirty -p polars-plugin-derive
 	cargo publish --allow-dirty -p polars-error 
 	cargo publish --allow-dirty -p polars-config
 	cargo publish --allow-dirty -p polars-utils
@@ -150,6 +153,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
 	cargo publish --allow-dirty -p polars-ffi
+	cargo publish --allow-dirty -p polars-plugin
 	cargo publish --allow-dirty -p polars-ops
 	cargo publish --allow-dirty -p polars-testing
 	cargo publish --allow-dirty -p polars-time

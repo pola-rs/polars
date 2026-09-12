@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
 use proc_macro2::Ident;
-use syn::parse::{Parse, ParseStream};
 use syn::Token;
+use syn::parse::{Parse, ParseStream};
 
 use crate::keywords;
 
