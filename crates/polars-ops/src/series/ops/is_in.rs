@@ -766,6 +766,47 @@ fn is_in_row_encoded(
     Ok(mask)
 }
 
+/// Whether every element of `s` reads the one element its single chunk repeats.
+fn repeats_one_element(s: &Series) -> bool {
+    let [chunk] = s.chunks().as_slice() else {
+        return false;
+    };
+
+    s.len() > 1 && chunk.is_scalar()
+}
+
+/// The answer of the one pair of elements both sides read, repeated over the whole column.
+///
+/// Both sides have to hand every element the same one, either because the side repeats it or
+/// because the side is the single element the other reads against all of its own. The lengths
+/// they line up at have already been checked by the caller, so the one element of each answers
+/// for every element of the column the caller is owed.
+fn repeat_one_answer(
+    needle: &Series,
+    haystack: &Series,
+    nulls_equal: bool,
+) -> Option<PolarsResult<BooleanChunked>> {
+    let length = usize::max(needle.len(), haystack.len());
+    // Nothing is saved by answering a column of one element, which is what is worked out here.
+    if length < 2 {
+        return None;
+    }
+
+    let reads_one = |s: &Series| s.len() == 1 || repeats_one_element(s);
+    if !reads_one(needle) || !reads_one(haystack) {
+        return None;
+    }
+
+    let one = |s: &Series| s.slice(0, 1);
+    Some(is_in(&one(needle), &one(haystack), nulls_equal).map(|out| {
+        let name = out.name().clone();
+        match out.get(0) {
+            Some(value) => BooleanChunked::full(name, value, length),
+            None => BooleanChunked::full_null(name, length),
+        }
+    }))
+}
+
 pub fn is_in(
     needle: &Series,
     haystack: &Series,
@@ -790,6 +831,16 @@ pub fn is_in(
         needle.dtype(),
         haystack.dtype()
     );
+
+    // Every element of each side reads the same one — because the side repeats it, or because
+    // the side is the single element the other reads against every one of its own — so the
+    // answer of that one pair is the answer of every element. It is worked out over a single
+    // element of each and repeated, rather than both sides being read out in full: a needle of
+    // a nested type is row-encoded to be looked up, and a chunk that repeats one element would
+    // be encoded once per element to say what one encoding says.
+    if let Some(out) = repeat_one_answer(needle, haystack, nulls_equal) {
+        return out;
+    }
 
     match needle.dtype() {
         #[cfg(feature = "dtype-categorical")]

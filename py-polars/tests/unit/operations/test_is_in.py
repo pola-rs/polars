@@ -839,3 +839,54 @@ def test_is_in_container_chunks(dtype: pl.DataType, nulls_equal: bool) -> None:
             ),
             expected,
         )
+
+
+@pytest.mark.parametrize("nulls_equal", [True, False])
+@pytest.mark.parametrize(
+    ("dtype", "value", "other"),
+    [
+        (pl.Int64, 1, 2),
+        (pl.String, "a", "b"),
+        (pl.List(pl.Int64), [1, 2], [3]),
+        (pl.Array(pl.Int64, 2), [1, 2], [3, 4]),
+        (pl.Struct({"x": pl.Int64}), {"x": 1}, {"x": 2}),
+    ],
+)
+def test_is_in_repeated_needle_and_container(
+    dtype: pl.DataType, value: Any, other: Any, nulls_equal: bool
+) -> None:
+    # Every element of a chunk that repeats one element reads the same one, so the answer
+    # of that one element stands for the whole column — whichever side repeats, and
+    # whichever way round the two sides broadcast.
+    length = 5
+    repeated = pl.select(pl.repeat(pl.lit(value, dtype=dtype), length)).to_series()
+    flat = pl.Series("a", [value] * length, dtype=dtype)
+
+    for container in ([value], [other], [value, None], [None], []):
+        needle = pl.Series("n", container, dtype=dtype).implode()
+        expected = (
+            pl.DataFrame({"a": flat})
+            .select(pl.col("a").is_in(needle, nulls_equal=nulls_equal))
+            .to_series()
+        )
+        assert_series_equal(
+            pl.DataFrame({"a": repeated})
+            .select(pl.col("a").is_in(needle, nulls_equal=nulls_equal))
+            .to_series(),
+            expected,
+        )
+
+    # A single needle against a container every element of which is the same one.
+    containers = pl.select(
+        pl.repeat(pl.lit([value], dtype=pl.List(dtype)), length)
+    ).to_series()
+    flat_containers = pl.Series("h", [[value]] * length, dtype=pl.List(dtype))
+    one = pl.lit(value, dtype=dtype)
+    assert_series_equal(
+        pl.DataFrame({"h": containers})
+        .select(one.is_in(pl.col("h"), nulls_equal=nulls_equal).alias("n"))
+        .to_series(),
+        pl.DataFrame({"h": flat_containers})
+        .select(one.is_in(pl.col("h"), nulls_equal=nulls_equal).alias("n"))
+        .to_series(),
+    )
