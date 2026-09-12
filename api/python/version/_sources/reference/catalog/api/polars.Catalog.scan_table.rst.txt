@@ -1,0 +1,6 @@
+﻿polars.Catalog.scan\_table
+==========================
+
+.. currentmodule:: polars
+
+.. automethod:: Catalog.scan_table

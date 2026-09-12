@@ -1,0 +1,6 @@
+﻿polars.Series.str.slice
+=======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.str.slice

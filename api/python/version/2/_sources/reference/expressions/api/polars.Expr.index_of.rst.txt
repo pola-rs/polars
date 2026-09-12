@@ -1,0 +1,6 @@
+﻿polars.Expr.index\_of
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.index_of

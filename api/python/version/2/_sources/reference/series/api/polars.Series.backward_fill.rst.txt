@@ -1,0 +1,6 @@
+﻿polars.Series.backward\_fill
+============================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.backward_fill

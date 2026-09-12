@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["POLARS_IPC_METADATA_KEY"],"struct":["PlIpcMetadata"]};

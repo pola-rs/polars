@@ -1,0 +1,6 @@
+﻿polars.Config.set\_streaming\_chunk\_size
+=========================================
+
+.. currentmodule:: polars
+
+.. automethod:: Config.set_streaming_chunk_size

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PolarsError","PolarsWarning"],"fn":["get_warning_function","map_err","set_warning_function","to_compute_err"],"macro":[["feature_gated",1],["polars_bail",1],["polars_ensure",1],["polars_err",1],["polars_warn",1]],"mod":["abort","constants"],"struct":["ErrString"],"trait":["PolarsContext"],"type":["PolarsResult"]};

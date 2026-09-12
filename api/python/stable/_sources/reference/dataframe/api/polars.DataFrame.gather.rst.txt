@@ -1,0 +1,6 @@
+﻿polars.DataFrame.gather
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.gather

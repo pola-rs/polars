@@ -1,0 +1,6 @@
+﻿polars.Config.set\_tbl\_column\_data\_type\_inline
+==================================================
+
+.. currentmodule:: polars
+
+.. automethod:: Config.set_tbl_column_data_type_inline

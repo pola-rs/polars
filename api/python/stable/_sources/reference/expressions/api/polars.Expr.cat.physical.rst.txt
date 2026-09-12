@@ -1,0 +1,6 @@
+﻿polars.Expr.cat.physical
+========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.cat.physical

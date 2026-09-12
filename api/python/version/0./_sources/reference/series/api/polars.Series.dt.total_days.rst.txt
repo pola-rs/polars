@@ -1,0 +1,6 @@
+﻿polars.Series.dt.total_days
+===========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.dt.total_days

@@ -1,0 +1,6 @@
+﻿polars.Expr.str.rjust
+=====================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.str.rjust

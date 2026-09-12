@@ -1,0 +1,6 @@
+﻿polars.Expr.mean
+================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.mean

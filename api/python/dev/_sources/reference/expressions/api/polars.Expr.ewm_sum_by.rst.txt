@@ -1,0 +1,6 @@
+﻿polars.Expr.ewm\_sum\_by
+========================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.ewm_sum_by

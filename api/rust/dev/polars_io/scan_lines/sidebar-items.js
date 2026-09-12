@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["count_lines","split_lines_to_rows"]};

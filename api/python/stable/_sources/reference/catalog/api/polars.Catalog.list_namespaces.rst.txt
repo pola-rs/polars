@@ -1,0 +1,6 @@
+﻿polars.Catalog.list\_namespaces
+===============================
+
+.. currentmodule:: polars
+
+.. automethod:: Catalog.list_namespaces

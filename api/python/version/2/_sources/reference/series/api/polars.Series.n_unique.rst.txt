@@ -1,0 +1,6 @@
+﻿polars.Series.n\_unique
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.n_unique

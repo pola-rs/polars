@@ -1,0 +1,6 @@
+﻿polars.lazyframe.groupby.LazyGroupBy.max
+========================================
+
+.. currentmodule:: polars.lazyframe.groupby
+
+.. automethod:: LazyGroupBy.max

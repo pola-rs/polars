@@ -1,0 +1,6 @@
+﻿polars.Expr.name.prefix_fields
+==============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.name.prefix_fields

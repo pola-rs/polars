@@ -1,0 +1,6 @@
+﻿polars.read\_json
+=================
+
+.. currentmodule:: polars
+
+.. autofunction:: read_json

@@ -1,0 +1,6 @@
+﻿polars.Expr.meta.show_graph
+===========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.meta.show_graph

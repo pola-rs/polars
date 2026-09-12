@@ -1,0 +1,6 @@
+﻿polars.Expr.ewm\_std
+====================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.ewm_std

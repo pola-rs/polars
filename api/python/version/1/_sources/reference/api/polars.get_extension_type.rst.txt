@@ -1,0 +1,6 @@
+﻿polars.get\_extension\_type
+===========================
+
+.. currentmodule:: polars
+
+.. autofunction:: get_extension_type

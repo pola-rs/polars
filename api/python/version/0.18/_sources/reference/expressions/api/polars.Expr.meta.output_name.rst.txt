@@ -1,0 +1,6 @@
+﻿polars.Expr.meta.output_name
+============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.meta.output_name

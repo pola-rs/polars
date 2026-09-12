@@ -1,0 +1,40 @@
+﻿polars.catalog.unity.TableInfo
+==============================
+
+.. currentmodule:: polars.catalog.unity
+
+.. autoclass:: TableInfo
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~TableInfo.__init__
+      ~TableInfo.get_polars_schema
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~TableInfo.name
+      ~TableInfo.comment
+      ~TableInfo.table_id
+      ~TableInfo.table_type
+      ~TableInfo.storage_location
+      ~TableInfo.data_source_format
+      ~TableInfo.columns
+      ~TableInfo.properties
+      ~TableInfo.created_at
+      ~TableInfo.created_by
+      ~TableInfo.updated_at
+      ~TableInfo.updated_by
+   
+   

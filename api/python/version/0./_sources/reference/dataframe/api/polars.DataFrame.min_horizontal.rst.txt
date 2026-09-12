@@ -1,0 +1,6 @@
+﻿polars.DataFrame.min\_horizontal
+================================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.min_horizontal

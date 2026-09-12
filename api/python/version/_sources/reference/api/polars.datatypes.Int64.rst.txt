@@ -1,0 +1,37 @@
+﻿polars.datatypes.Int64
+======================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Int64
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Int64.__init__
+      ~Int64.base_type
+      ~Int64.from_python
+      ~Int64.is_
+      ~Int64.is_decimal
+      ~Int64.is_float
+      ~Int64.is_integer
+      ~Int64.is_nested
+      ~Int64.is_numeric
+      ~Int64.is_object
+      ~Int64.is_signed_integer
+      ~Int64.is_temporal
+      ~Int64.is_unsigned_integer
+      ~Int64.max
+      ~Int64.min
+      ~Int64.to_python
+   
+   
+
+   
+   
+   

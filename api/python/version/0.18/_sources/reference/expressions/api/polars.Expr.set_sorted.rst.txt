@@ -1,0 +1,6 @@
+﻿polars.Expr.set\_sorted
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.set_sorted

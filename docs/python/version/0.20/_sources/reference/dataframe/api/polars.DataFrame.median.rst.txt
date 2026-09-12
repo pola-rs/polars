@@ -1,0 +1,6 @@
+﻿polars.DataFrame.median
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.median

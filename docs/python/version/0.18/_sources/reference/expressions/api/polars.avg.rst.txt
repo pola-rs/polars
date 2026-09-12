@@ -1,0 +1,6 @@
+﻿polars.avg
+==========
+
+.. currentmodule:: polars
+
+.. autofunction:: avg

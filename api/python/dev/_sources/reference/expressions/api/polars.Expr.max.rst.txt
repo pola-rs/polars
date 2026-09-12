@@ -1,0 +1,6 @@
+﻿polars.Expr.max
+===============
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.max

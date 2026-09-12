@@ -1,0 +1,6 @@
+﻿polars.Expr.replace
+===================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.replace

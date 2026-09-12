@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["is_supported_array_dot_dtype"],"trait":["ArrayNameSpace","AsArray"]};
