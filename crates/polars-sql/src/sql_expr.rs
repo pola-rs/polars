@@ -663,8 +663,11 @@ impl SQLExprVisitor<'_> {
         op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
+        if let Some(folded) = fold_decimal_literal_arithmetic(left, op, right) {
+            return Ok(folded);
+        }
         // need special handling for interval offsets and comparisons
-        let (lhs, mut rhs) = match (left, op, right) {
+        let (mut lhs, mut rhs) = match (left, op, right) {
             (_, SQLBinaryOperator::Minus, SQLExpr::Interval(v)) => {
                 let duration = interval_to_duration(v, false)?;
                 return Ok(self
@@ -700,6 +703,16 @@ impl SQLExprVisitor<'_> {
             _ => (self.visit_expr(left)?, self.visit_expr(right)?),
         };
         rhs = self.convert_temporal_strings(&lhs, &rhs);
+        if matches!(
+            op,
+            SQLBinaryOperator::Eq | SQLBinaryOperator::NotEq | SQLBinaryOperator::Spaceship
+        ) {
+            if let Some(e) = self.int_literal_as_string(&rhs, &lhs) {
+                rhs = e;
+            } else if let Some(e) = self.int_literal_as_string(&lhs, &rhs) {
+                lhs = e;
+            }
+        }
 
         if matches!(op, SQLBinaryOperator::Plus | SQLBinaryOperator::Minus)
             && let Some(expr) = self.date_day_offset(&lhs, op, &rhs)
@@ -981,7 +994,8 @@ impl SQLExprVisitor<'_> {
         })
     }
 
-    /// Handle implicit temporal strings, eg: "dt IN ('2024-04-30','2024-05-01')".
+    /// Handle implicit temporal strings, eg: "dt IN ('2024-04-30','2024-05-01')", and
+    /// integer literals tested against a String expression, eg: "str IN (13, 31)".
     /// (not yet as versatile as the temporal string conversions in visit_binary_op)
     fn cast_array_elements_for(
         &self,
@@ -1001,6 +1015,11 @@ impl SQLExprVisitor<'_> {
                     }
                 }
             }
+        }
+        if elems.dtype().is_integer()
+            && dtype_expr_match.is_some_and(|expr| self.is_string_expr(expr))
+        {
+            return elems.cast(&DataType::String);
         }
         Ok(elems)
     }
@@ -1064,6 +1083,19 @@ impl SQLExprVisitor<'_> {
         } else {
             expr.cast(polars_type)
         })
+    }
+
+    /// `str_expr = 13`: an integer literal tested for equality against a String
+    /// expression is compared as the string '13'.
+    fn int_literal_as_string(&self, literal: &Expr, other: &Expr) -> Option<Expr> {
+        match literal {
+            Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n)))
+                if self.is_string_expr(other) =>
+            {
+                Some(lit(n.to_string()))
+            },
+            _ => None,
+        }
     }
 
     /// Whether `expr` is known to be `String`; false if the dtype cannot be resolved.
@@ -1194,7 +1226,7 @@ impl SQLExprVisitor<'_> {
                     _ => "DATETIME",
                 };
                 polars_ensure!(
-                    is_iso_datetime(value),
+                    is_iso_datetime(value) || is_iso_date(value),
                     SQLSyntax: "invalid {} literal '{}'", fn_name, value,
                 );
                 Ok(DataType::Datetime(timeunit_from_precision(prec)?, None))
@@ -1492,39 +1524,149 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
     })
 }
 
+/// A fixed-point value: `mantissa / 10^scale`.
+struct DecimalLiteral {
+    mantissa: i128,
+    scale: u32,
+    has_point: bool,
+}
+
+impl DecimalLiteral {
+    fn parse(s: &str) -> Option<Self> {
+        let (int_part, frac_part) = s.split_once('.').unwrap_or((s, ""));
+        if !int_part
+            .bytes()
+            .chain(frac_part.bytes())
+            .all(|b| b.is_ascii_digit())
+        {
+            return None;
+        }
+        Some(Self {
+            mantissa: format!("{int_part}{frac_part}").parse().ok()?,
+            scale: frac_part.len() as u32,
+            has_point: s.contains('.'),
+        })
+    }
+
+    fn rescale(&self, scale: u32) -> Option<i128> {
+        self.mantissa
+            .checked_mul(10i128.checked_pow(scale - self.scale)?)
+    }
+
+    fn eval(expr: &SQLExpr) -> Option<Self> {
+        match expr {
+            SQLExpr::Value(ValueWithSpan {
+                value: SQLValue::Number(s, _),
+                ..
+            }) => Self::parse(s),
+            SQLExpr::Nested(e) => Self::eval(e),
+            SQLExpr::UnaryOp { op, expr } => {
+                let v = Self::eval(expr)?;
+                match op {
+                    SQLUnaryOperator::Plus => Some(v),
+                    SQLUnaryOperator::Minus => Some(Self {
+                        mantissa: v.mantissa.checked_neg()?,
+                        ..v
+                    }),
+                    _ => None,
+                }
+            },
+            SQLExpr::BinaryOp { left, op, right } => {
+                Self::combine(Self::eval(left)?, op, Self::eval(right)?)
+            },
+            _ => None,
+        }
+    }
+
+    fn combine(l: Self, op: &SQLBinaryOperator, r: Self) -> Option<Self> {
+        let has_point = l.has_point || r.has_point;
+        match op {
+            SQLBinaryOperator::Plus | SQLBinaryOperator::Minus => {
+                let scale = l.scale.max(r.scale);
+                let (l, r) = (l.rescale(scale)?, r.rescale(scale)?);
+                let mantissa = if *op == SQLBinaryOperator::Plus {
+                    l.checked_add(r)?
+                } else {
+                    l.checked_sub(r)?
+                };
+                Some(Self {
+                    mantissa,
+                    scale,
+                    has_point,
+                })
+            },
+            SQLBinaryOperator::Multiply => Some(Self {
+                mantissa: l.mantissa.checked_mul(r.mantissa)?,
+                scale: l.scale + r.scale,
+                has_point,
+            }),
+            _ => None,
+        }
+    }
+
+    fn to_f64(&self) -> f64 {
+        let digits = self.mantissa.unsigned_abs().to_string();
+        let digits = format!("{:0>width$}", digits, width = self.scale as usize + 1);
+        let (int_part, frac_part) = digits.split_at(digits.len() - self.scale as usize);
+        let sign = if self.mantissa < 0 { "-" } else { "" };
+        format!("{sign}{int_part}.{frac_part}").parse().unwrap()
+    }
+}
+
+/// Evaluate arithmetic between numeric literals exactly, so that `.06 + 0.01` yields the
+/// float nearest to 0.07 (as it would in decimal SQL) rather than accumulating float error.
+/// Integer-only arithmetic is left to the engine.
+fn fold_decimal_literal_arithmetic(
+    left: &SQLExpr,
+    op: &SQLBinaryOperator,
+    right: &SQLExpr,
+) -> Option<Expr> {
+    let value = DecimalLiteral::combine(
+        DecimalLiteral::eval(left)?,
+        op,
+        DecimalLiteral::eval(right)?,
+    )?;
+    value.has_point.then(|| lit(value.to_f64()))
+}
+
 pub(crate) fn interval_to_duration(interval: &Interval, fixed: bool) -> PolarsResult<Duration> {
     if interval.last_field.is_some()
-        || interval.leading_field.is_some()
         || interval.leading_precision.is_some()
         || interval.fractional_seconds_precision.is_some()
     {
         polars_bail!(SQLSyntax: "unsupported interval syntax ('{}')", interval)
     }
-    let s = match &*interval.value {
-        SQLExpr::UnaryOp { .. } => {
+    let s = match (&*interval.value, &interval.leading_field) {
+        (SQLExpr::UnaryOp { .. }, _) => {
             polars_bail!(SQLSyntax: "unary ops are not valid on interval strings; found {}", interval.value)
         },
-        SQLExpr::Value(ValueWithSpan {
-            value: SQLValue::SingleQuotedString(s),
-            ..
-        }) => Some(s),
-        _ => None,
+        (
+            SQLExpr::Value(ValueWithSpan {
+                value: SQLValue::SingleQuotedString(s),
+                ..
+            }),
+            None,
+        ) => s.clone(),
+        // "INTERVAL '3' MONTH" and "INTERVAL 3 MONTH": the value is a bare count of the unit
+        (
+            SQLExpr::Value(ValueWithSpan {
+                value: SQLValue::SingleQuotedString(n) | SQLValue::Number(n, _),
+                ..
+            }),
+            Some(unit),
+        ) if n.bytes().all(|b| b.is_ascii_digit()) => format!("{n} {unit}"),
+        _ => polars_bail!(SQLSyntax: "invalid interval {:?}", interval),
     };
-    match s {
-        Some(s) if s.contains('-') => {
-            polars_bail!(SQLInterface: "minus signs are not yet supported in interval strings; found '{}'", s)
-        },
-        Some(s) => {
-            // years, quarters, and months do not have a fixed duration; these
-            // interval parts can only be used with respect to a reference point
-            let duration = Duration::parse_interval(s);
-            if fixed && duration.months() != 0 {
-                polars_bail!(SQLSyntax: "fixed-duration interval cannot contain years, quarters, or months; found {}", s)
-            };
-            Ok(duration)
-        },
-        None => polars_bail!(SQLSyntax: "invalid interval {:?}", interval),
+    if s.contains('-') {
+        polars_bail!(SQLInterface: "minus signs are not yet supported in interval strings; found '{}'", s)
     }
+    // years, quarters, and months do not have a fixed duration; these
+    // interval parts can only be used with respect to a reference point
+    let duration = Duration::try_parse_interval(&s)?;
+    if fixed && duration.months() != 0 {
+        polars_bail!(SQLSyntax: "fixed-duration interval cannot contain years, quarters, or months; found {}", s)
+    };
+    Ok(duration)
 }
 
 pub(crate) fn parse_sql_expr(

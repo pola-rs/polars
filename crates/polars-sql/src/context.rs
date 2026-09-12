@@ -34,6 +34,7 @@ use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
     expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
     expr_refers_to_table, sql_expr_cols_all_in_schema, statement_registers_table,
+    table_qualified_columns,
 };
 use crate::subquery::{LowerScope, SubqueryBindings, desugar_quantified_subqueries};
 use crate::table_functions::PolarsTableFunctions;
@@ -3772,10 +3773,46 @@ fn process_join_on(
             ),
         },
         SQLExpr::Nested(expr) => process_join_on(ctx, expr, tbl_left, tbl_right),
-        _ => polars_bail!(
-            SQLInterface: "unsupported join constraint expression: {:?}", sql_expr
-        ),
+        // Any other predicate (LIKE, IN, IS NULL, OR, ...) is evaluated on the joined frame.
+        _ => {
+            let join_schema = build_join_schema(tbl_left, tbl_right)?;
+            let suffix = format!(":{}", tbl_right.name);
+            let predicate = parse_sql_expr(sql_expr, ctx, Some(&join_schema))?;
+            let predicate =
+                suffix_right_table_columns(predicate, sql_expr, tbl_left, tbl_right, &suffix)?;
+            Ok((vec![], vec![], vec![predicate]))
+        },
     }
+}
+
+/// Rename the columns that `sql_expr` references as `right_table.col` to their merged-schema
+/// (suffixed) names when the same column also exists in the left table.
+fn suffix_right_table_columns(
+    expr: Expr,
+    sql_expr: &SQLExpr,
+    tbl_left: &TableInfo,
+    tbl_right: &TableInfo,
+    suffix: &str,
+) -> PolarsResult<Expr> {
+    let right_cols = table_qualified_columns(sql_expr, &tbl_right.name);
+    let left_cols = table_qualified_columns(sql_expr, &tbl_left.name);
+    let conflicts = |name: &str| {
+        right_cols.contains(name)
+            && tbl_left.schema.contains(name)
+            && tbl_right.schema.contains(name)
+    };
+    if let Some(name) = left_cols.iter().find(|name| conflicts(name)) {
+        polars_bail!(
+            SQLInterface: "unsupported join condition: references both '{}.{}' and '{}.{}'",
+            tbl_left.name, name, tbl_right.name, name
+        )
+    }
+    Ok(strip_join_aliases(expr).map_expr(|e| match e {
+        Expr::Column(ref name) if conflicts(name) => {
+            Expr::Column(PlSmallStr::from_string(format!("{name}{suffix}")))
+        },
+        other => other,
+    }))
 }
 
 /// Replace aggregates over pre-aggregation columns with references to hoisted

@@ -52,6 +52,22 @@ pub(crate) fn expr_refers_to_table(expr: &SQLExpr, table_name: &str) -> bool {
     table_finder.found
 }
 
+/// Collect the column names that an expression references qualified by the given table
+/// (`table_name.col`).
+pub(crate) fn table_qualified_columns(expr: &SQLExpr, table_name: &str) -> PlHashSet<String> {
+    let mut columns = PlHashSet::new();
+    let _ = visit_expressions(expr, |e| {
+        if let SQLExpr::CompoundIdentifier(idents) = e
+            && idents.len() >= 2
+            && idents[0].value.as_str() == table_name
+        {
+            columns.insert(idents[1].value.clone());
+        }
+        ControlFlow::<()>::Continue(())
+    });
+    columns
+}
+
 // ---------------------------------------------------------------------------
 // UnqualifiedColumnsInSchema
 // ---------------------------------------------------------------------------

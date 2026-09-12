@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.sql import assert_sql_matches
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -210,6 +211,31 @@ def test_stddev_variance() -> None:
                 }
             ),
         )
+
+
+def test_decimal_literal_arithmetic_is_exact() -> None:
+    df = pl.DataFrame(
+        {
+            "disc": [D("0.04"), D("0.05"), D("0.06"), D("0.07"), D("0.08")],
+            "qty": [1, 2, 3, 4, 5],
+        },
+        schema={"disc": pl.Decimal(15, 2), "qty": pl.Int64},
+    )
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT disc, qty
+            FROM self
+            WHERE disc BETWEEN .06 - 0.01 AND .06 + 0.01
+              AND disc <= (0.03 + .01) * 2 - -0.01
+            ORDER BY disc
+        """,
+        expected={"disc": [D("0.05"), D("0.06"), D("0.07")], "qty": [2, 3, 4]},
+        compare_with="duckdb",
+    )
+    res = df.sql("SELECT 0.1 + 0.2 AS x, 1 + 2 AS y, 2 * 1.5 AS z FROM self LIMIT 1")
+    assert res.row(0) == (0.3, 3, 3.0)
+    assert res.schema == {"x": pl.Float64, "y": pl.Int32, "z": pl.Float64}
 
 
 def test_int_div_true_division() -> None:

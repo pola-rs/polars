@@ -80,6 +80,25 @@ def test_equal_not_equal() -> None:
     }
 
 
+def test_string_compared_with_integer_literals() -> None:
+    # integer literals tested for (in)equality against a string are compared as strings
+    df = pl.DataFrame({"phone": ["13-123", "31-456", "22-789", "22"]})
+    res = df.sql(
+        """
+        SELECT phone
+        FROM self
+        WHERE SUBSTRING(phone, 1, 2) IN (13, 31)
+           OR phone = 22
+           OR 13 <> SUBSTRING(phone, 1, 2)
+        ORDER BY phone
+        """
+    )
+    assert res.to_series().to_list() == ["13-123", "22", "22-789", "31-456"]
+
+    res = df.sql("SELECT phone FROM self WHERE phone NOT IN (22, 13)")
+    assert res.to_series().to_list() == ["13-123", "31-456", "22-789"]
+
+
 @pytest.mark.parametrize(
     "in_clause",
     [
