@@ -659,26 +659,31 @@ pub fn key_domain(
     let right_ndv = right_key.and_then(|name| right.distinct_count_key(name));
     let domain = match (left_ndv, right_ndv) {
         (Some(l), Some(r)) => l.max(r),
-        // The smaller relation is assumed to hold the key uniquely, so it describes
-        // the domain and only its own value range may tighten it. The other side's
-        // range covers the values that side happens to hold, and letting it bound the
-        // domain makes a selective dimension look like it multiplies the rows it
-        // filters.
+        // The side that repeats the key least describes the domain: it is the one
+        // closest to holding each value once. The other side's bound covers the
+        // values it happens to hold, and letting it decide makes a selective
+        // dimension look like it multiplies the rows it filters.
         _ => {
-            let side_domain = |side: &NodeStats, side_key: Option<&PlSmallStr>| {
-                let rows = side.unfiltered;
+            let bound = |side: &NodeStats, side_key: Option<&PlSmallStr>| {
+                // `int_domain` is already bounded by the side's own rows.
                 side_key
                     .and_then(|name| side.int_domain(name))
-                    .map_or(rows, |range| rows.min(range))
+                    .unwrap_or(side.unfiltered)
             };
-            let estimate = match left.unfiltered.partial_cmp(&right.unfiltered) {
-                Some(Ordering::Less) => side_domain(left, left_key),
-                Some(Ordering::Greater) => side_domain(right, right_key),
-                // Neither side is the smaller one. Take the domain that holds both,
-                // so the estimate does not depend on which way round the join is
-                // written.
-                _ => side_domain(left, left_key).max(side_domain(right, right_key)),
+            let (left_bound, right_bound) = (bound(left, left_key), bound(right, right_key));
+            // Distinct values per row, at most one. The side nearest to holding the
+            // key uniquely describes the domain; the other repeats values and says
+            // less about how many there are.
+            let per_row = |bound: f64, rows: f64| bound / rows.max(MIN_CARDINALITY);
+            let left_first = match per_row(left_bound, left.unfiltered)
+                .total_cmp(&per_row(right_bound, right.unfiltered))
+            {
+                Ordering::Greater => true,
+                Ordering::Less => false,
+                // Equally repeated, so fall back to the smaller relation.
+                Ordering::Equal => left.unfiltered <= right.unfiltered,
             };
+            let estimate = if left_first { left_bound } else { right_bound };
             // A known distinct count on either side is a lower bound, since every
             // value it holds is in the domain.
             left_ndv
@@ -788,6 +793,34 @@ mod tests {
         assert_eq!(domain, 73_049.0);
         // 28.8M * 2922 / 73049, well under the fact table it filters.
         assert!((out - 1_152_055.0).abs() < 50.0, "got {out}");
+    }
+
+    /// A dimension a shade larger than the table it joins still holds the key
+    /// uniquely. Row counts alone misread which side that is, and the fact's narrow
+    /// range then decides the domain, so the dimension looks like it multiplies the
+    /// rows it filters.
+    #[test]
+    fn the_least_repeated_side_describes_the_domain() {
+        let ranged = |rows: f64, range: (i128, i128)| {
+            leaf(rows, rows).with_column(
+                "k",
+                ScanColumnStats {
+                    int_range: Some(range),
+                    ..Default::default()
+                },
+            )
+        };
+        // The fact repeats 100 keys over a million rows; the dimension is one row
+        // larger and holds a million distinct ones.
+        let fact = ranged(1_000_000.0, (0, 99));
+        let dim = ranged(1_000_001.0, (0, 1_000_000));
+
+        let domain = key_domain(&fact, Some(&key("k")), &dim, Some(&key("k")));
+        assert_eq!(domain, 1_000_001.0);
+        assert_eq!(
+            domain,
+            key_domain(&dim, Some(&key("k")), &fact, Some(&key("k")))
+        );
     }
 
     /// Equal row counts leave neither side the smaller one, so the estimate must not
