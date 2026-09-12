@@ -27,8 +27,8 @@ use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::sql_expr::{
-    order_by_sort_options, parse_sql_array, parse_sql_expr, resolve_compound_identifier,
-    to_sql_interface_err,
+    order_by_sort_options, parse_sql_array, parse_sql_equality_operands, parse_sql_expr,
+    resolve_compound_identifier, to_sql_interface_err,
 };
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
@@ -2147,8 +2147,7 @@ impl SQLContext {
             };
 
             // shortcut filter evaluation for a constant condition (eg: "WHERE 1 = 1")
-            if !expr_references_any_column(expr) && !expr_contains_subquery(expr) {
-                let satisfied = evaluate_constant_predicate(self, expr)?;
+            if let Some(satisfied) = evaluate_constant_predicate(self, expr, &schema)? {
                 return Ok(if satisfied == (filter_mode == FilterMode::KeepTrue) {
                     lf
                 } else {
@@ -2216,10 +2215,8 @@ impl SQLContext {
         join_type: JoinType,
     ) -> PolarsResult<LazyFrame> {
         if let JoinConstraint::On(expr) = constraint {
-            // A subquery references no column of its own, so it needs excluding here
-            // as well as it would otherwise read as a constant predicate.
-            if !expr_references_any_column(expr) && !expr_contains_subquery(expr) {
-                let satisfied = evaluate_constant_predicate(self, expr)?;
+            let join_schema = build_join_schema(tbl_left, tbl_right)?;
+            if let Some(satisfied) = evaluate_constant_predicate(self, expr, &join_schema)? {
                 let builder = tbl_left
                     .frame
                     .clone()
@@ -3594,8 +3591,9 @@ fn determine_left_right_join_on(
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     // parse, removing any aliases that may have been added by `resolve_column`
     // (called inside `parse_sql_expr`) as we need the actual/underlying col
-    let left_on = strip_join_aliases(parse_sql_expr(expr_left, ctx, Some(join_schema))?);
-    let right_on = strip_join_aliases(parse_sql_expr(expr_right, ctx, Some(join_schema))?);
+    let (left_on, right_on) =
+        parse_sql_equality_operands(expr_left, expr_right, ctx, Some(join_schema))?;
+    let (left_on, right_on) = (strip_join_aliases(left_on), strip_join_aliases(right_on));
 
     // a constant operand is a literal, or any other expression referencing no column (such as
     // `UPPER('it')`); it can be evaluated against either input, so it has no table affinity
@@ -3849,15 +3847,41 @@ fn suffix_conflicting_columns(
     })
 }
 
-/// Evaluate a column-free (constant) condition to a definite true/false verdict;
-/// SQL treats an unknown (NULL) condition the same as false for matching.
-fn evaluate_constant_predicate(ctx: &mut SQLContext, expr: &SQLExpr) -> PolarsResult<bool> {
-    let predicate = parse_sql_expr(expr, ctx, None)?;
+/// Evaluate a condition that does not depend on the input frame (eg: `1 = 1`) to a
+/// definite true/false verdict; SQL treats an unknown (NULL) condition the same as
+/// false for matching. Returns `None` for any other condition.
+fn evaluate_constant_predicate(
+    ctx: &mut SQLContext,
+    expr: &SQLExpr,
+    schema: &Schema,
+) -> PolarsResult<Option<bool>> {
+    if expr_references_any_column(expr) || expr_contains_subquery(expr) {
+        return Ok(None);
+    }
+    let predicate = parse_sql_expr(expr, ctx, Some(schema))?;
+    // only literals and operations over them; anything reading the frame (a selector,
+    // `len()`, an aggregation or window) has no value without it
+    let is_constant = predicate.into_iter().all(|e| {
+        matches!(
+            e,
+            Expr::Literal(_)
+                | Expr::BinaryExpr { .. }
+                | Expr::Cast { .. }
+                | Expr::Ternary { .. }
+                | Expr::Function { .. }
+                | Expr::Alias(..)
+        )
+    });
+    if !is_constant {
+        return Ok(None);
+    }
     let df = DataFrame::empty()
         .lazy()
         .select([predicate.cast(DataType::Boolean).alias("predicate")])
         .collect()?;
-    Ok(df.column("predicate")?.bool()?.get(0).unwrap_or(false))
+    Ok(Some(
+        df.column("predicate")?.bool()?.get(0).unwrap_or(false),
+    ))
 }
 
 fn process_join_constraint(

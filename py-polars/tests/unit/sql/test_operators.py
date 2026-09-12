@@ -132,6 +132,33 @@ def test_constant_where_condition(condition: str, keeps_rows: bool) -> None:
 
 
 @pytest.mark.parametrize(
+    ("condition", "expected"),
+    [
+        ("ROW_NUMBER() OVER () <= 2", [1, 2]),
+        ("COUNT(1) > 1", [1, 2, 3]),
+        ("COLUMNS('^a$') > 1", [2, 3]),
+    ],
+)
+def test_where_condition_without_column_names(
+    condition: str, expected: list[int]
+) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    res = df.sql(f"SELECT a FROM self WHERE {condition}")
+    assert res.to_series().to_list() == expected
+
+
+def test_join_key_string_compared_with_integer_literal() -> None:
+    frames = {
+        "a": pl.DataFrame({"s": ["13", "31", "22"]}),
+        "b": pl.DataFrame({"k": [1, 2]}),
+    }
+    res = pl.SQLContext(frames=frames).execute(
+        "SELECT s, k FROM a JOIN b ON a.s = 13 AND b.k = 2", eager=True
+    )
+    assert res.rows() == [("13", 2)]
+
+
+@pytest.mark.parametrize(
     "in_clause",
     [
         "values NOT IN ([0], [3,4], [7,8], [6,6,6])",

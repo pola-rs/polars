@@ -1667,6 +1667,20 @@ pub(crate) fn parse_sql_expr(
     visitor.visit_expr(expr)
 }
 
+/// Parse the two operands of an equality (eg: a join key pair), applying the same
+/// literal coercion as `=` in an expression.
+pub(crate) fn parse_sql_equality_operands(
+    left: &SQLExpr,
+    right: &SQLExpr,
+    ctx: &mut SQLContext,
+    active_schema: Option<&Schema>,
+) -> PolarsResult<(Expr, Expr)> {
+    let mut visitor = SQLExprVisitor { ctx, active_schema };
+    let lhs = visitor.visit_expr(left)?;
+    let rhs = visitor.visit_expr(right)?;
+    Ok(visitor.convert_int_literal_for_string(lhs, rhs))
+}
+
 pub(crate) fn parse_sql_array(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsResult<Series> {
     match expr {
         SQLExpr::Array(arr) => {
