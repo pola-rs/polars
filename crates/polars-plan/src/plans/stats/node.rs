@@ -644,12 +644,13 @@ pub fn composite_key_domain(parts: impl Iterator<Item = f64>, max_rows: f64) -> 
 
 /// Domain size of the key joining two leaves.
 ///
-/// With distinct counts for both sides the domain is the larger of the two: every
-/// value one side holds is in the domain, whether or not the other side has it.
-/// Without them a value range stands in for a distinct count. When both sides have
-/// one, the side repeating the key least describes the domain alone. Otherwise the
-/// ranges cannot be compared, and the smaller relation describes it - by its own
-/// range where it has one, and by its row count otherwise.
+/// With distinct counts on both sides the domain is the larger of the two: every
+/// value a side holds is in the domain, whether or not the other side has it.
+///
+/// Otherwise a value range stands in for a distinct count. With a range on both
+/// sides, the one repeating the key least sets the domain. With a range on at most
+/// one side the two cannot be compared, so the smaller relation sets it, by its own
+/// range where it has one and by its row count otherwise.
 pub fn key_domain(
     left: &NodeStats,
     left_key: Option<&PlSmallStr>,
@@ -665,12 +666,12 @@ pub fn key_domain(
             let left_range = left_key.and_then(|name| left.int_domain(name));
             let right_range = right_key.and_then(|name| right.int_domain(name));
             let estimate = match (left_range, right_range) {
-                // Distinct values per row, cross multiplied rather than divided. The
-                // side closest to holding each value once describes the domain; on a
-                // tie prefer the smaller relation, whose key is likelier to be unique.
+                // Distinct values per row, cross multiplied rather than divided.
                 (Some(l), Some(r)) => {
                     let (l_per_row, r_per_row) = (l * right.unfiltered, r * left.unfiltered);
                     if l_per_row > r_per_row
+                        // A tie goes to the smaller relation, whose key is likelier
+                        // to be unique.
                         || (l_per_row == r_per_row && left.unfiltered <= right.unfiltered)
                     {
                         l
@@ -678,10 +679,8 @@ pub fn key_domain(
                         r
                     }
                 },
-                // A missing range is not evidence that the key is unique, so it must
-                // not win the comparison above. At most one side has a range here, so
-                // equal row counts leave that range - and nothing about the order the
-                // join is written in - to describe the domain.
+                // A missing range says nothing about uniqueness, so it must not be
+                // compared against a known one. At most one side has a range here.
                 _ if left.unfiltered == right.unfiltered => {
                     left_range.or(right_range).unwrap_or(left.unfiltered)
                 },
@@ -804,7 +803,7 @@ mod tests {
     }
 
     /// A dimension one row larger than the table it joins still holds the key
-    /// uniquely, so it describes the domain however the two compare in size.
+    /// uniquely, so it sets the domain however the two compare in size.
     #[test]
     fn the_least_repeated_side_describes_the_domain() {
         // The fact repeats 100 keys over a million rows; the dimension is one row
@@ -820,8 +819,8 @@ mod tests {
         );
     }
 
-    /// A key with no range is unknown, not unique: the side that has one must still
-    /// describe the domain.
+    /// A key with no range is unknown, not unique: the side that has one still sets
+    /// the domain.
     #[test]
     fn a_missing_range_does_not_outrank_a_known_one() {
         // Joining on a computed key loses the fact's range.
@@ -836,8 +835,8 @@ mod tests {
         );
     }
 
-    /// A known range describes the domain however the row counts compare, so equal
-    /// counts must not hand the estimate to whichever side is written first.
+    /// A known range sets the domain however the row counts compare, so equal counts
+    /// must not hand the estimate to whichever side is written first.
     #[test]
     fn equal_row_counts_keep_the_only_known_range() {
         let opaque = leaf(100_000.0, 100_000.0);
@@ -1041,9 +1040,8 @@ mod tests {
         let fact = leaf_with_range(1_000_000.0, (0, 99));
         let dim = leaf_with_ndv(800.0, 800.0, "k", 500);
 
-        // The dimension describes the domain, and its 500 known distinct keys are a
-        // lower bound on it. Either way the fact's narrow range does not drag the
-        // domain below what the dimension holds.
+        // The dimension sets the domain, and its 500 known distinct keys are a lower
+        // bound on it. The fact's narrow range does not drag it below either.
         assert_eq!(
             key_domain(&fact, Some(&key("k")), &dim, Some(&key("k"))),
             800.0
