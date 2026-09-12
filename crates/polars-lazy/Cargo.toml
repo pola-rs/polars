@@ -357,6 +357,7 @@ allow_unused = [
 
 test = [
   "polars-plan/debugging",
+  "approx_quantile",
   "rolling_window",
   "rank",
   "round_series",
