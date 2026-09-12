@@ -100,7 +100,6 @@ pub(crate) fn det_join_schema(
     schema_left: &SchemaRef,
     schema_right: &SchemaRef,
     options: &JoinOptionsIR,
-    expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<SchemaRef> {
     let condition = &options.options;
 
@@ -118,20 +117,10 @@ pub(crate) fn det_join_schema(
         //
         // df(cols=[B, A, B_right])
         JoinType::Right if options.args.should_coalesce() => {
-            // Get join names.
-            let mut join_on_left: PlIndexSet<_> =
-                PlIndexSet::with_capacity(condition.left_on_len());
-            for e in condition.left_on() {
-                let field = e.field(schema_left, expr_arena)?;
-                join_on_left.insert(field.name);
-            }
-
-            let mut join_on_right: PlIndexSet<_> =
-                PlIndexSet::with_capacity(condition.right_on_len());
-            for e in condition.right_on() {
-                let field = e.field(schema_right, expr_arena)?;
-                join_on_right.insert(field.name);
-            }
+            let join_on_left: PlIndexSet<_> = condition
+                .left_on()
+                .map(|e| e.output_name().clone())
+                .collect();
 
             // For the error message
             let mut suffixed = None;
@@ -173,14 +162,12 @@ pub(crate) fn det_join_schema(
             let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len())
                 .hstack(schema_left.iter_fields())?;
 
-            let is_coalesced = options.args.should_coalesce();
-
-            let mut join_on_right: PlIndexSet<_> =
-                PlIndexSet::with_capacity(condition.right_on_len());
-            for e in condition.right_on() {
-                let field = e.field(schema_right, expr_arena)?;
-                join_on_right.insert(field.name);
-            }
+            let join_on_right: Option<PlIndexSet<_>> = options.args.should_coalesce().then(|| {
+                condition
+                    .right_on()
+                    .map(|e| e.output_name().clone())
+                    .collect()
+            });
 
             let mut right_by: PlIndexSet<&PlSmallStr> = PlIndexSet::default();
             #[cfg(feature = "asof_join")]
@@ -191,29 +178,21 @@ pub(crate) fn det_join_schema(
             }
 
             for (name, dtype) in schema_right.iter() {
-                // Asof join by columns are coalesced
+                // As-of grouping columns are coalesced into the left output.
                 if right_by.contains(name) {
-                    // Do not add suffix. The column of the left table will be used
                     continue;
                 }
 
-                if is_coalesced
+                if let Some(join_on_right) = &join_on_right
                     && let Some(idx) = join_on_right.get_index_of(name)
                     && {
                         let mut need_to_include_column = false;
 
-                        // Handles coalescing of asof-joins.
-                        // Asof joins are not equi-joins
-                        // so the columns that are joined on, may have different
-                        // values so if the right has a different name, it is added to the schema
+                        // As-of key values can differ; preserve differently named right keys.
                         #[cfg(feature = "asof_join")]
                         if matches!(how, JoinType::AsOf(_)) {
-                            let field_left = condition
-                                .left_on()
-                                .nth(idx)
-                                .unwrap()
-                                .field(schema_left, expr_arena)?;
-                            need_to_include_column = field_left.name != name;
+                            need_to_include_column =
+                                condition.left_on().nth(idx).unwrap().output_name() != name;
                         }
 
                         !need_to_include_column
