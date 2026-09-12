@@ -679,8 +679,13 @@ pub fn key_domain(
                     }
                 },
                 // A missing range is not evidence that the key is unique, so it must
-                // not win the comparison above.
-                _ if left.unfiltered <= right.unfiltered => left_range.unwrap_or(left.unfiltered),
+                // not win the comparison above. At most one side has a range here, so
+                // equal row counts leave that range - and nothing about the order the
+                // join is written in - to describe the domain.
+                _ if left.unfiltered == right.unfiltered => {
+                    left_range.or(right_range).unwrap_or(left.unfiltered)
+                },
+                _ if left.unfiltered < right.unfiltered => left_range.unwrap_or(left.unfiltered),
                 _ => right_range.unwrap_or(right.unfiltered),
             };
             // A known distinct count on either side is a lower bound, since every
@@ -829,6 +834,20 @@ mod tests {
             domain,
             key_domain(&dim, Some(&key("k")), &fact, Some(&key("k")))
         );
+    }
+
+    /// A known range describes the domain however the row counts compare, so equal
+    /// counts must not hand the estimate to whichever side is written first.
+    #[test]
+    fn equal_row_counts_keep_the_only_known_range() {
+        let opaque = leaf(100_000.0, 100_000.0);
+        let ranged = leaf_with_range(100_000.0, (1, 1_000));
+
+        let forwards = key_domain(&opaque, Some(&key("k")), &ranged, Some(&key("k")));
+        let backwards = key_domain(&ranged, Some(&key("k")), &opaque, Some(&key("k")));
+
+        assert_eq!(forwards, 1_000.0);
+        assert_eq!(forwards, backwards);
     }
 
     /// Equal row counts leave neither side the smaller one, so the estimate must not
