@@ -25,7 +25,18 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
         return Ok(());
     }
 
-    let s = s.as_materialized_series().to_physical_repr();
+    let s = s.as_materialized_series();
+
+    // A single chunk that repeats one element is one run of that element, whatever the element
+    // is: the typed helpers below would read the repeat out one element at a time to say so.
+    if let [chunk] = s.chunks().as_slice()
+        && chunk.is_scalar()
+    {
+        lengths.push(s.len() as IdxSize);
+        return Ok(());
+    }
+
+    let s = s.to_physical_repr();
     match s.dtype() {
         DataType::Boolean => {
             let ca: &BooleanChunked = s.as_ref().as_ref().as_ref();

@@ -54,3 +54,25 @@ def test_rle_over_a_column_of_several_chunks() -> None:
             lf.select(pl.col("a").rle()).collect(engine=engine),  # type: ignore[arg-type]
             expected.collect(engine=engine),  # type: ignore[arg-type]
         )
+
+
+def test_rle_over_a_chunk_that_repeats_one_element() -> None:
+    # The answer comes off the one element the chunk repeats, rather than off a
+    # walk of every element of it: one run, as long as the column.
+    for dtype, value in [
+        (pl.Int64, 5),
+        (pl.String, "ab"),
+        (pl.Boolean, True),
+        (pl.List(pl.Int64), [1, 2]),
+        (pl.Struct({"x": pl.Int64}), {"x": 1}),
+        (pl.Datetime("us"), None),
+    ]:
+        s = pl.select(pl.repeat(pl.lit(value, dtype=dtype), 8).alias("a")).to_series()
+        df = pl.DataFrame([s])
+
+        expected = pl.DataFrame(
+            {"len": [8], "value": pl.Series("value", [value], dtype=dtype)},
+            schema_overrides={"len": pl.get_index_type()},
+        )
+        assert_frame_equal(df.select(pl.col("a").rle()).unnest("a"), expected)
+        assert df.select(pl.col("a").rle_id())["a"].to_list() == [0] * 8
