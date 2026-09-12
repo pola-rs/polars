@@ -166,6 +166,41 @@ mod inner {
 
     /// This lets us separate some logic into `new()` to reduce the amount of
     /// monomorphized code.
+    /// A mask read one element at a time, resolved once rather than once per element read.
+    ///
+    /// A mask may stand for every element with a single bit, and reading it through
+    /// [`PlBitmapRef`] resolves that an element at a time; resolving it once leaves the walks
+    /// below either a run of bits to read or the one bit that answers for all of them.
+    #[derive(Clone, Copy)]
+    enum Mask<'a> {
+        /// Every element reads the one bit, so it answers for all of them.
+        Shared(bool),
+        /// One bit per element.
+        PerElement(&'a Bitmap),
+    }
+
+    impl<'a> Mask<'a> {
+        fn new(mask: PlBitmapRef<'a>) -> Self {
+            match mask.scalar_value() {
+                Some(value) => Self::Shared(value),
+                // A mask that does not stand for its elements with one bit holds one each.
+                None => Self::PerElement(mask.flat_bitmap().unwrap()),
+            }
+        }
+
+        /// The bit at `index`.
+        ///
+        /// # Safety
+        /// `index` must be below the number of elements the mask covers.
+        #[inline(always)]
+        unsafe fn get(self, index: usize) -> bool {
+            match self {
+                Self::Shared(value) => value,
+                Self::PerElement(mask) => unsafe { mask.get_bit_unchecked(index) },
+            }
+        }
+    }
+
     impl ListNumericOpHelper {
         /// Checks that:
         /// * Dtypes are compatible:
@@ -541,6 +576,14 @@ mod inner {
                     let mut out_vec: Vec<T::Native> = Vec::with_capacity(n_values);
                     let out_ptr: *mut T::Native = out_vec.as_mut_ptr();
 
+                    // Reading a value out of an array resolves the representation it holds its
+                    // values in, and the walk below resolves it once per value read: both sides
+                    // are resolved once here instead, leaving the walk a slice to index.
+                    let values_lhs = arr_lhs.to_flat_values();
+                    let values_rhs = arr_rhs.to_flat_values();
+                    let (values_lhs, values_rhs) = (values_lhs.as_slice(), values_rhs.as_slice());
+                    let outer_valid = Mask::new(self.outer_validity.as_ref());
+
                     // Counter that stops being incremented at the first row position with mismatching
                     // list lengths.
                     let mut mismatch_pos = 0;
@@ -555,7 +598,7 @@ mod inner {
                                 (mismatch_pos == i)
                                 & (
                                     (lhs_len == rhs_len)
-                                    | unsafe { !self.outer_validity.get_unchecked(i) }
+                                    | unsafe { !outer_valid.get(i) }
                                 )
                             {
                                 mismatch_pos += 1;
@@ -569,8 +612,8 @@ mod inner {
                                 let l_idx = i + lhs_start;
                                 let r_idx = i + rhs_start;
 
-                                let l = unsafe { arr_lhs.value_unchecked(l_idx) };
-                                let r = unsafe { arr_rhs.value_unchecked(r_idx) };
+                                let l = unsafe { *values_lhs.get_unchecked(l_idx) };
+                                let r = unsafe { *values_rhs.get_unchecked(r_idx) };
                                 let v = $OP(l, r);
 
                                 unsafe { out_ptr.add(l_idx).write(v) };
@@ -600,6 +643,8 @@ mod inner {
                             (None, None) => None,
                         }
                         .map(|(mut validity_out, validity_rhs)| {
+                            // Resolved once, rather than once per element read below.
+                            let validity_rhs = Mask::new(validity_rhs);
                             for ((lhs_start, lhs_len), (rhs_start, rhs_len)) in offsets_lhs
                                 .offset_and_length_iter()
                                 .zip(offsets_rhs.offset_and_length_iter())
@@ -611,7 +656,7 @@ mod inner {
                                     let r_idx = i + rhs_start;
 
                                     let l_valid = unsafe { validity_out.get_unchecked(l_idx) };
-                                    let r_valid = unsafe { validity_rhs.get_unchecked(r_idx) };
+                                    let r_valid = unsafe { validity_rhs.get(r_idx) };
                                     let is_valid = l_valid & r_valid;
 
                                     // Size and alignment of validity vec are based on LHS.
@@ -652,12 +697,20 @@ mod inner {
                     let rhs_start = *offsets_rhs.first() as usize;
                     let width = offsets_rhs.range() as usize;
 
+                    // Reading a value out of an array resolves the representation it holds its
+                    // values in, and the walk below resolves it once per value read: both sides
+                    // are resolved once here instead, leaving the walk a slice to index.
+                    let values_lhs = arr_lhs.to_flat_values();
+                    let values_rhs = arr_rhs.to_flat_values();
+                    let (values_lhs, values_rhs) = (values_lhs.as_slice(), values_rhs.as_slice());
+                    let outer_valid = Mask::new(self.outer_validity.as_ref());
+
                     let mut mismatch_pos = 0;
 
                     with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
                         for (i, (lhs_start, lhs_len)) in offsets_lhs.offset_and_length_iter().enumerate() {
                             if ((lhs_len == width) & (mismatch_pos == i))
-                                | unsafe { !self.outer_validity.get_unchecked(i) }
+                                | unsafe { !outer_valid.get(i) }
                             {
                                 mismatch_pos += 1;
                             }
@@ -668,8 +721,8 @@ mod inner {
                                 let l_idx = i + lhs_start;
                                 let r_idx = i + rhs_start;
 
-                                let l = unsafe { arr_lhs.value_unchecked(l_idx) };
-                                let r = unsafe { arr_rhs.value_unchecked(r_idx) };
+                                let l = unsafe { *values_lhs.get_unchecked(l_idx) };
+                                let r = unsafe { *values_rhs.get_unchecked(r_idx) };
                                 let v = $OP(l, r);
 
                                 unsafe {
@@ -701,6 +754,8 @@ mod inner {
                             (None, None) => None,
                         }
                         .map(|(mut validity_out, validity_rhs)| {
+                            // Resolved once, rather than once per element read below.
+                            let validity_rhs = Mask::new(validity_rhs);
                             for (lhs_start, lhs_len) in offsets_lhs.offset_and_length_iter() {
                                 let len: usize = lhs_len.min(width);
 
@@ -709,7 +764,7 @@ mod inner {
                                     let r_idx = i + rhs_start;
 
                                     let l_valid = unsafe { validity_out.get_unchecked(l_idx) };
-                                    let r_valid = unsafe { validity_rhs.get_unchecked(r_idx) };
+                                    let r_valid = unsafe { validity_rhs.get(r_idx) };
                                     let is_valid = l_valid & r_valid;
 
                                     // Size and alignment of validity vec are based on LHS.
@@ -751,13 +806,20 @@ mod inner {
                     let mut out_vec = Vec::<T::Native>::with_capacity(n_values);
                     let out_ptr = out_vec.as_mut_ptr();
 
+                    // Reading a value out of an array resolves the representation it holds its
+                    // values in, and the walk below resolves it once per value read: both sides
+                    // are resolved once here instead, leaving the walk a slice to index.
+                    let values_lhs = arr_lhs.to_flat_values();
+                    let values_rhs = arr_rhs.to_flat_values();
+                    let (values_lhs, values_rhs) = (values_lhs.as_slice(), values_rhs.as_slice());
+
                     with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
                         for (i, l_range) in OffsetsBuffer::<i64>::leaf_ranges_iter(offsets_lhs).enumerate()
                         {
-                            let r = unsafe { arr_rhs.value_unchecked(i) };
+                            let r = unsafe { *values_rhs.get_unchecked(i) };
                             for l_idx in l_range {
                                 unsafe {
-                                    let l = arr_lhs.value_unchecked(l_idx);
+                                    let l = *values_lhs.get_unchecked(l_idx);
                                     let v = $OP(l, r);
                                     out_ptr.add(l_idx).write(v);
                                 }
@@ -915,19 +977,27 @@ mod inner {
             while iter.len() > 1 {
                 let (offsets, validity) = iter.next().unwrap();
                 let length = offsets.len_proxy();
-                results = Box::new(PlListArray::new(
-                    results,
-                    unsigned(offsets),
-                    length,
-                    validity.map(PlBitmap::from_bitmap),
-                ));
+                // SAFETY: an `OffsetsBuffer` carries the invariant a list array checks — one
+                // offset per element plus the end of the last, non-decreasing, and within the
+                // values it was read off — so the checked constructor would scan them all again.
+                results = Box::new(unsafe {
+                    PlListArray::new_unchecked(
+                        results,
+                        unsigned(offsets),
+                        length,
+                        validity.map(PlBitmap::from_bitmap),
+                    )
+                });
             }
 
             // The combined outer validity is pre-computed during `try_new()`
             let (offsets, _) = iter.next().unwrap();
             let validity = std::mem::take(&mut self.outer_validity);
             let length = offsets.len_proxy();
-            let results = PlListArray::new(results, unsigned(offsets), length, Some(validity));
+            // SAFETY: as above — the offsets are the ones the operands were read with.
+            let results = unsafe {
+                PlListArray::new_unchecked(results, unsigned(offsets), length, Some(validity))
+            };
 
             // A chunk carries no data type of its own — the output dtype is what the
             // `ChunkedArray` gets.
@@ -999,8 +1069,10 @@ mod inner {
             (None, None) => None,
         }
         .map(|(mut validity_out, validity_rhs)| {
+            // Resolved once, rather than once per element read below.
+            let validity_rhs = Mask::new(validity_rhs);
             for (i, l_range) in OffsetsBuffer::<i64>::leaf_ranges_iter(offsets_lhs).enumerate() {
-                let r_valid = unsafe { validity_rhs.get_unchecked(i) };
+                let r_valid = unsafe { validity_rhs.get(i) };
                 for l_idx in l_range {
                     let l_valid = unsafe { validity_out.get_unchecked(l_idx) };
                     let is_valid = l_valid & r_valid;
