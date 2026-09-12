@@ -76,6 +76,15 @@ impl NumericListOp {
 
             use either::Either;
 
+            // Every element of both sides reads the same pair, so the answer of that one pair is
+            // the answer of every element: it is worked out over a row of each side and repeated,
+            // rather than the lists being walked — and written out — one element at a time.
+            if let Some(out) =
+                super::list_utils::repeat_one_answer(lhs, rhs, |lhs, rhs| self.execute(lhs, rhs))
+            {
+                return out;
+            }
+
             // `trim_to_normalized_offsets` ensures we don't perform excessive
             // memory allocation / compute on memory regions that have been
             // sliced out.
@@ -86,8 +95,8 @@ impl NumericListOp {
                 .trim_lists_to_normalized_offsets()
                 .map_or(Cow::Borrowed(rhs), Cow::Owned);
 
-            let lhs = lhs.rechunk();
-            let rhs = rhs.rechunk();
+            let lhs = super::list_utils::flatten_list_chunks(lhs.rechunk());
+            let rhs = super::list_utils::flatten_list_chunks(rhs.rechunk());
 
             let binary_op_exec = match ListNumericOpHelper::try_new(
                 self.clone(),

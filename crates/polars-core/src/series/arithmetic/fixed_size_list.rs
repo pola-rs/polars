@@ -58,6 +58,15 @@ impl NumericFixedSizeListOp {
     #[cfg_attr(not(feature = "array_arithmetic"), allow(unused))]
     pub fn execute(&self, lhs: &Series, rhs: &Series) -> PolarsResult<Series> {
         feature_gated!("array_arithmetic", {
+            // Every element of both sides reads the same pair, so the answer of that one pair is
+            // the answer of every element: it is worked out over a row of each side and repeated,
+            // rather than the arrays being walked — and written out — one element at a time.
+            if let Some(out) =
+                super::list_utils::repeat_one_answer(lhs, rhs, |lhs, rhs| self.execute(lhs, rhs))
+            {
+                return out;
+            }
+
             NumericFixedSizeListOpHelper::execute_op(self.clone(), lhs.rechunk(), rhs.rechunk())
                 .map(|x| x.into_series())
         })

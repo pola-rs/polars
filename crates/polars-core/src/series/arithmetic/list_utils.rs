@@ -219,3 +219,75 @@ pub(super) enum Broadcast {
     #[allow(clippy::enum_variant_names)]
     NoBroadcast,
 }
+
+/// Whether every element of `s` reads the one element its single chunk repeats.
+fn repeats_one_element(s: &Series) -> bool {
+    let [chunk] = s.chunks().as_slice() else {
+        return false;
+    };
+
+    s.len() > 1 && chunk.is_scalar()
+}
+
+/// `s` with every chunk of its lists laid out one range of values per element.
+///
+/// The machinery below reads a side's offsets and its leaf values apart from one another, and
+/// each read writes out a chunk that repeats a single list to get at what it is after. Writing it
+/// out here leaves both reads borrowing it, which is one copy of the values rather than two.
+pub(super) fn flatten_list_chunks(s: Series) -> Series {
+    let Ok(ca) = s.list() else {
+        return s;
+    };
+    if ca.is_flat() {
+        return s;
+    }
+
+    let mut ca = ca.clone();
+    ca.flatten_mut();
+    ca.into_series()
+}
+
+/// The answer of the one pair of elements both sides repeat, repeated in turn.
+///
+/// The operation is elementwise, so where each side hands every element the same one — a chunk
+/// that repeats a single element, or a single element broadcast over the other side — every
+/// element of the answer is the answer of that one pair. It is worked out once, over a couple of
+/// rows of each side, and the answer stands for the whole column rather than being written out
+/// per element: `op` is the arithmetic the caller would otherwise run over both sides in full.
+///
+/// Each side keeps two rows rather than one where it has them: which side broadcasts over which
+/// is read off their lengths, and a pair of single rows would read as neither side broadcasting
+/// — a different reading of the same two elements, which divides by a leaf value rather than by
+/// the one scalar behind it and so rounds the last bit of a float differently.
+pub(super) fn repeat_one_answer(
+    lhs: &Series,
+    rhs: &Series,
+    op: impl FnOnce(&Series, &Series) -> PolarsResult<Series>,
+) -> Option<PolarsResult<Series>> {
+    // The two sides line up element for element, or one of them is the single element the other
+    // reads against every one of its own. Anything else is a length the caller has to reject.
+    let length = match (lhs.len(), rhs.len()) {
+        (left, right) if left == right => left,
+        (1, right) => right,
+        (left, 1) => left,
+        _ => return None,
+    };
+
+    // Nothing is saved by working out the answer of as many rows as there are.
+    if length < 3 {
+        return None;
+    }
+
+    // Every element of each side has to read the same one, either because the side repeats it or
+    // because the side is it.
+    let reads_one = |s: &Series| s.len() == 1 || repeats_one_element(s);
+    if !reads_one(lhs) || !reads_one(rhs) {
+        return None;
+    }
+
+    // Two rows of a side that has them, one of a side that is one: the same reading of which side
+    // broadcasts as the full lengths give, over a pair of elements rather than all of them.
+    let rows = |s: &Series| s.slice(0, s.len().min(2));
+    let out = op(&rows(lhs), &rows(rhs));
+    Some(out.and_then(|out| out.slice(0, 1).broadcast_owned_to(length)))
+}
