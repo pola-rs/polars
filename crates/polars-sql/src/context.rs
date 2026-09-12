@@ -3591,10 +3591,7 @@ fn determine_left_right_join_on(
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     // parse, removing any aliases that may have been added by `resolve_column`
     // (called inside `parse_sql_expr`) as we need the actual/underlying col
-    let left_on = strip_join_aliases(parse_sql_expr(expr_left, ctx, Some(join_schema))?);
-    let right_on = strip_join_aliases(parse_sql_expr(expr_right, ctx, Some(join_schema))?);
-
-    // an operand's dtype comes from the table it names; the merged schema keeps the left
+    // an operand's dtypes come from the table it names; the merged schema keeps the left
     // dtype for a column name that exists in both tables
     let operand_schema = |expr: &SQLExpr| -> &Schema {
         match (
@@ -3606,10 +3603,11 @@ fn determine_left_right_join_on(
             _ => join_schema,
         }
     };
-    let (left_on, right_on) = convert_int_literal_for_string(
-        (left_on, operand_schema(expr_left)),
-        (right_on, operand_schema(expr_right)),
-    );
+    let (left_schema, right_schema) = (operand_schema(expr_left), operand_schema(expr_right));
+    let left_on = strip_join_aliases(parse_sql_expr(expr_left, ctx, Some(left_schema))?);
+    let right_on = strip_join_aliases(parse_sql_expr(expr_right, ctx, Some(right_schema))?);
+    let (left_on, right_on) =
+        convert_int_literal_for_string((left_on, left_schema), (right_on, right_schema));
 
     // a constant operand is a literal, or any other expression referencing no column (such as
     // `UPPER('it')`); it can be evaluated against either input, so it has no table affinity

@@ -168,6 +168,17 @@ def test_join_key_string_compared_with_integer_literal() -> None:
     )
     assert res.rows() == [(1, "13", 13)]
 
+    # a nested comparison inside a join key operand resolves against its own table too
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2], "x": ["13", "31"], "flag": [True, True]}),
+        "b": pl.DataFrame({"k": [1, 2], "x": [13, 31]}),
+    }
+    res = pl.SQLContext(frames=frames).execute(
+        "SELECT a.k FROM a JOIN b ON a.k = b.k AND a.flag = (b.x = 13)",
+        eager=True,
+    )
+    assert res.rows() == [(1,)]
+
 
 @pytest.mark.parametrize(
     "in_clause",
