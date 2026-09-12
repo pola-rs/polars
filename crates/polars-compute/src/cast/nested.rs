@@ -95,11 +95,21 @@ pub fn list_to_fixed_size_list(
 
     // The one list every element of a scalar chunk reads is as wide as every element then is.
     if let Some(range) = from.scalar_offsets() {
-        polars_ensure!(
-            range.len() == width,
-            ComputeError: "not all elements have the specified width {width}"
-        );
         let values = cast_values(&*from.values().sliced(range.start, range.len()))?;
+
+        // A null element holds no values of its own, however wide the range the offsets repeat:
+        // where no element is there, there is none to be the wrong width, and the values the
+        // result reads are the `width` of nothing every element then holds.
+        let values = if range.len() == width {
+            values
+        } else {
+            polars_ensure!(
+                from.null_count() == from.len(),
+                ComputeError: "not all elements have the specified width {width}"
+            );
+            values.new_full_null_like_self(width)
+        };
+
         return Ok(PlFixedSizeListArray::new_broadcast(
             values,
             width,

@@ -279,6 +279,15 @@ fn find_validity_mismatch_list_fsl(
     let left =
         crate::cast::list_to_fixed_size_list(left, right.width(), |values| Ok(values.to_boxed()))
             .unwrap();
+    // The cast hands back the elements in whatever representation it reads them out in, and a
+    // chunk that repeats a single list comes back repeating one list's values: they are written
+    // out for the two sides to line up value for value, as the right side already was.
+    let left = left.to_flat();
 
-    find_validity_mismatch_nested(left.values(), right.values(), right.width(), idxs)
+    find_validity_mismatch_nested(
+        left.as_array().values(),
+        right.values(),
+        right.width(),
+        idxs,
+    )
 }
