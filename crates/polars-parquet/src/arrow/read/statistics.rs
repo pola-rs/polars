@@ -19,7 +19,7 @@ use crate::parquet::schema::types::PhysicalType as ParquetPhysicalType;
 use crate::parquet::statistics::Statistics as ParquetStatistics;
 use crate::read::{
     ColumnChunkMetadata, PrimitiveLogicalType, convert_days_ms, convert_i128, convert_i256,
-    convert_year_month, int96_to_i64_ns,
+    convert_u128, convert_year_month, int96_to_i64_ns,
 };
 
 /// Parquet statistics for a nesting level
@@ -539,6 +539,15 @@ pub fn deserialize_all(
                         |x: Option<Vec<u8>>| ParquetResult::Ok(x),
                         FixedSizeBinaryArray2,
                         *width
+                    )
+                },
+
+                (D::UInt128, PPT::FixedLenByteArray(n)) => {
+                    rmap!(
+                        expect_fixedlen,
+                        MutablePrimitiveArray::<u128>,
+                        @prim Vec<u8>,
+                        |x| convert_u128(&x, *n)
                     )
                 },
 
