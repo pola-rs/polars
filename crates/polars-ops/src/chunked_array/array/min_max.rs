@@ -1,7 +1,9 @@
+use arrow::bitmap::bitmask::BitMask;
 use polars_array::bitmap::combine_validities_and;
 use polars_compute::min_max::MinMaxKernel;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::vec::PushUnchecked;
 
 /// Reduces every element of `arr` — whose values `values` holds — to one element.
 fn array_agg<T, S, F1, F2>(
@@ -84,6 +86,7 @@ where
     // One row per element and one slot per value: a row is the run of the values buffer it
     // already is, and the values of it that are there are read out into `row` to be reduced as a
     // slice of their own — which is what keeps the kernel off a mask it would walk a bit at a time.
+    let mask = BitMask::from_bitmap(validity);
     let mut row = Vec::with_capacity(width);
     values
         .flat_values()
@@ -93,19 +96,52 @@ where
         .enumerate()
         .map(|(index, row_values)| {
             let start = index * width;
-            match validity.null_count_range(start, width) {
-                // Nothing under this row is null, so it reduces as the slice it is.
-                0 => slice_agg(row_values),
-                // Nothing under it is there at all, so it reduces to nothing.
-                nulls if nulls == width => None,
-                // Some values are there and some are not, so the ones that are are taken aside.
+            // A row up to 32 wide is one load of the mask, which says how many of its values are
+            // there and which ones in the same word; a wider one is counted a word at a time and
+            // read a bit at a time.
+            let Some(mut bits) = (width <= 32).then(|| {
+                // The load reads as many bits as the mask has left, of which this row's are the
+                // first `width`.
+                let word = mask.get_u32(start);
+                if width == 32 {
+                    word
+                } else {
+                    word & ((1u32 << width) - 1)
+                }
+            }) else {
+                return match validity.null_count_range(start, width) {
+                    0 => slice_agg(row_values),
+                    nulls if nulls == width => None,
+                    _ => {
+                        row.clear();
+                        row.extend(
+                            (0..width)
+                                .filter(|offset| validity.get_bit(start + offset))
+                                .map(|offset| row_values[offset]),
+                        );
+                        slice_agg(&row)
+                    },
+                };
+            };
+
+            match bits.count_ones() as usize {
+                // Nothing under this row is there at all, so it reduces to nothing.
+                0 => None,
+                // Nothing under it is null, so it reduces as the slice it is.
+                present if present == width => slice_agg(row_values),
+                // Some values are there and some are not: the ones that are are the bits the
+                // word sets, and they are taken aside into a row of their own.
                 _ => {
                     row.clear();
-                    row.extend(
-                        (0..width)
-                            .filter(|offset| validity.get_bit(start + offset))
-                            .map(|offset| row_values[offset]),
-                    );
+                    while bits != 0 {
+                        let offset = bits.trailing_zeros() as usize;
+                        // SAFETY: the word covers `width` bits of the mask, one per value of the
+                        // row, and `row` was built with room for that many.
+                        unsafe {
+                            row.push_unchecked(*row_values.get_unchecked(offset));
+                        }
+                        bits &= bits - 1;
+                    }
                     slice_agg(&row)
                 },
             }
