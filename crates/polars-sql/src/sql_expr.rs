@@ -245,7 +245,7 @@ impl SQLExprVisitor<'_> {
                 right,
                 is_some: _,
             } => self.visit_any(left, compare_op, right),
-            SQLExpr::Array(arr) => self.visit_array_expr(&arr.elem, true, None),
+            SQLExpr::Array(arr) => Ok(lit(Scalar::new_list(self.array_expr_to_series(&arr.elem)?))),
             SQLExpr::Between {
                 expr,
                 negated,
@@ -1003,26 +1003,6 @@ impl SQLExprVisitor<'_> {
             }
         }
         Ok(elems)
-    }
-
-    /// Visit a SQL `ARRAY` list (including `IN` values).
-    fn visit_array_expr(
-        &mut self,
-        elements: &[SQLExpr],
-        result_as_element: bool,
-        dtype_expr_match: Option<&Expr>,
-    ) -> PolarsResult<Expr> {
-        let elems = self.array_expr_to_series(elements)?;
-        let elems = self.cast_array_elements_for(elems, dtype_expr_match)?;
-
-        // if we are parsing the list as an element in a series, implode.
-        // otherwise, return the series as-is.
-        let res = if result_as_element {
-            elems.implode()?.into_series()
-        } else {
-            elems
-        };
-        Ok(lit(res))
     }
 
     /// Visit a SQL `CAST` or `TRY_CAST` expression.
