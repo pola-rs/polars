@@ -317,6 +317,44 @@ where
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
+/// [`unary_elementwise`] for an `op` that borrows a scratch buffer or a cache across elements.
+///
+/// The state `op` carries may only make the same answer cheaper to reach — a buffer it formats
+/// into, a cache of compiled patterns. It must not depend on *which* elements came before, since
+/// a chunk that reads one element throughout is answered by a single call, exactly as in
+/// [`unary_elementwise`]. An `op` whose answer does depend on the elements before it wants
+/// [`unary_elementwise_mut`].
+#[inline]
+pub fn unary_elementwise_amortized<'a, T, V, F>(
+    ca: &'a ChunkedArray<T>,
+    mut op: F,
+) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    V: PolarsDataType,
+    F: UnaryFnMut<Option<T::Physical<'a>>>,
+    V::Array: ArrayFromIter<<F as UnaryFnMut<Option<T::Physical<'a>>>>::Ret>,
+{
+    let iter = ca.downcast_iter().map(|arr| {
+        let length = arr.len();
+        if length > 1 {
+            if let Some(element) = arr.scalar_value() {
+                // The chunk reads the same element throughout, null or not, so one call answers
+                // it and the result repeats that single element — its own mask included.
+                let single: V::Array = std::iter::once(op(element)).collect_arr();
+                return single.new_from_index_typed(0, length);
+            }
+        }
+
+        if arr.null_count() == 0 {
+            arr.values_iter().map(|x| op(Some(x))).collect_arr_trusted()
+        } else {
+            arr.iter().map(&mut op).collect_arr_trusted()
+        }
+    });
+    ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
+}
+
 /// [`unary_elementwise`] for an `op` that carries state from one element to the next.
 #[inline]
 pub fn unary_elementwise_mut<'a, T, V, F>(ca: &'a ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
@@ -337,6 +375,39 @@ where
             .map(|arr| arr.values_iter().map(|x| op(Some(x))).collect_arr_trusted());
         ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
     }
+}
+
+/// [`try_unary_elementwise`] for an `op` whose state is under the contract of
+/// [`unary_elementwise_amortized`].
+#[inline]
+pub fn try_unary_elementwise_amortized<'a, T, V, F, K, E>(
+    ca: &'a ChunkedArray<T>,
+    mut op: F,
+) -> Result<ChunkedArray<V>, E>
+where
+    T: PolarsDataType,
+    V: PolarsDataType,
+    F: FnMut(Option<T::Physical<'a>>) -> Result<Option<K>, E>,
+    V::Array: ArrayFromIter<Option<K>>,
+{
+    let iter = ca.downcast_iter().map(|arr| {
+        let length = arr.len();
+        if length > 1 {
+            if let Some(element) = arr.scalar_value() {
+                // The chunk reads the same element throughout, null or not, so one call answers
+                // it and the result repeats that single element — its own mask included.
+                let single: V::Array = std::iter::once(op(element)).try_collect_arr()?;
+                return Ok(single.new_from_index_typed(0, length));
+            }
+        }
+
+        // Splitting the walk below into a values-only twin, as [`unary_elementwise`] does, costs
+        // more than it saves: it grows this function past what the caller inlines, and the
+        // `(flat, flat)` arm of `broadcast_try_binary_elementwise_amortized` — which never
+        // reaches here — read 1.4x on decimal arithmetic for it.
+        arr.iter().map(&mut op).try_collect_arr()
+    });
+    ChunkedArray::try_from_chunk_iter(ca.name().clone(), iter)
 }
 
 #[inline]
@@ -1117,6 +1188,35 @@ where
     }
 }
 
+/// [`broadcast_binary_elementwise`] for an `op` that borrows a scratch buffer or a cache across
+/// elements; the state it carries is under the contract of [`unary_elementwise_amortized`].
+pub fn broadcast_binary_elementwise_amortized<T, U, V, F>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    V: PolarsDataType,
+    F: for<'a> BinaryFnMut<Option<T::Physical<'a>>, Option<U::Physical<'a>>>,
+    V::Array: for<'a> ArrayFromIter<
+        <F as BinaryFnMut<Option<T::Physical<'a>>, Option<U::Physical<'a>>>>::Ret,
+    >,
+{
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    // See [`broadcast_binary_elementwise`] for what the two scalar arms are.
+    match (lhs.scalar_value(), rhs.scalar_value()) {
+        (Some(a), _) if rhs.len() == length => {
+            unary_elementwise_amortized(rhs, |b| op(a.clone(), b)).with_name(lhs.name().clone())
+        },
+        (_, Some(b)) => unary_elementwise_amortized(lhs, |a| op(a, b.clone())),
+        _ => binary_elementwise(lhs, rhs, op),
+    }
+}
+
 pub fn broadcast_try_binary_elementwise<T, U, V, F, K, E>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
@@ -1138,6 +1238,34 @@ where
             Ok(try_unary_elementwise(rhs, |b| op(a.clone(), b))?.with_name(lhs.name().clone()))
         },
         (_, Some(b)) => try_unary_elementwise(lhs, |a| op(a, b.clone())),
+        _ => try_binary_elementwise(lhs, rhs, op),
+    }
+}
+
+/// [`broadcast_try_binary_elementwise`] for an `op` whose state is under the contract of
+/// [`unary_elementwise_amortized`].
+pub fn broadcast_try_binary_elementwise_amortized<T, U, V, F, K, E>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+) -> Result<ChunkedArray<V>, E>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    V: PolarsDataType,
+    F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>) -> Result<Option<K>, E>,
+    V::Array: ArrayFromIter<Option<K>>,
+{
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    // See [`broadcast_binary_elementwise`] for what the two scalar arms are.
+    match (lhs.scalar_value(), rhs.scalar_value()) {
+        (Some(a), _) if rhs.len() == length => {
+            Ok(try_unary_elementwise_amortized(rhs, |b| op(a.clone(), b))?
+                .with_name(lhs.name().clone()))
+        },
+        (_, Some(b)) => try_unary_elementwise_amortized(lhs, |a| op(a, b.clone())),
         _ => try_binary_elementwise(lhs, rhs, op),
     }
 }

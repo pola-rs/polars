@@ -48,7 +48,7 @@ where
 
         Ok(T::Native::from_str_radix(s, base).ok())
     };
-    let out: ChunkedArray<T> = broadcast_try_binary_elementwise(ca, base, f)?;
+    let out: ChunkedArray<T> = broadcast_try_binary_elementwise_amortized(ca, base, f)?;
     if strict && ca.null_count() != out.null_count() {
         let failure_mask = ca.is_not_null() & out.is_null() & base.is_not_null();
         let n_failures = failure_mask.num_trues();
@@ -199,7 +199,7 @@ pub trait StringNameSpaceImpl: AsString {
                     }))
                 } else if strict {
                     with_regex_cache(|reg_cache| {
-                        broadcast_try_binary_elementwise(ca, pat, |opt_src, opt_pat| {
+                        broadcast_try_binary_elementwise_amortized(ca, pat, |opt_src, opt_pat| {
                             match (opt_src, opt_pat) {
                                 (Some(src), Some(pat)) => {
                                     let reg = reg_cache.compile(pat)?;
@@ -211,7 +211,7 @@ pub trait StringNameSpaceImpl: AsString {
                     })
                 } else {
                     with_regex_cache(|reg_cache| {
-                        Ok(broadcast_binary_elementwise_mut(
+                        Ok(broadcast_binary_elementwise_amortized(
                             ca,
                             pat,
                             infer_re_match(|src, pat| {
@@ -263,7 +263,7 @@ pub trait StringNameSpaceImpl: AsString {
                     }
                     Ok(None)
                 };
-                broadcast_try_binary_elementwise(ca, pat, matcher)
+                broadcast_try_binary_elementwise_amortized(ca, pat, matcher)
             })
         }
     }
@@ -651,7 +651,7 @@ pub trait StringNameSpaceImpl: AsString {
                         _ => Ok(None),
                     }
                 };
-                broadcast_try_binary_elementwise(ca, pat, op)
+                broadcast_try_binary_elementwise_amortized(ca, pat, op)
             })?
         };
 

@@ -1,6 +1,6 @@
 use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::MILLISECONDS_IN_DAY;
-use polars_core::prelude::arity::broadcast_try_binary_elementwise;
+use polars_core::prelude::arity::broadcast_try_binary_elementwise_amortized;
 use polars_core::prelude::*;
 use polars_utils::cache::LruCache;
 
@@ -84,7 +84,7 @@ impl PolarsTruncate for DatetimeChunked {
             TimeUnit::Milliseconds => Window::truncate_ms,
         };
 
-        let out = broadcast_try_binary_elementwise(
+        let out = broadcast_try_binary_elementwise_amortized(
             self.physical(),
             every,
             |opt_timestamp, opt_every| match (opt_timestamp, opt_every) {
@@ -132,28 +132,32 @@ impl PolarsTruncate for DateChunked {
                     Ok(Int32Chunked::full_null(self.name().clone(), self.len()))
                 }
             },
-            _ => broadcast_try_binary_elementwise(self.physical(), every, |opt_t, opt_every| {
-                // A sqrt(n) cache is not too small, not too large.
-                let mut duration_cache =
-                    LruCache::with_capacity((every.len() as f64).sqrt() as usize);
-                match (opt_t, opt_every) {
-                    (Some(t), Some(every)) => {
-                        let every =
-                            *duration_cache.try_get_or_insert_with(every, Duration::try_parse)?;
+            _ => broadcast_try_binary_elementwise_amortized(
+                self.physical(),
+                every,
+                |opt_t, opt_every| {
+                    // A sqrt(n) cache is not too small, not too large.
+                    let mut duration_cache =
+                        LruCache::with_capacity((every.len() as f64).sqrt() as usize);
+                    match (opt_t, opt_every) {
+                        (Some(t), Some(every)) => {
+                            let every = *duration_cache
+                                .try_get_or_insert_with(every, Duration::try_parse)?;
 
-                        if every.negative {
-                            polars_bail!(ComputeError: "cannot truncate a Date to a negative duration")
-                        }
+                            if every.negative {
+                                polars_bail!(ComputeError: "cannot truncate a Date to a negative duration")
+                            }
 
-                        let w = Window::new(every, every, offset);
-                        Ok(Some(
-                            (w.truncate_ms(MILLISECONDS_IN_DAY * t as i64, None)?
-                                / MILLISECONDS_IN_DAY) as i32,
-                        ))
-                    },
-                    _ => Ok(None),
-                }
-            }),
+                            let w = Window::new(every, every, offset);
+                            Ok(Some(
+                                (w.truncate_ms(MILLISECONDS_IN_DAY * t as i64, None)?
+                                    / MILLISECONDS_IN_DAY) as i32,
+                            ))
+                        },
+                        _ => Ok(None),
+                    }
+                },
+            ),
         };
         Ok(out?.into_date())
     }

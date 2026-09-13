@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use arrow::array::ValueSize;
 use jsonpath_lib::PathCompiled;
-use polars_core::prelude::arity::{broadcast_try_binary_elementwise, unary_elementwise};
+use polars_core::prelude::arity::{broadcast_try_binary_elementwise_amortized, unary_elementwise};
 use serde_json::Value;
 
 use super::*;
@@ -59,7 +59,7 @@ pub trait Utf8JsonPathImpl: AsString {
                 Ok(out)
             },
             (len_ca, len_path) if len_ca == 1 || len_ca == len_path => {
-                broadcast_try_binary_elementwise(ca, json_path, |opt_str, opt_path| {
+                broadcast_try_binary_elementwise_amortized(ca, json_path, |opt_str, opt_path| {
                     match (opt_str, opt_path) {
                     (Some(str_val), Some(path)) => {
                         PathCompiled::compile(path)
