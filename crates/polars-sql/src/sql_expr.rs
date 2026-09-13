@@ -297,9 +297,8 @@ impl SQLExprVisitor<'_> {
                 let sql_expr = expr;
                 let expr = self.visit_expr(sql_expr)?;
                 // Prefer the all-literal `is_in` fast path, which predicate pushdown can
-                // use. A non-literal element, an aggregate on the left, or a constant on
-                // the left (which the planner folds as an OR-chain but not as a set
-                // membership) falls back to an OR-chain of equality comparisons.
+                // use. A non-literal element, or an aggregate or constant on the left, falls
+                // back to an OR-chain of equality comparisons (which the planner can fold).
                 let is_constant = !expr_references_any_column(sql_expr)
                     && expr
                         .clone()

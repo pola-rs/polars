@@ -2231,8 +2231,8 @@ impl SQLContext {
         join_type: JoinType,
     ) -> PolarsResult<LazyFrame> {
         // A condition that reads no input (eg: `ON TRUE`, `ON 1 = 1`) pairs every row with
-        // every row, or none: join on the condition itself as a boolean key. Null keys do not
-        // match, which is SQL's treatment of an unknown condition.
+        // every row, or none: join on the condition itself as a boolean key (a null key
+        // matches nothing, like an unknown condition).
         if let JoinConstraint::On(expr) = constraint
             && let Some(predicate) = self.input_independent_predicate(expr)?
         {

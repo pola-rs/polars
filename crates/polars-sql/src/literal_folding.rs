@@ -1,9 +1,8 @@
 //! Exact folding of arithmetic between numeric SQL literals.
 //!
-//! `.06 + 0.01` is computed on the literal spellings as fixed-point values, so the
-//! result is the float nearest to `0.07` rather than the float sum of two rounded
-//! floats. Intermediate arithmetic is exact within `i128`; the result is still the
-//! ordinary `Float64` literal. Integer-only arithmetic is left to the engine.
+//! `.06 + 0.01` is computed on the literal spellings as fixed-point values (exact within
+//! `i128`) and converted once to the ordinary `Float64` literal. Integer-only arithmetic
+//! is left to the engine.
 
 use polars_compute::decimal::exact;
 use polars_plan::prelude::{Expr, lit};
