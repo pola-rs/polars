@@ -27,6 +27,7 @@ use sqlparser::ast::{
 use sqlparser::tokenizer::Span;
 
 use crate::SQLContext;
+use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::sql_expr::{
     adjust_one_indexed_param, order_by_sort_options, parse_extract_date_part, parse_sql_array,
     parse_sql_expr,
@@ -596,6 +597,15 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT FIRST(col1) FROM df;
     /// ```
     First,
+    /// SQL 'grouping' function.
+    /// Returns, for each argument, whether the current row's grouping set omits
+    /// that key, as bits with the last argument in the least significant position.
+    /// ```sql
+    /// SELECT col1, GROUPING(col1) FROM df GROUP BY ROLLUP(col1);
+    /// ```
+    Grouping,
+    /// SQL 'grouping_id' function; an alias for `GROUPING`.
+    GroupingId,
     /// SQL 'last' function.
     /// Returns the last element of the grouping.
     /// ```sql
@@ -1077,6 +1087,8 @@ impl PolarsSQLFunctions {
             "covar_pop" => Self::CovarPop,
             "covar_samp" | "covar" => Self::CovarSamp,
             "first" => Self::First,
+            "grouping" => Self::Grouping,
+            "grouping_id" => Self::GroupingId,
             "last" => Self::Last,
             "max" => Self::Max,
             "median" => Self::Median,
@@ -1652,6 +1664,7 @@ impl SQLFunctionVisitor<'_> {
             CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
             CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
             First => self.visit_unary(Expr::first),
+            Grouping | GroupingId => self.visit_grouping(),
             Last => self.visit_unary(Expr::last),
             Max => self.visit_min_max(Expr::max, Expr::cum_max),
             Median => self.visit_unary(Expr::median),
@@ -2335,6 +2348,35 @@ impl SQLFunctionVisitor<'_> {
                 polars_bail!(SQLSyntax: "ARRAY_TO_STRING expects 2-3 arguments (found {})", args.len())
             },
         }
+    }
+
+    /// `GROUPING(k1, ..., kn)` stands for a value that depends on the grouping set a
+    /// row came from, so it is registered with the query and bound to its keys when
+    /// the `GROUP BY` clause is processed.
+    fn visit_grouping(&mut self) -> PolarsResult<Expr> {
+        if self.func.over.is_some() {
+            polars_bail!(SQLSyntax: "GROUPING() cannot be used as a window function");
+        }
+        if self.func.filter.is_some() {
+            polars_bail!(SQLSyntax: "GROUPING() does not support a FILTER clause");
+        }
+        let args = extract_args(self.func)?;
+        if args.is_empty() || args.len() > MAX_GROUPING_ARGS {
+            polars_bail!(
+                SQLSyntax: "GROUPING() expects between 1 and {} arguments; found {}", MAX_GROUPING_ARGS, args.len()
+            );
+        }
+        let args = args
+            .iter()
+            .map(|arg| match arg {
+                FunctionArgExpr::Expr(e) => Ok(e.clone()),
+                _ => {
+                    polars_bail!(SQLSyntax: "GROUPING() expects column expressions; found {}", arg)
+                },
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let name = PlSmallStr::from_string(self.func.to_string());
+        Ok(self.ctx.register_grouping_call(args).alias(name))
     }
 
     fn visit_avg(&mut self) -> PolarsResult<Expr> {

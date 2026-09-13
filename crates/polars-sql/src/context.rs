@@ -26,6 +26,10 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
+use crate::grouping_sets::{
+    GroupingCall, GroupingSets, canonicalize_keys, contains_grouping_placeholder,
+    expand_grouping_sets, hoist_having_aggregates, new_placeholder,
+};
 use crate::sql_expr::{
     convert_int_literal_for_string, order_by_sort_options, parse_sql_array, parse_sql_expr,
     resolve_compound_identifier, to_sql_interface_err,
@@ -233,6 +237,8 @@ pub struct SQLContext {
     active_relations: PlHashSet<String>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
     pub(crate) named_windows: PlHashMap<String, WindowSpec>,
+    /// `GROUPING()` calls parsed in the query block being executed.
+    grouping_calls: Vec<GroupingCall>,
 }
 
 impl Default for SQLContext {
@@ -247,6 +253,7 @@ impl Default for SQLContext {
             active_relations: Default::default(),
             joined_aliases: Default::default(),
             named_windows: Default::default(),
+            grouping_calls: Default::default(),
             lp_arena: Default::default(),
             expr_arena: Default::default(),
         }
@@ -1505,8 +1512,38 @@ impl SQLContext {
         Ok(())
     }
 
+    /// Register a `GROUPING()` call of the current query block, returning the
+    /// placeholder column that stands for its value. Repeating a call yields the
+    /// same placeholder, so every clause of the block refers to one column.
+    pub(crate) fn register_grouping_call(&mut self, args: Vec<SQLExpr>) -> Expr {
+        let placeholder = match self.grouping_calls.iter().find(|c| c.args == args) {
+            Some(call) => call.placeholder.clone(),
+            None => {
+                let placeholder = new_placeholder();
+                self.grouping_calls.push(GroupingCall {
+                    args,
+                    placeholder: placeholder.clone(),
+                });
+                placeholder
+            },
+        };
+        Expr::Column(placeholder)
+    }
+
     /// Execute the 'SELECT' part of the query.
     fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
+        // `GROUPING()` calls are scoped to the query block that binds them.
+        let outer_grouping_calls = std::mem::take(&mut self.grouping_calls);
+        let result = self.execute_select_block(select_stmt, query);
+        self.grouping_calls = outer_grouping_calls;
+        result
+    }
+
+    fn execute_select_block(
+        &mut self,
+        select_stmt: &Select,
+        query: &Query,
+    ) -> PolarsResult<LazyFrame> {
         // Check that the statement doesn't contain unsupported SELECT clauses
         self.validate_select(select_stmt)?;
 
@@ -1595,12 +1632,17 @@ impl SQLContext {
             None => None,
         };
 
+        let n_grouping_calls = self.grouping_calls.len();
         lf = self.process_where(
             lf,
             effective_where.as_deref(),
             FilterMode::KeepTrue,
             Some(schema.clone()),
         )?;
+        polars_ensure!(
+            self.grouping_calls.len() == n_grouping_calls,
+            SQLSyntax: "GROUPING() is not allowed in the WHERE clause"
+        );
 
         // HAVING is parsed further below but lowered here, against the pre-aggregation
         // frame.
@@ -1771,38 +1813,27 @@ impl SQLContext {
 
         // Check for "GROUP BY ..." (after determining projections)
         let mut group_by_keys: Vec<Expr> = Vec::new();
+        let mut grouping_sets: Option<Vec<Vec<usize>>> = None;
         match &select_stmt.group_by {
             // Standard "GROUP BY x, y, z" syntax (also recognising ordinal values)
             GroupByExpr::Expressions(group_by_exprs, modifiers) => {
                 if !modifiers.is_empty() {
                     polars_bail!(SQLInterface: "GROUP BY does not support CUBE, ROLLUP, or TOTALS modifiers")
                 }
+                let expanded = expand_grouping_sets(group_by_exprs)?;
+                let key_exprs: &[SQLExpr] = expanded
+                    .as_ref()
+                    .map_or(group_by_exprs, |expanded| &expanded.keys);
                 // Translate the group expressions, resolving ordinal values and SELECT aliases
-                group_by_keys = group_by_exprs
+                group_by_keys = key_exprs
                     .iter()
-                    .map(|e| match e {
-                        SQLExpr::Identifier(ident) => {
-                            resolve_select_alias(&ident.value, &projections, &schema).map_or_else(
-                                || {
-                                    self.expr_or_ordinal(
-                                        e,
-                                        &projections,
-                                        None,
-                                        Some(&schema),
-                                        "GROUP BY",
-                                    )
-                                },
-                                Ok,
-                            )
-                        },
-                        // Drop the alias that restores the unqualified name, so two
-                        // relations sharing a column name give distinct keys.
-                        SQLExpr::CompoundIdentifier(_) => self
-                            .expr_or_ordinal(e, &projections, None, Some(&schema), "GROUP BY")
-                            .map(|e| strip_outer_alias(&e)),
-                        _ => self.expr_or_ordinal(e, &projections, None, Some(&schema), "GROUP BY"),
-                    })
-                    .collect::<PolarsResult<_>>()?
+                    .map(|e| self.resolve_group_by_key(e, &projections, &schema))
+                    .collect::<PolarsResult<_>>()?;
+                if let Some(expanded) = expanded {
+                    let (keys, sets) = canonicalize_keys(group_by_keys, expanded.sets);
+                    group_by_keys = keys;
+                    grouping_sets = Some(sets);
+                }
             },
             // "GROUP BY ALL" syntax; automatically adds expressions that do not contain
             // nested agg/window funcs to the group key (also ignores literals).
@@ -1813,6 +1844,7 @@ impl SQLContext {
                 projections.iter().for_each(|expr| match expr {
                     // immediately match the most common cases (col|agg|len|lit, optionally aliased).
                     Expr::Agg(_) | Expr::Len | Expr::Literal(_) => (),
+                    _ if contains_grouping_placeholder(expr) => (),
                     Expr::Column(_) => group_by_keys.push(expr.clone()),
                     Expr::Alias(e, _)
                         if matches!(&**e, Expr::Agg(_) | Expr::Len | Expr::Literal(_)) => {},
@@ -1846,13 +1878,21 @@ impl SQLContext {
         };
         for e in &group_by_keys {
             reject_unresolved_subquery(e, "GROUP BY")?;
+            polars_ensure!(
+                !contains_grouping_placeholder(e),
+                SQLSyntax: "GROUPING() is not allowed in the GROUP BY clause"
+            );
         }
 
-        lf = if group_by_keys.is_empty() {
+        lf = if group_by_keys.is_empty() && grouping_sets.is_none() {
             // The 'having' clause is only valid inside 'group by'
             if select_stmt.having.is_some() {
                 polars_bail!(SQLSyntax: "HAVING clause not valid outside of GROUP BY; found:\n{:?}", select_stmt.having);
             };
+            polars_ensure!(
+                self.grouping_calls.is_empty(),
+                SQLSyntax: "GROUPING() requires a GROUP BY clause"
+            );
 
             // Disambiguate SELECT-list output-name collisions.
             projections = disambiguate_output_names(
@@ -1969,26 +2009,28 @@ impl SQLContext {
                 .as_deref()
                 .map(|expr| parse_sql_expr(expr, self, Some(&schema)))
                 .transpose()?;
-            let (disambiguated_projections, order_by);
-            (lf, disambiguated_projections, order_by) = self.process_group_by(
+            let grouping = self.bind_grouping_sets(
+                &group_by_keys,
+                grouping_sets,
+                &projections,
+                &schema,
+                &query.order_by,
+                &select_stmt.qualify,
+            )?;
+            let (output_names, order_by);
+            (lf, output_names, order_by) = self.process_group_by(
                 lf,
                 &group_by_keys,
                 projections,
                 &explicit_aliases,
                 having,
                 &query.order_by,
+                grouping.as_ref(),
             )?;
             lf = self.process_order_by(lf, &order_by, None)?;
 
             // Drop any extra columns (eg: added to maintain ORDER BY access to original cols)
-            let output_cols: Vec<_> = disambiguated_projections
-                .iter()
-                .map(|p| p.to_field(&schema))
-                .collect::<PolarsResult<Vec<_>>>()?
-                .into_iter()
-                .map(|f| col(f.name))
-                .collect();
-
+            let output_cols: Vec<_> = output_names.into_iter().map(col).collect();
             lf.select(&output_cols)
         };
 
@@ -2897,6 +2939,80 @@ impl SQLContext {
         Ok((clause, extra))
     }
 
+    /// Translate one `GROUP BY` item, resolving ordinal values and SELECT aliases.
+    fn resolve_group_by_key(
+        &mut self,
+        e: &SQLExpr,
+        projections: &[Expr],
+        schema: &Schema,
+    ) -> PolarsResult<Expr> {
+        match e {
+            SQLExpr::Identifier(ident) => resolve_select_alias(&ident.value, projections, schema)
+                .map_or_else(
+                    || self.expr_or_ordinal(e, projections, None, Some(schema), "GROUP BY"),
+                    Ok,
+                ),
+            // Drop the alias that restores the unqualified name, so two
+            // relations sharing a column name give distinct keys.
+            SQLExpr::CompoundIdentifier(_) => self
+                .expr_or_ordinal(e, projections, None, Some(schema), "GROUP BY")
+                .map(|e| strip_outer_alias(&e)),
+            _ => self.expr_or_ordinal(e, projections, None, Some(schema), "GROUP BY"),
+        }
+    }
+
+    /// Bind the grouping sets and every `GROUPING()` call of the block to the
+    /// resolved keys. A plain `GROUP BY` that uses `GROUPING()` is a single set
+    /// holding every key.
+    fn bind_grouping_sets(
+        &mut self,
+        group_by_keys: &[Expr],
+        grouping_sets: Option<Vec<Vec<usize>>>,
+        projections: &[Expr],
+        schema: &Schema,
+        order_by: &Option<OrderBy>,
+        qualify: &Option<SQLExpr>,
+    ) -> PolarsResult<Option<GroupingSets>> {
+        // Calls in the clauses evaluated after aggregation must be known now, so
+        // every branch can carry their values; the parse is repeated later.
+        if grouping_sets.is_some() || !self.grouping_calls.is_empty() {
+            if let Some(OrderBy {
+                kind: OrderByKind::Expressions(exprs),
+                ..
+            }) = order_by
+            {
+                for ob in exprs {
+                    let _ = parse_sql_expr(&ob.expr, self, Some(schema));
+                }
+            }
+            if let Some(qualify) = qualify {
+                let _ = parse_sql_expr(qualify, self, Some(schema));
+            }
+        }
+        let sets = match grouping_sets {
+            Some(sets) => sets,
+            None if self.grouping_calls.is_empty() => return Ok(None),
+            None => vec![(0..group_by_keys.len()).collect()],
+        };
+        let calls = self.grouping_calls.clone();
+        let resolved_args = calls
+            .iter()
+            .map(|call| {
+                call.args
+                    .iter()
+                    .map(|arg| self.resolve_group_by_key(arg, projections, schema))
+                    .collect::<PolarsResult<Vec<_>>>()
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        Ok(Some(GroupingSets::new(
+            group_by_keys.to_vec(),
+            sets,
+            &calls,
+            resolved_args,
+        )?))
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn process_group_by(
         &mut self,
         mut lf: LazyFrame,
@@ -2905,12 +3021,24 @@ impl SQLContext {
         explicit_aliases: &[bool],
         having: Option<Expr>,
         order_by: &Option<OrderBy>,
-    ) -> PolarsResult<(LazyFrame, Vec<Expr>, Option<OrderBy>)> {
-        let schema_before = self.get_frame_schema(&mut lf)?;
-        let group_by_keys_schema =
+        grouping: Option<&GroupingSets>,
+    ) -> PolarsResult<(LazyFrame, Vec<PlSmallStr>, Option<OrderBy>)> {
+        let mut schema_before = self.get_frame_schema(&mut lf)?;
+        let key_schema =
             expressions_to_schema(group_by_keys, &schema_before, |duplicate_name: &str| {
                 format!("group_by keys contained duplicate output name '{duplicate_name}'")
             })?;
+        let mut group_by_keys_schema = key_schema.clone();
+        if let Some(grouping) = grouping {
+            // `GROUPING()` values are per-set constants, so the projections treat their
+            // placeholders like group keys: present on the aggregated frame as-is.
+            let mut extended = Arc::unwrap_or_clone(schema_before);
+            for placeholder in grouping.placeholders() {
+                extended.with_column(placeholder.clone(), DataType::Int64);
+                group_by_keys_schema.with_column(placeholder.clone(), DataType::Int64);
+            }
+            schema_before = Arc::new(extended);
+        }
 
         // Disambiguate SELECT-list output-name collisions.
         let projections = disambiguate_output_names(
@@ -2988,8 +3116,11 @@ impl SQLContext {
             let field = e_inner.to_field(&schema_before)?;
             if is_non_group_key_expr {
                 // Window functions run on the aggregated frame; only the aggregates
-                // inside them run in the group context.
-                if has_expr(e, |e| matches!(e, Expr::Over { .. })) {
+                // inside them run in the group context. The same holds for anything
+                // combining aggregates with `GROUPING()` values.
+                if has_expr(e, |e| matches!(e, Expr::Over { .. }))
+                    || (grouping.is_some() && contains_grouping_placeholder(e))
+                {
                     let window_expr = hoist_group_aggregates(
                         strip_outer_alias(e),
                         &schema_before,
@@ -3000,21 +3131,6 @@ impl SQLContext {
                     continue;
                 }
                 let mut e = e.clone();
-                if let Expr::Agg(AggExpr::Implode {
-                    input: expr,
-                    maintain_order: _,
-                }) = &e
-                {
-                    e = (**expr).clone();
-                } else if let Expr::Alias(expr, name) = &e {
-                    if let Expr::Agg(AggExpr::Implode {
-                        input: expr,
-                        maintain_order: _,
-                    }) = expr.as_ref()
-                    {
-                        e = (**expr).clone().alias(name.clone());
-                    }
-                }
                 // If aggregation colname conflicts with a group key,
                 // alias it to avoid duplicate/mis-tracked columns
                 if group_by_keys_schema.get(&field.name).is_some() {
@@ -3061,12 +3177,38 @@ impl SQLContext {
 
         aggregation_projection.extend(order_by_aggs.iter().map(|(_, e)| e.clone()));
 
-        let group_by = lf.group_by(group_by_keys);
-        let aggregated = match having {
-            Some(having) => group_by.having(having),
-            None => group_by,
-        }
-        .agg(&aggregation_projection);
+        let mut grouping_columns: Vec<PlSmallStr> = Vec::new();
+        let aggregated = match grouping {
+            None => {
+                let group_by = lf.group_by(group_by_keys);
+                match having {
+                    Some(having) => group_by.having(having),
+                    None => group_by,
+                }
+                .agg(strip_group_implode(&aggregation_projection))
+            },
+            Some(grouping) => {
+                // HAVING runs on the combined rows, where it can also see `GROUPING()`.
+                let having = having
+                    .map(|having| hoist_having_aggregates(having, &mut aggregation_projection));
+                let agg_names = aggregation_projection
+                    .iter()
+                    .map(|e| Ok(e.to_field(&schema_before)?.name))
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                let (aggregated, columns) = grouping.aggregate(
+                    lf,
+                    &key_schema,
+                    &strip_group_implode(&aggregation_projection),
+                    &aggregation_projection,
+                    &agg_names,
+                )?;
+                grouping_columns = columns;
+                match having {
+                    Some(having) => aggregated.filter(having),
+                    None => aggregated,
+                }
+            },
+        };
 
         let aggregated = if window_projection.is_empty() {
             aggregated
@@ -3119,6 +3261,14 @@ impl SQLContext {
         for (name, _) in &order_by_aggs {
             output_projection.push(col(name.clone()));
         }
+        // A projection of only literals must still yield one row per grouping-set row.
+        if !grouping_columns.is_empty()
+            && !output_projection
+                .iter()
+                .any(|e| has_expr(e, |e| matches!(e, Expr::Column(_))))
+        {
+            output_projection.push(col(grouping_columns[0].clone()));
+        }
         for key_name in group_by_keys_schema.iter_names() {
             if !projection_schema.contains(key_name) {
                 // Original col name not in output - add for ORDER BY access
@@ -3138,7 +3288,7 @@ impl SQLContext {
         }
         Ok((
             aggregated.select(&output_projection),
-            projections.clone(),
+            projection_schema.iter_names_cloned().collect(),
             order_by,
         ))
     }
@@ -3774,6 +3924,21 @@ fn process_join_predicate(
     });
     let predicate = strip_join_aliases(parse_sql_expr(&sql_expr, ctx, Some(&joined_schema))?);
     Ok((vec![], vec![], vec![predicate]))
+}
+
+/// `group_by().agg()` already collects a column into a list, so an explicit
+/// `implode` (SQL `ARRAY_AGG`) is dropped there; a global `select()` keeps it.
+fn strip_group_implode(aggs: &[Expr]) -> Vec<Expr> {
+    aggs.iter()
+        .map(|e| match e {
+            Expr::Agg(AggExpr::Implode { input, .. }) => (**input).clone(),
+            Expr::Alias(inner, name) => match inner.as_ref() {
+                Expr::Agg(AggExpr::Implode { input, .. }) => (**input).clone().alias(name.clone()),
+                _ => e.clone(),
+            },
+            _ => e.clone(),
+        })
+        .collect()
 }
 
 /// Replace aggregates over pre-aggregation columns with references to hoisted
