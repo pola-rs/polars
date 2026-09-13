@@ -1299,3 +1299,30 @@ def test_arithmetic_between_a_repeated_and_a_varying_side_checks_widths() -> Non
             pl.DataFrame({"a": repeated, "b": varying}).select(
                 pl.col(left) + pl.col(right)
             )
+
+
+@pytest.mark.parametrize(
+    "op",
+    [operator.add, operator.sub, operator.mul, operator.truediv, operator.mod],
+)
+def test_arithmetic_between_empty_lists_and_a_primitive_column(
+    op: Callable[[Any, Any], Any],
+) -> None:
+    # Lists that are all empty hold no values at all, and there is no writing the answer
+    # back over a values buffer that has no slots — nor anything to write into it.
+    height = 4
+    repeated = pl.select(
+        pl.repeat(pl.lit([], dtype=pl.List(pl.Int64)), height).alias("a")
+    ).to_series()
+    flat = pl.Series("a", [[]] * height, dtype=pl.List(pl.Int64))
+    primitive = pl.Series("b", range(height), dtype=pl.Int64)
+
+    for left, right in (("a", "b"), ("b", "a")):
+        assert_series_equal(
+            pl.DataFrame({"a": repeated, "b": primitive})
+            .select(op(pl.col(left), pl.col(right)))
+            .to_series(),
+            pl.DataFrame({"a": flat, "b": primitive})
+            .select(op(pl.col(left), pl.col(right)))
+            .to_series(),
+        )

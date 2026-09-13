@@ -886,9 +886,16 @@ mod inner {
                         arr_lhs = PlPrimitiveArray::from_vec(values).with_validity(validity);
                     }
 
-                    let arr_lhs_mut_slice = arr_lhs
-                        .flat_or_scalar_values_mut()
-                        .expect("the chunk it was read out of has been dropped");
+                    // Lists that are all empty hold no values at all, and the buffer of no
+                    // values is the empty one every array of none shares: there is no handle to
+                    // take on it, and no slot to write through one either.
+                    let arr_lhs_mut_slice = if n_values == 0 {
+                        &mut [][..]
+                    } else {
+                        arr_lhs
+                            .flat_or_scalar_values_mut()
+                            .expect("the chunk it was read out of has been dropped")
+                    };
                     assert_eq!(arr_lhs_mut_slice.len(), n_values);
 
                     with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
