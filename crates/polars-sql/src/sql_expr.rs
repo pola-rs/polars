@@ -245,7 +245,11 @@ impl SQLExprVisitor<'_> {
                 right,
                 is_some: _,
             } => self.visit_any(left, compare_op, right),
-            SQLExpr::Array(arr) => Ok(lit(Scalar::new_list(self.array_expr_to_series(&arr.elem)?))),
+            SQLExpr::Array(arr) => {
+                // Preserve the unnamed Series literal's output name.
+                Ok(lit(Scalar::new_list(self.array_expr_to_series(&arr.elem)?))
+                    .alias(PlSmallStr::EMPTY))
+            },
             SQLExpr::Between {
                 expr,
                 negated,

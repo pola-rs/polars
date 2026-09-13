@@ -55,6 +55,28 @@ def test_array_literal_projection_height(rows: int | None, engine: EngineType) -
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_array_literal_projection_names(engine: EngineType) -> None:
+    result = (
+        pl.LazyFrame({"id": [1, 2]})
+        .sql("SELECT [1, 2], ARRAY[3, 4], 7 FROM self")
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame(
+        {"": [[1, 2], [1, 2]], ":1": [[3, 4], [3, 4]], "literal": [7, 7]},
+        schema={"": pl.List(pl.Int64), ":1": pl.List(pl.Int64), "literal": pl.Int32},
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_array_literal_projection_zero_columns(engine: EngineType) -> None:
+    with pl.SQLContext(df=None) as ctx:
+        result = ctx.execute("SELECT [1, 2] AS x FROM df").collect(engine=engine)
+    expected = pl.DataFrame(schema={"x": pl.List(pl.Int64)})
+    assert_frame_equal(result, expected)
+
+
 def test_array_literal_projection_filtered_and_ordered() -> None:
     df = pl.DataFrame({"id": [1, 2, 3]})
     result = df.sql("SELECT [1, 2] AS x FROM self WHERE id > 1 ORDER BY id DESC")
