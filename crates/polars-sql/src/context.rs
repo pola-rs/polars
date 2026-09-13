@@ -2146,6 +2146,16 @@ impl SQLContext {
                 Some(s) => s,
             };
 
+            // A condition that reads no input (eg: "WHERE 1 = 1") is accepted as any type
+            // that casts to boolean; the planner folds it.
+            if let Some(predicate) = self.input_independent_predicate(expr)? {
+                let predicate = predicate.cast(DataType::Boolean);
+                return Ok(match filter_mode {
+                    FilterMode::KeepTrue => lf.filter(predicate),
+                    FilterMode::RemoveTrue => lf.remove(predicate),
+                });
+            }
+
             // Lower eligible `[NOT] EXISTS` / `[NOT] IN (subquery)` conjuncts
             // to semi / anti joins; whatever remains goes through the ordinary
             // filter path below.
@@ -2198,6 +2208,21 @@ impl SQLContext {
         Ok(lf)
     }
 
+    /// Parse a condition that yields one value independent of any input frame (a literal or
+    /// elementwise operations over literals); `None` for any other condition.
+    fn input_independent_predicate(&mut self, expr: &SQLExpr) -> PolarsResult<Option<Expr>> {
+        if expr_references_any_column(expr) || expr_contains_subquery(expr) {
+            return Ok(None);
+        }
+        let predicate = parse_sql_expr(expr, self, None)?;
+        let independent = predicate
+            .clone()
+            .meta()
+            .is_input_independent_scalar()
+            .unwrap_or(false);
+        Ok(independent.then_some(predicate))
+    }
+
     pub(super) fn process_join(
         &mut self,
         tbl_left: &TableInfo,
@@ -2209,28 +2234,19 @@ impl SQLContext {
         // every row, or none: join on the condition itself as a boolean key. Null keys do not
         // match, which is SQL's treatment of an unknown condition.
         if let JoinConstraint::On(expr) = constraint
-            && !expr_references_any_column(expr)
-            && !expr_contains_subquery(expr)
+            && let Some(predicate) = self.input_independent_predicate(expr)?
         {
-            let predicate = parse_sql_expr(expr, self, None)?;
-            if predicate
+            return tbl_left
+                .frame
                 .clone()
-                .meta()
-                .is_input_independent_scalar()
-                .unwrap_or(false)
-            {
-                return tbl_left
-                    .frame
-                    .clone()
-                    .join_builder()
-                    .with(tbl_right.frame.clone())
-                    .left_on([predicate.cast(DataType::Boolean)])
-                    .right_on([lit(true)])
-                    .how(join_type)
-                    .suffix(format!(":{}", tbl_right.name))
-                    .coalesce(JoinCoalesce::KeepColumns)
-                    .finish();
-            }
+                .join_builder()
+                .with(tbl_right.frame.clone())
+                .left_on([predicate.cast(DataType::Boolean)])
+                .right_on([lit(true)])
+                .how(join_type)
+                .suffix(format!(":{}", tbl_right.name))
+                .coalesce(JoinCoalesce::KeepColumns)
+                .finish();
         }
         let (left_on, right_on, predicates) =
             process_join_constraint(constraint, tbl_left, tbl_right, self)?;

@@ -1977,6 +1977,9 @@ def test_join_predicate_operand_spanning_both_sides() -> None:
         "UPPER('x') = 'X'",
         "(1 = 1) AND (2 > 1)",
         "CASE WHEN 1 = 1 THEN TRUE ELSE FALSE END",
+        "1 IN (1, 2)",
+        "3 NOT IN (1, 2)",
+        "'b' IN ('a', 'c')",
     ],
 )
 @pytest.mark.parametrize("empty_side", [None, "a", "b"])
@@ -2013,6 +2016,20 @@ def test_join_on_constant_true_plans_cross_join() -> None:
     # an always-true outer join is not a cross join: it must keep unmatched rows
     plan = ctx.execute("SELECT * FROM a LEFT JOIN b ON TRUE").explain()
     assert "CROSS JOIN" not in plan
+
+
+def test_constant_key_join_keeps_validation() -> None:
+    a = pl.LazyFrame({"k": [1, 2]})
+    b = pl.LazyFrame({"v": ["r", "s"]})
+    assert a.join(b, left_on=pl.lit(1), right_on=pl.lit(1)).collect().height == 4
+    for validate in ["1:1", "1:m", "m:1"]:
+        with pytest.raises(ComputeError, match="join keys did not fulfill"):
+            a.join(
+                b,
+                left_on=pl.lit(1),
+                right_on=pl.lit(1),
+                validate=validate,  # type: ignore[arg-type]
+            ).collect()
 
 
 @pytest.mark.parametrize("join_type", ["INNER", "LEFT"])

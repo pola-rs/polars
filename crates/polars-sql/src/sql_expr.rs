@@ -295,10 +295,12 @@ impl SQLExprVisitor<'_> {
             } => {
                 let expr = self.visit_expr(expr)?;
                 // Prefer the all-literal `is_in` fast path, which predicate pushdown can
-                // use. A non-literal element, or an aggregate on the left, falls back to an
-                // OR-chain of equality comparisons.
-                let expr_is_aggregate = has_expr(&expr, |e| matches!(e, Expr::Agg(_) | Expr::Len));
-                let elements = if expr_is_aggregate {
+                // use. A non-literal element, an aggregate on the left, or a literal on the
+                // left (a constant, which the planner folds as an OR-chain but not as a set
+                // membership) falls back to an OR-chain of equality comparisons.
+                let use_or_chain = matches!(expr, Expr::Literal(_))
+                    || has_expr(&expr, |e| matches!(e, Expr::Agg(_) | Expr::Len));
+                let elements = if use_or_chain {
                     None
                 } else {
                     self.array_expr_to_series(list).ok()

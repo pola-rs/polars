@@ -3,6 +3,7 @@ use either::Either;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::utils::{get_numeric_upcast_supertype_lossless, try_get_supertype};
+use polars_ops::prelude::JoinValidation;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 
@@ -157,7 +158,7 @@ pub fn resolve_join(
     let schema_right = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
 
     // Inner-joining on the same non-null constant on both sides pairs every row with every
-    // row: a cross join.
+    // row: a cross join (unless the key multiplicity is to be validated).
     let same_constant_key = |l: &ExprIR, r: &ExprIR| match (
         ctxt.expr_arena.get(l.node()),
         ctxt.expr_arena.get(r.node()),
@@ -166,6 +167,7 @@ pub fn resolve_join(
         _ => false,
     };
     if options.args.how == JoinType::Inner
+        && options.args.validation == JoinValidation::ManyToMany
         && left_on
             .iter()
             .zip(&right_on)

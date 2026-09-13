@@ -139,8 +139,14 @@ def test_constant_where_condition(condition: str, keeps_rows: bool) -> None:
         ("1 = 1", True),
         ("1 = 0", False),
         ("NULL = NULL", None),
+        ("NULL", None),
         ("UPPER('x') = 'X'", True),
         ("CASE WHEN 1 < 2 THEN FALSE ELSE TRUE END", False),
+        # non-boolean constants are cast to boolean
+        ("1", True),
+        ("0", False),
+        ("1 + 1", True),
+        ("2 IN (1, 2)", True),
     ],
 )
 @pytest.mark.parametrize("empty", [False, True])
