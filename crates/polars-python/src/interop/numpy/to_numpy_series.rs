@@ -309,6 +309,35 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> PyRe
     })
 }
 
+/// Collects `f` over the values of a Series with no nulls, one chunk at a time.
+///
+/// A chunk walked on its own has its representation resolved once, where one iterator across the
+/// chunks of the whole column resolves it per element.
+fn collect_values<T, U, F>(ca: &ChunkedArray<T>, f: F) -> Vec<U>
+where
+    T: PolarsDataType,
+    F: for<'a> Fn(<T as PolarsDataType>::Physical<'a>) -> U,
+{
+    let mut values = Vec::with_capacity(ca.len());
+    for arr in ca.downcast_iter() {
+        arr.values_iter().for_each(|value| values.push(f(value)));
+    }
+    values
+}
+
+/// Collects `f` over the elements of a Series, nulls included, one chunk at a time.
+fn collect_opt_values<T, U, F>(ca: &ChunkedArray<T>, f: F) -> Vec<U>
+where
+    T: PolarsDataType,
+    F: for<'a> Fn(Option<<T as PolarsDataType>::Physical<'a>>) -> U,
+{
+    let mut values = Vec::with_capacity(ca.len());
+    for arr in ca.downcast_iter() {
+        arr.iter().for_each(|value| values.push(f(value)));
+    }
+    values
+}
+
 /// Convert numeric types to f32 or f64 with NaN representing a null value.
 fn numeric_series_to_numpy<T, U>(py: Python<'_>, s: &Series) -> Py<PyAny>
 where
@@ -318,8 +347,8 @@ where
 {
     let ca: &ChunkedArray<T> = s.as_ref().as_ref();
     if s.null_count() == 0 {
-        let values = ca.into_no_null_iter();
-        PyArray1::<T::Native>::from_iter(py, values)
+        let values = collect_values(ca, |v| v);
+        PyArray1::<T::Native>::from_vec(py, values)
             .into_py_any(py)
             .unwrap()
     } else {
@@ -327,8 +356,8 @@ where
             Some(v) => NumCast::from(v).unwrap(),
             None => U::nan(),
         };
-        let values = ca.iter().map(mapper);
-        PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+        let values: Vec<U> = collect_opt_values(ca, mapper);
+        PyArray1::from_vec(py, values).into_py_any(py).unwrap()
     }
 }
 
@@ -336,13 +365,13 @@ where
 fn boolean_series_to_numpy(py: Python<'_>, s: &Series) -> Py<PyAny> {
     let ca = s.bool().unwrap();
     if s.null_count() == 0 {
-        let values = ca.no_null_iter();
-        PyArray1::<bool>::from_iter(py, values)
+        let values = collect_values(ca, |v| v);
+        PyArray1::<bool>::from_vec(py, values)
             .into_py_any(py)
             .unwrap()
     } else {
-        let values = ca.iter().map(|opt_v| opt_v.into_py_any(py).unwrap());
-        PyArray1::from_iter(py, values).into_py_any(py).unwrap()
+        let values = collect_opt_values(ca, |opt_v| opt_v.into_py_any(py).unwrap());
+        PyArray1::from_vec(py, values).into_py_any(py).unwrap()
     }
 }
 
@@ -354,21 +383,19 @@ fn date_series_to_numpy(py: Python<'_>, s: &Series) -> Py<PyAny> {
     let ca = s_phys.i32().unwrap();
 
     if s.null_count() == 0 {
-        let mapper = |v: i32| (v as i64).into();
-        let values = ca.into_no_null_iter().map(mapper);
-        PyArray1::<Datetime<units::Days>>::from_iter(py, values)
+        let values = collect_values(ca, |v: i32| Datetime::<units::Days>::from(v as i64));
+        PyArray1::<Datetime<units::Days>>::from_vec(py, values)
             .into_py_any(py)
             .unwrap()
     } else {
         let mapper = |opt_v: Option<i32>| {
-            match opt_v {
+            Datetime::<units::Days>::from(match opt_v {
                 Some(v) => v as i64,
                 None => i64::MIN,
-            }
-            .into()
+            })
         };
-        let values = ca.iter().map(mapper);
-        PyArray1::<Datetime<units::Days>>::from_iter(py, values)
+        let values = collect_opt_values(ca, mapper);
+        PyArray1::<Datetime<units::Days>>::from_vec(py, values)
             .into_py_any(py)
             .unwrap()
     }
@@ -381,10 +408,8 @@ where
 {
     let s_phys = s.to_physical_repr();
     let ca = s_phys.i64().unwrap();
-    let values = ca.iter().map(|v| v.unwrap_or(i64::MIN).into());
-    PyArray1::<T>::from_iter(py, values)
-        .into_py_any(py)
-        .unwrap()
+    let values = collect_opt_values(ca, |v| T::from(v.unwrap_or(i64::MIN)));
+    PyArray1::<T>::from_vec(py, values).into_py_any(py).unwrap()
 }
 fn list_series_to_numpy(py: Python<'_>, s: &Series, writable: bool) -> PyResult<Py<PyAny>> {
     let ca = s.list().unwrap();
