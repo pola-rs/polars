@@ -5,6 +5,7 @@ mod context;
 pub mod function_registry;
 mod functions;
 pub mod keywords;
+mod literal_folding;
 mod resolver;
 mod sql_expr;
 mod sql_visitors;

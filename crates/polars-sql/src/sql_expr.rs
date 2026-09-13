@@ -33,6 +33,7 @@ use sqlparser::tokenizer::Token;
 
 use crate::SQLContext;
 use crate::functions::SQLFunctionVisitor;
+use crate::literal_folding::try_fold_decimal_arithmetic;
 use crate::subquery::is_correlated_subquery;
 use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
@@ -664,7 +665,7 @@ impl SQLExprVisitor<'_> {
         op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
-        if let Some(folded) = fold_decimal_literal_arithmetic(left, op, right) {
+        if let Some(folded) = try_fold_decimal_arithmetic(left, op, right) {
             return Ok(folded);
         }
         // need special handling for interval offsets and comparisons
@@ -1507,98 +1508,6 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
         SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx, None)?,
         _ => polars_bail!(SQLInterface: "unable to parse '{}' as Expr", s),
     })
-}
-
-/// A fixed-point value: `mantissa / 10^scale`.
-struct DecimalLiteral {
-    mantissa: i128,
-    scale: u32,
-}
-
-impl DecimalLiteral {
-    fn parse(s: &str) -> Option<Self> {
-        let (int_part, frac_part) = s.split_once('.').unwrap_or((s, ""));
-        if !int_part
-            .bytes()
-            .chain(frac_part.bytes())
-            .all(|b| b.is_ascii_digit())
-        {
-            return None;
-        }
-        Some(Self {
-            mantissa: format!("{int_part}{frac_part}").parse().ok()?,
-            scale: frac_part.len() as u32,
-        })
-    }
-
-    fn rescale(&self, scale: u32) -> Option<i128> {
-        self.mantissa
-            .checked_mul(10i128.checked_pow(scale - self.scale)?)
-    }
-
-    fn eval(expr: &SQLExpr) -> Option<Self> {
-        match expr {
-            SQLExpr::Value(ValueWithSpan {
-                value: SQLValue::Number(s, _),
-                ..
-            }) => Self::parse(s),
-            SQLExpr::Nested(e) => Self::eval(e),
-            SQLExpr::UnaryOp { op, expr } => {
-                let v = Self::eval(expr)?;
-                match op {
-                    SQLUnaryOperator::Plus => Some(v),
-                    SQLUnaryOperator::Minus => Some(Self {
-                        mantissa: v.mantissa.checked_neg()?,
-                        ..v
-                    }),
-                    _ => None,
-                }
-            },
-            SQLExpr::BinaryOp { left, op, right } => Self::combine(left, op, right),
-            _ => None,
-        }
-    }
-
-    fn combine(left: &SQLExpr, op: &SQLBinaryOperator, right: &SQLExpr) -> Option<Self> {
-        if !matches!(
-            op,
-            SQLBinaryOperator::Plus | SQLBinaryOperator::Minus | SQLBinaryOperator::Multiply
-        ) {
-            return None;
-        }
-        let (l, r) = (Self::eval(left)?, Self::eval(right)?);
-        if *op == SQLBinaryOperator::Multiply {
-            return Some(Self {
-                mantissa: l.mantissa.checked_mul(r.mantissa)?,
-                scale: l.scale + r.scale,
-            });
-        }
-        let scale = l.scale.max(r.scale);
-        let (l, r) = (l.rescale(scale)?, r.rescale(scale)?);
-        let mantissa = if *op == SQLBinaryOperator::Plus {
-            l.checked_add(r)?
-        } else {
-            l.checked_sub(r)?
-        };
-        Some(Self { mantissa, scale })
-    }
-
-    fn to_f64(&self) -> f64 {
-        format!("{}e-{}", self.mantissa, self.scale)
-            .parse()
-            .unwrap()
-    }
-}
-
-/// Evaluate `+`/`-`/`*` between numeric literals exactly; integer-only arithmetic is
-/// left to the engine.
-fn fold_decimal_literal_arithmetic(
-    left: &SQLExpr,
-    op: &SQLBinaryOperator,
-    right: &SQLExpr,
-) -> Option<Expr> {
-    let value = DecimalLiteral::combine(left, op, right)?;
-    (value.scale > 0).then(|| lit(value.to_f64()))
 }
 
 pub(crate) fn interval_to_duration(interval: &Interval, fixed: bool) -> PolarsResult<Duration> {

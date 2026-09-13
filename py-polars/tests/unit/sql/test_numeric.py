@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from decimal import Decimal as D
 from typing import TYPE_CHECKING
 
@@ -236,6 +237,68 @@ def test_decimal_literal_arithmetic_is_exact() -> None:
     res = df.sql("SELECT 0.1 + 0.2 AS x, 1 + 2 AS y, 2 * 1.5 AS z FROM self LIMIT 1")
     assert res.row(0) == (0.3, 3, 3.0)
     assert res.schema == {"x": pl.Float64, "y": pl.Int32, "z": pl.Float64}
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        "0.1 + 0.2",
+        "-.5 + .5",
+        "-(0.5) * 2",
+        "+1.5 + 1",
+        "-(-1.5)",
+        "1.5 - 3",
+        "3 * 0.1",
+        "1.10 * 1.10",
+        "(1.5 + 0.5) * (2 - 0.5)",
+        "1.5 + 2 * 0.25",
+        "0.00000000000000000000000000000000000001 * 0.00000000000000000000000000000000000001",
+        "12345678901234567890.123456789 + 0.000000001",
+        "99999999999999999999999999999999999999.9 + 0.1",
+    ],
+)
+def test_literal_arithmetic_folds_exactly(expr: str) -> None:
+    # literal-only `+`/`-`/`*` is computed exactly, then converted to Float64 once;
+    # the reference evaluates the same expression with Python's exact Decimal
+    decimal_expr = re.sub(r"\d*\.\d+|\d+", lambda m: f"D('{m.group()}')", expr)
+    expected = float(eval(decimal_expr))
+    res = pl.sql(f"SELECT {expr} AS x", eager=True)
+    assert res.schema == {"x": pl.Float64}
+    assert res.item() == expected
+
+
+@pytest.mark.parametrize(
+    ("expr", "expected", "dtype"),
+    [
+        # integer-only arithmetic stays on the ordinary path
+        ("1 + 2", 3, pl.Int32),
+        # eligible children fold even when the parent cannot
+        ("0.1 + 0.2 + a", 1.3, pl.Float64),
+        ("0.1 + 0.2 = 0.3", True, pl.Boolean),
+        # division and casts are left to the engine
+        ("0.5 / 0.25", 2.0, pl.Float64),
+        ("1.5 + 0.5 / 2", 1.75, pl.Float64),
+        ("1.5 + CAST(1 AS FLOAT)", 2.5, pl.Float64),
+        ("0.0 - 0.0", 0.0, pl.Float64),
+        # beyond the exact domain: falls back to float arithmetic
+        (
+            "170141183460469231731687303715884105727.0 + 1.0",
+            1.7014118346046923e38,
+            pl.Float64,
+        ),
+    ],
+)
+def test_literal_arithmetic_fallback(
+    expr: str, expected: object, dtype: pl.DataType
+) -> None:
+    res = pl.DataFrame({"a": [1]}).sql(f"SELECT {expr} AS x FROM self")
+    assert res.schema == {"x": dtype}
+    assert res.item() == expected
+
+
+def test_literal_scientific_notation_unsupported() -> None:
+    with pytest.raises(SQLInterfaceError, match="cannot parse literal"):
+        pl.sql("SELECT 1e2 + 0.5 AS x", eager=True)
 
 
 def test_int_div_true_division() -> None:
