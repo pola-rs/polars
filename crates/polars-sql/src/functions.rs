@@ -27,7 +27,6 @@ use sqlparser::ast::{
 use sqlparser::tokenizer::Span;
 
 use crate::SQLContext;
-use crate::context::WHOLE_FRAME_PARTITION;
 use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::sql_expr::{
     adjust_one_indexed_param, order_by_sort_options, parse_extract_date_part, parse_sql_array,
@@ -2679,7 +2678,9 @@ impl SQLFunctionVisitor<'_> {
         // Apply window spec; under a GROUP BY an empty window still has to be
         // told apart from a group aggregate.
         Ok(match (partition_by, order_by) {
-            (None, None) if self.ctx.grouped_block => expr.over([col(WHOLE_FRAME_PARTITION)])?,
+            (None, None) if self.ctx.grouped_block => {
+                expr.over([col(self.ctx.whole_frame_partition())])?
+            },
             (None, None) => expr,
             (Some(part), None) => expr.over(part)?,
             (part, Some(order)) => expr.over_with_options(part, Some(order), Default::default())?,

@@ -795,3 +795,19 @@ def test_constant_input_aggregates_mixed_with_key() -> None:
         "SELECT a, AVG(1) + a AS v FROM self GROUP BY a ORDER BY a",
         expected={"a": [1, 2], "v": [2.0, 3.0]},
     )
+
+
+def test_whole_frame_window_marker_is_private() -> None:
+    lf = pl.LazyFrame({"__POLARS_WHOLE_FRAME_WINDOW": ["x", "y"], "v": [1, 2]})
+    assert_grouping_sets_matches(
+        lf,
+        """
+        SELECT __POLARS_WHOLE_FRAME_WINDOW,
+               COUNT(*) OVER (PARTITION BY __POLARS_WHOLE_FRAME_WINDOW) AS n
+        FROM self GROUP BY __POLARS_WHOLE_FRAME_WINDOW, v ORDER BY 1
+        """,
+        expected={"__POLARS_WHOLE_FRAME_WINDOW": ["x", "y"], "n": [1, 1]},
+    )
+    # GROUP BY ALL without inferable keys is not a grouped block.
+    out = lf.sql("SELECT ROW_NUMBER() OVER () AS n FROM self GROUP BY ALL ORDER BY n")
+    assert out.collect()["n"].to_list() == [1, 2]

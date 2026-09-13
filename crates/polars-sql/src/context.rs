@@ -11,9 +11,7 @@ use polars_plan::plans::visitor::TreeWalker;
 use polars_plan::plans::{ArenaExprIter, ExprToIRContext, is_scalar_ae, to_expr_ir};
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
-#[cfg(feature = "semi_anti_join")]
-use polars_utils::unique_column_name;
-use polars_utils::{UnitVec, format_pl_smallstr};
+use polars_utils::{UnitVec, format_pl_smallstr, unique_column_name};
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
     Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg,
@@ -245,6 +243,9 @@ pub struct SQLContext {
     /// Whether the clause being parsed feeds the `GROUP BY` of its query block,
     /// where windows must stay distinguishable from group aggregates.
     pub(crate) grouped_block: bool,
+    /// Partition column standing for an empty `OVER ()` parsed in such a clause,
+    /// until the window is separated from the group aggregates.
+    whole_frame_partition: Option<PlSmallStr>,
 }
 
 impl Default for SQLContext {
@@ -261,6 +262,7 @@ impl Default for SQLContext {
             named_windows: Default::default(),
             grouping_calls: Default::default(),
             grouped_block: false,
+            whole_frame_partition: None,
             lp_arena: Default::default(),
             expr_arena: Default::default(),
         }
@@ -1538,6 +1540,34 @@ impl SQLContext {
     }
 
     /// Execute the 'SELECT' part of the query.
+    /// The partition column of the current block's whole-frame windows.
+    pub(crate) fn whole_frame_partition(&mut self) -> PlSmallStr {
+        self.whole_frame_partition
+            .get_or_insert_with(|| {
+                format_pl_smallstr!("__POLARS_WHOLE_FRAME_{}", unique_column_name())
+            })
+            .clone()
+    }
+
+    /// Lower the whole-frame windows of a block that turned out to have no group
+    /// keys back to their bare expression, as a non-grouped block parses them.
+    fn resolve_whole_frame_windows(&self, expr: Expr) -> Expr {
+        let Some(partition) = &self.whole_frame_partition else {
+            return expr;
+        };
+        expr.map_expr(|e| match &e {
+            Expr::Over {
+                function,
+                partition_by,
+                order_by: None,
+                ..
+            } if matches!(partition_by.as_slice(), [Expr::Column(name)] if name == partition) => {
+                function.as_ref().clone()
+            },
+            _ => e,
+        })
+    }
+
     fn contains_grouping_placeholder(&self, expr: &Expr) -> bool {
         contains_grouping_placeholder(expr, self.grouping_calls.iter().map(|c| &c.placeholder))
     }
@@ -1545,6 +1575,7 @@ impl SQLContext {
     fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
         // `GROUPING()` calls are scoped to the query block that binds them.
         let outer_grouping_calls = std::mem::take(&mut self.grouping_calls);
+        let outer_whole_frame_partition = self.whole_frame_partition.take();
         let outer_grouped_block = self.grouped_block;
         self.grouped_block = match &select_stmt.group_by {
             GroupByExpr::Expressions(exprs, _) => !exprs.is_empty(),
@@ -1552,6 +1583,7 @@ impl SQLContext {
         };
         let result = self.execute_select_block(select_stmt, query);
         self.grouping_calls = outer_grouping_calls;
+        self.whole_frame_partition = outer_whole_frame_partition;
         self.grouped_block = outer_grouped_block;
         result
     }
@@ -1906,6 +1938,12 @@ impl SQLContext {
                 self.grouping_calls.is_empty(),
                 SQLSyntax: "GROUPING() requires a GROUP BY clause"
             );
+            // `GROUP BY ALL` may infer no keys; nothing here runs in a group context.
+            self.grouped_block = false;
+            projections = projections
+                .into_iter()
+                .map(|e| self.resolve_whole_frame_windows(e))
+                .collect();
 
             // Disambiguate SELECT-list output-name collisions.
             projections = disambiguate_output_names(
@@ -3078,10 +3116,9 @@ impl SQLContext {
         // the whole-frame window partition, and `GROUPING()` values, which are
         // per-set constants the projections treat like group keys.
         let mut extended = Arc::unwrap_or_clone(schema_before);
-        extended.with_column(
-            PlSmallStr::from_static(WHOLE_FRAME_PARTITION),
-            DataType::Int32,
-        );
+        if let Some(partition) = &self.whole_frame_partition {
+            extended.with_column(partition.clone(), DataType::Int32);
+        }
         if let Some(grouping) = grouping {
             for placeholder in grouping.placeholders() {
                 extended.with_column(placeholder.clone(), DataType::Int64);
@@ -3127,9 +3164,11 @@ impl SQLContext {
             })
             .collect();
 
+        let whole_frame_partition = self.whole_frame_partition.clone();
         let splitter = GroupContextSplitter {
             schema: &schema_before,
             keys: &group_by_keys_schema,
+            whole_frame_partition: whole_frame_partition.as_ref(),
         };
         // Post-aggregation expressions read computed keys from their stored columns.
         let bind_keys = |e: Expr| match grouping {
@@ -4018,15 +4057,12 @@ fn strip_group_implode(aggs: Vec<Expr>) -> Vec<Expr> {
 
 const HOISTED_AGG_PREFIX: &str = "__POLARS_HOISTED_AGG_";
 
-/// Partition column standing for an empty `OVER ()` parsed under a `GROUP BY`,
-/// until the window is separated from the group aggregates.
-pub(crate) const WHOLE_FRAME_PARTITION: &str = "__POLARS_WHOLE_FRAME_WINDOW";
-
 /// Splits post-aggregation expressions from the group-context reductions they
 /// contain, over the pre-aggregation schema.
 struct GroupContextSplitter<'a> {
     schema: &'a Schema,
     keys: &'a Schema,
+    whole_frame_partition: Option<&'a PlSmallStr>,
 }
 
 impl GroupContextSplitter<'_> {
@@ -4101,7 +4137,7 @@ impl GroupContextSplitter<'_> {
                 partition_by: partition_by
                     .into_iter()
                     .map(|e| match e {
-                        Expr::Column(name) if name == WHOLE_FRAME_PARTITION => lit(1),
+                        Expr::Column(name) if Some(&name) == self.whole_frame_partition => lit(1),
                         e => self.hoist(e, agg_out, counter),
                     })
                     .collect(),
