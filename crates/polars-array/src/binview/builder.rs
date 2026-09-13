@@ -51,6 +51,7 @@ impl PlBinaryViewArrayBuilder {
     }
 
     /// Appends `value` as an element of its own.
+    #[inline]
     pub fn push_value(&mut self, value: &[u8]) {
         let view = self.copy_value(value);
         self.views.push(view);
@@ -89,12 +90,14 @@ impl PlBinaryViewArrayBuilder {
     }
 
     /// Appends a null.
+    #[inline]
     pub fn push_null(&mut self) {
         self.views.push(View::default());
         self.validity.extend_constant(1, false);
     }
 
     /// Appends `value`, or a null if it is [`None`].
+    #[inline]
     pub fn push(&mut self, value: Option<&[u8]>) {
         match value {
             Some(value) => self.push_value(value),
