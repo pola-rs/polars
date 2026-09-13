@@ -4,10 +4,10 @@ use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_plan::plans::typed_lit;
 use polars_plan::utils::has_expr;
-use polars_utils::aliases::PlHashSet;
-use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::{format_pl_smallstr, unique_column_name};
 use sqlparser::ast::Expr as SQLExpr;
+
+use crate::context::strip_outer_alias;
 
 /// Cap on the number of grouping sets a single `GROUP BY` may expand to.
 const MAX_GROUPING_SETS: usize = 4096;
@@ -16,7 +16,7 @@ const MAX_GROUPING_SETS: usize = 4096;
 pub(crate) const MAX_GROUPING_ARGS: usize = 63;
 
 const PLACEHOLDER_PREFIX: &str = "__POLARS_GROUPING_";
-const HAVING_AGG_PREFIX: &str = "__POLARS_HAVINGAGG_";
+
 const GLOBAL_COUNT_COL: &str = "__POLARS_GSET_COUNT";
 
 /// A `GROUPING(...)` call parsed in the current query block.
@@ -30,8 +30,7 @@ pub(crate) struct GroupingCall {
 }
 
 pub(crate) fn new_placeholder() -> PlSmallStr {
-    static COUNTER: RelaxedCell<u64> = RelaxedCell::new_u64(0);
-    format_pl_smallstr!("{}{}", PLACEHOLDER_PREFIX, COUNTER.fetch_add(1))
+    format_pl_smallstr!("{}{}", PLACEHOLDER_PREFIX, unique_column_name())
 }
 
 fn is_grouping_placeholder(name: &str) -> bool {
@@ -140,7 +139,7 @@ pub(crate) fn canonicalize_keys(
     let mut stripped: Vec<Expr> = Vec::with_capacity(resolved.len());
     let mut remap = Vec::with_capacity(resolved.len());
     for key in resolved {
-        let s = strip_alias(&key);
+        let s = strip_outer_alias(&key);
         let idx = stripped.iter().position(|k| *k == s).unwrap_or_else(|| {
             keys.push(key);
             stripped.push(s);
@@ -163,13 +162,6 @@ pub(crate) fn canonicalize_keys(
     (keys, sets)
 }
 
-fn strip_alias(expr: &Expr) -> Expr {
-    match expr {
-        Expr::Alias(inner, _) => inner.as_ref().clone(),
-        e => e.clone(),
-    }
-}
-
 /// Everything the aggregation stage needs to know about a grouping-sets query.
 pub(crate) struct GroupingSets {
     /// Canonical key expressions, as handed to `group_by`.
@@ -188,7 +180,7 @@ impl GroupingSets {
         calls: &[GroupingCall],
         resolved_args: Vec<Vec<Expr>>,
     ) -> PolarsResult<Self> {
-        let stripped: Vec<Expr> = keys.iter().map(strip_alias).collect();
+        let stripped: Vec<Expr> = keys.iter().map(strip_outer_alias).collect();
         let calls = calls
             .iter()
             .zip(resolved_args)
@@ -197,7 +189,7 @@ impl GroupingSets {
                     .iter()
                     .zip(&call.args)
                     .map(|(arg, sql_arg)| {
-                        let arg = strip_alias(arg);
+                        let arg = strip_outer_alias(arg);
                         stripped.iter().position(|k| *k == arg).ok_or_else(|| {
                             polars_err!(SQLSyntax: "GROUPING() argument '{}' does not appear in the GROUP BY clause", sql_arg)
                         })
@@ -225,8 +217,7 @@ impl GroupingSets {
     /// set omits them), aggregate outputs and `GROUPING()` values.
     ///
     /// `group_aggs` run in `group_by().agg()`; `global_aggs` are the same aggregates
-    /// as they run in `select()` for the empty set. Also returns the combined
-    /// frame's column names.
+    /// as they run in `select()` for the empty set.
     pub(crate) fn aggregate(
         &self,
         lf: LazyFrame,
@@ -234,7 +225,7 @@ impl GroupingSets {
         group_aggs: &[Expr],
         global_aggs: &[Expr],
         agg_names: &[PlSmallStr],
-    ) -> PolarsResult<(LazyFrame, Vec<PlSmallStr>)> {
+    ) -> PolarsResult<LazyFrame> {
         // Compute non-column keys once, before the input is shared.
         let mut prepared = Vec::new();
         let group_keys: Vec<Expr> = self
@@ -242,7 +233,7 @@ impl GroupingSets {
             .iter()
             .zip(key_schema.iter_names())
             .map(|(key, name)| {
-                let inner = strip_alias(key);
+                let inner = strip_outer_alias(key);
                 if matches!(inner, Expr::Column(_)) {
                     key.clone()
                 } else {
@@ -261,12 +252,6 @@ impl GroupingSets {
 
         // With neither keys nor aggregates only a row count can carry the height.
         let need_count = key_schema.is_empty() && agg_names.is_empty();
-        let mut columns: Vec<PlSmallStr> = key_schema.iter_names_cloned().collect();
-        columns.extend(agg_names.iter().cloned());
-        columns.extend(self.placeholders().cloned());
-        if need_count {
-            columns.push(PlSmallStr::from_static(GLOBAL_COUNT_COL));
-        }
 
         let branches = self
             .sets
@@ -303,8 +288,8 @@ impl GroupingSets {
             })
             .collect::<Vec<_>>();
 
-        let lf = if branches.len() == 1 {
-            branches.into_iter().next().unwrap()
+        if branches.len() == 1 {
+            Ok(branches.into_iter().next().unwrap())
         } else {
             concat(
                 branches,
@@ -312,28 +297,7 @@ impl GroupingSets {
                     maintain_order: false,
                     ..Default::default()
                 },
-            )?
-        };
-        Ok((lf, columns))
+            )
+        }
     }
-}
-
-/// Replace every aggregate in a `HAVING` predicate with a reference to a hoisted
-/// aggregation output, so the predicate can run on the combined grouping-set rows.
-pub(crate) fn hoist_having_aggregates(expr: Expr, agg_out: &mut Vec<Expr>) -> Expr {
-    let mut hoisted: PlHashSet<PlSmallStr> = PlHashSet::new();
-    expr.map_expr(|e| match e {
-        Expr::Agg(_) | Expr::Len
-            if !has_expr(
-                &e,
-                |inner| matches!(inner, Expr::Column(name) if hoisted.contains(name.as_str())),
-            ) =>
-        {
-            let name = format_pl_smallstr!("{}{}", HAVING_AGG_PREFIX, agg_out.len());
-            agg_out.push(e.alias(name.clone()));
-            hoisted.insert(name.clone());
-            col(name)
-        },
-        e => e,
-    })
 }

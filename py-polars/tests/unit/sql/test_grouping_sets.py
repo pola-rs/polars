@@ -7,12 +7,14 @@ import pytest
 import polars as pl
 from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
-from tests.unit.sql.asserts import _execute_with_duckdb
+from tests.unit.sql import assert_sql_matches
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-ENGINES = ["in-memory", "streaming"]
+    from polars._typing import EngineType
+
+ENGINES: list[EngineType] = ["in-memory", "streaming"]
 
 
 def assert_grouping_sets_matches(
@@ -20,32 +22,16 @@ def assert_grouping_sets_matches(
     query: str,
     *,
     expected: dict[str, Sequence[Any]] | None = None,
-    check_row_order: bool = True,
     compare_with_duckdb: bool = True,
 ) -> None:
-    """Run `query` lazily on both engines and check it against DuckDB/`expected`."""
-    if isinstance(frames, pl.LazyFrame):
-        frames = {"self": frames}
-    results = {}
-    with pl.SQLContext(frames=frames, eager=False) as ctx:
-        plan = ctx.execute(query)
-        for engine in ENGINES:
-            results[engine] = plan.collect(engine=engine)  # type: ignore[call-overload]
-    assert_frame_equal(
-        results["in-memory"], results["streaming"], check_row_order=check_row_order
+    """Check `query` on both engines against DuckDB and/or `expected`."""
+    assert_sql_matches(
+        frames,
+        query=query,
+        compare_with="duckdb" if compare_with_duckdb else None,
+        expected=expected,
+        engines=ENGINES,
     )
-    result = results["in-memory"]
-    if compare_with_duckdb:
-        reference = _execute_with_duckdb(frames, query)
-        assert_frame_equal(
-            result, reference, check_dtypes=False, check_row_order=check_row_order
-        )
-    if expected is not None:
-        assert_frame_equal(
-            result,
-            pl.from_dict(expected, schema=result.schema),
-            check_row_order=check_row_order,
-        )
 
 
 @pytest.fixture
@@ -516,10 +502,12 @@ def test_grouping_sets_optimizations(
         GROUP BY CUBE(category, class)
         ORDER BY g, category NULLS LAST, class NULLS LAST
     """
-    expected = _execute_with_duckdb({"self": sales}, query)
+    # The optimized result is checked against DuckDB; unoptimized runs must match it.
+    assert_grouping_sets_matches(sales, query)
+    expected = sales.sql(query).collect()
     for engine in ENGINES:
-        out = sales.sql(query).collect(engine=engine, optimizations=optimizations)  # type: ignore[call-overload]
-        assert_frame_equal(out, expected, check_dtypes=False)
+        out = sales.sql(query).collect(engine=engine, optimizations=optimizations)
+        assert_frame_equal(out, expected)
 
 
 @pytest.mark.parametrize(
@@ -557,11 +545,23 @@ def test_grouping_sets_optimizations(
             "SELECT value FROM self GROUP BY ROLLUP(category)",
             "should participate in the GROUP BY",
         ),
+        (
+            "SELECT SUM(GROUPING(category)) FROM self GROUP BY ROLLUP(category)",
+            "cannot be used inside an aggregate function",
+        ),
     ],
 )
 def test_grouping_sets_errors(sales: pl.LazyFrame, query: str, match: str) -> None:
     with pytest.raises(SQLSyntaxError, match=match):
         sales.sql(query).collect()
+
+
+def test_grouping_in_delete_where(sales: pl.LazyFrame) -> None:
+    with (
+        pl.SQLContext(frames={"self": sales}) as ctx,
+        pytest.raises(SQLSyntaxError, match="not allowed in the WHERE clause"),
+    ):
+        ctx.execute("DELETE FROM self WHERE GROUPING(category) = 1").collect()
 
 
 def test_grouping_sets_expansion_limit() -> None:

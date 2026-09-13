@@ -377,6 +377,22 @@ pub(crate) fn expr_contains_subquery(expr: &SQLExpr) -> bool {
     .is_break()
 }
 
+/// Check if a SQL expression contains a `GROUPING()` / `GROUPING_ID()` call.
+pub(crate) fn expr_has_grouping_call(expr: &SQLExpr) -> bool {
+    visit_expressions(expr, |e| match e {
+        SQLExpr::Function(f)
+            if f.name.0.last().and_then(|p| p.as_ident()).is_some_and(|i| {
+                i.value.eq_ignore_ascii_case("grouping")
+                    || i.value.eq_ignore_ascii_case("grouping_id")
+            }) =>
+        {
+            ControlFlow::Break(())
+        },
+        _ => ControlFlow::Continue(()),
+    })
+    .is_break()
+}
+
 // ---------------------------------------------------------------------------
 // TableRegisteringFinder
 // ---------------------------------------------------------------------------
