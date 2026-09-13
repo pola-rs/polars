@@ -1,6 +1,7 @@
 use arrow::legacy::utils::CustomIterTools;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::datatypes::CategoricalPhysical;
+use polars_core::frame::column::ScalarColumn;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::with_match_categorical_physical_type;
@@ -32,11 +33,19 @@ pub fn _merge_sorted_dfs(
     }
 
     let merge_indicator = series_to_merge_indicator(left_s, right_s)?;
+    let height = left.height() + right.height();
     let new_columns = left
         .columns()
         .iter()
         .zip(right.columns())
         .map(|(lhs, rhs)| {
+            // Both sides repeating the same one element makes every row the merge lays down that
+            // element, whichever side it is taken from: the column repeats it rather than being
+            // written out a row at a time.
+            if let Some(out) = merged_repeated_element(lhs, rhs, height) {
+                return Ok(out);
+            }
+
             let lhs_phys = lhs.to_physical_repr();
             let rhs_phys = rhs.to_physical_repr();
 
@@ -53,6 +62,43 @@ pub fn _merge_sorted_dfs(
         .collect::<PolarsResult<_>>()?;
 
     Ok(unsafe { DataFrame::new_unchecked(left.height() + right.height(), new_columns) })
+}
+
+/// Whether `column` stands for one element repeated over all of its rows.
+fn repeats_one_element(column: &Column) -> bool {
+    match column {
+        // A scalar column is one value and a length, so asking its chunks would be what
+        // materializes it.
+        Column::Scalar(_) => true,
+        // A column of one element repeats that element, however its chunk holds it.
+        _ if column.len() <= 1 => true,
+        _ => {
+            let chunks = column.as_materialized_series().chunks();
+            // Every chunk of a column that repeats one element repeats the *same* one, which two
+            // of them no longer say on their own: only a single chunk answers here.
+            matches!(chunks.as_slice(), [chunk] if chunk.is_scalar())
+        },
+    }
+}
+
+/// The merged column of two that both repeat the same one element, or `None` where either side
+/// holds more than that one.
+fn merged_repeated_element(lhs: &Column, rhs: &Column, height: usize) -> Option<Column> {
+    if !repeats_one_element(lhs) || !repeats_one_element(rhs) {
+        return None;
+    }
+
+    // The two elements are compared as the one-row columns they stand for, which reads a null on
+    // both sides as the same element rather than as two unequal ones.
+    let first = lhs.slice(0, 1);
+    if !first.equals_missing(&rhs.slice(0, 1)) {
+        return None;
+    }
+
+    Some(
+        ScalarColumn::from_single_value_series(first.take_materialized_series(), height)
+            .into_column(),
+    )
 }
 
 fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsResult<Series> {
