@@ -240,8 +240,25 @@ impl<T: PolarsCategoricalType> LogicalType for CategoricalChunked<T> {
 
                 // TODO @ cat-rework:, if len >= mapping.upper_bound(), cast categories to ViewArray, then construct array of Views.
 
-                let mut builder = StringChunkedBuilder::new(self.phys.name().clone(), self.len());
                 let to_str = |cat_id: CatSize| unsafe { mapping.cat_to_str_unchecked(cat_id) };
+
+                // Every element of a chunk that repeats one is that one, so a single lookup in
+                // the mapping answers the whole column, which then repeats that one string.
+                if let [chunk] = self.phys.chunks().as_slice()
+                    && self.len() > 1
+                    && chunk.is_scalar()
+                {
+                    let name = self.phys.name().clone();
+                    let ca = match self.phys.get(0) {
+                        Some(cat_id) => {
+                            StringChunked::full(name, to_str(cat_id.as_cat()), self.len())
+                        },
+                        None => StringChunked::full_null(name, self.len()),
+                    };
+                    return Ok(ca.into_series());
+                }
+
+                let mut builder = StringChunkedBuilder::new(self.phys.name().clone(), self.len());
                 if !self.phys.has_nulls() {
                     for cat_id in self.phys.into_no_null_iter() {
                         builder.append_value(to_str(cat_id.as_cat()));
