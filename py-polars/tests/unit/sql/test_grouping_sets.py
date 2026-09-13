@@ -645,3 +645,66 @@ def test_grouping_argument_is_not_an_ordinal(sales: pl.LazyFrame) -> None:
         sales.sql(
             "SELECT category, GROUPING(1) FROM self GROUP BY ROLLUP(category)"
         ).collect()
+
+
+def test_group_count_versus_window_count() -> None:
+    lf = pl.LazyFrame({"a": [1, 1, 2]})
+    assert_grouping_sets_matches(
+        lf,
+        """
+        SELECT a, GROUPING(a) + COUNT(*) OVER () AS n
+        FROM self GROUP BY ROLLUP(a) ORDER BY GROUPING(a), a
+        """,
+        expected={"a": [1, 2, None], "n": [3, 3, 4]},
+    )
+    assert_grouping_sets_matches(
+        lf,
+        """
+        SELECT a, COUNT(*) + COUNT(*) OVER (PARTITION BY GROUPING(a)) + GROUPING(a) AS n
+        FROM self GROUP BY ROLLUP(a) ORDER BY GROUPING(a), a
+        """,
+        expected={"a": [1, 2, None], "n": [4, 3, 5]},
+    )
+    assert_grouping_sets_matches(
+        lf,
+        """
+        SELECT a, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, a DESC) AS rn
+        FROM self GROUP BY ROLLUP(a) ORDER BY rn
+        """,
+        expected={"a": [None, 1, 2], "rn": [1, 2, 3]},
+    )
+
+
+def test_order_by_ordinal_and_all_use_select_list() -> None:
+    lf = pl.LazyFrame({"a": [0, 1], "b": [20, 10]})
+    for order_by in ["1", "ALL", "s"]:
+        assert_grouping_sets_matches(
+            lf,
+            f"SELECT SUM(b) AS s, a FROM self GROUP BY ROLLUP(a) ORDER BY {order_by}",
+            expected={"s": [10, 20, 30], "a": [1, 0, None]},
+        )
+    with pytest.raises(pl.exceptions.SQLInterfaceError, match="ordinal value"):
+        lf.sql("SELECT SUM(b) AS s FROM self GROUP BY ROLLUP(a) ORDER BY 2").collect()
+
+
+def test_aggregate_combined_with_key() -> None:
+    lf = pl.LazyFrame({"a": [0, 1], "b": [20, 10]})
+    assert_grouping_sets_matches(
+        lf,
+        "SELECT a, SUM(b) + a AS s FROM self GROUP BY ROLLUP(a) ORDER BY a",
+        expected={"a": [0, 1, None], "s": [20, 11, None]},
+    )
+    assert_grouping_sets_matches(
+        lf,
+        """
+        SELECT a + 1 AS k, SUM(b) AS s
+        FROM self GROUP BY ROLLUP(a + 1) ORDER BY SUM(b) + (a + 1)
+        """,
+        expected={"k": [2, 1, None], "s": [10, 20, 30]},
+    )
+    # The same split applies to an ordinary GROUP BY.
+    assert_grouping_sets_matches(
+        lf,
+        "SELECT a, SUM(b) + a AS s FROM self GROUP BY a ORDER BY a",
+        expected={"a": [0, 1], "s": [20, 11]},
+    )

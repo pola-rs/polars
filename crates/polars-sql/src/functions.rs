@@ -2675,8 +2675,10 @@ impl SQLFunctionVisitor<'_> {
             Some((order_exprs, sort_opts))
         };
 
-        // Apply window spec
+        // Apply window spec; under a GROUP BY an empty window still has to be
+        // told apart from a group aggregate.
         Ok(match (partition_by, order_by) {
+            (None, None) if self.ctx.grouped_block => expr.over([lit(1)])?,
             (None, None) => expr,
             (Some(part), None) => expr.over(part)?,
             (part, Some(order)) => expr.over_with_options(part, Some(order), Default::default())?,
