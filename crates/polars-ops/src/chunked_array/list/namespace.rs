@@ -15,6 +15,36 @@ use crate::prelude::diff;
 use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
 use crate::series::{ArgAgg, convert_and_bound_index};
 
+/// The elements of one list `s` written into `buf` one after another, `separator` between them.
+///
+/// `None` where the list has a null element to write and `ignore_nulls` says not to skip it — the
+/// row that list belongs to is null then. `buf` is the caller's, reused from row to row.
+fn join_one_list<'a>(
+    s: &Series,
+    separator: &str,
+    ignore_nulls: bool,
+    buf: &'a mut String,
+) -> Option<&'a str> {
+    // make sure that we don't write values of previous iteration
+    buf.clear();
+    let ca = s.str().unwrap();
+
+    if ca.null_count() != 0 && !ignore_nulls {
+        return None;
+    }
+
+    for arr in ca.downcast_iter() {
+        for val in arr.iter().flatten() {
+            buf.write_str(val).unwrap();
+            buf.write_str(separator).unwrap();
+        }
+    }
+
+    // last value should not have a separator, so slice that off
+    // saturating sub because there might have been nothing written.
+    Some(&buf[..buf.len().saturating_sub(separator.len())])
+}
+
 pub(super) fn has_inner_nulls(ca: &ListChunked) -> bool {
     for arr in ca.downcast_iter() {
         if arr.values().null_count() > 0 {
@@ -91,31 +121,30 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn join_literal(&self, separator: &str, ignore_nulls: bool) -> PolarsResult<StringChunked> {
         let ca = self.as_list();
+
+        // Every element reading the one list joins it to the one string, and that string stands
+        // for every element in turn: it is written once and repeated rather than written out
+        // `len` times.
+        if let Some(length) = ca.repeats_one_list() {
+            let mut buf = String::with_capacity(128);
+            let one = ca.amortized_iter().next().flatten();
+            let joined =
+                one.and_then(|s| join_one_list(s.as_ref(), separator, ignore_nulls, &mut buf));
+
+            let name = ca.name().clone();
+            return Ok(match joined {
+                Some(joined) => StringChunked::full(name, joined, length),
+                None => StringChunked::full_null(name, length),
+            });
+        }
+
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
         let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
 
         ca.for_each_amortized(|opt_s| {
-            let opt_val = opt_s.and_then(|s| {
-                // make sure that we don't write values of previous iteration
-                buf.clear();
-                let ca = s.as_ref().str().unwrap();
-
-                if ca.null_count() != 0 && !ignore_nulls {
-                    return None;
-                }
-
-                for arr in ca.downcast_iter() {
-                    for val in arr.iter().flatten() {
-                        buf.write_str(val).unwrap();
-                        buf.write_str(separator).unwrap();
-                    }
-                }
-
-                // last value should not have a separator, so slice that off
-                // saturating sub because there might have been nothing written.
-                Some(&buf[..buf.len().saturating_sub(separator.len())])
-            });
+            let opt_val =
+                opt_s.and_then(|s| join_one_list(s.as_ref(), separator, ignore_nulls, &mut buf));
             builder.append_option(opt_val)
         });
         Ok(builder.finish())
@@ -127,6 +156,19 @@ pub trait ListNameSpaceImpl: AsList {
         ignore_nulls: bool,
     ) -> PolarsResult<StringChunked> {
         let ca = self.as_list();
+
+        // One list against one separator makes one string, whatever the length the two of them
+        // are read over — see `join_literal`, which this defers to for the answer itself.
+        if ca.repeats_one_list() == Some(separator.len())
+            && let Some(separator) = separator.scalar_value()
+        {
+            return match separator {
+                Some(separator) => self.join_literal(separator, ignore_nulls),
+                // A null separator writes a null row, and it is the separator for every row here.
+                None => Ok(StringChunked::full_null(ca.name().clone(), ca.len())),
+            };
+        }
+
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
         let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
@@ -136,24 +178,7 @@ pub trait ListNameSpaceImpl: AsList {
                 .for_each(|(opt_s, opt_sep)| match opt_sep {
                     Some(separator) => {
                         let opt_val = opt_s.and_then(|s| {
-                            // make sure that we don't write values of previous iteration
-                            buf.clear();
-                            let ca = s.as_ref().str().unwrap();
-
-                            if ca.null_count() != 0 && !ignore_nulls {
-                                return None;
-                            }
-
-                            for arr in ca.downcast_iter() {
-                                for val in arr.iter().flatten() {
-                                    buf.write_str(val).unwrap();
-                                    buf.write_str(separator).unwrap();
-                                }
-                            }
-
-                            // last value should not have a separator, so slice that off
-                            // saturating sub because there might have been nothing written.
-                            Some(&buf[..buf.len().saturating_sub(separator.len())])
+                            join_one_list(s.as_ref(), separator, ignore_nulls, &mut buf)
                         });
                         builder.append_option(opt_val)
                     },
