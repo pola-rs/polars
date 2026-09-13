@@ -64,22 +64,42 @@ where
 {
     let mut state = init;
 
-    // A flat chunk with nothing missing is walked as the values slice it is: driving the
-    // generic iterator costs a test of the chunk's representation per element, and a scan
-    // that carries state between elements gives the loop no way to hoist it.
+    // A single chunk with nothing missing hands the scan its values itself: driving the generic
+    // iterator costs a test of the chunk's representation per element, and a scan that carries
+    // state between elements gives the loop no way to hoist it.
     if let [chunk] = ca.chunks().as_slice() {
         let arr: &PlPrimitiveArray<T::Native> = chunk.as_any().downcast_ref().unwrap();
-        if !arr.has_nulls()
-            && let Some(values) = arr.flat_values()
-        {
+        if !arr.has_nulls() {
             // `update` answers `Some` for every element it is handed, and every element of a
             // chunk with no nulls is there.
-            let mut scan = |v: &T::Native| update(&mut state, Some(*v)).unwrap();
-            let out: NoNull<ChunkedArray<T>> = match reverse {
-                false => values.iter().map(&mut scan).collect_trusted(),
-                true => values.iter().rev().map(&mut scan).collect_reversed(),
+            let mut scan = |v: T::Native| update(&mut state, Some(v)).unwrap();
+            let out: Option<NoNull<ChunkedArray<T>>> = if let Some(values) = arr.flat_values() {
+                Some(match reverse {
+                    false => values.iter().copied().map(&mut scan).collect_trusted(),
+                    true => values
+                        .iter()
+                        .copied()
+                        .rev()
+                        .map(&mut scan)
+                        .collect_reversed(),
+                })
+            } else {
+                // Every element of a chunk that repeats one is that one, whichever end the scan
+                // starts from; only the order its answers are written back in differs. The scan
+                // itself still runs per element, since what it carries between them does not
+                // repeat — `cum_sum` of a repeated element counts up.
+                arr.scalar_value_ignore_validity().map(|value| {
+                    let values = std::iter::repeat_n(value, arr.len());
+                    match reverse {
+                        false => values.map(&mut scan).collect_trusted(),
+                        true => values.map(&mut scan).collect_reversed(),
+                    }
+                })
             };
-            return out.into_inner().with_name(ca.name().clone());
+
+            if let Some(out) = out {
+                return out.into_inner().with_name(ca.name().clone());
+            }
         }
     }
 
