@@ -1047,8 +1047,9 @@ impl SQLExprVisitor<'_> {
         // if we are parsing the list as an element in a series, the result is one
         // (scalar) list value; otherwise, return the series as-is.
         Ok(if result_as_element {
+            let name = elems.name().clone();
             let dtype = DataType::List(Box::new(elems.dtype().clone()));
-            lit(Scalar::new(dtype, AnyValue::List(elems)))
+            lit(Scalar::new(dtype, AnyValue::List(elems))).alias(name)
         } else {
             lit(elems)
         })

@@ -2241,7 +2241,7 @@ impl SQLContext {
                 .clone()
                 .join_builder()
                 .with(tbl_right.frame.clone())
-                .left_on([predicate.cast(DataType::Boolean)])
+                .left_on([strip_join_aliases(predicate).cast(DataType::Boolean)])
                 .right_on([lit(true)])
                 .how(join_type)
                 .suffix(format!(":{}", tbl_right.name))

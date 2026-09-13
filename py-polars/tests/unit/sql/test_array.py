@@ -358,3 +358,10 @@ def test_array_typed_literals_mixed_error() -> None:
         match="expected consistent dtypes",
     ):
         pl.sql("SELECT ARRAY[DATE '2024-01-01', TIME '12:00:00']").collect()
+
+
+def test_array_literal_default_name() -> None:
+    res = pl.sql("SELECT ARRAY[1, 2]", eager=True)
+    assert res.columns == [""]
+    res = pl.sql('SELECT t."" AS arr FROM (SELECT ARRAY[1, 2]) t', eager=True)
+    assert res.to_dict(as_series=False) == {"arr": [[1, 2]]}
