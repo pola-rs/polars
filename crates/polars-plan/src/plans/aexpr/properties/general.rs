@@ -193,6 +193,25 @@ pub fn is_elementwise_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     property_rec(node, expr_arena, is_elementwise)
 }
 
+/// Whether `node` yields one scalar value that does not depend on any input frame: a scalar
+/// literal, or elementwise operations (binary, cast, ternary, elementwise function) over such
+/// values. Columns, the frame length, aggregations, windows, nested evaluations and user
+/// functions are excluded.
+pub fn is_input_independent_scalar_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    property_rec(node, expr_arena, |stack, ae, _| {
+        let independent = match ae {
+            AExpr::Literal(lv) => lv.is_scalar(),
+            AExpr::BinaryExpr { .. } | AExpr::Cast { .. } | AExpr::Ternary { .. } => true,
+            AExpr::Function { options, .. } => options.is_elementwise(),
+            _ => false,
+        };
+        if independent {
+            ae.inputs_rev(stack);
+        }
+        independent
+    })
+}
+
 /// Checks if the top-level expression node is row-separable. If this is the case, then `stack` will
 /// be extended further with any nested expression nodes.
 pub fn is_row_separable(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {

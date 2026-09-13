@@ -3791,6 +3791,7 @@ version = "0.55.1"
 dependencies = [
  "bitflags",
  "hex",
+ "polars-compute",
  "polars-core",
  "polars-error",
  "polars-lazy",
