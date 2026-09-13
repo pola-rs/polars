@@ -77,8 +77,14 @@ impl NumericOp {
                     // A chunk that repeats one value answers this in `O(1)`, and the mask that
                     // comes back repeats one bit in turn.
                     let ne_0 = target.tot_ne_kernel_broadcast(&T::Native::zero());
-                    let validity = combine_validities_and(target.validity(), Some(ne_0.as_ref()));
-                    target.set_validity(validity);
+                    // A mask that leaves every element where it is is the mask the side already
+                    // carries: there is no zero to null out, and handing one over would leave a
+                    // side that had no mask at all carrying a bit per element for nothing.
+                    if ne_0.as_ref().unset_bits() > 0 {
+                        let validity =
+                            combine_validities_and(target.validity(), Some(ne_0.as_ref()));
+                        target.set_validity(validity);
+                    }
                 },
                 _ => {},
             }
@@ -110,7 +116,7 @@ impl NumericOp {
         })
     }
 
-    fn apply_arithmetic_kernel<T: PolarsNumericType>(
+    pub(super) fn apply_arithmetic_kernel<T: PolarsNumericType>(
         &self,
         lhs: PlPrimitiveArray<T::Native>,
         rhs: PlPrimitiveArray<T::Native>,

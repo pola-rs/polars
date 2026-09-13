@@ -491,34 +491,26 @@ mod inner {
 
             match (&self.op_apply_type, &self.broadcast) {
                 (BinaryOpApplyType::ListToList, Broadcast::Right) => {
-                    let mut out_vec: Vec<T::Native> =
-                        Vec::with_capacity(self.output_len * self.stride);
-                    let out_ptr: *mut T::Native = out_vec.as_mut_ptr();
-                    let stride = self.stride;
+                    // The right side is the one row every row of the left reads against, and the
+                    // leaf kernels answer two runs of values rather than a row at a time: the one
+                    // row is laid out over the left's length so that the whole column is answered
+                    // by one call. A walk of a row at a time asks for one answer before it starts
+                    // the next, which leaves the divider of a division idle between them — a
+                    // copy of the right side is cheaper than that wait.
+                    let values =
+                        repeat_values(arr_rhs.to_flat_values().as_slice(), self.output_len);
+                    let validity = arr_rhs.validity().map(|x| repeat_mask(x, self.output_len));
+                    let arr_rhs =
+                        PlPrimitiveArray::<T::Native>::from_vec(values).with_validity(validity);
+                    debug_assert_eq!(arr_lhs.len(), arr_rhs.len());
 
-                    with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
-                        unsafe {
-                            for outer_idx in 0..self.output_len {
-                                for inner_idx in 0..stride {
-                                    let l = arr_lhs.value_unchecked(stride * outer_idx + inner_idx);
-                                    let r = arr_rhs.value_unchecked(inner_idx);
-
-                                    *out_ptr.add(stride * outer_idx + inner_idx) = $OP(l, r);
-                                }
-                            }
-                        }
-                    });
-
-                    unsafe { out_vec.set_len(self.output_len * self.stride) };
-
-                    let repeated = arr_rhs.validity().map(|x| repeat_mask(x, self.output_len));
-                    let leaf_validity = polars_array::bitmap::combine_validities_and(
-                        arr_lhs.validity(),
-                        repeated.as_ref().map(PlBitmap::as_ref),
-                    );
-
-                    let arr = PlPrimitiveArray::<T::Native>::from_vec(out_vec)
-                        .with_validity(leaf_validity);
+                    // The sides are swapped where it is the left one that broadcasts, and the
+                    // kernel reads them in the order the query has them.
+                    let arr = if self.swapped {
+                        self.op.0.apply_arithmetic_kernel::<T>(arr_rhs, arr_lhs)
+                    } else {
+                        self.op.0.apply_arithmetic_kernel::<T>(arr_lhs, arr_rhs)
+                    };
 
                     let (_, validities_lhs) = std::mem::take(&mut self.data_lhs);
                     let (_, mut validities_rhs) = std::mem::take(&mut self.data_rhs);
@@ -545,13 +537,18 @@ mod inner {
                     let out_ptr: *mut T::Native = out_vec.as_mut_ptr();
                     let stride = self.stride;
 
+                    // Resolved once, rather than once per value read below.
+                    let values_lhs = arr_lhs.to_flat_values();
+                    let values_rhs = arr_rhs.to_flat_values();
+                    let (values_lhs, values_rhs) = (values_lhs.as_slice(), values_rhs.as_slice());
+
                     with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
                         unsafe {
                             for outer_idx in 0..self.output_len {
-                                let r = arr_rhs.value_unchecked(outer_idx);
+                                let r = *values_rhs.get_unchecked(outer_idx);
 
                                 for inner_idx in 0..stride {
-                                    let l = arr_lhs.value_unchecked(inner_idx);
+                                    let l = *values_lhs.get_unchecked(inner_idx);
 
                                     *out_ptr.add(stride * outer_idx + inner_idx) = $OP(l, r);
                                 }
@@ -594,14 +591,19 @@ mod inner {
                     let out_ptr: *mut T::Native = out_vec.as_mut_ptr();
                     let stride = self.stride;
 
+                    // Resolved once, rather than once per value read below.
+                    let values_lhs = arr_lhs.to_flat_values();
+                    let values_rhs = arr_rhs.to_flat_values();
+                    let (values_lhs, values_rhs) = (values_lhs.as_slice(), values_rhs.as_slice());
+
                     with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
                         unsafe {
                             for outer_idx in 0..self.output_len {
-                                let r = arr_rhs.value_unchecked(outer_idx);
+                                let r = *values_rhs.get_unchecked(outer_idx);
 
                                 for inner_idx in 0..stride {
                                     let idx = stride * outer_idx + inner_idx;
-                                    let l = arr_lhs.value_unchecked(idx);
+                                    let l = *values_lhs.get_unchecked(idx);
 
                                     *out_ptr.add(idx) = $OP(l, r);
                                 }
@@ -811,15 +813,33 @@ mod inner {
         })
     }
 
+    /// Returns `n_repeats` concatenated copies of the values.
+    fn repeat_values<T: Copy>(values: &[T], n_repeats: usize) -> Vec<T> {
+        let total = values.len() * n_repeats;
+        let mut out = Vec::with_capacity(total);
+        if total == 0 {
+            return out;
+        }
+
+        // Each copy is taken from the ones already written, so the run written at a time grows
+        // with the run behind it rather than staying the width of one row.
+        out.extend_from_slice(values);
+        while out.len() < total {
+            let take = (total - out.len()).min(out.len());
+            out.extend_from_within(..take);
+        }
+        out
+    }
+
     /// Returns `n_repeats` concatenated copies of the bitmap.
     #[inline(never)]
     fn repeat_bitmap(bitmap: &Bitmap, n_repeats: usize) -> Bitmap {
         let mut out = BitmapBuilder::with_capacity(bitmap.len() * n_repeats);
 
         for _ in 0..n_repeats {
-            for bit in bitmap.iter() {
-                unsafe { out.push_unchecked(bit) }
-            }
+            // A bitmap is extended by a run of words rather than a bit at a time, which is what
+            // pushing each of its bits in turn would be.
+            out.extend_from_bitmap(bitmap);
         }
 
         out.freeze()
