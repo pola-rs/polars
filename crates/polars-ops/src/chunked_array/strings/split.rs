@@ -201,6 +201,20 @@ where
         },
         (_, 1) => {
             if let Some(by) = by.get(0) {
+                // A chunk that reads one element throughout is split once, and the list that
+                // comes back stands for every element in turn.
+                if ca.len() > 1
+                    && let Some(scalar) = ca.scalar_value()
+                {
+                    let mut builder = ListStringChunkedBuilder::new(ca.name().clone(), 1, 0);
+                    match scalar {
+                        Some(s) if by.is_empty() => builder.append_values_iter(split_chars(s)),
+                        Some(s) => builder.append_values_iter(op(s, by)),
+                        None => builder.append_null(),
+                    }
+                    return Ok(builder.finish().new_from_index(0, ca.len()));
+                }
+
                 let mut builder = ListStringChunkedBuilder::new(
                     ca.name().clone(),
                     ca.len(),
