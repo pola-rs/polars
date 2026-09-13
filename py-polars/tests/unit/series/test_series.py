@@ -71,6 +71,36 @@ def test_cum_agg_with_infs() -> None:
     assert_series_equal(s.cum_max(), pl.Series([float("-inf"), 0.0, 1.0]))
 
 
+def test_cum_agg_over_every_chunk_shape() -> None:
+    # A flat chunk with nothing missing is scanned over its values slice rather than
+    # through the generic iterator; every other shape still goes the general way, and
+    # all of them answer alike.
+    values = [3.0, -1.0, 4.0, -1.0, 5.0, -9.0, 2.0]
+    flat = pl.Series("a", values)
+    sliced = pl.Series("a", [0.0, *values, 0.0])[1:-1]
+    chunked = pl.Series("a", values[:3])
+    chunked.append(pl.Series("a", values[3:]))
+    with_nulls = pl.Series(
+        "a", [None if i % 3 == 0 else v for i, v in enumerate(values)]
+    )
+
+    for shaped in (sliced, chunked):
+        for reverse in (False, True):
+            assert_series_equal(
+                shaped.cum_sum(reverse=reverse), flat.cum_sum(reverse=reverse)
+            )
+            assert_series_equal(
+                shaped.cum_prod(reverse=reverse), flat.cum_prod(reverse=reverse)
+            )
+            assert_series_equal(
+                shaped.cum_max(reverse=reverse), flat.cum_max(reverse=reverse)
+            )
+
+    assert with_nulls.cum_sum().to_list() == [None, -1.0, 3.0, None, 8.0, -1.0, None]
+    reversed_sum = with_nulls.cum_sum(reverse=True).to_list()
+    assert reversed_sum == [None, -1.0, 0.0, None, -4.0, -9.0, None]
+
+
 def test_cum_min_max_over_a_chunk_that_repeats_one_element() -> None:
     # The running max or min of a chunk that repeats one element is that element
     # again, so the answer comes off the repeat and stays a repeat rather than

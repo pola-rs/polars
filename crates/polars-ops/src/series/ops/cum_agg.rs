@@ -63,6 +63,26 @@ where
     F: Fn(&mut S, Option<T::Native>) -> Option<T::Native>,
 {
     let mut state = init;
+
+    // A flat chunk with nothing missing is walked as the values slice it is: driving the
+    // generic iterator costs a test of the chunk's representation per element, and a scan
+    // that carries state between elements gives the loop no way to hoist it.
+    if let [chunk] = ca.chunks().as_slice() {
+        let arr: &PlPrimitiveArray<T::Native> = chunk.as_any().downcast_ref().unwrap();
+        if !arr.has_nulls()
+            && let Some(values) = arr.flat_values()
+        {
+            // `update` answers `Some` for every element it is handed, and every element of a
+            // chunk with no nulls is there.
+            let mut scan = |v: &T::Native| update(&mut state, Some(*v)).unwrap();
+            let out: NoNull<ChunkedArray<T>> = match reverse {
+                false => values.iter().map(&mut scan).collect_trusted(),
+                true => values.iter().rev().map(&mut scan).collect_reversed(),
+            };
+            return out.into_inner().with_name(ca.name().clone());
+        }
+    }
+
     let out: ChunkedArray<T> = match reverse {
         false => ca.iter().map(|v| update(&mut state, v)).collect_trusted(),
         true => ca
