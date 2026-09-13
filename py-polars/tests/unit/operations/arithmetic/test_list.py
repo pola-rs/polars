@@ -1105,6 +1105,63 @@ def test_list_boolean_arithmetic_23146() -> None:
 
 @pytest.mark.parametrize(
     "dtype",
+    [
+        pl.List(pl.Int64),
+        pl.Array(pl.Int64, 3),
+        pl.List(pl.Float64),
+        pl.Array(pl.Float64, 3),
+    ],
+)
+@pytest.mark.parametrize(
+    "op",
+    [operator.add, operator.sub, operator.mul, operator.truediv, operator.mod],
+)
+def test_arithmetic_over_a_masked_chunk_that_repeats_one_element(
+    dtype: PolarsDataType, op: Callable[[Any, Any], Any]
+) -> None:
+    # A mask over a chunk that repeats one element says which elements are there at all,
+    # not which element each of them is: the ones that are there all read the same one
+    # still, so the answer is that one element's, under the same mask.
+    element = [3, 0, -5] if dtype.inner == pl.Int64 else [1.5, 0.0, -2.5]  # type: ignore[union-attr]
+    mask = [True, False, True, True]
+
+    repeated = pl.select(
+        pl.when(pl.Series("m", mask))
+        .then(pl.repeat(pl.lit(element, dtype=dtype), len(mask)))
+        .alias("a")
+    ).to_series()
+    flat = pl.Series("a", [element if m else None for m in mask], dtype=dtype)
+    assert repeated.to_list() == flat.to_list()
+
+    # `0` is the operand the answer of the one pair is itself null for, which no mask
+    # puts an element back into.
+    for other in (pl.lit(2), pl.lit(0), pl.col("a")):
+        assert_series_equal(
+            repeated.to_frame().select(op(pl.col("a"), other)).to_series(),
+            flat.to_frame().select(op(pl.col("a"), other)).to_series(),
+        )
+        assert_series_equal(
+            repeated.to_frame().select(op(other, pl.col("a"))).to_series(),
+            flat.to_frame().select(op(other, pl.col("a"))).to_series(),
+        )
+
+    # The mask of one side against a column that does not repeat, and against the other
+    # side's mask.
+    varying = pl.Series("b", [element] * len(mask), dtype=dtype)
+    other_mask = pl.Series("b", [element, element, None, element], dtype=dtype)
+    for b in (varying, other_mask):
+        assert_series_equal(
+            pl.DataFrame({"a": repeated, "b": b})
+            .select(op(pl.col("a"), pl.col("b")))
+            .to_series(),
+            pl.DataFrame({"a": flat, "b": b})
+            .select(op(pl.col("a"), pl.col("b")))
+            .to_series(),
+        )
+
+
+@pytest.mark.parametrize(
+    "dtype",
     [pl.List(pl.Float64), pl.Array(pl.Float64, 3), pl.List(pl.Int64)],
 )
 @pytest.mark.parametrize("op", [operator.truediv, operator.floordiv, operator.mod])

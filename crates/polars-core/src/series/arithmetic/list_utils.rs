@@ -234,6 +234,35 @@ fn repeats_one_element(s: &Series) -> bool {
     s.len() > 1 && chunk.is_scalar()
 }
 
+/// The mask of `s` where every one of its elements reads the same one value, `None` where they
+/// do not.
+///
+/// A chunk whose values repeat is a chunk of one element wherever its mask says an element is
+/// there at all, so the mask is what is left of it to answer with. `Some(None)` is a side that
+/// repeats one element and has no mask; the outer `None` is a side that repeats nothing.
+fn repeated_element_mask(s: &Series) -> Option<Option<PlBitmap>> {
+    let [chunk] = s.chunks().as_slice() else {
+        return None;
+    };
+    if s.len() <= 1 {
+        return None;
+    }
+
+    // The values are asked about apart from the mask: a mask of one bit per element is a shape
+    // the answer keeps, where the values behind it are the one value every element reads.
+    if !chunk.without_validity().is_scalar() {
+        return None;
+    }
+
+    match chunk.validity() {
+        None => Some(None),
+        // Nothing is left to read where no element is there to read it: the answer is a column of
+        // nulls, which the walk below writes without a pair of elements to work out first.
+        Some(validity) if validity.unset_bits() == s.len() => None,
+        Some(validity) => Some(Some(PlBitmap::from(validity))),
+    }
+}
+
 /// `s` with every chunk of its lists laid out one range of values per element.
 ///
 /// The machinery below reads a side's offsets and its leaf values apart from one another, and
@@ -297,6 +326,11 @@ pub(super) fn read_repeated_side_as_one_element(
 /// is read off their lengths, and a pair of single rows would read as neither side broadcasting
 /// — a different reading of the same two elements, which divides by a leaf value rather than by
 /// the one scalar behind it and so rounds the last bit of a float differently.
+///
+/// A mask over the elements of a side does not stop any of this: the elements that are not null
+/// all read the same one element still, and the ones that are read nothing at all. The pair is
+/// answered with both masks off and the answer carries them combined, which is the answer every
+/// element of a flat column would be given one at a time.
 pub(super) fn repeat_one_answer(
     lhs: &Series,
     rhs: &Series,
@@ -317,15 +351,43 @@ pub(super) fn repeat_one_answer(
     }
 
     // Every element of each side has to read the same one, either because the side repeats it or
-    // because the side is it.
-    let reads_one = |s: &Series| s.len() == 1 || repeats_one_element(s);
-    if !reads_one(lhs) || !reads_one(rhs) {
-        return None;
-    }
+    // because the side is it. A side that repeats one element under a mask hands its mask over,
+    // to go back around the answer once the pair behind it is worked out.
+    let reads_one = |s: &Series| {
+        if s.len() == 1 {
+            return Some(None);
+        }
+        repeated_element_mask(s)
+    };
+    let (lhs_mask, rhs_mask) = (reads_one(lhs)?, reads_one(rhs)?);
+
+    // The pair is read out from under the masks: a null element of a side stands for the one
+    // element the side repeats like every other, and it is the mask that makes it null again.
+    let unmasked = |s: &Series, mask: &Option<PlBitmap>| match mask {
+        None => s.clone(),
+        Some(_) => s.with_validity(None),
+    };
+    let lhs = unmasked(lhs, &lhs_mask);
+    let rhs = unmasked(rhs, &rhs_mask);
 
     // Two rows of a side that has them, one of a side that is one: the same reading of which side
     // broadcasts as the full lengths give, over a pair of elements rather than all of them.
     let rows = |s: &Series| s.slice(0, s.len().min(2));
-    let out = op(&rows(lhs), &rows(rhs));
-    Some(out.and_then(|out| out.slice(0, 1).broadcast_owned_to(length)))
+    let out = op(&rows(&lhs), &rows(&rhs));
+    let mask = combine_validities_and(
+        lhs_mask.as_ref().map(PlBitmap::as_ref),
+        rhs_mask.as_ref().map(PlBitmap::as_ref),
+    );
+    Some(out.and_then(|out| {
+        let one = out.slice(0, 1);
+        let answered_null = one.null_count() == 1;
+        let out = one.broadcast_owned_to(length)?;
+        Ok(match mask {
+            None => out,
+            // An answer that is null for the one pair is null for every element of the answer,
+            // whatever the masks say: there is nothing for them to leave behind.
+            Some(_) if answered_null => out,
+            Some(mask) => out.with_validity(Some(mask)),
+        })
+    }))
 }
