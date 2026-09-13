@@ -10,8 +10,9 @@ use polars_core::frame::DataFrame;
 #[cfg(feature = "dtype-array")]
 use polars_core::prelude::ArrayChunked;
 use polars_core::prelude::{
-    _set_check_length, ChunkCast, ChunkExplode, ChunkNestingUtils, Column, Field, GroupPositions,
-    GroupsType, IdxCa, IntoColumn, ListBuilderTrait, ListChunked,
+    _set_check_length, BooleanChunked, ChunkCast, ChunkExpandAtIndex, ChunkExplode,
+    ChunkNestingUtils, Column, Field, GroupPositions, GroupsIndicator, GroupsType, IdxCa,
+    IntoColumn, ListBuilderTrait, ListChunked,
 };
 use polars_core::schema::Schema;
 use polars_core::series::Series;
@@ -32,6 +33,9 @@ pub struct EvalExpr {
     is_scalar: bool,
     evaluation_is_scalar: bool,
     evaluation_is_elementwise: bool,
+    /// Names of the outer-frame columns referenced by the evaluation (deduplicated). Empty when
+    /// the evaluation only uses `pl.element()`.
+    evaluation_column_refs: Arc<[PlSmallStr]>,
     evaluation_is_fallible: bool,
 }
 
@@ -46,6 +50,7 @@ impl EvalExpr {
         is_scalar: bool,
         evaluation_is_scalar: bool,
         evaluation_is_elementwise: bool,
+        evaluation_column_refs: Arc<[PlSmallStr]>,
         evaluation_is_fallible: bool,
     ) -> Self {
         Self {
@@ -57,13 +62,31 @@ impl EvalExpr {
             is_scalar,
             evaluation_is_scalar,
             evaluation_is_elementwise,
+            evaluation_column_refs,
             evaluation_is_fallible,
+        }
+    }
+
+    /// Build the frame with null list elements removed.
+    fn build_named_column_reference_df<'a>(
+        &self,
+        outer_df: &'a DataFrame,
+        validity: Option<&Bitmap>,
+    ) -> PolarsResult<Cow<'a, DataFrame>> {
+        match validity {
+            Some(validity) => {
+                let projected = outer_df.select(self.evaluation_column_refs.iter().cloned())?;
+                let mask = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, validity.clone());
+                projected.filter(&mask).map(Cow::Owned)
+            },
+            None => Ok(Cow::Borrowed(outer_df)),
         }
     }
 
     fn evaluate_on_list_chunked(
         &self,
         ca: &ListChunked,
+        outer_df: &DataFrame,
         state: &ExecutionState,
         is_agg: bool,
     ) -> PolarsResult<Column> {
@@ -113,13 +136,37 @@ impl EvalExpr {
                 let flush_len = rel;
                 polars_ensure!(flush_len > 0, ComputeError: "list elements larger than IdxSize::MAX are not supported");
                 let batch = ca.slice(batch_row_start as i64, flush_len);
-                batch_results.push_back(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
+                // Slice the outer frame to the same row-range so that any named column
+                // references resolve to the matching outer rows for this batch. Only the outer
+                // frames whose height matches the list length carry per-row values (the col-ref
+                // path); otherwise `outer_df` is an unrelated placeholder and is passed through.
+                let batch_outer = if outer_df.height() == ca.len() {
+                    outer_df.slice(batch_row_start as i64, flush_len)
+                } else {
+                    outer_df.clone()
+                };
+                batch_results.push_back(self.evaluate_on_list_chunked(
+                    &batch,
+                    &batch_outer,
+                    state,
+                    is_agg,
+                )?);
                 batch_row_start += flush_len;
                 batch_inner_start = offsets_slice[batch_row_start];
             }
             // Flush the final batch.
             let batch = ca.slice(batch_row_start as i64, ca.len() - batch_row_start);
-            batch_results.push_back(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
+            let batch_outer = if outer_df.height() == ca.len() {
+                outer_df.slice(batch_row_start as i64, ca.len() - batch_row_start)
+            } else {
+                outer_df.clone()
+            };
+            batch_results.push_back(self.evaluate_on_list_chunked(
+                &batch,
+                &batch_outer,
+                state,
+                is_agg,
+            )?);
 
             let mut out = batch_results.pop_front().unwrap();
             for other in batch_results.into_iter() {
@@ -133,8 +180,13 @@ impl EvalExpr {
         let has_masked_out_values = LazyCell::new(|| ca.has_masked_out_values());
         let may_fail_on_masked_out_elements = self.evaluation_is_fallible && *has_masked_out_values;
 
-        // Fast path: fully elementwise expression without masked out values.
-        if self.evaluation_is_elementwise && !may_fail_on_masked_out_elements {
+        // Fast path: fully elementwise expression without masked out values or column references.
+        // When the eval_expr references outer columns we must use evaluate_on_groups so that
+        // ColumnExpr can look up per-row values from outer_df.
+        if self.evaluation_is_elementwise
+            && self.evaluation_column_refs.is_empty()
+            && !may_fail_on_masked_out_elements
+        {
             let mut state = state.clone();
             state.element = Arc::new(Some((flattened, validity.clone())));
             let mut column = self.evaluation.evaluate(&df, &state)?;
@@ -150,6 +202,21 @@ impl EvalExpr {
 
             return Ok(column);
         }
+
+        // Broadcasting for column references in evaluation expression.
+        let (ca, flattened, flattened_len, validity) =
+            if !self.evaluation_column_refs.is_empty() && ca.len() == 1 && outer_df.height() != 1 {
+                let ca: Cow<ListChunked> = Cow::Owned(ca.new_from_index(0, outer_df.height()));
+                // SAFETY: see the equivalent call above.
+                unsafe { _set_check_length(false) };
+                let flattened = ca.get_inner().into_column();
+                unsafe { _set_check_length(true) };
+                let flattened_len = flattened.len();
+                let validity = ca.rechunk_validity();
+                (ca, flattened, flattened_len, validity)
+            } else {
+                (ca, flattened, flattened_len, validity)
+            };
 
         let offsets = ca.offsets()?;
         // Detect accidental inclusion of sliced-out elements from chunks after the 1st (if present).
@@ -175,9 +242,16 @@ impl EvalExpr {
         let groups = Cow::Owned(groups.into_sliceable());
 
         let mut state = state.clone();
-        state.element = Arc::new(Some((flattened, validity.clone())));
-
-        let mut ac = self.evaluation.evaluate_on_groups(&df, &groups, &state)?;
+        let mut ac = if self.evaluation_column_refs.is_empty() {
+            state.element = Arc::new(Some((flattened, validity.clone())));
+            self.evaluation
+                .evaluate_on_groups(outer_df, &groups, &state)?
+        } else {
+            let aligned = self.build_named_column_reference_df(outer_df, validity.as_ref())?;
+            state.element = Arc::new(Some((flattened, None)));
+            self.evaluation
+                .evaluate_on_groups(aligned.as_ref(), &groups, &state)?
+        };
 
         // Update the groups.
         if self.evaluation_is_scalar || is_agg {
@@ -245,6 +319,7 @@ impl EvalExpr {
     fn evaluate_on_array_chunked(
         &self,
         ca: &ArrayChunked,
+        outer_df: &DataFrame,
         state: &ExecutionState,
         as_list: bool,
         is_agg: bool,
@@ -291,8 +366,20 @@ impl EvalExpr {
             while batch_row_start < ca.len() {
                 let batch_len = (ca.len() - batch_row_start).min(rows_per_batch);
                 let batch = ca.slice(batch_row_start as i64, batch_len);
-                batch_results
-                    .push_back(self.evaluate_on_array_chunked(&batch, state, as_list, is_agg)?);
+                // Slice the outer frame to the same row-range for named column references
+                // (see the list path for the height-matching rationale).
+                let batch_outer = if outer_df.height() == ca.len() {
+                    outer_df.slice(batch_row_start as i64, batch_len)
+                } else {
+                    outer_df.clone()
+                };
+                batch_results.push_back(self.evaluate_on_array_chunked(
+                    &batch,
+                    &batch_outer,
+                    state,
+                    as_list,
+                    is_agg,
+                )?);
                 batch_row_start += batch_len;
             }
 
@@ -305,8 +392,11 @@ impl EvalExpr {
 
         let may_fail_on_masked_out_elements = self.evaluation_is_fallible && ca.has_nulls();
 
-        // Fast path: fully elementwise expression without masked out values.
-        if self.evaluation_is_elementwise && !may_fail_on_masked_out_elements {
+        // Fast path: fully elementwise expression without masked out values or column references.
+        if self.evaluation_is_elementwise
+            && self.evaluation_column_refs.is_empty()
+            && !may_fail_on_masked_out_elements
+        {
             assert!(!self.evaluation_is_scalar);
 
             let mut state = state.clone();
@@ -335,6 +425,20 @@ impl EvalExpr {
 
         assert_eq!(flattened_len, ca.width() * ca.len());
 
+        // Broadcasting for column references in evaluation expression.
+        let (ca, flattened, validity) =
+            if !self.evaluation_column_refs.is_empty() && ca.len() == 1 && outer_df.height() != 1 {
+                let ca: Cow<ArrayChunked> = Cow::Owned(ca.new_from_index(0, outer_df.height()));
+                // SAFETY: see the equivalent call above.
+                unsafe { _set_check_length(false) };
+                let flattened = ca.get_inner().into_column();
+                unsafe { _set_check_length(true) };
+                let validity = ca.rechunk_validity();
+                (ca, flattened, validity)
+            } else {
+                (ca, flattened, validity)
+            };
+
         // Create groups for all valid array elements.
         let groups = if ca.has_nulls() {
             let validity = validity.as_ref().unwrap();
@@ -351,9 +455,17 @@ impl EvalExpr {
         let groups = Cow::Owned(groups.into_sliceable());
 
         let mut state = state.clone();
-        state.element = Arc::new(Some((flattened, validity.clone())));
-
-        let mut ac = self.evaluation.evaluate_on_groups(&df, &groups, &state)?;
+        // See the list path: align the outer frame once for column references.
+        let mut ac = if self.evaluation_column_refs.is_empty() {
+            state.element = Arc::new(Some((flattened, validity.clone())));
+            self.evaluation
+                .evaluate_on_groups(outer_df, &groups, &state)?
+        } else {
+            let aligned = self.build_named_column_reference_df(outer_df, validity.as_ref())?;
+            state.element = Arc::new(Some((flattened, None)));
+            self.evaluation
+                .evaluate_on_groups(&aligned, &groups, &state)?
+        };
 
         ac.groups(); // Update the groups.
 
@@ -471,6 +583,7 @@ impl EvalExpr {
 
         let groups = groups.into_sliceable();
 
+        // `cumulative_eval` does not support named column references, an empty frame is fine.
         let df = DataFrame::empty_with_height(input.len());
 
         let mut state = state.clone();
@@ -510,21 +623,25 @@ impl PhysicalExpr for EvalExpr {
         let out = match self.variant {
             EvalVariant::List => {
                 let lst = input.list()?;
-                self.evaluate_on_list_chunked(lst, state, false)
+                self.evaluate_on_list_chunked(lst, df, state, false)
             },
             EvalVariant::ListAgg => {
                 let lst = input.list()?;
-                self.evaluate_on_list_chunked(lst, state, true)
+                self.evaluate_on_list_chunked(lst, df, state, true)
             },
             EvalVariant::Array { as_list } => feature_gated!("dtype-array", {
                 let arr = input.array()?;
-                self.evaluate_on_array_chunked(arr, state, as_list, false)
+                self.evaluate_on_array_chunked(arr, df, state, as_list, false)
             }),
             EvalVariant::ArrayAgg => feature_gated!("dtype-array", {
                 let arr = input.array()?;
-                self.evaluate_on_array_chunked(arr, state, true, true)
+                self.evaluate_on_array_chunked(arr, df, state, true, true)
             }),
             EvalVariant::Cumulative { min_samples } => {
+                assert!(
+                    self.evaluation_column_refs.is_empty(),
+                    "disallowed during lowering"
+                );
                 self.evaluate_cumulative_eval(input.as_materialized_series(), min_samples, state)
             },
         }?;
@@ -540,34 +657,115 @@ impl PhysicalExpr for EvalExpr {
         let mut input = self.input.evaluate_on_groups(df, groups, state)?;
         input.groups();
 
+        // When the evaluation expression references outer columns and we are nested inside an
+        // evaluation expression (i.e. state.element is Some), the inner `input` groups index into
+        // the flattened element space, not into `df` rows.
+        //
+        // To fix this, we build a per-element outer-frame by gathering for each inner group, the
+        // outer-row it originated from. This way, named column references still resolve to the
+        // right value.
+        //
+        // @Speed: We could cache this, but I think it is not needed.
+        let expanded_df_for_col_refs = if !self.evaluation_column_refs.is_empty()
+            && state.element.is_some()
+            && df.height() > 0
+        {
+            let input_groups = input.groups();
+            let flat_len = input_groups.num_elements();
+            if flat_len == 0 {
+                None
+            } else {
+                // `Some(idx)` -> outer list had nulls, group k maps to df row idx[k].
+                // `None`      -> no outer validity, group k maps to df row k (identity), so we
+                //                avoid materializing `0..df.height()`.
+                let valid_row_indices: Option<Vec<IdxSize>> = match state.element.as_ref() {
+                    Some((_, Some(outer_validity))) => Some(
+                        outer_validity
+                            .true_idx_iter()
+                            .map(|i| i as IdxSize)
+                            .collect(),
+                    ),
+                    _ => None,
+                };
+
+                // For each group k with [start, len], repeat its outer row `len` times
+                // at positions start..start+len in the gather array.
+                let mut gather = vec![0 as IdxSize; flat_len];
+                for (k, group) in input_groups.iter().enumerate() {
+                    let row = match valid_row_indices.as_ref() {
+                        // No outer validity: group k maps to df row k (identity).
+                        None => k as IdxSize,
+                        // Outer nulls: group k maps to the k-th valid df row. The number of
+                        // groups equals the number of valid rows, so `idx[k]` is in bounds;
+                        // index directly so a broken invariant fails loudly instead of
+                        // silently substituting the wrong row.
+                        Some(idx) => idx[k],
+                    };
+                    match group {
+                        GroupsIndicator::Slice([s, l]) => {
+                            gather[s as usize..s as usize + l as usize].fill(row);
+                        },
+                        GroupsIndicator::Idx((_, all)) => {
+                            for &pos in all.iter() {
+                                gather[pos as usize] = row;
+                            }
+                        },
+                    }
+                }
+
+                // Gather only the referenced columns rather than the whole frame.
+                let gather_ca = IdxCa::from_vec(PlSmallStr::EMPTY, gather);
+                let projected = df.select(self.evaluation_column_refs.iter().cloned())?;
+                Some(projected.take(&gather_ca)?)
+            }
+        } else {
+            None
+        };
+        let inner_df = expanded_df_for_col_refs.as_ref().unwrap_or(df);
+
         match self.variant {
             EvalVariant::List => {
                 let input_col = input.flat_naive();
-                let out = self.evaluate_on_list_chunked(input_col.list()?, state, false)?;
+                let out =
+                    self.evaluate_on_list_chunked(input_col.list()?, inner_df, state, false)?;
                 input.with_values(out, false, Some(&self.expr))?;
             },
             EvalVariant::ListAgg => {
                 let input_col = input.flat_naive();
-                let out = self.evaluate_on_list_chunked(input_col.list()?, state, true)?;
+                let out =
+                    self.evaluate_on_list_chunked(input_col.list()?, inner_df, state, true)?;
                 input.with_values(out, false, Some(&self.expr))?;
             },
             EvalVariant::Array { as_list } => feature_gated!("dtype-array", {
                 let arr_col = input.flat_naive();
-                let out =
-                    self.evaluate_on_array_chunked(arr_col.array()?, state, as_list, false)?;
+                let out = self.evaluate_on_array_chunked(
+                    arr_col.array()?,
+                    inner_df,
+                    state,
+                    as_list,
+                    false,
+                )?;
                 input.with_values(out, false, Some(&self.expr))?;
             }),
             EvalVariant::ArrayAgg => feature_gated!("dtype-array", {
                 let arr_col = input.flat_naive();
-                let out = self.evaluate_on_array_chunked(arr_col.array()?, state, true, true)?;
+                let out =
+                    self.evaluate_on_array_chunked(arr_col.array()?, inner_df, state, true, true)?;
                 input.with_values(out, false, Some(&self.expr))?;
             }),
             EvalVariant::Cumulative { min_samples } => {
+                assert!(
+                    self.evaluation_column_refs.is_empty(),
+                    "disallowed during lowering"
+                );
+
                 let mut builder = AnonymousOwnedListBuilder::new(
                     self.output_field.name().clone(),
                     input.groups().len(),
                     Some(self.output_field.dtype.clone()),
                 );
+                // `cumulative_eval` does not support named column references, so each group is
+                // evaluated independently on its own values without consulting the outer frame.
                 for group in input.iter_groups(false) {
                     match group {
                         None => {},

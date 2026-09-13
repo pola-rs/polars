@@ -56,6 +56,9 @@ pub struct ExprToIRContext<'a> {
     pub allow_unknown: bool,
     /// Check whether mentioned column names exist in the schema.
     pub check_column_names: bool,
+    /// Turn every `col(...)` into `col(...).item()`. This is used in `eval` and `agg` to ensure
+    /// that column values are regarded as scalar values.
+    pub itemize_columns: bool,
 }
 
 impl<'a> ExprToIRContext<'a> {
@@ -66,6 +69,7 @@ impl<'a> ExprToIRContext<'a> {
             schema,
             allow_unknown: false,
             check_column_names: true,
+            itemize_columns: false,
         }
     }
 
@@ -90,6 +94,7 @@ impl<'a> ExprToIRContext<'a> {
             schema,
             allow_unknown: false,
             check_column_names: true,
+            itemize_columns: false,
         }
     }
 
@@ -161,7 +166,14 @@ pub(super) fn to_aexpr_impl(
             if ctx.check_column_names {
                 ctx.schema.try_index_of(&name)?;
             }
-            (AExpr::Column(name.clone()), name)
+            let mut aexpr = AExpr::Column(name.clone());
+            if ctx.itemize_columns {
+                aexpr = AExpr::Agg(IRAggExpr::Item {
+                    input: ctx.arena.add(aexpr),
+                    allow_empty: false,
+                });
+            }
+            (aexpr, name)
         },
         Expr::BinaryExpr { left, op, right } => {
             let (l, output_name) = recurse_arc!(left)?;
@@ -480,16 +492,6 @@ pub(super) fn to_aexpr_impl(
             let expr_dtype = ctx.arena.get(expr).to_dtype(&ctx.to_field_ctx())?;
             let element_dtype = variant.element_dtype(&expr_dtype)?;
 
-            // Perform this before schema resolution so that we can better error messages.
-            for e in evaluation.as_ref().into_iter() {
-                if matches!(e, Expr::Column(_)) {
-                    polars_bail!(
-                        ComputeError:
-                        "named columns are not allowed in `eval` functions; consider using `element`"
-                    );
-                }
-            }
-
             let mut evaluation_schema = ctx.schema.clone();
             evaluation_schema.insert(get_pl_element_name(), element_dtype.clone());
             let mut evaluation_ctx = ExprToIRContext {
@@ -498,8 +500,32 @@ pub(super) fn to_aexpr_impl(
                 arena: ctx.arena,
                 allow_unknown: ctx.allow_unknown,
                 check_column_names: ctx.check_column_names,
+                itemize_columns: matches!(
+                    variant,
+                    EvalVariant::List
+                        | EvalVariant::ListAgg
+                        | EvalVariant::Array { .. }
+                        | EvalVariant::ArrayAgg
+                ),
             };
             let (evaluation, _) = to_aexpr_impl(owned(evaluation), &mut evaluation_ctx)?;
+
+            let mut contains_column_reference = false;
+            for e in ctx.arena.iter(evaluation) {
+                contains_column_reference |= matches!(e.1, AExpr::Column(_));
+            }
+
+            if contains_column_reference {
+                polars_ensure!(
+                    !matches!(variant, EvalVariant::Cumulative { .. }),
+                    InvalidOperation: "`cumulative_eval` does not support named column references.",
+                );
+                polars_ensure!(
+                    is_elementwise_rec(expr, ctx.arena),
+                    InvalidOperation: "`{}` with named column references requires input to be elementwise.",
+                    variant.to_name(),
+                );
+            }
 
             match variant {
                 EvalVariant::List | EvalVariant::ListAgg => {},
@@ -554,6 +580,7 @@ pub(super) fn to_aexpr_impl(
                     schema: &eval_schema,
                     allow_unknown: ctx.allow_unknown,
                     check_column_names: ctx.check_column_names,
+                    itemize_columns: ctx.itemize_columns,
                 };
                 let exprir = to_expr_ir(e, &mut eval_ctx)?;
                 let field_name = exprir.output_name().clone();

@@ -214,8 +214,9 @@ pub enum AExpr {
     Eval {
         expr: Node,
 
-        /// An expression that is guaranteed to not contain any column reference beyond
-        /// `pl.element()` which refers to `pl.col("")`.
+        /// The expression evaluated per element. It may reference `pl.element()` (the current
+        /// element) as well as columns of the outer frame by name. For columns of the outer frame,
+        /// they are provided as `col(...).item(...)` and only allowed if `expr` is elementwise.
         evaluation: Node,
 
         variant: EvalVariant,
