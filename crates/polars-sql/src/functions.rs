@@ -32,6 +32,7 @@ use crate::sql_expr::{
     adjust_one_indexed_param, order_by_sort_options, parse_extract_date_part, parse_sql_array,
     parse_sql_expr,
 };
+use crate::sql_visitors::grouping_call_args;
 
 pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) func: &'a SQLFunction,
@@ -2360,23 +2361,17 @@ impl SQLFunctionVisitor<'_> {
         if self.func.filter.is_some() {
             polars_bail!(SQLSyntax: "GROUPING() does not support a FILTER clause");
         }
-        let args = extract_args(self.func)?;
-        if args.is_empty() || args.len() > MAX_GROUPING_ARGS {
+        let n_args = extract_args(self.func)?.len();
+        if n_args == 0 || n_args > MAX_GROUPING_ARGS {
             polars_bail!(
-                SQLSyntax: "GROUPING() expects between 1 and {} arguments; found {}", MAX_GROUPING_ARGS, args.len()
+                SQLSyntax: "GROUPING() expects between 1 and {} arguments; found {}", MAX_GROUPING_ARGS, n_args
             );
         }
-        let args = args
-            .iter()
-            .map(|arg| match arg {
-                FunctionArgExpr::Expr(e) => Ok(e.clone()),
-                _ => {
-                    polars_bail!(SQLSyntax: "GROUPING() expects column expressions; found {}", arg)
-                },
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
+        let Some(args) = grouping_call_args(self.func) else {
+            polars_bail!(SQLSyntax: "GROUPING() expects column expressions; found {}", self.func)
+        };
         let name = PlSmallStr::from_string(self.func.to_string());
-        Ok(self.ctx.register_grouping_call(args).alias(name))
+        Ok(col(self.ctx.register_grouping_call(args)).alias(name))
     }
 
     fn visit_avg(&mut self) -> PolarsResult<Expr> {
@@ -2678,7 +2673,7 @@ impl SQLFunctionVisitor<'_> {
         // Apply window spec; under a GROUP BY an empty window still has to be
         // told apart from a group aggregate.
         Ok(match (partition_by, order_by) {
-            (None, None) if self.ctx.group_scope.grouped => {
+            (None, None) if self.ctx.group_scope.parsing_group_input => {
                 expr.over([col(self.ctx.whole_frame_partition())])?
             },
             (None, None) => expr,
