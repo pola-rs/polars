@@ -7,8 +7,8 @@ use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
 use sqlparser::ast::{
-    Expr as SQLExpr, ObjectName, Query, SetExpr, Statement, TableFactor, Visit,
-    Visitor as SQLVisitor, visit_expressions,
+    Expr as SQLExpr, FunctionArg, FunctionArgExpr, FunctionArguments, ObjectName, Query, SetExpr,
+    Statement, TableFactor, Visit, Visitor as SQLVisitor, visit_expressions,
 };
 use sqlparser::keywords::ALL_KEYWORDS;
 
@@ -324,10 +324,26 @@ impl SQLVisitor for ColumnRefFinder {
     type Break = ();
 
     fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
-        if matches!(
-            expr,
-            SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_)
-        ) {
+        let is_column_ref = match expr {
+            SQLExpr::Identifier(_)
+            | SQLExpr::CompoundIdentifier(_)
+            | SQLExpr::Wildcard(_)
+            | SQLExpr::QualifiedWildcard(..) => true,
+            // wildcard arguments, eg: COUNT(*) / COLUMNS(*)
+            SQLExpr::Function(func) => match &func.args {
+                FunctionArguments::List(args) => args.args.iter().any(|arg| {
+                    matches!(
+                        arg,
+                        FunctionArg::Unnamed(
+                            FunctionArgExpr::Wildcard | FunctionArgExpr::QualifiedWildcard(_)
+                        )
+                    )
+                }),
+                _ => false,
+            },
+            _ => false,
+        };
+        if is_column_ref {
             ControlFlow::Break(())
         } else {
             ControlFlow::Continue(())
