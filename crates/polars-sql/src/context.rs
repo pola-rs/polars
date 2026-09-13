@@ -7,12 +7,13 @@ use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 use polars_plan::dsl::function_expr::StructFunction;
-use polars_plan::plans::visitor::{TreeWalker, VisitRecursion, Visitor};
+use polars_plan::plans::visitor::TreeWalker;
+use polars_plan::plans::{ExprToIRContext, is_scalar_ae, to_expr_ir};
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
-use polars_utils::format_pl_smallstr;
 #[cfg(feature = "semi_anti_join")]
 use polars_utils::unique_column_name;
+use polars_utils::{UnitVec, format_pl_smallstr};
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
     Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg,
@@ -3119,6 +3120,10 @@ impl SQLContext {
             })
             .collect();
 
+        let splitter = GroupContextSplitter {
+            schema: &schema_before,
+            keys: &group_by_keys_schema,
+        };
         // Post-aggregation expressions read computed keys from their stored columns.
         let bind_keys = |e: Expr| match grouping {
             Some(grouping) => grouping.bind_stored_keys(e, &key_schema),
@@ -3167,14 +3172,9 @@ impl SQLContext {
                 // inside them run in the group context. The same holds for anything
                 // combining aggregates with grouped keys or `GROUPING()` values.
                 let bound = bind_keys(strip_outer_alias(e));
-                if has_expr(&bound, |e| matches!(e, Expr::Over { .. }))
-                    || references_key_outside_aggregates(&bound, &group_by_keys_schema)
-                {
-                    let post_agg_expr = hoist_group_aggregates(
-                        bound,
-                        &mut aggregation_projection,
-                        &mut window_agg_count,
-                    );
+                if splitter.needs_post_aggregation(&bound) {
+                    let post_agg_expr =
+                        splitter.hoist(bound, &mut aggregation_projection, &mut window_agg_count);
                     window_projection.push(post_agg_expr.alias(field.name.clone()));
                     continue;
                 }
@@ -3225,12 +3225,9 @@ impl SQLContext {
 
         for (name, e) in &order_by_aggs {
             let bound = bind_keys(strip_outer_alias(e));
-            if references_key_outside_aggregates(&bound, &group_by_keys_schema) {
-                let rest = hoist_group_aggregates(
-                    bound,
-                    &mut aggregation_projection,
-                    &mut window_agg_count,
-                );
+            if splitter.needs_post_aggregation(&bound) {
+                let rest =
+                    splitter.hoist(bound, &mut aggregation_projection, &mut window_agg_count);
                 window_projection.push(rest.alias(name.clone()));
             } else {
                 aggregation_projection.push(e.clone());
@@ -3257,11 +3254,7 @@ impl SQLContext {
                 // HAVING runs on the combined rows, where it can also see `GROUPING()`.
                 let having = having.map(|having| {
                     let having = grouping.bind_stored_keys(having, &key_schema);
-                    hoist_group_aggregates(
-                        having,
-                        &mut aggregation_projection,
-                        &mut window_agg_count,
-                    )
+                    splitter.hoist(having, &mut aggregation_projection, &mut window_agg_count)
                 });
                 let agg_names = aggregation_projection
                     .iter()
@@ -4020,22 +4013,69 @@ fn strip_group_implode(aggs: Vec<Expr>) -> Vec<Expr> {
 
 const HOISTED_AGG_PREFIX: &str = "__POLARS_HOISTED_AGG_";
 
-/// Replace aggregates over pre-aggregation columns with references to hoisted
-/// aggregation outputs, collecting the hoisted aggregates into `agg_out`.
-///
-/// In `avg(sum(x)) OVER (...)`, `sum(x)` is hoisted and `avg(...) OVER (...)` is
-/// left to run on the aggregated frame. `COUNT(*)` is a group count everywhere
-/// except inside a window function's body, where it counts the window's rows.
-fn hoist_group_aggregates(expr: Expr, agg_out: &mut Vec<Expr>, counter: &mut usize) -> Expr {
-    fn hoist(expr: Expr, in_window: bool, agg_out: &mut Vec<Expr>, counter: &mut usize) -> Expr {
-        let hoist_children =
-            |e: Expr, in_window: bool, agg_out: &mut Vec<Expr>, counter: &mut usize| {
-                e.map_children(
-                    &mut |c, _| Ok(hoist(c, in_window, agg_out, counter)),
-                    &mut (),
-                )
-                .unwrap()
-            };
+/// Splits post-aggregation expressions from the group-context reductions they
+/// contain, over the pre-aggregation schema.
+struct GroupContextSplitter<'a> {
+    schema: &'a Schema,
+    keys: &'a Schema,
+}
+
+impl GroupContextSplitter<'_> {
+    /// Whether `expr` reduces its input columns to one value, judged by the plan
+    /// it lowers to; this covers SQL aggregates lowered to non-`Agg` reductions.
+    fn is_reduction(&self, expr: &Expr) -> bool {
+        if matches!(expr, Expr::Len) {
+            return true;
+        }
+        // A literal is scalar too, but reduces nothing.
+        if !has_expr(expr, |e| matches!(e, Expr::Column(_))) {
+            return false;
+        }
+        let mut arena = Arena::new();
+        let mut ctx = ExprToIRContext::new(&mut arena, self.schema);
+        ctx.allow_unknown = true;
+        ctx.check_column_names = false;
+        match to_expr_ir(expr.clone(), &mut ctx) {
+            Ok(ir) => is_scalar_ae(ir.node(), &arena),
+            Err(_) => false,
+        }
+    }
+
+    /// Whether `expr` must run after aggregation: it holds a window, or combines
+    /// a reduction with a grouped key.
+    fn needs_post_aggregation(&self, expr: &Expr) -> bool {
+        fn walk(this: &GroupContextSplitter<'_>, e: &Expr, saw_reduction: &mut bool) -> bool {
+            match e {
+                Expr::Over { .. } => true,
+                Expr::Column(name) => this.keys.contains(name),
+                _ if this.is_reduction(e) => {
+                    *saw_reduction = true;
+                    false
+                },
+                _ => {
+                    let mut children = UnitVec::new();
+                    e.nodes(&mut children);
+                    // Every child is visited so that no reduction goes unnoticed.
+                    let mut found = false;
+                    for c in children.iter() {
+                        found |= walk(this, c, saw_reduction);
+                    }
+                    found
+                },
+            }
+        }
+        let mut saw_reduction = false;
+        let key_reachable = walk(self, expr, &mut saw_reduction);
+        key_reachable && (saw_reduction || has_expr(expr, |e| matches!(e, Expr::Over { .. })))
+    }
+
+    /// Replace every reduction in `expr` with a reference to a hoisted aggregation
+    /// output, collecting the hoisted aggregates into `agg_out`.
+    ///
+    /// Inside a window function's body only aggregates over the input are hoisted:
+    /// in `avg(sum(x)) OVER (...)`, `sum(x)` is hoisted and `avg(...)` runs on the
+    /// aggregated frame, and a `COUNT(*)` there counts the window's rows.
+    fn hoist(&self, expr: Expr, agg_out: &mut Vec<Expr>, counter: &mut usize) -> Expr {
         match expr {
             Expr::Over {
                 function,
@@ -4043,86 +4083,73 @@ fn hoist_group_aggregates(expr: Expr, agg_out: &mut Vec<Expr>, counter: &mut usi
                 order_by,
                 mapping,
             } => Expr::Over {
-                function: Arc::new(hoist(
+                function: Arc::new(Self::hoist_in_window(
                     Arc::unwrap_or_clone(function),
-                    true,
                     agg_out,
                     counter,
                 )),
                 partition_by: partition_by
                     .into_iter()
-                    .map(|e| hoist(e, false, agg_out, counter))
+                    .map(|e| self.hoist(e, agg_out, counter))
                     .collect(),
                 order_by: order_by.map(|(e, options)| {
                     (
-                        Arc::new(hoist(Arc::unwrap_or_clone(e), false, agg_out, counter)),
+                        Arc::new(self.hoist(Arc::unwrap_or_clone(e), agg_out, counter)),
                         options,
                     )
                 }),
                 mapping,
             },
-            Expr::Len if in_window => Expr::Len,
-            e @ (Expr::Agg(_) | Expr::Len) => {
-                let e = hoist_children(e, in_window, agg_out, counter);
-                // Already hoisted below: an aggregate of an aggregate runs post-aggregation.
+            e if self.is_reduction(&e) => Self::hoisted(e, agg_out, counter),
+            e => e
+                .map_children(&mut |c, _| Ok(self.hoist(c, agg_out, counter)), &mut ())
+                .unwrap(),
+        }
+    }
+
+    fn hoist_in_window(expr: Expr, agg_out: &mut Vec<Expr>, counter: &mut usize) -> Expr {
+        match expr {
+            Expr::Len => Expr::Len,
+            e @ Expr::Agg(_) => {
+                let e = e
+                    .map_children(
+                        &mut |c, _| Ok(Self::hoist_in_window(c, agg_out, counter)),
+                        &mut (),
+                    )
+                    .unwrap();
+                // An aggregate over a hoisted aggregate runs on the aggregated frame.
                 if has_expr(
                     &e,
                     |inner| matches!(inner, Expr::Column(name) if name.starts_with(HOISTED_AGG_PREFIX)),
                 ) {
-                    return e;
+                    e
+                } else {
+                    Self::hoisted(e, agg_out, counter)
                 }
-                // An identical aggregate may appear in both the window body and its ORDER BY.
-                let existing = agg_out.iter().find_map(|agg| match agg {
-                    Expr::Alias(inner, name) if **inner == e => Some(name.clone()),
-                    _ => None,
-                });
-                let name = existing.unwrap_or_else(|| {
-                    let name = format_pl_smallstr!("{}{}", HOISTED_AGG_PREFIX, *counter);
-                    *counter += 1;
-                    agg_out.push(e.alias(name.clone()));
-                    name
-                });
-                col(name)
             },
-            e => hoist_children(e, in_window, agg_out, counter),
+            e => e
+                .map_children(
+                    &mut |c, _| Ok(Self::hoist_in_window(c, agg_out, counter)),
+                    &mut (),
+                )
+                .unwrap(),
         }
     }
-    hoist(expr, false, agg_out, counter)
-}
 
-/// Whether an aggregating expression also combines a grouped key with its
-/// aggregates through elementwise operations, so only the aggregates can run in
-/// the group context. Functions are not descended into: at this level it is
-/// unknown whether they reduce their input.
-fn references_key_outside_aggregates(expr: &Expr, keys: &Schema) -> bool {
-    struct Finder<'a> {
-        keys: &'a Schema,
-        found: bool,
+    fn hoisted(e: Expr, agg_out: &mut Vec<Expr>, counter: &mut usize) -> Expr {
+        // An identical aggregate may appear in both the window body and its ORDER BY.
+        let existing = agg_out.iter().find_map(|agg| match agg {
+            Expr::Alias(inner, name) if **inner == e => Some(name.clone()),
+            _ => None,
+        });
+        let name = existing.unwrap_or_else(|| {
+            let name = format_pl_smallstr!("{}{}", HOISTED_AGG_PREFIX, *counter);
+            *counter += 1;
+            agg_out.push(e.alias(name.clone()));
+            name
+        });
+        col(name)
     }
-    impl Visitor for Finder<'_> {
-        type Node = Expr;
-        type Arena = ();
-
-        fn pre_visit(&mut self, node: &Expr, _: &()) -> PolarsResult<VisitRecursion> {
-            Ok(match node {
-                Expr::Column(name) if self.keys.contains(name) => {
-                    self.found = true;
-                    VisitRecursion::Stop
-                },
-                Expr::Alias(..)
-                | Expr::BinaryExpr { .. }
-                | Expr::Ternary { .. }
-                | Expr::Cast { .. } => VisitRecursion::Continue,
-                _ => VisitRecursion::Skip,
-            })
-        }
-    }
-    if !has_expr(expr, |e| matches!(e, Expr::Agg(_) | Expr::Len)) {
-        return false;
-    }
-    let mut finder = Finder { keys, found: false };
-    let _ = expr.visit(&mut finder, &());
-    finder.found
 }
 
 /// Whether `expr` reduces a group to a scalar; shared by SELECT-projection

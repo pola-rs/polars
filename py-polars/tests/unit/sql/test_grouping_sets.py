@@ -708,3 +708,63 @@ def test_aggregate_combined_with_key() -> None:
         "SELECT a, SUM(b) + a AS s FROM self GROUP BY a ORDER BY a",
         expected={"a": [0, 1], "s": [20, 11]},
     )
+
+
+def test_empty_window_with_literal_key() -> None:
+    lf = pl.LazyFrame({"a": [1, 1, 2]})
+    assert_grouping_sets_matches(
+        lf,
+        """
+        SELECT 1 AS k, COUNT(*) OVER () AS n, GROUPING(1) AS g
+        FROM self GROUP BY ROLLUP(1) ORDER BY g
+        """,
+        expected={"k": [1, None], "n": [2, 2], "g": [0, 1]},
+    )
+
+
+def test_elementwise_functions_around_aggregates() -> None:
+    lf = pl.LazyFrame({"a": [1, 1, 2], "b": [10, 20, 30]})
+    for expr in ["ABS(SUM(b) + GROUPING(a))", "COALESCE(SUM(b) + GROUPING(a), 0)"]:
+        assert_grouping_sets_matches(
+            lf,
+            f"SELECT a, {expr} AS s FROM self GROUP BY ROLLUP(a) ORDER BY a",
+            expected={"a": [1, 2, None], "s": [30, 30, 61]},
+        )
+    assert_grouping_sets_matches(
+        lf,
+        "SELECT a FROM self GROUP BY ROLLUP(a) ORDER BY ABS(SUM(b) + GROUPING(a)), a",
+        expected={"a": [1, 2, None]},
+    )
+    assert_grouping_sets_matches(
+        lf,
+        "SELECT a, ABS(SUM(b) + a) AS s FROM self GROUP BY ROLLUP(a) ORDER BY a",
+        expected={"a": [1, 2, None], "s": [31, 32, None]},
+    )
+
+
+def test_unselected_window_in_order_by() -> None:
+    lf = pl.LazyFrame({"a": [1, 1, 2], "b": [10, 20, 30]})
+    for order_by, a in [
+        ("COUNT(*) OVER (PARTITION BY GROUPING(a)), a", [None, 1, 2]),
+        ("COUNT(*) OVER (), a", [1, 2, None]),
+        ("RANK() OVER (ORDER BY SUM(b)), a", [1, 2, None]),
+    ]:
+        assert_grouping_sets_matches(
+            lf,
+            f"SELECT a, SUM(b) AS s FROM self GROUP BY ROLLUP(a) ORDER BY {order_by}",
+            expected={"a": a, "s": [60 if x is None else 30 for x in a]},
+        )
+
+
+def test_count_distinct_mixed_with_key_or_grouping() -> None:
+    lf = pl.LazyFrame({"a": [1, 1, 2], "b": [10, 20, 30]})
+    assert_grouping_sets_matches(
+        lf,
+        "SELECT a, COUNT(DISTINCT b) + GROUPING(a) AS n FROM self GROUP BY ROLLUP(a) ORDER BY a",
+        expected={"a": [1, 2, None], "n": [2, 1, 4]},
+    )
+    assert_grouping_sets_matches(
+        lf,
+        "SELECT a, a + COUNT(DISTINCT b) AS n FROM self GROUP BY a ORDER BY a",
+        expected={"a": [1, 2], "n": [3, 3]},
+    )
