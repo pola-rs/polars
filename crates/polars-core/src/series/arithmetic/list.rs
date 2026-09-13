@@ -518,6 +518,7 @@ mod inner {
                 mismatch_pos: usize,
                 offsets_lhs: &OffsetsBuffer<i64>,
                 offsets_rhs: &OffsetsBuffer<i64>,
+                swapped: bool,
             ) -> PolarsResult<()> {
                 if mismatch_pos < offsets_lhs.len_proxy() {
                     // RHS could be broadcasted
@@ -526,11 +527,20 @@ mod inner {
                     } else {
                         mismatch_pos
                     });
+                    let len_l = offsets_lhs.length_at(mismatch_pos);
+                    // The sides are swapped where it is the left one that broadcasts, so the
+                    // lengths are swapped back here: the message names the operands the query
+                    // has them in either way.
+                    let (len_l, len_r) = if swapped {
+                        (len_r, len_l)
+                    } else {
+                        (len_l, len_r)
+                    };
                     polars_bail!(
                         ShapeMismatch:
                         "list lengths differed at index {}: {} != {}",
                         mismatch_pos,
-                        offsets_lhs.length_at(mismatch_pos), len_r
+                        len_l, len_r
                     )
                 }
                 Ok(())
@@ -630,7 +640,7 @@ mod inner {
                         }
                     });
 
-                    check_mismatch_pos(mismatch_pos, offsets_lhs, offsets_rhs)?;
+                    check_mismatch_pos(mismatch_pos, offsets_lhs, offsets_rhs, self.swapped)?;
 
                     unsafe { out_vec.set_len(n_values) };
 
@@ -741,7 +751,7 @@ mod inner {
                         }
                     });
 
-                    check_mismatch_pos(mismatch_pos, offsets_lhs, offsets_rhs)?;
+                    check_mismatch_pos(mismatch_pos, offsets_lhs, offsets_rhs, self.swapped)?;
 
                     unsafe { out_vec.set_len(n_values) };
 

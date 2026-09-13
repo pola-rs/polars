@@ -1326,3 +1326,16 @@ def test_arithmetic_between_empty_lists_and_a_primitive_column(
             .select(op(pl.col(left), pl.col(right)))
             .to_series(),
         )
+
+
+def test_arithmetic_width_mismatch_names_the_operands_in_query_order() -> None:
+    # The sides are swapped internally where it is the left one that broadcasts, and the
+    # lengths the message names are the query's either way.
+    one = pl.Series("a", [[1, 2]], dtype=pl.List(pl.Int64))
+    varying = pl.Series("b", [[1, 2, 3]] * 4, dtype=pl.List(pl.Int64))
+    frame = pl.DataFrame({"b": varying})
+
+    with pytest.raises(ShapeError, match=r"index 0: 2 != 3"):
+        frame.select(pl.lit(one) + pl.col("b"))
+    with pytest.raises(ShapeError, match=r"index 0: 3 != 2"):
+        frame.select(pl.col("b") + pl.lit(one))
