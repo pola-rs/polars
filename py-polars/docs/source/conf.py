@@ -144,6 +144,7 @@ if switcher_version == STABLE_MAJOR:
 
 html_js_files = [
     "js/announcement-dismiss.js",
+    "js/sidebar-resize.js",
     (
         "https://plausible.io/js/script.js",
         {"data-domain": "docs.pola.rs,combined.pola.rs", "defer": "defer"},
