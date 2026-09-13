@@ -1,7 +1,9 @@
 use std::iter::zip;
 
 use polars_array::builder::StaticArrayBuilder as _;
-use polars_core::prelude::arity::{try_binary_mut_with_options, try_unary_mut_with_options};
+use polars_core::prelude::arity::{
+    try_binary_mut_with_options, try_unary_elementwise_mut_with_options,
+};
 use regex::Regex;
 
 use super::*;
@@ -157,14 +159,18 @@ pub(super) fn extract_group(
         (_, 1) => {
             if let Some(pat) = pat.get(0) {
                 let reg = polars_utils::regex_cache::compile_regex(pat)?;
-                try_unary_mut_with_options(ca, |arr| extract_group_reg_lit(arr, &reg, group_index))
+                try_unary_elementwise_mut_with_options(ca, |arr| {
+                    extract_group_reg_lit(arr, &reg, group_index)
+                })
             } else {
                 Ok(StringChunked::full_null(ca.name().clone(), ca.len()))
             }
         },
         (1, _) => {
             if let Some(s) = ca.get(0) {
-                try_unary_mut_with_options(pat, |pat| extract_group_array_lit(s, pat, group_index))
+                try_unary_elementwise_mut_with_options(pat, |pat| {
+                    extract_group_array_lit(s, pat, group_index)
+                })
             } else {
                 Ok(StringChunked::full_null(ca.name().clone(), pat.len()))
             }

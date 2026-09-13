@@ -166,6 +166,32 @@ where
     out.new_from_index_typed(0, length)
 }
 
+/// [`elementwise_flat`] for a fallible kernel that reads its chunk in either representation.
+#[inline]
+fn try_elementwise<A, Arr, F, E>(arr: &A, op: &mut F) -> Result<Arr, E>
+where
+    A: StaticArray,
+    Arr: StaticArray,
+    F: FnMut(&A) -> Result<Arr, E>,
+{
+    let length = arr.len();
+    if length < 2 || !PlArray::is_scalar(arr) {
+        return op(arr);
+    }
+
+    let mut single = arr.clone();
+    single.slice(0, 1);
+
+    let out = op(&single)?;
+    debug_assert_eq!(
+        out.len(),
+        1,
+        "an elementwise kernel answers one element with one"
+    );
+
+    Ok(out.new_from_index_typed(0, length))
+}
+
 /// [`elementwise_binary_flat`] for a kernel that reads its chunks in either representation.
 #[inline]
 fn elementwise_binary<A, B, Arr, F>(lhs: &A, rhs: &B, op: &mut F) -> Arr
@@ -470,6 +496,23 @@ where
 {
     let iter = ca.downcast_iter().map(|arr| elementwise_flat(arr, &mut op));
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
+}
+
+/// [`try_unary_mut_with_options`] for an elementwise kernel, which leaves a scalar chunk scalar.
+#[inline]
+pub fn try_unary_elementwise_mut_with_options<T, V, F, Arr, E>(
+    ca: &ChunkedArray<T>,
+    mut op: F,
+) -> Result<ChunkedArray<V>, E>
+where
+    T: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: StaticArray,
+    F: FnMut(&T::Array) -> Result<Arr, E>,
+    E: Error,
+{
+    let iter = ca.downcast_iter().map(|arr| try_elementwise(arr, &mut op));
+    ChunkedArray::try_from_chunk_iter(ca.name().clone(), iter)
 }
 
 #[inline]

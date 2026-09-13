@@ -481,6 +481,18 @@ pub trait StringNameSpaceImpl: AsString {
     /// Extract each successive non-overlapping regex match in an individual string as an array.
     fn extract_all(&self, pat: &str) -> PolarsResult<ListChunked> {
         let ca = self.as_string();
+
+        // Every element of a chunk that repeats one is that one, so the matches of the single
+        // element it repeats are the matches of every element: one pass over one string answers
+        // the column, whose every row is then that same list.
+        if let [chunk] = ca.chunks().as_slice()
+            && ca.len() > 1
+            && chunk.is_scalar()
+        {
+            let single = ca.slice(0, 1).extract_all(pat)?;
+            return Ok(single.new_from_index(0, ca.len()));
+        }
+
         let reg = polars_utils::regex_cache::compile_regex(pat)?;
 
         let mut builder =
