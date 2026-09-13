@@ -694,6 +694,24 @@ where
     }
 }
 
+/// Folds the non-null values of `arr` into `f`, `CHUNK_SIZE` of them at a time.
+///
+/// A flat chunk is walked as the values slice it is: driving the generic iterator instead costs
+/// one test of the representation per element, which the chunk-filling loop cannot hoist.
+fn chunk_values_as_float<T, F>(arr: &PlPrimitiveArray<T>, f: F)
+where
+    T: NativeType + AsPrimitive<f64>,
+    F: FnMut(&[f64]),
+{
+    if arr.has_nulls() {
+        chunk_as_float(arr.iter().flatten(), f)
+    } else if let Some(flat) = arr.as_flat() {
+        chunk_as_float(flat.values_iter().copied(), f)
+    } else {
+        chunk_as_float(arr.values_iter(), f)
+    }
+}
+
 fn chunk_as_float_binary<T, U, I, F>(it: I, mut f: F)
 where
     T: NativeType + AsPrimitive<f64>,
@@ -718,6 +736,24 @@ where
     }
 }
 
+/// Folds the pairs of `x` and `y` that are null in neither into `f`, `CHUNK_SIZE` at a time.
+///
+/// Two flat chunks are walked as the values slices they are; see [`chunk_values_as_float`].
+fn chunk_value_pairs_as_float<T, U, F>(x: &PlPrimitiveArray<T>, y: &PlPrimitiveArray<U>, f: F)
+where
+    T: NativeType + AsPrimitive<f64>,
+    U: NativeType + AsPrimitive<f64>,
+    F: FnMut(&[f64], &[f64]),
+{
+    if x.has_nulls() || y.has_nulls() {
+        chunk_as_float_binary(x.iter().zip(y.iter()).filter_map(|(l, r)| l.zip(r)), f)
+    } else if let (Some(x), Some(y)) = (x.as_flat(), y.as_flat()) {
+        chunk_as_float_binary(x.values_iter().copied().zip(y.values_iter().copied()), f)
+    } else {
+        chunk_as_float_binary(x.values_iter().zip(y.values_iter()), f)
+    }
+}
+
 pub fn var<T>(arr: &PlPrimitiveArray<T>) -> VarState
 where
     T: NativeType + AsPrimitive<f64>,
@@ -729,15 +765,7 @@ where
     }
 
     let mut out = VarState::default();
-    if arr.has_nulls() {
-        chunk_as_float(arr.iter().flatten(), |chunk| {
-            out.combine(&VarState::new(chunk))
-        });
-    } else {
-        chunk_as_float(arr.values_iter(), |chunk| {
-            out.combine(&VarState::new(chunk))
-        });
-    }
+    chunk_values_as_float(arr, |chunk| out.combine(&VarState::new(chunk)));
     out
 }
 
@@ -758,16 +786,7 @@ where
     }
 
     let mut out = CovState::default();
-    if x.has_nulls() || y.has_nulls() {
-        chunk_as_float_binary(
-            x.iter().zip(y.iter()).filter_map(|(l, r)| l.zip(r)),
-            |l, r| out.combine(&CovState::new(l, r)),
-        );
-    } else {
-        chunk_as_float_binary(x.values_iter().zip(y.values_iter()), |l, r| {
-            out.combine(&CovState::new(l, r))
-        });
-    }
+    chunk_value_pairs_as_float(x, y, |l, r| out.combine(&CovState::new(l, r)));
     out
 }
 
@@ -786,16 +805,7 @@ where
     }
 
     let mut out = PearsonState::default();
-    if x.has_nulls() || y.has_nulls() {
-        chunk_as_float_binary(
-            x.iter().zip(y.iter()).filter_map(|(l, r)| l.zip(r)),
-            |l, r| out.combine(&PearsonState::new(l, r)),
-        );
-    } else {
-        chunk_as_float_binary(x.values_iter().zip(y.values_iter()), |l, r| {
-            out.combine(&PearsonState::new(l, r))
-        });
-    }
+    chunk_value_pairs_as_float(x, y, |l, r| out.combine(&PearsonState::new(l, r)));
     out
 }
 
@@ -808,15 +818,7 @@ where
     }
 
     let mut out = SkewState::default();
-    if arr.has_nulls() {
-        chunk_as_float(arr.iter().flatten(), |chunk| {
-            out.combine(&SkewState::new(chunk))
-        });
-    } else {
-        chunk_as_float(arr.values_iter(), |chunk| {
-            out.combine(&SkewState::new(chunk))
-        });
-    }
+    chunk_values_as_float(arr, |chunk| out.combine(&SkewState::new(chunk)));
     out
 }
 
@@ -829,14 +831,6 @@ where
     }
 
     let mut out = KurtosisState::default();
-    if arr.has_nulls() {
-        chunk_as_float(arr.iter().flatten(), |chunk| {
-            out.combine(&KurtosisState::new(chunk))
-        });
-    } else {
-        chunk_as_float(arr.values_iter(), |chunk| {
-            out.combine(&KurtosisState::new(chunk))
-        });
-    }
+    chunk_values_as_float(arr, |chunk| out.combine(&KurtosisState::new(chunk)));
     out
 }
