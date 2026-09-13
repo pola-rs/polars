@@ -74,21 +74,31 @@ where
     /// Applies a function only to the non-null elements, propagating nulls.
     pub fn try_apply_nonnull_values_generic<'a, U, K, F, E>(
         &'a self,
-        mut op: F,
+        op: F,
     ) -> Result<ChunkedArray<U>, E>
     where
         U: PolarsDataType,
-        F: FnMut(T::Physical<'a>) -> Result<K, E>,
+        F: Fn(T::Physical<'a>) -> Result<K, E>,
         U::Array: ArrayFromIter<K> + ArrayFromIter<Option<K>>,
     {
         let iter = self.downcast_iter().map(|arr| {
+            let length = arr.len();
+            if length > 1 {
+                if let Some(Some(value)) = arr.scalar_value() {
+                    // The chunk reads the same value throughout, so one call answers it and the
+                    // result repeats that single element.
+                    let single: U::Array = std::iter::once(op(value)?).collect_arr();
+                    return Ok(single.new_from_index_typed(0, length));
+                }
+            }
+
             let arr = if arr.null_count() == 0 {
-                let out: U::Array = arr.values_iter().map(&mut op).try_collect_arr_trusted()?;
+                let out: U::Array = arr.values_iter().map(&op).try_collect_arr_trusted()?;
                 out.with_validity_typed(arr.validity().map(PlBitmap::from))
             } else {
                 let out: U::Array = arr
                     .iter()
-                    .map(|opt| opt.map(&mut op).transpose())
+                    .map(|opt| opt.map(&op).transpose())
                     .try_collect_arr_trusted()?;
                 out.with_validity_typed(arr.validity().map(PlBitmap::from))
             };
