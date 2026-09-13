@@ -88,12 +88,16 @@ def test_arr_reduce_repeated_element() -> None:
 
 
 def test_arr_reduce_repeated_values_under_a_flat_mask() -> None:
-    # The values under the rows can repeat a single slot while the mask over them holds one
-    # bit each, which is what a `when` over a repeated column leaves: a row reduces to the one
-    # value wherever the mask leaves it a value at all, and to nothing where it leaves none.
+    # The values under the rows can repeat a single slot while the mask over them holds
+    # one bit each, which is what a `when` over a repeated column leaves: a row reduces
+    # to the one value wherever the mask leaves it a value at all, and to nothing where
+    # it leaves none.
     flags = [True, True, True, False, False, False, True, False, True]
-    inner = pl.select(pl.when(pl.Series(flags)).then(pl.repeat(7, 9)).alias("a")).to_series()
-    assert inner.estimated_size() < 9 * 8  # the values are still the one slot they repeat
+    inner = pl.select(
+        pl.when(pl.Series(flags)).then(pl.repeat(7, 9)).alias("a")
+    ).to_series()
+    # The values are still the one slot they repeat.
+    assert inner.estimated_size() < 9 * 8
 
     s = inner.reshape((3, 3))
     assert s.arr.min().to_list() == [7, None, 7]
@@ -107,19 +111,23 @@ def test_arr_reduce_repeated_values_under_a_flat_mask() -> None:
     assert none.reshape((3, 3)).arr.max().to_list() == [None] * 3
 
 
-# A row up to 32 values wide has its mask read in a single word, and a wider one a bit at a
-# time, so the widths either side of that are covered.
+# A row up to 32 values wide has its mask read in a single word, and a wider one a bit
+# at a time, so the widths either side of that are covered.
 @pytest.mark.parametrize("width", [1, 3, 8, 17, 31, 32, 33, 40])
 def test_arr_reduce_nulls_among_the_values(width: int) -> None:
     # A row whose values are partly null reduces over the ones that are there, whichever
     # representation the chunk it is read out of is in.
     rows = [
-        [None if (i * width + j) % 3 == 0 else (i * width + j) % 11 for j in range(width)]
+        [
+            None if (i * width + j) % 3 == 0 else (i * width + j) % 11
+            for j in range(width)
+        ]
         for i in range(12)
     ]
     s = pl.Series("a", rows, dtype=pl.Array(pl.Int64, width))
-    expected_min = [min((v for v in row if v is not None), default=None) for row in rows]
-    expected_max = [max((v for v in row if v is not None), default=None) for row in rows]
+    live = [[v for v in row if v is not None] for row in rows]
+    expected_min = [min(row, default=None) for row in live]
+    expected_max = [max(row, default=None) for row in live]
 
     padded = pl.concat([s.head(1), s, s.head(1)])
     shapes = {

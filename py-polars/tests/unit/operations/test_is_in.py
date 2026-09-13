@@ -855,9 +855,9 @@ def test_is_in_container_chunks(dtype: pl.DataType, nulls_equal: bool) -> None:
 def test_is_in_repeated_needle_and_container(
     dtype: pl.DataType, value: Any, other: Any, nulls_equal: bool
 ) -> None:
-    # Every element of a chunk that repeats one element reads the same one, so the answer
-    # of that one element stands for the whole column — whichever side repeats, and
-    # whichever way round the two sides broadcast.
+    # Every element of a chunk that repeats one element reads the same one, so the
+    # answer of that one element stands for the whole column — whichever side repeats,
+    # and whichever way round the two sides broadcast.
     length = 5
     repeated = pl.select(pl.repeat(pl.lit(value, dtype=dtype), length)).to_series()
     flat = pl.Series("a", [value] * length, dtype=dtype)
