@@ -47,7 +47,7 @@ def test_array_agg(sort_order: str | None, limit: int | None, expected: Any) -> 
 
 
 def test_array_literals() -> None:
-    with pl.SQLContext(df=None, eager=True) as ctx:
+    with pl.SQLContext(df=pl.DataFrame({"x": [0]}), eager=True) as ctx:
         res = ctx.execute(
             """
             SELECT

@@ -147,6 +147,8 @@ def test_constant_where_condition(condition: str, keeps_rows: bool) -> None:
         ("0", False),
         ("1 + 1", True),
         ("2 IN (1, 2)", True),
+        ("ARRAY_LENGTH(ARRAY[1, 2])", True),
+        ("ARRAY_CONTAINS(ARRAY[1, 2], 3)", False),
     ],
 )
 @pytest.mark.parametrize("empty", [False, True])

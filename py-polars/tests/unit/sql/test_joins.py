@@ -1983,6 +1983,8 @@ def test_join_predicate_operand_spanning_both_sides() -> None:
         "(1 + 0) IN (1, 2)",
         "UPPER('a') IN ('A', 'B')",
         "CAST(1 AS INT) NOT IN (1, 2)",
+        "ARRAY_LENGTH(ARRAY[1, 2]) IN (2, 3)",
+        "ARRAY_CONTAINS(ARRAY[1, 2], 1)",
     ],
 )
 @pytest.mark.parametrize("empty_side", [None, "a", "b"])
@@ -2005,6 +2007,33 @@ def test_join_on_constant_condition(
             ORDER BY 1, 2, 3, 4
         """
     assert_sql_matches(frames, query=query, compare_with="duckdb")
+
+
+@pytest.mark.parametrize(
+    "join_type",
+    [
+        "INNER JOIN",
+        "LEFT JOIN",
+        "RIGHT JOIN",
+        "FULL OUTER JOIN",
+        "SEMI JOIN",
+        "ANTI JOIN",
+    ],
+)
+def test_join_on_constant_any_condition(join_type: str) -> None:
+    # DuckDB does not support ANY(array) outside inner joins; compare with TRUE/FALSE
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2]}),
+        "b": pl.DataFrame({"v": ["r", "s"]}),
+    }
+    ctx = pl.SQLContext(frames=frames)
+    for condition, verdict in [
+        ("1 = ANY(ARRAY[1, 2])", "TRUE"),
+        ("3 = ANY(ARRAY[1, 2])", "FALSE"),
+    ]:
+        res = ctx.execute(f"SELECT * FROM a {join_type} b ON {condition}").collect()
+        expected = ctx.execute(f"SELECT * FROM a {join_type} b ON {verdict}").collect()
+        assert_frame_equal(res, expected, check_row_order=False)
 
 
 def test_join_on_constant_true_plans_cross_join() -> None:

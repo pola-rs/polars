@@ -1044,14 +1044,14 @@ impl SQLExprVisitor<'_> {
         let elems = self.array_expr_to_series(elements)?;
         let elems = self.cast_array_elements_for(elems, dtype_expr_match)?;
 
-        // if we are parsing the list as an element in a series, implode.
-        // otherwise, return the series as-is.
-        let res = if result_as_element {
-            elems.implode()?.into_series()
+        // if we are parsing the list as an element in a series, the result is one
+        // (scalar) list value; otherwise, return the series as-is.
+        Ok(if result_as_element {
+            let dtype = DataType::List(Box::new(elems.dtype().clone()));
+            lit(Scalar::new(dtype, AnyValue::List(elems)))
         } else {
-            elems
-        };
-        Ok(lit(res))
+            lit(elems)
+        })
     }
 
     /// Visit a SQL `CAST` or `TRY_CAST` expression.
