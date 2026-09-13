@@ -251,6 +251,22 @@ impl Series {
         new
     }
 
+    /// Whether every element of this column reads the one element its single chunk repeats.
+    ///
+    /// An op that answers such a column element by element answers it the same way every time, so
+    /// it may read that one element instead and repeat what it makes of it — see
+    /// [`new_from_index`](SeriesTrait::new_from_index), which repeats an answer in `O(1)` memory.
+    ///
+    /// Both the values and the mask have to repeat for this to hold: a column of one value behind
+    /// a mask that says some elements are there and some are not reads differently row by row.
+    pub fn repeats_one_element(&self) -> bool {
+        let [chunk] = self.chunks().as_slice() else {
+            return false;
+        };
+
+        self.len() > 1 && chunk.is_scalar()
+    }
+
     pub fn is_sorted_flag(&self) -> IsSorted {
         if self.len() <= 1 {
             return IsSorted::Ascending;

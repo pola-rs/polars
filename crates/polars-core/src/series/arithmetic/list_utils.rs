@@ -231,15 +231,6 @@ pub(super) enum Broadcast {
     NoBroadcast,
 }
 
-/// Whether every element of `s` reads the one element its single chunk repeats.
-fn repeats_one_element(s: &Series) -> bool {
-    let [chunk] = s.chunks().as_slice() else {
-        return false;
-    };
-
-    s.len() > 1 && chunk.is_scalar()
-}
-
 /// The mask of `s` where every one of its elements reads the same one value, `None` where they
 /// do not.
 ///
@@ -308,7 +299,7 @@ pub(super) fn read_repeated_side_as_one_element(
     }
 
     let one = |s: &Series| s.slice(0, 1);
-    match (repeats_one_element(lhs), repeats_one_element(rhs)) {
+    match (lhs.repeats_one_element(), rhs.repeats_one_element()) {
         (true, false) => Some((one(lhs), rhs.clone())),
         // A single primitive divisor is divided by through the kernels that multiply by its
         // reciprocal, where the leaves of a column divide by the value of each element. The two
