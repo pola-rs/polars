@@ -91,16 +91,25 @@ impl ChunkFull<&Series> for ListChunked {
         // wide it is and whatever is under it.
         let dtype = value.dtype();
         let values = value.rechunk().chunks()[0].clone();
+        let width = values.len();
         let arr = PlListArray::new_scalar(values, length);
 
         // SAFETY: physical type matches the logical.
-        unsafe {
+        let mut out = unsafe {
             ChunkedArray::from_chunks_and_dtype(
                 name,
                 vec![Box::new(arr)],
                 DataType::List(Box::new(dtype.clone())),
             )
+        };
+
+        // Every element is that one list, none of them null and none of them empty unless the
+        // list itself is: the offsets run end to end, which is what a fast explode reads.
+        if width > 0 {
+            out.set_fast_explode();
         }
+
+        out
     }
 }
 
