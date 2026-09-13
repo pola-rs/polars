@@ -1,5 +1,10 @@
+from typing import TYPE_CHECKING, Any
+
 import polars as pl
 from polars.testing.asserts.frame import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_rle() -> None:
@@ -59,14 +64,15 @@ def test_rle_over_a_column_of_several_chunks() -> None:
 def test_rle_over_a_chunk_that_repeats_one_element() -> None:
     # The answer comes off the one element the chunk repeats, rather than off a
     # walk of every element of it: one run, as long as the column.
-    for dtype, value in [
+    cases: list[tuple[PolarsDataType, Any]] = [
         (pl.Int64, 5),
         (pl.String, "ab"),
         (pl.Boolean, True),
         (pl.List(pl.Int64), [1, 2]),
         (pl.Struct({"x": pl.Int64}), {"x": 1}),
         (pl.Datetime("us"), None),
-    ]:
+    ]
+    for dtype, value in cases:
         s = pl.select(pl.repeat(pl.lit(value, dtype=dtype), 8).alias("a")).to_series()
         df = pl.DataFrame([s])
 

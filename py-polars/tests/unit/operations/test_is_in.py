@@ -813,6 +813,7 @@ def test_is_in_container_chunks(dtype: pl.DataType, nulls_equal: bool) -> None:
     # once per value read, so a container of several chunks or a sliced one has to
     # answer the way the single flat chunk of the same elements does.
     rows: list[list[Any] | None]
+    needles: list[Any]
     if dtype == pl.List(pl.String):
         rows = [["a", "b"], ["c", "d"], [None, "e"], None, ["f", "f"]]
         needles = ["a", "d", "e", "a", "g"]

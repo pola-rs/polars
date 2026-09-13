@@ -32,7 +32,7 @@ def test_arr_reduce_null_element_with_values() -> None:
     # element holds no values to read, whatever the values under it say.
     gathered = pl.Series(
         "a", [[1, 2], [3, 4], [5, 6]], dtype=pl.Array(pl.Int64, 2)
-    ).gather([0, None, 2])
+    ).gather([0, None, 2])  # type: ignore[list-item]
     broadcast = pl.select(
         pl.when(pl.Series("m", [True, False, True])).then(
             pl.repeat([1, 2], 3, dtype=pl.Array(pl.Int64, 2))
@@ -520,8 +520,8 @@ def test_arr_dot_special_floating_values(dtype: pl.DataType) -> None:
 @pytest.mark.parametrize(
     ("dtype", "rel_tol", "abs_tol", "with_inner_nulls"),
     [
-        (pl.Float32, 1e-5, 1e-5, False),
-        (pl.Float32, 1e-5, 1e-5, True),
+        (pl.Float32, 1e-3, 1e-5, False),
+        (pl.Float32, 1e-3, 1e-5, True),
         (pl.Float64, 1e-12, 1e-12, False),
         (pl.Float64, 1e-12, 1e-12, True),
     ],
@@ -532,6 +532,11 @@ def test_arr_dot_wide(
     abs_tol: float,
     with_inner_nulls: bool,
 ) -> None:
+    # The two sides add the same products up in different orders, so the tolerance
+    # has to cover the summation order rather than a single rounding: the terms
+    # alternate in sign and are each ~100x the sum they cancel down to, which lifts
+    # every term's rounding by that factor in the answer. On `Float32` that is a few
+    # parts in 1e5, so the relative tolerance is 1e-3 rather than 1e-5.
     width = 768
     lhs_values = [
         None
