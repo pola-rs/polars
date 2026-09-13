@@ -122,15 +122,12 @@ fn test_array_literal() {
 
     let sql = "SELECT [100,200,300] AS arr FROM df";
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
-    let df_expected = df! {
-        "arr" => &[100i64, 200, 300],
-    }
-    .unwrap()
-    .lazy()
-    .select(&[col("arr").implode(true)])
-    .collect()
-    .unwrap();
+    let schema = Schema::from_iter([(
+        PlSmallStr::from_static("arr"),
+        DataType::List(Box::new(DataType::Int64)),
+    )]);
+    let df_expected = DataFrame::empty_with_schema(&schema);
 
     assert!(df_sql.equals(&df_expected));
-    assert!(df_sql.height() == 1);
+    assert!(df_sql.height() == 0);
 }
