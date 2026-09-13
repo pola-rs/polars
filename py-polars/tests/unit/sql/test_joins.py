@@ -1980,6 +1980,9 @@ def test_join_predicate_operand_spanning_both_sides() -> None:
         "1 IN (1, 2)",
         "3 NOT IN (1, 2)",
         "'b' IN ('a', 'c')",
+        "(1 + 0) IN (1, 2)",
+        "UPPER('a') IN ('A', 'B')",
+        "CAST(1 AS INT) NOT IN (1, 2)",
     ],
 )
 @pytest.mark.parametrize("empty_side", [None, "a", "b"])

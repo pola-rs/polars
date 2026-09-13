@@ -34,6 +34,7 @@ use sqlparser::tokenizer::Token;
 use crate::SQLContext;
 use crate::functions::SQLFunctionVisitor;
 use crate::literal_folding::try_fold_decimal_arithmetic;
+use crate::sql_visitors::expr_references_any_column;
 use crate::subquery::is_correlated_subquery;
 use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
@@ -293,13 +294,20 @@ impl SQLExprVisitor<'_> {
                 list,
                 negated,
             } => {
-                let expr = self.visit_expr(expr)?;
+                let sql_expr = expr;
+                let expr = self.visit_expr(sql_expr)?;
                 // Prefer the all-literal `is_in` fast path, which predicate pushdown can
-                // use. A non-literal element, an aggregate on the left, or a literal on the
-                // left (a constant, which the planner folds as an OR-chain but not as a set
+                // use. A non-literal element, an aggregate on the left, or a constant on
+                // the left (which the planner folds as an OR-chain but not as a set
                 // membership) falls back to an OR-chain of equality comparisons.
-                let use_or_chain = matches!(expr, Expr::Literal(_))
-                    || has_expr(&expr, |e| matches!(e, Expr::Agg(_) | Expr::Len));
+                let is_constant = !expr_references_any_column(sql_expr)
+                    && expr
+                        .clone()
+                        .meta()
+                        .is_input_independent_scalar()
+                        .unwrap_or(false);
+                let use_or_chain =
+                    is_constant || has_expr(&expr, |e| matches!(e, Expr::Agg(_) | Expr::Len));
                 let elements = if use_or_chain {
                     None
                 } else {
