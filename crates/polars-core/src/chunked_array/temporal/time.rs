@@ -2,8 +2,6 @@ use std::fmt::Write;
 
 use arrow::temporal_conversions::{NANOSECONDS, time64ns_to_time};
 use chrono::Timelike;
-use polars_array::PlUtf8ViewArrayBuilder;
-use polars_array::builder::StaticArrayBuilder;
 
 use super::*;
 use crate::prelude::*;
@@ -30,24 +28,12 @@ impl TimeChunked {
         };
 
         // One buffer is formatted into and appended per element, rather than one `String` being
-        // allocated per element and thrown away.
-        let mut buf = String::new();
-        let chunks = self.physical().downcast_iter().map(|arr| {
-            let mut builder = PlUtf8ViewArrayBuilder::with_capacity(arr.len());
-            for opt in arr.iter() {
-                match opt {
-                    None => builder.push_null(),
-                    Some(v) => {
-                        buf.clear();
-                        let timefmt = time64ns_to_time(v).format(format);
-                        write!(buf, "{timefmt}").unwrap();
-                        builder.push_value(&buf)
-                    },
-                }
-            }
-            builder.freeze()
+        // allocated per element and thrown away — and a chunk that reads one element throughout
+        // is formatted once, the answer standing for the whole chunk.
+        let mut ca = self.physical().apply_into_string_amortized(|v, buf| {
+            let timefmt = time64ns_to_time(v).format(format);
+            write!(buf, "{timefmt}").unwrap();
         });
-        let mut ca = StringChunked::from_chunk_iter(PlSmallStr::EMPTY, chunks);
 
         ca.rename(self.name().clone());
         ca
