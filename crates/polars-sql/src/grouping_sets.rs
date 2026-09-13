@@ -214,8 +214,6 @@ impl GroupingSets {
     /// Point computed grouping expressions in a post-aggregation expression at the
     /// columns holding their grouped values. A key is matched as a whole before its
     /// children are visited, and aggregate arguments keep reading the original input.
-    /// Column and literal keys need no binding; a literal in particular must not
-    /// capture unrelated literals, such as a whole-frame window's partition.
     pub(crate) fn bind_stored_keys(&self, expr: Expr, key_schema: &Schema) -> Expr {
         struct Binder<'a> {
             keys: Vec<(Expr, &'a PlSmallStr)>,
@@ -244,7 +242,7 @@ impl GroupingSets {
             .iter()
             .zip(key_schema.iter_names())
             .map(|(key, name)| (strip_outer_alias(key), name))
-            .filter(|(key, _)| !matches!(key, Expr::Column(_) | Expr::Literal(_)))
+            .filter(|(key, _)| !matches!(key, Expr::Column(_)))
             .collect::<Vec<_>>();
         if keys.is_empty() {
             return expr;

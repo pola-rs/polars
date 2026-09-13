@@ -768,3 +768,30 @@ def test_count_distinct_mixed_with_key_or_grouping() -> None:
         "SELECT a, a + COUNT(DISTINCT b) AS n FROM self GROUP BY a ORDER BY a",
         expected={"a": [1, 2], "n": [3, 3]},
     )
+
+
+def test_literal_key_referenced_in_having() -> None:
+    lf = pl.LazyFrame({"a": [1, 1, 2]})
+    assert_grouping_sets_matches(
+        lf,
+        """
+        SELECT 1 AS k, COUNT(*) AS n
+        FROM self GROUP BY ROLLUP(k) HAVING k IS NOT NULL
+        """,
+        expected={"k": [1], "n": [3]},
+    )
+
+
+def test_constant_input_aggregates_mixed_with_key() -> None:
+    lf = pl.LazyFrame({"a": [1, 1, 2]})
+    for agg, value in [("AVG(1)", 1.0), ("MIN(1)", 1), ("COUNT(DISTINCT 1)", 1)]:
+        assert_grouping_sets_matches(
+            lf,
+            f"SELECT a, {agg} + GROUPING(a) AS v FROM self GROUP BY ROLLUP(a) ORDER BY a",
+            expected={"a": [1, 2, None], "v": [value, value, value + 1]},
+        )
+    assert_grouping_sets_matches(
+        lf,
+        "SELECT a, AVG(1) + a AS v FROM self GROUP BY a ORDER BY a",
+        expected={"a": [1, 2], "v": [2.0, 3.0]},
+    )

@@ -8,7 +8,7 @@ use polars_lazy::prelude::*;
 use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::plans::visitor::TreeWalker;
-use polars_plan::plans::{ExprToIRContext, is_scalar_ae, to_expr_ir};
+use polars_plan::plans::{ArenaExprIter, ExprToIRContext, is_scalar_ae, to_expr_ir};
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
 #[cfg(feature = "semi_anti_join")]
@@ -242,8 +242,8 @@ pub struct SQLContext {
     pub(crate) named_windows: PlHashMap<String, WindowSpec>,
     /// `GROUPING()` calls parsed in the query block being executed.
     grouping_calls: Vec<GroupingCall>,
-    /// Whether the query block being executed has a `GROUP BY`, so windows must
-    /// stay distinguishable from group aggregates.
+    /// Whether the clause being parsed feeds the `GROUP BY` of its query block,
+    /// where windows must stay distinguishable from group aggregates.
     pub(crate) grouped_block: bool,
 }
 
@@ -2040,6 +2040,8 @@ impl SQLContext {
                 &query.order_by,
                 grouping.as_ref(),
             )?;
+            // The remaining clauses run on the aggregated frame.
+            self.grouped_block = false;
             let visible_cols: Vec<_> = output_names.iter().cloned().map(col).collect();
             lf = self.process_order_by(lf, &order_by, Some(&visible_cols))?;
 
@@ -3072,16 +3074,21 @@ impl SQLContext {
                 format!("group_by keys contained duplicate output name '{duplicate_name}'")
             })?;
         let mut group_by_keys_schema = key_schema.clone();
+        // Columns the parsed expressions may name before the aggregation resolves them:
+        // the whole-frame window partition, and `GROUPING()` values, which are
+        // per-set constants the projections treat like group keys.
+        let mut extended = Arc::unwrap_or_clone(schema_before);
+        extended.with_column(
+            PlSmallStr::from_static(WHOLE_FRAME_PARTITION),
+            DataType::Int32,
+        );
         if let Some(grouping) = grouping {
-            // `GROUPING()` values are per-set constants, so the projections treat their
-            // placeholders like group keys: present on the aggregated frame as-is.
-            let mut extended = Arc::unwrap_or_clone(schema_before);
             for placeholder in grouping.placeholders() {
                 extended.with_column(placeholder.clone(), DataType::Int64);
                 group_by_keys_schema.with_column(placeholder.clone(), DataType::Int64);
             }
-            schema_before = Arc::new(extended);
         }
+        schema_before = Arc::new(extended);
 
         // Disambiguate SELECT-list output-name collisions.
         let projections = disambiguate_output_names(
@@ -3277,8 +3284,6 @@ impl SQLContext {
         let aggregated = if window_projection.is_empty() {
             aggregated
         } else {
-            let window_projection: Vec<Expr> =
-                window_projection.into_iter().map(bind_keys).collect();
             aggregated.with_columns(&window_projection)
         };
 
@@ -4013,6 +4018,10 @@ fn strip_group_implode(aggs: Vec<Expr>) -> Vec<Expr> {
 
 const HOISTED_AGG_PREFIX: &str = "__POLARS_HOISTED_AGG_";
 
+/// Partition column standing for an empty `OVER ()` parsed under a `GROUP BY`,
+/// until the window is separated from the group aggregates.
+pub(crate) const WHOLE_FRAME_PARTITION: &str = "__POLARS_WHOLE_FRAME_WINDOW";
+
 /// Splits post-aggregation expressions from the group-context reductions they
 /// contain, over the pre-aggregation schema.
 struct GroupContextSplitter<'a> {
@@ -4024,21 +4033,22 @@ impl GroupContextSplitter<'_> {
     /// Whether `expr` reduces its input columns to one value, judged by the plan
     /// it lowers to; this covers SQL aggregates lowered to non-`Agg` reductions.
     fn is_reduction(&self, expr: &Expr) -> bool {
-        if matches!(expr, Expr::Len) {
-            return true;
-        }
-        // A literal is scalar too, but reduces nothing.
-        if !has_expr(expr, |e| matches!(e, Expr::Column(_))) {
-            return false;
-        }
         let mut arena = Arena::new();
         let mut ctx = ExprToIRContext::new(&mut arena, self.schema);
         ctx.allow_unknown = true;
         ctx.check_column_names = false;
-        match to_expr_ir(expr.clone(), &mut ctx) {
-            Ok(ir) => is_scalar_ae(ir.node(), &arena),
-            Err(_) => false,
-        }
+        let Ok(ir) = to_expr_ir(expr.clone(), &mut ctx) else {
+            return false;
+        };
+        // A literal expression is scalar too, but reduces nothing.
+        let reduces = arena.iter(ir.node()).any(|(_, ae)| match ae {
+            AExpr::Agg(_) | AExpr::AnonymousAgg { .. } | AExpr::Len => true,
+            AExpr::Function { options, .. } | AExpr::AnonymousFunction { options, .. } => {
+                options.returns_scalar()
+            },
+            _ => false,
+        });
+        reduces && is_scalar_ae(ir.node(), &arena)
     }
 
     /// Whether `expr` must run after aggregation: it holds a window, or combines
@@ -4090,7 +4100,10 @@ impl GroupContextSplitter<'_> {
                 )),
                 partition_by: partition_by
                     .into_iter()
-                    .map(|e| self.hoist(e, agg_out, counter))
+                    .map(|e| match e {
+                        Expr::Column(name) if name == WHOLE_FRAME_PARTITION => lit(1),
+                        e => self.hoist(e, agg_out, counter),
+                    })
                     .collect(),
                 order_by: order_by.map(|(e, options)| {
                     (
