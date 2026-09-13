@@ -132,6 +132,67 @@ def test_constant_where_condition(condition: str, keeps_rows: bool) -> None:
 
 
 @pytest.mark.parametrize(
+    ("condition", "verdict"),
+    [
+        ("TRUE", True),
+        ("FALSE", False),
+        ("1 = 1", True),
+        ("1 = 0", False),
+        ("NULL = NULL", None),
+        ("UPPER('x') = 'X'", True),
+        ("CASE WHEN 1 < 2 THEN FALSE ELSE TRUE END", False),
+    ],
+)
+@pytest.mark.parametrize("empty", [False, True])
+def test_constant_condition_select_and_delete(
+    condition: str, verdict: bool | None, empty: bool
+) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    if empty:
+        df = df.clear()
+    ctx = pl.SQLContext(frames={"tbl": df.lazy()})
+
+    selected = ctx.execute(f"SELECT * FROM tbl WHERE {condition}").collect()
+    deleted = ctx.execute(f"DELETE FROM tbl WHERE {condition}").collect()
+    assert selected.schema == df.schema
+    assert deleted.schema == df.schema
+    # an unknown condition keeps nothing in SELECT and removes nothing in DELETE
+    assert selected.height == (df.height if verdict else 0)
+    assert deleted.height == (0 if verdict else df.height)
+
+
+def test_constant_where_condition_is_planned_not_executed() -> None:
+    # translating the query must not run the frame or any user function in it
+    def boom(df: pl.DataFrame) -> pl.DataFrame:
+        msg = "executed"
+        raise RuntimeError(msg)
+
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).map_batches(boom, schema={"a": pl.Int64})
+    ctx = pl.SQLContext(frames={"tbl": lf, "other": lf})
+    for query in [
+        "SELECT a FROM tbl WHERE 1 = 1 AND UPPER('x') = 'X'",
+        "SELECT * FROM tbl JOIN other ON 1 = 1",
+        "SELECT * FROM tbl LEFT JOIN other ON FALSE",
+    ]:
+        planned = ctx.execute(query)
+        with pytest.raises(RuntimeError, match="executed"):
+            planned.collect()
+
+    # a false condition never reads the input at all
+    res = ctx.execute("SELECT a FROM tbl WHERE 1 = 0").collect()
+    assert res.schema == {"a": pl.Int64}
+    assert res.height == 0
+
+    # constant conditions are folded by the planner: a true filter disappears
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    ctx = pl.SQLContext(frames={"tbl": lf})
+    plan = ctx.execute("SELECT a FROM tbl WHERE 1 = 1").explain()
+    assert "FILTER" not in plan
+    plan = ctx.execute("SELECT a FROM tbl WHERE 1 = 0").explain()
+    assert "FILTER" not in plan
+
+
+@pytest.mark.parametrize(
     ("condition", "expected"),
     [
         ("ROW_NUMBER() OVER () <= 2", [1, 2]),

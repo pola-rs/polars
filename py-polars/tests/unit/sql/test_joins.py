@@ -1952,6 +1952,69 @@ def test_join_predicate_operand_spanning_both_sides() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "join_type",
+    [
+        "INNER JOIN",
+        "LEFT JOIN",
+        "RIGHT JOIN",
+        "FULL OUTER JOIN",
+        "SEMI JOIN",
+        "ANTI JOIN",
+    ],
+)
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "TRUE",
+        "FALSE",
+        "NULL",
+        "1 = 1",
+        "1 = 0",
+        "NULL = NULL",
+        "1 < 2",
+        "'13' = 13",
+        "UPPER('x') = 'X'",
+        "(1 = 1) AND (2 > 1)",
+        "CASE WHEN 1 = 1 THEN TRUE ELSE FALSE END",
+    ],
+)
+@pytest.mark.parametrize("empty_side", [None, "a", "b"])
+def test_join_on_constant_condition(
+    join_type: str, condition: str, empty_side: str | None
+) -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2], "x": ["p", "q"]}),
+        "b": pl.DataFrame({"k": [2, 3], "y": ["r", "s"]}),
+    }
+    if empty_side:
+        frames[empty_side] = frames[empty_side].clear()
+
+    if "SEMI" in join_type or "ANTI" in join_type:
+        query = f"SELECT a.k, a.x FROM a {join_type} b ON {condition} ORDER BY 1, 2"
+    else:
+        query = f"""
+            SELECT a.k, a.x, b.k AS bk, b.y
+            FROM a {join_type} b ON {condition}
+            ORDER BY 1, 2, 3, 4
+        """
+    assert_sql_matches(frames, query=query, compare_with="duckdb")
+
+
+def test_join_on_constant_true_plans_cross_join() -> None:
+    frames = {
+        "a": pl.LazyFrame({"k": [1, 2]}),
+        "b": pl.LazyFrame({"v": ["r", "s"]}),
+    }
+    ctx = pl.SQLContext(frames=frames)
+    for condition in ["TRUE", "1 = 1", "1 < 2"]:
+        plan = ctx.execute(f"SELECT * FROM a JOIN b ON {condition}").explain()
+        assert plan.startswith("CROSS JOIN")
+    # an always-true outer join is not a cross join: it must keep unmatched rows
+    plan = ctx.execute("SELECT * FROM a LEFT JOIN b ON TRUE").explain()
+    assert "CROSS JOIN" not in plan
+
+
 @pytest.mark.parametrize("join_type", ["INNER", "LEFT"])
 def test_join_on_pattern_predicates(join_type: str) -> None:
     frames = {

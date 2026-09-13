@@ -2146,15 +2146,6 @@ impl SQLContext {
                 Some(s) => s,
             };
 
-            // shortcut filter evaluation for a constant condition (eg: "WHERE 1 = 1")
-            if let Some(satisfied) = evaluate_constant_predicate(self, expr)? {
-                return Ok(if satisfied == (filter_mode == FilterMode::KeepTrue) {
-                    lf
-                } else {
-                    lf.clear()
-                });
-            }
-
             // Lower eligible `[NOT] EXISTS` / `[NOT] IN (subquery)` conjuncts
             // to semi / anti joins; whatever remains goes through the ordinary
             // filter path below.
@@ -2214,29 +2205,31 @@ impl SQLContext {
         constraint: &JoinConstraint,
         join_type: JoinType,
     ) -> PolarsResult<LazyFrame> {
-        if let JoinConstraint::On(expr) = constraint {
-            if let Some(satisfied) = evaluate_constant_predicate(self, expr)? {
-                let builder = tbl_left
+        // A condition that reads no input (eg: `ON TRUE`, `ON 1 = 1`) pairs every row with
+        // every row, or none: join on the condition itself as a boolean key. Null keys do not
+        // match, which is SQL's treatment of an unknown condition.
+        if let JoinConstraint::On(expr) = constraint
+            && !expr_references_any_column(expr)
+            && !expr_contains_subquery(expr)
+        {
+            let predicate = parse_sql_expr(expr, self, None)?;
+            if predicate
+                .clone()
+                .meta()
+                .is_input_independent_scalar()
+                .unwrap_or(false)
+            {
+                return tbl_left
                     .frame
                     .clone()
                     .join_builder()
                     .with(tbl_right.frame.clone())
+                    .left_on([predicate.cast(DataType::Boolean)])
+                    .right_on([lit(true)])
+                    .how(join_type)
                     .suffix(format!(":{}", tbl_right.name))
-                    .coalesce(JoinCoalesce::KeepColumns);
-
-                // Only INNER: an always-true outer join still has to emit null-extended
-                // left rows when the right side is empty, which a cross join would not.
-                return Ok(if satisfied && join_type == JoinType::Inner {
-                    builder.how(JoinType::Cross).finish()?
-                } else {
-                    // Match every row against every row, or none against none.
-                    let right_key = if satisfied { lit(1i32) } else { lit(2i32) };
-                    builder
-                        .left_on([lit(1i32)])
-                        .right_on([right_key])
-                        .how(join_type)
-                        .finish()?
-                });
+                    .coalesce(JoinCoalesce::KeepColumns)
+                    .finish();
             }
         }
         let (left_on, right_on, predicates) =
@@ -3853,39 +3846,6 @@ fn suffix_conflicting_columns(
         },
         other => other,
     })
-}
-
-/// Evaluate a condition that does not depend on the input frame (eg: `1 = 1`) to a
-/// definite true/false verdict; SQL treats an unknown (NULL) condition the same as
-/// false for matching. Returns `None` for any other condition.
-fn evaluate_constant_predicate(ctx: &mut SQLContext, expr: &SQLExpr) -> PolarsResult<Option<bool>> {
-    if expr_references_any_column(expr) || expr_contains_subquery(expr) {
-        return Ok(None);
-    }
-    let predicate = parse_sql_expr(expr, ctx, None)?;
-    // only literals and operations over them; anything reading the frame (a selector,
-    // `len()`, an aggregation or window) has no value without it
-    let is_constant = predicate.into_iter().all(|e| {
-        matches!(
-            e,
-            Expr::Literal(_)
-                | Expr::BinaryExpr { .. }
-                | Expr::Cast { .. }
-                | Expr::Ternary { .. }
-                | Expr::Function { .. }
-                | Expr::Alias(..)
-        )
-    });
-    if !is_constant {
-        return Ok(None);
-    }
-    let df = DataFrame::empty()
-        .lazy()
-        .select([predicate.cast(DataType::Boolean).alias("predicate")])
-        .collect()?;
-    Ok(Some(
-        df.column("predicate")?.bool()?.get(0).unwrap_or(false),
-    ))
 }
 
 fn process_join_constraint(

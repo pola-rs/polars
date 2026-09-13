@@ -156,6 +156,26 @@ pub fn resolve_join(
     let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
     let schema_right = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
 
+    // Inner-joining on the same non-null constant on both sides pairs every row with every
+    // row: a cross join.
+    let same_constant_key = |l: &ExprIR, r: &ExprIR| match (
+        ctxt.expr_arena.get(l.node()),
+        ctxt.expr_arena.get(r.node()),
+    ) {
+        (AExpr::Literal(l), AExpr::Literal(r)) => l.is_scalar() && !l.is_null() && l == r,
+        _ => false,
+    };
+    if options.args.how == JoinType::Inner
+        && left_on
+            .iter()
+            .zip(&right_on)
+            .all(|(l, r)| same_constant_key(l, r))
+    {
+        options.args.how = JoinType::Cross;
+        left_on.clear();
+        right_on.clear();
+    }
+
     // # Resolve scalars
     //
     // Scalars need to be expanded. We translate them to temporary columns added with
