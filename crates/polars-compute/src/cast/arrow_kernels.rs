@@ -3,8 +3,8 @@
 use arrow::array::*;
 use arrow::datatypes::{ArrowDataType, TimeUnit};
 use arrow::offset::Offset;
-use polars_array::PlArray;
 use polars_array::arrow::{export, import};
+use polars_array::{PlArray, PlUtf8ViewArray};
 use polars_dtype::DataType;
 use polars_error::{PolarsResult, polars_bail};
 
@@ -104,6 +104,19 @@ fn cast_crossed_over(
         (A::BinaryView, A::List(field) | A::LargeList(field)) if field.dtype() == &A::UInt8 => {
             let bytes = super::view_to_binary(super::downcast(array));
             Ok(Box::new(super::binary_to_list(&bytes)))
+        },
+
+        // An Arrow UTF-8 array's bytes are valid UTF-8 by construction, which is what crossing
+        // over as a `BinaryOffset` gives up: the views its bytes are laid out in are taken as the
+        // strings they already are, rather than walked a second time to say so.
+        (A::Utf8 | A::LargeUtf8, A::Utf8View) => {
+            let view = super::binary_to_binview(super::downcast(array));
+
+            // SAFETY: the bytes are the ones an Arrow UTF-8 array holds, whose elements are valid
+            // UTF-8, and laying them out in views carries each element over as it is.
+            Ok(Box::new(unsafe {
+                PlUtf8ViewArray::from_binview_unchecked(view)
+            }))
         },
 
         // A fixed size binary array crossed over as the one array no Polars type names, and the
