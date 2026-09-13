@@ -8,7 +8,9 @@ use arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_utils::vec::PushUnchecked;
 
+use crate::binview::PlBinaryViewArrayBuilder;
 use crate::bitmap::PlBitmap;
+use crate::builder::StaticArrayBuilder;
 use crate::static_array::StaticArray;
 use crate::{PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlPrimitiveArray, PlUtf8ViewArray};
 
@@ -522,14 +524,16 @@ impl<V: IntoBytes> ArrayFromIter<V> for PlBinaryViewArray {
     }
 
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<V, E>>>(iter: I) -> Result<Self, E> {
-        // A view is written over the data buffers it points at, so the values are laid out first
-        // and written out in one pass once they are known to be there.
-        let values = iter
-            .into_iter()
-            .map(|value| Ok(value?.into_bytes()))
-            .collect::<Result<Vec<_>, E>>()?;
+        // The values go straight into the builder rather than into a `Vec` the array is then
+        // built out of: an error only means the half-built array is dropped, which is no reason
+        // to hold every value of a whole column a second time.
+        let iter = iter.into_iter();
+        let mut builder = PlBinaryViewArrayBuilder::with_capacity(iter.size_hint().0);
+        for value in iter {
+            builder.push_value_ignore_validity(value?.into_bytes().as_ref());
+        }
 
-        Ok(Self::from_values_iter(values))
+        Ok(builder.freeze())
     }
 }
 
@@ -544,13 +548,19 @@ impl<V: IntoBytes> ArrayFromIter<Option<V>> for PlBinaryViewArray {
     fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<V>, E>>>(
         iter: I,
     ) -> Result<Self, E> {
-        // As above: the values are laid out before any view is written.
-        let values = iter
-            .into_iter()
-            .map(|value| Ok(value?.map(IntoBytes::into_bytes)))
-            .collect::<Result<Vec<_>, E>>()?;
+        // As above: the builder is written into directly rather than through a `Vec`.
+        let iter = iter.into_iter();
+        let mut builder = PlBinaryViewArrayBuilder::with_capacity(iter.size_hint().0);
+        for value in iter {
+            builder.push(
+                value?
+                    .map(IntoBytes::into_bytes)
+                    .as_ref()
+                    .map(AsRef::as_ref),
+            );
+        }
 
-        Ok(values.into_iter().collect())
+        Ok(builder.freeze())
     }
 }
 
@@ -650,5 +660,54 @@ mod test {
                 );
             }
         }
+    }
+
+    /// The fallible collect of a view array builds the views as it goes rather than laying the
+    /// values out in a `Vec` first, so it is checked against the infallible one it mirrors —
+    /// including that it stops at the first error and that a value too long to be inlined into
+    /// its own view still reads back.
+    #[test]
+    fn fallible_view_collect_answers_as_the_infallible_one_does() {
+        let values: Vec<Vec<u8>> = (0..100u8)
+            .map(|i| vec![i; if i % 7 == 0 { 40 } else { 3 }])
+            .collect();
+
+        let plain: PlBinaryViewArray = values.iter().map(|v| v.as_slice()).collect_arr();
+        let fallible: PlBinaryViewArray = values
+            .iter()
+            .map(|v| Ok::<_, ()>(v.as_slice()))
+            .try_collect_arr()
+            .unwrap();
+        assert_eq!(fallible.len(), plain.len());
+        assert_eq!(
+            fallible.values_iter().collect::<Vec<_>>(),
+            plain.values_iter().collect::<Vec<_>>()
+        );
+
+        // The `Option` collect carries the mask through the same builder.
+        let masked: PlBinaryViewArray = values
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (i % 3 != 0).then_some(v.as_slice()))
+            .collect_arr();
+        let fallible: PlBinaryViewArray = values
+            .iter()
+            .enumerate()
+            .map(|(i, v)| Ok::<_, ()>((i % 3 != 0).then_some(v.as_slice())))
+            .try_collect_arr()
+            .unwrap();
+        assert_eq!(fallible.null_count(), masked.null_count());
+        assert_eq!(
+            fallible.iter().collect::<Vec<_>>(),
+            masked.iter().collect::<Vec<_>>()
+        );
+
+        // An error anywhere is the answer, and nothing built before it is handed back.
+        let failed: Result<PlBinaryViewArray, usize> = values
+            .iter()
+            .enumerate()
+            .map(|(i, v)| if i == 13 { Err(i) } else { Ok(v.as_slice()) })
+            .try_collect_arr();
+        assert_eq!(failed.err(), Some(13));
     }
 }
