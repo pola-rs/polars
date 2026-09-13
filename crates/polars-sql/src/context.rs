@@ -1531,7 +1531,7 @@ impl SQLContext {
     /// same placeholder, so every clause of the block refers to one column.
     pub(crate) fn register_grouping_call(&mut self, args: Vec<SQLExpr>) -> PlSmallStr {
         let calls = &mut self.group_scope.grouping_calls;
-        let placeholder = match calls.iter().find(|c| c.args == args) {
+        match calls.iter().find(|c| c.args == args) {
             Some(call) => call.placeholder.clone(),
             None => {
                 let placeholder = new_placeholder();
@@ -1541,8 +1541,7 @@ impl SQLContext {
                 });
                 placeholder
             },
-        };
-        placeholder
+        }
     }
 
     /// The partition column of the current block's whole-frame windows.
