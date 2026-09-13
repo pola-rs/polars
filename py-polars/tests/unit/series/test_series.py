@@ -71,6 +71,44 @@ def test_cum_agg_with_infs() -> None:
     assert_series_equal(s.cum_max(), pl.Series([float("-inf"), 0.0, 1.0]))
 
 
+def test_cum_min_max_over_a_chunk_that_repeats_one_element() -> None:
+    # The running max or min of a chunk that repeats one element is that element
+    # again, so the answer comes off the repeat and stays a repeat rather than
+    # being written out one element at a time.
+    cases: list[tuple[PolarsDataType, Any]] = [
+        (pl.Int64, 5),
+        (pl.Int32, -1),
+        (pl.UInt8, 200),
+        (pl.Float64, 1.5),
+        (pl.Float64, float("nan")),
+        (pl.Boolean, True),
+        (pl.Boolean, False),
+        (pl.Datetime("us"), datetime(2020, 1, 2, 3, 4, 5)),
+    ]
+    mask = pl.Series([True, False, True, True, False, True, True, True])
+    for dtype, value in cases:
+        repeated = pl.select(pl.repeat(value, 8, dtype=dtype).alias("a")).to_series()
+        masked = pl.select(
+            pl.when(mask).then(pl.repeat(value, 8, dtype=dtype)).alias("a")
+        ).to_series()
+
+        for shaped in (repeated, masked):
+            flat = pl.Series("a", shaped.to_list(), dtype=dtype)
+            for reverse in (False, True):
+                assert_series_equal(
+                    shaped.cum_max(reverse=reverse), flat.cum_max(reverse=reverse)
+                )
+                assert_series_equal(
+                    shaped.cum_min(reverse=reverse), flat.cum_min(reverse=reverse)
+                )
+
+    # A million rows repeating one element answer off that element rather than off a
+    # column of a million copies of it.
+    wide = pl.select(pl.repeat(7, 1_000_000, dtype=pl.Int64).alias("a"))
+    assert wide.select(pl.col("a").cum_max().alias("o")).estimated_size() < 1024
+    assert wide.select(pl.col("a").cum_min().alias("o")).estimated_size() < 1024
+
+
 def test_cum_min_max_bool() -> None:
     s = pl.Series("a", [None, True, True, None, False, None, True, False, False, None])
     assert_series_equal(s.cum_min().cast(pl.Int32), s.cast(pl.Int32).cum_min())

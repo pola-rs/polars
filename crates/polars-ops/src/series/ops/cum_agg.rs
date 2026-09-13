@@ -74,6 +74,31 @@ where
     out.with_name(ca.name().clone())
 }
 
+/// The running max or min of a chunk that repeats one element is that element again: `Some(v)`
+/// where the element is there and `None` where the mask says it is not, which is the chunk
+/// itself. Answering it off the repeat keeps the repeat, where the scan below would read the
+/// one element out once per element to write the same column back.
+fn cum_extremum_of_repeated_element<T>(
+    ca: &ChunkedArray<T>,
+    init: Option<T::Native>,
+) -> Option<ChunkedArray<T>>
+where
+    T: PolarsNumericType,
+{
+    // An `init` of its own can beat the element the chunk repeats, which is a different answer.
+    if init.is_some() {
+        return None;
+    }
+    let [chunk] = ca.chunks().as_slice() else {
+        return None;
+    };
+    let arr: &PlPrimitiveArray<T::Native> = chunk.as_any().downcast_ref().unwrap();
+    // The values axis alone answers this: a mask over it only turns elements into the nulls
+    // the scan would write there anyway.
+    arr.scalar_value_ignore_validity()?;
+    Some(ca.clone())
+}
+
 fn cum_max_numeric<T>(
     ca: &ChunkedArray<T>,
     reverse: bool,
@@ -84,6 +109,10 @@ where
     T::Native: MinMax + Bounded,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
+    if let Some(out) = cum_extremum_of_repeated_element(ca, init) {
+        return out;
+    }
+
     let init = init.unwrap_or(if T::Native::is_float() {
         T::Native::nan_value()
     } else {
@@ -102,12 +131,30 @@ where
     T::Native: MinMax + Bounded,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
+    if let Some(out) = cum_extremum_of_repeated_element(ca, init) {
+        return out;
+    }
+
     let init = init.unwrap_or(if T::Native::is_float() {
         T::Native::nan_value()
     } else {
         Bounded::max_value()
     });
     cum_scan_numeric(ca, reverse, init, det_min)
+}
+
+/// A chunk that repeats one bit runs its max or min over that bit alone, which is the chunk
+/// again: `init` is the only thing that can beat it, and both callers answer the `init` that
+/// does ahead of this.
+fn cum_extremum_of_repeated_bit(ca: &BooleanChunked) -> Option<BooleanChunked> {
+    let [chunk] = ca.chunks().as_slice() else {
+        return None;
+    };
+    let arr: &PlBooleanArray = chunk.as_any().downcast_ref().unwrap();
+    // The values axis alone answers this: a mask over it only turns elements into the nulls
+    // the scans below would write there anyway.
+    arr.scalar_value_ignore_validity()?;
+    Some(ca.clone())
 }
 
 fn cum_max_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> BooleanChunked {
@@ -130,6 +177,11 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
                     .collect(),
             )
         };
+    }
+
+    // `init` is `None` or `Some(false)` here, and neither beats the bit the chunk repeats.
+    if let Some(out) = cum_extremum_of_repeated_bit(ca) {
+        return out;
     }
 
     let mut out;
@@ -178,6 +230,11 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
                     .collect(),
             )
         };
+    }
+
+    // `init` is `None` or `Some(true)` here, and neither beats the bit the chunk repeats.
+    if let Some(out) = cum_extremum_of_repeated_bit(ca) {
+        return out;
     }
 
     let mut out;
