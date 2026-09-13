@@ -2678,7 +2678,7 @@ impl SQLFunctionVisitor<'_> {
         // Apply window spec; under a GROUP BY an empty window still has to be
         // told apart from a group aggregate.
         Ok(match (partition_by, order_by) {
-            (None, None) if self.ctx.grouped_block => {
+            (None, None) if self.ctx.group_scope.grouped => {
                 expr.over([col(self.ctx.whole_frame_partition())])?
             },
             (None, None) => expr,

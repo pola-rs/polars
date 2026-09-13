@@ -5,6 +5,7 @@ use polars_lazy::prelude::*;
 use polars_plan::plans::typed_lit;
 use polars_plan::plans::visitor::{RewriteRecursion, RewritingVisitor, TreeWalker};
 use polars_plan::utils::has_expr;
+use polars_utils::aliases::PlIndexSet;
 use polars_utils::{format_pl_smallstr, unique_column_name};
 use sqlparser::ast::Expr as SQLExpr;
 
@@ -99,7 +100,7 @@ pub(crate) fn expand_grouping_sets(items: &[SQLExpr]) -> PolarsResult<Option<Exp
         return Ok(None);
     }
 
-    let mut keys: Vec<SQLExpr> = Vec::new();
+    let mut keys: PlIndexSet<SQLExpr> = PlIndexSet::default();
     let mut sets: Vec<Vec<usize>> = vec![Vec::new()];
     for (item, alts) in items.iter().zip(alternatives) {
         let alts = alts.unwrap_or_else(|| vec![vec![item.clone()]]);
@@ -115,10 +116,7 @@ pub(crate) fn expand_grouping_sets(items: &[SQLExpr]) -> PolarsResult<Option<Exp
             for alt in &alts {
                 let mut set = base.clone();
                 for e in alt {
-                    let idx = keys.iter().position(|k| k == e).unwrap_or_else(|| {
-                        keys.push(e.clone());
-                        keys.len() - 1
-                    });
+                    let (idx, _) = keys.insert_full(e.clone());
                     if !set.contains(&idx) {
                         set.push(idx);
                     }
@@ -128,7 +126,10 @@ pub(crate) fn expand_grouping_sets(items: &[SQLExpr]) -> PolarsResult<Option<Exp
         }
         sets = expanded;
     }
-    Ok(Some(ExpandedGroupBy { keys, sets }))
+    Ok(Some(ExpandedGroupBy {
+        keys: keys.into_iter().collect(),
+        sets,
+    }))
 }
 
 /// Merge keys that resolved to the same expression, remapping the sets onto the
@@ -168,6 +169,8 @@ pub(crate) fn canonicalize_keys(
 pub(crate) struct GroupingSets {
     /// Canonical key expressions, as handed to `group_by`.
     keys: Vec<Expr>,
+    /// The keys without their output alias, for matching by expression.
+    stripped_keys: Vec<Expr>,
     /// One entry per grouping-set occurrence, holding the active canonical keys.
     sets: Vec<Vec<usize>>,
     /// Each `GROUPING()` placeholder with the canonical keys of its arguments.
@@ -182,7 +185,7 @@ impl GroupingSets {
         calls: &[GroupingCall],
         resolved_args: Vec<Vec<Expr>>,
     ) -> PolarsResult<Self> {
-        let stripped: Vec<Expr> = keys.iter().map(strip_outer_alias).collect();
+        let stripped_keys: Vec<Expr> = keys.iter().map(strip_outer_alias).collect();
         let calls = calls
             .iter()
             .zip(resolved_args)
@@ -192,7 +195,7 @@ impl GroupingSets {
                     .zip(&call.args)
                     .map(|(arg, sql_arg)| {
                         let arg = strip_outer_alias(arg);
-                        stripped.iter().position(|k| *k == arg).ok_or_else(|| {
+                        stripped_keys.iter().position(|k| *k == arg).ok_or_else(|| {
                             polars_err!(SQLSyntax: "GROUPING() argument '{}' does not appear in the GROUP BY clause", sql_arg)
                         })
                     })
@@ -200,7 +203,12 @@ impl GroupingSets {
                 Ok((call.placeholder.clone(), indices))
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        Ok(Self { keys, sets, calls })
+        Ok(Self {
+            keys,
+            stripped_keys,
+            sets,
+            calls,
+        })
     }
 
     pub(crate) fn placeholders(&self) -> impl Iterator<Item = &PlSmallStr> {
@@ -238,10 +246,10 @@ impl GroupingSets {
             }
         }
         let keys = self
-            .keys
+            .stripped_keys
             .iter()
             .zip(key_schema.iter_names())
-            .map(|(key, name)| (strip_outer_alias(key), name))
+            .map(|(key, name)| (key.clone(), name))
             .filter(|(key, _)| !matches!(key, Expr::Column(_)))
             .collect::<Vec<_>>();
         if keys.is_empty() {
@@ -276,14 +284,14 @@ impl GroupingSets {
         let group_keys: Vec<Expr> = self
             .keys
             .iter()
+            .zip(&self.stripped_keys)
             .zip(key_schema.iter_names())
-            .map(|(key, name)| {
-                let inner = strip_outer_alias(key);
+            .map(|((key, inner), name)| {
                 if matches!(inner, Expr::Column(_)) {
                     key.clone()
                 } else {
                     let hidden = unique_column_name();
-                    prepared.push(inner.alias(hidden.clone()));
+                    prepared.push(inner.clone().alias(hidden.clone()));
                     col(hidden).alias(name.clone())
                 }
             })

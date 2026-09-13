@@ -7,11 +7,11 @@ use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 use polars_plan::dsl::function_expr::StructFunction;
-use polars_plan::plans::visitor::TreeWalker;
+use polars_plan::plans::visitor::{TreeWalker, VisitRecursion, Visitor};
 use polars_plan::plans::{ArenaExprIter, ExprToIRContext, is_scalar_ae, to_expr_ir};
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
-use polars_utils::{UnitVec, format_pl_smallstr, unique_column_name};
+use polars_utils::{format_pl_smallstr, unique_column_name};
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
     Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg,
@@ -238,11 +238,17 @@ pub struct SQLContext {
     active_relations: PlHashSet<String>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
     pub(crate) named_windows: PlHashMap<String, WindowSpec>,
-    /// `GROUPING()` calls parsed in the query block being executed.
+    pub(crate) group_scope: GroupScope,
+}
+
+/// State of the query block being executed that its `GROUP BY` binds.
+#[derive(Clone, Default)]
+pub(crate) struct GroupScope {
+    /// `GROUPING()` calls parsed in the block.
     grouping_calls: Vec<GroupingCall>,
-    /// Whether the clause being parsed feeds the `GROUP BY` of its query block,
-    /// where windows must stay distinguishable from group aggregates.
-    pub(crate) grouped_block: bool,
+    /// Whether the clause being parsed feeds the `GROUP BY`, where windows must
+    /// stay distinguishable from group aggregates.
+    pub(crate) grouped: bool,
     /// Partition column standing for an empty `OVER ()` parsed in such a clause,
     /// until the window is separated from the group aggregates.
     whole_frame_partition: Option<PlSmallStr>,
@@ -260,9 +266,7 @@ impl Default for SQLContext {
             active_relations: Default::default(),
             joined_aliases: Default::default(),
             named_windows: Default::default(),
-            grouping_calls: Default::default(),
-            grouped_block: false,
-            whole_frame_partition: None,
+            group_scope: Default::default(),
             lp_arena: Default::default(),
             expr_arena: Default::default(),
         }
@@ -1525,11 +1529,12 @@ impl SQLContext {
     /// placeholder column that stands for its value. Repeating a call yields the
     /// same placeholder, so every clause of the block refers to one column.
     pub(crate) fn register_grouping_call(&mut self, args: Vec<SQLExpr>) -> Expr {
-        let placeholder = match self.grouping_calls.iter().find(|c| c.args == args) {
+        let calls = &mut self.group_scope.grouping_calls;
+        let placeholder = match calls.iter().find(|c| c.args == args) {
             Some(call) => call.placeholder.clone(),
             None => {
                 let placeholder = new_placeholder();
-                self.grouping_calls.push(GroupingCall {
+                calls.push(GroupingCall {
                     args,
                     placeholder: placeholder.clone(),
                 });
@@ -1539,10 +1544,10 @@ impl SQLContext {
         Expr::Column(placeholder)
     }
 
-    /// Execute the 'SELECT' part of the query.
     /// The partition column of the current block's whole-frame windows.
     pub(crate) fn whole_frame_partition(&mut self) -> PlSmallStr {
-        self.whole_frame_partition
+        self.group_scope
+            .whole_frame_partition
             .get_or_insert_with(|| {
                 format_pl_smallstr!("__POLARS_WHOLE_FRAME_{}", unique_column_name())
             })
@@ -1552,7 +1557,7 @@ impl SQLContext {
     /// Lower the whole-frame windows of a block that turned out to have no group
     /// keys back to their bare expression, as a non-grouped block parses them.
     fn resolve_whole_frame_windows(&self, expr: Expr) -> Expr {
-        let Some(partition) = &self.whole_frame_partition else {
+        let Some(partition) = &self.group_scope.whole_frame_partition else {
             return expr;
         };
         expr.map_expr(|e| match &e {
@@ -1569,22 +1574,27 @@ impl SQLContext {
     }
 
     fn contains_grouping_placeholder(&self, expr: &Expr) -> bool {
-        contains_grouping_placeholder(expr, self.grouping_calls.iter().map(|c| &c.placeholder))
+        contains_grouping_placeholder(
+            expr,
+            self.group_scope
+                .grouping_calls
+                .iter()
+                .map(|c| &c.placeholder),
+        )
     }
 
+    /// Execute the 'SELECT' part of the query.
     fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
-        // `GROUPING()` calls are scoped to the query block that binds them.
-        let outer_grouping_calls = std::mem::take(&mut self.grouping_calls);
-        let outer_whole_frame_partition = self.whole_frame_partition.take();
-        let outer_grouped_block = self.grouped_block;
-        self.grouped_block = match &select_stmt.group_by {
-            GroupByExpr::Expressions(exprs, _) => !exprs.is_empty(),
-            GroupByExpr::All(_) => true,
+        let scope = GroupScope {
+            grouped: match &select_stmt.group_by {
+                GroupByExpr::Expressions(exprs, _) => !exprs.is_empty(),
+                GroupByExpr::All(_) => true,
+            },
+            ..Default::default()
         };
+        let outer_scope = std::mem::replace(&mut self.group_scope, scope);
         let result = self.execute_select_block(select_stmt, query);
-        self.grouping_calls = outer_grouping_calls;
-        self.whole_frame_partition = outer_whole_frame_partition;
-        self.grouped_block = outer_grouped_block;
+        self.group_scope = outer_scope;
         result
     }
 
@@ -1935,11 +1945,11 @@ impl SQLContext {
                 polars_bail!(SQLSyntax: "HAVING clause not valid outside of GROUP BY; found:\n{:?}", select_stmt.having);
             };
             polars_ensure!(
-                self.grouping_calls.is_empty(),
+                self.group_scope.grouping_calls.is_empty(),
                 SQLSyntax: "GROUPING() requires a GROUP BY clause"
             );
             // `GROUP BY ALL` may infer no keys; nothing here runs in a group context.
-            self.grouped_block = false;
+            self.group_scope.grouped = false;
             projections = projections
                 .into_iter()
                 .map(|e| self.resolve_whole_frame_windows(e))
@@ -2079,7 +2089,7 @@ impl SQLContext {
                 grouping.as_ref(),
             )?;
             // The remaining clauses run on the aggregated frame.
-            self.grouped_block = false;
+            self.group_scope.grouped = false;
             let visible_cols: Vec<_> = output_names.iter().cloned().map(col).collect();
             lf = self.process_order_by(lf, &order_by, Some(&visible_cols))?;
 
@@ -2250,10 +2260,10 @@ impl SQLContext {
                 Some(s) => s,
             };
             // Parsing registers any `GROUPING()` call; subqueries keep their own registry.
-            let n_grouping_calls = self.grouping_calls.len();
+            let n_grouping_calls = self.group_scope.grouping_calls.len();
             let reject_grouping = |ctx: &Self| {
                 polars_ensure!(
-                    ctx.grouping_calls.len() == n_grouping_calls,
+                    ctx.group_scope.grouping_calls.len() == n_grouping_calls,
                     SQLSyntax: "GROUPING() is not allowed in the WHERE clause"
                 );
                 Ok(())
@@ -3071,11 +3081,11 @@ impl SQLContext {
         }
         let sets = match grouping_sets {
             Some(sets) => sets,
-            None if self.grouping_calls.is_empty() => return Ok(None),
+            None if self.group_scope.grouping_calls.is_empty() => return Ok(None),
             None => vec![(0..group_by_keys.len()).collect()],
         };
-        // Restored below: later parses of the same calls must find these registrations.
-        let calls = std::mem::take(&mut self.grouping_calls);
+        // Later parses of the same calls must still find these registrations.
+        let calls = std::mem::take(&mut self.group_scope.grouping_calls);
         let resolved_args = calls
             .iter()
             .map(|call| {
@@ -3085,11 +3095,11 @@ impl SQLContext {
                     .collect::<PolarsResult<Vec<_>>>()
             })
             .collect::<PolarsResult<Vec<_>>>();
-        self.grouping_calls = calls;
+        self.group_scope.grouping_calls = calls;
         let grouping = GroupingSets::new(
             group_by_keys.to_vec(),
             sets,
-            &self.grouping_calls,
+            &self.group_scope.grouping_calls,
             resolved_args?,
         )?;
         Ok(Some(grouping))
@@ -3115,17 +3125,21 @@ impl SQLContext {
         // Columns the parsed expressions may name before the aggregation resolves them:
         // the whole-frame window partition, and `GROUPING()` values, which are
         // per-set constants the projections treat like group keys.
-        let mut extended = Arc::unwrap_or_clone(schema_before);
-        if let Some(partition) = &self.whole_frame_partition {
-            extended.with_column(partition.clone(), DataType::Int32);
-        }
-        if let Some(grouping) = grouping {
-            for placeholder in grouping.placeholders() {
+        let whole_frame_partition = self.group_scope.whole_frame_partition.clone();
+        let placeholders: Vec<PlSmallStr> = grouping
+            .map(|g| g.placeholders().cloned().collect())
+            .unwrap_or_default();
+        if whole_frame_partition.is_some() || !placeholders.is_empty() {
+            let mut extended = Arc::unwrap_or_clone(schema_before);
+            if let Some(partition) = &whole_frame_partition {
+                extended.with_column(partition.clone(), DataType::Int32);
+            }
+            for placeholder in &placeholders {
                 extended.with_column(placeholder.clone(), DataType::Int64);
                 group_by_keys_schema.with_column(placeholder.clone(), DataType::Int64);
             }
+            schema_before = Arc::new(extended);
         }
-        schema_before = Arc::new(extended);
 
         // Disambiguate SELECT-list output-name collisions.
         let projections = disambiguate_output_names(
@@ -3147,7 +3161,6 @@ impl SQLContext {
         let mut aliased_aggregations: PlHashMap<PlSmallStr, PlSmallStr> = PlHashMap::new();
         let mut aggregation_projection = Vec::with_capacity(projections.len());
         let mut window_projection: Vec<Expr> = Vec::new();
-        let mut window_agg_count: usize = 0;
         let mut projection_overrides = PlHashMap::with_capacity(projections.len());
         let mut projection_aliases = PlHashSet::new();
         let mut group_key_aliases = PlHashSet::new();
@@ -3164,7 +3177,8 @@ impl SQLContext {
             })
             .collect();
 
-        let whole_frame_partition = self.whole_frame_partition.clone();
+        // ORDER BY extras were parsed above and may have registered the partition.
+        let whole_frame_partition = self.group_scope.whole_frame_partition.clone();
         let splitter = GroupContextSplitter {
             schema: &schema_before,
             keys: &group_by_keys_schema,
@@ -3219,8 +3233,7 @@ impl SQLContext {
                 // combining aggregates with grouped keys or `GROUPING()` values.
                 let bound = bind_keys(strip_outer_alias(e));
                 if splitter.needs_post_aggregation(&bound) {
-                    let post_agg_expr =
-                        splitter.hoist(bound, &mut aggregation_projection, &mut window_agg_count);
+                    let post_agg_expr = splitter.hoist(bound, &mut aggregation_projection);
                     window_projection.push(post_agg_expr.alias(field.name.clone()));
                     continue;
                 }
@@ -3272,8 +3285,7 @@ impl SQLContext {
         for (name, e) in &order_by_aggs {
             let bound = bind_keys(strip_outer_alias(e));
             if splitter.needs_post_aggregation(&bound) {
-                let rest =
-                    splitter.hoist(bound, &mut aggregation_projection, &mut window_agg_count);
+                let rest = splitter.hoist(bound, &mut aggregation_projection);
                 window_projection.push(rest.alias(name.clone()));
             } else {
                 aggregation_projection.push(e.clone());
@@ -3300,7 +3312,7 @@ impl SQLContext {
                 // HAVING runs on the combined rows, where it can also see `GROUPING()`.
                 let having = having.map(|having| {
                     let having = grouping.bind_stored_keys(having, &key_schema);
-                    splitter.hoist(having, &mut aggregation_projection, &mut window_agg_count)
+                    splitter.hoist(having, &mut aggregation_projection)
                 });
                 let agg_names = aggregation_projection
                     .iter()
@@ -3369,15 +3381,17 @@ impl SQLContext {
         // Include original GROUP BY columns for ORDER BY access (if aliased).
         let mut output_projection = final_projection;
         let mut output_names: Vec<PlSmallStr> = projection_schema.iter_names_cloned().collect();
+        let mut push_hidden = |expr: Expr, name: PlSmallStr| {
+            output_projection.push(expr);
+            output_names.push(name);
+        };
         for (name, _) in &order_by_aggs {
-            output_projection.push(col(name.clone()));
-            output_names.push(name.clone());
+            push_hidden(col(name.clone()), name.clone());
         }
         for key_name in group_by_keys_schema.iter_names() {
             if !projection_schema.contains(key_name) {
                 // Original col name not in output - add for ORDER BY access
-                output_projection.push(col(key_name.clone()));
-                output_names.push(key_name.clone());
+                push_hidden(col(key_name.clone()), key_name.clone());
             } else if group_by_keys.iter().any(|k| is_simple_col_ref(k, key_name)) {
                 // Original col name in output - check if cross-aliased
                 let is_cross_aliased = projection_schema
@@ -3387,8 +3401,10 @@ impl SQLContext {
                 if is_cross_aliased {
                     // Add original name under a prefixed alias for subsequent ORDER BY resolution
                     let internal_name = format_pl_smallstr!("__POLARS_ORIG_{}", key_name);
-                    output_projection.push(col(key_name.clone()).alias(internal_name.clone()));
-                    output_names.push(internal_name);
+                    push_hidden(
+                        col(key_name.clone()).alias(internal_name.clone()),
+                        internal_name,
+                    );
                 }
             }
         }
@@ -4090,38 +4106,54 @@ impl GroupContextSplitter<'_> {
     /// Whether `expr` must run after aggregation: it holds a window, or combines
     /// a reduction with a grouped key.
     fn needs_post_aggregation(&self, expr: &Expr) -> bool {
-        fn walk(this: &GroupContextSplitter<'_>, e: &Expr, saw_reduction: &mut bool) -> bool {
-            match e {
-                Expr::Over { .. } => true,
-                Expr::Column(name) => this.keys.contains(name),
-                _ if this.is_reduction(e) => {
-                    *saw_reduction = true;
-                    false
-                },
-                _ => {
-                    let mut children = UnitVec::new();
-                    e.nodes(&mut children);
-                    // Every child is visited so that no reduction goes unnoticed.
-                    let mut found = false;
-                    for c in children.iter() {
-                        found |= walk(this, c, saw_reduction);
-                    }
-                    found
-                },
+        struct Finder<'a, 'b> {
+            splitter: &'a GroupContextSplitter<'b>,
+            saw_reduction: bool,
+            found: bool,
+        }
+        impl Visitor for Finder<'_, '_> {
+            type Node = Expr;
+            type Arena = ();
+
+            fn pre_visit(&mut self, node: &Expr, _: &()) -> PolarsResult<VisitRecursion> {
+                // Siblings are still visited so that no reduction goes unnoticed.
+                Ok(match node {
+                    Expr::Over { .. } => {
+                        self.found = true;
+                        VisitRecursion::Skip
+                    },
+                    Expr::Column(name) => {
+                        self.found |= self.splitter.keys.contains(name);
+                        VisitRecursion::Skip
+                    },
+                    _ if self.splitter.is_reduction(node) => {
+                        self.saw_reduction = true;
+                        VisitRecursion::Skip
+                    },
+                    _ => VisitRecursion::Continue,
+                })
             }
         }
-        let mut saw_reduction = false;
-        let key_reachable = walk(self, expr, &mut saw_reduction);
-        key_reachable && (saw_reduction || has_expr(expr, |e| matches!(e, Expr::Over { .. })))
+        let mut finder = Finder {
+            splitter: self,
+            saw_reduction: false,
+            found: false,
+        };
+        let _ = expr.visit(&mut finder, &());
+        finder.found && (finder.saw_reduction || has_expr(expr, |e| matches!(e, Expr::Over { .. })))
     }
 
     /// Replace every reduction in `expr` with a reference to a hoisted aggregation
     /// output, collecting the hoisted aggregates into `agg_out`.
-    ///
-    /// Inside a window function's body only aggregates over the input are hoisted:
-    /// in `avg(sum(x)) OVER (...)`, `sum(x)` is hoisted and `avg(...)` runs on the
-    /// aggregated frame, and a `COUNT(*)` there counts the window's rows.
-    fn hoist(&self, expr: Expr, agg_out: &mut Vec<Expr>, counter: &mut usize) -> Expr {
+    fn hoist(&self, expr: Expr, agg_out: &mut Vec<Expr>) -> Expr {
+        self.hoist_rec(expr, false, agg_out)
+    }
+
+    /// Inside a window function's body a reduction of a hoisted output stays on the
+    /// aggregated frame (`avg(sum(x)) OVER (...)` hoists `sum(x)` only), and a
+    /// `COUNT(*)` counts the window's rows, so there the reductions are found
+    /// bottom-up.
+    fn hoist_rec(&self, expr: Expr, in_window: bool, agg_out: &mut Vec<Expr>) -> Expr {
         match expr {
             Expr::Over {
                 function,
@@ -4129,71 +4161,52 @@ impl GroupContextSplitter<'_> {
                 order_by,
                 mapping,
             } => Expr::Over {
-                function: Arc::new(Self::hoist_in_window(
-                    Arc::unwrap_or_clone(function),
-                    agg_out,
-                    counter,
-                )),
+                function: Arc::new(self.hoist_rec(Arc::unwrap_or_clone(function), true, agg_out)),
                 partition_by: partition_by
                     .into_iter()
                     .map(|e| match e {
                         Expr::Column(name) if Some(&name) == self.whole_frame_partition => lit(1),
-                        e => self.hoist(e, agg_out, counter),
+                        e => self.hoist_rec(e, false, agg_out),
                     })
                     .collect(),
                 order_by: order_by.map(|(e, options)| {
                     (
-                        Arc::new(self.hoist(Arc::unwrap_or_clone(e), agg_out, counter)),
+                        Arc::new(self.hoist_rec(Arc::unwrap_or_clone(e), false, agg_out)),
                         options,
                     )
                 }),
                 mapping,
             },
-            e if self.is_reduction(&e) => Self::hoisted(e, agg_out, counter),
-            e => e
-                .map_children(&mut |c, _| Ok(self.hoist(c, agg_out, counter)), &mut ())
-                .unwrap(),
-        }
-    }
-
-    fn hoist_in_window(expr: Expr, agg_out: &mut Vec<Expr>, counter: &mut usize) -> Expr {
-        match expr {
-            Expr::Len => Expr::Len,
-            e @ Expr::Agg(_) => {
+            Expr::Len if in_window => Expr::Len,
+            e if !in_window && self.is_reduction(&e) => Self::hoisted(e, agg_out),
+            e => {
                 let e = e
                     .map_children(
-                        &mut |c, _| Ok(Self::hoist_in_window(c, agg_out, counter)),
+                        &mut |c, _| Ok(self.hoist_rec(c, in_window, agg_out)),
                         &mut (),
                     )
                     .unwrap();
-                // An aggregate over a hoisted aggregate runs on the aggregated frame.
-                if has_expr(
-                    &e,
-                    |inner| matches!(inner, Expr::Column(name) if name.starts_with(HOISTED_AGG_PREFIX)),
-                ) {
-                    e
+                let over_window_values = has_expr(&e, |inner| {
+                    matches!(inner, Expr::Len)
+                        || matches!(inner, Expr::Column(name) if name.starts_with(HOISTED_AGG_PREFIX))
+                });
+                if in_window && !over_window_values && self.is_reduction(&e) {
+                    Self::hoisted(e, agg_out)
                 } else {
-                    Self::hoisted(e, agg_out, counter)
+                    e
                 }
             },
-            e => e
-                .map_children(
-                    &mut |c, _| Ok(Self::hoist_in_window(c, agg_out, counter)),
-                    &mut (),
-                )
-                .unwrap(),
         }
     }
 
-    fn hoisted(e: Expr, agg_out: &mut Vec<Expr>, counter: &mut usize) -> Expr {
+    fn hoisted(e: Expr, agg_out: &mut Vec<Expr>) -> Expr {
         // An identical aggregate may appear in both the window body and its ORDER BY.
         let existing = agg_out.iter().find_map(|agg| match agg {
             Expr::Alias(inner, name) if **inner == e => Some(name.clone()),
             _ => None,
         });
         let name = existing.unwrap_or_else(|| {
-            let name = format_pl_smallstr!("{}{}", HOISTED_AGG_PREFIX, *counter);
-            *counter += 1;
+            let name = format_pl_smallstr!("{}{}", HOISTED_AGG_PREFIX, unique_column_name());
             agg_out.push(e.alias(name.clone()));
             name
         });
