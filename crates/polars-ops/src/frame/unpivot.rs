@@ -147,9 +147,7 @@ pub trait UnpivotDF: IntoDf {
         let columns = self_.columns();
 
         for value_column_name in &on {
-            for _ in 0..len {
-                variable_col.push_value(value_column_name.as_str());
-            }
+            variable_col.extend_repeated(value_column_name.as_str(), len);
             // ensure we go via the schema so we are O(1)
             // self.column() is linear
             // together with this loop that would make it O^2 over `on`

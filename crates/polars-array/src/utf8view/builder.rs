@@ -39,6 +39,15 @@ impl PlUtf8ViewArrayBuilder {
         self.0.push_value(value.as_bytes());
     }
 
+    /// Appends `value` as an element of its own, `repeats` times over.
+    ///
+    /// The bytes are copied in once and every element is a view over that one copy, where
+    /// [`push_value`](Self::push_value) in a loop copies them once per element.
+    #[inline]
+    pub fn extend_repeated(&mut self, value: &str, repeats: usize) {
+        self.0.extend_repeated(value.as_bytes(), repeats);
+    }
+
     /// Appends a null.
     #[inline]
     pub fn push_null(&mut self) {

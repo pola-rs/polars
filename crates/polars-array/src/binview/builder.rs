@@ -74,6 +74,20 @@ impl PlBinaryViewArrayBuilder {
         self.views.push(view);
     }
 
+    /// Appends `value` as an element of its own, `repeats` times over.
+    ///
+    /// The bytes are copied in once and every element is a view over that one copy, where
+    /// [`push_value`](Self::push_value) in a loop copies them once per element.
+    pub fn extend_repeated(&mut self, value: &[u8], repeats: usize) {
+        if repeats == 0 {
+            return;
+        }
+
+        let view = self.copy_value(value);
+        self.views.resize(self.views.len() + repeats, view);
+        self.validity.extend_constant(repeats, true);
+    }
+
     /// Appends a null.
     pub fn push_null(&mut self) {
         self.views.push(View::default());
