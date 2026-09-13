@@ -22,6 +22,11 @@ pub(super) enum NumericOp {
 }
 
 impl NumericOp {
+    /// Whether the one value a right operand stands for is divided by.
+    pub(super) fn divides(&self) -> bool {
+        matches!(self, Self::Div | Self::Rem | Self::FloorDiv)
+    }
+
     pub(super) fn name(&self) -> &'static str {
         match self {
             Self::Add => "add",
@@ -258,6 +263,7 @@ pub(super) fn flatten_list_chunks(s: Series) -> Series {
 /// `None` where neither side repeats, or where both do — the pair they share is the whole answer
 /// then, which [`repeat_one_answer`] works out ahead of this.
 pub(super) fn read_repeated_side_as_one_element(
+    op: &NumericOp,
     lhs: &Series,
     rhs: &Series,
 ) -> Option<(Series, Series)> {
@@ -269,6 +275,11 @@ pub(super) fn read_repeated_side_as_one_element(
     let one = |s: &Series| s.slice(0, 1);
     match (repeats_one_element(lhs), repeats_one_element(rhs)) {
         (true, false) => Some((one(lhs), rhs.clone())),
+        // A single primitive divisor is divided by through the kernels that multiply by its
+        // reciprocal, where the leaves of a column divide by the value of each element. The two
+        // round the last bit of a float apart — a whole step apart, for the leaves that are
+        // multiples of the divisor — so a repeated divisor is left the column it is.
+        (false, true) if op.divides() && !rhs.dtype().is_nested() => None,
         (false, true) => Some((lhs.clone(), one(rhs))),
         _ => None,
     }

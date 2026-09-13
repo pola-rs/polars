@@ -1166,6 +1166,42 @@ where
     out.with_name(name.clone())
 }
 
+/// [`apply_binary_kernel_broadcast`] for a kernel whose scalar form answers differently from its
+/// flat one. See [`apply_binary_kernel_broadcast_single_owned`], which this is the borrowing
+/// twin of.
+pub fn apply_binary_kernel_broadcast_single<'l, 'r, L, R, O, K, LK, RK>(
+    lhs: &'l ChunkedArray<L>,
+    rhs: &'r ChunkedArray<R>,
+    kernel: K,
+    lhs_broadcast_kernel: LK,
+    rhs_broadcast_kernel: RK,
+) -> ChunkedArray<O>
+where
+    L: PolarsDataType,
+    R: PolarsDataType,
+    O: PolarsDataType,
+    K: Fn(&L::Array, &R::Array) -> O::Array,
+    LK: Fn(L::Physical<'l>, &R::Array) -> O::Array,
+    RK: Fn(&L::Array, R::Physical<'r>) -> O::Array,
+{
+    let name = lhs.name();
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    let out = match (lhs.len(), rhs.len()) {
+        (_, 1) if lhs.len() == length => match rhs.get(0) {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(rhs) => unary_kernel(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
+        },
+        (1, _) => match lhs.get(0) {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(lhs) => unary_kernel(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr)),
+        },
+        _ => binary_mut_with_options(lhs, rhs, |lhs, rhs| kernel(lhs, rhs), name.clone()),
+    };
+    out.with_name(name.clone())
+}
+
 /// [`apply_binary_kernel_broadcast`] for a kernel that takes its chunks by value.
 pub fn apply_binary_kernel_broadcast_owned<L, R, O, K, LK, RK>(
     lhs: ChunkedArray<L>,
@@ -1204,6 +1240,47 @@ where
         }
     } else {
         binary_owned(lhs, rhs, kernel)
+    };
+    out.with_name(name)
+}
+
+/// [`apply_binary_kernel_broadcast_owned`] for a kernel whose scalar form answers differently
+/// from its flat one.
+///
+/// The division kernels multiply by the reciprocal of the value they are handed, where the same
+/// division element by element divides — two different answers over the same values. Only a side
+/// that *is* one element reaches them here, which is the literal a column is divided by; a side
+/// that repeats one element stays the column it is, and the kernel behind `kernel` reads it as
+/// the one element it holds without rounding the answer any differently.
+pub fn apply_binary_kernel_broadcast_single_owned<L, R, O, K, LK, RK>(
+    lhs: ChunkedArray<L>,
+    rhs: ChunkedArray<R>,
+    kernel: K,
+    lhs_broadcast_kernel: LK,
+    rhs_broadcast_kernel: RK,
+) -> ChunkedArray<O>
+where
+    L: PolarsDataType,
+    R: PolarsDataType,
+    O: PolarsDataType,
+    K: Fn(L::Array, R::Array) -> O::Array,
+    for<'a> LK: Fn(L::Physical<'a>, R::Array) -> O::Array,
+    for<'a> RK: Fn(L::Array, R::Physical<'a>) -> O::Array,
+{
+    let name = lhs.name().to_owned();
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    let out = match (lhs.len(), rhs.len()) {
+        (_, 1) if lhs.len() == length => match rhs.get(0) {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(rhs) => unary_kernel_owned(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
+        },
+        (1, _) => match lhs.get(0) {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(lhs) => unary_kernel_owned(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr)),
+        },
+        _ => binary_owned(lhs, rhs, kernel),
     };
     out.with_name(name)
 }

@@ -122,6 +122,25 @@ pub trait PrimitiveArithmeticKernelImpl: NativeType {
     fn prim_true_div(lhs: PArr<Self>, rhs: PArr<Self>) -> POut<Self::TrueDivT>;
     fn prim_true_div_scalar(lhs: PArr<Self>, rhs: Self) -> POut<Self::TrueDivT>;
     fn prim_true_div_scalar_lhs(lhs: Self, rhs: PArr<Self>) -> POut<Self::TrueDivT>;
+
+    // The divisions again, by the one value a *repeated right operand* stands for.
+    //
+    // A kernel that divides by a literal is free to trade exactness for speed — the float ones
+    // multiply by the reciprocal — but a column that repeats a value has to answer what the same
+    // values laid out flat answer, element for element, so a type whose `_scalar` division is
+    // approximate divides here instead. The default is for the types whose already is exact.
+    fn prim_wrapping_floor_div_repeated(lhs: PArr<Self>, rhs: Self) -> POut<Self> {
+        Self::prim_wrapping_floor_div_scalar(lhs, rhs)
+    }
+    fn prim_wrapping_trunc_div_repeated(lhs: PArr<Self>, rhs: Self) -> POut<Self> {
+        Self::prim_wrapping_trunc_div_scalar(lhs, rhs)
+    }
+    fn prim_wrapping_mod_repeated(lhs: PArr<Self>, rhs: Self) -> POut<Self> {
+        Self::prim_wrapping_mod_scalar(lhs, rhs)
+    }
+    fn prim_true_div_repeated(lhs: PArr<Self>, rhs: Self) -> POut<Self::TrueDivT> {
+        Self::prim_true_div_scalar(lhs, rhs)
+    }
 }
 
 /// The kernels of [`PrimitiveArithmeticKernelImpl`], each behind its own dispatch.
@@ -138,9 +157,9 @@ impl<T: HasPrimitiveArithmeticKernel> ArithmeticKernel for PlPrimitiveArray<T> {
     fn wrapping_add(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_add, |l, r| T::prim_wrapping_add_scalar(r, l), T::prim_wrapping_add_scalar) }
     fn wrapping_sub(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_sub, T::prim_wrapping_sub_scalar_lhs, T::prim_wrapping_sub_scalar) }
     fn wrapping_mul(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_mul, |l, r| T::prim_wrapping_mul_scalar(r, l), T::prim_wrapping_mul_scalar) }
-    fn wrapping_floor_div(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_floor_div, T::prim_wrapping_floor_div_scalar_lhs, T::prim_wrapping_floor_div_scalar) }
-    fn wrapping_trunc_div(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_trunc_div, T::prim_wrapping_trunc_div_scalar_lhs, T::prim_wrapping_trunc_div_scalar) }
-    fn wrapping_mod(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_mod, T::prim_wrapping_mod_scalar_lhs, T::prim_wrapping_mod_scalar) }
+    fn wrapping_floor_div(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_floor_div, T::prim_wrapping_floor_div_scalar_lhs, T::prim_wrapping_floor_div_repeated) }
+    fn wrapping_trunc_div(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_trunc_div, T::prim_wrapping_trunc_div_scalar_lhs, T::prim_wrapping_trunc_div_repeated) }
+    fn wrapping_mod(self, rhs: Self) -> POut<T> { binary(self, rhs, T::prim_wrapping_mod, T::prim_wrapping_mod_scalar_lhs, T::prim_wrapping_mod_repeated) }
 
     fn wrapping_add_scalar(self, rhs: Self::Scalar) -> POut<T> { unary(self, |lhs| T::prim_wrapping_add_scalar(lhs, rhs)) }
     fn wrapping_sub_scalar(self, rhs: Self::Scalar) -> POut<T> { unary(self, |lhs| T::prim_wrapping_sub_scalar(lhs, rhs)) }
@@ -155,7 +174,7 @@ impl<T: HasPrimitiveArithmeticKernel> ArithmeticKernel for PlPrimitiveArray<T> {
 
     fn checked_mul_scalar(self, rhs: Self::Scalar) -> POut<T> { unary(self, |lhs| T::prim_checked_mul_scalar(lhs, rhs)) }
 
-    fn true_div(self, rhs: Self) -> POut<Self::TrueDivT> { binary(self, rhs, T::prim_true_div, T::prim_true_div_scalar_lhs, T::prim_true_div_scalar) }
+    fn true_div(self, rhs: Self) -> POut<Self::TrueDivT> { binary(self, rhs, T::prim_true_div, T::prim_true_div_scalar_lhs, T::prim_true_div_repeated) }
     fn true_div_scalar(self, rhs: Self::Scalar) -> POut<Self::TrueDivT> { unary(self, |lhs| T::prim_true_div_scalar(lhs, rhs)) }
     fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> POut<Self::TrueDivT> { unary(rhs, |rhs| T::prim_true_div_scalar_lhs(lhs, rhs)) }
 }

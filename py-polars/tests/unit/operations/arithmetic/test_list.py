@@ -1105,6 +1105,34 @@ def test_list_boolean_arithmetic_23146() -> None:
 
 @pytest.mark.parametrize(
     "dtype",
+    [pl.List(pl.Float64), pl.Array(pl.Float64, 3), pl.List(pl.Int64)],
+)
+@pytest.mark.parametrize("op", [operator.truediv, operator.floordiv, operator.mod])
+def test_dividing_a_nested_column_by_one_that_repeats_a_value(
+    dtype: PolarsDataType, op: Callable[[Any, Any], Any]
+) -> None:
+    # Dividing by the single value a column repeats goes through the kernels that
+    # multiply by its reciprocal, which answers a whole step out for the leaves that are
+    # exact multiples of it. A column that repeats a value is divided by as the column
+    # it is.
+    divisor = 49
+    element = [divisor, divisor * 2, divisor * 3]
+    a = pl.Series("a", [element] * 4, dtype=dtype)
+    inner = dtype.inner  # type: ignore[union-attr]
+
+    repeated = pl.select(
+        pl.repeat(pl.lit(divisor, dtype=inner), a.len()).alias("b")
+    ).to_series()
+    flat = pl.Series("b", [divisor] * a.len(), dtype=inner)
+
+    assert_series_equal(
+        pl.DataFrame([a, repeated]).select(op(pl.col("a"), pl.col("b"))).to_series(),
+        pl.DataFrame([a, flat]).select(op(pl.col("a"), pl.col("b"))).to_series(),
+    )
+
+
+@pytest.mark.parametrize(
+    "dtype",
     [
         pl.List(pl.Int64),
         pl.Array(pl.Int64, 3),

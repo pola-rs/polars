@@ -151,6 +151,12 @@ macro_rules! impl_unsigned_arith_kernel {
             fn prim_true_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> POut<Self::TrueDivT> {
                 prim_unary_values(rhs, |x| lhs as f64 / x as f64)
             }
+
+            // A repeated divisor divides, where the `_scalar` kernel above multiplies by the
+            // reciprocal: the flat column of the same values answers the division.
+            fn prim_true_div_repeated(lhs: PArr<$T>, rhs: $T) -> POut<Self::TrueDivT> {
+                prim_unary_values(lhs, |x| x as f64 / rhs as f64)
+            }
         }
     };
 }

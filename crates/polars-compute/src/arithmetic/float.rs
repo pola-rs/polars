@@ -4,6 +4,16 @@ use polars_utils::float16::pf16;
 use super::{PArr, POut, PrimitiveArithmeticKernelImpl};
 use crate::arity::{prim_binary_values, prim_unary_values};
 
+/// Whether `v` is `-0.0`, the zero that leaves a float alone when it is added to it.
+fn is_negative_zero<T>(v: T) -> bool
+where
+    T: Zero + One + PartialOrd + std::ops::Div<Output = T> + Copy,
+{
+    // A division tells the two zeros apart without a `f32`/`f64`/`pf16` method the three of them
+    // would each have to spell: one over `-0.0` is negative infinity.
+    v == T::zero() && T::one() / v < T::zero()
+}
+
 macro_rules! impl_float_arith_kernel {
     ($T:ty) => {
         impl PrimitiveArithmeticKernelImpl for $T {
@@ -42,21 +52,27 @@ macro_rules! impl_float_arith_kernel {
             }
 
             fn prim_wrapping_add_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
-                if rhs == <$T>::zero() {
+                // `-0.0` is the zero addition leaves every element as it is; adding `0.0` turns
+                // a `-0.0` element into `+0.0`, so that one is added element by element.
+                if is_negative_zero(rhs) {
                     return lhs.into_array();
                 }
                 prim_unary_values(lhs, |x| x + rhs)
             }
 
             fn prim_wrapping_sub_scalar(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
-                if rhs == <$T>::zero() {
+                // The zeros the other way around: subtracting `0.0` leaves every element as it
+                // is, where subtracting `-0.0` is the addition of `0.0` above.
+                if rhs == <$T>::zero() && !is_negative_zero(rhs) {
                     return lhs.into_array();
                 }
                 Self::prim_wrapping_add_scalar(lhs, -rhs)
             }
 
             fn prim_wrapping_sub_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> POut<$T> {
-                if lhs == <$T>::zero() {
+                // `-0.0 - x` is `-x` for every `x`; `0.0 - x` answers `+0.0` for `x == 0.0`,
+                // which negation would sign the other way.
+                if is_negative_zero(lhs) {
                     Self::prim_wrapping_neg(rhs)
                 } else {
                     prim_unary_values(rhs, |x| lhs - x)
@@ -115,6 +131,25 @@ macro_rules! impl_float_arith_kernel {
 
             fn prim_true_div_scalar_lhs(lhs: $T, rhs: PArr<$T>) -> POut<Self::TrueDivT> {
                 prim_unary_values(rhs, |x| lhs / x)
+            }
+
+            // The four divisions by the one value a repeated operand stands for. Each divides
+            // where its `_scalar` twin multiplies by the reciprocal, which is a rounding apart
+            // for half the dividends and a whole step apart for the exact multiples of `rhs`.
+            fn prim_wrapping_floor_div_repeated(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
+                prim_unary_values(lhs, |x| (x / rhs).floor())
+            }
+
+            fn prim_wrapping_trunc_div_repeated(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
+                prim_unary_values(lhs, |x| (x / rhs).trunc())
+            }
+
+            fn prim_wrapping_mod_repeated(lhs: PArr<$T>, rhs: $T) -> POut<$T> {
+                prim_unary_values(lhs, |x| x - rhs * (x / rhs).floor())
+            }
+
+            fn prim_true_div_repeated(lhs: PArr<$T>, rhs: $T) -> POut<Self::TrueDivT> {
+                prim_unary_values(lhs, |x| x / rhs)
             }
         }
     };
