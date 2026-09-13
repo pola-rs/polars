@@ -1532,6 +1532,10 @@ impl SQLContext {
     }
 
     /// Execute the 'SELECT' part of the query.
+    fn contains_grouping_placeholder(&self, expr: &Expr) -> bool {
+        contains_grouping_placeholder(expr, self.grouping_calls.iter().map(|c| &c.placeholder))
+    }
+
     fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
         // `GROUPING()` calls are scoped to the query block that binds them.
         let outer_grouping_calls = std::mem::take(&mut self.grouping_calls);
@@ -1823,7 +1827,7 @@ impl SQLContext {
                 // Translate the group expressions, resolving ordinal values and SELECT aliases
                 group_by_keys = key_exprs
                     .iter()
-                    .map(|e| self.resolve_group_by_key(e, &projections, &schema))
+                    .map(|e| self.resolve_group_by_key(e, &projections, &schema, true))
                     .collect::<PolarsResult<_>>()?;
                 if let Some(expanded) = expanded {
                     let (keys, sets) = canonicalize_keys(group_by_keys, expanded.sets);
@@ -1840,7 +1844,7 @@ impl SQLContext {
                 projections.iter().for_each(|expr| match expr {
                     // immediately match the most common cases (col|agg|len|lit, optionally aliased).
                     Expr::Agg(_) | Expr::Len | Expr::Literal(_) => (),
-                    _ if contains_grouping_placeholder(expr) => (),
+                    _ if self.contains_grouping_placeholder(expr) => (),
                     Expr::Column(_) => group_by_keys.push(expr.clone()),
                     Expr::Alias(e, _)
                         if matches!(&**e, Expr::Agg(_) | Expr::Len | Expr::Literal(_)) => {},
@@ -1875,11 +1879,12 @@ impl SQLContext {
         for e in &group_by_keys {
             reject_unresolved_subquery(e, "GROUP BY")?;
             polars_ensure!(
-                !contains_grouping_placeholder(e),
+                !self.contains_grouping_placeholder(e),
                 SQLSyntax: "GROUPING() is not allowed in the GROUP BY clause"
             );
         }
 
+        let mut qualify_visible_cols: Option<Vec<PlSmallStr>> = None;
         lf = if group_by_keys.is_empty() && grouping_sets.is_none() {
             // The 'having' clause is only valid inside 'group by'
             if select_stmt.having.is_some() {
@@ -2025,13 +2030,21 @@ impl SQLContext {
             )?;
             lf = self.process_order_by(lf, &order_by, None)?;
 
-            // Drop any extra columns (eg: added to maintain ORDER BY access to original cols)
-            let output_cols: Vec<_> = output_names.into_iter().map(col).collect();
+            // Drop any extra columns (eg: added to maintain ORDER BY access to original cols),
+            // keeping `GROUPING()` values that QUALIFY still reads.
+            let mut output_cols: Vec<_> = output_names.iter().cloned().map(col).collect();
+            if let Some(grouping) = grouping.filter(|_| select_stmt.qualify.is_some()) {
+                output_cols.extend(grouping.placeholders().cloned().map(col));
+                qualify_visible_cols = Some(output_names);
+            }
             lf.select(&output_cols)
         };
 
         // Apply optional QUALIFY clause (filters on window functions).
         lf = self.process_qualify(lf, &select_stmt.qualify, &window_fn_columns)?;
+        if let Some(names) = qualify_visible_cols {
+            lf = lf.select(names.into_iter().map(col).collect::<Vec<_>>());
+        }
 
         // Apply optional DISTINCT clause.
         lf = match &select_stmt.distinct {
@@ -2946,25 +2959,34 @@ impl SQLContext {
         Ok((clause, extra))
     }
 
-    /// Translate one `GROUP BY` item, resolving ordinal values and SELECT aliases.
+    /// Translate one `GROUP BY` item, resolving SELECT aliases and, for the clause
+    /// itself, ordinal values. A `GROUPING()` argument is an expression to match
+    /// against the keys, so an integer there is a literal.
     fn resolve_group_by_key(
         &mut self,
         e: &SQLExpr,
         projections: &[Expr],
         schema: &Schema,
+        allow_ordinal: bool,
     ) -> PolarsResult<Expr> {
+        let resolve = |ctx: &mut Self, e: &SQLExpr| {
+            if allow_ordinal {
+                ctx.expr_or_ordinal(e, projections, None, Some(schema), "GROUP BY")
+            } else {
+                parse_sql_expr(e, ctx, Some(schema))
+            }
+        };
         match e {
-            SQLExpr::Identifier(ident) => resolve_select_alias(&ident.value, projections, schema)
-                .map_or_else(
-                    || self.expr_or_ordinal(e, projections, None, Some(schema), "GROUP BY"),
-                    Ok,
-                ),
+            SQLExpr::Identifier(ident) => {
+                match resolve_select_alias(&ident.value, projections, schema) {
+                    Some(aliased) => Ok(aliased),
+                    None => resolve(self, e),
+                }
+            },
             // Drop the alias that restores the unqualified name, so two
             // relations sharing a column name give distinct keys.
-            SQLExpr::CompoundIdentifier(_) => self
-                .expr_or_ordinal(e, projections, None, Some(schema), "GROUP BY")
-                .map(|e| strip_outer_alias(&e)),
-            _ => self.expr_or_ordinal(e, projections, None, Some(schema), "GROUP BY"),
+            SQLExpr::CompoundIdentifier(_) => resolve(self, e).map(|e| strip_outer_alias(&e)),
+            _ => resolve(self, e),
         }
     }
 
@@ -3006,7 +3028,7 @@ impl SQLContext {
             .map(|call| {
                 call.args
                     .iter()
-                    .map(|arg| self.resolve_group_by_key(arg, projections, schema))
+                    .map(|arg| self.resolve_group_by_key(arg, projections, schema, false))
                     .collect::<PolarsResult<Vec<_>>>()
             })
             .collect::<PolarsResult<Vec<_>>>();
@@ -3126,20 +3148,21 @@ impl SQLContext {
                 // Window functions run on the aggregated frame; only the aggregates
                 // inside them run in the group context. The same holds for anything
                 // combining aggregates with `GROUPING()` values.
-                if has_expr(e, |e| matches!(e, Expr::Over { .. }))
-                    || (grouping.is_some() && contains_grouping_placeholder(e))
-                {
+                let has_window = has_expr(e, |e| matches!(e, Expr::Over { .. }));
+                if has_window || grouping.is_some_and(|g| g.contains_placeholder(e)) {
                     let n_aggs = aggregation_projection.len();
                     let window_expr = hoist_group_aggregates(
                         strip_outer_alias(e),
-                        false,
+                        !has_window,
                         &mut aggregation_projection,
                         &mut window_agg_count,
                     );
-                    polars_ensure!(
-                        !aggregation_projection[n_aggs..].iter().any(contains_grouping_placeholder),
-                        SQLSyntax: "GROUPING() cannot be used inside an aggregate function"
-                    );
+                    if let Some(grouping) = grouping {
+                        polars_ensure!(
+                            !aggregation_projection[n_aggs..].iter().any(|e| grouping.contains_placeholder(e)),
+                            SQLSyntax: "GROUPING() cannot be used inside an aggregate function"
+                        );
+                    }
                     window_projection.push(window_expr.alias(field.name.clone()));
                     continue;
                 }
@@ -3188,7 +3211,20 @@ impl SQLContext {
             None => (lf, None),
         };
 
-        aggregation_projection.extend(order_by_aggs.iter().map(|(_, e)| e.clone()));
+        for (name, e) in &order_by_aggs {
+            match grouping {
+                Some(grouping) if grouping.contains_placeholder(e) => {
+                    let rest = hoist_group_aggregates(
+                        strip_outer_alias(e),
+                        true,
+                        &mut aggregation_projection,
+                        &mut window_agg_count,
+                    );
+                    window_projection.push(rest.alias(name.clone()));
+                },
+                _ => aggregation_projection.push(e.clone()),
+            }
+        }
 
         let aggregated = match grouping {
             None => {
@@ -3202,6 +3238,7 @@ impl SQLContext {
             Some(grouping) => {
                 // HAVING runs on the combined rows, where it can also see `GROUPING()`.
                 let having = having.map(|having| {
+                    let having = grouping.bind_stored_keys(having, &key_schema);
                     hoist_group_aggregates(
                         having,
                         true,
@@ -3227,9 +3264,15 @@ impl SQLContext {
             },
         };
 
+        let bind_keys = |e: Expr| match grouping {
+            Some(grouping) => grouping.bind_stored_keys(e, &key_schema),
+            None => e,
+        };
         let aggregated = if window_projection.is_empty() {
             aggregated
         } else {
+            let window_projection: Vec<Expr> =
+                window_projection.into_iter().map(bind_keys).collect();
             aggregated.with_columns(&window_projection)
         };
 
@@ -3265,7 +3308,7 @@ impl SQLContext {
                     }) {
                         col(name.clone())
                     } else {
-                        projection_expr.clone()
+                        bind_keys(projection_expr.clone())
                     }
                 } else {
                     col(name.clone())

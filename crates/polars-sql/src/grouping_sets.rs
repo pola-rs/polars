@@ -3,6 +3,7 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_plan::plans::typed_lit;
+use polars_plan::plans::visitor::{RewriteRecursion, RewritingVisitor, TreeWalker};
 use polars_plan::utils::has_expr;
 use polars_utils::{format_pl_smallstr, unique_column_name};
 use sqlparser::ast::Expr as SQLExpr;
@@ -33,14 +34,15 @@ pub(crate) fn new_placeholder() -> PlSmallStr {
     format_pl_smallstr!("{}{}", PLACEHOLDER_PREFIX, unique_column_name())
 }
 
-fn is_grouping_placeholder(name: &str) -> bool {
-    name.starts_with(PLACEHOLDER_PREFIX)
-}
-
-pub(crate) fn contains_grouping_placeholder(expr: &Expr) -> bool {
+/// Whether `expr` refers to any of the given `GROUPING()` placeholders.
+pub(crate) fn contains_grouping_placeholder<'a>(
+    expr: &Expr,
+    placeholders: impl Iterator<Item = &'a PlSmallStr>,
+) -> bool {
+    let placeholders: Vec<&PlSmallStr> = placeholders.collect();
     has_expr(
         expr,
-        |e| matches!(e, Expr::Column(name) if is_grouping_placeholder(name.as_str())),
+        |e| matches!(e, Expr::Column(name) if placeholders.contains(&name)),
     )
 }
 
@@ -203,6 +205,49 @@ impl GroupingSets {
 
     pub(crate) fn placeholders(&self) -> impl Iterator<Item = &PlSmallStr> {
         self.calls.iter().map(|(name, _)| name)
+    }
+
+    pub(crate) fn contains_placeholder(&self, expr: &Expr) -> bool {
+        contains_grouping_placeholder(expr, self.placeholders())
+    }
+
+    /// Point computed grouping expressions in a post-aggregation expression at the
+    /// columns holding their grouped values. A key is matched as a whole before its
+    /// children are visited, and aggregate arguments keep reading the original input.
+    pub(crate) fn bind_stored_keys(&self, expr: Expr, key_schema: &Schema) -> Expr {
+        struct Binder<'a> {
+            keys: Vec<(Expr, &'a PlSmallStr)>,
+        }
+        impl RewritingVisitor for Binder<'_> {
+            type Node = Expr;
+            type Arena = ();
+
+            fn pre_visit(&mut self, node: &Expr, _: &mut ()) -> PolarsResult<RewriteRecursion> {
+                Ok(match node {
+                    Expr::Agg(_) | Expr::Len => RewriteRecursion::Stop,
+                    _ if self.keys.iter().any(|(k, _)| k == node) => {
+                        RewriteRecursion::MutateAndStop
+                    },
+                    _ => RewriteRecursion::NoMutateAndContinue,
+                })
+            }
+
+            fn mutate(&mut self, node: Expr, _: &mut ()) -> PolarsResult<Expr> {
+                let (_, name) = self.keys.iter().find(|(k, _)| *k == node).unwrap();
+                Ok(col((*name).clone()))
+            }
+        }
+        let keys = self
+            .keys
+            .iter()
+            .zip(key_schema.iter_names())
+            .map(|(key, name)| (strip_outer_alias(key), name))
+            .filter(|(key, _)| !matches!(key, Expr::Column(_)))
+            .collect::<Vec<_>>();
+        if keys.is_empty() {
+            return expr;
+        }
+        expr.rewrite(&mut Binder { keys }, &mut ()).unwrap()
     }
 
     /// The `GROUPING()` bits of a call within one set: an argument the set omits

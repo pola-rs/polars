@@ -574,3 +574,74 @@ def test_grouping_sets_expansion_limit() -> None:
             "SELECT COUNT(*) FROM self GROUP BY CUBE(c0, c1, c2, c3, c4, c5, c6),"
             " CUBE(c7, c8, c9, c10, c11, c12)"
         ).collect()
+
+
+def test_count_star_mixed_with_grouping() -> None:
+    lf = pl.LazyFrame({"a": [1, 1, 2]})
+    assert_grouping_sets_matches(
+        lf,
+        """
+        SELECT a, COUNT(*) + GROUPING(a) AS n
+        FROM self GROUP BY ROLLUP(a) ORDER BY GROUPING(a), a
+        """,
+        expected={"a": [1, 2, None], "n": [2, 1, 4]},
+    )
+
+
+def test_computed_key_in_having_and_projections() -> None:
+    lf = pl.LazyFrame({"a": [0, 1], "b": [10, 20]})
+    for having in ["a + 1 = 2", "k = 2"]:
+        assert_grouping_sets_matches(
+            lf,
+            f"""
+            SELECT a + 1 AS k, (a + 1) * 10 AS k10, SUM(b) AS s
+            FROM self GROUP BY ROLLUP(a + 1) HAVING {having}
+            """,
+            expected={"k": [2], "k10": [20], "s": [20]},
+        )
+
+
+def test_order_by_aggregate_mixed_with_grouping() -> None:
+    lf = pl.LazyFrame({"a": [0, 1], "b": [10, 20]})
+    assert_grouping_sets_matches(
+        lf,
+        "SELECT a FROM self GROUP BY ROLLUP(a) ORDER BY SUM(b) + GROUPING(a)",
+        expected={"a": [0, 1, None]},
+    )
+
+
+def test_grouping_in_qualify() -> None:
+    lf = pl.LazyFrame({"a": [0, 1], "b": [10, 20]})
+    for select_grouping in ["", "GROUPING(a) AS g,"]:
+        out = lf.sql(
+            f"""
+            SELECT a, {select_grouping} SUM(b) AS s, RANK() OVER (ORDER BY SUM(b)) AS rn
+            FROM self GROUP BY ROLLUP(a)
+            QUALIFY rn >= 1 AND GROUPING(a) = 1
+            """
+        ).collect()
+        assert out.select("a", "s", "rn").to_dict(as_series=False) == {
+            "a": [None],
+            "s": [30],
+            "rn": [3],
+        }
+        assert "__POLARS" not in "".join(out.columns)
+
+
+def test_user_column_with_internal_prefix() -> None:
+    lf = pl.LazyFrame({"__POLARS_GROUPING_user": [1, 1, 2]})
+    assert_grouping_sets_matches(
+        lf,
+        """
+        SELECT __POLARS_GROUPING_user, COUNT(*) AS n
+        FROM self GROUP BY __POLARS_GROUPING_user ORDER BY __POLARS_GROUPING_user
+        """,
+        expected={"__POLARS_GROUPING_user": [1, 2], "n": [2, 1]},
+    )
+
+
+def test_grouping_argument_is_not_an_ordinal(sales: pl.LazyFrame) -> None:
+    with pytest.raises(SQLSyntaxError, match="does not appear in the GROUP BY clause"):
+        sales.sql(
+            "SELECT category, GROUPING(1) FROM self GROUP BY ROLLUP(category)"
+        ).collect()
