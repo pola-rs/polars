@@ -447,16 +447,10 @@ pub trait ListNameSpaceImpl: AsList {
         let index_typed_index = |idx: &Series| {
             let idx = idx.cast(&IDX_DTYPE).unwrap();
             {
+                // Gathering out of the one list every element reads is one gather, which
+                // `try_apply_amortized` runs once and hands to every element in turn.
                 list_ca
-                    .amortized_iter()
-                    .map(|s| {
-                        s.map(|s| {
-                            let s = s.as_ref();
-                            take_series(s, idx.clone(), null_on_oob)
-                        })
-                        .transpose()
-                    })
-                    .collect::<PolarsResult<ListChunked>>()
+                    .try_apply_amortized(|s| take_series(s.as_ref(), idx.clone(), null_on_oob))
                     .map(|mut ca| {
                         ca.rename(list_ca.name().clone());
                         ca.into_series()
@@ -503,22 +497,10 @@ pub trait ListNameSpaceImpl: AsList {
                             if min >= 0 {
                                 index_typed_index(&idx_ca)
                             } else {
-                                let mut out = {
-                                    list_ca
-                                        .amortized_iter()
-                                        .map(|opt_s| {
-                                            opt_s
-                                                .map(|s| {
-                                                    take_series(
-                                                        s.as_ref(),
-                                                        idx_ca.clone(),
-                                                        null_on_oob,
-                                                    )
-                                                })
-                                                .transpose()
-                                        })
-                                        .collect::<PolarsResult<ListChunked>>()?
-                                };
+                                // As above: one list read throughout is one gather.
+                                let mut out = list_ca.try_apply_amortized(|s| {
+                                    take_series(s.as_ref(), idx_ca.clone(), null_on_oob)
+                                })?;
                                 out.rename(list_ca.name().clone());
                                 Ok(out.into_series())
                             }

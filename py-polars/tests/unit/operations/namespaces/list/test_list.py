@@ -1767,3 +1767,32 @@ def test_is_in_reads_a_container_in_the_layout_it_is_in(dtype: pl.DataType) -> N
         assert df.select(pl.col("n").is_in(pl.col("a")))["n"].to_list() == [
             (i % 5) in value for i in range(n)
         ]
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        ([1, 2, 3], pl.List(pl.Int64)),
+        ([1, None, 3], pl.List(pl.Int64)),
+        (None, pl.List(pl.Int64)),
+        (["a", "b", "c"], pl.List(pl.String)),
+    ],
+)
+@pytest.mark.parametrize("indices", [[0, 2], [0], [2, 2, 0], [-1, 0]])
+def test_gather_out_of_one_repeated_list_gathers_once(
+    value: Any, dtype: pl.DataType, indices: list[int]
+) -> None:
+    # Gathering out of the one list every element reads is one gather, and the answer it
+    # gives stands for every element; it used to be gathered once per element.
+    n = 100_000
+    repeated = _repeats_one_list(value, dtype, n)
+    flat = pl.Series("a", [value] * n, dtype=dtype)
+    expr = pl.col("a").list.gather(indices, null_on_oob=True)
+
+    one = pl.DataFrame([repeated]).select(expr).to_series()
+    many = pl.DataFrame([flat]).select(expr).to_series()
+
+    assert_series_equal(one, many)
+    if value is not None:
+        # One answer held once, not one slot per element.
+        assert one.estimated_size() < many.estimated_size() // 100
