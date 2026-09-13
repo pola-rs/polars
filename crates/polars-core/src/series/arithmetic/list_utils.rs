@@ -247,6 +247,33 @@ pub(super) fn flatten_list_chunks(s: Series) -> Series {
     ca.into_series()
 }
 
+/// A side that repeats one element, read as the one element it is.
+///
+/// The operation is elementwise, so a side whose every element is the same one hands the other
+/// side that element for each of its own — which is what a side of a single element already means
+/// to the machinery below, and a single element is read where a repeated one is written out per
+/// element of the other side to be read. Only the side that does not repeat carries a length, and
+/// it is the length of the answer either way.
+///
+/// `None` where neither side repeats, or where both do — the pair they share is the whole answer
+/// then, which [`repeat_one_answer`] works out ahead of this.
+pub(super) fn read_repeated_side_as_one_element(
+    lhs: &Series,
+    rhs: &Series,
+) -> Option<(Series, Series)> {
+    // A side that is already a single element broadcasts over the other as it is.
+    if lhs.len() != rhs.len() {
+        return None;
+    }
+
+    let one = |s: &Series| s.slice(0, 1);
+    match (repeats_one_element(lhs), repeats_one_element(rhs)) {
+        (true, false) => Some((one(lhs), rhs.clone())),
+        (false, true) => Some((lhs.clone(), one(rhs))),
+        _ => None,
+    }
+}
+
 /// The answer of the one pair of elements both sides repeat, repeated in turn.
 ///
 /// The operation is elementwise, so where each side hands every element the same one — a chunk

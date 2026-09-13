@@ -85,6 +85,14 @@ impl NumericListOp {
                 return out;
             }
 
+            // One side repeats a single element, which every element of the other reads: it is
+            // read as the one element it is rather than written out once per element of the other
+            // to be read out of again.
+            if let Some((lhs, rhs)) = super::list_utils::read_repeated_side_as_one_element(lhs, rhs)
+            {
+                return self.execute(&lhs, &rhs);
+            }
+
             // `trim_to_normalized_offsets` ensures we don't perform excessive
             // memory allocation / compute on memory regions that have been
             // sliced out.

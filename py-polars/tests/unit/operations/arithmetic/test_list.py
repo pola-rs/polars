@@ -1119,9 +1119,10 @@ def test_list_boolean_arithmetic_23146() -> None:
 def test_arithmetic_over_a_chunk_that_repeats_one_element(
     dtype: PolarsDataType, op: Callable[[Any, Any], Any]
 ) -> None:
-    # A chunk that repeats a single element hands every element the same one, so the answer of
-    # that one element is the answer of all of them — which has to be the answer the same
-    # elements written out one per row give, down to the last bit of a float.
+    # A chunk that repeats a single element hands every element the same one, so the
+    # answer of that one element is the answer of all of them — which has to be the
+    # answer the same elements written out one per row give, down to the last bit of a
+    # float.
     element = [3, 0, -5] if dtype.inner == pl.Int64 else [1.5, 0.0, -2.5]  # type: ignore[union-attr]
     height = 4
 
@@ -1141,7 +1142,8 @@ def test_arithmetic_over_a_chunk_that_repeats_one_element(
             flat.to_frame().select(op(other, pl.col("a"))).to_series(),
         )
 
-    # One side repeats and the other does not, which is the answer written out per element.
+    # One side repeats and the other does not, which is the answer written out per
+    # element.
     varying = pl.Series("b", [element] * height, dtype=dtype)
     assert_series_equal(
         pl.DataFrame({"a": repeated, "b": varying})
@@ -1151,3 +1153,64 @@ def test_arithmetic_over_a_chunk_that_repeats_one_element(
         .select(op(pl.col("a"), pl.col("b")))
         .to_series(),
     )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.List(pl.Int64),
+        pl.Array(pl.Int64, 3),
+        pl.List(pl.Float64),
+        pl.Array(pl.Float64, 3),
+    ],
+)
+@pytest.mark.parametrize(
+    "op",
+    [operator.add, operator.sub, operator.mul, operator.truediv, operator.mod],
+)
+def test_arithmetic_where_one_side_repeats_and_the_other_varies(
+    dtype: PolarsDataType, op: Callable[[Any, Any], Any]
+) -> None:
+    # A side that repeats one element is read as the one element it is, which the other
+    # side's every element reads against — and that has to be the answer the same
+    # elements written out one per row give, whichever side repeats and wherever the
+    # nulls of the other side are.
+    if dtype.inner == pl.Int64:  # type: ignore[union-attr]
+        element: Any = [3, 0, -5]
+        rows: list[Any] = [[1, 2, 3], None, [0, 0, 0], [None, 5, 6]]
+    else:
+        element = [1.5, 0.0, -2.5]
+        rows = [[1.5, 2.0, 3.25], None, [0.0, 0.0, 0.0], [None, 5.5, 6.0]]
+
+    height = len(rows)
+    repeated = pl.select(
+        pl.repeat(pl.lit(element, dtype=dtype), height).alias("a")
+    ).to_series()
+    flat = pl.Series("a", [element] * height, dtype=dtype)
+    varying = pl.Series("b", rows, dtype=dtype)
+    assert repeated.to_list() == flat.to_list()
+
+    for left, right in (("a", "b"), ("b", "a")):
+        assert_series_equal(
+            pl.DataFrame({"a": repeated, "b": varying})
+            .select(op(pl.col(left), pl.col(right)))
+            .to_series(),
+            pl.DataFrame({"a": flat, "b": varying})
+            .select(op(pl.col(left), pl.col(right)))
+            .to_series(),
+        )
+
+
+def test_arithmetic_between_a_repeated_and_a_varying_side_checks_widths() -> None:
+    # Reading a repeated side as the one element it is must not turn a width the other
+    # side does not line up with into a broadcast of it.
+    repeated = pl.select(
+        pl.repeat(pl.lit([3], dtype=pl.List(pl.Int64)), 4).alias("a")
+    ).to_series()
+    varying = pl.Series("b", [[1, 2, 3]] * 4, dtype=pl.List(pl.Int64))
+
+    for left, right in (("a", "b"), ("b", "a")):
+        with pytest.raises(ShapeError, match="list lengths differed"):
+            pl.DataFrame({"a": repeated, "b": varying}).select(
+                pl.col(left) + pl.col(right)
+            )
