@@ -139,6 +139,74 @@ def test_cum_min_max_over_a_chunk_that_repeats_one_element() -> None:
     assert wide.select(pl.col("a").cum_min().alias("o")).estimated_size() < 1024
 
 
+def test_cum_sum_and_prod_over_a_chunk_that_repeats_one_element() -> None:
+    # `cum_sum` and `cum_prod` of a repeated element count up rather than repeating, so
+    # they are written out — but off the one element the chunk holds, not through the
+    # generic iterator, and they answer what the same values laid out flat do.
+    cases: list[tuple[PolarsDataType, Any]] = [
+        (pl.Int64, 5),
+        (pl.Int32, -1),
+        (pl.UInt8, 3),
+        (pl.Float64, 1.5),
+        (pl.Float64, -0.0),
+        (pl.Float64, float("nan")),
+    ]
+    mask = pl.Series([True, False, True, True, False, True, True, True])
+    for dtype, value in cases:
+        repeated = pl.select(pl.repeat(value, 8, dtype=dtype).alias("a")).to_series()
+        masked = pl.select(
+            pl.when(mask).then(pl.repeat(value, 8, dtype=dtype)).alias("a")
+        ).to_series()
+        sliced = pl.select(pl.repeat(value, 12, dtype=dtype).alias("a")).to_series()[
+            2:10
+        ]
+
+        for shaped in (repeated, masked, sliced):
+            flat = pl.Series("a", shaped.to_list(), dtype=dtype)
+            for reverse in (False, True):
+                assert_series_equal(
+                    shaped.cum_sum(reverse=reverse), flat.cum_sum(reverse=reverse)
+                )
+                assert_series_equal(
+                    shaped.cum_prod(reverse=reverse), flat.cum_prod(reverse=reverse)
+                )
+
+
+def test_reverse_over_every_boolean_chunk_shape() -> None:
+    # A boolean column reverses through its bitmaps rather than one element at a time,
+    # and every shape a chunk comes in has to answer the same way.
+    values = [True, False, None, True, True, False, None, False, True]
+    flat = pl.Series("a", values, dtype=pl.Boolean)
+    sliced = pl.Series("a", [False, *values, False], dtype=pl.Boolean)[1:-1]
+    chunked = pl.Series("a", values[:4], dtype=pl.Boolean)
+    chunked.append(pl.Series("a", values[4:], dtype=pl.Boolean))
+    singletons = pl.Series("a", [values[0]], dtype=pl.Boolean)
+    for value in values[1:]:
+        singletons.append(pl.Series("a", [value], dtype=pl.Boolean))
+
+    expected = pl.Series("a", values[::-1], dtype=pl.Boolean)
+    for shaped in (flat, sliced, chunked, singletons):
+        assert_series_equal(shaped.reverse(), expected)
+        assert_series_equal(shaped.reverse().reverse(), flat)
+
+    # No-null and all-null columns keep their mask through the reverse.
+    no_nulls = pl.Series("a", [True, False, False, True, True], dtype=pl.Boolean)
+    assert no_nulls.reverse().to_list() == [True, True, False, False, True]
+    all_null = pl.Series("a", [None] * 5, dtype=pl.Boolean)
+    assert all_null.reverse().to_list() == [None] * 5
+
+    # A chunk that repeats one element is its own reverse and stays a repeat.
+    wide = pl.select(pl.repeat(True, 1_000_000, dtype=pl.Boolean).alias("a"))
+    assert wide.select(pl.col("a").reverse().alias("o")).estimated_size() < 1024
+
+    # Lengths either side of a word boundary, where the bits are moved a word at a time.
+    for length in [0, 1, 7, 8, 9, 31, 32, 33, 63, 64, 65, 127, 128, 129]:
+        bits = [i % 3 == 0 for i in range(length)]
+        assert pl.Series("a", bits, dtype=pl.Boolean).reverse().to_list() == bits[::-1]
+        offset = pl.Series("a", [False, False, *bits], dtype=pl.Boolean)[2:]
+        assert offset.reverse().to_list() == bits[::-1]
+
+
 def test_cum_min_max_bool() -> None:
     s = pl.Series("a", [None, True, True, None, False, None, True, False, False, None])
     assert_series_equal(s.cum_min().cast(pl.Int32), s.cast(pl.Int32).cum_min())

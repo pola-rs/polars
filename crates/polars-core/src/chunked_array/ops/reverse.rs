@@ -56,8 +56,36 @@ macro_rules! impl_reverse {
     };
 }
 
-impl_reverse!(BooleanType, BooleanChunked);
 impl_reverse!(BinaryOffsetType, BinaryOffsetChunked);
+
+impl ChunkReverse for BooleanChunked {
+    fn reverse(&self) -> Self {
+        if self.is_empty() {
+            return self.clone();
+        }
+        if let Some(ca) = reverses_to_itself(self) {
+            return ca;
+        }
+
+        // Both of a boolean chunk's axes are bitmaps, and a bitmap reverses a word at a time:
+        // reversing each chunk and then the order they come in reverses the column without
+        // ever reading an element out of it.
+        let chunks = self
+            .downcast_iter()
+            .rev()
+            .map(|arr| arr.reversed().into_boxed())
+            .collect::<Vec<_>>();
+
+        // SAFETY: reversing keeps every chunk's dtype and the column's length.
+        unsafe {
+            BooleanChunked::from_chunks_and_dtype_unchecked(
+                self.name().clone(),
+                chunks,
+                self.dtype().clone(),
+            )
+        }
+    }
+}
 
 impl ChunkReverse for ListChunked {
     fn reverse(&self) -> Self {

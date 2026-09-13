@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use arrow::array::Splitable;
+use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{PolarsResult, polars_ensure};
 
@@ -25,6 +26,30 @@ pub struct PlBitmap {
     /// Scalar: bitmap.len() == 1
     bitmap: Bitmap,
     length: usize,
+}
+
+/// Returns `bitmap` with its bits in the opposite order.
+///
+/// The bits are moved a word at a time rather than one at a time: the 32 bits ending at a
+/// position are the 32 bits starting at the mirror of that position, read backwards, which is
+/// what `u32::reverse_bits` answers.
+fn reverse_bitmap(bitmap: &Bitmap) -> Bitmap {
+    let length = bitmap.len();
+    let mask = BitMask::from_bitmap(bitmap);
+    let mut bytes = Vec::with_capacity(length.div_ceil(8));
+
+    let mut written = 0;
+    while written < length {
+        // The `bits` bits the next word writes out are the ones just below the point the
+        // previous word stopped mirroring at.
+        let bits = (length - written).min(32);
+        let word = mask.get_u32(length - written - bits);
+        bytes.extend_from_slice(&(word.reverse_bits() >> (32 - bits)).to_le_bytes());
+        written += bits;
+    }
+
+    bytes.truncate(length.div_ceil(8));
+    Bitmap::from_u8_vec(bytes, length)
 }
 
 impl PlBitmap {
@@ -309,7 +334,7 @@ impl PlBitmap {
         // that repeats one is its own reverse and nothing is written out.
         match self.scalar_value() {
             Some(_) => self.clone(),
-            None => Self::from_bitmap(self.iter().rev().collect()),
+            None => Self::from_bitmap(reverse_bitmap(&self.bitmap)),
         }
     }
 
@@ -489,5 +514,45 @@ pub(crate) fn validity_eq(
         (Some(lhs), Some(rhs)) => lhs == rhs,
         (Some(mask), None) | (None, Some(mask)) => mask.set_bits() == length,
         (None, None) => true,
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    /// The bits are reversed a word at a time, so the answer is checked against the bit-at-a-time
+    /// reverse it replaces, over lengths and offsets either side of a word boundary.
+    #[test]
+    fn reversed_answers_bit_by_bit() {
+        for length in [
+            0usize, 1, 2, 7, 8, 9, 31, 32, 33, 63, 64, 65, 127, 128, 129, 1000,
+        ] {
+            for offset in [0usize, 1, 3, 7, 8, 13, 64] {
+                if offset > length {
+                    continue;
+                }
+
+                let bits: Vec<bool> = (0..length).map(|i| i % 3 == 0 || i % 7 == 1).collect();
+                let mut bitmap: Bitmap = bits.iter().copied().collect();
+                bitmap.slice(offset, length - offset);
+
+                let mask = PlBitmap::from_bitmap(bitmap.clone());
+                let expected: Vec<bool> = bitmap.iter().rev().collect();
+                assert_eq!(mask.reversed().iter().collect::<Vec<_>>(), expected);
+                assert_eq!(
+                    mask.reversed().reversed().iter().collect::<Vec<_>>(),
+                    bitmap.iter().collect::<Vec<_>>()
+                );
+            }
+        }
+
+        // A mask that repeats one bit reads the same either way round, and stays a repeat.
+        for value in [false, true] {
+            let scalar = PlBitmap::new_scalar(value, 1_000_000);
+            let reversed = scalar.reversed();
+            assert!(reversed.is_scalar());
+            assert_eq!(reversed.scalar_value(), Some(value));
+        }
     }
 }

@@ -312,6 +312,37 @@ impl PlBooleanArray {
         unsafe { self.values().get_unchecked(i) }
     }
 
+    /// Returns this array with its elements in the opposite order, keeping the representation.
+    ///
+    /// Both axes are bitmaps, which reverse a word at a time, so no element is read out.
+    #[must_use]
+    pub fn reversed(&self) -> Self {
+        // A chunk that repeats one element reads the same either way round.
+        if self.is_scalar() {
+            return self.clone();
+        }
+
+        let validity = self
+            .validity
+            .as_ref()
+            .map(|validity| PlBitmap::new_broadcast(validity.clone(), self.length).reversed());
+
+        // The values axis keeps whichever representation it is in, so the constructor that
+        // takes it has to be the one for that representation.
+        if self.values_are_scalar() {
+            // A single bit says the same of every element whichever way they are read.
+            // SAFETY: the values bitmap is the one bit it already was.
+            unsafe { Self::new_broadcast_unchecked(self.values.clone(), self.length, validity) }
+        } else {
+            let values = PlBitmap::new(self.values.clone(), self.length)
+                .reversed()
+                .into_bitmap();
+
+            // SAFETY: reversing a flat mask leaves one bit per element.
+            unsafe { Self::new_unchecked(values, self.length, validity) }
+        }
+    }
+
     /// Returns an iterator over the values, ignoring validity.
     #[inline]
     pub fn values_iter(&self) -> PlBitmapIter<'_> {
