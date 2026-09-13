@@ -85,7 +85,9 @@ def cross_join_build_side(plan: str) -> str | None:
     heads = [i for i, line in enumerate(lines) if line.strip() == "CROSS JOIN:"]
     assert len(heads) == 1, f"expected one cross join, found {len(heads)}"
     below = lines[heads[0] + 1].strip()
-    return below.removeprefix("BUILD SIDE: ") if below.startswith("BUILD SIDE:") else None
+    return (
+        below.removeprefix("BUILD SIDE: ") if below.startswith("BUILD SIDE:") else None
+    )
 
 
 def test_cross_join_builds_the_one_row_side_over_an_unbounded_side(

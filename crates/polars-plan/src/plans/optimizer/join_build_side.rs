@@ -42,9 +42,10 @@ pub(super) fn set_join_build_sides(
             continue;
         }
         let (left, right) = (*input_left, *input_right);
-        // An equi join samples its inputs as it runs and picks the smaller itself, so
-        // a preference drawn from an estimate would override a measurement. A cross
-        // join has no such path and builds its left input when nothing names a side.
+        // equi joins sample lopsideness at runtime.
+        // cross joins don't so, plan time estimates
+        // are all we have. TODO!: change this if that
+        // assumption changes.
         let may_estimate = options.args.how.is_cross();
         let Some(side) = build_side(left, right, may_estimate, ir_arena, expr_arena) else {
             continue;
