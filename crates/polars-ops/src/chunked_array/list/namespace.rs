@@ -19,7 +19,9 @@ use crate::series::{ArgAgg, convert_and_bound_index};
 ///
 /// `None` where the list has a null element to write and `ignore_nulls` says not to skip it — the
 /// row that list belongs to is null then. `buf` is the caller's, reused from row to row.
-fn join_one_list<'a>(
+///
+/// A fixed-size list joins the same way, which is why `array::join` reads this too.
+pub(crate) fn join_one_list<'a>(
     s: &Series,
     separator: &str,
     ignore_nulls: bool,
