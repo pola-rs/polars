@@ -2980,8 +2980,8 @@ impl SQLContext {
         order_by: &Option<OrderBy>,
         qualify: &Option<SQLExpr>,
     ) -> PolarsResult<Option<GroupingSets>> {
-        // Calls in the clauses evaluated after aggregation must be known now, so
-        // every branch can carry their values; the parse is repeated later.
+        // Calls in clauses parsed after aggregation must be registered before the
+        // branches are built.
         let order_by_exprs = match order_by {
             Some(OrderBy {
                 kind: OrderByKind::Expressions(exprs),
@@ -2999,7 +2999,7 @@ impl SQLContext {
             None if self.grouping_calls.is_empty() => return Ok(None),
             None => vec![(0..group_by_keys.len()).collect()],
         };
-        // Later parses of the same calls must still find these registrations.
+        // Restored below: later parses of the same calls must find these registrations.
         let calls = std::mem::take(&mut self.grouping_calls);
         let resolved_args = calls
             .iter()
@@ -3295,8 +3295,8 @@ impl SQLContext {
                 }
             }
         }
-        // The union may be projected to literals only (`SELECT 1 ... GROUP BY ()`),
-        // which `select` would collapse to one row; the caller narrows the columns.
+        // A literal-only projection (`SELECT 1 ... GROUP BY ()`) must keep the union's
+        // height; the caller narrows the columns.
         let projected = match grouping {
             Some(_) => aggregated.with_columns(&output_projection),
             None => aggregated.select(&output_projection),
