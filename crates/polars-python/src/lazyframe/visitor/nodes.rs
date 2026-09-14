@@ -3,6 +3,7 @@ use polars::prelude::python_dsl::PythonScanSource;
 use polars::prelude::{ColumnMapping, PredicateFileSkip};
 use polars_core::prelude::IdxSize;
 use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType, IcebergSchema};
+use polars_io::HiveOptions;
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "asof_join")]
 use polars_ops::prelude::AsofStrategy;
@@ -130,9 +131,41 @@ impl PyFileOptions {
     fn rechunk(&self, _py: Python<'_>) -> bool {
         self.inner.rechunk
     }
+    /// None if hive partitioning is disabled, otherwise a dict with the keys
+    /// "hive_start_idx", "schema" and "try_parse_dates".
+    ///
+    /// Note that the hive column values themselves are on `Scan.hive_parts`; this
+    /// only carries the configuration used to parse them.
     #[getter]
-    fn hive_options(&self, _py: Python<'_>) -> PyResult<Py<PyAny>> {
-        Err(PyNotImplementedError::new_err("hive options"))
+    fn hive_options(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let HiveOptions {
+            enabled,
+            hive_start_idx,
+            schema,
+            try_parse_dates,
+        } = &self.inner.hive_options;
+
+        // `enabled` should always be initialized inside an IR plan, but treat an
+        // unset value the same as disabled rather than guessing.
+        if *enabled != Some(true) {
+            return Ok(py.None().into_any());
+        }
+
+        let out = PyDict::new(py);
+        out.set_item("hive_start_idx", *hive_start_idx)?;
+        out.set_item(
+            "schema",
+            match schema {
+                None => py.None(),
+                Some(schema) => Wrap(schema.as_ref().clone())
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
+            },
+        )?;
+        out.set_item("try_parse_dates", *try_parse_dates)?;
+
+        Ok(out.into_any().unbind())
     }
     #[getter]
     fn include_file_paths(&self, _py: Python<'_>) -> Option<&str> {
