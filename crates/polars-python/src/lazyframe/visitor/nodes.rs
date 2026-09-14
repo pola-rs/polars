@@ -399,6 +399,28 @@ impl PyFileOptions {
     }
 }
 
+/// The size in bytes of each scan source, in `sources` order, or None if unknown for
+/// any of them.
+///
+/// `UnifiedScanArgs::source_sizes` is a DSL-level input that IR conversion moves onto
+/// the scan type, so prefer the scan type and fall back to the unresolved args.
+fn scan_source_sizes(
+    scan_type: &FileScanIR,
+    unified_scan_args: &UnifiedScanArgs,
+) -> Option<Vec<u64>> {
+    let bytes_per_source = match scan_type {
+        #[cfg(feature = "parquet")]
+        FileScanIR::Parquet {
+            bytes_per_source, ..
+        } => bytes_per_source.as_ref(),
+        _ => None,
+    };
+
+    bytes_per_source
+        .or(unified_scan_args.source_sizes.as_ref())
+        .map(|sizes| sizes.iter().copied().collect())
+}
+
 /// Inverse of the `Wrap<MissingColumnsPolicy>` extraction.
 fn missing_columns_policy_to_str(policy: MissingColumnsPolicy) -> &'static str {
     match policy {
@@ -485,6 +507,10 @@ pub struct Scan {
     file_options: PyFileOptions,
     #[pyo3(get)]
     scan_type: Py<PyAny>,
+    /// The size in bytes of each source in `paths`, or None if not known for every
+    /// source. Saves the reader a metadata request per source.
+    #[pyo3(get)]
+    source_sizes: Option<Vec<u64>>,
 }
 
 #[pyclass(frozen)]
@@ -760,6 +786,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     inner: (**unified_scan_args).clone(),
                 },
                 scan_type: scan_type_to_pyobject(py, scan_type, &unified_scan_args.cloud_options)?,
+                source_sizes: scan_source_sizes(scan_type, unified_scan_args),
             }
         }
         .into_py_any(py),
