@@ -1,3 +1,4 @@
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use polars::prelude::default_values::DefaultFieldValues;
@@ -70,6 +71,7 @@ impl PyScanOptions<'_> {
             table_statistics: Option<Wrap<TableStatistics>>,
             row_count: Option<(u64, u64)>,
             source_sizes: Option<Vec<u64>>,
+            resolve_heavy_sources: Option<u32>,
         }
 
         let Extract {
@@ -95,6 +97,7 @@ impl PyScanOptions<'_> {
             table_statistics,
             row_count,
             source_sizes,
+            resolve_heavy_sources,
         } = self.0.extract()?;
 
         let cloud_options =
@@ -143,6 +146,7 @@ impl PyScanOptions<'_> {
             table_statistics: table_statistics.map(|x| x.0),
             row_count,
             source_sizes: source_sizes.map(Buffer::from),
+            resolve_heavy_sources: resolve_heavy_sources.and_then(NonZeroU32::new),
         };
 
         Ok(unified_scan_args)

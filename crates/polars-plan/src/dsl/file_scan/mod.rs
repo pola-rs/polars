@@ -1,3 +1,4 @@
+use std::num::NonZeroU32;
 use std::hash::Hash;
 use std::sync::Mutex;
 
@@ -129,6 +130,13 @@ pub struct PartialMetadata {
 
 #[cfg(feature = "parquet")]
 impl PartialMetadata {
+    /// Source indices of the resolved footers, ascending. Aligns with
+    /// [`MetadataPerSource::resolved_metadata`], which is dense and therefore
+    /// carries no index mapping of its own.
+    pub fn indices(&self) -> &[usize] {
+        &self.indices
+    }
+
     fn new(indices: Vec<usize>, metadata: Vec<FileMetadataRef>) -> Self {
         assert!(!indices.is_empty());
         assert_eq!(indices.len(), metadata.len());
@@ -594,6 +602,30 @@ pub struct UnifiedScanArgs {
     /// Note, intentionally store u64 instead of IdxSize to avoid erroring if it's unused.
     pub row_count: Option<(u64, u64)>,
     pub source_sizes: Option<Buffer<u64>>,
+    /// Resolve the footer of every source at least `1 / N` of the scan's total
+    /// bytes, on top of whatever the metadata resolve mode would read anyway.
+    ///
+    /// A distributed planner assigns whole files to workers, so a source larger
+    /// than a fair share pins one worker no matter how the rest are spread.
+    /// Splitting it needs its row groups, and those only come from its footer.
+    ///
+    /// Expressed as a fraction rather than a byte count because the total is
+    /// only known once paths are expanded, which happens during conversion --
+    /// after the caller has handed over the plan.
+    ///
+    /// Fewer than `N` sources can clear the bar, since their sizes sum to at
+    /// most the total, so the extra reads are bounded by `N` rather than by file
+    /// count. Requires [`Self::source_sizes`], which path expansion fills in for
+    /// free; without sizes this is a no-op.
+    ///
+    /// `N` is a dial, not just a fact about the topology. At `N` = the part
+    /// count, every unsplit source is under one fair share, which bounds the
+    /// makespan at `2x` the ideal. Raising it to `k` times the part count bounds
+    /// unsplit sources at `1/k` of a fair share, for a makespan within
+    /// `1 + 1/k`, at up to `k` times as many footer reads. Since a wave of
+    /// footer reads costs about one round trip up to the concurrency budget, a
+    /// small multiple is usually worth it.
+    pub resolve_heavy_sources: Option<NonZeroU32>,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -637,6 +669,7 @@ impl Default for UnifiedScanArgs {
             table_statistics: None,
             row_count: None,
             source_sizes: None,
+            resolve_heavy_sources: None,
         }
     }
 }

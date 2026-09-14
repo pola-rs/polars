@@ -4532,6 +4532,79 @@ def test_resolve_metadata_sampled_byte_weighted(
 
 
 @pytest.mark.write_disk
+def test_resolve_metadata_sampled_heavy_files(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # On top of its stratified sample, `sampled` resolves every source at least
+    # `1 / resolve_heavy_sources` of the scan's total bytes. A distributed
+    # planner assigns whole files to workers, so a source larger than a fair
+    # share pins one worker unless its row groups are known -- and those only
+    # come from its footer. Sizes come free from path expansion, so identifying
+    # the heavy sources costs nothing.
+    rows = [2, 2, 2, 1000]
+    for i, n in enumerate(rows):
+        pl.DataFrame({"x": range(n)}).write_parquet(tmp_path / f"part_{i}.parquet")
+
+    sizes = [(tmp_path / f"part_{i}.parquet").stat().st_size for i in range(len(rows))]
+    # The layout must have exactly one outlier for the assertions to be sharp:
+    # file 3 is over a quarter of the total, the others are each well under.
+    total = sum(sizes)
+    assert sizes[3] > total / 4
+    assert all(size < total / 4 for size in sizes[:3])
+
+    plmonkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", "sampled")
+    # Pin the wave to 2 footers so the 4-file layout stays a *partial* sample
+    # regardless of this machine's concurrency budget.
+    plmonkeypatch.setenv("POLARS_RESOLVE_SAMPLE_LIMIT", "2")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    def resolve_trace(lf: pl.LazyFrame) -> str:
+        capfd.readouterr()
+        # Resolution runs on the first plan build and prints its verbose trace.
+        lf.explain(optimized=True)
+        err = capfd.readouterr().err
+        return next(
+            (ln for ln in err.splitlines() if "parquet sampled resolve" in ln), ""
+        )
+
+    glob = tmp_path / "part_*.parquet"
+
+    # Unset: only the pinned two-footer wave is read.
+    assert "read 2 / 4 footers" in resolve_trace(pl.scan_parquet(glob))
+
+    # Splitting four ways makes the fair share a quarter of the total, which
+    # only the big file exceeds, so it is resolved on top of the wave.
+    assert "read 3 / 4 footers" in resolve_trace(
+        pl.scan_parquet(glob, _resolve_heavy_sources=4)
+    )
+
+    # A single partition needs no splitting, so nothing counts as heavy: the
+    # fair share is the whole total, which no individual file reaches.
+    assert "read 2 / 4 footers" in resolve_trace(
+        pl.scan_parquet(glob, _resolve_heavy_sources=1)
+    )
+
+    # Splitting very finely shrinks the fair share below every file, so the set
+    # spans the whole scan and routes through the read-everything arm instead.
+    # Its absence from the verbose output is the proof of that routing, and the
+    # row total is then exact rather than extrapolated.
+    lf = pl.scan_parquet(glob, _resolve_heavy_sources=1000)
+    assert resolve_trace(lf) == ""
+    assert f"ESTIMATED ROWS: {sum(rows)}" in lf.explain(optimized=True)
+    assert lf.collect().height == sum(rows)
+
+    # Without per-source sizes there is nothing to compare against a fair share,
+    # so the sample is unchanged. An explicit file list skips the path expansion
+    # that would have retained them.
+    paths = [tmp_path / f"part_{i}.parquet" for i in range(len(rows))]
+    assert "read 2 / 4 footers" in resolve_trace(
+        pl.scan_parquet(paths, _resolve_heavy_sources=4)
+    )
+
+
+@pytest.mark.write_disk
 def test_parquet_known_source_sizes(tmp_path: Path) -> None:
     path = tmp_path / "data.parquet"
     expected = pl.DataFrame({"a": [1, 2, 3]})

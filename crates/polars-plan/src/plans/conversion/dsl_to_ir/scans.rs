@@ -1,3 +1,4 @@
+use std::num::NonZeroU32;
 use std::io::{BufReader, Cursor};
 use std::sync::{LazyLock, RwLock};
 
@@ -272,6 +273,8 @@ pub(super) async fn parquet_file_info(
     row_index: Option<&RowIndex>,
     // Per-source byte sizes from path expansion, aligned with `sources`.
     bytes_per_source: Option<&[u64]>,
+    // See `UnifiedScanArgs::resolve_heavy_sources`.
+    resolve_heavy_sources: Option<NonZeroU32>,
     use_statistics: bool,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, MetadataPerSource)> {
@@ -343,7 +346,9 @@ pub(super) async fn parquet_file_info(
         use polars_config::ResolveMode;
 
         // Indices of the footers to be sampled. Value is `Some` only when
-        // file coverage is incomplete.
+        // file coverage is incomplete; a set that ends up spanning every source
+        // falls through to the read-everything arm, which reports an exact
+        // `known_size`.
         let partial_sample = matches!(mode, ResolveMode::Sampled)
             .then(|| {
                 // Default cap: the IO concurrency budget floored at
@@ -353,10 +358,32 @@ pub(super) async fn parquet_file_info(
                     || (polars_io::pl_async::get_concurrency_limit() as usize).max(SAMPLE_FLOOR),
                     |o| o as usize,
                 );
-                sample_size(n_sources, limit)
+                let mut indices = sampled_source_indices(n_sources, sample_size(n_sources, limit));
+
+                // On top of the stratified sample, resolve every source at
+                // least `1 / n_parts` of the total. A distributed planner can
+                // only split such a file across workers if it knows its row
+                // groups, and that needs its footer. The threshold is derived
+                // here rather than passed in, because the total is only known
+                // once paths are expanded. Fewer than `n_parts` sources can
+                // clear the bar, since their sizes sum to at most the total, so
+                // this stays bounded by `n_parts` rather than by file count.
+                if let Some(n_parts) = resolve_heavy_sources
+                    && let Some(bytes) = bytes_per_source
+                {
+                    debug_assert_eq!(bytes.len(), n_sources);
+                    let total: u128 = bytes.iter().map(|&b| b as u128).sum();
+                    let threshold = total / n_parts.get() as u128;
+                    // Source 0 is always read, so it never needs adding here.
+                    indices.extend((1..n_sources).filter(|&i| bytes[i] as u128 >= threshold));
+                    indices.sort_unstable();
+                    indices.dedup();
+                }
+
+                indices
             })
-            .filter(|&k| k != n_sources)
-            .map(|k| sampled_source_indices(n_sources, k));
+            // `+ 1` for source 0, which is read separately.
+            .filter(|indices| indices.len() + 1 != n_sources);
 
         match mode {
             ResolveMode::None => {
@@ -1543,6 +1570,7 @@ impl SourcesToFileInfo {
                             sources,
                             unified_scan_args.row_index.as_ref(),
                             bytes_per_source.as_deref(),
+                            unified_scan_args.resolve_heavy_sources,
                             options.use_statistics,
                             cloud_options,
                         )
