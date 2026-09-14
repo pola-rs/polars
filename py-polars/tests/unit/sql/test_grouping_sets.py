@@ -120,7 +120,7 @@ def test_rollup_key_as_aggregate_input() -> None:
     )
 
 
-def test_grouping_sets_filter_and_distinct(sales: pl.LazyFrame) -> None:
+def test_grouping_sets_filter_and_distinct() -> None:
     lf = pl.LazyFrame(
         {
             "k": ["a", "a", "b", "b", "b"],
@@ -588,17 +588,17 @@ def test_count_star_mixed_with_grouping() -> None:
     )
 
 
-def test_computed_key_in_having_and_projections() -> None:
+@pytest.mark.parametrize("having", ["a + 1 = 2", "k = 2"])
+def test_computed_key_in_having_and_projections(having: str) -> None:
     lf = pl.LazyFrame({"a": [0, 1], "b": [10, 20]})
-    for having in ["a + 1 = 2", "k = 2"]:
-        assert_grouping_sets_matches(
-            lf,
-            f"""
-            SELECT a + 1 AS k, (a + 1) * 10 AS k10, SUM(b) AS s
-            FROM self GROUP BY ROLLUP(a + 1) HAVING {having}
-            """,
-            expected={"k": [2], "k10": [20], "s": [20]},
-        )
+    assert_grouping_sets_matches(
+        lf,
+        f"""
+        SELECT a + 1 AS k, (a + 1) * 10 AS k10, SUM(b) AS s
+        FROM self GROUP BY ROLLUP(a + 1) HAVING {having}
+        """,
+        expected={"k": [2], "k10": [20], "s": [20]},
+    )
 
 
 def test_order_by_aggregate_mixed_with_grouping() -> None:
@@ -610,22 +610,22 @@ def test_order_by_aggregate_mixed_with_grouping() -> None:
     )
 
 
-def test_grouping_in_qualify() -> None:
+@pytest.mark.parametrize("select_grouping", ["", "GROUPING(a) AS g,"])
+def test_grouping_in_qualify(select_grouping: str) -> None:
     lf = pl.LazyFrame({"a": [0, 1], "b": [10, 20]})
-    for select_grouping in ["", "GROUPING(a) AS g,"]:
-        out = lf.sql(
-            f"""
-            SELECT a, {select_grouping} SUM(b) AS s, RANK() OVER (ORDER BY SUM(b)) AS rn
-            FROM self GROUP BY ROLLUP(a)
-            QUALIFY rn >= 1 AND GROUPING(a) = 1
-            """
-        ).collect()
-        assert out.select("a", "s", "rn").to_dict(as_series=False) == {
-            "a": [None],
-            "s": [30],
-            "rn": [3],
-        }
-        assert "__POLARS" not in "".join(out.columns)
+    out = lf.sql(
+        f"""
+        SELECT a, {select_grouping} SUM(b) AS s, RANK() OVER (ORDER BY SUM(b)) AS rn
+        FROM self GROUP BY ROLLUP(a)
+        QUALIFY rn >= 1 AND GROUPING(a) = 1
+        """
+    ).collect()
+    assert out.select("a", "s", "rn").to_dict(as_series=False) == {
+        "a": [None],
+        "s": [30],
+        "rn": [3],
+    }
+    assert "__POLARS" not in "".join(out.columns)
 
 
 def test_user_column_with_internal_prefix() -> None:
@@ -675,14 +675,18 @@ def test_group_count_versus_window_count() -> None:
     )
 
 
-def test_order_by_ordinal_and_all_use_select_list() -> None:
+@pytest.mark.parametrize("order_by", ["1", "ALL", "s"])
+def test_order_by_ordinal_and_all_use_select_list(order_by: str) -> None:
     lf = pl.LazyFrame({"a": [0, 1], "b": [20, 10]})
-    for order_by in ["1", "ALL", "s"]:
-        assert_grouping_sets_matches(
-            lf,
-            f"SELECT SUM(b) AS s, a FROM self GROUP BY ROLLUP(a) ORDER BY {order_by}",
-            expected={"s": [10, 20, 30], "a": [1, 0, None]},
-        )
+    assert_grouping_sets_matches(
+        lf,
+        f"SELECT SUM(b) AS s, a FROM self GROUP BY ROLLUP(a) ORDER BY {order_by}",
+        expected={"s": [10, 20, 30], "a": [1, 0, None]},
+    )
+
+
+def test_order_by_ordinal_out_of_range() -> None:
+    lf = pl.LazyFrame({"a": [0, 1], "b": [20, 10]})
     with pytest.raises(pl.exceptions.SQLInterfaceError, match="ordinal value"):
         lf.sql("SELECT SUM(b) AS s FROM self GROUP BY ROLLUP(a) ORDER BY 2").collect()
 
@@ -722,14 +726,20 @@ def test_empty_window_with_literal_key() -> None:
     )
 
 
-def test_elementwise_functions_around_aggregates() -> None:
+@pytest.mark.parametrize(
+    "expr", ["ABS(SUM(b) + GROUPING(a))", "COALESCE(SUM(b) + GROUPING(a), 0)"]
+)
+def test_elementwise_functions_around_aggregates(expr: str) -> None:
     lf = pl.LazyFrame({"a": [1, 1, 2], "b": [10, 20, 30]})
-    for expr in ["ABS(SUM(b) + GROUPING(a))", "COALESCE(SUM(b) + GROUPING(a), 0)"]:
-        assert_grouping_sets_matches(
-            lf,
-            f"SELECT a, {expr} AS s FROM self GROUP BY ROLLUP(a) ORDER BY a",
-            expected={"a": [1, 2, None], "s": [30, 30, 61]},
-        )
+    assert_grouping_sets_matches(
+        lf,
+        f"SELECT a, {expr} AS s FROM self GROUP BY ROLLUP(a) ORDER BY a",
+        expected={"a": [1, 2, None], "s": [30, 30, 61]},
+    )
+
+
+def test_elementwise_functions_around_aggregates_in_order_by_and_with_key() -> None:
+    lf = pl.LazyFrame({"a": [1, 1, 2], "b": [10, 20, 30]})
     assert_grouping_sets_matches(
         lf,
         "SELECT a FROM self GROUP BY ROLLUP(a) ORDER BY ABS(SUM(b) + GROUPING(a)), a",
@@ -742,18 +752,21 @@ def test_elementwise_functions_around_aggregates() -> None:
     )
 
 
-def test_unselected_window_in_order_by() -> None:
-    lf = pl.LazyFrame({"a": [1, 1, 2], "b": [10, 20, 30]})
-    for order_by, a in [
+@pytest.mark.parametrize(
+    ("order_by", "a"),
+    [
         ("COUNT(*) OVER (PARTITION BY GROUPING(a)), a", [None, 1, 2]),
         ("COUNT(*) OVER (), a", [1, 2, None]),
         ("RANK() OVER (ORDER BY SUM(b)), a", [1, 2, None]),
-    ]:
-        assert_grouping_sets_matches(
-            lf,
-            f"SELECT a, SUM(b) AS s FROM self GROUP BY ROLLUP(a) ORDER BY {order_by}",
-            expected={"a": a, "s": [60 if x is None else 30 for x in a]},
-        )
+    ],
+)
+def test_unselected_window_in_order_by(order_by: str, a: list[int | None]) -> None:
+    lf = pl.LazyFrame({"a": [1, 1, 2], "b": [10, 20, 30]})
+    assert_grouping_sets_matches(
+        lf,
+        f"SELECT a, SUM(b) AS s FROM self GROUP BY ROLLUP(a) ORDER BY {order_by}",
+        expected={"a": a, "s": [60 if x is None else 30 for x in a]},
+    )
 
 
 def test_count_distinct_mixed_with_key_or_grouping() -> None:
@@ -782,14 +795,20 @@ def test_literal_key_referenced_in_having() -> None:
     )
 
 
-def test_constant_input_aggregates_mixed_with_key() -> None:
+@pytest.mark.parametrize(
+    ("agg", "value"), [("AVG(1)", 1.0), ("MIN(1)", 1), ("COUNT(DISTINCT 1)", 1)]
+)
+def test_constant_input_aggregates_mixed_with_grouping(agg: str, value: float) -> None:
     lf = pl.LazyFrame({"a": [1, 1, 2]})
-    for agg, value in [("AVG(1)", 1.0), ("MIN(1)", 1), ("COUNT(DISTINCT 1)", 1)]:
-        assert_grouping_sets_matches(
-            lf,
-            f"SELECT a, {agg} + GROUPING(a) AS v FROM self GROUP BY ROLLUP(a) ORDER BY a",
-            expected={"a": [1, 2, None], "v": [value, value, value + 1]},
-        )
+    assert_grouping_sets_matches(
+        lf,
+        f"SELECT a, {agg} + GROUPING(a) AS v FROM self GROUP BY ROLLUP(a) ORDER BY a",
+        expected={"a": [1, 2, None], "v": [value, value, value + 1]},
+    )
+
+
+def test_constant_input_aggregate_mixed_with_key() -> None:
+    lf = pl.LazyFrame({"a": [1, 1, 2]})
     assert_grouping_sets_matches(
         lf,
         "SELECT a, AVG(1) + a AS v FROM self GROUP BY a ORDER BY a",
@@ -808,7 +827,10 @@ def test_whole_frame_window_marker_is_private() -> None:
         """,
         expected={"__POLARS_WHOLE_FRAME_WINDOW": ["x", "y"], "n": [1, 1]},
     )
-    # GROUP BY ALL without inferable keys is not a grouped block.
+
+
+def test_group_by_all_without_keys_keeps_rows() -> None:
+    lf = pl.LazyFrame({"v": [1, 2]})
     out = lf.sql("SELECT ROW_NUMBER() OVER () AS n FROM self GROUP BY ALL ORDER BY n")
     assert out.collect()["n"].to_list() == [1, 2]
 

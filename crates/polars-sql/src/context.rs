@@ -3159,7 +3159,6 @@ impl SQLContext {
 
         // Note: remove the `group_by` keys as Polars adds those implicitly.
         let mut aliased_aggregations: PlHashMap<PlSmallStr, PlSmallStr> = PlHashMap::new();
-        let mut aggregation_projection = Vec::with_capacity(projections.len());
         let mut post_agg_projection: Vec<Expr> = Vec::new();
         let mut projection_overrides = PlHashMap::with_capacity(projections.len());
         let mut projection_aliases = PlHashSet::new();
@@ -3183,7 +3182,7 @@ impl SQLContext {
             schema: &schema_before,
             keys: &group_by_keys_schema,
             whole_frame_partition: whole_frame_partition.as_ref(),
-            hoisted: Vec::new(),
+            aggregates: AggregateOutputs::with_capacity(projections.len()),
         };
         // Post-aggregation expressions read computed keys from their stored columns.
         let bind_keys = |e: Expr| match grouping {
@@ -3207,7 +3206,7 @@ impl SQLContext {
             let matches_group_key = group_key.is_some();
             // `Len` represents COUNT(*) so we treat as an aggregation here.
             let is_non_group_key_expr =
-                !matches_group_key && expr_reduces_group(e, &group_by_keys_schema);
+                !matches_group_key && requires_group_processing(e, &group_by_keys_schema);
 
             // Note: if simple aliased expression we defer aliasing until after the group_by.
             // Use `e_inner` to track the potentially unwrapped expression for field lookup.
@@ -3234,7 +3233,7 @@ impl SQLContext {
                 // combining aggregates with grouped keys or `GROUPING()` values.
                 let bound = bind_keys(strip_outer_alias(e));
                 if splitter.needs_post_aggregation(&bound) {
-                    let post_agg_expr = splitter.hoist(bound, &mut aggregation_projection);
+                    let post_agg_expr = splitter.hoist(bound);
                     post_agg_projection.push(post_agg_expr.alias(field.name.clone()));
                     continue;
                 }
@@ -3246,7 +3245,7 @@ impl SQLContext {
                     e = e.alias(alias_name.clone());
                     aliased_aggregations.insert(field.name.clone(), alias_name);
                 }
-                aggregation_projection.push(e);
+                splitter.aggregates.push(e);
             } else if !matches_group_key {
                 // Non-aggregated columns must be part of the GROUP BY clause
                 if let Expr::Column(_)
@@ -3262,8 +3261,9 @@ impl SQLContext {
             }
         }
 
-        // Note: HAVING is evaluated in the group context by `group_by().having(...)`,
-        // so any reference to a SELECT alias is resolved to the aggregate it names.
+        // Note: HAVING is evaluated in the group context (`group_by().having(...)` for
+        // ordinary grouping, a post-union filter for grouping sets), so any reference
+        // to a SELECT alias is resolved to the aggregate it names.
         let having = having.map(|having_expr| {
             let having_expr = having_expr.map_expr(|e| match &e {
                 Expr::Column(name) => resolve_select_alias(name, &projections, &schema_before)
@@ -3286,16 +3286,16 @@ impl SQLContext {
         for (name, e) in &order_by_aggs {
             let bound = bind_keys(strip_outer_alias(e));
             if splitter.needs_post_aggregation(&bound) {
-                let rest = splitter.hoist(bound, &mut aggregation_projection);
+                let rest = splitter.hoist(bound);
                 post_agg_projection.push(rest.alias(name.clone()));
             } else {
-                aggregation_projection.push(e.clone());
+                splitter.aggregates.push(e.clone());
             }
         }
 
         if let Some(grouping) = grouping {
             polars_ensure!(
-                !aggregation_projection.iter().any(|e| grouping.contains_placeholder(e)),
+                !splitter.aggregates.iter().any(|e| grouping.contains_placeholder(e)),
                 SQLSyntax: "GROUPING() cannot be used inside an aggregate function"
             );
         }
@@ -3307,14 +3307,15 @@ impl SQLContext {
                     Some(having) => group_by.having(having),
                     None => group_by,
                 }
-                .agg(strip_group_implode(aggregation_projection))
+                .agg(strip_group_implode(splitter.aggregates.into_exprs()))
             },
             Some(grouping) => {
                 // HAVING runs on the combined rows, where it can also see `GROUPING()`.
                 let having = having.map(|having| {
                     let having = grouping.bind_stored_keys(having, &key_schema);
-                    splitter.hoist(having, &mut aggregation_projection)
+                    splitter.hoist(having)
                 });
+                let aggregation_projection = splitter.aggregates.into_exprs();
                 let agg_names = aggregation_projection
                     .iter()
                     .map(|e| Ok(e.to_field(&schema_before)?.name))
@@ -4072,19 +4073,72 @@ fn strip_group_implode(aggs: Vec<Expr>) -> Vec<Expr> {
         .collect()
 }
 
+/// The expressions computed in the group context, plus the names of those
+/// outputs that a post-aggregation expression refers to.
+struct AggregateOutputs {
+    exprs: Vec<Expr>,
+    hoisted_names: Vec<PlSmallStr>,
+}
+
+impl AggregateOutputs {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            exprs: Vec::with_capacity(capacity),
+            hoisted_names: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, expr: Expr) {
+        self.exprs.push(expr);
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &Expr> {
+        self.exprs.iter()
+    }
+
+    fn into_exprs(self) -> Vec<Expr> {
+        self.exprs
+    }
+
+    fn is_hoisted(&self, name: &PlSmallStr) -> bool {
+        self.hoisted_names.contains(name)
+    }
+
+    /// Reference to the output computing `expr`, reusing an existing aggregate with
+    /// the same expression (from SELECT, or the same reduction repeated in a window
+    /// body and its ORDER BY). The output's name is registered as hoisted either way.
+    fn get_or_insert_hoisted(&mut self, expr: Expr) -> Expr {
+        let existing = self.exprs.iter().find_map(|agg| match agg {
+            Expr::Alias(inner, name) if **inner == expr => Some(name.clone()),
+            _ => None,
+        });
+        let name = existing.unwrap_or_else(|| {
+            let name = format_pl_smallstr!("__POLARS_HOISTED_AGG_{}", unique_column_name());
+            self.exprs.push(expr.alias(name.clone()));
+            name
+        });
+        if !self.is_hoisted(&name) {
+            self.hoisted_names.push(name.clone());
+        }
+        col(name)
+    }
+}
+
 /// Splits post-aggregation expressions from the group-context reductions they
 /// contain, over the pre-aggregation schema.
 struct GroupContextSplitter<'a> {
     schema: &'a Schema,
     keys: &'a Schema,
     whole_frame_partition: Option<&'a PlSmallStr>,
-    /// Names of the aggregation outputs hoisted so far.
-    hoisted: Vec<PlSmallStr>,
+    aggregates: AggregateOutputs,
 }
 
 impl GroupContextSplitter<'_> {
     /// Whether `expr` reduces its input columns to one value, judged by the plan
     /// it lowers to; this covers SQL aggregates lowered to non-`Agg` reductions.
+    ///
+    /// An expression that fails to lower is not treated as a reduction; it is
+    /// left in place and reports its error when the plan is built.
     fn is_reduction(&self, expr: &Expr) -> bool {
         let mut arena = Arena::new();
         let mut ctx = ExprToIRContext::new(&mut arena, self.schema);
@@ -4109,8 +4163,9 @@ impl GroupContextSplitter<'_> {
     fn needs_post_aggregation(&self, expr: &Expr) -> bool {
         struct Finder<'a, 'b> {
             splitter: &'a GroupContextSplitter<'b>,
-            saw_reduction: bool,
-            found: bool,
+            has_window: bool,
+            has_group_key: bool,
+            has_reduction: bool,
         }
         impl Visitor for Finder<'_, '_> {
             type Node = Expr;
@@ -4120,15 +4175,15 @@ impl GroupContextSplitter<'_> {
                 // Siblings are still visited so that no reduction goes unnoticed.
                 Ok(match node {
                     Expr::Over { .. } => {
-                        self.found = true;
+                        self.has_window = true;
                         VisitRecursion::Skip
                     },
                     Expr::Column(name) => {
-                        self.found |= self.splitter.keys.contains(name);
+                        self.has_group_key |= self.splitter.keys.contains(name);
                         VisitRecursion::Skip
                     },
                     _ if self.splitter.is_reduction(node) => {
-                        self.saw_reduction = true;
+                        self.has_reduction = true;
                         VisitRecursion::Skip
                     },
                     _ => VisitRecursion::Continue,
@@ -4137,24 +4192,25 @@ impl GroupContextSplitter<'_> {
         }
         let mut finder = Finder {
             splitter: self,
-            saw_reduction: false,
-            found: false,
+            has_window: false,
+            has_group_key: false,
+            has_reduction: false,
         };
         let _ = expr.visit(&mut finder, &());
-        finder.found && (finder.saw_reduction || has_expr(expr, |e| matches!(e, Expr::Over { .. })))
+        finder.has_window || (finder.has_group_key && finder.has_reduction)
     }
 
     /// Replace every reduction in `expr` with a reference to a hoisted aggregation
-    /// output, collecting the hoisted aggregates into `agg_out`.
-    fn hoist(&mut self, expr: Expr, agg_out: &mut Vec<Expr>) -> Expr {
-        self.hoist_rec(expr, false, agg_out)
+    /// output, recorded in `self.aggregates`.
+    fn hoist(&mut self, expr: Expr) -> Expr {
+        self.hoist_rec(expr, false)
     }
 
     /// Inside a window function's body a reduction of a hoisted output stays on the
     /// aggregated frame (`avg(sum(x)) OVER (...)` hoists `sum(x)` only), and a
     /// `COUNT(*)` counts the window's rows, so there the reductions are found
     /// bottom-up.
-    fn hoist_rec(&mut self, expr: Expr, in_window: bool, agg_out: &mut Vec<Expr>) -> Expr {
+    fn hoist_rec(&mut self, expr: Expr, in_window: bool) -> Expr {
         match expr {
             Expr::Over {
                 function,
@@ -4162,65 +4218,47 @@ impl GroupContextSplitter<'_> {
                 order_by,
                 mapping,
             } => Expr::Over {
-                function: Arc::new(self.hoist_rec(Arc::unwrap_or_clone(function), true, agg_out)),
+                function: Arc::new(self.hoist_rec(Arc::unwrap_or_clone(function), true)),
                 partition_by: partition_by
                     .into_iter()
                     .map(|e| match e {
                         Expr::Column(name) if Some(&name) == self.whole_frame_partition => lit(1),
-                        e => self.hoist_rec(e, false, agg_out),
+                        e => self.hoist_rec(e, false),
                     })
                     .collect(),
                 order_by: order_by.map(|(e, options)| {
                     (
-                        Arc::new(self.hoist_rec(Arc::unwrap_or_clone(e), false, agg_out)),
+                        Arc::new(self.hoist_rec(Arc::unwrap_or_clone(e), false)),
                         options,
                     )
                 }),
                 mapping,
             },
             Expr::Len if in_window => Expr::Len,
-            e if !in_window && self.is_reduction(&e) => self.hoisted(e, agg_out),
+            e if !in_window && self.is_reduction(&e) => self.aggregates.get_or_insert_hoisted(e),
             e => {
                 let e = e
-                    .map_children(
-                        &mut |c, _| Ok(self.hoist_rec(c, in_window, agg_out)),
-                        &mut (),
-                    )
+                    .map_children(&mut |c, _| Ok(self.hoist_rec(c, in_window)), &mut ())
                     .unwrap();
                 let over_window_values = has_expr(&e, |inner| {
                     matches!(inner, Expr::Len)
-                        || matches!(inner, Expr::Column(name) if self.hoisted.contains(name))
+                        || matches!(inner, Expr::Column(name) if self.aggregates.is_hoisted(name))
                 });
                 if in_window && !over_window_values && self.is_reduction(&e) {
-                    self.hoisted(e, agg_out)
+                    self.aggregates.get_or_insert_hoisted(e)
                 } else {
                     e
                 }
             },
         }
     }
-
-    fn hoisted(&mut self, e: Expr, agg_out: &mut Vec<Expr>) -> Expr {
-        // An identical aggregate may appear in both the window body and its ORDER BY.
-        let existing = agg_out.iter().find_map(|agg| match agg {
-            Expr::Alias(inner, name) if **inner == e => Some(name.clone()),
-            _ => None,
-        });
-        let name = existing.unwrap_or_else(|| {
-            let name = format_pl_smallstr!("__POLARS_HOISTED_AGG_{}", unique_column_name());
-            agg_out.push(e.alias(name.clone()));
-            name
-        });
-        if !self.hoisted.contains(&name) {
-            self.hoisted.push(name.clone());
-        }
-        col(name)
-    }
 }
 
-/// Whether `expr` reduces a group to a scalar; shared by SELECT-projection
-/// classification and HAVING, so both agree on what counts as aggregation.
-fn expr_reduces_group(expr: &Expr, group_by_keys_schema: &Schema) -> bool {
+/// Whether a SELECT projection must be processed in the group context rather
+/// than passed through as a group key: it contains an aggregate, a window, or a
+/// function over a non-key column. Broader than `is_reduction`, which tests
+/// for a scalar reduction boundary.
+fn requires_group_processing(expr: &Expr, group_by_keys_schema: &Schema) -> bool {
     has_expr(expr, |e| match e {
         Expr::Agg(_) | Expr::Len | Expr::Over { .. } => true,
         #[cfg(feature = "dynamic_group_by")]
