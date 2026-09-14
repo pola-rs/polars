@@ -7,8 +7,9 @@ use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
 use sqlparser::ast::{
-    Expr as SQLExpr, FunctionArg, FunctionArgExpr, FunctionArguments, ObjectName, Query, SetExpr,
-    Statement, TableFactor, Visit, Visitor as SQLVisitor, visit_expressions,
+    Expr as SQLExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, FunctionArgumentList,
+    FunctionArguments, ObjectName, Query, SetExpr, Statement, TableFactor, Visit,
+    Visitor as SQLVisitor, visit_expressions,
 };
 use sqlparser::keywords::ALL_KEYWORDS;
 
@@ -375,6 +376,70 @@ pub(crate) fn expr_contains_subquery(expr: &SQLExpr) -> bool {
         }
     })
     .is_break()
+}
+
+/// The argument expressions of a `GROUPING()` / `GROUPING_ID()` call; `None` for
+/// any other function or an argument list that is not plain expressions.
+pub(crate) fn grouping_call_args(func: &SQLFunction) -> Option<Vec<SQLExpr>> {
+    let is_grouping = func
+        .name
+        .0
+        .last()
+        .and_then(|p| p.as_ident())
+        .is_some_and(|i| {
+            i.value.eq_ignore_ascii_case("grouping") || i.value.eq_ignore_ascii_case("grouping_id")
+        });
+    if !is_grouping {
+        return None;
+    }
+    let FunctionArguments::List(FunctionArgumentList { args, .. }) = &func.args else {
+        return None;
+    };
+    args.iter()
+        .map(|arg| match arg {
+            FunctionArg::Unnamed(FunctionArgExpr::Expr(e)) => Some(e.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Collect the argument lists of the `GROUPING()` calls in a SQL expression,
+/// leaving out those inside subqueries, which belong to their own query block.
+pub(crate) fn collect_grouping_calls(expr: &SQLExpr) -> Vec<Vec<SQLExpr>> {
+    struct Collector {
+        subquery_depth: usize,
+        calls: Vec<Vec<SQLExpr>>,
+    }
+    impl SQLVisitor for Collector {
+        type Break = ();
+
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.subquery_depth += 1;
+            ControlFlow::Continue(())
+        }
+
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.subquery_depth -= 1;
+            ControlFlow::Continue(())
+        }
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            if self.subquery_depth == 0 {
+                if let SQLExpr::Function(f) = expr {
+                    if let Some(args) = grouping_call_args(f) {
+                        self.calls.push(args);
+                    }
+                }
+            }
+            ControlFlow::Continue(())
+        }
+    }
+    let mut collector = Collector {
+        subquery_depth: 0,
+        calls: Vec::new(),
+    };
+    let _ = expr.visit(&mut collector);
+    collector.calls
 }
 
 // ---------------------------------------------------------------------------
