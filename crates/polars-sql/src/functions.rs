@@ -2303,7 +2303,13 @@ impl SQLFunctionVisitor<'_> {
         let quantile = parse_quantile_literal(quantile, "APPROX_QUANTILE", args[1])?;
 
         let error = match error_arg {
-            Some(e) => f64::from_sql_arg(e, self)?,
+            Some(e) => match parse_sql_expr(e, self.ctx, self.active_schema)? {
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(f))) => f,
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) => n as f64,
+                _ => {
+                    polars_bail!(SQLSyntax: "invalid error value for APPROX_QUANTILE ({})", args[2])
+                },
+            },
             None => DEFAULT_ERROR,
         };
         let method = match method_arg {

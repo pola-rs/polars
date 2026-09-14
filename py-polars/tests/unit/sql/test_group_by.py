@@ -1033,7 +1033,7 @@ def test_approx_quantile_out_of_range(quantile: str) -> None:
         df.sql(f"SELECT APPROX_QUANTILE(x, {quantile}) FROM self")
 
 
-@pytest.mark.parametrize("error", ["0.0", "1.0", "2.0"])
+@pytest.mark.parametrize("error", ["0.0", "1.0", "2.0", "-0.1", "-1"])
 def test_approx_quantile_bad_error(error: str) -> None:
     df = pl.DataFrame({"x": [1.0, 2.0, 3.0]})
     with pytest.raises(InvalidOperationError, match="`error` must be in the range"):
@@ -1081,6 +1081,11 @@ def test_approx_quantile_optional_args(args: str, expected: float) -> None:
             "SELECT APPROX_QUANTILE(x, 0.5, 0.01, 'nope') FROM self",
             InvalidOperationError,
             "`method` must be one of",
+        ),
+        (
+            "SELECT APPROX_QUANTILE(x, 0.5, y) FROM self",
+            SQLSyntaxError,
+            "invalid error value for APPROX_QUANTILE",
         ),
     ],
 )
