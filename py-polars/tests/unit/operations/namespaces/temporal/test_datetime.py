@@ -126,9 +126,9 @@ def test_dt_replace_time_zone_none(time_zone: str | None, time_unit: TimeUnit) -
     assert result.item() == expected
 
 
-@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])
+@pytest.mark.parametrize("time_zone", [None, "UTC"])
 def test_local_date_sortedness(time_zone: str | None) -> None:
-    # singleton
+    # singleton - always sorted
     ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
     result = ser.dt.date()
     assert result.flags["SORTED_ASC"]
@@ -139,6 +139,40 @@ def test_local_date_sortedness(time_zone: str | None) -> None:
     ).sort()
     result = ser.dt.date()
     assert result.flags["SORTED_ASC"]
+    assert not result.flags["SORTED_DESC"]
+
+
+# The streaming engine derives sortedness from the values themselves, so it may report
+# this genuinely sorted result as sorted regardless of what the conversion claims.
+@pytest.mark.may_fail_auto_streaming
+def test_local_date_sortedness_tz_aware_is_conservative() -> None:
+    # A time zone with offset changes may move the local date backwards while the
+    # underlying instants move forwards, so sortedness can't be carried over.
+    ser = (
+        pl.Series([datetime(2022, 1, 1, 23)] * 2).dt.replace_time_zone("Asia/Kathmandu")
+    ).sort()
+    result = ser.dt.date()
+
+    assert not result.flags["SORTED_ASC"]
+    assert not result.flags["SORTED_DESC"]
+
+
+def test_local_date_sortedness_backwards_transition_28560() -> None:
+    # `Antarctica/Casey` moved from +11 to +08 on 2010-03-04, so the local date goes
+    # backwards while UTC goes forwards.
+    utc = (
+        pl.Series(
+            "t", [datetime(2010, 3, 4, 13) + timedelta(hours=h) for h in range(4)]
+        )
+        .dt.replace_time_zone("UTC")
+        .sort()
+    )
+    result = utc.dt.convert_time_zone("Antarctica/Casey").dt.date()
+
+    assert not result.flags["SORTED_ASC"]
+    assert not result.flags["SORTED_DESC"]
+    assert result.min() == date(2010, 3, 4)
+    assert result.sort().to_list() == sorted(result.to_list())
 
 
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])
