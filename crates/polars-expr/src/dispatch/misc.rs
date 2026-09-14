@@ -1167,13 +1167,13 @@ pub(super) fn bin(s: &Column, options: IRBinOptions) -> PolarsResult<Column> {
 
     match &method {
         IRBinMethod::Intervals { spec, right_closed } => {
-            polars_ops::prelude::bin_intervals(s, spec, labels, include_intervals, *right_closed)
+            polars_ops::series::bin_intervals(s, spec, labels, include_intervals, *right_closed)
         },
         IRBinMethod::Quantiles { spec, right_closed } => {
-            polars_ops::prelude::bin_quantiles(s, spec, labels, include_intervals, *right_closed)
+            polars_ops::series::bin_quantiles(s, spec, labels, include_intervals, *right_closed)
         },
         IRBinMethod::Ranks { spec } => {
-            polars_ops::prelude::bin_ranks(s, spec, labels, include_intervals)
+            polars_ops::series::bin_ranks(s, spec, labels, include_intervals)
         },
     }
     .map(Column::from)
