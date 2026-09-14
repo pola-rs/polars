@@ -68,46 +68,6 @@ fn gather_at_sorted_positions(
     s.take(&phys_idx)
 }
 
-/// Measure and apply an offset in the unsigned domain so full-width signed spans do not
-/// overflow.
-trait BinWidth: Copy {
-    /// `self - min`, non-negative because `self` is the column's max.
-    fn span_from(self, min: Self) -> u128;
-    /// `self + offset`, where `offset` lies within the span and so cannot overflow, nor
-    /// lose anything on the way back down to this width.
-    fn offset_by(self, offset: u128) -> Self;
-}
-
-macro_rules! impl_bin_width {
-    (signed: $($t:ty),* $(,)?) => {
-        $(
-            impl BinWidth for $t {
-                fn span_from(self, min: Self) -> u128 {
-                    self.cast_unsigned().wrapping_sub(min.cast_unsigned()).into()
-                }
-                fn offset_by(self, offset: u128) -> Self {
-                    self.cast_unsigned().wrapping_add(offset as _).cast_signed()
-                }
-            }
-        )*
-    };
-    (unsigned: $($t:ty),* $(,)?) => {
-        $(
-            impl BinWidth for $t {
-                fn span_from(self, min: Self) -> u128 {
-                    self.wrapping_sub(min).into()
-                }
-                fn offset_by(self, offset: u128) -> Self {
-                    self.wrapping_add(offset as _)
-                }
-            }
-        )*
-    };
-}
-
-impl_bin_width!(signed: i8, i16, i32, i64, i128);
-impl_bin_width!(unsigned: u8, u16, u32, u64, u128);
-
 /// Offsets from `min` of the `n_bins - 1` thresholds of equal-width bins over a span.
 ///
 /// The exact breakpoint `i * span / n_bins` need not be an integer. For left-closed bins
@@ -138,23 +98,11 @@ fn uniform_threshold_offsets(
     })
 }
 
-/// Representable thresholds for equal-width bins over `[min, max]`, in `N`'s own width.
-fn uniform_integer_thresholds<N: BinWidth>(
-    min: N,
-    max: N,
-    n_bins: usize,
-    right_closed: bool,
-) -> Vec<N> {
-    uniform_threshold_offsets(max.span_from(min), n_bins, right_closed)
-        .map(|offset| min.offset_by(offset))
-        .collect()
-}
-
 /// Equal-width breakpoints `min + (i + 1)/n_bins * (max - min)` for `0 <= i < n_bins - 1`,
 /// in the input dtype, or `None` when the column has no usable `min`/`max`.
 ///
 /// Floats go through `f64` and are narrowed back afterwards; integers and `Decimal` (via
-/// its `Int128` physical) use [`uniform_integer_thresholds`].
+/// its `Int128` physical) derive representable thresholds in their own width.
 fn uniform_interval_breaks(
     s: &Series,
     n_bins: usize,
@@ -188,15 +136,17 @@ fn uniform_interval_breaks(
     let phys = s.to_physical_repr();
     let phys: &Series = phys.as_ref();
     let breaks = with_match_physical_integer_polars_type!(phys.dtype(), |$T| {
+        type N = <$T as PolarsNumericType>::Native;
         let ca: &ChunkedArray<$T> = phys.as_ref().as_ref();
         let Some((min, max)) = ca.min_max() else {
             return Ok(None);
         };
-        ChunkedArray::<$T>::from_vec(
-            s.name().clone(),
-            uniform_integer_thresholds(min, max, n_bins, right_closed),
-        )
-        .into_series()
+        // we are exact for all signed/unsigned integer types
+        let span = (max as i128).wrapping_sub(min as i128) as u128;
+        let breaks: Vec<N> = uniform_threshold_offsets(span, n_bins, right_closed)
+            .map(|offset| (min as i128).wrapping_add(offset as i128) as N)
+            .collect();
+        ChunkedArray::<$T>::from_vec(s.name().clone(), breaks).into_series()
     });
 
     // Reattach the logical dtype: a no-op for plain integers, and restores the precision
@@ -231,19 +181,19 @@ fn quantile_break_positions_uniform(non_null_len: usize, n_bins: usize) -> Vec<I
         .collect()
 }
 
-/// Cut positions for `n_bins` bins of near-equal size.
+/// Cumulative sizes of `n_bins` bins of near-equal size.
 ///
 /// Bin `i` receives `k + 1` elements while `i < len % n_bins` and `k` afterwards, so the
 /// earlier bins are the larger ones: 14 elements over 4 bins gives 4 + 4 + 3 + 3.
-fn rank_cut_positions_uniform(non_null_len: usize, n_bins: usize) -> Vec<IdxSize> {
+fn cum_bin_sizes_uniform(non_null_len: usize, n_bins: usize) -> Vec<IdxSize> {
     let k = non_null_len / n_bins;
     let r = non_null_len % n_bins;
     (1..n_bins).map(|i| (i * k + i.min(r)) as IdxSize).collect()
 }
 
-/// Cut positions for explicit cumulative fractions: `round(f * len)`, rounding half away
-/// from zero so that, as in [`rank_cut_positions_uniform`], earlier bins are the larger.
-fn rank_cut_positions_fractions(non_null_len: usize, fractions: &[f64]) -> Vec<IdxSize> {
+/// Cumulative bin sizes for explicit cumulative fractions: `round(f * len)`, rounding half
+/// away from zero so that, as in [`cum_bin_sizes_uniform`], earlier bins are the larger.
+fn cum_bin_sizes_fractions(non_null_len: usize, fractions: &[f64]) -> Vec<IdxSize> {
     fractions
         .iter()
         .map(|f| (f * non_null_len as f64).round() as IdxSize)
@@ -273,26 +223,16 @@ fn finish_bins(
                 n_bins, labels.len()
             );
             let fcats = FrozenCategories::new(labels.iter().map(|s| s.as_str()))?;
-            let dtype = DataType::from_frozen_categories(fcats.clone());
-            with_match_categorical_physical_type!(fcats.physical(), |$C| {
-                let cats: Vec<<$C as PolarsCategoricalType>::Native> = bin_idx
-                    .iter()
-                    .map(|opt| {
-                        <$C as PolarsCategoricalType>::Native::from_cat(
-                            opt.unwrap_or(0) as CatSize,
-                        )
-                    })
-                    .collect();
-                let phys = ChunkedArray::<<$C as PolarsCategoricalType>::PolarsPhysical>::from_vec_validity(
+            let physical = fcats.physical();
+            let dtype = DataType::from_frozen_categories(fcats);
+            with_match_categorical_physical_type!(physical, |$C| {
+                CategoricalChunked::<$C>::from_str_iter(
                     PlSmallStr::EMPTY,
-                    cats,
-                    concatenate_validities(bin_idx.chunks()),
-                );
-                // SAFETY: every index is `< n_bins`, which is the number of frozen
-                // categories, and the physical width was taken from `fcats` itself.
-                unsafe {
-                    CategoricalChunked::<$C>::from_cats_and_dtype_unchecked(phys, dtype)
-                }
+                    dtype,
+                    bin_idx
+                        .iter()
+                        .map(|opt| opt.map(|i| labels[i as usize].as_str())),
+                )?
                 .into_series()
             })
         },
@@ -400,13 +340,13 @@ pub fn bin_ranks(
     include_intervals: bool,
 ) -> PolarsResult<Series> {
     let non_null_len = s.len() - s.null_count();
-    let positions = match spec {
-        FractionSpec::Explicit(fractions) => rank_cut_positions_fractions(non_null_len, fractions),
-        FractionSpec::Count(n_bins) => rank_cut_positions_uniform(non_null_len, n_bins.get()),
+    let cum_bin_sizes = match spec {
+        FractionSpec::Explicit(fractions) => cum_bin_sizes_fractions(non_null_len, fractions),
+        FractionSpec::Count(n_bins) => cum_bin_sizes_uniform(non_null_len, n_bins.get()),
     };
     bin_at_positions(
         s,
-        &positions,
+        &cum_bin_sizes,
         spec.n_bins(),
         labels,
         include_intervals,
@@ -421,6 +361,11 @@ pub fn bin_ranks(
 /// each row's ordinal rank against the cut positions. The rank form therefore splits ties
 /// across adjacent bins, which is the whole point of it -- and never needs the boundary
 /// values unless they are actually reported.
+///
+/// Either way `positions` indexes into the non-null values in sorted order, but the two
+/// forms arrive at it differently: for quantile binning it is the breakpoint's own sorted
+/// position, while for rank binning it is the cumulative bin sizes -- the rank at which
+/// each bin starts, whose value happens to be that bin's left boundary.
 fn bin_at_positions(
     s: &Series,
     positions: &[IdxSize],
