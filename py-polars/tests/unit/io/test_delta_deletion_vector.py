@@ -17,7 +17,7 @@ from deltalake import DeltaTable
 from pyroaring import BitMap  # type: ignore[import-not-found]
 
 import polars as pl
-from polars.io.delta._dataset import _extract_delta_deletion_vectors
+from polars.io.delta._scan_resolver import _extract_delta_deletion_vectors
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
