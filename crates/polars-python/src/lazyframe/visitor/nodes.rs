@@ -1,6 +1,8 @@
 use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::python_dsl::PythonScanSource;
-use polars::prelude::{ColumnMapping, PredicateFileSkip};
+use polars::prelude::{
+    CastColumnsPolicy, ColumnMapping, ExtraColumnsPolicy, MissingColumnsPolicy, PredicateFileSkip,
+};
 use polars_core::prelude::IdxSize;
 use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType, IcebergSchema};
 use polars_io::HiveOptions;
@@ -320,6 +322,96 @@ impl PyFileOptions {
     #[getter]
     fn row_count(&self) -> Option<(u64, u64)> {
         self.inner.row_count
+    }
+
+    /// How to handle columns of the output schema that a source does not contain.
+    /// One of "insert" (substitute a full-NULL column) or "raise".
+    #[getter]
+    fn missing_columns_policy(&self) -> &'static str {
+        missing_columns_policy_to_str(self.inner.missing_columns_policy)
+    }
+
+    /// How to handle columns in a source that are not in the output schema.
+    /// One of "ignore" or "raise".
+    #[getter]
+    fn extra_columns_policy(&self) -> &'static str {
+        extra_columns_policy_to_str(self.inner.extra_columns_policy)
+    }
+
+    /// Which dtype mismatches between a source and the output schema may be resolved
+    /// by casting, as a dict of the resolved policy flags.
+    ///
+    /// "missing_struct_fields" and "extra_struct_fields" are the struct-field
+    /// equivalents of `missing_columns_policy` and `extra_columns_policy`; the
+    /// remaining keys are booleans.
+    #[getter]
+    fn cast_columns_policy(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let CastColumnsPolicy {
+            integer_upcast,
+            integer_to_float_cast,
+            float_upcast,
+            float_downcast,
+            datetime_nanoseconds_downcast,
+            datetime_microseconds_downcast,
+            datetime_milliseconds_upcast,
+            datetime_microseconds_upcast,
+            datetime_convert_timezone,
+            null_upcast,
+            categorical_to_string,
+            missing_struct_fields,
+            extra_struct_fields,
+        } = &self.inner.cast_columns_policy;
+
+        let out = PyDict::new(py);
+        out.set_item("integer_upcast", *integer_upcast)?;
+        out.set_item("integer_to_float_cast", *integer_to_float_cast)?;
+        out.set_item("float_upcast", *float_upcast)?;
+        out.set_item("float_downcast", *float_downcast)?;
+        out.set_item(
+            "datetime_nanoseconds_downcast",
+            *datetime_nanoseconds_downcast,
+        )?;
+        out.set_item(
+            "datetime_microseconds_downcast",
+            *datetime_microseconds_downcast,
+        )?;
+        out.set_item(
+            "datetime_milliseconds_upcast",
+            *datetime_milliseconds_upcast,
+        )?;
+        out.set_item(
+            "datetime_microseconds_upcast",
+            *datetime_microseconds_upcast,
+        )?;
+        out.set_item("datetime_convert_timezone", *datetime_convert_timezone)?;
+        out.set_item("null_upcast", *null_upcast)?;
+        out.set_item("categorical_to_string", *categorical_to_string)?;
+        out.set_item(
+            "missing_struct_fields",
+            missing_columns_policy_to_str(*missing_struct_fields),
+        )?;
+        out.set_item(
+            "extra_struct_fields",
+            extra_columns_policy_to_str(*extra_struct_fields),
+        )?;
+
+        Ok(out.into_any().unbind())
+    }
+}
+
+/// Inverse of the `Wrap<MissingColumnsPolicy>` extraction.
+fn missing_columns_policy_to_str(policy: MissingColumnsPolicy) -> &'static str {
+    match policy {
+        MissingColumnsPolicy::Insert => "insert",
+        MissingColumnsPolicy::Raise => "raise",
+    }
+}
+
+/// Inverse of the `Wrap<ExtraColumnsPolicy>` extraction.
+fn extra_columns_policy_to_str(policy: ExtraColumnsPolicy) -> &'static str {
+    match policy {
+        ExtraColumnsPolicy::Ignore => "ignore",
+        ExtraColumnsPolicy::Raise => "raise",
     }
 }
 
