@@ -4209,9 +4209,11 @@ impl GroupContextSplitter<'_> {
         let name = existing.unwrap_or_else(|| {
             let name = format_pl_smallstr!("__POLARS_HOISTED_AGG_{}", unique_column_name());
             agg_out.push(e.alias(name.clone()));
-            self.hoisted.push(name.clone());
             name
         });
+        if !self.hoisted.contains(&name) {
+            self.hoisted.push(name.clone());
+        }
         col(name)
     }
 }

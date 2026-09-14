@@ -811,3 +811,15 @@ def test_whole_frame_window_marker_is_private() -> None:
     # GROUP BY ALL without inferable keys is not a grouped block.
     out = lf.sql("SELECT ROW_NUMBER() OVER () AS n FROM self GROUP BY ALL ORDER BY n")
     assert out.collect()["n"].to_list() == [1, 2]
+
+
+def test_window_over_selected_aggregate() -> None:
+    lf = pl.LazyFrame({"a": [1, 1, 2], "b": [10, 20, 30]})
+    assert_grouping_sets_matches(
+        lf,
+        """
+        SELECT a, MIN(b) AS m, MAX(MIN(b)) OVER () AS w
+        FROM self GROUP BY ROLLUP(a) ORDER BY a
+        """,
+        expected={"a": [1, 2, None], "m": [10, 30, 10], "w": [30, 30, 30]},
+    )
