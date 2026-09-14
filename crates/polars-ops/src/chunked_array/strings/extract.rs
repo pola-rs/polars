@@ -68,6 +68,14 @@ pub(super) fn extract_groups(
         .map(|fld| fld.name.as_str())
         .collect::<Vec<_>>();
 
+    // A column that reads one element throughout matches the pattern the one way, so the groups
+    // that come out of it stand for every element in turn: the regex is run over a single element
+    // and the struct it makes is repeated, rather than matched against `len` copies of one string.
+    if ca.len() > 1 && ca.scalar_value().is_some() {
+        let one = extract_groups(&ca.slice(0, 1), pat, dtype)?;
+        return Ok(one.new_from_index(0, ca.len()));
+    }
+
     let chunks = ca
         .downcast_iter()
         .map(|array| extract_groups_array(array, &reg, &names))
