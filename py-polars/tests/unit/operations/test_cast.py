@@ -1090,3 +1090,25 @@ def test_cast_binary_to_string_rejects_invalid_utf8() -> None:
         pl.Series("x", [b"ok", None], dtype=pl.Binary).cast(pl.String),
         pl.Series("x", ["ok", None], dtype=pl.String),
     )
+
+
+def test_cast_categorical_repeated_chunk() -> None:
+    # A chunk that reads one string throughout is one category, so a single lookup answers the
+    # whole column; it must agree with the written-out column, mask shape for mask shape.
+    for dtype in (pl.Categorical, pl.Enum(["abc", "q"])):
+        assert pl.repeat("abc", 3, dtype=pl.String, eager=True).cast(dtype).to_list() == [
+            "abc"
+        ] * 3
+        assert pl.repeat(None, 3, dtype=pl.String, eager=True).cast(dtype).to_list() == [
+            None
+        ] * 3
+        # a string the Enum does not hold becomes null, as it does on the written-out path
+        assert pl.repeat("zzz", 3, dtype=pl.String, eager=True).cast(
+            dtype, strict=False
+        ).to_list() == (["zzz"] * 3 if dtype == pl.Categorical else [None] * 3)
+
+    # and between the two categorical dtypes
+    cat = pl.repeat("abc", 3, dtype=pl.String, eager=True).cast(pl.Categorical)
+    assert cat.cast(pl.Enum(["abc", "q"])).to_list() == ["abc"] * 3
+    enum = pl.repeat("q", 3, dtype=pl.String, eager=True).cast(pl.Enum(["abc", "q"]))
+    assert enum.cast(pl.Categorical).to_list() == ["q"] * 3

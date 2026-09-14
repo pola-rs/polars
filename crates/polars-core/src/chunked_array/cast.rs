@@ -307,16 +307,24 @@ impl ChunkCast for StringChunked {
         match dtype {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(cats, _mapping) => {
+                // A chunk that reads one string throughout is one category, so a single lookup
+                // stands for every element; see `from_repeated_str`.
+                let repeated = (self.len() > 1).then(|| self.scalar_value()).flatten();
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
-                    Ok(CategoricalChunked::<$C>::from_str_iter(self.name().clone(), dtype.clone(), self.iter())?
-                        .into_series())
+                    Ok(match repeated {
+                        Some(value) => CategoricalChunked::<$C>::from_repeated_str(self.name().clone(), dtype.clone(), value, self.len())?,
+                        None => CategoricalChunked::<$C>::from_str_iter(self.name().clone(), dtype.clone(), self.iter())?,
+                    }.into_series())
                 })
             },
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(fcats, _mapping) => {
+                let repeated = (self.len() > 1).then(|| self.scalar_value()).flatten();
                 let ret = with_match_categorical_physical_type!(fcats.physical(), |$C| {
-                    CategoricalChunked::<$C>::from_str_iter(self.name().clone(), dtype.clone(), self.iter())?
-                        .into_series()
+                    match repeated {
+                        Some(value) => CategoricalChunked::<$C>::from_repeated_str(self.name().clone(), dtype.clone(), value, self.len())?,
+                        None => CategoricalChunked::<$C>::from_str_iter(self.name().clone(), dtype.clone(), self.iter())?,
+                    }.into_series()
                 });
 
                 if options.is_strict() && self.null_count() != ret.null_count() {
