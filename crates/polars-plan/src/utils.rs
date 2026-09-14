@@ -269,6 +269,7 @@ pub fn aexpr_to_leaf_names_iter(
     node: Node,
     arena: &'_ Arena<AExpr>,
 ) -> impl Iterator<Item = &'_ PlSmallStr> + '_ {
+    #[allow(clippy::disallowed_types)] // Order non-observable.
     let mut seen = PlHashSet::new();
     aexpr_to_column_nodes_iter(node, arena).filter_map(move |node| match arena.get(node.0) {
         AExpr::Column(name) => seen.insert(name).then_some(name),
