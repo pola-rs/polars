@@ -36,6 +36,13 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
         return Ok(IdxCa::new(s.name().clone(), [s.len() as IdxSize]).into_series());
     }
 
+    // Every element of a chunk that repeats one element is that element, so the column holds a
+    // single unique value and it appears as many times as the column is long: the count is read
+    // off the length rather than every element being hashed to find it.
+    if s.repeats_one_element() {
+        return Ok(IdxCa::new(s.name().clone(), [s.len() as IdxSize]).into_series());
+    }
+
     let mut s = Cow::Borrowed(s);
 
     if s.dtype().is_nested() {
