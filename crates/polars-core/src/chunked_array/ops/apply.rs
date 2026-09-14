@@ -329,11 +329,10 @@ where
     where
         F: Fn(Option<T::Native>) -> Option<T::Native> + Copy,
     {
-        let chunks = self.downcast_iter().map(|arr| {
-            let out: T::Array = arr.iter().map(f).collect_arr();
-            out
-        });
-        Self::from_chunk_iter(self.name().clone(), chunks)
+        // As in the `Boolean` and `String` impls of this same method: `unary_elementwise` is
+        // where a chunk that reads one element throughout is answered by a single call, and
+        // where a chunk with no nulls walks its values rather than its `Option`s.
+        unary_elementwise(self, f)
     }
 
     fn apply_to_slice<F, V>(&'a self, f: F, slice: &mut [V])

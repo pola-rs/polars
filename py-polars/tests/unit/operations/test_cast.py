@@ -1112,3 +1112,22 @@ def test_cast_categorical_repeated_chunk() -> None:
     assert cat.cast(pl.Enum(["abc", "q"])).to_list() == ["abc"] * 3
     enum = pl.repeat("q", 3, dtype=pl.String, eager=True).cast(pl.Enum(["abc", "q"]))
     assert enum.cast(pl.Categorical).to_list() == ["q"] * 3
+
+
+def test_cast_datetime_to_time_repeated_chunk() -> None:
+    # `Datetime -> Time` goes through the numeric `apply`, which answers a repeated chunk with a
+    # single call. Negative timestamps take the branch that adds a day back on.
+    for value, expected in [
+        (datetime(2021, 3, 4, 5, 6, 7), time(5, 6, 7)),
+        (datetime(1960, 5, 6, 7, 8, 9), time(7, 8, 9)),
+    ]:
+        for unit in ("ns", "us", "ms"):
+            s = pl.repeat(value, 3, dtype=pl.Datetime(unit), eager=True)  # type: ignore[arg-type]
+            assert s.cast(pl.Time).to_list() == [expected] * 3
+            assert pl.Series([value] * 3, dtype=pl.Datetime(unit)).cast(  # type: ignore[arg-type]
+                pl.Time
+            ).to_list() == [expected] * 3
+
+    assert pl.repeat(None, 3, dtype=pl.Datetime("us"), eager=True).cast(
+        pl.Time
+    ).to_list() == [None] * 3
