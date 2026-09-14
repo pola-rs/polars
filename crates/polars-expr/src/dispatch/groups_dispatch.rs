@@ -522,7 +522,12 @@ pub fn quantile<'a>(
 
     let quantile_column = inputs[1].evaluate(df, state)?;
     polars_ensure!(
-        quantile_column.len() <= 1,
+        !quantile_column.is_empty(),
+        ComputeError:
+            "the 'quantile' expression input should produce a single quantile, got an empty input"
+    );
+    polars_ensure!(
+        quantile_column.len() == 1,
         ComputeError:
             "polars only supports computing a single quantile in a groupby aggregation context"
     );

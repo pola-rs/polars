@@ -1,75 +1,99 @@
 use std::collections::BTreeMap;
 use std::ops::{Range, RangeBounds};
+use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 use polars_core::schema::SchemaRef;
 use polars_core::series::Series;
+use polars_ooc::{ParameterFreeSpillContext, RandomSpillContext, SpillFrame};
 use polars_utils::range::check_range;
 
 use crate::pipe::PortReceiver;
 
 #[derive(Clone, Debug)]
-pub(super) struct DataFrameSearchBuffer {
+pub(super) struct SpillFrameSearchBuffer {
     schema: SchemaRef,
-    dfs_at_offsets: BTreeMap<usize, DataFrame>,
+    // Use Arc<_> to prevent unspilling the SpillFrames when splitting the DFSB.
+    sfs_at_offsets: BTreeMap<usize, Arc<SpillFrame>>,
+    spill_ctx: RandomSpillContext,
     total_rows: usize,
     skip_rows: usize,
     frozen: bool,
 }
 
-impl DataFrameSearchBuffer {
-    pub(super) fn empty_with_schema(schema: SchemaRef) -> Self {
-        DataFrameSearchBuffer {
+impl SpillFrameSearchBuffer {
+    pub(super) fn empty_with_schema(schema: SchemaRef, spill_ctx: RandomSpillContext) -> Self {
+        SpillFrameSearchBuffer {
             schema,
-            dfs_at_offsets: BTreeMap::new(),
+            sfs_at_offsets: BTreeMap::new(),
+            spill_ctx,
             total_rows: 0,
             skip_rows: 0,
             frozen: false,
         }
     }
 
+    pub(super) fn empty_clone(&self) -> Self {
+        Self::empty_with_schema(self.schema.clone(), self.spill_ctx.clone())
+    }
+
     pub(super) fn height(&self) -> usize {
         self.total_rows
+    }
+
+    /// Get the offset of the first live row in `sfs_at_offsets` coordinates.
+    fn live_start(&self) -> usize {
+        let first_offset = match self.sfs_at_offsets.first_key_value() {
+            Some((offset, _)) => *offset,
+            None => 0,
+        };
+        first_offset + self.skip_rows
+    }
+
+    fn spillframe_at(&self, row_index: usize) -> (&Arc<SpillFrame>, usize) {
+        debug_assert!(row_index < self.total_rows);
+        let buf_index = self.live_start() + row_index;
+        let (frame_offset, frame) = self.sfs_at_offsets.range(..=buf_index).next_back().unwrap();
+        (frame, buf_index - frame_offset)
     }
 
     /// Get the `row_index`th value from the `column`.
     ///
     /// SAFETY: Caller must ensure that `row_index` is within bounds.
-    pub(super) unsafe fn get_unchecked(&self, column: &str, row_index: usize) -> AnyValue<'_> {
-        unsafe { self.get_bypass_validity(column, row_index, false) }
+    pub(super) async unsafe fn get_unchecked(
+        &self,
+        column: &str,
+        row_index: usize,
+    ) -> AnyValue<'static> {
+        unsafe { self.get_bypass_validity(column, row_index, false).await }
     }
 
     /// Get the `row_index`th value from the `column` potentially bypassing its
     /// validity bitmap.
     ///
     /// SAFETY: Caller must ensure that `row_index` is within bounds.
-    pub(super) unsafe fn get_bypass_validity(
+    pub(super) async unsafe fn get_bypass_validity(
         &self,
         column: &str,
         row_index: usize,
         bypass_validity: bool,
-    ) -> AnyValue<'_> {
-        debug_assert!(row_index < self.total_rows);
-        let first_offset = match self.dfs_at_offsets.first_key_value() {
-            Some((offset, _)) => *offset,
-            None => 0,
-        };
-        let buf_index = self.skip_rows + first_offset + row_index;
-        let (df_offset, df) = self.dfs_at_offsets.range(..=buf_index).next_back().unwrap();
-        let series_index = buf_index - df_offset;
+    ) -> AnyValue<'static> {
+        let (frame, frame_index) = self.spillframe_at(row_index);
+        let df = frame.get().await;
         let series = df.column(column).unwrap().as_materialized_series();
-        unsafe { series_get_bypass_validity(series, series_index, bypass_validity) }
+        unsafe { series_get_bypass_validity(series, frame_index, bypass_validity) }.into_static()
     }
 
-    pub(super) fn push_df(&mut self, df: DataFrame) {
+    pub(super) async fn push_sf(&mut self, sf: SpillFrame) {
         assert!(!self.frozen);
-        let added_rows = df.height();
-        let offset = match self.dfs_at_offsets.last_key_value() {
-            Some((last_key, last_df)) => last_key + last_df.height(),
+        let added_rows = sf.height();
+        let offset = match self.sfs_at_offsets.last_key_value() {
+            Some((last_key, last_sf)) => last_key + last_sf.height(),
             None => 0,
         };
-        self.dfs_at_offsets.insert(offset, df);
+        self.spill_ctx.register(&sf).await;
+        self.sfs_at_offsets.insert(offset, Arc::new(sf));
         self.total_rows += added_rows;
     }
 
@@ -93,20 +117,32 @@ impl DataFrameSearchBuffer {
         self
     }
 
-    pub(super) fn into_df(self) -> DataFrame {
+    pub(super) async fn into_df(self) -> DataFrame {
         let mut acc = DataFrame::empty_with_schema(&self.schema);
-        for df in self.dfs_at_offsets.into_values() {
-            acc.vstack_mut_owned(df).unwrap();
+        if self.total_rows == 0 {
+            return acc;
         }
-        acc.slice(self.skip_rows as i64, self.total_rows)
+
+        let live_start = self.live_start();
+        let live_end = live_start + self.total_rows;
+        let first_offset = *self
+            .sfs_at_offsets
+            .range(..=live_start)
+            .next_back()
+            .unwrap()
+            .0;
+        for (_, frame) in self.sfs_at_offsets.range(first_offset..live_end) {
+            acc.vstack_mut(&*frame.get().await).unwrap();
+        }
+        acc.slice((live_start - first_offset) as i64, self.total_rows)
     }
 
     fn gc(&mut self) {
-        while let Some((_, df)) = self.dfs_at_offsets.first_key_value()
-            && self.skip_rows > df.height()
+        while let Some((_, frame)) = self.sfs_at_offsets.first_key_value()
+            && self.skip_rows > frame.height()
         {
-            let (_, gc_df) = self.dfs_at_offsets.pop_first().unwrap();
-            self.skip_rows -= gc_df.height();
+            let (_, gc_frame) = self.sfs_at_offsets.pop_first().unwrap();
+            self.skip_rows -= gc_frame.height();
         }
     }
 
@@ -116,17 +152,23 @@ impl DataFrameSearchBuffer {
 
     /// Find the index of the first item in the buffer that satisfies `predicate`,
     /// assuming it is first always false and then always true.
-    pub(super) fn binary_search<P, R>(&self, predicate: P, key_col_name: &str, range: R) -> usize
+    pub(super) async fn binary_search<P, R>(
+        &self,
+        predicate: P,
+        key_col_name: &str,
+        range: R,
+    ) -> usize
     where
         P: Fn(&AnyValue<'_>) -> bool,
         R: RangeBounds<usize>,
     {
         self.binary_search_binary_offset_bypass_validity(predicate, key_col_name, range, false)
+            .await
     }
 
     /// Find the index of the first item in the buffer that satisfies `predicate`,
     /// assuming it is first always false and then always true.
-    pub(super) fn binary_search_binary_offset_bypass_validity<P, R>(
+    pub(super) async fn binary_search_binary_offset_bypass_validity<P, R>(
         &self,
         predicate: P,
         key_col_name: &str,
@@ -143,8 +185,11 @@ impl DataFrameSearchBuffer {
         } = check_range(range, ..self.height());
         while lower < upper {
             let mid = (lower + upper) / 2;
+            let (frame, frame_index) = self.spillframe_at(mid);
+            let df = frame.get().await;
+            let series = df.column(key_col_name).unwrap().as_materialized_series();
             let mid_val = unsafe {
-                self.get_bypass_validity(key_col_name, mid, binary_offset_bypass_validity)
+                series_get_bypass_validity(series, frame_index, binary_offset_bypass_validity)
             };
             if predicate(&mid_val) {
                 upper = mid;
@@ -156,50 +201,27 @@ impl DataFrameSearchBuffer {
     }
 
     pub(super) async fn stop_and_buffer_from_pipe(&mut self, port: Option<&mut PortReceiver>) {
-        stop_and_buffer_pipe_contents(port, &mut |df| self.push_df(df)).await
-    }
-
-    pub(super) fn select<I, S>(&self, columns: I) -> Self
-    where
-        I: IntoIterator<Item = S> + Clone,
-        S: AsRef<str>,
-    {
-        let select_map = |df: &DataFrame| df.select(columns.clone()).expect("projection failed");
-        let dfs_at_offsets = self
-            .dfs_at_offsets
-            .iter()
-            .map(|(offset, df)| (*offset, select_map(df)))
-            .collect();
-        DataFrameSearchBuffer {
-            schema: self
-                .schema
-                .try_project(columns)
-                .expect("projection failed")
-                .into(),
-            dfs_at_offsets,
-            total_rows: self.total_rows,
-            skip_rows: self.skip_rows,
-            frozen: self.frozen,
+        for sf in stop_and_take_pipe_contents(port).await {
+            self.push_sf(sf).await;
         }
     }
 }
 
-/// Tell the sender to this port to stop, and buffer everything that is still in the pipe.
-pub(super) async fn stop_and_buffer_pipe_contents<F>(
+/// Tell the sender to this port to stop, and take everything that is still in the pipe.
+pub(super) async fn stop_and_take_pipe_contents(
     port: Option<&mut PortReceiver>,
-    buffer_morsel: &mut F,
-) where
-    F: FnMut(DataFrame),
-{
+) -> Vec<SpillFrame> {
+    let mut frames = Vec::new();
     let Some(port) = port else {
-        return;
+        return frames;
     };
 
     while let Ok(morsel) = port.recv().await {
         morsel.source_token().stop();
         let (sf, _, _, _) = morsel.into_inner();
-        buffer_morsel(sf.into_df().await);
+        frames.push(sf);
     }
+    frames
 }
 
 /// Get value from series bypassing the validity bitmap.
