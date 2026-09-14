@@ -4532,6 +4532,68 @@ def test_resolve_metadata_sampled_byte_weighted(
 
 
 @pytest.mark.write_disk
+def test_resolve_metadata_sampled_heavy_files(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # On top of its stratified sample, `sampled` resolves every source at or
+    # above `POLARS_RESOLVE_HEAVY_FILE_BYTES`. A distributed planner assigns
+    # whole files to workers, so a file larger than a fair share pins one worker
+    # unless its row groups are known -- and those only come from its footer.
+    # Sizes are free from path expansion, so this costs no extra listing.
+    rows = [2, 2, 2, 1000]
+    for i, n in enumerate(rows):
+        pl.DataFrame({"x": range(n)}).write_parquet(tmp_path / f"part_{i}.parquet")
+
+    sizes = [(tmp_path / f"part_{i}.parquet").stat().st_size for i in range(len(rows))]
+    # The layout must have exactly one outlier for the assertions to be sharp.
+    assert sizes[3] > 4 * max(sizes[:3])
+    heavy_threshold = (max(sizes[:3]) + sizes[3]) // 2
+
+    plmonkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", "sampled")
+    # Pin the wave to 2 footers so the 4-file layout stays a *partial* sample
+    # regardless of this machine's concurrency budget.
+    plmonkeypatch.setenv("POLARS_RESOLVE_SAMPLE_LIMIT", "2")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    def footers_read(lf: pl.LazyFrame) -> str:
+        capfd.readouterr()
+        # Resolution runs on the first plan build and prints its verbose trace.
+        lf.explain(optimized=True)
+        err = capfd.readouterr().err
+        line = next(
+            (ln for ln in err.splitlines() if "parquet sampled resolve" in ln), ""
+        )
+        return line
+
+    glob = tmp_path / "part_*.parquet"
+
+    # Threshold unset: only the pinned two-footer wave is read.
+    assert "read 2 / 4 footers" in footers_read(pl.scan_parquet(glob))
+
+    # Threshold set above the small files: the big one is resolved as well, so
+    # the scheduler can split it by row group.
+    plmonkeypatch.setenv("POLARS_RESOLVE_HEAVY_FILE_BYTES", str(heavy_threshold))
+    assert "read 3 / 4 footers" in footers_read(pl.scan_parquet(glob))
+
+    # A threshold every file clears makes the set span the whole scan, which
+    # routes through the read-everything arm instead. Its absence from the
+    # verbose output is the proof of that routing, and the row total is exact.
+    plmonkeypatch.setenv("POLARS_RESOLVE_HEAVY_FILE_BYTES", "1")
+    lf = pl.scan_parquet(glob)
+    assert footers_read(lf) == ""
+    assert f"ESTIMATED ROWS: {sum(rows)}" in lf.explain(optimized=True)
+    assert lf.collect().height == sum(rows)
+
+    # Without per-source sizes there is nothing to compare against a byte
+    # threshold, so the sample is unchanged. An explicit file list skips the
+    # listing that would have retained them.
+    paths = [tmp_path / f"part_{i}.parquet" for i in range(len(rows))]
+    assert "read 2 / 4 footers" in footers_read(pl.scan_parquet(paths))
+
+
+@pytest.mark.write_disk
 def test_parquet_known_source_sizes(tmp_path: Path) -> None:
     path = tmp_path / "data.parquet"
     expected = pl.DataFrame({"a": [1, 2, 3]})

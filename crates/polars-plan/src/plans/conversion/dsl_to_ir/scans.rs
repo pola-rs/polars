@@ -343,7 +343,9 @@ pub(super) async fn parquet_file_info(
         use polars_config::ResolveMode;
 
         // Indices of the footers to be sampled. Value is `Some` only when
-        // file coverage is incomplete.
+        // file coverage is incomplete; a set that ends up spanning every source
+        // falls through to the read-everything arm, which reports an exact
+        // `known_size`.
         let partial_sample = matches!(mode, ResolveMode::Sampled)
             .then(|| {
                 // Default cap: the IO concurrency budget floored at
@@ -353,10 +355,29 @@ pub(super) async fn parquet_file_info(
                     || (polars_io::pl_async::get_concurrency_limit() as usize).max(SAMPLE_FLOOR),
                     |o| o as usize,
                 );
-                sample_size(n_sources, limit)
+                let mut indices = sampled_source_indices(n_sources, sample_size(n_sources, limit));
+
+                // On top of the stratified sample, resolve every source at or
+                // above the "heavy" byte threshold. A distributed planner can
+                // only split such a file across workers if it knows its row
+                // groups, and that needs its footer. Sizes are free from the
+                // listing, and fewer than `total / threshold` sources can clear
+                // the bar, so this stays bounded by worker count rather than by
+                // file count.
+                if let Some(threshold) = polars_config::config().resolve_heavy_file_bytes()
+                    && let Some(bytes) = bytes_per_source
+                {
+                    debug_assert_eq!(bytes.len(), n_sources);
+                    // Source 0 is always read, so it never needs adding here.
+                    indices.extend((1..n_sources).filter(|&i| bytes[i] >= threshold));
+                    indices.sort_unstable();
+                    indices.dedup();
+                }
+
+                indices
             })
-            .filter(|&k| k != n_sources)
-            .map(|k| sampled_source_indices(n_sources, k));
+            // `+ 1` for source 0, which is read separately.
+            .filter(|indices| indices.len() + 1 != n_sources);
 
         match mode {
             ResolveMode::None => {
