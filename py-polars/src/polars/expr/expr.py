@@ -5027,17 +5027,8 @@ class Expr(metaclass=_Meta):
         Explicit breakpoints make this elementwise. An integer derives breakpoints from
         the data, so bins are computed per group in group and window contexts.
 
-        For input that is not floating point, a breakpoint derived from an integer is
-        rounded to a value the input's data type can hold: up for left-closed bins, down
-        for right-closed ones, so that membership still matches
-        `min + (i + 1) / n * (max - min)` exactly. Reported boundaries are those
-        rounded values -- `[0, 3]` into two bins reports `2`, or `1` under
-        `right_closed`, rather than `1.5` -- while membership is `{0, 1}` and
-        `{2, 3}` either way.
-
-        For floating-point input, equal-width breakpoints are computed in `Float64`
-        and then cast to the input data type. Bins use these rounded breakpoints, so
-        membership near a boundary can differ between floating-point data types.
+        A derived breakpoint is rounded to a value the input data type can represent, so
+        membership right at a bin edge depends on the data type.
 
         See Also
         --------
