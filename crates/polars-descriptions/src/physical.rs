@@ -34,6 +34,7 @@ pub enum PhysicalPropsDescription {
     GroupBy {
         num_inputs: usize,
         key_per_input: Vec<Vec<String>>,
+        fused_agg_inputs_per_input: Vec<Vec<String>>,
         aggs_per_input: Vec<Vec<String>>,
     },
     DynamicGroupBy {
