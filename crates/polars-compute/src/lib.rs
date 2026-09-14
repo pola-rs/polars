@@ -33,6 +33,7 @@ pub mod moment;
 pub mod nan;
 mod nesting;
 pub mod propagate_nulls;
+pub mod rebuild_list;
 pub mod rolling;
 pub mod set;
 pub mod size;

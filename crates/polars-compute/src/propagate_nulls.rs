@@ -33,22 +33,15 @@ pub fn propagate_nulls(array: &dyn PlArray) -> Option<Box<dyn PlArray>> {
 
 /// Pushes the nulls of `array` down onto the values its null elements cover, recursively.
 pub fn propagate_nulls_list(array: &PlListArray) -> Option<PlListArray> {
-    propagate_nulls_list_impl(array, true)
+    propagate_nulls_list_impl(array)
 }
 
-/// Pushes the nulls of `array` one level down, leaving the levels below it alone.
-///
-/// Callers handle deeper levels themselves to preserve logical invariants, such as Map entries.
-pub fn propagate_nulls_list_shallow(array: &PlListArray) -> Option<PlListArray> {
-    propagate_nulls_list_impl(array, false)
-}
-
-fn propagate_nulls_list_impl(array: &PlListArray, recurse: bool) -> Option<PlListArray> {
+fn propagate_nulls_list_impl(array: &PlListArray) -> Option<PlListArray> {
     let values = array.values();
 
     let Some(validity) = nulls(array.validity()) else {
         // No element is null, so nothing is pushed down here; only a deeper level can still change.
-        let values = deeper(values, recurse)?;
+        let values = propagate_nulls(values)?;
 
         // SAFETY: pushing nulls down leaves the values as many as they were.
         return Some(unsafe { list_with_values(array, values) });
@@ -82,13 +75,13 @@ fn propagate_nulls_list_impl(array: &PlListArray, recurse: bool) -> Option<PlLis
         let flat = array.to_flat();
         let flat = flat.as_array();
 
-        return Some(propagate_nulls_list_impl(flat, recurse).unwrap_or_else(|| flat.clone()));
+        return Some(propagate_nulls_list_impl(flat).unwrap_or_else(|| flat.clone()));
     };
 
     let values = match child {
-        Some(child) => descend(with_pl_validity(values, child), recurse),
+        Some(child) => descend(with_pl_validity(values, child)),
         // Every value under a null element is already null; only a deeper level can still change.
-        None => deeper(values, recurse)?,
+        None => propagate_nulls(values)?,
     };
 
     // SAFETY: setting a mask leaves the values as many as they were.
@@ -97,22 +90,14 @@ fn propagate_nulls_list_impl(array: &PlListArray, recurse: bool) -> Option<PlLis
 
 /// Pushes the nulls of `array` down onto the values its null elements cover, recursively.
 pub fn propagate_nulls_fsl(array: &PlFixedSizeListArray) -> Option<PlFixedSizeListArray> {
-    propagate_nulls_fsl_impl(array, true)
+    propagate_nulls_fsl_impl(array)
 }
 
-/// See [`propagate_nulls_list_shallow`].
-pub fn propagate_nulls_fsl_shallow(array: &PlFixedSizeListArray) -> Option<PlFixedSizeListArray> {
-    propagate_nulls_fsl_impl(array, false)
-}
-
-fn propagate_nulls_fsl_impl(
-    array: &PlFixedSizeListArray,
-    recurse: bool,
-) -> Option<PlFixedSizeListArray> {
+fn propagate_nulls_fsl_impl(array: &PlFixedSizeListArray) -> Option<PlFixedSizeListArray> {
     let values = array.values();
 
     let Some(validity) = nulls(array.validity()) else {
-        let values = deeper(values, recurse)?;
+        let values = propagate_nulls(values)?;
 
         // SAFETY: pushing nulls down leaves the values as many as they were.
         return Some(unsafe { fsl_with_values(array, values) });
@@ -141,12 +126,12 @@ fn propagate_nulls_fsl_impl(
         let flat = array.to_flat();
         let flat = flat.as_array();
 
-        return Some(propagate_nulls_fsl_impl(flat, recurse).unwrap_or_else(|| flat.clone()));
+        return Some(propagate_nulls_fsl_impl(flat).unwrap_or_else(|| flat.clone()));
     };
 
     let values = match child {
-        Some(child) => descend(with_pl_validity(values, child), recurse),
-        None => deeper(values, recurse)?,
+        Some(child) => descend(with_pl_validity(values, child)),
+        None => propagate_nulls(values)?,
     };
 
     // SAFETY: setting a mask leaves the values as many as they were.
@@ -155,30 +140,23 @@ fn propagate_nulls_fsl_impl(
 
 /// Pushes the nulls of `array` down onto the value every field holds under them, recursively.
 pub fn propagate_nulls_struct(array: &PlStructArray) -> Option<PlStructArray> {
-    propagate_nulls_struct_impl(array, true)
+    propagate_nulls_struct_impl(array)
 }
 
-/// See [`propagate_nulls_list_shallow`].
-pub fn propagate_nulls_struct_shallow(array: &PlStructArray) -> Option<PlStructArray> {
-    propagate_nulls_struct_impl(array, false)
-}
-
-fn propagate_nulls_struct_impl(array: &PlStructArray, recurse: bool) -> Option<PlStructArray> {
+fn propagate_nulls_struct_impl(array: &PlStructArray) -> Option<PlStructArray> {
     let validity = nulls(array.validity());
 
     let mut changed = false;
     let fields = array
         .fields()
         .iter()
-        .map(
-            |field| match propagate_into_field(&**field, validity, recurse) {
-                Some(field) => {
-                    changed = true;
-                    field
-                },
-                None => field.clone(),
+        .map(|field| match propagate_into_field(&**field, validity) {
+            Some(field) => {
+                changed = true;
+                field
             },
-        )
+            None => field.clone(),
+        })
         .collect();
 
     if !changed {
@@ -194,10 +172,9 @@ fn propagate_nulls_struct_impl(array: &PlStructArray, recurse: bool) -> Option<P
 fn propagate_into_field(
     field: &dyn PlArray,
     validity: Option<PlBitmapRef<'_>>,
-    recurse: bool,
 ) -> Option<Box<dyn PlArray>> {
     let Some(validity) = validity else {
-        return deeper(field, recurse);
+        return propagate_nulls(field);
     };
 
     // A field takes the nulls of the struct on top of its own. Combining the two masks keeps the
@@ -208,28 +185,15 @@ fn propagate_into_field(
 
     // The field is already null wherever the struct is, so the mask it holds is the combined one.
     if field.validity().is_some_and(|old| combined == old) {
-        return deeper(field, recurse);
+        return propagate_nulls(field);
     }
 
-    Some(descend(with_pl_validity(field, combined), recurse))
+    Some(descend(with_pl_validity(field, combined)))
 }
 
-/// `values`, with the level below it read in turn where the caller asked for it.
-fn descend(values: Box<dyn PlArray>, recurse: bool) -> Box<dyn PlArray> {
-    if !recurse {
-        return values;
-    }
-
+/// `values`, with the level below it read in turn.
+fn descend(values: Box<dyn PlArray>) -> Box<dyn PlArray> {
     propagate_nulls(&*values).unwrap_or(values)
-}
-
-/// The level below `values` alone, where the caller asked for it to be read at all.
-fn deeper(values: &dyn PlArray, recurse: bool) -> Option<Box<dyn PlArray>> {
-    if !recurse {
-        return None;
-    }
-
-    propagate_nulls(values)
 }
 
 /// The validity mask of a chunk, if any element of it is null.

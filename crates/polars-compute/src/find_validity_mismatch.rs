@@ -2,7 +2,7 @@
 
 use arrow::bitmap::Bitmap;
 use polars_array::{
-    PlArray, PlArrayType, PlBitmapRef, PlFixedSizeListArray, PlListArray, PlStructArray,
+    PlArray, PlArrayType, PlBitmap, PlBitmapRef, PlFixedSizeListArray, PlListArray, PlStructArray,
 };
 use polars_utils::IdxSize;
 
@@ -52,6 +52,28 @@ pub fn find_validity_mismatch(left: &dyn PlArray, right: &dyn PlArray, idxs: &mu
         return;
     }
     idxs[original_idxs_length..].sort_unstable();
+}
+
+/// Appends the indices at which two validity masks over `length` elements disagree.
+///
+/// Only the masks handed in are read: nothing below them is descended into.
+pub fn find_validity_mismatch_shallow(
+    left: Option<&PlBitmap>,
+    right: Option<&PlBitmap>,
+    idxs: &mut Vec<IdxSize>,
+) {
+    // Two masks that are not there agree about every element, and where only one is there it is
+    // the one that says how many elements there are to disagree about.
+    let Some(length) = left.or(right).map(PlBitmap::len) else {
+        return;
+    };
+
+    extend_mismatches(
+        idxs,
+        length,
+        left.map(PlBitmap::as_ref),
+        right.map(PlBitmap::as_ref),
+    );
 }
 
 /// Appends the indices at which two validity masks over `length` elements disagree.

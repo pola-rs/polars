@@ -107,8 +107,7 @@ impl ListChunked {
     /// # Safety
     /// Physical representations must match, and the values must be safe to read as
     /// `inner_dtype`: categorical codes in range for every non-null slot, and nested Maps
-    /// satisfying the `MapChunked` storage safety contract. Dtype-blind null propagation may
-    /// violate the Map contract.
+    /// satisfying the `MapChunked` storage safety contract.
     pub unsafe fn to_logical(&mut self, inner_dtype: DataType) {
         // A chunk carries no inner type, so a `ChunkedArray` built from one alone names `Null`
         // as its inner type until it is set here.

@@ -470,13 +470,24 @@ fn create_physical_expr_inner(
                 && !matches!(expr_arena.get(truthy), AExpr::Column(_) | AExpr::Literal(_));
             let mask_falsy = is_elementwise_rec(falsy, expr_arena)
                 && !matches!(expr_arena.get(falsy), AExpr::Column(_) | AExpr::Literal(_));
+            // An arm is evaluated against a frame holding one masked column per name, so a leaf
+            // it reads more than once -- `col("a") + col("a")`, or two `when`s over one column --
+            // is named once. Reading it twice built a frame with the column twice in it, which is
+            // not a frame at all.
+            let mask_columns = |node| {
+                let mut seen = PlHashSet::new();
+                aexpr_to_leaf_names(node, expr_arena)
+                    .into_iter()
+                    .filter(|name| seen.insert(name.clone()))
+                    .collect()
+            };
             let truthy_mask_columns = if mask_truthy {
-                aexpr_to_leaf_names(truthy, expr_arena)
+                mask_columns(truthy)
             } else {
                 Vec::new()
             };
             let falsy_mask_columns = if mask_falsy {
-                aexpr_to_leaf_names(falsy, expr_arena)
+                mask_columns(falsy)
             } else {
                 Vec::new()
             };

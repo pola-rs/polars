@@ -15,6 +15,7 @@ pub mod categorical;
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use polars_compute::rebuild_list::rebuild_list_shallow;
 use polars_error::{PolarsError, PolarsResult, polars_ensure, polars_err};
 
 use crate::prelude::{
@@ -39,6 +40,34 @@ macro_rules! primitive_to_boxed_with_logical {
         let arr: &PrimitiveArray<$physical> = $array.as_any().downcast_ref().unwrap();
         arr.clone().to($logical_arrow_dtype).to_boxed()
     }};
+}
+
+/// Drop the entries no live row owns and rebase the offsets onto the rest; `None` if the
+/// chunk already spans exactly its child.
+fn normalize_map_entries(arr: &ListArray<i64>) -> Option<ListArray<i64>> {
+    #[cfg(feature = "dtype-map")]
+    {
+        // The compaction is expressed over the representation the column is held in, which the
+        // export has already left, so the chunk goes back through the bridge to be read by it.
+        let chunk = polars_array::arrow::import::list_from_arrow(arr);
+        if let Some(compacted) = crate::chunked_array::logical::compact_null_rows_chunk(&chunk) {
+            return Some(polars_array::arrow::export::list_to_arrow_large_list(
+                &compacted,
+            ));
+        }
+    }
+
+    let offsets = arr.offsets();
+    let first = *offsets.first() as usize;
+    let len = offsets.range() as usize;
+    if first == 0 && len == arr.values().len() {
+        return None;
+    }
+    Some(rebuild_list_shallow(
+        arr,
+        arr.dtype().clone(),
+        arr.values().sliced(first, len),
+    ))
 }
 
 fn ensure_no_nulls(array: &dyn Array) -> PolarsResult<()> {
@@ -492,6 +521,10 @@ impl ToArrowConverter {
         use arrow::offset::OffsetsBuffer;
 
         let arr: &ListArray<i64> = array.as_any().downcast_ref().unwrap();
+        // Arrow's MAP entries and keys are non-nullable, and entries that no live row owns
+        // may be null, so normalize before the child is read: those entries are dropped.
+        let normalized = normalize_map_entries(arr);
+        let arr = normalized.as_ref().unwrap_or(arr);
 
         let mut arrow_dtype = to_owned_dtype(arrow_field);
 
