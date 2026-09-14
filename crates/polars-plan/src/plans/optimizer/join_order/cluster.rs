@@ -11,17 +11,17 @@ use std::sync::Arc;
 
 use polars_core::prelude::{PlIndexMap, PlIndexSet};
 use polars_core::schema::{Schema, SchemaRef};
-use polars_ops::frame::JoinValidation;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 
+use crate::plans::optimizer::join_utils::plain_inner_equi_join;
 use crate::plans::{
-    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, MintermIter, NodeStats, OutputName,
-    ProjectionOptions, aexpr_to_leaf_names_iter, is_elementwise_rec, node_stats,
+    AExpr, ExprIR, IR, JoinOptionsIR, MintermIter, NodeStats, OutputName, ProjectionOptions,
+    aexpr_to_leaf_names_iter, is_elementwise_rec, node_stats,
 };
-use crate::prelude::{JoinArgs, JoinType, MaintainOrderJoin};
+use crate::prelude::JoinArgs;
 use crate::utils::rename_columns;
 
 /// With two leaves there is only one order, so a cluster needs at least three.
@@ -128,17 +128,7 @@ impl Cluster {
 /// identically named columns survive the inputs being swapped.
 /// If this evaluates false we don't rewrite a cluster and leave it as is.
 fn reorderable(options: &JoinOptionsIR) -> bool {
-    let args = &options.args;
-
-    matches!(args.how, JoinType::Inner)
-        && args.slice.is_none()
-        && matches!(args.maintain_order, MaintainOrderJoin::None)
-        // Validation checks a named side for uniqueness; reordering would point it
-        // at a different relation.
-        && matches!(args.validation, JoinValidation::ManyToMany)
-        // A forced build side refers to this specific join, so leave it alone.
-        && args.build_side.is_none()
-        && matches!(&options.options, JoinTypeOptionsIR::Equi { on, fused_predicate: None } if !on.is_empty())
+    plain_inner_equi_join(options)
 }
 
 /// A leaf as found, with the renames that carry its columns into the root namespace.
