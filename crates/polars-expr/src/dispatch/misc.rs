@@ -47,8 +47,8 @@ pub(super) fn approx_quantile_sketch(
     method: &ApproxQuantileMethod,
     error: f64,
 ) -> PolarsResult<Column> {
-    let input = s.as_materialized_series();
-    let out = polars_ops::prelude::approx_quantile_sketch(input, error, method)?;
+    let input = s.as_materialized_series_maintain_scalar();
+    let out = polars_ops::prelude::approx_quantile_sketch(&input, error, method)?;
     Ok(out.into_column())
 }
 
