@@ -10,7 +10,6 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-
     from polars._typing import JoinStrategy, JoinValidation
     from tests.conftest import PlMonkeyPatch
 
@@ -85,7 +84,9 @@ def test_unpriceable_anti_join_is_left_alone() -> None:
 def test_left_join_is_null_becomes_anti_join() -> None:
     fact, returns, dim = frames()
     lf = (
-        fact.join(returns, left_on="f_ret", right_on="r_ret", how="left", coalesce=False)
+        fact.join(
+            returns, left_on="f_ret", right_on="r_ret", how="left", coalesce=False
+        )
         .filter(pl.col("r_ret").is_null())
         .join(dim.filter(pl.col("d_flag")), left_on="f_dim", right_on="d_key")
         .select("f_id", "f_val", "d_flag")
@@ -113,7 +114,9 @@ def test_anti_rewrite_multi_key(nulls_equal: bool) -> None:
     left = pl.LazyFrame(
         {"k1": [1, 1, 2, None, 3], "k2": [1, 2, 1, 1, None], "v": [1, 2, 3, 4, 5]}
     )
-    right = pl.LazyFrame({"k1": [1, 1, None, 3], "k2": [1, 1, 1, None], "w": [7, 8, 9, 10]})
+    right = pl.LazyFrame(
+        {"k1": [1, 1, None, 3], "k2": [1, 1, 1, None], "w": [7, 8, 9, 10]}
+    )
     for keys in (["k1_right"], ["k1_right", "k2_right"]):
         lf = left.join(
             right, on=["k1", "k2"], how="left", coalesce=False, nulls_equal=nulls_equal
@@ -348,7 +351,9 @@ def test_filter_reaches_the_innermost_inner_join_through_stacked_outer_joins() -
 
 def test_fixture_has_matches_and_misses() -> None:
     fact, returns, _ = frames()
-    joined = fact.join(returns, left_on="f_ret", right_on="r_ret", how="left", coalesce=False)
+    joined = fact.join(
+        returns, left_on="f_ret", right_on="r_ret", how="left", coalesce=False
+    )
     counts = joined.select(
         matched=pl.col("r_ret").is_not_null().sum(), total=pl.len()
     ).collect()
@@ -391,7 +396,11 @@ def test_filter_stays_on_the_join_where_it_fuses() -> None:
     graph = lf.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     assert "fused predicate" in graph
     # C moved below E but stays above B, where the predicate can be fused.
-    assert all_joins(lf.explain(optimizations=ON)) == ["LEFT JOIN:", "INNER JOIN:", "LEFT JOIN:"]
+    assert all_joins(lf.explain(optimizations=ON)) == [
+        "LEFT JOIN:",
+        "INNER JOIN:",
+        "LEFT JOIN:",
+    ]
     assert_same_result(lf)
 
 
