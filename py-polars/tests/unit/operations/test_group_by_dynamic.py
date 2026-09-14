@@ -13,7 +13,7 @@ from polars.exceptions import AttributeRemovedError, ComputeError, InvalidOperat
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import ClosedInterval, Label, StartBy
+    from polars._typing import ClosedInterval, EngineType, Label, StartBy
 
 
 @pytest.mark.parametrize(
@@ -1448,3 +1448,67 @@ def test_group_by_having_27364() -> None:
     assert len(list(df.group_by("g").having(pl.len() == 2))) == 1
     assert len(list(df.group_by_dynamic("i", every="1i").having(pl.len() == 2))) == 1
     assert len(list(df.rolling("i", period="1i").having(pl.len() == 2))) == 2
+
+
+def _assert_rows_within_own_window(
+    ts: pl.Series, every: str, period: str, engine: EngineType
+) -> None:
+    """Assert no window gathers a value that lies outside its own boundaries."""
+    out = (
+        pl.LazyFrame({"t": ts, "v": range(len(ts))})
+        .group_by_dynamic("t", every=every, period=period, include_boundaries=True)
+        .agg(pl.col("t").min().alias("tmin"), pl.col("t").max().alias("tmax"))
+        .collect(engine=engine)
+        .filter(pl.col("tmin").is_not_null())
+    )
+
+    assert out.height > 0
+    assert (out["tmin"] >= out["_lower_boundary"]).all()
+    assert (out["tmax"] < out["_upper_boundary"]).all()
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("start", "days", "every", "period"),
+    [
+        # Clamped into February (29 days).
+        (datetime(2020, 1, 29, 23), 32, "12h", "1mo"),
+        # Clamped into April (30 days).
+        (datetime(2020, 3, 30, 23), 4, "6h", "1mo"),
+        # Clamped off the leap day, a year out.
+        (datetime(2020, 2, 27, 23), 4, "12h", "1y"),
+        # Clamped across a multi-month period: 2020-01-31 + 3mo is 2020-04-30.
+        (datetime(2020, 1, 30, 23), 40, "8h", "3mo"),
+    ],
+)
+def test_group_by_dynamic_month_clamping_non_monotonic_upper_bound_29190(
+    engine: EngineType, start: datetime, days: int, every: str, period: str
+) -> None:
+    # Adding a month clamps to the length of the target month
+    # 2020-01-29 12:00 + 1mo = 2020-02-29 12:00
+    # but the later:
+    # 2020-01-30 00:00 + 1mo is 2020-02-29 00:00.
+    ts = pl.datetime_range(start, start + timedelta(days=days), "7h", eager=True).alias(
+        "t"
+    )
+
+    _assert_rows_within_own_window(ts, every, period, engine)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(
+    ("time_zone", "start"),
+    [
+        ("America/New_York", datetime(2021, 3, 13, 1)),
+        ("Europe/Amsterdam", datetime(2021, 3, 27, 1)),
+    ],
+)
+def test_group_by_dynamic_dst_non_monotonic_upper_bound_29190(
+    engine: EngineType, time_zone: str, start: datetime
+) -> None:
+    # Upper bound can move backwards due to daylight saving.
+    ts = pl.datetime_range(
+        start, start + timedelta(days=2), "3h", eager=True, time_zone=time_zone
+    ).alias("t")
+
+    _assert_rows_within_own_window(ts, "30m", "1d", engine)
