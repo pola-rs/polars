@@ -1,8 +1,9 @@
 use std::ops::RangeInclusive;
+use std::str::FromStr;
 use std::{fmt, mem};
 
 pub use kll::KLLSketch;
-use polars_error::{PolarsResult, polars_ensure};
+use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure};
 use polars_utils::total_ord::TotalOrd;
 use rand::RngExt;
 use rand::rngs::SmallRng;
@@ -32,6 +33,26 @@ pub enum ApproxQuantileMethod {
     KLL,
     ReqSketch { hra: bool },
     DoubleReqSketch,
+}
+
+impl FromStr for ApproxQuantileMethod {
+    type Err = PolarsError;
+
+    fn from_str(s: &str) -> PolarsResult<Self> {
+        Ok(match s {
+            "auto" => Self::Auto,
+            "kll" => Self::KLL,
+            "req_lo" => Self::ReqSketch { hra: false },
+            "req_hi" => Self::ReqSketch { hra: true },
+            "req_both" => Self::DoubleReqSketch,
+            v => {
+                polars_bail!(
+                    InvalidOperation:
+                    "`method` must be one of {{'auto', 'kll', 'req_lo', 'req_hi', 'req_both'}}, got {v}"
+                )
+            },
+        })
+    }
 }
 
 impl ApproxQuantileMethod {
