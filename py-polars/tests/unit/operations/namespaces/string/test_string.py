@@ -2463,3 +2463,25 @@ def test_str_concat_removed() -> None:
         AttributeRemovedError, match=re.escape("use `str.join` instead")
     ):
         s.to_frame().select(pl.all().str.concat())  # type: ignore[attr-defined]
+
+
+def test_json_decode_repeated_chunk() -> None:
+    # A chunk that reads one string throughout decodes to one value, and that value stands for
+    # every row — with the schema inferred or given, and with a repeated null.
+    n = 4
+    for s in (
+        pl.repeat('{"a":1,"b":"z"}', n, dtype=pl.String, eager=True),
+        pl.Series(['{"a":1,"b":"z"}'] * n, dtype=pl.String),
+    ):
+        assert s.str.json_decode().to_list() == [{"a": 1, "b": "z"}] * n
+        assert s.str.json_decode(pl.Struct({"a": pl.Int64})).to_list() == [{"a": 1}] * n
+
+    assert pl.repeat(None, n, dtype=pl.String, eager=True).str.json_decode(
+        pl.Struct({"a": pl.Int64})
+    ).to_list() == [None] * n
+
+    # unparseable text raises just as the written-out column does
+    with pytest.raises(ComputeError, match="error deserializing JSON"):
+        pl.repeat("{not json", n, dtype=pl.String, eager=True).str.json_decode(
+            pl.Struct({"a": pl.Int64})
+        )
