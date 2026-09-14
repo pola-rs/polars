@@ -1796,3 +1796,49 @@ def test_gather_out_of_one_repeated_list_gathers_once(
     if value is not None:
         # One answer held once, not one slot per element.
         assert one.estimated_size() < many.estimated_size() // 100
+
+
+def test_concat_list_repeated_chunks() -> None:
+    # Every operand reading one element throughout makes one concatenation, and that list stands
+    # for every row. It must match what the written-out columns answer.
+    n = 4
+    rep = pl.DataFrame(
+        {
+            "a": pl.repeat(1, n, dtype=pl.Int64, eager=True),
+            "b": pl.repeat(2, n, dtype=pl.Int64, eager=True),
+        }
+    )
+    flat = pl.DataFrame({"a": [1] * n, "b": [2] * n})
+    for df in (rep, flat):
+        assert df.select(pl.concat_list("a", "b")).to_series().to_list() == [[1, 2]] * n
+        assert (
+            df.select(pl.concat_list("a", "b", "a")).to_series().to_list()
+            == [[1, 2, 1]] * n
+        )
+        assert (
+            df.select(pl.concat_list("a", pl.lit(9, dtype=pl.Int64)))
+            .to_series()
+            .to_list()
+            == [[1, 9]] * n
+        )
+
+    # a repeated null element, and a repeated list operand
+    nulls = pl.DataFrame(
+        {
+            "a": pl.repeat(None, n, dtype=pl.Int64, eager=True),
+            "b": pl.repeat(2, n, dtype=pl.Int64, eager=True),
+        }
+    )
+    assert nulls.select(pl.concat_list("a", "b")).to_series().to_list() == [
+        [None, 2]
+    ] * n
+
+    lists = pl.DataFrame(
+        {
+            "a": pl.repeat([1, 2], n, dtype=pl.List(pl.Int64), eager=True),
+            "b": pl.repeat([3], n, dtype=pl.List(pl.Int64), eager=True),
+        }
+    )
+    assert lists.select(pl.concat_list("a", "b")).to_series().to_list() == [
+        [1, 2, 3]
+    ] * n

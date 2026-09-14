@@ -721,6 +721,23 @@ pub trait ListNameSpaceImpl: AsList {
         let ca = self.as_list();
         let other_len = other.len();
         let length = ca.len();
+
+        // Every operand reading one element throughout makes one concatenation, and that list
+        // stands for every row: do it over a single row and repeat the answer. Without this the
+        // builder below walks all `length` rows to write the same list each time.
+        if ca.clone().into_series().repeats_one_element()
+            && other
+                .iter()
+                .all(|s| s.as_materialized_series().repeats_one_element())
+        {
+            let head_other = other
+                .iter()
+                .map(|s| s.as_materialized_series().head(Some(1)).into_column())
+                .collect::<Vec<_>>();
+            let one = ca.head(Some(1)).lst_concat(&head_other)?;
+            return Ok(one.new_from_index(0, length));
+        }
+
         let mut other = other.to_vec();
         let mut inner_super_type = ca.inner_dtype().clone();
 
