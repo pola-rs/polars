@@ -25,7 +25,7 @@ pub trait ChunkNestingUtils: Sized {
 
 impl ChunkNestingUtils for ListChunked {
     fn propagate_nulls(&self) -> Option<Self> {
-        use polars_compute::propagate_nulls::{propagate_nulls_list, propagate_nulls_list_shallow};
+        use polars_compute::propagate_nulls::propagate_nulls_list;
 
         let flags = self.get_flags();
 
@@ -39,18 +39,9 @@ impl ChunkNestingUtils for ListChunked {
             return None;
         }
 
-        let map_aware = self.inner_dtype().contains_map();
-        let propagate_chunk = |chunk| {
-            if map_aware {
-                propagate_nulls_list_shallow(chunk)
-            } else {
-                propagate_nulls_list(chunk)
-            }
-        };
-
         let mut chunks = Vec::new();
         for (i, chunk) in self.downcast_iter().enumerate() {
-            if let Some(propagated_chunk) = propagate_chunk(chunk) {
+            if let Some(propagated_chunk) = propagate_nulls_list(chunk) {
                 chunks.reserve(self.chunks.len());
                 chunks.extend(self.chunks[..i].iter().cloned());
                 chunks.push(propagated_chunk.into_boxed());
@@ -59,25 +50,21 @@ impl ChunkNestingUtils for ListChunked {
         }
 
         // If we found a chunk that needs propagating, create a new ListChunked
-        let mut out = if chunks.is_empty() {
+        let out = if chunks.is_empty() {
             None
         } else {
-            chunks.extend(self.downcast_iter().skip(chunks.len()).map(
-                |chunk| match propagate_chunk(chunk) {
+            chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
+                match propagate_nulls_list(chunk) {
                     None => chunk.to_boxed(),
                     Some(chunk) => chunk.into_boxed(),
-                },
-            ));
+                }
+            }));
 
             // SAFETY: The length and null_count should remain the same.
             Some(unsafe {
                 Self::new_with_dims(self.field.clone(), chunks, self.length, self.null_count)
             })
         };
-
-        if map_aware {
-            out = propagate_values_nulls(out, self);
-        }
 
         finish_propagate_nulls(out, self, flags)
     }
@@ -141,7 +128,7 @@ impl ChunkNestingUtils for ListChunked {
 #[cfg(feature = "dtype-array")]
 impl ChunkNestingUtils for super::ArrayChunked {
     fn propagate_nulls(&self) -> Option<Self> {
-        use polars_compute::propagate_nulls::{propagate_nulls_fsl, propagate_nulls_fsl_shallow};
+        use polars_compute::propagate_nulls::propagate_nulls_fsl;
 
         let flags = self.get_flags();
 
@@ -155,18 +142,9 @@ impl ChunkNestingUtils for super::ArrayChunked {
             return None;
         }
 
-        let map_aware = self.inner_dtype().contains_map();
-        let propagate_chunk = |chunk| {
-            if map_aware {
-                propagate_nulls_fsl_shallow(chunk)
-            } else {
-                propagate_nulls_fsl(chunk)
-            }
-        };
-
         let mut chunks = Vec::new();
         for (i, chunk) in self.downcast_iter().enumerate() {
-            if let Some(propagated_chunk) = propagate_chunk(chunk) {
+            if let Some(propagated_chunk) = propagate_nulls_fsl(chunk) {
                 chunks.reserve(self.chunks.len());
                 chunks.extend(self.chunks[..i].iter().cloned());
                 chunks.push(propagated_chunk.into_boxed());
@@ -174,25 +152,21 @@ impl ChunkNestingUtils for super::ArrayChunked {
             }
         }
 
-        let mut out = if chunks.is_empty() {
+        let out = if chunks.is_empty() {
             None
         } else {
-            chunks.extend(self.downcast_iter().skip(chunks.len()).map(
-                |chunk| match propagate_chunk(chunk) {
+            chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
+                match propagate_nulls_fsl(chunk) {
                     None => chunk.to_boxed(),
                     Some(chunk) => chunk.into_boxed(),
-                },
-            ));
+                }
+            }));
 
             // SAFETY: The length and null_count should remain the same.
             Some(unsafe {
                 Self::new_with_dims(self.field.clone(), chunks, self.length, self.null_count)
             })
         };
-
-        if map_aware {
-            out = propagate_values_nulls(out, self);
-        }
 
         finish_propagate_nulls(out, self, flags)
     }
@@ -257,9 +231,7 @@ impl ChunkNestingUtils for super::ArrayChunked {
 #[cfg(feature = "dtype-struct")]
 impl ChunkNestingUtils for super::StructChunked {
     fn propagate_nulls(&self) -> Option<Self> {
-        use polars_compute::propagate_nulls::{
-            propagate_nulls_struct, propagate_nulls_struct_shallow,
-        };
+        use polars_compute::propagate_nulls::propagate_nulls_struct;
 
         let flags = self.get_flags();
 
@@ -273,18 +245,9 @@ impl ChunkNestingUtils for super::StructChunked {
             return None;
         }
 
-        let map_aware = self.dtype().contains_map();
-        let propagate_chunk = |chunk| {
-            if map_aware {
-                propagate_nulls_struct_shallow(chunk)
-            } else {
-                propagate_nulls_struct(chunk)
-            }
-        };
-
         let mut chunks = Vec::new();
         for (i, chunk) in self.downcast_iter().enumerate() {
-            if let Some(propagated_chunk) = propagate_chunk(chunk) {
+            if let Some(propagated_chunk) = propagate_nulls_struct(chunk) {
                 chunks.reserve(self.chunks.len());
                 chunks.extend(self.chunks[..i].iter().cloned());
                 chunks.push(propagated_chunk.into_boxed());
@@ -292,25 +255,21 @@ impl ChunkNestingUtils for super::StructChunked {
             }
         }
 
-        let mut out = if chunks.is_empty() {
+        let out = if chunks.is_empty() {
             None
         } else {
-            chunks.extend(self.downcast_iter().skip(chunks.len()).map(
-                |chunk| match propagate_chunk(chunk) {
+            chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
+                match propagate_nulls_struct(chunk) {
                     None => chunk.to_boxed(),
                     Some(chunk) => chunk.into_boxed(),
-                },
-            ));
+                }
+            }));
 
             // SAFETY: The length and null_count should remain the same.
             Some(unsafe {
                 Self::new_with_dims(self.field.clone(), chunks, self.length, self.null_count)
             })
         };
-
-        if map_aware {
-            out = propagate_values_nulls(out, self);
-        }
 
         finish_propagate_nulls(out, self, flags)
     }
@@ -373,62 +332,6 @@ impl ChunkNestingUtils for super::StructChunked {
             offset += l.len() as IdxSize;
         }
     }
-}
-
-/// Propagate through [`Series`] to respect logical dtypes. Arrow recursion treats Map
-/// storage as a list and would null entries retained by null Map rows.
-trait PropagateValuesNulls: Sized {
-    fn values_propagate_nulls(&self) -> Option<Self>;
-}
-
-impl PropagateValuesNulls for ListChunked {
-    fn values_propagate_nulls(&self) -> Option<Self> {
-        let values = self.get_inner().propagate_nulls()?;
-        Some(self.with_inner_values(&values))
-    }
-}
-
-#[cfg(feature = "dtype-array")]
-impl PropagateValuesNulls for super::ArrayChunked {
-    fn values_propagate_nulls(&self) -> Option<Self> {
-        let values = self.get_inner().propagate_nulls()?;
-        Some(self.with_inner_values(&values))
-    }
-}
-
-#[cfg(feature = "dtype-struct")]
-impl PropagateValuesNulls for super::StructChunked {
-    fn values_propagate_nulls(&self) -> Option<Self> {
-        let fields = self.fields_as_series();
-        let mut new_fields = Vec::with_capacity(fields.len());
-        let mut changed = false;
-        for field in &fields {
-            let new_field = field.propagate_nulls();
-            changed |= new_field.is_some();
-            new_fields.push(new_field);
-        }
-
-        if !changed {
-            return None;
-        }
-
-        // Field names, lengths, and outer validity are unchanged, so this cannot fail.
-        let mut new_fields = new_fields.into_iter();
-        let out = self
-            .try_apply_fields(|field| {
-                Ok(new_fields.next().unwrap().unwrap_or_else(|| field.clone()))
-            })
-            .expect("propagating nulls keeps the struct fields");
-        Some(out)
-    }
-}
-
-/// Propagate child nulls in `out`, or `orig` if unchanged.
-fn propagate_values_nulls<T: PropagateValuesNulls>(out: Option<T>, orig: &T) -> Option<T> {
-    out.as_ref()
-        .unwrap_or(orig)
-        .values_propagate_nulls()
-        .or(out)
 }
 
 /// Mark `out` or `orig` as having propagated nulls.
