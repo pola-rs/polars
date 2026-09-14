@@ -2485,3 +2485,45 @@ def test_json_decode_repeated_chunk() -> None:
         pl.repeat("{not json", n, dtype=pl.String, eager=True).str.json_decode(
             pl.Struct({"a": pl.Int64})
         )
+
+
+
+def test_str_split_by_column_repeated_chunks() -> None:
+    # The equal-length arm of `split_helper`: both sides reading one element throughout split one
+    # way, and that list stands for every row.
+    n = 4
+    rep = pl.DataFrame(
+        {
+            "x": pl.repeat("a,b,c", n, dtype=pl.String, eager=True),
+            "y": pl.repeat(",", n, dtype=pl.String, eager=True),
+        }
+    )
+    flat = pl.DataFrame({"x": ["a,b,c"] * n, "y": [","] * n})
+    for df in (rep, flat):
+        assert df.select(pl.col("x").str.split(pl.col("y"))).to_series().to_list() == [
+            ["a", "b", "c"]
+        ] * n
+        assert df.select(
+            pl.col("x").str.split(pl.col("y"), inclusive=True)
+        ).to_series().to_list() == [["a,", "b,", "c"]] * n
+
+    # an empty separator splits into characters, and a null on either side gives a null row
+    empty = pl.DataFrame(
+        {
+            "x": pl.repeat("ab", n, dtype=pl.String, eager=True),
+            "y": pl.repeat("", n, dtype=pl.String, eager=True),
+        }
+    )
+    assert empty.select(pl.col("x").str.split(pl.col("y"))).to_series().to_list() == [
+        ["a", "b"]
+    ] * n
+    for null_col in ("x", "y"):
+        df = pl.DataFrame(
+            {
+                "x": pl.repeat("a,b", n, dtype=pl.String, eager=True),
+                "y": pl.repeat(",", n, dtype=pl.String, eager=True),
+            }
+        ).with_columns(pl.repeat(None, n, dtype=pl.String, eager=True).alias(null_col))
+        assert df.select(
+            pl.col("x").str.split(pl.col("y"))
+        ).to_series().to_list() == [None] * n

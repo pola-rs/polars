@@ -197,6 +197,21 @@ where
 {
     Ok(match (ca.len(), by.len()) {
         (a, b) if a == b => {
+            // Both sides reading one element throughout split one way, and the list that comes
+            // back stands for every element in turn — as in the `(_, 1)` arm below.
+            if a > 1
+                && let Some(scalar) = ca.scalar_value()
+                && let Some(scalar_by) = by.scalar_value()
+            {
+                let mut builder = ListStringChunkedBuilder::new(ca.name().clone(), 1, 0);
+                match (scalar, scalar_by) {
+                    (Some(s), Some("")) => builder.append_values_iter(split_chars(s)),
+                    (Some(s), Some(by)) => builder.append_values_iter(op(s, by)),
+                    _ => builder.append_null(),
+                }
+                return Ok(builder.finish().new_from_index(0, a));
+            }
+
             let mut builder =
                 ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.get_values_size());
 
