@@ -20,9 +20,8 @@ use pyo3::pybacked::PyBackedStr;
 
 use super::datatype::PyDataTypeExpr;
 use super::selector::PySelector;
-use crate::conversion::{Wrap, parse_fill_null_strategy};
+use crate::conversion::{Wrap, parse_fill_null_strategy, strings_to_pl_smallstr};
 use crate::error::PyPolarsErr;
-use crate::prelude::strings_to_pl_smallstr;
 use crate::utils::EnterPolarsExt;
 use crate::{PyDataType, PyExpr, PySeries};
 
