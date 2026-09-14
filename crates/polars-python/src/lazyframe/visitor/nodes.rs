@@ -137,33 +137,10 @@ impl PyFileOptions {
         self.inner.rechunk
     }
     #[getter]
-    fn hive_options(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let HiveOptions {
-            enabled,
-            hive_start_idx,
-            schema,
-            try_parse_dates,
-        } = &self.inner.hive_options;
+    fn hive_options(&self) -> Option<Wrap<HiveOptions>> {
+        let hive_options = &self.inner.hive_options;
 
-        if *enabled != Some(true) {
-            return Ok(py.None().into_any());
-        }
-
-        let out = PyDict::new(py);
-        out.set_item("hive_start_idx", *hive_start_idx)?;
-        out.set_item(
-            "schema",
-            match schema {
-                None => py.None(),
-                Some(schema) => Wrap(schema.as_ref().clone())
-                    .into_pyobject(py)?
-                    .into_any()
-                    .unbind(),
-            },
-        )?;
-        out.set_item("try_parse_dates", *try_parse_dates)?;
-
-        Ok(out.into_any().unbind())
+        (hive_options.enabled == Some(true)).then(|| Wrap(hive_options.clone()))
     }
     #[getter]
     fn include_file_paths(&self, _py: Python<'_>) -> Option<&str> {
@@ -298,81 +275,18 @@ impl PyFileOptions {
     }
 
     #[getter]
-    fn missing_columns_policy(&self) -> &'static str {
-        missing_columns_policy_to_str(self.inner.missing_columns_policy)
+    fn missing_columns_policy(&self) -> Wrap<MissingColumnsPolicy> {
+        Wrap(self.inner.missing_columns_policy)
     }
 
     #[getter]
-    fn extra_columns_policy(&self) -> &'static str {
-        extra_columns_policy_to_str(self.inner.extra_columns_policy)
+    fn extra_columns_policy(&self) -> Wrap<ExtraColumnsPolicy> {
+        Wrap(self.inner.extra_columns_policy)
     }
 
     #[getter]
-    fn cast_columns_policy(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let CastColumnsPolicy {
-            integer_upcast,
-            integer_to_float_cast,
-            float_upcast,
-            float_downcast,
-            datetime_nanoseconds_downcast,
-            datetime_microseconds_downcast,
-            datetime_milliseconds_upcast,
-            datetime_microseconds_upcast,
-            datetime_convert_timezone,
-            null_upcast,
-            categorical_to_string,
-            missing_struct_fields,
-            extra_struct_fields,
-        } = &self.inner.cast_columns_policy;
-
-        let out = PyDict::new(py);
-        out.set_item("integer_upcast", *integer_upcast)?;
-        out.set_item("integer_to_float_cast", *integer_to_float_cast)?;
-        out.set_item("float_upcast", *float_upcast)?;
-        out.set_item("float_downcast", *float_downcast)?;
-        out.set_item(
-            "datetime_nanoseconds_downcast",
-            *datetime_nanoseconds_downcast,
-        )?;
-        out.set_item(
-            "datetime_microseconds_downcast",
-            *datetime_microseconds_downcast,
-        )?;
-        out.set_item(
-            "datetime_milliseconds_upcast",
-            *datetime_milliseconds_upcast,
-        )?;
-        out.set_item(
-            "datetime_microseconds_upcast",
-            *datetime_microseconds_upcast,
-        )?;
-        out.set_item("datetime_convert_timezone", *datetime_convert_timezone)?;
-        out.set_item("null_upcast", *null_upcast)?;
-        out.set_item("categorical_to_string", *categorical_to_string)?;
-        out.set_item(
-            "missing_struct_fields",
-            missing_columns_policy_to_str(*missing_struct_fields),
-        )?;
-        out.set_item(
-            "extra_struct_fields",
-            extra_columns_policy_to_str(*extra_struct_fields),
-        )?;
-
-        Ok(out.into_any().unbind())
-    }
-}
-
-fn missing_columns_policy_to_str(policy: MissingColumnsPolicy) -> &'static str {
-    match policy {
-        MissingColumnsPolicy::Insert => "insert",
-        MissingColumnsPolicy::Raise => "raise",
-    }
-}
-
-fn extra_columns_policy_to_str(policy: ExtraColumnsPolicy) -> &'static str {
-    match policy {
-        ExtraColumnsPolicy::Ignore => "ignore",
-        ExtraColumnsPolicy::Raise => "raise",
+    fn cast_columns_policy(&self) -> Wrap<CastColumnsPolicy> {
+        Wrap(self.inner.cast_columns_policy.clone())
     }
 }
 
