@@ -611,14 +611,32 @@ fn visualize_plan_rec(
         PhysNodeKind::GroupBy {
             inputs,
             key_per_input,
+            fused_agg_inputs_per_input,
             aggs_per_input,
         } => {
             let mut out = String::from("group-by");
-            for (key, aggs) in key_per_input.iter().zip(aggs_per_input) {
+            for ((key, fused), aggs) in key_per_input
+                .iter()
+                .zip(fused_agg_inputs_per_input)
+                .zip(aggs_per_input)
+            {
                 write!(
                     &mut out,
-                    "\\nkey:\\n{}\\naggs:\\n{}",
+                    "\\nkey:\\n{}",
                     fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
+                )
+                .ok();
+                if !fused.is_empty() {
+                    write!(
+                        &mut out,
+                        "\\nfused agg inputs:\\n{}",
+                        fmt_exprs_to_label(fused, expr_arena, FormatExprStyle::Select),
+                    )
+                    .ok();
+                }
+                write!(
+                    &mut out,
+                    "\\naggs:\\n{}",
                     fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
                 )
                 .ok();

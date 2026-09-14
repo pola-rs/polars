@@ -9,6 +9,7 @@ import pytest
 import polars as pl
 from polars.exceptions import (
     ColumnNotFoundError,
+    ComputeError,
     InvalidOperationError,
     SQLInterfaceError,
     SQLSyntaxError,
@@ -1834,9 +1835,7 @@ def test_join_on_invalid_expr() -> None:
         "df1": pl.DataFrame({"a": [1, 2, 3]}),
         "df2": pl.DataFrame({"a": [2, 3, 9]}),
     }
-    with pytest.raises(
-        SQLInterfaceError, match="unsupported join constraint expression"
-    ):
+    with pytest.raises(ComputeError, match="predicates must resolve to boolean"):
         pl.SQLContext(frames, eager=True).execute(
             "SELECT * FROM df1 JOIN df2 ON (df1.a)"
         )
@@ -1950,4 +1949,169 @@ def test_join_predicate_operand_spanning_both_sides() -> None:
             ORDER BY ss1.k
         """,
         compare_with="sqlite",
+    )
+
+
+@pytest.mark.parametrize(
+    "join_type",
+    [
+        "INNER JOIN",
+        "LEFT JOIN",
+        "RIGHT JOIN",
+        "FULL OUTER JOIN",
+        "SEMI JOIN",
+        "ANTI JOIN",
+    ],
+)
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "TRUE",
+        "FALSE",
+        "NULL",
+        "1 = 1",
+        "1 = 0",
+        "NULL = NULL",
+        "1 < 2",
+        "'13' = 13",
+        "UPPER('x') = 'X'",
+        "(1 = 1) AND (2 > 1)",
+        "CASE WHEN 1 = 1 THEN TRUE ELSE FALSE END",
+        "1 IN (1, 2)",
+        "3 NOT IN (1, 2)",
+        "'b' IN ('a', 'c')",
+        "(1 + 0) IN (1, 2)",
+        "UPPER('a') IN ('A', 'B')",
+        "CAST(1 AS INT) NOT IN (1, 2)",
+        "ARRAY_LENGTH(ARRAY[1, 2]) IN (2, 3)",
+        "ARRAY_CONTAINS(ARRAY[1, 2], 1)",
+    ],
+)
+@pytest.mark.parametrize("empty_side", [None, "a", "b"])
+def test_join_on_constant_condition(
+    join_type: str, condition: str, empty_side: str | None
+) -> None:
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2], "x": ["p", "q"]}),
+        "b": pl.DataFrame({"k": [2, 3], "y": ["r", "s"]}),
+    }
+    if empty_side:
+        frames[empty_side] = frames[empty_side].clear()
+
+    if "SEMI" in join_type or "ANTI" in join_type:
+        query = f"SELECT a.k, a.x FROM a {join_type} b ON {condition} ORDER BY 1, 2"
+    else:
+        query = f"""
+            SELECT a.k, a.x, b.k AS bk, b.y
+            FROM a {join_type} b ON {condition}
+            ORDER BY 1, 2, 3, 4
+        """
+    assert_sql_matches(frames, query=query, compare_with="duckdb")
+
+
+@pytest.mark.parametrize(
+    "join_type",
+    [
+        "INNER JOIN",
+        "LEFT JOIN",
+        "RIGHT JOIN",
+        "FULL OUTER JOIN",
+        "SEMI JOIN",
+        "ANTI JOIN",
+    ],
+)
+def test_join_on_constant_any_condition(join_type: str) -> None:
+    # DuckDB does not support ANY(array) outside inner joins; compare with TRUE/FALSE
+    frames = {
+        "a": pl.DataFrame({"k": [1, 2]}),
+        "b": pl.DataFrame({"v": ["r", "s"]}),
+    }
+    ctx = pl.SQLContext(frames=frames)
+    for condition, verdict in [
+        ("1 = ANY(ARRAY[1, 2])", "TRUE"),
+        ("3 = ANY(ARRAY[1, 2])", "FALSE"),
+    ]:
+        res = ctx.execute(f"SELECT * FROM a {join_type} b ON {condition}").collect()
+        expected = ctx.execute(f"SELECT * FROM a {join_type} b ON {verdict}").collect()
+        assert_frame_equal(res, expected, check_row_order=False)
+
+
+def test_join_on_constant_true_plans_cross_join() -> None:
+    frames = {
+        "a": pl.LazyFrame({"k": [1, 2]}),
+        "b": pl.LazyFrame({"v": ["r", "s"]}),
+    }
+    ctx = pl.SQLContext(frames=frames)
+    for condition in ["TRUE", "1 = 1", "1 < 2"]:
+        plan = ctx.execute(f"SELECT * FROM a JOIN b ON {condition}").explain()
+        assert plan.startswith("CROSS JOIN")
+    # an always-true outer join is not a cross join: it must keep unmatched rows
+    plan = ctx.execute("SELECT * FROM a LEFT JOIN b ON TRUE").explain()
+    assert "CROSS JOIN" not in plan
+
+
+def test_constant_key_join_keeps_validation() -> None:
+    a = pl.LazyFrame({"k": [1, 2]})
+    b = pl.LazyFrame({"v": ["r", "s"]})
+    assert a.join(b, left_on=pl.lit(1), right_on=pl.lit(1)).collect().height == 4
+    for validate in ["1:1", "1:m", "m:1"]:
+        with pytest.raises(ComputeError, match="join keys did not fulfill"):
+            a.join(
+                b,
+                left_on=pl.lit(1),
+                right_on=pl.lit(1),
+                validate=validate,  # type: ignore[arg-type]
+            ).collect()
+
+
+@pytest.mark.parametrize("join_type", ["INNER", "LEFT"])
+def test_join_on_pattern_predicates(join_type: str) -> None:
+    frames = {
+        "customer": pl.DataFrame({"c_key": [1, 2, 3], "c_name": ["a", "b", "c"]}),
+        "orders": pl.DataFrame(
+            {
+                "o_key": [1, 1, 2, 3],
+                "o_comment": ["special requests", "no", "special packages", "no"],
+                "c_name": ["x", "x", "y", "z"],
+            }
+        ),
+    }
+    assert_sql_matches(
+        frames,
+        query=f"""
+            SELECT c_key, COUNT(o_key) AS n_orders
+            FROM customer
+            {join_type} JOIN orders
+              ON c_key = o_key AND o_comment NOT LIKE '%special%requests%'
+            GROUP BY c_key
+            ORDER BY c_key
+        """,
+        compare_with="duckdb",
+    )
+    # predicates on a right-table column that also exists on the left
+    assert_sql_matches(
+        frames,
+        query=f"""
+            SELECT customer.c_name, orders.c_name AS o_name, o_comment
+            FROM customer
+            {join_type} JOIN orders
+              ON customer.c_key = orders.o_key
+              AND orders.c_name IN ('x', 'z')
+              AND o_comment ILIKE 'NO%'
+            ORDER BY 1, 2, 3
+        """,
+        compare_with="duckdb",
+    )
+    # the same clashing column name on both sides of one predicate
+    assert_sql_matches(
+        frames,
+        query=f"""
+            SELECT c_key, orders.c_name AS o_name
+            FROM customer
+            {join_type} JOIN orders
+              ON c_key = o_key AND customer.c_name < orders.c_name
+              AND orders.c_name NOT IN (customer.c_name, 'y')
+            ORDER BY 1, 2
+        """,
+        compare_with="duckdb",
     )

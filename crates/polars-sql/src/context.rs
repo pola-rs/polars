@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::ops::Deref;
+use std::ops::{ControlFlow, Deref};
 use std::sync::{Arc, RwLock};
 
 use polars_core::frame::row::Row;
@@ -20,15 +20,15 @@ use sqlparser::ast::{
     OrderByKind, Query, RenameSelectItem, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
     TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
-    ValueWithSpan, Values, Visit, WildcardAdditionalOptions, WindowSpec,
+    ValueWithSpan, Values, Visit, WildcardAdditionalOptions, WindowSpec, visit_expressions_mut,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::sql_expr::{
-    order_by_sort_options, parse_sql_array, parse_sql_expr, resolve_compound_identifier,
-    to_sql_interface_err,
+    convert_int_literal_for_string, order_by_sort_options, parse_sql_array, parse_sql_expr,
+    resolve_compound_identifier, to_sql_interface_err,
 };
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
@@ -2146,28 +2146,14 @@ impl SQLContext {
                 Some(s) => s,
             };
 
-            // shortcut filter evaluation if given expression is just TRUE or FALSE
-            let (all_true, all_false) = match expr {
-                SQLExpr::Value(ValueWithSpan {
-                    value: SQLValue::Boolean(b),
-                    ..
-                }) => (*b, !*b),
-                SQLExpr::BinaryOp { left, op, right } => match (&**left, &**right, op) {
-                    (SQLExpr::Value(a), SQLExpr::Value(b), SQLBinaryOperator::Eq) => {
-                        (a.value == b.value, a.value != b.value)
-                    },
-                    (SQLExpr::Value(a), SQLExpr::Value(b), SQLBinaryOperator::NotEq) => {
-                        (a.value != b.value, a.value == b.value)
-                    },
-                    _ => (false, false),
-                },
-                _ => (false, false),
-            };
-            let removing = filter_mode == FilterMode::RemoveTrue;
-            if (all_true && !removing) || (all_false && removing) {
-                return Ok(lf);
-            } else if (all_false && !removing) || (all_true && removing) {
-                return Ok(lf.clear());
+            // A condition that reads no input (eg: "WHERE 1 = 1") is accepted as any type
+            // that casts to boolean; the planner folds it.
+            if let Some(predicate) = self.input_independent_predicate(expr)? {
+                let predicate = predicate.cast(DataType::Boolean);
+                return Ok(match filter_mode {
+                    FilterMode::KeepTrue => lf.filter(predicate),
+                    FilterMode::RemoveTrue => lf.remove(predicate),
+                });
             }
 
             // Lower eligible `[NOT] EXISTS` / `[NOT] IN (subquery)` conjuncts
@@ -2222,6 +2208,21 @@ impl SQLContext {
         Ok(lf)
     }
 
+    /// Parse a condition that yields one value independent of any input frame (a literal or
+    /// elementwise operations over literals); `None` for any other condition.
+    fn input_independent_predicate(&mut self, expr: &SQLExpr) -> PolarsResult<Option<Expr>> {
+        if expr_references_any_column(expr) || expr_contains_subquery(expr) {
+            return Ok(None);
+        }
+        let predicate = parse_sql_expr(expr, self, None)?;
+        let independent = predicate
+            .clone()
+            .meta()
+            .is_input_independent_scalar()
+            .unwrap_or(false);
+        Ok(independent.then_some(predicate))
+    }
+
     pub(super) fn process_join(
         &mut self,
         tbl_left: &TableInfo,
@@ -2229,33 +2230,23 @@ impl SQLContext {
         constraint: &JoinConstraint,
         join_type: JoinType,
     ) -> PolarsResult<LazyFrame> {
-        if let JoinConstraint::On(expr) = constraint {
-            // A subquery references no column of its own, so it needs excluding here
-            // as well as it would otherwise read as a constant predicate.
-            if !expr_references_any_column(expr) && !expr_contains_subquery(expr) {
-                let satisfied = evaluate_constant_join_predicate(self, expr)?;
-                let builder = tbl_left
-                    .frame
-                    .clone()
-                    .join_builder()
-                    .with(tbl_right.frame.clone())
-                    .suffix(format!(":{}", tbl_right.name))
-                    .coalesce(JoinCoalesce::KeepColumns);
-
-                // Only INNER: an always-true outer join still has to emit null-extended
-                // left rows when the right side is empty, which a cross join would not.
-                return Ok(if satisfied && join_type == JoinType::Inner {
-                    builder.how(JoinType::Cross).finish()?
-                } else {
-                    // Match every row against every row, or none against none.
-                    let right_key = if satisfied { lit(1i32) } else { lit(2i32) };
-                    builder
-                        .left_on([lit(1i32)])
-                        .right_on([right_key])
-                        .how(join_type)
-                        .finish()?
-                });
-            }
+        // A condition that reads no input (eg: `ON TRUE`, `ON 1 = 1`) pairs every row with
+        // every row, or none: join on the condition itself as a boolean key (a null key
+        // matches nothing, like an unknown condition).
+        if let JoinConstraint::On(expr) = constraint
+            && let Some(predicate) = self.input_independent_predicate(expr)?
+        {
+            return tbl_left
+                .frame
+                .clone()
+                .join_builder()
+                .with(tbl_right.frame.clone())
+                .left_on([strip_join_aliases(predicate).cast(DataType::Boolean)])
+                .right_on([lit(true)])
+                .how(join_type)
+                .suffix(format!(":{}", tbl_right.name))
+                .coalesce(JoinCoalesce::KeepColumns)
+                .finish();
         }
         let (left_on, right_on, predicates) =
             process_join_constraint(constraint, tbl_left, tbl_right, self)?;
@@ -3608,8 +3599,28 @@ fn determine_left_right_join_on(
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     // parse, removing any aliases that may have been added by `resolve_column`
     // (called inside `parse_sql_expr`) as we need the actual/underlying col
-    let left_on = strip_join_aliases(parse_sql_expr(expr_left, ctx, Some(join_schema))?);
-    let right_on = strip_join_aliases(parse_sql_expr(expr_right, ctx, Some(join_schema))?);
+    let left_refs = (
+        expr_refers_to_table(expr_left, &tbl_left.name),
+        expr_refers_to_table(expr_left, &tbl_right.name),
+    );
+    let right_refs = (
+        expr_refers_to_table(expr_right, &tbl_left.name),
+        expr_refers_to_table(expr_right, &tbl_right.name),
+    );
+    // an operand's dtypes come from the table it names; the merged schema keeps the left
+    // dtype for a column name that exists in both tables
+    let operand_schema = |refs: (bool, bool)| -> &Schema {
+        match refs {
+            (true, false) => &tbl_left.schema,
+            (false, true) => &tbl_right.schema,
+            _ => join_schema,
+        }
+    };
+    let (left_schema, right_schema) = (operand_schema(left_refs), operand_schema(right_refs));
+    let left_on = strip_join_aliases(parse_sql_expr(expr_left, ctx, Some(left_schema))?);
+    let right_on = strip_join_aliases(parse_sql_expr(expr_right, ctx, Some(right_schema))?);
+    let (left_on, right_on) =
+        convert_int_literal_for_string((left_on, left_schema), (right_on, right_schema));
 
     // a constant operand is a literal, or any other expression referencing no column (such as
     // `UPPER('it')`); it can be evaluated against either input, so it has no table affinity
@@ -3621,14 +3632,6 @@ fn determine_left_right_join_on(
     // ------------------------------------------------------------------
     // simple/typical case: can fully resolve SQL-level table references
     // ------------------------------------------------------------------
-    let left_refs = (
-        expr_refers_to_table(expr_left, &tbl_left.name),
-        expr_refers_to_table(expr_left, &tbl_right.name),
-    );
-    let right_refs = (
-        expr_refers_to_table(expr_right, &tbl_left.name),
-        expr_refers_to_table(expr_right, &tbl_right.name),
-    );
     // if the SQL-level references unambiguously indicate table ownership, we're done
     match (left_refs, right_refs) {
         // standard: left expr → left table, right expr → right table
@@ -3694,9 +3697,9 @@ fn determine_left_right_join_on(
 /// Returns `(left_on, right_on, join_where_predicates)`.
 ///
 /// - Equi-conditions (`=`) are returned as paired `left_on`/`right_on` entries.
-/// - Non-equi conditions (`<`, `<=`, `>`, `>=`, `!=`) are returned as `join_where` predicates
-///   that reference columns using their merged-schema names (right columns that conflict with the
-///   left schema are suffixed).
+/// - Any other condition is returned as a `join_where` predicate that references columns
+///   using their merged-schema names (right columns that conflict with the left schema are
+///   suffixed).
 fn process_join_on(
     ctx: &mut SQLContext,
     sql_expr: &SQLExpr,
@@ -3727,55 +3730,50 @@ fn process_join_on(
                 )?;
                 Ok((l, r, vec![]))
             },
-            SQLBinaryOperator::Lt
-            | SQLBinaryOperator::LtEq
-            | SQLBinaryOperator::Gt
-            | SQLBinaryOperator::GtEq
-            | SQLBinaryOperator::NotEq => {
-                let join_schema = build_join_schema(tbl_left, tbl_right)?;
-                let suffix = format!(":{}", tbl_right.name);
-
-                // Parse both operands and suffix each independently based on whether
-                // it references the right table (preserving SQL operand order).
-                let lhs = suffix_if_right_table(
-                    parse_sql_expr(left, ctx, Some(&join_schema))?,
-                    left,
-                    tbl_left,
-                    tbl_right,
-                    &suffix,
-                );
-                let rhs = suffix_if_right_table(
-                    parse_sql_expr(right, ctx, Some(&join_schema))?,
-                    right,
-                    tbl_left,
-                    tbl_right,
-                    &suffix,
-                );
-
-                let polars_op = match op {
-                    SQLBinaryOperator::Lt => Operator::Lt,
-                    SQLBinaryOperator::LtEq => Operator::LtEq,
-                    SQLBinaryOperator::Gt => Operator::Gt,
-                    SQLBinaryOperator::GtEq => Operator::GtEq,
-                    SQLBinaryOperator::NotEq => Operator::NotEq,
-                    _ => unreachable!(),
-                };
-                let predicate = Expr::BinaryExpr {
-                    left: Arc::new(lhs),
-                    op: polars_op,
-                    right: Arc::new(rhs),
-                };
-                Ok((vec![], vec![], vec![predicate]))
-            },
-            _ => polars_bail!(
-                SQLInterface: "unsupported join constraint operator '{:?}'", op
-            ),
+            _ => process_join_predicate(ctx, sql_expr, tbl_left, tbl_right),
         },
         SQLExpr::Nested(expr) => process_join_on(ctx, expr, tbl_left, tbl_right),
-        _ => polars_bail!(
-            SQLInterface: "unsupported join constraint expression: {:?}", sql_expr
-        ),
+        _ => process_join_predicate(ctx, sql_expr, tbl_left, tbl_right),
     }
+}
+
+/// Parse a join condition other than a plain equality into a `join_where` predicate over
+/// the joined frame, where right-table columns that also exist in the left table carry a suffix.
+fn process_join_predicate(
+    ctx: &mut SQLContext,
+    sql_expr: &SQLExpr,
+    tbl_left: &TableInfo,
+    tbl_right: &TableInfo,
+) -> PolarsResult<(Vec<Expr>, Vec<Expr>, Vec<Expr>)> {
+    let suffix = format!(":{}", tbl_right.name);
+    let conflicts = |name: &str| tbl_left.schema.contains(name) && tbl_right.schema.contains(name);
+
+    let mut joined_schema = build_join_schema(tbl_left, tbl_right)?;
+    for (name, dtype) in tbl_right.schema.iter().filter(|(name, _)| conflicts(name)) {
+        joined_schema.insert(
+            PlSmallStr::from_string(format!("{name}{suffix}")),
+            dtype.clone(),
+        );
+    }
+
+    // `right_table.col` -> `col:right_table` when the name is also a left column
+    let mut sql_expr = sql_expr.clone();
+    let _ = visit_expressions_mut(&mut sql_expr, |e| {
+        if let SQLExpr::CompoundIdentifier(idents) = e
+            && idents.len() >= 2
+            && idents[0].value == tbl_right.name
+            && conflicts(&idents[1].value)
+        {
+            let suffixed = Ident::new(format!("{}{suffix}", idents[1].value));
+            idents.splice(0..2, [suffixed]);
+            if idents.len() == 1 {
+                *e = SQLExpr::Identifier(idents.pop().unwrap());
+            }
+        }
+        ControlFlow::<()>::Continue(())
+    });
+    let predicate = strip_join_aliases(parse_sql_expr(&sql_expr, ctx, Some(&joined_schema))?);
+    Ok((vec![], vec![], vec![predicate]))
 }
 
 /// Replace aggregates over pre-aggregation columns with references to hoisted
@@ -3864,58 +3862,6 @@ fn suffix_conflicting_columns(
         },
         other => other,
     })
-}
-
-/// Suffix conflicting column names in `expr` if the SQL-level expression references the right
-/// table. Uses table qualifiers first, falling back to schema membership when unqualified.
-fn suffix_if_right_table(
-    expr: Expr,
-    sql_expr: &SQLExpr,
-    tbl_left: &TableInfo,
-    tbl_right: &TableInfo,
-    suffix: &str,
-) -> Expr {
-    // Strip any alias added by resolve_column
-    let expr = match expr {
-        Expr::Alias(inner, _) => Arc::unwrap_or_clone(inner),
-        e => e,
-    };
-
-    let refs_left = expr_refers_to_table(sql_expr, &tbl_left.name);
-    let refs_right = expr_refers_to_table(sql_expr, &tbl_right.name);
-
-    let is_right = if refs_right && !refs_left {
-        true
-    } else if refs_left {
-        false
-    } else {
-        // Unqualified: check schema membership
-        !expr_cols_all_in_schema(&expr, &tbl_left.schema)
-            && expr_cols_all_in_schema(&expr, &tbl_right.schema)
-    };
-
-    if is_right {
-        suffix_conflicting_columns(expr, tbl_left, tbl_right, suffix)
-    } else {
-        expr
-    }
-}
-
-/// Evaluate a column-free (constant) join ON-expression to a definite true/false
-/// verdict; SQL treats an unknown (NULL) condition the same as false for matching.
-fn evaluate_constant_join_predicate(ctx: &mut SQLContext, expr: &SQLExpr) -> PolarsResult<bool> {
-    let predicate = parse_sql_expr(expr, ctx, None)?;
-    let df = DataFrame::empty()
-        .lazy()
-        .select([predicate
-            .cast(DataType::Boolean)
-            .alias("_constant_join_predicate")])
-        .collect()?;
-    Ok(df
-        .column("_constant_join_predicate")?
-        .bool()?
-        .get(0)
-        .unwrap_or(false))
 }
 
 fn process_join_constraint(

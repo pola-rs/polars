@@ -11,7 +11,7 @@ mod cluster_with_columns;
 mod collapse_and_project;
 mod collect_members;
 #[cfg(feature = "cse")]
-mod cse;
+pub mod cse;
 #[cfg(feature = "merge_sorted")]
 mod flatten_merge_sorted;
 mod flatten_union;
