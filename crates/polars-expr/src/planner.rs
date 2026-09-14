@@ -470,13 +470,20 @@ fn create_physical_expr_inner(
                 && !matches!(expr_arena.get(truthy), AExpr::Column(_) | AExpr::Literal(_));
             let mask_falsy = is_elementwise_rec(falsy, expr_arena)
                 && !matches!(expr_arena.get(falsy), AExpr::Column(_) | AExpr::Literal(_));
+            // An arm reading a column more than once must mask it once.
+            let mask_columns = |node: Node| -> Vec<PlSmallStr> {
+                let mut names = aexpr_to_leaf_names(node, expr_arena);
+                names.sort_unstable();
+                names.dedup();
+                names
+            };
             let truthy_mask_columns = if mask_truthy {
-                aexpr_to_leaf_names(truthy, expr_arena)
+                mask_columns(truthy)
             } else {
                 Vec::new()
             };
             let falsy_mask_columns = if mask_falsy {
-                aexpr_to_leaf_names(falsy, expr_arena)
+                mask_columns(falsy)
             } else {
                 Vec::new()
             };
