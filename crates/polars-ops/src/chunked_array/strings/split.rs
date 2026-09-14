@@ -70,13 +70,44 @@ where
 {
     use polars_utils::format_pl_smallstr;
 
+    // A chunk that reads one element throughout splits into one set of fields, and those fields
+    // stand for every element in turn: the split is done over a single element and the fields go
+    // to the constructor one element long, which repeats them over the column's length.
+    let repeated = by.len() == 1 && ca.len() > 1 && ca.scalar_value().is_some();
+    let builder_len = if repeated { 1 } else { ca.len() };
+
     let mut arrs = (0..n)
-        .map(|_| PlUtf8ViewArrayBuilder::with_capacity(ca.len()))
+        .map(|_| PlUtf8ViewArrayBuilder::with_capacity(builder_len))
         .collect::<Vec<_>>();
 
     if by.len() == 1 {
         if let Some(by) = by.get(0) {
-            if by.is_empty() {
+            if repeated {
+                // `repeated` is exactly `scalar_value()` having answered.
+                match ca.scalar_value().unwrap() {
+                    Some(s) => {
+                        let mut arr_iter = arrs.iter_mut();
+                        if by.is_empty() {
+                            splitn_chars(s, n, keep_remainder)
+                                .zip(&mut arr_iter)
+                                .for_each(|(splitted, arr)| arr.push_value(splitted));
+                        } else {
+                            op(s, by)
+                                .zip(&mut arr_iter)
+                                .for_each(|(splitted, arr)| arr.push_value(splitted));
+                        }
+                        // fill the remaining with null
+                        for arr in arr_iter {
+                            arr.push_null()
+                        }
+                    },
+                    None => {
+                        for arr in &mut arrs {
+                            arr.push_null()
+                        }
+                    },
+                }
+            } else if by.is_empty() {
                 ca.for_each(|opt_s| match opt_s {
                     None => {
                         for arr in &mut arrs {
