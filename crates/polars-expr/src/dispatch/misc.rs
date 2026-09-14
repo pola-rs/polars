@@ -205,7 +205,11 @@ pub fn quantile(s: &[Column], method: QuantileMethod) -> PolarsResult<Column> {
     assert!(s.len() == 2);
     let input = &s[0];
     let quantile = s[1].as_materialized_series();
-    polars_ensure!(quantile.len() <= 1, ComputeError:
+    polars_ensure!(!quantile.is_empty(), ComputeError:
+        "the 'quantile' expression input should produce a single quantile or a list of quantiles, \
+        got an empty input"
+    );
+    polars_ensure!(quantile.len() == 1, ComputeError:
         "polars does not support varying quantiles yet, \
         make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
     );
@@ -213,7 +217,9 @@ pub fn quantile(s: &[Column], method: QuantileMethod) -> PolarsResult<Column> {
     match quantile.dtype() {
         DataType::List(_) => {
             let list = quantile.list()?;
-            let inner_s = list.get_as_series(0).unwrap();
+            let inner_s = list.get_as_series(0).ok_or_else(
+                || polars_err!(ComputeError: "quantile expression contains null values"),
+            )?;
             if inner_s.has_nulls() {
                 polars_bail!(ComputeError: "quantile expression contains null values");
             }

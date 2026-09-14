@@ -23,7 +23,7 @@ class ExprMapNameSpace:
         Each entry is a `Struct` with a `key` and a `value` field. Entry order is
         preserved. The inverse of :meth:`Expr.list.to_map`.
 
-        Null maps remain null; their stored entries are omitted.
+        Null maps remain null.
 
         .. engine-support:: in-memory, streaming, distributed
 
