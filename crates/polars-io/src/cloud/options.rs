@@ -736,6 +736,10 @@ impl CloudOptions {
             .with_url(url.to_string())
             .with_client_options({
                 let mut opts = super::get_client_options();
+                if url.scheme() == Some(CloudScheme::Http) {
+                    // Cleartext never handshakes; skip the platform trust-store walk.
+                    opts = opts.with_no_system_certificates(true);
+                }
                 if let Some(CloudConfig::Http { headers }) = &self.config {
                     opts = opts.with_default_headers(try_build_http_header_map_from_items_slice(
                         headers.as_slice(),
