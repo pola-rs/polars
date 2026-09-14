@@ -927,18 +927,21 @@ pub(super) fn convert_functions(
                 (polars_compute::approx_quantile::MIN_ERROR..1.0).contains(&error),
                 InvalidOperation: "`error` must be in the range [2^-32, 1) (got: {error})"
             );
-            let quantiles: Option<Vec<f64>> = match ctx.arena.get(e[1].node()) {
-                AExpr::Literal(LiteralValue::Series(s)) => s
-                    .list()
-                    .ok()
-                    .and_then(|ca| ca.get_as_series(0))
-                    .and_then(|s| s.cast(&DataType::Float64).ok())
-                    .and_then(|s| s.f64().ok()?.iter().collect()),
-                AExpr::Literal(lv) => lv
-                    .to_any_value()
-                    .and_then(|av| av.extract())
-                    .map(|q| vec![q]),
+            let quantile = match ctx.arena.get(e[1].node()) {
+                AExpr::Literal(LiteralValue::Series(s)) if s.len() == 1 => s.get(0).ok(),
+                AExpr::Literal(
+                    lv @ (LiteralValue::Scalar(_)
+                    | LiteralValue::Dyn(DynLiteralValue::Int(_) | DynLiteralValue::Float(_))),
+                ) => lv.to_any_value(),
                 _ => None,
+            };
+            let quantiles: Option<Vec<f64>> = match quantile {
+                Some(AnyValue::List(s)) => s
+                    .strict_cast(&DataType::Float64)
+                    .ok()
+                    .and_then(|s| s.iter().map(|v| v.extract()).collect()),
+                Some(av) => av.extract().map(|q| vec![q]),
+                None => None,
             };
             let method = method.resolve(quantiles.as_deref());
             let error = match use_formal_bound {
