@@ -312,6 +312,15 @@ impl PyFileOptions {
             .as_ref()
             .map(|table_statistics| PyDataFrame::new(table_statistics.0.as_ref().clone()))
     }
+
+    /// The table's `(physical, deleted)` row counts if known upfront, otherwise None.
+    ///
+    /// The number of rows the scan produces is `physical - deleted`. This allows a
+    /// row count to be answered from metadata without reading any source.
+    #[getter]
+    fn row_count(&self) -> Option<(u64, u64)> {
+        self.inner.row_count
+    }
 }
 
 /// Converts an [`IcebergSchema`] to a dict mapping physical field ID to a column.
