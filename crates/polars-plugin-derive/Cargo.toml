@@ -1,0 +1,21 @@
+[package]
+name = "polars-plugin-derive"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Proc-macros for polars-plugin"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro-crate = "3"
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "2", features = ["full", "extra-traits"] }
+
+[lints]
+workspace = true
