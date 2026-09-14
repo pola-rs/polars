@@ -482,6 +482,44 @@ impl PlBinaryViewArray {
         }
     }
 
+    /// Returns this array with its elements in the opposite order, keeping the representation.
+    #[must_use]
+    pub fn reversed(&self) -> Self {
+        // A chunk that repeats one element reads the same either way round.
+        if self.is_scalar() {
+            return self.clone();
+        }
+
+        let validity = self
+            .validity
+            .as_ref()
+            .map(|validity| PlBitmap::new_broadcast(validity.clone(), self.length).reversed());
+
+        // Only the views are reordered: they index a side table that the order of the elements
+        // says nothing about, so the buffers holding the bytes are carried over untouched.
+        if self.views_are_scalar() {
+            // One view stands for every element whichever way they are read.
+            // SAFETY: the views buffer is the one slot it already was, over the same buffers.
+            unsafe {
+                Self::new_broadcast_unchecked(
+                    self.views.clone(),
+                    self.buffers.clone(),
+                    self.length,
+                    validity,
+                )
+            }
+        } else {
+            let mut views = Vec::with_capacity(self.length);
+            views.extend(self.views.as_slice().iter().rev().copied());
+
+            // SAFETY: one view was written per element, each one already validated against these
+            // buffers, and the mask is this array's own reversed.
+            unsafe {
+                Self::new_unchecked(views.into(), self.buffers.clone(), self.length, validity)
+            }
+        }
+    }
+
     /// Returns an equivalent flat array, borrowing this one if it is already flat.
     pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         if let Some(flat) = self.as_flat() {

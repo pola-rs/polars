@@ -401,6 +401,35 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         Self::new_scalar(value, length)
     }
 
+    /// Returns this array with its elements in the opposite order, keeping the representation.
+    #[must_use]
+    pub fn reversed(&self) -> Self {
+        // A chunk that repeats one element reads the same either way round.
+        if self.is_scalar() {
+            return self.clone();
+        }
+
+        let validity = self
+            .validity
+            .as_ref()
+            .map(|validity| PlBitmap::new_broadcast(validity.clone(), self.length).reversed());
+
+        // The values axis keeps whichever representation it is in, so the constructor that takes
+        // it has to be the one for that representation.
+        if self.values_are_scalar() {
+            // One value stands for every element whichever way they are read, so only the mask
+            // above was written out.
+            // SAFETY: the values buffer is the one slot it already was.
+            unsafe { Self::new_broadcast_unchecked(self.values.clone(), self.length, validity) }
+        } else {
+            let mut values = Vec::with_capacity(self.length);
+            values.extend(self.values.as_slice().iter().rev().copied());
+
+            // SAFETY: one slot was written per element, and the mask is this array's own reversed.
+            unsafe { Self::new_unchecked(values.into(), self.length, validity) }
+        }
+    }
+
     /// Returns an equivalent flat array, borrowing this one if it is already flat.
     pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         if let Some(flat) = self.as_flat() {
