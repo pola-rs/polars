@@ -11,9 +11,6 @@ pub struct IRBinOptions {
     pub include_intervals: bool,
 }
 
-/// The resolved counterpart of [`BinMethod`](crate::dsl::BinMethod).
-///
-/// The breakpoint dtype is known, and their sorteness is validated.
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug, Hash)]
 pub enum IRBinMethod {
