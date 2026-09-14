@@ -1,7 +1,7 @@
 #![allow(unused)]
 use polars_core::error::{PolarsResult, polars_bail, polars_err};
 use polars_core::schema::*;
-use polars_ops::frame::JoinValidation;
+use polars_ops::frame::{JoinBuildSide, JoinValidation};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -16,7 +16,10 @@ pub(super) fn unconstrained(args: &JoinArgs) -> bool {
     args.slice.is_none()
         && matches!(args.maintain_order, MaintainOrderJoin::None)
         && matches!(args.validation, JoinValidation::ManyToMany)
-        && args.build_side.is_none()
+        && matches!(
+            args.build_side,
+            None | Some(JoinBuildSide::PreferLeft | JoinBuildSide::PreferRight)
+        )
 }
 
 /// An inner join on keys alone, free to be placed elsewhere in a chain of joins.
