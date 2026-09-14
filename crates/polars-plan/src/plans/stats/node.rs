@@ -216,25 +216,37 @@ pub(crate) fn node_stats_with_cache(
             let left = node_stats_with_cache(*input_left, ir_arena, expr_arena, cache)?;
             let right = node_stats_with_cache(*input_right, ir_arena, expr_arena, cache)?;
 
+            let how = &options.args.how;
+            // The right side of a semi- or anti-join is a set of values from the left
+            // key's own domain.
+            let own_domain = |left_key: Option<&PlSmallStr>| match how {
+                #[cfg(feature = "semi_anti_join")]
+                JoinType::Semi | JoinType::Anti => left_key.and_then(|name| left.int_domain(name)),
+                _ => None,
+            };
             let key_domains = composite_key_domain(
                 on.iter().map(|(left_key, right_key)| {
-                    key_domain(
-                        &left,
-                        left_key.plain_column(expr_arena),
-                        &right,
-                        right_key.plain_column(expr_arena),
-                    )
+                    let left_key = left_key.plain_column(expr_arena);
+                    let domain =
+                        key_domain(&left, left_key, &right, right_key.plain_column(expr_arena));
+                    own_domain(left_key).map_or(domain, |own| domain.max(own))
                 }),
                 left.unfiltered.max(right.unfiltered),
             );
-            let how = &options.args.how;
             let rows = |l: f64, r: f64| join_rows(how, l, r, join_cardinality(l, r, key_domains));
 
-            let stats = NodeStats {
-                filtered: rows(left.filtered, right.filtered)?,
-                unfiltered: rows(left.unfiltered, right.unfiltered)?,
-                max_rows: join_max_rows(how, &left, &right),
-                columns: join_columns(&left, &right),
+            let filtered = rows(left.filtered, right.filtered)?;
+            let stats = if how.is_semi_anti() {
+                // A filter on the left side: its rows are narrowed, its key domain
+                // is not.
+                left.filter(filtered)
+            } else {
+                NodeStats {
+                    filtered,
+                    unfiltered: rows(left.unfiltered, right.unfiltered)?,
+                    max_rows: join_max_rows(how, &left, &right),
+                    columns: join_columns(&left, &right),
+                }
             };
 
             // Only narrows `filtered`; an estimated selectivity is not an upper bound, so
@@ -382,9 +394,6 @@ fn join_max_rows(how: &JoinType, left: &NodeStats, right: &NodeStats) -> Option<
     match how {
         // Every pair, and no more.
         JoinType::Cross => Some(left.max_rows? * right.max_rows?),
-        // Both keep a subset of the left side.
-        #[cfg(feature = "semi_anti_join")]
-        JoinType::Semi | JoinType::Anti => left.max_rows,
         _ => None,
     }
 }
