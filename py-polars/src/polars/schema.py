@@ -217,7 +217,7 @@ class Schema(BaseSchema):
         Examples
         --------
         >>> pl.Schema({"x": pl.String}).to_arrow()
-        x: string_view
+        x: large_string
         """
 
         class SchemaCapsuleProvider:
@@ -232,7 +232,7 @@ class Schema(BaseSchema):
 
         return pa.schema(
             SchemaCapsuleProvider(
-                self, CompatLevel.newest() if compat_level is None else compat_level
+                self, CompatLevel.oldest() if compat_level is None else compat_level
             )
         )
 
