@@ -136,11 +136,6 @@ impl PyFileOptions {
     fn rechunk(&self, _py: Python<'_>) -> bool {
         self.inner.rechunk
     }
-    /// None if hive partitioning is disabled, otherwise a dict with the keys
-    /// "hive_start_idx", "schema" and "try_parse_dates".
-    ///
-    /// Note that the hive column values themselves are on `Scan.hive_parts`; this
-    /// only carries the configuration used to parse them.
     #[getter]
     fn hive_options(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let HiveOptions {
@@ -150,8 +145,6 @@ impl PyFileOptions {
             try_parse_dates,
         } = &self.inner.hive_options;
 
-        // `enabled` should always be initialized inside an IR plan, but treat an
-        // unset value the same as disabled rather than guessing.
         if *enabled != Some(true) {
             return Ok(py.None().into_any());
         }
@@ -226,8 +219,6 @@ impl PyFileOptions {
     /// One of:
     /// * None
     /// * ("iceberg-column-mapping", dict[int, column])
-    ///
-    /// See [`iceberg_schema_to_pyobject`] for the `column` representation.
     #[getter]
     fn column_mapping(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match &self.inner.column_mapping {
@@ -253,14 +244,6 @@ impl PyFileOptions {
     ///     )
     ///   )
     ///
-    /// Both dicts are keyed by physical field ID, and hold the value to use for a
-    /// field that is missing from a data file.
-    ///
-    /// An identity transformed partition field carries one value per scan source, in
-    /// `Scan.paths` order, as the value differs per source. A `str` there is instead
-    /// an error message explaining why the partition values could not be loaded - it
-    /// should only be raised if the field is actually needed. An initial default is a
-    /// single value that applies to every source.
     #[getter]
     fn default_values(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match &self.inner.default_values {
@@ -301,12 +284,6 @@ impl PyFileOptions {
         })
     }
 
-    /// Per-source statistics known upfront, as a DataFrame with one row per scan
-    /// source, or None if unavailable.
-    ///
-    /// Contains a `len` column, and `<name>_nc` / `<name>_min` / `<name>_max`
-    /// columns (null count, minimum and maximum) for the columns used by the
-    /// predicate. Can be used to skip sources that cannot match the predicate.
     #[getter]
     fn table_statistics(&self) -> Option<PyDataFrame> {
         self.inner
@@ -315,35 +292,21 @@ impl PyFileOptions {
             .map(|table_statistics| PyDataFrame::new(table_statistics.0.as_ref().clone()))
     }
 
-    /// The table's `(physical, deleted)` row counts if known upfront, otherwise None.
-    ///
-    /// The number of rows the scan produces is `physical - deleted`. This allows a
-    /// row count to be answered from metadata without reading any source.
     #[getter]
     fn row_count(&self) -> Option<(u64, u64)> {
         self.inner.row_count
     }
 
-    /// How to handle columns of the output schema that a source does not contain.
-    /// One of "insert" (substitute a full-NULL column) or "raise".
     #[getter]
     fn missing_columns_policy(&self) -> &'static str {
         missing_columns_policy_to_str(self.inner.missing_columns_policy)
     }
 
-    /// How to handle columns in a source that are not in the output schema.
-    /// One of "ignore" or "raise".
     #[getter]
     fn extra_columns_policy(&self) -> &'static str {
         extra_columns_policy_to_str(self.inner.extra_columns_policy)
     }
 
-    /// Which dtype mismatches between a source and the output schema may be resolved
-    /// by casting, as a dict of the resolved policy flags.
-    ///
-    /// "missing_struct_fields" and "extra_struct_fields" are the struct-field
-    /// equivalents of `missing_columns_policy` and `extra_columns_policy`; the
-    /// remaining keys are booleans.
     #[getter]
     fn cast_columns_policy(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let CastColumnsPolicy {
@@ -399,29 +362,6 @@ impl PyFileOptions {
     }
 }
 
-/// The size in bytes of each scan source, in `sources` order, or None if unknown for
-/// any of them.
-///
-/// `UnifiedScanArgs::source_sizes` is a DSL-level input that IR conversion moves onto
-/// the scan type, so prefer the scan type and fall back to the unresolved args.
-fn scan_source_sizes(
-    scan_type: &FileScanIR,
-    unified_scan_args: &UnifiedScanArgs,
-) -> Option<Vec<u64>> {
-    let bytes_per_source = match scan_type {
-        #[cfg(feature = "parquet")]
-        FileScanIR::Parquet {
-            bytes_per_source, ..
-        } => bytes_per_source.as_ref(),
-        _ => None,
-    };
-
-    bytes_per_source
-        .or(unified_scan_args.source_sizes.as_ref())
-        .map(|sizes| sizes.iter().copied().collect())
-}
-
-/// Inverse of the `Wrap<MissingColumnsPolicy>` extraction.
 fn missing_columns_policy_to_str(policy: MissingColumnsPolicy) -> &'static str {
     match policy {
         MissingColumnsPolicy::Insert => "insert",
@@ -429,7 +369,6 @@ fn missing_columns_policy_to_str(policy: MissingColumnsPolicy) -> &'static str {
     }
 }
 
-/// Inverse of the `Wrap<ExtraColumnsPolicy>` extraction.
 fn extra_columns_policy_to_str(policy: ExtraColumnsPolicy) -> &'static str {
     match policy {
         ExtraColumnsPolicy::Ignore => "ignore",
@@ -437,10 +376,6 @@ fn extra_columns_policy_to_str(policy: ExtraColumnsPolicy) -> &'static str {
     }
 }
 
-/// Converts an [`IcebergSchema`] to a dict mapping physical field ID to a column.
-///
-/// Note that the physical ID of a list element is `LIST_ELEMENT_DEFAULT_ID` if the
-/// element field did not carry one.
 fn iceberg_schema_to_pyobject(py: Python<'_>, schema: &IcebergSchema) -> PyResult<Py<PyAny>> {
     let out = PyDict::new(py);
 
@@ -451,13 +386,6 @@ fn iceberg_schema_to_pyobject(py: Python<'_>, schema: &IcebergSchema) -> PyResul
     Ok(out.into_any().unbind())
 }
 
-/// Converts an [`IcebergColumn`] to a `(name, physical_id, type)` tuple, where `type` is
-/// one of:
-/// * ("primitive", DataType)
-/// * ("list", column)
-/// * ("fixed-size-list", column, width)
-/// * ("map", key_column, value_column)
-/// * ("struct", dict[int, column])
 fn iceberg_column_to_pyobject(py: Python<'_>, column: &IcebergColumn) -> PyResult<Py<PyAny>> {
     let IcebergColumn {
         name,
@@ -507,8 +435,6 @@ pub struct Scan {
     file_options: PyFileOptions,
     #[pyo3(get)]
     scan_type: Py<PyAny>,
-    /// The size in bytes of each source in `paths`, or None if not known for every
-    /// source. Saves the reader a metadata request per source.
     #[pyo3(get)]
     source_sizes: Option<Vec<u64>>,
 }
@@ -786,7 +712,19 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     inner: (**unified_scan_args).clone(),
                 },
                 scan_type: scan_type_to_pyobject(py, scan_type, &unified_scan_args.cloud_options)?,
-                source_sizes: scan_source_sizes(scan_type, unified_scan_args),
+                source_sizes: {
+                    let bytes_per_source = match &**scan_type {
+                        #[cfg(feature = "parquet")]
+                        FileScanIR::Parquet {
+                            bytes_per_source, ..
+                        } => bytes_per_source.as_ref(),
+                        _ => None,
+                    };
+
+                    bytes_per_source
+                        .or(unified_scan_args.source_sizes.as_ref())
+                        .map(|sizes| sizes.iter().copied().collect())
+                },
             }
         }
         .into_py_any(py),
