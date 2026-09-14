@@ -252,6 +252,33 @@ def test_from_arrow() -> None:
     assert df.schema == {"a": pl.UInt32, "b": pl.UInt64}  # type: ignore[union-attr]
 
 
+def test_from_arrow_struct_duplicate_field_names_24899() -> None:
+    # https://github.com/pola-rs/polars/issues/24899
+    # Importing an Arrow struct with duplicate field names must raise a
+    # DuplicateError instead of panicking.
+    struct_arr = pa.StructArray.from_arrays(
+        [[1], [2]],
+        fields=[pa.field("x", pa.int64()), pa.field("x", pa.int64())],
+    )
+
+    with pytest.raises(DuplicateError, match="multiple fields with name 'x' found"):
+        pl.from_arrow(struct_arr)
+
+    with pytest.raises(DuplicateError, match="multiple fields with name 'x' found"):
+        pl.from_arrow(pa.table({"s": struct_arr}))
+
+    # Nested case from the original report: a list of structs with duplicate
+    # (empty) field names.
+    list_arr = pa.array(
+        [[(date(2010, 1, 1), date(2010, 1, 1))]],
+        type=pa.list_(
+            pa.struct([pa.field("", pa.date32()), pa.field("", pa.date32())])
+        ),
+    )
+    with pytest.raises(DuplicateError, match="multiple fields with name '' found"):
+        pl.from_arrow(pa.table({"s": list_arr}))
+
+
 def test_from_arrow_with_bigquery_metadata() -> None:
     arrow_schema = pa.schema(
         [
