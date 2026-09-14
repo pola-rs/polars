@@ -15,7 +15,7 @@ use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::visitor::AexprNode;
 use crate::plans::{AExpr, ExprIR, IR, PredicatePushDown, subplan_cost};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
-use crate::utils::aexpr_to_leaf_names;
+use crate::utils::aexpr_to_leaf_names_iter;
 
 fn get_upper_projections(
     parent: Node,
@@ -36,7 +36,7 @@ fn get_upper_projections(
         },
         IR::Filter { predicate, .. } => {
             // Also add predicate, as the projection is above the filter node.
-            names_scratch.extend(aexpr_to_leaf_names(predicate.node(), expr_arena));
+            names_scratch.extend(aexpr_to_leaf_names_iter(predicate.node(), expr_arena).cloned());
 
             true
         },
