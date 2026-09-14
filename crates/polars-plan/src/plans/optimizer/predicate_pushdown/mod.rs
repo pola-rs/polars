@@ -3,7 +3,7 @@ mod group_by;
 mod hive;
 mod join;
 mod keys;
-mod utils;
+pub(super) mod utils;
 
 pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
 use polars_buffer::Buffer;

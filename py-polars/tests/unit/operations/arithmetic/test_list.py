@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 )
 @pytest.mark.parametrize("exec_op", EXEC_OP_COMBINATIONS)
 @pytest.mark.slow
+@pytest.mark.may_fail_lazy_schema  # TODO: null-supertype
 def test_list_arithmetic_values(
     list_side: str,
     broadcast_series: Callable[

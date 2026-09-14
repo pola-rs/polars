@@ -11,6 +11,7 @@ pub struct KahanSum<T> {
 }
 
 impl<T: IsFloat + Num + Copy> KahanSum<T> {
+    #[inline]
     pub fn new(v: T) -> Self {
         KahanSum {
             sum: v,
@@ -18,12 +19,14 @@ impl<T: IsFloat + Num + Copy> KahanSum<T> {
         }
     }
 
+    #[inline(always)]
     pub fn sum(&self) -> T {
         self.sum
     }
 }
 
 impl<T: Num> Default for KahanSum<T> {
+    #[inline]
     fn default() -> Self {
         KahanSum {
             sum: T::zero(),
@@ -33,6 +36,7 @@ impl<T: Num> Default for KahanSum<T> {
 }
 
 impl<T: IsFloat + Num + AddAssign + Copy> AddAssign<T> for KahanSum<T> {
+    #[inline]
     fn add_assign(&mut self, rhs: T) {
         let y = rhs - self.err;
         let new_sum = self.sum + y;
@@ -48,6 +52,7 @@ impl<T: IsFloat + Num + AddAssign + Copy> AddAssign<T> for KahanSum<T> {
 impl<T: IsFloat + Num + AddAssign + Copy> Add<T> for KahanSum<T> {
     type Output = Self;
 
+    #[inline]
     fn add(self, rhs: T) -> Self::Output {
         let mut rv = self;
         rv += rhs;

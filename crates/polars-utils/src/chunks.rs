@@ -8,6 +8,7 @@ pub struct Chunks<'a, T> {
 impl<'a, T> Iterator for Chunks<'a, T> {
     type Item = &'a [T];
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.slice.is_empty() {
             return None;
@@ -44,14 +45,17 @@ impl<T> DoubleEndedIterator for Chunks<'_, T> {
 impl<T> ExactSizeIterator for Chunks<'_, T> {}
 
 impl<'a, T> Chunks<'a, T> {
+    #[inline(always)]
     pub const fn new(slice: &'a [T], chunk_size: usize) -> Self {
         Self { slice, chunk_size }
     }
 
+    #[inline(always)]
     pub const fn as_slice(&self) -> &'a [T] {
         self.slice
     }
 
+    #[inline(always)]
     pub const fn chunk_size(&self) -> usize {
         self.chunk_size
     }

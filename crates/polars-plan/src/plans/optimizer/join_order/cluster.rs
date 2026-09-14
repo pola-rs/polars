@@ -138,7 +138,7 @@ fn reorderable(options: &JoinOptionsIR) -> bool {
         && matches!(args.validation, JoinValidation::ManyToMany)
         // A forced build side refers to this specific join, so leave it alone.
         && args.build_side.is_none()
-        && matches!(&options.options, JoinTypeOptionsIR::Equi { on } if !on.is_empty())
+        && matches!(&options.options, JoinTypeOptionsIR::Equi { on, fused_predicate: None } if !on.is_empty())
 }
 
 /// A leaf as found, with the renames that carry its columns into the root namespace.
@@ -419,11 +419,23 @@ impl<'a> Collector<'a> {
             let expr_arena = self.expr_arena;
             let conjuncts = || MintermIter::new(predicate.node(), expr_arena);
             if conjuncts().all(|node| is_elementwise_rec(node, expr_arena)) {
-                self.residuals.extend(conjuncts().map(|node| RawResidual {
-                    predicate: ExprIR::from_node(node, expr_arena),
-                    renames: peeled_renames.clone(),
-                }));
+                let leaf_start = self.leaves.len();
                 self.collect(*input, &peeled_renames);
+
+                if self.leaves.len() == leaf_start + 1 {
+                    // Everything below narrows one leaf, so fold the whole filter into
+                    // it: the predicate keeps the namespace it was written in, and the
+                    // leaf is measured through it when the order is picked.
+                    self.leaves[leaf_start] = RawLeaf {
+                        node,
+                        renames: renames.clone(),
+                    };
+                } else {
+                    self.residuals.extend(conjuncts().map(|node| RawResidual {
+                        predicate: ExprIR::from_node(node, expr_arena),
+                        renames: peeled_renames.clone(),
+                    }));
+                }
             } else {
                 self.leaves.push(RawLeaf {
                     node,

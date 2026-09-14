@@ -504,6 +504,7 @@ impl<T: NativeType> PrimitiveArray<T> {
 impl<T: NativeType> Array for PrimitiveArray<T> {
     impl_common_array!();
 
+    #[inline(always)]
     fn validity(&self) -> Option<&Bitmap> {
         self.validity.as_ref()
     }

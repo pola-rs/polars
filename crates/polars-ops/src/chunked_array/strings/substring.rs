@@ -4,6 +4,7 @@ use polars_core::prelude::{ChunkFullNull, Int64Chunked, StringChunked, UInt64Chu
 use polars_core::series::IsSorted;
 use polars_error::{PolarsResult, polars_ensure};
 
+#[inline(always)]
 fn is_utf8_codepoint_start(b: u8) -> bool {
     // The top two bits of a continuation byte are 10. Any other value is a
     // starting byte. We can use signed comparison to test for this in one
@@ -54,6 +55,7 @@ pub fn char_to_byte_idx_or_cp_count(s: &str, char_idx: usize) -> Result<usize, u
 /// equivalent offset in bytes.
 ///
 /// If `char_idx` would be out-of-bounds s.len() is returned.
+#[inline]
 pub fn char_to_byte_idx(s: &str, char_idx: usize) -> usize {
     if char_idx >= s.len() {
         // No need to even count.

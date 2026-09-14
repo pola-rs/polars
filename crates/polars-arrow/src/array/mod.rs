@@ -86,6 +86,7 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     fn len(&self) -> usize;
 
     /// whether the array is empty
+    #[inline]
     fn is_empty(&self) -> bool {
         self.len() == 0
     }

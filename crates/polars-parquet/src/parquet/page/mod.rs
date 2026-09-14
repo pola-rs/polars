@@ -48,6 +48,7 @@ impl CompressedDataPage {
     }
 
     /// Returns a new [`CompressedDataPage`].
+    #[inline]
     pub(crate) fn new_read(
         header: DataPageHeader,
         buffer: CowBuffer,
@@ -65,14 +66,17 @@ impl CompressedDataPage {
         }
     }
 
+    #[inline]
     pub fn header(&self) -> &DataPageHeader {
         &self.header
     }
 
+    #[inline]
     pub fn uncompressed_size(&self) -> usize {
         self.uncompressed_page_size
     }
 
+    #[inline]
     pub fn compressed_size(&self) -> usize {
         self.buffer.len()
     }
@@ -80,10 +84,12 @@ impl CompressedDataPage {
     /// The compression of the data in this page.
     /// Note that what is compressed in a page depends on its version:
     /// in V1, the whole data (`[repetition levels][definition levels][values]`) is compressed; in V2 only the values are compressed.
+    #[inline]
     pub fn compression(&self) -> Compression {
         self.compression
     }
 
+    #[inline]
     pub fn num_values(&self) -> usize {
         self.header.num_values()
     }
@@ -122,6 +128,7 @@ pub enum DataPageHeader {
 }
 
 impl DataPageHeader {
+    #[inline]
     pub fn num_values(&self) -> usize {
         match &self {
             DataPageHeader::V1(d) => d.num_values as usize,
@@ -129,6 +136,7 @@ impl DataPageHeader {
         }
     }
 
+    #[inline]
     pub fn null_count(&self) -> Option<usize> {
         match &self {
             DataPageHeader::V1(_) => None,
@@ -173,6 +181,7 @@ impl DataPage {
         }
     }
 
+    #[inline]
     pub(crate) fn new_read(
         header: DataPageHeader,
         buffer: CowBuffer,
@@ -186,10 +195,12 @@ impl DataPage {
         }
     }
 
+    #[inline]
     pub fn header(&self) -> &DataPageHeader {
         &self.header
     }
 
+    #[inline]
     pub fn buffer(&self) -> &[u8] {
         &self.buffer
     }
@@ -200,10 +211,12 @@ impl DataPage {
         self.buffer.to_mut()
     }
 
+    #[inline]
     pub fn num_values(&self) -> usize {
         self.header.num_values()
     }
 
+    #[inline]
     pub fn null_count(&self) -> Option<usize> {
         self.header.null_count()
     }
@@ -353,6 +366,7 @@ impl CompressedDictPage {
     }
 
     /// The compression of the data in this page.
+    #[inline]
     pub fn compression(&self) -> Compression {
         self.compression
     }

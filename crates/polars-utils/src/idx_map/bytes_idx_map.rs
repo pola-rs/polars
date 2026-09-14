@@ -14,6 +14,7 @@ struct Key {
 }
 
 impl Key {
+    #[inline]
     unsafe fn get<'k>(&self, key_data: &'k [Vec<u8>]) -> &'k [u8] {
         let buf = unsafe { key_data.get_unchecked(self.key_buffer as usize) };
         unsafe { buf.get_unchecked(self.key_offset..self.key_offset + self.key_length as usize) }
@@ -55,10 +56,12 @@ impl<V> BytesIndexMap<V> {
         self.tuples.reserve(additional);
     }
 
+    #[inline]
     pub fn len(&self) -> IdxSize {
         self.tuples.len() as IdxSize
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.tuples.is_empty()
     }

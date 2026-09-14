@@ -1733,3 +1733,16 @@ def test_scan_from_object_nonzero_offset(
         assert f_rb.read(100) == padding
 
         assert_frame_equal(read(f_rb), pl.DataFrame({"x": 1}))
+
+
+@pytest.mark.write_disk
+def test_scan_expand_paths_arg(tmp_path: Path) -> None:
+    pl.DataFrame({"a": 1}).write_parquet(tmp_path / "data.parquet")
+
+    q = pl.scan_parquet(tmp_path)
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 1}))
+
+    q = pl.scan_parquet(tmp_path, _expand_paths=False)
+
+    with pytest.raises(OSError):
+        q.collect()

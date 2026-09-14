@@ -313,6 +313,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT DATE_PART('year', col1) FROM df;
     /// SELECT DATE_PART('day', col1) FROM df;
     DatePart,
+    /// SQL date part accessor functions ('YEAR', 'MONTH', 'DAY', 'HOUR', etc).
+    /// Shorthand for DATE_PART with a fixed part.
+    /// ```sql
+    /// SELECT YEAR(col1), MONTH(col1), DAYOFWEEK(col1) FROM df;
+    /// ```
+    DatePartOf(DateTimeField),
     /// SQL 'strftime' function.
     /// Converts a datetime to a string using a format string.
     /// ```sql
@@ -861,6 +867,10 @@ impl PolarsSQLFunctions {
             "covar_samp",
             "date",
             "date_part",
+            "day",
+            "dayofmonth",
+            "dayofweek",
+            "dayofyear",
             "degrees",
             "dense_rank",
             "ends_with",
@@ -869,6 +879,7 @@ impl PolarsSQLFunctions {
             "first_value",
             "floor",
             "greatest",
+            "hour",
             "if",
             "ifnull",
             "initcap",
@@ -889,9 +900,10 @@ impl PolarsSQLFunctions {
             "ltrim",
             "max",
             "median",
-            "quantile_disc",
             "min",
+            "minute",
             "mod",
+            "month",
             "nullif",
             "octet_length",
             "pi",
@@ -899,6 +911,7 @@ impl PolarsSQLFunctions {
             "power",
             "quantile_cont",
             "quantile_disc",
+            "quarter",
             "radians",
             "rank",
             "regexp_like",
@@ -909,6 +922,7 @@ impl PolarsSQLFunctions {
             "row_number",
             "rpad",
             "rtrim",
+            "second",
             "sign",
             "sin",
             "sind",
@@ -931,6 +945,8 @@ impl PolarsSQLFunctions {
             "var",
             "var_samp",
             "variance",
+            "week",
+            "year",
         ]
     }
 }
@@ -1008,6 +1024,16 @@ impl PolarsSQLFunctions {
             // ----
             "date" => Self::Date,
             "date_part" => Self::DatePart,
+            "year" => Self::DatePartOf(DateTimeField::Year),
+            "quarter" => Self::DatePartOf(DateTimeField::Quarter),
+            "month" => Self::DatePartOf(DateTimeField::Month),
+            "week" => Self::DatePartOf(DateTimeField::IsoWeek),
+            "day" | "dayofmonth" => Self::DatePartOf(DateTimeField::Day),
+            "dayofweek" => Self::DatePartOf(DateTimeField::DayOfWeek),
+            "dayofyear" => Self::DatePartOf(DateTimeField::DayOfYear),
+            "hour" => Self::DatePartOf(DateTimeField::Hour),
+            "minute" => Self::DatePartOf(DateTimeField::Minute),
+            "second" => Self::DatePartOf(DateTimeField::Second),
             "strftime" => Self::Strftime,
             "timestamp" | "datetime" => Self::Timestamp,
 
@@ -1285,6 +1311,7 @@ impl SQLFunctionVisitor<'_> {
                     },
                 }
             }),
+            DatePartOf(field) => self.try_visit_unary(|e| parse_extract_date_part(e, &field)),
             Strftime => {
                 let args = extract_args(function)?;
                 match args.len() {

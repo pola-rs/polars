@@ -73,6 +73,13 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
         return Ok(());
     }
 
+    // Match the cast's compacted Map layout at every depth: physical validity comparison
+    // cannot distinguish Map storage from lists.
+    #[cfg(feature = "dtype-map")]
+    let compacted = input.compact_map_null_rows()?;
+    #[cfg(feature = "dtype-map")]
+    let input = compacted.as_ref().unwrap_or(input);
+
     let mut idxs = Vec::new();
     input.find_validity_mismatch(output, &mut idxs);
 
