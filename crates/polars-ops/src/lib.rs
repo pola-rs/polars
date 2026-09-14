@@ -7,6 +7,7 @@
 
 pub mod chunked_array;
 #[cfg(feature = "pivot")]
+#[cfg_attr(docsrs, doc(cfg(feature = "pivot")))]
 pub use frame::unpivot;
 pub mod frame;
 pub mod prelude;
