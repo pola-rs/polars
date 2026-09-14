@@ -88,6 +88,105 @@ fn test_quantile_out_of_range() {
     }
 }
 
+#[cfg(feature = "approx_quantile")]
+mod approx_quantile {
+    use polars_lazy::prelude::ApproxQuantileMethod;
+
+    use super::*;
+
+    const DEFAULT_ERROR: f64 = 0.001;
+
+    fn execute(query: &str) -> PolarsResult<DataFrame> {
+        let mut ctx = SQLContext::new();
+        ctx.register("df", create_df());
+        ctx.execute(query).and_then(|lf| lf.collect())
+    }
+
+    #[test]
+    fn test_approx_quantile() {
+        for &q in &[0.25, 0.5, 0.75] {
+            let expr = col("Data").approx_quantile(
+                lit(q),
+                DEFAULT_ERROR,
+                false,
+                ApproxQuantileMethod::Auto,
+            );
+
+            let sql_expr = format!("APPROX_QUANTILE(Data, {q})");
+            let (expected, actual) = create_expected(expr, &sql_expr);
+
+            assert!(
+                expected.equals(&actual),
+                "q: {q}: expected {expected:?}, got {actual:?}"
+            )
+        }
+    }
+
+    #[test]
+    fn test_approx_quantile_error_arg() {
+        let expr = col("Data").approx_quantile(lit(0.5), 0.01, false, ApproxQuantileMethod::Auto);
+
+        let (expected, actual) = create_expected(expr, "APPROX_QUANTILE(Data, 0.5, 0.01)");
+
+        assert!(
+            expected.equals(&actual),
+            "expected {expected:?}, got {actual:?}"
+        )
+    }
+
+    #[test]
+    fn test_approx_quantile_method_arg() {
+        for (name, method) in [
+            ("auto", ApproxQuantileMethod::Auto),
+            ("kll", ApproxQuantileMethod::KLL),
+            ("req_lo", ApproxQuantileMethod::ReqSketch { hra: false }),
+            ("req_hi", ApproxQuantileMethod::ReqSketch { hra: true }),
+            ("req_both", ApproxQuantileMethod::DoubleReqSketch),
+        ] {
+            let expr = col("Data").approx_quantile(lit(0.5), 0.01, false, method);
+
+            let sql_expr = format!("APPROX_QUANTILE(Data, 0.5, 0.01, '{name}')");
+            let (expected, actual) = create_expected(expr, &sql_expr);
+
+            assert!(
+                expected.equals(&actual),
+                "method: {name}: expected {expected:?}, got {actual:?}"
+            )
+        }
+    }
+
+    #[test]
+    fn test_approx_quantile_out_of_range() {
+        for &q in &["-1", "2", "-0.01", "1.01"] {
+            assert!(execute(&format!("SELECT APPROX_QUANTILE(Data, {q}) FROM df")).is_err())
+        }
+    }
+
+    #[test]
+    fn test_approx_quantile_bad_error() {
+        for &error in &["0.0", "1.0", "-0.1", "2.0"] {
+            assert!(
+                execute(&format!(
+                    "SELECT APPROX_QUANTILE(Data, 0.5, {error}) FROM df"
+                ))
+                .is_err()
+            )
+        }
+    }
+
+    #[test]
+    fn test_approx_quantile_bad_method() {
+        assert!(execute("SELECT APPROX_QUANTILE(Data, 0.5, 0.01, 'nope') FROM df").is_err())
+    }
+
+    #[test]
+    fn test_approx_quantile_bad_arg_count() {
+        for &args in &["Data", "Data, 0.5, 0.01, 'kll', 1"] {
+            assert!(execute(&format!("SELECT APPROX_QUANTILE({args}) FROM df")).is_err())
+        }
+    }
+}
+
 #[test]
 fn test_quantile_disc_conformance() {
     let expected = df![
