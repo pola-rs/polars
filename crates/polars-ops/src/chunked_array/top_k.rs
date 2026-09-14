@@ -87,7 +87,7 @@ where
     // Every element of a chunk whose values repeat one value is that value, so the largest `k` of
     // them are it as well: the answer repeats it too, rather than the buffer being written out
     // and partitioned to find what it already holds.
-    if let Some(value) = chunk.scalar_value_ignore_validity().filter(|_| out_len > 0) {
+    if let Some(value) = chunk.scalar_value_ignore_validity() {
         let arr = PlPrimitiveArray::new_scalar(value, out_len)
             .with_validity(validity.map(PlBitmap::from_bitmap));
         return ChunkedArray::with_chunk_like(ca, arr);
@@ -137,7 +137,7 @@ fn top_k_binary_impl(
 
     // As in `top_k_num_impl`: views that repeat one view are every element's, so the largest `k`
     // of them are that view as well.
-    if chunk.views_are_scalar() && out_len > 0 {
+    if chunk.views_are_scalar() {
         let arr = chunk
             .new_from_index(0, out_len)
             .with_validity(validity.map(PlBitmap::from_bitmap));
