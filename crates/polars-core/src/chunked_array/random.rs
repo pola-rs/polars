@@ -84,6 +84,14 @@ impl Series {
         if n == 0 {
             return Ok(self.clear());
         }
+
+        // Every element of a column that repeats one element is that element, so every sample of
+        // it -- with replacement or without, in any order -- is `n` copies of that one element:
+        // it is repeated straight away rather than `n` indices being drawn and gathered.
+        if self.repeats_one_element() {
+            return Ok(self.new_from_index(0, n));
+        }
+
         let len = self.len();
 
         match with_replacement {
@@ -115,6 +123,12 @@ impl Series {
     }
 
     pub fn shuffle(&self, seed: Option<u64>) -> Self {
+        // Every element of a column that repeats one element is that element, so every ordering
+        // of it is the order it is already in.
+        if self.repeats_one_element() {
+            return self.clone();
+        }
+
         let len = self.len();
         let n = len;
         let idx = create_rand_index_no_replacement(n, len, seed, Some(true));
