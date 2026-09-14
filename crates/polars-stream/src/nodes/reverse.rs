@@ -6,10 +6,6 @@ use polars_ooc::{LeastRecentSpillContext, ParameterFreeSpillContext, SpillFrame}
 use super::compute_node_prelude::*;
 use crate::morsel::SourceToken;
 
-// A lot of the code in this module is similar to that in `negative_slice`.
-
-/// The buffer is put in the in the enum rather than as state in the node itself to make illegal
-/// states impossible to represent: `Done` cannot accidentally leak data that way.
 enum ReverseState {
     Buffering(Buffer),
     Emitting { buffer: Buffer, seq: MorselSeq },
