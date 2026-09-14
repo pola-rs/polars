@@ -29,18 +29,17 @@ fn bins_from_breaks(s: &Series, breaks: &Series, right_closed: bool) -> PolarsRe
         .with_validity(concatenate_validities(s.chunks())))
 }
 
-/// Assign every element the number of cut `positions` at or below its rank -- its 0-based
-/// position within the non-null values in sorted order -- and null wherever `s` is null.
+/// Assign every element the bin its rank falls in -- its 0-based position within the
+/// non-null values in sorted order -- and null wherever `s` is null.
 ///
-/// `positions` is non-decreasing, so it is walked in step with the ranks rather than
-/// searched per element.
-fn bins_from_rank_cuts(s: &Series, sort_idx: &IdxCa, positions: &[IdxSize]) -> IdxCa {
+/// `cum_bin_sizes[i]` is the number of elements in bins `0..=i`.
+fn bins_from_rank_cuts(s: &Series, sort_idx: &IdxCa, cum_bin_sizes: &[IdxSize]) -> IdxCa {
     let mut out = vec![0 as IdxSize; s.len()];
     let mut rank: IdxSize = 0;
     let mut bin = 0;
     for arr in sort_idx.downcast_iter() {
         for i in arr.values_iter() {
-            while bin < positions.len() && positions[bin] <= rank {
+            while bin < cum_bin_sizes.len() && cum_bin_sizes[bin] <= rank {
                 bin += 1;
             }
             out[*i as usize] = bin as IdxSize;
