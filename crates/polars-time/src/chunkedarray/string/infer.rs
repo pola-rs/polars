@@ -1,5 +1,6 @@
 use chrono::format::ParseErrorKind;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
+use polars_core::chunked_array::ops::arity::unary_elementwise_amortized;
 use polars_core::prelude::*;
 
 use super::patterns::{self, Pattern};
@@ -292,13 +293,13 @@ impl<T: PolarsNumericType> DatetimeInfer<T> {
 
 impl<T: PolarsNumericType> DatetimeInfer<T> {
     pub fn coerce_string(&mut self, ca: &StringChunked) -> Series {
-        let chunks = ca.downcast_iter().map(|array| {
-            let iter = array
-                .into_iter()
-                .map(|opt_val| opt_val.and_then(|val| self.parse(val)));
-            iter.collect_arr_trusted()
-        });
-        ChunkedArray::<T>::from_chunk_iter(ca.name().clone(), chunks)
+        // The only state `parse` carries across elements is `latest_fmt`, the pattern it last
+        // succeeded with — a cache that makes the same answer cheaper to reach, never a different
+        // one. That is the contract of `unary_elementwise_amortized`, which answers a chunk that
+        // reads one string throughout with a single call instead of parsing it a row at a time.
+        let parsed: ChunkedArray<T> =
+            unary_elementwise_amortized(ca, |opt_val| opt_val.and_then(|val| self.parse(val)));
+        parsed
             .into_series()
             .cast(&self.logical_type)
             .unwrap()
