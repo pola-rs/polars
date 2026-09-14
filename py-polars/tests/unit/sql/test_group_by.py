@@ -1000,6 +1000,46 @@ def test_group_by_approx_quantile_having() -> None:
     )
 
 
+@pytest.mark.parametrize("quantile", [0.25, 0.5, 0.75])
+def test_approx_quantile_matches_expr_api(quantile: float) -> None:
+    df = pl.DataFrame({"x": [1000.0, 2000.0, 3000.0, 4000.0, 5000.0, 6000.0]})
+    assert_frame_equal(
+        df.sql(f"SELECT APPROX_QUANTILE(x, {quantile}) AS q FROM self"),
+        df.select(pl.col("x").approx_quantile(quantile).alias("q")),
+    )
+    assert_frame_equal(
+        df.sql(f"SELECT APPROX_QUANTILE(x, {quantile}, 0.01) AS q FROM self"),
+        df.select(pl.col("x").approx_quantile(quantile, error=0.01).alias("q")),
+    )
+
+
+@pytest.mark.parametrize("method", ["auto", "kll", "req_lo", "req_hi", "req_both"])
+def test_approx_quantile_method_arg(method: str) -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]})
+    assert_frame_equal(
+        df.sql(f"SELECT APPROX_QUANTILE(x, 0.5, 0.01, '{method}') AS q FROM self"),
+        df.select(
+            pl.col("x").approx_quantile(0.5, error=0.01, method=method).alias("q")  # type: ignore[arg-type]
+        ),
+    )
+
+
+@pytest.mark.parametrize("quantile", ["-1", "2", "-0.01", "1.01", "1.5"])
+def test_approx_quantile_out_of_range(quantile: str) -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0]})
+    with pytest.raises(
+        SQLSyntaxError, match="APPROX_QUANTILE value must be between 0 and 1"
+    ):
+        df.sql(f"SELECT APPROX_QUANTILE(x, {quantile}) FROM self")
+
+
+@pytest.mark.parametrize("error", ["0.0", "1.0", "2.0"])
+def test_approx_quantile_bad_error(error: str) -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0]})
+    with pytest.raises(InvalidOperationError, match="`error` must be in the range"):
+        df.sql(f"SELECT APPROX_QUANTILE(x, 0.5, {error}) FROM self")
+
+
 @pytest.mark.parametrize(
     ("args", "expected"),
     [
@@ -1023,11 +1063,6 @@ def test_approx_quantile_optional_args(args: str, expected: float) -> None:
     ("query", "exc", "match"),
     [
         (
-            "SELECT APPROX_QUANTILE(x, 1.5) FROM self",
-            SQLSyntaxError,
-            "APPROX_QUANTILE value must be between 0 and 1",
-        ),
-        (
             "SELECT APPROX_QUANTILE(x, y) FROM self",
             SQLSyntaxError,
             "invalid value for APPROX_QUANTILE",
@@ -1046,11 +1081,6 @@ def test_approx_quantile_optional_args(args: str, expected: float) -> None:
             "SELECT APPROX_QUANTILE(x, 0.5, 0.01, 'nope') FROM self",
             InvalidOperationError,
             "`method` must be one of",
-        ),
-        (
-            "SELECT APPROX_QUANTILE(x, 0.5, 2.0) FROM self",
-            InvalidOperationError,
-            "`error` must be in the range",
         ),
     ],
 )
