@@ -13,5 +13,5 @@ pub fn function_expr_to_udf(func: IRMapFunction) -> SpecialEq<Arc<dyn ColumnsUdf
 }
 
 fn map_entries(c: &Column) -> PolarsResult<Column> {
-    c.try_apply_unary_elementwise(|s| Ok(s.map()?.storage().clone()))
+    c.try_apply_unary_elementwise(|s| Ok(s.map()?.live_storage().into_owned().into_series()))
 }

@@ -443,7 +443,7 @@ impl DataTypeSelector {
             },
             Self::Wildcard => schema
                 .iter_names()
-                .filter(|n| ignored_columns.contains(*n))
+                .filter(|n| !ignored_columns.contains(*n))
                 .cloned()
                 .collect(),
             Self::Empty => Default::default(),

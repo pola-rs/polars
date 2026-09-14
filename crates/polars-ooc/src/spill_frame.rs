@@ -125,6 +125,7 @@ impl SpillFrame {
     }
 
     /// The height of the contained DataFrame. Does not need to unspill DataFrame.
+    #[inline]
     pub fn height(&self) -> usize {
         self.height
     }

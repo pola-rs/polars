@@ -229,6 +229,15 @@ impl IRFunctionExpr {
             CumMax { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantile { .. } => {
+                // A list of quantiles in, a list of estimates out.
+                let quantiles_are_list = mapper.args()[1].dtype().is_list();
+                mapper.map_dtype(|dtype| match quantiles_are_list {
+                    true => DataType::List(Box::new(dtype.clone())),
+                    false => dtype.clone(),
+                })
+            },
             #[cfg(feature = "hist")]
             Hist {
                 include_category,
@@ -295,7 +304,9 @@ impl IRFunctionExpr {
                 .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "exp")?
                 .map_to_float_dtype(),
             #[cfg(feature = "log")]
-            Log => mapper.log_dtype(),
+            Log => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log")?
+                .log_dtype(),
             Unique(_) => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
             Round { .. } | RoundSF { .. } | Truncate { .. } | Floor | Ceil => {

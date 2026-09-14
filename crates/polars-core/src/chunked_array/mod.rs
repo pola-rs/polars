@@ -239,6 +239,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.get_flags().can_fast_explode_list()
     }
 
+    #[inline]
     pub fn get_flags(&self) -> StatisticsFlags {
         self.flags.get()
     }
@@ -492,11 +493,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         &mut self.chunks
     }
 
-    /// Returns true if contains a single chunk and has no null values
-    pub fn is_optimal_aligned(&self) -> bool {
-        self.chunks.len() == 1 && self.null_count() == 0
-    }
-
     /// Create a new [`ChunkedArray`] from self, where the chunks are replaced.
     ///
     /// # Safety
@@ -506,6 +502,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Get data type of [`ChunkedArray`].
+    #[inline(always)]
     pub fn dtype(&self) -> &DataType {
         self.field.dtype()
     }
@@ -515,11 +512,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Name of the [`ChunkedArray`].
+    #[inline]
     pub fn name(&self) -> &PlSmallStr {
         self.field.name()
     }
 
     /// Get a reference to the field.
+    #[inline(always)]
     pub fn ref_field(&self) -> &Field {
         &self.field
     }

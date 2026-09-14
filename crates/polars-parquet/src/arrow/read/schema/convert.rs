@@ -16,17 +16,14 @@ use crate::parquet::schema::types::{
 /// Converts [`ParquetType`]s to a [`Field`], ignoring parquet fields that do not contain
 /// any physical column.
 pub fn parquet_to_arrow_schema(fields: &[ParquetType]) -> PolarsResult<ArrowSchema> {
-    parquet_to_arrow_schema_with_options(fields, &None)
+    parquet_to_arrow_schema_with_options(fields, &SchemaInferenceOptions::default())
 }
 
 /// Like [`parquet_to_arrow_schema`] but with configurable options which affect the behavior of schema inference
 pub fn parquet_to_arrow_schema_with_options(
     fields: &[ParquetType],
-    options: &Option<SchemaInferenceOptions>,
+    options: &SchemaInferenceOptions,
 ) -> PolarsResult<ArrowSchema> {
-    let default_options = SchemaInferenceOptions::default();
-    let options = options.as_ref().unwrap_or(&default_options);
-
     let fields = fields
         .iter()
         .map(|f| to_field(f, options))
@@ -440,6 +437,8 @@ pub(crate) fn is_nullable(field_info: &FieldInfo) -> bool {
 /// i.e. if it is a column-less group type.
 fn to_field(type_: &ParquetType, options: &SchemaInferenceOptions) -> PolarsResult<Option<Field>> {
     let field_info = type_.get_field_info();
+
+    let options = options.enter_nested(field_info.name.as_str());
 
     let metadata: Option<Arc<Metadata>> = field_info.id.map(|x: i32| {
         Arc::new(
@@ -1652,9 +1651,10 @@ mod tests {
             let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
             let fields = parquet_to_arrow_schema_with_options(
                 parquet_schema.fields(),
-                &Some(SchemaInferenceOptions {
+                &SchemaInferenceOptions {
                     int96_coerce_to_timeunit: tu,
-                }),
+                    ..Default::default()
+                },
             )?;
             let fields = fields.iter_values().cloned().collect::<Vec<_>>();
             assert_eq!(arrow_fields, fields);

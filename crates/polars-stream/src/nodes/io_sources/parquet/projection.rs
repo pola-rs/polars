@@ -71,6 +71,7 @@ pub enum ArrowFieldProjection {
 }
 
 impl ArrowFieldProjection {
+    #[inline]
     pub fn arrow_field(&self) -> &ArrowField {
         match self {
             Self::Plain(field) => field,

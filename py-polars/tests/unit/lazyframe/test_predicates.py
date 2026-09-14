@@ -1244,7 +1244,7 @@ def test_predicate_pushdown_auto_disable_strict() -> None:
     assert plan.index("FILTER") > plan.index("MARKER")
 
 
-@pytest.mark.may_fail_auto_streaming  # IO plugin validate=False schema mismatch
+@pytest.mark.may_fail_lazy_schema  # reason: declared-schema
 def test_predicate_pushdown_map_elements_io_plugin_22860() -> None:
     def generator(
         with_columns: list[str] | None,
@@ -1907,3 +1907,16 @@ def test_or_factoring_skips_nondeterminism_in_eval_body() -> None:
 
     plan = query.explain()
     assert plan.count("shuffle") == 2, plan
+
+
+def test_predicate_pushdown_fallible_inside_list_eval() -> None:
+    lf = pl.LazyFrame({"k": [1, 2], "a": [["1"], ["bad"]]})
+
+    q = lf.filter(pl.col("k") == 1).filter(
+        pl.col("a").list.eval(pl.element().cast(pl.Int64)).list.first() == 1
+    )
+
+    plan = q.explain()
+    assert plan.index("list.eval") < plan.index('FILTER col("k")')
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"k": [1], "a": [["1"]]}))

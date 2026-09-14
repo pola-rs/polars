@@ -1,6 +1,7 @@
 mod canonicalize_maps;
 mod downcast;
 mod extend;
+mod from_physical;
 mod null;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

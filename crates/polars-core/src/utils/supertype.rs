@@ -110,6 +110,7 @@ bitflags! {
 }
 
 impl Default for SuperTypeFlags {
+    #[inline]
     fn default() -> Self {
         SuperTypeFlags::from_bits_truncate(0) | SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING
     }

@@ -3,6 +3,7 @@ use crate::prelude::*;
 pub type DateChunked = Logical<DateType, Int32Type>;
 
 impl Int32Chunked {
+    #[inline]
     pub fn into_date(self) -> DateChunked {
         // SAFETY: no invalid states.
         unsafe { DateChunked::new_logical(self, DataType::Date) }
@@ -10,6 +11,7 @@ impl Int32Chunked {
 }
 
 impl LogicalType for DateChunked {
+    #[inline]
     fn dtype(&self) -> &DataType {
         &DataType::Date
     }

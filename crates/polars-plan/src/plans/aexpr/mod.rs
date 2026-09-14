@@ -192,9 +192,10 @@ pub enum AExpr {
     },
     Agg(IRAggExpr),
     Ternary {
-        predicate: Node,
+        /// `truthy` and `falsy` come before `predicate` as they determine the output name.
         truthy: Node,
         falsy: Node,
+        predicate: Node,
     },
     AnonymousAgg {
         input: Vec<ExprIR>,

@@ -295,6 +295,11 @@ impl ChunkCast for StringChunked {
                 let out = Series::try_from((self.name().clone(), result))?;
                 Ok(out)
             },
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => {
+                let result = cast_chunks(&self.chunks, dtype, options)?;
+                Series::try_from((self.name().clone(), result))
+            },
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(time_unit, time_zone) => match time_zone {
                 #[cfg(feature = "timezones")]

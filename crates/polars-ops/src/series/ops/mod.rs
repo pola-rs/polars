@@ -1,5 +1,7 @@
 #[cfg(feature = "abs")]
 mod abs;
+#[cfg(feature = "approx_quantile")]
+mod approx_quantile;
 pub mod arg_min_max;
 mod bitwise;
 #[cfg(feature = "business")]
@@ -68,6 +70,8 @@ pub(crate) mod various;
 
 #[cfg(feature = "abs")]
 pub use abs::*;
+#[cfg(feature = "approx_quantile")]
+pub use approx_quantile::*;
 pub use arg_min_max::ArgAgg;
 pub use bitwise::*;
 #[cfg(feature = "business")]

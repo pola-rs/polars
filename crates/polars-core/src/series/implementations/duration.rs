@@ -43,9 +43,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        self.0.physical().into_total_eq_inner()
-    }
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         self.0.physical().into_total_ord_inner()
     }

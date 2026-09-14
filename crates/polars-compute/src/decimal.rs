@@ -465,6 +465,55 @@ pub fn dec128_to_i128(x: i128, s: usize) -> i128 {
     if s == 0 { x } else { div_128_pow10(x, s) }
 }
 
+/// Returns `x * 10^e`, or None on overflow; `e` is not bounded by `DEC128_MAX_PREC`.
+#[inline]
+pub fn i128_mul_pow10(x: i128, mut e: usize) -> Option<i128> {
+    let mut r = x;
+    while e > DEC128_MAX_PREC {
+        r = r.checked_mul(POW10_I128[DEC128_MAX_PREC])?;
+        e -= DEC128_MAX_PREC;
+    }
+    r.checked_mul(POW10_I128[e])
+}
+
+/// Exact scalar arithmetic on `(mantissa, scale)` fixed-point values, bounded only by
+/// `i128`: the result scale is the larger input scale for `add`/`sub` and the sum of the
+/// input scales for `mul`, so no rounding takes place. Returns None on overflow.
+pub mod exact {
+    use super::i128_mul_pow10;
+
+    fn align(l: (i128, usize), r: (i128, usize)) -> Option<(i128, i128, usize)> {
+        let s = l.1.max(r.1);
+        Some((
+            i128_mul_pow10(l.0, s - l.1)?,
+            i128_mul_pow10(r.0, s - r.1)?,
+            s,
+        ))
+    }
+
+    #[inline]
+    pub fn add(l: (i128, usize), r: (i128, usize)) -> Option<(i128, usize)> {
+        let (l, r, s) = align(l, r)?;
+        Some((l.checked_add(r)?, s))
+    }
+
+    #[inline]
+    pub fn sub(l: (i128, usize), r: (i128, usize)) -> Option<(i128, usize)> {
+        let (l, r, s) = align(l, r)?;
+        Some((l.checked_sub(r)?, s))
+    }
+
+    #[inline]
+    pub fn mul(l: (i128, usize), r: (i128, usize)) -> Option<(i128, usize)> {
+        Some((l.0.checked_mul(r.0)?, l.1 + r.1))
+    }
+
+    #[inline]
+    pub fn neg(x: (i128, usize)) -> Option<(i128, usize)> {
+        Some((x.0.checked_neg()?, x.1))
+    }
+}
+
 /// Converts an i128 to a Decimal128 with the given precision and scale,
 /// returning None if the value doesn't fit.
 #[inline]
@@ -885,6 +934,29 @@ mod test {
     use rand::prelude::*;
 
     use super::*;
+
+    #[test]
+    fn test_exact_scalar_arithmetic() {
+        // 0.06 + 0.01 = 0.07, exact at scale 2
+        assert_eq!(exact::add((6, 2), (1, 2)), Some((7, 2)));
+        // 1.5 - 3 aligns to the larger scale
+        assert_eq!(exact::sub((15, 1), (3, 0)), Some((-15, 1)));
+        // 1.10 * 1.10 = 1.2100 at the summed scale
+        assert_eq!(exact::mul((110, 2), (110, 2)), Some((12100, 4)));
+        assert_eq!(exact::neg((5, 1)), Some((-5, 1)));
+
+        // scales beyond DEC128_MAX_PREC stay exact
+        assert_eq!(exact::mul((1, 38), (1, 38)), Some((1, 76)));
+        assert_eq!(exact::add((0, 0), (1, 76)), Some((1, 76)));
+        assert_eq!(i128_mul_pow10(0, 200), Some(0));
+
+        // overflow is reported rather than wrapped
+        assert_eq!(exact::add((i128::MAX, 0), (1, 0)), None);
+        assert_eq!(exact::add((1, 0), (1, 39)), None);
+        assert_eq!(exact::mul((i128::MAX, 0), (2, 0)), None);
+        assert_eq!(exact::neg((i128::MIN, 0)), None);
+        assert_eq!(i128_mul_pow10(1, 39), None);
+    }
 
     fn bigdecimal_to_dec128(x: &BigDecimal, p: usize, s: usize) -> Option<i128> {
         let n = x
