@@ -123,6 +123,17 @@ where
         } else {
             let mask = mask.rechunk();
             match picked_out(mask.downcast_as_array()) {
+                // A mask that says the same of every element picks out all of them or none of
+                // them, and either way the answer is known without a single element being read:
+                // nothing replaced leaves the column as it is, and everything replaced leaves a
+                // column of the one value -- which `full` and `full_null` build in `O(1)` memory.
+                Either::Left(range) if range.is_empty() && self.chunks().len() == 1 => {
+                    Ok(self.clone())
+                },
+                Either::Left(range) if range.end as usize == self.len() => Ok(match value {
+                    Some(value) => Self::full(self.name().clone(), value, self.len()),
+                    None => Self::full_null(self.name().clone(), self.len()),
+                }),
                 Either::Left(range) => self.scatter_single(range, value),
                 Either::Right(bits) => {
                     self.scatter_single(bits.true_idx_iter().map(|v| v as IdxSize), value)
