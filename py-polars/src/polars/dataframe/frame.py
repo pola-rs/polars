@@ -12474,6 +12474,7 @@ class DataFrame:
         columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
         *more_columns: ColumnNameOrSelector,
         separator: str | None = None,
+        max_depth: int | None = 1,
     ) -> DataFrame:
         """
         Decompose struct columns into separate columns for each of their fields.
@@ -12492,6 +12493,9 @@ class DataFrame:
         separator
             Rename output column names as combination of the struct column name,
             name separator and field name.
+        max_depth
+            Maximum depth to unnest. ``None`` means unlimited (fully recursive).
+            Default is 1 (unnest only one level).
 
         Examples
         --------
@@ -12563,12 +12567,30 @@ class DataFrame:
         │ foo    ┆ 1    ┆ a    ┆ true ┆ [1, 2]    ┆ baz   │
         │ bar    ┆ 2    ┆ b    ┆ null ┆ [3]       ┆ womp  │
         └────────┴──────┴──────┴──────┴───────────┴───────┘
+
+        Use ``max_depth=None`` to fully unnest nested struct columns:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "x": [{"foo": {"a": 1, "b": 2}}, {"foo": {"a": 3, "b": 4}}],
+        ...     }
+        ... )
+        >>> df.unnest("x", separator=".", max_depth=None)
+        shape: (2, 2)
+        ┌─────────┬─────────┐
+        │ x.foo.a ┆ x.foo.b │
+        │ ---     ┆ ---     │
+        │ i64     ┆ i64     │
+        ╞═════════╪═════════╡
+        │ 1       ┆ 2       │
+        │ 3       ┆ 4       │
+        └─────────┴─────────┘
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         return (
             self.lazy()
-            .unnest(columns, *more_columns, separator=separator)
+            .unnest(columns, *more_columns, separator=separator, max_depth=max_depth)
             ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
