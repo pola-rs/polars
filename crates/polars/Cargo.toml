@@ -197,6 +197,7 @@ approx_unique = [
 approx_quantile = [
   "polars-lazy?/approx_quantile",
   "polars-ops/approx_quantile",
+  "polars-sql?/approx_quantile",
 ]
 arg_where = ["polars-lazy?/arg_where"]
 asof_join = ["polars-lazy?/asof_join", "polars-ops/asof_join"]
