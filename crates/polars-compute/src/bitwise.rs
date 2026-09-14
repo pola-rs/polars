@@ -67,15 +67,28 @@ fn repeated_bit(arr: &PlBooleanArray) -> Option<(bool, usize)> {
 
 /// Counts the bits of every value of a primitive array with `$count`, keeping a scalar chunk so.
 macro_rules! count_bits {
-    ($arr:expr, $count:ident, $to_bits:expr) => {{
+    ($arr:expr, $count:ident, $to_bits:expr, $T:ty) => {{
         let arr = $arr;
-        count_values(
-            arr.scalar_value_ignore_validity(),
-            arr.values_iter(),
-            arr.len(),
-            arr.validity().map(PlBitmap::from),
-            |v| $to_bits(v).$count(),
-        )
+        let op = |v: $T| $to_bits(v).$count();
+        let validity = arr.validity().map(PlBitmap::from);
+
+        match arr.scalar_value_ignore_validity() {
+            // One value stands for every element, so its bits are counted once.
+            Some(value) => PlPrimitiveArray::new_scalar(op(value), arr.len()),
+            // A slot per element, and the loop is handed them as the slice they are rather than an
+            // iterator that asks how they are stored once per element -- which is what lets the
+            // count vectorise over the buffer the way it does for a plain one.
+            None => PlPrimitiveArray::from_vec(
+                arr.flat_values()
+                    .expect("the values are not repeated")
+                    .as_slice()
+                    .iter()
+                    .copied()
+                    .map(op)
+                    .collect(),
+            ),
+        }
+        .with_validity(validity)
     }};
 }
 
@@ -103,32 +116,32 @@ macro_rules! impl_bitwise_kernel {
 
             #[inline(never)]
             fn count_ones(&self) -> PlPrimitiveArray<u32> {
-                count_bits!(self, count_ones, $to_bits)
+                count_bits!(self, count_ones, $to_bits, $T)
             }
 
             #[inline(never)]
             fn count_zeros(&self) -> PlPrimitiveArray<u32> {
-                count_bits!(self, count_zeros, $to_bits)
+                count_bits!(self, count_zeros, $to_bits, $T)
             }
 
             #[inline(never)]
             fn leading_ones(&self) -> PlPrimitiveArray<u32> {
-                count_bits!(self, leading_ones, $to_bits)
+                count_bits!(self, leading_ones, $to_bits, $T)
             }
 
             #[inline(never)]
             fn leading_zeros(&self) -> PlPrimitiveArray<u32> {
-                count_bits!(self, leading_zeros, $to_bits)
+                count_bits!(self, leading_zeros, $to_bits, $T)
             }
 
             #[inline(never)]
             fn trailing_ones(&self) -> PlPrimitiveArray<u32> {
-                count_bits!(self, trailing_ones, $to_bits)
+                count_bits!(self, trailing_ones, $to_bits, $T)
             }
 
             #[inline(never)]
             fn trailing_zeros(&self) -> PlPrimitiveArray<u32> {
-                count_bits!(self, trailing_zeros, $to_bits)
+                count_bits!(self, trailing_zeros, $to_bits, $T)
             }
 
             // `and` and `or` are idempotent, so an array that repeats one value reduces to that
