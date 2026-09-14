@@ -3,9 +3,110 @@ use super::*;
 #[derive(Debug)]
 pub(super) enum IsInTypeCoercionResult {
     SuperType(DataType, DataType),
-    SelfCast { dtype: DataType, strict: bool },
-    OtherCast { dtype: DataType, strict: bool },
+    SelfCast {
+        dtype: DataType,
+        strict: bool,
+    },
+    OtherCast {
+        dtype: DataType,
+        strict: bool,
+    },
     Implode,
+    /// Cast unrepresentable needles to null, treating them as missing Map keys.
+    #[cfg(feature = "dtype-map")]
+    LenientSelfCast(DataType),
+}
+
+/// Resolve Map lookup coercion without changing stored keys.
+///
+/// Cast only the needle, preserving its value or producing null for a missing key.
+/// Reject casts that could round it onto a different key.
+#[cfg(feature = "dtype-map")]
+pub(super) fn resolve_map_key(
+    input: &[ExprIR],
+    expr_arena: &Arena<AExpr>,
+    input_schema: &Schema,
+    op: &'static str,
+) -> PolarsResult<Option<IsInTypeCoercionResult>> {
+    let (_, needle) = unpack!(get_aexpr_and_type(
+        expr_arena,
+        input[1].node(),
+        input_schema
+    ));
+    let (_, map) = unpack!(get_aexpr_and_type(
+        expr_arena,
+        input[0].node(),
+        input_schema
+    ));
+    let DataType::Map(key, _) = &map else {
+        // Output field resolution rejects non-Map inputs.
+        return Ok(None);
+    };
+
+    if let Some(result) = resolve_temporal_map_key(&needle, key, op)? {
+        return Ok(Some(result));
+    }
+
+    Ok(Some(
+        match resolve_is_in(input, expr_arena, input_schema, true, op, 1, 0)? {
+            None => return Ok(None),
+            // Unknown Enum labels become null instead of raising.
+            Some(IsInTypeCoercionResult::SelfCast { dtype, strict: _ }) => {
+                IsInTypeCoercionResult::LenientSelfCast(dtype)
+            },
+            // Accept the supertype only if stored keys need no cast.
+            Some(IsInTypeCoercionResult::SuperType(supertype, _)) if supertype == **key => {
+                IsInTypeCoercionResult::LenientSelfCast(supertype)
+            },
+            Some(
+                IsInTypeCoercionResult::SuperType(_, _)
+                | IsInTypeCoercionResult::OtherCast { .. }
+                | IsInTypeCoercionResult::LenientSelfCast(_),
+            ) => polars_bail!(
+                InvalidOperation:
+                "'{op}' cannot look up a `{needle}` key in a Map with `{key}` keys\n\
+                Hint: cast the key to `{key}` first.",
+            ),
+            Some(IsInTypeCoercionResult::Implode) => {
+                unreachable!("a key lookup resolves as a `contains`")
+            },
+        },
+    ))
+}
+
+/// Widen the needle to the Map's temporal unit; reject precision loss.
+///
+/// Unlike `is_in` coercion, lookup must not truncate a needle onto a different key.
+#[cfg(feature = "dtype-map")]
+fn resolve_temporal_map_key(
+    needle: &DataType,
+    key: &DataType,
+    op: &'static str,
+) -> PolarsResult<Option<IsInTypeCoercionResult>> {
+    // Preserve the needle's time zone when changing its unit.
+    let (needle_unit, key_unit, widened) = match (needle, key) {
+        (DataType::Datetime(needle_unit, tz), DataType::Datetime(key_unit, _)) => (
+            needle_unit,
+            key_unit,
+            DataType::Datetime(*key_unit, tz.clone()),
+        ),
+        (DataType::Duration(needle_unit), DataType::Duration(key_unit)) => {
+            (needle_unit, key_unit, DataType::Duration(*key_unit))
+        },
+        _ => return Ok(None),
+    };
+    if needle_unit == key_unit {
+        return Ok(None);
+    }
+
+    // `TimeUnit` orders the finest unit first.
+    polars_ensure!(
+        key_unit < needle_unit,
+        InvalidOperation:
+        "'{op}' cannot look up a `{needle}` key in a Map with `{key}` keys, as the key would be \
+        rounded\nHint: cast the key to `{key}` first if that is intended.",
+    );
+    Ok(Some(IsInTypeCoercionResult::LenientSelfCast(widened)))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -48,11 +149,23 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         DataType::List(_) => DataType::List(Box::new(resolved_inner_type)),
         #[cfg(feature = "dtype-array")]
         DataType::Array(_, width) => DataType::Array(Box::new(resolved_inner_type), *width),
+        // Map lookup resolves only the key dtype.
+        #[cfg(feature = "dtype-map")]
+        DataType::Map(_, value) => DataType::Map(Box::new(resolved_inner_type), value.clone()),
         _ => unreachable!(),
     };
 
+    // Maps have no single `inner_dtype`; lookup uses the key dtype.
+    #[cfg(feature = "dtype-map")]
+    let map_key_dtype = match &type_other {
+        DataType::Map(key, _) => Some(key.as_ref()),
+        _ => None,
+    };
+    #[cfg(not(feature = "dtype-map"))]
+    let map_key_dtype = None;
+
     let type_left_materialized = type_left.clone().materialize_unknown(false)?;
-    let Some(type_other_inner) = type_other.inner_dtype() else {
+    let Some(type_other_inner) = map_key_dtype.or_else(|| type_other.inner_dtype()) else {
         polars_bail!(InvalidOperation: "'{op:?}' cannot check for {type_left:?} values in {type_other:?} data.\n\
         Hint: container dtype ({type_other:?}) must be nested");
     };

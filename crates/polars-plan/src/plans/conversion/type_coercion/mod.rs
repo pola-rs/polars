@@ -5,7 +5,7 @@ mod binary;
 ))]
 mod datetime;
 mod functions;
-#[cfg(feature = "is_in")]
+#[cfg(any(feature = "is_in", feature = "dtype-map"))]
 mod is_in;
 
 use binary::process_binary;
@@ -17,9 +17,13 @@ use datetime::coerce_temporal_dt;
 #[cfg(all(feature = "range", feature = "dtype-datetime"))]
 use datetime::{ensure_datetime, ensure_int, temporal_range_output_type};
 use polars_core::chunked_array::cast::CastOptions;
-#[cfg(all(
-    feature = "range",
-    any(feature = "dtype-date", feature = "dtype-datetime")
+#[cfg(any(
+    all(
+        feature = "range",
+        any(feature = "dtype-date", feature = "dtype-datetime")
+    ),
+    feature = "is_in",
+    feature = "dtype-map"
 ))]
 use polars_core::utils::try_get_supertype;
 use polars_core::utils::{
@@ -441,26 +445,39 @@ impl OptimizationRule for TypeCoercionRule {
 
                 Some(out)
             },
-            #[cfg(feature = "is_in")]
-            AExpr::Function {
-                ref function,
-                ref input,
-                options,
-            } if {
-                let mut matches = matches!(
+            // Map lookup must work without the `is_in` feature.
+            #[cfg(feature = "dtype-map")]
+            AExpr::Function { ref function, .. }
+                if matches!(
                     function,
-                    IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. })
-                        | IRFunctionExpr::ListExpr(IRListFunction::Contains { .. })
-                );
-                #[cfg(feature = "dtype-array")]
-                {
-                    matches |= matches!(
+                    IRFunctionExpr::MapExpr(IRMapFunction::Get | IRMapFunction::ContainsKey)
+                ) =>
+            {
+                let op = match function {
+                    IRFunctionExpr::MapExpr(IRMapFunction::Get) => "map.get",
+                    _ => "map.contains_key",
+                };
+                coerce_is_in(expr_node, expr_arena, schema, true, 1, 0, |input, arena| {
+                    is_in::resolve_map_key(input, arena, schema, op)
+                })?
+            },
+            #[cfg(feature = "is_in")]
+            AExpr::Function { ref function, .. }
+                if {
+                    let mut matches = matches!(
                         function,
-                        IRFunctionExpr::ArrayExpr(IRArrayFunction::Contains { .. })
+                        IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. })
+                            | IRFunctionExpr::ListExpr(IRListFunction::Contains { .. })
                     );
-                }
-                matches
-            } =>
+                    #[cfg(feature = "dtype-array")]
+                    {
+                        matches |= matches!(
+                            function,
+                            IRFunctionExpr::ArrayExpr(IRArrayFunction::Contains { .. })
+                        );
+                    }
+                    matches
+                } =>
             {
                 let (op, flat, nested, is_contains) = match function {
                     IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }) => {
@@ -476,71 +493,17 @@ impl OptimizationRule for TypeCoercionRule {
                     _ => unreachable!(),
                 };
 
-                let Some(result) =
-                    is_in::resolve_is_in(input, expr_arena, schema, is_contains, op, flat, nested)?
-                else {
-                    return Ok(None);
-                };
-
-                let function = function.clone();
-                let mut input = input.to_vec();
-                use self::is_in::IsInTypeCoercionResult;
-                match result {
-                    IsInTypeCoercionResult::SuperType(flat_type, nested_type) => {
-                        let (_, type_left) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
-                        let (_, type_other) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
-                        cast_expr_ir(
-                            &mut input[flat],
-                            &type_left,
-                            &flat_type,
-                            expr_arena,
-                            CastOptions::NonStrict,
-                        )?;
-                        cast_expr_ir(
-                            &mut input[nested],
-                            &type_other,
-                            &nested_type,
-                            expr_arena,
-                            CastOptions::NonStrict,
-                        )?;
+                coerce_is_in(
+                    expr_node,
+                    expr_arena,
+                    schema,
+                    is_contains,
+                    flat,
+                    nested,
+                    |input, arena| {
+                        is_in::resolve_is_in(input, arena, schema, is_contains, op, flat, nested)
                     },
-                    IsInTypeCoercionResult::SelfCast { dtype, strict } => {
-                        let (_, type_self) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
-                        let options = if strict {
-                            CastOptions::Strict
-                        } else {
-                            CastOptions::NonStrict
-                        };
-                        cast_expr_ir(&mut input[flat], &type_self, &dtype, expr_arena, options)?;
-                    },
-                    IsInTypeCoercionResult::OtherCast { dtype, strict } => {
-                        let (_, type_other) =
-                            unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
-                        let options = if strict {
-                            CastOptions::Strict
-                        } else {
-                            CastOptions::NonStrict
-                        };
-                        cast_expr_ir(&mut input[nested], &type_other, &dtype, expr_arena, options)?;
-                    },
-                    IsInTypeCoercionResult::Implode => {
-                        assert!(!is_contains);
-                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                            input: input[1].node(),
-                            maintain_order: true,
-                        }));
-                        input[1].set_node(other_input);
-                    },
-                }
-
-                Some(AExpr::Function {
-                    function,
-                    input,
-                    options,
-                })
+                )?
             },
             AExpr::Function {
                 ref function,
@@ -1328,6 +1291,104 @@ fn inline_or_prune_cast(
     Ok(out)
 }
 
+/// Apply membership or Map lookup casts chosen by `resolve`.
+///
+/// `expr_node` must be an [`AExpr::Function`] comparing its `flat` input against
+/// elements of its `nested` input.
+#[cfg(any(feature = "is_in", feature = "dtype-map"))]
+fn coerce_is_in(
+    expr_node: Node,
+    expr_arena: &mut Arena<AExpr>,
+    schema: &Schema,
+    is_contains: bool,
+    flat: usize,
+    nested: usize,
+    resolve: impl FnOnce(
+        &[ExprIR],
+        &Arena<AExpr>,
+    ) -> PolarsResult<Option<is_in::IsInTypeCoercionResult>>,
+) -> PolarsResult<Option<AExpr>> {
+    let AExpr::Function {
+        function,
+        input,
+        options,
+    } = expr_arena.get(expr_node)
+    else {
+        unreachable!("caller matched a function expression")
+    };
+    let options = *options;
+
+    let Some(result) = resolve(input, expr_arena)? else {
+        return Ok(None);
+    };
+
+    let function = function.clone();
+    let mut input = input.to_vec();
+    use self::is_in::IsInTypeCoercionResult;
+    match result {
+        IsInTypeCoercionResult::SuperType(flat_type, nested_type) => {
+            let (_, type_left) =
+                unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
+            let (_, type_other) =
+                unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
+            cast_expr_ir(
+                &mut input[flat],
+                &type_left,
+                &flat_type,
+                expr_arena,
+                CastOptions::NonStrict,
+            )?;
+            cast_expr_ir(
+                &mut input[nested],
+                &type_other,
+                &nested_type,
+                expr_arena,
+                CastOptions::NonStrict,
+            )?;
+        },
+        IsInTypeCoercionResult::SelfCast { dtype, strict } => {
+            let (_, type_self) =
+                unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
+            let options = if strict {
+                CastOptions::Strict
+            } else {
+                CastOptions::NonStrict
+            };
+            cast_expr_ir(&mut input[flat], &type_self, &dtype, expr_arena, options)?;
+        },
+        IsInTypeCoercionResult::OtherCast { dtype, strict } => {
+            let (_, type_other) =
+                unpack!(get_aexpr_and_type(expr_arena, input[nested].node(), schema));
+            let options = if strict {
+                CastOptions::Strict
+            } else {
+                CastOptions::NonStrict
+            };
+            cast_expr_ir(&mut input[nested], &type_other, &dtype, expr_arena, options)?;
+        },
+        #[cfg(feature = "dtype-map")]
+        IsInTypeCoercionResult::LenientSelfCast(dtype) => {
+            let (_, type_self) =
+                unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
+            cast_expr_ir_non_strict(&mut input[flat], &type_self, &dtype, expr_arena)?;
+        },
+        IsInTypeCoercionResult::Implode => {
+            assert!(!is_contains);
+            let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                input: input[1].node(),
+                maintain_order: true,
+            }));
+            input[1].set_node(other_input);
+        },
+    }
+
+    Ok(Some(AExpr::Function {
+        function,
+        input,
+        options,
+    }))
+}
+
 fn try_inline_literal_cast(
     lv: &LiteralValue,
     dtype: &DataType,
@@ -1395,6 +1456,44 @@ fn cast_expr_ir(
     expr_arena: &mut Arena<AExpr>,
     options: CastOptions,
 ) -> PolarsResult<()> {
+    // Non-literal casts are strict; `options` controls only literal folding.
+    cast_expr_ir_with(
+        e,
+        from_dtype,
+        to_dtype,
+        expr_arena,
+        options,
+        CastOptions::Strict,
+    )
+}
+
+/// Cast literals and computed operands with failures becoming null.
+#[cfg(feature = "dtype-map")]
+fn cast_expr_ir_non_strict(
+    e: &mut ExprIR,
+    from_dtype: &DataType,
+    to_dtype: &DataType,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<()> {
+    cast_expr_ir_with(
+        e,
+        from_dtype,
+        to_dtype,
+        expr_arena,
+        CastOptions::NonStrict,
+        CastOptions::NonStrict,
+    )
+}
+
+/// Use `literal_options` for folding and `cast_options` for inserted casts.
+fn cast_expr_ir_with(
+    e: &mut ExprIR,
+    from_dtype: &DataType,
+    to_dtype: &DataType,
+    expr_arena: &mut Arena<AExpr>,
+    literal_options: CastOptions,
+    cast_options: CastOptions,
+) -> PolarsResult<()> {
     if from_dtype == to_dtype {
         return Ok(());
     }
@@ -1402,7 +1501,7 @@ fn cast_expr_ir(
     check_cast(from_dtype, to_dtype)?;
 
     if let AExpr::Literal(lv) = expr_arena.get(e.node()) {
-        if let Some(literal) = try_inline_literal_cast(lv, to_dtype, options)? {
+        if let Some(literal) = try_inline_literal_cast(lv, to_dtype, literal_options)? {
             e.set_node(expr_arena.add(AExpr::Literal(literal)));
             e.set_dtype(to_dtype.clone());
             return Ok(());
@@ -1412,7 +1511,7 @@ fn cast_expr_ir(
     e.set_node(expr_arena.add(AExpr::Cast {
         expr: e.node(),
         dtype: to_dtype.clone(),
-        options: CastOptions::Strict,
+        options: cast_options,
     }));
     e.set_dtype(to_dtype.clone());
 
