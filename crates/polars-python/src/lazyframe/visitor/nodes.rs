@@ -298,6 +298,20 @@ impl PyFileOptions {
             },
         })
     }
+
+    /// Per-source statistics known upfront, as a DataFrame with one row per scan
+    /// source, or None if unavailable.
+    ///
+    /// Contains a `len` column, and `<name>_nc` / `<name>_min` / `<name>_max`
+    /// columns (null count, minimum and maximum) for the columns used by the
+    /// predicate. Can be used to skip sources that cannot match the predicate.
+    #[getter]
+    fn table_statistics(&self) -> Option<PyDataFrame> {
+        self.inner
+            .table_statistics
+            .as_ref()
+            .map(|table_statistics| PyDataFrame::new(table_statistics.0.as_ref().clone()))
+    }
 }
 
 /// Converts an [`IcebergSchema`] to a dict mapping physical field ID to a column.
