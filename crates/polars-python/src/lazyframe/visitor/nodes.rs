@@ -2,6 +2,7 @@ use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::python_dsl::PythonScanSource;
 use polars::prelude::{ColumnMapping, PredicateFileSkip};
 use polars_core::prelude::IdxSize;
+use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType, IcebergSchema};
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "asof_join")]
 use polars_ops::prelude::AsofStrategy;
@@ -17,8 +18,8 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyString};
 
 use super::expr_nodes::PyGroupbyOptions;
-use crate::PyDataFrame;
 use crate::lazyframe::visit::PyExprIR;
+use crate::{PyDataFrame, Wrap};
 
 fn scan_type_to_pyobject(
     py: Python<'_>,
@@ -186,15 +187,78 @@ impl PyFileOptions {
 
     /// One of:
     /// * None
-    /// * ("iceberg-column-mapping", <unimplemented>)
+    /// * ("iceberg-column-mapping", dict[int, column])
+    ///
+    /// See [`iceberg_schema_to_pyobject`] for the `column` representation.
     #[getter]
     fn column_mapping(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match &self.inner.column_mapping {
             None => py.None().into_any(),
 
-            Some(ColumnMapping::Iceberg { .. }) => unimplemented!(),
+            Some(ColumnMapping::Iceberg(schema)) => (
+                "iceberg-column-mapping",
+                iceberg_schema_to_pyobject(py, schema)?,
+            )
+                .into_pyobject(py)?
+                .into_any()
+                .unbind(),
         })
     }
+}
+
+/// Converts an [`IcebergSchema`] to a dict mapping physical field ID to a column.
+///
+/// Note that the physical ID of a list element is `LIST_ELEMENT_DEFAULT_ID` if the
+/// element field did not carry one.
+fn iceberg_schema_to_pyobject(py: Python<'_>, schema: &IcebergSchema) -> PyResult<Py<PyAny>> {
+    let out = PyDict::new(py);
+
+    for (physical_id, column) in schema.iter() {
+        out.set_item(*physical_id, iceberg_column_to_pyobject(py, column)?)?;
+    }
+
+    Ok(out.into_any().unbind())
+}
+
+/// Converts an [`IcebergColumn`] to a `(name, physical_id, type)` tuple, where `type` is
+/// one of:
+/// * ("primitive", DataType)
+/// * ("list", column)
+/// * ("fixed-size-list", column, width)
+/// * ("map", key_column, value_column)
+/// * ("struct", dict[int, column])
+fn iceberg_column_to_pyobject(py: Python<'_>, column: &IcebergColumn) -> PyResult<Py<PyAny>> {
+    let IcebergColumn {
+        name,
+        physical_id,
+        type_,
+    } = column;
+
+    let type_ = match type_ {
+        IcebergColumnType::Primitive { dtype } => {
+            ("primitive", Wrap(dtype.clone())).into_py_any(py)?
+        },
+        IcebergColumnType::List(inner) => {
+            ("list", iceberg_column_to_pyobject(py, inner)?).into_py_any(py)?
+        },
+        IcebergColumnType::FixedSizeList(inner, width) => (
+            "fixed-size-list",
+            iceberg_column_to_pyobject(py, inner)?,
+            *width,
+        )
+            .into_py_any(py)?,
+        IcebergColumnType::Map(key, value) => (
+            "map",
+            iceberg_column_to_pyobject(py, key)?,
+            iceberg_column_to_pyobject(py, value)?,
+        )
+            .into_py_any(py)?,
+        IcebergColumnType::Struct(fields) => {
+            ("struct", iceberg_schema_to_pyobject(py, fields)?).into_py_any(py)?
+        },
+    };
+
+    (name.as_str(), *physical_id, type_).into_py_any(py)
 }
 
 #[pyclass(frozen)]
