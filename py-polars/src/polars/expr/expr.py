@@ -5125,13 +5125,16 @@ class Expr(metaclass=_Meta):
 
         Examples
         --------
-        Unlike :meth:`bin_ranks`, equal values remain in the same bin. Here, the first
-        bin is empty because the first breakpoint is `1`.
+        Unlike :meth:`bin_ranks`, all equal values remain in the same bin, so a bin can
+        be empty. Here the breakpoints are `1`, `1`, and `2`, giving the bins
+        `[-inf, 1)`, `[1, 1)`, `[1, 2)`, and `[2, inf)`. The first is empty because a
+        left-closed bin excludes its right boundary, and the second because the
+        breakpoint `1` repeats.
 
         >>> df = pl.DataFrame({"x": [1, 1, 2, 2]})
         >>> df.with_columns(
         ...     pl.col("x")
-        ...     .bin_quantiles([0.25, 0.75], labels=["low", "mid", "high"])
+        ...     .bin_quantiles([0.1, 0.25, 0.75], labels=["a", "b", "c", "d"])
         ...     .alias("bin")
         ... )
         shape: (4, 2)
@@ -5140,10 +5143,10 @@ class Expr(metaclass=_Meta):
         │ --- ┆ ---  │
         │ i64 ┆ enum │
         ╞═════╪══════╡
-        │ 1   ┆ mid  │
-        │ 1   ┆ mid  │
-        │ 2   ┆ high │
-        │ 2   ┆ high │
+        │ 1   ┆ c    │
+        │ 1   ┆ c    │
+        │ 2   ┆ d    │
+        │ 2   ┆ d    │
         └─────┴──────┘
         """
         labels_arg = None if labels is False else list(labels)

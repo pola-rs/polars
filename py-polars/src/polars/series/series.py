@@ -2712,18 +2712,21 @@ class Series(metaclass=_Meta):
 
         Examples
         --------
-        Unlike :meth:`bin_ranks`, equal values remain in the same bin. Here, the first
-        bin is empty because the first breakpoint is `1`.
+        Unlike :meth:`bin_ranks`, all equal values remain in the same bin, so a bin can
+        be empty. Here the breakpoints are `1`, `1`, and `2`, giving the bins
+        `[-inf, 1)`, `[1, 1)`, `[1, 2)`, and `[2, inf)`. The first is empty because a
+        left-closed bin excludes its right boundary, and the second because the
+        breakpoint `1` repeats.
 
         >>> s = pl.Series("x", [1, 1, 2, 2])
-        >>> s.bin_quantiles([0.25, 0.75], labels=["low", "mid", "high"])
+        >>> s.bin_quantiles([0.1, 0.25, 0.75], labels=["a", "b", "c", "d"])
         shape: (4,)
         Series: 'x' [enum]
         [
-            "mid"
-            "mid"
-            "high"
-            "high"
+            "c"
+            "c"
+            "d"
+            "d"
         ]
         """
 
