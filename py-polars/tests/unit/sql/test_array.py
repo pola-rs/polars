@@ -47,7 +47,7 @@ def test_array_agg(sort_order: str | None, limit: int | None, expected: Any) -> 
 
 
 def test_array_literals() -> None:
-    with pl.SQLContext(df=None, eager=True) as ctx:
+    with pl.SQLContext(df=pl.DataFrame({"x": [0]}), eager=True) as ctx:
         res = ctx.execute(
             """
             SELECT
@@ -358,3 +358,10 @@ def test_array_typed_literals_mixed_error() -> None:
         match="expected consistent dtypes",
     ):
         pl.sql("SELECT ARRAY[DATE '2024-01-01', TIME '12:00:00']").collect()
+
+
+def test_array_literal_default_name() -> None:
+    res = pl.sql("SELECT ARRAY[1, 2]", eager=True)
+    assert res.columns == [""]
+    res = pl.sql('SELECT t."" AS arr FROM (SELECT ARRAY[1, 2]) t', eager=True)
+    assert res.to_dict(as_series=False) == {"arr": [[1, 2]]}

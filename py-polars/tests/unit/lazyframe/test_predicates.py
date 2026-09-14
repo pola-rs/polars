@@ -1867,7 +1867,7 @@ def test_predicate_simplification_stable_28267() -> None:
 
     plan = q.explain()
 
-    assert plan.find("is_between") > plan.find("&")
+    assert plan.find("is_between") < plan.find("&")
 
 
 def test_or_factoring_skips_udf_conjunct() -> None:

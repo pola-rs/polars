@@ -159,4 +159,11 @@ impl MetaNameSpace {
         let ae = expr_arena.get(e_ir.node());
         Ok(is_row_separable(&mut stack, ae, &expr_arena))
     }
+
+    /// Indicate if this expression yields one scalar value that does not depend on any
+    /// input frame (see [`is_input_independent_scalar_rec`]).
+    pub fn is_input_independent_scalar(self) -> PolarsResult<bool> {
+        let (e_ir, expr_arena) = self.into_expr_ir()?;
+        Ok(is_input_independent_scalar_rec(e_ir.node(), &expr_arena))
+    }
 }
