@@ -298,6 +298,7 @@ markers = [
   "slow: Tests with a longer than average runtime.",
   "write_disk: Tests that write to disk",
   "may_fail_cloud: Test that may fail when automatically using the cloud distributed engine for all lazy queries.",
+  "may_fail_lazy_schema: Test whose lazy queries may have a `collect_schema()` that disagrees with the schema of the collected DataFrame.",
   "may_fail_strict: Test that may fail strict mode.",
 ]
 filterwarnings = [

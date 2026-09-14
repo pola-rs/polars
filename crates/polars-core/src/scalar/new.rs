@@ -43,6 +43,9 @@ impl Scalar {
     }
 
     /// One `Map` row from its flat key and value fields.
+    ///
+    /// Validation is deferred to `Series::from_any_values_and_dtype`, which calls
+    /// `MapChunked::try_from_storage`. Other consumers only read the entries.
     #[cfg(feature = "dtype-map")]
     pub fn new_map(keys: &Series, values: &Series) -> Self {
         Scalar::new(

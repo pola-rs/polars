@@ -505,6 +505,7 @@ def test_len() -> None:
 
 
 @pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+@pytest.mark.may_fail_lazy_schema  # TODO: uint128
 def test_cum_agg(dtype: PolarsDataType) -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3, 2]}, schema={"a": dtype})
     assert_series_equal(

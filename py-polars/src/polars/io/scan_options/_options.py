@@ -37,6 +37,7 @@ class ScanOptions:
 
     # For path expansion
     glob: bool = True
+    expand_paths: bool = True
     hidden_file_prefix: Sequence[str] | None = None
 
     # Hive

@@ -426,7 +426,11 @@ pub enum PhysNodeKind {
         inputs: Vec<PhysStream>,
         // Must have the same schema when applied for each input.
         key_per_input: Vec<Vec<ExprIR>>,
-        // Must be a 'simple' expression, a singular column feeding into a single aggregate, or Len.
+        // Elementwise expressions evaluated inside the group-by node, producing derived
+        // columns which `aggs_per_input` may reference in addition to the input columns.
+        fused_agg_inputs_per_input: Vec<Vec<ExprIR>>,
+        // Must be a 'simple' expression, a singular column (of the input or of
+        // `fused_agg_inputs_per_input`) feeding into a single aggregate, or Len.
         aggs_per_input: Vec<Vec<ExprIR>>,
     },
 
@@ -462,6 +466,9 @@ pub enum PhysNodeKind {
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
         args: JoinArgs,
+        /// Extra match condition, in the join's output namespace, applied per candidate
+        /// pair. See `JoinTypeOptionsIR::Equi`.
+        fused_predicate: Option<ExprIR>,
     },
 
     MergeJoin {

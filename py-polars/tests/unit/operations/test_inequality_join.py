@@ -255,7 +255,9 @@ def test_join_where_predicates(range_constraint: list[pl.Expr]) -> None:
 
     explained = q.explain()
     assert "INNER JOIN" in explained
-    assert "FILTER" in explained
+    # The equality becomes the join key; the range constraint stays a separate
+    # condition, fused into the join as its fused predicate.
+    assert "FUSED PREDICATE" in explained
     actual = q.collect()
 
     expected = (

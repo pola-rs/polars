@@ -41,6 +41,8 @@ pub use array::ArrayFunction;
 #[cfg(feature = "cov")]
 pub use correlation::CorrelationMethod;
 pub use list::ListFunction;
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 pub use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
 #[cfg(feature = "random")]
@@ -233,6 +235,13 @@ pub enum FunctionExpr {
     UniqueCounts,
     #[cfg(feature = "approx_unique")]
     ApproxNUnique,
+    #[cfg(feature = "approx_quantile")]
+    ApproxQuantile {
+        method: ApproxQuantileMethod,
+        error: f64,
+        /// Interpret `error` as the formal bound instead of the empirically calibrated one.
+        use_formal_bound: bool,
+    },
     Coalesce,
     #[cfg(feature = "diff")]
     Diff(NullBehavior),
@@ -586,6 +595,16 @@ impl Hash for FunctionExpr {
             UniqueCounts => {},
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => {},
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantile {
+                method,
+                error,
+                use_formal_bound,
+            } => {
+                method.hash(state);
+                error.to_bits().hash(state);
+                use_formal_bound.hash(state);
+            },
             Coalesce => {},
             #[cfg(feature = "pct_change")]
             PctChange => {},
@@ -825,6 +844,8 @@ impl Display for FunctionExpr {
             Reverse => "reverse",
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => "approx_n_unique",
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantile { .. } => "approx_quantile",
             Coalesce => "coalesce",
             #[cfg(feature = "diff")]
             Diff(_) => "diff",

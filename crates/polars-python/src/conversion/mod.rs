@@ -21,6 +21,8 @@ use polars::prelude::default_values::DefaultFieldValues;
 use polars::prelude::deletion::{DeletionFilesList, DeltaDeletionVectorProvider};
 use polars::series::ops::NullBehavior;
 use polars_buffer::Buffer;
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::decimal::dec128_verify_prec_scale;
 use polars_core::datatypes::extension::get_extension_type_or_generic;
 use polars_core::schema::iceberg::IcebergSchema;
@@ -1187,6 +1189,27 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<IndexOrder> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`order` must be one of {{'fortran', 'c'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+#[cfg(feature = "approx_quantile")]
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ApproxQuantileMethod> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "auto" => ApproxQuantileMethod::Auto,
+            "kll" => ApproxQuantileMethod::KLL,
+            "req_lo" => ApproxQuantileMethod::ReqSketch { hra: false },
+            "req_hi" => ApproxQuantileMethod::ReqSketch { hra: true },
+            "req_both" => ApproxQuantileMethod::DoubleReqSketch,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`method` must be one of {{'auto', 'kll', 'req_lo', 'req_hi', 'req_both'}}, got {v}",
                 )));
             },
         };

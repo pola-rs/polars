@@ -71,6 +71,7 @@ impl<'a> NodeVisitor for ExprHeightVisitor<'a> {
     type Storage = &'a Arena<AExpr>;
     type BreakValue = ();
 
+    #[inline]
     fn default_edge(
         &mut self,
         _key: Self::Key,

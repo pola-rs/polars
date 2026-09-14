@@ -294,7 +294,7 @@ def test_rolling_skew_kurtosis_empty_28515(rolling_fn: str) -> None:
 def test_rolling_crossing_dst(
     time_zone: str | None,
     rolling_fn: str,
-    expected_values: list[int | None | float],
+    expected_values: list[int | float | None],
     expected_dtype: PolarsDataType,
 ) -> None:
     ts = pl.datetime_range(
@@ -1931,6 +1931,66 @@ def test_rolling_median_23480() -> None:
     )
     expected = pl.DataFrame({"r15": evals, "r17": evals})
     assert_frame_equal(out, expected)
+
+
+def test_rolling_weighted_median_center_29170() -> None:
+    # A centered window is truncated at the tail, but the weighted kernel used to read
+    # `window_size` values past the window start regardless, running off the end of the
+    # array.
+    s = pl.Series([1.0, 2.0, 3.0])
+
+    result = s.rolling_median(
+        window_size=3, min_samples=1, weights=[1.0, 1.0, 1.0], center=True
+    )
+
+    # Windows are [1, 2], [1, 2, 3] and [2, 3].
+    expected = pl.Series([1.5, 2.0, 2.5])
+    assert_series_equal(result, expected)
+    # Uniform weights must agree with the unweighted kernel.
+    assert_series_equal(
+        result, s.rolling_median(window_size=3, min_samples=1, center=True)
+    )
+
+
+def test_rolling_weighted_median_partial_window_29170() -> None:
+    # With `min_samples` below `window_size` the leading windows are shorter than
+    # `window_size`. The weighted kernel used to fill them with values from *after* the
+    # window instead, so a backwards-looking rolling median looked forwards.
+    s = pl.Series([1.0, 2.0, 3.0])
+
+    result = s.rolling_median(window_size=3, min_samples=1, weights=[1.0, 1.0, 1.0])
+
+    # Windows are [1], [1, 2] and [1, 2, 3].
+    expected = pl.Series([1.0, 1.5, 2.0])
+    assert_series_equal(result, expected)
+    # Uniform weights must agree with the unweighted kernel.
+    assert_series_equal(result, s.rolling_median(window_size=3, min_samples=1))
+
+
+def test_rolling_weighted_median_all_zero_weights_in_window() -> None:
+    # A truncated window can cover only zero weights,
+    # leaving nothing to take a quantile over.
+    # The result is undefined, represented as a null.
+    s = pl.Series([1.0, 2.0, 3.0])
+    result = s.rolling_median(window_size=3, min_samples=1, weights=[1.0, 0.0, 0.0])
+
+    # The first window covers only the last weight, which is zero.
+    # The second covers the last two, also both zero.
+    # The third now has a valid weight.
+    expected = pl.Series([None, None, 1.0], dtype=pl.Float64)
+    assert_series_equal(result, expected)
+
+
+def test_rolling_weighted_median_all_zero_weights_in_centered_window_29170() -> None:
+    s = pl.Series([1.0, 2.0, 3.0])
+    result = s.rolling_median(
+        window_size=5, min_samples=1, weights=[1.0, 0.0, 0.0, 0.0, 1.0], center=True
+    )
+
+    # The windows cover weights[2:5], weights[1:4] and weights[0:3]; only the middle one
+    # is left without a value to take a quantile over.
+    expected = pl.Series([3.0, None, 1.0], dtype=pl.Float64)
+    assert_series_equal(result, expected)
 
 
 @pytest.mark.slow

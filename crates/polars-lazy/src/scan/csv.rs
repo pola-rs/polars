@@ -405,6 +405,7 @@ impl LazyFileListReader for LazyCsvReader {
                 rechunk,
                 cache: self.cache,
                 glob: self.glob,
+                expand_paths: true,
                 hidden_file_prefix: None,
                 projection: None,
                 column_mapping: None,

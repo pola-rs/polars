@@ -46,6 +46,7 @@ impl SeriesColumn {
         None
     }
 
+    #[inline]
     pub fn take(self) -> Series {
         self.inner
     }
@@ -62,12 +63,14 @@ impl From<Series> for SeriesColumn {
 impl Deref for SeriesColumn {
     type Target = Series;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
 impl DerefMut for SeriesColumn {
+    #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }

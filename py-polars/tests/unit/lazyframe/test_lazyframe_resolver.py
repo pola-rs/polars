@@ -274,6 +274,7 @@ def test_lazyframe_resolver_cse_after_pickle() -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 1]}))
 
 
+@pytest.mark.may_fail_lazy_schema  # reason: stateful-resolver
 def test_lazyframe_resolver_versioned_caching() -> None:
     resolver = InMemoryLazyFrameResolver(pl.LazyFrame({"a": [1]}))
     resolver.resolve_lazyframe = Mock(wraps=resolver.resolve_lazyframe)  # type: ignore[method-assign]

@@ -127,6 +127,7 @@ impl<T> JoinHandle<T> {
 impl<T> Future for JoinHandle<T> {
     type Output = T;
 
+    #[inline]
     fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
         self.0.poll_join(ctx)
     }

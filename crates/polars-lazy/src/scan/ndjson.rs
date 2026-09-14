@@ -132,6 +132,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             rechunk: self.rechunk,
             cache: false,
             glob: true,
+            expand_paths: true,
             hidden_file_prefix: None,
             projection: None,
             column_mapping: None,

@@ -49,6 +49,7 @@ impl LazyFrame {
                 rechunk: false,
                 cache: false,
                 glob: false,
+                expand_paths: true,
                 hidden_file_prefix: None,
                 projection: None,
                 column_mapping: None,
