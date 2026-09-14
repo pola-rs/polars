@@ -8,11 +8,13 @@ use polars_io::cloud::CloudOptions;
 #[cfg(feature = "asof_join")]
 use polars_ops::prelude::AsofStrategy;
 use polars_ops::prelude::JoinType;
+use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldValues};
 use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_plan::plans::{HintIR, IR};
 #[cfg(feature = "iejoin")]
 use polars_plan::prelude::JoinTypeOptionsIR;
 use polars_plan::prelude::{FileScanIR, FunctionIR, PythonPredicate, UnifiedScanArgs};
+use polars_utils::pl_str::PlSmallStr;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
@@ -20,6 +22,7 @@ use pyo3::types::{PyDict, PyList, PyString};
 
 use super::expr_nodes::PyGroupbyOptions;
 use crate::lazyframe::visit::PyExprIR;
+use crate::series::PySeries;
 use crate::{PyDataFrame, Wrap};
 
 fn scan_type_to_pyobject(
@@ -235,6 +238,64 @@ impl PyFileOptions {
                 .into_pyobject(py)?
                 .into_any()
                 .unbind(),
+        })
+    }
+
+    /// One of:
+    /// * None
+    /// * (
+    ///     "iceberg",
+    ///     (
+    ///       dict[int, Series | str],  # identity transformed partition fields
+    ///       dict[int, Series],        # V3 initial-default values
+    ///     )
+    ///   )
+    ///
+    /// Both dicts are keyed by physical field ID, and hold the value to use for a
+    /// field that is missing from a data file.
+    ///
+    /// An identity transformed partition field carries one value per scan source, in
+    /// `Scan.paths` order, as the value differs per source. A `str` there is instead
+    /// an error message explaining why the partition values could not be loaded - it
+    /// should only be raised if the field is actually needed. An initial default is a
+    /// single value that applies to every source.
+    #[getter]
+    fn default_values(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        Ok(match &self.inner.default_values {
+            None => py.None().into_any(),
+
+            Some(DefaultFieldValues::Iceberg(default_values)) => {
+                let IcebergDefaultFieldValues {
+                    identity_transformed_partition_fields,
+                    initial_defaults,
+                } = default_values.as_ref();
+
+                let partition_fields = PyDict::new(py);
+
+                for (physical_id, value) in identity_transformed_partition_fields.iter() {
+                    let value = match value {
+                        Ok(column) => PySeries::new(column.as_materialized_series().clone())
+                            .into_py_any(py)?,
+                        Err(err_msg) => err_msg.into_py_any(py)?,
+                    };
+
+                    partition_fields.set_item(*physical_id, value)?;
+                }
+
+                let defaults = PyDict::new(py);
+
+                for (physical_id, scalar) in initial_defaults.iter() {
+                    defaults.set_item(
+                        *physical_id,
+                        PySeries::new(scalar.clone().into_series(PlSmallStr::EMPTY)),
+                    )?;
+                }
+
+                ("iceberg", (partition_fields, defaults))
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind()
+            },
         })
     }
 }
