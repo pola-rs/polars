@@ -11,7 +11,7 @@ from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import ClosedInterval, PolarsIntegerType
+    from polars._typing import ClosedInterval, EngineType, PolarsIntegerType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -762,6 +762,20 @@ def test_rolling_on_expressions() -> None:
     )
 
     assert_series_equal(df["df_ri"], df["in_ri"], check_names=False)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_rolling_index_regex(engine: EngineType) -> None:
+    df = pl.DataFrame({"b": [0, 1, 2, 4], "c": [10, 13, 21, 34]}).set_sorted("b")
+
+    result = (
+        df.lazy()
+        .select(pl.col("c").sum().rolling(index_column=pl.col("^b$"), period="2i"))
+        .collect(engine=engine)
+    )
+
+    expected = pl.DataFrame({"c": [10, 23, 34, 34]})
+    assert_frame_equal(result, expected)
 
 
 def test_rolling_in_group_by() -> None:

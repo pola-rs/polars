@@ -48,6 +48,48 @@ def test_root_and_output_names() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("index_column", "expected_root_names", "is_regex"),
+    [
+        pytest.param("b", ["c", "c", "b"], False, id="column-name"),
+        pytest.param(pl.col("b"), ["c", "c", "b"], False, id="column-expression"),
+        pytest.param(
+            pl.col("b") + pl.col("offset"),
+            ["c", "c", "b", "offset"],
+            False,
+            id="computed-index",
+        ),
+        pytest.param(
+            (pl.col("b") + pl.col("offset")).alias("index"),
+            ["c", "c", "b", "offset"],
+            False,
+            id="aliased-index",
+        ),
+        pytest.param(pl.lit(1), ["c", "c"], False, id="literal-index"),
+        pytest.param(pl.col("^b.*$"), ["c", "c"], True, id="regex-index"),
+    ],
+)
+def test_rolling_index_metadata(
+    index_column: str | pl.Expr, expected_root_names: list[str], is_regex: bool
+) -> None:
+    calculation = pl.col("c").last() - pl.col("c").first()
+    expr = calculation.rolling(index_column=index_column, period="2i")
+    expected_index = (
+        pl.col(index_column) if isinstance(index_column, str) else index_column
+    )
+
+    assert expr.meta.root_names() == expected_root_names
+    assert expr.meta.output_name() == "c"
+    assert expr.alias("result").meta.output_name() == "result"
+    assert expr.meta.has_multiple_outputs() is is_regex
+    assert expr.meta.is_regex_projection() is is_regex
+
+    popped_index, popped_calculation = expr.meta.pop()
+
+    assert popped_index.meta.eq(expected_index)
+    assert popped_calculation.meta.eq(calculation)
+
+
 def test_undo_aliases() -> None:
     e = pl.col("foo").alias("bar")
     assert e.meta.undo_aliases().meta == pl.col("foo")
