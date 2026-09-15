@@ -144,9 +144,13 @@ fn is_hash_join(options: &JoinOptionsIR) -> bool {
         && !args.validation.needs_checks()
 }
 
-/// The side to force as build side: filtered (an unfiltered side holds its whole
-/// key domain, so its range prunes nothing), bounded, within the byte budget, and
-/// much smaller than the other side's estimate. `true` for the left side.
+/// The side to force as build side: bounded, within the byte budget, and much
+/// smaller than the other side's estimate. `true` for the left side.
+///
+/// Only a filtered side qualifies. That is a profitability heuristic: an unfiltered
+/// side usually spans the probe side's key domain, so publishing its range would
+/// serialize the inputs for nothing. It can still be narrower than the probe's
+/// domain, which is left on the table.
 fn choose_build_side(
     left: Node,
     right: Node,
