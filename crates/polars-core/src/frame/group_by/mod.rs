@@ -70,16 +70,17 @@ impl DataFrame {
                 unreachable!()
             }
         } else {
-            // Skip null dtype.
+            // Skip null dtype, and keys that are one element repeated: a key that holds the
+            // same element in every row tells no two rows apart, so the groups are the ones the
+            // remaining keys name and the encoder need not carry it.
             let by = by
                 .iter()
-                .filter(|s| !s.dtype().is_null())
+                .filter(|s| !s.dtype().is_null() && !s.reads_as_one_element())
                 .cloned()
                 .collect::<Vec<_>>();
-            // Keys that are each one element repeated make every row the same row, so they are
-            // all one group -- as are no keys at all, which is what nothing but null dtypes
-            // leaves behind.
-            if by.is_empty() || by.iter().all(Column::reads_as_one_element) {
+            // Nothing left to tell rows apart by: every row is the same row, so they are one
+            // group over the whole height.
+            if by.is_empty() {
                 let groups = if common_height == 0 {
                     vec![]
                 } else {
