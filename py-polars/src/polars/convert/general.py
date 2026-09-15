@@ -459,8 +459,8 @@ def from_torch(
 def from_arrow(
     data: (
         pa.Table
-        | pa.Array
-        | pa.ChunkedArray
+        | pa.Array[Any]
+        | pa.ChunkedArray[Any]
         | pa.RecordBatch
         | Iterable[pa.RecordBatch | pa.Table]
         | ArrowArrayExportable
