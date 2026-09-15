@@ -129,6 +129,13 @@ pub struct PartialMetadata {
 
 #[cfg(feature = "parquet")]
 impl PartialMetadata {
+    /// Source indices of the resolved footers, ascending. Aligns with
+    /// [`MetadataPerSource::resolved_metadata`], which is dense and therefore
+    /// carries no index mapping of its own.
+    pub fn indices(&self) -> &[usize] {
+        &self.indices
+    }
+
     fn new(indices: Vec<usize>, metadata: Vec<FileMetadataRef>) -> Self {
         assert!(!indices.is_empty());
         assert_eq!(indices.len(), metadata.len());

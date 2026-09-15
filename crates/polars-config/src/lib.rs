@@ -52,6 +52,10 @@ const RESOLVE_SAMPLE_LIMIT: &str = "POLARS_RESOLVE_SAMPLE_LIMIT";
 // 0 = auto (see `resolve_sample_limit()`).
 const DEFAULT_RESOLVE_SAMPLE_LIMIT: u64 = 0;
 
+const RESOLVE_HEAVY_FILE_BYTES: &str = "POLARS_RESOLVE_HEAVY_FILE_BYTES";
+// 0 = disabled (see `resolve_heavy_file_bytes()`).
+const DEFAULT_RESOLVE_HEAVY_FILE_BYTES: u64 = 0;
+
 // Private.
 const VERBOSE_SENSITIVE: &str = "POLARS_VERBOSE_SENSITIVE";
 const DEFAULT_VERBOSE_SENSITIVE: bool = false;
@@ -146,6 +150,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     ALLOW_NESTED_CSPE,
     RESOLVE_METADATA_LEVEL,
     RESOLVE_SAMPLE_LIMIT,
+    RESOLVE_HEAVY_FILE_BYTES,
     /*
     Not yet supported public options:
 
@@ -206,6 +211,7 @@ pub struct Config {
     allow_nested_cspe: AtomicBool,
     resolve_metadata_level: AtomicU8,
     resolve_sample_limit: AtomicU64,
+    resolve_heavy_file_bytes: AtomicU64,
 
     // Private.
     verbose_sensitive: AtomicBool,
@@ -251,6 +257,7 @@ impl Config {
             prune_parquet_metadata: AtomicBool::new(DEFAULT_PRUNE_PARQUET_METADATA),
             resolve_metadata_level: AtomicU8::new(ResolveMode::default() as u8),
             resolve_sample_limit: AtomicU64::new(DEFAULT_RESOLVE_SAMPLE_LIMIT),
+            resolve_heavy_file_bytes: AtomicU64::new(DEFAULT_RESOLVE_HEAVY_FILE_BYTES),
 
             // Private.
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
@@ -377,6 +384,11 @@ impl Config {
             RESOLVE_SAMPLE_LIMIT => self.resolve_sample_limit.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_RESOLVE_SAMPLE_LIMIT),
+                Ordering::Relaxed,
+            ),
+            RESOLVE_HEAVY_FILE_BYTES => self.resolve_heavy_file_bytes.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_RESOLVE_HEAVY_FILE_BYTES),
                 Ordering::Relaxed,
             ),
 
@@ -580,6 +592,27 @@ impl Config {
     #[inline(always)]
     pub fn resolve_sample_limit(&self) -> Option<u64> {
         match self.resolve_sample_limit.load(Ordering::Relaxed) {
+            0 => None,
+            n => Some(n),
+        }
+    }
+
+    /// Byte size at or above which a source is considered "heavy" and has its
+    /// footer read during a `Sampled` resolve, on top of the ordinary sample.
+    ///
+    /// A distributed planner assigns whole files to workers, so a file larger
+    /// than a fair share of the scan pins one worker regardless of how the rest
+    /// are spread; splitting it needs its row groups, and those only come from
+    /// its footer. Setting this to `total_bytes / n_workers` resolves exactly
+    /// the files that can be split to useful effect. Fewer than `n_workers` such
+    /// files can exist, since their sizes sum to at most the total, so the extra
+    /// reads are bounded by worker count rather than by file count.
+    ///
+    /// `None` (the default) disables the behaviour. Requires per-source sizes,
+    /// which come free from the object store listing.
+    #[inline(always)]
+    pub fn resolve_heavy_file_bytes(&self) -> Option<u64> {
+        match self.resolve_heavy_file_bytes.load(Ordering::Relaxed) {
             0 => None,
             n => Some(n),
         }
