@@ -7,6 +7,7 @@ use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 
 pub use categorical::PyCategories;
 #[cfg(feature = "object")]
@@ -1201,18 +1202,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ApproxQuantileMethod> {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "auto" => ApproxQuantileMethod::Auto,
-            "kll" => ApproxQuantileMethod::KLL,
-            "req_lo" => ApproxQuantileMethod::ReqSketch { hra: false },
-            "req_hi" => ApproxQuantileMethod::ReqSketch { hra: true },
-            "req_both" => ApproxQuantileMethod::DoubleReqSketch,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "`method` must be one of {{'auto', 'kll', 'req_lo', 'req_hi', 'req_both'}}, got {v}",
-                )));
-            },
-        };
+        let s = ob.extract::<PyBackedStr>()?;
+        let parsed =
+            ApproxQuantileMethod::from_str(&s).map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Wrap(parsed))
     }
 }
