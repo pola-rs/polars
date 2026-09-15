@@ -11,6 +11,7 @@ mod apply;
 #[cfg(feature = "approx_unique")]
 mod approx_n_unique;
 pub mod arity;
+pub mod binning;
 mod bit_repr;
 mod bits;
 #[cfg(feature = "bitwise")]
