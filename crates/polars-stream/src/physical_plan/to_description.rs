@@ -520,6 +520,7 @@ pub fn phys_props(
             right_on,
             args,
             fused_predicate,
+            runtime_filters: _,
         } => (
             PhysicalPropsDescription::EquiJoin {
                 how: format!("{}", args.how),

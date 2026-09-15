@@ -16,6 +16,7 @@ use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_ops::frame::{JoinArgs, JoinBuildSide, JoinType, MaintainOrderJoin};
 use polars_ops::series::coalesce_columns;
+use polars_plan::plans::options::RuntimeFilter;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
@@ -26,6 +27,7 @@ use polars_utils::sparse_init_vec::SparseInitVec;
 use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
 
+use super::runtime_filter::KeyRange;
 use super::{BufferedStream, LOPSIDED_SAMPLE_FACTOR};
 use crate::expression::StreamExpr;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
@@ -190,6 +192,9 @@ struct EquiJoinParams {
     right_payload_schema: Arc<Schema>,
     args: JoinArgs,
     fused_predicate: Option<FusedPredicate>,
+    /// Build-key ranges to publish once the build is done. Only kept when the
+    /// build side is fixed at plan time, so the probe side is never read first.
+    runtime_filters: Vec<RuntimeFilter>,
     random_state: PlRandomState,
     sample_limit: usize,
 }
@@ -329,17 +334,30 @@ async fn select_keys(
     params: &EquiJoinParams,
     state: &ExecutionState,
 ) -> PolarsResult<HashKeys> {
+    Ok(select_keys_with_columns(df, key_selectors, params, state)
+        .await?
+        .0)
+}
+
+/// The hashed keys and the key columns they were hashed from.
+async fn select_keys_with_columns(
+    df: &DataFrame,
+    key_selectors: &[StreamExpr],
+    params: &EquiJoinParams,
+    state: &ExecutionState,
+) -> PolarsResult<(HashKeys, DataFrame)> {
     let mut key_columns = Vec::new();
     for selector in key_selectors {
         key_columns.push(selector.evaluate(df, state).await?.into_column());
     }
     let keys = unsafe { DataFrame::new_unchecked_with_broadcast(df.height(), key_columns)? };
-    Ok(HashKeys::from_df(
+    let hash_keys = HashKeys::from_df(
         &keys,
         params.random_state.clone(),
         params.args.nulls_equal,
         false,
-    ))
+    );
+    Ok((hash_keys, keys))
 }
 
 fn select_payload(df: DataFrame, selector: &[Option<PlSmallStr>]) -> DataFrame {
@@ -548,6 +566,7 @@ impl SampleState {
         let mut build_state = BuildState::new(
             state.num_pipelines,
             state.num_pipelines,
+            params.runtime_filters.len(),
             sampled_probe_morsels,
         );
 
@@ -594,6 +613,9 @@ struct LocalBuilder {
     // A cardinality sketch per partition for the keys seen by this builder.
     sketch_per_p: Vec<CardinalitySketch>,
 
+    // Min and max of the key of each runtime filter seen by this builder.
+    key_ranges: Vec<Option<(Scalar, Scalar)>>,
+
     // morsel_idxs_values_per_p[p][start..stop] contains the offsets into morsels[i]
     // for partition p, where start, stop are:
     // let start = morsel_idxs_offsets[i * num_partitions + p];
@@ -611,12 +633,14 @@ impl BuildState {
     fn new(
         num_pipelines: usize,
         num_partitions: usize,
+        num_runtime_filters: usize,
         sampled_probe_morsels: BufferedStream,
     ) -> Self {
         let local_builders = (0..num_pipelines)
             .map(|_| LocalBuilder {
                 morsels: Vec::new(),
                 sketch_per_p: vec![CardinalitySketch::default(); num_partitions],
+                key_ranges: vec![None; num_runtime_filters],
                 morsel_idxs_values_per_p: vec![Vec::new(); num_partitions],
                 morsel_idxs_offsets_per_p: vec![0; num_partitions],
             })
@@ -649,8 +673,12 @@ impl BuildState {
             // Compute hashed keys and payload. We must rechunk the payload for
             // later gathers.
             let df = morsel.df().await;
-            let hash_keys =
-                select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
+            let (hash_keys, keys) =
+                select_keys_with_columns(&df, key_selectors, params, &state.in_memory_exec_state)
+                    .await?;
+            for (filter, range) in params.runtime_filters.iter().zip(&mut local.key_ranges) {
+                KeyRange::extend(range, &keys.columns()[filter.key_idx])?;
+            }
             let mut payload = select_payload(df.clone(), payload_selector);
             payload.rechunk_mut();
 
@@ -668,6 +696,22 @@ impl BuildState {
             local.morsels.push((morsel.seq(), sf, hash_keys));
         }
         Ok(())
+    }
+
+    /// Hand the range of every build key with a runtime filter to the scans
+    /// below the probe side.
+    fn publish_runtime_filters(&mut self, params: &EquiJoinParams) {
+        for (i, filter) in params.runtime_filters.iter().enumerate() {
+            let range = KeyRange::union(
+                self.local_builders
+                    .iter_mut()
+                    .map(|local| local.key_ranges[i].take()),
+            );
+            if config::verbose() {
+                eprintln!("join publishes build key range {range:?}");
+            }
+            filter.pred.set(Arc::new(KeyRange::new(range)));
+        }
     }
 
     fn finalize_ordered(&mut self, params: &EquiJoinParams, table: &dyn IdxTable) -> ProbeState {
@@ -1375,6 +1419,7 @@ impl EquiJoinNode {
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
         fused_predicate: Option<(StreamExpr, Arc<Schema>)>,
+        runtime_filters: Vec<RuntimeFilter>,
         args: JoinArgs,
         num_pipelines: usize,
     ) -> PolarsResult<Self> {
@@ -1433,10 +1478,19 @@ impl EquiJoinNode {
             &args,
         )?;
 
+        // A sampled build side may turn out to be the other one, and the probe
+        // side has then already been read.
+        let runtime_filters = match (left_is_build, &args.build_side) {
+            (Some(true), Some(JoinBuildSide::ForceLeft))
+            | (Some(false), Some(JoinBuildSide::ForceRight)) => runtime_filters,
+            _ => Vec::new(),
+        };
+
         let state = if left_is_build.is_some() {
             EquiJoinState::Build(BuildState::new(
                 num_pipelines,
                 num_pipelines,
+                runtime_filters.len(),
                 BufferedStream::default(),
             ))
         } else {
@@ -1476,6 +1530,7 @@ impl EquiJoinNode {
                 right_payload_schema,
                 args,
                 fused_predicate,
+                runtime_filters,
                 random_state: PlRandomState::default(),
                 sample_limit,
             },
@@ -1525,6 +1580,7 @@ impl ComputeNode for EquiJoinNode {
         // If we are building and the build input is done, transition to probing.
         if let EquiJoinState::Build(build_state) = &mut self.state {
             if recv[build_idx] == PortState::Done {
+                build_state.publish_runtime_filters(&self.params);
                 let probe_state = if self.params.preserve_order_build {
                     build_state.finalize_ordered(&self.params, &*self.table)
                 } else {

@@ -246,7 +246,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::FoldHorizontal { .. } | F::ReduceHorizontal { .. } => true,
         #[cfg(feature = "dtype-struct")]
         F::CumFoldHorizontal { .. } | F::CumReduceHorizontal { .. } => true,
-        F::DynamicPred { .. } => true,
+        F::DynamicPred { .. } | F::DynamicSkipBatch { .. } => true,
     }
 }
 

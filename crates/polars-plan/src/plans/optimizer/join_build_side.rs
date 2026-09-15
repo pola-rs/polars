@@ -10,7 +10,7 @@ use crate::plans::{AExpr, IR, NodeStats, node_stats};
 use crate::prelude::MaintainOrderJoin;
 
 /// A side has to be this many times smaller to be picked as the build side.
-const LOPSIDED_FACTOR: f64 = 8.0;
+pub(super) const LOPSIDED_FACTOR: f64 = 8.0;
 
 /// Bytes assumed for a value whose width neither the statistics nor the dtype give.
 const DEFAULT_VALUE_WIDTH: f64 = 16.0;
@@ -93,7 +93,7 @@ fn build_side(
 }
 
 /// Statistics of one input of the join, and the bytes one of its rows takes.
-fn side_stats(
+pub(super) fn side_stats(
     node: Node,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,

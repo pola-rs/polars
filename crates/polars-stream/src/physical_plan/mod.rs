@@ -27,7 +27,7 @@ use polars_plan::dsl::{
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_plan::plans::options::JoinTypeOptionsIR;
+use polars_plan::plans::options::{JoinTypeOptionsIR, RuntimeFilter};
 use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
 
 mod fmt;
@@ -469,6 +469,8 @@ pub enum PhysNodeKind {
         /// Extra match condition, in the join's output namespace, applied per candidate
         /// pair. See `JoinTypeOptionsIR::Equi`.
         fused_predicate: Option<ExprIR>,
+        /// See `JoinOptionsIR::runtime_filters`.
+        runtime_filters: Vec<RuntimeFilter>,
     },
 
     MergeJoin {

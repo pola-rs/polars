@@ -15,7 +15,6 @@ use super::super::IRStructFunction;
 use super::super::evaluate::constant_evaluate;
 use super::super::{AExpr, IRBooleanFunction, IRFunctionExpr, LiteralValue, Operator};
 use crate::plans::aexpr::builder::IntoAExprBuilder;
-#[cfg(feature = "dtype-struct")]
 use crate::plans::expr_ir::ExprIR;
 #[cfg(feature = "is_in")]
 use crate::plans::predicates::try_extract_is_in_haystack;
@@ -724,6 +723,28 @@ fn aexpr_to_skip_batch_predicate_rec(
                         )
                     },
                     _ => None,
+                },
+                IRFunctionExpr::DynamicPred { pred } => {
+                    let target = resolve_stat_target(input[0].node(), arena)?;
+                    let dtype = target_leaf_dtype(&target, schema)?;
+                    if !can_use_min_max_stats(dtype, None, None) || dtype.is_float() {
+                        return None;
+                    }
+                    let function = IRFunctionExpr::DynamicSkipBatch { pred: pred.clone() };
+                    let options = function.function_options();
+                    let input = [
+                        target.min(arena),
+                        target.max(arena),
+                        target.null_count(arena),
+                    ]
+                    .into_iter()
+                    .map(|b| ExprIR::from_node(b.node(), arena))
+                    .collect();
+                    Some(arena.add(AExpr::Function {
+                        input,
+                        function,
+                        options,
+                    }))
                 },
                 _ => None,
             },

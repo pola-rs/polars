@@ -1158,3 +1158,7 @@ pub fn repeat(args: &[Column]) -> PolarsResult<Column> {
 pub fn dynamic_pred(columns: &[Column], pred: &DynamicPredWeakRef) -> PolarsResult<Column> {
     pred.evaluate(columns)
 }
+
+pub fn dynamic_skip_batch(columns: &[Column], pred: &DynamicPredWeakRef) -> PolarsResult<Column> {
+    pred.evaluate_stats(&columns[0], &columns[1], &columns[2])
+}
