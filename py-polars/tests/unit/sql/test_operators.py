@@ -201,13 +201,20 @@ def test_constant_where_condition_is_planned_not_executed() -> None:
     assert "FILTER" not in plan
 
 
-def test_input_independent_list_eval_in_list_uses_or_chain() -> None:
+@pytest.mark.parametrize(
+    "expression",
+    [
+        pytest.param("ARRAY_REVERSE(ARRAY[1, 2])", id="reverse"),
+        pytest.param("ARRAY_UNIQUE(ARRAY[1, 1, 2])", id="unique"),
+    ],
+)
+def test_input_independent_list_eval_in_list_uses_or_chain(expression: str) -> None:
     df = pl.LazyFrame({"a": [1, 2, 3]})
     with pl.SQLContext(df=df, eager=False) as ctx:
         lf = ctx.execute(
-            """
+            f"""
             SELECT a FROM df
-            WHERE ARRAY_LENGTH(ARRAY_REVERSE(ARRAY[1, 2])) IN (1, 2)
+            WHERE ARRAY_LENGTH({expression}) IN (1, 2)
             """
         )
         plan = lf.explain(optimized=False)
@@ -218,13 +225,20 @@ def test_input_independent_list_eval_in_list_uses_or_chain() -> None:
     assert result["a"].to_list() == [1, 2, 3]
 
 
-def test_input_independent_list_eval_preserves_errors() -> None:
+@pytest.mark.parametrize(
+    "expression",
+    [
+        pytest.param("ARRAY_REVERSE(ARRAY['bad'])", id="reverse"),
+        pytest.param("ARRAY_UNIQUE(ARRAY['bad', 'bad'])", id="unique"),
+    ],
+)
+def test_input_independent_list_eval_preserves_errors(expression: str) -> None:
     df = pl.LazyFrame({"a": [1, 2, 3]})
     result = df.sql(
-        """
+        f"""
         SELECT a FROM self
         WHERE ARRAY_CONTAINS(
-            CAST(ARRAY_REVERSE(ARRAY['bad']) AS INTEGER[]), 1
+            CAST({expression} AS INTEGER[]), 1
         )
         """
     )
