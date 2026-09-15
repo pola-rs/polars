@@ -501,7 +501,7 @@ impl OptimizationRule for TypeCoercionRule {
                 };
 
                 coerce_is_in(expr_node, expr_arena, schema, form, |input, arena| {
-                    is_in::resolve_is_in(input, arena, schema, form, op)
+                    is_in::resolve_is_in(input, arena, schema, form, op, None)
                 })?
             },
             AExpr::Function {

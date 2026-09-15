@@ -2264,19 +2264,18 @@ def test_map_get_rejects_a_key_that_would_be_rounded(
 
 
 @pytest.mark.parametrize("needle", ["z", pl.lit("z"), pl.col("k")])
-def test_map_get_treats_an_unknown_enum_label_as_missing(needle: Any) -> None:
-    # A label the Enum does not have is a key no map holds, not a cast error.
+def test_map_get_rejects_an_unknown_enum_label(needle: Any) -> None:
+    # The needle cast is strict, as it is for `is_in`.
     dtype = pl.Map(pl.Enum(["a", "b"]), pl.Int64)
     df = pl.DataFrame(
         {"m": pl.Series([{"a": 1}], dtype=dtype), "k": ["z"]},
     )
 
-    result = df.select(
-        pl.col("m").map.get(needle).alias("v"),
-        pl.col("m").map.contains_key(needle).alias("has"),
-    )
-    assert_series_equal(result["v"], pl.Series("v", [None], dtype=pl.Int64))
-    assert_series_equal(result["has"], pl.Series("has", [False]))
+    for method in ("get", "contains_key"):
+        with pytest.raises(
+            InvalidOperationError, match="conversion from `str` to `enum`"
+        ):
+            df.select(getattr(pl.col("m").map, method)(needle))
 
 
 def test_map_get_rejects_a_key_the_map_cannot_be_searched_by() -> None:
@@ -2285,9 +2284,25 @@ def test_map_get_rejects_a_key_the_map_cannot_be_searched_by() -> None:
     with pytest.raises(InvalidOperationError, match="cannot look up a `enum` key"):
         string_keys.map.get(pl.lit("a", pl.Enum(["a"])))
 
-    narrow_keys = map_of(pl.Int32, 7)
-    with pytest.raises(InvalidOperationError, match="cannot look up a `i64` key"):
-        narrow_keys.map.get(pl.lit(7, pl.Int64))
+    # Narrowing a float needle would round it onto a key it does not equal.
+    narrow_floats = map_of(pl.Float32, 1.5)
+    with pytest.raises(InvalidOperationError, match="cannot look up a `f64` key"):
+        narrow_floats.map.get(pl.lit(1.5, pl.Float64))
+
+
+def test_map_get_narrows_a_wider_integer_key() -> None:
+    # The cast is exact or null, and a null needle is a key no map holds.
+    s = map_of(pl.Int32, 7)
+
+    assert_map_method(
+        s, "get", pl.Series("m", [42], dtype=pl.Int64), pl.lit(7, pl.Int64)
+    )
+    assert_map_method(s, "contains_key", pl.Series("m", [True]), pl.lit(7, pl.Int64))
+
+    # Out of the key type's range, so it cannot be a key of this map.
+    out_of_range = pl.lit(2**40, pl.Int64)
+    assert_map_method(s, "get", pl.Series("m", [None], dtype=pl.Int64), out_of_range)
+    assert_map_method(s, "contains_key", pl.Series("m", [False]), out_of_range)
 
 
 def map_with_keys(key_dtype: PolarsDataType, keys: list[Any]) -> pl.Series:
@@ -2434,3 +2449,42 @@ def test_map_null_valued_keys_values_len_across_chunks() -> None:
     # Slicing cuts across the chunk boundary as well.
     assert_series_equal(s.slice(1, 4).map.keys(), keys.slice(1, 4))
     assert_series_equal(s.slice(1, 4).map.values(), values.slice(1, 4))
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "key"),
+    [
+        # A Map whose keys match the needle is still not a container to search.
+        pytest.param(pl.List(pl.Int64), [1, 2], id="matching-keys"),
+        pytest.param(pl.String, "a", id="other-keys"),
+    ],
+)
+def test_is_in_rejects_a_map_haystack(key_dtype: PolarsDataType, key: Any) -> None:
+    # Only `map.get` and `map.contains_key` may search a Map by its keys.
+    df = pl.DataFrame(
+        {
+            "l": pl.Series([[1, 2]], dtype=pl.List(pl.Int64)),
+            "m": map_with_keys(key_dtype, [key]),
+        }
+    )
+
+    with pytest.raises(InvalidOperationError, match="must be nested"):
+        df.select(pl.col("l").is_in(pl.col("m")))
+
+
+def test_map_get_overflowing_temporal_key_is_missing_not_an_error() -> None:
+    # Widening the needle can overflow. A Map key is never null, so an
+    # unrepresentable needle is simply absent, and a literal must agree with a column.
+    s = map_of(pl.Duration("ns"), timedelta(microseconds=1))
+    big = timedelta(milliseconds=10**13)
+
+    assert_map_method(
+        s, "get", pl.Series("m", [None], dtype=pl.Int64), pl.lit(big, pl.Duration("ms"))
+    )
+    df = pl.DataFrame({"m": s, "k": pl.Series([big], dtype=pl.Duration("ms"))})
+    result = df.select(
+        pl.col("m").map.get(pl.col("k")).alias("v"),
+        pl.col("m").map.contains_key(pl.col("k")).alias("has"),
+    )
+    assert_series_equal(result["v"], pl.Series("v", [None], dtype=pl.Int64))
+    assert_series_equal(result["has"], pl.Series("has", [False]))

@@ -47,8 +47,8 @@ impl MembershipForm {
 
 /// Resolve Map lookup coercion without changing stored keys.
 ///
-/// Cast only the needle, preserving its value or producing null for a missing key.
-/// Reject casts that could round it onto a different key.
+/// Cast only the needle. A cast that is exact, or that yields null for a key no Map can hold,
+/// is fine. A cast that could round the needle onto a different key is not.
 #[cfg(feature = "dtype-map")]
 pub(super) fn resolve_map_key(
     input: &[ExprIR],
@@ -82,15 +82,24 @@ pub(super) fn resolve_map_key(
             input_schema,
             MembershipForm::Contains,
             op,
+            Some(key.as_ref()),
         )? {
             None => return Ok(None),
-            // Unknown Enum labels become null instead of raising.
-            Some(IsInTypeCoercionResult::SelfCast { dtype, strict: _ }) => {
-                IsInTypeCoercionResult::LenientSelfCast(dtype)
-            },
-            // Accept the supertype only if stored keys need no cast.
+            // The needle alone moves, so a strict cast still raises as it would for `is_in`.
+            Some(result @ IsInTypeCoercionResult::SelfCast { .. }) => result,
+            // Only the needle has to widen to reach the stored key type.
             Some(IsInTypeCoercionResult::SuperType(supertype, _)) if supertype == **key => {
-                IsInTypeCoercionResult::LenientSelfCast(supertype)
+                IsInTypeCoercionResult::SelfCast {
+                    dtype: supertype,
+                    strict: false,
+                }
+            },
+            // The needle is the wider integer. Narrowing it is exact or null, and a null needle
+            // matches nothing, so an out-of-range key is simply absent.
+            Some(IsInTypeCoercionResult::SuperType(_, _))
+                if needle.is_integer() && key.is_integer() =>
+            {
+                IsInTypeCoercionResult::LenientSelfCast((**key).clone())
             },
             Some(
                 IsInTypeCoercionResult::SuperType(_, _)
@@ -108,9 +117,10 @@ pub(super) fn resolve_map_key(
     ))
 }
 
-/// Widen the needle to the Map's temporal unit; reject precision loss.
+/// Widen the needle to the Map's temporal unit; reject a unit that would be rounded.
 ///
-/// Unlike `is_in` coercion, lookup must not truncate a needle onto a different key.
+/// Safe where `is_in` is not: Map keys are never null, so a needle that overflows to null
+/// simply matches nothing, which is the right answer for a value no key can hold.
 #[cfg(feature = "dtype-map")]
 fn resolve_temporal_map_key(
     needle: &DataType,
@@ -143,12 +153,17 @@ fn resolve_temporal_map_key(
     Ok(Some(IsInTypeCoercionResult::LenientSelfCast(widened)))
 }
 
+/// Resolve the cast that makes a membership function's operands comparable.
+///
+/// `element_dtype` names the container's elements for containers that have no
+/// [`DataType::inner_dtype`], such as a Map searched by its keys.
 pub(super) fn resolve_is_in(
     input: &[ExprIR],
     expr_arena: &Arena<AExpr>,
     input_schema: &Schema,
     form: MembershipForm,
     op: &'static str,
+    element_dtype: Option<&DataType>,
 ) -> PolarsResult<Option<IsInTypeCoercionResult>> {
     let (_, type_left) = unpack!(get_aexpr_and_type(
         expr_arena,
@@ -180,23 +195,14 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         DataType::List(_) => DataType::List(Box::new(resolved_inner_type)),
         #[cfg(feature = "dtype-array")]
         DataType::Array(_, width) => DataType::Array(Box::new(resolved_inner_type), *width),
-        // Map lookup resolves only the key dtype.
+        // A Map lookup reaches this through the lossless upcast of its key.
         #[cfg(feature = "dtype-map")]
         DataType::Map(_, value) => DataType::Map(Box::new(resolved_inner_type), value.clone()),
         _ => unreachable!(),
     };
 
-    // Maps have no single `inner_dtype`; lookup uses the key dtype.
-    #[cfg(feature = "dtype-map")]
-    let map_key_dtype = match &type_other {
-        DataType::Map(key, _) => Some(key.as_ref()),
-        _ => None,
-    };
-    #[cfg(not(feature = "dtype-map"))]
-    let map_key_dtype = None;
-
     let type_left_materialized = type_left.clone().materialize_unknown(false)?;
-    let Some(type_other_inner) = map_key_dtype.or_else(|| type_other.inner_dtype()) else {
+    let Some(type_other_inner) = element_dtype.or_else(|| type_other.inner_dtype()) else {
         polars_bail!(InvalidOperation: "'{op:?}' cannot check for {type_left:?} values in {type_other:?} data.\n\
         Hint: container dtype ({type_other:?}) must be nested");
     };
@@ -247,22 +253,24 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
             polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left:?} values in {type_other:?} data")
         },
-        // can't check for more granular time_unit in less-granular time_unit data,
-        // or we'll cast away valid/necessary precision (eg: nanosecs to millisecs)
-        (DataType::Datetime(lhs_unit, _), DataType::Datetime(rhs_unit, _)) => {
-            if lhs_unit <= rhs_unit {
+        // Matching the units would need a needle cast that can overflow to null, and a null
+        // needle matches null elements here, so an overflow would read as a hit.
+        (DataType::Datetime(needle_unit, _), DataType::Datetime(other_unit, _)) => {
+            // Equal units but unequal dtypes means the time zones differ, which equality handles.
+            if needle_unit == other_unit {
                 return Ok(None);
-            } else {
-                polars_bail!(InvalidOperation: "'{op}' cannot check for {rhs_unit:?} precision values in {lhs_unit:?} Datetime data")
             }
+            polars_bail!(
+                InvalidOperation:
+                "'{op}' cannot check for {needle_unit} values in {other_unit} data\n\
+                Hint: cast both sides to the same time unit first.",
+            )
         },
-        (DataType::Duration(lhs_unit), DataType::Duration(rhs_unit)) => {
-            if lhs_unit <= rhs_unit {
-                return Ok(None);
-            } else {
-                polars_bail!(InvalidOperation: "'{op}' cannot check for {rhs_unit:?} precision values in {lhs_unit:?} Duration data")
-            }
-        },
+        (DataType::Duration(needle_unit), DataType::Duration(other_unit)) => polars_bail!(
+            InvalidOperation:
+            "'{op}' cannot check for {needle_unit} values in {other_unit} data\n\
+            Hint: cast both sides to the same time unit first.",
+        ),
 
         // Don't attempt to cast between obviously mismatched types. Only allow
         // to cast to a supertype if the cast is lossless.

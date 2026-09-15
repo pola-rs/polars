@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Collection
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal as D
 from typing import TYPE_CHECKING
 
@@ -802,3 +802,42 @@ def test_is_in_non_nested_container() -> None:
         match=r"(?s)cannot check for List\(Int64\) values in Int64 data.*container dtype \(Int64\) must be nested",
     ):
         df.select(pl.col("a").is_in(pl.col("b")))
+
+
+@pytest.mark.parametrize(
+    ("needle_dtype", "haystack_dtype"),
+    [
+        pytest.param(pl.Datetime("ms"), pl.Datetime("us"), id="datetime-coarser"),
+        pytest.param(pl.Datetime("us"), pl.Datetime("ms"), id="datetime-finer"),
+        pytest.param(pl.Duration("ms"), pl.Duration("us"), id="duration-coarser"),
+        pytest.param(pl.Duration("us"), pl.Duration("ms"), id="duration-finer"),
+    ],
+)
+def test_is_in_rejects_a_mismatched_time_unit(
+    needle_dtype: PolarsDataType, haystack_dtype: PolarsDataType
+) -> None:
+    # Matching the units needs a needle cast that can overflow to null, and a null
+    # needle matches null elements, so an overflow would read as a hit.
+    is_datetime = needle_dtype.base_type() is pl.Datetime
+    value = datetime(1970, 1, 1) if is_datetime else timedelta(0)
+    df = pl.DataFrame({"h": pl.Series("h", [[value]], dtype=pl.List(haystack_dtype))})
+
+    with pytest.raises(InvalidOperationError, match="same time unit"):
+        df.select(pl.lit(value, needle_dtype).is_in(pl.col("h")))
+
+
+def test_is_in_does_not_match_null_on_temporal_overflow() -> None:
+    # A needle outside the stored unit's range must not be confused with a null element.
+    df = pl.DataFrame(
+        {
+            "k": [datetime(2500, 1, 1)],
+            "h": pl.Series([[None]], dtype=pl.List(pl.Datetime("ns"))),
+        }
+    )
+
+    for expr in (
+        pl.col("h").list.contains(pl.col("k")),
+        pl.col("k").is_in(pl.col("h"), nulls_equal=True),
+    ):
+        with pytest.raises(InvalidOperationError, match="same time unit"):
+            df.select(expr)
