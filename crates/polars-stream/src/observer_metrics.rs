@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use polars_descriptions::NodeMetricsDescription;
+use polars_descriptions::{CustomMetricDescription, NodeMetricsDescription};
 use polars_observer::QueryMetricsSnapshotter;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
@@ -65,5 +65,14 @@ fn metrics_row(phys_node_key: u64, m: &NodeMetrics) -> NodeMetricsDescription {
         io_total_bytes_sent: m.io_total_bytes_sent,
         total_time_ns: m.total_poll_time_ns + m.total_state_update_time_ns,
         done: m.done,
+        custom: m
+            .custom
+            .iter()
+            .map(|(key, metric)| CustomMetricDescription {
+                key: key.to_string(),
+                kind: metric.kind,
+                value: metric.value,
+            })
+            .collect(),
     }
 }

@@ -243,6 +243,12 @@ impl StreamingQuery {
                 let io_total_bytes_received = node_metrics.io_total_bytes_received;
                 let io_total_bytes_sent = node_metrics.io_total_bytes_sent;
 
+                let custom = node_metrics
+                    .custom
+                    .iter()
+                    .map(|(key, metric)| format!(", {key}={}", metric.value))
+                    .collect::<String>();
+
                 lines.push(
                     (total_time, format!(
                         "{name}: tot({total_time:.2?}), \
@@ -254,7 +260,8 @@ impl StreamingQuery {
                                     total_active_time={io_total_active_time:.2?}, \
                                     total_bytes_requested={io_total_bytes_requested}, \
                                     total_bytes_received={io_total_bytes_received}, \
-                                    total_bytes_sent={io_total_bytes_sent})"))
+                                    total_bytes_sent={io_total_bytes_sent})\
+                                 {custom}"))
                 );
 
                 total_query_ns += total_ns;
