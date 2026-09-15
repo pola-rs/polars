@@ -3083,7 +3083,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Row group size in number of rows.
         maintain_order
             Maintain the input row order in the written files. Setting this to
-            `False` can improve throughput.
+            `False` can improve throughput. For tables with a sort order, this
+            controls the order of rows with equal sort keys; files always follow
+            the table's sort order.
         engine
             Engine used to produce rows for the local `pyiceberg` writer.
 
@@ -3103,8 +3105,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         ``mode="overwrite"`` replaces all table data; dynamic partition overwrite
         is not supported. ``schema_mode="overwrite"`` is not supported for
-        partitioned tables. Tables with sort orders or custom location providers
-        are also not supported.
+        partitioned tables or tables with a sort order. Custom location providers
+        are not supported.
+
+        The table's default sort order is applied to incoming rows and recorded on
+        each new data file. Existing files are not rewritten. Sorting materializes
+        the incoming data in memory. Bucket sort transforms require
+        ``pyiceberg-core``; their sort keys are computed in batches while Parquet
+        I/O remains native. This does not guarantee a globally sorted table scan.
         """
         from polars.io.iceberg._sink import IcebergSinkState
 

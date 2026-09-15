@@ -1396,6 +1396,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         )
                     })?;
 
+                    let state = Python::attach(|py| py_sink_state.extract(py))?;
+
                     let mut plan: Box<DslPlan> = (reg.from_py.dsl_plan)(out)?.downcast().unwrap();
 
                     let DslPlan::Sink {
