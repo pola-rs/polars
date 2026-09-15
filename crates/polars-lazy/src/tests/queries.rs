@@ -1,5 +1,6 @@
-use polars_core::series::ops::NullBehavior;
 #[cfg(feature = "diff")]
+use polars_core::series::ops::NullBehavior;
+#[cfg(feature = "rank")]
 use polars_defs::expr::{RankMethod, RankOptions};
 use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 

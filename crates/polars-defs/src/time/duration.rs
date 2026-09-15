@@ -1037,23 +1037,7 @@ pub fn ensure_duration_matches_dtype(
             polars_ensure!(duration.parsed_int || duration.is_zero(),
                 InvalidOperation: "`{}` duration must be a parsed integer (i.e. use '2i', not '2d') when working with a numeric column", variable_name);
         },
-        #[cfg(feature = "dtype-datetime")]
-        DataType::Datetime(_, _) => {
-            polars_ensure!(!duration.parsed_int,
-                InvalidOperation: "`{}` duration may not be a parsed integer (i.e. use '2d', not '2i') when working with a temporal column", variable_name);
-        },
-        #[cfg(feature = "dtype-date")]
-        DataType::Date => {
-            polars_ensure!(!duration.parsed_int,
-                InvalidOperation: "`{}` duration may not be a parsed integer (i.e. use '2d', not '2i') when working with a temporal column", variable_name);
-        },
-        #[cfg(feature = "dtype-duration")]
-        DataType::Duration(_) => {
-            polars_ensure!(!duration.parsed_int,
-                InvalidOperation: "`{}` duration may not be a parsed integer (i.e. use '2d', not '2i') when working with a temporal column", variable_name);
-        },
-        #[cfg(feature = "dtype-time")]
-        DataType::Time => {
+        DataType::Datetime(_, _) | DataType::Date | DataType::Duration(_) | DataType::Time => {
             polars_ensure!(!duration.parsed_int,
                 InvalidOperation: "`{}` duration may not be a parsed integer (i.e. use '2d', not '2i') when working with a temporal column", variable_name);
         },
