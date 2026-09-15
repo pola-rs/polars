@@ -733,12 +733,21 @@ where
         .map(|(lhs_arr, rhs_arr)| {
             let validity = combine_validities_and(lhs_arr.validity(), rhs_arr.validity());
 
-            let element_iter = lhs_arr
-                .values_iter()
-                .zip(rhs_arr.values_iter())
-                .map(|(lhs_val, rhs_val)| op(lhs_val, rhs_val));
-
-            let array: V::Array = element_iter.collect_arr();
+            // Resolving the representation once for both sides matters here: a `zip` drives
+            // both iterators by `next`, so the hoisting `fold` either one has on its own never
+            // runs and every element pays for a branch the flat pair does not need.
+            let array: V::Array = match (lhs_arr.as_slice(), rhs_arr.as_slice()) {
+                (Some(lhs_values), Some(rhs_values)) => lhs_values
+                    .iter()
+                    .zip(rhs_values)
+                    .map(|(lhs_val, rhs_val)| op(lhs_val.clone(), rhs_val.clone()))
+                    .collect_arr(),
+                _ => lhs_arr
+                    .values_iter()
+                    .zip(rhs_arr.values_iter())
+                    .map(|(lhs_val, rhs_val)| op(lhs_val, rhs_val))
+                    .collect_arr(),
+            };
             array.with_validity_typed(validity)
         });
     ChunkedArray::from_chunk_iter(lhs.name().clone(), iter)
