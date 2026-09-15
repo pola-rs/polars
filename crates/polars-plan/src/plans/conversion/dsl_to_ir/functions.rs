@@ -153,6 +153,11 @@ pub(super) fn convert_functions(
             use MapFunction as M;
             I::MapExpr(match map_function {
                 M::Entries => IM::Entries,
+                M::Keys => IM::Keys,
+                M::Values => IM::Values,
+                M::Length => IM::Length,
+                M::ContainsKey => IM::ContainsKey,
+                M::Get => IM::Get,
             })
         },
         #[cfg(feature = "dtype-extension")]
