@@ -9,6 +9,114 @@ use crate::chunked_array::cast::CastOptions;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
+/// The answer of `op` over a chunk whose values repeat one value under a mask that does not.
+///
+/// `op` runs on the non-null elements only, and every one of them holds the value the chunk
+/// repeats: one call answers them all, and the mask the chunk already carries leaves the rest
+/// null. The chunk has to hold an element that is not null for that value to be one `op` is
+/// given at all.
+// Out of line on purpose, as in `arity::scalar_values_under_mask`: it runs at most once per
+// chunk, and the walks that call it are inlined into their callers.
+#[inline(never)]
+fn scalar_values_under_mask<'a, A, Arr, K, F>(arr: &'a A, op: &mut F) -> Option<Arr>
+where
+    A: StaticArray,
+    Arr: StaticArray + ArrayFromIter<K>,
+    F: FnMut(A::ValueT<'a>) -> K,
+{
+    let length = arr.len();
+    if arr.null_count() == length {
+        return None;
+    }
+
+    let value = arr.scalar_value_ignore_validity()?;
+    let single: Arr = std::iter::once(op(value)).collect_arr();
+
+    Some(
+        single
+            .new_from_index_typed(0, length)
+            .with_validity_typed(arr.validity().map(PlBitmap::from)),
+    )
+}
+
+/// [`scalar_values_under_mask`] for an `op` that may fail.
+#[inline(never)]
+fn try_scalar_values_under_mask<'a, A, Arr, K, E, F>(
+    arr: &'a A,
+    op: &mut F,
+) -> Result<Option<Arr>, E>
+where
+    A: StaticArray,
+    Arr: StaticArray + ArrayFromIter<K>,
+    F: FnMut(A::ValueT<'a>) -> Result<K, E>,
+{
+    let length = arr.len();
+    if arr.null_count() == length {
+        return Ok(None);
+    }
+
+    let Some(value) = arr.scalar_value_ignore_validity() else {
+        return Ok(None);
+    };
+    let single: Arr = std::iter::once(op(value)?).collect_arr();
+
+    Ok(Some(
+        single
+            .new_from_index_typed(0, length)
+            .with_validity_typed(arr.validity().map(PlBitmap::from)),
+    ))
+}
+
+/// [`scalar_values_under_mask`] for an `f` that writes its answer into a buffer.
+#[inline(never)]
+fn scalar_string_under_mask<'a, A, F>(
+    arr: &'a A,
+    buf: &mut String,
+    f: &mut F,
+) -> Option<PlUtf8ViewArray>
+where
+    A: StaticArray,
+    F: FnMut(A::ValueT<'a>, &mut String),
+{
+    let length = arr.len();
+    if arr.null_count() == length {
+        return None;
+    }
+
+    let value = arr.scalar_value_ignore_validity()?;
+    buf.clear();
+    f(value, buf);
+
+    Some(PlUtf8ViewArray::new_scalar(buf, length).with_validity(arr.validity().map(PlBitmap::from)))
+}
+
+/// [`scalar_string_under_mask`] for an `f` that may fail.
+#[inline(never)]
+fn try_scalar_string_under_mask<'a, A, E, F>(
+    arr: &'a A,
+    buf: &mut String,
+    f: &mut F,
+) -> Result<Option<PlUtf8ViewArray>, E>
+where
+    A: StaticArray,
+    F: FnMut(A::ValueT<'a>, &mut String) -> Result<(), E>,
+{
+    let length = arr.len();
+    if arr.null_count() == length {
+        return Ok(None);
+    }
+
+    let Some(value) = arr.scalar_value_ignore_validity() else {
+        return Ok(None);
+    };
+    buf.clear();
+    f(value, buf)?;
+
+    Ok(Some(
+        PlUtf8ViewArray::new_scalar(buf, length).with_validity(arr.validity().map(PlBitmap::from)),
+    ))
+}
+
 impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
@@ -32,6 +140,16 @@ where
                 if let Some(Some(value)) = arr.scalar_value() {
                     let single: U::Array = std::iter::once(op(value)).collect_arr();
                     return single.new_from_index_typed(0, length);
+                }
+
+                // The values read one value throughout under a mask that does not, which `op` —
+                // which runs on the non-null elements only — answers out of that one value. A
+                // chunk that holds one slot per element repeats nothing, which is the cheapest
+                // thing to ask and what almost every chunk answers.
+                if !arr.is_flat()
+                    && let Some(single) = scalar_values_under_mask(arr, &mut &op)
+                {
+                    return single;
                 }
             }
 
@@ -90,6 +208,13 @@ where
                     let single: U::Array = std::iter::once(op(value)?).collect_arr();
                     return Ok(single.new_from_index_typed(0, length));
                 }
+
+                // As above, for values that repeat under a mask that does not.
+                if !arr.is_flat()
+                    && let Some(single) = try_scalar_values_under_mask(arr, &mut &op)?
+                {
+                    return Ok(single);
+                }
             }
 
             let arr = if arr.null_count() == 0 {
@@ -130,6 +255,15 @@ where
                             },
                         };
                     }
+
+                    // The values read one value throughout under a mask that does not: `f` is
+                    // called on that value once, and the chunk's own mask leaves the elements it
+                    // calls null null.
+                    if !arr.is_flat()
+                        && let Some(single) = scalar_string_under_mask(arr, &mut buf, &mut f)
+                    {
+                        return single;
+                    }
                 }
 
                 let mut mutarr = PlUtf8ViewArrayBuilder::with_capacity(length);
@@ -168,6 +302,13 @@ where
                                 Ok(PlUtf8ViewArray::new_scalar(&buf, length))
                             },
                         };
+                    }
+
+                    // As above, for values that repeat under a mask that does not.
+                    if !arr.is_flat()
+                        && let Some(single) = try_scalar_string_under_mask(arr, &mut buf, &mut f)?
+                    {
+                        return Ok(single);
                     }
                 }
 

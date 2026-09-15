@@ -132,6 +132,22 @@ pub trait StaticArray: PlArray + Clone {
         (PlArray::is_scalar(self) && !self.is_empty()).then(|| unsafe { self.get_unchecked(0) })
     }
 
+    /// The value every element of this array reads, whether or not the mask calls it null.
+    ///
+    /// [`Self::scalar_value`] answers for both axes at once, so a chunk that repeats one value
+    /// under a mask of one bit per element is not scalar by it. This asks the values axis alone,
+    /// which is the axis a kernel that reads the values reads; the caller puts the mask back on
+    /// the result.
+    #[inline]
+    fn scalar_value_ignore_validity(&self) -> Option<Self::ValueT<'_>> {
+        // Dropping the mask is `O(1)`: the buffers are handed over as they are.
+        let values = self.clone().with_validity_typed(None);
+        let values_are_scalar = PlArray::is_scalar(&values);
+
+        // SAFETY: the array is not empty, so element 0 is in bounds.
+        (values_are_scalar && !self.is_empty()).then(|| unsafe { self.value_unchecked(0) })
+    }
+
     /// Returns this array in the flat representation, borrowing it if it is already flat.
     #[must_use]
     fn to_flat(&self) -> Cow<'_, Flat<Self>>;

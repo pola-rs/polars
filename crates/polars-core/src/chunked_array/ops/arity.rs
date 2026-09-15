@@ -315,6 +315,16 @@ where
                 let single: V::Array = std::iter::once(op(element)).collect_arr();
                 return single.new_from_index_typed(0, length);
             }
+
+            // The values read one value throughout under a mask that does not, so there are two
+            // answers between them: the one `op` gives that value, and the one it gives a null.
+            // A chunk that holds one slot per element repeats nothing, which is the cheapest
+            // thing to ask and what almost every chunk answers.
+            if !arr.is_flat()
+                && let Some(single) = scalar_under_mask(arr, &mut &op)
+            {
+                return single;
+            }
         }
 
         // The element iterators are `TrustedLen`, so the collect writes straight into the room
@@ -327,6 +337,68 @@ where
         }
     });
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
+}
+
+/// The answer of `op` over a chunk whose values repeat one value under a mask that does not.
+///
+/// Such a chunk holds two answers at most: the one `op` gives the value it repeats, and the one
+/// it gives a null. Where the second of them is a null — which is what an elementwise op answers
+/// a null with — the chunk's own mask is what tells the two apart, so the first answer alone,
+/// repeated under that mask, is the whole result. Where it is not, there is no repeated answer to
+/// give and this hands the chunk back to the walk.
+// Out of line on purpose: it runs at most once per chunk, and the walks that call it are
+// inlined into their callers, where every line of this one would be in the way.
+#[inline(never)]
+fn scalar_under_mask<'a, A, Arr, F>(arr: &'a A, op: &mut F) -> Option<Arr>
+where
+    A: StaticArray,
+    Arr: StaticArray + ArrayFromIter<<F as UnaryFnMut<Option<A::ValueT<'a>>>>::Ret>,
+    F: UnaryFnMut<Option<A::ValueT<'a>>>,
+{
+    let value = arr.scalar_value_ignore_validity()?;
+
+    // A null element keeps its own answer, so the mask only stands in for it if that answer is
+    // the null the mask already makes.
+    let null: Arr = std::iter::once(op(None)).collect_arr();
+    if null.null_count() != 1 {
+        return None;
+    }
+
+    let single: Arr = std::iter::once(op(Some(value))).collect_arr();
+    let repeated = single.new_from_index_typed(0, arr.len());
+
+    // The one answer is itself null, so every element of the result is null whatever the mask
+    // says; `new_from_index_typed` already made it so.
+    Some(if single.null_count() == 1 {
+        repeated
+    } else {
+        repeated.with_validity_typed(arr.validity().map(PlBitmap::from))
+    })
+}
+
+/// The answer of `op` — a kernel over the values alone — over a chunk whose values repeat one
+/// value, whatever its mask says about which elements are null.
+///
+/// One call answers every element, and the mask the chunk already carries goes back on the
+/// result: a null element keeps the value it held, and the mask is what makes it null.
+// Out of line on purpose: it runs at most once per chunk, and the walk that calls it is inlined
+// into its caller, where these lines would push it past what the caller inlines — `str.encode`
+// over a flat column read 1.33x for them when they were in the body.
+#[inline(never)]
+fn scalar_values_under_mask<'a, A, Arr, F>(arr: &'a A, op: &mut F) -> Option<Arr>
+where
+    A: StaticArray,
+    Arr: StaticArray + ArrayFromIter<<F as UnaryFnMut<A::ValueT<'a>>>::Ret>,
+    F: UnaryFnMut<A::ValueT<'a>>,
+{
+    let value = arr.scalar_value_ignore_validity()?;
+    let single: Arr = std::iter::once(op(value)).collect_arr();
+
+    Some(
+        single
+            .new_from_index_typed(0, arr.len())
+            .with_validity_typed(arr.validity().map(PlBitmap::from)),
+    )
 }
 
 /// [`unary_elementwise`] for an `op` that borrows a scratch buffer or a cache across elements.
@@ -355,6 +427,14 @@ where
                 // it and the result repeats that single element — its own mask included.
                 let single: V::Array = std::iter::once(op(element)).collect_arr();
                 return single.new_from_index_typed(0, length);
+            }
+
+            // As in `unary_elementwise`: values that repeat under a mask that does not hold two
+            // answers between them, and the mask is what tells them apart.
+            if !arr.is_flat()
+                && let Some(single) = scalar_under_mask(arr, &mut op)
+            {
+                return single;
             }
         }
 
@@ -458,6 +538,15 @@ where
                 let single: V::Array = std::iter::once(op(value)).collect_arr();
                 return single.new_from_index_typed(0, length);
             }
+
+            // The values read one value throughout under a mask that does not, which `op` — a
+            // kernel over the values alone — answers out of that one value. A chunk that holds
+            // one slot per element repeats nothing, which is the cheapest thing to ask.
+            if !arr.is_flat()
+                && let Some(single) = scalar_values_under_mask(arr, &mut &op)
+            {
+                return single;
+            }
         }
 
         let validity = arr.validity().map(PlBitmap::from);
@@ -510,6 +599,19 @@ where
     }
 
     let iter = ca.downcast_iter().map(|arr| {
+        let length = arr.len();
+        if length > 1
+            && !arr.is_flat()
+            && let Some(value) = arr.scalar_value_ignore_validity()
+        {
+            // As in `unary_elementwise_values`: one value read throughout, mask or no mask, is
+            // one call to `op`, and the chunk's own mask is what the result keeps.
+            let single: V::Array = std::iter::once(op(value)).try_collect_arr()?;
+            return Ok(single
+                .new_from_index_typed(0, length)
+                .with_validity_typed(arr.validity().map(PlBitmap::from)));
+        }
+
         let validity = arr.validity().map(PlBitmap::from);
         let arr: V::Array = arr.values_iter().map(&mut op).try_collect_arr()?;
         Ok(arr.with_validity_typed(validity))
