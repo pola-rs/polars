@@ -27,10 +27,12 @@ use sqlparser::ast::{
 use sqlparser::tokenizer::Span;
 
 use crate::SQLContext;
+use crate::grouping_sets::MAX_GROUPING_ARGS;
 use crate::sql_expr::{
     adjust_one_indexed_param, order_by_sort_options, parse_extract_date_part, parse_sql_array,
     parse_sql_expr,
 };
+use crate::sql_visitors::grouping_call_args;
 
 pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) func: &'a SQLFunction,
@@ -596,6 +598,15 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT FIRST(col1) FROM df;
     /// ```
     First,
+    /// SQL 'grouping' function.
+    /// Returns, for each argument, whether the current row's grouping set omits
+    /// that key, as bits with the last argument in the least significant position.
+    /// ```sql
+    /// SELECT col1, GROUPING(col1) FROM df GROUP BY ROLLUP(col1);
+    /// ```
+    Grouping,
+    /// SQL 'grouping_id' function; an alias for `GROUPING`.
+    GroupingId,
     /// SQL 'last' function.
     /// Returns the last element of the grouping.
     /// ```sql
@@ -1077,6 +1088,8 @@ impl PolarsSQLFunctions {
             "covar_pop" => Self::CovarPop,
             "covar_samp" | "covar" => Self::CovarSamp,
             "first" => Self::First,
+            "grouping" => Self::Grouping,
+            "grouping_id" => Self::GroupingId,
             "last" => Self::Last,
             "max" => Self::Max,
             "median" => Self::Median,
@@ -1652,6 +1665,7 @@ impl SQLFunctionVisitor<'_> {
             CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
             CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
             First => self.visit_unary(Expr::first),
+            Grouping | GroupingId => self.visit_grouping(),
             Last => self.visit_unary(Expr::last),
             Max => self.visit_min_max(Expr::max, Expr::cum_max),
             Median => self.visit_unary(Expr::median),
@@ -2337,6 +2351,29 @@ impl SQLFunctionVisitor<'_> {
         }
     }
 
+    /// `GROUPING(k1, ..., kn)` stands for a value that depends on the grouping set a
+    /// row came from, so it is registered with the query and bound to its keys when
+    /// the `GROUP BY` clause is processed.
+    fn visit_grouping(&mut self) -> PolarsResult<Expr> {
+        if self.func.over.is_some() {
+            polars_bail!(SQLSyntax: "GROUPING() cannot be used as a window function");
+        }
+        if self.func.filter.is_some() {
+            polars_bail!(SQLSyntax: "GROUPING() does not support a FILTER clause");
+        }
+        let n_args = extract_args(self.func)?.len();
+        if n_args == 0 || n_args > MAX_GROUPING_ARGS {
+            polars_bail!(
+                SQLSyntax: "GROUPING() expects between 1 and {} arguments; found {}", MAX_GROUPING_ARGS, n_args
+            );
+        }
+        let Some(args) = grouping_call_args(self.func) else {
+            polars_bail!(SQLSyntax: "GROUPING() expects column expressions; found {}", self.func)
+        };
+        let name = PlSmallStr::from_string(self.func.to_string());
+        Ok(col(self.ctx.register_grouping_call(args)).alias(name))
+    }
+
     fn visit_avg(&mut self) -> PolarsResult<Expr> {
         let (args, is_distinct) = extract_args_distinct(self.func)?;
         let mut arg = match args.as_slice() {
@@ -2633,8 +2670,12 @@ impl SQLFunctionVisitor<'_> {
             Some((order_exprs, sort_opts))
         };
 
-        // Apply window spec
+        // Apply window spec; under a GROUP BY an empty window still has to be
+        // told apart from a group aggregate.
         Ok(match (partition_by, order_by) {
+            (None, None) if self.ctx.group_scope.parsing_group_input => {
+                expr.over([col(self.ctx.whole_frame_partition())])?
+            },
             (None, None) => expr,
             (Some(part), None) => expr.over(part)?,
             (part, Some(order)) => expr.over_with_options(part, Some(order), Default::default())?,

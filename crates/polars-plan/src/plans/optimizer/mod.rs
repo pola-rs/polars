@@ -20,6 +20,7 @@ mod fused;
 mod join_build_side;
 mod join_order;
 mod join_predicate_fusion;
+mod join_pushthrough;
 mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
 pub mod call_dsl_resolvers;
@@ -215,6 +216,9 @@ pub fn optimize(
 
     // Needs the filters that predicate pushdown places on the scans, and must come
     // before projection pushdown so projections follow the final join order.
+    if opt_flags.join_order() && get_or_init_members!().has_preserving_join {
+        root = join_pushthrough::push_through_outer_joins(root, ir_arena, expr_arena);
+    }
     if opt_flags.join_order() && get_or_init_members!().has_joins_or_unions {
         root = join_order::join_order(root, ir_arena, expr_arena)?;
     }
