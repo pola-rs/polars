@@ -1,5 +1,4 @@
 use arrow::temporal_conversions::{NANOSECONDS, NANOSECONDS_IN_DAY};
-use chrono::{Datelike, Timelike};
 use polars_utils::array;
 
 use super::*;
@@ -134,45 +133,52 @@ impl DatetimeArgs {
         let Expr::Literal(lv) = &self.year else {
             unreachable!()
         };
-        let year = lv.to_any_value()?.extract()?;
+        let year: i32 = lv.to_any_value()?.extract()?;
         let Expr::Literal(lv) = &self.month else {
             unreachable!()
         };
-        let month = lv.to_any_value()?.extract()?;
+        let month: u32 = lv.to_any_value()?.extract()?;
         let Expr::Literal(lv) = &self.day else {
             unreachable!()
         };
-        let day = lv.to_any_value()?.extract()?;
+        let day: u32 = lv.to_any_value()?.extract()?;
         let Expr::Literal(lv) = &self.hour else {
             unreachable!()
         };
-        let hour = lv.to_any_value()?.extract()?;
+        let hour: u32 = lv.to_any_value()?.extract()?;
         let Expr::Literal(lv) = &self.minute else {
             unreachable!()
         };
-        let minute = lv.to_any_value()?.extract()?;
+        let minute: u32 = lv.to_any_value()?.extract()?;
         let Expr::Literal(lv) = &self.second else {
             unreachable!()
         };
-        let second = lv.to_any_value()?.extract()?;
+        let second: u32 = lv.to_any_value()?.extract()?;
         let Expr::Literal(lv) = &self.microsecond else {
             unreachable!()
         };
         let ms: u32 = lv.to_any_value()?.extract()?;
 
-        let dt = chrono::NaiveDateTime::default()
-            .with_year(year)?
-            .with_month(month)?
-            .with_day(day)?
-            .with_hour(hour)?
-            .with_minute(minute)?
-            .with_second(second)?
-            .with_nanosecond(ms * 1000)?;
+        let date = jiff::civil::Date::new(
+            i16::try_from(year).ok()?,
+            i8::try_from(month).ok()?,
+            i8::try_from(day).ok()?,
+        )
+        .ok()?;
+        let time = jiff::civil::Time::new(
+            i8::try_from(hour).ok()?,
+            i8::try_from(minute).ok()?,
+            i8::try_from(second).ok()?,
+            i32::try_from(ms * 1000).ok()?,
+        )
+        .ok()?;
+        let dt = date.to_datetime(time);
+        let ts = jiff::tz::TimeZone::UTC.to_timestamp(dt).ok()?;
 
         let ts = match self.time_unit {
-            TimeUnit::Milliseconds => dt.and_utc().timestamp_millis(),
-            TimeUnit::Microseconds => dt.and_utc().timestamp_micros(),
-            TimeUnit::Nanoseconds => dt.and_utc().timestamp_nanos_opt()?,
+            TimeUnit::Milliseconds => ts.as_millisecond(),
+            TimeUnit::Microseconds => ts.as_microsecond(),
+            TimeUnit::Nanoseconds => i64::try_from(ts.as_nanosecond()).ok()?,
         };
 
         Some(

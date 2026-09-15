@@ -1,17 +1,11 @@
-use chrono::NaiveDate;
+use jiff::civil::Date as NaiveDate;
 
 use super::*;
 
 #[test]
 fn test_expand_datetimes_3042() -> PolarsResult<()> {
-    let low = NaiveDate::from_ymd_opt(2020, 1, 1)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let high = NaiveDate::from_ymd_opt(2020, 2, 1)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
+    let low = NaiveDate::new(2020, 1, 1).unwrap().at(0, 0, 0, 0);
+    let high = NaiveDate::new(2020, 2, 1).unwrap().at(0, 0, 0, 0);
     let date_range_ = polars_time::date_range(
         "dt1".into(),
         low,

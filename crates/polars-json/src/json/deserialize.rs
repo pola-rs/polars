@@ -475,9 +475,9 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
                 BorrowedValue::Static(StaticNode::I64(v)) => Some(*v),
                 BorrowedValue::String(v) => match &tz_offset {
                     None => {
-                        polars_compute::cast::temporal::utf8_to_naive_timestamp_scalar(v, "%+", tu)
+                        polars_compute::cast::temporal::iso8601_to_naive_timestamp_scalar(v, tu)
                     },
-                    Some(tz) => temporal_conversions::utf8_to_timestamp_scalar(v, "%+", tz, tu),
+                    Some(_) => temporal_conversions::iso8601_to_timestamp_scalar(v, tu),
                 },
                 BorrowedValue::Static(StaticNode::Null) => None,
                 _ => {

@@ -120,14 +120,7 @@ def test_to_datetime(datetimes: datetime, fmt: str) -> None:
         )
     except ComputeError as exc:
         assert "Invalid format string" in str(exc)  # noqa: PT017
-        assert (
-            (("%H" in fmt) ^ ("%M" in fmt))
-            or (("%I" in fmt) ^ ("%M" in fmt))
-            or ("%S" in fmt and "%H" not in fmt)
-            or ("%S" in fmt and "%I" not in fmt)
-            or (("%I" in fmt) ^ ("%p" in fmt))
-            or (("%H" in fmt) ^ ("%p" in fmt))
-        )
+        assert ("%I" in fmt) ^ ("%p" in fmt)
     else:
         assert result == expected
 
@@ -167,12 +160,14 @@ def test_to_datetime_aware_values_aware_dtype() -> None:
     assert_series_equal(result, expected)
 
     # When the format is provided
-    result = s.str.to_datetime(format="%Y-%m-%dT%H:%M:%S%z", time_zone="Asia/Kathmandu")
+    result = s.str.to_datetime(
+        format="%Y-%m-%dT%H:%M:%S%:z", time_zone="Asia/Kathmandu"
+    )
     assert_series_equal(result, expected)
 
     # With `exact=False`
     result = s.str.to_datetime(
-        format="%Y-%m-%dT%H:%M:%S%z", time_zone="Asia/Kathmandu", exact=False
+        format="%Y-%m-%dT%H:%M:%S%:z", time_zone="Asia/Kathmandu", exact=False
     )
     assert_series_equal(result, expected)
 
