@@ -459,6 +459,7 @@ impl ArrowDataType {
         matches!(self, ArrowDataType::Utf8View | ArrowDataType::BinaryView)
     }
 
+    #[inline]
     pub fn is_numeric(&self) -> bool {
         use ArrowDataType as D;
         matches!(

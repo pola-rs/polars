@@ -39,6 +39,7 @@ impl Filter {
         }
     }
 
+    #[inline]
     pub fn max_offset(&self, total_num_rows: usize) -> usize {
         match self {
             Self::Range(range) => range.end,

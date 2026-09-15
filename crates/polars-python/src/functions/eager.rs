@@ -3,7 +3,6 @@ use polars_core::prelude::*;
 use pyo3::prelude::*;
 
 use crate::conversion::{get_df, get_series};
-use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, PySeries};
 
@@ -45,22 +44,28 @@ pub fn concat_df(dfs: &Bound<'_, PyAny>, py: Python) -> PyResult<PyDataFrame> {
 }
 
 #[pyfunction]
-pub fn concat_series(series: &Bound<'_, PyAny>) -> PyResult<PySeries> {
+pub fn concat_series(py: Python<'_>, series: &Bound<'_, PyAny>) -> PyResult<PySeries> {
     let mut iter = series.try_iter()?;
     let first = iter.next().unwrap()?;
 
     let mut s = get_series(&first)?;
+    let rest = iter
+        .map(|item| {
+            let item = item?;
+            get_series(&item)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
 
-    for res in iter {
-        let item = res?;
-        let item = get_series(&item)?;
-        s.append(&item).map_err(PyPolarsErr::from)?;
-    }
-    Ok(s.into())
+    py.enter_polars_series(move || {
+        for item in &rest {
+            s.append(item)?;
+        }
+        Ok(s)
+    })
 }
 
 #[pyfunction]
-pub fn concat_df_diagonal(dfs: &Bound<'_, PyAny>) -> PyResult<PyDataFrame> {
+pub fn concat_df_diagonal(py: Python<'_>, dfs: &Bound<'_, PyAny>) -> PyResult<PyDataFrame> {
     let iter = dfs.try_iter()?;
 
     let dfs = iter
@@ -70,12 +75,15 @@ pub fn concat_df_diagonal(dfs: &Bound<'_, PyAny>) -> PyResult<PyDataFrame> {
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let df = functions::concat_df_diagonal(&dfs).map_err(PyPolarsErr::from)?;
-    Ok(df.into())
+    py.enter_polars_df(move || functions::concat_df_diagonal(&dfs))
 }
 
 #[pyfunction]
-pub fn concat_df_horizontal(dfs: &Bound<'_, PyAny>, strict: bool) -> PyResult<PyDataFrame> {
+pub fn concat_df_horizontal(
+    py: Python<'_>,
+    dfs: &Bound<'_, PyAny>,
+    strict: bool,
+) -> PyResult<PyDataFrame> {
     let iter = dfs.try_iter()?;
 
     let dfs = iter
@@ -85,7 +93,5 @@ pub fn concat_df_horizontal(dfs: &Bound<'_, PyAny>, strict: bool) -> PyResult<Py
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let df =
-        functions::concat_df_horizontal(&dfs, true, strict, false).map_err(PyPolarsErr::from)?;
-    Ok(df.into())
+    py.enter_polars_df(move || functions::concat_df_horizontal(&dfs, true, strict, false))
 }
