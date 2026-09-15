@@ -4,7 +4,6 @@ use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{RwLock, Weak};
 
-use polars_core::frame::column::ScalarColumn;
 use polars_utils::unique_id::UniqueId;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
@@ -15,7 +14,9 @@ pub trait PredicateExpr: Send + Sync + Any {
     // Invariant: output column must be of type `Boolean`. If true a value is
     // included, if false it is filtered out. If None is returned it is assumed
     // all values are needed.
-    fn evaluate(&self, columns: &[Column]) -> PolarsResult<Option<Column>>;
+    fn evaluate(&self, _columns: &[Column]) -> PolarsResult<Option<Column>> {
+        Ok(None)
+    }
 
     // Whether a batch with these per-column `min`, `max` and `null_count`
     // statistics can be skipped entirely. True skips the batch. None means the
@@ -32,11 +33,7 @@ pub trait PredicateExpr: Send + Sync + Any {
 
 pub struct TrivialPredicateExpr;
 
-impl PredicateExpr for TrivialPredicateExpr {
-    fn evaluate(&self, _columns: &[Column]) -> PolarsResult<Option<Column>> {
-        Ok(None)
-    }
-}
+impl PredicateExpr for TrivialPredicateExpr {}
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 struct Inner {
@@ -165,8 +162,7 @@ impl DynamicPredWeakRef {
 }
 
 fn all_of(name: PlSmallStr, len: usize, value: bool) -> Column {
-    let s = Scalar::new(DataType::Boolean, AnyValue::Boolean(value));
-    Column::Scalar(ScalarColumn::new(name, s, len))
+    Column::new_scalar(name, Scalar::from(value), len)
 }
 
 /// A predicate over `node` whose value a producer sets at run time, evaluated

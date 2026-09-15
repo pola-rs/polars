@@ -40,8 +40,7 @@ pub fn create_scan_predicate(
     create_skip_batch_predicate: bool,
     create_column_predicates: bool,
 ) -> PolarsResult<ScanPredicate> {
-    // Parts a scan only consults to skip batches stay out of the row predicate, so
-    // their columns do not have to be decoded up front just to evaluate them.
+    // Parts a scan only consults to skip batches stay out of the row predicate.
     let full_predicate = predicate.clone();
     let mut predicate = predicate.clone();
     let mut filters_rows = true;

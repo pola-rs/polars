@@ -1,5 +1,6 @@
 //! The range of a build-side key, published by a hash join to the scans below
-//! its probe side once the build is done.
+//! its probe side once the build is done. Scans consult it to skip batches by
+//! their statistics only.
 
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
@@ -65,24 +66,7 @@ fn bounds_for(
     )))
 }
 
-fn all(name: PlSmallStr, len: usize, value: bool) -> Column {
-    Column::new_scalar(name, Scalar::from(value), len)
-}
-
 impl PredicateExpr for KeyRange {
-    fn evaluate(&self, columns: &[Column]) -> PolarsResult<Option<Column>> {
-        let column = &columns[0];
-        let Some(bounds) = &self.bounds else {
-            return Ok(Some(all(column.name().clone(), column.len(), false)));
-        };
-        let s = column.as_materialized_series();
-        let Some((lo, hi)) = bounds_for(bounds, s.dtype())? else {
-            return Ok(None);
-        };
-        let mask = s.gt_eq(&lo)? & s.lt_eq(&hi)?;
-        Ok(Some(mask.fill_null_with_values(false)?.into_column()))
-    }
-
     fn evaluate_stats(
         &self,
         min: &Column,
@@ -90,7 +74,11 @@ impl PredicateExpr for KeyRange {
         _null_count: &Column,
     ) -> PolarsResult<Option<Column>> {
         let Some(bounds) = &self.bounds else {
-            return Ok(Some(all(min.name().clone(), min.len(), true)));
+            return Ok(Some(Column::new_scalar(
+                min.name().clone(),
+                Scalar::from(true),
+                min.len(),
+            )));
         };
         let min = min.as_materialized_series();
         let max = max.as_materialized_series();
