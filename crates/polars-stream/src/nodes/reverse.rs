@@ -57,15 +57,21 @@ impl ComputeNode for ReverseNode {
             self.state = ReverseState::Done;
         }
 
-        if recv[0] == PortState::Done {
-            if let ReverseState::Buffering(buffer) = &mut self.state {
-                // Stop buffering and become a source.
-                // If it is empty it is handled further down.
-                self.state = ReverseState::Emitting {
-                    buffer: core::mem::take(buffer),
-                    seq: MorselSeq::default(),
-                };
-            }
+        if recv[0] == PortState::Done
+            && let ReverseState::Buffering(buffer) = &mut self.state
+        {
+            // Stop buffering and become a source.
+            // If it is empty it is handled further down.
+            self.state = ReverseState::Emitting {
+                buffer: core::mem::take(buffer),
+                seq: MorselSeq::default(),
+            };
+        }
+
+        if let ReverseState::Emitting { buffer, .. } = &mut self.state
+            && buffer.total_len == 0
+        {
+            self.state = ReverseState::Done
         }
 
         match &mut self.state {
@@ -73,18 +79,12 @@ impl ComputeNode for ReverseNode {
                 recv[0] = PortState::Ready;
                 send[0] = PortState::Blocked;
             },
-            ReverseState::Emitting { buffer, seq: _ } => {
-                recv[0] = PortState::Done;
-                // InMemorySource has implemented a hack for compatibility with
-                // nodes downstream that require at least one input.
-                // This is not needed here.
 
-                send[0] = if buffer.total_len == 0 {
-                    PortState::Done
-                } else {
-                    PortState::Ready
-                }
+            ReverseState::Emitting { .. } => {
+                recv[0] = PortState::Done;
+                send[0] = PortState::Ready
             },
+
             ReverseState::Done => {
                 recv[0] = PortState::Done;
                 send[0] = PortState::Done;
@@ -103,7 +103,6 @@ impl ComputeNode for ReverseNode {
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         assert!(recv_ports.len() == 1 && send_ports.len() == 1);
-        // Very similar to [super::negative_slice::NegativeSliceNode].
         match &mut self.state {
             ReverseState::Buffering(buffer) => {
                 let mut recv = recv_ports[0].take().unwrap().serial();
@@ -119,9 +118,11 @@ impl ComputeNode for ReverseNode {
                     Ok(())
                 }));
             },
+
             ReverseState::Emitting { buffer, seq } => {
                 assert!(recv_ports[0].is_none());
                 let mut sender = send_ports[0].take().unwrap().serial();
+
                 join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
                     let source_token = SourceToken::new();
                     let wait_group = WaitGroup::default();
@@ -131,6 +132,7 @@ impl ComputeNode for ReverseNode {
                         let mut morsel = Morsel::new_unregistered(df, *seq, source_token.clone());
                         *seq = seq.successor();
                         morsel.set_consume_token(wait_group.token());
+
                         if sender.send(morsel).await.is_err() {
                             break;
                         }
@@ -142,6 +144,7 @@ impl ComputeNode for ReverseNode {
                     Ok(())
                 }));
             },
+
             ReverseState::Done => unreachable!(),
         }
     }
