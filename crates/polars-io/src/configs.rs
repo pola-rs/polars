@@ -81,3 +81,18 @@ pub(crate) fn cloud_writer_copy_buffer_size() -> NonZeroUsize {
         v
     });
 }
+
+/// Tail size to speculatively fetch when reading file metadata from a cloud source. Sized
+/// generously as the cost of overfetching is low (extra KB) vs the cost of underfetching
+/// (extra round-trip).
+pub const DEFAULT_CLOUD_FOOTER_READ_SIZE: usize = 256 * 1024;
+
+// Not cached - lookup cost is low compared to I/O, allows for testing.
+pub fn cloud_footer_read_size() -> usize {
+    let Ok(s) = std::env::var("POLARS_CLOUD_FOOTER_READ_SIZE") else {
+        return DEFAULT_CLOUD_FOOTER_READ_SIZE;
+    };
+
+    s.parse::<usize>()
+        .unwrap_or_else(|_| panic!("invalid value for POLARS_CLOUD_FOOTER_READ_SIZE: {s}"))
+}
