@@ -192,8 +192,7 @@ struct EquiJoinParams {
     right_payload_schema: Arc<Schema>,
     args: JoinArgs,
     fused_predicate: Option<FusedPredicate>,
-    /// Build-key ranges to publish once the build is done. Only kept when the
-    /// build side is fixed at plan time, so the probe side is never read first.
+    /// Build-key ranges to publish once the build is done.
     runtime_filters: Vec<RuntimeFilter>,
     random_state: PlRandomState,
     sample_limit: usize,
@@ -1476,13 +1475,8 @@ impl EquiJoinNode {
             &args,
         )?;
 
-        // A sampled build side may turn out to be the other one, and the probe
-        // side has then already been read.
-        let runtime_filters = match (left_is_build, &args.build_side) {
-            (Some(true), Some(JoinBuildSide::ForceLeft))
-            | (Some(false), Some(JoinBuildSide::ForceRight)) => runtime_filters,
-            _ => Vec::new(),
-        };
+        // A range is only exact when the build side is fixed up front.
+        debug_assert!(runtime_filters.is_empty() || left_is_build.is_some());
 
         let state = if left_is_build.is_some() {
             EquiJoinState::Build(BuildState::new(

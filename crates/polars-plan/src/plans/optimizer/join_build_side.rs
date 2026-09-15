@@ -6,7 +6,8 @@ use polars_core::prelude::Schema;
 use polars_ops::prelude::JoinBuildSide;
 use polars_utils::arena::{Arena, Node};
 
-use crate::plans::{AExpr, IR, NodeStats, node_stats};
+use crate::plans::stats::{StatsCache, node_stats_with_cache};
+use crate::plans::{AExpr, IR, NodeStats};
 use crate::prelude::MaintainOrderJoin;
 
 /// A side has to be this many times smaller to be picked as the build side.
@@ -22,6 +23,7 @@ pub(super) fn set_join_build_sides(
     ir_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
 ) {
+    let mut stats = StatsCache::default();
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
         let ir = ir_arena.get(node);
@@ -47,7 +49,8 @@ pub(super) fn set_join_build_sides(
         // are all we have. TODO!: change this if that
         // assumption changes.
         let may_estimate = options.args.how.is_cross();
-        let Some(side) = build_side(left, right, may_estimate, ir_arena, expr_arena) else {
+        let Some(side) = build_side(left, right, may_estimate, ir_arena, expr_arena, &mut stats)
+        else {
             continue;
         };
         let IR::Join { options, .. } = ir_arena.get_mut(node) else {
@@ -70,13 +73,14 @@ fn build_side(
     may_estimate: bool,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
+    stats: &mut StatsCache,
 ) -> Option<JoinBuildSide> {
-    let (left_stats, left_width) = side_stats(left, ir_arena, expr_arena)?;
+    let (left_stats, left_width) = side_stats(left, ir_arena, expr_arena, stats)?;
     let left_bound = left_stats.max_rows();
     if left_bound.is_none() && !may_estimate {
         return None;
     }
-    let (right_stats, right_width) = side_stats(right, ir_arena, expr_arena)?;
+    let (right_stats, right_width) = side_stats(right, ir_arena, expr_arena, stats)?;
     let (left_rows, right_rows) = match (left_bound, right_stats.max_rows()) {
         (Some(left_rows), Some(right_rows)) => (left_rows, right_rows),
         _ if may_estimate => (left_stats.filtered, right_stats.filtered),
@@ -97,8 +101,9 @@ pub(super) fn side_stats(
     node: Node,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
+    cache: &mut StatsCache,
 ) -> Option<(NodeStats, f64)> {
-    let stats = node_stats(node, ir_arena, expr_arena)?;
+    let stats = node_stats_with_cache(node, ir_arena, expr_arena, cache)?;
     let schema = ir_arena.get(node).schema(ir_arena);
     let width = row_width(&schema, &stats);
     Some((stats, width))

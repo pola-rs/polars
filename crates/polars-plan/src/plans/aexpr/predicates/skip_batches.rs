@@ -172,7 +172,7 @@ pub fn aexpr_to_skip_batch_predicate(
 /// but data may contain it. Since NaN is largest under TotalOrd, `col < x` is safe
 /// (NaN never matches) but `col > x` is not (NaN always matches).
 /// col >= NaN matches NaN == NaN, but stats exclude NaN so max < NaN can't detect them -> unsafe
-fn can_use_min_max_stats(
+pub(crate) fn can_use_min_max_stats(
     dtype: &DataType,
     op: Option<&Operator>,
     lv: Option<&LiteralValue>,

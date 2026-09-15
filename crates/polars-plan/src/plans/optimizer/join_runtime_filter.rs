@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use polars_core::prelude::{DataType, PlIndexMap};
+use polars_core::prelude::PlIndexMap;
 use polars_ops::prelude::JoinBuildSide;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
@@ -22,9 +22,11 @@ use super::predicate_pushdown::utils::{
 };
 #[cfg(feature = "parquet")]
 use crate::dsl::FileScanIR;
+use crate::plans::aexpr::predicates::can_use_min_max_stats;
 use crate::plans::optimizer::predicate_pushdown::new_batch_only_dynamic_pred;
 use crate::plans::options::RuntimeFilter;
 use crate::plans::schema::join_right_output_names;
+use crate::plans::stats::StatsCache;
 use crate::plans::{AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, Operator, into_column};
 use crate::prelude::{JoinType, MaintainOrderJoin};
 use crate::utils::has_aexpr;
@@ -49,8 +51,9 @@ pub(super) fn attach_join_runtime_filters(
         ir.copy_inputs(&mut stack);
     }
     let mut scratch = UnitVec::new();
+    let mut stats = StatsCache::default();
     for node in joins.into_iter().rev() {
-        process_join(node, ir_arena, expr_arena, &mut scratch);
+        process_join(node, ir_arena, expr_arena, &mut scratch, &mut stats);
     }
 }
 
@@ -59,6 +62,7 @@ fn process_join(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut UnitVec<Node>,
+    stats: &mut StatsCache,
 ) {
     let IR::Join {
         input_left,
@@ -78,7 +82,8 @@ fn process_join(
     {
         return;
     }
-    let Some(build_left) = choose_build_side(input_left, input_right, ir_arena, expr_arena) else {
+    let Some(build_left) = choose_build_side(input_left, input_right, ir_arena, expr_arena, stats)
+    else {
         return;
     };
     let JoinTypeOptionsIR::Equi { on, .. } = &options.options else {
@@ -104,7 +109,10 @@ fn process_join(
     let mut filters = Vec::new();
     for (key_idx, name) in probe_keys.into_iter().enumerate() {
         let Some(name) = name else { continue };
-        if !probe_schema.get(&name).is_some_and(range_prunable) {
+        if !probe_schema
+            .get(&name)
+            .is_some_and(|dtype| can_use_min_max_stats(dtype, None, None))
+        {
             continue;
         }
         let column = expr_arena.add(AExpr::Column(name));
@@ -146,21 +154,17 @@ fn is_eligible_join(options: &JoinOptionsIR) -> bool {
         && !args.validation.needs_checks()
 }
 
-/// The side to force as build side: bounded, within the byte budget, and much
-/// smaller than the other side's estimate. `true` for the left side.
-///
-/// Only a filtered side qualifies. That is a profitability heuristic: an unfiltered
-/// side usually spans the probe side's key domain, so publishing its range would
-/// serialize the inputs for nothing. It can still be narrower than the probe's
-/// domain, which is left on the table.
+/// The side to force as build side: filtered, bounded, within the byte budget, and
+/// much smaller than the other side's estimate. `true` for the left side.
 fn choose_build_side(
     left: Node,
     right: Node,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
+    stats: &mut StatsCache,
 ) -> Option<bool> {
-    let (left_stats, left_width) = side_stats(left, ir_arena, expr_arena)?;
-    let (right_stats, right_width) = side_stats(right, ir_arena, expr_arena)?;
+    let (left_stats, left_width) = side_stats(left, ir_arena, expr_arena, stats)?;
+    let (right_stats, right_width) = side_stats(right, ir_arena, expr_arena, stats)?;
     let bound = |stats: &crate::plans::NodeStats, width: f64| {
         stats
             .max_rows()
@@ -176,11 +180,6 @@ fn choose_build_side(
         (false, true) => Some(false),
         (false, false) => None,
     }
-}
-
-/// Whether row-group statistics of this type can be compared against a range.
-fn range_prunable(dtype: &DataType) -> bool {
-    !(dtype.is_nested() || dtype.is_null() || dtype.is_categorical() || dtype.is_float())
 }
 
 /// The scan whose column `predicate` reads, following the column down from `node`
