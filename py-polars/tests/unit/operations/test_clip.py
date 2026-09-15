@@ -247,7 +247,8 @@ def test_clip_bound_nan() -> None:
 
 
 def test_clip_repeated_chunk_bounds() -> None:
-    # Every operand reading one element throughout clamps to one value, and that value stands for
+    # Every operand reading one element throughout clamps to one value, and that value
+    # stands for
     # every row; it must agree with the written-out columns.
     n = 4
     rep = pl.DataFrame(

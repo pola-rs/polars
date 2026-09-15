@@ -1093,8 +1093,9 @@ def test_cast_binary_to_string_rejects_invalid_utf8() -> None:
 
 
 def test_cast_categorical_repeated_chunk() -> None:
-    # A chunk that reads one string throughout is one category, so a single lookup answers the
-    # whole column; it must agree with the written-out column, mask shape for mask shape.
+    # A chunk that reads one string throughout is one category, so a single lookup
+    # answers the whole column; it must agree with the written-out column, mask shape
+    # for mask shape.
     for dtype in (pl.Categorical, pl.Enum(["abc", "q"])):
         assert pl.repeat("abc", 3, dtype=pl.String, eager=True).cast(dtype).to_list() == [
             "abc"
@@ -1102,7 +1103,7 @@ def test_cast_categorical_repeated_chunk() -> None:
         assert pl.repeat(None, 3, dtype=pl.String, eager=True).cast(dtype).to_list() == [
             None
         ] * 3
-        # a string the Enum does not hold becomes null, as it does on the written-out path
+        # a string the Enum does not hold becomes null, as on the written-out path
         assert pl.repeat("zzz", 3, dtype=pl.String, eager=True).cast(
             dtype, strict=False
         ).to_list() == (["zzz"] * 3 if dtype == pl.Categorical else [None] * 3)
@@ -1115,7 +1116,8 @@ def test_cast_categorical_repeated_chunk() -> None:
 
 
 def test_cast_datetime_to_time_repeated_chunk() -> None:
-    # `Datetime -> Time` goes through the numeric `apply`, which answers a repeated chunk with a
+    # `Datetime -> Time` goes through the numeric `apply`, which answers a repeated
+    # chunk with a
     # single call. Negative timestamps take the branch that adds a day back on.
     for value, expected in [
         (datetime(2021, 3, 4, 5, 6, 7), time(5, 6, 7)),
