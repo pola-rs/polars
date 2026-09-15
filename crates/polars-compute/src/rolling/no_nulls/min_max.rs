@@ -49,10 +49,7 @@ macro_rules! rolling_minmax_func {
                         T::is_float(),
                         "implementation error, should only be reachable by float types"
                     );
-                    let weights = weights
-                        .iter()
-                        .map(|v| NumCast::from(*v).unwrap())
-                        .collect::<Vec<_>>();
+                    let weights = no_nulls::coerce_weights(weights);
                     no_nulls::rolling_apply_weights(
                         values,
                         window_size,
