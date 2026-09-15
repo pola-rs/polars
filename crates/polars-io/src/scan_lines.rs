@@ -135,11 +135,9 @@ fn split_lines_to_rows_impl(bytes: Buffer<u8>, max_row_size: usize) -> PolarsRes
 
 #[cfg(test)]
 mod tests {
-    use arrow::array::BINVIEW_MAX_ROW_BYTE_LEN;
     use polars_buffer::Buffer;
     use polars_error::PolarsError;
 
-    use super::{CR, LF};
     use crate::scan_lines::split_lines_to_rows_impl;
 
     #[test]
