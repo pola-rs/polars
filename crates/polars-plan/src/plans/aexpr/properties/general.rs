@@ -195,8 +195,8 @@ pub fn is_elementwise_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum InputIndependentContext {
-    Scalar,
-    ListEvaluation,
+    OuterExpression,
+    ListElementExpression,
 }
 
 fn is_input_independent_node(
@@ -207,11 +207,11 @@ fn is_input_independent_node(
     let independent = match ae {
         AExpr::Literal(lv) => lv.is_scalar(),
         AExpr::BinaryExpr { .. } | AExpr::Cast { .. } | AExpr::Ternary { .. } => true,
-        AExpr::Element => context == InputIndependentContext::ListEvaluation,
+        AExpr::Element => context == InputIndependentContext::ListElementExpression,
         AExpr::Function { options, .. } => match context {
-            InputIndependentContext::Scalar => options.is_elementwise(),
+            InputIndependentContext::OuterExpression => options.is_elementwise(),
             // Admit order-aware transforms without widening this to length-changing operations.
-            InputIndependentContext::ListEvaluation => options.is_length_preserving(),
+            InputIndependentContext::ListElementExpression => options.is_length_preserving(),
         },
         _ => false,
     };
@@ -223,7 +223,7 @@ fn is_input_independent_node(
 
 fn is_input_independent_list_eval_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     property_rec(node, expr_arena, |stack, ae, _| {
-        is_input_independent_node(stack, ae, InputIndependentContext::ListEvaluation)
+        is_input_independent_node(stack, ae, InputIndependentContext::ListElementExpression)
     })
 }
 
@@ -245,7 +245,7 @@ pub fn is_input_independent_scalar_rec(node: Node, expr_arena: &Arena<AExpr>) ->
                 false
             }
         },
-        _ => is_input_independent_node(stack, ae, InputIndependentContext::Scalar),
+        _ => is_input_independent_node(stack, ae, InputIndependentContext::OuterExpression),
     })
 }
 
