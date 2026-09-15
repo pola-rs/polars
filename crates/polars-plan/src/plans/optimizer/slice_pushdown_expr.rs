@@ -3,6 +3,7 @@ use std::ops::ControlFlow;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_utils::UnitVec;
 use polars_utils::collection::{Collection, CollectionWrap, MappedCollection};
+use polars_utils::index::idxsize_try_from;
 
 use super::*;
 use crate::plans::optimizer::slice_pushdown_lp::{
@@ -284,6 +285,61 @@ impl SlicePushDown {
     }
 }
 
+/// Flips a comparison operator so that `n <op> len()` becomes `len() <flip(op)> n`.
+fn flip_comparison(op: Operator) -> Operator {
+    match op {
+        Operator::Lt => Operator::Gt,
+        Operator::LtEq => Operator::GtEq,
+        Operator::Gt => Operator::Lt,
+        Operator::GtEq => Operator::LtEq,
+        other => other,
+    }
+}
+
+/// If `ae` is a comparison between `len()` and a non-negative integer literal, returns the
+/// `len()` node together with the leading-rows slice that needs to be materialized to answer it.
+///
+/// `len()` is height `H::Scalar`, so unlike a `Column` it doesn't survive the generic
+/// Column-height candidate propagation in [`aexpr_slice_pushdown_top`] on its own; this is used
+/// to seed it as a push candidate directly, the same way `first()`/`last()` reuse their (still
+/// `H::Column`) input's candidacy.
+fn len_cmp_head_slice(ae: &AExpr, expr_arena: &Arena<AExpr>) -> Option<(Node, ExtractedSlice)> {
+    let AExpr::BinaryExpr { left, op, right } = ae else {
+        return None;
+    };
+
+    let (op, len_node, literal_node) = if matches!(expr_arena.get(*left), AExpr::Len) {
+        (*op, *left, *right)
+    } else if matches!(expr_arena.get(*right), AExpr::Len) {
+        (flip_comparison(*op), *right, *left)
+    } else {
+        return None;
+    };
+
+    let AExpr::Literal(lv) = expr_arena.get(literal_node) else {
+        return None;
+    };
+    let n: u64 = lv.extract_i64().ok()?.try_into().ok()?;
+
+    let head_len = match op {
+        // `len() < n` doesn't need the extra row: `head(n).len() < n` is
+        // already equivalent to `len() < n`.
+        Operator::Lt => n,
+        Operator::Eq | Operator::NotEq | Operator::LtEq | Operator::Gt | Operator::GtEq => {
+            n.saturating_add(1)
+        },
+        _ => return None,
+    };
+
+    Some((
+        len_node,
+        ExtractedSlice {
+            offset: 0,
+            len: idxsize_try_from(head_len).ok()?,
+        },
+    ))
+}
+
 fn aexpr_slice_pushdown_top(
     current_ae_node: Node,
     input_states: &mut dyn Collection<State>,
@@ -358,26 +414,41 @@ fn aexpr_slice_pushdown_top(
         *col_hit_count = col_hit_count.map(|x| x + 1);
     }
 
+    // `len()` is `H::Scalar`, so it was dropped from `state.candidate_push_locations` by the
+    // Column-height propagation above (a plain scalar computation has nothing to push a slice
+    // into). If `ae` is a `len() <cmp> n` comparison, seed the `len()` node back in as the sole
+    // candidate so it goes through the same machinery as `first()`/`last()` below.
+    let len_cmp_slice = len_cmp_head_slice(ae, expr_arena);
+    if state.candidate_push_locations.is_empty()
+        && let Some((len_node, _)) = len_cmp_slice
+    {
+        state.candidate_push_locations.push(len_node);
+    }
+
     'pushdown_current_slice: {
         if state.candidate_push_locations.is_empty() {
             break 'pushdown_current_slice;
         }
 
-        let (current_input_node, current_slice) = match ae {
-            AExpr::Slice {
-                input,
-                offset,
-                length,
-            } => (*input, Slice::from_nodes(*offset, *length, expr_arena)),
-            AExpr::Agg(IRAggExpr::First(input)) => (
-                *input,
-                Slice::Extracted(ExtractedSlice { offset: 0, len: 1 }),
-            ),
-            AExpr::Agg(IRAggExpr::Last(input)) => (
-                *input,
-                Slice::Extracted(ExtractedSlice { offset: -1, len: 1 }),
-            ),
-            _ => break 'pushdown_current_slice,
+        let (current_input_node, current_slice) = if let Some((len_node, slice)) = len_cmp_slice {
+            (len_node, Slice::Extracted(slice))
+        } else {
+            match ae {
+                AExpr::Slice {
+                    input,
+                    offset,
+                    length,
+                } => (*input, Slice::from_nodes(*offset, *length, expr_arena)),
+                AExpr::Agg(IRAggExpr::First(input)) => (
+                    *input,
+                    Slice::Extracted(ExtractedSlice { offset: 0, len: 1 }),
+                ),
+                AExpr::Agg(IRAggExpr::Last(input)) => (
+                    *input,
+                    Slice::Extracted(ExtractedSlice { offset: -1, len: 1 }),
+                ),
+                _ => break 'pushdown_current_slice,
+            }
         };
 
         for candidate_node in state.candidate_push_locations.iter().copied() {
@@ -437,9 +508,9 @@ fn aexpr_slice_pushdown_top(
             };
 
             'update_common_slice: {
-                let AExpr::Column(_) = expr_arena.get(slice_input) else {
+                if !matches!(expr_arena.get(slice_input), AExpr::Column(_) | AExpr::Len) {
                     break 'update_common_slice;
-                };
+                }
 
                 if sliced_at_candidate {
                     all_slice_ae_nodes_with_direct_col_input.insert(candidate_node);

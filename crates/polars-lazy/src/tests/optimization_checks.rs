@@ -651,3 +651,53 @@ fn test_cluster_with_columns_chain() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[test]
+fn test_len_cmp_head_insertion() -> PolarsResult<()> {
+    let df = df!("a" => &[1, 2, 3, 4, 5])?;
+
+    let cases: Vec<(Expr, usize)> = vec![
+        (len().eq(lit(2)), 3),
+        (len().neq(lit(2)), 3),
+        (len().lt(lit(2)), 2),
+        (len().lt_eq(lit(2)), 3),
+        (len().gt(lit(2)), 3),
+        (len().gt_eq(lit(2)), 3),
+    ];
+
+    for (expr, expected_head_len) in cases {
+        // Filter first so the inserted slice isn't collapsed directly into the
+        // `DataFrameScan` (which would elide the `SLICE` node from the plan entirely).
+        let q = df
+            .clone()
+            .lazy()
+            .filter(col("a").gt(lit(0)))
+            .select([expr.clone().alias("out")]);
+        let optimized = q.clone().describe_optimized_plan()?;
+        assert!(
+            optimized.contains(&format!("SLICE[offset: 0, len: {expected_head_len}]")),
+            "expr {expr:?} plan:\n{optimized}"
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_len_cmp_head_insertion_pushed_into_filter() -> PolarsResult<()> {
+    let df = df!("a" => (0..10).collect::<Vec<i32>>())?;
+
+    let q = df
+        .lazy()
+        .filter(col("a").gt_eq(lit(0)))
+        .select([len().gt(lit(3)).alias("out")]);
+
+    let optimized = q.describe_optimized_plan()?;
+    assert!(optimized.contains("SLICE[offset: 0, len: 4]"));
+
+    let slice_pos = optimized.find("SLICE").unwrap();
+    let filter_pos = optimized.find("FILTER").unwrap();
+    assert!(slice_pos < filter_pos, "plan:\n{optimized}");
+
+    Ok(())
+}
