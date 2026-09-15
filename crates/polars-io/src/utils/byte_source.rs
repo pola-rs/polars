@@ -31,6 +31,9 @@ mod direct_io;
 #[allow(async_fn_in_trait)]
 pub trait ByteSource: Send + Sync {
     async fn get_size(&self) -> PolarsResult<usize>;
+    /// Fetch the last `n` bytes and the total size of the source, in a single request. Returns
+    /// fewer than `n` bytes if the source is smaller than `n`.
+    async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)>;
     /// # Panics
     /// Panics if `range` is not in bounds.
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>>;
@@ -66,6 +69,11 @@ impl BufferByteSource {
 impl ByteSource for BufferByteSource {
     async fn get_size(&self) -> PolarsResult<usize> {
         Ok(self.0.as_ref().len())
+    }
+
+    async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        let len = self.0.as_ref().len();
+        Ok((self.0.clone().sliced(len.saturating_sub(n)..len), len))
     }
 
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
@@ -404,6 +412,12 @@ impl ByteSource for FileByteSource {
             .map_err(|_| polars_err!(ComputeError: "file size {} does not fit in usize", self.size))
     }
 
+    async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        let size = self.get_size().await?;
+        let bytes = self.get_range(size.saturating_sub(n)..size).await?;
+        Ok((bytes, size))
+    }
+
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
         assert!(range.end as u64 <= self.size);
 
@@ -550,6 +564,10 @@ impl ByteSource for ObjectStoreByteSource {
             .size as usize)
     }
 
+    async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        self.store.get_suffix(&self.path, n, self.config).await
+    }
+
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
         self.store.get_range(&self.path, range, self.config).await
     }
@@ -624,6 +642,15 @@ impl ByteSource for DynByteSource {
             Self::File(v) => v.get_size().await,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v.get_size().await,
+        }
+    }
+
+    async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        match self {
+            Self::Buffer(v) => v.get_suffix(n).await,
+            Self::File(v) => v.get_suffix(n).await,
+            #[cfg(feature = "cloud")]
+            Self::Cloud(v) => v.get_suffix(n).await,
         }
     }
 
