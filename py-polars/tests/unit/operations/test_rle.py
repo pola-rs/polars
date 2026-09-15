@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING, Any
 
 import polars as pl
 from polars.testing.asserts.frame import assert_frame_equal
+from polars.testing.asserts.series import assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -82,3 +83,35 @@ def test_rle_over_a_chunk_that_repeats_one_element() -> None:
         )
         assert_frame_equal(df.select(pl.col("a").rle()).unnest("a"), expected)
         assert df.select(pl.col("a").rle_id())["a"].to_list() == [0] * 8
+
+
+def test_rle_over_a_repeated_chunk_under_a_mask() -> None:
+    # The values still repeat one value, so two elements differ only where the mask
+    # does: the runs come off the mask, and answer what the same values laid out flat
+    # do.
+    mask = pl.Series("m", [True, True, False, False, False, True, False, True])
+    cases: list[tuple[PolarsDataType, Any]] = [
+        (pl.Int64, 5),
+        (pl.String, "ab"),
+        (pl.Boolean, True),
+        (pl.List(pl.Int64), [1, 2]),
+        (pl.Struct({"x": pl.Int64}), {"x": 1}),
+    ]
+    for dtype, value in cases:
+        masked = pl.select(
+            pl.when(mask).then(pl.repeat(pl.lit(value, dtype=dtype), 8)).alias("a")
+        ).to_series()
+        flat = pl.Series("a", masked.to_list(), dtype=dtype)
+
+        assert_frame_equal(masked.rle().struct.unnest(), flat.rle().struct.unnest())
+        assert_series_equal(masked.rle_id(), flat.rle_id())
+        assert masked.rle_id().to_list() == [0, 0, 1, 1, 1, 2, 3, 4]
+
+    # A million rows of one value under a mask are the mask's own runs, which is not a
+    # walk of a million elements: the answer is four runs.
+    wide = pl.select(
+        pl.when(pl.Series("m", [i % 500_000 != 0 for i in range(1_000_000)]))
+        .then(pl.repeat(7, 1_000_000, dtype=pl.Int64))
+        .alias("a")
+    ).to_series()
+    assert wide.rle().len() == 4

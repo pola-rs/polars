@@ -1240,3 +1240,83 @@ def test_list_comparison_repeated_element() -> None:
     ).to_series()
     assert (masked == repeated).to_list() == [True, None, True]
     assert masked.eq_missing(repeated).to_list() == [True, False, True]
+
+
+def test_comparison_of_a_repeated_chunk_under_a_mask() -> None:
+    # A chunk that repeats one value under a mask of one bit per element is not scalar
+    # throughout — the mask says something different of each — but its values still
+    # are, and a comparison reads only those. The answers match the same values laid
+    # out flat, and the comparison itself is one bit.
+    mask = pl.Series("m", [i % 3 != 0 for i in range(9)])
+    cases: list[tuple[PolarsDataType, Any, Any]] = [
+        (pl.Int64, 5, 4),
+        (pl.Float64, 1.5, 2.5),
+        (pl.String, "ab", "ac"),
+        (pl.Boolean, True, False),
+    ]
+    for dtype, value, other in cases:
+        masked = pl.select(
+            pl.when(mask).then(pl.repeat(pl.lit(value, dtype=dtype), 9)).alias("a")
+        ).to_series()
+        flat = pl.Series("a", masked.to_list(), dtype=dtype)
+
+        for rhs in (value, other):
+            assert_series_equal(masked == rhs, flat == rhs)
+            assert_series_equal(masked != rhs, flat != rhs)
+            assert_series_equal(masked.eq_missing(rhs), flat.eq_missing(rhs))
+            assert_series_equal(masked.ne_missing(rhs), flat.ne_missing(rhs))
+            assert_series_equal(masked == pl.Series([rhs] * 9, dtype=dtype), flat == rhs)
+            assert_series_equal(
+                masked.eq_missing(pl.Series([rhs] * 9, dtype=dtype)),
+                flat.eq_missing(rhs),
+            )
+        if dtype != pl.Boolean:
+            for rhs in (value, other):
+                assert_series_equal(masked > rhs, flat > rhs)
+                assert_series_equal(masked <= rhs, flat <= rhs)
+        assert_series_equal(masked.eq_missing(masked), flat.eq_missing(flat))
+
+    # A million rows of one value compare to one bit, not to a million of them.
+    wide = pl.select(
+        pl.when(pl.Series("m", [i % 3 != 0 for i in range(1_000_000)]))
+        .then(pl.repeat(7, 1_000_000, dtype=pl.Int64))
+        .alias("a")
+    ).to_series()
+    # The mask is a bit per element and stays that size; the comparison itself does not.
+    assert (wide > 3).estimated_size() < wide.len() // 8 + 1024
+    assert (wide == 3).estimated_size() < wide.len() // 8 + 1024
+
+
+def test_if_then_else_over_a_repeated_chunk_under_a_mask() -> None:
+    # The same shape through `zip_with` and `when/then/otherwise`: the side whose values
+    # repeat is read off that one value, and the mask the answer carries is settled from
+    # the two sides' own masks.
+    mask = pl.Series("m", [i % 2 == 0 for i in range(9)])
+    valid = pl.Series("v", [i % 3 != 0 for i in range(9)])
+    for dtype, value in ((pl.Int64, 5), (pl.String, "ab"), (pl.Boolean, True)):
+        masked = pl.select(
+            pl.when(valid).then(pl.repeat(pl.lit(value, dtype=dtype), 9)).alias("a")
+        ).to_series()
+        flat = pl.Series("a", masked.to_list(), dtype=dtype)
+        other = pl.Series("b", [value] * 4 + [None] + [value] * 4, dtype=dtype)
+
+        assert_series_equal(masked.zip_with(mask, other), flat.zip_with(mask, other))
+        assert_series_equal(other.zip_with(mask, masked), other.zip_with(mask, flat))
+        assert_series_equal(masked.zip_with(mask, masked), flat.zip_with(mask, flat))
+        assert_series_equal(
+            pl.select(
+                pl.when(mask).then(pl.lit(masked)).otherwise(pl.lit(other))
+            ).to_series(),
+            pl.select(
+                pl.when(mask).then(pl.lit(flat)).otherwise(pl.lit(other))
+            ).to_series(),
+        )
+        # One side a single value, which is the broadcast kernel.
+        assert_series_equal(
+            masked.zip_with(mask, pl.Series("b", [value], dtype=dtype)),
+            flat.zip_with(mask, pl.Series("b", [value], dtype=dtype)),
+        )
+        assert_series_equal(
+            pl.Series("b", [value], dtype=dtype).zip_with(mask, masked),
+            pl.Series("b", [value], dtype=dtype).zip_with(mask, flat),
+        )
