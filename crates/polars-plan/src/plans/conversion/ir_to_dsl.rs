@@ -982,10 +982,11 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "approx_unique")]
         IF::ApproxNUnique => F::ApproxNUnique,
         #[cfg(feature = "approx_quantile")]
-        IF::ApproxQuantile { method, error } => F::ApproxQuantile {
-            method,
-            error,
-            use_formal_bound: true,
+        ref f @ (IF::ApproxQuantileSketch { .. } | IF::ApproxQuantileEstimate { .. }) => {
+            return Expr::Display {
+                inputs: input,
+                fmt_str: Box::new(format_pl_smallstr!("{f}")),
+            };
         },
         IF::Coalesce => F::Coalesce,
         #[cfg(feature = "diff")]
