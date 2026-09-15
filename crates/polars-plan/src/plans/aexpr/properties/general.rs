@@ -208,10 +208,14 @@ fn is_input_independent_node(
         AExpr::Literal(lv) => lv.is_scalar(),
         AExpr::BinaryExpr { .. } | AExpr::Cast { .. } | AExpr::Ternary { .. } => true,
         AExpr::Element => context == InputIndependentContext::ListElementExpression,
-        AExpr::Function { options, .. } => match context {
+        AExpr::Function {
+            function, options, ..
+        } => match context {
             InputIndependentContext::OuterExpression => options.is_elementwise(),
-            // Admit order-aware transforms without widening this to length-changing operations.
-            InputIndependentContext::ListElementExpression => options.is_length_preserving(),
+            InputIndependentContext::ListElementExpression => {
+                // Unique changes nested length but still yields one scalar List.
+                options.is_length_preserving() || matches!(function, IRFunctionExpr::Unique(_))
+            },
         },
         _ => false,
     };

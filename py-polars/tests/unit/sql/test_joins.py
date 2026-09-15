@@ -2050,15 +2050,22 @@ def test_join_on_constant_true_plans_cross_join() -> None:
     assert "CROSS JOIN" not in plan
 
 
-def test_join_on_input_independent_list_eval() -> None:
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param("ARRAY_REVERSE(ARRAY[1, 2])", id="reverse"),
+        pytest.param("ARRAY_UNIQUE(ARRAY[1, 1, 2])", id="unique"),
+    ],
+)
+def test_join_on_input_independent_list_eval(value: str) -> None:
     frames = {
         "a": pl.LazyFrame({"k": [1, 2]}),
         "b": pl.LazyFrame({"v": ["r", "s"]}),
     }
     ctx = pl.SQLContext(frames=frames)
-    query = """
+    query = f"""
         SELECT * FROM a JOIN b
-        ON ARRAY_CONTAINS(ARRAY_REVERSE(ARRAY[1, 2]), 1)
+        ON ARRAY_CONTAINS({value}, 1)
     """
     result = ctx.execute(query).collect()
     expected = ctx.execute("SELECT * FROM a CROSS JOIN b").collect()
