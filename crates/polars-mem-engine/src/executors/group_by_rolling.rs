@@ -86,6 +86,15 @@ impl GroupByRollingExec {
             return gb.apply_sliced(self.slice, move |df| f.call(df), Some(&self.output_schema));
         }
 
+        // A row-parallel gather can leave the frame chunked, which disables the rolling kernels.
+        if !self.aggs.is_empty()
+            && groups.is_overlapping()
+            && groups.is_monotonic()
+            && df.first_col_n_chunks() > 1
+        {
+            df.rechunk_mut_par();
+        }
+
         let mut groups = &groups;
         #[allow(unused_assignments)]
         // it is unused because we only use it to keep the lifetime of sliced_group valid
