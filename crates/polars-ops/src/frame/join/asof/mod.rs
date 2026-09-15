@@ -6,6 +6,7 @@ use std::cmp::Ordering;
 use default::*;
 pub use groups::AsofJoinBy;
 use polars_core::prelude::*;
+use polars_defs::join::AsofStrategy;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::TotalOrd;
 
@@ -196,8 +197,6 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
         }
     }
 }
-
-use polars_defs::join::AsofStrategy;
 
 pub fn _check_asof_columns(
     a: &Series,

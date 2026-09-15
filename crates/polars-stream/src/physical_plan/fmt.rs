@@ -651,6 +651,7 @@ fn visualize_plan_rec(
             slice,
         } => {
             use polars_defs::time::group_by::{Label, StartBy};
+
             let DynamicGroupOptions {
                 index_column,
                 every,

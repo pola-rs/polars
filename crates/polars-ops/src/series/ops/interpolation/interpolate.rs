@@ -5,6 +5,7 @@ use arrow::bitmap::MutableBitmap;
 use num_traits::{NumCast, Zero};
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
+use polars_defs::expr::InterpolationMethod;
 
 use super::linear_itp;
 
@@ -196,8 +197,6 @@ fn interpolate_linear(s: &Series) -> Series {
 fn linear_interp_signed<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Series {
     interpolate_impl(ca, signed_interp::<T::Native>).into_series()
 }
-
-use polars_defs::expr::InterpolationMethod;
 
 pub fn interpolate(s: &Series, method: InterpolationMethod) -> Series {
     match method {

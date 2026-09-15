@@ -13,6 +13,7 @@ pub use polars_plan::dsl::AnonymousScanOptions;
 pub use polars_plan::plans::{AnonymousScan, AnonymousScanArgs, Literal, LiteralValue, NULL, Null};
 pub(crate) use polars_plan::prelude::*;
 pub use polars_plan::prelude::{PlanCallback, UnionArgs};
+#[cfg(feature = "dynamic_group_by")]
 pub use polars_time::PolarsTemporalGroupby;
 pub(crate) use polars_utils::arena::{Arena, Node};
 

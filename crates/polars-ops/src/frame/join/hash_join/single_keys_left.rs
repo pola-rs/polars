@@ -4,6 +4,8 @@ use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
+use crate::frame::join::validation::validate_build;
+
 use super::*;
 
 #[cfg(feature = "chunked_ids")]
@@ -132,7 +134,7 @@ where
         }
         let hash_tbls = build_tables(build, nulls_equal);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
-        validate.validate_build(build_size, expected_size, false)?;
+        validate_build(validate, build_size, expected_size, false)?;
         hash_tbls
     } else {
         build_tables(build, nulls_equal)

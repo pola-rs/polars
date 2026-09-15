@@ -2,6 +2,7 @@ use polars_core::prelude::*;
 use polars_defs::time::duration::Duration;
 use polars_lazy::prelude::*;
 use polars_sql::*;
+
 fn create_sample_df() -> DataFrame {
     let a = Column::new(
         "a".into(),

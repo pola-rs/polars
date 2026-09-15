@@ -11,7 +11,7 @@ description = "Shared option, argument and enum definitions for the Polars DataF
 [dependencies]
 arrow = { workspace = true }
 polars-compute = { workspace = true }
-polars-core = { workspace = true, features = ["dtype-date", "dtype-datetime", "dtype-duration", "dtype-time"] }
+polars-core = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 

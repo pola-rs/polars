@@ -604,6 +604,7 @@ pub fn phys_props(
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf(asof_options) => {
                     use polars_defs::join::AsOfOptions;
+
                     let AsOfOptions {
                         strategy,
                         tolerance,
@@ -684,6 +685,7 @@ pub fn phys_props(
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf(asof_options) => {
                     use polars_defs::join::AsOfOptions;
+
                     let AsOfOptions {
                         strategy,
                         tolerance,
@@ -728,6 +730,7 @@ pub fn phys_props(
                         ..
                     } => {
                         use polars_defs::join::InequalityOperator;
+
                         let to_description = |o: &InequalityOperator| match o {
                             InequalityOperator::Lt => InequalityOperatorDescription::Lt,
                             InequalityOperator::LtEq => InequalityOperatorDescription::LtEq,

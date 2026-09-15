@@ -10,6 +10,7 @@ mod iejoin;
 pub mod merge_join;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
+mod validation;
 
 use std::borrow::Cow;
 use std::hash::Hash;

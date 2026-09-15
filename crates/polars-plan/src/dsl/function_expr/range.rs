@@ -4,6 +4,7 @@ use polars_core::prelude::*;
 use polars_defs::expr::ClosedInterval;
 #[cfg(feature = "temporal")]
 use polars_defs::time::duration::Duration;
+#[cfg(feature = "temporal")]
 use polars_defs::time::group_by::ClosedWindow;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

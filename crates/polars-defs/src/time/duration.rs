@@ -20,6 +20,7 @@ use chrono::offset::LocalResult;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 #[cfg(feature = "timezones")]
 use chrono_tz::OffsetComponents;
+#[cfg(feature = "temporal")]
 use polars_core::chunked_array::temporal::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us,
 };
@@ -349,8 +350,7 @@ impl Duration {
     /// Normalize the duration within the interval.
     /// It will ensure that the output duration is the smallest positive
     /// duration that is the equivalent of the current duration.
-    #[allow(dead_code)]
-    pub fn normalize(&self, interval: &Duration) -> Self {
+    pub(crate) fn normalize(&self, interval: &Duration) -> Self {
         if self.months_only() && interval.months_only() {
             let mut months = self.months() % interval.months();
 
@@ -405,7 +405,7 @@ impl Duration {
     }
 
     /// Creates a [`Duration`] that represents a fixed number of months.
-    pub fn from_months(v: i64) -> Self {
+    pub(crate) fn from_months(v: i64) -> Self {
         let (negative, months) = Self::to_positive(v);
         Self {
             months,
@@ -418,7 +418,7 @@ impl Duration {
     }
 
     /// Creates a [`Duration`] that represents a fixed number of weeks.
-    pub fn from_weeks(v: i64) -> Self {
+    pub(crate) fn from_weeks(v: i64) -> Self {
         let (negative, weeks) = Self::to_positive(v);
         Self {
             months: 0,
@@ -431,7 +431,7 @@ impl Duration {
     }
 
     /// Creates a [`Duration`] that represents a fixed number of days.
-    pub fn from_days(v: i64) -> Self {
+    pub(crate) fn from_days(v: i64) -> Self {
         let (negative, days) = Self::to_positive(v);
         Self {
             months: 0,
@@ -892,6 +892,7 @@ impl Duration {
     }
 
     // Truncate the given ns timestamp by the window boundary.
+    #[cfg(feature = "temporal")]
     #[inline]
     pub fn truncate_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_impl(
@@ -904,6 +905,7 @@ impl Duration {
     }
 
     // Truncate the given ns timestamp by the window boundary.
+    #[cfg(feature = "temporal")]
     #[inline]
     pub fn truncate_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_impl(
@@ -916,6 +918,7 @@ impl Duration {
     }
 
     // Truncate the given ms timestamp by the window boundary.
+    #[cfg(feature = "temporal")]
     #[inline]
     pub fn truncate_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_impl(
@@ -1019,6 +1022,7 @@ impl Duration {
         Ok(t)
     }
 
+    #[cfg(feature = "temporal")]
     pub fn add_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
@@ -1032,6 +1036,7 @@ impl Duration {
         Ok(new_t? + nsecs)
     }
 
+    #[cfg(feature = "temporal")]
     pub fn add_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
@@ -1045,6 +1050,7 @@ impl Duration {
         Ok(new_t? + nsecs / 1_000)
     }
 
+    #[cfg(feature = "temporal")]
     pub fn add_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
@@ -1114,7 +1120,23 @@ pub fn ensure_duration_matches_dtype(
             polars_ensure!(duration.parsed_int || duration.is_zero(),
                 InvalidOperation: "`{}` duration must be a parsed integer (i.e. use '2i', not '2d') when working with a numeric column", variable_name);
         },
-        DataType::Datetime(_, _) | DataType::Date | DataType::Duration(_) | DataType::Time => {
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(_, _) => {
+            polars_ensure!(!duration.parsed_int,
+                InvalidOperation: "`{}` duration may not be a parsed integer (i.e. use '2d', not '2i') when working with a temporal column", variable_name);
+        },
+        #[cfg(feature = "dtype-date")]
+        DataType::Date => {
+            polars_ensure!(!duration.parsed_int,
+                InvalidOperation: "`{}` duration may not be a parsed integer (i.e. use '2d', not '2i') when working with a temporal column", variable_name);
+        },
+        #[cfg(feature = "dtype-duration")]
+        DataType::Duration(_) => {
+            polars_ensure!(!duration.parsed_int,
+                InvalidOperation: "`{}` duration may not be a parsed integer (i.e. use '2d', not '2i') when working with a temporal column", variable_name);
+        },
+        #[cfg(feature = "dtype-time")]
+        DataType::Time => {
             polars_ensure!(!duration.parsed_int,
                 InvalidOperation: "`{}` duration may not be a parsed integer (i.e. use '2d', not '2i') when working with a temporal column", variable_name);
         },

@@ -365,6 +365,7 @@ pub(super) fn set_operation(
 
     if s0.is_empty() || s1.is_empty() {
         use polars_defs::expr::SetOperation;
+
         return match set_type {
             SetOperation::Intersection => {
                 if s0.is_empty() {
