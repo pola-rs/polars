@@ -36,6 +36,8 @@ pub use builder::AExprBuilder;
 pub use evaluate::{constant_evaluate, into_column};
 pub use properties::*;
 pub use schema::ToFieldContext;
+#[cfg(feature = "dtype-struct")]
+pub(crate) use schema::get_struct_numeric_dtype;
 
 use crate::constants::LEN;
 use crate::prelude::*;
