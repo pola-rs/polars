@@ -2488,3 +2488,22 @@ def test_map_get_overflowing_temporal_key_is_missing_not_an_error() -> None:
     )
     assert_series_equal(result["v"], pl.Series("v", [None], dtype=pl.Int64))
     assert_series_equal(result["has"], pl.Series("has", [False]))
+
+
+@pytest.mark.parametrize(
+    ("key_dtype", "needle_zone"),
+    [
+        pytest.param(pl.Datetime("us"), "UTC", id="naive-keys"),
+        pytest.param(pl.Datetime("us", "UTC"), "America/New_York", id="aware-keys"),
+    ],
+)
+def test_map_get_rejects_a_key_in_another_time_zone(
+    key_dtype: PolarsDataType, needle_zone: str
+) -> None:
+    # The kernel reports this as an opaque comparison failure. Catch it while resolving.
+    s = map_of(key_dtype, datetime(2020, 1, 1))
+    needle = pl.lit(datetime(2020, 1, 1)).dt.replace_time_zone(needle_zone)
+
+    for method in ("get", "contains_key"):
+        with pytest.raises(InvalidOperationError, match="time zones differ"):
+            getattr(s.map, method)(needle)

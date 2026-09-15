@@ -127,13 +127,21 @@ fn resolve_temporal_map_key(
     key: &DataType,
     op: &'static str,
 ) -> PolarsResult<Option<IsInTypeCoercionResult>> {
-    // Preserve the needle's time zone when changing its unit.
     let (needle_unit, key_unit, widened) = match (needle, key) {
-        (DataType::Datetime(needle_unit, tz), DataType::Datetime(key_unit, _)) => (
-            needle_unit,
-            key_unit,
-            DataType::Datetime(*key_unit, tz.clone()),
-        ),
+        (DataType::Datetime(needle_unit, needle_tz), DataType::Datetime(key_unit, key_tz)) => {
+            // Comparing across zones is a `SchemaMismatch` in the kernel. Name it here instead.
+            polars_ensure!(
+                needle_tz == key_tz,
+                InvalidOperation:
+                "'{op}' cannot look up a `{needle}` key in a Map with `{key}` keys, as the time \
+                zones differ\nHint: convert the key to `{key}` first.",
+            );
+            (
+                needle_unit,
+                key_unit,
+                DataType::Datetime(*key_unit, key_tz.clone()),
+            )
+        },
         (DataType::Duration(needle_unit), DataType::Duration(key_unit)) => {
             (needle_unit, key_unit, DataType::Duration(*key_unit))
         },
