@@ -1799,8 +1799,8 @@ def test_gather_out_of_one_repeated_list_gathers_once(
 
 
 def test_concat_list_repeated_chunks() -> None:
-    # Every operand reading one element throughout makes one concatenation, and that list stands
-    # for every row. It must match what the written-out columns answer.
+    # Every operand reading one element throughout makes one concatenation, and that
+    # list stands for every row. It must match what the written-out columns answer.
     n = 4
     rep = pl.DataFrame(
         {
