@@ -257,6 +257,131 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 // Take slices so that vecs are not copied
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                let build_null_count = if swapped {
+                    s_self.null_count()
+                } else {
+                    other.null_count()
+                };
+                Ok((
+                    hash_join_tuples_inner(
+                        lhs,
+                        rhs,
+                        swapped,
+                        validate,
+                        nulls_equal,
+                        build_null_count,
+                    )?,
+                    !swapped,
+                ))
+            },
+            T::BinaryOffset => {
+                let lhs = lhs.binary_offset().unwrap();
+                let rhs = rhs.binary_offset()?;
+                let (lhs, rhs, swapped, _) = prepare_binary::<BinaryOffsetType>(lhs, rhs, true);
+                // Take slices so that vecs are not copied
+                let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                let build_null_count = if swapped {
+                    s_self.null_count()
+                } else {
+                    other.null_count()
+                };
+                Ok((
+                    hash_join_tuples_inner(
+                        lhs,
+                        rhs,
+                        swapped,
+                        validate,
+                        nulls_equal,
+                        build_null_count,
+                    )?,
+                    !swapped,
+                ))
+            },
+            T::List(_) => {
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
+                lhs.hash_join_inner(rhs, validate, nulls_equal)
+            },
+            #[cfg(feature = "dtype-array")]
+            T::Array(_, _) => {
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
+                lhs.hash_join_inner(rhs, validate, nulls_equal)
+            },
+            #[cfg(feature = "dtype-struct")]
+            T::Struct(_) => {
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
+                lhs.hash_join_inner(rhs, validate, nulls_equal)
+            },
+            x if x.is_float() => {
+                with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
+                    let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
+                    let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
+                    group_join_inner::<$T>(lhs, rhs, validate, nulls_equal)
+                })
+            },
+            _ => {
+                let lhs = s_self.bit_repr();
+                let rhs = other.bit_repr();
+
+                let (Some(lhs), Some(rhs)) = (lhs, rhs) else {
+                    polars_bail!(nyi = "Hash Inner Join between {lhs_dtype} and {rhs_dtype}");
+                };
+
+                use BitRepr as B;
+                match (lhs, rhs) {
+                    (B::U8(lhs), B::U8(rhs)) => {
+                        group_join_inner::<UInt8Type>(&lhs, &rhs, validate, nulls_equal)
+                    },
+                    (B::U16(lhs), B::U16(rhs)) => {
+                        group_join_inner::<UInt16Type>(&lhs, &rhs, validate, nulls_equal)
+                    },
+                    (B::U32(lhs), B::U32(rhs)) => {
+                        group_join_inner::<UInt32Type>(&lhs, &rhs, validate, nulls_equal)
+                    },
+                    (B::U64(lhs), BitRepr::U64(rhs)) => {
+                        group_join_inner::<UInt64Type>(&lhs, &rhs, validate, nulls_equal)
+                    },
+                    #[cfg(feature = "dtype-u128")]
+                    (B::U128(lhs), BitRepr::U128(rhs)) => {
+                        group_join_inner::<UInt128Type>(&lhs, &rhs, validate, nulls_equal)
+                    },
+                    _ => {
+                        polars_bail!(
+                            nyi = "Mismatch bit repr Hash Inner Join between {lhs_dtype} and {rhs_dtype}"
+                        );
+                    },
+                }
+            },
+        }
+    }
+
+    fn hash_join_outer(
+        &self,
+        other: &Series,
+        validate: JoinValidation,
+        nulls_equal: bool,
+    ) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)> {
+        let s_self = self.as_series();
+        let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
+        validate_probe(validate, &lhs, &rhs, true, nulls_equal)?;
+
+        let lhs_dtype = lhs.dtype();
+        let rhs_dtype = rhs.dtype();
+
+        use DataType as T;
+        match lhs_dtype {
+            T::String | T::Binary => {
+                let lhs = lhs.cast(&T::Binary).unwrap();
+                let rhs = rhs.cast(&T::Binary).unwrap();
+                let lhs = lhs.binary().unwrap();
+                let rhs = rhs.binary().unwrap();
+                let (lhs, rhs, swapped, _) = prepare_binary::<BinaryType>(lhs, rhs, true);
+                // Take slices so that vecs are not copied
+                let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
+                let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 hash_join_tuples_outer(lhs, rhs, swapped, validate, nulls_equal)
             },
             T::BinaryOffset => {
