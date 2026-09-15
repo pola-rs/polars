@@ -818,8 +818,12 @@ fn concatenate_fixed_size_list_impl(
     // The values of each array are what its elements cover, which is the whole values array of a
     // flat one; scalar values are the one element they share, which the result writes out once per
     // element it stands for.
-    let mut values = Vec::with_capacity(list.len());
-    for array in list.iter() {
+    //
+    // One pass over the distinct arrays is what the concatenation is made of, and the copies after
+    // it hold the same values over again: repeating the pass is what lays them down, rather than
+    // the arrays being read — and sliced, and concatenated — once per repeat.
+    let mut values = Vec::with_capacity(list.count);
+    for array in list.distinct() {
         if let Some(array_values) = array.flat_values() {
             values.push(array_values.to_boxed());
         } else if let Some(element) = array.scalar_value_ignore_validity() {
@@ -830,7 +834,8 @@ fn concatenate_fixed_size_list_impl(
     }
 
     // The values of the arrays are concatenated through the boxes they were sliced into.
-    let values = concatenate_impl(ArrayList::new(&|index| &*values[index], values.len()))?;
+    let pass = concatenate_impl(ArrayList::new(&|index| &*values[index], values.len()))?;
+    let values = concatenate_repeated(&*pass, list.repeats)?;
     let validity = list
         .validities(length, null_count)
         .map(PlBitmap::from_bitmap);
@@ -945,12 +950,17 @@ fn concatenate_list_impl(list: ArrayList<'_, '_, PlListArray>) -> PolarsResult<P
 
     // The values of each array are sliced to what its offsets reach, so that the offsets of the
     // result can be rebased onto their concatenation.
-    let mut values = Vec::with_capacity(list.len());
+    //
+    // One pass over the distinct arrays is what the concatenation is made of, and the copies after
+    // it hold the same lists over again, each a pass of the values further on: repeating the pass
+    // is what lays them down, rather than the arrays being read — and sliced, and concatenated —
+    // once per repeat.
+    let mut values = Vec::with_capacity(list.count);
     let mut offsets = Vec::with_capacity(length + 1);
     offsets.push(0);
 
     let mut end = 0;
-    for array in list.iter() {
+    for array in list.distinct() {
         if array.is_empty() {
             // No element of the array is reachable, but its values are still what the type of its
             // lists is taken from, which every array has to agree on.
@@ -987,7 +997,18 @@ fn concatenate_list_impl(list: ArrayList<'_, '_, PlListArray>) -> PolarsResult<P
     }
 
     // The values of the arrays are concatenated through the boxes they were sliced into.
-    let values = concatenate_impl(ArrayList::new(&|index| &*values[index], values.len()))?;
+    let pass = concatenate_impl(ArrayList::new(&|index| &*values[index], values.len()))?;
+    let values = concatenate_repeated(&*pass, list.repeats)?;
+
+    // Each copy of the pass covers the lists of the pass again, a pass of the values further on.
+    if list.repeats > 1 {
+        let (pass_offsets, pass_end) = (offsets[1..].to_vec(), end);
+        for repeat in 1..list.repeats as u64 {
+            let start = repeat * pass_end;
+            offsets.extend(pass_offsets.iter().map(|offset| start + offset));
+        }
+    }
+
     let validity = list
         .validities(length, null_count)
         .map(PlBitmap::from_bitmap);
