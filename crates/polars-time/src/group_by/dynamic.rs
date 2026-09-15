@@ -3,7 +3,8 @@ use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_par;
-pub use polars_defs::time::group_by::{DynamicGroupOptions, RollingGroupOptions};
+use polars_defs::time::duration::ensure_duration_matches_dtype;
+use polars_defs::time::group_by::{ClosedWindow, DynamicGroupOptions, Label, RollingGroupOptions};
 use polars_ops::series::SeriesMethods;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
@@ -430,6 +431,8 @@ impl Wrap<&DataFrame> {
 #[cfg(test)]
 mod test {
     use polars_compute::rolling::QuantileMethod;
+    use polars_defs::time::duration::Duration;
+    use polars_defs::time::group_by::RollingGroupOptions;
     use polars_ops::prelude::*;
 
     use super::*;

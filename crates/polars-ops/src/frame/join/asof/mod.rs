@@ -197,7 +197,7 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
     }
 }
 
-pub use polars_defs::join::{AsOfOptions, AsofStrategy};
+use polars_defs::join::AsofStrategy;
 
 pub fn _check_asof_columns(
     a: &Series,

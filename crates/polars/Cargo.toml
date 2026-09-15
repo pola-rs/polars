@@ -15,6 +15,7 @@ arrow = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by"] }
+polars-defs = { workspace = true }
 polars-error = { workspace = true }
 polars-expr = { workspace = true, optional = true }
 polars-io = { workspace = true, optional = true }

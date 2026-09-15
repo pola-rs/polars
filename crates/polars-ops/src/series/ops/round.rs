@@ -1,7 +1,7 @@
 use num_traits::AsPrimitive;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
-pub use polars_defs::expr::RoundMode;
+use polars_defs::expr::RoundMode;
 use polars_utils::float16::pf16;
 
 use crate::series::ops::SeriesSealed;

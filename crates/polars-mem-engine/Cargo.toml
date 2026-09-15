@@ -13,6 +13,7 @@ arrow = { workspace = true }
 futures = { workspace = true, optional = true }
 memmap = { workspace = true }
 polars-core = { workspace = true, features = ["lazy"] }
+polars-defs = { workspace = true }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
 polars-io = { workspace = true, features = ["lazy"] }

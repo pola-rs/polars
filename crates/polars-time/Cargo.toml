@@ -53,7 +53,14 @@ fmt = ["polars-core/fmt"]
 serde = ["dep:serde", "polars-utils/serde", "polars-compute/serde", "polars-defs/serde"]
 dsl-schema = ["dep:schemars", "polars-utils/dsl-schema", "polars-compute/dsl-schema", "polars-defs/dsl-schema"]
 temporal = ["polars-core/temporal"]
-timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones", "arrow/timezones", "polars-ops/timezones", "polars-defs/timezones"]
+timezones = [
+  "chrono-tz",
+  "dtype-datetime",
+  "polars-core/timezones",
+  "arrow/timezones",
+  "polars-ops/timezones",
+  "polars-defs/timezones",
+]
 
 test = ["dtype-date", "dtype-datetime", "polars-core/fmt"]
 allow_unused = []

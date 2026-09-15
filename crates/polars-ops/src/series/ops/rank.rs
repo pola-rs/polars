@@ -2,7 +2,7 @@
 use arrow::array::BooleanArray;
 use arrow::compute::concatenate::concatenate_validities;
 use polars_core::prelude::*;
-pub use polars_defs::expr::{RankMethod, RankOptions};
+use polars_defs::expr::{RankMethod, RankOptions};
 use rand::prelude::*;
 
 use crate::prelude::SeriesSealed;

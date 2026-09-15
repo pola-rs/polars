@@ -1,6 +1,6 @@
 use polars::lazy::dsl;
 use polars_core::with_match_physical_integer_polars_type;
-use polars_ops::series::ClosedInterval;
+use polars_defs::expr::ClosedInterval;
 use polars_plan::constants::get_literal_name;
 use pyo3::prelude::*;
 

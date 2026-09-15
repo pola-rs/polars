@@ -15,7 +15,7 @@ use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
 use polars_core::utils::{_set_partition_size, slice_slice, split};
 use polars_core::with_match_physical_numeric_polars_type;
-pub use polars_defs::join::{IEJoinOptions, InequalityOperator};
+use polars_defs::join::{IEJoinOptions, InequalityOperator};
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::IdxSize;
 use polars_utils::binary_search::ExponentialSearch;

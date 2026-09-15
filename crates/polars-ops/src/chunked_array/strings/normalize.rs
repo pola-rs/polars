@@ -1,5 +1,5 @@
 use polars_core::prelude::{StringChunked, StringChunkedBuilder};
-pub use polars_defs::expr::UnicodeForm;
+use polars_defs::expr::UnicodeForm;
 use unicode_normalization::UnicodeNormalization;
 
 pub fn normalize_with<F: Fn(&str, &mut String)>(

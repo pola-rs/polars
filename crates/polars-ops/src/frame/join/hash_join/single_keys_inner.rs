@@ -1,4 +1,5 @@
 use polars_core::utils::flatten;
+use polars_defs::join::JoinValidation;
 use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::itertools::Itertools;

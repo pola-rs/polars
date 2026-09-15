@@ -10,7 +10,7 @@ use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_type;
-pub use polars_defs::expr::SetOperation;
+use polars_defs::expr::SetOperation;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash, TotalOrdWrap};
 
 trait MaterializeValues<K> {

@@ -112,7 +112,13 @@ dtype-f16 = ["polars-core/dtype-f16"]
 dtype-decimal = ["polars-core/dtype-decimal", "polars-ops/dtype-decimal", "dtype-i128"]
 dtype-date = ["polars-defs/dtype-date", "polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-defs/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
-dtype-duration = ["polars-core/dtype-duration", "polars-defs/dtype-duration", "polars-time/dtype-duration", "temporal", "polars-ops/dtype-duration"]
+dtype-duration = [
+  "polars-core/dtype-duration",
+  "polars-defs/dtype-duration",
+  "polars-time/dtype-duration",
+  "temporal",
+  "polars-ops/dtype-duration",
+]
 dtype-time = ["polars-defs/dtype-time", "polars-time/dtype-time", "temporal"]
 dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]

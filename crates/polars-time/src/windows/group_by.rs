@@ -13,7 +13,8 @@ use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
-pub use polars_defs::time::group_by::{ClosedWindow, Label, StartBy};
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::{ClosedWindow, StartBy};
 use rayon::prelude::*;
 
 use crate::prelude::*;

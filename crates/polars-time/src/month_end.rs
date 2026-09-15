@@ -7,9 +7,9 @@ use polars_core::utils::arrow::temporal_conversions::{
     MILLISECONDS, SECONDS_IN_DAY, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
     timestamp_us_to_datetime,
 };
+use polars_defs::time::duration::Duration;
 
 use crate::month_start::roll_backward;
-use crate::windows::duration::Duration;
 
 // roll forward to the last day of the month
 fn roll_forward(

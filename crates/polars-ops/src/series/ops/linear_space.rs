@@ -1,6 +1,6 @@
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-pub use polars_defs::expr::ClosedInterval;
+use polars_defs::expr::ClosedInterval;
 
 pub fn new_linear_space_f32(
     start: f32,

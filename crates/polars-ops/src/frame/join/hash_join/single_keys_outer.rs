@@ -2,6 +2,7 @@ use std::hash::BuildHasher;
 
 use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 use arrow::legacy::utils::CustomIterTools;
+use polars_defs::join::JoinValidation;
 use polars_utils::hashing::hash_to_partition;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::nulls::IsNull;

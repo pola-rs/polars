@@ -197,7 +197,7 @@ fn linear_interp_signed<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Series {
     interpolate_impl(ca, signed_interp::<T::Native>).into_series()
 }
 
-pub use polars_defs::expr::InterpolationMethod;
+use polars_defs::expr::InterpolationMethod;
 
 pub fn interpolate(s: &Series, method: InterpolationMethod) -> Series {
     match method {

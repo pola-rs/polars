@@ -14,8 +14,3 @@ pub type ChunkJoinOptIds = Vec<NullableIdxSize>;
 
 #[cfg(not(feature = "chunked_ids"))]
 pub type ChunkJoinIds = Vec<IdxSize>;
-
-pub use polars_defs::join::{
-    CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinBuildSide, JoinCoalesce, JoinType,
-    JoinTypeOptions, JoinValidation, MaintainOrderJoin,
-};

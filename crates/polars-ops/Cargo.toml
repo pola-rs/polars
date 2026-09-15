@@ -11,8 +11,8 @@ description = "More operations on Polars data structures"
 [dependencies]
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
-polars-defs = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by", "zip_with"] }
+polars-defs = { workspace = true }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
 polars-schema = { workspace = true }

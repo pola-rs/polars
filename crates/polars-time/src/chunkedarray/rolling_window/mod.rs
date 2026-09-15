@@ -6,4 +6,4 @@ use arrow::array::{ArrayRef, PrimitiveArray};
 pub use dispatch::*;
 use polars_compute::rolling;
 use polars_core::prelude::*;
-pub use polars_defs::time::rolling::RollingOptionsDynamicWindow;
+use polars_defs::time::rolling::RollingOptionsDynamicWindow;

@@ -1,4 +1,5 @@
 use polars_core::utils::flatten::flatten_par;
+use polars_defs::join::JoinValidation;
 use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};

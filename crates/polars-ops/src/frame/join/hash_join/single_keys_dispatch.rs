@@ -5,6 +5,7 @@ use polars_core::chunked_array::ops::row_encode::{
 use polars_core::series::BitRepr;
 use polars_core::utils::split;
 use polars_core::with_match_physical_float_polars_type;
+use polars_defs::join::JoinValidation;
 use polars_utils::aliases::PlRandomState;
 use polars_utils::hashing::DirtyHash;
 use polars_utils::nulls::IsNull;
