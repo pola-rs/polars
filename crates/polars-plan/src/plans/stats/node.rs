@@ -134,20 +134,13 @@ pub(crate) fn node_stats_with_cache(
                 return None;
             }
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
-            // A computed key holds neither the values, the distinct count nor the
-            // uniqueness of the column it is named after, so only a key reading one
-            // column contributes.
-            let sources = keys
-                .iter()
-                .map(|k| into_column(k.node(), expr_arena))
-                .collect::<Option<Vec<_>>>()
-                .map(|mut sources| {
-                    // Several keys reading one column split it no finer than one of
-                    // them does, so it must be counted once.
-                    sources.sort_unstable();
-                    sources.dedup();
-                    sources
-                });
+            let sources = source_columns(keys, expr_arena).map(|mut sources| {
+                // Several keys reading one column split it no finer than one of
+                // them does, so it must be counted once.
+                sources.sort_unstable();
+                sources.dedup();
+                sources
+            });
             let names: Vec<&PlSmallStr> = keys.iter().map(|k| k.output_name()).collect();
             Some(one_row_per_group(
                 inner,
@@ -265,22 +258,20 @@ pub(crate) fn node_stats_with_cache(
                 // is not.
                 left.filter(filtered)
             } else {
-                // Uniqueness is a property of the columns a key reads, not of the
-                // name it emits, so a computed key proves nothing.
-                let sources = |side: fn(&(ExprIR, ExprIR)) -> &ExprIR| {
-                    on.iter()
-                        .map(|pair| into_column(side(pair).node(), expr_arena))
-                        .collect::<Option<Vec<_>>>()
-                };
-                let (left_keys, right_keys) = (sources(|(l, _)| l), sources(|(_, r)| r));
-                let matched_once =
-                    MatchedOnce::of(&left, left_keys.as_deref(), &right, right_keys.as_deref());
+                let left_keys = source_columns(on.iter().map(|(key, _)| key), expr_arena);
+                let right_keys = source_columns(on.iter().map(|(_, key)| key), expr_arena);
+                let unique = JoinKeyUniqueness::of(
+                    &left,
+                    left_keys.as_deref(),
+                    &right,
+                    right_keys.as_deref(),
+                );
                 NodeStats {
                     filtered,
                     unfiltered: rows(left.unfiltered, right.unfiltered)?,
-                    max_rows: join_max_rows(how, &left, &right, matched_once),
+                    max_rows: join_max_rows(how, &left, &right, unique),
                     columns: join_columns(&left, &right),
-                    unique_keys: join_unique_keys(how, &left, matched_once),
+                    unique_keys: join_unique_keys(how, &left, unique),
                 }
             };
 
@@ -462,27 +453,28 @@ fn join_max_rows(
     how: &JoinType,
     left: &NodeStats,
     right: &NodeStats,
-    matched_once: MatchedOnce,
+    unique: JoinKeyUniqueness,
 ) -> Option<f64> {
     match how {
         // Every pair, and no more.
         JoinType::Cross => Some(left.max_rows? * right.max_rows?),
-        // A side matched at most once cannot repeat a row of the other. An outer side
-        // can still add its own unmatched rows, so only the inner side is bounded.
-        JoinType::Inner | JoinType::Left if matched_once.right => left.max_rows,
-        JoinType::Inner | JoinType::Right if matched_once.left => right.max_rows,
+        // A side unique on its keys matches each row of the other at most once, so it
+        // cannot repeat one. An outer side can still add its own unmatched rows, so
+        // only the inner side is bounded.
+        JoinType::Inner | JoinType::Left if unique.right => left.max_rows,
+        JoinType::Inner | JoinType::Right if unique.left => right.max_rows,
         _ => None,
     }
 }
 
-/// Which sides of an equi-join a key matches at most one row of.
+/// Which sides of an equi-join are unique on their keys.
 #[derive(Clone, Copy)]
-struct MatchedOnce {
+struct JoinKeyUniqueness {
     left: bool,
     right: bool,
 }
 
-impl MatchedOnce {
+impl JoinKeyUniqueness {
     /// `left_keys` and `right_keys` are the input columns the join keys read, when
     /// every key of that side reads a column as is.
     fn of(
@@ -501,11 +493,12 @@ impl MatchedOnce {
 /// Unique key sets of a join output.
 ///
 /// Only the left side's, as a right column is renamed when both sides hold the name.
-/// They survive a join that matches each left row at most once. A semi- or anti-join
-/// is handled as a filter of the left side and never gets here.
-fn join_unique_keys(how: &JoinType, left: &NodeStats, matched_once: MatchedOnce) -> Vec<UniqueKey> {
+/// They survive a join whose right side is unique on its keys, as that matches each
+/// left row at most once. A semi- or anti-join is handled as a filter of the left
+/// side and never gets here.
+fn join_unique_keys(how: &JoinType, left: &NodeStats, unique: JoinKeyUniqueness) -> Vec<UniqueKey> {
     match how {
-        JoinType::Inner | JoinType::Left if matched_once.right => left.unique_keys.clone(),
+        JoinType::Inner | JoinType::Left if unique.right => left.unique_keys.clone(),
         _ => Vec::new(),
     }
 }
@@ -533,7 +526,7 @@ fn unshadowed_unique_keys(
     let shadowed = |name: &PlSmallStr| {
         exprs
             .iter()
-            .any(|e| e.output_name() == name && is_computed(e, expr_arena))
+            .any(|e| e.output_name() == name && e.plain_column(expr_arena).is_none())
     };
     inner
         .unique_keys
@@ -608,7 +601,7 @@ fn shadowed_columns(
 ) -> Option<Arc<ScanColumnStatsMap>> {
     let columns = inner.columns.as_ref()?;
     let overwrites =
-        |e: &ExprIR| is_computed(e, expr_arena) && columns.contains_key(e.output_name());
+        |e: &ExprIR| e.plain_column(expr_arena).is_none() && columns.contains_key(e.output_name());
     if !exprs.iter().any(overwrites) {
         return Some(Arc::clone(columns));
     }
@@ -624,10 +617,19 @@ fn shadowed_columns(
     (!kept.is_empty()).then(|| Arc::new(kept))
 }
 
-/// Whether `expr` puts a computed value under its output name, rather than passing a
-/// column of the input through under it.
-fn is_computed(expr: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
-    into_column(expr.node(), expr_arena) != Some(expr.output_name())
+/// The input columns `exprs` read, when every one reads a column as is, under its
+/// own name or an alias.
+///
+/// A computed expression holds neither the values, the distinct count nor the
+/// uniqueness of the column it is named after, so it contributes nothing.
+fn source_columns<'a>(
+    exprs: impl IntoIterator<Item = &'a ExprIR>,
+    expr_arena: &Arena<AExpr>,
+) -> Option<Vec<&PlSmallStr>> {
+    exprs
+        .into_iter()
+        .map(|e| into_column(e.node(), expr_arena))
+        .collect()
 }
 
 /// Whether an expression leaves the frame's height alone, either by producing one
@@ -1274,7 +1276,7 @@ mod tests {
         let fact = NodeStats::of_rows(1_000_000.0);
         let dim = NodeStats::of_rows(800.0).unique_on(&["k"]);
 
-        let bounded = MatchedOnce::of(&fact, on, &dim, on);
+        let bounded = JoinKeyUniqueness::of(&fact, on, &dim, on);
         assert_eq!(
             join_max_rows(&JoinType::Inner, &fact, &dim, bounded),
             Some(1_000_000.0)
@@ -1287,7 +1289,7 @@ mod tests {
 
         // Neither side unique: a key value on both can repeat rows of either.
         let dim = NodeStats::of_rows(800.0);
-        let unbounded = MatchedOnce::of(&fact, on, &dim, on);
+        let unbounded = JoinKeyUniqueness::of(&fact, on, &dim, on);
         assert_eq!(
             join_max_rows(&JoinType::Inner, &fact, &dim, unbounded),
             None
@@ -1296,7 +1298,7 @@ mod tests {
         // A computed key reads no column as is, so it inherits no uniqueness: joining
         // `left.k == right.k % 2` can match a distinct left key several times.
         let dim = NodeStats::of_rows(800.0).unique_on(&["k"]);
-        let computed = MatchedOnce::of(&fact, on, &dim, None);
+        let computed = JoinKeyUniqueness::of(&fact, on, &dim, None);
         assert!(!computed.right);
         assert_eq!(join_max_rows(&JoinType::Inner, &fact, &dim, computed), None);
         assert!(join_unique_keys(&JoinType::Inner, &dim, computed).is_empty());
@@ -1399,5 +1401,123 @@ mod tests {
             apply_predicate(1.0, 1.0, and, &expr_arena, None),
             MIN_CARDINALITY
         );
+    }
+
+    /// Plans built from the DSL, so that the keys reach the estimator the way the
+    /// conversion resolves them.
+    mod plans {
+        use polars_core::prelude::*;
+
+        use super::*;
+        use crate::dsl::functions::{col, lit};
+        use crate::dsl::{DistinctOptionsDSL, DslBuilder, DslPlan, Expr, JoinOptions};
+        use crate::frame::OptFlags;
+        use crate::plans::to_alp;
+
+        /// `rows` rows of integer columns `k` and `j`, both unique.
+        fn frame(rows: i64) -> DslBuilder {
+            let column = |name: &str| Column::new(name.into(), (0..rows).collect::<Vec<_>>());
+            let df = DataFrame::new(rows as usize, vec![column("k"), column("j")]).unwrap();
+            DslBuilder::from_existing_df(df)
+        }
+
+        /// The frame, made unique on `subset` by a distinct.
+        fn distinct_on(input: DslBuilder, subset: &[&str]) -> DslBuilder {
+            input.distinct(DistinctOptionsDSL {
+                subset: Some(subset.iter().map(|name| col(*name)).collect()),
+                ..Default::default()
+            })
+        }
+
+        fn stats(plan: DslBuilder) -> NodeStats {
+            let mut ir_arena = Arena::new();
+            let mut expr_arena = Arena::new();
+            let node = to_alp(
+                plan.build(),
+                &mut expr_arena,
+                &mut ir_arena,
+                &mut OptFlags::schema_only(),
+            )
+            .unwrap();
+            node_stats(node, &ir_arena, &expr_arena).unwrap()
+        }
+
+        fn inner_join(left: DslBuilder, right: DslBuilder, right_on: Expr) -> DslBuilder {
+            left.join(
+                right.build(),
+                vec![col("k")],
+                vec![right_on],
+                Arc::new(JoinOptions::default()),
+            )
+            .unwrap()
+        }
+
+        fn group_by(input: DslBuilder, keys: Vec<Expr>) -> DslPlan {
+            input
+                .group_by(
+                    keys,
+                    vec![],
+                    vec![],
+                    None,
+                    false,
+                    #[cfg(feature = "dynamic_group_by")]
+                    None,
+                    #[cfg(feature = "dynamic_group_by")]
+                    None,
+                )
+                .build()
+        }
+
+        /// A join key must read a column as is to inherit its uniqueness: `k % 2`
+        /// on a side unique on `k` can match a left row several times.
+        #[test]
+        fn a_computed_join_key_inherits_no_uniqueness() {
+            let left = || distinct_on(frame(1000), &["k"]);
+            let right = || distinct_on(frame(10), &["k"]);
+
+            let plain = stats(inner_join(left(), right(), col("k")));
+            assert_eq!(plain.max_rows, Some(1000.0));
+            assert!(plain.is_unique_on(&["k"]));
+
+            let computed = stats(inner_join(left(), right(), col("k") % lit(2)));
+            assert_eq!(computed.max_rows, None);
+            assert!(computed.unique_keys.is_empty());
+        }
+
+        /// Grouping by the columns the input is unique on keeps its height, also
+        /// under an alias, but not once a key is computed from them.
+        #[test]
+        fn a_computed_grouping_key_does_not_keep_the_height() {
+            let input = || distinct_on(frame(10_000), &["k", "j"]);
+            let height = stats(input()).filtered;
+
+            let plain = stats(group_by(input(), vec![col("k"), col("j")]).into());
+            assert_eq!(plain.filtered, height);
+            assert!(plain.is_unique_on(&["k", "j"]));
+
+            let aliased =
+                stats(group_by(input(), vec![col("k").alias("a"), col("j").alias("b")]).into());
+            assert_eq!(aliased.filtered, height);
+            assert!(aliased.is_unique_on(&["a", "b"]));
+
+            let computed =
+                stats(group_by(input(), vec![col("k") % lit(2), col("j") % lit(2)]).into());
+            assert!(computed.filtered < height);
+            // The output is still one row per computed key, under the input's names.
+            assert!(computed.is_unique_on(&["k", "j"]));
+        }
+
+        /// A `with_columns` drops a unique key once it overwrites one of its columns
+        /// with a computed value, and keeps it when it only adds columns.
+        #[test]
+        fn overwriting_a_unique_column_drops_the_key() {
+            let input = || distinct_on(frame(1000), &["k"]);
+            let with_columns =
+                |expr: Expr| stats(input().with_columns(vec![expr], Default::default()));
+
+            assert!(with_columns(col("k") % lit(2)).unique_keys.is_empty());
+            assert!(with_columns(col("j") % lit(2)).is_unique_on(&["k"]));
+            assert!(with_columns(col("k").alias("x")).is_unique_on(&["k"]));
+        }
     }
 }
