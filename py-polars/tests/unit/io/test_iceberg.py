@@ -1,6 +1,7 @@
 # mypy: disable-error-code="attr-defined"
 from __future__ import annotations
 
+import base64
 import contextlib
 import io
 import itertools
@@ -15,8 +16,10 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal as D
 from functools import partial
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from threading import Thread
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -69,7 +72,10 @@ from polars.io.iceberg._dataset import (
     IcebergScanResolver,
     IcebergScanTableSerializer,
     IcebergTableWrap,
+    _convert_iceberg_to_rust_storage_options,
+    _load_kms_config,
     _NativeIcebergScanData,
+    _RustIcebergScanData,
 )
 from polars.io.iceberg._sink import IcebergSinkState, PlIcebergPathProviderConfig
 from polars.io.iceberg._utils import (
@@ -84,6 +90,9 @@ from tests.unit.io.conftest import normalize_path_separator_pl
 from tests.unit.io.test_scan_row_deletion import write_position_deletes  # noqa: F401
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from polars._typing import EngineType
     from tests.conftest import PlMonkeyPatch
     from tests.unit.io.test_scan_row_deletion import (
         WritePositionDeletes,
@@ -129,6 +138,135 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
     from pyiceberg.catalog.sql import SqlCatalog
     from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+
+class _TestKmsClient:
+    instances: ClassVar[list[_TestKmsClient]] = []
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[bytes, str]] = []
+        self.properties: dict[str, str] = {}
+        self.instances.append(self)
+
+    def initialize(self, properties: dict[str, str]) -> None:
+        self.properties = properties
+
+    def unwrap_key(self, wrapped_key: bytes, wrapping_key_id: str) -> bytes:
+        self.calls.append((wrapped_key, wrapping_key_id))
+        key = self.properties.get("test-kms-key")
+        if key is None:
+            msg = "unencrypted table should not request a key"
+            raise AssertionError(msg)
+        return bytes.fromhex(key)
+
+
+class _KmsWithoutInitialize:
+    def unwrap_key(self, wrapped_key: bytes, wrapping_key_id: str) -> bytes:
+        return wrapped_key
+
+
+class _KmsWithoutUnwrap:
+    def initialize(self, properties: dict[str, str]) -> None:
+        pass
+
+
+class _KmsWithRequiredArgument:
+    def __init__(self, value: str) -> None:
+        pass
+
+
+@pytest.fixture
+def iceberg_kms_endpoint() -> Iterator[
+    tuple[str, list[tuple[str | None, dict[str, Any]]], dict[str, str]]
+]:
+    calls: list[tuple[str | None, dict[str, Any]]] = []
+    response = {
+        "Plaintext": base64.b64encode(
+            bytes.fromhex("fa501fc8fcba0566490e925879392260")
+        ).decode(),
+        "KeyId": "master-1",
+        "EncryptionAlgorithm": "SYMMETRIC_DEFAULT",
+    }
+
+    class KmsHandler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            calls.append((self.headers.get("X-Amz-Target"), json.loads(body)))
+            self.send_response(400 if "__type" in response else 200)
+            self.send_header("Content-Type", "application/x-amz-json-1.1")
+            self.end_headers()
+            self.wfile.write(json.dumps(response).encode())
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), KmsHandler) as server:
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"http://127.0.0.1:{server.server_port}", calls, response
+        finally:
+            server.shutdown()
+            thread.join()
+
+
+@pytest.mark.parametrize(
+    ("location", "properties", "expected"),
+    [
+        (
+            "s3://bucket/metadata.json",
+            {
+                "aws_endpoint_url": "http://localhost:9000",
+                "aws_access_key_id": "access-key",
+                "aws_secret_access_key": "secret-key",
+                "aws_session_token": "session-token",
+                "aws_region": "us-east-1",
+                "aws_virtual_hosted_style_request": "true",
+            },
+            {
+                "s3.endpoint": "http://localhost:9000",
+                "s3.access-key-id": "access-key",
+                "s3.secret-access-key": "secret-key",
+                "s3.session-token": "session-token",
+                "s3.region": "us-east-1",
+                "s3.path-style-access": "false",
+            },
+        ),
+        (
+            "gs://bucket/metadata.json",
+            {
+                "bearer_token": "token",
+                "google_service_account_key": '{"type":"service_account"}',
+                "google_url": "http://localhost:9000",
+            },
+            {
+                "gcs.oauth2.token": "token",
+                "gcs.credentials-json": '{"type":"service_account"}',
+                "gcs.service.host": "http://localhost:9000",
+            },
+        ),
+        (
+            "abfss://container@account.dfs.core.windows.net/metadata.json",
+            {
+                "azure_storage_account_name": "account",
+                "azure_storage_account_key": "key",
+                "azure_storage_tenant_id": "tenant",
+                "azure_storage_client_id": "client",
+                "azure_storage_client_secret": "secret",
+            },
+            {
+                "adls.account-name": "account",
+                "adls.account-key": "key",
+                "adls.tenant-id": "tenant",
+                "adls.client-id": "client",
+                "adls.client-secret": "secret",
+            },
+        ),
+    ],
+)
+def test_convert_iceberg_to_rust_storage_options(
+    location: str, properties: dict[str, str], expected: dict[str, str]
+) -> None:
+    result = _convert_iceberg_to_rust_storage_options(location, properties)
+
+    assert result.items() >= expected.items()
 
 
 @pytest.fixture(autouse=True)
@@ -265,6 +403,334 @@ class TestIcebergScanIO:
     def test_scan_iceberg_snapshot_id_not_found(self, iceberg_path: str) -> None:
         with pytest.raises(ValueError, match="snapshot ID not found"):
             pl.scan_iceberg(iceberg_path, snapshot_id=1234567890).collect()
+
+    def test_scan_iceberg_kms_implementation(self, iceberg_path: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.catalog.properties.update(
+            {
+                "py-kms-impl": f"{__name__}._TestKmsClient",
+                "property-precedence": "catalog",
+            }
+        )
+        table.config = {
+            "config-property": "config",
+            "property-precedence": "config",
+        }
+        table.metadata.properties["property-precedence"] = "table"
+
+        q = pl.scan_iceberg(table)
+        assert q.select("id").head(2).collect().shape == (2, 1)
+        assert q.filter(pl.col("id") > 1).select("str").sort(
+            "str"
+        ).collect().rows() == [
+            ("2",),
+            ("3",),
+        ]
+
+        scan_data = new_iceberg_scan_resolver(table)
+        resolved = scan_data._to_dataset_scan_impl(projection=["str"])
+
+        assert isinstance(resolved, _RustIcebergScanData)
+        assert resolved.projected_iceberg_schema.column_names == ["str"]
+        assert resolved.kms_client.properties["config-property"] == "config"
+        assert resolved.kms_client.properties["property-precedence"] == "table"
+        assert resolved.storage_properties["config-property"] == "config"
+
+    @pytest.mark.parametrize(
+        ("kms_impl", "error", "match"),
+        [
+            ("InvalidKms", ValueError, "fully qualified class name"),
+            ("invalid_module.InvalidKms", ImportError, "failed to import"),
+            (
+                f"{__name__}.InvalidKms",
+                ImportError,
+                "KMS class 'InvalidKms' not found",
+            ),
+            (123, TypeError, "must be a string"),
+            (
+                f"{__name__}._KmsWithRequiredArgument",
+                TypeError,
+                "failed to construct",
+            ),
+            (
+                f"{__name__}._KmsWithoutInitialize",
+                TypeError,
+                "has no initialize",
+            ),
+            (
+                f"{__name__}._KmsWithoutUnwrap",
+                TypeError,
+                "has no unwrap_key",
+            ),
+        ],
+    )
+    def test_load_invalid_kms_implementation(
+        self,
+        iceberg_path: str,
+        kms_impl: Any,
+        error: type[Exception],
+        match: str,
+    ) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.config = {"py-kms-impl": kms_impl}
+
+        with pytest.raises(error, match=match):
+            _load_kms_config(table)
+
+    def test_kms_implementation_is_not_loaded_from_table_metadata(
+        self, iceberg_path: str
+    ) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.metadata.properties["py-kms-impl"] = f"{__name__}._TestKmsClient"
+
+        assert _load_kms_config(table) is None
+
+    @pytest.mark.parametrize("source", ["catalog", "config", "storage_options"])
+    def test_native_kms_configuration(self, iceberg_path: str, source: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        properties = {"encryption.kms-type": "aws", "region_name": "us-east-1"}
+        storage_options = None
+        if source == "catalog":
+            table.catalog.properties.update(properties)
+        elif source == "config":
+            table.config = properties
+        else:
+            storage_options = properties
+
+        assert _load_kms_config(table, storage_options) is None
+        table.metadata.properties.update(
+            {
+                "encryption.key-id": "master-1",
+                "encryption.kms-type": "untrusted",
+                "kms.endpoint": "https://untrusted.invalid",
+                "region_name": "untrusted",
+            }
+        )
+        config = _load_kms_config(table, storage_options)
+        assert config is not None
+        assert config.client is None
+        assert config.properties["encryption.kms-type"] == "aws"
+        assert config.properties["region_name"] == "us-east-1"
+        assert "kms.endpoint" not in config.properties
+
+    @pytest.mark.parametrize("kms_type", ["azure", "gcp", "unknown"])
+    def test_unsupported_native_kms(self, iceberg_path: str, kms_type: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.metadata.properties["encryption.key-id"] = "master-1"
+        table.config = {"encryption.kms-type": kms_type}
+
+        with pytest.raises(NotImplementedError, match="unsupported Iceberg KMS type"):
+            pl.scan_iceberg(table).collect()
+
+    def test_conflicting_kms_configuration(self, iceberg_path: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.config = {
+            "encryption.kms-type": "aws",
+            "py-kms-impl": f"{__name__}._TestKmsClient",
+        }
+        with pytest.raises(ValueError, match="configure only one"):
+            pl.scan_iceberg(table).collect()
+
+    def test_native_kms_configuration_precedence(self, iceberg_path: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.metadata.properties["encryption.key-id"] = "master-1"
+        table.catalog.properties.update(
+            {"encryption.kms-type": "aws", "region_name": "catalog"}
+        )
+        table.config = {"region_name": "config"}
+        config = _load_kms_config(table)
+        assert config is not None
+        assert config.properties["region_name"] == "config"
+        config = _load_kms_config(table, {"region_name": "explicit"})
+        assert config is not None
+        assert config.properties["region_name"] == "explicit"
+
+    def test_native_kms_incremental_scan_rejected(self, iceberg_path: str) -> None:
+        table = StaticTable.from_metadata(iceberg_path)
+        table.metadata.properties["encryption.key-id"] = "master-1"
+        table.config = {"encryption.kms-type": "aws"}
+        with pytest.raises(NotImplementedError, match="incremental append scans"):
+            pl.scan_iceberg(table, from_snapshot_id_exclusive=1).collect()
+
+    @pytest.mark.parametrize("kms_type", ["python", "aws", "aws_env", "aws_denied"])
+    @pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+    def test_scan_iceberg_encrypted_manifest_list(
+        self,
+        tmp_path: Path,
+        kms_type: str,
+        engine: EngineType,
+        monkeypatch: pytest.MonkeyPatch,
+        iceberg_kms_endpoint: tuple[
+            str, list[tuple[str | None, dict[str, Any]]], dict[str, str]
+        ],
+    ) -> None:
+        encrypted_manifest_list = base64.b64decode(
+            "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"
+            "M" + "EYLdD6uboIkIT+shZDHU/IsbFg3Rj3jNdKfFbUzRaVh95lRyosAARBGI9S3xHRwr/"
+            "NBKl+rsbB9YC2y0O1vV75NCyobwrjHFmuwO80WEmJ7kTOL7YM4nSFpWT3ZEj+/9v3"
+            "QsqmKGuimpxQsDbmoD1EIkoDE" + "D81waDgah6o0WsDaXMi6AUnEmZe8hofG1aQ="
+        )
+        manifest_list_path = tmp_path / "manifest-list.avro"
+        manifest_list_path.write_bytes(encrypted_manifest_list)
+
+        metadata = {
+            "format-version": 3,
+            "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+            "location": str(tmp_path),
+            "last-sequence-number": 0,
+            "last-updated-ms": 1602638573590,
+            "last-column-id": 1,
+            "current-schema-id": 0,
+            "schemas": [
+                {
+                    "type": "struct",
+                    "schema-id": 0,
+                    "fields": [
+                        {
+                            "id": 1,
+                            "name": "x",
+                            "required": True,
+                            "type": "long",
+                        }
+                    ],
+                }
+            ],
+            "default-spec-id": 0,
+            "partition-specs": [{"spec-id": 0, "fields": []}],
+            "last-partition-id": 1000,
+            "default-sort-order-id": 0,
+            "sort-orders": [{"order-id": 0, "fields": []}],
+            "properties": {
+                "encryption.key-id": "master-1",
+                "test-kms-key": "fa501fc8fcba0566490e925879392260",
+            },
+            "current-snapshot-id": 1,
+            "snapshots": [
+                {
+                    "snapshot-id": 1,
+                    "sequence-number": 0,
+                    "timestamp-ms": 0,
+                    "manifest-list": str(manifest_list_path),
+                    "summary": {"operation": "append"},
+                    "schema-id": 0,
+                    "key-id": "1fb95f04-7f98-4b1f-a08f-e810cfb907ff",
+                }
+            ],
+            "encryption-keys": [
+                {
+                    "key-id": "5b29941b-b3b4-4d57-8758-a9d1bf340b39",
+                    "encrypted-key-metadata": (
+                        "WVMIPwafypGJRgXOICFKcL+m8K4B40gEIJFsgC7rlitqN9PUpDeT19OZPs8="
+                    ),
+                    "encrypted-by-id": "master-1",
+                    "properties": {"KEY_TIMESTAMP": "1781172301703"},
+                },
+                {
+                    "key-id": "1fb95f04-7f98-4b1f-a08f-e810cfb907ff",
+                    "encrypted-key-metadata": (
+                        "scAmTJzgxf7vDQBetLMWSKnZmOljEzoitb6H90HQ/wjDz5/naIkg44PkAg+"
+                        "Ldl6RBP0FBcoS1bfBDVLToUbdrVA="
+                    ),
+                    "encrypted-by-id": "5b29941b-b3b4-4d57-8758-a9d1bf340b39",
+                },
+            ],
+            "snapshot-log": [{"snapshot-id": 1, "timestamp-ms": 0}],
+            "metadata-log": [],
+            "refs": {"main": {"snapshot-id": 1, "type": "branch"}},
+            "next-row-id": 0,
+        }
+        metadata_path = tmp_path / "v1.metadata.json"
+        metadata_path.write_text(json.dumps(metadata), encoding="utf8")
+
+        instance_count = len(_TestKmsClient.instances)
+        endpoint, calls, response = iceberg_kms_endpoint
+        storage_options = (
+            {"py-kms-impl": f"{__name__}._TestKmsClient"}
+            if kms_type == "python"
+            else {
+                "encryption.kms-type": "aws",
+                "kms.endpoint": endpoint,
+                "region_name": "us-east-1",
+                "aws_access_key_id": "test",
+                "aws_secret_access_key": "test",
+            }
+        )
+        if kms_type == "aws_env":
+            monkeypatch.setenv(
+                "AWS_ACCESS_KEY_ID", storage_options.pop("aws_access_key_id")
+            )
+            monkeypatch.setenv(
+                "AWS_SECRET_ACCESS_KEY", storage_options.pop("aws_secret_access_key")
+            )
+            monkeypatch.setenv("AWS_REGION", storage_options.pop("region_name"))
+        q = pl.scan_iceberg(
+            format_file_uri_iceberg(str(metadata_path)),
+            storage_options=storage_options,
+        )
+        if kms_type == "aws_denied":
+            response.clear()
+            response.update({"__type": "AccessDeniedException", "message": "denied"})
+            with pytest.raises(
+                pl.exceptions.ComputeError, match="AWS KMS Decrypt failed"
+            ):
+                q.collect(engine=engine)
+            assert len(calls) == 1
+            assert len(_TestKmsClient.instances) == instance_count
+            return
+
+        result = q.collect(engine=engine)
+
+        assert_frame_equal(result, pl.DataFrame(schema={"x": pl.Int64}))
+        if kms_type in {"aws", "aws_env"}:
+            assert len(_TestKmsClient.instances) == instance_count
+            assert calls == [
+                (
+                    "TrentService.Decrypt",
+                    {
+                        "CiphertextBlob": "WVMIPwafypGJRgXOICFKcL+m8K4B40gEIJFsgC7rlitqN9PUpDeT19OZPs8=",
+                        "KeyId": "master-1",
+                        "EncryptionAlgorithm": "SYMMETRIC_DEFAULT",
+                    },
+                )
+            ]
+            return
+        assert len(_TestKmsClient.instances) == instance_count + 1
+        assert _TestKmsClient.instances[-1].calls == [
+            (
+                base64.b64decode(
+                    "WVMIPwafypGJRgXOICFKcL+m8K4B40gEIJFsgC7rlitqN9PUpDeT19OZPs8="
+                ),
+                "master-1",
+            )
+        ]
 
     def test_scan_iceberg_filter_on_partition(self, iceberg_path: str) -> None:
         ts1 = datetime(2023, 3, 1, 18, 15)

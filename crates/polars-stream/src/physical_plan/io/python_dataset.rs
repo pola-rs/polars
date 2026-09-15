@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use polars_core::config;
+use polars_error::PolarsResult;
 use polars_plan::plans::{ExpandedPythonScan, python_df_to_rust};
 use polars_utils::format_pl_smallstr;
 use pyo3::exceptions::PyStopIteration;
@@ -13,17 +14,17 @@ use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderB
 /// Note: Currently used for iceberg fallback.
 pub fn python_dataset_scan_to_reader_builder(
     expanded_scan: &ExpandedPythonScan,
-) -> Arc<dyn FileReaderBuilder> {
+) -> PolarsResult<Arc<dyn FileReaderBuilder>> {
     use polars_plan::dsl::python_dsl::PythonScanSource as S;
     use pyo3::prelude::*;
 
     let (name, get_batch_fn) = match &expanded_scan.variant {
         S::Pyarrow => {
-            let generator = Python::attach(|py| {
-                let generator = expanded_scan.scan_fn.call0(py).unwrap();
+            let generator = Python::attach(|py| -> PyResult<Py<PyAny>> {
+                let generator = expanded_scan.scan_fn.call0(py)?;
 
-                generator.bind(py).get_item(0).unwrap().unbind()
-            });
+                Ok(generator.bind(py).get_item(0)?.unbind())
+            })?;
 
             (
                 format_pl_smallstr!("python[{} @ pyarrow]", &expanded_scan.name),
@@ -60,9 +61,9 @@ pub fn python_dataset_scan_to_reader_builder(
         verbose: config::verbose(),
     };
 
-    Arc::new(BatchFnReaderBuilder {
+    Ok(Arc::new(BatchFnReaderBuilder {
         name,
         reader: std::sync::Mutex::new(Some(reader)),
         execution_state: Default::default(),
-    }) as Arc<dyn FileReaderBuilder>
+    }) as Arc<dyn FileReaderBuilder>)
 }
