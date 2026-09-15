@@ -3,18 +3,29 @@
 use arrow::bitmap::MutableBitmap;
 use polars_core::prelude::*;
 
-/// `length`, if `chunks` is a single chunk that repeats one element over more than one of them.
+/// `length`, if every one of the `length` elements `chunks` holds is the same one.
 ///
-/// Every element of such a chunk is the same one — the same value throughout, or a null
-/// throughout — which settles the whole `distinct` family on it without a single element being
-/// hashed: the first element is the only one that is distinct in it, so is the last, and none of
-/// them occurs just once.
+/// A single chunk that repeats one element is the same value throughout, or the same null
+/// throughout; so is a column with nothing but nulls in it, whatever its chunks look like.
+/// Either way the whole `distinct` family is settled without a single element being hashed:
+/// the first element is the only one that is distinct, so is the last, and none of them occurs
+/// just once.
 fn repeated_element(chunks: &[PlArrayRef], length: usize) -> Option<usize> {
+    if length <= 1 {
+        return None;
+    }
+
+    // Nulls are all the same element, so a column of nothing else holds one element throughout
+    // however many chunks it is spread over; the counts are the ones the masks already carry.
+    if chunks.iter().map(|chunk| chunk.null_count()).sum::<usize>() == length {
+        return Some(length);
+    }
+
     let [chunk] = chunks else {
         return None;
     };
 
-    (length > 1 && chunk.is_scalar()).then_some(length)
+    chunk.is_scalar().then_some(length)
 }
 
 /// [`repeated_element`], for a chunked array.

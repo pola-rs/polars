@@ -61,14 +61,24 @@ impl<T: PolarsObject> ChunkUnique for ObjectChunked<T> {
     }
 }
 
-/// Whether this chunked array is one chunk that repeats a single element.
+/// Whether every element of this chunked array is the same one.
 ///
-/// Every element of such a chunk is the same one — the same value throughout, or a null
-/// throughout — so it has exactly one distinct element, and the whole distinct family is
-/// answered off the first of them without hashing a single one. See also
+/// One chunk that repeats a single element is the same value throughout, or the same null
+/// throughout; a column with nothing but nulls in it is the same null throughout too, however
+/// many chunks they are spread over. Either way it has exactly one distinct element, and the
+/// whole unique family is answered off the first of them without hashing a single one. See also
 /// [`scalar_groups`](crate::frame::group_by::scalar_groups).
-fn is_scalar_chunk<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
-    matches!(ca.chunks().as_slice(), [chunk] if !chunk.is_empty() && chunk.is_scalar())
+fn reads_as_one_element<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
+    if ca.is_empty() {
+        return false;
+    }
+
+    // Nulls are all the same element, and their count is the one the masks already carry.
+    if ca.null_count() == ca.len() {
+        return true;
+    }
+
+    matches!(ca.chunks().as_slice(), [chunk] if chunk.is_scalar())
 }
 
 fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<IdxSize>
@@ -88,7 +98,7 @@ where
 
 macro_rules! arg_unique_ca {
     ($ca:expr) => {{
-        if is_scalar_chunk($ca) {
+        if reads_as_one_element($ca) {
             vec![0]
         } else {
             match $ca.has_nulls() {
@@ -111,7 +121,7 @@ where
         if self.is_empty() {
             return Ok(self.clone());
         }
-        if is_scalar_chunk(self) {
+        if reads_as_one_element(self) {
             return Ok(self.slice(0, 1));
         }
         match self.is_sorted_flag() {
@@ -157,7 +167,7 @@ where
         if self.is_empty() {
             return Ok(0);
         }
-        if is_scalar_chunk(self) {
+        if reads_as_one_element(self) {
             return Ok(1);
         }
         match self.is_sorted_flag() {
@@ -234,7 +244,7 @@ impl ChunkUnique for StringChunked {
 
 impl ChunkUnique for BinaryChunked {
     fn unique(&self) -> PolarsResult<Self> {
-        if is_scalar_chunk(self) {
+        if reads_as_one_element(self) {
             return Ok(self.slice(0, 1));
         }
         match self.null_count() {
@@ -268,7 +278,7 @@ impl ChunkUnique for BinaryChunked {
     }
 
     fn n_unique(&self) -> PolarsResult<usize> {
-        if is_scalar_chunk(self) {
+        if reads_as_one_element(self) {
             return Ok(1);
         }
         let mut set: PlHashSet<&[u8]> = PlHashSet::new();
@@ -305,7 +315,7 @@ impl ChunkUnique for BinaryChunked {
 
 impl ChunkUnique for BinaryOffsetChunked {
     fn unique(&self) -> PolarsResult<Self> {
-        if is_scalar_chunk(self) {
+        if reads_as_one_element(self) {
             return Ok(self.slice(0, 1));
         }
         match self.null_count() {
@@ -333,7 +343,7 @@ impl ChunkUnique for BinaryOffsetChunked {
     }
 
     fn n_unique(&self) -> PolarsResult<usize> {
-        if is_scalar_chunk(self) {
+        if reads_as_one_element(self) {
             return Ok(1);
         }
         let mut set: PlHashSet<&[u8]> = PlHashSet::new();
@@ -372,7 +382,7 @@ impl ChunkUnique for BooleanChunked {
     fn unique(&self) -> PolarsResult<Self> {
         use polars_compute::unique::RangedUniqueKernel;
 
-        if is_scalar_chunk(self) {
+        if reads_as_one_element(self) {
             return Ok(self.slice(0, 1));
         }
 

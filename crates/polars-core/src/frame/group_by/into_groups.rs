@@ -29,10 +29,15 @@ pub trait IntoGroupsType {
 /// hashed. For a nested type that is worth the most: its groups are otherwise read off a row
 /// encoding of the whole column, written out before a single row is hashed.
 pub(crate) fn scalar_groups<T: PolarsDataType>(ca: &ChunkedArray<T>) -> Option<GroupsType> {
-    let [chunk] = ca.chunks().as_slice() else {
+    if ca.is_empty() {
         return None;
-    };
-    if chunk.is_empty() || !chunk.is_scalar() {
+    }
+
+    // Nulls all fall into one group, so a column of nothing else is one group whatever its
+    // chunks look like; otherwise it takes one chunk repeating one element to say as much.
+    let one_element = ca.null_count() == ca.len()
+        || matches!(ca.chunks().as_slice(), [chunk] if chunk.is_scalar());
+    if !one_element {
         return None;
     }
 
