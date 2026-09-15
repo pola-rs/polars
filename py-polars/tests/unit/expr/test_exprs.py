@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from itertools import permutations
 from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
@@ -130,20 +130,57 @@ def test_unique_stable() -> None:
     assert_series_equal(s.unique(maintain_order=True), expected)
 
 
-def test_entropy() -> None:
-    df = pl.DataFrame(
-        {
-            "group": ["A", "A", "A", "B", "B", "B", "B", "C"],
-            "id": [1, 2, 1, 4, 5, 4, 6, 7],
-        }
-    )
-    result = df.group_by("group", maintain_order=True).agg(
-        pl.col("id").entropy(normalize=True)
-    )
-    expected = pl.DataFrame(
-        {"group": ["A", "B", "C"], "id": [1.0397207708399179, 1.371381017771811, 0.0]}
-    )
-    assert_frame_equal(result, expected)
+@pytest.mark.parametrize(
+    ("dtype_in", "dtype_out"),
+    [
+        (pl.Int32, pl.Float64),
+        (pl.Float16, pl.Float16),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
+        (pl.Decimal(10, 2), pl.Float64),
+    ],
+)
+@pytest.mark.parametrize("normalize", [True, False])
+def test_entropy_dtypes(
+    dtype_in: PolarsDataType, dtype_out: PolarsDataType, normalize: bool
+) -> None:
+    a = pl.Series("a", [1, 3, 9, 4, 10], dtype=dtype_in)
+    lf = pl.LazyFrame([a])
+
+    a_np = a.cast(pl.Float64).to_numpy()
+    if normalize:
+        a_np = a_np / a_np.sum()
+    expected = -np.sum(a_np * np.log(a_np))
+
+    result = lf.select(pl.col("a").entropy(normalize=normalize))
+    assert result.collect_schema() == pl.Schema({"a": dtype_out})
+    assert result.collect_schema() == result.collect().schema
+    rel = 1e-2 if dtype_in == pl.Float16 else 1e-6
+    assert result.collect().item() == pytest.approx(expected, rel=rel)
+
+
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series("a", [date(2020, 1, 1), date(2021, 1, 1)]),
+        pl.Series("a", [datetime(2020, 1, 1), datetime(2021, 1, 1)]),
+        pl.Series("a", [timedelta(days=1), timedelta(days=2)]),
+        pl.Series("a", [time(1, 0), time(2, 0)]),
+        pl.Series("a", ["x", "y"], dtype=pl.Categorical),
+        pl.Series("a", ["x", "y"]),
+    ],
+)
+def test_entropy_invalid_dtype(s: pl.Series) -> None:
+    lf = pl.LazyFrame([s])
+    q = lf.select(pl.col("a").entropy())
+
+    # planner: schema resolution must reject the input dtype
+    with pytest.raises(InvalidOperationError):
+        q.collect_schema()
+
+    # engine: execution must error rather than compute on the physical repr
+    with pytest.raises(InvalidOperationError):
+        q.collect()
 
 
 @pytest.mark.parametrize(
@@ -232,21 +269,23 @@ def test_log(
         (pl.Float16, pl.Float16),
         (pl.Float32, pl.Float32),
         (pl.Float64, pl.Float64),
+        (pl.Decimal(10, 2), pl.Float64),
     ],
 )
 def test_exp_log1p(dtype_in: PolarsDataType, dtype_out: PolarsDataType) -> None:
     a = pl.Series("a", [1, 3, 9, 4, 10], dtype=dtype_in)
     lf = pl.LazyFrame([a])
+    a_np = a.cast(pl.Float64).to_numpy()
 
     # exp
     result = lf.select(pl.col("a").exp())
-    expected = pl.Series("a", np.exp(a.to_numpy())).cast(dtype_out).to_frame()
+    expected = pl.Series("a", np.exp(a_np)).cast(dtype_out).to_frame()
     assert_frame_equal(result.collect(), expected)
     assert result.collect_schema() == expected.schema
 
     # log1p
     result = lf.select(pl.col("a").log1p())
-    expected = pl.Series("a", np.log1p(a.to_numpy())).cast(dtype_out).to_frame()
+    expected = pl.Series("a", np.log1p(a_np)).cast(dtype_out).to_frame()
     assert_frame_equal(result.collect(), expected)
     assert result.collect_schema() == expected.schema
 
