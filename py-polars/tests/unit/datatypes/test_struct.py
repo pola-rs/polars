@@ -1054,6 +1054,14 @@ def test_struct_arithmetic_nested_list_array_fields(
             "flt": pl.Series([1.5, None, 3.5], dtype=pl.Float32),
             "lst": pl.Series([[1, 3], None, [None]], dtype=pl.List(pl.Int32)),
             "arr": pl.Series([[1, 3], None, [None, 3]], dtype=pl.Array(pl.Int32, 2)),
+            "int8_lst": pl.Series([[127, 3], None, [None]], dtype=pl.List(pl.Int8)),
+            "int8_arr": pl.Series(
+                [[127, 3], None, [None, 3]], dtype=pl.Array(pl.Int8, 2)
+            ),
+            "flt32_lst": pl.Series([[0.1, 3], None, [None]], dtype=pl.List(pl.Float32)),
+            "flt32_arr": pl.Series(
+                [[0.1, 3], None, [None, 3]], dtype=pl.Array(pl.Float32, 2)
+            ),
             "null_lst": pl.Series([[None], None, [None]], dtype=pl.List(pl.Null)),
             "null_arr": pl.Series(
                 [[None, None], None, [None, None]], dtype=pl.Array(pl.Null, 2)
@@ -1086,16 +1094,34 @@ def test_struct_arithmetic_nested_list_array_fields(
         assert_frame_equal(q.collect(engine=engine), expected)
 
 
-@pytest.mark.parametrize("dtype", [pl.String, pl.Date, pl.Duration])
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.String,
+        pl.Date,
+        pl.Duration,
+        *[
+            container
+            for leaf in (pl.Date, pl.Datetime, pl.Duration, pl.Decimal(10, 2))
+            for container in (pl.List(leaf), pl.Array(leaf, 1))
+        ],
+        pl.List(pl.Array(pl.Int32, 1)),
+        pl.Array(pl.List(pl.Int32), 1),
+    ],
+)
 @pytest.mark.parametrize("op", [operator.add, operator.truediv])
 @pytest.mark.parametrize("reverse", [False, True])
 def test_struct_arithmetic_rejects_non_numeric_fields(
     dtype: PolarsDataType, op: Callable[[Any, Any], Any], reverse: bool
 ) -> None:
     df = pl.DataFrame(schema={"s": pl.Struct({"nested": pl.Struct({"bad": dtype})})})
-    expr = op(2, pl.col("s")) if reverse else op(pl.col("s"), 2)
+    expr = op(1.5, pl.col("s")) if reverse else op(pl.col("s"), 1.5)
+    q = df.lazy().select(expr)
     with pytest.raises(InvalidOperationError, match=r"non-numeric field.*bad"):
-        df.lazy().select(expr).collect_schema()
+        q.collect_schema()
+    for engine in ("in-memory", "streaming"):
+        with pytest.raises(InvalidOperationError, match=r"non-numeric field.*bad"):
+            q.collect(engine=engine)
 
 
 @pytest.mark.parametrize(
@@ -1133,6 +1159,40 @@ def test_struct_arithmetic_rejects_non_numeric_fields(
             {"i": 2, "b": 2},
         ),
         *[
+            (dtype, value, rhs, operator.add, reverse, expected_dtype, result)
+            for dtype, value, rhs, expected_dtype, result in (
+                (
+                    pl.List(pl.UInt64),
+                    [2**63],
+                    -1,
+                    pl.List(pl.Int128),
+                    [2**63 - 1],
+                ),
+                (
+                    pl.Array(pl.UInt64, 1),
+                    [2**63],
+                    -1,
+                    pl.Array(pl.Int128, 1),
+                    [2**63 - 1],
+                ),
+                (
+                    pl.List(pl.Boolean),
+                    [True, False],
+                    1.5,
+                    pl.List(pl.Float64),
+                    [2.5, 1.5],
+                ),
+                (
+                    pl.Array(pl.Boolean, 2),
+                    [True, False],
+                    1.5,
+                    pl.Array(pl.Float64, 2),
+                    [2.5, 1.5],
+                ),
+            )
+            for reverse in (False, True)
+        ],
+        *[
             (
                 dtype,
                 value,
@@ -1167,7 +1227,8 @@ def test_struct_arithmetic_field_dtypes(
         "result", [{"a": result}], dtype=pl.Struct({"a": expected_dtype})
     )
     assert q.collect_schema() == {"result": expected.dtype}
-    assert_series_equal(q.collect().to_series(), expected)
+    for engine in ("in-memory", "streaming"):
+        assert_series_equal(q.collect(engine=engine).to_series(), expected)
 
 
 @pytest.mark.parametrize("engine", ["in-memory", "streaming"])

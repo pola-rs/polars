@@ -493,13 +493,42 @@ pub(crate) fn get_struct_numeric_dtype(
             let dtype = match field.dtype() {
                 DataType::Struct(fields) => get_struct_numeric_dtype(fields, numeric, op)?,
                 DataType::Duration(_) if op == Operator::Multiply => field.dtype().clone(),
-                dtype
-                    if dtype.is_numeric()
-                        || dtype.is_null()
-                        || dtype.is_bool()
-                        || dtype.is_list()
-                        || dtype.is_array() =>
-                {
+                dtype if dtype.is_list() || dtype.is_array() => {
+                    let mut leaf = dtype;
+                    while (dtype.is_list() && leaf.is_list())
+                        || (dtype.is_array() && leaf.is_array())
+                    {
+                        leaf = leaf.inner_dtype().unwrap();
+                    }
+                    polars_ensure!(
+                        leaf.is_supported_list_arithmetic_input(),
+                        InvalidOperation:
+                        "cannot {op} a struct with non-numeric field: (field: {}, dtype: {})",
+                        field.name, dtype,
+                    );
+                    let list_op = match op {
+                        Operator::Plus => NumericListOp::add(),
+                        Operator::Minus => NumericListOp::sub(),
+                        Operator::Multiply => NumericListOp::mul(),
+                        Operator::TrueDivide | Operator::RustDivide => NumericListOp::div(),
+                        Operator::FloorDivide => NumericListOp::floor_div(),
+                        Operator::Modulus => NumericListOp::rem(),
+                        _ => unreachable!(),
+                    };
+                    // List coercion narrows literals before the kernel resolves its supertype.
+                    let numeric = if numeric.is_unknown() {
+                        let narrowed = list_op.try_get_leaf_supertype(leaf, numeric)?;
+                        if narrowed.is_unknown() {
+                            numeric.clone().materialize_unknown(false)?
+                        } else {
+                            narrowed
+                        }
+                    } else {
+                        numeric.clone()
+                    };
+                    dtype.cast_leaf(list_op.try_get_leaf_supertype(leaf, &numeric)?)
+                },
+                dtype if dtype.is_numeric() || dtype.is_null() || dtype.is_bool() => {
                     let numeric = if dtype.is_bool() {
                         numeric.clone().materialize_unknown(false)?
                     } else {
