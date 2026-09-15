@@ -49,52 +49,36 @@ fn is_cat_str_binary(type_left: &DataType, type_right: &DataType) -> bool {
 }
 
 #[cfg(feature = "dtype-struct")]
-// Ensure we don't cast to supertype
-// otherwise we will fill a struct with null fields
 fn process_struct_numeric_arithmetic(
     type_left: DataType,
     type_right: DataType,
-    node_left: Node,
-    node_right: Node,
+    mut node_left: Node,
+    mut node_right: Node,
     op: Operator,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
-    match (&type_left, &type_right) {
-        (DataType::Struct(fields), _) => {
-            if let Some(first) = fields.first() {
-                let new_node_right = expr_arena.add(AExpr::Cast {
-                    expr: node_right,
-                    dtype: DataType::Struct(vec![first.clone()]),
-                    options: CastOptions::NonStrict,
-                });
-                Ok(Some(AExpr::BinaryExpr {
-                    left: node_left,
-                    op,
-                    right: new_node_right,
-                }))
-            } else {
-                Ok(None)
-            }
-        },
-        (_, DataType::Struct(fields)) => {
-            if let Some(first) = fields.first() {
-                let new_node_left = expr_arena.add(AExpr::Cast {
-                    expr: node_left,
-                    dtype: DataType::Struct(vec![first.clone()]),
-                    options: CastOptions::NonStrict,
-                });
-
-                Ok(Some(AExpr::BinaryExpr {
-                    left: new_node_left,
-                    op,
-                    right: node_right,
-                }))
-            } else {
-                Ok(None)
-            }
-        },
-        _ => unreachable!(),
+    let (struct_dtype, numeric_dtype, struct_node) = match &type_left {
+        DataType::Struct(_) => (&type_left, &type_right, &mut node_left),
+        _ => (&type_right, &type_left, &mut node_right),
+    };
+    let DataType::Struct(fields) = struct_dtype else {
+        unreachable!()
+    };
+    let dtype = get_struct_numeric_dtype(fields, numeric_dtype, op)?;
+    if &dtype == struct_dtype {
+        return Ok(None);
     }
+
+    *struct_node = expr_arena.add(AExpr::Cast {
+        expr: *struct_node,
+        dtype,
+        options: CastOptions::NonStrict,
+    });
+    Ok(Some(AExpr::BinaryExpr {
+        left: node_left,
+        op,
+        right: node_right,
+    }))
 }
 
 fn process_list_numeric_arithmetic(
