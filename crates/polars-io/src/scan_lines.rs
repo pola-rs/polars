@@ -1,12 +1,10 @@
-use arrow::array::builder::StaticArrayBuilder;
-use arrow::array::{BINVIEW_MAX_ROW_BYTE_LEN, BinaryViewArrayGenericBuilder};
-use arrow::datatypes::ArrowDataType;
-use polars_core::prelude::DataType;
-use polars_core::series::Series;
+use arrow::array::BINVIEW_MAX_ROW_BYTE_LEN;
+use polars_array::builder::StaticArrayBuilder;
+use polars_array::{PlBinaryViewArrayBuilder, PlUtf8ViewArray};
+use polars_core::prelude::{DataType, StringChunked};
+use polars_core::series::{IntoSeries, Series};
 use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::pl_str::PlSmallStr;
-
-type BinviewArrayBuilder = BinaryViewArrayGenericBuilder<[u8]>;
 
 const CR: u8 = b'\r';
 const LF: u8 = b'\n';
@@ -39,7 +37,9 @@ fn split_lines_to_rows_impl(bytes: &[u8], max_buffer_size: usize) -> PolarsResul
         .len()
         .div_ceil(first_line_len.min(last_line_len).max(1));
 
-    let mut builder: BinviewArrayBuilder = BinviewArrayBuilder::new(ArrowDataType::BinaryView);
+    // The lines are appended as the bytes they are and validated as UTF-8 once at the end, which
+    // is cheaper than validating each of them on the way in.
+    let mut builder = PlBinaryViewArrayBuilder::new();
     builder.reserve(n_lines_estimate);
 
     let bytes = if bytes.last() == Some(&LF) {
@@ -62,21 +62,13 @@ fn split_lines_to_rows_impl(bytes: &[u8], max_buffer_size: usize) -> PolarsResul
             line_bytes.len(), max_buffer_size,
         );
 
-        builder.push_value_ignore_validity(line_bytes);
+        builder.push_value(line_bytes);
     }
 
-    let arr = builder.freeze();
-
     // Performs UTF-8 validation.
-    let arr = arr.to_utf8view()?;
+    let arr = PlUtf8ViewArray::from_binview(builder.freeze())?;
 
-    Ok(unsafe {
-        Series::_try_from_arrow_unchecked(
-            PlSmallStr::EMPTY,
-            vec![arr.boxed()],
-            &ArrowDataType::Utf8View,
-        )?
-    })
+    Ok(StringChunked::with_chunk(PlSmallStr::EMPTY, arr).into_series())
 }
 
 #[cfg(test)]

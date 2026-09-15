@@ -1,5 +1,3 @@
-use arrow::array::BooleanArray;
-
 use super::*;
 
 #[derive(Default)]
@@ -56,7 +54,7 @@ impl GroupedReduction for HasNullsReduce {
         if arr.has_nulls() {
             let valid = arr.validity().unwrap();
             for (i, g) in subset.iter().zip(group_idxs) {
-                let is_null = !valid.get_bit_unchecked(*i as usize);
+                let is_null = !valid.get_unchecked(*i as usize);
                 if g.should_evict() {
                     self.evicted_has_nulls
                         .push(self.has_nulls.get_unchecked(g.idx()));
@@ -101,8 +99,8 @@ impl GroupedReduction for HasNullsReduce {
 
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v = core::mem::take(&mut self.has_nulls);
-        let arr = BooleanArray::from(v.freeze());
-        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
+        let arr = pl_boolean(v.freeze(), None);
+        Ok(BooleanChunked::with_chunk(PlSmallStr::EMPTY, arr).into_series())
     }
 
     fn as_any(&self) -> &dyn Any {

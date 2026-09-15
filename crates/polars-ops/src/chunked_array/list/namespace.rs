@@ -15,6 +15,38 @@ use crate::prelude::diff;
 use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
 use crate::series::{ArgAgg, convert_and_bound_index};
 
+/// The elements of one list `s` written into `buf` one after another, `separator` between them.
+///
+/// `None` where the list has a null element to write and `ignore_nulls` says not to skip it — the
+/// row that list belongs to is null then. `buf` is the caller's, reused from row to row.
+///
+/// A fixed-size list joins the same way, which is why `array::join` reads this too.
+pub(crate) fn join_one_list<'a>(
+    s: &Series,
+    separator: &str,
+    ignore_nulls: bool,
+    buf: &'a mut String,
+) -> Option<&'a str> {
+    // make sure that we don't write values of previous iteration
+    buf.clear();
+    let ca = s.str().unwrap();
+
+    if ca.null_count() != 0 && !ignore_nulls {
+        return None;
+    }
+
+    for arr in ca.downcast_iter() {
+        for val in arr.iter().flatten() {
+            buf.write_str(val).unwrap();
+            buf.write_str(separator).unwrap();
+        }
+    }
+
+    // last value should not have a separator, so slice that off
+    // saturating sub because there might have been nothing written.
+    Some(&buf[..buf.len().saturating_sub(separator.len())])
+}
+
 pub(super) fn has_inner_nulls(ca: &ListChunked) -> bool {
     for arr in ca.downcast_iter() {
         if arr.values().null_count() > 0 {
@@ -91,31 +123,30 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn join_literal(&self, separator: &str, ignore_nulls: bool) -> PolarsResult<StringChunked> {
         let ca = self.as_list();
+
+        // Every element reading the one list joins it to the one string, and that string stands
+        // for every element in turn: it is written once and repeated rather than written out
+        // `len` times.
+        if let Some(length) = ca.repeats_one_list() {
+            let mut buf = String::with_capacity(128);
+            let one = ca.amortized_iter().next().flatten();
+            let joined =
+                one.and_then(|s| join_one_list(s.as_ref(), separator, ignore_nulls, &mut buf));
+
+            let name = ca.name().clone();
+            return Ok(match joined {
+                Some(joined) => StringChunked::full(name, joined, length),
+                None => StringChunked::full_null(name, length),
+            });
+        }
+
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
         let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
 
         ca.for_each_amortized(|opt_s| {
-            let opt_val = opt_s.and_then(|s| {
-                // make sure that we don't write values of previous iteration
-                buf.clear();
-                let ca = s.as_ref().str().unwrap();
-
-                if ca.null_count() != 0 && !ignore_nulls {
-                    return None;
-                }
-
-                for arr in ca.downcast_iter() {
-                    for val in arr.non_null_values_iter() {
-                        buf.write_str(val).unwrap();
-                        buf.write_str(separator).unwrap();
-                    }
-                }
-
-                // last value should not have a separator, so slice that off
-                // saturating sub because there might have been nothing written.
-                Some(&buf[..buf.len().saturating_sub(separator.len())])
-            });
+            let opt_val =
+                opt_s.and_then(|s| join_one_list(s.as_ref(), separator, ignore_nulls, &mut buf));
             builder.append_option(opt_val)
         });
         Ok(builder.finish())
@@ -127,6 +158,19 @@ pub trait ListNameSpaceImpl: AsList {
         ignore_nulls: bool,
     ) -> PolarsResult<StringChunked> {
         let ca = self.as_list();
+
+        // One list against one separator makes one string, whatever the length the two of them
+        // are read over — see `join_literal`, which this defers to for the answer itself.
+        if ca.repeats_one_list() == Some(separator.len())
+            && let Some(separator) = separator.scalar_value()
+        {
+            return match separator {
+                Some(separator) => self.join_literal(separator, ignore_nulls),
+                // A null separator writes a null row, and it is the separator for every row here.
+                None => Ok(StringChunked::full_null(ca.name().clone(), ca.len())),
+            };
+        }
+
         // used to amortize heap allocs
         let mut buf = String::with_capacity(128);
         let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
@@ -136,24 +180,7 @@ pub trait ListNameSpaceImpl: AsList {
                 .for_each(|(opt_s, opt_sep)| match opt_sep {
                     Some(separator) => {
                         let opt_val = opt_s.and_then(|s| {
-                            // make sure that we don't write values of previous iteration
-                            buf.clear();
-                            let ca = s.as_ref().str().unwrap();
-
-                            if ca.null_count() != 0 && !ignore_nulls {
-                                return None;
-                            }
-
-                            for arr in ca.downcast_iter() {
-                                for val in arr.non_null_values_iter() {
-                                    buf.write_str(val).unwrap();
-                                    buf.write_str(separator).unwrap();
-                                }
-                            }
-
-                            // last value should not have a separator, so slice that off
-                            // saturating sub because there might have been nothing written.
-                            Some(&buf[..buf.len().saturating_sub(separator.len())])
+                            join_one_list(s.as_ref(), separator, ignore_nulls, &mut buf)
                         });
                         builder.append_option(opt_val)
                     },
@@ -309,17 +336,38 @@ pub trait ListNameSpaceImpl: AsList {
             return IdxCa::full_null(ca.name().clone(), ca.len());
         }
 
-        let mut lengths = Vec::with_capacity(ca.len());
-        ca.downcast_iter().for_each(|arr| {
-            let offsets = arr.offsets().as_slice();
-            let mut last = offsets[0];
-            for o in &offsets[1..] {
-                lengths.push((*o - last) as IdxSize);
-                last = *o;
-            }
-        });
+        // Every element of the one chunk covers the one range, so they are all that range's
+        // length: the answer is the single slot that says so, and neither the offsets nor the
+        // lengths are ever written out one per element.
+        if ca.chunks().len() == 1
+            && let Some(range) = ca.downcast_get(0).unwrap().scalar_offsets()
+        {
+            let arr = PlPrimitiveArray::new_scalar(range.len() as IdxSize, ca.len())
+                .with_validity(ca_validity);
+            return IdxCa::with_chunk(ca.name().clone(), arr);
+        }
 
-        let arr = IdxArr::from_vec(lengths).with_validity(ca_validity);
+        let mut lengths = Vec::with_capacity(ca.len());
+        ca.downcast_iter()
+            .for_each(|arr| match arr.scalar_offsets() {
+                // As above, for one of several chunks: the lengths of the other chunks are written
+                // out, so this one's are too.
+                Some(range) => lengths.resize(lengths.len() + arr.len(), range.len() as IdxSize),
+                None => {
+                    let offsets = arr
+                        .flat_offsets()
+                        .expect("the elements cover ranges of their own");
+                    let mut last = offsets[0];
+                    for o in &offsets[1..] {
+                        lengths.push((*o - last) as IdxSize);
+                        last = *o;
+                    }
+                },
+            });
+
+        // The lengths are written out one per element, but the mask carries over as it is: one
+        // that repeats a single bit stays that single bit.
+        let arr = PlPrimitiveArray::from_vec(lengths).with_validity(ca_validity);
         IdxCa::with_chunk(ca.name().clone(), arr)
     }
 
@@ -338,9 +386,10 @@ pub trait ListNameSpaceImpl: AsList {
             .map(|arr| sublist_get(arr, idx))
             .collect::<Vec<_>>();
 
-        let s = Series::try_from((ca.name().clone(), chunks)).unwrap();
         // SAFETY: every element in list has dtype equal to its inner type
-        unsafe { s.from_physical_unchecked(ca.inner_dtype()) }
+        Ok(unsafe {
+            Series::from_chunks_and_dtype_unchecked(ca.name().clone(), chunks, ca.inner_dtype())
+        })
     }
 
     #[cfg(feature = "list_gather")]
@@ -425,16 +474,10 @@ pub trait ListNameSpaceImpl: AsList {
         let index_typed_index = |idx: &Series| {
             let idx = idx.cast(&IDX_DTYPE).unwrap();
             {
+                // Gathering out of the one list every element reads is one gather, which
+                // `try_apply_amortized` runs once and hands to every element in turn.
                 list_ca
-                    .amortized_iter()
-                    .map(|s| {
-                        s.map(|s| {
-                            let s = s.as_ref();
-                            take_series(s, idx.clone(), null_on_oob)
-                        })
-                        .transpose()
-                    })
-                    .collect::<PolarsResult<ListChunked>>()
+                    .try_apply_amortized(|s| take_series(s.as_ref(), idx.clone(), null_on_oob))
                     .map(|mut ca| {
                         ca.rename(list_ca.name().clone());
                         ca.into_series()
@@ -481,22 +524,10 @@ pub trait ListNameSpaceImpl: AsList {
                             if min >= 0 {
                                 index_typed_index(&idx_ca)
                             } else {
-                                let mut out = {
-                                    list_ca
-                                        .amortized_iter()
-                                        .map(|opt_s| {
-                                            opt_s
-                                                .map(|s| {
-                                                    take_series(
-                                                        s.as_ref(),
-                                                        idx_ca.clone(),
-                                                        null_on_oob,
-                                                    )
-                                                })
-                                                .transpose()
-                                        })
-                                        .collect::<PolarsResult<ListChunked>>()?
-                                };
+                                // As above: one list read throughout is one gather.
+                                let mut out = list_ca.try_apply_amortized(|s| {
+                                    take_series(s.as_ref(), idx_ca.clone(), null_on_oob)
+                                })?;
                                 out.rename(list_ca.name().clone());
                                 Ok(out.into_series())
                             }
@@ -580,8 +611,11 @@ pub trait ListNameSpaceImpl: AsList {
             1 => {
                 if let Some(n) = n.get(0) {
                     unsafe {
-                        // SAFETY: `sample_n` doesn't change the dtype
-                        ca.try_apply_amortized_same_type(|s| {
+                        // SAFETY: `sample_n` doesn't change the dtype.
+                        //
+                        // Every element is sampled on its own even where they all read the one
+                        // list: an unseeded sample answers differently every time it is asked.
+                        ca.try_apply_amortized_same_type_per_element(|s| {
                             s.as_ref()
                                 .sample_n(n as usize, with_replacement, shuffle, seed)
                         })
@@ -654,8 +688,10 @@ pub trait ListNameSpaceImpl: AsList {
             1 => {
                 if let Some(fraction) = fraction.get(0) {
                     unsafe {
-                        // SAFETY: `sample_n` doesn't change the dtype
-                        ca.try_apply_amortized_same_type(|s| {
+                        // SAFETY: `sample_n` doesn't change the dtype.
+                        //
+                        // As in `lst_sample_n`: a sample is taken per element, not once.
+                        ca.try_apply_amortized_same_type_per_element(|s| {
                             let n = (s.as_ref().len() as f64 * fraction) as usize;
                             s.as_ref().sample_n(n, with_replacement, shuffle, seed)
                         })
@@ -685,6 +721,23 @@ pub trait ListNameSpaceImpl: AsList {
         let ca = self.as_list();
         let other_len = other.len();
         let length = ca.len();
+
+        // Every operand reading one element throughout makes one concatenation, and that list
+        // stands for every row: do it over a single row and repeat the answer. Without this the
+        // builder below walks all `length` rows to write the same list each time.
+        if ca.clone().into_series().repeats_one_element()
+            && other
+                .iter()
+                .all(|s| s.as_materialized_series().repeats_one_element())
+        {
+            let head_other = other
+                .iter()
+                .map(|s| s.as_materialized_series().head(Some(1)).into_column())
+                .collect::<Vec<_>>();
+            let one = ca.head(Some(1)).lst_concat(&head_other)?;
+            return Ok(one.new_from_index(0, length));
+        }
+
         let mut other = other.to_vec();
         let mut inner_super_type = ca.inner_dtype().clone();
 

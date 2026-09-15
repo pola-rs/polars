@@ -171,6 +171,20 @@ pub fn cut(
     } else {
         compute_labels(&breaks, left_closed)?
     };
+
+    // Every element reading the one value falls in the one bucket, and that bucket is the answer
+    // for every element in turn: it is found once and repeated rather than looked up `len` times.
+    if s.repeats_one_element() {
+        let one = map_enum_cats(
+            &s.head(Some(1)),
+            &cut_labels,
+            &breaks,
+            left_closed,
+            include_breaks,
+        )?;
+        return Ok(one.new_from_index(0, s.len()));
+    }
+
     map_enum_cats(s, &cut_labels, &breaks, left_closed, include_breaks)
 }
 
@@ -235,6 +249,20 @@ pub fn qcut(
     } else {
         compute_labels(&qbreaks, left_closed)?
     };
+
+    // Every element reading the one value falls in the one bucket -- the breaks above are worked
+    // out over the whole column either way, so the checks they carry are unchanged -- and that
+    // bucket is the answer for every element in turn.
+    if s.repeats_one_element() {
+        let one = map_categorical_cats(
+            &s.head(Some(1)),
+            &cut_labels,
+            &qbreaks,
+            left_closed,
+            include_breaks,
+        )?;
+        return Ok(one.new_from_index(0, s.len()));
+    }
 
     map_categorical_cats(&s, &cut_labels, &qbreaks, left_closed, include_breaks)
 }

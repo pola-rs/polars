@@ -8,12 +8,12 @@ mod string;
 use std::borrow::Cow;
 
 pub use agg_list::*;
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::legacy::kernels::take_agg::*;
+use arrow::bitmap::MutableBitmap;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
+use polars_array::{NoNulls, PlPrimitiveArray, StaticArray};
 use polars_compute::rolling::no_nulls::{
     MaxWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
 };
@@ -24,6 +24,7 @@ use polars_compute::rolling::{
     RollingQuantileParams, RollingVarParams, SumWindow, quantile_filter, rolling_argmax_by,
     rolling_argmin_by,
 };
+use polars_compute::take_agg::*;
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::float::IsFloat;
 #[cfg(feature = "dtype-f16")]
@@ -35,8 +36,6 @@ use rayon::prelude::*;
 
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::from_iterator_par::collect_primitive_opt_par;
-#[cfg(feature = "object")]
-use crate::chunked_array::object::extension::create_extension;
 use crate::chunked_array::{arg_max_numeric, arg_min_numeric};
 #[cfg(feature = "object")]
 use crate::frame::group_by::GroupsIndicator;
@@ -61,7 +60,7 @@ pub fn _use_rolling_kernels(
     groups: &GroupsSlice,
     overlapping: bool,
     monotonic: bool,
-    chunks: &[ArrayRef],
+    chunks: &[PlArrayRef],
 ) -> bool {
     match groups.len() {
         0 | 1 => false,
@@ -89,38 +88,66 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
 
     let arr = with_match_physical_numeric_polars_type!(phys_dtype, |$T| {
         let ca: &ChunkedArray<$T> = by_phys.as_ref().as_ref().as_ref();
-        let arr = ca.downcast_as_array();
-        let values = arr.values().as_slice();
-        let validity = arr.validity();
+        let by = ca.downcast_as_array();
 
         if is_max_by {
-            rolling_argmax_by(values, validity, &starts, &ends, 1)
+            rolling_argmax_by(by, &starts, &ends, 1)
         } else {
-            rolling_argmin_by(values, validity, &starts, &ends, 1)
+            rolling_argmin_by(by, &starts, &ends, 1)
         }
     });
 
     IdxCa::with_chunk(PlSmallStr::EMPTY, arr)
 }
 
-// Use an aggregation window that maintains the state
-pub fn _rolling_apply_agg_window_nulls<Agg, T, O, Out>(
-    values: &[T],
-    validity: &Bitmap,
+/// Runs a rolling aggregation over `arr` in whatever representation it is stored in.
+pub fn _rolling_apply_agg_window<NoNullsAgg, NullsAgg, T, O, Out>(
+    arr: &PlPrimitiveArray<T>,
     offsets: O,
     params: Option<RollingFnParams>,
-) -> PrimitiveArray<Out>
+) -> PlPrimitiveArray<Out>
+where
+    O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
+    NoNullsAgg: RollingAggWindowNoNulls<T, Out>,
+    NullsAgg: RollingAggWindowNulls<T, Out>,
+    T: IsFloat + NativeType,
+    Out: NativeType,
+{
+    // Nothing is laid out here: whether any element is null is a count, and each of the two
+    // implementations resolves the representation itself.
+    match arr.as_no_nulls() {
+        Some(no_nulls) => {
+            _rolling_apply_agg_window_no_nulls::<NoNullsAgg, _, _, _>(no_nulls, offsets, params)
+        },
+        None => _rolling_apply_agg_window_nulls::<NullsAgg, _, _, _>(arr, offsets, params),
+    }
+}
+
+// Use an aggregation window that maintains the state
+pub fn _rolling_apply_agg_window_nulls<Agg, T, O, Out>(
+    arr: &PlPrimitiveArray<T>,
+    offsets: O,
+    params: Option<RollingFnParams>,
+) -> PlPrimitiveArray<Out>
 where
     O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
     Agg: RollingAggWindowNulls<T, Out>,
     T: IsFloat + NativeType,
     Out: NativeType,
 {
+    // The window machine walks its values as a slice and reads the mask bit by bit, so the chunk
+    // is laid out here, once, and only what repeats is written out.
+    let arr = arr.to_flat();
+    let values = arr.as_slice();
+    let mask = arr
+        .validity()
+        .expect("a chunk reaching the nulls window leaves an element null");
+
     // This iterators length can be trusted
     // these represent the number of groups in the group_by operation
     let output_len = offsets.size_hint().0;
     // start with a dummy index, will be overwritten on first iteration.
-    let mut agg_window = Agg::new(values, validity, 0, 0, params, None);
+    let mut agg_window = Agg::new(values, mask, 0, 0, params, None);
 
     let mut validity = MutableBitmap::with_capacity(output_len);
     validity.extend_constant(output_len, true);
@@ -144,15 +171,15 @@ where
         })
         .collect_trusted::<Vec<_>>();
 
-    PrimitiveArray::new(Out::PRIMITIVE.into(), out.into(), Some(validity.into()))
+    PlPrimitiveArray::from_vec(out).with_validity(Some(validity.into()))
 }
 
 // Use an aggregation window that maintains the state.
 pub fn _rolling_apply_agg_window_no_nulls<Agg, T, O, Out>(
-    values: &[T],
+    arr: &NoNulls<PlPrimitiveArray<T>>,
     offsets: O,
     params: Option<RollingFnParams>,
-) -> PrimitiveArray<Out>
+) -> PlPrimitiveArray<Out>
 where
     // items (offset, len) -> so offsets are offset, offset + len
     Agg: RollingAggWindowNoNulls<T, Out>,
@@ -160,6 +187,12 @@ where
     T: IsFloat + NativeType,
     Out: NativeType,
 {
+    // The window machine walks its values as a slice: the representation is resolved here, once,
+    // and a buffer that already holds one slot per element is handed over as it stands. No element
+    // is null, so the mask is not read at all.
+    let values = arr.to_flat_values();
+    let values = values.as_slice();
+
     // start with a dummy index, will be overwritten on first iteration.
     let mut agg_window = Agg::new(values, 0, 0, params, None);
 
@@ -172,7 +205,7 @@ where
             unsafe { agg_window.update(start as usize, end as usize) };
             agg_window.get_agg(idx)
         })
-        .collect::<PrimitiveArray<Out>>()
+        .collect::<PlPrimitiveArray<Out>>()
 }
 
 pub fn _slice_from_offsets<T>(ca: &ChunkedArray<T>, first: IdxSize, len: IdxSize) -> ChunkedArray<T>
@@ -347,30 +380,21 @@ where
                     .cast_with_options(&K::get_static_dtype(), CastOptions::Overflowing)
                     .unwrap();
                 let ca: &ChunkedArray<K> = s.as_ref().as_ref();
-                let arr = ca.downcast_iter().next().unwrap();
-                let values = arr.values().as_slice();
                 let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
-                let arr = match arr.validity() {
-                    None => _rolling_apply_agg_window_no_nulls::<QuantileWindow<_>, _, _, _>(
-                        values,
-                        offset_iter,
-                        Some(RollingFnParams::Quantile(RollingQuantileParams {
-                            prob: quantile,
-                            method,
-                        })),
-                    ),
-                    Some(validity) => {
-                        _rolling_apply_agg_window_nulls::<rolling::nulls::QuantileWindow<_>, _, _, _>(
-                            values,
-                            validity,
-                            offset_iter,
-                            Some(RollingFnParams::Quantile(RollingQuantileParams {
-                                prob: quantile,
-                                method,
-                            })),
-                        )
-                    },
-                };
+                let arr = _rolling_apply_agg_window::<
+                    QuantileWindow<_>,
+                    rolling::nulls::QuantileWindow<_>,
+                    _,
+                    _,
+                    _,
+                >(
+                    ca.downcast_iter().next().unwrap(),
+                    offset_iter,
+                    Some(RollingFnParams::Quantile(RollingQuantileParams {
+                        prob: quantile,
+                        method,
+                    })),
+                );
                 // The rolling kernels works on the dtype, this is not yet the
                 // float output type we need.
                 ChunkedArray::<K>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
@@ -520,7 +544,8 @@ where
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
-                        arr.get(first as usize)
+                        // SAFETY: the group's index is in bounds of this array.
+                        arr.get_unchecked(first as usize)
                     } else if no_nulls {
                         take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
                             .reduce(|a, b| a.min_ignore_nan(b))
@@ -536,25 +561,17 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
-                    let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
-                    let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _, _>(
-                            values,
-                            offset_iter,
-                            None,
-                        ),
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<rolling::nulls::MinWindow<_>, _, _, _>(
-                                values,
-                                validity,
-                                offset_iter,
-                                None,
-                            )
-                        },
-                    };
-                    Self::from(arr).into_series()
+                    let arr = _rolling_apply_agg_window::<
+                        MinWindow<_>,
+                        rolling::nulls::MinWindow<_>,
+                        _,
+                        _,
+                        _,
+                    >(
+                        self.downcast_iter().next().unwrap(), offset_iter, None
+                    );
+                    Self::with_chunk(PlSmallStr::EMPTY, arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -639,28 +656,16 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_as_array();
-                    let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
-                    let idx_arr = match arr.validity() {
-                        None => {
-                            _rolling_apply_agg_window_no_nulls::<ArgMinWindow<_>, _, _, IdxSize>(
-                                values,
-                                offset_iter,
-                                None,
-                            )
-                        },
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<ArgMinWindow<_>, _, _, IdxSize>(
-                                values,
-                                validity,
-                                offset_iter,
-                                None,
-                            )
-                        },
-                    };
+                    let idx_arr = _rolling_apply_agg_window::<
+                        ArgMinWindow<_>,
+                        ArgMinWindow<_>,
+                        _,
+                        _,
+                        IdxSize,
+                    >(self.downcast_as_array(), offset_iter, None);
 
-                    IdxCa::from(idx_arr).into_series()
+                    IdxCa::with_chunk(PlSmallStr::EMPTY, idx_arr).into_series()
                 } else {
                     _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -705,7 +710,8 @@ where
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
-                        arr.get(first as usize)
+                        // SAFETY: the group's index is in bounds of this array.
+                        arr.get_unchecked(first as usize)
                     } else if no_nulls {
                         take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
                             .reduce(|a, b| a.max_ignore_nan(b))
@@ -721,25 +727,17 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
-                    let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
-                    let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _, _>(
-                            values,
-                            offset_iter,
-                            None,
-                        ),
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<rolling::nulls::MaxWindow<_>, _, _, _>(
-                                values,
-                                validity,
-                                offset_iter,
-                                None,
-                            )
-                        },
-                    };
-                    Self::from(arr).into_series()
+                    let arr = _rolling_apply_agg_window::<
+                        MaxWindow<_>,
+                        rolling::nulls::MaxWindow<_>,
+                        _,
+                        _,
+                        _,
+                    >(
+                        self.downcast_iter().next().unwrap(), offset_iter, None
+                    );
+                    Self::with_chunk(PlSmallStr::EMPTY, arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -826,27 +824,17 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
-                    let values = arr.values().as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
-                    let idx_arr = match arr.validity() {
-                        None => {
-                            _rolling_apply_agg_window_no_nulls::<ArgMaxWindow<_>, _, _, IdxSize>(
-                                values,
-                                offset_iter,
-                                None,
-                            )
-                        },
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<ArgMaxWindow<_>, _, _, IdxSize>(
-                                values,
-                                validity,
-                                offset_iter,
-                                None,
-                            )
-                        },
-                    };
-                    IdxCa::from(idx_arr).into_series()
+                    let idx_arr = _rolling_apply_agg_window::<
+                        ArgMaxWindow<_>,
+                        ArgMaxWindow<_>,
+                        _,
+                        _,
+                        IdxSize,
+                    >(
+                        self.downcast_iter().next().unwrap(), offset_iter, None
+                    );
+                    IdxCa::with_chunk(PlSmallStr::EMPTY, idx_arr).into_series()
                 } else {
                     _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -875,7 +863,9 @@ where
                     if idx.is_empty() {
                         T::Native::zero()
                     } else if idx.len() == 1 {
-                        arr.get(first as usize).unwrap_or(T::Native::zero())
+                        // SAFETY: the group's index is in bounds of this array.
+                        arr.get_unchecked(first as usize)
+                            .unwrap_or(T::Native::zero())
                     } else if no_nulls {
                         if T::Native::is_float() {
                             take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
@@ -901,26 +891,17 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
-                    let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
-                    let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<
-                            SumWindow<T::Native, T::Native>,
-                            _,
-                            _,
-                            _,
-                        >(values, offset_iter, None),
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<
-                                SumWindow<T::Native, T::Native>,
-                                _,
-                                _,
-                                _,
-                            >(values, validity, offset_iter, None)
-                        },
-                    };
-                    Self::from(arr).into_series()
+                    let arr = _rolling_apply_agg_window::<
+                        SumWindow<T::Native, T::Native>,
+                        SumWindow<T::Native, T::Native>,
+                        _,
+                        _,
+                        _,
+                    >(
+                        self.downcast_iter().next().unwrap(), offset_iter, None
+                    );
+                    Self::with_chunk(PlSmallStr::EMPTY, arr).into_series()
                 } else {
                     _agg_helper_slice_no_null::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -965,7 +946,9 @@ where
                     let out = if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
-                        arr.get(first as usize).map(|sum| sum.to_f64().unwrap())
+                        // SAFETY: the group's index is in bounds of this array.
+                        arr.get_unchecked(first as usize)
+                            .map(|sum| sum.to_f64().unwrap())
                     } else if no_nulls {
                         Some(
                             take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
@@ -994,25 +977,13 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
-                    let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
-                    let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<MeanWindow<_>, _, _, _>(
-                            values,
-                            offset_iter,
-                            None,
-                        ),
-                        Some(validity) => {
-                            _rolling_apply_agg_window_nulls::<MeanWindow<_>, _, _, _>(
-                                values,
-                                validity,
-                                offset_iter,
-                                None,
-                            )
-                        },
-                    };
-                    ChunkedArray::<T>::from(arr).into_series()
+                    let arr = _rolling_apply_agg_window::<MeanWindow<_>, MeanWindow<_>, _, _, _>(
+                        self.downcast_iter().next().unwrap(),
+                        offset_iter,
+                        None,
+                    );
+                    ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -1059,33 +1030,19 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
-                    let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
-                    let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<
-                            MomentWindow<_, VarianceMoment>,
-                            _,
-                            _,
-                            _,
-                        >(
-                            values,
-                            offset_iter,
-                            Some(RollingFnParams::Var(RollingVarParams { ddof })),
-                        ),
-                        Some(validity) => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::MomentWindow<_, VarianceMoment>,
-                            _,
-                            _,
-                            _,
-                        >(
-                            values,
-                            validity,
-                            offset_iter,
-                            Some(RollingFnParams::Var(RollingVarParams { ddof })),
-                        ),
-                    };
-                    ChunkedArray::<T>::from(arr).into_series()
+                    let arr = _rolling_apply_agg_window::<
+                        MomentWindow<_, VarianceMoment>,
+                        rolling::nulls::MomentWindow<_, VarianceMoment>,
+                        _,
+                        _,
+                        _,
+                    >(
+                        self.downcast_iter().next().unwrap(),
+                        offset_iter,
+                        Some(RollingFnParams::Var(RollingVarParams { ddof })),
+                    );
+                    ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -1136,34 +1093,20 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = ca.downcast_iter().next().unwrap();
-                    let values = arr.values().as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
-                    let arr = match arr.validity() {
-                        None => _rolling_apply_agg_window_no_nulls::<
-                            MomentWindow<_, VarianceMoment>,
-                            _,
-                            _,
-                            _,
-                        >(
-                            values,
-                            offset_iter,
-                            Some(RollingFnParams::Var(RollingVarParams { ddof })),
-                        ),
-                        Some(validity) => _rolling_apply_agg_window_nulls::<
-                            rolling::nulls::MomentWindow<_, rolling::nulls::VarianceMoment>,
-                            _,
-                            _,
-                            _,
-                        >(
-                            values,
-                            validity,
-                            offset_iter,
-                            Some(RollingFnParams::Var(RollingVarParams { ddof })),
-                        ),
-                    };
+                    let arr = _rolling_apply_agg_window::<
+                        MomentWindow<_, VarianceMoment>,
+                        rolling::nulls::MomentWindow<_, rolling::nulls::VarianceMoment>,
+                        _,
+                        _,
+                        _,
+                    >(
+                        ca.downcast_iter().next().unwrap(),
+                        offset_iter,
+                        Some(RollingFnParams::Var(RollingVarParams { ddof })),
+                    );
 
-                    let mut ca = ChunkedArray::<T>::from(arr);
+                    let mut ca = ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr);
                     ca.apply_mut(|v| v.powf(NumCast::from(0.5).unwrap()));
                     ca.into_series()
                 } else {

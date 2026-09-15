@@ -1,5 +1,4 @@
-use arrow::array::{BinaryArray, PrimitiveArray};
-use arrow::offset::{Offsets, OffsetsBuffer};
+use polars_array::{PlBinaryArray, PlPrimitiveArray};
 use polars_buffer::Buffer;
 use polars_utils::vec::PushUnchecked;
 
@@ -12,7 +11,9 @@ pub struct RowEncodedHashHotGrouper {
     table: FixedIndexTable<(u64, Vec<u8>)>,
     evicted_key_hashes: Vec<u64>,
     evicted_key_data: Vec<u8>,
-    evicted_key_offsets: Offsets<i64>,
+    // The end of each evicted key in `evicted_key_data`, preceded by a leading zero —
+    // the offsets a `PlBinaryArray` is built from.
+    evicted_key_offsets: Vec<u64>,
 }
 
 impl RowEncodedHashHotGrouper {
@@ -22,7 +23,7 @@ impl RowEncodedHashHotGrouper {
             table: FixedIndexTable::new(max_groups.try_into().unwrap()),
             evicted_key_hashes: Vec::new(),
             evicted_key_data: Vec::new(),
-            evicted_key_offsets: Offsets::new(),
+            evicted_key_offsets: vec![0],
         }
     }
 }
@@ -64,7 +65,9 @@ impl HotGrouper for RowEncodedHashHotGrouper {
                         |k| (h, k.to_owned()),
                         |k, ev_k| {
                             self.evicted_key_hashes.push(ev_k.0);
-                            self.evicted_key_offsets.try_push(ev_k.1.len()).unwrap();
+                            let end =
+                                self.evicted_key_offsets.last().unwrap() + ev_k.1.len() as u64;
+                            self.evicted_key_offsets.push(end);
                             self.evicted_key_data.extend_from_slice(&ev_k.1);
                             ev_k.0 = h;
                             ev_k.1.clear();
@@ -85,26 +88,25 @@ impl HotGrouper for RowEncodedHashHotGrouper {
     fn keys(&self) -> HashKeys {
         unsafe {
             let mut hashes = Vec::with_capacity(self.table.len());
-            let keys = LargeBinaryArray::from_trusted_len_values_iter(
-                self.table.keys().iter().map(|(h, k)| {
-                    hashes.push_unchecked(*h);
-                    k
-                }),
-            );
-            let hashes = PrimitiveArray::from_vec(hashes);
+            let keys = PlBinaryArray::from_values_iter(self.table.keys().iter().map(|(h, k)| {
+                hashes.push_unchecked(*h);
+                k
+            }));
+            let hashes = PlPrimitiveArray::from_vec(hashes);
             HashKeys::RowEncoded(RowEncodedKeys { hashes, keys })
         }
     }
 
     fn num_evictions(&self) -> usize {
-        self.evicted_key_offsets.len_proxy()
+        self.evicted_key_offsets.len() - 1
     }
 
     fn take_evicted_keys(&mut self) -> HashKeys {
-        let hashes = PrimitiveArray::from_vec(core::mem::take(&mut self.evicted_key_hashes));
+        let hashes = PlPrimitiveArray::from_vec(core::mem::take(&mut self.evicted_key_hashes));
         let values = Buffer::from(core::mem::take(&mut self.evicted_key_data));
-        let offsets = OffsetsBuffer::from(core::mem::take(&mut self.evicted_key_offsets));
-        let keys = BinaryArray::new(ArrowDataType::LargeBinary, offsets, values, None);
+        // The offsets are drained too, so what is left behind is the empty run they started as.
+        let offsets = Buffer::from(core::mem::replace(&mut self.evicted_key_offsets, vec![0]));
+        let keys = PlBinaryArray::from_offsets(values, offsets);
         HashKeys::RowEncoded(RowEncodedKeys { hashes, keys })
     }
 

@@ -3,10 +3,11 @@ pub mod skip_files_mask;
 use core::fmt;
 use std::sync::Arc;
 
-use arrow::bitmap::Bitmap;
 pub use functions::{create_scan_predicate, initialize_scan_predicate};
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{AnyValue, Column, Field, GroupPositions, PlHashMap, PlIndexSet};
+use polars_core::prelude::{
+    AnyValue, Column, Field, GroupPositions, PlBitmap, PlHashMap, PlIndexSet,
+};
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
@@ -213,9 +214,9 @@ impl SkipBatchPredicate for SkipBatchPredicateHelper {
         &self.schema
     }
 
-    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap> {
+    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<PlBitmap> {
         if df.height() == 0 {
-            return Ok(Bitmap::new());
+            return Ok(PlBitmap::new_empty());
         }
         let array = self
             .skip_batch_predicate
@@ -223,19 +224,17 @@ impl SkipBatchPredicate for SkipBatchPredicateHelper {
         let array = array.bool()?.rechunk();
         let array = array.downcast_as_array();
 
-        let array = if let Some(validity) = array.validity() {
-            array.values() & validity
-        } else {
-            array.values().clone()
-        };
+        // Nulls count as false.
+        let mask = array.true_and_valid();
 
         // @NOTE: Certain predicates like `1 == 1` will only output 1 value. We need to broadcast
-        // the result back to the dataframe length.
-        if array.len() == 1 && df.height() != 0 {
-            return Ok(Bitmap::new_with_value(array.get_bit(0), df.height()));
+        // the result back to the dataframe length — which the mask does by keeping the one bit it
+        // holds rather than writing it out per row.
+        if mask.len() == 1 {
+            return Ok(PlBitmap::new_scalar(mask.get(0), df.height()));
         }
 
-        assert_eq!(array.len(), df.height());
-        Ok(array)
+        assert_eq!(mask.len(), df.height());
+        Ok(mask)
     }
 }

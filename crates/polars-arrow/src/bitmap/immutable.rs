@@ -93,8 +93,14 @@ pub(super) fn check(bytes: &[u8], offset: usize, length: usize) -> PolarsResult<
 impl Bitmap {
     /// Initializes an empty [`Bitmap`].
     #[inline]
-    pub fn new() -> Self {
-        Self::default()
+    pub const fn new() -> Self {
+        Self {
+            storage: SharedStorage::empty(),
+            offset: 0,
+            length: 0,
+            // An empty bitmap has an exactly known count of zero unset bits.
+            unset_bit_count_cache: RelaxedCell::new_u64(0),
+        }
     }
 
     /// Initializes a new [`Bitmap`] from vector of bytes and a length.
@@ -235,17 +241,25 @@ impl Bitmap {
     ///
     /// This function counts the number of unset bits if it is not already
     /// computed. Repeated calls use the cached bitcount.
+    #[inline]
     pub fn unset_bits(&self) -> usize {
-        self.lazy_unset_bits().unwrap_or_else(|| {
-            let zeros = count_zeros(&self.storage, self.offset, self.length);
-            self.unset_bit_count_cache.store(zeros as u64);
-            zeros
-        })
+        self.lazy_unset_bits()
+            .unwrap_or_else(|| self.count_unset_bits())
+    }
+
+    /// Counts the unset bits of this [`Bitmap`] and caches the count for [`Self::unset_bits`].
+    #[cold]
+    #[inline(never)]
+    fn count_unset_bits(&self) -> usize {
+        let zeros = count_zeros(&self.storage, self.offset, self.length);
+        self.unset_bit_count_cache.store(zeros as u64);
+        zeros
     }
 
     /// Returns the number of unset bits on this [`Bitmap`] if it is known.
     ///
     /// Guaranteed to be `<= self.len()`.
+    #[inline]
     pub fn lazy_unset_bits(&self) -> Option<usize> {
         let cache = self.unset_bit_count_cache.load();
         has_cached_unset_bit_count(cache).then_some(cache as usize)

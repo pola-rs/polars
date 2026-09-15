@@ -1,5 +1,6 @@
 use arrow::temporal_conversions::{EPOCH_DAYS_FROM_CE, MILLISECONDS, SECONDS_IN_DAY};
 use chrono::{Datelike, NaiveDate};
+use polars_core::prelude::arity::unary_elementwise;
 
 use super::*;
 
@@ -18,22 +19,20 @@ pub trait DateMethods: AsDate {
     /// Returns the year number in the calendar date.
     fn year(&self) -> Int32Chunked {
         let ca = self.as_date();
-        ca.physical().apply_kernel_cast::<Int32Type>(&date_to_year)
+        unary_elementwise(ca.physical(), |opt| opt.and_then(date_to_year))
     }
 
     /// Extract year from underlying NaiveDate representation.
     /// Returns whether the year is a leap year.
     fn is_leap_year(&self) -> BooleanChunked {
         let ca = self.as_date();
-        ca.physical()
-            .apply_kernel_cast::<BooleanType>(&date_to_is_leap_year)
+        unary_elementwise(ca.physical(), |opt| opt.and_then(date_to_is_leap_year))
     }
 
     /// This year number might not match the calendar year number.
     fn iso_year(&self) -> Int32Chunked {
         let ca = self.as_date();
-        ca.physical()
-            .apply_kernel_cast::<Int32Type>(&date_to_iso_year)
+        unary_elementwise(ca.physical(), |opt| opt.and_then(date_to_iso_year))
     }
 
     /// Extract month from underlying NaiveDateTime representation.
@@ -49,23 +48,21 @@ pub trait DateMethods: AsDate {
     /// The return value ranges from 1 to 12.
     fn month(&self) -> Int8Chunked {
         let ca = self.as_date();
-        ca.physical().apply_kernel_cast::<Int8Type>(&date_to_month)
+        unary_elementwise(ca.physical(), |opt| opt.and_then(date_to_month))
     }
 
     /// Returns the number of days in the month of the underlying NaiveDate
     /// representation.
     fn days_in_month(&self) -> Int8Chunked {
         let ca = self.as_date();
-        ca.physical()
-            .apply_kernel_cast::<Int8Type>(&date_to_days_in_month)
+        unary_elementwise(ca.physical(), |opt| opt.and_then(date_to_days_in_month))
     }
 
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
     fn week(&self) -> Int8Chunked {
         let ca = self.as_date();
-        ca.physical()
-            .apply_kernel_cast::<Int8Type>(&date_to_iso_week)
+        unary_elementwise(ca.physical(), |opt| opt.and_then(date_to_iso_week))
     }
 
     /// Extract day from underlying NaiveDate representation.
@@ -74,7 +71,7 @@ pub trait DateMethods: AsDate {
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
     fn day(&self) -> Int8Chunked {
         let ca = self.as_date();
-        ca.physical().apply_kernel_cast::<Int8Type>(&date_to_day)
+        unary_elementwise(ca.physical(), |opt| opt.and_then(date_to_day))
     }
 
     /// Returns the day of year starting from 1.
@@ -82,8 +79,7 @@ pub trait DateMethods: AsDate {
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
     fn ordinal(&self) -> Int16Chunked {
         let ca = self.as_date();
-        ca.physical()
-            .apply_kernel_cast::<Int16Type>(&date_to_ordinal)
+        unary_elementwise(ca.physical(), |opt| opt.and_then(date_to_ordinal))
     }
 
     fn parse_from_str_slice(name: PlSmallStr, v: &[&str], fmt: &str) -> DateChunked;

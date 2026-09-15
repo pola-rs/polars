@@ -1,6 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::array::BooleanArray;
-use arrow::compute::concatenate::concatenate_validities;
+use polars_array::concatenate::concatenate_validities;
 use polars_core::prelude::*;
 use rand::prelude::*;
 #[cfg(feature = "serde")]
@@ -39,13 +38,17 @@ impl Default for RankOptions {
     }
 }
 
-unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(idxs: &IdxCa, neq: &BooleanArray, mut flush_ties: F) {
+unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(
+    idxs: &IdxCa,
+    neq: &PlBooleanArray,
+    mut flush_ties: F,
+) {
     let mut ties_indices = Vec::with_capacity(128);
     let mut idx_it = idxs.downcast_iter().flat_map(|arr| arr.values_iter());
     let Some(first_idx) = idx_it.next() else {
         return;
     };
-    ties_indices.push(*first_idx);
+    ties_indices.push(first_idx);
 
     for (eq_idx, idx) in idx_it.enumerate() {
         if neq.value_unchecked(eq_idx) {
@@ -53,7 +56,7 @@ unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(idxs: &IdxCa, neq: &BooleanArray, 
             ties_indices.clear()
         }
 
-        ties_indices.push(*idx);
+        ties_indices.push(idx);
     }
     flush_ties(&mut ties_indices);
 }
@@ -93,6 +96,30 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
         };
     }
 
+    // Every element of a scalar column ties with every other, which is one tie group covering the
+    // column and therefore one rank repeated — the sort below would only rediscover that. The
+    // methods that rank within a tie group by position are the two that read the sort order.
+    if let [chunk] = s.chunks().as_slice() {
+        if chunk.is_scalar() && null_count == 0 {
+            use RankMethod::*;
+            let name = s.name().clone();
+            let out = match method {
+                Average => {
+                    Some(Float64Chunked::full(name, (1.0 + len as f64) / 2.0, len).into_series())
+                },
+                Min | Dense => Some(IdxCa::full(name, 1, len).into_series()),
+                Max => Some(IdxCa::full(name, len as IdxSize, len).into_series()),
+                Ordinal => None,
+                #[cfg(feature = "random")]
+                Random => None,
+            };
+
+            if let Some(out) = out {
+                return out;
+            }
+        }
+    }
+
     let sort_idx_ca = s
         .arg_sort(SortOptions {
             descending,
@@ -101,7 +128,8 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
         })
         .slice(0, len - null_count);
 
-    let validity = concatenate_validities(s.chunks());
+    let chunks = s.chunks().iter().map(|chunk| &**chunk).collect::<Vec<_>>();
+    let validity = concatenate_validities(&chunks);
 
     use RankMethod::*;
     if let Ordinal = method {
@@ -109,7 +137,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
         let mut rank = 0;
         for arr in sort_idx_ca.downcast_iter() {
             for i in arr.values_iter() {
-                out[*i as usize] = rank + 1;
+                out[i as usize] = rank + 1;
                 rank += 1;
             }
         }

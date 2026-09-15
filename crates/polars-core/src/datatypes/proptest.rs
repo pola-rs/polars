@@ -9,10 +9,7 @@ use proptest::prelude::*;
 use proptest::strategy::BoxedStrategy;
 
 use crate::datatypes::{PolarsObjectSafe, pf16};
-use crate::prelude::{
-    AnyValue, ArrowDataType, ArrowField, DataType, Field, OwnedObject, PolarsObject, StructArray,
-    TimeUnit,
-};
+use crate::prelude::{AnyValue, DataType, Field, OwnedObject, PolarsObject, TimeUnit};
 use crate::series::Series;
 
 // DataType Strategies
@@ -687,13 +684,9 @@ fn av_struct_strategy(
                 .map(|(i, _)| Field::new(format!("field{i}").into(), DataType::Null))
                 .collect();
 
-            let arrow_fields: Vec<ArrowField> = fields
-                .iter()
-                .map(|f| ArrowField::new(f.name.clone(), ArrowDataType::Null, true))
-                .collect();
-
-            let struct_array = StructArray::new_empty(ArrowDataType::Struct(arrow_fields));
-            let leaked_struct: &'static StructArray = Box::leak(Box::new(struct_array));
+            let struct_array = polars_array::PlStructArray::new_empty();
+            let leaked_struct: &'static polars_array::PlStructArray =
+                Box::leak(Box::new(struct_array));
             let leaked_fields: &'static [Field] = Box::leak(fields.into_boxed_slice());
 
             AnyValue::Struct(0, leaked_struct, leaked_fields)

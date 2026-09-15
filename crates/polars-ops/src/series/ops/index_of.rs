@@ -1,8 +1,19 @@
-use arrow::array::{BinaryArray, BinaryViewArray, PrimitiveArray};
+use arrow::bitmap::Bitmap;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
 use polars_utils::total_ord::TotalEq;
 use row_encode::encode_rows_unordered;
+
+/// The number of set bits at the start of `mask`.
+fn leading_ones(mask: PlBitmapRef<'_>) -> usize {
+    match mask.scalar_value() {
+        // Every element shares the single bit, so the run is either the whole mask or nothing.
+        Some(true) => mask.len(),
+        Some(false) => 0,
+        // A flat mask hands its bits out as they are; an empty one has none to count.
+        None => mask.flat_bitmap().map_or(0, Bitmap::leading_ones),
+    }
+}
 
 /// Find the index of the value, or ``None`` if it can't be found.
 fn index_of_value<'a, DT, AR>(ca: &'a ChunkedArray<DT>, value: AR::ValueT<'a>) -> Option<usize>
@@ -41,7 +52,7 @@ fn index_of_numeric_value<T>(ca: &ChunkedArray<T>, value: T::Native) -> Option<u
 where
     T: PolarsNumericType,
 {
-    index_of_value::<_, PrimitiveArray<T::Native>>(ca, value)
+    index_of_value::<_, PlPrimitiveArray<T::Native>>(ca, value)
 }
 
 /// Try casting the value to the correct type, then call
@@ -85,7 +96,7 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
         for chunk in series.chunks() {
             let length = chunk.len();
             if let Some(bitmap) = chunk.validity() {
-                let leading_ones = bitmap.leading_ones();
+                let leading_ones = leading_ones(bitmap);
                 if leading_ones < length {
                     return Ok(Some(offset + leading_ones));
                 }
@@ -113,15 +124,15 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
                 needle
             ))
         },
-        DT::String => Ok(index_of_value::<_, BinaryViewArray>(
+        DT::String => Ok(index_of_value::<_, PlBinaryViewArray>(
             &series.str()?.as_binary(),
             needle.value().extract_str().unwrap().as_bytes(),
         )),
-        DT::Binary => Ok(index_of_value::<_, BinaryViewArray>(
+        DT::Binary => Ok(index_of_value::<_, PlBinaryViewArray>(
             series.binary()?,
             needle.value().extract_bytes().unwrap(),
         )),
-        DT::BinaryOffset => Ok(index_of_value::<_, BinaryArray<i64>>(
+        DT::BinaryOffset => Ok(index_of_value::<_, PlBinaryArray>(
             series.binary_offset()?,
             needle.value().extract_bytes().unwrap(),
         )),
@@ -135,7 +146,7 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
                 .first()
                 .expect("Shouldn't have nulls in a row-encoded result");
             let ca = encode_rows_unordered(&[series.clone().into_column()])?;
-            Ok(index_of_value::<_, BinaryArray<i64>>(&ca, value))
+            Ok(index_of_value::<_, PlBinaryArray>(&ca, value))
         },
 
         DT::UInt8

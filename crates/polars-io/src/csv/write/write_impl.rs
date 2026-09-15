@@ -1,7 +1,7 @@
 mod serializer;
 
-use arrow::array::NullArray;
 use arrow::legacy::time_zone::Tz;
+use polars_array::PlNullArray;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_error::polars_ensure;
@@ -183,7 +183,6 @@ impl CsvSerializer {
 
         for (i, c) in columns.iter().enumerate() {
             assert_eq!(c.n_chunks(), 1);
-
             serializers.push(serializer_for(
                 c.as_materialized_series().chunks()[0].as_ref(),
                 Arc::as_ref(&self.options),
@@ -260,7 +259,7 @@ pub fn csv_header(names: &[&str], options: &SerializeOptions) -> PolarsResult<Ve
     let mut header = Vec::new();
 
     // A hack, but it works for this case.
-    let fake_arr = NullArray::new(ArrowDataType::Null, 0);
+    let fake_arr = PlNullArray::new(0);
     let mut names_serializer = string_serializer(
         |iter: &mut std::slice::Iter<&str>| iter.next().copied(),
         options,

@@ -1,6 +1,5 @@
-use std::fmt::Write;
-
 use super::*;
+use crate::chunked_array::list::namespace::join_one_list;
 
 fn join_literal(
     ca: &ArrayChunked,
@@ -11,29 +10,26 @@ fn join_literal(
         unreachable!()
     };
 
+    // Every element reading the one list joins it to the one string, and that string stands for
+    // every element in turn: it is written once and repeated rather than written out `len` times.
+    if let Some(length) = ca.repeats_one_list() {
+        let mut buf = String::with_capacity(128);
+        let one = ca.amortized_iter().next().flatten();
+        let joined = one.and_then(|s| join_one_list(s.as_ref(), separator, ignore_nulls, &mut buf));
+
+        let name = ca.name().clone();
+        return Ok(match joined {
+            Some(joined) => StringChunked::full(name, joined, length),
+            None => StringChunked::full_null(name, length),
+        });
+    }
+
     let mut buf = String::with_capacity(128);
     let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
 
     ca.for_each_amortized(|opt_s| {
-        let opt_val = opt_s.and_then(|s| {
-            // make sure that we don't write values of previous iteration
-            buf.clear();
-            let ca = s.as_ref().str().unwrap();
-
-            if ca.null_count() != 0 && !ignore_nulls {
-                return None;
-            }
-            for arr in ca.downcast_iter() {
-                for val in arr.non_null_values_iter() {
-                    buf.write_str(val).unwrap();
-                    buf.write_str(separator).unwrap();
-                }
-            }
-
-            // last value should not have a separator, so slice that off
-            // saturating sub because there might have been nothing written.
-            Some(&buf[..buf.len().saturating_sub(separator.len())])
-        });
+        let opt_val =
+            opt_s.and_then(|s| join_one_list(s.as_ref(), separator, ignore_nulls, &mut buf));
         builder.append_option(opt_val)
     });
     Ok(builder.finish())
@@ -51,6 +47,18 @@ fn join_many(
         separator.len()
     );
 
+    // One list against one separator makes one string, however many elements read the two of
+    // them — see `join_literal`, which this defers to for the answer itself.
+    if ca.repeats_one_list().is_some()
+        && let Some(separator) = separator.scalar_value()
+    {
+        return match separator {
+            Some(separator) => join_literal(ca, separator, ignore_nulls),
+            // A null separator writes a null row, and it is the separator for every row here.
+            None => Ok(StringChunked::full_null(ca.name().clone(), ca.len())),
+        };
+    }
+
     let mut buf = String::new();
     let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
 
@@ -58,25 +66,8 @@ fn join_many(
         .zip(separator.iter())
         .for_each(|(opt_s, opt_sep)| match opt_sep {
             Some(separator) => {
-                let opt_val = opt_s.and_then(|s| {
-                    // make sure that we don't write values of previous iteration
-                    buf.clear();
-                    let ca = s.as_ref().str().unwrap();
-
-                    if ca.null_count() != 0 && !ignore_nulls {
-                        return None;
-                    }
-
-                    for arr in ca.downcast_iter() {
-                        for val in arr.non_null_values_iter() {
-                            buf.write_str(val).unwrap();
-                            buf.write_str(separator).unwrap();
-                        }
-                    }
-                    // last value should not have a separator, so slice that off
-                    // saturating sub because there might have been nothing written.
-                    Some(&buf[..buf.len().saturating_sub(separator.len())])
-                });
+                let opt_val = opt_s
+                    .and_then(|s| join_one_list(s.as_ref(), separator, ignore_nulls, &mut buf));
                 builder.append_option(opt_val)
             },
             _ => builder.append_null(),

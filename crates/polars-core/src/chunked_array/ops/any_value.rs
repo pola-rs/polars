@@ -1,5 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
+use polars_utils::float16::pf16;
+
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 use crate::utils::index_to_chunked_index;
@@ -9,7 +11,7 @@ use crate::utils::index_to_chunked_index;
 #[inline]
 #[allow(unused_variables)]
 pub(crate) unsafe fn arr_to_any_value<'a>(
-    arr: &'a dyn Array,
+    arr: &'a dyn PlArray,
     idx: usize,
     dtype: &'a DataType,
 ) -> AnyValue<'a> {
@@ -19,37 +21,37 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
     }
 
     macro_rules! downcast_and_pack {
-        ($casttype:ident, $variant:ident) => {{
-            let arr = &*(arr as *const dyn Array as *const $casttype);
+        ($casttype:ty, $variant:ident) => {{
+            let arr = arr.as_any().downcast_ref::<$casttype>().unwrap_unchecked();
             let v = arr.value_unchecked(idx);
             AnyValue::$variant(v)
         }};
     }
     macro_rules! downcast {
-        ($casttype:ident) => {{
-            let arr = &*(arr as *const dyn Array as *const $casttype);
+        ($casttype:ty) => {{
+            let arr = arr.as_any().downcast_ref::<$casttype>().unwrap_unchecked();
             arr.value_unchecked(idx)
         }};
     }
     match dtype {
-        DataType::String => downcast_and_pack!(Utf8ViewArray, String),
-        DataType::Binary => downcast_and_pack!(BinaryViewArray, Binary),
-        DataType::Boolean => downcast_and_pack!(BooleanArray, Boolean),
-        DataType::UInt8 => downcast_and_pack!(UInt8Array, UInt8),
-        DataType::UInt16 => downcast_and_pack!(UInt16Array, UInt16),
-        DataType::UInt32 => downcast_and_pack!(UInt32Array, UInt32),
-        DataType::UInt64 => downcast_and_pack!(UInt64Array, UInt64),
-        DataType::UInt128 => downcast_and_pack!(UInt128Array, UInt128),
-        DataType::Int8 => downcast_and_pack!(Int8Array, Int8),
-        DataType::Int16 => downcast_and_pack!(Int16Array, Int16),
-        DataType::Int32 => downcast_and_pack!(Int32Array, Int32),
-        DataType::Int64 => downcast_and_pack!(Int64Array, Int64),
-        DataType::Int128 => downcast_and_pack!(Int128Array, Int128),
-        DataType::Float16 => downcast_and_pack!(Float16Array, Float16),
-        DataType::Float32 => downcast_and_pack!(Float32Array, Float32),
-        DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
+        DataType::String => downcast_and_pack!(PlUtf8ViewArray, String),
+        DataType::Binary => downcast_and_pack!(PlBinaryViewArray, Binary),
+        DataType::Boolean => downcast_and_pack!(PlBooleanArray, Boolean),
+        DataType::UInt8 => downcast_and_pack!(PlPrimitiveArray<u8>, UInt8),
+        DataType::UInt16 => downcast_and_pack!(PlPrimitiveArray<u16>, UInt16),
+        DataType::UInt32 => downcast_and_pack!(PlPrimitiveArray<u32>, UInt32),
+        DataType::UInt64 => downcast_and_pack!(PlPrimitiveArray<u64>, UInt64),
+        DataType::UInt128 => downcast_and_pack!(PlPrimitiveArray<u128>, UInt128),
+        DataType::Int8 => downcast_and_pack!(PlPrimitiveArray<i8>, Int8),
+        DataType::Int16 => downcast_and_pack!(PlPrimitiveArray<i16>, Int16),
+        DataType::Int32 => downcast_and_pack!(PlPrimitiveArray<i32>, Int32),
+        DataType::Int64 => downcast_and_pack!(PlPrimitiveArray<i64>, Int64),
+        DataType::Int128 => downcast_and_pack!(PlPrimitiveArray<i128>, Int128),
+        DataType::Float16 => downcast_and_pack!(PlPrimitiveArray<pf16>, Float16),
+        DataType::Float32 => downcast_and_pack!(PlPrimitiveArray<f32>, Float32),
+        DataType::Float64 => downcast_and_pack!(PlPrimitiveArray<f64>, Float64),
         DataType::List(dt) => {
-            let v: ArrayRef = downcast!(LargeListArray);
+            let v: PlArrayRef = downcast!(PlListArray);
             if dt.is_primitive() {
                 let s = Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![v], dt);
                 AnyValue::List(s)
@@ -66,7 +68,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         },
         #[cfg(feature = "dtype-array")]
         DataType::Array(dt, width) => {
-            let v: ArrayRef = downcast!(FixedSizeListArray);
+            let v: PlArrayRef = downcast!(PlFixedSizeListArray);
             if dt.is_primitive() {
                 let s = Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![v], dt);
                 AnyValue::Array(s, *width)
@@ -85,7 +87,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Categorical(cats, mapping) => {
             with_match_categorical_physical_type!(cats.physical(), |$C| {
                 type A = <$C as PolarsDataType>::Array;
-                let arr = &*(arr as *const dyn Array as *const A);
+                let arr = arr.as_any().downcast_ref::<A>().unwrap_unchecked();
                 let cat_id = arr.value_unchecked(idx).as_cat();
                 AnyValue::Categorical(cat_id, mapping)
             })
@@ -94,50 +96,68 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Enum(fcats, mapping) => {
             with_match_categorical_physical_type!(fcats.physical(), |$C| {
                 type A = <$C as PolarsDataType>::Array;
-                let arr = &*(arr as *const dyn Array as *const A);
+                let arr = arr.as_any().downcast_ref::<A>().unwrap_unchecked();
                 let cat_id = arr.value_unchecked(idx).as_cat();
                 AnyValue::Enum(cat_id, mapping)
             })
         },
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(flds) => {
-            let arr = &*(arr as *const dyn Array as *const StructArray);
+            let arr = arr
+                .as_any()
+                .downcast_ref::<PlStructArray>()
+                .unwrap_unchecked();
             AnyValue::Struct(idx, arr, flds)
         },
         #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(tu, tz) => {
-            let arr = &*(arr as *const dyn Array as *const Int64Array);
+            let arr = arr
+                .as_any()
+                .downcast_ref::<PlPrimitiveArray<i64>>()
+                .unwrap_unchecked();
             let v = arr.value_unchecked(idx);
             AnyValue::Datetime(v, *tu, tz.as_ref())
         },
         #[cfg(feature = "dtype-date")]
         DataType::Date => {
-            let arr = &*(arr as *const dyn Array as *const Int32Array);
+            let arr = arr
+                .as_any()
+                .downcast_ref::<PlPrimitiveArray<i32>>()
+                .unwrap_unchecked();
             let v = arr.value_unchecked(idx);
             AnyValue::Date(v)
         },
         #[cfg(feature = "dtype-duration")]
         DataType::Duration(tu) => {
-            let arr = &*(arr as *const dyn Array as *const Int64Array);
+            let arr = arr
+                .as_any()
+                .downcast_ref::<PlPrimitiveArray<i64>>()
+                .unwrap_unchecked();
             let v = arr.value_unchecked(idx);
             AnyValue::Duration(v, *tu)
         },
         #[cfg(feature = "dtype-time")]
         DataType::Time => {
-            let arr = &*(arr as *const dyn Array as *const Int64Array);
+            let arr = arr
+                .as_any()
+                .downcast_ref::<PlPrimitiveArray<i64>>()
+                .unwrap_unchecked();
             let v = arr.value_unchecked(idx);
             AnyValue::Time(v)
         },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(precision, scale) => {
-            let arr = &*(arr as *const dyn Array as *const Int128Array);
+            let arr = arr
+                .as_any()
+                .downcast_ref::<PlPrimitiveArray<i128>>()
+                .unwrap_unchecked();
             let v = arr.value_unchecked(idx);
             AnyValue::Decimal(v, *precision, *scale)
         },
         #[cfg(feature = "dtype-map")]
         DataType::Map(_, _) => {
             let entries_dtype = dtype.map_entries_dtype().unwrap();
-            let v: ArrayRef = downcast!(LargeListArray);
+            let v: PlArrayRef = downcast!(PlListArray);
             let s = Series::from_chunks_and_dtype_unchecked(
                 PlSmallStr::EMPTY,
                 vec![v],
@@ -155,7 +175,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             get_object_array_getter()(arr, idx).unwrap()
         },
         DataType::Null => AnyValue::Null,
-        DataType::BinaryOffset => downcast_and_pack!(LargeBinaryArray, Binary),
+        DataType::BinaryOffset => downcast_and_pack!(PlBinaryArray, Binary),
         dt => panic!("not implemented for {dt:?}"),
     }
 }
@@ -167,7 +187,7 @@ impl<'a> AnyValue<'a> {
             unreachable!()
         };
         unsafe {
-            arr.values()
+            arr.fields()
                 .iter()
                 .zip(*flds)
                 .map(move |(arr, fld)| arr_to_any_value(&**arr, *idx, fld.dtype()))
@@ -266,7 +286,10 @@ impl ChunkAnyValueBypassValidity for BinaryOffsetChunked {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         debug_assert!(chunk_idx < self.chunks.len());
         let arr = &**self.chunks.get_unchecked(chunk_idx);
-        let arr = &*(arr as *const dyn Array as *const LargeBinaryArray);
+        let arr = arr
+            .as_any()
+            .downcast_ref::<PlBinaryArray>()
+            .unwrap_unchecked();
         let v = arr.value_unchecked(idx);
         AnyValue::Binary(v)
     }
@@ -336,7 +359,10 @@ impl ChunkAnyValue for StructChunked {
             // guarded by the type system.
             unsafe {
                 let arr = &**self.chunks.get_unchecked(chunk_idx);
-                let arr = &*(arr as *const dyn Array as *const StructArray);
+                let arr = arr
+                    .as_any()
+                    .downcast_ref::<PlStructArray>()
+                    .unwrap_unchecked();
 
                 if arr.is_null_unchecked(idx) {
                     AnyValue::Null

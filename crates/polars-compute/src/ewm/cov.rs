@@ -1,11 +1,10 @@
 use std::ops::{AddAssign, DivAssign, MulAssign};
 
-use arrow::array::{Array, PrimitiveArray};
-use arrow::trusted_len::TrustedLen;
 use arrow::types::NativeType;
 use num_traits::Float;
+use polars_array::{PlArray, PlPrimitiveArray, StaticArray};
 
-use crate::ewm::EwmStateUpdate;
+use crate::ewm::{EwmStateUpdate, chunk_of};
 
 pub struct EwmCovState<T> {
     weight: T,
@@ -143,15 +142,13 @@ where
         + std::ops::DivAssign
         + std::ops::MulAssign,
 {
-    fn ewm_state_update(&mut self, values: &dyn Array) -> Box<dyn Array> {
-        let values: &PrimitiveArray<T> = values.as_any().downcast_ref().unwrap();
+    fn ewm_state_update(&mut self, values: &dyn PlArray) -> Box<dyn PlArray> {
+        let values = chunk_of::<T>(values);
 
-        let out: PrimitiveArray<T> = self
-            .0
-            .update_iter(values.iter().map(|x| x.map(|x| (*x, *x))))
-            .collect();
-
-        out.boxed()
+        self.0
+            .update_iter(values.iter().map(|x| x.map(|x| (x, x))))
+            .collect::<PlPrimitiveArray<T>>()
+            .into_boxed()
     }
 }
 
@@ -171,16 +168,14 @@ where
         + std::ops::DivAssign
         + std::ops::MulAssign,
 {
-    fn ewm_state_update(&mut self, values: &dyn Array) -> Box<dyn Array> {
-        let values: &PrimitiveArray<T> = values.as_any().downcast_ref().unwrap();
+    fn ewm_state_update(&mut self, values: &dyn PlArray) -> Box<dyn PlArray> {
+        let values = chunk_of::<T>(values);
 
-        let out: PrimitiveArray<T> = self
-            .0
-            .update_iter(values.iter().map(|x| x.map(|x| (*x, *x))))
+        self.0
+            .update_iter(values.iter().map(|x| x.map(|x| (x, x))))
             .map(|x| x.map(|x| x.sqrt()))
-            .collect();
-
-        out.boxed()
+            .collect::<PlPrimitiveArray<T>>()
+            .into_boxed()
     }
 }
 
@@ -191,10 +186,9 @@ pub fn ewm_var<I, T>(
     bias: bool,
     min_periods: usize,
     ignore_nulls: bool,
-) -> PrimitiveArray<T>
+) -> PlPrimitiveArray<T>
 where
     I: IntoIterator<Item = Option<T>>,
-    I::IntoIter: TrustedLen,
     T: Float + NativeType + AddAssign + MulAssign + DivAssign,
 {
     let mut state = EwmCovState::new(alpha, adjust, bias, min_periods, ignore_nulls);
@@ -210,7 +204,7 @@ pub fn ewm_std<I, T>(
     bias: bool,
     min_periods: usize,
     ignore_nulls: bool,
-) -> PrimitiveArray<T>
+) -> PlPrimitiveArray<T>
 where
     I: IntoIterator<Item = Option<T>>,
     T: NativeType
@@ -252,10 +246,9 @@ mod test {
         bias: bool,
         min_periods: usize,
         ignore_nulls: bool,
-    ) -> PrimitiveArray<T>
+    ) -> PlPrimitiveArray<T>
     where
         I: IntoIterator<Item = Option<T>>,
-        I::IntoIter: TrustedLen,
         T: Float + NativeType + AddAssign + MulAssign + DivAssign,
     {
         let mut state = EwmCovState::new(alpha, adjust, bias, min_periods, ignore_nulls);
@@ -268,7 +261,7 @@ mod test {
     fn test_ewm_var() {
         assert_allclose!(
             ewm_var(XS.to_vec(), ALPHA, true, true, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 Some(0.0),
                 Some(3.555_555_555_555_556),
                 Some(4.244_897_959_183_674),
@@ -281,7 +274,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(XS.to_vec(), ALPHA, true, true, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 Some(0.0),
                 Some(3.555_555_555_555_556),
                 Some(4.244_897_959_183_674),
@@ -294,7 +287,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(XS.to_vec(), ALPHA, true, false, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(8.0),
                 Some(7.428_571_428_571_429),
@@ -307,7 +300,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(XS.to_vec(), ALPHA, true, false, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(8.0),
                 Some(7.428_571_428_571_429),
@@ -320,7 +313,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(XS.to_vec(), ALPHA, false, true, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 Some(0.0),
                 Some(4.0),
                 Some(6.0),
@@ -333,7 +326,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(XS.to_vec(), ALPHA, false, true, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 Some(0.0),
                 Some(4.0),
                 Some(6.0),
@@ -346,7 +339,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(XS.to_vec(), ALPHA, false, true, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 Some(0.0),
                 Some(4.0),
                 Some(6.0),
@@ -359,7 +352,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(XS.to_vec(), ALPHA, false, false, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(8.0),
                 Some(9.600_000_000_000_001),
@@ -372,7 +365,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(XS.to_vec(), ALPHA, false, false, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(8.0),
                 Some(9.600_000_000_000_001),
@@ -385,7 +378,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(YS.to_vec(), ALPHA, true, true, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(0.0),
                 Some(0.888_888_888_888_889),
@@ -398,7 +391,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(YS.to_vec(), ALPHA, true, true, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(0.0),
                 Some(0.888_888_888_888_889),
@@ -411,7 +404,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(YS.to_vec(), ALPHA, true, false, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(2.0),
@@ -424,7 +417,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(YS.to_vec(), ALPHA, true, false, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(2.0),
@@ -437,7 +430,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(YS.to_vec(), ALPHA, false, true, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(0.0),
                 Some(1.0),
@@ -450,12 +443,20 @@ mod test {
         );
         assert_allclose!(
             ewm_var(YS.to_vec(), ALPHA, false, true, 0, false),
-            PrimitiveArray::from([None, Some(0.0), Some(1.0), None, None, Some(4.2), Some(3.1)]),
+            PlPrimitiveArray::from_iter([
+                None,
+                Some(0.0),
+                Some(1.0),
+                None,
+                None,
+                Some(4.2),
+                Some(3.1)
+            ]),
             EPS
         );
         assert_allclose!(
             ewm_var(YS.to_vec(), ALPHA, false, false, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(2.0),
@@ -468,7 +469,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(YS.to_vec(), ALPHA, false, false, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(2.0),
@@ -485,7 +486,7 @@ mod test {
     fn test_ewm_cov() {
         assert_allclose!(
             ewm_cov(XS.to_vec(), YS.to_vec(), ALPHA, true, true, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(0.0),
                 Some(0.888_888_888_888_889),
@@ -498,7 +499,7 @@ mod test {
         );
         assert_allclose!(
             ewm_cov(XS.to_vec(), YS.to_vec(), ALPHA, true, true, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(0.0),
                 Some(0.888_888_888_888_889),
@@ -511,7 +512,7 @@ mod test {
         );
         assert_allclose!(
             ewm_cov(XS.to_vec(), YS.to_vec(), ALPHA, true, false, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(2.0),
@@ -524,7 +525,7 @@ mod test {
         );
         assert_allclose!(
             ewm_cov(XS.to_vec(), YS.to_vec(), ALPHA, true, false, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(2.0),
@@ -537,7 +538,7 @@ mod test {
         );
         assert_allclose!(
             ewm_cov(XS.to_vec(), YS.to_vec(), ALPHA, false, true, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(0.0),
                 Some(1.0),
@@ -550,12 +551,20 @@ mod test {
         );
         assert_allclose!(
             ewm_cov(XS.to_vec(), YS.to_vec(), ALPHA, false, true, 0, false),
-            PrimitiveArray::from([None, Some(0.0), Some(1.0), None, None, Some(4.2), Some(3.1)]),
+            PlPrimitiveArray::from_iter([
+                None,
+                Some(0.0),
+                Some(1.0),
+                None,
+                None,
+                Some(4.2),
+                Some(3.1)
+            ]),
             EPS
         );
         assert_allclose!(
             ewm_cov(XS.to_vec(), YS.to_vec(), ALPHA, false, false, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(2.0),
@@ -568,7 +577,7 @@ mod test {
         );
         assert_allclose!(
             ewm_cov(XS.to_vec(), YS.to_vec(), ALPHA, false, false, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(2.0),
@@ -585,7 +594,7 @@ mod test {
     fn test_ewm_std() {
         assert_allclose!(
             ewm_std(XS.to_vec(), ALPHA, true, true, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 Some(0.0),
                 Some(1.885_618_083_164_126_7),
                 Some(2.060_315_014_550_851_3),
@@ -598,7 +607,7 @@ mod test {
         );
         assert_allclose!(
             ewm_std(XS.to_vec(), ALPHA, true, true, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 Some(0.0),
                 Some(1.885_618_083_164_126_7),
                 Some(2.060_315_014_550_851_3),
@@ -611,7 +620,7 @@ mod test {
         );
         assert_allclose!(
             ewm_std(XS.to_vec(), ALPHA, true, false, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(2.828_427_124_746_190_3),
                 Some(2.725_540_575_476_987_5),
@@ -624,7 +633,7 @@ mod test {
         );
         assert_allclose!(
             ewm_std(XS.to_vec(), ALPHA, true, false, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(2.828_427_124_746_190_3),
                 Some(2.725_540_575_476_987_5),
@@ -637,7 +646,7 @@ mod test {
         );
         assert_allclose!(
             ewm_std(XS.to_vec(), ALPHA, false, true, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 Some(0.0),
                 Some(2.0),
                 Some(2.449_489_742_783_178),
@@ -650,7 +659,7 @@ mod test {
         );
         assert_allclose!(
             ewm_std(XS.to_vec(), ALPHA, false, true, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 Some(0.0),
                 Some(2.0),
                 Some(2.449_489_742_783_178),
@@ -663,7 +672,7 @@ mod test {
         );
         assert_allclose!(
             ewm_std(XS.to_vec(), ALPHA, false, false, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(2.828_427_124_746_190_3),
                 Some(3.098_386_676_965_933_6),
@@ -676,7 +685,7 @@ mod test {
         );
         assert_allclose!(
             ewm_std(XS.to_vec(), ALPHA, false, false, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(2.828_427_124_746_190_3),
                 Some(3.098_386_676_965_933_6),
@@ -689,7 +698,7 @@ mod test {
         );
         assert_allclose!(
             ewm_std(YS.to_vec(), ALPHA, true, true, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(0.0),
                 Some(0.942_809_041_582_063_4),
@@ -702,7 +711,7 @@ mod test {
         );
         assert_allclose!(
             ewm_std(YS.to_vec(), ALPHA, true, true, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(0.0),
                 Some(0.942_809_041_582_063_4),
@@ -715,7 +724,7 @@ mod test {
         );
         assert_allclose!(
             ewm_std(YS.to_vec(), ALPHA, true, false, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(SQRT_2),
@@ -728,7 +737,7 @@ mod test {
         );
         assert_allclose!(
             ewm_std(YS.to_vec(), ALPHA, true, false, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(SQRT_2),
@@ -741,7 +750,7 @@ mod test {
         );
         assert_allclose!(
             ewm_std(YS.to_vec(), ALPHA, false, true, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(0.0),
                 Some(1.0),
@@ -754,7 +763,7 @@ mod test {
         );
         assert_allclose!(
             ewm_std(YS.to_vec(), ALPHA, false, true, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(0.0),
                 Some(1.0),
@@ -767,7 +776,7 @@ mod test {
         );
         assert_allclose!(
             ewm_std(YS.to_vec(), ALPHA, false, false, 0, true),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(SQRT_2),
@@ -780,7 +789,7 @@ mod test {
         );
         assert_allclose!(
             ewm_std(YS.to_vec(), ALPHA, false, false, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(SQRT_2),
@@ -797,7 +806,7 @@ mod test {
     fn test_ewm_min_periods() {
         assert_allclose!(
             ewm_var(YS.to_vec(), ALPHA, true, true, 0, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(0.0),
                 Some(0.888_888_888_888_889),
@@ -810,7 +819,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(YS.to_vec(), ALPHA, true, true, 1, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 Some(0.0),
                 Some(0.888_888_888_888_889),
@@ -823,7 +832,7 @@ mod test {
         );
         assert_allclose!(
             ewm_var(YS.to_vec(), ALPHA, true, true, 2, false),
-            PrimitiveArray::from([
+            PlPrimitiveArray::from_iter([
                 None,
                 None,
                 Some(0.888_888_888_888_889),

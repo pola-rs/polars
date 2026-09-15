@@ -6,16 +6,20 @@ pub use super::super::moment::*;
 use super::*;
 
 pub fn rolling_var<T>(
-    values: &[T],
+    values: &NoNulls<PlPrimitiveArray<T>>,
     window_size: usize,
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
     params: Option<RollingFnParams>,
-) -> PolarsResult<ArrayRef>
+) -> PolarsResult<Box<dyn PlArray>>
 where
     T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
 {
+    // The chunk becomes a slice here, once, out of the window loop; see the module docs.
+    let values = values.to_flat_values();
+    let values = values.as_slice();
+
     let offset_fn = match center {
         true => det_offsets_center,
         false => det_offsets,
@@ -52,15 +56,19 @@ where
 }
 
 pub fn rolling_skew<T>(
-    values: &[T],
+    values: &NoNulls<PlPrimitiveArray<T>>,
     window_size: usize,
     min_periods: usize,
     center: bool,
     params: Option<RollingFnParams>,
-) -> PolarsResult<ArrayRef>
+) -> PolarsResult<Box<dyn PlArray>>
 where
     T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
 {
+    // The chunk becomes a slice here, once, out of the window loop; see the module docs.
+    let values = values.to_flat_values();
+    let values = values.as_slice();
+
     let offset_fn = match center {
         true => det_offsets_center,
         false => det_offsets,
@@ -75,15 +83,19 @@ where
 }
 
 pub fn rolling_kurtosis<T>(
-    values: &[T],
+    values: &NoNulls<PlPrimitiveArray<T>>,
     window_size: usize,
     min_periods: usize,
     center: bool,
     params: Option<RollingFnParams>,
-) -> PolarsResult<ArrayRef>
+) -> PolarsResult<Box<dyn PlArray>>
 where
     T: NativeType + Float + IsFloat + ToPrimitive + FromPrimitive + AddAssign,
 {
+    // The chunk becomes a slice here, once, out of the window loop; see the module docs.
+    let values = values.to_flat_values();
+    let values = values.as_slice();
+
     let offset_fn = match center {
         true => det_offsets_center,
         false => det_offsets,
@@ -103,32 +115,28 @@ mod test {
 
     #[test]
     fn test_rolling_var() {
-        let values = &[1.0f64, 5.0, 3.0, 4.0];
+        let values = &chunk(&[1.0f64, 5.0, 3.0, 4.0]);
 
         let out = rolling_var(values, 2, 2, false, None, None).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[None, Some(8.0), Some(2.0), Some(0.5)]);
 
         let testpars = Some(RollingFnParams::Var(RollingVarParams { ddof: 0 }));
         let out = rolling_var(values, 2, 2, false, None, testpars).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         assert_eq!(out, &[None, Some(4.0), Some(1.0), Some(0.25)]);
 
         let out = rolling_var(values, 2, 1, false, None, None).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         // we cannot compare nans, so we compare the string values
         assert_eq!(
             format!("{:?}", out.as_slice()),
             format!("{:?}", &[None, Some(8.0), Some(2.0), Some(0.5)])
         );
         // test nan handling.
-        let values = &[-10.0, 2.0, 3.0, f64::nan(), 5.0, 6.0, 7.0];
+        let values = &chunk(&[-10.0, 2.0, 3.0, f64::nan(), 5.0, 6.0, 7.0]);
         let out = rolling_var(values, 3, 3, false, None, None).unwrap();
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out = elements_of::<f64>(&*out);
         // we cannot compare nans, so we compare the string values
         assert_eq!(
             format!("{:?}", out.as_slice()),

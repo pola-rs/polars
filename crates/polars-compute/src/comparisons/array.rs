@@ -1,256 +1,119 @@
-use arrow::array::{
-    Array, BinaryArray, BinaryViewArray, BooleanArray, DictionaryArray, FixedSizeBinaryArray,
-    FixedSizeListArray, ListArray, NullArray, PrimitiveArray, StructArray, Utf8Array,
-    Utf8ViewArray,
-};
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::utils::count_zeros;
-use arrow::datatypes::ArrowDataType;
-use arrow::legacy::utils::CustomIterTools;
-use arrow::types::{days_ms, i256, months_days_ns};
-use polars_utils::float16::pf16;
+//! The equality kernels over a [`PlFixedSizeListArray`], whose width often settles them.
 
-use super::TotalEqKernel;
-use crate::comparisons::dyn_array::{array_tot_eq_missing_kernel, array_tot_ne_missing_kernel};
+use polars_array::{PlArray, PlBitmap, PlBitmapRef, PlFixedSizeListArray};
 
-/// Condenses a bitmap of n * width elements into one with n elements.
-///
-/// For each block of width bits a zero count is done. The block of bits is then
-/// replaced with a single bit: the result of true_zero_count(zero_count).
-fn agg_array_bitmap<F>(bm: Bitmap, width: usize, true_zero_count: F) -> Bitmap
-where
-    F: Fn(usize) -> bool,
-{
-    if bm.len() == 1 {
-        bm
-    } else {
-        assert!(width > 0 && bm.len().is_multiple_of(width));
+use super::dyn_array::{pl_array_tot_eq_missing_kernel, pl_array_tot_ne_missing_kernel};
+use super::{Condense, PlTotalEqKernel, condense, condense_one, repeated};
 
-        let (slice, offset, _len) = bm.as_slice();
-        (0..bm.len() / width)
-            .map(|i| true_zero_count(count_zeros(slice, offset + i * width, width)))
-            .collect()
+impl PlTotalEqKernel for PlFixedSizeListArray {
+    type Scalar = Box<dyn PlArray>;
+
+    fn validity_mask(&self) -> Option<PlBitmapRef<'_>> {
+        self.validity()
     }
-}
 
-impl TotalEqKernel for FixedSizeListArray {
-    type Scalar = Box<dyn Array>;
-
-    fn tot_eq_kernel(&self, other: &Self) -> Bitmap {
-        // Nested comparison always done with eq_missing, propagating doesn't
-        // make any sense.
-
+    fn tot_eq_kernel(&self, other: &Self) -> PlBitmap {
         assert_eq!(self.len(), other.len());
-        let ArrowDataType::FixedSizeList(self_type, self_width) = self.dtype().to_storage() else {
-            panic!("array comparison called with non-array type");
-        };
-        let ArrowDataType::FixedSizeList(other_type, other_width) = other.dtype().to_storage()
-        else {
-            panic!("array comparison called with non-array type");
-        };
-        assert_eq!(self_type.dtype(), other_type.dtype());
-
-        if self_width != other_width {
-            return Bitmap::new_with_value(false, self.len());
-        }
-
-        if *self_width == 0 {
-            return Bitmap::new_with_value(true, self.len());
-        }
-
-        // @TODO: It is probably worth it to dispatch to a special kernel for when there are
-        // several nested arrays because that can be rather slow with this code.
-        let inner = array_tot_eq_missing_kernel(self.values().as_ref(), other.values().as_ref());
-
-        agg_array_bitmap(inner, self.size(), |zeroes| zeroes == 0)
+        fsl_compare_values(
+            self,
+            other,
+            Condense::All,
+            pl_array_tot_eq_missing_kernel,
+            false,
+        )
     }
 
-    fn tot_ne_kernel(&self, other: &Self) -> Bitmap {
+    fn tot_ne_kernel(&self, other: &Self) -> PlBitmap {
         assert_eq!(self.len(), other.len());
-        let ArrowDataType::FixedSizeList(self_type, self_width) = self.dtype().to_storage() else {
-            panic!("array comparison called with non-array type");
-        };
-        let ArrowDataType::FixedSizeList(other_type, other_width) = other.dtype().to_storage()
-        else {
-            panic!("array comparison called with non-array type");
-        };
-        assert_eq!(self_type.dtype(), other_type.dtype());
-
-        if self_width != other_width {
-            return Bitmap::new_with_value(true, self.len());
-        }
-
-        if *self_width == 0 {
-            return Bitmap::new_with_value(false, self.len());
-        }
-
-        // @TODO: It is probably worth it to dispatch to a special kernel for when there are
-        // several nested arrays because that can be rather slow with this code.
-        let inner = array_tot_ne_missing_kernel(self.values().as_ref(), other.values().as_ref());
-
-        agg_array_bitmap(inner, self.size(), |zeroes| zeroes < self.size())
+        fsl_compare_values(
+            self,
+            other,
+            Condense::Any,
+            pl_array_tot_ne_missing_kernel,
+            true,
+        )
     }
 
-    fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        let ArrowDataType::FixedSizeList(self_type, width) = self.dtype().to_storage() else {
-            panic!("array comparison called with non-array type");
-        };
-        assert_eq!(self_type.dtype(), other.dtype().to_storage());
-
-        let width = *width;
-
-        if width != other.len() {
-            return Bitmap::new_with_value(false, self.len());
-        }
-
-        if width == 0 {
-            return Bitmap::new_with_value(true, self.len());
-        }
-
-        // @TODO: It is probably worth it to dispatch to a special kernel for when there are
-        // several nested arrays because that can be rather slow with this code.
-        array_fsl_tot_eq_missing_kernel(self.values().as_ref(), other.as_ref(), self.len(), width)
+    fn tot_eq_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
+        fsl_compare_scalar(
+            self,
+            &**other,
+            Condense::All,
+            pl_array_tot_eq_missing_kernel,
+            false,
+        )
     }
 
-    fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> Bitmap {
-        let ArrowDataType::FixedSizeList(self_type, width) = self.dtype().to_storage() else {
-            panic!("array comparison called with non-array type");
-        };
-        assert_eq!(self_type.dtype(), other.dtype().to_storage());
-
-        let width = *width;
-
-        if width != other.len() {
-            return Bitmap::new_with_value(true, self.len());
-        }
-
-        if width == 0 {
-            return Bitmap::new_with_value(false, self.len());
-        }
-
-        // @TODO: It is probably worth it to dispatch to a special kernel for when there are
-        // several nested arrays because that can be rather slow with this code.
-        array_fsl_tot_ne_missing_kernel(self.values().as_ref(), other.as_ref(), self.len(), width)
+    fn tot_ne_kernel_broadcast(&self, other: &Self::Scalar) -> PlBitmap {
+        fsl_compare_scalar(
+            self,
+            &**other,
+            Condense::Any,
+            pl_array_tot_ne_missing_kernel,
+            true,
+        )
     }
 }
 
-macro_rules! compare {
-    ($lhs:expr, $rhs:expr, $length:expr, $width:expr, $op:path, $true_op:expr) => {{
-        let lhs = $lhs;
-        let rhs = $rhs;
+/// Compares the lists of `lhs` against `rhs`'s, element for element.
+fn fsl_compare_values(
+    lhs: &PlFixedSizeListArray,
+    rhs: &PlFixedSizeListArray,
+    how: Condense,
+    inner: fn(&dyn PlArray, &dyn PlArray) -> PlBitmap,
+    mismatch: bool,
+) -> PlBitmap {
+    let (length, width) = (lhs.len(), lhs.width());
 
-        macro_rules! call_binary {
-            ($T:ty) => {{
-                let values: &$T = $lhs.as_any().downcast_ref().unwrap();
-                let scalar: &$T = $rhs.as_any().downcast_ref().unwrap();
+    if width != rhs.width() || lhs.values().array_type() != rhs.values().array_type() {
+        return repeated(mismatch, length);
+    }
+    // A list of no values is the same list on both sides, whatever is under it.
+    if width == 0 {
+        return repeated(!mismatch, length);
+    }
 
-                (0..$length)
-                    .map(move |i| {
-                        // @TODO: I feel like there is a better way to do this.
-                        let mut values: $T = values.clone();
-                        <$T>::slice(&mut values, i * $width, $width);
-
-                        $true_op($op(&values, scalar))
-                    })
-                    .collect_trusted()
-            }};
-        }
-
-        assert_eq!(lhs.dtype(), rhs.dtype());
-
-        use arrow::datatypes::{IntegerType as I, PhysicalType as PH, PrimitiveType as PR};
-        match lhs.dtype().to_physical_type() {
-            PH::Boolean => call_binary!(BooleanArray),
-            PH::BinaryView => call_binary!(BinaryViewArray),
-            PH::Utf8View => call_binary!(Utf8ViewArray),
-            PH::Primitive(PR::Int8) => call_binary!(PrimitiveArray<i8>),
-            PH::Primitive(PR::Int16) => call_binary!(PrimitiveArray<i16>),
-            PH::Primitive(PR::Int32) => call_binary!(PrimitiveArray<i32>),
-            PH::Primitive(PR::Int64) => call_binary!(PrimitiveArray<i64>),
-            PH::Primitive(PR::Int128) => call_binary!(PrimitiveArray<i128>),
-            PH::Primitive(PR::UInt8) => call_binary!(PrimitiveArray<u8>),
-            PH::Primitive(PR::UInt16) => call_binary!(PrimitiveArray<u16>),
-            PH::Primitive(PR::UInt32) => call_binary!(PrimitiveArray<u32>),
-            PH::Primitive(PR::UInt64) => call_binary!(PrimitiveArray<u64>),
-            PH::Primitive(PR::UInt128) => call_binary!(PrimitiveArray<u128>),
-            PH::Primitive(PR::Float16) => call_binary!(PrimitiveArray<pf16>),
-            PH::Primitive(PR::Float32) => call_binary!(PrimitiveArray<f32>),
-            PH::Primitive(PR::Float64) => call_binary!(PrimitiveArray<f64>),
-            PH::Primitive(PR::Int256) => call_binary!(PrimitiveArray<i256>),
-            PH::Primitive(PR::DaysMs) => call_binary!(PrimitiveArray<days_ms>),
-            PH::Primitive(PR::MonthDayNano) => {
-                call_binary!(PrimitiveArray<months_days_ns>)
-            },
-            PH::Primitive(PR::MonthDayMillis) => unimplemented!(),
-
-            #[cfg(feature = "dtype-array")]
-            PH::FixedSizeList => call_binary!(arrow::array::FixedSizeListArray),
-            #[cfg(not(feature = "dtype-array"))]
-            PH::FixedSizeList => todo!(
-                "Comparison of FixedSizeListArray is not supported without dtype-array feature"
-            ),
-
-            PH::Null => call_binary!(NullArray),
-            PH::FixedSizeBinary => call_binary!(FixedSizeBinaryArray),
-            PH::Binary => call_binary!(BinaryArray<i32>),
-            PH::LargeBinary => call_binary!(BinaryArray<i64>),
-            PH::Utf8 => call_binary!(Utf8Array<i32>),
-            PH::LargeUtf8 => call_binary!(Utf8Array<i64>),
-            PH::List => call_binary!(ListArray<i32>),
-            PH::LargeList => call_binary!(ListArray<i64>),
-            PH::Struct => call_binary!(StructArray),
-            PH::Union => todo!("Comparison of UnionArrays is not yet supported"),
-            PH::Map => todo!("Comparison of MapArrays is not yet supported"),
-            PH::Dictionary(I::Int8) => call_binary!(DictionaryArray<i8>),
-            PH::Dictionary(I::Int16) => call_binary!(DictionaryArray<i16>),
-            PH::Dictionary(I::Int32) => call_binary!(DictionaryArray<i32>),
-            PH::Dictionary(I::Int64) => call_binary!(DictionaryArray<i64>),
-            PH::Dictionary(I::Int128) => call_binary!(DictionaryArray<i128>),
-            PH::Dictionary(I::UInt8) => call_binary!(DictionaryArray<u8>),
-            PH::Dictionary(I::UInt16) => call_binary!(DictionaryArray<u16>),
-            PH::Dictionary(I::UInt32) => call_binary!(DictionaryArray<u32>),
-            PH::Dictionary(I::UInt64) => call_binary!(DictionaryArray<u64>),
-            PH::Dictionary(I::UInt128) => call_binary!(DictionaryArray<u128>),
-        }
-    }};
+    match (
+        lhs.scalar_value_ignore_validity(),
+        rhs.scalar_value_ignore_validity(),
+    ) {
+        // Each side repeats one list, so comparing those two lists once — `width` values, not
+        // `length * width` of them — answers for every element.
+        (Some(lhs), Some(rhs)) => repeated(condense_one(&inner(lhs, rhs), how), length),
+        // At least one side holds every element's values, so both are read that way.
+        _ => {
+            let (lhs, rhs) = (lhs.to_flat(), rhs.to_flat());
+            let values = inner(lhs.as_array().values(), rhs.as_array().values());
+            condense(values, length, width, how)
+        },
+    }
 }
 
-fn array_fsl_tot_eq_missing_kernel(
-    values: &dyn Array,
-    scalar: &dyn Array,
-    length: usize,
-    width: usize,
-) -> Bitmap {
-    // @NOTE: Zero-Width Array are handled before
-    debug_assert_eq!(values.len(), length * width);
-    debug_assert_eq!(scalar.len(), width);
+/// Compares the lists of `lhs` against the single list `rhs`.
+fn fsl_compare_scalar(
+    lhs: &PlFixedSizeListArray,
+    rhs: &dyn PlArray,
+    how: Condense,
+    inner: fn(&dyn PlArray, &dyn PlArray) -> PlBitmap,
+    mismatch: bool,
+) -> PlBitmap {
+    let (length, width) = (lhs.len(), lhs.width());
 
-    compare!(
-        values,
-        scalar,
-        length,
-        width,
-        TotalEqKernel::tot_eq_missing_kernel,
-        |bm: Bitmap| bm.unset_bits() == 0
-    )
-}
+    if width != rhs.len() || lhs.values().array_type() != rhs.array_type() {
+        return repeated(mismatch, length);
+    }
+    if width == 0 || length == 0 {
+        return repeated(!mismatch, length);
+    }
 
-fn array_fsl_tot_ne_missing_kernel(
-    values: &dyn Array,
-    scalar: &dyn Array,
-    length: usize,
-    width: usize,
-) -> Bitmap {
-    // @NOTE: Zero-Width Array are handled before
-    debug_assert_eq!(values.len(), length * width);
-    debug_assert_eq!(scalar.len(), width);
+    // The scalar is one list, so a side that repeats one list too is a single comparison.
+    if let Some(lhs) = lhs.scalar_value_ignore_validity() {
+        return repeated(condense_one(&inner(lhs, rhs), how), length);
+    }
 
-    compare!(
-        values,
-        scalar,
-        length,
-        width,
-        TotalEqKernel::tot_ne_missing_kernel,
-        |bm: Bitmap| bm.set_bits() > 0
-    )
+    // A chunk that repeats the scalar's list holds it once and reads it for every element, which
+    // is what makes the comparison against it the one over a pair of chunks: a single kernel call
+    // over `length * width` values, rather than one call — and a bitmap of its own — per element.
+    let rhs = PlFixedSizeListArray::new_broadcast(rhs.to_boxed(), width, length, None);
+    fsl_compare_values(lhs, &rhs, how, inner, mismatch)
 }

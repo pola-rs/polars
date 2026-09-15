@@ -1,11 +1,11 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use polars_array::PlBitmap;
 use polars_buffer::Buffer;
 use polars_core::prelude::PlHashMap;
 use polars_core::runtime::ASYNC;
 use polars_core::series::IsSorted;
-use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, create_sorting_map};
@@ -36,7 +36,7 @@ pub(super) struct RowGroupDataFetcher {
     pub(super) byte_source: Arc<DynByteSource>,
 
     pub(super) row_group_slice: Range<usize>,
-    pub(super) row_group_mask: Option<Bitmap>,
+    pub(super) row_group_mask: Option<PlBitmap>,
 
     pub(super) row_offset: usize,
 }
@@ -52,7 +52,7 @@ impl RowGroupDataFetcher {
         while slice_start < self.row_group_slice.end {
             // Check mask
             if let Some(mask) = &self.row_group_mask {
-                if mask.get_bit(mask_offset) {
+                if mask.get(mask_offset) {
                     // masked out, skip
                     slice_start += 1;
                     mask_offset += 1;
@@ -110,7 +110,7 @@ impl RowGroupDataFetcher {
             };
 
             if let Some(row_group_mask) = self.row_group_mask.as_mut() {
-                let do_skip = row_group_mask.get_bit(0);
+                let do_skip = row_group_mask.get(0);
                 row_group_mask.slice(1, self.row_group_slice.len());
 
                 if do_skip {

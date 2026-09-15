@@ -1,6 +1,8 @@
-use arrow::array::builder::StaticArrayBuilder;
-use arrow::array::{BinaryViewArrayGenericBuilder, PrimitiveArray, View};
+use arrow::array::View;
 use arrow::bitmap::MutableBitmap;
+use polars_array::bitmap::PlBitmap;
+use polars_array::builder::StaticArrayBuilder;
+use polars_array::{PlBinaryViewArrayBuilder, PlPrimitiveArray};
 use polars_buffer::Buffer;
 use polars_utils::vec::PushUnchecked;
 
@@ -12,7 +14,7 @@ pub struct BinviewHashHotGrouper {
     // The views in this table when not inline are stored in the vec.
     table: FixedIndexTable<(u64, View, Vec<u8>)>,
     evicted_key_hashes: Vec<u64>,
-    evicted_keys: BinaryViewArrayGenericBuilder<[u8]>,
+    evicted_keys: PlBinaryViewArrayBuilder,
     null_idx: IdxSize,
 }
 
@@ -21,7 +23,7 @@ impl BinviewHashHotGrouper {
         Self {
             table: FixedIndexTable::new(max_groups.try_into().unwrap()),
             evicted_key_hashes: Vec::new(),
-            evicted_keys: BinaryViewArrayGenericBuilder::new(ArrowDataType::BinaryView),
+            evicted_keys: PlBinaryViewArrayBuilder::new(),
             null_idx: IdxSize::MAX,
         }
     }
@@ -39,12 +41,8 @@ impl BinviewHashHotGrouper {
         unsafe {
             let mut evict = |ev_h: &u64, ev_view: &View, ev_buffer: &Vec<u8>| {
                 self.evicted_key_hashes.push(*ev_h);
-                if ev_view.is_inline() {
-                    self.evicted_keys.push_inline_view_ignore_validity(*ev_view);
-                } else {
-                    self.evicted_keys
-                        .push_value_ignore_validity(ev_buffer.as_slice());
-                }
+                let bytes = ev_view.get_inlined_slice().unwrap_or(ev_buffer.as_slice());
+                self.evicted_keys.push_value(bytes);
             };
             if view.is_inline() {
                 self.table.insert_key(
@@ -131,13 +129,17 @@ impl HotGrouper for BinviewHashHotGrouper {
         };
 
         unsafe {
-            let views = hash_keys.keys.views().as_slice();
+            // The getter resolves the index against the buffer, so a scalar chunk hands back the
+            // one view every element reads rather than being indexed past its single slot.
+            let view_at = |idx: usize| hash_keys.keys.view_unchecked(idx);
             let buffers = hash_keys.keys.data_buffers();
             if hash_keys.null_is_valid {
                 hash_keys.for_each_hash(|idx, opt_h| {
                     if let Some(h) = opt_h {
-                        let view = views.get_unchecked(idx as usize);
-                        push_g(idx as usize, self.insert_key(h, *view, force_hot, buffers));
+                        push_g(
+                            idx as usize,
+                            self.insert_key(h, view_at(idx as usize), force_hot, buffers),
+                        );
                     } else {
                         push_g(idx as usize, self.insert_null());
                     }
@@ -145,8 +147,10 @@ impl HotGrouper for BinviewHashHotGrouper {
             } else {
                 hash_keys.for_each_hash(|idx, opt_h| {
                     if let Some(h) = opt_h {
-                        let view = views.get_unchecked(idx as usize);
-                        push_g(idx as usize, self.insert_key(h, *view, force_hot, buffers));
+                        push_g(
+                            idx as usize,
+                            self.insert_key(h, view_at(idx as usize), force_hot, buffers),
+                        );
                     }
                 });
             }
@@ -156,25 +160,21 @@ impl HotGrouper for BinviewHashHotGrouper {
     fn keys(&self) -> HashKeys {
         unsafe {
             let mut hashes = Vec::with_capacity(self.table.len());
-            let mut keys_builder = BinaryViewArrayGenericBuilder::new(ArrowDataType::BinaryView);
-            keys_builder.reserve(self.table.len());
+            let mut keys_builder = PlBinaryViewArrayBuilder::with_capacity(self.table.len());
             for (h, view, buf) in self.table.keys() {
                 hashes.push_unchecked(*h);
-                if view.is_inline() {
-                    keys_builder.push_inline_view_ignore_validity(*view);
-                } else {
-                    keys_builder.push_value_ignore_validity(buf.as_slice());
-                }
+                let bytes = view.get_inlined_slice().unwrap_or(buf.as_slice());
+                keys_builder.push_value(bytes);
             }
 
-            let hashes = PrimitiveArray::from_vec(hashes);
+            let hashes = PlPrimitiveArray::from_vec(hashes);
             let mut keys = keys_builder.freeze();
             let null_is_valid = self.null_idx < IdxSize::MAX;
             if null_is_valid {
                 let mut validity = MutableBitmap::new();
                 validity.extend_constant(keys.len(), true);
                 validity.set(self.null_idx as usize, false);
-                keys = keys.with_validity_typed(Some(validity.freeze()));
+                keys = keys.with_validity(Some(PlBitmap::from_bitmap(validity.freeze())));
             }
             HashKeys::Binview(BinviewKeys {
                 hashes,
@@ -192,7 +192,7 @@ impl HotGrouper for BinviewHashHotGrouper {
         let hashes = core::mem::take(&mut self.evicted_key_hashes);
         let keys = self.evicted_keys.freeze_reset();
         HashKeys::Binview(BinviewKeys {
-            hashes: PrimitiveArray::from_vec(hashes),
+            hashes: PlPrimitiveArray::from_vec(hashes),
             keys,
             null_is_valid: false,
         })

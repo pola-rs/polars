@@ -23,6 +23,27 @@ fn clamp_max<T: PartialOrd>(input: T, max: T) -> T {
     if input > max { max } else { input }
 }
 
+/// Do `op` over a single row and repeat its answer, when every operand reads one element
+/// throughout.
+///
+/// Clamping is elementwise, so operands that repeat clamp to one value and that value stands for
+/// every row. Without this the ternary kernel walks all `n` rows to write the same number each
+/// time.
+fn repeated_operands<F>(operands: &[&Series], op: F) -> PolarsResult<Option<Series>>
+where
+    F: FnOnce(&[Series]) -> PolarsResult<Series>,
+{
+    let length = operands[0].len();
+    // A length-1 operand is already the one row; it is the longer ones that have to repeat.
+    let repeats = |s: &Series| s.len() == 1 || s.repeats_one_element();
+    if !operands[0].repeats_one_element() || !operands[1..].iter().copied().all(repeats) {
+        return Ok(None);
+    }
+
+    let heads = operands.iter().map(|s| s.head(Some(1))).collect::<Vec<_>>();
+    Ok(Some(op(&heads)?.new_from_index(0, length)))
+}
+
 /// Set values outside the given boundaries to the boundary value.
 pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
     polars_ensure!(
@@ -46,6 +67,10 @@ pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
             argument = name,
             argument_idx = i
         );
+    }
+
+    if let Some(out) = repeated_operands(&[s, min, max], |h| clip(&h[0], &h[1], &h[2]))? {
+        return Ok(out);
     }
 
     let original_type = s.dtype();
@@ -87,6 +112,10 @@ pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
         max.len()
     );
 
+    if let Some(out) = repeated_operands(&[s, max], |h| clip_max(&h[0], &h[1]))? {
+        return Ok(out);
+    }
+
     let original_type = s.dtype();
     let max = max.strict_cast(s.dtype())?;
 
@@ -120,6 +149,10 @@ pub fn clip_min(s: &Series, min: &Series) -> PolarsResult<Series> {
         s.len(),
         min.len()
     );
+
+    if let Some(out) = repeated_operands(&[s, min], |h| clip_min(&h[0], &h[1]))? {
+        return Ok(out);
+    }
 
     let original_type = s.dtype();
     let min = min.strict_cast(s.dtype())?;

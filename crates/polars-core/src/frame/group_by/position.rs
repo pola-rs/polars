@@ -1,8 +1,9 @@
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 
-use arrow::offset::OffsetsBuffer;
+use polars_buffer::Buffer;
 use polars_utils::idx_vec::IdxVec;
+use polars_utils::index::idxsize_to_u64;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
 
@@ -353,38 +354,33 @@ impl GroupsType {
         }
     }
 
-    pub(crate) fn prepare_list_agg(
-        &self,
-        total_len: usize,
-    ) -> (Option<IdxCa>, OffsetsBuffer<i64>, bool) {
+    pub(crate) fn prepare_list_agg(&self, total_len: usize) -> (Option<IdxCa>, Buffer<u64>, bool) {
         let mut can_fast_explode = true;
         match self {
             GroupsType::Idx(groups) => {
                 let mut list_offset = Vec::with_capacity(self.len() + 1);
                 let mut gather_offsets = Vec::with_capacity(total_len);
 
-                let mut len_so_far = 0i64;
+                let mut len_so_far = 0u64;
                 list_offset.push(len_so_far);
 
                 for idx in groups {
                     let idx = idx.1;
                     gather_offsets.extend_from_slice(idx);
-                    len_so_far += idx.len() as i64;
+                    len_so_far += idx.len() as u64;
                     list_offset.push(len_so_far);
                     can_fast_explode &= !idx.is_empty();
                 }
-                unsafe {
-                    (
-                        Some(IdxCa::from_vec(PlSmallStr::EMPTY, gather_offsets)),
-                        OffsetsBuffer::new_unchecked(list_offset.into()),
-                        can_fast_explode,
-                    )
-                }
+                (
+                    Some(IdxCa::from_vec(PlSmallStr::EMPTY, gather_offsets)),
+                    list_offset.into(),
+                    can_fast_explode,
+                )
             },
             GroupsType::Slice { groups, .. } => {
                 let mut list_offset = Vec::with_capacity(self.len() + 1);
                 let mut gather_offsets = Vec::with_capacity(total_len);
-                let mut len_so_far = 0i64;
+                let mut len_so_far = 0u64;
                 list_offset.push(len_so_far);
 
                 for g in groups {
@@ -392,18 +388,16 @@ impl GroupsType {
                     let offset = g[0];
                     gather_offsets.extend(offset..offset + len);
 
-                    len_so_far += len as i64;
+                    len_so_far += idxsize_to_u64(len);
                     list_offset.push(len_so_far);
                     can_fast_explode &= len > 0;
                 }
 
-                unsafe {
-                    (
-                        Some(IdxCa::from_vec(PlSmallStr::EMPTY, gather_offsets)),
-                        OffsetsBuffer::new_unchecked(list_offset.into()),
-                        can_fast_explode,
-                    )
-                }
+                (
+                    Some(IdxCa::from_vec(PlSmallStr::EMPTY, gather_offsets)),
+                    list_offset.into(),
+                    can_fast_explode,
+                )
             },
         }
     }

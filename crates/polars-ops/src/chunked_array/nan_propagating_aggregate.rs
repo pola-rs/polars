@@ -1,13 +1,12 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::array::Array;
-use arrow::legacy::kernels::take_agg::{
-    take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
-};
 use polars_compute::rolling;
 use polars_compute::rolling::no_nulls::{MaxWindow, MinWindow};
+use polars_compute::take_agg::{
+    take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
+};
 use polars_core::frame::group_by::aggregations::{
-    _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window_no_nulls,
-    _rolling_apply_agg_window_nulls, _slice_from_offsets, _use_rolling_kernels,
+    _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window, _slice_from_offsets,
+    _use_rolling_kernels,
 };
 use polars_core::prelude::*;
 use polars_utils::min_max::MinMax;
@@ -20,12 +19,9 @@ where
     ca.downcast_iter()
         .filter_map(|arr| {
             if arr.null_count() == 0 {
-                arr.values().iter().copied().reduce(min_or_max_fn)
+                arr.values_iter().reduce(min_or_max_fn)
             } else {
-                arr.iter()
-                    .unwrap_optional()
-                    .filter_map(|opt| opt.copied())
-                    .reduce(min_or_max_fn)
+                arr.iter().flatten().reduce(min_or_max_fn)
             }
         })
         .reduce(min_or_max_fn)
@@ -79,6 +75,8 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                 ca.get(first as usize)
             } else {
                 match (ca.has_nulls(), ca.chunks().len()) {
+                    // The take kernels read a chunk that repeats one value as that value, so it
+                    // is gathered once however many indices ask for it.
                     (false, 1) => take_agg_no_null_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
@@ -102,23 +100,16 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
             monotonic,
         } => {
             if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, ca.chunks()) {
-                let arr = ca.downcast_iter().next().unwrap();
-                let values = arr.values().as_slice();
+                let ca = ca.rechunk();
                 let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
-                let arr = match arr.validity() {
-                    None => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _, _>(
-                        values,
-                        offset_iter,
-                        None,
-                    ),
-                    Some(validity) => _rolling_apply_agg_window_nulls::<
-                        rolling::nulls::MaxWindow<_>,
-                        _,
-                        _,
-                        _,
-                    >(values, validity, offset_iter, None),
-                };
-                ChunkedArray::<T>::from(arr).into_series()
+                let arr = _rolling_apply_agg_window::<
+                    MaxWindow<_>,
+                    rolling::nulls::MaxWindow<_>,
+                    _,
+                    _,
+                    _,
+                >(ca.downcast_as_array(), offset_iter, None);
+                ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);
@@ -146,6 +137,8 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                 ca.get(first as usize)
             } else {
                 match (ca.has_nulls(), ca.chunks().len()) {
+                    // The take kernels read a chunk that repeats one value as that value, so it
+                    // is gathered once however many indices ask for it.
                     (false, 1) => take_agg_no_null_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
@@ -169,23 +162,16 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
             monotonic,
         } => {
             if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, ca.chunks()) {
-                let arr = ca.downcast_iter().next().unwrap();
-                let values = arr.values().as_slice();
+                let ca = ca.rechunk();
                 let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
-                let arr = match arr.validity() {
-                    None => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _, _>(
-                        values,
-                        offset_iter,
-                        None,
-                    ),
-                    Some(validity) => _rolling_apply_agg_window_nulls::<
-                        rolling::nulls::MinWindow<_>,
-                        _,
-                        _,
-                        _,
-                    >(values, validity, offset_iter, None),
-                };
-                ChunkedArray::<T>::from(arr).into_series()
+                let arr = _rolling_apply_agg_window::<
+                    MinWindow<_>,
+                    rolling::nulls::MinWindow<_>,
+                    _,
+                    _,
+                    _,
+                >(ca.downcast_as_array(), offset_iter, None);
+                ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);

@@ -1,5 +1,5 @@
-use arrow::array::Array;
 use arrow::trusted_len::TrustedLen;
+use polars_array::PlArray;
 
 use crate::chunked_array::object::{ObjectArray, PolarsObject};
 
@@ -76,6 +76,9 @@ impl<T: PolarsObject> std::iter::DoubleEndedIterator for ObjectIter<'_, T> {
 
 /// all arrays have known size.
 impl<T: PolarsObject> std::iter::ExactSizeIterator for ObjectIter<'_, T> {}
+
+// SAFETY: the iterator walks the elements of the array it was made from, whose length it knows.
+unsafe impl<T: PolarsObject> arrow::trusted_len::TrustedLen for ObjectIter<'_, T> {}
 
 impl<'a, T: PolarsObject> IntoIterator for &'a ObjectArray<T> {
     type Item = Option<&'a T>;

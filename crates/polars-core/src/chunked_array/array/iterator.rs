@@ -1,7 +1,8 @@
 use std::ptr::NonNull;
 
 use super::*;
-use crate::chunked_array::list::iterator::AmortizedListIter;
+use crate::chunked_array::array::collect_array_chunk;
+use crate::chunked_array::list::iterator::{AmortizedListIter, repeat_one_answer};
 use crate::series::amortized_iter::{AmortSeries, ArrayBox, unstable_series_container_and_ptr};
 
 impl ArrayChunked {
@@ -51,7 +52,10 @@ impl ArrayChunked {
         // we create the series container from the inner array
         // so that the container has the proper dtype.
         let arr = self.downcast_iter().next().unwrap();
-        let inner_values = arr.values();
+        // Only the type of the values matters here: the container is a placeholder whose array is
+        // swapped out on every step, so the values are handed over in whatever representation they
+        // are in rather than being written out one list per element to seed it.
+        let inner_values = arr.values().to_boxed();
 
         let inner_dtype = self.inner_dtype();
         let iter_dtype = match inner_dtype {
@@ -66,7 +70,7 @@ impl ArrayChunked {
         // SAFETY:
         // inner type passed as physical type
         let (s, ptr) =
-            unsafe { unstable_series_container_and_ptr(name, inner_values.clone(), &iter_dtype) };
+            unsafe { unstable_series_container_and_ptr(name, inner_values, &iter_dtype) };
 
         // SAFETY: `ptr` belongs to the `Series`.
         unsafe {
@@ -78,6 +82,39 @@ impl ArrayChunked {
                 inner_dtype.clone(),
             )
         }
+    }
+
+    /// The number of elements every one of which reads the one list this array holds, if that is
+    /// how it holds them: a single chunk whose values are that one list, with no null element to
+    /// read anything else for.
+    ///
+    /// A closure applied element by element then only has to see that one list — see
+    /// [`apply_amortized_same_type`](Self::apply_amortized_same_type).
+    ///
+    /// Only work that answers the same way twice may be shared like this: an unseeded sample has
+    /// to be taken per element even here.
+    pub fn repeats_one_list(&self) -> Option<usize> {
+        let [chunk] = self.chunks().as_slice() else {
+            return None;
+        };
+        let arr = chunk.as_any().downcast_ref::<PlFixedSizeListArray>()?;
+
+        (arr.len() > 1 && arr.null_count() == 0 && arr.values_are_scalar()).then_some(arr.len())
+    }
+
+    /// The one list every element reads, for [`repeats_one_list`](Self::repeats_one_list) to have
+    /// answered `Some`.
+    fn one_list(&self) -> AmortSeries {
+        self.amortized_iter()
+            .next()
+            .flatten()
+            .expect("an array that repeats one list holds it, and holds it for every element")
+    }
+
+    /// `length` elements over the single list `out`, which every one of them reads.
+    fn repeat_one_answer(&self, out: &Series, length: usize) -> Self {
+        let arr = PlFixedSizeListArray::new_broadcast(to_arr(out), self.width(), length, None);
+        ChunkedArray::from_chunk_iter_and_field(self.field.clone(), [arr])
     }
 
     pub fn try_apply_amortized_to_list<F>(&self, mut f: F) -> PolarsResult<ListChunked>
@@ -130,14 +167,25 @@ impl ArrayChunked {
         if self.is_empty() {
             return self.clone();
         }
-        self.amortized_iter()
+
+        // The one list every element reads is mapped once, and the answer is that one list
+        // repeated: `f` runs once rather than once per element, and the elements share it.
+        if let Some(length) = self.repeats_one_list() {
+            let out = f(self.one_list());
+            return self.repeat_one_answer(&out, length);
+        }
+
+        let elements = self
+            .amortized_iter()
             .map(|opt_v| {
                 opt_v.map(|v| {
                     let out = f(v);
                     to_arr(&out)
                 })
             })
-            .collect_ca_with_dtype(self.name().clone(), self.dtype().clone())
+            .collect::<Vec<_>>();
+        let chunk = collect_array_chunk(elements, self.width(), self.inner_dtype());
+        ChunkedArray::from_chunk_iter_and_field(self.field.clone(), [chunk])
     }
 
     /// Try apply a closure `F` to each array.
@@ -151,16 +199,29 @@ impl ArrayChunked {
         if self.is_empty() {
             return Ok(self.clone());
         }
-        self.amortized_iter()
+
+        // As in `apply_amortized_same_type`: one list mapped once, the answer shared.
+        if let Some(length) = self.repeats_one_list() {
+            let out = f(self.one_list())?;
+            return Ok(self.repeat_one_answer(&out, length));
+        }
+
+        let elements = self
+            .amortized_iter()
             .map(|opt_v| {
                 opt_v
                     .map(|v| {
                         let out = f(v)?;
-                        Ok(to_arr(&out))
+                        PolarsResult::Ok(to_arr(&out))
                     })
                     .transpose()
             })
-            .try_collect_ca_with_dtype(self.name().clone(), self.dtype().clone())
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let chunk = collect_array_chunk(elements, self.width(), self.inner_dtype());
+        Ok(ChunkedArray::from_chunk_iter_and_field(
+            self.field.clone(),
+            [chunk],
+        ))
     }
 
     /// Zip with a `ChunkedArray` then apply a binary function `F` elementwise.
@@ -180,38 +241,57 @@ impl ArrayChunked {
         if self.is_empty() {
             return self.clone();
         }
-        self.amortized_iter()
+        let elements = self
+            .amortized_iter()
             .zip(ca.iter())
             .map(|(opt_s, opt_v)| {
                 let out = f(opt_s, opt_v);
                 out.map(|s| to_arr(&s))
             })
-            .collect_ca_with_dtype(self.name().clone(), self.dtype().clone())
+            .collect::<Vec<_>>();
+        let chunk = collect_array_chunk(elements, self.width(), self.inner_dtype());
+        ChunkedArray::from_chunk_iter_and_field(self.field.clone(), [chunk])
     }
 
     /// Apply a closure `F` elementwise.
+    ///
+    /// Only a closure that answers the same way twice may be applied this way: where every element
+    /// reads the one list, `f` sees it once and the answer stands for all of them.
     #[must_use]
-    pub fn apply_amortized_generic<F, K, V>(&self, f: F) -> ChunkedArray<V>
+    pub fn apply_amortized_generic<F, K, V>(&self, mut f: F) -> ChunkedArray<V>
     where
         V: PolarsDataType,
         F: FnMut(Option<AmortSeries>) -> Option<K> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
+        // The one list every element reads is mapped once and the answer repeated, rather than
+        // that same list being read — and reduced — once per element. See `repeats_one_list`.
+        if let Some(length) = self.repeats_one_list() {
+            return repeat_one_answer(self.name().clone(), f(Some(self.one_list())), length);
+        }
+
         self.amortized_iter().map(f).collect_ca(self.name().clone())
     }
 
     /// Try apply a closure `F` elementwise.
-    pub fn try_apply_amortized_generic<F, K, V>(&self, f: F) -> PolarsResult<ChunkedArray<V>>
+    pub fn try_apply_amortized_generic<F, K, V>(&self, mut f: F) -> PolarsResult<ChunkedArray<V>>
     where
         V: PolarsDataType,
         F: FnMut(Option<AmortSeries>) -> PolarsResult<Option<K>> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
-        {
-            self.amortized_iter()
-                .map(f)
-                .try_collect_ca(self.name().clone())
+        // As in `apply_amortized_generic`: the one list is mapped once and the answer repeated.
+        if let Some(length) = self.repeats_one_list() {
+            return Ok(repeat_one_answer(
+                self.name().clone(),
+                f(Some(self.one_list()))?,
+                length,
+            ));
         }
+
+        self.amortized_iter()
+            .map(f)
+            .try_collect_ca(self.name().clone())
     }
 
     pub fn for_each_amortized<F>(&self, f: F)
@@ -222,7 +302,7 @@ impl ArrayChunked {
     }
 }
 
-fn to_arr(s: &Series) -> ArrayRef {
+fn to_arr(s: &Series) -> PlArrayRef {
     if s.chunks().len() > 1 {
         let s = s.rechunk();
         s.chunks()[0].clone()

@@ -1,6 +1,5 @@
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
+use polars_array::{ArrayCollectIterExt, PlPrimitiveArray, StaticArray};
 use polars_utils::IdxSize;
 use polars_utils::min_max::{MaxPropagateNan, MinMaxPolicy, MinPropagateNan};
 
@@ -16,21 +15,39 @@ use super::nulls::RollingAggWindowNulls;
 /// - `starts` and `ends` must be monotonically non-decreasing (rolling window invariant).
 /// - All indices in `starts`/`ends` must be within bounds of `by`.
 fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
-    by: &[B],
-    validity: Option<&Bitmap>,
+    by: &PlPrimitiveArray<B>,
     starts: &[IdxSize],
     ends: &[IdxSize],
     min_periods: usize,
-) -> PrimitiveArray<IdxSize> {
+) -> PlPrimitiveArray<IdxSize> {
     assert_eq!(starts.len(), ends.len());
     let n = starts.len();
 
     if n == 0 || by.is_empty() {
-        return PrimitiveArray::new_null(IdxSize::PRIMITIVE.into(), n);
+        return PlPrimitiveArray::new_full_null(n);
     }
 
     let first_start = starts[0] as usize;
     let first_end = ends[0] as usize;
+
+    // The deque walks the `by` values as a slice, and reads the mask bit by bit only where there is
+    // a null to skip. With nothing null there is no mask to read at all, whatever representation it
+    // is in, so only a values buffer that repeats one value is written out; with something null the
+    // two are laid out together.
+    let values;
+    let flat;
+    let validity = match by.as_no_nulls() {
+        Some(no_nulls) => {
+            values = no_nulls.to_flat_values();
+            None
+        },
+        None => {
+            flat = by.to_flat();
+            values = std::borrow::Cow::Borrowed(flat.values());
+            flat.validity()
+        },
+    };
+    let by = values.as_slice();
 
     match validity {
         None => {
@@ -58,7 +75,7 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
                     .map(|rel_idx| start as IdxSize + rel_idx)
             });
 
-            PrimitiveArray::from_trusted_len_iter(iter)
+            iter.collect_arr_trusted()
         },
         Some(validity) => {
             let mut window = <ArgMinMaxWindow<'_, B, P> as RollingAggWindowNulls<B, IdxSize>>::new(
@@ -89,27 +106,25 @@ fn rolling_arg_extremum_by<B: NativeType, P: MinMaxPolicy>(
                     .map(|rel_idx| start as IdxSize + rel_idx)
             });
 
-            PrimitiveArray::from_trusted_len_iter(iter)
+            iter.collect_arr_trusted()
         },
     }
 }
 
 pub fn rolling_argmin_by<B: NativeType>(
-    by: &[B],
-    validity: Option<&Bitmap>,
+    by: &PlPrimitiveArray<B>,
     starts: &[IdxSize],
     ends: &[IdxSize],
     min_periods: usize,
-) -> PrimitiveArray<IdxSize> {
-    rolling_arg_extremum_by::<B, MinPropagateNan>(by, validity, starts, ends, min_periods)
+) -> PlPrimitiveArray<IdxSize> {
+    rolling_arg_extremum_by::<B, MinPropagateNan>(by, starts, ends, min_periods)
 }
 
 pub fn rolling_argmax_by<B: NativeType>(
-    by: &[B],
-    validity: Option<&Bitmap>,
+    by: &PlPrimitiveArray<B>,
     starts: &[IdxSize],
     ends: &[IdxSize],
     min_periods: usize,
-) -> PrimitiveArray<IdxSize> {
-    rolling_arg_extremum_by::<B, MaxPropagateNan>(by, validity, starts, ends, min_periods)
+) -> PlPrimitiveArray<IdxSize> {
+    rolling_arg_extremum_by::<B, MaxPropagateNan>(by, starts, ends, min_periods)
 }

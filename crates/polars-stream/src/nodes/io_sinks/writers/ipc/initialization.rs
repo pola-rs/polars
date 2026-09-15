@@ -3,9 +3,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::Field as ArrowField;
 use arrow::io::ipc::IpcField;
-use polars_core::prelude::{
-    CategoricalMapping, CategoricalPhysicalDtypeExt, CompatLevel, DataType,
-};
+use polars_core::prelude::{CategoricalMapping, CompatLevel, DataType};
 use polars_core::schema::Schema;
 use polars_core::series::arrow_export::ToArrowConverter;
 use polars_core::series::arrow_export::categorical::CategoricalToArrowConverter;

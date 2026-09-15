@@ -70,8 +70,10 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
             );
             let intermediate_pred_true_mask = p.predicate.evaluate(&array);
 
-            let array =
-                polars_compute::filter::filter_with_bitmap(&array, &intermediate_pred_true_mask);
+            let array = polars_compute::filter::filter_arrow_with_bitmap(
+                &array,
+                &intermediate_pred_true_mask,
+            );
             let array = array.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
 
             target.extend(array.values().iter().copied());

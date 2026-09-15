@@ -132,8 +132,9 @@ where
     let sorted_values = unsafe { values.take_unchecked(&sorting_indices) };
     let sorted_times = unsafe { times.take_unchecked(&sorting_indices) };
     let sorting_indices = sorting_indices
-        .cont_slice()
-        .expect("`arg_sort` should have returned a single chunk");
+        .to_cont_slice()
+        .expect("`arg_sort` should have returned a single chunk of indices, none of them null");
+    let sorting_indices = sorting_indices.as_slice();
 
     let mut out: Vec<_> = zeroed_vec(sorted_times.len());
     ewm_by_core::<T, IS_MEAN, _>(
@@ -215,7 +216,8 @@ fn ewm_by_finish<T>(
 where
     T: PolarsFloatType,
 {
-    let mut arr = T::Array::from_zeroable_vec(out, values.dtype().to_arrow(CompatLevel::newest()));
+    // A float is its own zeroable value, so the vector is the values of the array as they are.
+    let mut arr = PlPrimitiveArray::from_vec(out);
     if (times.null_count() > 0) || (values.null_count() > 0) {
         let validity = binary_concatenate_validities(times, values);
         arr = arr.with_validity_typed(validity);

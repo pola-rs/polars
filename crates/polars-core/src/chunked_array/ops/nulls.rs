@@ -1,4 +1,4 @@
-use arrow::bitmap::Bitmap;
+use polars_array::bitmap::invert;
 
 use super::*;
 
@@ -22,36 +22,30 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 }
 
-pub fn is_not_null(name: PlSmallStr, chunks: &[ArrayRef]) -> BooleanChunked {
-    let chunks = chunks.iter().map(|arr| {
-        let bitmap = arr
-            .validity()
-            .cloned()
-            .unwrap_or_else(|| !(&Bitmap::new_zeroed(arr.len())));
-        BooleanArray::from_data_default(bitmap, None)
+/// The mask of a chunk, as the boolean array of which elements are not null.
+pub fn is_not_null(name: PlSmallStr, chunks: &[PlArrayRef]) -> BooleanChunked {
+    let chunks = chunks.iter().map(|arr| match arr.validity() {
+        Some(validity) => PlBooleanArray::from_pl_bitmap(PlBitmap::from(validity)),
+        None => PlBooleanArray::new_scalar(true, arr.len()),
     });
     BooleanChunked::from_chunk_iter(name, chunks)
 }
 
-pub fn is_null(name: PlSmallStr, chunks: &[ArrayRef]) -> BooleanChunked {
-    let chunks = chunks.iter().map(|arr| {
-        let bitmap = arr
-            .validity()
-            .map(|bitmap| !bitmap)
-            .unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
-        BooleanArray::from_data_default(bitmap, None)
+/// The mask of a chunk, as the boolean array of which elements are null — see [`is_not_null`].
+pub fn is_null(name: PlSmallStr, chunks: &[PlArrayRef]) -> BooleanChunked {
+    let chunks = chunks.iter().map(|arr| match arr.validity() {
+        Some(validity) => PlBooleanArray::from_pl_bitmap(invert(validity)),
+        None => PlBooleanArray::new_scalar(false, arr.len()),
     });
     BooleanChunked::from_chunk_iter(name, chunks)
 }
 
-pub fn replace_non_null(name: PlSmallStr, chunks: &[ArrayRef], default: bool) -> BooleanChunked {
+pub fn replace_non_null(name: PlSmallStr, chunks: &[PlArrayRef], default: bool) -> BooleanChunked {
     BooleanChunked::from_chunk_iter(
         name,
         chunks.iter().map(|el| {
-            BooleanArray::from_data_default(
-                Bitmap::new_with_value(default, el.len()),
-                el.validity().cloned(),
-            )
+            PlBooleanArray::new_scalar(default, el.len())
+                .with_validity(el.validity().map(PlBitmap::from))
         }),
     )
 }

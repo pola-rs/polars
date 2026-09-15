@@ -4,10 +4,108 @@ mod iterator;
 
 use std::borrow::Cow;
 
+use arrow::bitmap::BitmapBuilder;
 use either::Either;
+use polars_array::builder::{PlArrayBuilder, builder_like};
+use polars_array::concatenate::concatenate;
 
 use super::align_inner_chunks;
+use crate::chunked_array::new_empty_chunk;
 use crate::prelude::*;
+
+/// The values `arr` is taken over: the values of every element, laid end to end.
+pub(crate) fn array_values(arr: &PlFixedSizeListArray) -> PlArrayRef {
+    if let Some(values) = arr.flat_values() {
+        return values.to_boxed();
+    }
+
+    // The mask is dropped first: it is not part of what is handed over, and a repeated one would
+    // otherwise be written out along with the values for no reader at all.
+    arr.clone()
+        .with_validity(None)
+        .to_flat()
+        .values()
+        .to_boxed()
+}
+
+/// Returns `arr` with its values replaced, keeping its width and validity mask.
+///
+/// The replacement stands for the values it replaces one for one, so it is in the
+/// representation they were in: one element's values where `arr` repeats a single element, and
+/// one element's values per element otherwise.
+pub(crate) fn array_with_values(
+    arr: &PlFixedSizeListArray,
+    values: PlArrayRef,
+) -> PlFixedSizeListArray {
+    assert_eq!(arr.values().len(), values.len());
+    let (width, length) = (arr.width(), arr.len());
+    let values_are_scalar = arr.values_are_scalar();
+    let validity = arr.validity().map(PlBitmap::from);
+
+    // SAFETY: only the values are replaced, by an array of the same length, so they still hold
+    // the width of every element in the representation they were taken out in.
+    let out = unsafe {
+        if values_are_scalar {
+            PlFixedSizeListArray::new_broadcast_unchecked(values, width, length, None)
+        } else {
+            PlFixedSizeListArray::new_unchecked(values, width, length, None)
+        }
+    };
+    out.with_validity(validity)
+}
+
+/// Lays `elements` out as the chunk of an [`ArrayChunked`] of `width` and `inner_dtype`.
+pub(crate) fn collect_array_chunk(
+    elements: Vec<Option<PlArrayRef>>,
+    width: usize,
+    inner_dtype: &DataType,
+) -> PlFixedSizeListArray {
+    let length = elements.len();
+    let mut validity = BitmapBuilder::with_capacity(length);
+    let mut has_nulls = false;
+    for element in &elements {
+        if let Some(values) = element {
+            assert_eq!(
+                values.len(),
+                width,
+                "a fixed size list element of the wrong width"
+            );
+        }
+        has_nulls |= element.is_none();
+        validity.push(element.is_some());
+    }
+
+    // The values of a null element are the `width` nulls that stand in for the element it does not
+    // hold; the array is built once and shared by every null element.
+    let null_element = has_nulls.then(|| {
+        let mut builder = builder_like(&*new_empty_chunk(inner_dtype));
+        builder.extend_nulls(width);
+        builder.freeze_reset()
+    });
+
+    let values = elements
+        .iter()
+        .map(|element| match element {
+            Some(values) => &**values,
+            None => &**null_element.as_ref().unwrap(),
+        })
+        .collect::<Vec<_>>();
+    let values = if values.is_empty() {
+        new_empty_chunk(inner_dtype)
+    } else {
+        concatenate(&values).expect("the elements of a fixed size list are all of the same type")
+    };
+
+    // SAFETY: every element covers `width` values, which were laid end to end.
+    unsafe {
+        PlFixedSizeListArray::new_unchecked(
+            values,
+            width,
+            length,
+            (has_nulls.then(|| validity.freeze())).map(PlBitmap::from_bitmap),
+        )
+    }
+}
 
 impl ArrayChunked {
     /// Get the inner data type of the fixed size list.
@@ -27,7 +125,11 @@ impl ArrayChunked {
     /// Panics if the physical representation of `dtype` differs the physical
     /// representation of the existing inner `dtype`.
     pub unsafe fn set_inner_dtype(&mut self, dtype: DataType) {
-        assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
+        // A chunk carries no inner type, so a `ChunkedArray` built from one alone names `Null`
+        // as its inner type until it is set here.
+        assert!(
+            self.inner_dtype().is_null() || dtype.to_physical() == self.inner_dtype().to_physical()
+        );
         unsafe { self.to_logical(dtype) }
     }
 
@@ -43,7 +145,12 @@ impl ArrayChunked {
     /// # Safety
     /// Same requirements as [`ListChunked::to_logical`].
     pub unsafe fn to_logical(&mut self, inner_dtype: DataType) {
-        debug_assert_eq!(inner_dtype.to_physical(), self.inner_dtype().to_physical());
+        // A chunk carries no inner type, so a `ChunkedArray` built from one alone names `Null`
+        // as its inner type until it is set here.
+        debug_assert!(
+            self.inner_dtype().is_null()
+                || inner_dtype.to_physical() == self.inner_dtype().to_physical()
+        );
         let width = self.width();
         let fld = Arc::make_mut(&mut self.field);
         fld.set_dtype(DataType::Array(Box::new(inner_dtype), width))
@@ -51,6 +158,14 @@ impl ArrayChunked {
 
     /// Convert the datatype of the array into the physical datatype.
     pub fn to_physical_repr(&self) -> Cow<'_, ArrayChunked> {
+        // Whether the values change is a question about the inner type alone, so it is asked of
+        // the type rather than of the values: `get_inner` writes them out one list per element,
+        // which for an inner type that is already physical is a copy of the whole column for an
+        // answer of "nothing to do" — and a chunk that repeats one list pays it in full.
+        if !self.inner_dtype().is_logical() {
+            return Cow::Borrowed(self);
+        }
+
         let Cow::Owned(physical_repr) = self.get_inner().to_physical_repr() else {
             return Cow::Borrowed(self);
         };
@@ -58,14 +173,18 @@ impl ArrayChunked {
         let chunk_len_validity_iter =
             if physical_repr.chunks().len() == 1 && self.chunks().len() > 1 {
                 // Physical repr got rechunked, rechunk our validity as well.
-                Either::Left(std::iter::once((self.len(), self.rechunk_validity())))
+                Either::Left(std::iter::once((
+                    self.len(),
+                    // Rechunking writes the mask out one bit per element.
+                    self.rechunk_validity(),
+                )))
             } else {
                 // No rechunking, expect the same number of chunks.
                 assert_eq!(self.chunks().len(), physical_repr.chunks().len());
                 Either::Right(
                     self.chunks()
                         .iter()
-                        .map(|c| (c.len(), c.validity().cloned())),
+                        .map(|c| (c.len(), c.validity().map(PlBitmap::from))),
                 )
             };
 
@@ -73,20 +192,11 @@ impl ArrayChunked {
         let chunks: Vec<_> = chunk_len_validity_iter
             .zip(physical_repr.into_chunks())
             .map(|((len, validity), values)| {
-                FixedSizeListArray::new(
-                    ArrowDataType::FixedSizeList(
-                        Box::new(ArrowField::new(
-                            LIST_VALUES_NAME,
-                            values.dtype().clone(),
-                            true,
-                        )),
-                        width,
-                    ),
-                    len,
-                    values,
-                    validity,
-                )
-                .to_boxed()
+                // SAFETY: the values are the physical repr of the ones taken out, so they still
+                // hold the width of every element, laid end to end.
+                unsafe { PlFixedSizeListArray::new_unchecked(values, width, len, None) }
+                    .with_validity(validity)
+                    .into_boxed()
             })
             .collect();
 
@@ -103,10 +213,12 @@ impl ArrayChunked {
     pub unsafe fn from_physical_unchecked(&self, to_inner_dtype: DataType) -> PolarsResult<Self> {
         debug_assert!(!self.inner_dtype().is_logical());
 
+        // The values are re-tagged one for one, so they are taken as they are laid out: a chunk
+        // that repeats a single array holds that one array's values rather than a copy of them
+        // per element, and `array_with_values` puts the re-tagged ones back the same way.
         let chunks = self
             .downcast_iter()
-            .map(|chunk| chunk.values())
-            .cloned()
+            .map(|arr| arr.values().to_boxed())
             .collect();
 
         let inner = unsafe {
@@ -117,22 +229,7 @@ impl ArrayChunked {
         let chunks: Vec<_> = self
             .downcast_iter()
             .zip(inner.into_chunks())
-            .map(|(chunk, values)| {
-                FixedSizeListArray::new(
-                    ArrowDataType::FixedSizeList(
-                        Box::new(ArrowField::new(
-                            LIST_VALUES_NAME,
-                            values.dtype().clone(),
-                            true,
-                        )),
-                        self.width(),
-                    ),
-                    chunk.len(),
-                    values,
-                    chunk.validity().cloned(),
-                )
-                .to_boxed()
-            })
+            .map(|(chunk, values)| array_with_values(chunk, values).into_boxed())
             .collect();
 
         let name = self.name().clone();
@@ -142,7 +239,7 @@ impl ArrayChunked {
 
     /// Get the inner values as `Series`
     pub fn get_inner(&self) -> Series {
-        let chunks: Vec<_> = self.downcast_iter().map(|c| c.values().clone()).collect();
+        let chunks: Vec<_> = self.downcast_iter().map(array_values).collect();
 
         // SAFETY: Data type of arrays matches because they are chunks from the same array.
         unsafe {
@@ -153,7 +250,7 @@ impl ArrayChunked {
     /// The total number of inner values across all chunks, i.e. `len() * width()`
     /// discounting sliced-away chunks.
     pub fn inner_length(&self) -> usize {
-        self.downcast_iter().map(|c| c.values().len()).sum()
+        self.downcast_iter().map(|c| c.len() * c.width()).sum()
     }
 
     /// Rebuild the arrays around new inner values, reusing the widths and outer validity.
@@ -166,7 +263,10 @@ impl ArrayChunked {
         }
 
         // Align the chunks of the array's inner values and the values series.
-        let values = align_inner_chunks(self.downcast_iter().map(|arr| arr.values().len()), values);
+        let values = align_inner_chunks(
+            self.downcast_iter().map(|arr| arr.len() * arr.width()),
+            values,
+        );
         let values_dtype = values.dtype().clone();
         let width = self.width();
 
@@ -174,14 +274,12 @@ impl ArrayChunked {
             .downcast_iter()
             .zip(values.into_chunks())
             .map(|(ca_arr, v_arr)| {
-                debug_assert_eq!(ca_arr.values().len(), v_arr.len());
-                FixedSizeListArray::new(
-                    FixedSizeListArray::default_datatype(v_arr.dtype().clone(), width),
-                    ca_arr.len(),
-                    v_arr,
-                    ca_arr.validity().cloned(),
-                )
-                .to_boxed()
+                // `values` holds one element's worth of values per element, which is the flat
+                // layout: a chunk that repeats a single array holds them once, and is written
+                // out here for the two to line up. `array_with_values` puts the replacement
+                // back in the representation it takes the values out in.
+                let flat = ca_arr.to_flat();
+                array_with_values(flat.as_array(), v_arr).into_boxed()
             })
             .collect::<Vec<_>>();
 
@@ -196,6 +294,9 @@ impl ArrayChunked {
     }
 
     /// Ignore the list indices and apply `func` to the inner type as [`Series`].
+    ///
+    /// `func` is handed the values of one element for a chunk that repeats a single array,
+    /// since every element reads the same ones, and its answer is repeated in turn.
     pub fn apply_to_inner(
         &self,
         func: &dyn Fn(Series) -> PolarsResult<Series>,
@@ -209,7 +310,7 @@ impl ArrayChunked {
         let elements = unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 self.name().clone(),
-                vec![arr.values().clone()],
+                vec![arr.values().to_boxed()],
                 ca.inner_dtype(),
             )
         };
@@ -223,8 +324,7 @@ impl ArrayChunked {
         let out = out.rechunk();
         let values = out.chunks()[0].clone();
 
-        let inner_dtype = FixedSizeListArray::default_datatype(values.dtype().clone(), ca.width());
-        let arr = FixedSizeListArray::new(inner_dtype, arr.len(), values, arr.validity().cloned());
+        let arr = array_with_values(arr, values);
 
         Ok(unsafe {
             ArrayChunked::from_chunks_and_dtype_unchecked(
@@ -233,5 +333,39 @@ impl ArrayChunked {
                 DataType::Array(Box::new(out.dtype().clone()), self.width()),
             )
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    /// [`ArrayChunked::with_inner_values`] is handed one element's worth of values per element,
+    /// which a chunk that repeats a single array does not hold: `array_with_values` reads its
+    /// replacement in the representation it takes the old values out in, so the chunk is
+    /// written out flat first for the two to line up.
+    #[test]
+    fn with_inner_values_over_a_chunk_that_repeats_one_array() {
+        let element = Series::new(PlSmallStr::from_static("a"), [1i64, 2, 3]);
+        let repeated = ArrayChunked::full(PlSmallStr::from_static("a"), &element, 4);
+        assert!(repeated.downcast_as_array().values_are_scalar());
+        assert_eq!(repeated.inner_length(), 12);
+
+        let values = repeated.get_inner();
+        assert_eq!(values.len(), repeated.inner_length());
+
+        let doubled = &values * 2;
+        let out = repeated.with_inner_values(&doubled);
+
+        assert_eq!(out.len(), repeated.len());
+        assert_eq!(out.width(), 3);
+        assert_eq!(
+            out.get_inner()
+                .i64()
+                .unwrap()
+                .into_no_null_iter()
+                .collect::<Vec<_>>(),
+            vec![2i64, 4, 6, 2, 4, 6, 2, 4, 6, 2, 4, 6],
+        );
     }
 }

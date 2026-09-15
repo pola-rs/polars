@@ -180,8 +180,9 @@ fn maintain_order_idx(
         .as_materialized_series()
         .idx()
         .unwrap()
-        .cont_slice()
+        .to_cont_slice()
         .unwrap();
+    let join_tuples_left = join_tuples_left.as_slice();
 
     let join_tuples_right = df
         .column("b")
@@ -189,8 +190,9 @@ fn maintain_order_idx(
         .as_materialized_series()
         .idx()
         .unwrap()
-        .cont_slice()
+        .to_cont_slice()
         .unwrap();
+    let join_tuples_right = join_tuples_right.as_slice();
 
     RAYON.join(
         || materialize_left_join_idx_left(left, join_tuples_left, args),

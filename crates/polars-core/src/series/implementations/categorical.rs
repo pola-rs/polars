@@ -165,11 +165,11 @@ macro_rules! impl_cat_series {
                 self.0.physical().name()
             }
 
-            fn chunks(&self) -> &Vec<ArrayRef> {
+            fn chunks(&self) -> &Vec<PlArrayRef> {
                 self.0.physical().chunks()
             }
 
-            unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+            unsafe fn chunks_mut(&mut self) -> &mut Vec<PlArrayRef> {
                 self.0.physical_mut().chunks_mut()
             }
 
@@ -232,7 +232,7 @@ macro_rules! impl_cat_series {
                 unsafe { self.apply_on_phys(|cats| cats.take_unchecked(indices)).into_series() }
             }
 
-            fn deposit(&self, validity: &Bitmap) -> Series {
+            fn deposit(&self, validity: &PlBitmap) -> Series {
                 unsafe { self.apply_on_phys(|cats| cats.deposit(validity)) }
                     .into_series()
             }
@@ -245,7 +245,7 @@ macro_rules! impl_cat_series {
                 unsafe { self.apply_on_phys(|cats| cats.rechunk().into_owned()).into_series() }
             }
 
-            fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+            fn with_validity(&self, validity: Option<PlBitmap>) -> Series {
                 unsafe { self.apply_on_phys(move |cats| cats.clone().with_validity(validity)).into_series() }
             }
 

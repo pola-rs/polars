@@ -3,7 +3,7 @@ use polars_compute::decimal::{
 };
 
 use super::*;
-use crate::prelude::arity::broadcast_try_binary_elementwise;
+use crate::prelude::arity::broadcast_try_binary_elementwise_amortized;
 
 impl Add for &DecimalChunked {
     type Output = PolarsResult<DecimalChunked>;
@@ -13,7 +13,7 @@ impl Add for &DecimalChunked {
         let right_s = rhs.scale();
         let scale = left_s.max(right_s);
         let prec = DEC128_MAX_PREC;
-        let phys = broadcast_try_binary_elementwise(
+        let phys = broadcast_try_binary_elementwise_amortized(
             self.physical(),
             rhs.physical(),
             |opt_l, opt_r| {
@@ -44,7 +44,7 @@ impl Sub for &DecimalChunked {
         let right_s = rhs.scale();
         let scale = left_s.max(right_s);
         let prec = DEC128_MAX_PREC;
-        let phys = broadcast_try_binary_elementwise(
+        let phys = broadcast_try_binary_elementwise_amortized(
             self.physical(),
             rhs.physical(),
             |opt_l, opt_r| {
@@ -75,7 +75,7 @@ impl Mul for &DecimalChunked {
         let right_s = rhs.scale();
         let scale = left_s.max(right_s);
         let prec = DEC128_MAX_PREC;
-        let phys = broadcast_try_binary_elementwise(
+        let phys = broadcast_try_binary_elementwise_amortized(
             self.physical(),
             rhs.physical(),
             |opt_l, opt_r| {
@@ -106,7 +106,7 @@ impl Div for &DecimalChunked {
         let right_s = rhs.scale();
         let scale = left_s.max(right_s);
         let prec = DEC128_MAX_PREC;
-        let phys = broadcast_try_binary_elementwise(
+        let phys = broadcast_try_binary_elementwise_amortized(
             self.physical(),
             rhs.physical(),
             |opt_l, opt_r| {

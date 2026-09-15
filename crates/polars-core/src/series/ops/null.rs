@@ -1,7 +1,3 @@
-use arrow::bitmap::Bitmap;
-use arrow::offset::OffsetsBuffer;
-use polars_buffer::Buffer;
-
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_builder;
 use crate::prelude::*;
@@ -67,26 +63,18 @@ impl Series {
                     .collect::<Vec<_>>();
                 let ca = StructChunked::from_series(name, size, fields.iter()).unwrap();
 
-                ca.with_outer_validity(Some(Bitmap::new_zeroed(size)))
+                ca.with_outer_validity(Some(PlBitmap::new_scalar(false, size)))
                     .into_series()
             },
             DataType::BinaryOffset => {
-                let length = size;
-
-                let offsets = vec![0; size + 1];
-                let array = BinaryArray::<i64>::new(
-                    dtype.to_arrow(CompatLevel::oldest()),
-                    unsafe { OffsetsBuffer::new_unchecked(Buffer::from(offsets)) },
-                    Buffer::default(),
-                    Some(Bitmap::new_zeroed(size)),
-                );
+                let array = PlBinaryArray::new_full_null(size);
 
                 unsafe {
                     BinaryOffsetChunked::new_with_dims(
                         Arc::new(Field::new(name, dtype.clone())),
                         vec![Box::new(array)],
-                        length,
-                        length,
+                        size,
+                        size,
                     )
                 }
                 .into_series()

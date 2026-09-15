@@ -1,6 +1,8 @@
 #![allow(clippy::eq_op)] // We use x != x to detect NaN generically.
 
 use arrow::bitmap::Bitmap;
+use arrow::types::NativeType;
+use polars_array::{PlBitmap, PlBooleanArray, PlPrimitiveArray};
 use polars_buffer::SharedStorage;
 use polars_utils::float::IsFloat;
 
@@ -38,18 +40,20 @@ pub fn first_nan_idx<T: PartialEq + IsFloat>(slice: &[T]) -> Option<usize> {
 
 /// Returns a bitmap, where bitmap[i] = slice[i].is_nan(). If None is returned
 /// none of the elements are NaN.
-pub fn is_nan<T: PartialEq + IsFloat>(slice: &[T]) -> Option<Bitmap> {
-    is_not_nan_impl(slice, true)
+pub fn is_nan_slice<T: PartialEq + IsFloat>(slice: &[T]) -> Option<Bitmap> {
+    nan_mask_slice(slice, true)
 }
 
 /// Returns a bitmap, where bitmap[i] = !slice[i].is_nan(). If None is returned
 /// none of the elements are NaN.
-pub fn is_not_nan<T: PartialEq + IsFloat>(slice: &[T]) -> Option<Bitmap> {
-    is_not_nan_impl(slice, false)
+pub fn is_not_nan_slice<T: PartialEq + IsFloat>(slice: &[T]) -> Option<Bitmap> {
+    nan_mask_slice(slice, false)
 }
 
-fn is_not_nan_impl<T: PartialEq + IsFloat>(slice: &[T], invert: bool) -> Option<Bitmap> {
+/// Returns a bitmap where bit `i` says whether `slice[i]` is NaN, or is not if `!nan_is_set`.
+fn nan_mask_slice<T: PartialEq + IsFloat>(slice: &[T], nan_is_set: bool) -> Option<Bitmap> {
     assert!(T::is_float());
+    let invert = nan_is_set;
     let invert_mask = if invert { u64::MAX } else { 0 };
     let first_idx = first_nan_idx(slice)?;
     let no_nan_chunks = first_idx / 64;
@@ -92,4 +96,33 @@ fn is_not_nan_impl<T: PartialEq + IsFloat>(slice: &[T], invert: bool) -> Option<
         .unwrap();
     let bitmap = unsafe { Bitmap::from_inner_unchecked(storage, 0, slice.len(), Some(unset_bits)) };
     Some(bitmap)
+}
+
+/// Returns a mask that is set where `array` is NaN.
+pub fn is_nan<T: NativeType + IsFloat>(array: &PlPrimitiveArray<T>) -> PlBooleanArray {
+    nan_mask(array, true)
+}
+
+/// Returns a mask that is set where `array` is not NaN; see [`is_nan`].
+pub fn is_not_nan<T: NativeType + IsFloat>(array: &PlPrimitiveArray<T>) -> PlBooleanArray {
+    nan_mask(array, false)
+}
+
+fn nan_mask<T: NativeType + IsFloat>(
+    array: &PlPrimitiveArray<T>,
+    nan_is_set: bool,
+) -> PlBooleanArray {
+    // A scalar values buffer holds the one value every element reads: it is tested once, and the
+    // one answer stands for the whole chunk, in `O(1)` memory.
+    let values = match array.scalar_value_ignore_validity() {
+        Some(value) => PlBitmap::new_scalar((value != value) == nan_is_set, array.len()),
+        None => match nan_mask_slice(array.flat_values().unwrap(), nan_is_set) {
+            Some(mask) => PlBitmap::new(mask, array.len()),
+            // No element is NaN, so the whole mask is the one answer that holds for all of
+            // them, which needs no slot per element either.
+            None => PlBitmap::new_scalar(!nan_is_set, array.len()),
+        },
+    };
+
+    PlBooleanArray::from_pl_bitmap(values).with_validity(array.validity().map(PlBitmap::from))
 }

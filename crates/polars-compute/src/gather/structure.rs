@@ -23,7 +23,7 @@ pub(super) unsafe fn take_unchecked(array: &StructArray, indices: &IdxArr) -> St
     let values: Vec<Box<dyn Array>> = array
         .values()
         .iter()
-        .map(|a| super::take_unchecked(a.as_ref(), indices))
+        .map(|a| super::take_arrow_unchecked(a.as_ref(), indices))
         .collect();
 
     let validity = array

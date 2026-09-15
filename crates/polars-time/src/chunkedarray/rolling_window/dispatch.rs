@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use arrow::types::NativeType;
 #[cfg(feature = "dtype-f16")]
 use num_traits::real::Real;
+use polars_array::PlPrimitiveArray;
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
 use polars_compute::rolling::{MeanWindow, SumWindow, no_nulls, nulls};
@@ -15,26 +16,19 @@ use crate::prelude::*;
 use crate::series::AsSeries;
 
 #[cfg(feature = "rolling_window")]
+/// Runs `rolling_agg_fn` over `ca`, handing it the chunk in whatever representation it is in.
 #[allow(clippy::type_complexity)]
 fn rolling_agg<T>(
     ca: &ChunkedArray<T>,
     options: RollingOptionsFixedWindow,
     rolling_agg_fn: &dyn Fn(
-        &[T::Native],
+        &PlPrimitiveArray<T::Native>,
         usize,
         usize,
         bool,
         Option<&[f64]>,
         Option<RollingFnParams>,
-    ) -> PolarsResult<ArrayRef>,
-    rolling_agg_fn_nulls: &dyn Fn(
-        &PrimitiveArray<T::Native>,
-        usize,
-        usize,
-        bool,
-        Option<&[f64]>,
-        Option<RollingFnParams>,
-    ) -> ArrayRef,
+    ) -> PolarsResult<PlArrayRef>,
 ) -> PolarsResult<Series>
 where
     T: PolarsNumericType,
@@ -45,26 +39,26 @@ where
     }
     let ca = ca.rechunk();
 
-    let arr = ca.downcast_iter().next().unwrap();
-    let arr = match ca.null_count() {
-        0 => rolling_agg_fn(
-            arr.values().as_slice(),
-            options.window_size,
-            options.min_periods,
-            options.center,
-            options.weights.as_deref(),
-            options.fn_params,
-        )?,
-        _ => rolling_agg_fn_nulls(
-            arr,
-            options.window_size,
-            options.min_periods,
-            options.center,
-            options.weights.as_deref(),
-            options.fn_params,
-        ),
-    };
-    Series::try_from((ca.name().clone(), arr))
+    let arr = rolling_agg_fn(
+        ca.downcast_as_array(),
+        options.window_size,
+        options.min_periods,
+        options.center,
+        options.weights.as_deref(),
+        options.fn_params,
+    )?;
+    Ok(series_of(ca.name().clone(), arr))
+}
+
+/// The column a rolling kernel's answer is.
+#[cfg(any(feature = "rolling_window", feature = "rolling_window_by"))]
+fn series_of(name: PlSmallStr, chunk: PlArrayRef) -> Series {
+    let array_type = chunk.array_type();
+    let dtype = DataType::from_pl_array_type(array_type)
+        .unwrap_or_else(|| unreachable!("a rolling kernel answered in a {array_type:?} chunk"));
+
+    // SAFETY: the chunk is an array of exactly the type just read off it.
+    unsafe { Series::from_chunks_and_dtype_unchecked(name, vec![chunk], &dtype) }
 }
 
 #[cfg(feature = "rolling_window_by")]
@@ -123,7 +117,7 @@ where
         let computed =
             rolling_agg_by::<T, Out, NoNullsAgg, NullsAgg>(&ca_filtered, &by_filtered, options)?;
 
-        let gather_arr = IdxArr::from_vec(ranks).with_validity_typed(Some(validity));
+        let gather_arr = PlPrimitiveArray::from_vec(ranks).with_validity(Some(validity));
         let gather_ca = IdxCa::with_chunk(PlSmallStr::EMPTY, gather_arr);
         return Ok(unsafe { computed.take_unchecked(&gather_ca) });
     }
@@ -167,33 +161,25 @@ where
         by_physical = Cow::Owned(unsafe { by_physical.take_unchecked(sorting_indices) });
     }
 
-    let by_values = by_physical.cont_slice().unwrap();
-    let arr = ca_rechunked.downcast_iter().next().unwrap();
-    let values = arr.values().as_slice();
+    // `by` and the sorting indices are read for their values alone — `by` has had its nulls taken
+    // out above, and the indices are an `arg_sort` — so only a values buffer that repeats one
+    // value is written out for them; their masks are left as they are.
+    let by_values = by_physical.downcast_as_array().to_flat_values();
+    let by_values = by_values.as_slice();
+    let sorting_indices_flat = sorting_indices_opt
+        .as_ref()
+        .map(|s| s.downcast_as_array().to_flat_values());
+    let sorting_indices_flat = sorting_indices_flat.as_ref().map(|s| s.as_slice());
+
+    let arr = ca_rechunked.downcast_as_array();
 
     // We explicitly branch here because we want to compile different versions based on the no_nulls
-    // or nulls kernel.
-    let out: ArrayRef = if ca.null_count() == 0 {
-        let mut agg_window =
-            RollingAggWindowNoNullsWrapper(NoNullsAgg::new(values, 0, 0, options.fn_params, None));
-
-        rolling_apply_agg(
-            &mut agg_window,
-            options.window_size,
-            by_values,
-            options.closed_window,
-            options.min_periods,
-            tu,
-            tz.as_ref(),
-            sorting_indices_opt
-                .as_ref()
-                .map(|s| s.cont_slice().unwrap()),
-        )?
-    } else {
-        let validity = arr.validity().unwrap();
-        let mut agg_window = RollingAggWindowNullsWrapper(NullsAgg::new(
-            values,
-            validity,
+    // or nulls kernel. Each side lays out only what its own window machine reads: with nothing
+    // null the mask is never looked at, whatever representation it is in.
+    let out: PlArrayRef = if let Some(no_nulls) = arr.as_no_nulls() {
+        let values = no_nulls.to_flat_values();
+        let mut agg_window = RollingAggWindowNoNullsWrapper(NoNullsAgg::new(
+            values.as_slice(),
             0,
             0,
             options.fn_params,
@@ -208,13 +194,34 @@ where
             options.min_periods,
             tu,
             tz.as_ref(),
-            sorting_indices_opt
-                .as_ref()
-                .map(|s| s.cont_slice().unwrap()),
+            sorting_indices_flat,
+        )?
+    } else {
+        let chunk = arr.to_flat();
+        let mut agg_window = RollingAggWindowNullsWrapper(NullsAgg::new(
+            chunk.as_slice(),
+            chunk
+                .validity()
+                .expect("a chunk that leaves an element null carries a mask"),
+            0,
+            0,
+            options.fn_params,
+            None,
+        ));
+
+        rolling_apply_agg(
+            &mut agg_window,
+            options.window_size,
+            by_values,
+            options.closed_window,
+            options.min_periods,
+            tu,
+            tz.as_ref(),
+            sorting_indices_flat,
         )?
     };
 
-    Series::try_from((ca.name().clone(), out))
+    Ok(series_of(ca.name().clone(), out))
 }
 
 pub trait SeriesOpsTime: AsSeries {
@@ -242,8 +249,7 @@ pub trait SeriesOpsTime: AsSeries {
             rolling_agg(
                 ca,
                 options,
-                &rolling::no_nulls::rolling_mean,
-                &rolling::nulls::rolling_mean,
+                &rolling::dispatch::rolling_mean,
             )
         })
     }
@@ -305,8 +311,7 @@ pub trait SeriesOpsTime: AsSeries {
             rolling_agg(
                 ca,
                 options,
-                &rolling::no_nulls::rolling_sum,
-                &rolling::nulls::rolling_sum,
+                &rolling::dispatch::rolling_sum,
             )
         })
     }
@@ -339,8 +344,7 @@ pub trait SeriesOpsTime: AsSeries {
             rolling_agg(
                 ca,
                 options,
-                &rolling::no_nulls::rolling_quantile,
-                &rolling::nulls::rolling_quantile,
+                &rolling::dispatch::rolling_quantile,
             )
         })
     }
@@ -420,8 +424,7 @@ pub trait SeriesOpsTime: AsSeries {
             rolling_agg(
                 ca,
                 options,
-                &rolling::no_nulls::rolling_min,
-                &rolling::nulls::rolling_min,
+                &rolling::dispatch::rolling_min,
             )
         })
     }
@@ -501,8 +504,7 @@ pub trait SeriesOpsTime: AsSeries {
             rolling_agg(
                 ca,
                 options,
-                &rolling::no_nulls::rolling_max,
-                &rolling::nulls::rolling_max,
+                &rolling::dispatch::rolling_max,
             )
         })
     }
@@ -539,8 +541,7 @@ pub trait SeriesOpsTime: AsSeries {
             rolling_agg(
                 ca,
                 options,
-                &rolling::no_nulls::rolling_var,
-                &rolling::nulls::rolling_var,
+                &rolling::dispatch::rolling_var,
             )
         })
     }
@@ -672,8 +673,7 @@ pub trait SeriesOpsTime: AsSeries {
             rolling_agg(
                 &ca,
                 options,
-                &rolling::no_nulls::rolling_rank,
-                &rolling::nulls::rolling_rank,
+                &rolling::dispatch::rolling_rank,
             )
         })
     }

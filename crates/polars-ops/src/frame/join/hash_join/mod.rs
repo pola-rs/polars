@@ -7,7 +7,6 @@ mod single_keys_outer;
 #[cfg(feature = "semi_anti_join")]
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
-use arrow::array::ArrayRef;
 use polars_core::runtime::RAYON;
 use polars_core::utils::_set_partition_size;
 use polars_utils::index::ChunkId;
@@ -49,8 +48,6 @@ macro_rules! det_hash_prone_order {
     }};
 }
 
-#[cfg(feature = "performant")]
-use arrow::legacy::conversion::primitive_to_vec;
 pub(super) use det_hash_prone_order;
 
 pub trait JoinDispatch: IntoDf {
@@ -156,8 +153,8 @@ pub trait JoinDispatch: IntoDf {
         try_raise_polars_abort();
 
         let (df_left, df_right) = if args.maintain_order != MaintainOrderJoin::None {
-            let idx_ca_l = IdxCa::with_chunk("a".into(), join_idx_l);
-            let idx_ca_r = IdxCa::with_chunk("b".into(), join_idx_r);
+            let idx_ca_l = IdxCa::with_chunk("a".into(), join_idx_l.clone());
+            let idx_ca_r = IdxCa::with_chunk("b".into(), join_idx_r.clone());
             let mut df = unsafe {
                 DataFrame::new_unchecked_infer_height(vec![
                     idx_ca_l.into_series().into(),
@@ -197,8 +194,8 @@ pub trait JoinDispatch: IntoDf {
                 join_idx_l.slice(offset, len);
                 join_idx_r.slice(offset, len);
             }
-            let idx_ca_l = IdxCa::with_chunk("a".into(), join_idx_l);
-            let idx_ca_r = IdxCa::with_chunk("b".into(), join_idx_r);
+            let idx_ca_l = IdxCa::with_chunk("a".into(), join_idx_l.clone());
+            let idx_ca_r = IdxCa::with_chunk("b".into(), join_idx_r.clone());
             RAYON.join(
                 || unsafe { df_self.take_unchecked(&idx_ca_l) },
                 || unsafe { other.take_unchecked(&idx_ca_r) },

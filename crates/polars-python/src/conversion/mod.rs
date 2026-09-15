@@ -24,9 +24,9 @@ use polars_buffer::Buffer;
 #[cfg(feature = "approx_quantile")]
 use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::decimal::dec128_verify_prec_scale;
+use polars_core::chunked_array::from::import_arrow_chunks;
 use polars_core::datatypes::extension::get_extension_type_or_generic;
 use polars_core::schema::iceberg::IcebergSchema;
-use polars_core::utils::arrow::array::Array;
 use polars_core::utils::materialize_dyn_int;
 use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
@@ -362,7 +362,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let categories = unsafe {
                     StringChunked::from_chunks(
                         PlSmallStr::from_static("category"),
-                        vec![mapping.to_arrow(true)],
+                        import_arrow_chunks(vec![mapping.to_arrow(true)]),
                     )
                 };
                 let class = pl.getattr(intern!(py, "Enum"))?;

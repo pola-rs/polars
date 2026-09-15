@@ -560,7 +560,7 @@ impl PyDataFrame {
                     validity.set(i, false);
                 }
                 ca.rechunk_mut();
-                Ok(ca.with_outer_validity(Some(validity.freeze())))
+                Ok(ca.with_outer_validity(Some(PlBitmap::from_bitmap(validity.freeze()))))
             } else {
                 Ok(ca)
             }

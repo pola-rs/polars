@@ -1,5 +1,6 @@
 use std::hash::Hash;
 
+use arrow::bitmap::utils::SlicesIterator;
 use polars_core::prelude::*;
 use polars_core::series::{BitRepr, IsSorted};
 use polars_core::with_match_physical_float_polars_type;
@@ -25,7 +26,43 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
         return Ok(());
     }
 
-    let s = s.as_materialized_series().to_physical_repr();
+    let s = s.as_materialized_series();
+
+    // A single chunk that repeats one element is one run of that element, whatever the element
+    // is: the typed helpers below would read the repeat out one element at a time to say so.
+    if let [chunk] = s.chunks().as_slice()
+        && chunk.is_scalar()
+    {
+        lengths.push(s.len() as IdxSize);
+        return Ok(());
+    }
+
+    // The same chunk under a mask of one bit per element: every element still holds the one value
+    // the values repeat, so two of them differ only where the mask does -- a null equals a null
+    // and differs from a value. The runs are the mask's own runs, counted off its bits rather
+    // than found by reading a million copies of one value against each other.
+    if let [chunk] = s.chunks().as_slice()
+        && let Some(validity) = chunk.validity()
+        && chunk.without_validity().is_scalar()
+    {
+        // The mask is not a single bit: a chunk whose mask repeats one bit as well is scalar
+        // throughout, and was answered above.
+        let (bits, length) = validity.into_inner();
+        let mut opened = 0;
+        for (start, run) in SlicesIterator::new(bits) {
+            if start > opened {
+                lengths.push((start - opened) as IdxSize);
+            }
+            lengths.push(run as IdxSize);
+            opened = start + run;
+        }
+        if opened < length {
+            lengths.push((length - opened) as IdxSize);
+        }
+        return Ok(());
+    }
+
+    let s = s.to_physical_repr();
     match s.dtype() {
         DataType::Boolean => {
             let ca: &BooleanChunked = s.as_ref().as_ref().as_ref();
@@ -78,7 +115,20 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
 
     assert!(!s_neq.has_nulls());
     for arr in s_neq.downcast_iter() {
-        let mut values = arr.values().clone();
+        // A scalar chunk stands for one bit at every element: either nothing in it differs from
+        // the element before, and the run carries on through the whole chunk, or everything does
+        // and every element opens a run of its own. Neither needs the bits written out.
+        if let Some(differs) = arr.values().scalar_value() {
+            if differs {
+                lengths.resize(lengths.len() + arr.len(), 1);
+            } else {
+                *lengths.last_mut().unwrap() += arr.len() as IdxSize;
+            }
+            continue;
+        }
+
+        // What is left holds one bit per element already, so this borrows rather than writes out.
+        let mut values = arr.values().to_flat().into_owned();
         while !values.is_empty() {
             // @NOTE: This `as IdxSize` is safe because it is less than or equal to the a ChunkedArray
             // length.
@@ -175,6 +225,11 @@ pub fn rle_id(s: &Column) -> PolarsResult<Column> {
     let s_neq = s1
         .as_materialized_series()
         .not_equal_missing(s2.as_materialized_series())?;
+
+    // A column whose neighbours never differ is a single run, and every element carries its id.
+    if let Some(Some(false)) = s_neq.scalar_value() {
+        return Ok(IdxCa::full(s.name().clone(), 0, s.len()).into_column());
+    }
 
     let mut out = Vec::<IdxSize>::with_capacity(s.len());
     let mut last = 0;

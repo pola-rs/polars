@@ -1,210 +1,176 @@
-use arrow::array::{Array, ArrayRef, ListArray};
-use arrow::datatypes::IdxArr;
+//! The `list.get` kernels over the arrays of `polars-array`.
+
+use std::ops::Range;
+
+use arrow::bitmap::bitmask::BitMask;
 use arrow::legacy::index::IndexToUsize;
-use arrow::legacy::trusted_len::TrustedLenPush;
-use arrow::legacy::utils::CustomIterTools;
-use arrow::offset::{Offsets, OffsetsBuffer};
+use polars_array::builder::new_full_null_like;
+use polars_array::{PlArray, PlListArray, PlPrimitiveArray};
 use polars_utils::IdxSize;
 
 use crate::gather::take_unchecked;
 
-/// Get the indices that would result in a get operation on the lists values.
-/// for example, consider this list:
-/// ```text
-/// [[1, 2, 3],
-///  [4, 5],
-///  [6]]
+/// The position in the values array that `index` picks out of an element covering `range`, or
+/// `None` if it falls outside it.
 ///
-///  This contains the following values array:
-/// [1, 2, 3, 4, 5, 6]
+/// A negative index counts back from the end of the element, and an element that covers no values
+/// at all has no position for any index to land on.
+#[inline]
+fn position_in(index: i64, range: Range<usize>) -> Option<usize> {
+    index
+        .negative_to_usize(range.len())
+        .map(|position| range.start + position)
+}
+
+/// Returns the value at `index` within every element of `arr`.
+pub fn sublist_get(arr: &PlListArray, index: i64) -> Box<dyn PlArray> {
+    if arr.is_empty() {
+        return arr.values().sliced(0, 0);
+    }
+
+    // A chunk whose own buffers stand for a single list repeated says the same of every element:
+    // the index lands at one position within that list, and the value there is the answer at every
+    // element in turn, in `O(1)`.
+    if arr.is_scalar() {
+        // SAFETY: the array holds at least one element, so element 0 is in bounds.
+        let position = unsafe {
+            (!arr.is_null_unchecked(0))
+                .then(|| position_in(index, arr.value_range_unchecked(0)))
+                .flatten()
+        };
+
+        return match position {
+            // SAFETY: the position lies within the range the element covers.
+            Some(position) => unsafe { arr.values().new_from_index_unchecked(position, arr.len()) },
+            None => new_full_null_like(arr.values(), arr.len()),
+        };
+    }
+
+    // The elements cover ranges of their own, which the offsets hold end to end: walking them and
+    // the mask as the slices they are settles the representation once instead of at every element.
+    if let Some(offsets) = arr.flat_offsets() {
+        let offsets = offsets.as_slice();
+        let indices = match arr.validity().and_then(|validity| {
+            // A mask of a single bit says the same of every element: either none of them is null,
+            // which is nothing to read, or all of them are.
+            match validity.scalar_value() {
+                Some(true) => None,
+                Some(false) => Some(Err(())),
+                None => Some(Ok(BitMask::from_bitmap(
+                    validity.flat_bitmap().expect("a mask is flat or scalar"),
+                ))),
+            }
+        }) {
+            // Every element is null, so no index lands anywhere and no value is ever read.
+            Some(Err(())) => return new_full_null_like(arr.values(), arr.len()),
+            // SAFETY: the mask holds one bit per element, so every index below is in bounds.
+            Some(Ok(mask)) => {
+                positions_in(offsets, index, |i| unsafe { mask.get_bit_unchecked(i) })
+            },
+            None => positions_in(offsets, index, |_| true),
+        };
+
+        // SAFETY: every index lands within the range the element it is read for covers.
+        return unsafe { take_unchecked(arr.values(), &indices) };
+    }
+
+    // The elements share one range but not one mask bit, so the index lands at the same position
+    // for every one of them and it is only the mask that tells them apart.
+    let indices = (0..arr.len())
+        .map(|i| {
+            // SAFETY: `i` is an element of `arr`.
+            unsafe {
+                (!arr.is_null_unchecked(i))
+                    .then(|| position_in(index, arr.value_range_unchecked(i)))
+                    .flatten()
+            }
+            .map(|position| position as IdxSize)
+        })
+        .collect::<PlPrimitiveArray<IdxSize>>();
+
+    // SAFETY: every index lands within the range the element it is read for covers.
+    unsafe { take_unchecked(arr.values(), &indices) }
+}
+
+/// The position `index` lands on within each of the elements `offsets` holds the ends of.
 ///
-/// get index 0
-/// would lead to the following indexes:
-///     [0, 3, 5].
-/// if we use those in a take operation on the values array we get:
-///     [1, 4, 6]
-///
-///
-/// get index -1
-/// would lead to the following indexes:
-///     [2, 4, 5].
-/// if we use those in a take operation on the values array we get:
-///     [3, 5, 6]
-///
-/// ```
-fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> IdxArr {
-    let offsets = arr.offsets().as_slice();
-    let mut iter = offsets.iter();
+/// An element `is_valid` answers `false` for is null, which no index lands within.
+#[inline]
+fn positions_in(
+    offsets: &[u64],
+    index: i64,
+    is_valid: impl Fn(usize) -> bool,
+) -> PlPrimitiveArray<IdxSize> {
+    let mut start = offsets[0] as usize;
 
-    // the indices can be sliced, so we should not start at 0.
-    let mut cum_offset = (*offsets.first().unwrap_or(&0)) as IdxSize;
+    offsets[1..]
+        .iter()
+        .enumerate()
+        .map(|(i, &end)| {
+            let range = start..end as usize;
+            start = range.end;
 
-    if let Some(mut previous) = iter.next().copied() {
-        if arr.null_count() == 0 {
-            iter.map(|&offset| {
-                let len = offset - previous;
-                previous = offset;
-                // make sure that empty lists don't get accessed
-                // and out of bounds return null
-                if len == 0 {
-                    return None;
-                }
-                if index >= len {
-                    cum_offset += len as IdxSize;
-                    return None;
-                }
+            is_valid(i)
+                .then(|| position_in(index, range))
+                .flatten()
+                .map(|position| position as IdxSize)
+        })
+        .collect()
+}
 
-                let out = index
-                    .negative_to_usize(len as usize)
-                    .map(|idx| idx as IdxSize + cum_offset);
-                cum_offset += len as IdxSize;
-                out
-            })
-            .collect_trusted()
-        } else {
-            // we can ensure that validity is not none as we have null value.
-            let validity = arr.validity().unwrap();
-            iter.enumerate()
-                .map(|(i, &offset)| {
-                    let len = offset - previous;
-                    previous = offset;
-                    // make sure that empty and null lists don't get accessed and return null.
-                    // SAFETY, we are within bounds
-                    if len == 0 || !unsafe { validity.get_bit_unchecked(i) } {
-                        cum_offset += len as IdxSize;
-                        return None;
-                    }
+/// Whether `index` falls outside at least one of the non-null elements of `arr`.
+pub fn index_is_oob(arr: &PlListArray, index: i64) -> bool {
+    // An array of nothing but nulls holds no list for the index to fall outside of, which covers
+    // an empty one as well.
+    if arr.null_count() == arr.len() {
+        return false;
+    }
 
-                    // make sure that out of bounds return null
-                    if index >= len {
-                        cum_offset += len as IdxSize;
-                        return None;
-                    }
+    // Offsets that hold a single range say every element covers it, and at least one element is
+    // not null: whether the index falls outside that one range answers for the whole array.
+    if let Some(range) = arr.scalar_offsets() {
+        return position_in(index, range).is_none();
+    }
 
-                    let out = index
-                        .negative_to_usize(len as usize)
-                        .map(|idx| idx as IdxSize + cum_offset);
-                    cum_offset += len as IdxSize;
-                    out
-                })
-                .collect_trusted()
+    // The offsets hold the range of every element, and the mask says which of them are null: both
+    // are read out once, so the loop below touches nothing but the slices they are.
+    let offsets = arr
+        .flat_offsets()
+        .expect("the elements cover ranges of their own")
+        .as_slice();
+    let validity = arr.validity();
+
+    let mut start = offsets[0] as usize;
+    for (i, &end) in offsets[1..].iter().enumerate() {
+        let range = start..end as usize;
+        start = range.end;
+
+        // SAFETY: `i` is an element of `arr`, which the mask covers.
+        let is_valid = validity.is_none_or(|validity| unsafe { validity.get_unchecked(i) });
+        if is_valid && position_in(index, range).is_none() {
+            return true;
         }
-    } else {
-        IdxArr::from_slice([])
     }
+
+    false
 }
 
-pub fn sublist_get(arr: &ListArray<i64>, index: i64) -> ArrayRef {
-    let take_by = sublist_get_indexes(arr, index);
-    let values = arr.values();
-    // SAFETY:
-    // the indices we generate are in bounds
-    unsafe { take_unchecked(&**values, &take_by) }
-}
-
-/// Check if an index is out of bounds for at least one sublist.
-pub fn index_is_oob(arr: &ListArray<i64>, index: i64) -> bool {
-    if arr.null_count() == 0 {
-        arr.offsets()
-            .lengths()
-            .any(|len| index.negative_to_usize(len).is_none())
-    } else {
-        arr.offsets()
-            .lengths()
-            .zip(arr.validity().unwrap())
-            .any(|(len, valid)| {
-                if valid {
-                    index.negative_to_usize(len).is_none()
-                } else {
-                    // skip nulls
-                    false
-                }
-            })
-    }
-}
-
-/// Convert a list `[1, 2, 3]` to a list type of `[[1], [2], [3]]`
-pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
-    let len = array.len();
-    let mut offsets = Vec::with_capacity(len + 1);
-    // SAFETY: we allocated enough
-    unsafe {
-        offsets.push_unchecked(0i64);
-
-        for _ in 0..len {
-            offsets.push_unchecked(offsets.len() as i64)
-        }
-    };
-
-    // SAFETY:
-    // offsets are monotonically increasing
-    unsafe {
-        let offsets: OffsetsBuffer<i64> = Offsets::new_unchecked(offsets).into();
-        let dtype = ListArray::<i64>::default_datatype(array.dtype().clone());
-        ListArray::<i64>::new(dtype, offsets, array, None)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use arrow::array::{Int32Array, PrimitiveArray};
-    use arrow::datatypes::ArrowDataType;
-
-    use super::*;
-
-    fn get_array() -> ListArray<i64> {
-        let values = Int32Array::from_slice([1, 2, 3, 4, 5, 6]);
-        let offsets = OffsetsBuffer::try_from(vec![0i64, 3, 5, 6]).unwrap();
-
-        let dtype = ListArray::<i64>::default_datatype(ArrowDataType::Int32);
-        ListArray::<i64>::new(dtype, offsets, Box::new(values), None)
+/// Wraps every element of `array` in a list of its own, turning `[1, 2, 3]` into `[[1], [2], [3]]`.
+pub fn array_to_unit_list(array: Box<dyn PlArray>) -> PlListArray {
+    let length = array.len();
+    if length == 0 {
+        return PlListArray::new_empty(array);
     }
 
-    #[test]
-    fn test_sublist_get_indexes() {
-        let arr = get_array();
-        let out = sublist_get_indexes(&arr, 0);
-        assert_eq!(out.values().as_slice(), &[0, 3, 5]);
-        let out = sublist_get_indexes(&arr, -1);
-        assert_eq!(out.values().as_slice(), &[2, 4, 5]);
-        let out = sublist_get_indexes(&arr, 3);
-        assert_eq!(out.null_count(), 3);
-
-        let values = Int32Array::from_iter([
-            Some(1),
-            Some(1),
-            Some(3),
-            Some(4),
-            Some(5),
-            Some(6),
-            Some(7),
-            Some(8),
-            Some(9),
-            None,
-            Some(11),
-        ]);
-        let offsets = OffsetsBuffer::try_from(vec![0i64, 1, 2, 3, 6, 9, 11]).unwrap();
-
-        let dtype = ListArray::<i64>::default_datatype(ArrowDataType::Int32);
-        let arr = ListArray::<i64>::new(dtype, offsets, Box::new(values), None);
-
-        let out = sublist_get_indexes(&arr, 1);
-        assert_eq!(
-            out.into_iter().collect::<Vec<_>>(),
-            &[None, None, None, Some(4), Some(7), Some(10)]
-        );
+    // A chunk that repeats one element wraps into one list repeated: every element is the list of
+    // that same value, so the offsets need hold nothing but the range it covers.
+    if array.is_scalar() {
+        return PlListArray::new_scalar(array.sliced(0, 1), length);
     }
 
-    #[test]
-    fn test_sublist_get() {
-        let arr = get_array();
-
-        let out = sublist_get(&arr, 0);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<i32>>().unwrap();
-
-        assert_eq!(out.values().as_slice(), &[1, 4, 6]);
-        let out = sublist_get(&arr, -1);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<i32>>().unwrap();
-        assert_eq!(out.values().as_slice(), &[3, 5, 6]);
-    }
+    // Every element covers the one value at its own position, so the offsets count up by one.
+    //
+    // SAFETY: those offsets are one per element plus the end of the last, ascending, and they end
+    // at the length of the values — which is what a pass over them would have to check.
+    unsafe { PlListArray::new_unchecked(array, (0..=length as u64).collect(), length, None) }
 }

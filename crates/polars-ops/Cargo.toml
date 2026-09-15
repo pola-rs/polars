@@ -9,6 +9,7 @@ repository = { workspace = true }
 description = "More operations on Polars data structures"
 
 [dependencies]
+polars-array = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by", "zip_with"] }

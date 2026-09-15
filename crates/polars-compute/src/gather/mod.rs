@@ -32,17 +32,19 @@ pub mod boolean;
 pub mod fixed_size_list;
 pub mod generic_binary;
 pub mod list;
+mod pl_array;
 pub mod primitive;
 pub mod structure;
 pub mod sublist;
 
-use arrow::with_match_primitive_type_full;
+use arrow::with_match_primitive_type;
+pub use pl_array::take_unchecked;
 
 /// Returns a new [`Array`] with only indices at `indices`. Null indices are taken as nulls.
 /// The returned array has a length equal to `indices.len()`.
 /// # Safety
 /// Doesn't do bound checks
-pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Array> {
+pub unsafe fn take_arrow_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Array> {
     if indices.len() == 0 {
         return new_empty_array(values.dtype().clone());
     }
@@ -54,7 +56,7 @@ pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Ar
             let values = values.as_any().downcast_ref().unwrap();
             Box::new(boolean::take_unchecked(values, indices))
         },
-        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let values = values.as_any().downcast_ref().unwrap();
             Box::new(primitive::take_primitive_unchecked::<$T>(&values, indices))
         }),

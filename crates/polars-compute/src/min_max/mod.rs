@@ -3,8 +3,7 @@ use polars_utils::float16::pf16;
 use polars_utils::min_max::MinMax;
 
 pub use self::dyn_array::{
-    dyn_array_max_ignore_nan, dyn_array_max_propagate_nan, dyn_array_min_ignore_nan,
-    dyn_array_min_max_propagate_nan, dyn_array_min_propagate_nan,
+    dyn_array_max_propagate_nan, dyn_array_min_max_propagate_nan, dyn_array_min_propagate_nan,
 };
 
 /// Low-level min/max kernel.
@@ -43,6 +42,7 @@ impl NotSimdPrimitive for i128 {}
 impl NotSimdPrimitive for pf16 {}
 
 mod dyn_array;
+mod pl_array;
 mod scalar;
 
 #[cfg(feature = "simd")]

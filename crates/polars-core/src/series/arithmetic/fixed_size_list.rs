@@ -58,6 +58,24 @@ impl NumericFixedSizeListOp {
     #[cfg_attr(not(feature = "array_arithmetic"), allow(unused))]
     pub fn execute(&self, lhs: &Series, rhs: &Series) -> PolarsResult<Series> {
         feature_gated!("array_arithmetic", {
+            // Every element of both sides reads the same pair, so the answer of that one pair is
+            // the answer of every element: it is worked out over a row of each side and repeated,
+            // rather than the arrays being walked — and written out — one element at a time.
+            if let Some(out) =
+                super::list_utils::repeat_one_answer(lhs, rhs, |lhs, rhs| self.execute(lhs, rhs))
+            {
+                return out;
+            }
+
+            // One side repeats a single element, which every element of the other reads: it is
+            // read as the one element it is rather than written out once per element of the other
+            // to be read out of again.
+            if let Some((lhs, rhs)) =
+                super::list_utils::read_repeated_side_as_one_element(&self.0, lhs, rhs)
+            {
+                return self.execute(&lhs, &rhs);
+            }
+
             NumericFixedSizeListOpHelper::execute_op(self.clone(), lhs.rechunk(), rhs.rechunk())
                 .map(|x| x.into_series())
         })
@@ -69,7 +87,10 @@ use inner::NumericFixedSizeListOpHelper;
 
 #[cfg(feature = "array_arithmetic")]
 mod inner {
-    use arrow::bitmap::{Bitmap, BitmapBuilder};
+    use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
+    // The level validities below this leaf are plain bitmaps, one bit per element throughout, so
+    // combining them is the Arrow one; the *leaf* mask carries its own representation and is
+    // combined with `polars_array`'s.
     use arrow::compute::utils::combine_validities_and;
     use fixed_size_list::NumericFixedSizeListOp;
     use list_utils::with_match_pl_num_arith;
@@ -79,6 +100,7 @@ mod inner {
 
     use super::super::list_utils::{BinaryOpApplyType, Broadcast, NumericOp};
     use super::super::*;
+    use crate::chunked_array::array::array_values;
 
     /// Utility to perform a binary operation between the primitive values of
     /// 2 columns, where at least one of the columns is a `ArrayChunked` type.
@@ -186,16 +208,23 @@ mod inner {
             //
 
             fn push_array_validities_recursive(s: &Series, out: &mut Vec<Option<Bitmap>>) {
-                let mut opt_arr = s.array().ok().map(|x| {
+                let mut opt_arr: Option<PlArrayRef> = s.array().ok().map(|x| {
                     assert_eq!(x.chunks().len(), 1);
-                    x.downcast_get(0).unwrap()
+                    x.chunks()[0].clone()
                 });
 
                 while let Some(arr) = opt_arr {
+                    let arr = arr.as_any().downcast_ref::<PlFixedSizeListArray>().unwrap();
                     // Push none if all-valid, this can potentially save some `repeat_bitmap()`
                     // materializations on broadcasting paths.
-                    out.push(arr.validity().filter(|x| x.unset_bits() > 0).cloned());
-                    opt_arr = arr.values().as_any().downcast_ref::<FixedSizeListArray>();
+                    out.push(
+                        arr.validity()
+                            .filter(|x| x.unset_bits() > 0)
+                            .map(|x| x.to_flat().into_owned()),
+                    );
+                    let values = array_values(arr);
+                    opt_arr =
+                        matches!(values.array_type(), PlArrayType::FixedSizeList).then_some(values);
                 }
             }
 
@@ -255,6 +284,7 @@ mod inner {
 
                         return Ok(finish_array_to_array_no_broadcast(
                             lhs.name().clone(),
+                            dtype_lhs.cast_leaf(output_primitive_dtype.clone()),
                             &output_widths,
                             output_len,
                             &array_validities_lhs,
@@ -437,8 +467,8 @@ mod inner {
         ) -> ArrayChunked
         where
             T::Native: PlNumArithmetic,
-            PrimitiveArray<T::Native>:
-                polars_compute::comparisons::TotalEqKernel<Scalar = T::Native>,
+            PlPrimitiveArray<T::Native>:
+                polars_compute::comparisons::PlTotalEqKernel<Scalar = T::Native>,
             T::Native: Zero + IsFloat,
         {
             let mut arr_lhs = {
@@ -461,36 +491,26 @@ mod inner {
 
             match (&self.op_apply_type, &self.broadcast) {
                 (BinaryOpApplyType::ListToList, Broadcast::Right) => {
-                    let mut out_vec: Vec<T::Native> =
-                        Vec::with_capacity(self.output_len * self.stride);
-                    let out_ptr: *mut T::Native = out_vec.as_mut_ptr();
-                    let stride = self.stride;
+                    // The right side is the one row every row of the left reads against, and the
+                    // leaf kernels answer two runs of values rather than a row at a time: the one
+                    // row is laid out over the left's length so that the whole column is answered
+                    // by one call. A walk of a row at a time asks for one answer before it starts
+                    // the next, which leaves the divider of a division idle between them — a
+                    // copy of the right side is cheaper than that wait.
+                    let values =
+                        repeat_values(arr_rhs.to_flat_values().as_slice(), self.output_len);
+                    let validity = arr_rhs.validity().map(|x| repeat_mask(x, self.output_len));
+                    let arr_rhs =
+                        PlPrimitiveArray::<T::Native>::from_vec(values).with_validity(validity);
+                    debug_assert_eq!(arr_lhs.len(), arr_rhs.len());
 
-                    with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
-                        unsafe {
-                            for outer_idx in 0..self.output_len {
-                                for inner_idx in 0..stride {
-                                    let l = arr_lhs.value_unchecked(stride * outer_idx + inner_idx);
-                                    let r = arr_rhs.value_unchecked(inner_idx);
-
-                                    *out_ptr.add(stride * outer_idx + inner_idx) = $OP(l, r);
-                                }
-                            }
-                        }
-                    });
-
-                    unsafe { out_vec.set_len(self.output_len * self.stride) };
-
-                    let leaf_validity = combine_validities_and(
-                        arr_lhs.validity(),
-                        arr_rhs
-                            .validity()
-                            .map(|x| repeat_bitmap(x, self.output_len))
-                            .as_ref(),
-                    );
-
-                    let arr =
-                        PrimitiveArray::<T::Native>::from_vec(out_vec).with_validity(leaf_validity);
+                    // The sides are swapped where it is the left one that broadcasts, and the
+                    // kernel reads them in the order the query has them.
+                    let arr = if self.swapped {
+                        self.op.0.apply_arithmetic_kernel::<T>(arr_rhs, arr_lhs)
+                    } else {
+                        self.op.0.apply_arithmetic_kernel::<T>(arr_lhs, arr_rhs)
+                    };
 
                     let (_, validities_lhs) = std::mem::take(&mut self.data_lhs);
                     let (_, mut validities_rhs) = std::mem::take(&mut self.data_rhs);
@@ -503,6 +523,7 @@ mod inner {
 
                     finish_array_to_array_no_broadcast(
                         std::mem::take(&mut self.output_name),
+                        self.output_dtype.clone(),
                         &self.output_widths,
                         self.output_len,
                         &validities_lhs,
@@ -516,13 +537,18 @@ mod inner {
                     let out_ptr: *mut T::Native = out_vec.as_mut_ptr();
                     let stride = self.stride;
 
+                    // Resolved once, rather than once per value read below.
+                    let values_lhs = arr_lhs.to_flat_values();
+                    let values_rhs = arr_rhs.to_flat_values();
+                    let (values_lhs, values_rhs) = (values_lhs.as_slice(), values_rhs.as_slice());
+
                     with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
                         unsafe {
                             for outer_idx in 0..self.output_len {
-                                let r = arr_rhs.value_unchecked(outer_idx);
+                                let r = *values_rhs.get_unchecked(outer_idx);
 
                                 for inner_idx in 0..stride {
-                                    let l = arr_lhs.value_unchecked(inner_idx);
+                                    let l = *values_lhs.get_unchecked(inner_idx);
 
                                     *out_ptr.add(stride * outer_idx + inner_idx) = $OP(l, r);
                                 }
@@ -532,17 +558,15 @@ mod inner {
 
                     unsafe { out_vec.set_len(self.output_len * self.stride) };
 
+                    let repeated = arr_lhs.validity().map(|x| repeat_mask(x, self.output_len));
                     let leaf_validity = combine_validities_array_to_primitive_no_broadcast(
-                        arr_lhs
-                            .validity()
-                            .map(|x| repeat_bitmap(x, self.output_len))
-                            .as_ref(),
+                        repeated.as_ref().map(PlBitmap::as_ref),
                         arr_rhs.validity(),
                         self.stride,
                     );
 
-                    let arr =
-                        PrimitiveArray::<T::Native>::from_vec(out_vec).with_validity(leaf_validity);
+                    let arr = PlPrimitiveArray::<T::Native>::from_vec(out_vec)
+                        .with_validity(leaf_validity.map(PlBitmap::from_bitmap));
 
                     let (_, mut validities) = std::mem::take(&mut self.data_lhs);
 
@@ -554,6 +578,7 @@ mod inner {
 
                     finish_with_level_validities(
                         std::mem::take(&mut self.output_name),
+                        self.output_dtype.clone(),
                         &self.output_widths,
                         self.output_len,
                         &validities,
@@ -566,14 +591,19 @@ mod inner {
                     let out_ptr: *mut T::Native = out_vec.as_mut_ptr();
                     let stride = self.stride;
 
+                    // Resolved once, rather than once per value read below.
+                    let values_lhs = arr_lhs.to_flat_values();
+                    let values_rhs = arr_rhs.to_flat_values();
+                    let (values_lhs, values_rhs) = (values_lhs.as_slice(), values_rhs.as_slice());
+
                     with_match_pl_num_arith!(&self.op.0, self.swapped, |$OP| {
                         unsafe {
                             for outer_idx in 0..self.output_len {
-                                let r = arr_rhs.value_unchecked(outer_idx);
+                                let r = *values_rhs.get_unchecked(outer_idx);
 
                                 for inner_idx in 0..stride {
                                     let idx = stride * outer_idx + inner_idx;
-                                    let l = arr_lhs.value_unchecked(idx);
+                                    let l = *values_lhs.get_unchecked(idx);
 
                                     *out_ptr.add(idx) = $OP(l, r);
                                 }
@@ -589,13 +619,14 @@ mod inner {
                         self.stride,
                     );
 
-                    let arr =
-                        PrimitiveArray::<T::Native>::from_vec(out_vec).with_validity(leaf_validity);
+                    let arr = PlPrimitiveArray::<T::Native>::from_vec(out_vec)
+                        .with_validity(leaf_validity.map(PlBitmap::from_bitmap));
 
                     let (_, validities) = std::mem::take(&mut self.data_lhs);
 
                     finish_with_level_validities(
                         std::mem::take(&mut self.output_name),
+                        self.output_dtype.clone(),
                         &self.output_widths,
                         self.output_len,
                         &validities,
@@ -605,16 +636,19 @@ mod inner {
                 (BinaryOpApplyType::ListToPrimitive, Broadcast::Right) => {
                     assert_eq!(arr_rhs.len(), 1);
 
-                    let Some(r) = (unsafe { arr_rhs.get_unchecked(0) }) else {
+                    let Some(r) =
+                        (unsafe { (!arr_rhs.is_null(0)).then(|| arr_rhs.value_unchecked(0)) })
+                    else {
                         // RHS is single primitive NULL, create the result by setting the leaf validity to all-NULL.
                         let (_, validities) = std::mem::take(&mut self.data_lhs);
                         return finish_with_level_validities(
                             std::mem::take(&mut self.output_name),
+                            self.output_dtype.clone(),
                             &self.output_widths,
                             self.output_len,
                             &validities,
                             Box::new(
-                                arr_lhs.clone().with_validity(Some(Bitmap::new_with_value(
+                                arr_lhs.clone().with_validity(Some(PlBitmap::new_scalar(
                                     false,
                                     arr_lhs.len(),
                                 ))),
@@ -631,6 +665,7 @@ mod inner {
 
                     finish_with_level_validities(
                         std::mem::take(&mut self.output_name),
+                        self.output_dtype.clone(),
                         &self.output_widths,
                         self.output_len,
                         &validities,
@@ -656,11 +691,12 @@ mod inner {
     #[inline(never)]
     fn finish_array_to_array_no_broadcast(
         output_name: PlSmallStr,
+        output_dtype: DataType,
         widths: &[usize],
         outer_len: usize,
         validities_lhs: &[Option<Bitmap>],
         validities_rhs: &[Option<Bitmap>],
-        output_leaf_array: Box<dyn Array>,
+        output_leaf_array: PlArrayRef,
     ) -> ArrayChunked {
         assert_eq!(
             [widths.len(), validities_lhs.len(), validities_rhs.len()],
@@ -682,10 +718,18 @@ mod inner {
         };
 
         for (width, opt_validity) in iter {
-            out = builder.build_level(*width, opt_validity, Box::new(out))
+            out = builder.build_level(*width, opt_validity, out.into_boxed())
         }
 
-        ArrayChunked::with_chunk(output_name, out)
+        // The chunk carries no data type of its own — the output dtype is what the
+        // `ChunkedArray` gets.
+        unsafe {
+            ArrayChunked::from_chunks_and_dtype_unchecked(
+                output_name,
+                vec![out.into_boxed()],
+                output_dtype,
+            )
+        }
     }
 
     /// Used when we are operating between array<->primitive, as in that case we only need the
@@ -693,10 +737,11 @@ mod inner {
     #[inline(never)]
     fn finish_with_level_validities(
         output_name: PlSmallStr,
+        output_dtype: DataType,
         widths: &[usize],
         outer_len: usize,
         validities: &[Option<Bitmap>],
-        output_leaf_array: Box<dyn Array>,
+        output_leaf_array: PlArrayRef,
     ) -> ArrayChunked {
         assert_eq!(widths.len(), validities.len());
 
@@ -712,10 +757,18 @@ mod inner {
         };
 
         for (width, opt_validity) in iter {
-            out = builder.build_level(*width, opt_validity, Box::new(out))
+            out = builder.build_level(*width, opt_validity, out.into_boxed())
         }
 
-        ArrayChunked::with_chunk(output_name, out)
+        // The chunk carries no data type of its own — the output dtype is what the
+        // `ChunkedArray` gets.
+        unsafe {
+            ArrayChunked::from_chunks_and_dtype_unchecked(
+                output_name,
+                vec![out.into_boxed()],
+                output_dtype,
+            )
+        }
     }
 
     /// ```text
@@ -726,16 +779,18 @@ mod inner {
     /// ```
     #[inline(never)]
     fn combine_validities_array_to_primitive_no_broadcast(
-        array_leaf_validity: Option<&Bitmap>,
-        primitive_validity: Option<&Bitmap>,
+        array_leaf_validity: Option<PlBitmapRef<'_>>,
+        primitive_validity: Option<PlBitmapRef<'_>>,
         stride: usize,
     ) -> Option<Bitmap> {
         match (array_leaf_validity, primitive_validity) {
-            (Some(l), Some(r)) => Some((l.clone().make_mut(), r)),
-            (Some(v), None) => return Some(v.clone()),
+            // A mask that repeats one bit is written out here: the bits are set one at a
+            // time below, which needs one per element.
+            (Some(l), Some(r)) => Some((l.to_flat().into_owned().make_mut(), r)),
+            (Some(v), None) => return Some(v.to_flat().into_owned()),
             // Materialize a full-true validity to re-use the codepath, as we still
             // need to spread the bits from the RHS to the correct positions.
-            (None, Some(v)) => Some((Bitmap::new_with_value(true, stride * v.len()).make_mut(), v)),
+            (None, Some(v)) => Some((MutableBitmap::from_len_set(stride * v.len()), v)),
             (None, None) => None,
         }
         .map(|(mut validity_out, primitive_validity)| {
@@ -743,7 +798,7 @@ mod inner {
 
             unsafe {
                 for outer_idx in 0..primitive_validity.len() {
-                    let r = primitive_validity.get_bit_unchecked(outer_idx);
+                    let r = primitive_validity.get_unchecked(outer_idx);
 
                     for inner_idx in 0..stride {
                         let idx = stride * outer_idx + inner_idx;
@@ -758,18 +813,51 @@ mod inner {
         })
     }
 
+    /// Returns `n_repeats` concatenated copies of the values.
+    fn repeat_values<T: Copy>(values: &[T], n_repeats: usize) -> Vec<T> {
+        let total = values.len() * n_repeats;
+        let mut out = Vec::with_capacity(total);
+        if total == 0 {
+            return out;
+        }
+
+        // Each copy is taken from the ones already written, so the run written at a time grows
+        // with the run behind it rather than staying the width of one row.
+        out.extend_from_slice(values);
+        while out.len() < total {
+            let take = (total - out.len()).min(out.len());
+            out.extend_from_within(..take);
+        }
+        out
+    }
+
     /// Returns `n_repeats` concatenated copies of the bitmap.
     #[inline(never)]
     fn repeat_bitmap(bitmap: &Bitmap, n_repeats: usize) -> Bitmap {
         let mut out = BitmapBuilder::with_capacity(bitmap.len() * n_repeats);
 
         for _ in 0..n_repeats {
-            for bit in bitmap.iter() {
-                unsafe { out.push_unchecked(bit) }
-            }
+            // A bitmap is extended by a run of words rather than a bit at a time, which is what
+            // pushing each of its bits in turn would be.
+            out.extend_from_bitmap(bitmap);
         }
 
         out.freeze()
+    }
+
+    /// [`repeat_bitmap`] over a mask in whichever representation it is in.
+    fn repeat_mask(mask: PlBitmapRef<'_>, n_repeats: usize) -> PlBitmap {
+        match mask.flat_bitmap() {
+            Some(bitmap) => PlBitmap::from_bitmap(repeat_bitmap(bitmap, n_repeats)),
+            // The one bit stands for every element in turn, so it stands for `n_repeats` times as
+            // many of them without being written out. `PlBitmapRef::broadcast` is no use here: it
+            // widens a mask over *one* element to cover many, not one over `mask.len()` of them.
+            None => PlBitmap::new_scalar(
+                mask.scalar_value()
+                    .expect("a mask that is not laid out one bit per element repeats one bit"),
+                mask.len() * n_repeats,
+            ),
+        }
     }
 
     struct FixedSizeListLevelBuilder {
@@ -800,26 +888,14 @@ mod inner {
             &mut self,
             width: usize,
             opt_validity: Option<Bitmap>,
-            inner_array: Box<dyn Array>,
-        ) -> FixedSizeListArray {
+            inner_array: PlArrayRef,
+        ) -> PlFixedSizeListArray {
             let level_height = self.heights.next_back().unwrap();
             assert_eq!(inner_array.len(), level_height * width);
 
-            FixedSizeListArray::new(
-                ArrowDataType::FixedSizeList(
-                    Box::new(ArrowField::new(
-                        LIST_VALUES_NAME,
-                        inner_array.dtype().clone(),
-                        // is_nullable, we always set true otherwise the Eq kernels would panic
-                        // when they assert == on the arrow `Field`
-                        true,
-                    )),
-                    width,
-                ),
-                level_height,
-                inner_array,
-                opt_validity,
-            )
+            // SAFETY: the values hold `width` values for every element, just asserted.
+            unsafe { PlFixedSizeListArray::new_unchecked(inner_array, width, level_height, None) }
+                .with_validity(opt_validity.map(PlBitmap::from_bitmap))
         }
     }
 }

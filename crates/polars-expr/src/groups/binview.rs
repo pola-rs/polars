@@ -1,5 +1,7 @@
-use arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
+use arrow::array::View;
 use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_array::bitmap::PlBitmap;
+use polars_array::{PlBinaryViewArray, PlUtf8ViewArray};
 use polars_buffer::Buffer;
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
 
@@ -62,8 +64,9 @@ impl BinviewHashGrouper {
     }
 
     /// # Safety
-    /// The views must be valid for the given buffers.
-    unsafe fn finalize_keys<V: ViewType + ?Sized>(
+    /// The views must be valid for the given buffers, and `dtype` must be the one the keys were
+    /// gathered as — `Binary` or `String`, which is what decides the chunk's type.
+    unsafe fn finalize_keys(
         &self,
         schema: &Schema,
         views: Buffer<View>,
@@ -71,17 +74,20 @@ impl BinviewHashGrouper {
         validity: Option<Bitmap>,
     ) -> DataFrame {
         let (name, dtype) = schema.get_at_index(0).unwrap();
+        let length = views.len();
         unsafe {
-            let arrow_dtype = dtype.to_arrow(CompatLevel::newest());
-            let keys = BinaryViewArrayGeneric::<V>::new_unchecked_unknown_md(
-                arrow_dtype,
+            let keys = PlBinaryViewArray::new_unchecked(
                 views,
                 buffers,
-                validity,
-                None,
+                length,
+                validity.map(PlBitmap::from_bitmap),
             );
-            let s =
-                Series::from_chunks_and_dtype_unchecked(name.clone(), vec![Box::new(keys)], dtype);
+            // A `String` chunk is the same views and buffers, read as text.
+            let keys: PlArrayRef = match dtype {
+                DataType::String => Box::new(PlUtf8ViewArray::from_binview_unchecked(keys)),
+                _ => Box::new(keys),
+            };
+            let s = Series::from_chunks_and_dtype_unchecked(name.clone(), vec![keys], dtype);
             DataFrame::new_unchecked(s.len(), vec![Column::from(s)])
         }
     }
@@ -111,15 +117,16 @@ impl Grouper for BinviewHashGrouper {
         };
 
         unsafe {
-            let views = hash_keys.keys.views().as_slice();
+            // The getter resolves the index against the buffer, so a scalar chunk hands back the
+            // one view every element reads rather than being indexed past its single slot.
+            let view_at = |idx: usize| hash_keys.keys.view_unchecked(idx);
             let buffers = hash_keys.keys.data_buffers();
             if let Some(validity) = hash_keys.keys.validity() {
                 if hash_keys.null_is_valid {
                     let groups = subset.iter().map(|idx| {
-                        if validity.get_bit_unchecked(*idx as usize) {
+                        if validity.get_unchecked(*idx as usize) {
                             let hash = hash_keys.hashes.value_unchecked(*idx as usize);
-                            let view = views.get_unchecked(*idx as usize);
-                            self.insert_key(hash, *view, buffers)
+                            self.insert_key(hash, view_at(*idx as usize), buffers)
                         } else {
                             self.insert_null()
                         }
@@ -132,10 +139,9 @@ impl Grouper for BinviewHashGrouper {
                     }
                 } else {
                     let groups = subset.iter().filter_map(|idx| {
-                        if validity.get_bit_unchecked(*idx as usize) {
+                        if validity.get_unchecked(*idx as usize) {
                             let hash = hash_keys.hashes.value_unchecked(*idx as usize);
-                            let view = views.get_unchecked(*idx as usize);
-                            Some(self.insert_key(hash, *view, buffers))
+                            Some(self.insert_key(hash, view_at(*idx as usize), buffers))
                         } else {
                             None
                         }
@@ -150,8 +156,7 @@ impl Grouper for BinviewHashGrouper {
             } else {
                 let groups = subset.iter().map(|idx| {
                     let hash = hash_keys.hashes.value_unchecked(*idx as usize);
-                    let view = views.get_unchecked(*idx as usize);
-                    self.insert_key(hash, *view, buffers)
+                    self.insert_key(hash, view_at(*idx as usize), buffers)
                 });
                 if let Some(group_idxs) = group_idxs {
                     group_idxs.reserve(subset.len());
@@ -183,8 +188,9 @@ impl Grouper for BinviewHashGrouper {
         unsafe {
             let (_name, dt) = schema.get_at_index(0).unwrap();
             match dt {
-                DataType::Binary => self.finalize_keys::<[u8]>(schema, views, buffers, validity),
-                DataType::String => self.finalize_keys::<str>(schema, views, buffers, validity),
+                DataType::Binary | DataType::String => {
+                    self.finalize_keys(schema, views, buffers, validity)
+                },
                 _ => unreachable!(),
             }
         }
@@ -208,15 +214,16 @@ impl Grouper for BinviewHashGrouper {
         unsafe {
             let null_p = partitioner.null_partition();
             let buffers = hash_keys.keys.data_buffers();
-            let views = hash_keys.keys.views().as_slice();
+            // The getter resolves the index against the buffer, so a scalar chunk hands back the
+            // one view every element reads rather than being indexed past its single slot.
+            let view_at = |idx: usize| hash_keys.keys.view_unchecked(idx);
             hash_keys.for_each_hash(|idx, opt_h| {
                 let has_group = if let Some(h) = opt_h {
                     let p = partitioner.hash_to_partition(h);
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
-                    let view = views.get_unchecked(idx as usize);
-                    grouper.contains_key(h, view, buffers)
+                    grouper.contains_key(h, &view_at(idx as usize), buffers)
                 } else {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =
@@ -249,15 +256,16 @@ impl Grouper for BinviewHashGrouper {
         unsafe {
             let null_p = partitioner.null_partition();
             let buffers = hash_keys.keys.data_buffers();
-            let views = hash_keys.keys.views().as_slice();
+            // The getter resolves the index against the buffer, so a scalar chunk hands back the
+            // one view every element reads rather than being indexed past its single slot.
+            let view_at = |idx: usize| hash_keys.keys.view_unchecked(idx);
             hash_keys.for_each_hash(|idx, opt_h| {
                 let has_group = if let Some(h) = opt_h {
                     let p = partitioner.hash_to_partition(h);
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(p);
                     let grouper =
                         &*(dyn_grouper as *const dyn Grouper as *const BinviewHashGrouper);
-                    let view = views.get_unchecked(idx as usize);
-                    grouper.contains_key(h, view, buffers)
+                    grouper.contains_key(h, &view_at(idx as usize), buffers)
                 } else {
                     let dyn_grouper: &dyn Grouper = &**groupers.get_unchecked(null_p);
                     let grouper =

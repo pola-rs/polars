@@ -95,7 +95,7 @@ pub fn _coalesce_full_join(
 }
 
 #[cfg(feature = "chunked_ids")]
-pub(crate) fn create_chunked_index_mapping(chunks: &[ArrayRef], len: usize) -> Vec<ChunkId> {
+pub(crate) fn create_chunked_index_mapping(chunks: &[PlArrayRef], len: usize) -> Vec<ChunkId> {
     let mut vals = Vec::with_capacity(len);
 
     for (chunk_i, chunk) in chunks.iter().enumerate() {

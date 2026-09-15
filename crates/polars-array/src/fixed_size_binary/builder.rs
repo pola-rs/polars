@@ -1,0 +1,263 @@
+//! The builder of a [`PlFixedSizeBinaryArray`].
+
+use arrow::bitmap::OptBitmapBuilder;
+use polars_buffer::Buffer;
+use polars_utils::IdxSize;
+
+use super::PlFixedSizeBinaryArray;
+use crate::bitmap::PlBitmap;
+use crate::builder::{
+    ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
+    opt_gather_extend_validity, subslice_extend_each_repeated_validity, subslice_extend_validity,
+};
+
+/// A builder of a [`PlFixedSizeBinaryArray`].
+pub struct PlFixedSizeBinaryArrayBuilder {
+    values: Vec<u8>,
+    width: usize,
+    length: usize,
+    validity: OptBitmapBuilder,
+}
+
+impl PlFixedSizeBinaryArrayBuilder {
+    /// Creates an empty builder of the byte strings of `width` bytes.
+    pub fn new(width: usize) -> Self {
+        Self {
+            values: Vec::new(),
+            width,
+            length: 0,
+            validity: OptBitmapBuilder::default(),
+        }
+    }
+
+    /// Creates an empty builder with room for `capacity` elements.
+    pub fn with_capacity(width: usize, capacity: usize) -> Self {
+        let mut builder = Self::new(width);
+        StaticArrayBuilder::reserve(&mut builder, capacity);
+        builder
+    }
+
+    /// The number of bytes every element of the built array covers.
+    #[inline]
+    pub const fn width(&self) -> usize {
+        self.width
+    }
+
+    /// Appends `value` as an element of its own.
+    #[inline]
+    pub fn push_value(&mut self, value: &[u8]) {
+        assert_eq!(
+            value.len(),
+            self.width,
+            "cannot append a byte string of {} bytes to a builder of width {}",
+            value.len(),
+            self.width,
+        );
+
+        self.values.extend_from_slice(value);
+        self.length += 1;
+        self.validity.extend_constant(1, true);
+    }
+
+    /// Appends a null.
+    #[inline]
+    pub fn push_null(&mut self) {
+        // The bytes of a null element are undetermined, but there are as many of them as there are
+        // of any other element: the width is what every element covers.
+        self.values.resize(self.values.len() + self.width, 0);
+        self.length += 1;
+        self.validity.extend_constant(1, false);
+    }
+
+    /// Appends `value`, or a null if it is [`None`].
+    #[inline]
+    pub fn push(&mut self, value: Option<&[u8]>) {
+        match value {
+            Some(value) => self.push_value(value),
+            None => self.push_null(),
+        }
+    }
+
+    /// Panics unless `other` is as wide as the elements this builds.
+    fn assert_width(&self, other: &PlFixedSizeBinaryArray) {
+        assert_eq!(
+            other.width(),
+            self.width,
+            "cannot append a fixed size binary array of width {} to a builder of width {}",
+            other.width(),
+            self.width,
+        );
+    }
+
+    /// Appends the bytes of the `length` elements of `other` at `start`, ignoring validity.
+    fn extend_values(&mut self, other: &PlFixedSizeBinaryArray, start: usize, length: usize) {
+        if let Some(values) = other.flat_values() {
+            let bytes = &values[start * self.width..(start + length) * self.width];
+            self.values.extend_from_slice(bytes);
+        } else if let Some(element) = other.scalar_value_ignore_validity() {
+            self.extend_repeated(element, length);
+        }
+        // An empty array is neither, and the subslice it admits covers no element to append.
+    }
+
+    /// Appends `element` `repeats` times over.
+    fn extend_repeated(&mut self, element: &[u8], repeats: usize) {
+        debug_assert_eq!(element.len(), self.width);
+
+        self.values.reserve(repeats * self.width);
+        for _ in 0..repeats {
+            self.values.extend_from_slice(element);
+        }
+    }
+}
+
+impl StaticArrayBuilder for PlFixedSizeBinaryArrayBuilder {
+    type Array = PlFixedSizeBinaryArray;
+
+    fn reserve(&mut self, additional: usize) {
+        self.values.reserve(additional * self.width);
+        self.validity.reserve(additional);
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.length
+    }
+
+    fn freeze(self) -> PlFixedSizeBinaryArray {
+        let (width, length) = (self.width, self.length);
+        let validity = self.validity.into_opt_validity().map(PlBitmap::from_bitmap);
+        // SAFETY: every element appended the width of bytes it covers, so the values hold the
+        // width of every element laid end to end, and the mask holds one bit per element.
+        unsafe {
+            PlFixedSizeBinaryArray::new_unchecked(
+                Buffer::from(self.values),
+                width,
+                length,
+                validity,
+            )
+        }
+    }
+
+    fn freeze_reset(&mut self) -> PlFixedSizeBinaryArray {
+        let values = std::mem::take(&mut self.values);
+        let validity = std::mem::take(&mut self.validity);
+        let length = std::mem::take(&mut self.length);
+        // SAFETY: as in `freeze`.
+        unsafe {
+            PlFixedSizeBinaryArray::new_unchecked(
+                Buffer::from(values),
+                self.width,
+                length,
+                validity.into_opt_validity().map(PlBitmap::from_bitmap),
+            )
+        }
+    }
+
+    fn extend_nulls(&mut self, length: usize) {
+        // The bytes of a null element are undetermined, but there are as many of them as there are
+        // of any other element: the width is what every element covers.
+        self.values
+            .resize(self.values.len() + length * self.width, 0);
+        self.validity.extend_constant(length, false);
+        self.length += length;
+    }
+
+    fn subslice_extend(
+        &mut self,
+        other: &PlFixedSizeBinaryArray,
+        start: usize,
+        length: usize,
+        _share: ShareStrategy,
+    ) {
+        self.assert_width(other);
+        assert_subslice(other.len(), start, length);
+
+        self.extend_values(other, start, length);
+        subslice_extend_validity(&mut self.validity, other.validity(), start, length);
+        self.length += length;
+    }
+
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &PlFixedSizeBinaryArray,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        _share: ShareStrategy,
+    ) {
+        self.assert_width(other);
+        assert_subslice(other.len(), start, length);
+        self.values.reserve(length * repeats * self.width);
+
+        if let Some(values) = other.flat_values() {
+            for i in start..start + length {
+                // SAFETY: the subslice was just checked against the length of the array.
+                let range = unsafe { other.value_range_unchecked(i) };
+                self.extend_repeated(&values[range], repeats);
+            }
+        } else {
+            // Every element covers the same bytes, so which of them is repeated is immaterial.
+            self.extend_values(other, start, length * repeats);
+        }
+
+        subslice_extend_each_repeated_validity(
+            &mut self.validity,
+            other.validity(),
+            start,
+            length,
+            repeats,
+        );
+        self.length += length * repeats;
+    }
+
+    unsafe fn gather_extend(
+        &mut self,
+        other: &PlFixedSizeBinaryArray,
+        idxs: &[IdxSize],
+        _share: ShareStrategy,
+    ) {
+        self.assert_width(other);
+        self.values.reserve(idxs.len() * self.width);
+
+        if let Some(values) = other.flat_values() {
+            for idx in idxs {
+                // SAFETY: the indices are in bounds of the array, whose values are flat.
+                let range = unsafe { other.value_range_unchecked(*idx as usize) };
+                self.values.extend_from_slice(&values[range]);
+            }
+        } else {
+            // Every index reads the one element the values hold.
+            self.extend_values(other, 0, idxs.len());
+        }
+
+        // SAFETY: the indices are in bounds of the array, and therefore of its mask.
+        unsafe { gather_extend_validity(&mut self.validity, other.validity(), idxs) };
+        self.length += idxs.len();
+    }
+
+    fn opt_gather_extend(
+        &mut self,
+        other: &PlFixedSizeBinaryArray,
+        idxs: &[IdxSize],
+        _share: ShareStrategy,
+    ) {
+        self.assert_width(other);
+        self.values.reserve(idxs.len() * self.width);
+
+        for idx in idxs {
+            let idx = *idx as usize;
+            if idx < other.len() {
+                // SAFETY: the index was just checked against the length of the array.
+                self.values
+                    .extend_from_slice(unsafe { other.value_unchecked(idx) });
+            } else {
+                // An out-of-bounds index stands for a null, which covers a width of zeros.
+                self.values.resize(self.values.len() + self.width, 0);
+            }
+        }
+
+        opt_gather_extend_validity(&mut self.validity, other.validity(), idxs, other.len());
+        self.length += idxs.len();
+    }
+}

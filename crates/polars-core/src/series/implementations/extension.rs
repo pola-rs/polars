@@ -109,11 +109,11 @@ impl SeriesTrait for SeriesWrap<ExtensionChunked> {
         self.0.name()
     }
 
-    fn chunks(&self) -> &Vec<ArrayRef> {
+    fn chunks(&self) -> &Vec<PlArrayRef> {
         self.0.storage().chunks()
     }
 
-    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<PlArrayRef> {
         self.0.storage_mut().chunks_mut()
     }
 
@@ -185,7 +185,7 @@ impl SeriesTrait for SeriesWrap<ExtensionChunked> {
         self.apply_on_storage(|s| s.rechunk())
     }
 
-    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+    fn with_validity(&self, validity: Option<PlBitmap>) -> Series {
         self.apply_on_storage(move |s| s.with_validity(validity))
     }
 
@@ -193,7 +193,7 @@ impl SeriesTrait for SeriesWrap<ExtensionChunked> {
         self.apply_on_storage(|s| s.new_from_index(index, length))
     }
 
-    fn deposit(&self, validity: &Bitmap) -> Series {
+    fn deposit(&self, validity: &PlBitmap) -> Series {
         self.apply_on_storage(|s| s.deposit(validity))
     }
 

@@ -33,13 +33,13 @@
 use std::fmt::LowerExp;
 use std::io::Write;
 
-use arrow::array::{Array, BooleanArray, Float16Array, NullArray, PrimitiveArray, Utf8ViewArray};
 use arrow::legacy::time_zone::Tz;
 use arrow::types::NativeType;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
 use memchr::{memchr_iter, memchr3};
 use num_traits::NumCast;
+use polars_array::{PlArray, PlBooleanArray, PlNullArray, PlPrimitiveArray, PlUtf8ViewArray};
 use polars_core::prelude::*;
 use polars_utils::float16::pf16;
 
@@ -96,9 +96,9 @@ fn make_serializer<'a, T, I: Iterator<Item = Option<T>>, const QUOTE_NON_NULL: b
 }
 
 fn integer_serializer<I: NativeType + itoa::Integer>(
-    array: &PrimitiveArray<I>,
+    array: &PlPrimitiveArray<I>,
 ) -> impl Serializer<'_> {
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+    let f = move |item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         let mut buffer = itoa::Buffer::new();
         let value = buffer.format(item);
         buf.extend_from_slice(value.as_bytes());
@@ -107,8 +107,10 @@ fn integer_serializer<I: NativeType + itoa::Integer>(
     make_serializer::<_, _, false>(f, array.iter())
 }
 
-fn float_serializer_no_precision_autoformat_f16(array: &Float16Array) -> impl Serializer<'_> {
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+fn float_serializer_no_precision_autoformat_f16(
+    array: &PlPrimitiveArray<pf16>,
+) -> impl Serializer<'_> {
+    let f = move |item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         let mut buffer = zmij::Buffer::new();
         let cast: f32 = NumCast::from(item).unwrap();
         let value = buffer.format(cast);
@@ -118,9 +120,9 @@ fn float_serializer_no_precision_autoformat_f16(array: &Float16Array) -> impl Se
 }
 
 fn float_serializer_no_precision_autoformat<I: NativeType + zmij::Float>(
-    array: &PrimitiveArray<I>,
+    array: &PlPrimitiveArray<I>,
 ) -> impl Serializer<'_> {
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+    let f = move |item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         let mut buffer = zmij::Buffer::new();
         let value = buffer.format(item);
         buf.extend_from_slice(value.as_bytes());
@@ -131,18 +133,18 @@ fn float_serializer_no_precision_autoformat<I: NativeType + zmij::Float>(
 fn float_serializer_no_precision_autoformat_<
     'a,
     I: NativeType,
-    F: Fn(&'a I, &mut Vec<u8>, &SerializeOptions),
+    F: Fn(I, &mut Vec<u8>, &SerializeOptions),
 >(
-    array: &'a PrimitiveArray<I>,
+    array: &'a PlPrimitiveArray<I>,
     f: F,
 ) -> impl Serializer<'a> {
     make_serializer::<_, _, false>(f, array.iter())
 }
 
 fn float_serializer_no_precision_autoformat_decimal_comma_f16(
-    array: &Float16Array,
+    array: &PlPrimitiveArray<pf16>,
 ) -> impl Serializer<'_> {
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+    let f = move |item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         let mut buffer = zmij::Buffer::new();
         let cast: f32 = NumCast::from(item).unwrap();
         let value = buffer.format(cast);
@@ -155,9 +157,9 @@ fn float_serializer_no_precision_autoformat_decimal_comma_f16(
 }
 
 fn float_serializer_no_precision_autoformat_decimal_comma<I: NativeType + zmij::Float>(
-    array: &PrimitiveArray<I>,
+    array: &PlPrimitiveArray<I>,
 ) -> impl Serializer<'_> {
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+    let f = move |item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         let mut buffer = zmij::Buffer::new();
         let value = buffer.format(item).as_bytes();
 
@@ -171,18 +173,18 @@ fn float_serializer_no_precision_autoformat_decimal_comma<I: NativeType + zmij::
 fn float_serializer_no_precision_autoformat_decimal_comma_<
     'a,
     I: NativeType,
-    F: Fn(&'a I, &mut Vec<u8>, &SerializeOptions),
+    F: Fn(I, &mut Vec<u8>, &SerializeOptions),
 >(
-    array: &'a PrimitiveArray<I>,
+    array: &'a PlPrimitiveArray<I>,
     f: F,
 ) -> impl Serializer<'a> {
     make_serializer::<_, _, false>(f, array.iter())
 }
 
 fn float_serializer_no_precision_scientific<I: NativeType + LowerExp>(
-    array: &PrimitiveArray<I>,
+    array: &PlPrimitiveArray<I>,
 ) -> impl Serializer<'_> {
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+    let f = move |item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         // Float writing into a buffer of `Vec<u8>` cannot fail.
         let _ = write!(buf, "{item:.e}");
     };
@@ -191,11 +193,11 @@ fn float_serializer_no_precision_scientific<I: NativeType + LowerExp>(
 }
 
 fn float_serializer_no_precision_scientific_decimal_comma<I: NativeType + LowerExp>(
-    array: &PrimitiveArray<I>,
+    array: &PlPrimitiveArray<I>,
 ) -> impl Serializer<'_> {
     let mut scratch = Vec::new();
 
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+    let f = move |item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         // Float writing into a buffer of `Vec<u8>` cannot fail.
         let _ = write!(&mut scratch, "{item:.e}");
         for c in &mut scratch {
@@ -211,9 +213,9 @@ fn float_serializer_no_precision_scientific_decimal_comma<I: NativeType + LowerE
 }
 
 fn float_serializer_no_precision_positional<I: NativeType + NumCast>(
-    array: &PrimitiveArray<I>,
+    array: &PlPrimitiveArray<I>,
 ) -> impl Serializer<'_> {
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+    let f = move |item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         let v: f64 = NumCast::from(item).unwrap();
         let _ = write!(buf, "{v}");
     };
@@ -222,11 +224,11 @@ fn float_serializer_no_precision_positional<I: NativeType + NumCast>(
 }
 
 fn float_serializer_no_precision_positional_decimal_comma<I: NativeType + NumCast>(
-    array: &PrimitiveArray<I>,
+    array: &PlPrimitiveArray<I>,
 ) -> impl Serializer<'_> {
     let mut scratch = Vec::new();
 
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+    let f = move |item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         scratch.clear();
         let v: f64 = NumCast::from(item).unwrap();
         let _ = write!(&mut scratch, "{v}");
@@ -243,10 +245,10 @@ fn float_serializer_no_precision_positional_decimal_comma<I: NativeType + NumCas
 }
 
 fn float_serializer_with_precision_scientific<I: NativeType + LowerExp>(
-    array: &PrimitiveArray<I>,
+    array: &PlPrimitiveArray<I>,
     precision: usize,
 ) -> impl Serializer<'_> {
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+    let f = move |item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         // Float writing into a buffer of `Vec<u8>` cannot fail.
         let _ = write!(buf, "{item:.precision$e}");
     };
@@ -255,12 +257,12 @@ fn float_serializer_with_precision_scientific<I: NativeType + LowerExp>(
 }
 
 fn float_serializer_with_precision_scientific_decimal_comma<I: NativeType + LowerExp>(
-    array: &PrimitiveArray<I>,
+    array: &PlPrimitiveArray<I>,
     precision: usize,
 ) -> impl Serializer<'_> {
     let mut scratch = Vec::new();
 
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+    let f = move |item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         scratch.clear();
         // Float writing into a buffer of `Vec<u8>` cannot fail.
         let _ = write!(&mut scratch, "{item:.precision$e}");
@@ -277,10 +279,10 @@ fn float_serializer_with_precision_scientific_decimal_comma<I: NativeType + Lowe
 }
 
 fn float_serializer_with_precision_positional<I: NativeType>(
-    array: &PrimitiveArray<I>,
+    array: &PlPrimitiveArray<I>,
     precision: usize,
 ) -> impl Serializer<'_> {
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+    let f = move |item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         // Float writing into a buffer of `Vec<u8>` cannot fail.
         let _ = write!(buf, "{item:.precision$}");
     };
@@ -289,12 +291,12 @@ fn float_serializer_with_precision_positional<I: NativeType>(
 }
 
 fn float_serializer_with_precision_positional_decimal_comma<I: NativeType>(
-    array: &PrimitiveArray<I>,
+    array: &PlPrimitiveArray<I>,
     precision: usize,
 ) -> impl Serializer<'_> {
     let mut scratch = Vec::new();
 
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+    let f = move |item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         scratch.clear();
         let _ = write!(&mut scratch, "{item:.precision$}");
         for c in &mut scratch {
@@ -309,7 +311,7 @@ fn float_serializer_with_precision_positional_decimal_comma<I: NativeType>(
     make_serializer::<_, _, false>(f, array.iter())
 }
 
-fn null_serializer(_array: &NullArray) -> impl Serializer<'_> {
+fn null_serializer(_array: &PlNullArray) -> impl Serializer<'_> {
     struct NullSerializer;
     impl<'a> Serializer<'a> for NullSerializer {
         fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) {
@@ -319,7 +321,7 @@ fn null_serializer(_array: &NullArray) -> impl Serializer<'_> {
     NullSerializer
 }
 
-fn bool_serializer<const QUOTE_NON_NULL: bool>(array: &BooleanArray) -> impl Serializer<'_> {
+fn bool_serializer<const QUOTE_NON_NULL: bool>(array: &PlBooleanArray) -> impl Serializer<'_> {
     let f = move |item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         let s = if item { "true" } else { "false" };
         buf.extend_from_slice(s.as_bytes());
@@ -329,11 +331,11 @@ fn bool_serializer<const QUOTE_NON_NULL: bool>(array: &BooleanArray) -> impl Ser
 }
 
 #[cfg(feature = "dtype-decimal")]
-fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serializer<'_> {
+fn decimal_serializer(array: &PlPrimitiveArray<i128>, scale: usize) -> impl Serializer<'_> {
     let trim_zeros = arrow::compute::decimal::get_trim_decimal_zeros();
 
     let mut fmt_buf = polars_compute::decimal::DecimalFmtBuffer::new();
-    let f = move |&item, buf: &mut Vec<u8>, options: &SerializeOptions| {
+    let f = move |item, buf: &mut Vec<u8>, options: &SerializeOptions| {
         buf.extend_from_slice(
             fmt_buf
                 .format_dec128(item, scale, trim_zeros, options.decimal_comma)
@@ -350,10 +352,10 @@ fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serial
     feature = "dtype-datetime"
 ))]
 fn callback_serializer<'a, T: NativeType, const QUOTE_NON_NULL: bool>(
-    array: &'a PrimitiveArray<T>,
+    array: &'a PlPrimitiveArray<T>,
     mut callback: impl FnMut(T, &mut Vec<u8>) + 'a,
 ) -> impl Serializer<'a> {
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+    let f = move |item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         callback(item, buf);
     };
 
@@ -367,7 +369,7 @@ type ChronoFormatIter<'a, 'b> = std::slice::Iter<'a, chrono::format::Item<'b>>;
 fn date_and_time_serializer<'a, Underlying: NativeType, T: std::fmt::Display>(
     format_str: Option<&'a str>,
     description: &str,
-    array: &'a dyn Array,
+    array: &'a dyn PlArray,
     sample_value: T,
     mut convert: impl FnMut(Underlying) -> T + Send + 'a,
     mut format_fn: impl for<'b> FnMut(
@@ -415,7 +417,7 @@ fn date_and_time_serializer<'a, Underlying: NativeType, T: std::fmt::Display>(
     feature = "dtype-datetime"
 ))]
 fn date_and_time_final_serializer<'a, T: NativeType>(
-    array: &'a PrimitiveArray<T>,
+    array: &'a PlPrimitiveArray<T>,
     callback: impl FnMut(T, &mut Vec<u8>) + Send + 'a,
     options: &SerializeOptions,
 ) -> Box<dyn Serializer<'a> + Send + 'a> {
@@ -431,8 +433,8 @@ fn date_and_time_final_serializer<'a, T: NativeType>(
 pub(super) fn string_serializer<'a, Iter: Send + 'a>(
     mut f: impl FnMut(&mut Iter) -> Option<&str> + Send + 'a,
     options: &SerializeOptions,
-    mut update: impl FnMut(&'a dyn Array) -> Iter + Send + 'a,
-    array: &'a dyn Array,
+    mut update: impl FnMut(&'a dyn PlArray) -> Iter + Send + 'a,
+    array: &'a dyn PlArray,
 ) -> Box<dyn Serializer<'a> + 'a + Send> {
     const LF: u8 = b'\n';
     const CR: u8 = b'\r';
@@ -564,7 +566,7 @@ fn quote_serializer<'a>(serializer: impl Serializer<'a>) -> impl Serializer<'a> 
 }
 
 pub(super) fn serializer_for<'a>(
-    array: &'a dyn Array,
+    array: &'a dyn PlArray,
     options: &'a SerializeOptions,
     dtype: &'a DataType,
     _datetime_format: &'a str,
@@ -866,7 +868,7 @@ pub(super) fn serializer_for<'a>(
             options,
             |arr| {
                 arr.as_any()
-                    .downcast_ref::<Utf8ViewArray>()
+                    .downcast_ref::<PlUtf8ViewArray>()
                     .expect(ARRAY_MISMATCH_MSG)
                     .iter()
             },
@@ -877,13 +879,13 @@ pub(super) fn serializer_for<'a>(
             polars_core::with_match_categorical_physical_type!(dtype.cat_physical().unwrap(), |$C| {
                 string_serializer(
                     |iter| {
-                        let &idx: &<$C as PolarsCategoricalType>::Native = Iterator::next(iter).expect(TOO_MANY_MSG)?;
+                        let idx: <$C as PolarsCategoricalType>::Native = Iterator::next(iter).expect(TOO_MANY_MSG)?;
                         Some(unsafe { mapping.cat_to_str_unchecked(idx.as_cat()) })
                     },
                     options,
                     |arr| {
                         arr.as_any()
-                            .downcast_ref::<PrimitiveArray<<$C as PolarsCategoricalType>::Native>>()
+                            .downcast_ref::<PlPrimitiveArray<<$C as PolarsCategoricalType>::Native>>()
                             .expect(ARRAY_MISMATCH_MSG)
                             .iter()
                     },
@@ -904,8 +906,7 @@ pub(super) fn serializer_for<'a>(
 
 #[cfg(test)]
 mod test {
-    use arrow::array::NullArray;
-    use polars_core::prelude::ArrowDataType;
+    use polars_array::PlNullArray;
 
     use super::string_serializer;
     use crate::csv::write::options::{QuoteStyle, SerializeOptions};
@@ -915,7 +916,7 @@ mod test {
     fn test_string_serializer() {
         #[track_caller]
         fn check_string_serialization(options: &SerializeOptions, s: Option<&str>, expected: &str) {
-            let fake_array = NullArray::new(ArrowDataType::Null, 0);
+            let fake_array = PlNullArray::new(0);
             let mut serializer = string_serializer(|s| *s, options, |_| s, &fake_array);
             let mut buf = Vec::new();
             serializer.serialize(&mut buf, options);

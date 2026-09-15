@@ -7,7 +7,7 @@ use polars_compute::decimal::{
 };
 
 use super::*;
-use crate::chunked_array::cast::cast_chunks;
+use crate::chunked_array::cast::cast_chunks_from;
 use crate::prelude::arity::{unary_elementwise, unary_kernel};
 use crate::prelude::*;
 
@@ -77,24 +77,16 @@ impl LogicalType for DecimalChunked {
             dt if dt.is_primitive_numeric()
                 | matches!(dt, DataType::String | DataType::Boolean) =>
             {
-                // Normally we don't set the Arrow logical type, but now we temporarily set it so
-                // we can re-use the compute cast kernels.
-                let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
-                let chunks = self
-                    .physical()
-                    .chunks
-                    .iter()
-                    .map(|arr| {
-                        arr.as_any()
-                            .downcast_ref::<PrimitiveArray<i128>>()
-                            .unwrap()
-                            .clone()
-                            .to(arrow_dtype.clone())
-                            .to_boxed()
-                    })
-                    .collect::<Vec<_>>();
-                let chunks = cast_chunks(&chunks, dtype, cast_options)?;
-                Series::try_from((self.name().clone(), chunks))
+                // The chunks hold `i128`s and nothing that says what they are worth, so the
+                // precision and scale are what the cast is told to read them as.
+                let chunks =
+                    cast_chunks_from(&self.physical().chunks, self.dtype(), dtype, cast_options)?;
+                // SAFETY: the chunks were just cast to `dtype`, which the arm above restricts to
+                // the types that are their own physical type.
+                debug_assert_eq!(&dtype.to_physical(), dtype);
+                Ok(unsafe {
+                    Series::from_chunks_and_dtype_unchecked(self.name().clone(), chunks, dtype)
+                })
             },
 
             dt => {
@@ -155,13 +147,14 @@ impl DecimalChunked {
                         .iter()
                         .map(|opt_x| {
                             if let Some(x) = opt_x {
-                                dec128_fits(*x, prec)
+                                dec128_fits(x, prec)
                             } else {
                                 false
                             }
                         })
                         .collect();
-                    arr.clone().with_validity_typed(Some(new_valid))
+                    arr.clone()
+                        .with_validity_typed(Some(PlBitmap::from_bitmap(new_valid)))
                 })
             }
         } else {
@@ -198,7 +191,7 @@ impl DecimalChunked {
 
         let mut prod = i128_to_dec128(1, prec, scale).unwrap();
         for arr in self.phys.downcast_iter() {
-            for v in arr.non_null_values_iter() {
+            for v in arr.iter().flatten() {
                 if let Some(p) = dec128_mul(prod, v, prec, scale) {
                     prod = p;
                 } else {

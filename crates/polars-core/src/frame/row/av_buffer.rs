@@ -550,7 +550,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                             // SAFETY: Function contract.
                             unsafe { unreachable_unchecked() }
                         };
-                        let arrays = arr.values();
+                        let arrays = arr.fields();
                         debug_assert_eq!(builders.len(), arrays.len());
                         debug_assert_eq!(fields.len(), arrays.len());
                         for ((field, array), (builder, _)) in
@@ -671,7 +671,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 outer_validity.reserve(capacity);
 
                 StructChunked::from_series(PlSmallStr::EMPTY, length, v.iter())?
-                    .with_outer_validity(Some(old_outer_validity.freeze()))
+                    .with_outer_validity(Some(PlBitmap::from_bitmap(old_outer_validity.freeze())))
                     .into_series()
             },
             Null(b) => {

@@ -2,7 +2,8 @@ use polars_compute::arithmetic::ArithmeticKernel;
 
 use super::*;
 use crate::chunked_array::arity::{
-    apply_binary_kernel_broadcast, apply_binary_kernel_broadcast_owned, unary_kernel,
+    apply_binary_kernel_broadcast, apply_binary_kernel_broadcast_owned,
+    apply_binary_kernel_broadcast_single, apply_binary_kernel_broadcast_single_owned, unary_kernel,
     unary_kernel_owned,
 };
 
@@ -133,7 +134,7 @@ impl<T: PolarsNumericType> ArithmeticChunked for ChunkedArray<T> {
     }
 
     fn wrapping_floor_div(self, rhs: Self) -> Self::Out {
-        apply_binary_kernel_broadcast_owned(
+        apply_binary_kernel_broadcast_single_owned(
             self,
             rhs,
             ArithmeticKernel::wrapping_floor_div,
@@ -143,7 +144,7 @@ impl<T: PolarsNumericType> ArithmeticChunked for ChunkedArray<T> {
     }
 
     fn wrapping_trunc_div(self, rhs: Self) -> Self::Out {
-        apply_binary_kernel_broadcast_owned(
+        apply_binary_kernel_broadcast_single_owned(
             self,
             rhs,
             ArithmeticKernel::wrapping_trunc_div,
@@ -153,7 +154,7 @@ impl<T: PolarsNumericType> ArithmeticChunked for ChunkedArray<T> {
     }
 
     fn wrapping_mod(self, rhs: Self) -> Self::Out {
-        apply_binary_kernel_broadcast_owned(
+        apply_binary_kernel_broadcast_single_owned(
             self,
             rhs,
             ArithmeticKernel::wrapping_mod,
@@ -215,7 +216,7 @@ impl<T: PolarsNumericType> ArithmeticChunked for ChunkedArray<T> {
     }
 
     fn true_div(self, rhs: Self) -> Self::TrueDivOut {
-        apply_binary_kernel_broadcast_owned(
+        apply_binary_kernel_broadcast_single_owned(
             self,
             rhs,
             ArithmeticKernel::true_div,
@@ -233,7 +234,7 @@ impl<T: PolarsNumericType> ArithmeticChunked for ChunkedArray<T> {
     }
 
     fn legacy_div(self, rhs: Self) -> Self::Out {
-        apply_binary_kernel_broadcast_owned(
+        apply_binary_kernel_broadcast_single_owned(
             self,
             rhs,
             ArithmeticKernel::legacy_div,
@@ -295,7 +296,7 @@ impl<T: PolarsNumericType> ArithmeticChunked for &ChunkedArray<T> {
     }
 
     fn wrapping_floor_div(self, rhs: Self) -> Self::Out {
-        apply_binary_kernel_broadcast(
+        apply_binary_kernel_broadcast_single(
             self,
             rhs,
             |l, r| ArithmeticKernel::wrapping_floor_div(l.clone(), r.clone()),
@@ -305,7 +306,7 @@ impl<T: PolarsNumericType> ArithmeticChunked for &ChunkedArray<T> {
     }
 
     fn wrapping_trunc_div(self, rhs: Self) -> Self::Out {
-        apply_binary_kernel_broadcast(
+        apply_binary_kernel_broadcast_single(
             self,
             rhs,
             |l, r| ArithmeticKernel::wrapping_trunc_div(l.clone(), r.clone()),
@@ -315,7 +316,7 @@ impl<T: PolarsNumericType> ArithmeticChunked for &ChunkedArray<T> {
     }
 
     fn wrapping_mod(self, rhs: Self) -> Self::Out {
-        apply_binary_kernel_broadcast(
+        apply_binary_kernel_broadcast_single(
             self,
             rhs,
             |l, r| ArithmeticKernel::wrapping_mod(l.clone(), r.clone()),
@@ -391,7 +392,7 @@ impl<T: PolarsNumericType> ArithmeticChunked for &ChunkedArray<T> {
     }
 
     fn true_div(self, rhs: Self) -> Self::TrueDivOut {
-        apply_binary_kernel_broadcast(
+        apply_binary_kernel_broadcast_single(
             self,
             rhs,
             |l, r| ArithmeticKernel::true_div(l.clone(), r.clone()),
@@ -411,7 +412,7 @@ impl<T: PolarsNumericType> ArithmeticChunked for &ChunkedArray<T> {
     }
 
     fn legacy_div(self, rhs: Self) -> Self::Out {
-        apply_binary_kernel_broadcast(
+        apply_binary_kernel_broadcast_single(
             self,
             rhs,
             |l, r| ArithmeticKernel::legacy_div(l.clone(), r.clone()),

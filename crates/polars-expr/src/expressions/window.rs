@@ -1,6 +1,5 @@
 use std::fmt::Write;
 
-use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::trusted_len::TrustMyLength;
 use polars_core::downcast_as_macro_arg_physical;
@@ -561,21 +560,15 @@ impl PhysicalExpr for WindowExpr {
 
                                 let (left, right) = if left.dtype().is_nested() {
                                     (
-                                        ChunkedArray::<BinaryOffsetType>::with_chunk(
+                                        row_encode::_get_rows_encoded_ca_unordered(
                                             "".into(),
-                                            row_encode::_get_rows_encoded_unordered(&[
-                                                left.clone()
-                                            ])?
-                                            .into_array(),
-                                        )
+                                            &[left.clone()],
+                                        )?
                                         .into_series(),
-                                        ChunkedArray::<BinaryOffsetType>::with_chunk(
+                                        row_encode::_get_rows_encoded_ca_unordered(
                                             "".into(),
-                                            row_encode::_get_rows_encoded_unordered(&[
-                                                right.clone()
-                                            ])?
-                                            .into_array(),
-                                        )
+                                            &[right.clone()],
+                                        )?
                                         .into_series(),
                                     )
                                 } else {
@@ -672,7 +665,7 @@ impl PhysicalExpr for WindowExpr {
                 let e = e
                     .evaluate(df, state)?
                     .broadcast_owned_to(length_preserving_height)?;
-                let arr: Option<PrimitiveArray<IdxSize>> = if needs_remap_to_rows {
+                let arr: Option<Flat<PlPrimitiveArray<IdxSize>>> = if needs_remap_to_rows {
                     feature_gated!("rank", {
                         // Performance: precompute the rank here, so we can avoid dispatching per group
                         // later.
@@ -686,7 +679,7 @@ impl PhysicalExpr for WindowExpr {
                         );
                         let arr = arr.idx()?;
                         let arr = arr.rechunk();
-                        Some(arr.downcast_as_array().clone())
+                        Some(arr.downcast_as_array().to_flat().into_owned())
                     })
                 } else {
                     None
@@ -1065,10 +1058,11 @@ fn set_numeric<T: PolarsNumericType>(
     let sync_ptr_values = unsafe { SyncPtr::new(ptr) };
 
     if ca.null_count() == 0 {
-        let ca = ca.rechunk();
+        let rechunked = ca.rechunk();
+        let flat = rechunked.to_flat();
         match groups {
             GroupsType::Idx(groups) => {
-                let agg_vals = ca.cont_slice().expect("rechunked");
+                let agg_vals = flat.cont_slice().expect("rechunked");
                 RAYON.install(|| {
                     agg_vals
                         .par_iter()
@@ -1083,7 +1077,7 @@ fn set_numeric<T: PolarsNumericType>(
                 })
             },
             GroupsType::Slice { groups, .. } => {
-                let agg_vals = ca.cont_slice().expect("rechunked");
+                let agg_vals = flat.cont_slice().expect("rechunked");
                 RAYON.install(|| {
                     agg_vals
                         .par_iter()
@@ -1175,14 +1169,8 @@ fn set_numeric<T: PolarsNumericType>(
         }
         // SAFETY: we have written all slots
         unsafe { values.set_len(len) }
-        let validity = Bitmap::from(validity);
-        let arr = PrimitiveArray::new(
-            T::get_static_dtype()
-                .to_physical()
-                .to_arrow(CompatLevel::newest()),
-            values.into(),
-            Some(validity),
-        );
-        Series::try_from((ca.name().clone(), arr.boxed())).unwrap()
+        let validity = PlBitmap::from_bitmap(Bitmap::from(validity));
+        let arr = PlPrimitiveArray::<T::Native>::new(values.into(), len, Some(validity));
+        ChunkedArray::<T>::with_chunk(ca.name().clone(), arr).into_series()
     }
 }

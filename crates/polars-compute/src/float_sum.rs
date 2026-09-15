@@ -2,11 +2,11 @@ use std::ops::{Add, IndexMut};
 #[cfg(feature = "simd")]
 use std::simd::{prelude::*, *};
 
-use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float};
+use polars_array::PlPrimitiveArray;
 #[cfg(feature = "simd")]
 use polars_utils::float16::pf16;
 
@@ -243,6 +243,9 @@ where
 pub trait FloatSum<F>: Sized {
     fn sum(f: &[Self]) -> F;
     fn sum_with_validity(f: &[Self], validity: &Bitmap) -> F;
+
+    /// The sum of `count` copies of `value`, which is their product: one rounding, not a pass.
+    fn sum_repeated(value: Self, count: usize) -> F;
 }
 
 impl<T, F> FloatSum<F> for T
@@ -262,6 +265,16 @@ where
         // TODO: faster remainder.
         let restsum: F = rest.iter().map(|x| x.as_()).sum();
         mainsum + restsum
+    }
+
+    fn sum_repeated(value: Self, count: usize) -> F {
+        let total =
+            value.as_() * F::from(count).expect("a length is representable in the accumulator");
+        // Adding into a zero is what the loops above do with the first element they read, and it
+        // is the one thing the product does not answer alike: `-0.0` added to `+0.0` is `+0.0`,
+        // where multiplying it by a count leaves the sign of the zero on. Every other total is
+        // itself again.
+        F::zero() + total
     }
 
     fn sum_with_validity(f: &[Self], validity: &Bitmap) -> F {
@@ -289,26 +302,47 @@ where
     }
 }
 
-pub fn sum_arr_as_f32<T>(arr: &PrimitiveArray<T>) -> f32
+/// Adds up every non-null element of `arr`, in whichever representation it is stored.
+fn sum_arr<T, F>(arr: &PlPrimitiveArray<T>) -> F
 where
-    T: NativeType + FloatSum<f32>,
+    T: NativeType + FloatSum<F>,
+    F: num_traits::Zero,
 {
-    let validity = arr.validity().filter(|_| arr.null_count() > 0);
-    if let Some(mask) = validity {
-        FloatSum::sum_with_validity(arr.values(), mask)
-    } else {
-        FloatSum::sum(arr.values())
+    let count = arr.len() - arr.null_count();
+    if count == 0 {
+        return F::zero();
+    }
+
+    // The non-null elements of a chunk with a repeated values buffer are all that one value, so
+    // their total is it added up `count` times whatever the mask looks like.
+    if let Some(value) = arr.scalar_value_ignore_validity() {
+        return FloatSum::sum_repeated(value, count);
+    }
+
+    let values = arr.flat_values().expect("the values are not repeated");
+
+    // A mask that repeats a single bit cannot reach here: it would have to be a set one, since an
+    // unset one leaves no element non-null and `count` is not zero, and a set one leaves nothing
+    // for the sum to skip.
+    match (count < arr.len()).then(|| arr.validity().expect("a null element has a mask").to_flat())
+    {
+        Some(validity) => FloatSum::sum_with_validity(values, &validity),
+        None => FloatSum::sum(values),
     }
 }
 
-pub fn sum_arr_as_f64<T>(arr: &PrimitiveArray<T>) -> f64
+/// Adds up every non-null element of `arr`, accumulating into `f32`.
+pub fn sum_arr_as_f32<T>(arr: &PlPrimitiveArray<T>) -> f32
+where
+    T: NativeType + FloatSum<f32>,
+{
+    sum_arr(arr)
+}
+
+/// Adds up every non-null element of `arr`, accumulating into `f64`; see [`sum_arr_as_f32`].
+pub fn sum_arr_as_f64<T>(arr: &PlPrimitiveArray<T>) -> f64
 where
     T: NativeType + FloatSum<f64>,
 {
-    let validity = arr.validity().filter(|_| arr.null_count() > 0);
-    if let Some(mask) = validity {
-        FloatSum::sum_with_validity(arr.values(), mask)
-    } else {
-        FloatSum::sum(arr.values())
-    }
+    sum_arr(arr)
 }

@@ -610,3 +610,35 @@ def test_is_sorted_flag_respects_null_placement() -> None:
     assert desc_nulls_first.flags["SORTED_DESC"]
     assert desc_nulls_first.is_sorted(descending=True)
     assert not desc_nulls_first.is_sorted(descending=True, nulls_last=True)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "value"),
+    [
+        (pl.Int64, 7),
+        (pl.String, "abc"),
+        (pl.Struct({"a": pl.Int64, "b": pl.String}), {"a": 1, "b": "x"}),
+        (pl.List(pl.Int64), [1, 2, 3]),
+        (pl.Array(pl.Int64, 3), [1, 2, 3]),
+        (pl.Int64, None),
+    ],
+)
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_is_sorted_repeated_element(
+    dtype: pl.DataType, value: Any, descending: bool, nulls_last: bool
+) -> None:
+    # A chunk repeating one element is answered off two of its elements rather than
+    # all of them. The answer, and the error for a dtype with no ordering, have to be
+    # the flat column's.
+    one = pl.Series("a", [value], dtype=dtype)
+    repeated = one.new_from_index(0, 8)
+    flat = pl.Series("a", [value] * 8, dtype=dtype)
+
+    def answer(s: pl.Series) -> Any:
+        try:
+            return s.is_sorted(descending=descending, nulls_last=nulls_last)
+        except Exception as exc:
+            return f"{type(exc).__name__}: {exc}"
+
+    assert answer(repeated) == answer(flat)

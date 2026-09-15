@@ -1,5 +1,5 @@
 use arrow::legacy::time_zone::Tz;
-use polars_core::prelude::arity::broadcast_try_binary_elementwise;
+use polars_core::prelude::arity::broadcast_try_binary_elementwise_amortized;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 
@@ -44,7 +44,7 @@ fn apply_offsets_to_datetime(
                 TimeUnit::Microseconds => Duration::add_us,
                 TimeUnit::Nanoseconds => Duration::add_ns,
             };
-            broadcast_try_binary_elementwise(
+            broadcast_try_binary_elementwise_amortized(
                 datetime.physical(),
                 offsets,
                 |timestamp_opt, offset_opt| match (timestamp_opt, offset_opt) {

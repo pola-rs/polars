@@ -8,7 +8,7 @@ use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 
 use super::{
-    IfThenElseKernel, if_then_else_loop, if_then_else_loop_broadcast_both,
+    IfThenElseArrowKernel, if_then_else_loop, if_then_else_loop_broadcast_both,
     if_then_else_loop_broadcast_false, if_then_else_validity, scalar,
 };
 
@@ -64,7 +64,7 @@ fn if_then_else_broadcast_both_simd_64<T: Copy + SimdElement>(
 
 macro_rules! impl_if_then_else {
     ($T: ty) => {
-        impl IfThenElseKernel for PrimitiveArray<$T> {
+        impl IfThenElseArrowKernel for PrimitiveArray<$T> {
             type Scalar<'a> = $T;
 
             fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self {

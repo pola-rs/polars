@@ -1,9 +1,12 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::hash::BuildHasher;
 
-use arrow::array::{Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticArray, UInt64Array};
-use arrow::bitmap::Bitmap;
-use arrow::compute::utils::combine_validities_and_many;
+use polars_array::bitmap::combine_validities_and_many;
+use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
+use polars_array::{
+    PlBinaryArray, PlBinaryArrayBuilder, PlBinaryViewArray, PlBinaryViewArrayBuilder, PlBitmapRef,
+    PlPrimitiveArray, PlPrimitiveArrayBuilder,
+};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType, *};
@@ -136,7 +139,7 @@ impl HashKeys {
                 .map(|k| random_state.hash_one(k))
                 .collect();
             Self::RowEncoded(RowEncodedKeys {
-                hashes: PrimitiveArray::from_vec(hashes),
+                hashes: PlPrimitiveArray::from_vec(hashes),
                 keys: keys_encoded,
             })
         } else if first_col_variant == HashKeysVariant::Binview {
@@ -158,7 +161,7 @@ impl HashKeys {
             };
 
             Self::Binview(BinviewKeys {
-                hashes: PrimitiveArray::from_vec(hashes),
+                hashes: PlPrimitiveArray::from_vec(hashes),
                 keys,
                 null_is_valid,
             })
@@ -183,11 +186,12 @@ impl HashKeys {
         self.len() == 0
     }
 
-    pub fn validity(&self) -> Option<&Bitmap> {
+    /// The validity mask of the keys, in whichever representation they carry it.
+    pub fn validity(&self) -> Option<PlBitmap> {
         match self {
-            HashKeys::RowEncoded(s) => s.keys.validity(),
-            HashKeys::Single(s) => s.keys.chunks()[0].validity(),
-            HashKeys::Binview(s) => s.keys.validity(),
+            HashKeys::RowEncoded(s) => s.keys.validity().map(PlBitmap::from),
+            HashKeys::Single(s) => s.keys.chunks()[0].validity().map(PlBitmap::from),
+            HashKeys::Binview(s) => s.keys.validity().map(PlBitmap::from),
         }
     }
 
@@ -395,13 +399,13 @@ impl HashKeys {
 
 #[derive(Clone, Debug)]
 pub struct RowEncodedKeys {
-    pub hashes: UInt64Array, // Always non-null, we use the validity of keys.
-    pub keys: BinaryArray<i64>,
+    pub hashes: PlPrimitiveArray<u64>, // Always non-null, we use the validity of keys.
+    pub keys: PlBinaryArray,
 }
 
 impl RowEncodedKeys {
     pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
-        for_each_hash_prehashed(self.hashes.values().as_slice(), self.keys.validity(), f);
+        for_each_hash_prehashed(&self.hashes, self.keys.validity(), f);
     }
 
     /// # Safety
@@ -411,24 +415,22 @@ impl RowEncodedKeys {
         subset: &[IdxSize],
         f: F,
     ) {
-        for_each_hash_subset_prehashed(
-            self.hashes.values().as_slice(),
-            self.keys.validity(),
-            subset,
-            f,
-        );
+        for_each_hash_subset_prehashed(&self.hashes, self.keys.validity(), subset, f);
     }
 
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
-        let idx_arr = arrow::ffi::mmap::slice(idxs);
+        // A gather picks the elements out again, so the values are compacted rather than shared.
+        let mut hashes = PlPrimitiveArrayBuilder::<u64>::with_capacity(idxs.len());
+        let mut keys = PlBinaryArrayBuilder::with_capacity(idxs.len());
+        unsafe {
+            hashes.gather_extend(&self.hashes, idxs, ShareStrategy::Never);
+            keys.gather_extend(&self.keys, idxs, ShareStrategy::Never);
+        }
         Self {
-            hashes: polars_compute::gather::primitive::take_primitive_unchecked(
-                &self.hashes,
-                &idx_arr,
-            ),
-            keys: polars_compute::gather::binary::take_unchecked(&self.keys, &idx_arr),
+            hashes: hashes.freeze(),
+            keys: keys.freeze(),
         }
     }
 }
@@ -474,14 +476,14 @@ impl SingleKeys {
 /// Pre-hashed binary view keys with prehashing.
 #[derive(Clone, Debug)]
 pub struct BinviewKeys {
-    pub hashes: UInt64Array,
-    pub keys: BinaryViewArray,
+    pub hashes: PlPrimitiveArray<u64>,
+    pub keys: PlBinaryViewArray,
     pub null_is_valid: bool,
 }
 
 impl BinviewKeys {
     pub fn for_each_hash<F: FnMut(IdxSize, Option<u64>)>(&self, f: F) {
-        for_each_hash_prehashed(self.hashes.values().as_slice(), self.keys.validity(), f);
+        for_each_hash_prehashed(&self.hashes, self.keys.validity(), f);
     }
 
     /// # Safety
@@ -491,71 +493,96 @@ impl BinviewKeys {
         subset: &[IdxSize],
         f: F,
     ) {
-        for_each_hash_subset_prehashed(
-            self.hashes.values().as_slice(),
-            self.keys.validity(),
-            subset,
-            f,
-        );
+        for_each_hash_subset_prehashed(&self.hashes, self.keys.validity(), subset, f);
     }
 
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_unchecked(&self, idxs: &[IdxSize]) -> Self {
-        let idx_arr = arrow::ffi::mmap::slice(idxs);
+        // A gather picks the elements out again, so the views are compacted rather than shared.
+        let mut hashes = PlPrimitiveArrayBuilder::<u64>::with_capacity(idxs.len());
+        let mut keys = PlBinaryViewArrayBuilder::with_capacity(idxs.len());
+        unsafe {
+            hashes.gather_extend(&self.hashes, idxs, ShareStrategy::Never);
+            keys.gather_extend(&self.keys, idxs, ShareStrategy::Never);
+        }
         Self {
-            hashes: polars_compute::gather::primitive::take_primitive_unchecked(
-                &self.hashes,
-                &idx_arr,
-            ),
-            keys: polars_compute::gather::binview::take_binview_unchecked(&self.keys, &idx_arr),
+            hashes: hashes.freeze(),
+            keys: keys.freeze(),
             null_is_valid: self.null_is_valid,
         }
     }
 }
 
+/// Whether a validity mask leaves anything to read per element.
+fn each_key_is_valid(opt_v: Option<PlBitmapRef<'_>>) -> Option<bool> {
+    match opt_v {
+        None => Some(true),
+        Some(validity) => validity.scalar_value(),
+    }
+}
+
 fn for_each_hash_prehashed<F: FnMut(IdxSize, Option<u64>)>(
-    hashes: &[u64],
-    opt_v: Option<&Bitmap>,
+    hashes: &PlPrimitiveArray<u64>,
+    opt_v: Option<PlBitmapRef<'_>>,
     mut f: F,
 ) {
-    if let Some(validity) = opt_v {
-        for (idx, (is_v, hash)) in validity.iter().zip(hashes).enumerate_idx() {
-            if is_v {
-                f(idx, Some(*hash))
-            } else {
-                f(idx, None)
+    // The hashes are read through the array, so a chunk that repeats one hash hands it back once
+    // per key rather than being written out to one slot per key first.
+    match each_key_is_valid(opt_v) {
+        Some(true) => {
+            for (idx, h) in hashes.values_iter().enumerate_idx() {
+                f(idx, Some(h));
             }
-        }
-    } else {
-        for (idx, h) in hashes.iter().enumerate_idx() {
-            f(idx, Some(*h));
-        }
+        },
+        Some(false) => {
+            for idx in 0..hashes.len() as IdxSize {
+                f(idx, None);
+            }
+        },
+        None => {
+            let validity = opt_v.unwrap();
+            for (idx, (is_v, hash)) in validity.iter().zip(hashes.values_iter()).enumerate_idx() {
+                if is_v {
+                    f(idx, Some(hash))
+                } else {
+                    f(idx, None)
+                }
+            }
+        },
     }
 }
 
 /// # Safety
 /// The indices must be in-bounds.
 unsafe fn for_each_hash_subset_prehashed<F: FnMut(IdxSize, Option<u64>)>(
-    hashes: &[u64],
-    opt_v: Option<&Bitmap>,
+    hashes: &PlPrimitiveArray<u64>,
+    opt_v: Option<PlBitmapRef<'_>>,
     subset: &[IdxSize],
     mut f: F,
 ) {
-    if let Some(validity) = opt_v {
-        for idx in subset {
-            let hash = *hashes.get_unchecked(*idx as usize);
-            let is_v = validity.get_bit_unchecked(*idx as usize);
-            if is_v {
-                f(*idx, Some(hash))
-            } else {
-                f(*idx, None)
+    match each_key_is_valid(opt_v) {
+        Some(true) => {
+            for idx in subset {
+                f(*idx, Some(hashes.value_unchecked(*idx as usize)));
             }
-        }
-    } else {
-        for idx in subset {
-            f(*idx, Some(*hashes.get_unchecked(*idx as usize)));
-        }
+        },
+        Some(false) => {
+            for idx in subset {
+                f(*idx, None);
+            }
+        },
+        None => {
+            let validity = opt_v.unwrap();
+            for idx in subset {
+                let hash = hashes.value_unchecked(*idx as usize);
+                if validity.get_unchecked(*idx as usize) {
+                    f(*idx, Some(hash))
+                } else {
+                    f(*idx, None)
+                }
+            }
+        },
     }
 }
 

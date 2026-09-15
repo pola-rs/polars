@@ -3,7 +3,7 @@ use polars_error::constants::LENGTH_LIMIT_MSG;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
-pub(crate) fn new_chunks(chunks: &mut Vec<ArrayRef>, other: &[ArrayRef], len: usize) {
+pub(crate) fn new_chunks(chunks: &mut Vec<PlArrayRef>, other: &[PlArrayRef], len: usize) {
     // Replace an empty array.
     if chunks.len() == 1 && len == 0 {
         other.clone_into(chunks);
@@ -16,7 +16,7 @@ pub(crate) fn new_chunks(chunks: &mut Vec<ArrayRef>, other: &[ArrayRef], len: us
     }
 }
 
-pub(crate) fn new_chunks_owned(chunks: &mut Vec<ArrayRef>, other: Vec<ArrayRef>, len: usize) {
+pub(crate) fn new_chunks_owned(chunks: &mut Vec<PlArrayRef>, other: Vec<PlArrayRef>, len: usize) {
     // Replace an empty array.
     if chunks.len() == 1 && len == 0 {
         *chunks = other;

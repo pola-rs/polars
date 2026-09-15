@@ -156,3 +156,85 @@ def test_is_first_last_distinct_all_null(dtypes: PolarsDataType) -> None:
     s = pl.Series([None, None, None], dtype=dtypes)
     assert s.is_first_distinct().to_list() == [True, False, False]
     assert s.is_last_distinct().to_list() == [False, False, True]
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        (7, pl.Int64),
+        (7, pl.Int32),
+        (2.5, pl.Float64),
+        (True, pl.Boolean),
+        ("hello", pl.String),
+        (b"hello", pl.Binary),
+        (7, pl.Datetime("us")),
+        (None, pl.Int64),
+        (None, pl.String),
+    ],
+)
+def test_distinct_of_a_repeated_element(value: Any, dtype: PolarsDataType) -> None:
+    # A chunk that repeats a single element answers the whole `distinct` family without
+    # one element being hashed, so the answers must match the ones read off a chunk that
+    # holds every element in a slot of its own.
+    for length in (1, 2, 5):
+        flat = pl.Series("a", [value] * length, dtype=dtype).to_frame()
+        repeated = (
+            pl.select(pl.repeat(value, length, dtype=dtype))
+            .to_series()
+            .rename("a")
+            .to_frame()
+        )
+
+        for expr in (
+            pl.col("a").is_first_distinct(),
+            pl.col("a").is_last_distinct(),
+            pl.col("a").is_unique(),
+            pl.col("a").is_duplicated(),
+        ):
+            assert_frame_equal(repeated.select(expr), flat.select(expr))
+
+
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        ([1, 2, 3], pl.List(pl.Int64)),
+        ([], pl.List(pl.Int64)),
+        ([None, None], pl.List(pl.Int64)),
+        (["a", None], pl.List(pl.String)),
+        ([1, 2], pl.Array(pl.Int64, 2)),
+        ([None, None], pl.Array(pl.Int64, 2)),
+        (["a", "b"], pl.Array(pl.String, 2)),
+        ({"x": 1, "y": "a"}, pl.Struct({"x": pl.Int64, "y": pl.String})),
+        ({"x": None, "y": None}, pl.Struct({"x": pl.Int64, "y": pl.String})),
+        (None, pl.List(pl.Int64)),
+        (None, pl.Struct({"x": pl.Int64})),
+    ],
+)
+def test_distinct_of_a_repeated_nested_element(
+    value: Any, dtype: PolarsDataType
+) -> None:
+    # The nested arms of the `distinct` family group on the rows to find their answer,
+    # which for a nested type row-encodes the whole column first. A chunk that repeats a
+    # single element is answered off the representation instead, and has to answer the
+    # same thing as a chunk holding every element in a slot of its own.
+    for length in (1, 2, 5):
+        flat = pl.Series("a", [value] * length, dtype=dtype).to_frame()
+        one = pl.Series("a", [value], dtype=dtype)
+        repeated = (
+            pl.DataFrame({"i": range(length)})
+            .with_columns(pl.lit(one).first().alias("a"))
+            .drop("i")
+        )
+
+        for expr in (
+            pl.col("a").is_unique(),
+            pl.col("a").is_duplicated(),
+        ):
+            assert_frame_equal(repeated.select(expr), flat.select(expr))
+
+        if not isinstance(dtype, pl.Array):
+            for expr in (
+                pl.col("a").is_first_distinct(),
+                pl.col("a").is_last_distinct(),
+            ):
+                assert_frame_equal(repeated.select(expr), flat.select(expr))

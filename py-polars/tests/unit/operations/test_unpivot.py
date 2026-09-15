@@ -409,3 +409,16 @@ def test_unpivot_selector_parsing_parity() -> None:
             pl.Series("value", [2, 4], dtype=pl.Int64),
         ],
     )
+
+
+def test_unpivot_column_name_widths() -> None:
+    # The variable column repeats each name once per row: the names are written
+    # out whether they are short enough to be held inline or not, and an empty
+    # one names a column all the same.
+    names = ["a", "b" * 12, "c" * 13, "d" * 64, "", "é" * 20]
+    df = pl.DataFrame({name: [1, 2, 3] for name in names})
+
+    unpivoted = df.unpivot()
+
+    assert unpivoted["variable"].to_list() == [name for name in names for _ in range(3)]
+    assert unpivoted["value"].to_list() == [1, 2, 3] * len(names)

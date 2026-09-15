@@ -14,25 +14,20 @@ impl Int64Chunked {
         let chunks = std::mem::take(&mut self.chunks)
             .into_iter()
             .map(|chunk| {
-                // We need to retain the PhysicalType underneath, but we should properly update the
-                // validity as that might change because Time is not valid for all values of Int64.
+                // A time holds a day's worth of nanoseconds, and an `i64` outside that range names
+                // none: the cast is that range check, and the chunk it answers is the chunk itself
+                // when every value fell inside it.
                 let casted = polars_compute::cast::cast(
-                    chunk.as_ref(),
-                    &ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
+                    &*chunk,
+                    &DataType::Int64,
+                    &DataType::Time,
                     CastOptionsImpl::default(),
                 )
                 .unwrap();
-                let validity = casted.validity();
-
-                match validity {
-                    None => chunk,
-                    Some(validity) => {
-                        null_count += validity.unset_bits();
-                        chunk.with_validity(Some(validity.clone()))
-                    },
-                }
+                null_count += casted.null_count();
+                casted
             })
-            .collect::<Vec<Box<dyn Array>>>();
+            .collect::<Vec<PlArrayRef>>();
 
         debug_assert!(null_count >= self.null_count);
 

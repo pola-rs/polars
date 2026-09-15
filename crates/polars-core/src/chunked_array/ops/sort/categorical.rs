@@ -13,6 +13,15 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
             };
         }
 
+        // A column that reads one element throughout is already in order, whichever way round and
+        // wherever the nulls are asked to go, so it stands for its own answer. Without this the
+        // lexical path below writes out one `(cat, &str)` pair per element and sorts them — the
+        // physical path does not, because `sort_with` on the cat ids answers a repeated chunk
+        // with itself.
+        if self.len() > 1 && self.physical().scalar_value().is_some() {
+            return self.clone();
+        }
+
         let mut vals = self
             .physical()
             .iter()
@@ -49,7 +58,8 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
             }
         }
 
-        let arr = PrimitiveArray::from_vec(cats).with_validity(validity.map(|v| v.freeze()));
+        let arr = PlPrimitiveArray::from_vec(cats)
+            .with_validity((validity.map(|v| v.freeze())).map(PlBitmap::from_bitmap));
         let cats = ChunkedArray::with_chunk(self.name().clone(), arr);
 
         // SAFETY: we only reordered the indexes so we are still in bounds.
