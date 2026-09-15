@@ -396,6 +396,25 @@ impl ChunkUnique for BooleanChunked {
         Ok(IdxCa::from_vec(self.name().clone(), arg_unique_ca!(self)))
     }
 
+    fn n_unique(&self) -> PolarsResult<usize> {
+        use polars_compute::unique::RangedUniqueKernel;
+
+        // There are only ever three distinct booleans -- `false`, `true` and null -- so counting
+        // them is counting the bits of each chunk, not walking its elements through a hash set
+        // the way the default `arg_unique().len()` does.
+        let mut state = BooleanUniqueKernelState::new();
+
+        for arr in self.downcast_iter() {
+            state.append(arr);
+
+            if state.has_seen_all() {
+                break;
+            }
+        }
+
+        Ok(state.finalize_n_unique())
+    }
+
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         let num_nulls = self.null_count();
         let num_trues = self.num_trues();
