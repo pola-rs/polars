@@ -655,6 +655,10 @@ fn get_arithmetic_field(
                     )?)
                 },
                 #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_integer() => {
+                    Decimal(DEC128_MAX_PREC, *scale)
+                },
+                #[cfg(feature = "dtype-decimal")]
                 (Decimal(_, scale_left), Decimal(_, scale_right)) => {
                     Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
                 },
@@ -714,6 +718,10 @@ fn get_arithmetic_field(
                         list_dtype.leaf_dtype(),
                         other_dtype.leaf_dtype(),
                     )?)
+                },
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_integer() => {
+                    Decimal(DEC128_MAX_PREC, *scale)
                 },
                 #[cfg(feature = "dtype-decimal")]
                 (Decimal(_, scale_left), Decimal(_, scale_right)) => {
@@ -776,12 +784,17 @@ fn get_arithmetic_field(
                     },
                 },
                 #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale), dtype) | (dtype, Decimal(_, scale)) if dtype.is_integer() => {
+                    let dtype = Decimal(DEC128_MAX_PREC, *scale);
+                    left_field.set_dtype(dtype);
+                    return Ok(left_field);
+                },
+                #[cfg(feature = "dtype-decimal")]
                 (Decimal(_, scale_left), Decimal(_, scale_right)) => {
                     let dtype = Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right));
                     left_field.set_dtype(dtype);
                     return Ok(left_field);
                 },
-
                 (l @ List(a), r @ List(b))
                     if ![a, b]
                         .into_iter()
