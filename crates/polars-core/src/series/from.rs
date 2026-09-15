@@ -79,7 +79,8 @@ impl Series {
     ///
     /// - `Categorical` / `Enum`: every non-null code names a category;
     /// - `Object`: chunks originate from this process;
-    /// - `Map`: storage satisfies the `MapChunked` storage safety contract. Keys may repeat.
+    /// - `Map`: storage satisfies the `MapChunked` storage safety contract, so entries and
+    ///   keys are non-null within the offset windows of live rows. Keys may repeat.
     pub unsafe fn from_chunks_and_dtype_unchecked(
         name: PlSmallStr,
         chunks: Vec<ArrayRef>,
@@ -606,17 +607,13 @@ impl Series {
                 match map_dtype {
                     #[cfg(feature = "dtype-map")]
                     Some(dtype) => {
-                        use crate::chunked_array::logical::{
-                            CanonicalizeMode, canonicalize_map_storage,
-                        };
+                        use crate::chunked_array::logical::ensure_live_entries_non_null;
 
-                        // Reject live null entries/keys and compact hidden ones.
-                        // Trust the producer's key uniqueness, as Arrow does.
-                        let storage =
-                            canonicalize_map_storage(&storage, CanonicalizeMode::NullsOnly)?
-                                .unwrap_or(storage);
-                        // SAFETY: dtype and imported children are valid; null entries/keys
-                        // have been removed.
+                        // Entries a null row spans are left where the producer put them, so
+                        // the import stays zero-copy. Trust the producer's key uniqueness.
+                        ensure_live_entries_non_null(storage.list().unwrap())?;
+                        // SAFETY: dtype and imported children are valid; live rows own no
+                        // null entries or keys.
                         Ok(
                             unsafe { MapChunked::from_storage_unchecked(dtype, storage) }
                                 .into_series(),
