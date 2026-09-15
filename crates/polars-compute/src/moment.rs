@@ -142,9 +142,10 @@ impl CovState {
         }
 
         let weight = x.len() as f64;
-        let inv_weight = 1.0 / weight;
-        let mean_x = alg_sum_f64(x.iter().copied()) * inv_weight;
-        let mean_y = alg_sum_f64(y.iter().copied()) * inv_weight;
+        // Divide rather than multiply by a precomputed reciprocal;
+        // see PearsonState::new comment prior to mean calculations.
+        let mean_x = alg_sum_f64(x.iter().copied()) / weight;
+        let mean_y = alg_sum_f64(y.iter().copied()) / weight;
         Self {
             weight,
             mean_x,
@@ -211,9 +212,12 @@ impl PearsonState {
         }
 
         let weight = x.len() as f64;
-        let inv_weight = 1.0 / weight;
-        let mean_x = alg_sum_f64(x.iter().copied()) * inv_weight;
-        let mean_y = alg_sum_f64(y.iter().copied()) * inv_weight;
+        // Divide rather than multiply by a precomputed reciprocal: 1/weight is only
+        // exactly representable when weight is a power of two, and an inexact mean
+        // makes the deviations of a constant input nonzero, so dp_xx (and thus the
+        // correlation) turns into rounding noise instead of 0/NaN.
+        let mean_x = alg_sum_f64(x.iter().copied()) / weight;
+        let mean_y = alg_sum_f64(y.iter().copied()) / weight;
         let mut dp_xx = 0.0;
         let mut dp_xy = 0.0;
         let mut dp_yy = 0.0;
