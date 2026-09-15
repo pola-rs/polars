@@ -16,6 +16,8 @@ use binary::process_binary;
 use datetime::coerce_temporal_dt;
 #[cfg(all(feature = "range", feature = "dtype-datetime"))]
 use datetime::{ensure_datetime, ensure_int, temporal_range_output_type};
+#[cfg(any(feature = "is_in", feature = "dtype-map"))]
+use is_in::MembershipForm;
 use polars_core::chunked_array::cast::CastOptions;
 #[cfg(any(
     all(
@@ -447,19 +449,24 @@ impl OptimizationRule for TypeCoercionRule {
             },
             // Map lookup must work without the `is_in` feature.
             #[cfg(feature = "dtype-map")]
-            AExpr::Function { ref function, .. }
-                if matches!(
-                    function,
-                    IRFunctionExpr::MapExpr(IRMapFunction::Get | IRMapFunction::ContainsKey)
-                ) =>
-            {
-                let op = match function {
-                    IRFunctionExpr::MapExpr(IRMapFunction::Get) => "map.get",
+            AExpr::Function {
+                function:
+                    IRFunctionExpr::MapExpr(
+                        ref func @ (IRMapFunction::Get | IRMapFunction::ContainsKey),
+                    ),
+                ..
+            } => {
+                let op = match func {
+                    IRMapFunction::Get => "map.get",
                     _ => "map.contains_key",
                 };
-                coerce_is_in(expr_node, expr_arena, schema, true, 1, 0, |input, arena| {
-                    is_in::resolve_map_key(input, arena, schema, op)
-                })?
+                coerce_is_in(
+                    expr_node,
+                    expr_arena,
+                    schema,
+                    MembershipForm::Contains,
+                    |input, arena| is_in::resolve_map_key(input, arena, schema, op),
+                )?
             },
             #[cfg(feature = "is_in")]
             AExpr::Function { ref function, .. }
@@ -479,31 +486,23 @@ impl OptimizationRule for TypeCoercionRule {
                     matches
                 } =>
             {
-                let (op, flat, nested, is_contains) = match function {
+                let (op, form) = match function {
                     IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }) => {
-                        ("is_in", 0, 1, false)
+                        ("is_in", MembershipForm::IsIn)
                     },
                     IRFunctionExpr::ListExpr(IRListFunction::Contains { .. }) => {
-                        ("list.contains", 1, 0, true)
+                        ("list.contains", MembershipForm::Contains)
                     },
                     #[cfg(feature = "dtype-array")]
                     IRFunctionExpr::ArrayExpr(IRArrayFunction::Contains { .. }) => {
-                        ("arr.contains", 1, 0, true)
+                        ("arr.contains", MembershipForm::Contains)
                     },
                     _ => unreachable!(),
                 };
 
-                coerce_is_in(
-                    expr_node,
-                    expr_arena,
-                    schema,
-                    is_contains,
-                    flat,
-                    nested,
-                    |input, arena| {
-                        is_in::resolve_is_in(input, arena, schema, is_contains, op, flat, nested)
-                    },
-                )?
+                coerce_is_in(expr_node, expr_arena, schema, form, |input, arena| {
+                    is_in::resolve_is_in(input, arena, schema, form, op)
+                })?
             },
             AExpr::Function {
                 ref function,
@@ -1293,16 +1292,13 @@ fn inline_or_prune_cast(
 
 /// Apply membership or Map lookup casts chosen by `resolve`.
 ///
-/// `expr_node` must be an [`AExpr::Function`] comparing its `flat` input against
-/// elements of its `nested` input.
+/// `expr_node` must be an [`AExpr::Function`] whose operands are laid out as `form` says.
 #[cfg(any(feature = "is_in", feature = "dtype-map"))]
 fn coerce_is_in(
     expr_node: Node,
     expr_arena: &mut Arena<AExpr>,
     schema: &Schema,
-    is_contains: bool,
-    flat: usize,
-    nested: usize,
+    form: MembershipForm,
     resolve: impl FnOnce(
         &[ExprIR],
         &Arena<AExpr>,
@@ -1317,6 +1313,7 @@ fn coerce_is_in(
         unreachable!("caller matched a function expression")
     };
     let options = *options;
+    let (flat, nested) = (form.flat(), form.nested());
 
     let Some(result) = resolve(input, expr_arena)? else {
         return Ok(None);
@@ -1370,15 +1367,23 @@ fn coerce_is_in(
         IsInTypeCoercionResult::LenientSelfCast(dtype) => {
             let (_, type_self) =
                 unpack!(get_aexpr_and_type(expr_arena, input[flat].node(), schema));
-            cast_expr_ir_non_strict(&mut input[flat], &type_self, &dtype, expr_arena)?;
+            // Unrepresentable keys become null rather than raising.
+            cast_expr_ir_with(
+                &mut input[flat],
+                &type_self,
+                &dtype,
+                expr_arena,
+                CastOptions::NonStrict,
+                CastOptions::NonStrict,
+            )?;
         },
         IsInTypeCoercionResult::Implode => {
-            assert!(!is_contains);
+            assert!(!form.is_contains());
             let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                input: input[1].node(),
+                input: input[nested].node(),
                 maintain_order: true,
             }));
-            input[1].set_node(other_input);
+            input[nested].set_node(other_input);
         },
     }
 
@@ -1464,24 +1469,6 @@ fn cast_expr_ir(
         expr_arena,
         options,
         CastOptions::Strict,
-    )
-}
-
-/// Cast literals and computed operands with failures becoming null.
-#[cfg(feature = "dtype-map")]
-fn cast_expr_ir_non_strict(
-    e: &mut ExprIR,
-    from_dtype: &DataType,
-    to_dtype: &DataType,
-    expr_arena: &mut Arena<AExpr>,
-) -> PolarsResult<()> {
-    cast_expr_ir_with(
-        e,
-        from_dtype,
-        to_dtype,
-        expr_arena,
-        CastOptions::NonStrict,
-        CastOptions::NonStrict,
     )
 }
 

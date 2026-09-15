@@ -17,6 +17,34 @@ pub(super) enum IsInTypeCoercionResult {
     LenientSelfCast(DataType),
 }
 
+/// Where a membership function keeps its operands.
+///
+/// The flat operand is compared against the elements of the nested one; which input is which
+/// depends on the function.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum MembershipForm {
+    /// `flat.is_in(nested)`.
+    IsIn,
+    /// `nested.contains(flat)`, including Map key lookup.
+    Contains,
+}
+
+impl MembershipForm {
+    /// Input index of the operand compared against the container's elements.
+    pub(super) fn flat(self) -> usize {
+        (self == Self::Contains) as usize
+    }
+
+    /// Input index of the container.
+    pub(super) fn nested(self) -> usize {
+        (self == Self::IsIn) as usize
+    }
+
+    pub(super) fn is_contains(self) -> bool {
+        self == Self::Contains
+    }
+}
+
 /// Resolve Map lookup coercion without changing stored keys.
 ///
 /// Cast only the needle, preserving its value or producing null for a missing key.
@@ -48,7 +76,13 @@ pub(super) fn resolve_map_key(
     }
 
     Ok(Some(
-        match resolve_is_in(input, expr_arena, input_schema, true, op, 1, 0)? {
+        match resolve_is_in(
+            input,
+            expr_arena,
+            input_schema,
+            MembershipForm::Contains,
+            op,
+        )? {
             None => return Ok(None),
             // Unknown Enum labels become null instead of raising.
             Some(IsInTypeCoercionResult::SelfCast { dtype, strict: _ }) => {
@@ -109,24 +143,21 @@ fn resolve_temporal_map_key(
     Ok(Some(IsInTypeCoercionResult::LenientSelfCast(widened)))
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn resolve_is_in(
     input: &[ExprIR],
     expr_arena: &Arena<AExpr>,
     input_schema: &Schema,
-    is_contains: bool,
+    form: MembershipForm,
     op: &'static str,
-    flat_idx: usize,
-    nested_idx: usize,
 ) -> PolarsResult<Option<IsInTypeCoercionResult>> {
     let (_, type_left) = unpack!(get_aexpr_and_type(
         expr_arena,
-        input[flat_idx].node(),
+        input[form.flat()].node(),
         input_schema
     ));
     let (_, type_other) = unpack!(get_aexpr_and_type(
         expr_arena,
-        input[nested_idx].node(),
+        input[form.nested()].node(),
         input_schema
     ));
 
@@ -134,7 +165,7 @@ pub(super) fn resolve_is_in(
     let right_nl = type_other.nesting_level();
 
     // @HACK. This needs to happen until 3.0 because we support `pl.col.a.is_in(pl.col.a)`.
-    if !is_contains && left_nl == right_nl {
+    if !form.is_contains() && left_nl == right_nl {
         polars_warn!(
             Deprecation,
             "`is_in` with a collection of the same datatype is ambiguous and deprecated.
@@ -247,7 +278,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     let lossy_supertype = try_get_supertype(dtml, dto)?;
                     polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left:?} values in {type_other:?} data.\n\
                         Hint: Before version 2.0, Polars would perform this check by lossily coercing the operands to {lossy_supertype:?}. \
-                        However, since Polars 2.0, for is_in() it is required to explicitly cast (one of) the operands to a compatible type.")
+                        However, since Polars 2.0, for '{op}' it is required to explicitly cast (one of) the operands to a compatible type.")
                 }
             }
             polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left:?} values in {type_other:?} data")

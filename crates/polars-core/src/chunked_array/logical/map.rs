@@ -184,16 +184,7 @@ impl MapChunked {
             .list()
             .unwrap()
             .downcast_iter()
-            .flat_map(|arr| {
-                let validity = arr.validity().filter(|v| v.unset_bits() > 0);
-                arr.offsets()
-                    .lengths()
-                    .enumerate()
-                    .map(move |(row, len)| match validity {
-                        Some(validity) if !validity.get_bit(row) => 0,
-                        _ => len,
-                    })
-            })
+            .flat_map(live_lengths)
     }
 
     /// Position and dtype of the named entry field.
@@ -552,24 +543,26 @@ fn live_entry_field_chunk(arr: &LargeListArray, i: usize) -> ArrayRef {
 /// Matches what flattening the entries of live rows produces, so the two can be recombined.
 fn live_offsets(arr: &LargeListArray) -> OffsetsBuffer<i64> {
     let offsets = arr.offsets();
-    let Some(validity) = arr.validity().filter(|v| v.unset_bits() > 0) else {
-        let first = *offsets.first();
-        if first == 0 {
-            return offsets.clone();
-        }
-        // SAFETY: subtracting the first offset keeps the offsets monotonic and zero-based.
-        return unsafe {
-            OffsetsBuffer::new_unchecked(offsets.iter().map(|offset| offset - first).collect())
-        };
-    };
+    let has_null_rows = arr.validity().is_some_and(|v| v.unset_bits() > 0);
+    if !has_null_rows && *offsets.first() == 0 {
+        return offsets.clone();
+    }
 
-    let live_lengths = validity
-        .iter()
-        .zip(offsets.lengths())
-        .map(|(valid, len)| if valid { len } else { 0 });
-    Offsets::try_from_lengths(live_lengths)
+    Offsets::try_from_lengths(live_lengths(arr))
         .expect("live lengths sum to at most the entry count")
         .into()
+}
+
+/// Entries each row of one chunk owns, in row order, with null rows emptied.
+fn live_lengths(arr: &LargeListArray) -> impl Iterator<Item = usize> + '_ {
+    let validity = arr.validity().filter(|v| v.unset_bits() > 0);
+    arr.offsets()
+        .lengths()
+        .enumerate()
+        .map(move |(row, len)| match validity {
+            Some(validity) if !validity.get_bit(row) => 0,
+            _ => len,
+        })
 }
 
 /// Filter out entries under null rows and rebuild offsets; `None` if unchanged.

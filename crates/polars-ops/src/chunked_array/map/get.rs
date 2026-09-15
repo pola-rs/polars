@@ -1,4 +1,3 @@
-use arrow::array::BooleanArray;
 use arrow::bitmap::Bitmap;
 use polars_core::prelude::*;
 use polars_utils::IdxSize;
@@ -20,14 +19,8 @@ pub fn map_get(ca: &MapChunked, key: &Series) -> PolarsResult<Series> {
 pub fn map_contains_key(ca: &MapChunked, key: &Series) -> PolarsResult<BooleanChunked> {
     with_broadcast_map(ca, key, |ca, key| {
         let found = map_key_index(ca, key)?.is_not_null();
-
         // Restore null rows, which `is_not_null` turned into false.
-        let Some(validity) = ca.storage().rechunk_validity() else {
-            return Ok(found);
-        };
-        let arr = found.downcast_as_array();
-        let arr = BooleanArray::new(arr.dtype().clone(), arr.values().clone(), Some(validity));
-        Ok(BooleanChunked::with_chunk(ca.name().clone(), arr))
+        Ok(found.with_validity(ca.storage().rechunk_validity()))
     })
 }
 
@@ -61,8 +54,8 @@ fn with_broadcast_map<T>(
 ///
 /// Scans entries linearly; Map storage has no key index.
 fn map_key_index(ca: &MapChunked, key: &Series) -> PolarsResult<IdxCa> {
-    // Read the row lengths off the offsets rather than through `live_storage`, which would
-    // compact the value child as well just to have them.
+    // Read the row lengths off the offsets rather than through `live_storage` or `key_lists`,
+    // neither of which can hand them over without materializing something.
     let row_lengths = || ca.live_row_lengths();
 
     let flat_keys = ca.keys();

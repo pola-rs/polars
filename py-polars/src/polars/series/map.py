@@ -47,8 +47,8 @@ class MapNameSpace:
 
         Returns
         -------
-        Expr
-            Expression of data type :class:`List` of the map's key type.
+        Series
+            Series of data type :class:`List` of the map's key type.
 
         Examples
         --------
@@ -73,8 +73,8 @@ class MapNameSpace:
 
         Returns
         -------
-        Expr
-            Expression of data type :class:`List` of the map's value type.
+        Series
+            Series of data type :class:`List` of the map's value type.
 
         Examples
         --------

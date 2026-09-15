@@ -2161,9 +2161,8 @@ def test_map_ops_resolve_schema_without_data() -> None:
 )
 def test_map_ops_require_map_dtype(method: str, args: tuple[Any, ...]) -> None:
     df = pl.DataFrame({"m": [[1, 2]]})
-    name = "len" if method == "len" else method
 
-    with pytest.raises(InvalidOperationError, match=rf"`map\.{name}` requires a Map"):
+    with pytest.raises(InvalidOperationError, match=rf"`map\.{method}` requires a Map"):
         df.select(getattr(pl.col("m").map, method)(*args))
 
 
