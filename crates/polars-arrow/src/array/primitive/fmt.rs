@@ -62,7 +62,12 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
                 match timezone {
                     Ok(timezone) => {
                         dyn_primitive!(array, i64, |time| {
-                            temporal_conversions::timestamp_to_datetime(time, *time_unit, &timezone)
+                            match temporal_conversions::timestamp_to_datetime(
+                                time, *time_unit, &timezone,
+                            ) {
+                                Some(dt) => dt.to_string(),
+                                None => format!("invalid or out-of-range datetime: {}", time),
+                            }
                         })
                     },
                     #[cfg(feature = "chrono-tz")]
@@ -70,9 +75,12 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
                         let timezone = temporal_conversions::parse_offset_tz(tz.as_str());
                         match timezone {
                             Ok(timezone) => dyn_primitive!(array, i64, |time| {
-                                temporal_conversions::timestamp_to_datetime(
+                                match temporal_conversions::timestamp_to_datetime(
                                     time, *time_unit, &timezone,
-                                )
+                                ) {
+                                    Some(dt) => dt.to_string(),
+                                    None => format!("invalid or out-of-range datetime: {}", time),
+                                }
                             }),
                             Err(_) => {
                                 let tz = tz.clone();
@@ -90,7 +98,10 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
                 }
             } else {
                 dyn_primitive!(array, i64, |time| {
-                    temporal_conversions::timestamp_to_naive_datetime(time, *time_unit)
+                    match temporal_conversions::timestamp_to_naive_datetime(time, *time_unit) {
+                        Some(dt) => dt.to_string(),
+                        None => format!("invalid or out-of-range datetime: {}", time),
+                    }
                 })
             }
         },

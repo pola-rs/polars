@@ -449,8 +449,13 @@ fn timestamp_tz_serializer<'a>(
         Ok(parsed_tz) => {
             let f = move |x: Option<&i64>, buf: &mut Vec<u8>| {
                 if let Some(x) = x {
-                    let dt_str = timestamp_to_datetime(*x, time_unit, &parsed_tz).to_rfc3339();
-                    write!(buf, "\"{dt_str}\"").unwrap();
+                    match timestamp_to_datetime(*x, time_unit, &parsed_tz) {
+                        Some(dt) => {
+                            let dt_str = dt.to_rfc3339();
+                            write!(buf, "\"{dt_str}\"").unwrap();
+                        },
+                        None => buf.extend_from_slice(b"null"),
+                    }
                 } else {
                     buf.extend_from_slice(b"null")
                 }
@@ -463,8 +468,13 @@ fn timestamp_tz_serializer<'a>(
             Ok(parsed_tz) => {
                 let f = move |x: Option<&i64>, buf: &mut Vec<u8>| {
                     if let Some(x) = x {
-                        let dt_str = timestamp_to_datetime(*x, time_unit, &parsed_tz).to_rfc3339();
-                        write!(buf, "\"{dt_str}\"").unwrap();
+                        match timestamp_to_datetime(*x, time_unit, &parsed_tz) {
+                            Some(dt) => {
+                                let dt_str = dt.to_rfc3339();
+                                write!(buf, "\"{dt_str}\"").unwrap();
+                            },
+                            None => buf.extend_from_slice(b"null"),
+                        }
                     } else {
                         buf.extend_from_slice(b"null")
                     }

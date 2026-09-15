@@ -18,7 +18,7 @@ from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import PolarsDataType, PythonDataType
+    from polars._typing import PolarsDataType, PythonDataType, TimeUnit
 
 
 def test_invalid_string_date() -> None:
@@ -1076,3 +1076,31 @@ def test_strict_struct_cast_field_name_mismatch() -> None:
     s = pl.Series("x", [{"a": 1}])
     with pytest.raises(InvalidOperationError, match="field name mismatch"):
         s.cast(pl.Struct({"b": pl.Int64}), strict=True)
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "value"),
+    [
+        ("ms", 8_210_266_876_800_000),
+        ("us", 8_210_266_876_800_000_000),
+    ],
+)
+def test_out_of_range_datetime_display_no_panic_25742(
+    time_unit: TimeUnit, value: int
+) -> None:
+    result = str(pl.Series([value]).cast(pl.Datetime(time_unit)))
+    assert f"invalid or out-of-range datetime: {value}" in result
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "value"),
+    [
+        ("ms", 8_210_266_876_800_000),
+        ("us", 8_210_266_876_800_000_000),
+    ],
+)
+def test_out_of_range_datetime_cast_error_25742(
+    time_unit: TimeUnit, value: int
+) -> None:
+    with pytest.raises(InvalidOperationError, match="conversion from"):
+        pl.select(pl.lit(value, dtype=pl.Datetime(time_unit)).cast(pl.UInt32))
