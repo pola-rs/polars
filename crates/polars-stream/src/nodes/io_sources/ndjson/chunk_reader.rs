@@ -1,3 +1,4 @@
+use polars_buffer::Buffer;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::ndjson;
@@ -65,16 +66,16 @@ impl ChunkReaderBuilder {
 }
 
 impl ChunkReader {
-    pub(super) fn read_chunk(&self, chunk: &[u8]) -> PolarsResult<DataFrame> {
+    pub(super) fn read_chunk(&self, chunk: Buffer<u8>) -> PolarsResult<DataFrame> {
         match self {
             Self::NDJson {
                 projected_schema,
                 ignore_errors,
             } => {
                 if projected_schema.is_empty() {
-                    Ok(DataFrame::empty_with_height(ndjson::count_rows(chunk)))
+                    Ok(DataFrame::empty_with_height(ndjson::count_rows(&chunk)))
                 } else {
-                    parse_ndjson(chunk, None, projected_schema, *ignore_errors)
+                    parse_ndjson(&chunk, None, projected_schema, *ignore_errors)
                 }
             },
             #[cfg(feature = "scan_lines")]
@@ -84,7 +85,9 @@ impl ChunkReader {
                 use polars_io::scan_lines;
 
                 let Some(name) = projection else {
-                    return Ok(DataFrame::empty_with_height(scan_lines::count_lines(chunk)));
+                    return Ok(DataFrame::empty_with_height(scan_lines::count_lines(
+                        &chunk,
+                    )));
                 };
 
                 let out: Series = scan_lines::split_lines_to_rows(chunk)?.with_name(name.clone());
