@@ -347,50 +347,6 @@ impl Duration {
         if v < 0 { (true, -v) } else { (false, v) }
     }
 
-    /// Normalize the duration within the interval.
-    /// It will ensure that the output duration is the smallest positive
-    /// duration that is the equivalent of the current duration.
-    pub(crate) fn normalize(&self, interval: &Duration) -> Self {
-        if self.months_only() && interval.months_only() {
-            let mut months = self.months() % interval.months();
-
-            match (self.negative, interval.negative) {
-                (true, true) | (true, false) => months = -months + interval.months(),
-                _ => {},
-            }
-            Duration::from_months(months)
-        } else if self.weeks_only() && interval.weeks_only() {
-            let mut weeks = self.weeks() % interval.weeks();
-
-            match (self.negative, interval.negative) {
-                (true, true) | (true, false) => weeks = -weeks + interval.weeks(),
-                _ => {},
-            }
-            Duration::from_weeks(weeks)
-        } else if self.days_only() && interval.days_only() {
-            let mut days = self.days() % interval.days();
-
-            match (self.negative, interval.negative) {
-                (true, true) | (true, false) => days = -days + interval.days(),
-                _ => {},
-            }
-            Duration::from_days(days)
-        } else {
-            let mut offset = self.duration_ns();
-            if offset == 0 {
-                return *self;
-            }
-            let every = interval.duration_ns();
-
-            if offset < 0 {
-                offset += every * ((offset / -every) + 1)
-            } else {
-                offset -= every * (offset / every)
-            }
-            Duration::from_nsecs(offset)
-        }
-    }
-
     /// Creates a [`Duration`] that represents a fixed number of nanoseconds.
     pub fn from_nsecs(v: i64) -> Self {
         let (negative, nsecs) = Self::to_positive(v);
@@ -404,44 +360,6 @@ impl Duration {
         }
     }
 
-    /// Creates a [`Duration`] that represents a fixed number of months.
-    pub(crate) fn from_months(v: i64) -> Self {
-        let (negative, months) = Self::to_positive(v);
-        Self {
-            months,
-            weeks: 0,
-            days: 0,
-            nsecs: 0,
-            negative,
-            parsed_int: false,
-        }
-    }
-
-    /// Creates a [`Duration`] that represents a fixed number of weeks.
-    pub(crate) fn from_weeks(v: i64) -> Self {
-        let (negative, weeks) = Self::to_positive(v);
-        Self {
-            months: 0,
-            weeks,
-            days: 0,
-            nsecs: 0,
-            negative,
-            parsed_int: false,
-        }
-    }
-
-    /// Creates a [`Duration`] that represents a fixed number of days.
-    pub(crate) fn from_days(v: i64) -> Self {
-        let (negative, days) = Self::to_positive(v);
-        Self {
-            months: 0,
-            weeks: 0,
-            days,
-            nsecs: 0,
-            negative,
-            parsed_int: false,
-        }
-    }
 
     /// `true` if zero duration.
     pub fn is_zero(&self) -> bool {
