@@ -220,6 +220,13 @@ macro_rules! sort_with_fast_path {
             return $ca.clone();
         }
 
+        // Nulls are all the same element, so a column of nothing else already stands in every
+        // order at once -- and its nulls are the first and the last of it at the same time,
+        // whichever end the options ask for them at.
+        if $ca.null_count() == $ca.len() {
+            return sorted_flag_of($ca, $options);
+        }
+
         // we can clone if we sort in same order
         if $options.descending && $ca.is_sorted_descending_flag() || ($ca.is_sorted_ascending_flag() && !$options.descending) {
             // there are nulls
@@ -248,6 +255,12 @@ macro_rules! sort_with_fast_path {
 
 macro_rules! arg_sort_fast_path {
     ($ca:ident,  $options:expr) => {{
+        // As in `sort_with_fast_path`: elements that are all the same null are in order already,
+        // so each of them stays where it is.
+        if $options.limit.is_none() && !$ca.is_empty() && $ca.null_count() == $ca.len() {
+            return arg_sort_identity($ca.name().clone(), $ca.len());
+        }
+
         // if already sorted in required order we can just return 0..len
         if $options.limit.is_none() &&
         ($options.descending && $ca.is_sorted_descending_flag() || ($ca.is_sorted_ascending_flag() && !$options.descending)) {
