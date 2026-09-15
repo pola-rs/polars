@@ -67,7 +67,7 @@ from polars._utils.expired import (
     removed_parameters,
 )
 from polars._utils.getitem import get_df_item_by_key
-from polars._utils.parse import parse_into_expression
+from polars._utils.parse import parse_into_list_of_expressions_require_selectors
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
 from polars._utils.unstable import issue_unstable_warning, unstable
@@ -11518,15 +11518,26 @@ class DataFrame:
             # distinct row for any non-empty frame.
             return min(self.height, 1)
 
-        if isinstance(subset, str):
+        if subset is None:
+            expr = F.struct(F.all())
+        elif isinstance(subset, str):
+            # A plain column name always resolves to exactly one column.
             expr = F.col(subset)
-        elif isinstance(subset, pl.Expr):
-            expr = subset
-        elif isinstance(subset, Sequence) and len(subset) == 1:
-            expr = wrap_expr(parse_into_expression(subset[0]))
         else:
-            struct_fields = F.all() if (subset is None) else subset
-            expr = F.struct(struct_fields)
+            # `subset` may be a bare expression/selector (e.g. `pl.col("a", "b")`,
+            # `cs.by_name(...)`, `pl.exclude(...)`) or a sequence of those. Any of
+            # these can expand to *more than one* column at evaluation time, even
+            # though at the Python level it looks like "a single expression" or a
+            # "length-1 sequence". Resolve first (mirroring what `unique()` does
+            # via the same helper), then check the resulting column count so that
+            # only genuinely multi-column subsets pay for struct-packing, while a
+            # subset that resolves to a single column keeps the cheap direct path.
+            exprs = [
+                wrap_expr(e)
+                for e in parse_into_list_of_expressions_require_selectors(subset)
+            ]
+            schema = self.lazy().select(exprs).collect_schema()
+            expr = exprs[0] if len(schema) == 1 else F.struct(exprs)
 
         from polars.lazyframe.opt_flags import QueryOptFlags
 

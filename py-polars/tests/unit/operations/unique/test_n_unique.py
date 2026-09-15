@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 
 
 def test_n_unique() -> None:
@@ -29,6 +30,43 @@ def test_n_unique_subsets() -> None:
         df.n_unique(subset=[(pl.col("a") // 2), (pl.col("c") | (pl.col("b") >= 2))])
         == 3
     )
+
+
+def test_n_unique_subset_multi_column_expansion_28903() -> None:
+    # https://github.com/pola-rs/polars/issues/28903
+    # A single expression/selector that *expands* to multiple columns (rather
+    # than a Python-level list of several columns) must still be counted
+    # jointly, not per-column-with-only-the-first-kept. Column "A" alone has
+    # 4 distinct values, but jointly with "B" there are 5 distinct (A, B)
+    # pairs -- this discriminates the bug (which silently returned 4, the
+    # count for "A" only) from the correct joint count.
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5, 6],
+            "A": [1, 2, 3, 4, 1, 2],
+            "B": [1, 2, 3, 1, 1, 1],
+        }
+    )
+    joint_ab = 5  # distinct (A, B) pairs: (1,1),(2,2),(3,3),(4,1),(1,1),(2,1)
+
+    # a bare multi-column expression
+    assert df.n_unique(subset=pl.col("A", "B")) == joint_ab
+    # a selector that resolves to multiple columns
+    assert df.n_unique(subset=cs.by_name("A", "B")) == joint_ab
+    # an expression that expands via exclusion
+    assert df.n_unique(subset=pl.exclude("id")) == joint_ab
+    # a length-1 sequence wrapping a multi-column expression/selector
+    assert df.n_unique(subset=[pl.col("A", "B")]) == joint_ab
+    assert df.n_unique(subset=[cs.by_name("A", "B")]) == joint_ab
+
+    # regression: single-column cases must be unaffected
+    assert df.n_unique(subset="A") == 4
+    assert df.n_unique(subset=pl.col("A")) == 4
+    assert df.n_unique(subset=[pl.col("A")]) == 4
+    assert df.n_unique(subset=["A"]) == 4
+
+    # regression: a plain multi-item list/sequence of single columns
+    assert df.n_unique(subset=["A", "B"]) == joint_ab
 
 
 def test_n_unique_null() -> None:
