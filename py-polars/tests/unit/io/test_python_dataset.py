@@ -285,6 +285,11 @@ def test_dataset_provider_predicate_arithmetic_not_lowered(
     # Integer arithmetic would raise on overflow in PyArrow where Polars wraps.
     assert lowered_predicate(df, pl.col("id") * pl.col("id") > 4) is None
     assert lowered_predicate(df, pl.col("id") + 1 > 0) is None
+    # `/` never lowers: PyArrow raises on division by zero where Polars yields
+    # `inf`/`NaN`, follows the operand types where Polars always float-divides,
+    # and its safe casts lose precision (`Float32`) or error (large integers).
+    assert lowered_predicate(df, pl.col("id") / 4 > 1.0) is None
+    assert lowered_predicate(df, pl.col("val") / 2.0 > 1.0) is None
     # `Float32` arithmetic is not `Float64`: rounding can differ.
     floats = pl.DataFrame({"x": [1.0]}, schema={"x": pl.Float32})
     assert lowered_predicate(floats, pl.col("x") * 2 > 1.0) is None
@@ -300,16 +305,6 @@ def test_dataset_provider_predicate_arithmetic_not_lowered(
     assert (
         lowered_predicate(temporal, (pl.col("x") + pl.col("d")) == pl.col("y")) is None
     )
-
-
-def test_dataset_provider_predicate_true_divide_not_lowered(
-    df: pl.DataFrame,
-) -> None:
-    # `/` never lowers: PyArrow raises on division by zero where Polars yields
-    # `inf`/`NaN`, follows the operand types where Polars always float-divides,
-    # and its safe casts lose precision (`Float32`) or error (large integers).
-    assert lowered_predicate(df, pl.col("id") / 4 > 1.0) is None
-    assert lowered_predicate(df, pl.col("val") / 2.0 > 1.0) is None
 
 
 def test_dataset_provider_predicate_not_lowered(df: pl.DataFrame) -> None:

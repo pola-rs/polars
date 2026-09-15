@@ -162,12 +162,7 @@ pub fn predicate_to_pa(
             },
             op => {
                 let symbol = binary_op_symbol(op)?;
-
-                if op.is_arithmetic()
-                    && !is_float64_arithmetic(*left, *right, *op, expr_arena, schema)
-                {
-                    return None;
-                }
+                reject_inexact_arithmetic(*left, *right, *op, expr_arena, schema)?;
 
                 let mut lhs = predicate_to_pa(*left, expr_arena, schema)?;
                 let rhs = predicate_to_pa(*right, expr_arena, schema)?;
@@ -437,6 +432,24 @@ fn is_float64_arithmetic(
         && (matches!(left_dtype, DataType::Float64) || matches!(right_dtype, DataType::Float64))
 }
 
+/// `None` if `op` is arithmetic that PyArrow may evaluate differently than
+/// Polars, `Some(())` otherwise (including for non-arithmetic operators).
+/// Shared by both lowering paths so they cannot diverge on what is safe to
+/// push (see [`is_float64_arithmetic`]).
+fn reject_inexact_arithmetic(
+    left: Node,
+    right: Node,
+    op: Operator,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+) -> Option<()> {
+    if op.is_arithmetic() && !is_float64_arithmetic(left, right, op, expr_arena, schema) {
+        None
+    } else {
+        Some(())
+    }
+}
+
 /// The Python operator reproducing `op` on a PyArrow expression, or `None` when
 /// PyArrow has no equivalent. Mirrors [`binary_op_method`].
 ///
@@ -585,11 +598,7 @@ pub fn aexpr_to_pyarrow<'py>(
             }
 
             let method = binary_op_method(op)?;
-
-            if op.is_arithmetic() && !is_float64_arithmetic(*left, *right, *op, expr_arena, schema)
-            {
-                return None;
-            }
+            reject_inexact_arithmetic(*left, *right, *op, expr_arena, schema)?;
 
             let l = aexpr_to_pyarrow(py, pc, *left, expr_arena, schema)?;
             let r = aexpr_to_pyarrow(py, pc, *right, expr_arena, schema)?;

@@ -277,6 +277,7 @@ def test_pyarrow_dataset_arithmetic_predicate_pushdown(
 ) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
 
+    # Exactly-equivalent `Float64` arithmetic pushes fully, without a residual.
     df = pl.DataFrame({"a": [1.0, 2.0, 3.0], "b": [10.0, 20.0, 30.0]})
     dset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
 
@@ -298,26 +299,37 @@ def test_pyarrow_dataset_arithmetic_predicate_pushdown(
         assert "residual predicate: None" in capture
         assert_frame_equal(result, df.filter(pred))
 
-
-def test_pyarrow_dataset_true_divide_not_pushed(
-    plmonkeypatch: PlMonkeyPatch,
-    capfd: pytest.CaptureFixture[str],
-) -> None:
-    # `/` never pushes: PyArrow raises on division by zero where Polars yields
-    # `inf`/`NaN`, and matching Polars' output dtype needs casts that lose
-    # precision or error. The engine evaluates the full predicate instead.
-    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
-
+    # Anything else stays in the engine: integer overflow raises where Polars
+    # wraps, `/ 0` raises where Polars yields `inf`/`NaN`, and
+    # `Float32`/temporal/large-integer operands round differently (or error).
+    # Pushing any of these would turn matching rows into errors or drop them.
     cases = [
-        # Plain integer division.
-        (pl.DataFrame({"a": [1, 2, 3, 7]}), pl.col("a") / 2 > 1.4),
-        # Division by zero: Polars yields `inf`, PyArrow would raise.
+        # Integer overflow: wraps in Polars, raises in PyArrow.
+        (pl.DataFrame({"a": [2**63 - 1]}), pl.col("a") + 1 < 0),
+        # Division by zero: `inf` in Polars, raises in PyArrow.
         (
             pl.DataFrame({"a": [1.0], "b": [0.0]}),
             pl.col("a") / pl.col("b") > 1.0,
         ),
-        # Integers outside 2**53 are not exactly representable as `double`.
+        # Plain integer division, and integers inexact as `double`.
+        (pl.DataFrame({"a": [1, 2, 3, 7]}), pl.col("a") / 2 > 1.4),
         (pl.DataFrame({"a": [2**53 + 1]}), pl.col("a") / 2 > 0),
+        # `Float32` division rounds in `f32`, not `f64`.
+        (
+            pl.DataFrame({"a": [1.0]}, schema={"a": pl.Float32}),
+            pl.col("a") / 3 == pl.lit(1 / 3, dtype=pl.Float32),
+        ),
+        # `Date + Duration` truncates to `Date` in Polars only.
+        (
+            pl.DataFrame(
+                {
+                    "x": [date(2024, 1, 1)],
+                    "d": [timedelta(hours=1)],
+                    "y": [date(2024, 1, 1)],
+                }
+            ),
+            (pl.col("x") + pl.col("d")) == pl.col("y"),
+        ),
     ]
 
     for df, pred in cases:
@@ -330,79 +342,6 @@ def test_pyarrow_dataset_true_divide_not_pushed(
 
         assert "residual predicate: None" not in capture
         assert_frame_equal(result, df.filter(pred))
-
-
-def test_pyarrow_dataset_integer_arithmetic_not_pushed(
-    plmonkeypatch: PlMonkeyPatch,
-    capfd: pytest.CaptureFixture[str],
-) -> None:
-    # Integer arithmetic wraps on overflow in Polars but PyArrow's checked
-    # kernels raise, so it must stay in the engine: pushing `a + 1 < 0` for
-    # `a = i64::MAX` would turn a matching row into an `ArrowInvalid` error.
-    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
-
-    df = pl.DataFrame({"a": [2**63 - 1]})
-    dset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
-
-    pred = pl.col("a") + 1 < 0
-    q = pl.scan_pyarrow_dataset(dset).filter(pred)
-
-    capfd.readouterr()
-    result = q.collect()
-    capture = capfd.readouterr().err
-
-    assert "residual predicate: None" not in capture
-    assert_frame_equal(result, df.filter(pred))
-
-
-def test_pyarrow_dataset_float32_arithmetic_not_pushed(
-    plmonkeypatch: PlMonkeyPatch,
-    capfd: pytest.CaptureFixture[str],
-) -> None:
-    # Only `Float64` arithmetic pushes: `Float32` division rounds in `f32`, so
-    # evaluating it in `f64` drops a matching row here.
-    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
-
-    df = pl.DataFrame({"a": [1.0]}, schema={"a": pl.Float32})
-    dset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
-
-    pred = pl.col("a") / 3 == pl.lit(1 / 3, dtype=pl.Float32)
-    q = pl.scan_pyarrow_dataset(dset).filter(pred)
-
-    capfd.readouterr()
-    result = q.collect()
-    capture = capfd.readouterr().err
-
-    assert "residual predicate: None" not in capture
-    assert_frame_equal(result, df.filter(pred))
-
-
-def test_pyarrow_dataset_temporal_arithmetic_not_pushed(
-    plmonkeypatch: PlMonkeyPatch,
-    capfd: pytest.CaptureFixture[str],
-) -> None:
-    # `Date + Duration` truncates to a `Date` in Polars but yields a timestamp
-    # in PyArrow, so pushing it would drop a matching row.
-    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
-
-    df = pl.DataFrame(
-        {
-            "x": [date(2024, 1, 1)],
-            "d": [timedelta(hours=1)],
-            "y": [date(2024, 1, 1)],
-        }
-    )
-    dset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
-
-    pred = (pl.col("x") + pl.col("d")) == pl.col("y")
-    q = pl.scan_pyarrow_dataset(dset).filter(pred)
-
-    capfd.readouterr()
-    result = q.collect()
-    capture = capfd.readouterr().err
-
-    assert "residual predicate: None" not in capture
-    assert_frame_equal(result, df.filter(pred))
 
 
 def test_pyarrow_dataset_is_in_predicate_pushdown(
