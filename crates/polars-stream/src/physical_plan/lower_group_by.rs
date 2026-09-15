@@ -1068,6 +1068,7 @@ pub fn try_build_streaming_group_by(
                 right_on: trans_keys,
                 args,
                 fused_predicate: None,
+                runtime_filters: Vec::new(),
             },
         ));
         post_select_input = PhysStream::first(join_key);

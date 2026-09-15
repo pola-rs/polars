@@ -422,6 +422,11 @@ pub enum IRFunctionExpr {
     DynamicPred {
         pred: DynamicPredWeakRef,
     },
+    /// Batch-skipping form of `DynamicPred`, over the `min`, `max` and null count
+    /// statistics of its column. True means the batch can be skipped.
+    DynamicSkipBatch {
+        pred: DynamicPredWeakRef,
+    },
 }
 
 impl Hash for IRFunctionExpr {
@@ -741,7 +746,7 @@ impl Hash for IRFunctionExpr {
                 fs.hash(state);
                 variants.hash(state);
             },
-            DynamicPred { pred } => {
+            DynamicPred { pred } | DynamicSkipBatch { pred } => {
                 pred.id().hash(state);
             },
         }
@@ -971,6 +976,7 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "dtype-struct")]
             RowDecode(..) => "row_decode",
             DynamicPred { .. } => "dynamic_predicate",
+            DynamicSkipBatch { .. } => "dynamic_skip_batch",
         };
         write!(f, "{s}")
     }
@@ -1350,7 +1356,7 @@ impl IRFunctionExpr {
             F::RowEncode(..) => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-struct")]
             F::RowDecode(..) => FunctionOptions::elementwise(),
-            F::DynamicPred { .. } => FunctionOptions::elementwise(),
+            F::DynamicPred { .. } | F::DynamicSkipBatch { .. } => FunctionOptions::elementwise(),
         }
     }
 }

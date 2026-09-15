@@ -16,6 +16,18 @@ pub trait PredicateExpr: Send + Sync + Any {
     // included, if false it is filtered out. If None is returned it is assumed
     // all values are needed.
     fn evaluate(&self, columns: &[Column]) -> PolarsResult<Option<Column>>;
+
+    // Whether a batch with these per-column `min`, `max` and `null_count`
+    // statistics can be skipped entirely. True skips the batch. None means the
+    // statistics do not settle it.
+    fn evaluate_stats(
+        &self,
+        _min: &Column,
+        _max: &Column,
+        _null_count: &Column,
+    ) -> PolarsResult<Option<Column>> {
+        Ok(None)
+    }
 }
 
 pub struct TrivialPredicateExpr;
@@ -129,13 +141,32 @@ impl DynamicPredWeakRef {
             }
         }
 
-        let s = Scalar::new(DataType::Boolean, AnyValue::Boolean(true));
-        Ok(Column::Scalar(ScalarColumn::new(
-            columns[0].name().clone(),
-            s,
-            columns[0].len(),
-        )))
+        Ok(all_of(columns[0].name().clone(), columns[0].len(), true))
     }
+
+    pub fn evaluate_stats(
+        &self,
+        min: &Column,
+        max: &Column,
+        null_count: &Column,
+    ) -> PolarsResult<Column> {
+        if let Some(inner) = self.inner.upgrade()
+            && inner.is_set.load(Ordering::Acquire)
+        {
+            let guard = inner.pred.read().unwrap();
+            let dyn_func = guard.as_ref().unwrap();
+            if let Some(skip) = dyn_func.evaluate_stats(min, max, null_count)? {
+                return Ok(skip);
+            }
+        }
+
+        Ok(all_of(min.name().clone(), min.len(), false))
+    }
+}
+
+fn all_of(name: PlSmallStr, len: usize, value: bool) -> Column {
+    let s = Scalar::new(DataType::Boolean, AnyValue::Boolean(value));
+    Column::Scalar(ScalarColumn::new(name, s, len))
 }
 
 pub fn new_dynamic_pred(node: Node, arena: &mut Arena<AExpr>) -> (Node, DynamicPred) {

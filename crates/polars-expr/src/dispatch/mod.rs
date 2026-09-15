@@ -547,6 +547,9 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::DynamicPred { pred } => {
             map_as_slice!(misc::dynamic_pred, &pred)
         },
+        F::DynamicSkipBatch { pred } => {
+            map_as_slice!(misc::dynamic_skip_batch, &pred)
+        },
     }
 }
 
