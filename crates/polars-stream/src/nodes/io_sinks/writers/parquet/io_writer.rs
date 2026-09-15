@@ -6,7 +6,9 @@ use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_io::parquet::write::BatchedWriter;
 use polars_io::prelude::KeyValueMetadata;
-use polars_parquet::write::{Encoding, FileWriter, SchemaDescriptor, WriteOptions};
+use polars_parquet::write::{
+    Encoding, FileWriter, SchemaDescriptor, WriteOptions, write_metadata_sidecar,
+};
 
 use crate::nodes::io_sinks::writers::interface::FileOpenTaskHandle;
 use crate::nodes::io_sinks::writers::parquet::EncodedRowGroup;
@@ -65,10 +67,17 @@ impl IOWriter {
         }
 
         parquet_writer.finish()?;
+        let parquet_metadata = {
+            let writer = parquet_writer.get_writer().lock().unwrap();
+            let mut out = Vec::new();
+            write_metadata_sidecar(&mut out, writer.metadata().unwrap())?;
+            out
+        };
         drop(parquet_writer);
         buffered_file.flush()?;
         drop(buffered_file);
 
+        file.set_parquet_metadata(parquet_metadata);
         file.close(sync_on_close).await?;
 
         Ok(())

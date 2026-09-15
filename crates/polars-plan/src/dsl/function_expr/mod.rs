@@ -1,6 +1,8 @@
 #[cfg(feature = "dtype-array")]
 mod array;
 mod binary;
+#[cfg(feature = "cutqcut")]
+mod binning;
 #[cfg(feature = "bitwise")]
 mod bitwise;
 mod boolean;
@@ -15,6 +17,8 @@ mod datetime;
 #[cfg(feature = "dtype-extension")]
 mod extension;
 mod list;
+#[cfg(feature = "dtype-map")]
+mod map;
 mod pow;
 #[cfg(feature = "random")]
 mod random;
@@ -36,9 +40,13 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "dtype-array")]
 pub use array::ArrayFunction;
+#[cfg(feature = "cutqcut")]
+pub use binning::{BinMethod, BinOptions, DslIntervalSpec, FractionSpec};
 #[cfg(feature = "cov")]
 pub use correlation::CorrelationMethod;
 pub use list::ListFunction;
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 pub use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
 #[cfg(feature = "random")]
@@ -58,6 +66,8 @@ pub use self::cat::CategoricalFunction;
 pub use self::datetime::TemporalFunction;
 #[cfg(feature = "dtype-extension")]
 pub use self::extension::ExtensionFunction;
+#[cfg(feature = "dtype-map")]
+pub use self::map::MapFunction;
 pub use self::pow::PowFunction;
 #[cfg(feature = "range")]
 pub use self::range::{DateRangeArgs, RangeFunction};
@@ -86,6 +96,8 @@ pub enum FunctionExpr {
     #[cfg(feature = "dtype-extension")]
     Extension(ExtensionFunction),
     ListExpr(ListFunction),
+    #[cfg(feature = "dtype-map")]
+    MapExpr(MapFunction),
     #[cfg(feature = "strings")]
     StringExpr(StringFunction),
     #[cfg(feature = "dtype-struct")]
@@ -227,6 +239,13 @@ pub enum FunctionExpr {
     UniqueCounts,
     #[cfg(feature = "approx_unique")]
     ApproxNUnique,
+    #[cfg(feature = "approx_quantile")]
+    ApproxQuantile {
+        method: ApproxQuantileMethod,
+        error: f64,
+        /// Interpret `error` as the formal bound instead of the empirically calibrated one.
+        use_formal_bound: bool,
+    },
     Coalesce,
     #[cfg(feature = "diff")]
     Diff(NullBehavior),
@@ -291,6 +310,8 @@ pub enum FunctionExpr {
         allow_duplicates: bool,
         include_breaks: bool,
     },
+    #[cfg(feature = "cutqcut")]
+    Bin(BinOptions),
     #[cfg(feature = "rle")]
     RLE,
     #[cfg(feature = "rle")]
@@ -404,6 +425,8 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "dtype-extension")]
             Extension(f) => f.hash(state),
             ListExpr(f) => f.hash(state),
+            #[cfg(feature = "dtype-map")]
+            MapExpr(f) => f.hash(state),
             #[cfg(feature = "strings")]
             StringExpr(f) => f.hash(state),
             #[cfg(feature = "dtype-struct")]
@@ -578,6 +601,16 @@ impl Hash for FunctionExpr {
             UniqueCounts => {},
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => {},
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantile {
+                method,
+                error,
+                use_formal_bound,
+            } => {
+                method.hash(state);
+                error.to_bits().hash(state);
+                use_formal_bound.hash(state);
+            },
             Coalesce => {},
             #[cfg(feature = "pct_change")]
             PctChange => {},
@@ -645,6 +678,8 @@ impl Hash for FunctionExpr {
                 allow_duplicates.hash(state);
                 include_breaks.hash(state);
             },
+            #[cfg(feature = "cutqcut")]
+            Bin(options) => options.hash(state),
             #[cfg(feature = "rle")]
             RLE => {},
             #[cfg(feature = "rle")]
@@ -711,6 +746,8 @@ impl Display for FunctionExpr {
             #[cfg(feature = "dtype-extension")]
             Extension(func) => return write!(f, "{func}"),
             ListExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "dtype-map")]
+            MapExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "strings")]
             StringExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-struct")]
@@ -815,6 +852,8 @@ impl Display for FunctionExpr {
             Reverse => "reverse",
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => "approx_n_unique",
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantile { .. } => "approx_quantile",
             Coalesce => "coalesce",
             #[cfg(feature = "diff")]
             Diff(_) => "diff",
@@ -862,6 +901,8 @@ impl Display for FunctionExpr {
             Cut { .. } => "cut",
             #[cfg(feature = "cutqcut")]
             QCut { .. } => "qcut",
+            #[cfg(feature = "cutqcut")]
+            Bin(options) => options.method.name(),
             #[cfg(feature = "dtype-array")]
             Reshape(_) => "reshape",
             #[cfg(feature = "repeat_by")]

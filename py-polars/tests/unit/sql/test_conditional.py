@@ -91,7 +91,9 @@ def test_control_flow(foods_ipc_path: Path) -> None:
             SQLSyntaxError,
             match=r"(IFNULL|NULLIF) expects 2 arguments \(found 3\)",
         ):
-            pl.SQLContext(df=nums).execute(f"SELECT {null_func}(x,y,z) FROM df")
+            pl.SQLContext(df=nums).execute(
+                f"SELECT {null_func}(x,y,z) FROM df"
+            ).collect()
 
 
 def test_greatest_least() -> None:

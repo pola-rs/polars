@@ -95,6 +95,8 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::Categorical(_) => false,
         #[cfg(feature = "dtype-extension")]
         F::Extension(_) => false,
+        #[cfg(feature = "dtype-map")]
+        F::MapExpr(_) => false,
         F::ListExpr(l) => is_inherently_nondeterministic_list_fn(l),
         #[cfg(feature = "strings")]
         F::StringExpr(_) => false,
@@ -189,6 +191,8 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::UniqueCounts => false,
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => false,
+        #[cfg(feature = "approx_quantile")]
+        F::ApproxQuantile { .. } => true,
         F::Coalesce => false,
         #[cfg(feature = "diff")]
         F::Diff(_) => false,
@@ -213,7 +217,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(feature = "peaks")]
         F::PeakMin | F::PeakMax => false,
         #[cfg(feature = "cutqcut")]
-        F::Cut { .. } | F::QCut { .. } => false,
+        F::Cut { .. } | F::QCut { .. } | F::Bin(_) => false,
         #[cfg(feature = "rle")]
         F::RLE | F::RLEID => false,
         F::ToPhysical => false,
@@ -339,6 +343,8 @@ fn is_inherently_nondeterministic_list_fn(f: &IRListFunction) -> bool {
         L::ToArray(_) => false,
         #[cfg(feature = "list_to_struct")]
         L::ToStruct(_) => false,
+        #[cfg(feature = "dtype-map")]
+        L::ToMap => false,
 
         // Inherently non-deterministic: draws random samples.
         #[cfg(feature = "list_sample")]

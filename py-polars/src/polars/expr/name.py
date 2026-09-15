@@ -149,6 +149,48 @@ class ExprNameNameSpace:
         """
         return wrap_expr(self._pyexpr.name_prefix(prefix))
 
+    def strip_prefix(self, prefix: str) -> Expr:
+        """
+        Remove a prefix from the root column name of the expression.
+
+        .. engine-support:: in-memory, streaming, distributed, gpu
+
+        The prefix is removed exactly once if present. Names that do not start with
+        the prefix are unchanged.
+
+        Parameters
+        ----------
+        prefix
+            Prefix to remove from the root column name.
+
+        See Also
+        --------
+        prefix
+        strip_suffix
+        map
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "prefix_a": [1, 2, 3],
+        ...         "b": ["x", "y", "z"],
+        ...     }
+        ... )
+        >>> df.select(pl.all().name.strip_prefix("prefix_"))
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 1   ┆ x   │
+        │ 2   ┆ y   │
+        │ 3   ┆ z   │
+        └─────┴─────┘
+        """
+        return self.map(lambda name: name.removeprefix(prefix))
+
     def suffix(self, suffix: str) -> Expr:
         """
         Add a suffix to the root column name of the expression.
@@ -186,6 +228,48 @@ class ExprNameNameSpace:
         └─────┴─────┴───────────┴───────────┘
         """
         return wrap_expr(self._pyexpr.name_suffix(suffix))
+
+    def strip_suffix(self, suffix: str) -> Expr:
+        """
+        Remove a suffix from the root column name of the expression.
+
+        .. engine-support:: in-memory, streaming, distributed, gpu
+
+        The suffix is removed exactly once if present. Names that do not end with
+        the suffix are unchanged.
+
+        Parameters
+        ----------
+        suffix
+            Suffix to remove from the root column name.
+
+        See Also
+        --------
+        suffix
+        strip_prefix
+        map
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a_suffix": [1, 2, 3],
+        ...         "b": ["x", "y", "z"],
+        ...     }
+        ... )
+        >>> df.select(pl.all().name.strip_suffix("_suffix"))
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 1   ┆ x   │
+        │ 2   ┆ y   │
+        │ 3   ┆ z   │
+        └─────┴─────┘
+        """
+        return self.map(lambda name: name.removesuffix(suffix))
 
     def to_lowercase(self) -> Expr:
         """

@@ -6,6 +6,7 @@ use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 /// the bytes of the entire file are loaded, it is returned in the second return value.
 pub async fn read_parquet_metadata_bytes(
     byte_source: &DynByteSource,
+    file_size: Option<usize>,
     verbose: bool,
 ) -> PolarsResult<(Buffer<u8>, Option<Buffer<u8>>)> {
     use polars_parquet::parquet::PARQUET_MAGIC;
@@ -13,7 +14,10 @@ pub async fn read_parquet_metadata_bytes(
 
     const FOOTER_HEADER_SIZE: usize = polars_parquet::parquet::FOOTER_SIZE as usize;
 
-    let file_size = byte_source.get_size().await?;
+    let file_size = match file_size {
+        Some(file_size) => file_size,
+        None => byte_source.get_size().await?,
+    };
 
     if file_size < FOOTER_HEADER_SIZE {
         return Err(ParquetError::OutOfSpec(format!(

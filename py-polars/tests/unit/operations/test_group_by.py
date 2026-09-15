@@ -1447,6 +1447,7 @@ def test_group_by_agg_19173() -> None:
     assert out.schema == pl.Schema([("g", pl.Int64), ("x", pl.List(pl.Float64))])
 
 
+@pytest.mark.may_fail_lazy_schema  # reason: declared-schema
 def test_group_by_map_groups_slice_pushdown_20002() -> None:
     schema = {
         "a": pl.Int8,
@@ -3229,7 +3230,6 @@ def test_group_by_f16_agg_28353(agg: str, args: list[float]) -> None:
     assert_frame_equal(out16, out64, check_row_order=False, rel_tol=1e-3, abs_tol=1e-4)
 
 
-@pytest.mark.may_fail_auto_streaming  # n_chunks is an implementation detail for in-memory
 @pytest.mark.parametrize("agg", ["any", "all"])
 @pytest.mark.parametrize("ignore_nulls", [True, False])
 @pytest.mark.parametrize("null_frac", [0.0, 0.3])
@@ -3255,7 +3255,6 @@ def test_group_by_bool_agg_any_all_single_chunk_28684(
     assert_series_equal(out["b"], expected, check_names=False)
 
 
-@pytest.mark.may_fail_auto_streaming  # n_chunks is an implementation detail for in-memory
 @pytest.mark.parametrize("agg", ["min", "max"])
 @pytest.mark.parametrize("set_sorted", [False, True])
 @pytest.mark.parametrize("null_frac", [0.0, 0.3])
@@ -3279,3 +3278,51 @@ def test_group_by_bool_agg_min_max_single_chunk_28684(
 
     expected = df["b"]
     assert_series_equal(out["b"], expected, check_names=False)
+
+
+def test_group_by_agg_primitive_opt_single_chunk_28684() -> None:
+    # must be large enough to trigger chunk fragmentation
+    n = 20_000
+    rng = np.random.default_rng(0)
+    v = rng.random(n)
+    v[rng.random(n) < 0.2] = np.nan
+
+    df = pl.DataFrame(
+        {
+            "g": np.arange(n),
+            "v": v,
+            "b": rng.random(n) < 0.5,
+            "i": rng.integers(0, 1000, n),
+            "c": pl.Series(rng.choice(["a", "b", "c"], n)).cast(pl.Categorical),
+            "d": pl.Series(np.arange(n).astype("datetime64[ms]")),
+        }
+    )
+
+    out = df.group_by("g").agg(
+        pl.col("v").min(),
+        pl.col("v").max().alias("max"),
+        pl.col("v").mean().alias("mean"),
+        pl.col("v").median().alias("median"),
+        pl.col("v").std().alias("std"),
+        pl.col("v").var().alias("var"),
+        pl.col("v").quantile(0.5).alias("quantile"),
+        pl.col("v").first().alias("first"),
+        pl.col("v").n_unique().alias("n_unique"),
+        pl.col("v").arg_min().alias("arg_min"),
+        pl.col("v").arg_max().alias("arg_max"),
+        pl.col("b").arg_min().alias("b_arg_min"),
+        pl.col("b").arg_max().alias("b_arg_max"),
+        pl.col("v").nan_max().alias("nan_max"),
+        pl.col("v").nan_min().alias("nan_min"),
+        pl.col("i").min().alias("i_min"),
+        pl.col("i").max().alias("i_max"),
+        pl.col("b").min().alias("b_min"),
+        pl.col("b").max().alias("b_max"),
+        pl.col("c").min().alias("c_min"),
+        pl.col("c").max().alias("c_max"),
+        pl.col("d").min().alias("d_min"),
+        pl.col("d").max().alias("d_max"),
+        pl.col("d").mean().alias("d_mean"),
+    )
+
+    assert [s.n_chunks() for s in out.select(pl.exclude("g"))] == [1] * (out.width - 1)

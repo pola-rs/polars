@@ -63,6 +63,7 @@ simd = [
 avx512 = ["polars-core/avx512"]
 nightly = [
   "polars-core/nightly",
+  "polars-io?/nightly",
   "polars-ops?/nightly",
   "simd",
   "polars-lazy?/nightly",
@@ -191,6 +192,10 @@ approx_unique = [
   "polars-lazy?/approx_unique",
   "polars-ops/approx_unique",
   "polars-core/approx_unique",
+]
+approx_quantile = [
+  "polars-lazy?/approx_quantile",
+  "polars-ops/approx_quantile",
 ]
 arg_where = ["polars-lazy?/arg_where"]
 asof_join = ["polars-lazy?/asof_join", "polars-ops/asof_join"]
@@ -392,6 +397,7 @@ dtype-full = [
   "dtype-f16",
   "dtype-categorical",
   "dtype-struct",
+  "dtype-map",
 ]
 
 # sensible minimal set of opt-in datatypes
@@ -502,10 +508,18 @@ dtype-struct = [
 ]
 dtype-extension = [
   "polars-core/dtype-extension",
-  "polars-expr/dtype-extension",
+  "polars-expr?/dtype-extension",
   "polars-lazy?/dtype-extension",
   "polars-ops/dtype-extension",
-  "polars-plan/dtype-extension",
+  "polars-plan?/dtype-extension",
+]
+dtype-map = [
+  "polars-core/dtype-map",
+  "polars-expr?/dtype-map",
+  "polars-io/dtype-map",
+  "polars-lazy?/dtype-map",
+  "polars-ops/dtype-map",
+  "polars-plan?/dtype-map",
 ]
 hist = ["polars-ops/hist", "polars-lazy/hist"]
 
@@ -572,6 +586,7 @@ docs-selection = [
   "extract_groups",
   "replace",
   "approx_unique",
+  "approx_quantile",
   "unique_counts",
   "polars_cloud_client",
   "serde",

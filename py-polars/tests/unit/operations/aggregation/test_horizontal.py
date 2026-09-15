@@ -782,3 +782,13 @@ def test_min_max_horizontal_with_nan_28682() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_min_max_horizontal_scalar_column_29082() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]}).with_columns(s=pl.lit(2.0))
+    out = df.select(
+        mn=pl.min_horizontal("s", pl.lit(3.0)),
+        mx=pl.max_horizontal("s", pl.lit(3.0)),
+    )
+    expected = pl.DataFrame({"mn": [2.0, 2.0, 2.0], "mx": [3.0, 3.0, 3.0]})
+    assert_frame_equal(out, expected)

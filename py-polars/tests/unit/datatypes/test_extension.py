@@ -169,6 +169,16 @@ def test_extension_native_to_extension_cast_27193() -> None:
     assert_series_equal(casted, expected)
 
 
+def test_extension_cast_schema_28542() -> None:
+    dtype = PythonTestExtension(storage=pl.Int64)
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).with_columns(pl.col("a").cast(dtype))
+
+    result = lf.collect()
+
+    assert result.collect_schema() == lf.collect_schema() == {"a": dtype}
+    assert result["a"].ext.storage().to_list() == [1, 2, 3]
+
+
 def test_extension_to_extension_raises_27519() -> None:
     AExtension = pl.Extension(name="a.ext", storage=pl.Int64)
     BExtension = pl.Extension(name="b.ext", storage=pl.Int64)

@@ -116,11 +116,16 @@ impl SpillFrame {
         slf
     }
 
+    pub fn current_ctx(&self) -> Option<(WeakSpillContext, SpillContextParam)> {
+        self.token.current_ctx()
+    }
+
     pub fn unregister(&mut self) -> Option<(WeakSpillContext, SpillContextParam)> {
         self.token.unregister()
     }
 
     /// The height of the contained DataFrame. Does not need to unspill DataFrame.
+    #[inline]
     pub fn height(&self) -> usize {
         self.height
     }

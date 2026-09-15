@@ -81,11 +81,11 @@ impl Field {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// let mut f = Field::new("Temperature".into(), DataType::Int32);
-    /// f.coerce(DataType::Float32);
+    /// f.set_dtype(DataType::Float32);
     ///
     /// assert_eq!(f, Field::new("Temperature".into(), DataType::Float32));
     /// ```
-    pub fn coerce(&mut self, dtype: DataType) {
+    pub fn set_dtype(&mut self, dtype: DataType) {
         self.dtype = dtype;
     }
 
@@ -296,8 +296,13 @@ impl DataType {
             },
             ArrowDataType::LargeBinary | ArrowDataType::Binary => DataType::Binary,
             ArrowDataType::FixedSizeBinary(_) => DataType::Binary,
-            ArrowDataType::Map(inner, _is_sorted) => {
-                DataType::List(Self::from_arrow_field(inner).boxed())
+            ArrowDataType::Map(inner, _keys_sorted) => {
+                let entries = Self::from_arrow_field(inner);
+                #[cfg(feature = "dtype-map")]
+                let map = entries.map_from_positional_entries_dtype();
+                #[cfg(not(feature = "dtype-map"))]
+                let map: Option<DataType> = None;
+                map.unwrap_or_else(|| DataType::List(entries.boxed()))
             },
             ArrowDataType::Interval(IntervalUnit::MonthDayNano) => {
                 check_allow_importing_interval_as_struct("month_day_nano_interval").unwrap();

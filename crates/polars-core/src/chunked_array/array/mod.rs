@@ -6,6 +6,7 @@ use std::borrow::Cow;
 
 use either::Either;
 
+use super::align_inner_chunks;
 use crate::prelude::*;
 
 impl ArrayChunked {
@@ -17,14 +18,17 @@ impl ArrayChunked {
         }
     }
 
+    /// Relabel the inner dtype, checking its physical representation.
+    ///
+    /// # Safety
+    /// The values must be valid for `dtype`, see [`Self::to_logical`].
+    ///
     /// # Panics
     /// Panics if the physical representation of `dtype` differs the physical
     /// representation of the existing inner `dtype`.
-    pub fn set_inner_dtype(&mut self, dtype: DataType) {
+    pub unsafe fn set_inner_dtype(&mut self, dtype: DataType) {
         assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
-        let width = self.width();
-        let field = Arc::make_mut(&mut self.field);
-        field.coerce(DataType::Array(Box::new(dtype), width));
+        unsafe { self.to_logical(dtype) }
     }
 
     pub fn width(&self) -> usize {
@@ -34,13 +38,15 @@ impl ArrayChunked {
         }
     }
 
+    /// Relabel the inner dtype without changing values.
+    ///
     /// # Safety
-    /// The caller must ensure that the logical type given fits the physical type of the array.
+    /// Same requirements as [`ListChunked::to_logical`].
     pub unsafe fn to_logical(&mut self, inner_dtype: DataType) {
-        debug_assert_eq!(&inner_dtype.to_physical(), self.inner_dtype());
+        debug_assert_eq!(inner_dtype.to_physical(), self.inner_dtype().to_physical());
         let width = self.width();
         let fld = Arc::make_mut(&mut self.field);
-        fld.coerce(DataType::Array(Box::new(inner_dtype), width))
+        fld.set_dtype(DataType::Array(Box::new(inner_dtype), width))
     }
 
     /// Convert the datatype of the array into the physical datatype.
@@ -144,6 +150,51 @@ impl ArrayChunked {
         }
     }
 
+    /// The total number of inner values across all chunks, i.e. `len() * width()`
+    /// discounting sliced-away chunks.
+    pub fn inner_length(&self) -> usize {
+        self.downcast_iter().map(|c| c.values().len()).sum()
+    }
+
+    /// Rebuild the arrays around new inner values, reusing the widths and outer validity.
+    ///
+    /// `values` must have `inner_length()` elements; its chunks need not line up with
+    /// this array's, but nothing is copied when they do.
+    pub fn with_inner_values(&self, values: &Series) -> ArrayChunked {
+        if cfg!(debug_assertions) {
+            assert_eq!(values.len(), self.inner_length());
+        }
+
+        // Align the chunks of the array's inner values and the values series.
+        let values = align_inner_chunks(self.downcast_iter().map(|arr| arr.values().len()), values);
+        let values_dtype = values.dtype().clone();
+        let width = self.width();
+
+        let chunks = self
+            .downcast_iter()
+            .zip(values.into_chunks())
+            .map(|(ca_arr, v_arr)| {
+                debug_assert_eq!(ca_arr.values().len(), v_arr.len());
+                FixedSizeListArray::new(
+                    FixedSizeListArray::default_datatype(v_arr.dtype().clone(), width),
+                    ca_arr.len(),
+                    v_arr,
+                    ca_arr.validity().cloned(),
+                )
+                .to_boxed()
+            })
+            .collect::<Vec<_>>();
+
+        // SAFETY: the chunks' inner dtype is derived from `values`' own chunks.
+        unsafe {
+            ArrayChunked::from_chunks_and_dtype_unchecked(
+                self.name().clone(),
+                chunks,
+                DataType::Array(Box::new(values_dtype), width),
+            )
+        }
+    }
+
     /// Ignore the list indices and apply `func` to the inner type as [`Series`].
     pub fn apply_to_inner(
         &self,
@@ -182,14 +233,5 @@ impl ArrayChunked {
                 DataType::Array(Box::new(out.dtype().clone()), self.width()),
             )
         })
-    }
-
-    /// Recurse nested types until we are at the leaf array.
-    pub fn get_leaf_array(&self) -> Series {
-        let mut current = self.get_inner();
-        while let Some(child_array) = current.try_array() {
-            current = child_array.get_inner();
-        }
-        current
     }
 }

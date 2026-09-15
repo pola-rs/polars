@@ -415,9 +415,7 @@ def scan_ipc(
     This allows the query optimizer to push down predicates and projections to the scan
     level, thereby potentially reducing memory overhead.
 
-    .. versionchanged:: 0.20.4
-        * The `row_count_name` parameter was renamed `row_index_name`.
-        * The `row_count_offset` parameter was renamed `row_index_offset`.
+    .. engine-support:: in-memory, streaming, distributed
 
     Parameters
     ----------

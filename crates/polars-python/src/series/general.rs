@@ -447,7 +447,7 @@ impl PySeries {
     #[pyo3(signature = (offset, length))]
     fn slice(&self, offset: i64, length: Option<usize>) -> Self {
         let s = self.series.read();
-        let length = length.unwrap_or_else(|| s.len());
+        let length = length.unwrap_or(usize::MAX);
         s.slice(offset, length).into()
     }
 

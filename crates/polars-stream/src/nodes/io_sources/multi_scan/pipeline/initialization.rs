@@ -446,6 +446,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 missing_columns_policy,
                 forbid_extra_columns: config.forbid_extra_columns.clone(),
                 num_pipelines,
+                max_concurrent_scans,
                 disable_morsel_split,
                 last_morsel_pipelines,
                 verbose,

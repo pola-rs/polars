@@ -171,8 +171,10 @@ where
             // SAFETY:
             // we are in bound
             unsafe { agg_window.update(start as usize, end as usize) };
+            // idx is the position of the current element in the window,
+            // because the values were sorted by 'by' before.
             let res = if agg_window.is_valid(min_periods) {
-                agg_window.get_agg(*out_idx as usize)
+                agg_window.get_agg(idx)
             } else {
                 None
             };

@@ -896,7 +896,6 @@ def test_cse_chunks_18124() -> None:
     ).collect().shape == (4, 4)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_eager_cse_during_struct_expansion_18411() -> None:
     df = pl.DataFrame({"foo": [0, 0, 0, 1, 1]})
     vc = pl.col("foo").value_counts()
@@ -925,7 +924,6 @@ def test_cse_as_struct_19253() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.skip('Fix this test after setting default engine to "streaming"')
 def test_cse_as_struct_value_counts_20927() -> None:
     q = pl.LazyFrame({"x": [i for i in range(1, 6) for _ in range(i)]}).select(
@@ -1677,6 +1675,93 @@ def test_cspe_with_pushable_filters_scan_19479(tmp_path: Path) -> None:
     assert "CACHE[id:" not in result.explain()
 
 
+def wide_subplan_referenced(
+    tmp_path: Path, n: int, *, cross: bool = False
+) -> pl.LazyFrame:
+    """`n` branches over one join-and-aggregate subplan, each with its own predicate.
+
+    The predicates are all pushable, so the caches are removable; whether removing
+    them is worth `n` copies of the join is the question. Written to parquet because
+    the cost model reads its row counts from scan metadata.
+
+    With `cross`, the join is written as a cross join plus an equality, the form
+    predicate pushdown rewrites into an equi join.
+    """
+    rows = 20_000
+    pl.DataFrame(
+        {
+            "key": [i % 100 for i in range(rows)],
+            "grp": [i % 7 for i in range(rows)],
+            "val": list(range(rows)),
+        }
+    ).write_parquet(tmp_path / "fact.parquet")
+    pl.DataFrame(
+        {"key": list(range(100)), "name": [f"n{i}" for i in range(100)]}
+    ).write_parquet(tmp_path / "dim.parquet")
+
+    fact = pl.scan_parquet(tmp_path / "fact.parquet")
+    dim = pl.scan_parquet(tmp_path / "dim.parquet")
+    joined = (
+        fact.join(dim, how="cross").filter(pl.col("key") == pl.col("key_right"))
+        if cross
+        else fact.join(dim, on="key")
+    )
+    base = joined.group_by("grp", "name").agg(pl.col("val").sum())
+    return pl.concat(
+        [base.filter(pl.col("grp") == i).select("name", "val") for i in range(n)]
+    )
+
+
+@pytest.mark.parametrize(
+    ("references", "caches"),
+    [
+        # Three narrowed copies cost less than evaluating the join and aggregate once
+        # and reading it back three times.
+        (3, 0),
+        # Eight of them do not: the predicates narrow too little to pay for redoing
+        # the join that often, so the subplan stays shared.
+        (8, 8),
+    ],
+)
+def test_cspe_reference_count_drives_cache_removal(
+    tmp_path: Path, references: int, caches: int
+) -> None:
+    q = wide_subplan_referenced(tmp_path, references)
+    assert q.explain().count("CACHE[id:") == caches
+
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_cross_join_subplan_is_costed_after_pushdown(tmp_path: Path) -> None:
+    # The subplan sits under the cache as a cross join, since pushdown does not
+    # descend into caches. Costed in that form its join prices as a cross product,
+    # which no shared subplan can beat.
+    q = wide_subplan_referenced(tmp_path, 8, cross=True)
+
+    plan = q.explain()
+    assert plan.count("CACHE[id:") == 8
+    # The shared subplan is joined once, not once per branch.
+    assert plan.count("INNER JOIN:") == 1
+
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_row_estimate_flag_controls_cache_removal(tmp_path: Path) -> None:
+    # Without the estimates the decision falls back to the structural rule, which
+    # removes the caches whenever the predicates can be pushed.
+    q = wide_subplan_referenced(tmp_path, 8)
+    plan = q.explain(optimizations=pl.QueryOptFlags(row_estimate=False))
+    assert "CACHE[id:" not in plan
+
+
 def test_cspe_cache_removal_keeps_nested_caches(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
@@ -1707,12 +1792,19 @@ def test_cspe_cache_removal_keeps_nested_caches(
         ]
     )
 
+    # The frames are tiny, so the cost model would rather keep the outer cache than
+    # copy the subplan per branch. Turn it off; the mechanism under test is what
+    # removal does to the caches below it.
+    no_cost_model = pl.QueryOptFlags(row_estimate=False)
+
     # The nested cache over `src` survives and stays shared across both branches.
-    cache_ids = set(re.findall(r"CACHE\[id: ([0-9a-f-]+)\]", q.explain()))
+    cache_ids = set(
+        re.findall(r"CACHE\[id: ([0-9a-f-]+)\]", q.explain(optimizations=no_cost_model))
+    )
     assert len(cache_ids) == 3
 
     assert_frame_equal(
-        q.collect(),
+        q.collect(optimizations=no_cost_model),
         q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
     )
 
@@ -1871,3 +1963,191 @@ def test_cspe_nondeterministic_still_caches_inputs_28733() -> None:
     # can be cached
     plan = copied.explain()
     assert plan.count("WITH_COLUMNS") == 1, plan
+
+
+def year_totals() -> pl.LazyFrame:
+    """An aggregation worth sharing, keyed by a column its readers filter on."""
+    lf = pl.LazyFrame(
+        {
+            "year": [2000, 2001, None, 2002, 2003] * 3,
+            "v": list(range(15)),
+            "w": list(range(15)),
+        }
+    )
+    return lf.group_by("year").agg(
+        pl.col("v").sum().alias("total"), pl.col("w").max().alias("mw")
+    )
+
+
+def test_cspe_narrows_shared_subplan_to_what_its_readers_ask_for() -> None:
+    # `total` is computed in the subplan so the filters cannot be pushed and the
+    # cache stays. The years they select still bound the subplan from both sides.
+    base = year_totals()
+    q = pl.concat(
+        [
+            base.filter((pl.col("year") == 2001) & (pl.col("total") > 0)),
+            base.filter((pl.col("year") == 2002) & (pl.col("total") > 0)),
+        ]
+    )
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'FILTER (col("year") >= 2001) & (col("year") <= 2002)' in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_no_narrowing_when_a_reader_takes_every_row() -> None:
+    # One reader has no filter, so nothing may be dropped below the cache.
+    base = year_totals()
+    q = pl.concat([base, base.filter((pl.col("year") == 2001) & (pl.col("total") > 0))])
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'col("year") >=' not in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_narrowing_keeps_only_what_every_reader_bounds() -> None:
+    # The readers bound different columns, so only the constraint they share is
+    # pushed; `year` and `mw` stay above the cache.
+    base = year_totals()
+    q = pl.concat(
+        [
+            base.filter((pl.col("total") > 0) & (pl.col("year") == 2001)),
+            base.filter((pl.col("total") > 0) & (pl.col("mw") > 1)),
+        ]
+    )
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'col("year") >=' not in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_narrowing_keeps_the_rows_a_reader_still_needs() -> None:
+    # A reader taking an open range must not be narrowed to another's point.
+    base = year_totals()
+    q = pl.concat(
+        [
+            base.filter((pl.col("year") == 2001) & (pl.col("total") > 0)),
+            base.filter((pl.col("year") >= 2000) & (pl.col("total") > 0)),
+        ]
+    )
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'col("year") <=' not in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_no_narrowing_past_a_reader_that_reads_a_whole_column() -> None:
+    # `s.sort()` sees a different column once rows are dropped beneath it, so which
+    # rows this reader keeps is not implied by any bound on `year`.
+    base = (
+        pl.LazyFrame({"year": [2000, 2001, 2002], "s": ["z", "a", "b"], "v": [1, 1, 1]})
+        .group_by("year", maintain_order=True)
+        .agg(pl.col("v").sum().alias("total"), pl.col("s").first())
+    )
+    q = pl.concat(
+        [
+            base.filter((pl.col("year") == 2001) & (pl.col("s").sort() == "b")),
+            base.filter((pl.col("year") == 2002) & (pl.col("s").sort() == "b")),
+        ]
+    )
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'col("year") >=' not in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+def test_cspe_no_narrowing_past_a_fallible_reader(plmonkeypatch: PlMonkeyPatch) -> None:
+    # Dropping rows beneath a filter that can error means it may no longer error.
+    base = (
+        pl.LazyFrame(
+            {"year": [2000, 2001, 2002], "lst": [[1], [1], [1]], "v": [1, 1, 1]}
+        )
+        .group_by("year", maintain_order=True)
+        .agg(pl.col("v").sum().alias("total"), pl.col("lst").first())
+    )
+    q = pl.concat(
+        [
+            base.filter((pl.col("year") == 2001) & (pl.col("lst").list.get(1) > 0)),
+            base.filter((pl.col("year") == 2002) & (pl.col("lst").list.get(1) > 0)),
+        ]
+    )
+    assert 'col("year") >=' in q.explain()
+
+    plmonkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+    assert 'col("year") >=' not in q.explain()
+
+
+def test_cspe_no_narrowing_of_a_column_with_its_own_order() -> None:
+    # An enum compares by its categories, so the string bounds "m" and "z" do not
+    # describe the rows the readers keep.
+    dtype = pl.Enum(["z", "a", "m"])
+    base = (
+        pl.LazyFrame({"key": pl.Series(["z", "a", "m"], dtype=dtype), "v": [1, 2, 3]})
+        .group_by("key", maintain_order=True)
+        .agg(pl.col("v").sum().alias("total"))
+    )
+    q = pl.concat(
+        [
+            base.filter((pl.col("key") == "z") & (pl.col("total") > 0)),
+            base.filter((pl.col("key") == "m") & (pl.col("total") > 0)),
+        ]
+    )
+    plan = q.explain()
+
+    assert plan.count("CACHE[id:") == 2
+    assert 'col("key") >=' not in plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "dead",
+    [
+        (pl.col("mw") > 10) & (pl.col("mw") < 0),
+        (pl.col("mw") == 1) & (pl.col("mw") != 1),
+        pl.col("mw").is_null() & (pl.col("mw") > 0),
+        pl.col("mw").is_in([1]) & pl.col("mw").is_in([2]),
+    ],
+)
+def test_cspe_narrowing_ignores_a_reader_that_keeps_no_rows(dead: pl.Expr) -> None:
+    # The first reader selects nothing, so it asks nothing of the shared subplan
+    # and the second one is still narrowed to the rows it wants.
+    base = year_totals()
+    q = pl.concat([base.filter(dead), base.filter(pl.col("year") == 2001)])
+    plan = q.explain()
+
+    # Twice: the second reader's own filter, and the copy of it below the cache.
+    assert plan.count('col("year") == 2001') == 2, plan
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        check_row_order=False,
+    )

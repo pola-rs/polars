@@ -41,6 +41,7 @@ class QueryOptFlags:
         sort_collapse: None | bool = None,
         pre_partition_hive: None | bool = None,
         join_order: None | bool = None,
+        row_estimate: None | bool = None,
     ) -> None:
         self._pyoptflags = PyOptFlags.default()
         self.update(
@@ -56,6 +57,7 @@ class QueryOptFlags:
             sort_collapse=sort_collapse,
             pre_partition_hive=pre_partition_hive,
             join_order=join_order,
+            row_estimate=row_estimate,
         )
 
     @classmethod
@@ -87,6 +89,7 @@ class QueryOptFlags:
         sort_collapse: None | bool = None,
         pre_partition_hive: None | bool = None,
         join_order: None | bool = None,
+        row_estimate: None | bool = None,
     ) -> QueryOptFlags:
         """Create new empty set off optimizations."""
         optflags = QueryOptFlags()
@@ -104,6 +107,7 @@ class QueryOptFlags:
             sort_collapse=sort_collapse,
             pre_partition_hive=pre_partition_hive,
             join_order=join_order,
+            row_estimate=row_estimate,
         )
 
     @removed_parameters(
@@ -129,6 +133,7 @@ class QueryOptFlags:
         sort_collapse: None | bool = None,
         pre_partition_hive: None | bool = None,
         join_order: None | bool = None,
+        row_estimate: None | bool = None,
     ) -> QueryOptFlags:
         """Update the current optimization flags."""
         if predicate_pushdown is not None:
@@ -155,6 +160,8 @@ class QueryOptFlags:
             self.pre_partition_hive = pre_partition_hive
         if join_order is not None:
             self.join_order = join_order
+        if row_estimate is not None:
+            self.row_estimate = row_estimate
 
         return self
 
@@ -285,6 +292,15 @@ class QueryOptFlags:
     def join_order(self, value: bool) -> None:
         self._pyoptflags.join_order = value
 
+    @property
+    def row_estimate(self) -> bool:
+        """Use row estimates to pick join build sides and keep useful caches."""
+        return self._pyoptflags.row_estimate
+
+    @row_estimate.setter
+    def row_estimate(self, value: bool) -> None:
+        self._pyoptflags.row_estimate = value
+
     def __str__(self) -> str:
         return f"""
 QueryOptFlags {{
@@ -303,6 +319,7 @@ QueryOptFlags {{
     sort_collapse: {self.sort_collapse}
     pre_partition_hive: {self.pre_partition_hive}
     join_order: {self.join_order}
+    row_estimate: {self.row_estimate}
 
     eager: {self._pyoptflags.eager}
     streaming: {self._pyoptflags.streaming}

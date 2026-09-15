@@ -11,7 +11,7 @@ use polars_io::RowIndex;
 use polars_io::predicates::{
     ColumnPredicateExpr, ColumnPredicates, ScanIOPredicate, SpecializedColumnPredicate,
 };
-pub use polars_io::prelude::_internal::PrefilterMaskSetting;
+use polars_io::prelude::_internal::canonicalize_parquet_maps;
 use polars_io::prelude::try_set_sorted_flag;
 use polars_parquet::read::{Filter, PredicateFilter, PrimitiveLogicalType};
 use polars_utils::pl_str::PlSmallStr;
@@ -27,7 +27,7 @@ pub(super) struct RowGroupDecoder {
     pub(super) allow_column_predicates: bool,
     pub(super) row_index: Option<RowIndex>,
     pub(super) predicate: Option<ScanIOPredicate>,
-    pub(super) use_prefiltered: Option<PrefilterMaskSetting>,
+    pub(super) use_prefiltered: bool,
     /// Indices into `projected_arrow_fields. This must be sorted.
     pub(super) predicate_field_indices: Arc<[usize]>,
     /// Indices into `projected_arrow_fields. This must be sorted.
@@ -46,7 +46,7 @@ impl RowGroupDecoder {
             slice.0 == 0 && slice.1 >= row_group_data.row_group_metadata.num_rows()
         });
 
-        if self.use_prefiltered.is_some()
+        if self.use_prefiltered
             && row_group_data.slice.is_none()
             && !self.predicate_field_indices.is_empty()
         {
@@ -278,6 +278,7 @@ fn decode_column(
     }
 
     let mut series = Series::try_from((arrow_field, arrays))?;
+    canonicalize_parquet_maps(&mut series)?;
 
     if let Some(col_idxs) = row_group_data
         .row_group_metadata
@@ -687,11 +688,14 @@ fn decode_column_prefiltered(
         }
     }
 
-    let series = if !prefilter {
+    let mut series = if !prefilter {
         series.filter(mask)?
     } else {
         series
     };
+
+    // Done after the filter so that discarded rows cost nothing.
+    canonicalize_parquet_maps(&mut series)?;
 
     assert_eq!(series.len(), expected_num_rows);
 

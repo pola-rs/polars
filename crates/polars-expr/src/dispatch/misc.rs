@@ -1,3 +1,5 @@
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use polars_core::prelude::*;
@@ -17,6 +19,8 @@ use polars_plan::plans::FusedOperator;
 #[cfg(feature = "cov")]
 use polars_plan::plans::IRCorrelationMethod;
 use polars_plan::plans::{AExprSorted, DynamicPredWeakRef, RowEncodingVariant};
+#[cfg(feature = "cutqcut")]
+use polars_plan::plans::{IRBinMethod, IRBinOptions};
 use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -34,6 +38,47 @@ pub(super) fn reverse(s: &Column) -> PolarsResult<Column> {
 pub(super) fn approx_n_unique(s: &Column) -> PolarsResult<Column> {
     s.approx_n_unique()
         .map(|v| Column::new_scalar(s.name().clone(), Scalar::new(IDX_DTYPE, v.into()), 1))
+}
+
+#[cfg(feature = "approx_quantile")]
+pub(super) fn approx_quantile(
+    s: &[Column],
+    method: &ApproxQuantileMethod,
+    error: f64,
+) -> PolarsResult<Column> {
+    assert_eq!(s.len(), 2);
+    let input = s[0].as_materialized_series();
+    let mut quantile = s[1].as_materialized_series();
+    polars_ensure!(!quantile.is_empty(), ComputeError:
+        "the 'quantile' expression input should produce a single quantile or a list of quantiles, \
+        got an empty input"
+    );
+    polars_ensure!(quantile.len() == 1, ComputeError:
+        "polars does not support varying approximate quantiles yet, \
+        make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
+    );
+
+    // A list input asks for several quantiles at once, and comes back as a list.
+    let is_list = quantile.dtype().is_list();
+    let inner_s;
+    if is_list {
+        let list = quantile.list()?;
+        inner_s = list
+            .get_as_series(0)
+            .ok_or_else(|| polars_err!(ComputeError: "`quantile` should not be null"))?;
+        quantile = &inner_s;
+    }
+
+    let out = polars_ops::prelude::approx_quantile(input, quantile, error, method)?;
+    let name = input.name().clone();
+    let sc = match is_list {
+        true => Scalar::new(
+            DataType::List(Box::new(out.dtype().clone())),
+            AnyValue::List(out),
+        ),
+        false => Scalar::new(out.dtype().clone(), out.get(0)?.into_static()),
+    };
+    Ok(sc.into_column(name))
 }
 
 #[cfg(feature = "diff")]
@@ -162,7 +207,11 @@ pub fn quantile(s: &[Column], method: QuantileMethod) -> PolarsResult<Column> {
     assert!(s.len() == 2);
     let input = &s[0];
     let quantile = s[1].as_materialized_series();
-    polars_ensure!(quantile.len() <= 1, ComputeError:
+    polars_ensure!(!quantile.is_empty(), ComputeError:
+        "the 'quantile' expression input should produce a single quantile or a list of quantiles, \
+        got an empty input"
+    );
+    polars_ensure!(quantile.len() == 1, ComputeError:
         "polars does not support varying quantiles yet, \
         make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
     );
@@ -170,7 +219,9 @@ pub fn quantile(s: &[Column], method: QuantileMethod) -> PolarsResult<Column> {
     match quantile.dtype() {
         DataType::List(_) => {
             let list = quantile.list()?;
-            let inner_s = list.get_as_series(0).unwrap();
+            let inner_s = list.get_as_series(0).ok_or_else(
+                || polars_err!(ComputeError: "quantile expression contains null values"),
+            )?;
             if inner_s.has_nulls() {
                 polars_bail!(ComputeError: "quantile expression contains null values");
             }
@@ -695,21 +746,21 @@ pub(super) fn log(columns: &[Column]) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
     assert_eq!(columns.len(), 2);
-    Column::apply_broadcasting_binary_elementwise(&columns[0], &columns[1], Series::log)
+    Column::try_apply_broadcasting_binary_elementwise(&columns[0], &columns[1], Series::log)
 }
 
 #[cfg(feature = "log")]
 pub(super) fn log1p(s: &Column) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
-    Ok(s.as_materialized_series().log1p().into())
+    Ok(s.as_materialized_series().log1p()?.into())
 }
 
 #[cfg(feature = "log")]
 pub(super) fn exp(s: &Column) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
-    Ok(s.as_materialized_series().exp().into())
+    Ok(s.as_materialized_series().exp()?.into())
 }
 
 pub(super) fn unique(s: &Column, stable: bool) -> PolarsResult<Column> {
@@ -1108,4 +1159,28 @@ pub fn repeat(args: &[Column]) -> PolarsResult<Column> {
 
 pub fn dynamic_pred(columns: &[Column], pred: &DynamicPredWeakRef) -> PolarsResult<Column> {
     pred.evaluate(columns)
+}
+
+#[cfg(feature = "cutqcut")]
+pub(super) fn bin(s: &Column, options: IRBinOptions) -> PolarsResult<Column> {
+    let IRBinOptions {
+        method,
+        labels,
+        include_intervals,
+    } = options;
+    let labels = labels.as_deref();
+    let s = s.as_materialized_series();
+
+    match &method {
+        IRBinMethod::Intervals { spec, right_closed } => {
+            polars_ops::series::bin_intervals(s, spec, labels, include_intervals, *right_closed)
+        },
+        IRBinMethod::Quantiles { spec, right_closed } => {
+            polars_ops::series::bin_quantiles(s, spec, labels, include_intervals, *right_closed)
+        },
+        IRBinMethod::Ranks { spec } => {
+            polars_ops::series::bin_ranks(s, spec, labels, include_intervals)
+        },
+    }
+    .map(Column::from)
 }

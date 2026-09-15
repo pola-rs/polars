@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use arrow::bitmap::Bitmap;
 
-use self::compare_inner::{TotalEqInner, TotalOrdInner};
+use self::compare_inner::TotalOrdInner;
 use self::sort::arg_sort_row_fmt;
 use super::{IsSorted, StatisticsFlags, private};
 use crate::chunked_array::AsSinglePtr;
@@ -83,9 +83,6 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
         self.0.remainder(rhs)
     }
 
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        invalid_operation_panic!(into_total_eq_inner, self)
-    }
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         invalid_operation_panic!(into_total_ord_inner, self)
     }

@@ -254,6 +254,58 @@ def test_scalar_subquery_null_result() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("lhs", "kept", "deleted"),
+    [
+        # A float literal compares in the column's precision, on its own or
+        # inside an expression that also reads a column.
+        ("0.1", [0, 1, 2], []),
+        ("(CASE WHEN x > 0 THEN 0.1 ELSE 0.2 END)", [1, 2], [0]),
+    ],
+)
+def test_scalar_subquery_literal_key(
+    lhs: str, kept: list[int], deleted: list[int]
+) -> None:
+    frames = {
+        "a": pl.DataFrame({"x": [0, 1, 2]}),
+        "b": pl.DataFrame({"y": pl.Series([0.1], dtype=pl.Float32)}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=f"SELECT x FROM a WHERE {lhs} = (SELECT y FROM b) ORDER BY x",
+        compare_with="duckdb",
+        expected={"x": kept},
+    )
+    res = pl.SQLContext(frames=frames).execute(
+        f"DELETE FROM a WHERE {lhs} = (SELECT y FROM b)", eager=True
+    )
+    assert res["x"].to_list() == deleted
+
+
+@pytest.mark.parametrize(
+    ("query", "error", "match"),
+    [
+        (
+            "SELECT x FROM a WHERE x = (SELECT y FROM b)",
+            pl.exceptions.ComputeError,
+            "cannot compare string",
+        ),
+        (
+            "SELECT x FROM a WHERE x IN (SELECT y FROM b)",
+            pl.exceptions.InvalidOperationError,
+            "cannot check",
+        ),
+    ],
+)
+def test_subquery_key_of_incomparable_type_errors(
+    query: str, error: type[Exception], match: str
+) -> None:
+    # Numeric and string operands are rejected as any comparison would.
+    ctx = pl.SQLContext(a=pl.DataFrame({"x": [1, 2]}), b=pl.DataFrame({"y": ["1"]}))
+    with pytest.raises(error, match=match):
+        ctx.execute(query).collect()
+
+
 def test_scalar_subquery_multi_row_errors() -> None:
     # PostgreSQL semantics: a scalar subquery returning more than one row is a
     # runtime error.
@@ -261,6 +313,11 @@ def test_scalar_subquery_multi_row_errors() -> None:
     with pytest.raises(pl.exceptions.ComputeError, match="aggregation 'item'"):
         pl.sql(
             "SELECT value FROM df WHERE value = (SELECT value FROM df ORDER BY value)",
+            eager=True,
+        )
+    with pytest.raises(pl.exceptions.ComputeError, match="aggregation 'item'"):
+        pl.sql(
+            "SELECT value FROM df WHERE value > (SELECT value FROM df ORDER BY value)",
             eager=True,
         )
 
@@ -513,6 +570,73 @@ def _subquery_ctx() -> pl.SQLContext[pl.LazyFrame]:
             " WHERE EXISTS (SELECT 1 FROM orders WHERE o_custkey = c_custkey)",
             "ANTI JOIN",
             [(1, 10, 1, 10), (4, 40, 1, 20), (None, 60, 2, 30)],
+        ),
+        # An uncorrelated IN over a subquery shape the decorrelating rewrite
+        # declines (an aggregate, a nested scalar subquery) is evaluated whole and
+        # still joined.
+        (
+            "SELECT c_custkey FROM customer"
+            " WHERE c_custkey IN (SELECT MAX(o_custkey) FROM orders GROUP BY a)",
+            "SEMI JOIN",
+            [2, 5],
+        ),
+        (
+            "SELECT c_custkey FROM customer WHERE c_acctbal IN"
+            " (SELECT o_amt FROM orders WHERE a = (SELECT MIN(a) FROM orders))",
+            "SEMI JOIN",
+            [2],
+        ),
+        # `= (scalar subquery)` is membership in a one-row set.
+        (
+            "SELECT c_custkey FROM customer"
+            " WHERE c_custkey = (SELECT MAX(o_custkey) FROM orders)",
+            "SEMI JOIN",
+            [5],
+        ),
+        # Keys of different numeric types compare as their supertype.
+        (
+            "SELECT c_custkey FROM customer"
+            " WHERE (SELECT MIN(o_amt) FROM orders) = CAST(c_acctbal AS DOUBLE)",
+            "SEMI JOIN",
+            [2],
+        ),
+        (
+            "SELECT c_custkey FROM customer"
+            " WHERE CAST(c_acctbal AS DOUBLE) IN (SELECT o_amt FROM orders)",
+            "SEMI JOIN",
+            [2],
+        ),
+        # An empty scalar subquery is NULL, which nothing equals.
+        (
+            "SELECT c_custkey FROM customer"
+            " WHERE c_custkey = (SELECT o_custkey FROM orders WHERE o_amt > 1000)",
+            "SEMI JOIN",
+            [],
+        ),
+        (
+            "DELETE FROM customer"
+            " WHERE c_custkey = (SELECT MAX(o_custkey) FROM orders)",
+            "ANTI JOIN",
+            [
+                (1, 10, 1, 10),
+                (2, 20, 1, 20),
+                (3, 30, 2, 10),
+                (4, 40, 1, 20),
+                (None, 60, 2, 30),
+            ],
+        ),
+        # NOT IN over an evaluated-whole subquery keeps SQL three-valued logic.
+        (
+            "SELECT c_custkey FROM customer"
+            " WHERE c_custkey NOT IN (SELECT MAX(o_custkey) FROM orders GROUP BY b)",
+            "ANTI JOIN",
+            [],
+        ),
+        (
+            "SELECT c_custkey FROM customer WHERE c_custkey NOT IN"
+            " (SELECT MAX(o_custkey) FROM orders WHERE o_custkey IS NOT NULL GROUP BY b)",
+            "ANTI JOIN",
+            [1, 2, 4],
         ),
     ],
 )
@@ -799,3 +923,33 @@ def test_correlated_scalar_subquery_rejects_foreign_qualifier() -> None:
         ctx.execute(
             "SELECT k, (SELECT SUM(foo.a) FROM t2 x WHERE x.b = t1.k) AS s FROM t1"
         ).collect()
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        "cost > (SELECT avg(cost) FROM sales s2)",
+        "state = 'GA' AND order_no IN (SELECT order_no FROM sales s2 WHERE s2.cost > 6)",
+        "state = 'GA' AND EXISTS ("
+        " SELECT * FROM sales s2"
+        " WHERE sales.order_no = s2.order_no AND sales.warehouse <> s2.warehouse)",
+    ],
+)
+def test_delete_with_subquery_preserves_schema(predicate: str) -> None:
+    # the flag and placeholder columns a subquery predicate binds are internal;
+    # DELETE returns whole rows, so they must not survive the filter
+    frames = {
+        "sales": pl.DataFrame(
+            {
+                "order_no": [1, 1, 2, 2, 3, 4],
+                "warehouse": [10, 20, 10, 10, 30, 40],
+                "state": ["GA", "GA", "GA", "GA", "CA", "GA"],
+                "cost": [5, 6, 7, 8, 9, 10],
+            }
+        ),
+    }
+    with pl.SQLContext(frames=frames) as ctx:
+        remaining = ctx.execute(f"DELETE FROM sales WHERE {predicate}").collect()
+
+    assert remaining.columns == ["order_no", "warehouse", "state", "cost"]
+    assert remaining.schema == frames["sales"].schema

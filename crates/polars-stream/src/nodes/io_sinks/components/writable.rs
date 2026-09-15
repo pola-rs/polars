@@ -37,6 +37,12 @@ impl WriteTarget {
         Writable(WritableVariant::TargetRef(WriteTargetWrap::new_ref(self)))
     }
 
+    pub fn set_parquet_metadata(&self, parquet_metadata: Vec<u8>) {
+        if let Some(path_info) = &self.inner.path_info {
+            path_info.set_parquet_metadata(parquet_metadata);
+        }
+    }
+
     pub fn as_buffered_writable(&mut self) -> Box<dyn io::Write + Send + '_> {
         let is_cloud = matches!(&self.variant, WriteTargetVariant::Cloud(_));
 

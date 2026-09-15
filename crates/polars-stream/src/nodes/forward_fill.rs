@@ -1,12 +1,15 @@
-use polars_async::primitives::distributor_channel::distributor_channel;
+use std::sync::Arc;
+
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::{AnyValue, Column, DataType, FillNullStrategy, Scalar};
 use polars_error::PolarsResult;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::compute_node_prelude::*;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
+use crate::utils::morsel_distributor::morsel_distributor;
 
 pub struct ForwardFillNode {
     dtype: DataType,
@@ -18,6 +21,7 @@ pub struct ForwardFillNode {
     limit: IdxSize,
     /// Amount of nulls that have been filled in since seeing a valid value.
     consecutive_nulls: IdxSize,
+    seq_offset: Arc<RelaxedCell<u64>>,
 }
 
 impl ForwardFillNode {
@@ -27,6 +31,7 @@ impl ForwardFillNode {
             dtype,
             last: AnyValue::Null,
             consecutive_nulls: 0,
+            seq_offset: Arc::default(),
         }
     }
 }
@@ -60,8 +65,11 @@ impl ComputeNode for ForwardFillNode {
         let mut receiver = recv_ports[0].take().unwrap().serial();
         let senders = send_ports[0].take().unwrap().parallel();
 
-        let (mut distributor, distr_receivers) =
-            distributor_channel(senders.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+        let (mut distributor, distr_receivers) = morsel_distributor(
+            senders.len(),
+            *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
+            self.seq_offset.clone(),
+        );
 
         let limit = self.limit;
         let last = &mut self.last;
@@ -99,7 +107,7 @@ impl ComputeNode for ForwardFillNode {
                 drop(df);
 
                 if distributor
-                    .send((morsel, morsel_last, morsel_consecutive_nulls))
+                    .send((morsel, (morsel_last, morsel_consecutive_nulls)))
                     .await
                     .is_err()
                 {
@@ -116,7 +124,7 @@ impl ComputeNode for ForwardFillNode {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let wait_group = WaitGroup::default();
 
-                while let Ok((morsel, last, consecutive_nulls)) = recv.recv().await {
+                while let Ok((morsel, (last, consecutive_nulls))) = recv.recv().await {
                     let mut morsel = morsel
                         .try_map(|df| {
                             let column = &df[0];

@@ -298,7 +298,7 @@ pub fn deserialize_all(
     use ArrowDataType as D;
     match field.dtype() {
         // @TODO: These are all a bit more complex, skip for now.
-        D::List(..) | D::LargeList(..) => Ok(None),
+        D::List(..) | D::LargeList(..) | D::Map(..) => Ok(None),
         D::Dictionary(..) => Ok(None),
         D::FixedSizeList(..) => Ok(None),
         D::Struct(..) => Ok(None),
@@ -567,7 +567,7 @@ pub fn deserialize<'a>(
 ) -> ParquetResult<Option<Statistics>> {
     use ArrowDataType as D;
     match field.dtype() {
-        D::List(field) | D::LargeList(field) => Ok(Some(Statistics::List(
+        D::List(field) | D::LargeList(field) | D::Map(field, _) => Ok(Some(Statistics::List(
             deserialize(field.as_ref(), columns, footer_buf)?.map(Box::new),
         ))),
         D::Dictionary(key, dtype, ordered) => Ok(Some(Statistics::Dictionary(

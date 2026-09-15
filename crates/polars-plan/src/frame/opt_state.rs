@@ -38,10 +38,7 @@ bitflags! {
         const STREAMING = 1 << 11;
         /// Run every node eagerly. This turns off multi-node optimizations.
         const EAGER = 1 << 12;
-        /// Try to estimate the number of rows so that joins can determine which side to keep in memory.
-        ///
-        /// Unread: the streaming engine samples at runtime to pick a build side, and
-        /// plan-time estimates sit behind [`Self::JOIN_ORDER`].
+        /// Use row estimates in cost planning.
         const ROW_ESTIMATE = 1 << 13;
         /// Replace simple projections with a faster inlined projection that skips the expression engine.
         const FAST_PROJECTION = 1 << 14;
@@ -117,6 +114,10 @@ impl OptFlags {
 
     pub fn partition_hive(&self) -> bool {
         self.contains(OptFlags::PARTITION_HIVE)
+    }
+
+    pub fn row_estimate(&self) -> bool {
+        self.contains(OptFlags::ROW_ESTIMATE)
     }
 }
 

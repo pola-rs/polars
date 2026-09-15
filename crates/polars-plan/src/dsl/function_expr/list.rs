@@ -50,6 +50,8 @@ pub enum ListFunction {
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
     ToStruct(Arc<[PlSmallStr]>),
+    #[cfg(feature = "dtype-map")]
+    ToMap,
 }
 
 impl Display for ListFunction {
@@ -99,6 +101,8 @@ impl Display for ListFunction {
             ToArray(_) => "to_array",
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "dtype-map")]
+            ToMap => "to_map",
         };
         write!(f, "list.{name}")
     }

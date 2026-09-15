@@ -19,9 +19,6 @@ impl private::PrivateSeries for SeriesWrap<BinaryOffsetChunked> {
         self.0.set_flags(flags)
     }
 
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        (&self.0).into_total_eq_inner()
-    }
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         (&self.0).into_total_ord_inner()
     }

@@ -6,22 +6,23 @@
 //!
 //! Anything not known to be safe to reorder across ends the cluster instead.
 
-use std::ops::Range;
 use std::sync::Arc;
 
 use polars_core::prelude::{PlIndexMap, PlIndexSet};
 use polars_core::schema::{Schema, SchemaRef};
-use polars_ops::frame::JoinValidation;
 use polars_utils::arena::{Arena, Node};
+use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 
-use super::stats::{LeafStats, leaf_stats};
+use crate::plans::aexpr::{ExprPushdownGroup, is_inherently_nondeterministic};
+use crate::plans::optimizer::join_utils::plain_inner_equi_join;
+use crate::plans::schema::join_right_output_names;
 use crate::plans::{
-    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, OutputName, ProjectionOptions,
-    aexpr_to_leaf_names_iter,
+    AExpr, ExprIR, IR, JoinOptionsIR, MintermIter, NodeStats, OutputName, ProjectionOptions,
+    aexpr_to_leaf_names_iter, node_stats,
 };
-use crate::prelude::{JoinArgs, JoinType, MaintainOrderJoin};
+use crate::prelude::JoinArgs;
 use crate::utils::rename_columns;
 
 /// With two leaves there is only one order, so a cluster needs at least three.
@@ -34,7 +35,7 @@ type Renames = PlIndexMap<PlSmallStr, PlSmallStr>;
 pub(super) struct Leaf {
     pub(super) node: Node,
     pub(super) schema: SchemaRef,
-    pub(super) stats: LeafStats,
+    pub(super) stats: NodeStats,
 }
 
 /// One equi-key pair, resolved to the leaves it connects.
@@ -47,6 +48,11 @@ pub(super) struct Edge {
     pub(super) right_leaf: usize,
     pub(super) left_key: ExprIR,
     pub(super) right_key: ExprIR,
+    /// Column each key reads, when it is a plain column reference. A computed key
+    /// has none: it is named after its left-most column, whose statistics and
+    /// identity are not the expression's.
+    pub(super) left_name: Option<PlSmallStr>,
+    pub(super) right_name: Option<PlSmallStr>,
 }
 
 /// An edge oriented against the leaves joined so far.
@@ -57,6 +63,9 @@ pub(super) struct Bridge<'a> {
     pub(super) placed_key: &'a ExprIR,
     /// Key belonging to the candidate (right) side.
     pub(super) candidate_key: &'a ExprIR,
+    /// Column names of those keys, when they are plain column references.
+    pub(super) placed_name: Option<&'a PlSmallStr>,
+    pub(super) candidate_name: Option<&'a PlSmallStr>,
 }
 
 pub(super) struct Cluster {
@@ -65,9 +74,16 @@ pub(super) struct Cluster {
     /// Schema of the cluster root before reordering. The rebuilt plan is projected
     /// back to it.
     pub(super) output_schema: SchemaRef,
+    /// Reads of [`output_schema`](Self::output_schema)'s columns under the names the
+    /// leaves carry, aliased back. Empty unless a leaf was renamed.
+    pub(super) restore: Vec<ExprIR>,
     /// Options used for every rebuilt join. [`same_settings`] guarantees all joins
     /// in the cluster agree on everything but their keys.
     pub(super) options: Arc<JoinOptionsIR>,
+    /// Conjuncts that sat between the cluster's joins, in the root namespace. The
+    /// joins are all inner, so these commute with them and are re-applied as soon as
+    /// the chain has the columns they read.
+    pub(super) residuals: Vec<ExprIR>,
 }
 
 impl Cluster {
@@ -88,12 +104,16 @@ impl Cluster {
                     placed_leaf: edge.left_leaf,
                     placed_key: &edge.left_key,
                     candidate_key: &edge.right_key,
+                    placed_name: edge.left_name.as_ref(),
+                    candidate_name: edge.right_name.as_ref(),
                 })
             } else if edge.left_leaf == candidate && is_placed[edge.right_leaf] {
                 Some(Bridge {
                     placed_leaf: edge.right_leaf,
                     placed_key: &edge.right_key,
                     candidate_key: &edge.left_key,
+                    placed_name: edge.right_name.as_ref(),
+                    candidate_name: edge.left_name.as_ref(),
                 })
             } else {
                 None
@@ -109,17 +129,7 @@ impl Cluster {
 /// identically named columns survive the inputs being swapped.
 /// If this evaluates false we don't rewrite a cluster and leave it as is.
 fn reorderable(options: &JoinOptionsIR) -> bool {
-    let args = &options.args;
-
-    matches!(args.how, JoinType::Inner)
-        && args.slice.is_none()
-        && matches!(args.maintain_order, MaintainOrderJoin::None)
-        // Validation checks a named side for uniqueness; reordering would point it
-        // at a different relation.
-        && matches!(args.validation, JoinValidation::ManyToMany)
-        // A forced build side refers to this specific join, so leave it alone.
-        && args.build_side.is_none()
-        && matches!(&options.options, JoinTypeOptionsIR::Equi { on } if !on.is_empty())
+    plain_inner_equi_join(options)
 }
 
 /// A leaf as found, with the renames that carry its columns into the root namespace.
@@ -128,17 +138,24 @@ struct RawLeaf {
     renames: Arc<Renames>,
 }
 
-/// A key pair as written, together with the leaves either side of its join.
+/// One conjunct found between two joins, with the origin of every column it reads.
+struct RawResidual {
+    predicate: ExprIR,
+    origins: PlIndexMap<PlSmallStr, Origin>,
+}
+
+/// A leaf and the name of one of its columns, as the leaf itself emits it.
+type Origin = (usize, PlSmallStr);
+
+/// A key pair as written, with the origin of every column either key reads.
 ///
-/// A key expression is resolved by name against its own input, so the sides have to
-/// be looked up separately; the same name can occur on both.
+/// A key expression is resolved against its own input, so the sides are looked up
+/// separately; the same name can occur on both.
 struct RawKey {
     left_key: ExprIR,
     right_key: ExprIR,
-    left_leaves: Range<usize>,
-    right_leaves: Range<usize>,
-    /// Renames carrying this join's namespace up to the root's.
-    renames: Arc<Renames>,
+    left_origins: PlIndexMap<PlSmallStr, Origin>,
+    right_origins: PlIndexMap<PlSmallStr, Origin>,
 }
 
 /// Extract the cluster rooted at `root`, or `None` if it cannot be reordered.
@@ -147,7 +164,7 @@ pub(super) fn extract(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<Cluster> {
-    let IR::Join { options, .. } = ir_arena.get(root) else {
+    let IR::Join { options, .. } = ir_arena.get(root_join(root, ir_arena, expr_arena)?) else {
         return None;
     };
     if !reorderable(options) {
@@ -155,29 +172,125 @@ pub(super) fn extract(
     }
     let options = options.clone();
 
-    let mut raw_leaves = Vec::new();
-    let mut raw_keys = Vec::new();
-    collect(
-        root,
-        ir_arena,
-        expr_arena,
-        &options,
-        &Arc::new(Renames::default()),
-        &mut raw_leaves,
-        &mut raw_keys,
-    );
+    let (raw_leaves, raw_keys, raw_residuals, root_origins) =
+        Collector::run(root, ir_arena, expr_arena, &options)?;
 
     if raw_leaves.len() < MIN_LEAVES {
         return None;
     }
 
-    // Every leaf needs an estimate. Ordering on partial information would order by
-    // which leaves happened to be measurable.
-    let mut leaves = Vec::with_capacity(raw_leaves.len());
+    let mut nodes = Vec::with_capacity(raw_leaves.len());
+    let mut schemas = Vec::with_capacity(raw_leaves.len());
+    let mut leaf_renames = Vec::with_capacity(raw_leaves.len());
     for raw in raw_leaves {
-        let stats = leaf_stats(raw.node, ir_arena, expr_arena)?;
         let schema = ir_arena.get(raw.node).schema(ir_arena).into_owned();
         let (node, schema) = rename_leaf(raw.node, schema, &raw.renames, ir_arena, expr_arena)?;
+        nodes.push(node);
+        schemas.push(schema);
+        leaf_renames.push(raw.renames);
+    }
+
+    let mut edges = Vec::with_capacity(raw_keys.len());
+    for raw in raw_keys {
+        let (left_key, left_leaf) =
+            resolve_key(&raw.left_key, &raw.left_origins, &leaf_renames, expr_arena)?;
+        let (right_key, right_leaf) = resolve_key(
+            &raw.right_key,
+            &raw.right_origins,
+            &leaf_renames,
+            expr_arena,
+        )?;
+        let left_name = left_key.plain_column(expr_arena).cloned();
+        let right_name = right_key.plain_column(expr_arena).cloned();
+        edges.push(Edge {
+            left_leaf,
+            right_leaf,
+            left_key,
+            right_key,
+            left_name,
+            right_name,
+        });
+    }
+
+    let coalesced = if options.args.should_coalesce() {
+        let (names, closed) = coalesce_keys(&schemas, &edges, expr_arena)?;
+        edges = closed;
+        names
+    } else {
+        PlIndexSet::default()
+    };
+
+    let output_schema = ir_arena.get(root).schema(ir_arena).into_owned();
+
+    // A coalescing cluster folds its key columns away, which the restoring projection
+    // does not model, so only a non-coalescing one can be renamed apart.
+    let mut collisions = vec![Renames::default(); schemas.len()];
+    if !column_names_are_unambiguous(&schemas, &coalesced) {
+        if !coalesced.is_empty() {
+            return None;
+        }
+        collisions = collision_renames(&schemas);
+        let renames = &collisions;
+        for (leaf, renames) in renames.iter().enumerate() {
+            let (node, schema) = rename_leaf(
+                nodes[leaf],
+                schemas[leaf].clone(),
+                renames,
+                ir_arena,
+                expr_arena,
+            )?;
+            nodes[leaf] = node;
+            schemas[leaf] = schema;
+        }
+        for edge in &mut edges {
+            edge.left_key = rename_expr(&edge.left_key, &renames[edge.left_leaf], expr_arena);
+            edge.right_key = rename_expr(&edge.right_key, &renames[edge.right_leaf], expr_arena);
+        }
+        // A leaf column already named like a renamed one is still shared afterwards.
+        if !column_names_are_unambiguous(&schemas, &coalesced) {
+            return None;
+        }
+    }
+
+    // The name a leaf column carries in the rebuilt joins.
+    let rebuilt_name = |(leaf, name): &Origin| {
+        let name = leaf_renames[*leaf].get(name).unwrap_or(name);
+        collisions[*leaf].get(name).unwrap_or(name).clone()
+    };
+
+    // Reads of the cluster's output columns under the names the rebuilt joins use,
+    // aliased back to the names the plan above expects. Only needed once leaves have
+    // been renamed apart; otherwise the output is selected by name.
+    let mut restore = Vec::new();
+    if collisions.iter().any(|renames| !renames.is_empty()) {
+        for (origin, output_name) in root_origins.iter().zip(output_schema.iter_names()) {
+            let read = rebuilt_name(origin);
+            let mut e = ExprIR::from_column_name(read.clone(), expr_arena);
+            if read != *output_name {
+                e.set_alias(output_name.clone());
+            }
+            restore.push(e);
+        }
+    }
+
+    let residuals = raw_residuals
+        .iter()
+        .map(|raw| {
+            let renames: Renames = raw
+                .origins
+                .iter()
+                .map(|(name, origin)| (name.clone(), rebuilt_name(origin)))
+                .collect();
+            rename_expr(&raw.predicate, &renames, expr_arena)
+        })
+        .collect();
+
+    // Every leaf needs an estimate. Ordering on partial information would order by
+    // which leaves happened to be measurable. Taken after renaming so that the
+    // per-column statistics are keyed on the names the rebuilt joins use.
+    let mut leaves = Vec::with_capacity(nodes.len());
+    for (node, schema) in nodes.into_iter().zip(schemas) {
+        let stats = node_stats(node, ir_arena, expr_arena)?;
         leaves.push(Leaf {
             node,
             schema,
@@ -185,40 +298,68 @@ pub(super) fn extract(
         });
     }
 
-    let mut edges = Vec::with_capacity(raw_keys.len());
-    for raw in raw_keys {
-        let left_key = normalize_key(&raw.left_key, &raw.renames, expr_arena);
-        let right_key = normalize_key(&raw.right_key, &raw.renames, expr_arena);
-        let left_leaf = owning_leaf(&left_key, &leaves, raw.left_leaves, expr_arena)?;
-        let right_leaf = owning_leaf(&right_key, &leaves, raw.right_leaves, expr_arena)?;
-        edges.push(Edge {
-            left_leaf,
-            right_leaf,
-            left_key,
-            right_key,
-        });
-    }
-
-    let coalesced = if options.args.should_coalesce() {
-        let (names, closed) = coalesce_keys(&leaves, &edges, expr_arena)?;
-        edges = closed;
-        names
-    } else {
-        PlIndexSet::default()
-    };
-
-    if !column_names_are_unambiguous(&leaves, &coalesced) {
-        return None;
-    }
-
-    let output_schema = ir_arena.get(root).schema(ir_arena).into_owned();
-
     Some(Cluster {
         leaves,
         edges,
         output_schema,
+        restore,
         options,
+        residuals,
     })
+}
+
+/// The join whose settings the cluster inherits: `root` itself, or the join under a
+/// filter on top of the run. The collector carries such a filter's conjuncts as
+/// residuals, so they are re-applied as soon as their columns are joined in rather
+/// than staying above the whole rebuilt run.
+fn root_join(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<Node> {
+    let node = match ir_arena.get(root) {
+        IR::Join { .. } => root,
+        IR::Filter { input, .. } => {
+            peel_projections(*input, ir_arena, expr_arena, &Arc::new(Renames::default())).0
+        },
+        _ => return None,
+    };
+    matches!(ir_arena.get(node), IR::Join { .. }).then_some(node)
+}
+
+/// Whether a filter conjunct may be re-applied elsewhere in the join run: the same
+/// test predicate-pushdown applies before moving a predicate past a join, plus
+/// determinism, since a moved predicate is evaluated on a different set of rows.
+fn may_travel(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    let mut group = ExprPushdownGroup::Pushable;
+    group.update_with_expr_rec(expr_arena.get(node), expr_arena, None);
+    matches!(group, ExprPushdownGroup::Pushable)
+        && !is_inherently_nondeterministic(node, expr_arena)
+}
+
+/// A name for a column held by more than one leaf, unique across the cluster.
+fn disambiguated(leaf: usize, name: &PlSmallStr) -> PlSmallStr {
+    format_pl_smallstr!("__POLARS_JOIN_ORDER_{leaf}_{name}")
+}
+
+/// Per leaf, the renames pulling its share of a name held by several leaves apart.
+///
+/// A leaf holding no shared name gets an empty map, which is a no-op to apply.
+fn collision_renames(schemas: &[SchemaRef]) -> Vec<Renames> {
+    let mut holders: PlIndexMap<&PlSmallStr, usize> = PlIndexMap::default();
+    for schema in schemas {
+        for name in schema.iter_names() {
+            *holders.entry(name).or_default() += 1;
+        }
+    }
+
+    schemas
+        .iter()
+        .enumerate()
+        .map(|(leaf, schema)| {
+            schema
+                .iter_names()
+                .filter(|name| holders[name] > 1)
+                .map(|name| (name.clone(), disambiguated(leaf, name)))
+                .collect()
+        })
+        .collect()
 }
 
 /// Walk the contiguous run of reorderable joins, collecting leaves and raw key pairs.
@@ -226,68 +367,216 @@ pub(super) fn extract(
 /// A join configured differently from the root becomes a leaf instead of being folded
 /// in. Rebuilt joins inherit the root's settings, so folding in a join that disagreed
 /// on, say, `nulls_equal` would change its meaning.
-#[recursive]
-fn collect(
-    node: Node,
-    ir_arena: &Arena<IR>,
-    expr_arena: &Arena<AExpr>,
-    root_options: &JoinOptionsIR,
-    renames: &Arc<Renames>,
-    leaves: &mut Vec<RawLeaf>,
-    key_pairs: &mut Vec<RawKey>,
-) {
-    // Column projections commonly sit between joins. They preserve rows, so look past
-    // them for the join underneath; otherwise almost every join is its own cluster.
-    let (peeled, peeled_renames) = peel_projections(node, ir_arena, expr_arena, renames);
+struct Collector<'a> {
+    ir_arena: &'a Arena<IR>,
+    expr_arena: &'a Arena<AExpr>,
+    root_options: &'a JoinOptionsIR,
+    leaves: Vec<RawLeaf>,
+    key_pairs: Vec<RawKey>,
+    residuals: Vec<RawResidual>,
+}
 
-    match ir_arena.get(peeled) {
-        IR::Join {
-            input_left,
-            input_right,
-            options,
-            ..
-        } if reorderable(options) && same_settings(options, root_options) => {
-            // Each side's leaves land in one contiguous run, which is the range the
-            // keys of that side resolve against.
-            let start = leaves.len();
-            collect(
-                *input_left,
-                ir_arena,
-                expr_arena,
-                root_options,
-                &peeled_renames,
-                leaves,
-                key_pairs,
-            );
-            let mid = leaves.len();
-            collect(
-                *input_right,
-                ir_arena,
-                expr_arena,
-                root_options,
-                &peeled_renames,
-                leaves,
-                key_pairs,
-            );
-            let end = leaves.len();
+impl<'a> Collector<'a> {
+    /// Walk the cluster rooted at `root`, returning its leaves, keys and residuals,
+    /// and the origin of each of the root's output columns.
+    #[allow(clippy::type_complexity)]
+    fn run(
+        root: Node,
+        ir_arena: &'a Arena<IR>,
+        expr_arena: &'a Arena<AExpr>,
+        root_options: &'a JoinOptionsIR,
+    ) -> Option<(Vec<RawLeaf>, Vec<RawKey>, Vec<RawResidual>, Vec<Origin>)> {
+        let mut collector = Self {
+            ir_arena,
+            expr_arena,
+            root_options,
+            leaves: Vec::new(),
+            key_pairs: Vec::new(),
+            residuals: Vec::new(),
+        };
+        let origins = collector.collect(root, &Arc::new(Renames::default()))?;
+        Some((
+            collector.leaves,
+            collector.key_pairs,
+            collector.residuals,
+            origins,
+        ))
+    }
 
-            if let Some(on) = options.options.key_pairs() {
-                key_pairs.extend(on.iter().map(|(left_key, right_key)| RawKey {
-                    left_key: left_key.clone(),
-                    right_key: right_key.clone(),
-                    left_leaves: start..mid,
-                    right_leaves: mid..end,
-                    renames: peeled_renames.clone(),
-                }));
-            }
-        },
-        // Keep the unpeeled node, and with it the renames as they stood above it: a
-        // projection on a leaf still narrows it, and its own renames are already
-        // part of its schema.
-        _ => leaves.push(RawLeaf {
+    /// Push `node` as a leaf; its columns are their own origin.
+    fn push_leaf(&mut self, node: Node, renames: &Arc<Renames>) -> Vec<Origin> {
+        let leaf = self.leaves.len();
+        self.leaves.push(RawLeaf {
             node,
             renames: renames.clone(),
-        }),
+        });
+        self.leaf_origins(leaf, node)
+    }
+
+    fn leaf_origins(&self, leaf: usize, node: Node) -> Vec<Origin> {
+        self.ir_arena
+            .get(node)
+            .schema(self.ir_arena)
+            .iter_names()
+            .map(|name| (leaf, name.clone()))
+            .collect()
+    }
+
+    /// Collect the run under `node`, returning the origin of each of its output
+    /// columns, in schema order. `None` if a join's schema cannot be determined.
+    #[recursive]
+    fn collect(&mut self, node: Node, renames: &Arc<Renames>) -> Option<Vec<Origin>> {
+        // Column projections commonly sit between joins. They preserve rows, so look
+        // past them for the join underneath; otherwise almost every join is its own
+        // cluster.
+        let (peeled, peeled_renames) =
+            peel_projections(node, self.ir_arena, self.expr_arena, renames);
+
+        // A predicate over two of the relations cannot be pushed below their join, so
+        // it sits between the joins. Peel it off and carry it, otherwise the cluster
+        // ends here and everything below is one leaf, keys and all. Each conjunct
+        // travels on its own so it can be re-applied as soon as its own columns are
+        // available.
+        //
+        // Only a predicate that predicate-pushdown would move past a join may travel:
+        // elementwise, infallible and deterministic. Anything else depends on which
+        // rows reach it, and reordering the joins below changes which rows those are.
+        let origins = if let IR::Filter { input, predicate } = self.ir_arena.get(peeled) {
+            let expr_arena = self.expr_arena;
+            let conjuncts = || MintermIter::new(predicate.node(), expr_arena);
+            if !conjuncts().all(|node| may_travel(node, expr_arena)) {
+                return Some(self.push_leaf(node, renames));
+            }
+
+            let leaf_start = self.leaves.len();
+            let origins = self.collect(*input, &peeled_renames)?;
+
+            if self.leaves.len() == leaf_start + 1 {
+                // Everything below narrows one leaf, so fold the whole filter into
+                // it: the predicate keeps the namespace it was written in, and the
+                // leaf is measured through it when the order is picked.
+                self.leaves[leaf_start] = RawLeaf {
+                    node,
+                    renames: renames.clone(),
+                };
+                return Some(self.leaf_origins(leaf_start, node));
+            }
+
+            let input_schema = self.ir_arena.get(*input).schema(self.ir_arena);
+            for conjunct in conjuncts() {
+                self.residuals.push(RawResidual {
+                    predicate: ExprIR::from_node(conjunct, expr_arena),
+                    origins: self.origins_read(conjunct, &input_schema, &origins)?,
+                });
+            }
+            origins
+        } else {
+            match self.ir_arena.get(peeled) {
+                IR::Join {
+                    input_left,
+                    input_right,
+                    options,
+                    ..
+                } if reorderable(options) && same_settings(options, self.root_options) => {
+                    let mut origins = self.collect(*input_left, &peeled_renames)?;
+                    let right_origins = self.collect(*input_right, &peeled_renames)?;
+                    let schema_left = self.ir_arena.get(*input_left).schema(self.ir_arena);
+                    let schema_right = self.ir_arena.get(*input_right).schema(self.ir_arena);
+
+                    if let Some(on) = options.options.key_pairs() {
+                        for (left_key, right_key) in on {
+                            self.key_pairs.push(RawKey {
+                                left_key: left_key.clone(),
+                                right_key: right_key.clone(),
+                                left_origins: self.origins_read(
+                                    left_key.node(),
+                                    &schema_left,
+                                    &origins,
+                                )?,
+                                right_origins: self.origins_read(
+                                    right_key.node(),
+                                    &schema_right,
+                                    &right_origins,
+                                )?,
+                            });
+                        }
+                    }
+
+                    // The join emits its left columns, then its right ones minus any
+                    // coalesced away.
+                    let right_names = join_right_output_names(
+                        &schema_left,
+                        &schema_right,
+                        options,
+                        self.expr_arena,
+                    )
+                    .ok()?;
+                    origins.extend(
+                        right_origins
+                            .into_iter()
+                            .zip(right_names)
+                            .filter_map(|(origin, name)| name.map(|_| origin)),
+                    );
+                    origins
+                },
+                // Keep the unpeeled node, and with it the renames as they stood above
+                // it: a projection on a leaf still narrows it, and its own renames are
+                // already part of its schema.
+                _ => return Some(self.push_leaf(node, renames)),
+            }
+        };
+
+        Some(self.project_origins(node, peeled, origins))
+    }
+
+    /// The origin of every column `expr` reads, resolved against the schema it is
+    /// evaluated on and the origins of that schema's columns.
+    fn origins_read(
+        &self,
+        expr: Node,
+        schema: &Schema,
+        origins: &[Origin],
+    ) -> Option<PlIndexMap<PlSmallStr, Origin>> {
+        aexpr_to_leaf_names_iter(expr, self.expr_arena)
+            .map(|name| Some((name.clone(), origins[schema.index_of(name)?].clone())))
+            .collect()
+    }
+
+    /// Carry `origins`, which describe `peeled`'s columns, up through the projections
+    /// between `peeled` and `node`, so that they describe `node`'s columns instead.
+    fn project_origins(&self, node: Node, peeled: Node, mut origins: Vec<Origin>) -> Vec<Origin> {
+        let mut chain = Vec::new();
+        let mut current = node;
+        while current != peeled {
+            chain.push(current);
+            current = match self.ir_arena.get(current) {
+                IR::SimpleProjection { input, .. } | IR::Select { input, .. } => *input,
+                _ => unreachable!("only projections are peeled"),
+            };
+        }
+
+        for projection in chain.into_iter().rev() {
+            let (input, reads): (Node, Vec<&PlSmallStr>) = match self.ir_arena.get(projection) {
+                IR::SimpleProjection { input, columns } => (*input, columns.iter_names().collect()),
+                // `peel_projections` only looks through a select of plain columns.
+                IR::Select { input, expr, .. } => (
+                    *input,
+                    expr.iter()
+                        .map(|e| match self.expr_arena.get(e.node()) {
+                            AExpr::Column(name) => name,
+                            _ => unreachable!("only column reads are peeled"),
+                        })
+                        .collect(),
+                ),
+                _ => unreachable!("only projections are peeled"),
+            };
+            let input_schema = self.ir_arena.get(input).schema(self.ir_arena);
+            origins = reads
+                .into_iter()
+                .map(|name| origins[input_schema.index_of(name).unwrap()].clone())
+                .collect();
+        }
+        origins
     }
 }
 
@@ -414,19 +703,45 @@ fn rename_leaf(
     Some((node, schema))
 }
 
-/// A join key rewritten into the names the cluster root uses.
-fn normalize_key(key: &ExprIR, renames: &Renames, expr_arena: &mut Arena<AExpr>) -> ExprIR {
-    // `rename_columns` re-interns the whole expression, so only pay for it when this
-    // key is one of the things being renamed.
-    let touches = |name: &PlSmallStr| renames.contains_key(name.as_str());
-    if !aexpr_to_leaf_names_iter(key.node(), expr_arena).any(&touches)
-        && !key.output_name_inner().get().is_some_and(touches)
-    {
-        return key.clone();
+/// A key rewritten into the names its leaf carries after [`rename_leaf`], and that
+/// leaf; `None` if the key does not read from exactly one leaf.
+fn resolve_key(
+    key: &ExprIR,
+    origins: &PlIndexMap<PlSmallStr, Origin>,
+    leaf_renames: &[Arc<Renames>],
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<(ExprIR, usize)> {
+    let mut owner = None;
+    let mut renames = Renames::default();
+    for (name, (leaf, column)) in origins {
+        // A key spanning two leaves cannot be attributed to one side.
+        if owner
+            .replace(*leaf)
+            .is_some_and(|existing| existing != *leaf)
+        {
+            return None;
+        }
+        let read = leaf_renames[*leaf].get(column).unwrap_or(column);
+        if read != name {
+            renames.insert(name.clone(), read.clone());
+        }
     }
-    let node = rename_columns(key.node(), expr_arena, renames);
+    Some((rename_expr(key, &renames, expr_arena), owner?))
+}
+
+/// A key or residual rewritten into the names the rebuilt joins use.
+fn rename_expr(expr: &ExprIR, renames: &Renames, expr_arena: &mut Arena<AExpr>) -> ExprIR {
+    // `rename_columns` re-interns the whole expression, so only pay for it when this
+    // expression is one of the things being renamed.
+    let touches = |name: &PlSmallStr| renames.contains_key(name.as_str());
+    if !aexpr_to_leaf_names_iter(expr.node(), expr_arena).any(&touches)
+        && !expr.output_name_inner().get().is_some_and(touches)
+    {
+        return expr.clone();
+    }
+    let node = rename_columns(expr.node(), expr_arena, renames);
     let renamed = |name: &PlSmallStr| renames.get(name).unwrap_or(name).clone();
-    let output_name = match key.output_name_inner() {
+    let output_name = match expr.output_name_inner() {
         OutputName::ColumnLhs(name) => OutputName::ColumnLhs(renamed(name)),
         OutputName::Alias(name) => OutputName::Alias(renamed(name)),
         other => other.clone(),
@@ -469,12 +784,14 @@ fn same_settings(a: &JoinOptionsIR, b: &JoinOptionsIR) -> bool {
 /// A name held by two leaves is suffixed on collision, and which side gets the suffix
 /// depends on which ends up left, so reordering could rename columns. Coalesced key
 /// names are the exception: they are folded into one column rather than suffixed.
-fn column_names_are_unambiguous(leaves: &[Leaf], coalesced: &PlIndexSet<PlSmallStr>) -> bool {
-    let total: usize = leaves.iter().map(|l| l.schema.len()).sum();
+///
+/// [`collision_renames`] pulls the holders apart so that this holds.
+fn column_names_are_unambiguous(schemas: &[SchemaRef], coalesced: &PlIndexSet<PlSmallStr>) -> bool {
+    let total: usize = schemas.iter().map(|s| s.len()).sum();
     let mut seen = PlIndexSet::with_capacity_and_hasher(total, Default::default());
-    leaves
+    schemas
         .iter()
-        .flat_map(|l| l.schema.iter_names())
+        .flat_map(|s| s.iter_names())
         .all(|name| coalesced.contains(name.as_str()) || seen.insert(name.as_str()))
 }
 
@@ -489,7 +806,7 @@ fn column_names_are_unambiguous(leaves: &[Leaf], coalesced: &PlIndexSet<PlSmallS
 /// replaced by the clique over every leaf holding it. Without those implied edges an
 /// order could join two holders over some other key and leave both columns behind.
 fn coalesce_keys(
-    leaves: &[Leaf],
+    schemas: &[SchemaRef],
     edges: &[Edge],
     expr_arena: &Arena<AExpr>,
 ) -> Option<(PlIndexSet<PlSmallStr>, Vec<Edge>)> {
@@ -504,10 +821,10 @@ fn coalesce_keys(
 
     let mut closed = Vec::with_capacity(edges.len());
     for (name, on_name) in &by_name {
-        let holders: Vec<usize> = (0..leaves.len())
-            .filter(|&i| leaves[i].schema.contains(name.as_str()))
+        let holders: Vec<usize> = (0..schemas.len())
+            .filter(|&i| schemas[i].contains(name.as_str()))
             .collect();
-        if !folds_into_one_column(name, &holders, on_name, leaves) {
+        if !folds_into_one_column(name, &holders, on_name, schemas) {
             return None;
         }
 
@@ -521,6 +838,8 @@ fn coalesce_keys(
                     right_leaf,
                     left_key: template.left_key.clone(),
                     right_key: template.right_key.clone(),
+                    left_name: template.left_name.clone(),
+                    right_name: template.right_name.clone(),
                 });
             }
         }
@@ -539,9 +858,9 @@ fn folds_into_one_column(
     name: &PlSmallStr,
     holders: &[usize],
     edges: &[&Edge],
-    leaves: &[Leaf],
+    schemas: &[SchemaRef],
 ) -> bool {
-    let mut parent: Vec<usize> = (0..leaves.len()).collect();
+    let mut parent: Vec<usize> = (0..schemas.len()).collect();
     for edge in edges {
         let (left, right) = (
             find(&mut parent, edge.left_leaf),
@@ -554,10 +873,10 @@ fn folds_into_one_column(
         return false;
     };
     let root = find(&mut parent, first);
-    let dtype = leaves[first].schema.get(name.as_str());
+    let dtype = schemas[first].get(name.as_str());
 
     rest.iter()
-        .all(|&i| find(&mut parent, i) == root && leaves[i].schema.get(name.as_str()) == dtype)
+        .all(|&i| find(&mut parent, i) == root && schemas[i].get(name.as_str()) == dtype)
 }
 
 fn find(parent: &mut [usize], mut i: usize) -> usize {
@@ -566,28 +885,4 @@ fn find(parent: &mut [usize], mut i: usize) -> usize {
         i = parent[i];
     }
     i
-}
-
-/// Which leaf of `range` a key expression reads from, or `None` if that is not
-/// exactly one leaf.
-fn owning_leaf(
-    key: &ExprIR,
-    leaves: &[Leaf],
-    range: Range<usize>,
-    expr_arena: &Arena<AExpr>,
-) -> Option<usize> {
-    let mut owner = None;
-    for name in aexpr_to_leaf_names_iter(key.node(), expr_arena) {
-        let found = leaves[range.clone()]
-            .iter()
-            .position(|leaf| leaf.schema.contains(name.as_str()))?
-            + range.start;
-        match owner {
-            None => owner = Some(found),
-            // A key spanning two leaves cannot be attributed to one side.
-            Some(existing) if existing != found => return None,
-            Some(_) => {},
-        }
-    }
-    owner
 }

@@ -223,18 +223,6 @@ impl<'a> GroupBy<'a> {
         &self.groups
     }
 
-    /// Get the internal representation of the GroupBy operation.
-    /// The Vec returned contains:
-    ///     (first_idx, [`Vec<indexes>`])
-    ///     Where second value in the tuple is a vector with all matching indexes.
-    ///
-    /// # Safety
-    /// Groups should always be in bounds of the `DataFrame` hold by this [`GroupBy`].
-    /// If you mutate it, you must hold that invariant.
-    pub unsafe fn get_groups_mut(&mut self) -> &mut GroupPositions {
-        &mut self.groups
-    }
-
     pub fn into_groups(self) -> GroupPositions {
         self.groups
     }

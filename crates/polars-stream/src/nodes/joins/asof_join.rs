@@ -8,6 +8,7 @@ use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::utils::{Container, accumulate_dataframes_vertical_unchecked};
+use polars_ooc::RandomSpillContext;
 use polars_ops::frame::is_sorted::DataFrameIsSorted;
 use polars_ops::frame::{
     _check_asof_columns, _finish_join, _join_asof_dispatch, AsOfOptions, AsofStrategy, JoinArgs,
@@ -23,7 +24,7 @@ use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::ComputeNode;
-use crate::nodes::joins::utils::{DataFrameSearchBuffer, stop_and_buffer_pipe_contents};
+use crate::nodes::joins::utils::{SpillFrameSearchBuffer, stop_and_take_pipe_contents};
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
 const ROW_ENCODED_COL_NAME: PlSmallStr = PlSmallStr::from_static("__PL_ASOF_JOIN_BY");
@@ -89,7 +90,7 @@ pub struct AsOfJoinNode {
     /// In these cases, we stash that morsel here.
     left_buffer: VecDeque<DataFrame>,
     /// Buffer of the live range of right AsOf join rows.
-    right_buffer: DataFrameSearchBuffer,
+    right_buffer: SpillFrameSearchBuffer,
     output_seq: MorselSeq,
     // Slots to store the last non-null row of the previous morsel.
     // Used to check that each side is sorted across morsel boundaries.
@@ -150,7 +151,10 @@ impl AsOfJoinNode {
             params,
             state: AsOfJoinState::default(),
             left_buffer: Default::default(),
-            right_buffer: DataFrameSearchBuffer::empty_with_schema(right_input_schema),
+            right_buffer: SpillFrameSearchBuffer::empty_with_schema(
+                right_input_schema,
+                RandomSpillContext::new("asof-join-search-buffer".into()),
+            ),
             output_seq: Default::default(),
             last_non_null_row_left: None,
             last_non_null_row_right: None,
@@ -282,9 +286,9 @@ impl ComputeNode for AsOfJoinNode {
 async fn distribute_work_task(
     mut recv_left: Option<PortReceiver>,
     mut recv_right: Option<PortReceiver>,
-    mut distributor: dc::Sender<(DataFrame, DataFrameSearchBuffer, MorselSeq, SourceToken)>,
+    mut distributor: dc::Sender<(DataFrame, SpillFrameSearchBuffer, MorselSeq, SourceToken)>,
     left_buffer: &mut VecDeque<DataFrame>,
-    right_buffer: &mut DataFrameSearchBuffer,
+    right_buffer: &mut SpillFrameSearchBuffer,
     output_seq: &mut MorselSeq,
     last_non_null_row_left: &mut Option<DataFrame>,
     last_non_null_row_right: &mut Option<DataFrame>,
@@ -295,9 +299,11 @@ async fn distribute_work_task(
 
     loop {
         if source_token.stop_requested() {
-            stop_and_buffer_pipe_contents(recv_left.as_mut(), &mut |df| left_buffer.push_back(df))
-                .await;
-            stop_and_buffer_pipe_contents(recv_right.as_mut(), &mut |df| right_buffer.push_df(df))
+            for sf in stop_and_take_pipe_contents(recv_left.as_mut()).await {
+                left_buffer.push_back(sf.into_df().await);
+            }
+            right_buffer
+                .stop_and_buffer_from_pipe(recv_right.as_mut())
                 .await;
             return Ok(());
         }
@@ -310,24 +316,24 @@ async fn distribute_work_task(
             let (sf, _, st, _) = m.into_inner();
             (sf.into_df().await, st)
         } else {
-            stop_and_buffer_pipe_contents(recv_right.as_mut(), &mut |df| right_buffer.push_df(df))
+            right_buffer
+                .stop_and_buffer_from_pipe(recv_right.as_mut())
                 .await;
             return Ok(());
         };
 
-        while need_more_right_side(&left_df, right_buffer, params)? && !right_done {
+        while need_more_right_side(&left_df, right_buffer, params).await? && !right_done {
             if let Some(ref mut recv) = recv_right
                 && let Ok(morsel_right) = recv.recv().await
             {
-                right_buffer.push_df(morsel_right.into_df().await);
+                right_buffer.push_sf(morsel_right.into_sf()).await;
             } else {
                 // The right pipe is empty at this stage, we will need to wait for
                 // a new stage and try again.
                 left_buffer.push_front(left_df);
-                stop_and_buffer_pipe_contents(recv_left.as_mut(), &mut |df| {
-                    left_buffer.push_back(df)
-                })
-                .await;
+                for sf in stop_and_take_pipe_contents(recv_left.as_mut()).await {
+                    left_buffer.push_back(sf.into_df().await);
+                }
                 return Ok(());
             }
         }
@@ -340,7 +346,7 @@ async fn distribute_work_task(
             // If we need to check sortedness, we cannot prune the right side
             // yet, because the worker task still needs to check the internal
             // sortedness of this right chunk.
-            prune_right_side(&left_df, right_buffer, 0, last_non_null_row_right, params)?;
+            prune_right_side(&left_df, right_buffer, 0, last_non_null_row_right, params).await?;
         }
         if distributor
             .send((left_df.clone(), right_buffer.clone(), *output_seq, st))
@@ -356,7 +362,8 @@ async fn distribute_work_task(
             left_df.height().saturating_sub(1),
             last_non_null_row_right,
             params,
-        )?;
+        )
+        .await?;
     }
 }
 
@@ -392,9 +399,9 @@ fn check_left_continuity(
     Ok(())
 }
 
-fn check_right_continuity(
+async fn check_right_continuity(
     last_non_null_row: &mut Option<DataFrame>,
-    dfsb: &DataFrameSearchBuffer,
+    dfsb: &SpillFrameSearchBuffer,
     split_at_idx: usize,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
@@ -402,8 +409,11 @@ fn check_right_continuity(
     let sorted_by_cols = params.right_by().iter().chain([key_col_name]);
     let sorted_by_descending = params.by_descending.iter().chain([&false]);
     let sorted_by_nulls_last = params.by_nulls_last.iter().chain([&false]);
-    let project = dfsb.select(sorted_by_cols.clone());
-    let df = project.into_df();
+    let df = dfsb
+        .clone()
+        .into_df()
+        .await
+        .select(sorted_by_cols.clone())?;
     let before_split = df.slice(0, split_at_idx);
     let after_split = df.slice(split_at_idx as i64, df.height() - split_at_idx);
     let last_non_null = before_split.column(key_col_name)?.last_non_null();
@@ -454,9 +464,9 @@ where
 
 /// Do we need more values on the right side before we can compute the AsOf join
 /// between the right side and the complete left side?
-fn need_more_right_side(
+async fn need_more_right_side(
     left: &DataFrame,
-    right: &DataFrameSearchBuffer,
+    right: &SpillFrameSearchBuffer,
     params: &AsOfJoinParams,
 ) -> PolarsResult<bool> {
     if left.height() == 0 {
@@ -477,8 +487,12 @@ fn need_more_right_side(
         let left_last_group = unsafe { left_by_col.get_unchecked(left.height() - 1) };
         let cmp =
             move |a: &AnyValue<'_>, b: &AnyValue<'_>| reorder_cmp(a, b, *descending, *nulls_last);
-        start = right.binary_search(|x| cmp(x, &left_last_group).is_ge(), right_by, start..end);
-        end = right.binary_search(|x| cmp(x, &left_last_group).is_gt(), right_by, start..end);
+        start = right
+            .binary_search(|x| cmp(x, &left_last_group).is_ge(), right_by, start..end)
+            .await;
+        end = right
+            .binary_search(|x| cmp(x, &left_last_group).is_gt(), right_by, start..end)
+            .await;
         if start >= right.height() {
             return Ok(true);
         } else if end < right.height() {
@@ -491,14 +505,19 @@ fn need_more_right_side(
     let left_last_val = unsafe { left_key.get_unchecked(left_key.len() - 1) };
     let right_range_end = match (options.strategy, options.allow_eq) {
         (Forward, true) | (Backward, false) => {
-            right.binary_search(|x| *x >= left_last_val, params.right.key_col(), start..end)
+            right
+                .binary_search(|x| *x >= left_last_val, params.right.key_col(), start..end)
+                .await
         },
         (Forward, false) | (Backward, true) => {
-            right.binary_search(|x| *x > left_last_val, params.right.key_col(), start..end)
+            right
+                .binary_search(|x| *x > left_last_val, params.right.key_col(), start..end)
+                .await
         },
         (Nearest, _) => {
-            let first_greater =
-                right.binary_search(|x| *x > left_last_val, params.right.key_col(), start..end);
+            let first_greater = right
+                .binary_search(|x| *x > left_last_val, params.right.key_col(), start..end)
+                .await;
             if first_greater >= right.height() {
                 return Ok(true);
             }
@@ -507,13 +526,18 @@ fn need_more_right_side(
             // the AsOf join is greedy and should until the *end* of that chunk.
 
             // SAFETY: We just checked that first_greater is in bounds
-            let first_greater_val =
-                unsafe { right.get_unchecked(params.right.key_col(), first_greater) };
-            right.binary_search(
-                |x| *x > first_greater_val,
-                params.right.key_col(),
-                first_greater..end,
-            )
+            let first_greater_val = unsafe {
+                right
+                    .get_unchecked(params.right.key_col(), first_greater)
+                    .await
+            };
+            right
+                .binary_search(
+                    |x| *x > first_greater_val,
+                    params.right.key_col(),
+                    first_greater..end,
+                )
+                .await
         },
     };
     Ok(right_range_end >= right.height())
@@ -521,9 +545,9 @@ fn need_more_right_side(
 
 /// Prune right-side rows that are no longer needed using a specific left row as the
 /// pruning reference point.
-fn prune_right_side(
+async fn prune_right_side(
     left: &DataFrame,
-    right: &mut DataFrameSearchBuffer,
+    right: &mut SpillFrameSearchBuffer,
     left_row_idx: usize,
     last_non_null_row: &mut Option<DataFrame>,
     params: &AsOfJoinParams,
@@ -542,28 +566,33 @@ fn prune_right_side(
         let group_val = unsafe { left_by_col.get_unchecked(left_row_idx) };
         let cmp =
             move |a: &AnyValue<'_>, b: &AnyValue<'_>| reorder_cmp(a, b, *descending, *nulls_last);
-        start = right.binary_search(|x| cmp(x, &group_val).is_ge(), right_by, start..end);
-        end = right.binary_search(|x| cmp(x, &group_val).is_gt(), right_by, start..end);
+        start = right
+            .binary_search(|x| cmp(x, &group_val).is_ge(), right_by, start..end)
+            .await;
+        end = right
+            .binary_search(|x| cmp(x, &group_val).is_gt(), right_by, start..end)
+            .await;
     }
 
     let left_key = left.column(params.left.key_col())?.as_materialized_series();
     // SAFETY: We checked earlier that the dataframes are not empty
     let key_val = unsafe { left_key.get_unchecked(left_row_idx) };
-    let mut right_range_start =
-        right.binary_search(|x| *x >= key_val, params.right.key_col(), start..end);
+    let mut right_range_start = right
+        .binary_search(|x| *x >= key_val, params.right.key_col(), start..end)
+        .await;
     if matches!(params.as_of_options().strategy, Backward | Nearest) {
         right_range_start = right_range_start.saturating_sub(1).max(start);
     }
 
     if params.as_of_options().check_sortedness {
-        check_right_continuity(last_non_null_row, right, right_range_start, params)?;
+        check_right_continuity(last_non_null_row, right, right_range_start, params).await?;
     }
     right.split_at(right_range_start);
     Ok(())
 }
 
 async fn compute_and_emit_task(
-    mut dist_recv: dc::Receiver<(DataFrame, DataFrameSearchBuffer, MorselSeq, SourceToken)>,
+    mut dist_recv: dc::Receiver<(DataFrame, SpillFrameSearchBuffer, MorselSeq, SourceToken)>,
     mut send: PortSender,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
@@ -571,7 +600,8 @@ async fn compute_and_emit_task(
     let mut scratch1 = ScratchVec::default();
     let mut scratch2 = ScratchVec::default();
     while let Ok((left_df, right_dfsb, seq, st)) = dist_recv.recv().await {
-        let out = compute_asof_join(left_df, right_dfsb, params, &mut scratch1, &mut scratch2)?;
+        let out =
+            compute_asof_join(left_df, right_dfsb, params, &mut scratch1, &mut scratch2).await?;
         let mut morsel = Morsel::new_unregistered(out, seq, st);
         morsel.set_consume_token(wait_group.token());
         if send.send(morsel).await.is_err() {
@@ -741,14 +771,14 @@ fn join_asof_ungrouped(
     _finish_join(left_df, right_df, params.args.suffix.clone())
 }
 
-fn compute_asof_join(
+async fn compute_asof_join(
     mut left_df: DataFrame,
-    right_dfsb: DataFrameSearchBuffer,
+    right_dfsb: SpillFrameSearchBuffer,
     params: &AsOfJoinParams,
     left_lengths: &mut ScratchVec<IdxSize>,
     right_lengths: &mut ScratchVec<IdxSize>,
 ) -> PolarsResult<DataFrame> {
-    let mut right_df = right_dfsb.into_df();
+    let mut right_df = right_dfsb.into_df().await;
     let options = params.as_of_options();
     let left_key = left_df.column(params.left.key_col())?.to_physical_repr();
     let right_key = right_df
