@@ -319,7 +319,7 @@ impl SimplifyIRNodeOrder<'_> {
                 schema: _,
                 options,
             } => {
-                use polars_ops::prelude::JoinType;
+                use polars_defs::join::JoinType;
 
                 let ([in_edge_lhs, in_edge_rhs], [out_edge]) = unpack_edges!(3);
 
@@ -350,7 +350,7 @@ impl SimplifyIRNodeOrder<'_> {
                     return false;
                 }
 
-                use polars_ops::prelude::MaintainOrderJoin as JO;
+                use polars_defs::join::MaintainOrderJoin as JO;
 
                 if out_edge.is_unordered() || options.args.maintain_order == JO::None {
                     *out_edge = Edge::Unordered;

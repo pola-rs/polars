@@ -12,7 +12,6 @@ pub mod merge_join;
 mod merge_sorted;
 
 use std::borrow::Cow;
-use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 pub use args::*;

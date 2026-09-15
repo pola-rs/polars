@@ -11,6 +11,7 @@ description = "More operations on Polars data structures"
 [dependencies]
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
+polars-defs = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by", "zip_with"] }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
@@ -92,7 +93,7 @@ fused = []
 cutqcut = ["dtype-categorical", "dtype-struct", "search_sorted"]
 rle = ["dtype-struct"]
 timezones = ["chrono", "chrono-tz", "polars-core/temporal", "polars-core/timezones", "polars-core/dtype-datetime"]
-random = ["rand", "rand_distr"]
+random = ["rand", "rand_distr", "polars-defs/random"]
 rank = ["rand"]
 find_many = ["aho-corasick"]
 serde = [
@@ -102,6 +103,7 @@ serde = [
   "polars-utils/serde",
   "polars-schema/serde",
   "polars-compute/serde",
+  "polars-defs/serde",
 ]
 dsl-schema = [
   "dep:schemars",
@@ -109,6 +111,7 @@ dsl-schema = [
   "polars-utils/dsl-schema",
   "polars-schema/dsl-schema",
   "polars-compute/dsl-schema",
+  "polars-defs/dsl-schema",
 ]
 
 # extra utilities for BinaryChunked
@@ -145,9 +148,9 @@ top_k = []
 pivot = ["polars-core/reinterpret", "polars-core/dtype-struct"]
 cross_join = []
 chunked_ids = []
-asof_join = []
-iejoin = []
-semi_anti_join = []
+asof_join = ["polars-defs/asof_join"]
+iejoin = ["polars-defs/iejoin"]
+semi_anti_join = ["polars-defs/semi_anti_join"]
 array_count = ["dtype-array"]
 list_filter = []
 list_gather = []

@@ -119,6 +119,7 @@ publish:  ## Publish Polars crates
 	 -p polars-arrow \
 	 -p polars-compute \
 	 -p polars-dtype \
+	 -p polars-defs \
 	 -p polars-row \
 	 -p polars-json \
 	 -p polars-core \
@@ -146,6 +147,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-arrow
 	cargo publish --allow-dirty -p polars-compute
 	cargo publish --allow-dirty -p polars-dtype
+	cargo publish --allow-dirty -p polars-defs
 	cargo publish --allow-dirty -p polars-row
 	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
