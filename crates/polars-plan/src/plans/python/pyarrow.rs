@@ -3,7 +3,7 @@ use std::fmt::Write;
 use polars_core::datatypes::AnyValue;
 #[cfg(feature = "dtype-datetime")]
 use polars_core::prelude::TimeZone;
-use polars_core::prelude::{DataType, ExplodeOptions, TimeUnit};
+use polars_core::prelude::{DataType, ExplodeOptions, Schema, TimeUnit};
 use polars_core::series::Series;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
@@ -141,21 +141,36 @@ fn series_to_pyarrow_list(s: &Series) -> Option<String> {
 // `pa.compute.field('x') > pa.compute.scalar(1)`). Used by the iceberg and
 // delta paths which feed the string into Python (delta `eval`s it,
 // iceberg walks it via `try_convert_pyarrow_predicate`).
-pub fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Option<String> {
+//
+// `schema` is the scan output schema, used to resolve column dtypes so that
+// only arithmetic provably equivalent to Polars' is lowered (see
+// [`is_float64_arithmetic`]).
+pub fn predicate_to_pa(
+    predicate: Node,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+) -> Option<String> {
     match expr_arena.get(predicate) {
         AExpr::BinaryExpr { left, right, op } => match op {
             Operator::EqValidity | Operator::NotEqValidity => {
-                validity_comparison_to_pa(*left, *right, *op, expr_arena)
+                validity_comparison_to_pa(*left, *right, *op, expr_arena, schema)
             },
             Operator::Xor => {
-                let (lhs, rhs) = boolean_operands_to_pa(*left, *right, expr_arena)?;
+                let (lhs, rhs) = boolean_operands_to_pa(*left, *right, expr_arena, schema)?;
 
                 Some(format!("(({lhs} | {rhs}) & ~({lhs} & {rhs}))"))
             },
             op => {
                 let symbol = binary_op_symbol(op)?;
-                let mut lhs = predicate_to_pa(*left, expr_arena)?;
-                let rhs = predicate_to_pa(*right, expr_arena)?;
+
+                if op.is_arithmetic()
+                    && !is_float64_arithmetic(*left, *right, *op, expr_arena, schema)
+                {
+                    return None;
+                }
+
+                let mut lhs = predicate_to_pa(*left, expr_arena, schema)?;
+                let rhs = predicate_to_pa(*right, expr_arena, schema)?;
 
                 if op.is_arithmetic() {
                     // PyArrow expressions define no reflected arithmetic operators, so a
@@ -166,10 +181,6 @@ pub fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Option<Str
                         && !lhs.starts_with("pa.compute.")
                     {
                         lhs = format!("pa.compute.scalar({lhs})");
-                    }
-
-                    if matches!(op, Operator::TrueDivide) {
-                        lhs = format!("({lhs}).cast('{FLOAT_DIVIDEND_TYPE}')");
                     }
                 }
 
@@ -225,7 +236,7 @@ pub fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Option<Str
             input,
             ..
         } => {
-            let col = predicate_to_pa(input.first()?.node(), expr_arena)?;
+            let col = predicate_to_pa(input.first()?.node(), expr_arena, schema)?;
 
             let AExpr::Literal(lv) = expr_arena.get(input.get(1)?.node()) else {
                 return None;
@@ -248,7 +259,7 @@ pub fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Option<Str
             if !matches!(expr_arena.get(input.first()?.node()), AExpr::Column(_)) {
                 None
             } else {
-                let col = predicate_to_pa(input.first()?.node(), expr_arena)?;
+                let col = predicate_to_pa(input.first()?.node(), expr_arena, schema)?;
                 let left_cmp_op = match closed {
                     ClosedInterval::None | ClosedInterval::Right => Operator::Gt,
                     ClosedInterval::Both | ClosedInterval::Left => Operator::GtEq,
@@ -258,8 +269,8 @@ pub fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Option<Str
                     ClosedInterval::Both | ClosedInterval::Right => Operator::LtEq,
                 };
 
-                let lower = predicate_to_pa(input.get(1)?.node(), expr_arena)?;
-                let upper = predicate_to_pa(input.get(2)?.node(), expr_arena)?;
+                let lower = predicate_to_pa(input.get(1)?.node(), expr_arena, schema)?;
+                let upper = predicate_to_pa(input.get(2)?.node(), expr_arena, schema)?;
 
                 Some(format!(
                     "(({col} {left_cmp_op} {lower}) & ({col} {right_cmp_op} {upper}))"
@@ -270,7 +281,7 @@ pub fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Option<Str
             function, input, ..
         } => {
             let input = input.first().unwrap().node();
-            let input = predicate_to_pa(input, expr_arena)?;
+            let input = predicate_to_pa(input, expr_arena, schema)?;
 
             match function {
                 IRFunctionExpr::Boolean(IRBooleanFunction::Not) => Some(format!("~({input})")),
@@ -294,6 +305,7 @@ fn validity_comparison_to_pa(
     right: Node,
     op: Operator,
     expr_arena: &Arena<AExpr>,
+    schema: &Schema,
 ) -> Option<String> {
     // The column is repeated in the output, so restrict this to plain columns.
     let (column, literal, lv) = match (expr_arena.get(left), expr_arena.get(right)) {
@@ -303,7 +315,7 @@ fn validity_comparison_to_pa(
     };
 
     let eq = matches!(op, Operator::EqValidity);
-    let column = predicate_to_pa(column, expr_arena)?;
+    let column = predicate_to_pa(column, expr_arena, schema)?;
 
     Some(if lv.is_null() {
         if eq {
@@ -312,7 +324,7 @@ fn validity_comparison_to_pa(
             format!("~({column}).is_null()")
         }
     } else {
-        let literal = predicate_to_pa(literal, expr_arena)?;
+        let literal = predicate_to_pa(literal, expr_arena, schema)?;
 
         // A null column value is not equal to a non-null literal, whereas the
         // plain comparison would evaluate to null.
@@ -330,14 +342,15 @@ fn boolean_operands_to_pa(
     left: Node,
     right: Node,
     expr_arena: &Arena<AExpr>,
+    schema: &Schema,
 ) -> Option<(String, String)> {
     if !(returns_boolean(left, expr_arena) && returns_boolean(right, expr_arena)) {
         return None;
     }
 
     Some((
-        predicate_to_pa(left, expr_arena)?,
-        predicate_to_pa(right, expr_arena)?,
+        predicate_to_pa(left, expr_arena, schema)?,
+        predicate_to_pa(right, expr_arena, schema)?,
     ))
 }
 
@@ -371,16 +384,64 @@ fn returns_boolean(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     }
 }
 
-/// Polars' `/` is always float division, while PyArrow's `divide` follows the
-/// operand types and would truncate an all-integer division. Casting the
-/// dividend keeps the two in agreement.
-const FLOAT_DIVIDEND_TYPE: &str = "double";
+/// Whether `left op right` is `Float64` arithmetic that PyArrow's checked
+/// kernels evaluate exactly like Polars, so the minterm containing it can be
+/// pushed down without an engine-side residual.
+///
+/// Only `+`, `-` and `*` with (transitively) `Float64` operands qualify:
+///
+/// * Integer arithmetic is excluded: Polars wraps on overflow where PyArrow's
+///   `*_checked` kernels raise.
+/// * `TrueDivide` is excluded: Polars yields `inf`/`NaN` on division by zero
+///   where PyArrow raises, and matching Polars' float-division output dtype
+///   would need a dividend cast that loses precision (`Float32`) or errors on
+///   large integers.
+/// * Anything but plain numeric operands (temporal, string, boolean, decimal,
+///   casts, ...) is excluded.
+fn is_float64_arithmetic(
+    left: Node,
+    right: Node,
+    op: Operator,
+    expr_arena: &Arena<AExpr>,
+    schema: &Schema,
+) -> bool {
+    if !matches!(op, Operator::Plus | Operator::Minus | Operator::Multiply) {
+        return false;
+    }
+
+    fn operand_dtype(node: Node, expr_arena: &Arena<AExpr>, schema: &Schema) -> Option<DataType> {
+        match expr_arena.get(node) {
+            AExpr::Column(name) => schema.get(name).cloned(),
+            AExpr::Literal(lv) => Some(lv.get_datatype()),
+            AExpr::BinaryExpr { left, right, op }
+                if is_float64_arithmetic(*left, *right, *op, expr_arena, schema) =>
+            {
+                Some(DataType::Float64)
+            },
+            _ => None,
+        }
+    }
+
+    let (Some(left_dtype), Some(right_dtype)) = (
+        operand_dtype(left, expr_arena, schema),
+        operand_dtype(right, expr_arena, schema),
+    ) else {
+        return false;
+    };
+
+    // Both sides must be plain floats or integers, and at least one side must
+    // already be `Float64` so the result is `Float64` rather than an integer
+    // (wrapping) or `Float32` (different rounding) type.
+    (left_dtype.is_float() || left_dtype.is_integer())
+        && (right_dtype.is_float() || right_dtype.is_integer())
+        && (matches!(left_dtype, DataType::Float64) || matches!(right_dtype, DataType::Float64))
+}
 
 /// The Python operator reproducing `op` on a PyArrow expression, or `None` when
 /// PyArrow has no equivalent. Mirrors [`binary_op_method`].
 ///
-/// Note that the arithmetic operators map onto PyArrow's *checked* kernels,
-/// which raise on integer overflow where Polars wraps.
+/// The arithmetic operators map onto PyArrow's *checked* kernels; this is
+/// exact only for the `Float64` cases admitted by [`is_float64_arithmetic`].
 fn binary_op_symbol(op: &Operator) -> Option<&'static str> {
     Some(match op {
         Operator::Eq => "==",
@@ -394,7 +455,6 @@ fn binary_op_symbol(op: &Operator) -> Option<&'static str> {
         Operator::Plus => "+",
         Operator::Minus => "-",
         Operator::Multiply => "*",
-        Operator::TrueDivide => "/",
         _ => return None,
     })
 }
@@ -412,7 +472,6 @@ fn binary_op_method(op: &Operator) -> Option<&'static str> {
         Operator::Plus => "__add__",
         Operator::Minus => "__sub__",
         Operator::Multiply => "__mul__",
-        Operator::TrueDivide => "__truediv__",
         _ => return None,
     })
 }
@@ -495,11 +554,16 @@ fn series_to_py_list<'py>(py: Python<'py>, s: &Series) -> Option<Bound<'py, PyLi
 }
 
 // Convert an AExpr predicate to a pyarrow expression using python.
+//
+// `schema` is the scan output schema, used to resolve column dtypes so that
+// only arithmetic provably equivalent to Polars' is lowered (see
+// [`is_float64_arithmetic`]).
 pub fn aexpr_to_pyarrow<'py>(
     py: Python<'py>,
     pc: &Bound<'py, PyAny>,
     predicate: Node,
     expr_arena: &Arena<AExpr>,
+    schema: &Schema,
 ) -> Option<Bound<'py, PyAny>> {
     match expr_arena.get(predicate) {
         AExpr::BinaryExpr { left, right, op } => {
@@ -508,8 +572,8 @@ pub fn aexpr_to_pyarrow<'py>(
                     return None;
                 }
 
-                let l = aexpr_to_pyarrow(py, pc, *left, expr_arena)?;
-                let r = aexpr_to_pyarrow(py, pc, *right, expr_arena)?;
+                let l = aexpr_to_pyarrow(py, pc, *left, expr_arena, schema)?;
+                let r = aexpr_to_pyarrow(py, pc, *right, expr_arena, schema)?;
                 let any = l.call_method1("__or__", (&r,)).ok()?;
                 let both = l
                     .call_method1("__and__", (&r,))
@@ -521,13 +585,14 @@ pub fn aexpr_to_pyarrow<'py>(
             }
 
             let method = binary_op_method(op)?;
-            let l = aexpr_to_pyarrow(py, pc, *left, expr_arena)?;
-            let r = aexpr_to_pyarrow(py, pc, *right, expr_arena)?;
-            let l = if matches!(op, Operator::TrueDivide) {
-                l.call_method1("cast", (FLOAT_DIVIDEND_TYPE,)).ok()?
-            } else {
-                l
-            };
+
+            if op.is_arithmetic() && !is_float64_arithmetic(*left, *right, *op, expr_arena, schema)
+            {
+                return None;
+            }
+
+            let l = aexpr_to_pyarrow(py, pc, *left, expr_arena, schema)?;
+            let r = aexpr_to_pyarrow(py, pc, *right, expr_arena, schema)?;
             l.call_method1(method, (r,)).ok()
         },
         AExpr::Column(name) => pc.call_method1("field", (name,)).ok(),
@@ -543,7 +608,7 @@ pub fn aexpr_to_pyarrow<'py>(
             input,
             ..
         } => {
-            let col = aexpr_to_pyarrow(py, pc, input.first()?.node(), expr_arena)?;
+            let col = aexpr_to_pyarrow(py, pc, input.first()?.node(), expr_arena, schema)?;
             let rhs_node = input.get(1)?.node();
 
             let AExpr::Literal(lv) = expr_arena.get(rhs_node) else {
@@ -565,7 +630,7 @@ pub fn aexpr_to_pyarrow<'py>(
             if !matches!(expr_arena.get(input.first()?.node()), AExpr::Column(_)) {
                 return None;
             }
-            let col = aexpr_to_pyarrow(py, pc, input.first()?.node(), expr_arena)?;
+            let col = aexpr_to_pyarrow(py, pc, input.first()?.node(), expr_arena, schema)?;
             let left_method = match closed {
                 ClosedInterval::None | ClosedInterval::Right => "__gt__",
                 ClosedInterval::Both | ClosedInterval::Left => "__ge__",
@@ -575,8 +640,8 @@ pub fn aexpr_to_pyarrow<'py>(
                 ClosedInterval::Both | ClosedInterval::Right => "__le__",
             };
 
-            let lower = aexpr_to_pyarrow(py, pc, input.get(1)?.node(), expr_arena)?;
-            let upper = aexpr_to_pyarrow(py, pc, input.get(2)?.node(), expr_arena)?;
+            let lower = aexpr_to_pyarrow(py, pc, input.get(1)?.node(), expr_arena, schema)?;
+            let upper = aexpr_to_pyarrow(py, pc, input.get(2)?.node(), expr_arena, schema)?;
 
             let lower_cmp = col.call_method1(left_method, (lower,)).ok()?;
             let upper_cmp = col.call_method1(right_method, (upper,)).ok()?;
@@ -586,7 +651,7 @@ pub fn aexpr_to_pyarrow<'py>(
             function, input, ..
         } => {
             let input = input.first().unwrap().node();
-            let input = aexpr_to_pyarrow(py, pc, input, expr_arena)?;
+            let input = aexpr_to_pyarrow(py, pc, input, expr_arena, schema)?;
 
             match function {
                 IRFunctionExpr::Boolean(IRBooleanFunction::Not) => {
