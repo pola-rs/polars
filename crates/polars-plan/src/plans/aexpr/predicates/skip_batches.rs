@@ -698,7 +698,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                         let col_min = target.min(arena);
                         let col_max = target.max(arena);
 
-                        use polars_ops::series::ClosedInterval;
+                        use polars_defs::expr::ClosedInterval;
                         let (left, right) = match closed {
                             ClosedInterval::Both => (O::Lt, O::Gt),
                             ClosedInterval::Left => (O::Lt, O::GtEq),

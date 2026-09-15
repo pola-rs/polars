@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use polars_core::prelude::Schema;
-use polars_ops::prelude::JoinBuildSide;
+use polars_defs::join::JoinBuildSide;
 use polars_utils::arena::{Arena, Node};
 
 use crate::plans::{AExpr, IR, NodeStats, node_stats};
