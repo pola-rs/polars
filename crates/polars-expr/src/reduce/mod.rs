@@ -121,6 +121,17 @@ pub trait GroupedReduction: Any + Send + Sync {
     /// After this operation the number of groups is reset to 0.
     fn finalize(&mut self) -> PolarsResult<Series>;
 
+    /// Returns whether the given group is "done": its finalized value can no
+    /// longer change no matter what further data is fed to this reduction.
+    ///
+    /// Used by the non-grouped streaming reduce to short-circuit and stop
+    /// pulling input once every reduction has settled. The default is
+    /// conservatively `false`; only reductions whose result is monotone /
+    /// existential (e.g. `any`, `all`, `has_nulls`) override it.
+    fn is_group_done(&self, _group_idx: IdxSize) -> bool {
+        false
+    }
+
     /// Returns this GroupedReduction as a dyn Any.
     fn as_any(&self) -> &dyn Any;
 }
