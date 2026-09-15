@@ -283,8 +283,19 @@ pub(crate) unsafe fn slice_validity(
     offset: usize,
     length: usize,
 ) {
-    if let Some(validity) = validity.as_mut() {
-        unsafe { slice_bitmap(validity, array_len, offset, length) };
+    let Some(mask) = validity.as_mut() else {
+        return;
+    };
+
+    unsafe { slice_bitmap(mask, array_len, offset, length) };
+
+    // A mask with no unset bit left in it marks nothing, and the kernels read the values on
+    // their own — without zipping a bit per element — exactly when there is no mask to read.
+    // Dropping it here is what keeps a slice of a column that never had a null as fast as the
+    // column it was cut from; the count is the one the bitmap already carries whenever slicing
+    // could keep it.
+    if mask.unset_bits() == 0 {
+        *validity = None;
     }
 }
 
