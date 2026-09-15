@@ -1,0 +1,6 @@
+﻿polars.Expr.eq\_missing
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.eq_missing

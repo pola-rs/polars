@@ -1,0 +1,6 @@
+﻿polars.Expr.bitwise\_and
+========================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.bitwise_and

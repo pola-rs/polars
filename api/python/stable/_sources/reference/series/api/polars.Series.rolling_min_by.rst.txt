@@ -1,0 +1,6 @@
+﻿polars.Series.rolling\_min\_by
+==============================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.rolling_min_by

@@ -1,0 +1,63 @@
+<meta http-equiv="refresh" content="0; url=https://docs.pola.rs/api/rust/dev/polars_io/json/index.html">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="(De)serialize JSON files."><title>polars_io::json - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="polars_io" data-themes="" data-resource-suffix="" data-rustdoc-version="1.80.0-nightly (032af18af 2024-06-02)" data-channel="nightly" data-search-js="search-d52510db62a78183.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../polars_io/index.html">polars_io</a><span class="version">0.40.0</span></h2></div><h2 class="location"><a href="#">Module json</a></h2><div class="sidebar-elems"><section><ul class="block"><li><a href="#structs">Structs</a></li><li><a href="#enums">Enums</a></li></ul></section><h2><a href="../index.html">In crate polars_io</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../index.html">polars_io</a>::<wbr><a class="mod" href="#">json</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../src/polars_io/json/mod.rs.html#1-397">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>json</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="deserialize-json-files"><a class="doc-anchor" href="#deserialize-json-files">§</a>(De)serialize JSON files.</h2><h3 id="read-json-to-a-dataframe"><a class="doc-anchor" href="#read-json-to-a-dataframe">§</a>Read JSON to a DataFrame</h3><h3 id="example"><a class="doc-anchor" href="#example">§</a>Example</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>polars_core::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>polars_io::prelude::<span class="kw-2">*</span>;
+<span class="kw">use </span>std::io::Cursor;
+<span class="kw">use </span>std::num::NonZeroUsize;
+
+<span class="kw">let </span>basic_json = <span class="string">r#"{"a":1, "b":2.0, "c":false, "d":"4"}
+{"a":-10, "b":-3.5, "c":true, "d":"4"}
+{"a":2, "b":0.6, "c":false, "d":"text"}
+{"a":1, "b":2.0, "c":false, "d":"4"}
+{"a":7, "b":-3.5, "c":true, "d":"4"}
+{"a":1, "b":0.6, "c":false, "d":"text"}
+{"a":1, "b":2.0, "c":false, "d":"4"}
+{"a":5, "b":-3.5, "c":true, "d":"4"}
+{"a":1, "b":0.6, "c":false, "d":"text"}
+{"a":1, "b":2.0, "c":false, "d":"4"}
+{"a":1, "b":-3.5, "c":true, "d":"4"}
+{"a":1, "b":0.6, "c":false, "d":"text"}"#</span>;
+<span class="kw">let </span>file = Cursor::new(basic_json);
+<span class="kw">let </span>df = JsonReader::new(file)
+.with_json_format(JsonFormat::JsonLines)
+.infer_schema_len(NonZeroUsize::new(<span class="number">3</span>))
+.with_batch_size(NonZeroUsize::new(<span class="number">3</span>).unwrap())
+.finish()
+.unwrap();
+
+<span class="macro">println!</span>(<span class="string">"{:?}"</span>, df);</code></pre></div>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>Outputs:</p>
+</blockquote>
+</blockquote>
+</blockquote>
+<div class="example-wrap"><pre class="language-text"><code>+-----+--------+-------+--------+
+| a   | b      | c     | d      |
+| --- | ---    | ---   | ---    |
+| i64 | f64    | bool  | str    |
++=====+========+=======+========+
+| 1   | 2      | false | &quot;4&quot;    |
++-----+--------+-------+--------+
+| -10 | -3.5e0 | true  | &quot;4&quot;    |
++-----+--------+-------+--------+
+| 2   | 0.6    | false | &quot;text&quot; |
++-----+--------+-------+--------+
+| 1   | 2      | false | &quot;4&quot;    |
++-----+--------+-------+--------+
+| 7   | -3.5e0 | true  | &quot;4&quot;    |
++-----+--------+-------+--------+
+| 1   | 0.6    | false | &quot;text&quot; |
++-----+--------+-------+--------+
+| 1   | 2      | false | &quot;4&quot;    |
++-----+--------+-------+--------+
+| 5   | -3.5e0 | true  | &quot;4&quot;    |
++-----+--------+-------+--------+
+| 1   | 0.6    | false | &quot;text&quot; |
++-----+--------+-------+--------+
+| 1   | 2      | false | &quot;4&quot;    |
++-----+--------+-------+--------+
+</code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="struct" href="struct.BatchedWriter.html" title="struct polars_io::json::BatchedWriter">BatchedWriter</a></div></li><li><div class="item-name"><a class="struct" href="struct.JsonReader.html" title="struct polars_io::json::JsonReader">JsonReader</a></div><div class="desc docblock-short">Reads JSON in one of the formats in <a href="enum.JsonFormat.html" title="enum polars_io::json::JsonFormat"><code>JsonFormat</code></a> into a DataFrame.</div></li><li><div class="item-name"><a class="struct" href="struct.JsonWriter.html" title="struct polars_io::json::JsonWriter">JsonWriter</a></div><div class="desc docblock-short">Writes a DataFrame to JSON.</div></li><li><div class="item-name"><a class="struct" href="struct.JsonWriterOptions.html" title="struct polars_io::json::JsonWriterOptions">JsonWriterOptions</a></div></li></ul><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="enum" href="enum.JsonFormat.html" title="enum polars_io::json::JsonFormat">JsonFormat</a></div><div class="desc docblock-short">The format to use to write the DataFrame to JSON: <code>Json</code> (a JSON array) or <code>JsonLines</code> (each row output on a
+separate line). In either case, each row is serialized as a JSON object whose keys are the column names and whose
+values are the row’s corresponding values.</div></li></ul></section></div></main></body></html>

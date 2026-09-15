@@ -1,0 +1,6 @@
+﻿polars.Expr.cat.ends_with
+=========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.cat.ends_with

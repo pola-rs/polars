@@ -1,0 +1,33 @@
+﻿polars.testing.parametric.column
+================================
+
+.. currentmodule:: polars.testing.parametric
+
+.. autoclass:: column
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~column.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~column.allow_null
+      ~column.dtype
+      ~column.name
+      ~column.null_probability
+      ~column.strategy
+      ~column.unique
+   
+   

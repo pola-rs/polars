@@ -1,0 +1,6 @@
+﻿polars.disable\_string\_cache
+=============================
+
+.. currentmodule:: polars
+
+.. autofunction:: disable_string_cache

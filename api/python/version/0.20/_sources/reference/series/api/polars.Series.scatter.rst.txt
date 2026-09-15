@@ -1,0 +1,6 @@
+﻿polars.Series.scatter
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.scatter

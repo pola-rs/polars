@@ -1,0 +1,6 @@
+﻿polars.cum\_fold
+================
+
+.. currentmodule:: polars
+
+.. autofunction:: cum_fold

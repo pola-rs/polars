@@ -1,0 +1,6 @@
+﻿polars.exceptions.InvalidOperationError
+=======================================
+
+.. currentmodule:: polars.exceptions
+
+.. autoexception:: InvalidOperationError

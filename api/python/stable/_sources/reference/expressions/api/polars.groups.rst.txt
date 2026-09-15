@@ -1,0 +1,6 @@
+﻿polars.groups
+=============
+
+.. currentmodule:: polars
+
+.. autofunction:: groups

@@ -1,0 +1,6 @@
+﻿polars.Series.bitwise\_and
+==========================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.bitwise_and

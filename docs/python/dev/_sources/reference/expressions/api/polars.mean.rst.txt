@@ -1,0 +1,6 @@
+﻿polars.mean
+===========
+
+.. currentmodule:: polars
+
+.. autofunction:: mean

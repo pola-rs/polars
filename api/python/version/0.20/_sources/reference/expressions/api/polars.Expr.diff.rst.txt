@@ -1,0 +1,6 @@
+﻿polars.Expr.diff
+================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.diff

@@ -1,0 +1,6 @@
+﻿polars.Series.str.extract_groups
+================================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.str.extract_groups

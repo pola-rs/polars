@@ -1,0 +1,6 @@
+﻿polars.rolling\_cov
+===================
+
+.. currentmodule:: polars
+
+.. autofunction:: rolling_cov

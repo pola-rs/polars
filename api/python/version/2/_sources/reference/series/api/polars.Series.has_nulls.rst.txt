@@ -1,0 +1,6 @@
+﻿polars.Series.has\_nulls
+========================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.has_nulls

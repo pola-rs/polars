@@ -1,0 +1,6 @@
+﻿polars.Expr.struct.with_fields
+==============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.struct.with_fields

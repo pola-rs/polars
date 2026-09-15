@@ -1,0 +1,6 @@
+﻿polars.scan\_delta
+==================
+
+.. currentmodule:: polars
+
+.. autofunction:: scan_delta

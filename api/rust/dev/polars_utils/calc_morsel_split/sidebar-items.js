@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["calc_n_parts"],"struct":["PartSizesIter"]};

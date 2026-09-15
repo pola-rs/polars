@@ -1,0 +1,6 @@
+﻿polars.time\_ranges
+===================
+
+.. currentmodule:: polars
+
+.. autofunction:: time_ranges

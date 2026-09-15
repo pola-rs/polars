@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ParquetStatistics"],"fn":["deserialize"],"struct":["FileMetadata"],"type":["FileMetadataRef"]};

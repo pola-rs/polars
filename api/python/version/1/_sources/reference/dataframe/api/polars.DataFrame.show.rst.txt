@@ -1,0 +1,6 @@
+﻿polars.DataFrame.show
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.show

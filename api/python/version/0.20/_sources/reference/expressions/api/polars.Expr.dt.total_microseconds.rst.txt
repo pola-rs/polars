@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.total_microseconds
+=================================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.total_microseconds

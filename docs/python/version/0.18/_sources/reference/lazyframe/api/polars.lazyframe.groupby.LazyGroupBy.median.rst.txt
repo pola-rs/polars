@@ -1,0 +1,6 @@
+﻿polars.lazyframe.groupby.LazyGroupBy.median
+===========================================
+
+.. currentmodule:: polars.lazyframe.groupby
+
+.. automethod:: LazyGroupBy.median

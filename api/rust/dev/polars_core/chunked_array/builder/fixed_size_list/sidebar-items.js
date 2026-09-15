@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_fixed_size_list_builder"],"trait":["FixedSizeListBuilder"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_polars_lib_build_commit","get_polars_lib_name","get_polars_lib_version","set_polars_lib_build_commit","set_polars_lib_name","set_polars_lib_version"]};

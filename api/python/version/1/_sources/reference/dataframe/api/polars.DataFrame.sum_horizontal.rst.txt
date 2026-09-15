@@ -1,0 +1,6 @@
+﻿polars.DataFrame.sum\_horizontal
+================================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.sum_horizontal

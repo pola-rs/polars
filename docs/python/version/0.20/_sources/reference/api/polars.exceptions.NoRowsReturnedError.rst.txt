@@ -1,0 +1,6 @@
+﻿polars.exceptions.NoRowsReturnedError
+=====================================
+
+.. currentmodule:: polars.exceptions
+
+.. autoexception:: NoRowsReturnedError

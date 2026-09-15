@@ -1,0 +1,6 @@
+﻿polars.Series.str.strip_chars
+=============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.str.strip_chars

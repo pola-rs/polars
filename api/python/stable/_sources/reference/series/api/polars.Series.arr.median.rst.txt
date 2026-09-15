@@ -1,0 +1,6 @@
+﻿polars.Series.arr.median
+========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.arr.median

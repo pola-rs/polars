@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["PY_DSL_RESOLVER_VTABLE"],"struct":["PyDslResolverVTable","PythonDslResolver"]};

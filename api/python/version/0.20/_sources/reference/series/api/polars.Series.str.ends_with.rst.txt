@@ -1,0 +1,6 @@
+﻿polars.Series.str.ends_with
+===========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.str.ends_with

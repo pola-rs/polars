@@ -1,0 +1,31 @@
+﻿polars.lazyframe.engine\_config.GPUEngine
+=========================================
+
+.. currentmodule:: polars.lazyframe.engine_config
+
+.. autoclass:: GPUEngine
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~GPUEngine.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~GPUEngine.device
+      ~GPUEngine.memory_resource
+      ~GPUEngine.raise_on_fail
+      ~GPUEngine.config
+   
+   

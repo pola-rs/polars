@@ -1,0 +1,6 @@
+﻿polars.Expr.list.__getitem__
+============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.list.__getitem__

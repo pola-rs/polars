@@ -1,0 +1,6 @@
+﻿polars.DataFrame.drop
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.drop

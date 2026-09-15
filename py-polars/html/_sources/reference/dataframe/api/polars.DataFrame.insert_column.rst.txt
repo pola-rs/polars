@@ -1,0 +1,6 @@
+﻿polars.DataFrame.insert\_column
+===============================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.insert_column

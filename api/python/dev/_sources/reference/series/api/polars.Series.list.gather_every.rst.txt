@@ -1,0 +1,6 @@
+﻿polars.Series.list.gather_every
+===============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.list.gather_every

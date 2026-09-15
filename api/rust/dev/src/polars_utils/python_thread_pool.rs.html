@@ -1,0 +1,88 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates/polars-utils/src/python_thread_pool.rs`."><title>python_thread_pool.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="polars_utils" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (0dfb098f3 2026-08-31)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js" ><script src="../../static.files/storage-41dd4d93.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1><div class="sub-heading">polars_utils/</div>python_thread_pool.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-2"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>pyo3::call::PyCallArgs;
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span>pyo3::sync::PyOnceLock;
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>pyo3::types::{PyAnyMethods <span class="kw">as _</span>, PyDict};
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>pyo3::{Bound, IntoPyObject, Py, PyAny, PyResult, Python};
+<a href=#5 id=5 data-nosnippet>5</a>
+<a href=#6 id=6 data-nosnippet>6</a><span class="attr">#[derive(IntoPyObject)]
+<a href=#7 id=7 data-nosnippet>7</a></span><span class="kw">pub struct </span>PyThreadPool(
+<a href=#8 id=8 data-nosnippet>8</a>    <span class="doccomment">/// polars._utils.threading.PyThreadPool
+<a href=#9 id=9 data-nosnippet>9</a>    </span>Py&lt;PyAny&gt;,
+<a href=#10 id=10 data-nosnippet>10</a>);
+<a href=#11 id=11 data-nosnippet>11</a>
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">impl</span>&lt;<span class="lifetime">'py</span>&gt; IntoPyObject&lt;<span class="lifetime">'py</span>&gt; <span class="kw">for </span><span class="kw-2">&amp;</span><span class="lifetime">'py </span>PyThreadPool {
+<a href=#13 id=13 data-nosnippet>13</a>    <span class="kw">type </span>Output = &lt;<span class="kw-2">&amp;</span><span class="lifetime">'py </span>Py&lt;PyAny&gt; <span class="kw">as </span>IntoPyObject&lt;<span class="lifetime">'py</span>&gt;&gt;::Output;
+<a href=#14 id=14 data-nosnippet>14</a>    <span class="kw">type </span>Target = &lt;<span class="kw-2">&amp;</span><span class="lifetime">'py </span>Py&lt;PyAny&gt; <span class="kw">as </span>IntoPyObject&lt;<span class="lifetime">'py</span>&gt;&gt;::Target;
+<a href=#15 id=15 data-nosnippet>15</a>    <span class="kw">type </span>Error = &lt;<span class="kw-2">&amp;</span><span class="lifetime">'py </span>Py&lt;PyAny&gt; <span class="kw">as </span>IntoPyObject&lt;<span class="lifetime">'py</span>&gt;&gt;::Error;
+<a href=#16 id=16 data-nosnippet>16</a>
+<a href=#17 id=17 data-nosnippet>17</a>    <span class="kw">fn </span>into_pyobject(<span class="self">self</span>, py: Python&lt;<span class="lifetime">'py</span>&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>::Output, <span class="self">Self</span>::Error&gt; {
+<a href=#18 id=18 data-nosnippet>18</a>        IntoPyObject::into_pyobject(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>, py)
+<a href=#19 id=19 data-nosnippet>19</a>    }
+<a href=#20 id=20 data-nosnippet>20</a>}
+<a href=#21 id=21 data-nosnippet>21</a>
+<a href=#22 id=22 data-nosnippet>22</a><span class="kw">impl </span>PyThreadPool {
+<a href=#23 id=23 data-nosnippet>23</a>    <span class="kw">pub fn </span>new() -&gt; <span class="self">Self </span>{
+<a href=#24 id=24 data-nosnippet>24</a>        <span class="kw">use </span>std::num::NonZeroUsize;
+<a href=#25 id=25 data-nosnippet>25</a>
+<a href=#26 id=26 data-nosnippet>26</a>        Python::attach(|py| {
+<a href=#27 id=27 data-nosnippet>27</a>            <span class="kw">let </span>num_threads =
+<a href=#28 id=28 data-nosnippet>28</a>                std::env::var(<span class="string">"POLARS_PYTHON_SCAN_RESOLVE_THREADS"</span>).map_or(<span class="number">128</span>, |x| {
+<a href=#29 id=29 data-nosnippet>29</a>                    x.parse::&lt;NonZeroUsize&gt;()
+<a href=#30 id=30 data-nosnippet>30</a>                        .unwrap_or_else(|<span class="kw">_</span>| {
+<a href=#31 id=31 data-nosnippet>31</a>                            <span class="macro">panic!</span>(<span class="string">"invalid value for POLARS_PYTHON_SCAN_RESOLVE_THREADS: {x}"</span>)
+<a href=#32 id=32 data-nosnippet>32</a>                        })
+<a href=#33 id=33 data-nosnippet>33</a>                        .get()
+<a href=#34 id=34 data-nosnippet>34</a>                });
+<a href=#35 id=35 data-nosnippet>35</a>
+<a href=#36 id=36 data-nosnippet>36</a>            <span class="kw">if </span>polars_config::config().verbose() {
+<a href=#37 id=37 data-nosnippet>37</a>                <span class="macro">eprintln!</span>(<span class="string">"python scan_resolve_threadpool threads: {num_threads}"</span>)
+<a href=#38 id=38 data-nosnippet>38</a>            }
+<a href=#39 id=39 data-nosnippet>39</a>
+<a href=#40 id=40 data-nosnippet>40</a>            <span class="kw">return </span><span class="self">Self</span>(
+<a href=#41 id=41 data-nosnippet>41</a>                py_scan_resolve_threadpool_cls(py)
+<a href=#42 id=42 data-nosnippet>42</a>                    .bind(py)
+<a href=#43 id=43 data-nosnippet>43</a>                    .call1((num_threads,))
+<a href=#44 id=44 data-nosnippet>44</a>                    .map(|x| x.unbind())
+<a href=#45 id=45 data-nosnippet>45</a>                    .unwrap(),
+<a href=#46 id=46 data-nosnippet>46</a>            );
+<a href=#47 id=47 data-nosnippet>47</a>
+<a href=#48 id=48 data-nosnippet>48</a>            <span class="kw">fn </span>py_scan_resolve_threadpool_cls(py: Python&lt;<span class="lifetime">'_</span>&gt;) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>Py&lt;PyAny&gt; {
+<a href=#49 id=49 data-nosnippet>49</a>                <span class="kw">static </span>CLS: PyOnceLock&lt;Py&lt;PyAny&gt;&gt; = PyOnceLock::new();
+<a href=#50 id=50 data-nosnippet>50</a>
+<a href=#51 id=51 data-nosnippet>51</a>                CLS.get_or_init(py, || {
+<a href=#52 id=52 data-nosnippet>52</a>                    py.import(<span class="string">"polars._utils.threading"</span>)
+<a href=#53 id=53 data-nosnippet>53</a>                        .unwrap()
+<a href=#54 id=54 data-nosnippet>54</a>                        .getattr(<span class="string">"PyThreadPool"</span>)
+<a href=#55 id=55 data-nosnippet>55</a>                        .unwrap()
+<a href=#56 id=56 data-nosnippet>56</a>                        .unbind()
+<a href=#57 id=57 data-nosnippet>57</a>                })
+<a href=#58 id=58 data-nosnippet>58</a>            }
+<a href=#59 id=59 data-nosnippet>59</a>        })
+<a href=#60 id=60 data-nosnippet>60</a>    }
+<a href=#61 id=61 data-nosnippet>61</a>
+<a href=#62 id=62 data-nosnippet>62</a>    <span class="kw">pub fn </span>spawn_call&lt;<span class="lifetime">'a</span>&gt;(
+<a href=#63 id=63 data-nosnippet>63</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#64 id=64 data-nosnippet>64</a>        py: Python&lt;<span class="lifetime">'a</span>&gt;,
+<a href=#65 id=65 data-nosnippet>65</a>        function: <span class="kw-2">&amp;</span>Py&lt;PyAny&gt;,
+<a href=#66 id=66 data-nosnippet>66</a>        args: <span class="kw">impl </span>PyCallArgs&lt;<span class="lifetime">'a</span>&gt;,
+<a href=#67 id=67 data-nosnippet>67</a>        kwargs: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>Bound&lt;<span class="lifetime">'a</span>, PyDict&gt;&gt;,
+<a href=#68 id=68 data-nosnippet>68</a>    ) -&gt; PyResult&lt;Py&lt;PyAny&gt;&gt; {
+<a href=#69 id=69 data-nosnippet>69</a>        <span class="kw">static </span>CLS: PyOnceLock&lt;Py&lt;PyAny&gt;&gt; = PyOnceLock::new();
+<a href=#70 id=70 data-nosnippet>70</a>
+<a href=#71 id=71 data-nosnippet>71</a>        CLS.get_or_init(py, || {
+<a href=#72 id=72 data-nosnippet>72</a>            py.import(<span class="string">"polars._utils.threading"</span>)
+<a href=#73 id=73 data-nosnippet>73</a>                .unwrap()
+<a href=#74 id=74 data-nosnippet>74</a>                .getattr(<span class="string">"FnPoolWrap"</span>)
+<a href=#75 id=75 data-nosnippet>75</a>                .unwrap()
+<a href=#76 id=76 data-nosnippet>76</a>                .unbind()
+<a href=#77 id=77 data-nosnippet>77</a>        })
+<a href=#78 id=78 data-nosnippet>78</a>        .call1(py, (function, <span class="self">self</span>))<span class="question-mark">?
+<a href=#79 id=79 data-nosnippet>79</a>        </span>.call(py, args, kwargs)
+<a href=#80 id=80 data-nosnippet>80</a>    }
+<a href=#81 id=81 data-nosnippet>81</a>}
+<a href=#82 id=82 data-nosnippet>82</a>
+<a href=#83 id=83 data-nosnippet>83</a><span class="kw">impl </span>Default <span class="kw">for </span>PyThreadPool {
+<a href=#84 id=84 data-nosnippet>84</a>    <span class="kw">fn </span>default() -&gt; <span class="self">Self </span>{
+<a href=#85 id=85 data-nosnippet>85</a>        <span class="self">Self</span>::new()
+<a href=#86 id=86 data-nosnippet>86</a>    }
+<a href=#87 id=87 data-nosnippet>87</a>}
+</code></pre></div></section></main></body></html>

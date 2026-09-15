@@ -1,0 +1,6 @@
+﻿polars.Series.cum\_prod
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.cum_prod

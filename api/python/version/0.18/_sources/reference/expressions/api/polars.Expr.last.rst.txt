@@ -1,0 +1,6 @@
+﻿polars.Expr.last
+================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.last

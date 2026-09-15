@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.top\_k
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.top_k

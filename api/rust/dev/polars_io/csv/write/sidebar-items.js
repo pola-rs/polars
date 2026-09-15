@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["UTF8_BOM"],"enum":["QuoteStyle"],"fn":["csv_header"],"struct":["BatchedWriter","CsvSerializer","CsvWriter","CsvWriterOptions","SerializeOptions"]};

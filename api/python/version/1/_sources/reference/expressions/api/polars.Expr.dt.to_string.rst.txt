@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.to_string
+========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.to_string

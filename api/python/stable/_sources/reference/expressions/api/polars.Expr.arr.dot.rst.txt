@@ -1,0 +1,6 @@
+﻿polars.Expr.arr.dot
+===================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.arr.dot

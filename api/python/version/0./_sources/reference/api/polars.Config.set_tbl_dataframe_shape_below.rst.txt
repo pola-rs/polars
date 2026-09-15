@@ -1,0 +1,6 @@
+﻿polars.Config.set\_tbl\_dataframe\_shape\_below
+===============================================
+
+.. currentmodule:: polars
+
+.. automethod:: Config.set_tbl_dataframe_shape_below

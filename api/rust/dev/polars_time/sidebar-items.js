@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ClosedWindow"],"mod":["chunkedarray","prelude","series"],"struct":["Duration","Window"],"trait":["PolarsRound","PolarsUpsample"]};
