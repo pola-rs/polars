@@ -253,7 +253,9 @@ class ConnectionExecutor:
                 frames = (
                     self._apply_overrides(batch, (schema_overrides or {}))
                     if isinstance(batch, DataFrame)
-                    else DataFrame(batch)
+                    else self._apply_overrides(
+                        DataFrame(batch), (schema_overrides or {})
+                    )
                     for batch in self._fetch_arrow(
                         driver_properties,
                         iter_batches=iter_batches,

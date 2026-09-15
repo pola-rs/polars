@@ -955,6 +955,49 @@ def test_read_database_mocked(
     assert res.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
 
 
+@pytest.mark.parametrize(
+    ("driver", "batch_size", "iter_batches"),
+    [
+        ("snowflake", None, False),
+        ("snowflake", 10_000, True),
+        ("databricks", None, False),
+        ("databricks", 25_000, True),
+    ],
+)
+def test_read_database_mocked_schema_overrides(
+    driver: str, batch_size: int | None, iter_batches: bool
+) -> None:
+    # ensure `schema_overrides` is applied for Arrow-native drivers that
+    # route through `_from_arrow` (regression test for GH #29253)
+    arrow = pl.DataFrame({"x": [1, 2, 3], "y": ["aa", "bb", "cc"]}).to_arrow()
+
+    reg = ARROW_DRIVER_REGISTRY.get(driver, [{}])[0]  # type: ignore[var-annotated]
+    exact_batch_size = reg.get("exact_batch_size", False)
+    repeat_batch_calls = reg.get("repeat_batch_calls", False)
+
+    mc = MockConnection(
+        driver,
+        batch_size,
+        test_data=arrow,
+        repeat_batch_calls=repeat_batch_calls,
+        exact_batch_size=exact_batch_size,  # type: ignore[arg-type]
+    )
+    res = pl.read_database(
+        query="SELECT * FROM test_data",
+        connection=mc,
+        iter_batches=iter_batches,
+        batch_size=batch_size,
+        schema_overrides={"x": pl.UInt8},
+    )
+    if iter_batches:
+        assert isinstance(res, GeneratorType)
+        res = pl.concat(res)
+
+    res = cast("pl.DataFrame", res)
+    assert res.schema == pl.Schema({"x": pl.UInt8, "y": pl.String})
+    assert res.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
+
+
 class MockOracleConnection:
     """Mock `python-oracledb` Connection (Arrow `fetch_df_*` on the connection)."""
 
