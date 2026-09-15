@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use polars_core::schema::SchemaRef;
+use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
-use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
     CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy, PredicateFileSkip, ScanSources,
@@ -17,6 +17,7 @@ use reader_interface::builder::FileReaderBuilder;
 use reader_interface::capabilities::ReaderCapabilities;
 
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
+use crate::nodes::io_sources::multi_scan::components::predicate::Predicate;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface;
 
@@ -34,7 +35,7 @@ pub struct MultiScanConfig {
 
     pub row_index: Option<RowIndex>,
     pub pre_slice: Option<Slice>,
-    pub predicate: Option<ScanIOPredicate>,
+    pub predicate: Option<Predicate>,
     pub predicate_file_skip_applied: Option<PredicateFileSkip>,
 
     pub hive_parts: Option<Arc<HivePartitionsDf>>,
@@ -69,10 +70,10 @@ impl MultiScanConfig {
         self.max_concurrent_scans.load()
     }
 
-    pub fn reader_capabilities(&self) -> ReaderCapabilities {
+    pub fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities> {
         if std::env::var("POLARS_FORCE_EMPTY_READER_CAPABILITIES").as_deref() == Ok("1") {
-            self.file_reader_builder.reader_capabilities()
-                & ReaderCapabilities::NEEDS_FILE_CACHE_INIT
+            Ok(self.file_reader_builder.reader_capabilities()?
+                & ReaderCapabilities::NEEDS_FILE_CACHE_INIT)
         } else {
             self.file_reader_builder.reader_capabilities()
         }

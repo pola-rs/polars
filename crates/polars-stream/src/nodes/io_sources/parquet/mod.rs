@@ -385,7 +385,7 @@ impl FileReader for ParquetFileReader {
         let (output_recv, handle) = ParquetReadImpl {
             projected_arrow_fields,
             is_full_projection,
-            predicate,
+            predicate: predicate.map(|x| x.scan_io_predicate),
             // TODO: Refactor to avoid full clone
             options: Arc::unwrap_or_clone(self.config.clone()),
             byte_source,

@@ -60,6 +60,7 @@ impl RowCountAndSize {
 
     /// Returns an error if the resulting row count exceeds `IdxSize::MAX`. `num_bytes` will use
     /// saturating addition.
+    #[expect(clippy::should_implement_trait)] // This add returns Result<> type.
     pub fn add(self, rhs: Self) -> PolarsResult<Self> {
         self.checked_add(rhs).ok_or_else(|| {
             let consider_installing_64 = if cfg!(feature = "bigidx") {
@@ -152,7 +153,6 @@ impl NonZeroRowCountAndSize {
         })
     }
 
-    #[expect(unused)]
     pub fn min(self, other: Self) -> Self {
         Self {
             num_rows: self.num_rows.min(other.num_rows),

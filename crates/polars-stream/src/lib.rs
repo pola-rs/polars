@@ -21,7 +21,7 @@ pub use polars_observer::{
     register_query_observer_factory,
 };
 mod morsel;
-mod nodes;
+pub mod nodes;
 mod physical_plan;
 pub use physical_plan::{
     NodeStyle, PhysNode, PhysNodeKey, PhysNodeKind, ZipBehavior, physical_plan_to_description,

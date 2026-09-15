@@ -158,6 +158,10 @@ impl ProjectionBuilder {
                     }
                 }
 
+                if mapping.is_none() && missing_columns_mask.is_none() {
+                    return Ok(Projection::Plain(projected_schema.clone()));
+                }
+
                 Projection::Mapped {
                     projected_schema: projected_schema.clone(),
                     mapping: mapping.map(Arc::new),

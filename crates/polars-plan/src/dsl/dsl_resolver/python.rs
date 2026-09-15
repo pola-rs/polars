@@ -7,7 +7,7 @@ use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_utils::arena::Arena;
+use polars_utils::arena::{Arena, Node};
 use polars_utils::async_utils::tokio_handle_ext::AbortOnDropHandle;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
@@ -15,8 +15,8 @@ use polars_utils::python_function::PythonObject;
 use polars_utils::python_interns;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{PyAnyMethods, PyDict, PyList, PyListMethods};
-use pyo3::{Bound, IntoPyObjectExt, Py, PyAny, Python, intern};
+use pyo3::types::{PyAnyMethods, PyDict, PyList, PyListMethods, PyModule};
+use pyo3::{Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python, intern};
 
 use crate::dsl::Expr;
 #[cfg(feature = "python")]
@@ -61,6 +61,45 @@ impl DslResolver {
     }
 }
 
+pub fn expr_to_py_filter_expr(
+    py: Python<'_>,
+    expr: &Expr,
+    ae_node: Node,
+    expr_arena: &Arena<AExpr>,
+    pyarrow_compute: &PyResult<Bound<'_, PyModule>>,
+) -> PyResult<Py<PyAny>> {
+    let kwargs = PyDict::new(py);
+    kwargs.set_item(
+        intern!(py, "expr"),
+        (py_dsl_resolver_vtable().to_py_plexpr)(py, expr.clone()),
+    )?;
+    kwargs.set_item(
+        intern!(py, "_pyarrow_expr"),
+        match pyarrow_compute.as_ref() {
+            Ok(pc) => aexpr_to_pyarrow(py, pc, ae_node, expr_arena).into_py_any(py)?,
+            Err(e) => e.into_py_any(py)?,
+        },
+    )?;
+    kwargs.set_item(
+        intern!(py, "pyarrow_str"),
+        predicate_to_pa(ae_node, expr_arena),
+    )?;
+
+    return py_filter_dataclass(py).call(py, (), Some(&kwargs));
+
+    fn py_filter_dataclass(py: Python<'_>) -> &'static Py<PyAny> {
+        static CLS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+
+        CLS.get_or_init(py, || {
+            py.import("polars.lazyframe.resolver")
+                .unwrap()
+                .getattr("FilterExpr")
+                .unwrap()
+                .unbind()
+        })
+    }
+}
+
 fn to_py_resolve_dsl_args<'py>(
     py: Python<'py>,
     resolve_dsl_args: &ResolveDslArgs,
@@ -94,26 +133,13 @@ fn to_py_resolve_dsl_args<'py>(
     let pyarrow_compute = py.import("pyarrow.compute");
 
     for (expr, eir) in filters.iter().zip_eq(filters_eir.iter()) {
-        let node = eir.node();
-
-        let kwargs = PyDict::new(py);
-        kwargs.set_item(
-            intern!(py, "expr"),
-            (py_dsl_resolver_vtable().to_py_plexpr)(py, expr.clone()),
-        )?;
-        kwargs.set_item(
-            intern!(py, "_pyarrow_expr"),
-            match pyarrow_compute.as_ref() {
-                Ok(pc) => aexpr_to_pyarrow(py, pc, node, expr_arena).into_py_any(py)?,
-                Err(e) => e.into_py_any(py)?,
-            },
-        )?;
-        kwargs.set_item(
-            intern!(py, "pyarrow_str"),
-            predicate_to_pa(node, expr_arena),
-        )?;
-
-        py_dsl_filters.append(py_filter_dataclass(py).call(py, (), Some(&kwargs))?)?;
+        py_dsl_filters.append(expr_to_py_filter_expr(
+            py,
+            expr,
+            eir.node(),
+            expr_arena,
+            &pyarrow_compute,
+        )?)?;
     }
 
     py_resolve_dsl_kwargs.set_item(intern!(py, "filters"), PyList::new(py, py_dsl_filters)?)?;
@@ -123,19 +149,7 @@ fn to_py_resolve_dsl_args<'py>(
         filter_drop_columns_idx,
     )?;
 
-    return Ok(py_resolve_dsl_kwargs);
-
-    fn py_filter_dataclass(py: Python<'_>) -> &'static Py<PyAny> {
-        static CLS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
-
-        CLS.get_or_init(py, || {
-            py.import("polars.lazyframe.resolver")
-                .unwrap()
-                .getattr("FilterExpr")
-                .unwrap()
-                .unbind()
-        })
-    }
+    Ok(py_resolve_dsl_kwargs)
 }
 
 impl DslResolverTrait for PythonDslResolver {

@@ -1,7 +1,7 @@
 use polars_io::RowIndex;
-use polars_io::predicates::ScanIOPredicate;
 use polars_utils::slice_enum::Slice;
 
+use crate::nodes::io_sources::multi_scan::components::predicate::Predicate;
 use crate::nodes::io_sources::multi_scan::components::row_deletions::ExternalFilterMask;
 use crate::nodes::io_sources::multi_scan::pipeline::models::ExtraOperations;
 use crate::nodes::io_sources::multi_scan::reader_interface::Projection;
@@ -24,7 +24,7 @@ impl ReaderOperationPushdown<'_> {
         Projection,
         Option<RowIndex>,
         Option<Slice>,
-        Option<ScanIOPredicate>,
+        Option<Predicate>,
         Option<ExternalFilterMask>,
     ) {
         let Self {
@@ -82,13 +82,13 @@ impl ReaderOperationPushdown<'_> {
             _ => None,
         };
 
-        let push_predicate = !(!reader_capabilities.contains(RC::MAPPED_COLUMN_PROJECTION)
+        let push_predicate = !(unsupported_resolved_mapped_projection
             || unsupported_external_filter_mask
             || extra_ops_post.predicate.is_none()
             || (extra_ops_post.row_index.is_some() || extra_ops_post.pre_slice.is_some())
             || !reader_capabilities.contains(RC::PARTIAL_FILTER));
 
-        let mut predicate: Option<ScanIOPredicate> = None;
+        let mut predicate: Option<Predicate> = None;
 
         if push_predicate {
             predicate = if reader_capabilities.contains(RC::FULL_FILTER) {

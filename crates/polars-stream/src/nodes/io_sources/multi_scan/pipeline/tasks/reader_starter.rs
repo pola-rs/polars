@@ -552,7 +552,7 @@ async fn start_reader_impl(
         let mut external_predicate_cols = Vec::with_capacity(
             hive_parts.as_ref().map_or(0, |x| x.df().width())
                 + extra_ops_post.include_file_paths.is_some() as usize
-                + projection_to_reader.num_missing_columns().unwrap(),
+                + projection_to_reader.num_missing_columns().unwrap_or(0),
         );
 
         if let Some(hp) = &hive_parts {
@@ -560,7 +560,7 @@ async fn start_reader_impl(
                 hp.df()
                     .columns()
                     .iter()
-                    .filter(|c| predicate.live_columns.contains(c.name()))
+                    .filter(|c| predicate.scan_io_predicate.live_columns.contains(c.name()))
                     .map(|c| {
                         (
                             c.name().clone(),
@@ -593,7 +593,11 @@ async fn start_reader_impl(
         {
             match &missing_columns_policy {
                 MissingColumnsPolicy::Insert => {
-                    if predicate.live_columns.contains(missing_col_name) {
+                    if predicate
+                        .scan_io_predicate
+                        .live_columns
+                        .contains(missing_col_name)
+                    {
                         external_predicate_cols.push((
                             missing_col_name.clone(),
                             default_value
@@ -601,14 +605,17 @@ async fn start_reader_impl(
                                 .unwrap_or_else(|| Scalar::null(dtype.clone())),
                         ));
 
-                        Arc::make_mut(&mut predicate.column_predicates).is_sumwise_complete = false;
+                        Arc::make_mut(&mut predicate.scan_io_predicate.column_predicates)
+                            .is_sumwise_complete = false;
                     }
                 },
                 MissingColumnsPolicy::Raise => return Err(missing_column_err(missing_col_name)),
             }
         }
 
-        predicate.set_external_constant_columns(external_predicate_cols);
+        predicate
+            .scan_io_predicate
+            .set_external_constant_columns(external_predicate_cols);
     }
 
     let begin_read_args = BeginReadArgs {

@@ -8,6 +8,7 @@ use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
 use polars_io::csv::read::CsvReadOptions;
+use polars_io::external_reader::ExternalReaderBuilder;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
@@ -81,6 +82,10 @@ pub enum FileScanDsl {
 
     ExpandedPaths {
         name: PlSmallStr,
+    },
+
+    ExternalReaderBuilder {
+        external: ExternalReaderBuilder,
     },
 
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
@@ -334,6 +339,10 @@ pub enum FileScanIR {
         name: PlSmallStr,
     },
 
+    ExternalReaderBuilder {
+        external: ExternalReaderBuilder,
+    },
+
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Anonymous {
         options: Arc<AnonymousScanOptions>,
@@ -423,6 +432,7 @@ impl FileScanIR {
             #[cfg(feature = "scan_lines")]
             Self::Lines { name: _ } => {},
             Self::ExpandedPaths { name: _ } => {},
+            Self::ExternalReaderBuilder { external: _ } => {},
             Self::Anonymous {
                 options: _,
                 function: _,
@@ -647,6 +657,7 @@ mod _file_scan_eq_hash {
     use std::hash::{Hash, Hasher};
     use std::sync::Arc;
 
+    use polars_io::external_reader::ExternalReaderBuilder;
     use polars_utils::pl_str::PlSmallStr;
 
     use super::FileScanIR;
@@ -708,6 +719,10 @@ mod _file_scan_eq_hash {
             name: &'a PlSmallStr,
         },
 
+        ExternalReaderBuilder {
+            external: &'a ExternalReaderBuilder,
+        },
+
         Anonymous {
             options: &'a crate::dsl::AnonymousScanOptions,
             function: usize,
@@ -759,6 +774,10 @@ mod _file_scan_eq_hash {
                 FileScanIR::Lines { name } => FileScanEqHashWrap::Lines { name },
 
                 FileScanIR::ExpandedPaths { name } => FileScanEqHashWrap::ExpandedPaths { name },
+
+                FileScanIR::ExternalReaderBuilder { external } => {
+                    FileScanEqHashWrap::ExternalReaderBuilder { external }
+                },
 
                 FileScanIR::Anonymous { options, function } => FileScanEqHashWrap::Anonymous {
                     options,

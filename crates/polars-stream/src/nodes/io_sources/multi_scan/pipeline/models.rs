@@ -10,7 +10,6 @@ use polars_core::prelude::PlHashMap;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
-use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy, ScanSource};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::pl_str::PlSmallStr;
@@ -21,6 +20,7 @@ use crate::nodes::io_sources::multi_scan::components;
 use crate::nodes::io_sources::multi_scan::components::bridge::{BridgeRecvPort, BridgeState};
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::physical_slice::PhysicalSlice;
+use crate::nodes::io_sources::multi_scan::components::predicate::Predicate;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::io_sources::multi_scan::reader_interface::{FileReader, FileReaderCallbacks};
@@ -45,7 +45,7 @@ pub struct ExtraOperations {
     pub include_file_paths: Option<PlSmallStr>,
     /// Index of the file path column in the final output.
     pub file_path_col_idx: usize,
-    pub predicate: Option<ScanIOPredicate>,
+    pub predicate: Option<Predicate>,
 }
 
 impl ExtraOperations {
