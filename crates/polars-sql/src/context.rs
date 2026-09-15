@@ -2304,6 +2304,25 @@ impl SQLContext {
                 lowered_residuals.push(lowered);
             }
 
+            // Whatever is still an uncorrelated `[NOT] IN` / `=` subquery conjunct
+            // becomes a semi / anti join.
+            #[cfg(feature = "semi_anti_join")]
+            let lowered_residuals = {
+                let mut kept = Vec::with_capacity(lowered_residuals.len());
+                for e in lowered_residuals {
+                    match self.try_rewrite_uncorrelated_subquery_conjunct(
+                        &lf,
+                        &e,
+                        filter_mode,
+                        &schema,
+                    )? {
+                        Some(new_lf) => lf = new_lf,
+                        None => kept.push(e),
+                    }
+                }
+                kept
+            };
+
             let Some(parsed_residual) = lowered_residuals
                 .iter()
                 .map(|e| parse_sql_expr(e, self, Some(&*schema)))
