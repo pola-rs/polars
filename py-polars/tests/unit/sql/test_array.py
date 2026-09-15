@@ -1,13 +1,72 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("rows", [None, 0, 3])
+def test_array_literal_projection_height(rows: int | None, engine: EngineType) -> None:
+    query = """
+        SELECT
+            [1, 2] AS plain,
+            ARRAY[1, NULL] AS nullable,
+            [NULL] AS nulls,
+            [] AS empty,
+            [[1, 2], [3, 4]] AS nested,
+            CAST([1, 2] AS SMALLINT[]) AS casted,
+            COALESCE(NULL, [1, 2]) AS composed
+    """
+    if rows is None:
+        result = pl.sql(query).collect(engine=engine)
+    else:
+        df = pl.LazyFrame({"id": range(rows)})
+        result = df.sql(query + " FROM self").collect(engine=engine)
+    height = 1 if rows is None else rows
+    expected = pl.DataFrame(
+        {
+            "plain": [[1, 2]] * height,
+            "nullable": [[1, None]] * height,
+            "nulls": [[None]] * height,
+            "empty": [[]] * height,
+            "nested": [[[1, 2], [3, 4]]] * height,
+            "casted": [[1, 2]] * height,
+            "composed": [[1, 2]] * height,
+        },
+        schema={
+            "plain": pl.List(pl.Int64),
+            "nullable": pl.List(pl.Int64),
+            "nulls": pl.List(pl.Null),
+            "empty": pl.List(pl.Null),
+            "nested": pl.List(pl.List(pl.Int64)),
+            "casted": pl.List(pl.Int16),
+            "composed": pl.List(pl.Int64),
+        },
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_array_literal_projection_zero_columns(engine: EngineType) -> None:
+    with pl.SQLContext(df=None) as ctx:
+        result = ctx.execute("SELECT [1, 2] AS x FROM df").collect(engine=engine)
+    expected = pl.DataFrame(schema={"x": pl.List(pl.Int64)})
+    assert_frame_equal(result, expected)
+
+
+def test_array_literal_projection_height_with_filter_and_order_by() -> None:
+    df = pl.DataFrame({"id": [1, 2, 3]})
+    result = df.sql("SELECT [1, 2] AS x FROM self WHERE id > 1 ORDER BY id DESC")
+    assert_frame_equal(result, pl.DataFrame({"x": [[1, 2], [1, 2]]}))
 
 
 @pytest.mark.parametrize(
