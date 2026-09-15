@@ -923,7 +923,6 @@ fn canonicalize_list_chunk(
 mod test {
     use arrow::array::PrimitiveArray;
     use arrow::bitmap::Bitmap;
-    use arrow::offset::OffsetsBuffer;
 
     use super::*;
     use crate::frame::column::Column;
