@@ -132,7 +132,39 @@ impl<'a, 'f, A: AsPlArray + ?Sized> ArrayList<'a, 'f, A> {
 
     /// The validity mask of the concatenation, per [`concatenate_validities_with`].
     fn validities(&self, length: usize, null_count: usize) -> Option<Bitmap> {
-        concatenate_validities_with(&mut self.iter_erased(), length, null_count)
+        if self.repeats <= 1 {
+            return concatenate_validities_with(&mut self.iter_erased(), length, null_count);
+        }
+
+        // One pass over the distinct arrays is what the concatenation is made of; the copies
+        // after it hold the same bits over again. Both counts divide by the repeats exactly,
+        // since every copy holds the same elements and the same nulls.
+        let pass_length = length / self.repeats;
+        let pass = concatenate_validities_with(
+            &mut self.distinct_erased(),
+            pass_length,
+            null_count / self.repeats,
+        )?;
+
+        // A mask that stands for its elements in `O(1)` — nothing but nulls — says the same of
+        // every copy of them, so there is nothing to lay down.
+        if pass.len() < pass_length {
+            return Some(pass);
+        }
+
+        // The copies after the first are taken from the bits already written and the run doubles,
+        // rather than the pass being laid down once per repeat — which is one short copy per
+        // repeat where the pass holds few bits.
+        let mut bits = pass;
+        while bits.len() < length {
+            let take = (length - bits.len()).min(bits.len());
+            let mut builder = BitmapBuilder::with_capacity(bits.len() + take);
+            builder.extend_from_bitmap(&bits);
+            builder.extend_from_bitmap(&bits.clone().sliced(0, take));
+            bits = builder.freeze();
+        }
+
+        Some(bits)
     }
 }
 
