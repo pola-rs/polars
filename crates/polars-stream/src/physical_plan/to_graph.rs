@@ -145,6 +145,14 @@ fn to_graph_rec<'a>(
             )
         },
 
+        Reverse { input } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::reverse::ReverseNode::new(),
+                [(input_key, input.port)],
+            )
+        },
+
         NegativeSlice {
             input,
             offset,
