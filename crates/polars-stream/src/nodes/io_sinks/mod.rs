@@ -11,7 +11,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::{ComputeNode, PortState};
 use crate::execute::StreamingExecutionState;
-use crate::metrics::NodeMetricsRegistrator;
+use crate::metrics::OptNodeMetricsRegistrator;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::TaskPriority;
 use crate::nodes::io_sinks::components::partitioner::Partitioner;
@@ -27,12 +27,15 @@ pub mod writers;
 pub struct IOSinkNode {
     name: PlSmallStr,
     state: IOSinkNodeState,
-    metrics_registrator: Option<NodeMetricsRegistrator>,
+    metrics_registrator: OptNodeMetricsRegistrator,
     verbose: bool,
 }
 
 impl IOSinkNode {
-    pub fn new(config: impl Into<Box<IOSinkNodeConfig>>) -> Self {
+    pub fn new(
+        config: impl Into<Box<IOSinkNodeConfig>>,
+        metrics_registrator: OptNodeMetricsRegistrator,
+    ) -> Self {
         let config = config.into();
 
         let target_type = match &config.target {
@@ -51,7 +54,7 @@ impl IOSinkNode {
         IOSinkNode {
             name,
             state: IOSinkNodeState::Uninitialized { config },
-            metrics_registrator: None,
+            metrics_registrator,
             verbose,
         }
     }
@@ -60,10 +63,6 @@ impl IOSinkNode {
 impl ComputeNode for IOSinkNode {
     fn name(&self) -> &str {
         &self.name
-    }
-
-    fn set_phase_metrics_registrator(&mut self, metrics_registrator: NodeMetricsRegistrator) {
-        self.metrics_registrator = Some(metrics_registrator);
     }
 
     fn update_state(
@@ -146,9 +145,8 @@ impl ComputeNode for IOSinkNode {
                 unreachable!()
             };
 
-            if let Some(metrics_registrator) = &self.metrics_registrator {
-                metrics_registrator.register_io_metrics(io_metrics.clone().unwrap());
-            }
+            self.metrics_registrator
+                .register_io_metrics(io_metrics.clone());
 
             if phase_channel_tx.send(phase_morsel_rx).await.is_err() {
                 let IOSinkNodeState::Initialized {

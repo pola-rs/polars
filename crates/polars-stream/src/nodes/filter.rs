@@ -1,19 +1,64 @@
+use std::time::Instant;
+
 use polars_buffer::Buffer;
 use polars_mem_engine::column_to_mask;
 
 use super::compute_node_prelude::*;
 use crate::expression::StreamExpr;
+use crate::metrics::{Metric, MetricReporter, MetricUnit, OptNodeMetricsRegistrator, kind};
+
+#[derive(Default)]
+struct FilterMetrics {
+    rows_dropped: Metric<kind::Sum>,
+    morsels_received: Metric<kind::Sum>,
+    largest_morsel_received: Metric<kind::Max>,
+    eval_wall_ns: Metric<kind::Sum>,
+}
+
+struct FilterReporter {
+    rows_dropped: MetricReporter<kind::Sum>,
+    morsels_received: MetricReporter<kind::Sum>,
+    largest_morsel_received: MetricReporter<kind::Max>,
+    eval_wall_ns: MetricReporter<kind::Sum>,
+}
+
+impl FilterMetrics {
+    fn register(registrator: &OptNodeMetricsRegistrator) -> Self {
+        Self {
+            rows_dropped: registrator.new_sum("filter.rows_dropped", MetricUnit::Unit),
+            morsels_received: registrator.new_sum("filter.morsels_received", MetricUnit::Unit),
+            largest_morsel_received: registrator
+                .new_max("filter.largest_morsel_received", MetricUnit::Unit),
+            eval_wall_ns: registrator.new_sum("filter.eval_wall_ns", MetricUnit::DurationNs),
+        }
+    }
+
+    fn reporters(&self) -> FilterReporter {
+        FilterReporter {
+            rows_dropped: self.rows_dropped.reporter(),
+            morsels_received: self.morsels_received.reporter(),
+            largest_morsel_received: self.largest_morsel_received.reporter(),
+            eval_wall_ns: self.eval_wall_ns.reporter(),
+        }
+    }
+}
 
 pub struct FilterNode {
     predicate: StreamExpr,
     projection: Option<Buffer<usize>>,
+    metrics: FilterMetrics,
 }
 
 impl FilterNode {
-    pub fn new(predicate: StreamExpr, projection: Option<Buffer<usize>>) -> Self {
+    pub fn new(
+        predicate: StreamExpr,
+        projection: Option<Buffer<usize>>,
+        metrics_registrator: OptNodeMetricsRegistrator,
+    ) -> Self {
         Self {
             predicate,
             projection,
+            metrics: FilterMetrics::register(&metrics_registrator),
         }
     }
 }
@@ -48,8 +93,14 @@ impl ComputeNode for FilterNode {
 
         for (mut recv, mut send) in receivers.into_iter().zip(senders) {
             let slf = &*self;
+
+            let metrics = slf.metrics.reporters();
+
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Ok(morsel) = recv.recv().await {
+                    let height_in = morsel.height() as i64;
+                    let started = Instant::now();
+
                     let morsel = morsel
                         .async_try_map(|mut df| async move {
                             let mask = slf
@@ -74,6 +125,13 @@ impl ComputeNode for FilterNode {
                             df.filter_seq(mask.as_ref())
                         })
                         .await?;
+
+                    metrics.rows_dropped.add(height_in - morsel.height() as i64);
+                    metrics.morsels_received.add(1);
+                    metrics.largest_morsel_received.record(height_in);
+                    metrics
+                        .eval_wall_ns
+                        .add(started.elapsed().as_nanos() as i64);
 
                     if morsel.height() == 0 {
                         continue;

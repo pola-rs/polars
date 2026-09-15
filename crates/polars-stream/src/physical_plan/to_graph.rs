@@ -33,8 +33,10 @@ use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::execute::StreamingExecutionState;
 use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
+use crate::metrics::{GraphMetrics, NodeMetricsRegistrator, OptNodeMetricsRegistrator};
 use crate::morsel::{MorselSeq, get_ideal_morsel_size};
 use crate::nodes;
+use crate::nodes::ComputeNode;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
@@ -74,12 +76,36 @@ struct GraphConversionContext<'a> {
     phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     expr_conversion_state: ExpressionConversionState,
     num_pipelines: usize,
+    metrics: Option<Arc<Mutex<GraphMetrics>>>,
+}
+
+impl GraphConversionContext<'_> {
+    fn add_node_with_metrics<N: ComputeNode + 'static>(
+        &mut self,
+        node: impl FnOnce(OptNodeMetricsRegistrator) -> N,
+        inputs: impl IntoIterator<Item = (GraphNodeKey, usize)>,
+    ) -> GraphNodeKey {
+        let metrics = self.metrics.clone();
+
+        self.graph.add_node_with_key(
+            |graph_key| {
+                node(OptNodeMetricsRegistrator(metrics.map(|graph_metrics| {
+                    NodeMetricsRegistrator {
+                        graph_key,
+                        graph_metrics,
+                    }
+                })))
+            },
+            inputs,
+        )
+    }
 }
 
 pub fn physical_plan_to_graph(
     root: PhysNodeKey,
     phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &mut Arena<AExpr>,
+    metrics: Option<Arc<Mutex<GraphMetrics>>>,
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {
     let num_pipelines = polars_config::config().max_threads();
     let mut ctx = GraphConversionContext {
@@ -89,6 +115,7 @@ pub fn physical_plan_to_graph(
         phys_to_graph: SecondaryMap::with_capacity(phys_sm.len()),
         expr_conversion_state: ExpressionConversionState::new(false),
         num_pipelines,
+        metrics,
     };
 
     to_graph_rec(root, &mut ctx)?;
@@ -211,16 +238,16 @@ fn to_graph_rec<'a>(
         } => {
             let input_schema = input.output_schema(ctx.phys_sm);
             let phys_predicate_expr = create_stream_expr(predicate, ctx, input_schema)?;
+            let projection = projection.as_ref().map(|(x, _)| {
+                x.iter()
+                    .map(|name| input_schema.index_of(name).unwrap())
+                    .collect()
+            });
             let input_key = to_graph_rec(input.node, ctx)?;
-            ctx.graph.add_node(
-                nodes::filter::FilterNode::new(
-                    phys_predicate_expr,
-                    projection.as_ref().map(|(x, _)| {
-                        x.iter()
-                            .map(|name| input_schema.index_of(name).unwrap())
-                            .collect()
-                    }),
-                ),
+            ctx.add_node_with_metrics(
+                |registrator| {
+                    nodes::filter::FilterNode::new(phys_predicate_expr, projection, registrator)
+                },
                 [(input_key, input.port)],
             )
         },
@@ -362,8 +389,10 @@ fn to_graph_rec<'a>(
                 input_schema,
             };
 
-            ctx.graph
-                .add_node(IOSinkNode::new(config), [(input_key, input.port)])
+            ctx.add_node_with_metrics(
+                |registrator| IOSinkNode::new(config, registrator),
+                [(input_key, input.port)],
+            )
         },
 
         PartitionedSink {
@@ -501,8 +530,10 @@ fn to_graph_rec<'a>(
                 input_schema,
             };
 
-            ctx.graph
-                .add_node(IOSinkNode::new(config), [(input_key, input.port)])
+            ctx.add_node_with_metrics(
+                |registrator| IOSinkNode::new(config, registrator),
+                [(input_key, input.port)],
+            )
         },
 
         InMemoryMap {
@@ -907,32 +938,37 @@ fn to_graph_rec<'a>(
 
             let verbose = config::verbose();
 
-            ctx.graph.add_node(
-                nodes::io_sources::multi_scan::MultiScan::new(Arc::new(MultiScanConfig {
-                    sources,
-                    file_reader_builder,
-                    cloud_options,
-                    final_output_schema,
-                    file_projection_builder,
-                    row_index,
-                    pre_slice,
-                    predicate,
-                    predicate_file_skip_applied,
-                    hive_parts,
-                    include_file_paths,
-                    extra_columns_policy,
-                    missing_columns_policy,
-                    forbid_extra_columns,
-                    cast_columns_policy,
-                    deletion_files,
-                    table_statistics,
-                    // Initialized later
-                    num_pipelines: RelaxedCell::new_usize(0),
-                    n_readers_pre_init: RelaxedCell::new_usize(0),
-                    max_concurrent_scans: RelaxedCell::new_usize(0),
-                    disable_morsel_split,
-                    verbose,
-                })),
+            ctx.add_node_with_metrics(
+                |registrator| {
+                    nodes::io_sources::multi_scan::MultiScan::new(
+                        Arc::new(MultiScanConfig {
+                            sources,
+                            file_reader_builder,
+                            cloud_options,
+                            final_output_schema,
+                            file_projection_builder,
+                            row_index,
+                            pre_slice,
+                            predicate,
+                            predicate_file_skip_applied,
+                            hive_parts,
+                            include_file_paths,
+                            extra_columns_policy,
+                            missing_columns_policy,
+                            forbid_extra_columns,
+                            cast_columns_policy,
+                            deletion_files,
+                            table_statistics,
+                            // Initialized later
+                            num_pipelines: RelaxedCell::new_usize(0),
+                            n_readers_pre_init: RelaxedCell::new_usize(0),
+                            max_concurrent_scans: RelaxedCell::new_usize(0),
+                            disable_morsel_split,
+                            verbose,
+                        }),
+                        registrator,
+                    )
+                },
                 [],
             )
         },
@@ -1698,32 +1734,37 @@ fn to_graph_rec<'a>(
             let disable_morsel_split = false;
             let verbose = config::verbose();
 
-            ctx.graph.add_node(
-                nodes::io_sources::multi_scan::MultiScan::new(Arc::new(MultiScanConfig {
-                    sources,
-                    file_reader_builder,
-                    cloud_options,
-                    final_output_schema,
-                    file_projection_builder,
-                    row_index,
-                    pre_slice,
-                    predicate,
-                    predicate_file_skip_applied,
-                    hive_parts,
-                    include_file_paths,
-                    extra_columns_policy,
-                    missing_columns_policy,
-                    forbid_extra_columns,
-                    cast_columns_policy,
-                    deletion_files,
-                    table_statistics,
-                    // Initialized later
-                    num_pipelines: RelaxedCell::new_usize(0),
-                    n_readers_pre_init: RelaxedCell::new_usize(0),
-                    max_concurrent_scans: RelaxedCell::new_usize(0),
-                    disable_morsel_split,
-                    verbose,
-                })),
+            ctx.add_node_with_metrics(
+                |registrator| {
+                    nodes::io_sources::multi_scan::MultiScan::new(
+                        Arc::new(MultiScanConfig {
+                            sources,
+                            file_reader_builder,
+                            cloud_options,
+                            final_output_schema,
+                            file_projection_builder,
+                            row_index,
+                            pre_slice,
+                            predicate,
+                            predicate_file_skip_applied,
+                            hive_parts,
+                            include_file_paths,
+                            extra_columns_policy,
+                            missing_columns_policy,
+                            forbid_extra_columns,
+                            cast_columns_policy,
+                            deletion_files,
+                            table_statistics,
+                            // Initialized later
+                            num_pipelines: RelaxedCell::new_usize(0),
+                            n_readers_pre_init: RelaxedCell::new_usize(0),
+                            max_concurrent_scans: RelaxedCell::new_usize(0),
+                            disable_morsel_split,
+                            verbose,
+                        }),
+                        registrator,
+                    )
+                },
                 [],
             )
         },
