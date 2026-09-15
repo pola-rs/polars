@@ -241,7 +241,13 @@ macro_rules! binary_eq_ineq_impl {
             }
 
             fn equal_missing(&self, rhs: &[u8]) -> BooleanChunked {
-                arity::unary_elementwise_mut_with_options_flat(self, |arr| arr.tot_eq_missing_kernel_broadcast(rhs).into())
+                // The chunk goes to the kernel in the representation it is in, as in the
+                // numeric impl above: a chunk that repeats one value is compared once.
+                arity::unary_mut_with_options(self, |arr| {
+                    PlBooleanArray::from_pl_bitmap(
+                        PlTotalEqKernel::tot_eq_missing_kernel_broadcast(arr, rhs),
+                    )
+                })
             }
 
             fn not_equal(&self, rhs: &[u8]) -> BooleanChunked {
@@ -249,7 +255,11 @@ macro_rules! binary_eq_ineq_impl {
             }
 
             fn not_equal_missing(&self, rhs: &[u8]) -> BooleanChunked {
-                arity::unary_elementwise_mut_with_options_flat(self, |arr| arr.tot_ne_missing_kernel_broadcast(rhs).into())
+                arity::unary_mut_with_options(self, |arr| {
+                    PlBooleanArray::from_pl_bitmap(
+                        PlTotalEqKernel::tot_ne_missing_kernel_broadcast(arr, rhs),
+                    )
+                })
             }
         }
 
@@ -288,8 +298,11 @@ impl ChunkCompareEq<&str> for StringChunked {
     }
 
     fn equal_missing(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_elementwise_mut_with_options_flat(self, |arr| {
-            arr.tot_eq_missing_kernel_broadcast(rhs).into()
+        // As above: the chunk reaches the kernel in the representation it is in.
+        arity::unary_mut_with_options(self, |arr| {
+            PlBooleanArray::from_pl_bitmap(PlTotalEqKernel::tot_eq_missing_kernel_broadcast(
+                arr, rhs,
+            ))
         })
     }
 
@@ -300,8 +313,10 @@ impl ChunkCompareEq<&str> for StringChunked {
     }
 
     fn not_equal_missing(&self, rhs: &str) -> BooleanChunked {
-        arity::unary_elementwise_mut_with_options_flat(self, |arr| {
-            arr.tot_ne_missing_kernel_broadcast(rhs).into()
+        arity::unary_mut_with_options(self, |arr| {
+            PlBooleanArray::from_pl_bitmap(PlTotalEqKernel::tot_ne_missing_kernel_broadcast(
+                arr, rhs,
+            ))
         })
     }
 }
