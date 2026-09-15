@@ -76,11 +76,14 @@ impl DataFrame {
                 .filter(|s| !s.dtype().is_null())
                 .cloned()
                 .collect::<Vec<_>>();
-            if by.is_empty() {
-                let groups = if self.height() == 0 {
+            // Keys that are each one element repeated make every row the same row, so they are
+            // all one group -- as are no keys at all, which is what nothing but null dtypes
+            // leaves behind.
+            if by.is_empty() || by.iter().all(Column::reads_as_one_element) {
+                let groups = if common_height == 0 {
                     vec![]
                 } else {
-                    vec![[0, self.height() as IdxSize]]
+                    vec![[0, common_height as IdxSize]]
                 };
 
                 Ok(GroupsType::new_slice(groups, false, true))

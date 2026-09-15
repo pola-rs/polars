@@ -663,6 +663,28 @@ impl Column {
         }
     }
 
+    /// Whether every element of this column is the same one.
+    ///
+    /// Any order of such a column is a sorted one, and every row of it falls into one group, so
+    /// the multi-key operations that would otherwise compare rows against each other can answer
+    /// off the length alone. An empty column has no element to repeat and answers `false`.
+    pub fn reads_as_one_element(&self) -> bool {
+        if self.is_empty() {
+            return false;
+        }
+
+        match self {
+            // A scalar column is one value and a length: there is nothing else in it.
+            Self::Scalar(_) => true,
+            // Nulls are all the same element whatever the chunks look like; otherwise it takes a
+            // single chunk that repeats one element to say as much.
+            Self::Series(series) => {
+                series.null_count() == series.len()
+                    || matches!(series.chunks().as_slice(), [chunk] if chunk.is_scalar())
+            },
+        }
+    }
+
     pub fn first_non_null(&self) -> Option<usize> {
         match self {
             Self::Series(s) => crate::utils::first_non_null(s.chunks().iter().map(|a| a.as_ref())),

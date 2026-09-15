@@ -992,6 +992,13 @@ pub fn arg_sort(columns: &[Column], mut sort_options: SortMultipleOptions) -> Po
             maintain_order: sort_options.maintain_order,
             limit: sort_options.limit,
         }))
+    } else if columns.iter().all(Column::reads_as_one_element) {
+        // Every row compares equal, so the order the rows are already in is a sorted one -- and
+        // the one a stable sort answers. The single-column arm above has its own fast paths.
+        Ok(arg_sort_identity(
+            columns[0].name().clone(),
+            columns[0].len(),
+        ))
     } else if sort_options.nulls_last.iter().all(|&x| x)
         || columns.iter().any(|c| c.dtype().is_nested())
         || std::env::var("POLARS_ROW_FMT_SORT").is_ok()

@@ -47,6 +47,16 @@ pub fn _arg_bottom_k(
         return Ok(NoNull::new(by_column[0].arg_sort((&*sort_options).into())));
     }
 
+    // Every row compares equal when every key is one element repeated, so the first `k` rows are
+    // a bottom `k` -- and the ones a stable answer names.
+    if by_column.iter().all(Column::reads_as_one_element) {
+        let k = k.min(from_n_rows);
+        return Ok(NoNull::new(super::arg_sort_identity(
+            by_column[0].name().clone(),
+            k,
+        )));
+    }
+
     let encoded = _get_rows_encoded(
         by_column,
         &sort_options.descending,
