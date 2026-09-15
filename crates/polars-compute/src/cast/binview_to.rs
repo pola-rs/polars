@@ -78,7 +78,9 @@ pub fn view_to_binary(from: &PlBinaryViewArray) -> PlBinaryArray {
             .with_validity(from.validity().map(PlBitmap::from));
     }
 
-    PlBinaryArray::from_values_iter(from.values_iter())
+    // Every view holds the length of what it reads, so what the values come to is known before
+    // the first of them is written: the buffer is allocated for all of them at once.
+    PlBinaryArray::from_values_iter_with_bytes_capacity(from.values_iter(), from.total_bytes_len())
         .with_validity(from.validity().map(PlBitmap::from))
 }
 

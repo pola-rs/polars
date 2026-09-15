@@ -187,18 +187,33 @@ impl PlBinaryArray {
     }
 
     /// Creates a fully valid, flat [`PlBinaryArray`] holding `values`, in order.
+    #[inline]
     pub fn from_values_iter<V: AsRef<[u8]>, I: IntoIterator<Item = V>>(values: I) -> Self {
+        Self::from_values_iter_with_bytes_capacity(values, 0)
+    }
+
+    /// [`Self::from_values_iter`], over a values buffer allocated for `capacity` bytes up front.
+    ///
+    /// A caller that knows how many bytes the values come to — a view array knows, since every
+    /// view holds the length of what it reads — hands that count over rather than have the buffer
+    /// grow into it, which copies every byte already written once per doubling.
+    pub fn from_values_iter_with_bytes_capacity<V: AsRef<[u8]>, I: IntoIterator<Item = V>>(
+        values: I,
+        capacity: usize,
+    ) -> Self {
         let values = values.into_iter();
         let (lower, _) = values.size_hint();
 
-        let mut bytes = Vec::new();
+        let mut bytes = Vec::with_capacity(capacity);
         let mut offsets = Vec::with_capacity(lower + 1);
         offsets.push(0);
 
-        for value in values {
+        // Driven by `for_each`, so that an iterator over a chunk that reads one value throughout
+        // resolves that once and folds the slice underneath rather than per element.
+        values.for_each(|value| {
             bytes.extend_from_slice(value.as_ref());
             offsets.push(bytes.len() as u64);
-        }
+        });
 
         let length = offsets.len() - 1;
         // SAFETY: the offsets are the ends of the values appended so far: ordered, one per element

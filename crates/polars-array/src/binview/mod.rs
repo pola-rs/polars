@@ -190,9 +190,11 @@ impl PlBinaryViewArray {
 
         let mut views = Vec::with_capacity(lower);
         let mut buffers = Vec::new();
-        for value in values {
+        // Driven by `for_each`, so that an iterator over a chunk that reads one value throughout
+        // resolves that once and folds the slice underneath rather than per element.
+        values.for_each(|value| {
             views.push(copy_value(&mut buffers, 0, value.as_ref()));
-        }
+        });
 
         let length = views.len();
         // SAFETY: there is one view per element, and every one of them was just written over the
@@ -628,19 +630,19 @@ impl<V: AsRef<[u8]>> FromIterator<Option<V>> for PlBinaryViewArray {
         let mut buffers = Vec::new();
         let mut validity = BitmapBuilder::with_capacity(lower);
 
-        for value in iter {
-            match value {
-                Some(value) => {
-                    views.push(copy_value(&mut buffers, 0, value.as_ref()));
-                    validity.push(true);
-                },
-                // The value of a null element is undetermined, so nothing is written out for it.
-                None => {
-                    views.push(View::default());
-                    validity.push(false);
-                },
-            }
-        }
+        // As in `from_values_iter`: `for_each` is what lets the iterator underneath resolve its
+        // representation once and fold the slice it holds.
+        iter.for_each(|value| match value {
+            Some(value) => {
+                views.push(copy_value(&mut buffers, 0, value.as_ref()));
+                validity.push(true);
+            },
+            // The value of a null element is undetermined, so nothing is written out for it.
+            None => {
+                views.push(View::default());
+                validity.push(false);
+            },
+        });
 
         let length = views.len();
         // SAFETY: there is one view per element and one bit per element, and every view was just
