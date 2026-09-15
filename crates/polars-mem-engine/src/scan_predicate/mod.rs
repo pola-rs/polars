@@ -26,6 +26,10 @@ pub struct ScanPredicate {
     /// Column names that are used in the predicate.
     pub live_columns: Arc<PlIndexSet<PlSmallStr>>,
 
+    /// Column names whose statistics the skip-batch predicate reads. A superset of
+    /// the live columns: a dynamic predicate may only be consulted for skipping.
+    pub skip_batch_columns: Arc<PlIndexSet<PlSmallStr>>,
+
     /// A predicate expression used to skip record batches based on its statistics.
     ///
     /// This expression will be given a batch size along with a `min`, `max` and `null count` for
@@ -115,6 +119,7 @@ impl ScanPredicate {
         let constant_columns = constant_columns.into_iter();
 
         let mut live_columns = self.live_columns.as_ref().clone();
+        let mut skip_batch_columns = self.skip_batch_columns.as_ref().clone();
         let mut skip_batch_predicate_constants =
             Vec::with_capacity(if self.skip_batch_predicate.is_some() {
                 1 + constant_columns.size_hint().0 * 3
@@ -124,7 +129,8 @@ impl ScanPredicate {
 
         let predicate_constants = constant_columns
             .filter_map(|(name, scalar): (PlSmallStr, Scalar)| {
-                if !live_columns.swap_remove(&name) {
+                let in_skip_batch = skip_batch_columns.swap_remove(&name);
+                if !live_columns.swap_remove(&name) && !in_skip_batch {
                     return None;
                 }
 
@@ -162,6 +168,7 @@ impl ScanPredicate {
         Self {
             predicate,
             live_columns: Arc::new(live_columns),
+            skip_batch_columns: Arc::new(skip_batch_columns),
             skip_batch_predicate,
             column_predicates: self.column_predicates.clone(), // Q? Maybe this should cull
             // predicates.
@@ -190,6 +197,7 @@ impl ScanPredicate {
         ScanIOPredicate {
             predicate: phys_expr_to_io_expr(self.predicate.clone()),
             live_columns: self.live_columns.clone(),
+            skip_batch_columns: self.skip_batch_columns.clone(),
             skip_batch_predicate: skip_batch_predicate
                 .cloned()
                 .or_else(|| self.to_dyn_skip_batch_predicate(schema)),

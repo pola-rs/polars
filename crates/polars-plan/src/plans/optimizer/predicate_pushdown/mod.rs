@@ -609,7 +609,7 @@ impl PredicatePushDown {
                 {
                     let n = by_column[0].node();
                     if let AExpr::Column(_) = expr_arena.get(n) {
-                        let (dyn_pred_node, pred) = new_dynamic_pred(n, expr_arena);
+                        let (dyn_pred_node, pred) = new_dynamic_pred(n, false, expr_arena);
                         slice = Some((offset, len, Some(pred)));
 
                         let predicate = ExprIR::from_node(dyn_pred_node, expr_arena);

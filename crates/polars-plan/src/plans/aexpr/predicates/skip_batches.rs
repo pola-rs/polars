@@ -724,7 +724,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     },
                     _ => None,
                 },
-                IRFunctionExpr::DynamicPred { pred } => {
+                IRFunctionExpr::DynamicPred { pred, .. } => {
                     let target = resolve_stat_target(input[0].node(), arena)?;
                     let dtype = target_leaf_dtype(&target, schema)?;
                     if !can_use_min_max_stats(dtype, None, None) || dtype.is_float() {

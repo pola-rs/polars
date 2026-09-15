@@ -279,17 +279,14 @@ def test_user_forced_build_side_is_left_alone(fact: pl.LazyFrame) -> None:
     assert "dynamic_predicate" not in plan
 
 
-def test_ipc_scan(
-    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
-) -> None:
+def test_only_parquet_scans_get_a_filter(tmp_path: Path) -> None:
     n = N_ROW_GROUPS * ROWS_PER_GROUP
     path = tmp_path / "fact.ipc"
     pl.DataFrame({"k": range(n), "v": range(n)}).write_ipc(path)
     q = pl.scan_ipc(path).join(dim(220, 240), on="k")
-    assert "dynamic_predicate" in q.explain(engine="streaming")
+    assert "dynamic_predicate" not in q.explain(engine="streaming")
     out = q.collect(engine="streaming")
     assert out.get_column("k").sort().to_list() == [220, 240]
-    assert_matches_in_memory(q, out)
 
 
 def test_build_side_of_several_morsels(

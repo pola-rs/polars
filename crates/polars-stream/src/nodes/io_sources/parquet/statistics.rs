@@ -102,7 +102,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
 
     let num_row_groups = row_group_slice.len();
     let metadata = metadata.clone();
-    let live_columns = predicate.live_columns.clone();
+    let live_columns = predicate.skip_batch_columns.clone();
 
     // Note: We are spawning here onto the computational async runtime because the caller is being run
     // on a tokio async thread.

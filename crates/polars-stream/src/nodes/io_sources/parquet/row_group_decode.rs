@@ -93,7 +93,11 @@ impl RowGroupDecoder {
 
         let df = unsafe { DataFrame::new_unchecked(projection_height, out_columns) };
 
-        let df = if let Some(predicate) = self.predicate.as_ref() {
+        let df = if let Some(predicate) = self
+            .predicate
+            .as_ref()
+            .filter(|p| !p.live_columns.is_empty())
+        {
             let mask = predicate.predicate.evaluate_io(&df)?;
             let mask = mask.bool().unwrap();
 

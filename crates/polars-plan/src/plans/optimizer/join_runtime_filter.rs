@@ -20,7 +20,7 @@ use super::join_build_side::{LOPSIDED_FACTOR, side_stats};
 use super::predicate_pushdown::utils::{
     PushdownEligibility, map_column_references, pushdown_eligibility, temporary_unique_key,
 };
-#[cfg(any(feature = "parquet", feature = "ipc"))]
+#[cfg(feature = "parquet")]
 use crate::dsl::FileScanIR;
 use crate::plans::optimizer::predicate_pushdown::new_dynamic_pred;
 use crate::plans::options::RuntimeFilter;
@@ -108,7 +108,7 @@ fn process_join(
             continue;
         }
         let column = expr_arena.add(AExpr::Column(name));
-        let (dyn_node, pred) = new_dynamic_pred(column, expr_arena);
+        let (dyn_node, pred) = new_dynamic_pred(column, true, expr_arena);
         let mut predicate = ExprIR::from_node(dyn_node, expr_arena);
         if let Some(scan) = scan_origin(probe_input, &mut predicate, ir_arena, expr_arena, scratch)
         {
@@ -200,13 +200,13 @@ fn scan_origin(
     loop {
         match ir_arena.get(node) {
             IR::Scan { scan_type, .. } => {
-                return match scan_type.as_ref() {
-                    #[cfg(feature = "parquet")]
-                    FileScanIR::Parquet { .. } => Some(node),
-                    #[cfg(feature = "ipc")]
-                    FileScanIR::Ipc { .. } => Some(node),
-                    _ => None,
-                };
+                // Only the parquet reader skips batches by their statistics.
+                #[cfg(feature = "parquet")]
+                if matches!(scan_type.as_ref(), FileScanIR::Parquet { .. }) {
+                    return Some(node);
+                }
+                let _ = scan_type;
+                return None;
             },
             IR::SimpleProjection { input, columns } => {
                 let name = column_name(predicate, expr_arena);
