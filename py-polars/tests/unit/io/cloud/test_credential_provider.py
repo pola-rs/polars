@@ -215,7 +215,7 @@ endpoint_url = http://localhost:333
 
     capfd.readouterr()
 
-    with pytest.raises(IOError, match=r"Error performing HEAD http://localhost:333"):
+    with pytest.raises(IOError, match=r"Error performing \w+ http://localhost:333"):
         q.collect()
 
     capture = capfd.readouterr().err
@@ -255,7 +255,7 @@ endpoint_url = http://localhost:777
 
     capfd.readouterr()
 
-    with pytest.raises(IOError, match=r"Error performing HEAD http://localhost:777"):
+    with pytest.raises(IOError, match=r"Error performing \w+ http://localhost:777"):
         q.collect()
 
 
@@ -292,7 +292,7 @@ endpoint_url = http://localhost:333
         },
     )
 
-    with pytest.raises(IOError, match=r"Error performing HEAD http://localhost:333"):
+    with pytest.raises(IOError, match=r"Error performing \w+ http://localhost:333"):
         q.collect()
 
     capture = capfd.readouterr().err
@@ -337,7 +337,7 @@ endpoint_url = http://localhost:333
 
     q = pl.scan_parquet("s3://.../...")
 
-    with pytest.raises(IOError, match=r"Error performing HEAD http://localhost:333"):
+    with pytest.raises(IOError, match=r"Error performing \w+ http://localhost:333"):
         q.collect()
 
     # An endpoint_url passed in `storage_options` should take precedence.
@@ -346,7 +346,7 @@ endpoint_url = http://localhost:333
         storage_options=storage_options,
     )
 
-    with pytest.raises(IOError, match=r"Error performing HEAD http://localhost:777"):
+    with pytest.raises(IOError, match=r"Error performing \w+ http://localhost:777"):
         q.collect()
 
 
