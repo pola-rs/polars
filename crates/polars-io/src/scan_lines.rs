@@ -8,6 +8,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 const CR: u8 = b'\r';
 const LF: u8 = b'\n';
+const BUFFER_SPLIT_THRESHOLD: usize = 4096;
 
 pub fn count_lines(full_bytes: &[u8]) -> usize {
     let mut n: usize = full_bytes.iter().map(|c| (*c == LF) as usize).sum();
@@ -85,8 +86,10 @@ fn split_lines_to_rows_impl(bytes: Buffer<u8>, max_row_size: usize) -> PolarsRes
         let view = if len <= View::MAX_INLINE_SIZE as usize {
             unsafe { View::new_inline_unchecked(line_bytes) }
         } else {
+            // Note: `start > buffer_end`, there is always at least a line terminator in between.
             if let Some((buffer_start, buffer_end)) = active_buffer
-                && end - buffer_start > BINVIEW_ARROW_BUFFER_LEN_LIMIT
+                && (end - buffer_start > BINVIEW_ARROW_BUFFER_LEN_LIMIT
+                    || start - buffer_end > BUFFER_SPLIT_THRESHOLD)
             {
                 total_buffer_len += buffer_end - buffer_start;
                 data_buffers.push(bytes.clone().sliced(buffer_start..buffer_end));
