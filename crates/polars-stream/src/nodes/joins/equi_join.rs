@@ -613,8 +613,8 @@ struct LocalBuilder {
     // A cardinality sketch per partition for the keys seen by this builder.
     sketch_per_p: Vec<CardinalitySketch>,
 
-    // Min and max of the key of each runtime filter seen by this builder.
-    key_ranges: Vec<Option<(Scalar, Scalar)>>,
+    // The range of the key of each runtime filter seen by this builder.
+    key_ranges: Vec<KeyRange>,
 
     // morsel_idxs_values_per_p[p][start..stop] contains the offsets into morsels[i]
     // for partition p, where start, stop are:
@@ -640,7 +640,9 @@ impl BuildState {
             .map(|_| LocalBuilder {
                 morsels: Vec::new(),
                 sketch_per_p: vec![CardinalitySketch::default(); num_partitions],
-                key_ranges: vec![None; num_runtime_filters],
+                key_ranges: (0..num_runtime_filters)
+                    .map(|_| KeyRange::default())
+                    .collect(),
                 morsel_idxs_values_per_p: vec![Vec::new(); num_partitions],
                 morsel_idxs_offsets_per_p: vec![0; num_partitions],
             })
@@ -677,7 +679,7 @@ impl BuildState {
                 select_keys_with_columns(&df, key_selectors, params, &state.in_memory_exec_state)
                     .await?;
             for (filter, range) in params.runtime_filters.iter().zip(&mut local.key_ranges) {
-                KeyRange::extend(range, &keys.columns()[filter.key_idx])?;
+                range.extend(&keys.columns()[filter.key_idx])?;
             }
             let mut payload = select_payload(df.clone(), payload_selector);
             payload.rechunk_mut();
@@ -702,15 +704,11 @@ impl BuildState {
     /// below the probe side.
     fn publish_runtime_filters(&mut self, params: &EquiJoinParams) {
         for (i, filter) in params.runtime_filters.iter().enumerate() {
-            let range = KeyRange::union(
-                self.local_builders
-                    .iter_mut()
-                    .map(|local| local.key_ranges[i].take()),
-            );
-            if config::verbose() {
-                eprintln!("join publishes build key range {range:?}");
+            let mut range = KeyRange::default();
+            for local in &mut self.local_builders {
+                range.merge(std::mem::take(&mut local.key_ranges[i]));
             }
-            filter.pred.set(Arc::new(KeyRange::new(range)));
+            filter.pred.set(Arc::new(range));
         }
     }
 

@@ -169,10 +169,19 @@ fn all_of(name: PlSmallStr, len: usize, value: bool) -> Column {
     Column::Scalar(ScalarColumn::new(name, s, len))
 }
 
-/// A predicate over `node` whose value a producer sets at run time. With
-/// `batch_only` a scan uses it to skip batches by their statistics but never
-/// evaluates it per row.
-pub fn new_dynamic_pred(
+/// A predicate over `node` whose value a producer sets at run time, evaluated
+/// per row wherever it lands.
+pub fn new_dynamic_pred(node: Node, arena: &mut Arena<AExpr>) -> (Node, DynamicPred) {
+    dynamic_pred_node(node, false, arena)
+}
+
+/// A predicate over `node` whose value a producer sets at run time, which a scan
+/// only uses to skip batches by their statistics and never evaluates per row.
+pub fn new_batch_only_dynamic_pred(node: Node, arena: &mut Arena<AExpr>) -> (Node, DynamicPred) {
+    dynamic_pred_node(node, true, arena)
+}
+
+fn dynamic_pred_node(
     node: Node,
     batch_only: bool,
     arena: &mut Arena<AExpr>,

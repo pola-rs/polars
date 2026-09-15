@@ -22,7 +22,7 @@ use polars_plan::plans::predicates::{
     aexpr_to_column_predicates, aexpr_to_skip_batch_predicate, null_count_dtype,
 };
 use polars_plan::plans::{AExpr, ExprIRDisplay, FileInfo, IR, IRFunctionExpr, MintermIter};
-use polars_plan::utils::{aexpr_to_leaf_names_iter, has_aexpr};
+use polars_plan::utils::aexpr_to_leaf_names_iter;
 use polars_utils::aliases::PlIndexMapHashable;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -44,10 +44,12 @@ pub fn create_scan_predicate(
     // their columns do not have to be decoded up front just to evaluate them.
     let full_predicate = predicate.clone();
     let mut predicate = predicate.clone();
+    let mut filters_rows = true;
     let (batch_only, per_row): (Vec<Node>, Vec<Node>) =
         MintermIter::new(predicate.node(), expr_arena)
             .partition(|&part| is_batch_only(part, expr_arena));
     if !batch_only.is_empty() {
+        filters_rows = !per_row.is_empty();
         let node = per_row
             .into_iter()
             .reduce(|left, right| {
@@ -222,6 +224,7 @@ pub fn create_scan_predicate(
 
     PolarsResult::Ok(ScanPredicate {
         predicate: phys_predicate,
+        filters_rows,
         live_columns,
         skip_batch_columns,
         skip_batch_predicate,
@@ -231,21 +234,20 @@ pub fn create_scan_predicate(
     })
 }
 
-/// Whether the predicate part holds a dynamic predicate a scan may only use to
-/// skip batches.
+/// Whether the predicate part is exactly a dynamic predicate a scan may only use
+/// to skip batches. Any other shape, also one wrapping such a predicate, is
+/// evaluated per row like any predicate.
 fn is_batch_only(part: Node, expr_arena: &Arena<AExpr>) -> bool {
-    has_aexpr(part, expr_arena, |e| {
-        matches!(
-            e,
-            AExpr::Function {
-                function: IRFunctionExpr::DynamicPred {
-                    batch_only: true,
-                    ..
-                },
+    matches!(
+        expr_arena.get(part),
+        AExpr::Function {
+            function: IRFunctionExpr::DynamicPred {
+                batch_only: true,
                 ..
-            }
-        )
-    })
+            },
+            ..
+        }
+    )
 }
 
 /// # Returns

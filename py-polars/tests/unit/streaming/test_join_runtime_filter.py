@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import pytest
@@ -146,7 +147,7 @@ def test_not_through_a_sampling_join(
     fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     # The first join's build side has no row bound, so it samples and may read the
-    # scan before the second join has built; only the first join's own filter applies.
+    # scan before the second join has built: neither join gets to publish.
     unbounded = pl.LazyFrame({"k": list(range(0, 1000, 3))}).select(
         pl.col("k").repeat_by(2).explode()
     )
@@ -171,11 +172,9 @@ def test_not_through_a_sampling_join(
 )
 def test_barriers_between_join_and_scan(
     fact: pl.LazyFrame,
-    between: object,
-    plmonkeypatch: PlMonkeyPatch,
-    capfd: pytest.CaptureFixture[str],
+    between: Callable[[pl.LazyFrame], pl.LazyFrame],
 ) -> None:
-    q = between(fact).join(dim(*range(1000)), on="k")  # type: ignore[operator]
+    q = between(fact).join(dim(*range(1000)), on="k")
     assert "dynamic_predicate" not in q.explain(engine="streaming")
     out = q.collect(engine="streaming")
     assert_matches_in_memory(q, out)
@@ -274,9 +273,9 @@ def test_no_statistics_still_correct(
     ],
 )
 def test_joins_without_runtime_filters(
-    fact: pl.LazyFrame, make: object, reason: str
+    fact: pl.LazyFrame, make: Callable[[pl.LazyFrame], pl.LazyFrame], reason: str
 ) -> None:
-    q = make(fact)  # type: ignore[operator]
+    q = make(fact)
     assert "dynamic_predicate" not in q.explain(engine="streaming"), reason
     out = q.collect(engine="streaming")
     assert_matches_in_memory(q, out)
@@ -329,3 +328,21 @@ def test_build_side_of_several_morsels(
     assert out.get_column("k").sort().to_list() == list(range(300, 305)) + list(
         range(660, 665)
     )
+
+
+def test_row_filtering_stays_on_without_live_columns(tmp_path: Path) -> None:
+    # A predicate reading no column of the file still filters rows; whether a scan
+    # filters rows is not derived from the columns it reads.
+    path = tmp_path / "fact.parquet"
+    pl.DataFrame({"k": range(10)}).write_parquet(path)
+
+    out = pl.scan_parquet(path, use_statistics=False).filter(pl.lit(False))
+    assert out.collect(engine="streaming").height == 0
+    assert out.collect(engine="in-memory").height == 0
+
+    # An inserted missing column is bound as a constant, leaving no live columns.
+    with_missing = pl.scan_parquet(
+        path, schema={"k": pl.Int64, "m": pl.Int64}, missing_columns="insert"
+    ).filter(pl.col("m") == 1)
+    assert with_missing.collect(engine="streaming").height == 0
+    assert with_missing.collect(engine="in-memory").height == 0

@@ -321,10 +321,7 @@ impl ParquetReadImpl {
         let target_values_per_thread = self.config.target_values_per_thread;
         let predicate = self.predicate.clone();
 
-        // A predicate without live columns only skips batches by their statistics.
-        let filters_rows = predicate
-            .as_ref()
-            .is_some_and(|p| !p.live_columns.is_empty());
+        let filters_rows = predicate.as_ref().is_some_and(|p| p.filters_rows);
         let mut use_prefiltered =
             filters_rows && matches!(self.options.parallel, ParallelStrategy::Prefiltered);
         use_prefiltered |= filters_rows && matches!(self.options.parallel, ParallelStrategy::Auto);
