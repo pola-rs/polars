@@ -534,8 +534,9 @@ impl Series {
     ///
     /// Payloads must be safe to read as `dtype`: categorical codes in range for every
     /// non-null slot, and Maps satisfying the `MapChunked` storage safety contract. Null
-    /// entries or keys under null rows are allowed and compacted; those in live rows are
-    /// errors. Unsafe payloads can cause invalid memory access downstream.
+    /// Map rows may span entries, and those entries may themselves be null; they are left
+    /// alone. Null entries or keys in live rows are errors. Unsafe payloads can cause
+    /// invalid memory access downstream.
     ///
     /// # Key uniqueness
     /// Not required for safety. Whole-row transformations preserve existing uniqueness;
@@ -616,12 +617,12 @@ impl Series {
 
             #[cfg(feature = "dtype-map")]
             (D::List(_), D::Map(_, _)) => {
-                use crate::chunked_array::logical::{CanonicalizeMode, canonicalize_map_storage};
+                use crate::chunked_array::logical::ensure_live_entries_non_null;
 
                 let storage = self.from_physical_unchecked(&dtype.map_storage_dtype().unwrap())?;
-                // Repair hidden nulls from dtype-blind propagation; reject live ones.
-                let storage = canonicalize_map_storage(&storage, CanonicalizeMode::NullsOnly)?
-                    .unwrap_or(storage);
+                // Nulls that propagation left under null rows are legal; only live rows
+                // must own no null entry or key.
+                ensure_live_entries_non_null(storage.list().unwrap())?;
                 Ok(MapChunked::from_storage_unchecked(dtype.clone(), storage).into_series())
             },
             #[cfg(feature = "dtype-extension")]
