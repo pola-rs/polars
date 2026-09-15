@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
@@ -260,9 +260,56 @@ def test_dataset_provider_predicate_xor_operands(df: pl.DataFrame) -> None:
     )
 
 
+def test_dataset_provider_predicate_arithmetic(df: pl.DataFrame) -> None:
+    # Only `Float64` arithmetic lowers: PyArrow's checked kernels raise on
+    # integer overflow where Polars wraps.
+    assert (
+        lowered_predicate(df, pl.col("val") * 2 > 1.0)
+        == "((pa.compute.field('val') * 2) > 1)"
+    )
+    assert (
+        lowered_predicate(df, pl.col("val") + 1.0 <= 1.5)
+        == "((pa.compute.field('val') + 1) <= 1.5)"
+    )
+    # PyArrow expressions have no reflected arithmetic, so a literal on the left
+    # has to become an expression of its own.
+    assert (
+        lowered_predicate(df, 2.0 - pl.col("val") > 1.0)
+        == "((pa.compute.scalar(2) - pa.compute.field('val')) > 1)"
+    )
+
+
+def test_dataset_provider_predicate_arithmetic_not_lowered(
+    df: pl.DataFrame,
+) -> None:
+    # Integer arithmetic would raise on overflow in PyArrow where Polars wraps.
+    assert lowered_predicate(df, pl.col("id") * pl.col("id") > 4) is None
+    assert lowered_predicate(df, pl.col("id") + 1 > 0) is None
+    # `/` never lowers: PyArrow raises on division by zero where Polars yields
+    # `inf`/`NaN`, follows the operand types where Polars always float-divides,
+    # and its safe casts lose precision (`Float32`) or error (large integers).
+    assert lowered_predicate(df, pl.col("id") / 4 > 1.0) is None
+    assert lowered_predicate(df, pl.col("val") / 2.0 > 1.0) is None
+    # `Float32` arithmetic is not `Float64`: rounding can differ.
+    floats = pl.DataFrame({"x": [1.0]}, schema={"x": pl.Float32})
+    assert lowered_predicate(floats, pl.col("x") * 2 > 1.0) is None
+    # Temporal arithmetic has no PyArrow equivalent with Polars' semantics
+    # (`Date + Duration` truncates to a `Date` in Polars).
+    temporal = pl.DataFrame(
+        {
+            "x": [date(2024, 1, 1)],
+            "d": [timedelta(hours=1)],
+            "y": [date(2024, 1, 1)],
+        }
+    )
+    assert (
+        lowered_predicate(temporal, (pl.col("x") + pl.col("d")) == pl.col("y")) is None
+    )
+
+
 def test_dataset_provider_predicate_not_lowered(df: pl.DataFrame) -> None:
-    # Arithmetic has no lowering.
-    assert lowered_predicate(df, pl.col("val") * 2 > 1.0) is None
+    # `%` has no PyArrow expression form.
+    assert lowered_predicate(df, pl.col("id") % 2 == 0) is None
     # Neither does a cast.
     assert lowered_predicate(df, pl.col("id").cast(pl.String) == "1") is None
 

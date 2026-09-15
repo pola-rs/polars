@@ -57,7 +57,7 @@ pub(super) fn expand_datasets(
                         scan_type,
                         unified_scan_args,
 
-                        file_info: _,
+                        file_info,
                         hive_parts: _,
                         predicate,
                         predicate_file_skip_applied: _,
@@ -136,7 +136,9 @@ pub(super) fn expand_datasets(
                                 // Convert minterms independently, can allow conversion to partially succeed if there are unsupported expressions
                                 let parts: Vec<String> =
                                     MintermIter::new(predicate.node(), expr_arena)
-                                        .filter_map(|node| predicate_to_pa(node, expr_arena))
+                                        .filter_map(|node| {
+                                            predicate_to_pa(node, expr_arena, &file_info.schema)
+                                        })
                                         .collect();
                                 match parts.len() {
                                     0 => None,
