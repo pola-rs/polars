@@ -4998,8 +4998,8 @@ class Expr(metaclass=_Meta):
         .. engine-support:: in-memory, streaming
 
         .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+            This functionality is considered **experimental**. It may be removed or
+            changed at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -5087,8 +5087,8 @@ class Expr(metaclass=_Meta):
         .. engine-support:: in-memory, streaming
 
         .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+            This functionality is considered **experimental**. It may be removed or
+            changed at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -5177,8 +5177,8 @@ class Expr(metaclass=_Meta):
         .. engine-support:: in-memory, streaming
 
         .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+            This functionality is considered **experimental**. It may be removed or
+            changed at any point without it being considered a breaking change.
 
         Parameters
         ----------

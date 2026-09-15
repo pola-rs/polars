@@ -2615,8 +2615,8 @@ class Series(metaclass=_Meta):
         Bin values into discrete intervals delimited by breakpoints.
 
         .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+            This functionality is considered **experimental**. It may be removed or
+            changed at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -2680,8 +2680,8 @@ class Series(metaclass=_Meta):
         Bin values into discrete intervals delimited by quantiles of the data.
 
         .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+            This functionality is considered **experimental**. It may be removed or
+            changed at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -2745,8 +2745,8 @@ class Series(metaclass=_Meta):
         are not supported.
 
         .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+            This functionality is considered **experimental**. It may be removed or
+            changed at any point without it being considered a breaking change.
 
         Parameters
         ----------
