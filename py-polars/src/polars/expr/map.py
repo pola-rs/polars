@@ -25,8 +25,6 @@ class ExprMapNameSpace:
         Each entry is a `Struct` with a `key` and a `value` field. Entry order is
         preserved. The inverse of :meth:`Expr.list.to_map`.
 
-        Null maps remain null.
-
         .. engine-support:: in-memory, streaming, distributed
 
         Examples
@@ -49,8 +47,6 @@ class ExprMapNameSpace:
     def keys(self) -> Expr:
         """
         Get the keys of every map as a `List`, in entry order.
-
-        Null maps remain null.
 
         .. engine-support:: in-memory, streaming, distributed
 
@@ -86,8 +82,6 @@ class ExprMapNameSpace:
         """
         Get the values of every map as a `List`, in entry order.
 
-        Null maps remain null.
-
         .. engine-support:: in-memory, streaming, distributed
 
         Returns
@@ -122,8 +116,6 @@ class ExprMapNameSpace:
         """
         Get the number of entries of every map.
 
-        Null maps remain null.
-
         .. engine-support:: in-memory, streaming, distributed
 
         Returns
@@ -157,13 +149,6 @@ class ExprMapNameSpace:
     def contains_key(self, key: IntoExpr) -> Expr:
         """
         Check whether every map holds `key`.
-
-        Null maps remain null. Map keys are never null, so a null `key` is never found.
-
-        The key is cast to the map's key type when that is lossless, so a value the
-        key type cannot represent -- an `Enum` label the keys do not have -- is never
-        found. A cast that would round the key, such as a more precise `Datetime`, is
-        rejected.
 
         .. engine-support:: in-memory, streaming, distributed
 
@@ -205,14 +190,8 @@ class ExprMapNameSpace:
         """
         Look up `key` in every map.
 
-        Maps that do not hold `key` yield null, as do null maps. Map keys are never
-        null, so a null `key` is never found. Use :meth:`contains_key` to tell a
-        missing key apart from a key whose value is null.
-
-        The key is cast to the map's key type when that is lossless, so a value the
-        key type cannot represent -- an `Enum` label the keys do not have -- is never
-        found. A cast that would round the key, such as a more precise `Datetime`, is
-        rejected.
+        Maps that do not hold `key` yield null, as do null maps. Use
+        :meth:`contains_key` to tell a missing key apart from a key whose value is null.
 
         .. engine-support:: in-memory, streaming, distributed
 

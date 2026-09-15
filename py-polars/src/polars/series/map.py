@@ -24,9 +24,9 @@ class MapNameSpace:
         Convert the `Map` to a `List` of `Struct` entries.
 
         Each entry is a `Struct` with a `key` and a `value` field. Entry order is
-        preserved. The inverse of :meth:`Series.list.to_map`.
+        preserved. The inverse of :meth:`Expr.list.to_map`.
 
-        Null maps remain null.
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -43,12 +43,12 @@ class MapNameSpace:
         """
         Get the keys of every map as a `List`, in entry order.
 
-        Null maps remain null.
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
-        Series
-            Series of data type :class:`List` of the map's key type.
+        Expr
+            Expression of data type :class:`List` of the map's key type.
 
         Examples
         --------
@@ -69,12 +69,12 @@ class MapNameSpace:
         """
         Get the values of every map as a `List`, in entry order.
 
-        Null maps remain null.
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
-        Series
-            Series of data type :class:`List` of the map's value type.
+        Expr
+            Expression of data type :class:`List` of the map's value type.
 
         Examples
         --------
@@ -95,7 +95,7 @@ class MapNameSpace:
         """
         Get the number of entries of every map.
 
-        Null maps remain null.
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -121,12 +121,7 @@ class MapNameSpace:
         """
         Check whether every map holds `key`.
 
-        Null maps remain null. Map keys are never null, so a null `key` is never found.
-
-        The key is cast to the map's key type when that is lossless, so a value the
-        key type cannot represent -- an `Enum` label the keys do not have -- is never
-        found. A cast that would round the key, such as a more precise `Datetime`, is
-        rejected.
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -157,14 +152,10 @@ class MapNameSpace:
         """
         Look up `key` in every map.
 
-        Maps that do not hold `key` yield null, as do null maps. Map keys are never
-        null, so a null `key` is never found. Use :meth:`contains_key` to tell a
-        missing key apart from a key whose value is null.
+        Maps that do not hold `key` yield null, as do null maps. Use
+        :meth:`contains_key` to tell a missing key apart from a key whose value is null.
 
-        The key is cast to the map's key type when that is lossless, so a value the
-        key type cannot represent -- an `Enum` label the keys do not have -- is never
-        found. A cast that would round the key, such as a more precise `Datetime`, is
-        rejected.
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
