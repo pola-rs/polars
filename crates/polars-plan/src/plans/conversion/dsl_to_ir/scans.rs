@@ -87,8 +87,10 @@ pub(super) async fn dsl_to_ir(
                 },
                 #[cfg(feature = "scan_lines")]
                 FileScanDsl::Lines { .. } => sources.expand_paths(unified_scan_args).await?,
-
                 FileScanDsl::ExpandedPaths { .. } => {
+                    sources.expand_paths(unified_scan_args).await?
+                },
+                FileScanDsl::ExternalReaderBuilder { .. } => {
                     sources.expand_paths(unified_scan_args).await?
                 },
                 FileScanDsl::Anonymous { .. } => sources.clone(),
@@ -194,7 +196,11 @@ pub(super) async fn dsl_to_ir(
                 .unwrap();
         }
 
-        let ir = if sources.is_empty() && !matches!(&(*scan_type), FileScanDsl::Anonymous { .. }) {
+        let ir = if sources.is_empty()
+            && !matches!(
+                &(*scan_type),
+                FileScanDsl::Anonymous { .. } | FileScanDsl::ExternalReaderBuilder { .. }
+            ) {
             IR::DataFrameScan {
                 df: Arc::new(DataFrame::empty_with_schema(&file_info.schema)),
                 schema: file_info.schema,
@@ -1742,6 +1748,23 @@ impl SourcesToFileInfo {
                         stats: ScanStats::exact_rows(sources.len() as u64),
                     },
                     FileScanIR::ExpandedPaths { name },
+                )
+            },
+            FileScanDsl::ExternalReaderBuilder { external } => {
+                let schema = unified_scan_args.schema.clone().ok_or_else(|| {
+                    polars_err!(
+                        InvalidOperation:
+                        "scan_external_reader requires schema to be specified"
+                    )
+                })?;
+
+                (
+                    FileInfo {
+                        schema: schema.clone(),
+                        reader_schema: Some(either::Either::Right(schema.clone())),
+                        stats: ScanStats::unknown(),
+                    },
+                    FileScanIR::ExternalReaderBuilder { external },
                 )
             },
             FileScanDsl::Anonymous {

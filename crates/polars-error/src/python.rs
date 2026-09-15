@@ -19,6 +19,12 @@ impl<'a, 'py> From<PyClassGuardError<'a, 'py>> for PolarsError {
     }
 }
 
+impl<'a, 'py> From<pyo3::CastError<'a, 'py>> for PolarsError {
+    fn from(err: pyo3::CastError) -> Self {
+        PolarsError::from(PyErr::from(err))
+    }
+}
+
 impl Clone for PyErrWrap {
     fn clone(&self) -> Self {
         Python::attach(|py| Self(self.0.clone_ref(py)))

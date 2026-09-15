@@ -3,11 +3,13 @@ use std::sync::Arc;
 
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
+use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::metrics::IOMetrics;
 use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_plan::dsl::ScanSource;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
@@ -34,12 +36,12 @@ impl std::fmt::Debug for LineReaderBuilder {
 }
 
 impl FileReaderBuilder for LineReaderBuilder {
-    fn reader_name(&self) -> &str {
-        "line"
+    fn reader_name(&self) -> PolarsResult<PlSmallStr> {
+        Ok(PlSmallStr::from_static("line"))
     }
 
-    fn reader_capabilities(&self) -> ReaderCapabilities {
-        ndjson_reader_capabilities()
+    fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities> {
+        Ok(ndjson_reader_capabilities())
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
@@ -79,7 +81,7 @@ impl FileReaderBuilder for LineReaderBuilder {
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
         _scan_source_idx: usize,
-    ) -> Box<dyn FileReader> {
+    ) -> PolarsResult<Box<dyn FileReader>> {
         use crate::metrics::OptIOMetrics;
         use crate::nodes::io_sources::ndjson::ChunkPrefetchSync;
 
@@ -113,6 +115,6 @@ impl FileReaderBuilder for LineReaderBuilder {
             io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
         };
 
-        Box::new(reader) as _
+        Ok(Box::new(reader) as _)
     }
 }

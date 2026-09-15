@@ -21,15 +21,14 @@ impl BufferedStream {
     }
 }
 
+#[derive(Default)]
 pub struct MultiplexerNode {
     buffers: Vec<BufferedStream>,
 }
 
 impl MultiplexerNode {
     pub fn new() -> Self {
-        Self {
-            buffers: Vec::default(),
-        }
+        Self::default()
     }
 }
 

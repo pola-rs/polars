@@ -111,7 +111,7 @@ async fn resolve_negative_slice(
                         source,
                         cloud_options.clone(),
                         scan_source_idx,
-                    );
+                    )?;
 
                     reader.prepare_read()?;
 

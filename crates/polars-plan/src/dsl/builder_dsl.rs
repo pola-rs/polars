@@ -5,6 +5,7 @@ use polars_core::frame::PivotColumnNaming;
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
 use polars_io::csv::read::CsvReadOptions;
+use polars_io::external_reader::ExternalReaderBuilder;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
@@ -153,6 +154,22 @@ impl DslBuilder {
             resolver: dsl_resolver,
             resolver_schema: Default::default(),
             resolved_cache: Default::default(),
+        }
+        .into()
+    }
+
+    pub fn from_external_reader_builder(
+        sources: ScanSources,
+        external_reader_builder: ExternalReaderBuilder,
+        unified_scan_args: UnifiedScanArgs,
+    ) -> DslBuilder {
+        DslPlan::Scan {
+            sources,
+            unified_scan_args: Box::new(unified_scan_args),
+            scan_type: Box::new(FileScanDsl::ExternalReaderBuilder {
+                external: external_reader_builder,
+            }),
+            cached_ir: Default::default(),
         }
         .into()
     }

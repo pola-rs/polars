@@ -3,11 +3,15 @@ use std::sync::Arc;
 
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
+#[cfg(feature = "json")]
+use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency_config::FetchConfig;
 #[cfg(feature = "json")]
 use polars_io::metrics::IOMetrics;
 use polars_plan::dsl::{NDJsonReadOptions, ScanSource};
+#[cfg(feature = "json")]
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::{DynByteSourceBuilder, FileReader, NDJsonFileReader};
@@ -41,12 +45,12 @@ pub fn ndjson_reader_capabilities() -> ReaderCapabilities {
 
 #[cfg(feature = "json")]
 impl FileReaderBuilder for NDJsonReaderBuilder {
-    fn reader_name(&self) -> &str {
-        "ndjson"
+    fn reader_name(&self) -> PolarsResult<PlSmallStr> {
+        Ok(PlSmallStr::from_static("ndjson"))
     }
 
-    fn reader_capabilities(&self) -> ReaderCapabilities {
-        ndjson_reader_capabilities()
+    fn reader_capabilities(&self) -> PolarsResult<ReaderCapabilities> {
+        Ok(ndjson_reader_capabilities())
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
@@ -86,7 +90,7 @@ impl FileReaderBuilder for NDJsonReaderBuilder {
         source: ScanSource,
         cloud_options: Option<Arc<CloudOptions>>,
         _scan_source_idx: usize,
-    ) -> Box<dyn FileReader> {
+    ) -> PolarsResult<Box<dyn FileReader>> {
         use crate::metrics::OptIOMetrics;
         use crate::nodes::io_sources::ndjson::ChunkPrefetchSync;
 
@@ -121,6 +125,6 @@ impl FileReaderBuilder for NDJsonReaderBuilder {
             io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
         };
 
-        Box::new(reader) as _
+        Ok(Box::new(reader) as _)
     }
 }

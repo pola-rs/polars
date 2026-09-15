@@ -13,6 +13,8 @@ use polars::time::*;
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_core::query_result::QueryResult;
+use polars_io::external_reader::ExternalReaderBuilder;
+use polars_io::external_reader::python::PythonFileReaderBuilder;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
@@ -427,10 +429,40 @@ impl PyLazyFrame {
     #[staticmethod]
     #[pyo3(signature = (resolver))]
     fn from_lazyframe_resolver(resolver: Py<PyAny>) -> PyResult<Self> {
-        let lf = LazyFrame::from(
+        let lf: PyLazyFrame = LazyFrame::from(
             DslBuilder::from_dsl_resolver(Arc::new(DslResolver::new_python(PythonObject(
                 resolver,
             ))))
+            .build(),
+        )
+        .into();
+
+        Ok(lf)
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (sources, reader_builder, schema, scan_options))]
+    fn new_from_external_reader_builder(
+        sources: Wrap<ScanSources>,
+        reader_builder: Py<PyAny>,
+        schema: Wrap<Schema>,
+        scan_options: PyScanOptions,
+    ) -> PyResult<Self> {
+        let sources = sources.0;
+
+        let first_path = sources.first_path();
+
+        let mut unified_scan_args =
+            scan_options.extract_unified_scan_args(first_path.and_then(|x| x.scheme()))?;
+
+        unified_scan_args.schema = Some(schema.0.into());
+
+        let lf: PyLazyFrame = LazyFrame::from(
+            DslBuilder::from_external_reader_builder(
+                sources,
+                ExternalReaderBuilder::Python(PythonFileReaderBuilder::new(reader_builder)),
+                unified_scan_args,
+            )
             .build(),
         )
         .into();
