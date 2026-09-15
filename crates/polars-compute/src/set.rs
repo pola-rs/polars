@@ -61,15 +61,20 @@ pub fn set_at_nulls<T: NativeType>(array: &PlPrimitiveArray<T>, value: T) -> PlP
         return array.clone();
     }
 
+    // Every element is null, so every one of them is overwritten and the answer is `value`
+    // throughout -- the one value a scalar chunk stands for, written once whatever the mask it
+    // came under looks like.
+    if array.null_count() == array.len() {
+        return PlPrimitiveArray::new_scalar(value, array.len());
+    }
+
     let validity = array
         .validity()
-        .expect("a chunk with nulls in it holds a validity mask");
-
-    let Some(validity) = validity.flat_bitmap() else {
-        // The mask holds a single bit and there is a null under it, so it is unset and every
-        // element is null: every one of them is overwritten, in `O(1)`.
-        return PlPrimitiveArray::new_scalar(value, array.len());
-    };
+        .expect("a chunk with nulls in it holds a validity mask")
+        .flat_bitmap()
+        // A mask of a single bit either leaves no null at all or leaves every element null, and
+        // the two counts above have answered for both.
+        .expect("a mask that repeats one bit says the same of every element");
 
     // A values buffer of a single slot still has to be written out, because the result holds
     // `value` wherever the mask is unset and that one value everywhere else. Which buffer the
