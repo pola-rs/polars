@@ -2882,8 +2882,9 @@ dependencies = [
 
 [[package]]
 name = "object_store"
-version = "0.14.1"
-source = "git+https://github.com/apache/arrow-rs-object-store?rev=b07471e2bc341278f86e30cf80a850d56cbe2c67#b07471e2bc341278f86e30cf80a850d56cbe2c67"
+version = "0.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1796bc93603f78c5760a69f2d58badc9618d22adade0a95385bb2adbae4eb94"
 dependencies = [
  "async-trait",
  "aws-lc-rs",
