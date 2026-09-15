@@ -53,6 +53,7 @@ macro_rules! broadcast_cmp {
 impl<T> ChunkCompareEq<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Array: PlTotalEqKernel<Scalar = T::Native>,
     Flat<T::Array>: TotalOrdKernel<Scalar = T::Native> + TotalEqKernel<Scalar = T::Native>,
 {
     type Item = BooleanChunked;
@@ -76,10 +77,13 @@ where
             self, rhs,
             broadcast: |value| [self.equal_missing(value), rhs.equal_missing(value)],
             null: is_null,
-            flat: arity::binary_elementwise_kernel_flat(
+            // The chunks go to the kernel in the representation they are in: a side whose
+            // values repeat one value is compared once, where writing them out first would
+            // compare the same value against the same value a million times over.
+            flat: arity::binary_elementwise_kernel(
                 self,
                 rhs,
-                |a, b| a.tot_eq_missing_kernel(b).into(),
+                |a, b| PlBooleanArray::from_pl_bitmap(PlTotalEqKernel::tot_eq_missing_kernel(a, b)),
                 PlSmallStr::EMPTY,
             ),
         )
@@ -104,10 +108,10 @@ where
             self, rhs,
             broadcast: |value| [self.not_equal_missing(value), rhs.not_equal_missing(value)],
             null: is_not_null,
-            flat: arity::binary_elementwise_kernel_flat(
+            flat: arity::binary_elementwise_kernel(
                 self,
                 rhs,
-                |a, b| a.tot_ne_missing_kernel(b).into(),
+                |a, b| PlBooleanArray::from_pl_bitmap(PlTotalEqKernel::tot_ne_missing_kernel(a, b)),
                 PlSmallStr::EMPTY,
             ),
         )
@@ -428,10 +432,12 @@ macro_rules! binary_eq_ineq_impl {
                     self, rhs,
                     broadcast: |value| [self.equal_missing(value), rhs.equal_missing(value)],
                     null: is_null,
-                    flat: arity::binary_elementwise_kernel_flat(
+                    flat: arity::binary_elementwise_kernel(
                         self,
                         rhs,
-                        |a, b| a.tot_eq_missing_kernel(b).into(),
+                        |a, b| PlBooleanArray::from_pl_bitmap(
+                            PlTotalEqKernel::tot_eq_missing_kernel(a, b),
+                        ),
                         PlSmallStr::EMPTY,
                     ),
                 )
@@ -459,10 +465,12 @@ macro_rules! binary_eq_ineq_impl {
                         rhs.not_equal_missing(value),
                     ],
                     null: is_not_null,
-                    flat: arity::binary_elementwise_kernel_flat(
+                    flat: arity::binary_elementwise_kernel(
                         self,
                         rhs,
-                        |a, b| a.tot_ne_missing_kernel(b).into(),
+                        |a, b| PlBooleanArray::from_pl_bitmap(
+                            PlTotalEqKernel::tot_ne_missing_kernel(a, b),
+                        ),
                         PlSmallStr::EMPTY,
                     ),
                 )

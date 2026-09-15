@@ -108,6 +108,7 @@ impl<T, Rhs> ChunkCompareEq<Rhs> for ChunkedArray<T>
 where
     T: PolarsNumericType,
     Rhs: ToPrimitive,
+    T::Array: PlTotalEqKernel<Scalar = T::Native>,
     Flat<T::Array>: TotalOrdKernel<Scalar = T::Native> + TotalEqKernel<Scalar = T::Native>,
 {
     type Item = BooleanChunked;
@@ -130,8 +131,13 @@ where
             self.equal(rhs)
         } else {
             let rhs: T::Native = NumCast::from(rhs).unwrap();
-            arity::unary_elementwise_mut_with_options_flat(self, |arr| {
-                arr.tot_eq_missing_kernel_broadcast(&rhs).into()
+            // The chunk goes to the kernel in the representation it is in: a chunk that repeats
+            // one value answers off that value and the mask alone, where writing the values out
+            // first would compare the same value a million times over.
+            arity::unary_mut_with_options(self, |arr| {
+                PlBooleanArray::from_pl_bitmap(PlTotalEqKernel::tot_eq_missing_kernel_broadcast(
+                    arr, &rhs,
+                ))
             })
         }
     }
@@ -154,8 +160,10 @@ where
             self.not_equal(rhs)
         } else {
             let rhs: T::Native = NumCast::from(rhs).unwrap();
-            arity::unary_elementwise_mut_with_options_flat(self, |arr| {
-                arr.tot_ne_missing_kernel_broadcast(&rhs).into()
+            arity::unary_mut_with_options(self, |arr| {
+                PlBooleanArray::from_pl_bitmap(PlTotalEqKernel::tot_ne_missing_kernel_broadcast(
+                    arr, &rhs,
+                ))
             })
         }
     }

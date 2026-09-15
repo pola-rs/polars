@@ -166,6 +166,18 @@ where
     out.new_from_index_typed(0, length)
 }
 
+/// `arr` with the mask over its values dropped, in `O(1)`.
+///
+/// [`PlArray::is_scalar`] answers for both axes at once, so a chunk that repeats a single value
+/// under a mask of one bit per element is not scalar by it -- and a kernel that reads only the
+/// values would have them written out one per element before it ever saw them. Dropping the mask
+/// leaves the values axis alone to answer, which is the axis such a kernel reads; the caller puts
+/// the original mask back on the result.
+#[inline]
+fn values_only<A: StaticArray>(arr: &A) -> A {
+    arr.clone().with_validity_typed(None)
+}
+
 /// [`elementwise_flat`] for a fallible kernel that reads its chunk in either representation.
 #[inline]
 fn try_elementwise<A, Arr, F, E>(arr: &A, op: &mut F) -> Result<Arr, E>
@@ -536,7 +548,8 @@ where
     F: FnMut(&Flat<T::Array>) -> Arr,
 {
     let iter = ca.downcast_iter().map(|arr| {
-        elementwise_flat(arr, &mut op).with_validity_typed(arr.validity().map(PlBitmap::from))
+        elementwise_flat(&values_only(arr), &mut op)
+            .with_validity_typed(arr.validity().map(PlBitmap::from))
     });
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
@@ -840,7 +853,8 @@ where
         .downcast_iter()
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| {
-            let ret = elementwise_binary_flat(lhs_arr, rhs_arr, &mut op);
+            let ret =
+                elementwise_binary_flat(&values_only(lhs_arr), &values_only(rhs_arr), &mut op);
             mask_with_inputs(ret, lhs_arr.validity(), rhs_arr.validity())
         });
     ChunkedArray::from_chunk_iter(name, iter)
