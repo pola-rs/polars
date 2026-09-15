@@ -64,7 +64,7 @@ mod inner_mod {
         );
         for w in weights.into_iter().flatten() {
             polars_ensure!(
-                w.is_sign_positive(),
+                w >= &0.,
                 InvalidOperation: "Weights for rolling windows need to be positive."
             );
         }
@@ -117,7 +117,7 @@ mod inner_mod {
 
             if let Some(weights) = options.weights {
                 debug_assert!(
-                    weights.iter().all(|&w| w.is_sign_positive()),
+                    weights.iter().all(|&w| w >= 0.),
                     "implementation error: rolling weights should not be negative"
                 );
                 let weights_series =

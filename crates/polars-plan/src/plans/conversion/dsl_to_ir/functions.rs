@@ -766,7 +766,7 @@ pub(super) fn convert_functions(
 
             for w in options.weights.iter().flatten() {
                 polars_ensure!(
-                    w.is_sign_positive(),
+                    w >= &0.,
                     InvalidOperation: "Weights for rolling windows need to be positive."
                 );
             }
