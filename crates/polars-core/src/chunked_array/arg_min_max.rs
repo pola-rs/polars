@@ -169,6 +169,12 @@ where
         IsSorted::Ascending => ca.first_non_null(),
         IsSorted::Descending => ca.last_non_null(),
         IsSorted::Not => {
+            // Every value is the same one, so it is the minimum, and the first element that is
+            // not null is where the walk below would first meet it.
+            if ca.scalar_value_ignore_validity().is_some() {
+                return ca.first_non_null();
+            }
+
             let mut chunk_start_offset = 0;
             let mut min_idx: Option<usize> = None;
             let mut min_val: Option<T::Native> = None;
@@ -222,6 +228,12 @@ where
         IsSorted::Ascending => ca.last_non_null(),
         IsSorted::Descending => ca.first_non_null(),
         IsSorted::Not => {
+            // Every value is the same one, so it is the maximum, and the first element that is
+            // not null is where the walk below would first meet it.
+            if ca.scalar_value_ignore_validity().is_some() {
+                return ca.first_non_null();
+            }
+
             let mut chunk_start_offset = 0;
             let mut max_idx: Option<usize> = None;
             let mut max_val: Option<T::Native> = None;

@@ -611,6 +611,22 @@ where
         }
     }
 
+    /// The single value every element of this column holds, disregarding which of them are null.
+    ///
+    /// Unlike [`scalar_value`](Self::scalar_value) this asks the values alone, so a column whose
+    /// values repeat under a mask of one bit per element answers with that value.
+    #[inline]
+    pub fn scalar_value_ignore_validity(&self) -> Option<T::Physical<'_>>
+    where
+        T: PolarsNumericType,
+    {
+        let [_] = self.chunks.as_slice() else {
+            return None;
+        };
+        // SAFETY: the column was just seen to hold exactly one chunk.
+        unsafe { self.downcast_get_unchecked(0) }.scalar_value_ignore_validity()
+    }
+
     /// # Panics
     /// Panics if the [`ChunkedArray`] is empty.
     #[inline]

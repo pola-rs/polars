@@ -176,15 +176,6 @@ fn quantiles_slice<T: ToPrimitive + TotalOrd + Copy>(
 }
 
 // This function is called if data is already sorted or we cannot make a contiguous slice
-/// The one value every element of `ca` holds, disregarding which of them are null.
-fn repeated_value<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Option<T::Native> {
-    let [_] = ca.chunks().as_slice() else {
-        return None;
-    };
-    // SAFETY: the column was just seen to hold exactly one chunk.
-    unsafe { ca.downcast_get_unchecked(0) }.scalar_value_ignore_validity()
-}
-
 fn generic_quantiles<T>(
     ca: ChunkedArray<T>,
     quantiles: &[f64],
@@ -212,7 +203,7 @@ where
     // quantile picks it — the methods that interpolate do so between two copies of it. The mask is
     // disregarded: the elements left after the null ones are dropped are that value again, and the
     // branch above has already answered where none of them is.
-    if let Some(value) = repeated_value(&ca) {
+    if let Some(value) = ca.scalar_value_ignore_validity() {
         let value = value.to_f64().expect("a numeric value converts to `f64`");
         return Ok(vec![Some(value); quantiles.len()]);
     }
