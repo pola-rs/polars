@@ -23,7 +23,14 @@ where
         return value;
     }
 
-    if arr.has_nulls() {
+    // A chunk with nothing but nulls in it has no extremum either, and walking its elements
+    // would only confirm that one null at a time.
+    let null_count = arr.null_count();
+    if null_count == arr.len() {
+        return None;
+    }
+
+    if null_count > 0 {
         arr.iter().flatten().reduce(f)
     } else {
         arr.values_iter().reduce(f)
@@ -43,8 +50,14 @@ where
         return value.map(|value| (value.clone(), value));
     }
 
+    // As in `reduce_values`: nothing but nulls leaves no extremum to fold.
+    let null_count = arr.null_count();
+    if null_count == arr.len() {
+        return None;
+    }
+
     let pair = |value: A::ValueT<'a>| (value.clone(), value);
-    if arr.has_nulls() {
+    if null_count > 0 {
         arr.iter().flatten().map(pair).reduce(f)
     } else {
         arr.values_iter().map(pair).reduce(f)
@@ -75,8 +88,12 @@ fn values_of<T: NativeType>(arr: &PlPrimitiveArray<T>) -> Option<Values<'_, T>> 
 
     // A mask that is set everywhere marks nothing, and one that is unset everywhere left no
     // element to reduce, which the null count has already answered — so a scalar mask says
-    // nothing either way, and an absent one says nothing at all.
-    let validity = arr.validity().and_then(|validity| validity.flat_bitmap());
+    // nothing either way, and an absent one says nothing at all. A flat mask with no unset bit
+    // in it marks nothing either, and handing it over would cost a bit read per element for an
+    // answer it never changes.
+    let validity = (arr.null_count() > 0)
+        .then(|| arr.validity().and_then(|validity| validity.flat_bitmap()))
+        .flatten();
 
     Some(Values::Flat(values.as_slice(), validity))
 }

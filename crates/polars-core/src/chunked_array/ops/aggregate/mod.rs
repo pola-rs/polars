@@ -518,14 +518,11 @@ impl StringChunked {
                     unsafe { self.get_unchecked(idx) }
                 })
             },
+            // The kernel reads a chunk that repeats one element, and one with nothing but
+            // nulls in it, without walking a single element of either.
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(|arr| match arr.scalar_value() {
-                    // Every element of a scalar chunk is the one value it repeats, which is
-                    // therefore its own extremum: the chunk is read, not walked.
-                    Some(value) => value,
-                    None => arr.iter().flatten().reduce(MinMax::max_ignore_nan),
-                })
+                .filter_map(MinMaxKernel::max_ignore_nan_kernel)
                 .reduce(MinMax::max_ignore_nan),
         }
     }
@@ -546,14 +543,11 @@ impl StringChunked {
                     unsafe { self.get_unchecked(idx) }
                 })
             },
+            // The kernel reads a chunk that repeats one element, and one with nothing but
+            // nulls in it, without walking a single element of either.
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(|arr| match arr.scalar_value() {
-                    // Every element of a scalar chunk is the one value it repeats, which is
-                    // therefore its own extremum: the chunk is read, not walked.
-                    Some(value) => value,
-                    None => arr.iter().flatten().reduce(MinMax::min_ignore_nan),
-                })
+                .filter_map(MinMaxKernel::min_ignore_nan_kernel)
                 .reduce(MinMax::min_ignore_nan),
         }
     }
@@ -662,14 +656,11 @@ impl BinaryChunked {
                     unsafe { self.get_unchecked(idx) }
                 })
             },
+            // The kernel reads a chunk that repeats one element, and one with nothing but
+            // nulls in it, without walking a single element of either.
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(|arr| match arr.scalar_value() {
-                    // Every element of a scalar chunk is the one value it repeats, which is
-                    // therefore its own extremum: the chunk is read, not walked.
-                    Some(value) => value,
-                    None => arr.iter().flatten().reduce(MinMax::max_ignore_nan),
-                })
+                .filter_map(MinMaxKernel::max_ignore_nan_kernel)
                 .reduce(MinMax::max_ignore_nan),
         }
     }
@@ -691,14 +682,11 @@ impl BinaryChunked {
                     unsafe { self.get_unchecked(idx) }
                 })
             },
+            // The kernel reads a chunk that repeats one element, and one with nothing but
+            // nulls in it, without walking a single element of either.
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(|arr| match arr.scalar_value() {
-                    // Every element of a scalar chunk is the one value it repeats, which is
-                    // therefore its own extremum: the chunk is read, not walked.
-                    Some(value) => value,
-                    None => arr.iter().flatten().reduce(MinMax::min_ignore_nan),
-                })
+                .filter_map(MinMaxKernel::min_ignore_nan_kernel)
                 .reduce(MinMax::min_ignore_nan),
         }
     }
