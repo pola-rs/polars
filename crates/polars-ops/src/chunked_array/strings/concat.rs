@@ -40,8 +40,8 @@ pub fn str_join(ca: &StringChunked, delimiter: &str, ignore_nulls: bool) -> Stri
 
     assert!(capacity >= buf.len());
     // The one element of the result is the whole buffer, which is what a scalar array of length
-    // one holds.
-    let arr = PlUtf8ViewArray::new_scalar(&buf, 1);
+    // one holds — over the very buffer it was joined into, rather than a copy of it.
+    let arr = PlUtf8ViewArray::new_scalar_owned(buf, 1);
     StringChunked::with_chunk(ca.name().clone(), arr)
 }
 

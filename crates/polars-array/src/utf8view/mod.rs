@@ -71,6 +71,18 @@ impl PlUtf8ViewArray {
         Self(PlBinaryViewArray::new_scalar(value.as_bytes(), length))
     }
 
+    /// [`Self::new_scalar`], taking over the allocation `value` already holds its bytes in.
+    #[inline]
+    pub fn new_scalar_owned(value: String, length: usize) -> Self {
+        // SAFETY: the bytes of a `String` are valid UTF-8, and they are every element's value.
+        unsafe {
+            Self::from_binview_unchecked(PlBinaryViewArray::new_scalar_owned(
+                value.into_bytes(),
+                length,
+            ))
+        }
+    }
+
     /// Returns the element at `i`, whether or not it is null.
     #[inline]
     pub fn value(&self, i: usize) -> &str {

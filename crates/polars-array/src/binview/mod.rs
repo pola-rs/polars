@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use arrow::array::View;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use buffers::{copy_only_value, copy_value};
+use buffers::{copy_only_value, copy_value, own_only_value};
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 
@@ -213,6 +213,27 @@ impl PlBinaryViewArray {
         // The one value is all the array ever holds, so its bytes are copied into a buffer that
         // fits them exactly: a scalar array costs what the value costs, and no block more.
         let (view, buffers) = copy_only_value(value);
+
+        Self {
+            views: Buffer::from_owner([view]),
+            buffers: collect_buffers(buffers),
+            length,
+            validity: None,
+        }
+    }
+
+    /// [`Self::new_scalar`], taking over the allocation `value` already holds its bytes in.
+    ///
+    /// A caller that built the value into a buffer of its own — a join that formatted a whole
+    /// column into one string, say — hands that buffer over rather than have it copied again.
+    pub fn new_scalar_owned(value: Vec<u8>, length: usize) -> Self {
+        // There is no element for the value to be shared by when there are no elements at all,
+        // which is why an empty array is the one that keeps nothing of the value it repeats.
+        if length == 0 {
+            return Self::new_empty();
+        }
+
+        let (view, buffers) = own_only_value(value);
 
         Self {
             views: Buffer::from_owner([view]),

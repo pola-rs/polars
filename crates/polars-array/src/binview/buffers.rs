@@ -26,6 +26,26 @@ pub(super) fn copy_only_value(bytes: &[u8]) -> (View, Vec<Vec<u8>>) {
     copy_only_value_limited::<BINVIEW_MAX_ROW_BYTE_LEN>(bytes)
 }
 
+/// Takes `bytes` over as the only data buffer, and returns the [`View`] holding them.
+pub(super) fn own_only_value(bytes: Vec<u8>) -> (View, Vec<Vec<u8>>) {
+    own_only_value_limited::<BINVIEW_MAX_ROW_BYTE_LEN>(bytes)
+}
+
+/// [`own_only_value`], against a limit the tests lower.
+fn own_only_value_limited<const MAX_ROW_BYTE_LEN: usize>(bytes: Vec<u8>) -> (View, Vec<Vec<u8>>) {
+    // A view that inlines its bytes reads no buffer at all, so the allocation is of no use to it.
+    if bytes.len() <= View::MAX_INLINE_SIZE as usize {
+        return (View::new_inline(&bytes), Vec::new());
+    }
+
+    assert_row_fits::<MAX_ROW_BYTE_LEN>(bytes.len());
+
+    // SAFETY: the bytes are longer than `View::MAX_INLINE_SIZE`, and they are the whole of the
+    // buffer the view is over.
+    let view = unsafe { View::new_noninline_unchecked(&bytes, 0, 0) };
+    (view, vec![bytes])
+}
+
 /// [`copy_only_value`], against a limit the tests lower.
 fn copy_only_value_limited<const MAX_ROW_BYTE_LEN: usize>(bytes: &[u8]) -> (View, Vec<Vec<u8>>) {
     if bytes.len() <= View::MAX_INLINE_SIZE as usize {
