@@ -41,7 +41,9 @@ def dim(*keys: int, key: str = "k") -> pl.LazyFrame:
 
 def tiny(*keys: int, key: str = "k") -> pl.LazyFrame:
     # Few enough rows to be forced against a filtered fact, whose estimate is lower.
-    return pl.LazyFrame({key: list(keys), "e": list(range(len(keys)))})
+    # Only a filtered side is worth publishing, hence the filter.
+    lf = pl.LazyFrame({key: list(keys), "e": list(range(len(keys)))})
+    return lf.filter(pl.col("e") >= 0)
 
 
 def row_groups_read(
@@ -90,7 +92,9 @@ def test_build_side_on_the_left(
 def test_composite_key_filters_every_column(
     fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    other = pl.LazyFrame({"k": [230, 231, 232], "k2": [6, 6, 6], "d": [1, 2, 3]})
+    other = pl.LazyFrame({"k": [230, 231, 232], "k2": [6, 6, 6], "d": [1, 2, 3]}).filter(
+        pl.col("d") > 0
+    )
     q = fact.join(other, on=["k", "k2"])
     assert q.explain(engine="streaming").count("dynamic_predicate") == 2
 
@@ -113,7 +117,7 @@ def test_filter_reaches_the_scan_through_a_forced_join(
     fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     # The second dimension's range crosses the first join on its probe side.
-    q = fact.join(dim(), on="k").join(tiny(220, 240, key="v"), on="v")
+    q = fact.join(dim(*range(0, 1000, 20)), on="k").join(tiny(220, 240, key="v"), on="v")
     plan = q.explain(engine="streaming")
     assert plan.count("BUILD SIDE: ForceRight") == 2
     assert plan.count("dynamic_predicate") == 2
@@ -194,7 +198,11 @@ def test_slice_on_an_intermediate_join_is_a_barrier(
 ) -> None:
     # The slice is absorbed into the first join, which then neither publishes nor
     # lets the second join's range through.
-    q = fact.join(dim(), on="k").head(5000).join(tiny(40, key="v"), on="v")
+    q = (
+        fact.join(dim(*range(0, 1000, 20)), on="k")
+        .head(5000)
+        .join(tiny(40, key="v"), on="v")
+    )
     plan = q.explain(engine="streaming")
     assert "dynamic_predicate" not in plan
     assert "Force" not in plan
@@ -215,7 +223,9 @@ def test_empty_build_side_reads_nothing(
 def test_all_null_build_keys_read_nothing(
     fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    nulls = pl.LazyFrame({"k": [None, None], "d": [1, 2]}, schema={"k": pl.Int64, "d": pl.Int64})
+    nulls = pl.LazyFrame(
+        {"k": [None, None], "d": [1, 2]}, schema={"k": pl.Int64, "d": pl.Int64}
+    ).filter(pl.col("d") > 0)
     q = fact.join(nulls, on="k")
     out, groups = row_groups_read(q, plmonkeypatch, capfd)
     assert groups == "0 / 10 row groups"
@@ -272,6 +282,14 @@ def test_joins_without_runtime_filters(
     assert_matches_in_memory(q, out)
 
 
+def test_unfiltered_build_side_is_not_published(fact: pl.LazyFrame) -> None:
+    # An unfiltered dimension spans its whole key domain; its range prunes nothing.
+    q = fact.join(pl.LazyFrame({"k": list(range(0, 1000, 20))}), on="k")
+    plan = q.explain(engine="streaming")
+    assert "dynamic_predicate" not in plan
+    assert "Force" not in plan
+
+
 def test_user_forced_build_side_is_left_alone(fact: pl.LazyFrame) -> None:
     q = fact.join(dim(220, 240), on="k", build_side="force_left")
     plan = q.explain(engine="streaming")
@@ -301,7 +319,7 @@ def test_build_side_of_several_morsels(
     pl.DataFrame({"k": [300, 301, 302, 303, 304, 660, 661, 662, 663, 664]}).write_parquet(
         path, row_group_size=1
     )
-    q = fact.join(pl.scan_parquet(path), on="k")
+    q = fact.join(pl.scan_parquet(path).filter(pl.col("k") > 0), on="k")
     assert "dynamic_predicate" in q.explain(engine="streaming")
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     capfd.readouterr()

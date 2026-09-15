@@ -144,8 +144,9 @@ fn is_hash_join(options: &JoinOptionsIR) -> bool {
         && !args.validation.needs_checks()
 }
 
-/// The side to force as build side: bounded, within the byte budget, and much
-/// smaller than the other side's estimate. `true` for the left side.
+/// The side to force as build side: filtered (an unfiltered side holds its whole
+/// key domain, so its range prunes nothing), bounded, within the byte budget, and
+/// much smaller than the other side's estimate. `true` for the left side.
 fn choose_build_side(
     left: Node,
     right: Node,
@@ -157,7 +158,7 @@ fn choose_build_side(
     let bound = |stats: &crate::plans::NodeStats, width: f64| {
         stats
             .max_rows()
-            .filter(|rows| rows * width <= FORCED_BUILD_BYTES)
+            .filter(|rows| stats.filtered < stats.unfiltered && rows * width <= FORCED_BUILD_BYTES)
     };
     let left_bound = bound(&left_stats, left_width);
     let right_bound = bound(&right_stats, right_width);
