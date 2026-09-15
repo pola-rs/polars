@@ -1,5 +1,6 @@
 use std::hash::Hash;
 
+use arrow::bitmap::utils::SlicesIterator;
 use polars_core::prelude::*;
 use polars_core::series::{BitRepr, IsSorted};
 use polars_core::with_match_physical_float_polars_type;
@@ -33,6 +34,31 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
         && chunk.is_scalar()
     {
         lengths.push(s.len() as IdxSize);
+        return Ok(());
+    }
+
+    // The same chunk under a mask of one bit per element: every element still holds the one value
+    // the values repeat, so two of them differ only where the mask does -- a null equals a null
+    // and differs from a value. The runs are the mask's own runs, counted off its bits rather
+    // than found by reading a million copies of one value against each other.
+    if let [chunk] = s.chunks().as_slice()
+        && let Some(validity) = chunk.validity()
+        && chunk.without_validity().is_scalar()
+    {
+        // The mask is not a single bit: a chunk whose mask repeats one bit as well is scalar
+        // throughout, and was answered above.
+        let (bits, length) = validity.into_inner();
+        let mut opened = 0;
+        for (start, run) in SlicesIterator::new(bits) {
+            if start > opened {
+                lengths.push((start - opened) as IdxSize);
+            }
+            lengths.push(run as IdxSize);
+            opened = start + run;
+        }
+        if opened < length {
+            lengths.push((length - opened) as IdxSize);
+        }
         return Ok(());
     }
 
