@@ -4,7 +4,7 @@
 //! A join whose one side is known to be small gets that side forced as build side,
 //! and every probe key that reads a scan column unchanged gets a dynamic predicate
 //! on that scan. The join publishes the range of its build keys once the build is
-//! done; the scan then skips row groups and rows outside it. The probe side is only
+//! done; the scan then skips row groups outside it. The probe side is only
 //! read after the build, because a forced join blocks its probe input until then
 //! and a predicate is only carried across joins that are forced the same way.
 
@@ -22,7 +22,7 @@ use super::predicate_pushdown::utils::{
 };
 #[cfg(feature = "parquet")]
 use crate::dsl::FileScanIR;
-use crate::plans::optimizer::predicate_pushdown::new_dynamic_pred;
+use crate::plans::optimizer::predicate_pushdown::new_batch_only_dynamic_pred;
 use crate::plans::options::RuntimeFilter;
 use crate::plans::schema::join_right_output_names;
 use crate::plans::{AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, Operator, into_column};
@@ -70,7 +70,7 @@ fn process_join(
         return;
     };
     let (input_left, input_right) = (*input_left, *input_right);
-    if !is_hash_join(options)
+    if !is_eligible_join(options)
         || matches!(
             options.args.build_side,
             Some(JoinBuildSide::ForceLeft | JoinBuildSide::ForceRight)
@@ -108,7 +108,7 @@ fn process_join(
             continue;
         }
         let column = expr_arena.add(AExpr::Column(name));
-        let (dyn_node, pred) = new_dynamic_pred(column, true, expr_arena);
+        let (dyn_node, pred) = new_batch_only_dynamic_pred(column, expr_arena);
         let mut predicate = ExprIR::from_node(dyn_node, expr_arena);
         if let Some(scan) = scan_origin(probe_input, &mut predicate, ir_arena, expr_arena, scratch)
         {
@@ -132,9 +132,11 @@ fn process_join(
     options.runtime_filters = filters;
 }
 
-/// Whether the join runs as a streaming hash join that can block its probe side
-/// until the build is done and filter the probe rows by build keys.
-fn is_hash_join(options: &JoinOptionsIR) -> bool {
+/// Whether the join may publish a range or be crossed by one: an inner equi join
+/// the streaming engine can run as a hash join that blocks its probe side until
+/// the build is done. Sorted inputs may still make it a merge join, which drops
+/// the range.
+fn is_eligible_join(options: &JoinOptionsIR) -> bool {
     let args = &options.args;
     matches!(&options.options, JoinTypeOptionsIR::Equi { on, .. } if !on.is_empty())
         && args.how == JoinType::Inner
@@ -282,7 +284,7 @@ fn scan_origin(
                     Some(JoinBuildSide::ForceLeft) => false,
                     _ => return None,
                 };
-                if !is_hash_join(options) {
+                if !is_eligible_join(options) {
                     return None;
                 }
                 let name = column_name(predicate, expr_arena).clone();

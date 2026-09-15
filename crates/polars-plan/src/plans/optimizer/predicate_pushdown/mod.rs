@@ -5,8 +5,8 @@ mod join;
 mod keys;
 pub(super) mod utils;
 
-pub(crate) use dynamic::new_dynamic_pred;
 pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
+pub(crate) use dynamic::{new_batch_only_dynamic_pred, new_dynamic_pred};
 use polars_buffer::Buffer;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::ScratchUnitVec;
@@ -609,7 +609,7 @@ impl PredicatePushDown {
                 {
                     let n = by_column[0].node();
                     if let AExpr::Column(_) = expr_arena.get(n) {
-                        let (dyn_pred_node, pred) = new_dynamic_pred(n, false, expr_arena);
+                        let (dyn_pred_node, pred) = new_dynamic_pred(n, expr_arena);
                         slice = Some((offset, len, Some(pred)));
 
                         let predicate = ExprIR::from_node(dyn_pred_node, expr_arena);

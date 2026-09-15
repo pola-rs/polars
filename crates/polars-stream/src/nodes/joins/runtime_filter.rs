@@ -5,26 +5,33 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_plan::plans::PredicateExpr;
 
-/// Min and max of one build key column. `None` when the build side had no
-/// non-null key, so nothing can match.
+/// Min and max of one build key column. Empty until a non-null key is seen; an
+/// empty range published after the build means nothing can match.
+#[derive(Default)]
 pub struct KeyRange {
     bounds: Option<(Scalar, Scalar)>,
 }
 
 impl KeyRange {
-    pub fn new(bounds: Option<(Scalar, Scalar)>) -> Self {
-        Self { bounds }
-    }
-
-    /// Widen `acc` to cover the non-null values of `column`.
-    pub fn extend(acc: &mut Option<(Scalar, Scalar)>, column: &Column) -> PolarsResult<()> {
+    /// Widen the range to cover the non-null values of `column`.
+    pub fn extend(&mut self, column: &Column) -> PolarsResult<()> {
         let min = column.min_reduce()?;
         let max = column.max_reduce()?;
-        if min.is_null() || max.is_null() {
-            return Ok(());
+        if !min.is_null() && !max.is_null() {
+            self.merge(Self {
+                bounds: Some((min, max)),
+            });
         }
-        match acc {
-            None => *acc = Some((min, max)),
+        Ok(())
+    }
+
+    /// Widen the range to cover `other`.
+    pub fn merge(&mut self, other: Self) {
+        let Some((min, max)) = other.bounds else {
+            return;
+        };
+        match &mut self.bounds {
+            None => self.bounds = Some((min, max)),
             Some((lo, hi)) => {
                 if min.value() < lo.value() {
                     *lo = min;
@@ -34,19 +41,6 @@ impl KeyRange {
                 }
             },
         }
-        Ok(())
-    }
-
-    /// Merge the ranges of several builders.
-    pub fn union(
-        ranges: impl IntoIterator<Item = Option<(Scalar, Scalar)>>,
-    ) -> Option<(Scalar, Scalar)> {
-        ranges.into_iter().flatten().reduce(|(lo, hi), (min, max)| {
-            (
-                if min.value() < lo.value() { min } else { lo },
-                if max.value() > hi.value() { max } else { hi },
-            )
-        })
     }
 }
 

@@ -332,6 +332,10 @@ impl PhysicalIoExpr for PhysicalExprWithConstCols<Arc<dyn PhysicalIoExpr>> {
 pub struct ScanIOPredicate {
     pub predicate: Arc<dyn PhysicalIoExpr>,
 
+    /// Whether `predicate` filters rows at all. False when the predicate only
+    /// carries parts a reader consults to skip batches by their statistics.
+    pub filters_rows: bool,
+
     /// Column names that are used in the predicate.
     pub live_columns: Arc<PlIndexSet<PlSmallStr>>,
 
