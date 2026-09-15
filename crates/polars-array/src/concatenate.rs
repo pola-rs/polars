@@ -768,7 +768,7 @@ fn concatenate_fixed_size_list_impl(
     let Some(first) = distinct.next() else {
         polars_bail!(
             InvalidOperation:
-            "cannot concatenate an empty list of fixed size list arrays: there is no values array              to take the lists of the result over"
+            "cannot concatenate an empty list of fixed size list arrays: there is no values array to take the lists of the result over"
         );
     };
 
