@@ -92,6 +92,10 @@ where
         ca.len() == by.len(),
         InvalidOperation: "`by` column in `rolling_*_by` must be the same length as values column"
     );
+    polars_ensure!(
+        by.null_count() == 0,
+        InvalidOperation: "`by` column in `rolling_*_by` must not contain nulls"
+    );
     ensure_duration_matches_dtype(options.window_size, by.dtype(), "window_size")?;
     polars_ensure!(
         !options.window_size.is_zero() && !options.window_size.negative,
