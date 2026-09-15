@@ -4,9 +4,8 @@ use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
-use crate::frame::join::validation::validate_build;
-
 use super::*;
+use crate::frame::join::validation::validate_build;
 
 #[cfg(feature = "chunked_ids")]
 unsafe fn apply_mapping(idx: Vec<IdxSize>, chunk_mapping: &[ChunkId]) -> Vec<ChunkId> {

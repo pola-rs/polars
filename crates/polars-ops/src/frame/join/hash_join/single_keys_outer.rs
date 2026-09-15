@@ -9,9 +9,8 @@ use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 use polars_utils::unitvec;
 
-use crate::frame::join::validation::validate_build;
-
 use super::*;
+use crate::frame::join::validation::validate_build;
 
 pub(crate) fn create_hash_and_keys_threaded_vectorized<I, T>(
     iters: Vec<I>,

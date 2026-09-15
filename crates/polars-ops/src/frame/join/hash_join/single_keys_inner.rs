@@ -7,9 +7,8 @@ use polars_utils::nulls::IsNull;
 use polars_utils::sync::SyncPtr;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
-use crate::frame::join::validation::validate_build;
-
 use super::*;
+use crate::frame::join::validation::validate_build;
 
 pub(super) fn probe_inner<T, F, I>(
     probe: I,

@@ -360,7 +360,6 @@ impl Duration {
         }
     }
 
-
     /// `true` if zero duration.
     pub fn is_zero(&self) -> bool {
         self.months == 0 && self.weeks == 0 && self.days == 0 && self.nsecs == 0
