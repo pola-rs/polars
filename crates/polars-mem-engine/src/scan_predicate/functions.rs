@@ -4,7 +4,9 @@ use std::sync::Arc;
 use arrow::bitmap::Bitmap;
 use polars_core::config;
 use polars_core::error::PolarsResult;
-use polars_core::prelude::{IDX_DTYPE, IdxCa, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet};
+use polars_core::prelude::{
+    IDX_DTYPE, IdxCa, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet, Scalar,
+};
 use polars_core::schema::Schema;
 use polars_error::polars_warn;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
@@ -19,8 +21,8 @@ use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::predicates::{
     aexpr_to_column_predicates, aexpr_to_skip_batch_predicate, null_count_dtype,
 };
-use polars_plan::plans::{AExpr, ExprIRDisplay, FileInfo, IR, MintermIter};
-use polars_plan::utils::aexpr_to_leaf_names_iter;
+use polars_plan::plans::{AExpr, ExprIRDisplay, FileInfo, IR, IRFunctionExpr, MintermIter};
+use polars_plan::utils::{aexpr_to_leaf_names_iter, has_aexpr};
 use polars_utils::aliases::PlIndexMapHashable;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -38,7 +40,26 @@ pub fn create_scan_predicate(
     create_skip_batch_predicate: bool,
     create_column_predicates: bool,
 ) -> PolarsResult<ScanPredicate> {
+    // Parts a scan only consults to skip batches stay out of the row predicate, so
+    // their columns do not have to be decoded up front just to evaluate them.
+    let full_predicate = predicate.clone();
     let mut predicate = predicate.clone();
+    let (batch_only, per_row): (Vec<Node>, Vec<Node>) =
+        MintermIter::new(predicate.node(), expr_arena)
+            .partition(|&part| is_batch_only(part, expr_arena));
+    if !batch_only.is_empty() {
+        let node = per_row
+            .into_iter()
+            .reduce(|left, right| {
+                expr_arena.add(AExpr::BinaryExpr {
+                    left,
+                    op: Operator::And,
+                    right,
+                })
+            })
+            .unwrap_or_else(|| expr_arena.add(AExpr::Literal(Scalar::from(true).into())));
+        predicate = ExprIR::from_node(node, expr_arena);
+    }
 
     let mut hive_predicate = None;
     let mut hive_predicate_is_full_predicate = false;
@@ -115,23 +136,27 @@ pub fn create_scan_predicate(
     let live_columns = Arc::new(PlIndexSet::from_iter(
         aexpr_to_leaf_names_iter(predicate.node(), expr_arena).cloned(),
     ));
+    let skip_batch_columns = Arc::new(PlIndexSet::from_iter(
+        aexpr_to_leaf_names_iter(full_predicate.node(), expr_arena).cloned(),
+    ));
 
     let mut skip_batch_predicate = None;
 
     if create_skip_batch_predicate {
-        if let Some(node) = aexpr_to_skip_batch_predicate(predicate.node(), expr_arena, schema) {
-            let expr = ExprIR::new(node, predicate.output_name_inner().clone());
+        if let Some(node) = aexpr_to_skip_batch_predicate(full_predicate.node(), expr_arena, schema)
+        {
+            let expr = ExprIR::new(node, full_predicate.output_name_inner().clone());
 
             if std::env::var("POLARS_OUTPUT_SKIP_BATCH_PRED").as_deref() == Ok("1") {
-                eprintln!("predicate: {}", predicate.display(expr_arena));
+                eprintln!("predicate: {}", full_predicate.display(expr_arena));
                 eprintln!("skip_batch_predicate: {}", expr.display(expr_arena));
             }
 
-            let mut skip_batch_schema = Schema::with_capacity(1 + live_columns.len());
+            let mut skip_batch_schema = Schema::with_capacity(1 + skip_batch_columns.len());
 
             skip_batch_schema.insert(PlSmallStr::from_static("len"), IDX_DTYPE);
             for (col, dtype) in schema.iter() {
-                if !live_columns.contains(col) {
+                if !skip_batch_columns.contains(col) {
                     continue;
                 }
 
@@ -198,10 +223,28 @@ pub fn create_scan_predicate(
     PolarsResult::Ok(ScanPredicate {
         predicate: phys_predicate,
         live_columns,
+        skip_batch_columns,
         skip_batch_predicate,
         column_predicates,
         hive_predicate,
         hive_predicate_is_full_predicate,
+    })
+}
+
+/// Whether the predicate part holds a dynamic predicate a scan may only use to
+/// skip batches.
+fn is_batch_only(part: Node, expr_arena: &Arena<AExpr>) -> bool {
+    has_aexpr(part, expr_arena, |e| {
+        matches!(
+            e,
+            AExpr::Function {
+                function: IRFunctionExpr::DynamicPred {
+                    batch_only: true,
+                    ..
+                },
+                ..
+            }
+        )
     })
 }
 

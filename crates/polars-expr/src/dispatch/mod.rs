@@ -542,7 +542,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::RowDecode(fs, variants) => {
             map_as_slice!(misc::row_decode, fs.clone(), variants.clone())
         },
-        F::DynamicPred { pred } => {
+        F::DynamicPred { pred, .. } => {
             map_as_slice!(misc::dynamic_pred, &pred)
         },
         F::DynamicSkipBatch { pred } => {
