@@ -570,47 +570,64 @@ impl PolarsObjectStore {
         n: usize,
         strategy: ConcurrencyStrategy,
     ) -> PolarsResult<(Buffer<u8>, usize)> {
+        match strategy {
+            ConcurrencyStrategy::BytesBased => {
+                let controller = self.get_or_init_concurrency();
+                let _permit = controller.acquire(n as u64).await;
+                self.try_get_suffix_inner(path, n, Some(&**controller))
+                    .await
+            },
+            ConcurrencyStrategy::Legacy => {
+                with_concurrency_budget(1, || self.try_get_suffix_inner(path, n, None)).await
+            },
+            ConcurrencyStrategy::Unbounded => self.try_get_suffix_inner(path, n, None).await,
+        }
+    }
+
+    async fn try_get_suffix_inner(
+        &self,
+        path: &Path,
+        n: usize,
+        controller: Option<&ConcurrencyController>,
+    ) -> PolarsResult<(Buffer<u8>, usize)> {
         let metrics = self.io_metrics();
 
         metrics.add_bytes_requested(n as u64);
 
-        let (bytes, size) = with_concurrency_budget(1, || async {
-            let io_session = metrics.start_io_session();
+        let io_session = metrics.start_io_session();
 
-            let out = self
-                .exec_with_rebuild_retry_on_err(|s| async move {
-                    let t0 = Instant::now();
-                    let response = s
-                        .get_opts(
-                            path,
-                            object_store::GetOptions {
-                                range: Some(object_store::GetRange::Suffix(n as u64)),
-                                ..Default::default()
-                            },
-                        )
-                        .await?;
-                    let ttfb = t0.elapsed();
-                    // `get_opts()` rewrites this from `Content-Range`: the full object size.
-                    let size = response.meta.size as usize;
-                    let bytes = response.bytes().await?;
+        let out = self
+            .exec_with_rebuild_retry_on_err(|s| async move {
+                let t0 = Instant::now();
+                let response = s
+                    .get_opts(
+                        path,
+                        object_store::GetOptions {
+                            range: Some(object_store::GetRange::Suffix(n as u64)),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+                let ttfb = t0.elapsed();
+                // `get_opts()` rewrites this from `Content-Range`: the full object size.
+                let size = response.meta.size as usize;
+                let bytes = response.bytes().await?;
 
-                    if let ConcurrencyStrategy::BytesBased = strategy {
-                        self.get_or_init_concurrency().record_io(IoSample {
-                            n_bytes: bytes.len() as u64,
-                            ttfb,
-                            completion_time: Instant::now(),
-                        });
-                    }
+                if let Some(controller) = controller {
+                    controller.record_io(IoSample {
+                        n_bytes: bytes.len() as u64,
+                        ttfb,
+                        completion_time: Instant::now(),
+                    });
+                }
 
-                    Ok((Buffer::from_owner(bytes), size))
-                })
-                .await;
+                Ok((Buffer::from_owner(bytes), size))
+            })
+            .await;
 
-            drop(io_session);
+        drop(io_session);
 
-            out
-        })
-        .await?;
+        let (bytes, size) = out?;
 
         // A suffix response is short when the object is smaller than `n`.
         metrics.add_bytes_received(bytes.len() as u64);

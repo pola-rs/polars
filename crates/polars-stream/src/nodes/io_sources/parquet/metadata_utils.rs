@@ -15,12 +15,6 @@ pub async fn read_parquet_metadata_bytes(
 
     const FOOTER_HEADER_SIZE: usize = polars_parquet::parquet::FOOTER_SIZE as usize;
 
-<<<<<<< HEAD
-    let file_size = match file_size {
-        Some(file_size) => file_size,
-        None => byte_source.get_size().await?,
-    };
-=======
     let prefetch_size = if let DynByteSource::Buffer(_) = byte_source {
         // Mmapped or in-memory, reads are free.
         usize::MAX
@@ -28,8 +22,15 @@ pub async fn read_parquet_metadata_bytes(
         cloud_footer_read_size()
     };
 
-    let (bytes, file_size) = byte_source.get_suffix(prefetch_size).await?;
->>>>>>> 57c7cfd0d0 (perf: Use HTTP suffix range for Parquet size and footer)
+    let (bytes, file_size) = match file_size {
+        Some(file_size) => {
+            let bytes = byte_source
+                .get_range(file_size.saturating_sub(prefetch_size)..file_size)
+                .await?;
+            (bytes, file_size)
+        },
+        None => byte_source.get_suffix(prefetch_size).await?,
+    };
 
     if file_size < FOOTER_HEADER_SIZE {
         return Err(ParquetError::OutOfSpec(format!(

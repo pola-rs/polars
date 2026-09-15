@@ -412,6 +412,12 @@ impl ByteSource for FileByteSource {
             .map_err(|_| polars_err!(ComputeError: "file size {} does not fit in usize", self.size))
     }
 
+    async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
+        let size = self.get_size().await?;
+        let bytes = self.get_range(size.saturating_sub(n)..size).await?;
+        Ok((bytes, size))
+    }
+
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
         assert!(range.end as u64 <= self.size);
 
@@ -642,6 +648,7 @@ impl ByteSource for DynByteSource {
     async fn get_suffix(&self, n: usize) -> PolarsResult<(Buffer<u8>, usize)> {
         match self {
             Self::Buffer(v) => v.get_suffix(n).await,
+            Self::File(v) => v.get_suffix(n).await,
             #[cfg(feature = "cloud")]
             Self::Cloud(v) => v.get_suffix(n).await,
         }
