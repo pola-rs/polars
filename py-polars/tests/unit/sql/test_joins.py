@@ -2050,6 +2050,33 @@ def test_join_on_constant_true_plans_cross_join() -> None:
     assert "CROSS JOIN" not in plan
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param("ARRAY_REVERSE(ARRAY[1, 2])", id="reverse"),
+        pytest.param("ARRAY_UNIQUE(ARRAY[1, 1, 2])", id="unique"),
+    ],
+)
+def test_join_on_input_independent_list_eval(value: str) -> None:
+    frames = {
+        "a": pl.LazyFrame({"k": [1, 2]}),
+        "b": pl.LazyFrame({"v": ["r", "s"]}),
+    }
+    ctx = pl.SQLContext(frames=frames)
+    query = f"""
+        SELECT * FROM a JOIN b
+        ON ARRAY_CONTAINS({value}, 1)
+    """
+    result = ctx.execute(query).collect()
+    expected = ctx.execute("SELECT * FROM a CROSS JOIN b").collect()
+    assert_frame_equal(result, expected, check_row_order=False)
+
+    plan = ctx.execute(query).explain(optimized=False)
+    assert "INNER JOIN" in plan
+    assert "list.eval" in plan
+    assert "FILTER" not in plan
+
+
 def test_constant_key_join_keeps_validation() -> None:
     a = pl.LazyFrame({"k": [1, 2]})
     b = pl.LazyFrame({"v": ["r", "s"]})
