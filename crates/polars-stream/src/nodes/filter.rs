@@ -1,12 +1,22 @@
+use std::sync::Arc;
+
 use polars_buffer::Buffer;
 use polars_mem_engine::column_to_mask;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::compute_node_prelude::*;
 use crate::expression::StreamExpr;
+use crate::metrics::{CustomMetric, CustomMetrics, MetricKind, NodeMetricsRegistrator};
 
 pub struct FilterNode {
     predicate: StreamExpr,
     projection: Option<Buffer<usize>>,
+    metrics: Option<FilterMetrics>,
+}
+
+struct FilterMetrics {
+    handle: Arc<CustomMetrics>,
+    rows_filtered: Arc<CustomMetric>,
 }
 
 impl FilterNode {
@@ -14,6 +24,7 @@ impl FilterNode {
         Self {
             predicate,
             projection,
+            metrics: None,
         }
     }
 }
@@ -21,6 +32,23 @@ impl FilterNode {
 impl ComputeNode for FilterNode {
     fn name(&self) -> &str {
         "filter"
+    }
+
+    fn set_phase_metrics_registrator(&mut self, metrics_registrator: NodeMetricsRegistrator) {
+        let metrics = self.metrics.get_or_insert_with(|| {
+            let handle = Arc::<CustomMetrics>::default();
+            let rows_filtered = handle.slot(
+                PlSmallStr::from_static("filter.rows_filtered"),
+                MetricKind::Literal,
+            );
+
+            FilterMetrics {
+                handle,
+                rows_filtered,
+            }
+        });
+
+        metrics_registrator.register_custom_metrics(metrics.handle.clone());
     }
 
     fn update_state(
@@ -50,6 +78,7 @@ impl ComputeNode for FilterNode {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Ok(morsel) = recv.recv().await {
+                    let height_in = morsel.height() as u64;
                     let morsel = morsel
                         .async_try_map(|mut df| async move {
                             let mask = slf
@@ -74,6 +103,12 @@ impl ComputeNode for FilterNode {
                             df.filter_seq(mask.as_ref())
                         })
                         .await?;
+
+                    if let Some(metrics) = &slf.metrics {
+                        metrics
+                            .rows_filtered
+                            .add(height_in - morsel.height() as u64);
+                    }
 
                     if morsel.height() == 0 {
                         continue;
