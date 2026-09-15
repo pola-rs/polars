@@ -2302,9 +2302,8 @@ def map_with_keys(key_dtype: PolarsDataType, keys: list[Any]) -> pl.Series:
 
 
 def test_map_get_float_keys_match_canonicalization() -> None:
-    # Keys are deduplicated by row encoding, which has one NaN and one zero. The lookup
-    # compares with `equal_missing`, which has to agree or a stored key would be
-    # unreachable.
+    # Lookup and key deduplication must agree for NaN and signed zero so every stored
+    # key remains retrievable.
     nan = float("nan")
     s = map_with_keys(pl.Float64, [nan, 0.0, float("inf")])
 
@@ -2407,8 +2406,8 @@ def test_map_get_composite_key_per_row() -> None:
 
 
 def test_map_null_valued_keys_values_len_across_chunks() -> None:
-    # A `Null` field collapses to one chunk as a `Series`, so the per-row accessors
-    # have to read the storage chunks themselves to keep the row layout.
+    # Maps with Null-typed values must retain their keys, entry counts, and null
+    # status across chunk boundaries.
     dtype = pl.Map(pl.String, pl.Null)
     s = pl.concat(
         [
