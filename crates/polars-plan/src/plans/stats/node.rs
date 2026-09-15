@@ -46,7 +46,7 @@ pub struct NodeStats {
     /// Per output column, sparse. An absent column is unknown.
     columns: Option<Arc<ScanColumnStatsMap>>,
     /// Column sets the node holds at most one row of each. A guarantee, not an
-    /// estimate. Empty means nothing is known.
+    /// estimate.
     unique_keys: Vec<UniqueKey>,
 }
 
@@ -458,9 +458,8 @@ fn join_max_rows(
     match how {
         // Every pair, and no more.
         JoinType::Cross => Some(left.max_rows? * right.max_rows?),
-        // A side unique on its keys matches each row of the other at most once, so it
-        // cannot repeat one. An outer side can still add its own unmatched rows, so
-        // only the inner side is bounded.
+        // A side unique on its keys cannot repeat a row of the other. An outer side
+        // still adds its own unmatched rows, so only the inner side is bounded.
         JoinType::Inner | JoinType::Left if unique.right => left.max_rows,
         JoinType::Inner | JoinType::Right if unique.left => right.max_rows,
         _ => None,
@@ -475,8 +474,8 @@ struct JoinKeyUniqueness {
 }
 
 impl JoinKeyUniqueness {
-    /// `left_keys` and `right_keys` are the input columns the join keys read, when
-    /// every key of that side reads a column as is.
+    /// `left_keys` and `right_keys` are the columns the keys of that side read, if
+    /// every one reads a column as is.
     fn of(
         left: &NodeStats,
         left_keys: Option<&[&PlSmallStr]>,
@@ -490,12 +489,9 @@ impl JoinKeyUniqueness {
     }
 }
 
-/// Unique key sets of a join output.
-///
-/// Only the left side's, as a right column is renamed when both sides hold the name.
-/// They survive a join whose right side is unique on its keys, as that matches each
-/// left row at most once. A semi- or anti-join is handled as a filter of the left
-/// side and never gets here.
+/// Unique key sets of a join output: the left side's, when the right side is unique
+/// on its keys and so repeats no left row. A right column may be renamed, so the
+/// right side's are dropped.
 fn join_unique_keys(how: &JoinType, left: &NodeStats, unique: JoinKeyUniqueness) -> Vec<UniqueKey> {
     match how {
         JoinType::Inner | JoinType::Left if unique.right => left.unique_keys.clone(),
@@ -617,11 +613,9 @@ fn shadowed_columns(
     (!kept.is_empty()).then(|| Arc::new(kept))
 }
 
-/// The input columns `exprs` read, when every one reads a column as is, under its
-/// own name or an alias.
-///
-/// A computed expression holds neither the values, the distinct count nor the
-/// uniqueness of the column it is named after, so it contributes nothing.
+/// The columns `exprs` read, if every one reads a column as is, under its own name
+/// or an alias. A computed expression shares nothing with the column it is named
+/// after.
 fn source_columns<'a>(
     exprs: impl IntoIterator<Item = &'a ExprIR>,
     expr_arena: &Arena<AExpr>,
@@ -1250,7 +1244,7 @@ mod tests {
         assert!(n_groups(1_000_000.0, 1, None) > 12.0);
     }
 
-    /// A unique column holds one value per row, which no scan statistic has to say.
+    /// A unique column holds one value per row.
     #[test]
     fn a_unique_key_is_its_own_distinct_count() {
         let fact = leaf(1_000_000.0, 1_000_000.0);
@@ -1266,8 +1260,8 @@ mod tests {
         assert!(pair.distinct_count_key("k").is_none());
     }
 
-    /// Repeating a row of the other side takes a key value matched twice, so a side
-    /// matched at most once bounds the join exactly.
+    /// A side unique on its keys cannot repeat a row of the other, which bounds the
+    /// join.
     #[test]
     fn a_uniquely_matched_side_bounds_the_join() {
         let k = key("k");
@@ -1295,8 +1289,7 @@ mod tests {
             None
         );
 
-        // A computed key reads no column as is, so it inherits no uniqueness: joining
-        // `left.k == right.k % 2` can match a distinct left key several times.
+        // A computed key such as `k % 2` inherits no uniqueness.
         let dim = NodeStats::of_rows(800.0).unique_on(&["k"]);
         let computed = JoinKeyUniqueness::of(&fact, on, &dim, None);
         assert!(!computed.right);
@@ -1315,7 +1308,7 @@ mod tests {
         assert_eq!(groups.filtered, 250_000.0);
         assert_eq!(groups.unfiltered, 1_000_000.0);
 
-        // Without the guarantee the count is interpolated well below the input.
+        // Without the guarantee the count is interpolated below the input.
         let groups = one_row_per_group(
             leaf(1_000_000.0, 250_000.0),
             &keys[..1],
@@ -1324,8 +1317,7 @@ mod tests {
         );
         assert!(groups.filtered < 250_000.0);
 
-        // A computed key such as `k % 2` keeps the unique column's name but not its
-        // uniqueness, so the height is estimated rather than kept.
+        // A computed key such as `k % 2` keeps the column's name but not its uniqueness.
         let groups = one_row_per_group(inner, &keys, None, None);
         assert!(groups.filtered < 250_000.0);
     }
@@ -1403,8 +1395,8 @@ mod tests {
         );
     }
 
-    /// Plans built from the DSL, so that the keys reach the estimator the way the
-    /// conversion resolves them.
+    /// Plans built from the DSL, so the keys reach the estimator as the conversion
+    /// resolves them.
     mod plans {
         use polars_core::prelude::*;
 
@@ -1468,8 +1460,7 @@ mod tests {
                 .build()
         }
 
-        /// A join key must read a column as is to inherit its uniqueness: `k % 2`
-        /// on a side unique on `k` can match a left row several times.
+        /// Only a key reading a column as is inherits its uniqueness.
         #[test]
         fn a_computed_join_key_inherits_no_uniqueness() {
             let left = || distinct_on(frame(1000), &["k"]);
@@ -1485,7 +1476,7 @@ mod tests {
         }
 
         /// Grouping by the columns the input is unique on keeps its height, also
-        /// under an alias, but not once a key is computed from them.
+        /// under an alias, but not when a key is computed from them.
         #[test]
         fn a_computed_grouping_key_does_not_keep_the_height() {
             let input = || distinct_on(frame(10_000), &["k", "j"]);
@@ -1503,12 +1494,12 @@ mod tests {
             let computed =
                 stats(group_by(input(), vec![col("k") % lit(2), col("j") % lit(2)]).into());
             assert!(computed.filtered < height);
-            // The output is still one row per computed key, under the input's names.
+            // Still one row per computed key, under the input's names.
             assert!(computed.is_unique_on(&["k", "j"]));
         }
 
-        /// A `with_columns` drops a unique key once it overwrites one of its columns
-        /// with a computed value, and keeps it when it only adds columns.
+        /// A `with_columns` drops a unique key when it overwrites one of its columns
+        /// and keeps it when it only adds columns.
         #[test]
         fn overwriting_a_unique_column_drops_the_key() {
             let input = || distinct_on(frame(1000), &["k"]);
