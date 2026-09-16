@@ -111,9 +111,8 @@ fn process_join(
         return;
     };
 
-    // Sides that could be built, a bounded one before an estimated one and the
-    // smaller of two alike; the first whose range reaches a scan it is much
-    // smaller than is taken.
+    // A bounded side before an estimated one, the smaller of two alike; the first
+    // whose range prunes a scan much larger than itself is taken.
     let mut sides: Vec<BuildSide> = [false, true]
         .into_iter()
         .filter_map(|left| {

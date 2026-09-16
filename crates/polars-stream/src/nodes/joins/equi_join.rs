@@ -455,9 +455,8 @@ struct SampleState {
     left_len: usize,
     right: Vec<Morsel>,
     right_len: usize,
-    /// The only side being read, while a join with runtime filters gives its
-    /// preferred build side the chance to end under the sample limit. Its scans
-    /// under the other side then see the filters, as that side is not opened.
+    /// The only side being read: the preferred build side of a join with runtime
+    /// filters, until it ends or reaches the sample limit.
     only_side: Option<bool>,
 }
 
@@ -573,8 +572,7 @@ impl SampleState {
             (true, false) => false,
 
             (true, true) => {
-                // A preference with runtime filters is only an estimate; the sample
-                // decides.
+                // A preference with runtime filters does not decide; the sample does.
                 match params.args.build_side {
                     Some(JoinBuildSide::PreferLeft) if params.runtime_filters.is_empty() => true,
                     Some(JoinBuildSide::PreferRight) if params.runtime_filters.is_empty() => false,
@@ -1574,7 +1572,7 @@ impl EquiJoinNode {
                 BufferedStream::default(),
             ))
         } else {
-            // A forced side is built outright, so this is a preferred one.
+            // A forced side never samples, so this names a preferred one.
             let only_side = if runtime_filters.is_empty() {
                 None
             } else {
