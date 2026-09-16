@@ -15,7 +15,7 @@ They will benefit from the same benefits default expressions have:
 
 ## Background: How does a plugin interact with Polars?
 
-In short, there are two important things to always keep in mind while building a plugin:
+In short, there are three important things to always keep in mind while building a plugin:
 
 1. The plugin contains its own copy of the core polars functionality. It communicates with the full
    Polars install you normally use.
@@ -39,10 +39,9 @@ files, building Series, and displaying a DataFrame.
 The **Plugin** is only responsible for your custom expressions. This includes conversion to- and
 from the data types that they take.
 
-The two copies never share a `Series`, a `DataType`, or a global variable. They talk over the
-**Arrow C data interface** only: a `SeriesExport` struct holding an `ArrowSchema` and one or more
-`ArrowArray` pointers. Everything that crosses the boundary is encoded on one- , and decoded on the
-other side.
+The two copies never share a `Series`, a `DataType`, or a global variable. They talk over the Arrow
+C data interface only: a `SeriesExport` struct holding an `ArrowSchema` and one or more `ArrowArray`
+pointers. Everything that crosses the boundary is encoded on one- , and decoded on the other side.
 
 ## Our first custom expression: Pig Latin
 
@@ -247,19 +246,20 @@ def append_args(
 ## Output data types
 
 Polars must know the result `dtype` of your expression before running anything. Output data types of
-course don't have to be fixed. They often depend on the input types of an expression. To accommodate
-this you can provide the `#[polars_expr()]` macro with an `output_type_func` argument that points to
-a function. This function can map input fields `&[Field]` to an output `Field` (name and data type).
-This is the right place to reject bad input. It runs during schema resolution before any data moves,
-so the user sees the error immediately.
+course don't have to be fixed. They often depend on the input types of an expression. This is also
+the right place to reject bad input. It runs during schema resolution before any data moves, so the
+user sees the error immediately.
 
-You declare it in the attribute, in one of three ways:
+You declare it in the `#[polars_expr()]` attribute, in one of three ways:
 
 | Attribute                            | Use when                         |
 | ------------------------------------ | -------------------------------- |
 | `output_type=Float64`                | The dtype is fixed.              |
 | `output_type_func=my_fn`             | The dtype depends on the inputs. |
 | `output_type_func_with_kwargs=my_fn` | It also depends on the kwargs.   |
+
+The function types are very powerful: they can map input fields `&[Field]` to an output `Field`
+(name and data type).
 
 In the snippet below is an example where we define a function, and use the utility `FieldsMapper` to
 help with this mapping. This approach helps with common cases such as taking the supertype of the
@@ -319,8 +319,8 @@ fn same_point_type(input_fields: &[Field]) -> PolarsResult<Field> {
 
 ## Registering Arrow extension types
 
-> [!warning] Registering arrow types is **unstable** This guide was written for Polars v0.55. It
-> might not accurately reflect the current way of doing things!
+> Registering arrow types is **unstable** This guide was written for Polars v0.55. It might not
+> accurately reflect the current way of doing things!
 
 An Arrow extension type contains the following:
 
@@ -349,10 +349,10 @@ storage type.
 Polars needs to be made aware of each extension name. This is done using a **Factory** that turns
 `(name, storage, metadata)` into a type instance.
 
-Remember from before: there are **two copies** of `polars-core`, so we need to register them twice.
+Remember from before: there are **two copies** of `polars-core`, so we need to register them twice:
 
-**Polars wheel (host)**: `pl.register_extension_type(name, cls)` in Python **Plugin**:
-`polars_core::datatypes::extension::register_extension_type` in Rust
+- **Polars wheel (host)**: `pl.register_extension_type(name, cls)` in Python
+- **Plugin**: `polars_core::datatypes::extension::register_extension_type` in Rust
 
 If the Python side is registered and the Rust side is not, your data still round-trips, but inside
 the plugin the column arrives as a plain storage type.
