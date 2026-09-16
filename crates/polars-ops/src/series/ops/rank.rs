@@ -6,11 +6,13 @@ use rand::prelude::*;
 
 use crate::prelude::SeriesSealed;
 
-unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(
-    idxs: &IdxCa,
-    neq: &PlBooleanArray,
-    mut flush_ties: F,
-) {
+/// Walks the sorted indices, closing a tie group wherever `opens_group` says the element differs
+/// from the one before it.
+unsafe fn rank_walk<G, F>(idxs: &IdxCa, opens_group: G, mut flush_ties: F)
+where
+    G: Fn(usize) -> bool,
+    F: FnMut(&mut [IdxSize]),
+{
     let mut ties_indices = Vec::with_capacity(128);
     let mut idx_it = idxs.downcast_iter().flat_map(|arr| arr.values_iter());
     let Some(first_idx) = idx_it.next() else {
@@ -19,7 +21,7 @@ unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(
     ties_indices.push(first_idx);
 
     for (eq_idx, idx) in idx_it.enumerate() {
-        if neq.value_unchecked(eq_idx) {
+        if opens_group(eq_idx) {
             flush_ties(&mut ties_indices);
             ties_indices.clear()
         }
@@ -27,6 +29,22 @@ unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(
         ties_indices.push(idx);
     }
     flush_ties(&mut ties_indices);
+}
+
+unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(idxs: &IdxCa, neq: &PlBooleanArray, flush_ties: F) {
+    // Settle how `neq` holds its bits once, for the whole walk. Reading one out by index has to
+    // find out each time whether the array carries a bit per element or a single bit standing for
+    // all of them, and that question is the same for every element of the walk.
+    let neq = neq.values();
+    match neq.flat_bitmap() {
+        Some(bits) => rank_walk(idxs, |i| bits.get_bit_unchecked(i), flush_ties),
+        // One bit for the whole array: either every element differs from the one before it, so
+        // each is its own tie group, or none of them does and the column is a single group.
+        None => {
+            let bit = neq.scalar_value().expect("a bitmap is flat or scalar");
+            rank_walk(idxs, |_| bit, flush_ties)
+        },
+    }
 }
 
 fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> Series {
