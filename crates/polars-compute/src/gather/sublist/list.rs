@@ -1,5 +1,6 @@
 use arrow::array::{Array, ArrayRef, ListArray};
-use arrow::legacy::prelude::*;
+use arrow::datatypes::IdxArr;
+use arrow::legacy::index::IndexToUsize;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::offset::{Offsets, OffsetsBuffer};

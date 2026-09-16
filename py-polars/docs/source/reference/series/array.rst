@@ -16,6 +16,7 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.arg_min
     Series.arr.contains
     Series.arr.count_matches
+    Series.arr.dot
     Series.arr.explode
     Series.arr.eval
     Series.arr.first

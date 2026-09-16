@@ -47,8 +47,9 @@ struct ExtensionSentinel {
 
 impl Drop for ExtensionSentinel {
     fn drop(&mut self) {
-        let mut drop_fn = self.drop_fn.take().unwrap();
-        drop_fn()
+        if let Some(mut drop_fn) = self.drop_fn.take() {
+            (drop_fn)()
+        }
     }
 }
 

@@ -112,6 +112,8 @@ mod extension;
 mod groups_dispatch;
 mod horizontal;
 mod list;
+#[cfg(feature = "dtype-map")]
+mod map;
 mod misc;
 mod pow;
 #[cfg(feature = "random")]
@@ -148,6 +150,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "dtype-extension")]
         F::Extension(func) => extension::function_expr_to_udf(func),
         F::ListExpr(func) => list::function_expr_to_udf(func),
+        #[cfg(feature = "dtype-map")]
+        F::MapExpr(func) => map::function_expr_to_udf(func),
         #[cfg(feature = "strings")]
         F::StringExpr(func) => strings::function_expr_to_udf(func),
         #[cfg(feature = "dtype-struct")]
@@ -177,8 +181,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             IRPowFunction::Cbrt => map!(pow::cbrt),
         },
         #[cfg(feature = "row_hash")]
-        F::Hash(k0, k1, k2, k3) => {
-            map!(misc::row_hash, k0, k1, k2, k3)
+        F::Hash(seed) => {
+            map!(misc::row_hash, seed)
         },
         #[cfg(feature = "arg_where")]
         F::ArgWhere => {
@@ -273,7 +277,6 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         } => {
             map_as_slice!(misc::hist, bin_count, include_category, include_breakpoint)
         },
-        F::Rechunk => map!(misc::rechunk),
         F::ShiftAndFill => {
             map_as_slice!(shift_and_fill::shift_and_fill)
         },
@@ -303,6 +306,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::Repeat => map_as_slice!(misc::repeat),
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => map!(misc::rank, options, seed),
+        F::AsList => map_as_slice!(misc::as_list),
         #[cfg(feature = "dtype-struct")]
         F::AsStruct => {
             map_as_slice!(misc::as_struct)
@@ -338,6 +342,10 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::Reverse => map!(misc::reverse),
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => map!(misc::approx_n_unique),
+        #[cfg(feature = "approx_quantile")]
+        F::ApproxQuantile { method, error } => {
+            map_as_slice!(misc::approx_quantile, &method, error)
+        },
         F::Coalesce => map_as_slice!(misc::coalesce),
         #[cfg(feature = "diff")]
         F::Diff(null_behavior) => map_as_slice!(misc::diff, null_behavior),
@@ -411,6 +419,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             allow_duplicates,
             include_breaks
         ),
+        #[cfg(feature = "cutqcut")]
+        F::Bin(options) => map!(misc::bin, options.clone()),
         #[cfg(feature = "rle")]
         F::RLE => map!(polars_ops::series::rle),
         #[cfg(feature = "rle")]
@@ -504,6 +514,10 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::EwmMean { options } => map!(misc::ewm_mean, options),
         #[cfg(feature = "ewma_by")]
         F::EwmMeanBy { half_life } => map_as_slice!(misc::ewm_mean_by, half_life),
+        #[cfg(feature = "ewma")]
+        F::EwmSum { options } => map!(misc::ewm_sum, options),
+        #[cfg(feature = "ewma_by")]
+        F::EwmSumBy { half_life } => map_as_slice!(misc::ewm_sum_by, half_life),
         #[cfg(feature = "ewma")]
         F::EwmStd { options } => map!(misc::ewm_std, options),
         #[cfg(feature = "ewma")]

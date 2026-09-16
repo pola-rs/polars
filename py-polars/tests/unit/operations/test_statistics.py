@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 from hypothesis import given
@@ -116,6 +116,61 @@ def test_quantile(fruits_cars: pl.DataFrame) -> None:
 
     assert fruits_cars.lazy().quantile(0.24, "linear").collect()["A"][0] == 1.96
     assert fruits_cars.select(pl.col("A").quantile(0.24, "linear"))["A"][0] == 1.96
+
+
+def test_quantile_list_schema_29030() -> None:
+    lf = pl.LazyFrame({"a": [1.0, 2.0, 3.0]})
+
+    # list of quantiles -> List(Float64), schema must match the materialized result
+    q_list = lf.select(pl.col("a").quantile([0.1, 0.5, 0.9]))
+    assert q_list.collect_schema() == q_list.collect().schema
+    assert q_list.collect_schema()["a"] == pl.List(pl.Float64)
+
+    # single quantile -> plain Float64, must not regress
+    q_scalar = lf.select(pl.col("a").quantile(0.5))
+    assert q_scalar.collect_schema() == q_scalar.collect().schema
+    assert q_scalar.collect_schema()["a"] == pl.Float64
+
+    # a single-element list is still list-shaped output, not scalar
+    q_single_elem_list = lf.select(pl.col("a").quantile([0.5]))
+    assert q_single_elem_list.collect_schema() == q_single_elem_list.collect().schema
+    assert q_single_elem_list.collect_schema()["a"] == pl.List(pl.Float64)
+
+    # empty list of quantiles -> List(Float64) with an empty list per row
+    q_empty_list = lf.select(pl.col("a").quantile([]))
+    assert q_empty_list.collect_schema() == q_empty_list.collect().schema
+    assert q_empty_list.collect_schema()["a"] == pl.List(pl.Float64)
+
+
+@pytest.mark.parametrize(
+    ("values", "quantile_input", "expected_dtype"),
+    [
+        ([1, 2, 3], [0.25, 0.75], pl.List(pl.Float64)),
+        ([1, 2, 3], 0.5, pl.Float64),
+        (
+            [date(2020, 1, 1), date(2020, 6, 1), date(2021, 1, 1)],
+            [0.25, 0.75],
+            pl.List(pl.Datetime("us")),
+        ),
+        (
+            [timedelta(days=1), timedelta(days=2), timedelta(days=3)],
+            [0.25, 0.75],
+            pl.List(pl.Duration("us")),
+        ),
+    ],
+)
+def test_quantile_schema_dtypes_29030(
+    values: list[object],
+    quantile_input: float | list[float],
+    expected_dtype: pl.DataType,
+) -> None:
+    # moment_dtype()'s per-dtype mapping (numeric -> Float64, Date -> Datetime,
+    # Duration preserved, ...) must still apply correctly when the result is
+    # wrapped in List for a list of quantiles.
+    lf = pl.LazyFrame({"a": values})
+    q = lf.select(pl.col("a").quantile(quantile_input))
+    assert q.collect_schema() == q.collect().schema
+    assert q.collect_schema()["a"] == expected_dtype
 
 
 def test_count() -> None:

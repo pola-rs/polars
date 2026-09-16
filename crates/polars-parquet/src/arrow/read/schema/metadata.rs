@@ -95,13 +95,7 @@ fn convert_dtype(mut dtype: ArrowDataType) -> ArrowDataType {
         Extension(ref mut ext) => {
             ext.inner = convert_dtype(std::mem::take(&mut ext.inner));
         },
-        Map(mut field, _ordered) => {
-            // Polars doesn't support Map.
-            // A map is physically a `List<Struct<K, V>>`
-            // So we read as list.
-            convert_field(field.as_mut());
-            dtype = LargeList(field);
-        },
+        Map(ref mut field, _ordered) => convert_field(field.as_mut()),
         _ => {},
     }
 

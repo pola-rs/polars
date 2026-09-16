@@ -79,11 +79,15 @@ pub fn concat_df_horizontal(
     strict: bool,
     unit_length_as_scalar: bool,
 ) -> PolarsResult<DataFrame> {
-    let output_height = dfs
-        .iter()
-        .map(|df| df.height())
-        .max()
-        .ok_or_else(|| polars_err!(ComputeError: "cannot concat empty dataframes"))?;
+    if dfs.is_empty() {
+        return Err(polars_err!(ComputeError: "cannot concat empty dataframes"));
+    }
+    let heights = || dfs.iter().map(|df| df.height());
+    let output_height = if unit_length_as_scalar {
+        heights().filter(|h| *h != 1).max().unwrap_or(1)
+    } else {
+        heights().max().unwrap()
+    };
 
     let owned_df;
 
@@ -177,8 +181,29 @@ mod tests {
             matches!(result, Err(PolarsError::ShapeMismatch(_))),
             "expected shape mismatch error"
         );
-
         // Ensure the DataFrame is not mutated in the error case.
         assert_eq!(df.width(), 0);
+    }
+
+    #[test]
+    fn test_scalar_broadcast_over_empty_frame() {
+        use crate::prelude::*;
+
+        // Unit-length "scalar" frame broadcast against zero-row frame should yield zero rows
+        let empty = df!["a" => Vec::<i64>::new()].unwrap();
+        let scalar = df!["b" => [1i64]].unwrap();
+        let out = super::concat_df_horizontal(&[empty, scalar], true, false, true).unwrap();
+        assert_eq!(out.height(), 0);
+        assert_eq!(out.width(), 2);
+
+        // Non-empty frame must still broadcast the scalar across all its rows
+        let non_empty = df!["a" => [10i64, 20, 30]].unwrap();
+        let scalar = df!["b" => [1i64]].unwrap();
+        let out = super::concat_df_horizontal(&[non_empty, scalar], true, false, true).unwrap();
+        assert_eq!(out.height(), 3);
+        assert_eq!(
+            out.column("b").unwrap().as_materialized_series(),
+            &Series::new("b".into(), [1i64, 1, 1])
+        );
     }
 }

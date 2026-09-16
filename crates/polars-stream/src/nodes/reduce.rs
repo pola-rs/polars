@@ -64,17 +64,18 @@ impl ReduceNode {
                     let mut in_columns = Vec::new();
                     let mut in_column_refs = Vec::new();
                     while let Ok(morsel) = recv.recv().await {
+                        let seq = morsel.seq();
+                        let df = morsel.into_df().await;
                         for (reducer, selector_set) in local_reducers.iter_mut().zip(selectors) {
                             for selector in selector_set {
-                                let col = selector
-                                    .evaluate(morsel.df(), &state.in_memory_exec_state)
-                                    .await?;
+                                let col =
+                                    selector.evaluate(&df, &state.in_memory_exec_state).await?;
                                 in_columns.push(col);
                             }
                             for c in in_columns.iter() {
                                 in_column_refs.push(c);
                             }
-                            reducer.update_group(&in_column_refs, 0, morsel.seq().to_u64())?;
+                            reducer.update_group(&in_column_refs, 0, seq.to_u64())?;
                             in_column_refs.clear();
                             in_column_refs =
                                 in_column_refs.into_iter().map(|_| unreachable!()).collect(); // Clear lifetimes.
@@ -110,7 +111,8 @@ impl ReduceNode {
     ) {
         let mut send = send.serial();
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            let morsel = Morsel::new(df.take().unwrap(), MorselSeq::new(0), SourceToken::new());
+            let morsel =
+                Morsel::new_unregistered(df.take().unwrap(), MorselSeq::new(0), SourceToken::new());
             let _ = send.send(morsel).await;
             Ok(())
         }));

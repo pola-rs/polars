@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import dataclasses
 import enum
+import subprocess
 import sys
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -10,6 +12,11 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+from polars._utils.construction.dataframe import (
+    _resolved_sequence_handlers,
+    _sequence_of_dataclasses_to_pydf,
+    _sequence_to_pydf_dispatcher,
+)
 from polars.exceptions import DataOrientationWarning, InvalidOperationError
 from polars.testing import assert_frame_equal
 
@@ -260,3 +267,98 @@ def test_bytes_scalar_broadcast_27620() -> None:
     result = pl.DataFrame({"a": b"foo", "b": "foo", "c": [10, 20, 30]})
     expected = pl.DataFrame({"a": [b"foo"] * 3, "b": ["foo"] * 3, "c": [10, 20, 30]})
     assert_frame_equal(result, expected)
+
+
+def test_df_init_from_sequence_of_generators_29121() -> None:
+    result = pl.DataFrame([(x for x in (1, 2, 3)), (x for x in (4, 5, 6))])
+    expected = pl.DataFrame({"column_0": [1, 2, 3], "column_1": [4, 5, 6]})
+    assert_frame_equal(result, expected)
+
+    result = pl.DataFrame(
+        [(x for x in (1, 2, 3)), (x for x in (4, 5, 6))],
+        schema=["a", "b", "c"],
+        orient="row",
+    )
+    expected = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
+    assert_frame_equal(result, expected)
+
+
+def test_df_init_resolution_leaves_dispatch_registry_alone_29121() -> None:
+    SomeRow = dataclasses.make_dataclass("Row29121", [("a", int)])
+    registered = set(_sequence_to_pydf_dispatcher.registry)
+
+    pl.DataFrame([SomeRow(a=1)])
+
+    assert set(_sequence_to_pydf_dispatcher.registry) == registered
+    assert _resolved_sequence_handlers[SomeRow] is _sequence_of_dataclasses_to_pydf
+
+
+def test_df_init_dataclass_class_is_not_an_instance() -> None:
+    SomeRow = dataclasses.make_dataclass("Row29121Class", [("a", int)])
+    _resolved_sequence_handlers.pop(type, None)
+
+    class Unrelated:
+        pass
+
+    assert pl.DataFrame([SomeRow]).dtypes == [pl.Object]
+    assert pl.DataFrame([Unrelated]).dtypes == [pl.Object]
+    assert pl.Series([SomeRow]).dtype == pl.Object
+
+    # instances are still unpacked into columns
+    assert pl.DataFrame([SomeRow(a=1)]).to_dict(as_series=False) == {"a": [1]}
+    assert pl.Series([SomeRow(a=1)]).dtype == pl.Struct({"a": pl.Int64})
+
+
+# Type resolution is memoized process-wide, so the first-use window this
+# exercises only exists in an interpreter that no other test has warmed up
+_CONCURRENT_INIT_SCRIPT = """\
+import dataclasses
+import sys
+import threading
+
+import polars as pl
+sys.setswitchinterval(1e-6)
+
+THREADS = 8
+ROUNDS = 25
+errors = []
+
+def build(payload, barrier):
+    barrier.wait()
+    try:
+        pl.DataFrame(payload)
+    except Exception as exc:
+        errors.append(exc)
+
+def race(payloads):
+    # time out rather than deadlock if a thread never reaches the barrier
+    barrier = threading.Barrier(len(payloads), timeout=30)
+    threads = [threading.Thread(target=build, args=(p, barrier)) for p in payloads]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+# the type from the issue report; only races on its very first use in the process
+race([[pl.Series(f"c{i}", [i])] for i in range(THREADS)])
+
+# a fresh dataclass type per round reopens the first-use window each time,
+# so the race can be exercised repeatedly instead of getting a single shot
+for r in range(ROUNDS):
+    Row = dataclasses.make_dataclass(f"Row{r}", [("a", int)])
+    race([[Row(a=i)] for i in range(THREADS)])
+
+assert not errors, f"{len(errors)} constructions failed, first: {errors[0]!r}"
+"""
+
+
+def test_df_init_concurrent_first_use_29121() -> None:
+    # resolving a type for the first time must not mutate
+    # state that a concurrent dispatch is reading
+    proc = subprocess.run(
+        [sys.executable, "-c", _CONCURRENT_INIT_SCRIPT],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert proc.returncode == 0, proc.stderr

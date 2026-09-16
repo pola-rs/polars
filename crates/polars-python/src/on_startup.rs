@@ -10,12 +10,16 @@ use polars_core::chunked_array::object::builder::ObjectChunkedBuilder;
 use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
 use polars_core::chunked_array::object::{registry, set_polars_allow_extension};
 use polars_error::PolarsWarning;
-use polars_error::signals::register_polars_keyboard_interrupt_hook;
+use polars_error::abort::register_polars_abort_mechanism;
 use polars_ffi::version_0::SeriesExport;
 use polars_plan::plans::python_df_to_rust;
 use polars_utils::python_convert_registry::{FromPythonConvertRegistry, PythonConvertRegistry};
+use polars_utils::version::{
+    set_polars_lib_build_commit, set_polars_lib_name, set_polars_lib_version,
+};
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
+use pyo3::types::PyCFunction;
 
 use crate::Wrap;
 use crate::dataframe::PyDataFrame;
@@ -110,6 +114,10 @@ static WARN_FUNCTION: OnceLock<Py<PyAny>> = OnceLock::new();
 pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_function: Py<PyAny>) {
     // TODO: should we throw an error if we try to initialize while already initialized?
     POLARS_REGISTRY_INIT_LOCK.get_or_init(|| {
+        set_polars_lib_name("Polars (python)");
+        set_polars_lib_version(crate::PYPOLARS_VERSION);
+        set_polars_lib_build_commit(crate::PYPOLARS_BUILD_COMMIT);
+
         WARN_FUNCTION.set(warn_function).unwrap();
         set_polars_allow_extension(true);
 
@@ -123,8 +131,12 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
         #[cfg(feature = "backtrace_filter")]
         {
             use std::path::Path;
-            use color_backtrace::{BacktracePrinter, default_output_stream, default_is_dependency_frame, Frame, ColorScheme};
-            use color_backtrace::termcolor::{ColorSpec, Color};
+
+            use color_backtrace::termcolor::{Color, ColorSpec};
+            use color_backtrace::{
+                BacktracePrinter, ColorScheme, Frame, default_is_dependency_frame,
+                default_output_stream,
+            };
 
             let polars_base_path = || {
                 let on_startup = Path::new(file!()).canonicalize().ok()?;
@@ -137,12 +149,28 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
 
             let mut btp = BacktracePrinter::default();
             if let Some(bp) = polars_base_path() {
-                btp = btp.dependency_predicate(Box::new(move |frame: &Frame| -> bool {
-                    if let Some(file) = frame.filename.as_ref().and_then(|f| f.canonicalize().ok()) {
+                let is_non_polars_frame = Box::new(move |frame: &Frame| -> bool {
+                    if let Some(file) = frame.filename.as_ref().and_then(|f| f.canonicalize().ok())
+                    {
                         !file.starts_with(&bp)
                     } else {
                         default_is_dependency_frame(frame)
                     }
+                });
+                btp = btp.dependency_predicate(is_non_polars_frame.clone());
+
+                btp = btp.path_display(Box::new(move |path: &Path, frame: &Frame| {
+                    // Remove ./ from the start of relative paths, regularly breaks VS Code ctrl+click fuzzy find.
+                    let p = path.to_string_lossy();
+                    let p = p.strip_prefix("./").unwrap_or(&p).to_owned();
+
+                    // Dim paths of non-Polars frames.
+                    let color = is_non_polars_frame(frame).then(|| {
+                        let mut color = ColorSpec::new();
+                        color.set_dimmed(true);
+                        color
+                    });
+                    (p, color)
                 }));
             }
 
@@ -154,8 +182,7 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
             color_scheme.crate_code.set_fg(Some(Color::Blue));
             color_scheme.crate_code_hash = color_scheme.crate_code.clone();
 
-            btp
-                .color_scheme(color_scheme)
+            btp.color_scheme(color_scheme)
                 .install(default_output_stream());
         }
 
@@ -171,12 +198,11 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
             });
             Box::new(object) as Box<dyn Any>
         });
-        let pyobject_converter = Arc::new(|av: AnyValue| {
-            let object = Python::attach(|py| Wrap(av).into_py_any(py).unwrap());
-            Box::new(object) as Box<dyn Any>
-        });
         fn object_array_getter(arr: &dyn Array, idx: usize) -> Option<AnyValue<'_>> {
-            let arr = arr.as_any().downcast_ref::<ObjectArray<ObjectValue>>().unwrap();
+            let arr = arr
+                .as_any()
+                .downcast_ref::<ObjectArray<ObjectValue>>()
+                .unwrap();
             arr.get(idx).map(|v| AnyValue::Object(v))
         }
         fn with_gil(f: &mut dyn FnMut()) {
@@ -259,13 +285,20 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
         registry::register_object_builder(
             object_builder,
             object_converter,
-            pyobject_converter,
             physical_dtype,
             Arc::new(object_array_getter),
-            Arc::new(with_gil)
+            Arc::new(with_gil),
         );
 
         use crate::dataset::dataset_provider_funcs;
+
+        polars_plan::dsl::dsl_resolver::python::PY_DSL_RESOLVER_VTABLE.get_or_init(|| {
+            polars_plan::dsl::dsl_resolver::python::PyDslResolverVTable {
+                extract_schema: dataset_provider_funcs::extract_schema,
+                to_py_plexpr: crate::expr::expr_to_py_plexpr,
+                extract_py_resolved_dsl: crate::conversion::extract_py_resolved_dsl,
+            }
+        });
 
         polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
             name: dataset_provider_funcs::name,
@@ -282,26 +315,43 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
         });
 
         // Register SERIES UDF.
-        python_dsl::CALL_PYTHON_COLUMNS_UDF.set(python_function_caller_series).unwrap();
+        python_dsl::CALL_PYTHON_COLUMNS_UDF
+            .set(python_function_caller_series)
+            .unwrap();
         // Register DATAFRAME UDF.
-        python_dsl::CALL_PYTHON_DF_UDF.set(python_function_caller_df).unwrap();
+        python_dsl::CALL_PYTHON_DF_UDF
+            .set(python_function_caller_df)
+            .unwrap();
         // Register warning function for `polars_warn!`.
         polars_error::set_warning_function(warning_function);
 
+        // Makes `DslPlan::SQL` resolvable, also for plans deserialized without an
+        // `SQLContext` being constructed here.
+        #[cfg(feature = "sql")]
+        polars::sql::register_sql_resolver();
+
         if catch_keyboard_interrupt {
-            register_polars_keyboard_interrupt_hook();
+            register_polars_abort_mechanism();
         }
 
         use polars_core::datatypes::extension::UnknownExtensionTypeBehavior;
         let behavior = match std::env::var("POLARS_UNKNOWN_EXTENSION_TYPE_BEHAVIOR").as_deref() {
             Ok("load_as_storage") => UnknownExtensionTypeBehavior::LoadAsStorage,
             Ok("load_as_extension") => UnknownExtensionTypeBehavior::LoadAsGeneric,
-            Ok("") | Err(_) => UnknownExtensionTypeBehavior::WarnAndLoadAsStorage,
-            _ => {
-                polars_warn!("Invalid value for 'POLARS_UNKNOWN_EXTENSION_TYPE_BEHAVIOR' environment variable. Expected one of 'load_as_storage' or 'load_as_extension'.");
-                UnknownExtensionTypeBehavior::WarnAndLoadAsStorage
-            },
+            _ => UnknownExtensionTypeBehavior::LoadAsGeneric,
         };
         polars_core::datatypes::extension::set_unknown_extension_type_behavior(behavior);
+
+        // Out-of-core cleaning.
+        polars_ooc::init_ooc_cleaner();
+        Python::attach(|py| {
+            let atexit = py.import("atexit").unwrap();
+            let flush_fn = PyCFunction::new_closure(py, None, None, |_args, _kwargs| {
+                polars_ooc::flush_ooc_cleanup();
+                PyResult::Ok(())
+            })
+            .unwrap();
+            atexit.call_method1("register", (flush_fn,)).unwrap();
+        });
     });
 }

@@ -58,7 +58,7 @@ pub fn resolve_arrow_field_projections(
         .collect::<Arc<[ArrowFieldProjection]>>())
 }
 
-/// Represents a potentially mapped (i.e. casted and/or renamed) arrow field projection.
+/// Represents a potentially mapped (i.e. cast and/or renamed) arrow field projection.
 #[derive(Debug)]
 pub enum ArrowFieldProjection {
     Plain(ArrowField),
@@ -71,6 +71,7 @@ pub enum ArrowFieldProjection {
 }
 
 impl ArrowFieldProjection {
+    #[inline]
     pub fn arrow_field(&self) -> &ArrowField {
         match self {
             Self::Plain(field) => field,

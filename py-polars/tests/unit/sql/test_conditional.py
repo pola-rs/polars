@@ -91,7 +91,9 @@ def test_control_flow(foods_ipc_path: Path) -> None:
             SQLSyntaxError,
             match=r"(IFNULL|NULLIF) expects 2 arguments \(found 3\)",
         ):
-            pl.SQLContext(df=nums).execute(f"SELECT {null_func}(x,y,z) FROM df")
+            pl.SQLContext(df=nums).execute(
+                f"SELECT {null_func}(x,y,z) FROM df"
+            ).collect()
 
 
 def test_greatest_least() -> None:
@@ -113,7 +115,7 @@ def test_greatest_least() -> None:
               GREATEST("a", "b") AS max_ab,
               GREATEST("c", "d", ) AS max_cd,
               GREATEST("e", "f") AS max_ef,
-              GREATEST('1999-12-31'::date, "e", "f") AS max_efx
+              GREATEST(DATE('1999-12-31'), "e", "f") AS max_efx
             FROM df
             """
         ).collect()
@@ -148,7 +150,7 @@ def test_greatest_least() -> None:
               LEAST("a", "b") AS min_ab,
               LEAST("c", "d") AS min_cd,
               LEAST("e", "f") AS min_ef,
-              LEAST("f", "e", '1999-12-31'::date) AS min_efx
+              LEAST("f", "e", DATE('1999-12-31')) AS min_efx
             FROM df
             """
         ).collect()

@@ -1,3 +1,6 @@
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use super::*;
 
 /// Utility struct for the `when-then-otherwise` expression.
@@ -14,6 +17,7 @@ pub struct When {
 ///
 /// Represents the state of the expression after `when(...).then(...)` is called.
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))] // Not in DSL schema, but needed for pickling.
 pub struct Then {
     condition: Expr,
     statement: Expr,
@@ -34,6 +38,7 @@ pub struct ChainedWhen {
 ///
 /// Represents the state of the expression after an additional `then` is called.
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))] // Not in DSL schema, but needed for pickling.
 pub struct ChainedThen {
     conditions: Vec<Expr>,
     statements: Vec<Expr>,
@@ -61,6 +66,17 @@ impl Then {
     /// Define a default for the `when-then-otherwise` expression.
     pub fn otherwise<E: Into<Expr>>(self, statement: E) -> Expr {
         ternary_expr(self.condition, self.statement, statement.into())
+    }
+
+    /// Serialize with the compact format, not portable.
+    #[cfg(feature = "serde")]
+    pub fn serialize_compact_into(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
+        polars_utils::pl_serialize::serialize_into_writer::<_, _, false>(writer, self)
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn deserialize_compact_from(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
+        polars_utils::pl_serialize::deserialize_from_reader::<_, _, false>(reader)
     }
 }
 
@@ -127,6 +143,17 @@ impl ChainedThen {
         }
 
         otherwise
+    }
+
+    /// Serialize with the compact format, not portable.
+    #[cfg(feature = "serde")]
+    pub fn serialize_compact_into(&self, writer: &mut dyn std::io::Write) -> PolarsResult<()> {
+        polars_utils::pl_serialize::serialize_into_writer::<_, _, false>(writer, self)
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn deserialize_compact_from(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
+        polars_utils::pl_serialize::deserialize_from_reader::<_, _, false>(reader)
     }
 }
 

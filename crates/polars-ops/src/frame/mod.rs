@@ -1,4 +1,5 @@
 pub mod gather;
+pub mod is_sorted;
 pub mod join;
 #[cfg(feature = "pivot")]
 pub mod unpivot;

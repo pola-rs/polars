@@ -167,19 +167,45 @@ impl Bitmap {
         AlignedBitmapSlice::new(&self.storage, self.offset, self.length)
     }
 
+    /// Reallocates if this bitmap has a bit offset that is not a multiple of 8.
+    pub fn to_aligned_bitmap(&self) -> Bitmap {
+        if self.offset.is_multiple_of(8) {
+            self.clone()
+        } else {
+            Bitmap::from_trusted_len_iter(self.iter())
+        }
+    }
+
     /// Returns the byte slice of this [`Bitmap`].
     ///
     /// The returned tuple contains:
-    /// * `.1`: The byte slice, truncated to the start of the first bit. So the start of the slice
+    /// * `.0`: The byte slice, truncated to the start of the first bit. So the start of the slice
     ///   is within the first 8 bits.
-    /// * `.2`: The start offset in bits on a range `0 <= offsets < 8`.
-    /// * `.3`: The length in number of bits.
+    /// * `.1`: The start offset in bits on a range `0 <= offsets < 8`.
+    /// * `.2`: The length in number of bits.
     #[inline]
     pub fn as_slice(&self) -> (&[u8], usize, usize) {
         let start = self.offset / 8;
         let len = (self.offset % 8 + self.length).saturating_add(7) / 8;
         (
             &self.storage[start..start + len],
+            self.offset % 8,
+            self.length,
+        )
+    }
+
+    /// Returns the buffer of this [`Bitmap`].
+    ///
+    /// The returned tuple contains:
+    /// * `.0`: The byte slice, truncated to the start of the first bit. So the start of the slice
+    ///   is within the first 8 bits.
+    /// * `.1`: The start offset in bits on a range `0 <= offsets < 8`.
+    /// * `.2`: The length in number of bits.
+    pub fn as_buffer(&self) -> (Buffer<u8>, usize, usize) {
+        let start = self.offset / 8;
+        let len = (self.offset % 8 + self.length).saturating_add(7) / 8;
+        (
+            Buffer::from_storage(self.storage.clone()).sliced(start..start + len),
             self.offset % 8,
             self.length,
         )
@@ -338,6 +364,14 @@ impl Bitmap {
     /// This pointer is allocated iff `self.len() > 0`.
     pub(crate) fn as_ptr(&self) -> *const u8 {
         self.storage.deref().as_ptr()
+    }
+
+    /// If this bitmap has a bit offset that is a multiple of 8, returns
+    /// an offset-adjusted `Some(ptr)`.
+    pub fn as_aligned_ptr(&self) -> Option<*const u8> {
+        self.offset
+            .is_multiple_of(8)
+            .then(|| unsafe { self.as_ptr().add(self.offset / 8) })
     }
 
     /// Returns a pointer to the start of this [`Bitmap`] (ignores `offsets`)

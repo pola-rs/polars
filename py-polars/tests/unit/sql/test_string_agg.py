@@ -85,3 +85,36 @@ def test_string_agg_limit(df_test: pl.LazyFrame) -> None:
         "grp": ["a", "b"],
         "v": ["x3,x2", "y3,y2"],
     }
+
+
+def test_string_agg_all_null_returns_null() -> None:
+    # `STRING_AGG` over an all-null input returns NULL (not an empty string),
+    # matching standard SQL. A non-null empty string is still concatenated.
+    df = pl.DataFrame({"a": [None, None]}, schema={"a": pl.String})
+    assert_sql_matches(
+        {"df": df},
+        query="SELECT STRING_AGG(a, ',') AS v FROM df",
+        compare_with="duckdb",
+        expected={"v": [None]},
+    )
+
+    # an all-null group yields NULL; a group with values concatenates as normal
+    grp = pl.DataFrame(
+        {"g": [1, 1, 2, 2], "a": [None, None, "p", "q"]},
+        schema={"g": pl.Int64, "a": pl.String},
+    )
+    assert_sql_matches(
+        {"df": grp},
+        query="SELECT g, STRING_AGG(a, ',') AS v FROM df GROUP BY g ORDER BY g",
+        compare_with="duckdb",
+        expected={"g": [1, 2], "v": [None, "p,q"]},
+    )
+
+    # a non-null empty string is preserved (distinct from the all-null case)
+    empty = pl.DataFrame({"a": ["", None]}, schema={"a": pl.String})
+    assert_sql_matches(
+        {"df": empty},
+        query="SELECT STRING_AGG(a, ',') AS v FROM df",
+        compare_with="duckdb",
+        expected={"v": [""]},
+    )

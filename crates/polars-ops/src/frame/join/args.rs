@@ -84,7 +84,7 @@ pub enum JoinType {
     Cross,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum JoinCoalesce {
@@ -160,6 +160,11 @@ impl JoinArgs {
         self
     }
 
+    pub fn with_maintain_order(mut self, maintain_order: MaintainOrderJoin) -> Self {
+        self.maintain_order = maintain_order;
+        self
+    }
+
     pub fn with_suffix(mut self, suffix: Option<PlSmallStr>) -> Self {
         self.suffix = suffix;
         self
@@ -183,14 +188,24 @@ impl From<JoinType> for JoinArgs {
 }
 
 pub trait CrossJoinFilter: Send + Sync {
-    fn apply(&self, df: DataFrame) -> PolarsResult<DataFrame>;
+    /// Evaluates the filter predicate on `df`, returning a boolean mask.
+    fn evaluate(&self, df: &DataFrame) -> PolarsResult<BooleanChunked>;
+
+    fn apply(&self, df: DataFrame, parallel: bool) -> PolarsResult<DataFrame> {
+        let mask = self.evaluate(&df)?;
+        if parallel {
+            df.filter(&mask)
+        } else {
+            df.filter_seq(&mask)
+        }
+    }
 }
 
 impl<T> CrossJoinFilter for T
 where
-    T: Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
+    T: Fn(&DataFrame) -> PolarsResult<BooleanChunked> + Send + Sync,
 {
-    fn apply(&self, df: DataFrame) -> PolarsResult<DataFrame> {
+    fn evaluate(&self, df: &DataFrame) -> PolarsResult<BooleanChunked> {
         self(df)
     }
 }
@@ -232,6 +247,8 @@ pub enum JoinTypeOptions {
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
     Cross(CrossJoinOptions),
+    /// A predicate fused into an equi join's match condition, on top of its keys.
+    FusedPredicate(CrossJoinOptions),
 }
 
 impl Display for JoinType {
@@ -316,6 +333,10 @@ impl JoinType {
         }
     }
 
+    pub fn is_inner(&self) -> bool {
+        matches!(self, JoinType::Inner)
+    }
+
     pub fn is_cross(&self) -> bool {
         matches!(self, JoinType::Cross)
     }
@@ -341,9 +362,31 @@ impl JoinType {
             false
         }
     }
+
+    /// Unmatched rows of the left input appear in the output.
+    pub fn emits_unmatched_left(&self) -> bool {
+        #[cfg(feature = "semi_anti_join")]
+        {
+            matches!(self, JoinType::Left | JoinType::Full | JoinType::Anti)
+        }
+        #[cfg(not(feature = "semi_anti_join"))]
+        {
+            matches!(self, JoinType::Left | JoinType::Full)
+        }
+    }
+
+    /// Unmatched rows of the right input appear in the output.
+    pub fn emits_unmatched_right(&self) -> bool {
+        matches!(self, JoinType::Right | JoinType::Full)
+    }
+
+    /// Joins supported in join where with non-equi conditions
+    pub fn supports_non_equi(&self) -> bool {
+        matches!(self, JoinType::Inner | JoinType::Left | JoinType::Right)
+    }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Default, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum JoinValidation {

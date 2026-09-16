@@ -205,8 +205,11 @@ impl MorselStreamReverser {
                             unsafe { df.with_row_index_mut(row_index.name.clone(), Some(offset)) };
                         }
 
-                        let morsel =
-                            Morsel::new(df, MorselSeq::new(chunk_idx as u64), SourceToken::new());
+                        let morsel = Morsel::new_unregistered(
+                            df,
+                            MorselSeq::new(chunk_idx as u64),
+                            SourceToken::new(),
+                        );
 
                         if morsel_tx.send_morsel(morsel).await.is_err() {
                             break;

@@ -1,9 +1,12 @@
 use std::fmt::{self, Write};
 
 use polars_core::error::*;
+use polars_utils::aliases::PlIndexSet;
 use polars_utils::format_list_truncated;
+use polars_utils::unique_id::UniqueId;
 
 use crate::constants;
+use crate::dsl::dsl_resolver::ResolverExplainHeadingDisplay;
 use crate::plans::ir::IRPlanRef;
 use crate::plans::visitor::{VisitRecursion, Visitor};
 use crate::prelude::ir::format::ColumnsDisplay;
@@ -98,6 +101,21 @@ pub enum TreeFmtNodeContent<'a> {
     LogicalPlan(Node),
 }
 
+impl<'a> TreeFmtNodeContent<'a> {
+    pub fn cache_id(&self, arena: &Arena<IR>) -> Option<UniqueId> {
+        match self {
+            Self::Expression(_) => None,
+            Self::LogicalPlan(node) => {
+                if let IR::Cache { id, .. } = arena.get(*node) {
+                    Some(*id)
+                } else {
+                    None
+                }
+            },
+        }
+    }
+}
+
 struct TreeFmtNodeData<'a>(String, Vec<TreeFmtNode<'a>>);
 
 fn with_header(header: &Option<String>, text: &str) -> String {
@@ -158,8 +176,14 @@ impl<'a> TreeFmtNode<'a> {
         visitor.prev_depth = visitor.depth;
         visitor.depth += 1;
 
-        for child in &child_nodes {
-            child.traverse(visitor);
+        if self
+            .content
+            .cache_id(self.lp.lp_arena)
+            .is_none_or(|id| visitor.seen_caches.insert(id))
+        {
+            for child in &child_nodes {
+                child.traverse(visitor);
+            }
         }
 
         visitor.depth -= 1;
@@ -302,19 +326,19 @@ impl<'a> TreeFmtNode<'a> {
                 Join {
                     input_left,
                     input_right,
-                    left_on,
-                    right_on,
                     options,
                     ..
                 } => ND(
                     wh(h, &format!("{} JOIN", options.args.how)),
-                    left_on
-                        .iter()
+                    options
+                        .options
+                        .left_on()
                         .map(|expr| self.expr_node(Some("left on:".to_string()), expr))
                         .chain([self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)])
                         .chain(
-                            right_on
-                                .iter()
+                            options
+                                .options
+                                .right_on()
                                 .map(|expr| self.expr_node(Some("right on:".to_string()), expr)),
                         )
                         .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
@@ -357,9 +381,6 @@ impl<'a> TreeFmtNode<'a> {
                     wh(h, &format!("{function}")),
                     vec![self.lp_node(None, *input)],
                 ),
-                ExtContext { input, .. } => {
-                    ND(wh(h, "EXTERNAL_CONTEXT"), vec![self.lp_node(None, *input)])
-                },
                 Sink { input, payload } => ND(
                     wh(
                         h,
@@ -403,8 +424,12 @@ impl<'a> TreeFmtNode<'a> {
                     wh(
                         h,
                         &format!(
-                            "MERGE SORTED[maintain_order: {:?}] ON '{key}'",
-                            maintain_order
+                            "MERGE SORTED[maintain_order: {:?}] ON [{}]",
+                            maintain_order,
+                            key.iter()
+                                .map(|k| format!("'{k}'"))
+                                .collect::<Vec<_>>()
+                                .join(", "),
                         ),
                     ),
                     [self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)]
@@ -423,6 +448,29 @@ impl<'a> TreeFmtNode<'a> {
                         .map(|(input_idx, _col_idx, _arg_name)| &inputs[input_idx])
                         .map(|input| self.lp_node(None, *input))
                         .collect(),
+                ),
+                Resolver {
+                    resolver,
+                    resolved_dsl,
+                    resolved_ir,
+                    ..
+                } => ND(
+                    wh(
+                        h,
+                        &format!(
+                            "{}",
+                            ResolverExplainHeadingDisplay {
+                                indent: 0,
+                                resolver,
+                                resolved_dsl
+                            }
+                        ),
+                    ),
+                    if let Some(node) = *resolved_ir {
+                        vec![self.lp_node(None, node)]
+                    } else {
+                        vec![]
+                    },
                 ),
                 Invalid => ND(wh(h, "INVALID"), vec![]),
             },
@@ -443,6 +491,7 @@ pub(crate) struct TreeFmtVisitor {
     prev_depth: usize,
     depth: usize,
     width: usize,
+    seen_caches: PlIndexSet<UniqueId>,
     pub(crate) display: TreeFmtVisitorDisplay,
 }
 

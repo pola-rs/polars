@@ -32,6 +32,8 @@ class ExprExtensionNameSpace:
 
         The input must be of the storage type of the extension dtype.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         .. warning::
             This functionality is currently considered **unstable**. It may be
             changed at any point without it being considered a breaking change.
@@ -45,6 +47,8 @@ class ExprExtensionNameSpace:
         Get the storage values of an extension data type.
 
         If the input does not have an extension data type, it is returned as-is.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is currently considered **unstable**. It may be

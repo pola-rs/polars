@@ -1,6 +1,8 @@
 use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
+use polars_core::prelude::sort::arg_sort;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
@@ -41,6 +43,16 @@ fn prepare_bool_vec(values: &[bool], by_len: usize) -> Vec<bool> {
         (0, n) => vec![false; n],
         // Broadcast first.
         (_, n) => vec![values[0]; n],
+    }
+}
+
+/// Preserve logical ordering information, including inside nested columns
+fn to_sort_repr(c: &Column) -> Column {
+    let dtype = c.dtype();
+    if dtype.is_nested() || dtype.contains_categoricals() || dtype.contains_enums() {
+        c.clone()
+    } else {
+        c.to_physical_repr()
     }
 }
 
@@ -160,10 +172,7 @@ fn sort_by_groups_multiple_by(
                 limit: None,
             };
 
-            let sorted_idx = groups[0]
-                .as_materialized_series()
-                .arg_sort_multiple(&groups[1..], &options)
-                .unwrap();
+            let sorted_idx = arg_sort(&groups, options)?;
             map_sorted_indices_to_group_idx(&sorted_idx, idx)
         },
         GroupsIndicator::Slice([first, len]) => {
@@ -180,10 +189,7 @@ fn sort_by_groups_multiple_by(
                 maintain_order,
                 limit: None,
             };
-            let sorted_idx = groups[0]
-                .as_materialized_series()
-                .arg_sort_multiple(&groups[1..], &options)
-                .unwrap();
+            let sorted_idx = arg_sort(&groups, options)?;
             map_sorted_indices_to_group_slice(&sorted_idx, first)
         },
     };
@@ -216,49 +222,21 @@ impl PhysicalExpr for SortByExpr {
             let nulls_last = prepare_bool_vec(&self.sort_options.nulls_last, self.by.len());
 
             let sorted_idx_f = || {
-                let mut needs_broadcast = false;
-                let mut broadcast_length = 1;
-
                 let mut s_sort_by = self
                     .by
                     .iter()
-                    .enumerate()
-                    .map(|(i, e)| {
-                        let column = e.evaluate(df, state).map(|c| match c.dtype() {
-                            #[cfg(feature = "dtype-categorical")]
-                            DataType::Categorical(_, _) | DataType::Enum(_, _) => c,
-                            _ => c.to_physical_repr(),
-                        })?;
-
-                        if column.len() == 1 && broadcast_length != 1 {
-                            polars_ensure!(
-                                e.is_scalar(),
-                                ShapeMismatch: "non-scalar expression produces broadcasting column",
-                            );
-
-                            return Ok(column.new_from_index(0, broadcast_length));
-                        }
-
-                        if broadcast_length != column.len() {
-                            polars_ensure!(
-                                broadcast_length == 1, ShapeMismatch:
-                                "`sort_by` produced different length ({}) than earlier Series' length in `by` ({})",
-                                broadcast_length, column.len()
-                            );
-
-                            needs_broadcast |= i > 0;
-                            broadcast_length = column.len();
-                        }
-
-                        Ok(column)
-                    })
+                    .map(|e| e.evaluate(df, state).map(|c| to_sort_repr(&c)))
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                if needs_broadcast {
-                    for c in s_sort_by.iter_mut() {
-                        if c.len() != broadcast_length {
-                            *c = c.new_from_index(0, broadcast_length);
-                        }
+                let broadcast_length = broadcast_len(s_sort_by.iter())
+                    .context("`sort_by` produced Series of differing lengths in `by`")?;
+                for (e, c) in self.by.iter().zip(s_sort_by.iter_mut()) {
+                    if c.len() != broadcast_length {
+                        polars_ensure!(
+                            e.is_scalar(),
+                            ShapeMismatch: "non-scalar expression produces broadcasting column",
+                        );
+                        c.broadcast_in_place_to(broadcast_length)?;
                     }
                 }
 
@@ -268,9 +246,7 @@ impl PhysicalExpr for SortByExpr {
                     .with_order_descending_multi(descending)
                     .with_nulls_last_multi(nulls_last);
 
-                s_sort_by[0]
-                    .as_materialized_series()
-                    .arg_sort_multiple(&s_sort_by[1..], &options)
+                arg_sort(&s_sort_by, options)
             };
             RAYON.install(|| rayon::join(series_f, sorted_idx_f))
         };
@@ -337,18 +313,9 @@ impl PhysicalExpr for SortByExpr {
 
         let mut sort_by_s = ac_sort_by
             .iter()
-            .map(|c| {
-                let c = c.flat_naive();
-                match c.dtype() {
-                    #[cfg(feature = "dtype-categorical")]
-                    DataType::Categorical(_, _) | DataType::Enum(_, _) => {
-                        c.as_materialized_series().clone()
-                    },
-                    // @scalar-opt
-                    // @partition-opt
-                    _ => c.to_physical_repr().take_materialized_series(),
-                }
-            })
+            // @scalar-opt
+            // @partition-opt
+            .map(|c| to_sort_repr(&c.flat_naive()).take_materialized_series())
             .collect::<Vec<_>>();
 
         let ordered_by_group_operation = matches!(
@@ -440,6 +407,6 @@ impl PhysicalExpr for SortByExpr {
     }
 
     fn is_scalar(&self) -> bool {
-        false
+        self.input.is_scalar()
     }
 }

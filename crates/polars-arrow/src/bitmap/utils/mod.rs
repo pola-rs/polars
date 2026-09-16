@@ -206,7 +206,7 @@ pub fn trailing_ones(slice: &[u8], offset: usize, len: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use rand::Rng;
+    use rand::RngExt;
 
     use super::*;
     use crate::bitmap::Bitmap;

@@ -398,11 +398,11 @@ hello,","," ",world,"!"
         .unwrap();
 
     for (col, val) in [
-        ("column_1", "hello"),
-        ("column_2", ","),
-        ("column_3", " "),
-        ("column_4", "world"),
-        ("column_5", "!"),
+        ("column_0", "hello"),
+        ("column_1", ","),
+        ("column_2", " "),
+        ("column_3", "world"),
+        ("column_4", "!"),
     ] {
         assert!(
             df.column(col)
@@ -671,11 +671,11 @@ fn test_missing_fields() -> PolarsResult<()> {
 
     use polars_core::df;
     let expect = df![
-        "column_1" => [1, 1, 1, 1],
-        "column_2" => [2, 2, 2, 3],
-        "column_3" => [3, 3, 3, 5],
-        "column_4" => [Some(4), None, Some(4), None],
-        "column_5" => [Some(5), None, Some(5), None]
+        "column_0" => [1, 1, 1, 1],
+        "column_1" => [2, 2, 2, 3],
+        "column_2" => [3, 3, 3, 5],
+        "column_3" => [Some(4), None, Some(4), None],
+        "column_4" => [Some(5), None, Some(5), None]
     ]?;
     assert!(df.equals_missing(&expect));
     Ok(())
@@ -1183,7 +1183,7 @@ fn test_empty_string_cols() -> PolarsResult<()> {
         .with_has_header(false)
         .into_reader_with_file_handle(file)
         .finish()?;
-    let s = df.column("column_1")?;
+    let s = df.column("column_0")?;
     let ca = s.str()?;
     assert_eq!(
         ca.iter().collect::<Vec<_>>(),
@@ -1197,8 +1197,8 @@ fn test_empty_string_cols() -> PolarsResult<()> {
         .into_reader_with_file_handle(file)
         .finish()?;
     let expected = df![
-        "column_1" => [None, Some("abc"), None, Some("xyz")],
-        "column_2" => [None, Some(333i64), Some(666), Some(999)]
+        "column_0" => [None, Some("abc"), None, Some("xyz")],
+        "column_1" => [None, Some(333i64), Some(666), Some(999)]
     ]?;
     assert!(df.equals_missing(&expected));
     Ok(())

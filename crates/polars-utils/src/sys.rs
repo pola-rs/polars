@@ -2,8 +2,6 @@ use std::sync::{LazyLock, Mutex};
 
 use sysinfo::{MemoryRefreshKind, System};
 
-use crate::config::verbose;
-
 /// Return the total system memory in bytes.
 pub fn total_memory() -> u64 {
     return *TOTAL_MEMORY;
@@ -24,7 +22,7 @@ pub fn total_memory() -> u64 {
                 .unwrap_or_else(|_| panic!("invalid value for POLARS_OVERRIDE_TOTAL_MEMORY: {s}"))
         }
 
-        if verbose() {
+        if polars_config::config().verbose() {
             let gib = (v as f64) / (1024.0 * 1024.0 * 1024.0);
             eprintln!("total memory: {gib:.3} GiB ({v} bytes)")
         }

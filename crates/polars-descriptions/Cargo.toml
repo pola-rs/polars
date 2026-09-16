@@ -1,0 +1,16 @@
+[package]
+name = "polars-descriptions"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "Telemetry models for exporting polars query plans and metrics."
+
+[dependencies]
+serde = { workspace = true }
+strum_macros = { workspace = true }
+
+[lints]
+workspace = true
