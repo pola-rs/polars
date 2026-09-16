@@ -736,8 +736,9 @@ impl CloudOptions {
             .with_url(url.to_string())
             .with_client_options({
                 let mut opts = super::get_client_options();
-                if url.scheme() == Some(CloudScheme::Http) {
-                    // Cleartext never handshakes; skip the platform trust-store walk.
+                if url.scheme() == Some(CloudScheme::Http)
+                    && polars_config::config().http_skip_system_certificates()
+                {
                     opts = opts.with_no_system_certificates(true);
                 }
                 if let Some(CloudConfig::Http { headers }) = &self.config {
