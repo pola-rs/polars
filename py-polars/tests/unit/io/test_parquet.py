@@ -3672,6 +3672,31 @@ def test_scan_parquet_skip_row_groups_struct(
     assert f"Predicate pushdown: reading {reading} row groups" in capfd.readouterr().err
 
 
+@pytest.mark.parametrize("dtype", [pl.Int128, pl.UInt128])
+def test_skip_row_groups_without_bounds_uses_null_count(
+    dtype: pl.DataType,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # 128-bit statistics give no min/max, but their null counts still prune.
+    df = pl.DataFrame({"k": pl.Series([1, None, 3, 4, 5, 6, 7, 8], dtype=dtype)})
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=2, statistics="full")
+    f.seek(0)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = pl.scan_parquet(f).filter(pl.col("k").is_null()).collect(engine="streaming")
+    assert out.height == 1
+    assert "Predicate pushdown: reading 1 / 4 row groups" in capfd.readouterr().err
+
+    f.seek(0)
+    capfd.readouterr()
+    out = pl.scan_parquet(f).filter(pl.col("k") > 6).collect(engine="streaming")
+    assert out.get_column("k").to_list() == [7, 8]
+    assert "Predicate pushdown: reading 4 / 4 row groups" in capfd.readouterr().err
+
+
 @pytest.mark.may_fail_cloud  # reason: looks at stdout
 def test_is_in_string_pushdown_27416(
     plmonkeypatch: PlMonkeyPatch,

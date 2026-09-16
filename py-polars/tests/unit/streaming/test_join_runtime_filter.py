@@ -598,3 +598,60 @@ def test_static_predicate_on_128_bit_column(tmp_path: Path, dtype: pl.DataType) 
     )
     q = pl.scan_parquet(path).filter(pl.col("k") > 2)
     assert q.collect(engine="streaming").get_column("k").to_list() == [3, 4]
+
+
+def test_int96_timestamps_have_no_bounds(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Statistics of INT96 timestamps are not ordered as polars orders datetimes;
+    # the range is published but skips nothing, except when it is empty.
+    import pyarrow.parquet as pq
+
+    stamps = [datetime(2020, 1, 1) + timedelta(days=i) for i in range(20)]
+    path = tmp_path / "int96.parquet"
+    pq.write_table(
+        pl.DataFrame({"k": stamps, "v": range(20)}).to_arrow(),
+        path,
+        use_deprecated_int96_timestamps=True,
+        row_group_size=5,
+    )
+    assert pq.read_metadata(path).row_group(0).column(0).physical_type == "INT96"
+    fact = pl.scan_parquet(path)
+
+    build = pl.LazyFrame({"k": stamps[12:14], "e": [0, 1]}).filter(pl.col("e") >= 0)
+    q = fact.join(build, on="k")
+    assert "dynamic_predicate" in q.explain(engine="streaming")
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+    assert groups == "4 / 4 row groups"
+    assert out.get_column("v").sort().to_list() == [12, 13]
+
+    empty = build.filter(pl.col("k").is_in([datetime(1999, 1, 1)]))
+    out, groups = row_groups_read(fact.join(empty, on="k"), plmonkeypatch, capfd)
+    assert groups == "0 / 4 row groups"
+    assert out.height == 0
+
+
+def test_pruned_metadata_keeps_pruning(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # Metadata pruned to the projection keeps the column orders of its leaves,
+    # including those under a projected struct.
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    path = tmp_path / "nested.parquet"
+    pl.DataFrame(
+        {"s": [{"a": i, "b": str(i)} for i in range(n)], "k": range(n), "v": range(n)}
+    ).write_parquet(path, row_group_size=ROWS_PER_GROUP, statistics="full")
+    plmonkeypatch.setenv("POLARS_PRUNE_PARQUET_METADATA", "1")
+
+    q = pl.scan_parquet(path).select("s", "k").join(dim(220, 240), on="k")
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+    assert groups == "1 / 10 row groups"
+    assert out.sort("k").get_column("s").to_list() == [
+        {"a": 220, "b": "220"},
+        {"a": 240, "b": "240"},
+    ]
+
+    q = pl.scan_parquet(path).select("s").filter(pl.col("s").struct.field("a") == 555)
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+    assert groups == "1 / 10 row groups"
+    assert out.height == 1
