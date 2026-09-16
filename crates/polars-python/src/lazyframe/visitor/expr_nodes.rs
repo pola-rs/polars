@@ -2198,8 +2198,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::RowDecode(..) => {
                     return Err(PyNotImplementedError::new_err("row_decode"));
                 },
-                IRFunctionExpr::DynamicPred { pred } => {
+                IRFunctionExpr::DynamicPred { pred, .. } => {
                     ("dynamic_pred", pred.id().map(|u| u.as_u128())).into_py_any(py)
+                },
+                IRFunctionExpr::DynamicSkipBatch { pred } => {
+                    ("dynamic_skip_batch", pred.id().map(|u| u.as_u128())).into_py_any(py)
                 },
             }?,
             options: py.None(),

@@ -1184,3 +1184,7 @@ pub(super) fn bin(s: &Column, options: IRBinOptions) -> PolarsResult<Column> {
     }
     .map(Column::from)
 }
+
+pub fn dynamic_skip_batch(columns: &[Column], pred: &DynamicPredWeakRef) -> PolarsResult<Column> {
+    pred.evaluate_stats(&columns[0], &columns[1], &columns[2])
+}

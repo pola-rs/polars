@@ -6,6 +6,7 @@ mod keys;
 pub(super) mod utils;
 
 pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
+pub(crate) use dynamic::{new_batch_only_dynamic_pred, new_dynamic_pred};
 use polars_buffer::Buffer;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::ScratchUnitVec;
@@ -15,7 +16,6 @@ pub(crate) use utils::combine_predicates;
 use utils::*;
 
 use super::*;
-use crate::plans::optimizer::predicate_pushdown::dynamic::new_dynamic_pred;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::utils::{check_input_node, has_aexpr};
