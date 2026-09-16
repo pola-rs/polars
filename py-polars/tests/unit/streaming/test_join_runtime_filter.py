@@ -302,14 +302,86 @@ def test_user_forced_build_side_is_left_alone(fact: pl.LazyFrame) -> None:
     assert "dynamic_predicate" not in plan
 
 
-def test_only_parquet_scans_get_a_filter(tmp_path: Path) -> None:
+def fact_frame() -> pl.DataFrame:
     n = N_ROW_GROUPS * ROWS_PER_GROUP
+    return pl.DataFrame({"k": range(n), "v": range(n)})
+
+
+def fact_ipc(tmp_path: Path) -> pl.LazyFrame:
     path = tmp_path / "fact.ipc"
-    pl.DataFrame({"k": range(n), "v": range(n)}).write_ipc(path)
-    q = pl.scan_ipc(path).join(dim(220, 240), on="k")
-    assert "dynamic_predicate" not in q.explain(engine="streaming")
+    fact_frame().write_ipc(path)
+    return pl.scan_ipc(path)
+
+
+def fact_csv(tmp_path: Path) -> pl.LazyFrame:
+    path = tmp_path / "fact.csv"
+    fact_frame().write_csv(path)
+    return pl.scan_csv(path)
+
+
+def assert_no_runtime_filter(q: pl.LazyFrame) -> None:
+    plan = q.explain(engine="streaming")
+    assert "dynamic_predicate" not in plan
+    assert "Force" not in plan
     out = q.collect(engine="streaming")
     assert out.get_column("k").sort().to_list() == [220, 240]
+    assert_matches_in_memory(q, out)
+
+
+@pytest.mark.parametrize(
+    "probe",
+    [fact_ipc, fact_csv, lambda _tmp_path: fact_frame().lazy()],
+    ids=["ipc", "csv", "in-memory"],
+)
+def test_only_parquet_probes_get_a_filter(
+    tmp_path: Path, probe: Callable[[Path], pl.LazyFrame]
+) -> None:
+    assert_no_runtime_filter(probe(tmp_path).join(dim(220, 240), on="k"))
+    assert_no_runtime_filter(dim(220, 240).join(probe(tmp_path), on="k"))
+
+
+def test_parquet_build_side_does_not_make_a_probe_eligible(
+    tmp_path: Path, fact: pl.LazyFrame
+) -> None:
+    # The probe side's format decides; a parquet build side is read like any other.
+    path = tmp_path / "dim.parquet"
+    pl.DataFrame({"k": list(range(0, 1000, 20)), "d": list(range(50))}).write_parquet(
+        path
+    )
+    build = pl.scan_parquet(path).filter(pl.col("k").is_in([220, 240]))
+    assert_no_runtime_filter(fact_ipc(tmp_path).join(build, on="k"))
+    assert_no_runtime_filter(build.join(fact_ipc(tmp_path), on="k"))
+
+    # A build side read from IPC still publishes to a parquet probe.
+    ipc = tmp_path / "dim.ipc"
+    pl.DataFrame({"k": list(range(0, 1000, 20)), "d": list(range(50))}).write_ipc(ipc)
+    q = fact.join(pl.scan_ipc(ipc).filter(pl.col("k").is_in([220, 240])), on="k")
+    plan = q.explain(engine="streaming")
+    assert "BUILD SIDE: ForceRight" in plan
+    assert plan.count("dynamic_predicate") == 1
+
+
+def test_only_the_parquet_join_of_a_mixed_plan_gets_a_filter(
+    tmp_path: Path,
+    fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    q = pl.concat(
+        [
+            fact.join(dim(220, 240), on="k").select("k", "v", "d"),
+            fact_ipc(tmp_path).join(dim(220, 240), on="k"),
+        ]
+    )
+    plan = q.explain(engine="streaming")
+    assert plan.count("dynamic_predicate") == 1
+    assert plan.count("Force") == 1
+    assert plan.index("Force") < plan.index("Ipc SCAN")
+
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+    assert groups == "1 / 10 row groups"
+    assert out.get_column("k").sort().to_list() == [220, 220, 240, 240]
+    assert_matches_in_memory(q, out)
 
 
 def test_build_side_of_several_morsels(

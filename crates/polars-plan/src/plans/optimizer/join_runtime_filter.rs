@@ -1,12 +1,16 @@
-//! Let a hash join tell the scan under its probe side which keys the build side
-//! holds.
+//! Let a hash join tell the parquet scan under its probe side which keys the build
+//! side holds.
 //!
 //! A join whose one side is known to be small gets that side forced as build side,
-//! and every probe key that reads a scan column unchanged gets a dynamic predicate
-//! on that scan. The join publishes the range of its build keys once the build is
-//! done; the scan then skips row groups outside it. The probe side is only
-//! read after the build, because a forced join blocks its probe input until then
-//! and a predicate is only carried across joins that are forced the same way.
+//! and every probe key that reads a parquet scan column unchanged gets a batch-only
+//! dynamic predicate on that scan. The join publishes the range of its build keys
+//! once the build is done; the scan then skips row groups outside it and never
+//! filters rows by it. The probe side is only read after the build, because a
+//! forced join blocks its probe input until then and a predicate is only carried
+//! across joins that are forced the same way.
+//!
+//! Only a scan that skips batches by their statistics can use the range, so a plan
+//! without one is left alone, and a join is only forced once a key reached one.
 
 use std::sync::Arc;
 
@@ -20,8 +24,7 @@ use super::join_build_side::{LOPSIDED_FACTOR, side_stats};
 use super::predicate_pushdown::utils::{
     PushdownEligibility, map_column_references, pushdown_eligibility, temporary_unique_key,
 };
-#[cfg(feature = "parquet")]
-use crate::dsl::FileScanIR;
+use crate::dsl::{FileScanIR, ScanFlags};
 use crate::plans::aexpr::predicates::supports_runtime_range;
 use crate::plans::optimizer::predicate_pushdown::new_batch_only_dynamic_pred;
 use crate::plans::options::RuntimeFilter;
@@ -42,13 +45,19 @@ pub(super) fn attach_join_runtime_filters(
     // Inputs before their join, so a join lower in a probe chain is forced before
     // an outer one tries to carry a predicate through it.
     let mut joins = Vec::new();
+    let mut has_pruning_scan = false;
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
         let ir = ir_arena.get(node);
-        if matches!(ir, IR::Join { .. }) {
-            joins.push(node);
+        match ir {
+            IR::Join { .. } => joins.push(node),
+            IR::Scan { scan_type, .. } => has_pruning_scan |= skips_batches(scan_type),
+            _ => {},
         }
         ir.copy_inputs(&mut stack);
+    }
+    if !has_pruning_scan {
+        return;
     }
     let mut scratch = UnitVec::new();
     let mut stats = StatsCache::default();
@@ -202,15 +211,7 @@ fn scan_origin(
     let key = PlSmallStr::from_static("__POLARS_RUNTIME_FILTER");
     loop {
         match ir_arena.get(node) {
-            IR::Scan { scan_type, .. } => {
-                // Only the parquet reader skips batches by their statistics.
-                #[cfg(feature = "parquet")]
-                if matches!(scan_type.as_ref(), FileScanIR::Parquet { .. }) {
-                    return Some(node);
-                }
-                let _ = scan_type;
-                return None;
-            },
+            IR::Scan { scan_type, .. } => return skips_batches(scan_type).then_some(node),
             IR::SimpleProjection { input, columns } => {
                 let name = column_name(predicate, expr_arena);
                 if !columns.contains(name) {
@@ -309,6 +310,12 @@ fn scan_origin(
             _ => return None,
         }
     }
+}
+
+fn skips_batches(scan_type: &FileScanIR) -> bool {
+    scan_type
+        .flags()
+        .contains(ScanFlags::SKIPS_BATCHES_BY_STATISTICS)
 }
 
 fn column_name<'a>(predicate: &ExprIR, expr_arena: &'a Arena<AExpr>) -> &'a PlSmallStr {
