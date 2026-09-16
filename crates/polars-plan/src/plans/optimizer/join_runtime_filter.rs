@@ -111,17 +111,25 @@ fn process_join(
         return;
     };
 
-    // What each side would build as, and what its range would prune.
-    let mut candidates = Vec::new();
-    for build_left in [true, false] {
-        let (build, width) = if build_left {
-            (&left_stats, left_width)
-        } else {
-            (&right_stats, right_width)
-        };
-        let Some((rows, forced)) = build_rows(build, width) else {
-            continue;
-        };
+    // Sides that could be built, a bounded one before an estimated one and the
+    // smaller of two alike; the first whose range reaches a scan it is much
+    // smaller than is taken.
+    let mut sides: Vec<(bool, f64, bool)> = [true, false]
+        .into_iter()
+        .filter_map(|build_left| {
+            let (build, width) = if build_left {
+                (&left_stats, left_width)
+            } else {
+                (&right_stats, right_width)
+            };
+            let (rows, forced) = build_rows(build, width)?;
+            Some((build_left, rows, forced))
+        })
+        .collect();
+    sides.sort_by(|a, b| b.2.cmp(&a.2).then(a.1.total_cmp(&b.1)));
+
+    let mut chosen = None;
+    for (build_left, rows, forced) in sides {
         let probe_input = if build_left { input_right } else { input_left };
         let probe_keys: Vec<Option<PlSmallStr>> = on
             .iter()
@@ -144,14 +152,11 @@ fn process_join(
             .filter_map(|f| side_stats(f.scan, ir_arena, expr_arena, stats))
             .fold(other.filtered, |acc, (scan, _)| acc.max(scan.filtered));
         if pruned >= LOPSIDED_FACTOR * rows {
-            candidates.push((build_left, rows, forced, filters));
+            chosen = Some((build_left, forced, filters));
+            break;
         }
     }
-    // A bounded side before an estimated one, the smaller of two alike.
-    let Some((build_left, _, forced, filters)) = candidates
-        .into_iter()
-        .max_by(|a, b| a.2.cmp(&b.2).then(b.1.total_cmp(&a.1)))
-    else {
+    let Some((build_left, forced, filters)) = chosen else {
         return;
     };
 

@@ -450,9 +450,21 @@ struct SampleState {
     left_len: usize,
     right: Vec<Morsel>,
     right_len: usize,
+    /// The only side being read, while a join with runtime filters gives its
+    /// preferred build side the chance to end under the sample limit. Its scans
+    /// under the other side then see the filters, as that side is not opened.
+    only_side: Option<bool>,
 }
 
 impl SampleState {
+    fn side_mut(&mut self, left: bool) -> (&mut Vec<Morsel>, &mut usize) {
+        if left {
+            (&mut self.left, &mut self.left_len)
+        } else {
+            (&mut self.right, &mut self.right_len)
+        }
+    }
+
     async fn sink(
         mut recv: PortReceiver,
         morsels: &mut Vec<Morsel>,
@@ -486,6 +498,24 @@ impl SampleState {
         state: &StreamingExecutionState,
         spill_ctx: &MostRecentSpillContext,
     ) -> PolarsResult<Option<BuildState>> {
+        if let Some(left) = self.only_side {
+            let idx = if left { 0 } else { 1 };
+            let len = *self.side_mut(left).1;
+            if len >= params.sample_limit {
+                if config::verbose() {
+                    eprintln!("preferred build side reached the sample limit, sampling both sides");
+                }
+                self.only_side = None;
+            } else if recv[idx] == PortState::Done {
+                if config::verbose() {
+                    eprintln!("preferred build side done with {len} rows, building it");
+                }
+                return Ok(Some(self.start_build(left, params, state, spill_ctx)?));
+            } else {
+                return Ok(None);
+            }
+        }
+
         let left_saturated = self.left_len >= params.sample_limit;
         let right_saturated = self.right_len >= params.sample_limit;
         let left_done = recv[0] == PortState::Done || left_saturated;
@@ -537,8 +567,8 @@ impl SampleState {
             (true, false) => false,
 
             (true, true) => {
-                // A preference that came with runtime filters was made on an estimate
-                // the sample has since outgrown; it is not followed blindly.
+                // A preference with runtime filters is only an estimate; the sample
+                // decides.
                 match params.args.build_side {
                     Some(JoinBuildSide::PreferLeft) if params.runtime_filters.is_empty() => true,
                     Some(JoinBuildSide::PreferRight) if params.runtime_filters.is_empty() => false,
@@ -702,6 +732,7 @@ impl BuildState {
             key_selectors = &params.right_key_selectors;
         };
 
+        let publishes_runtime_filters = params.publishes_runtime_filters();
         while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload. We must rechunk the payload for
             // later gathers.
@@ -709,7 +740,7 @@ impl BuildState {
             let (hash_keys, keys) =
                 select_keys_with_columns(&df, key_selectors, params, &state.in_memory_exec_state)
                     .await?;
-            if params.publishes_runtime_filters() {
+            if publishes_runtime_filters {
                 for (filter, range) in params.runtime_filters.iter().zip(&mut local.key_ranges) {
                     range.extend(&keys.columns()[filter.key_idx])?;
                 }
@@ -1440,9 +1471,6 @@ impl EmitUnmatchedState {
 }
 
 enum EquiJoinState {
-    /// Only the side the plan prefers to build is read, so the scans under the
-    /// other side see this join's runtime filters if it is built as planned.
-    SamplePreferred(SampleState),
     Sample(SampleState),
     Build(BuildState),
     Probe(ProbeState),
@@ -1530,9 +1558,7 @@ impl EquiJoinNode {
         )?;
 
         // A range is only published for the side the plan named.
-        debug_assert!(
-            runtime_filters.is_empty() || left_is_build.is_some() || args.build_side.is_some()
-        );
+        debug_assert!(runtime_filters.is_empty() || args.build_side.is_some());
 
         let state = if left_is_build.is_some() {
             EquiJoinState::Build(BuildState::new(
@@ -1541,10 +1567,16 @@ impl EquiJoinNode {
                 runtime_filters.len(),
                 BufferedStream::default(),
             ))
-        } else if !runtime_filters.is_empty() {
-            EquiJoinState::SamplePreferred(SampleState::default())
         } else {
-            EquiJoinState::Sample(SampleState::default())
+            let only_side = match args.build_side {
+                Some(JoinBuildSide::PreferLeft) if !runtime_filters.is_empty() => Some(true),
+                Some(JoinBuildSide::PreferRight) if !runtime_filters.is_empty() => Some(false),
+                _ => None,
+            };
+            EquiJoinState::Sample(SampleState {
+                only_side,
+                ..Default::default()
+            })
         };
 
         let left_payload_schema = Arc::new(select_schema(&left_input_schema, &left_payload_select));
@@ -1606,34 +1638,6 @@ impl ComputeNode for EquiJoinNode {
         // If the output doesn't want any more data, transition to being done.
         if send[0] == PortState::Done {
             self.state = EquiJoinState::Done;
-        }
-
-        // If we are sampling the preferred side only, build from it once it is
-        // done, or sample both sides once it has outgrown the sample.
-        if let EquiJoinState::SamplePreferred(sample_state) = &mut self.state {
-            let prefer_left = self.params.planned_build_left().unwrap();
-            let (idx, len) = if prefer_left {
-                (0, sample_state.left_len)
-            } else {
-                (1, sample_state.right_len)
-            };
-            if len >= self.params.sample_limit {
-                if config::verbose() {
-                    eprintln!("preferred build side reached the sample limit, sampling both sides");
-                }
-                self.state = EquiJoinState::Sample(core::mem::take(sample_state));
-            } else if recv[idx] == PortState::Done {
-                if config::verbose() {
-                    eprintln!("preferred build side done with {len} rows, building it");
-                }
-                let build_state = sample_state.start_build(
-                    prefer_left,
-                    &mut self.params,
-                    state,
-                    &self.spill_ctx,
-                )?;
-                self.state = EquiJoinState::Build(build_state);
-            }
         }
 
         // If we are sampling and both sides are done/filled, transition to building.
@@ -1703,35 +1707,15 @@ impl ComputeNode for EquiJoinNode {
         }
 
         match &mut self.state {
-            EquiJoinState::SamplePreferred(sample_state) => {
-                send[0] = PortState::Blocked;
-                let (idx, len) = if self.params.planned_build_left().unwrap() {
-                    (0, sample_state.left_len)
-                } else {
-                    (1, sample_state.right_len)
-                };
-                if recv[idx] != PortState::Done {
-                    recv[idx] = if len < self.params.sample_limit {
-                        PortState::Ready
-                    } else {
-                        PortState::Blocked
-                    };
-                }
-                if recv[1 - idx] != PortState::Done {
-                    recv[1 - idx] = PortState::Blocked;
-                }
-            },
             EquiJoinState::Sample(sample_state) => {
                 send[0] = PortState::Blocked;
-                if recv[0] != PortState::Done {
-                    recv[0] = if sample_state.left_len < self.params.sample_limit {
-                        PortState::Ready
-                    } else {
-                        PortState::Blocked
-                    };
-                }
-                if recv[1] != PortState::Done {
-                    recv[1] = if sample_state.right_len < self.params.sample_limit {
+                for (idx, left) in [(0, true), (1, false)] {
+                    if recv[idx] == PortState::Done {
+                        continue;
+                    }
+                    let open = sample_state.only_side.is_none_or(|side| side == left);
+                    let len = *sample_state.side_mut(left).1;
+                    recv[idx] = if open && len < self.params.sample_limit {
                         PortState::Ready
                     } else {
                         PortState::Blocked
@@ -1785,9 +1769,7 @@ impl ComputeNode for EquiJoinNode {
     fn is_memory_intensive_pipeline_blocker(&self) -> bool {
         matches!(
             self.state,
-            EquiJoinState::SamplePreferred { .. }
-                | EquiJoinState::Sample { .. }
-                | EquiJoinState::Build { .. }
+            EquiJoinState::Sample { .. } | EquiJoinState::Build { .. }
         )
     }
 
@@ -1810,51 +1792,18 @@ impl ComputeNode for EquiJoinNode {
         let probe_idx = 1 - build_idx;
 
         match &mut self.state {
-            EquiJoinState::SamplePreferred(sample_state) => {
-                assert!(send_ports[0].is_none());
-                let (morsels, len, recv_port) = if self.params.planned_build_left().unwrap() {
-                    assert!(recv_ports[1].is_none());
-                    (
-                        &mut sample_state.left,
-                        &mut sample_state.left_len,
-                        recv_ports[0].take(),
-                    )
-                } else {
-                    assert!(recv_ports[0].is_none());
-                    (
-                        &mut sample_state.right,
-                        &mut sample_state.right_len,
-                        recv_ports[1].take(),
-                    )
-                };
-                if let Some(recv) = recv_port {
-                    // The other side's length is unknown, so only the sample limit stops.
-                    let unknown = || Arc::new(RelaxedCell::from(usize::MAX));
-                    join_handles.push(scope.spawn_task(
-                        TaskPriority::High,
-                        SampleState::sink(
-                            recv.serial(),
-                            morsels,
-                            len,
-                            unknown(),
-                            unknown(),
-                            self.params.sample_limit,
-                        ),
-                    ));
-                }
-            },
             EquiJoinState::Sample(sample_state) => {
                 assert!(send_ports[0].is_none());
-                let left_final_len = Arc::new(RelaxedCell::from(if recv_ports[0].is_none() {
-                    sample_state.left_len
-                } else {
-                    usize::MAX
-                }));
-                let right_final_len = Arc::new(RelaxedCell::from(if recv_ports[1].is_none() {
-                    sample_state.right_len
-                } else {
-                    usize::MAX
-                }));
+                // A side without a port is done, unless it is the one not being read.
+                let final_len = |idx: usize, len: usize| {
+                    let closed = sample_state
+                        .only_side
+                        .is_some_and(|left| left != (idx == 0));
+                    let known = recv_ports[idx].is_none() && !closed;
+                    Arc::new(RelaxedCell::from(if known { len } else { usize::MAX }))
+                };
+                let left_final_len = final_len(0, sample_state.left_len);
+                let right_final_len = final_len(1, sample_state.right_len);
 
                 if let Some(left_recv) = recv_ports[0].take() {
                     join_handles.push(scope.spawn_task(
