@@ -1,6 +1,9 @@
-//! OR factoring: `(A∧X) ∨ (A∧Y) → A ∧ (X∨Y)`
+//! OR factoring: `(A∧X) ∨ (A∧Y) → A ∧ (X∨Y)`, and its dual
+//! [`or_implied_predicates`]: the per-column-set predicates a disjunction
+//! implies, for predicate-pushdown to push past a join the disjunction itself
+//! cannot cross.
 //!
-//! Pure AExpr rewrite, in place on `expr_arena`. Called from
+//! Factoring is a pure AExpr rewrite, in place on `expr_arena`. Called from
 //! `simplify_predicate` before `SplitPredicates::new` walks the AND
 //! chain; factored commons become AND-conjuncts at the top, get split
 //! into their own `IR::Filter` nodes, and become visible to
@@ -13,10 +16,16 @@
 //! trade-off: final result is unchanged, error-reporting order may differ
 //! as it would with a `.filter(...).filter(...)` chain.
 
+use polars_utils::aliases::{InitHashMaps, PlIndexMap, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
+use polars_utils::pl_str::PlSmallStr;
+use polars_utils::scratch_vec::ScratchVec;
 
-use crate::plans::aexpr::AExpr;
+use crate::plans::aexpr::{
+    AExpr, CanonicalExprId, CanonicalExprMap, MintermIter, is_inherently_nondeterministic,
+};
 use crate::prelude::Operator;
+use crate::utils::aexpr_to_leaf_names_iter;
 
 /// Walk the AExpr tree bottom-up, applying OR factoring at every OR node.
 /// Descends into every variant (not just AND/OR) so ORs nested under `Not`,
@@ -26,24 +35,22 @@ use crate::prelude::Operator;
 /// operands by case analysis.
 pub(crate) fn factor_or_in_aexpr(node: Node, expr_arena: &mut Arena<AExpr>) {
     // Iterative pre-order into a Vec, then iterate reversed so descendants
-    // are visited before ancestors. Matches `traverse_and_hash_aexpr` /
-    // `MintermIter`.
+    // are visited before ancestors. Matches `MintermIter`.
     let mut work = vec![node];
-    let mut post_order = Vec::new();
+    let mut pre_order = Vec::new();
     while let Some(n) = work.pop() {
-        post_order.push(n);
+        pre_order.push(n);
         expr_arena.get(n).children_rev(&mut work);
     }
 
-    for &n in post_order.iter().rev() {
-        if matches!(
-            expr_arena.get(n),
-            AExpr::BinaryExpr {
-                op: Operator::Or | Operator::LogicalOr,
-                ..
-            }
-        ) {
-            if let Some(factored) = try_factor_or(n, expr_arena) {
+    let mut canonical_exprs = CanonicalExprMap::new();
+
+    // Iterate in post-order
+    for &n in pre_order.iter().rev() {
+        if is_or(n, expr_arena) {
+            if let Some(factored) = try_factor_or(n, &mut canonical_exprs, expr_arena) {
+                // Fine to remove because we have not visited the parent of `n` yet
+                canonical_exprs.remove(n, expr_arena);
                 expr_arena.replace(n, factored);
             }
         }
@@ -70,16 +77,11 @@ fn collect_or_branches(root: Node, expr_arena: &Arena<AExpr>, out: &mut Vec<Node
 
 /// Try OR factoring on a node known to be an OR. Returns the rewritten
 /// top-level `AExpr` on success.
-fn try_factor_or(or_node: Node, expr_arena: &mut Arena<AExpr>) -> Option<AExpr> {
-    use std::hash::{BuildHasher, Hasher};
-
-    use polars_utils::aliases::{InitHashMaps, PlFixedStateQuality, PlHashMap};
-    use polars_utils::scratch_vec::ScratchVec;
-
-    use crate::plans::aexpr::{
-        MintermIter, is_inherently_nondeterministic, traverse_and_hash_aexpr,
-    };
-
+fn try_factor_or(
+    or_node: Node,
+    canonical_exprs: &mut CanonicalExprMap,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<AExpr> {
     let mut branches = Vec::new();
     collect_or_branches(or_node, expr_arena, &mut branches);
     if branches.len() < 2 {
@@ -96,23 +98,22 @@ fn try_factor_or(or_node: Node, expr_arena: &mut Arena<AExpr>) -> Option<AExpr> 
     // OR is commutative, so the sorted branch order is semantically identical.
     branch_terms.sort_by_key(|terms| terms.len());
 
-    // Bucket each branch's conjuncts by structural hash so the cross-branch
-    // match is a hashmap lookup plus a final structural-equality check within
-    // the bucket, instead of a linear scan over every term. Drops the matching
-    // loop from O(T² × B × S) to O(T × B × S) for large fan-outs; one tree
-    // walk per conjunct for the hash, computed inline.
-    let hb = PlFixedStateQuality::with_seed(0);
-    let hash_of = |n: Node, arena: &Arena<AExpr>| -> u64 {
-        let mut h = hb.build_hasher();
-        traverse_and_hash_aexpr(n, arena, &mut h);
-        h.finish()
-    };
-    let buckets: Vec<PlHashMap<u64, Vec<usize>>> = branch_terms
+    let branch_ids: Vec<Vec<CanonicalExprId>> = branch_terms
         .iter()
         .map(|terms| {
-            let mut m: PlHashMap<u64, Vec<usize>> = PlHashMap::with_capacity(terms.len());
-            for (i, &n) in terms.iter().enumerate() {
-                m.entry(hash_of(n, expr_arena)).or_default().push(i);
+            terms
+                .iter()
+                .map(|&term| canonical_exprs.resolve(term, expr_arena))
+                .collect()
+        })
+        .collect();
+    let buckets: Vec<PlIndexMap<CanonicalExprId, Vec<usize>>> = branch_ids
+        .iter()
+        .map(|ids| {
+            let mut m: PlIndexMap<CanonicalExprId, Vec<usize>> =
+                PlIndexMap::with_capacity(ids.len());
+            for (i, &id) in ids.iter().enumerate() {
+                m.entry(id).or_default().push(i);
             }
             m
         })
@@ -121,32 +122,24 @@ fn try_factor_or(or_node: Node, expr_arena: &mut Arena<AExpr>) -> Option<AExpr> 
     // `taken[b][i]` = "term i of branch b already claimed".
     let mut common = Vec::new();
     let mut taken: Vec<_> = branch_terms.iter().map(|t| vec![false; t.len()]).collect();
-    let (mut l_stack, mut r_stack) = (Vec::new(), Vec::new());
     let mut other_matches: ScratchVec<usize> = ScratchVec::default();
 
     for (cand_idx, &cand) in branch_terms[0].iter().enumerate() {
+        let cand_id = branch_ids[0][cand_idx];
+
         // Skip inherently non-deterministic candidates: factoring them out of
         // `(A ∧ X) ∨ (A ∧ Y) → A ∧ (X ∨ Y)` would evaluate `A` once instead of
         // twice per row, which is unsound when the two evaluations could disagree.
-        if is_inherently_nondeterministic(cand, expr_arena) {
+        if canonical_exprs.is_nondeterministic(cand_id) {
             continue;
         }
-        let cand_expr = expr_arena.get(cand);
-        let cand_hash = hash_of(cand, expr_arena);
 
         let other_matches = other_matches.get();
         let all_matched = (1..branch_terms.len()).all(|b_idx| {
-            let Some(m) = buckets[b_idx].get(&cand_hash).and_then(|ixs| {
-                ixs.iter().copied().find(|&i| {
-                    !taken[b_idx][i]
-                        && cand_expr.is_expr_equal_to_amortized(
-                            expr_arena.get(branch_terms[b_idx][i]),
-                            expr_arena,
-                            &mut l_stack,
-                            &mut r_stack,
-                        )
-                })
-            }) else {
+            let Some(&m) = buckets[b_idx]
+                .get(&cand_id)
+                .and_then(|ixs| ixs.iter().find(|&i| !taken[b_idx][*i]))
+            else {
                 return false;
             };
             other_matches.push(m);
@@ -208,4 +201,94 @@ fn combine_with(
         .into_iter()
         .reduce(|left, right| expr_arena.add(AExpr::BinaryExpr { left, op, right }))
         .expect("combine_with: non-empty iterator")
+}
+
+/// The per-column-set predicates implied by each top-level OR conjunct of
+/// `predicate`: `(A₁∧X₁) ∨ (A₂∧X₂)` implies `A₁∨A₂` and `X₁∨X₂` when every `Aᵢ`
+/// references the same set of columns, likewise every `Xᵢ`. Each derived
+/// predicate is redundant next to the original, but references a single
+/// column set, so it can be pushed past a join the disjunction cannot cross.
+///
+/// Only sound for filter semantics: a row that passes the original passes every
+/// derived predicate, but `null ∧ false = false` breaks equivalence as a
+/// general boolean expression.
+pub(crate) fn or_implied_predicates(predicate: Node, expr_arena: &mut Arena<AExpr>) -> Vec<Node> {
+    let mut derived = Vec::new();
+    let minterms: Vec<Node> = MintermIter::new(predicate, expr_arena).collect();
+    for minterm in minterms {
+        if is_or(minterm, expr_arena) {
+            derive_from_or(minterm, expr_arena, &mut derived);
+        }
+    }
+    derived
+}
+
+fn is_or(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    matches!(
+        expr_arena.get(node),
+        AExpr::BinaryExpr {
+            op: Operator::Or | Operator::LogicalOr,
+            ..
+        }
+    )
+}
+
+type ColumnSet = Vec<PlSmallStr>;
+
+fn derive_from_or(or_node: Node, expr_arena: &mut Arena<AExpr>, out: &mut Vec<Node>) {
+    let mut branches = Vec::new();
+    collect_or_branches(or_node, expr_arena, &mut branches);
+    if branches.len() < 2 {
+        return;
+    }
+
+    // Per branch: column set -> the branch's conjuncts on exactly that set.
+    let grouped: Vec<PlIndexMap<ColumnSet, Vec<Node>>> = branches
+        .iter()
+        .map(|&branch| {
+            let mut m: PlIndexMap<ColumnSet, Vec<Node>> = PlIndexMap::new();
+            for term in MintermIter::new(branch, expr_arena) {
+                let mut columns: ColumnSet = aexpr_to_leaf_names_iter(term, expr_arena)
+                    .cloned()
+                    .collect();
+                if columns.is_empty() {
+                    continue;
+                }
+                columns.sort_unstable();
+                m.entry(columns).or_default().push(term);
+            }
+            m
+        })
+        .collect();
+
+    // If every conjunct of every branch is on the same column set, the derived
+    // predicate would just repeat the disjunction.
+    let mut distinct_sets = PlIndexSet::new();
+    for m in &grouped {
+        distinct_sets.extend(m.keys());
+    }
+    if distinct_sets.len() < 2 {
+        return;
+    }
+
+    'sets: for columns in distinct_sets {
+        let mut per_branch: Vec<&[Node]> = Vec::with_capacity(grouped.len());
+        for m in &grouped {
+            let Some(terms) = m.get(columns) else {
+                continue 'sets;
+            };
+            if terms
+                .iter()
+                .any(|&term| is_inherently_nondeterministic(term, expr_arena))
+            {
+                continue 'sets;
+            }
+            per_branch.push(terms);
+        }
+        let disjuncts: Vec<Node> = per_branch
+            .into_iter()
+            .map(|terms| combine_with(terms.iter().copied(), Operator::And, expr_arena))
+            .collect();
+        out.push(combine_with(disjuncts, Operator::Or, expr_arena));
+    }
 }

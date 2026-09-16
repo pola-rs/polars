@@ -64,11 +64,13 @@ pub fn register_plugin_function(
 }
 
 #[pyfunction]
-pub fn __register_startup_deps() {
+pub fn __register_startup_deps(warn_function: Py<PyAny>) {
     #[cfg(feature = "object")]
     unsafe {
-        crate::on_startup::register_startup_deps(true)
+        crate::on_startup::register_startup_deps(true, warn_function)
     }
+    #[cfg(not(feature = "object"))]
+    let _ = warn_function;
 }
 
 #[pyfunction]

@@ -296,9 +296,12 @@ impl<T: PolarsCategoricalType> LogicalType for CategoricalChunked<T> {
                 )
             },
 
-            // LEGACY
-            // TODO @ cat-rework: remove after exposing to/from physical functions.
-            dt if dt.is_integer() => self.phys.clone().cast_with_options(dtype, options),
+            dt if dt.is_integer() => {
+                polars_bail!(
+                    ComputeError: "cannot cast categorical types to {dtype:?}.\n\
+                    Instead of `.cast({dtype:?})`, use `.cat.physical()`.",
+                );
+            },
 
             _ => polars_bail!(ComputeError: "cannot cast categorical types to {dtype:?}"),
         }

@@ -46,14 +46,6 @@ impl DateLikeNameSpace {
             )))
     }
 
-    /// Change the underlying [`TimeUnit`] of the [`Series`]. This does not modify the data.
-    pub fn with_time_unit(self, tu: TimeUnit) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::WithTimeUnit(
-                tu,
-            )))
-    }
-
     /// Change the underlying [`TimeZone`] of the [`Series`]. This does not modify the data.
     #[cfg(feature = "timezones")]
     pub fn convert_time_zone(self, time_zone: TimeZone) -> Expr {
@@ -162,12 +154,6 @@ impl DateLikeNameSpace {
     pub fn date(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::Date))
-    }
-
-    /// Get the (local) datetime of a Datetime.
-    pub fn datetime(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::Datetime))
     }
 
     /// Get the hour of a Datetime/Time64.

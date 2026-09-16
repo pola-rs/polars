@@ -53,13 +53,13 @@ autolabeler:
       - '/^perf/'
   - label: regression
     title:
-      - '/regression/'
+      - '/regression/i'
   - label: release
     title:
       - '/^release/'
   - label: A-sql
     title:
-      - '/\bsql\b|sqlcontext/i'
+      - '/\bsql\b|sql_expr|sqlcontext/i'
   - label: A-dtype-categorical
     title:
       - '/categorical|categories/i'
@@ -68,10 +68,10 @@ autolabeler:
       - '/decimal/i'
   - label: A-dtype-object
     title:
-      - '/Object/'
+      - '/\bObject\b/'
   - label: A-dtype-struct
     title:
-      - '/struct/i'
+      - '/\b(as_|to_)?struct\b/i'
   - label: A-gpu
     title:
       - '/\bgpu\b/i'
@@ -107,7 +107,7 @@ autolabeler:
       - '/parquet/i'
   - label: A-io-spreadsheet
     title:
-      - '/spreadsheet|excel/i'
+      - '/spreadsheet|excel|\bods\b/i'
   - label: A-interop-numpy
     title:
       - '/numpy/i'

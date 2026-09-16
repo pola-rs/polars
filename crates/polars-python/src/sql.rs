@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 
 use crate::PyLazyFrame;
 use crate::error::PyPolarsErr;
+use crate::utils::EnterPolarsExt;
 
 #[pyclass(frozen, skip_from_py_object)]
 #[repr(transparent)]
@@ -35,13 +36,9 @@ impl PySQLContext {
     }
 
     /// Execute a SQL query in the current SQLContext.
-    pub fn execute(&self, query: &str) -> PyResult<PyLazyFrame> {
-        Ok(self
-            .context
-            .write()
-            .execute(query)
-            .map_err(PyPolarsErr::from)?
-            .into())
+    pub fn execute(&self, py: Python<'_>, query: &str) -> PyResult<PyLazyFrame> {
+        py.enter_polars(|| self.context.write().execute(query))
+            .map(Into::into)
     }
 
     /// Get a list of table names registered in the current SQLContext.

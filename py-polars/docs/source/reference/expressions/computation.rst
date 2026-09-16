@@ -8,6 +8,7 @@ Computation
 
     Expr.abs
     Expr.approx_n_unique
+    Expr.approx_quantile
     Expr.arccos
     Expr.arccosh
     Expr.arcsin
@@ -37,6 +38,8 @@ Computation
     Expr.entropy
     Expr.ewm_mean
     Expr.ewm_mean_by
+    Expr.ewm_sum
+    Expr.ewm_sum_by
     Expr.ewm_std
     Expr.ewm_var
     Expr.exp

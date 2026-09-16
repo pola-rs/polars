@@ -74,7 +74,7 @@ fn test_q2() -> PolarsResult<()> {
             [col("p_partkey"), col("ps_supplycost")],
             [col("p_partkey"), col("ps_supplycost")],
             JoinType::Inner.into(),
-        )
+        )?
         .select([cols([
             "s_acctbal",
             "s_name",

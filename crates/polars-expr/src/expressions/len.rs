@@ -24,7 +24,10 @@ impl PhysicalExpr for LenExpr {
     fn evaluate_impl(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column> {
         Ok(Column::new_scalar(
             PlSmallStr::from_static(LEN),
-            Scalar::from(df.height() as IdxSize),
+            Scalar::from(
+                IdxSize::try_from(df.height())
+                    .map_err(|_| polars_err!(bigidx, ctx = "len()", size = df.height()))?,
+            ),
             1,
         ))
     }

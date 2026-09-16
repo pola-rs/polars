@@ -33,7 +33,7 @@ where
         return None;
     }
 
-    let mut arr_chunks = arr.chunks_exact(N);
+    let (arr_chunks, arr_rest) = arr.as_chunks::<N>();
 
     let identity = Simd::splat(scalar_identity);
     let mut state = identity;
@@ -44,25 +44,23 @@ where
 
         let mask = BitMask::from_bitmap(valid);
         let mut offset = 0;
-        for c in arr_chunks.by_ref() {
+        for c in arr_chunks {
             let m: Mask<T::Mask, N> = mask.get_simd(offset);
             state = simd_f(state, m.select(Simd::from_slice(c), identity));
             offset += N;
         }
-        if !arr.len().is_multiple_of(N) {
+        if !arr_rest.is_empty() {
             let mut rest: [T; N] = identity.to_array();
-            let arr_rest = arr_chunks.remainder();
             rest[..arr_rest.len()].copy_from_slice(arr_rest);
             let m: Mask<T::Mask, N> = mask.get_simd(offset);
             state = simd_f(state, m.select(Simd::from_array(rest), identity));
         }
     } else {
-        for c in arr_chunks.by_ref() {
+        for c in arr_chunks {
             state = simd_f(state, Simd::from_slice(c));
         }
-        if !arr.len().is_multiple_of(N) {
+        if !arr_rest.is_empty() {
             let mut rest: [T; N] = identity.to_array();
-            let arr_rest = arr_chunks.remainder();
             rest[..arr_rest.len()].copy_from_slice(arr_rest);
             state = simd_f(state, Simd::from_array(rest));
         }
@@ -86,7 +84,7 @@ where
         return None;
     }
 
-    let mut arr_chunks = arr.chunks_exact(N);
+    let (arr_chunks, arr_rest) = arr.as_chunks::<N>();
 
     let min_identity = Simd::splat(min_scalar_identity);
     let max_identity = Simd::splat(max_scalar_identity);
@@ -98,7 +96,7 @@ where
 
         let mask = BitMask::from_bitmap(valid);
         let mut offset = 0;
-        for c in arr_chunks.by_ref() {
+        for c in arr_chunks {
             let m: Mask<T::Mask, N> = mask.get_simd(offset);
             let slice = Simd::from_slice(c);
             state = simd_f(
@@ -107,11 +105,9 @@ where
             );
             offset += N;
         }
-        if !arr.len().is_multiple_of(N) {
+        if !arr_rest.is_empty() {
             let mut min_rest: [T; N] = min_identity.to_array();
             let mut max_rest: [T; N] = max_identity.to_array();
-
-            let arr_rest = arr_chunks.remainder();
             min_rest[..arr_rest.len()].copy_from_slice(arr_rest);
             max_rest[..arr_rest.len()].copy_from_slice(arr_rest);
 
@@ -129,15 +125,13 @@ where
             );
         }
     } else {
-        for c in arr_chunks.by_ref() {
+        for c in arr_chunks {
             let slice = Simd::from_slice(c);
             state = simd_f(state, (slice, slice));
         }
-        if !arr.len().is_multiple_of(N) {
+        if !arr_rest.is_empty() {
             let mut min_rest: [T; N] = min_identity.to_array();
             let mut max_rest: [T; N] = max_identity.to_array();
-
-            let arr_rest = arr_chunks.remainder();
             min_rest[..arr_rest.len()].copy_from_slice(arr_rest);
             max_rest[..arr_rest.len()].copy_from_slice(arr_rest);
 

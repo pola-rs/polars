@@ -1,13 +1,17 @@
+import math
 from datetime import date
 from typing import Any
 
+import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
+from polars.testing.parametric.strategies import dataframes, series
 
 
 def is_sorted_any(s: pl.Series) -> bool:
@@ -264,7 +268,7 @@ def test_sorted_flag_singletons(value: Any) -> None:
     assert pl.DataFrame({"x": [value]})["x"].flags["SORTED_ASC"] is True
 
 
-def test_is_sorted() -> None:
+def test_series_is_sorted() -> None:
     assert not pl.Series([1, 2, 5, None, 2, None]).is_sorted()
     assert pl.Series([1, 2, 4, None, None]).is_sorted(nulls_last=True)
     assert pl.Series([None, None, 1, 2, 4]).is_sorted(nulls_last=False)
@@ -286,6 +290,37 @@ def test_is_sorted() -> None:
     assert not pl.Series([5, 2, 1, 10, 1, -1, None, None]).is_sorted(
         descending=True, nulls_last=True
     )
+
+
+@given(s=series(), descending=st.booleans(), nulls_last=st.booleans())
+def test_series_is_sorted_parametric(
+    s: pl.Series, descending: bool, nulls_last: bool
+) -> None:
+    s = s.sort(descending=descending, nulls_last=nulls_last)
+    s = pl.Series(s.to_list(), dtype=s.dtype)  # Remove the sorted flags
+    assert s.is_sorted(descending=descending, nulls_last=nulls_last)
+    if s.drop_nulls().n_unique() > 1:
+        assert not s.is_sorted(descending=not descending, nulls_last=nulls_last)
+    if s.n_unique() > 1 and s.null_count() > 0:
+        assert not s.is_sorted(descending=descending, nulls_last=not nulls_last)
+
+
+@given(data=st.data())
+def test_dataframe_is_sorted_parametric(data: st.DataObject) -> None:
+    n = data.draw(st.integers(min_value=1, max_value=10))
+    descending = data.draw(st.lists(st.booleans(), min_size=n, max_size=n))
+    nulls_last = data.draw(st.lists(st.booleans(), min_size=n, max_size=n))
+    df = data.draw(
+        dataframes(min_cols=n, max_cols=n, excluded_dtypes={pl.Int128, pl.UInt128})
+    )
+    df_sorted = df.sort(by=df.columns, descending=descending, nulls_last=nulls_last)
+    assert df_sorted.is_sorted(
+        by=df.columns, descending=descending, nulls_last=nulls_last
+    )
+    if not df.equals(df_sorted):
+        assert not (
+            df.is_sorted(by=df.columns, descending=descending, nulls_last=nulls_last)
+        )
 
 
 def test_sorted_flag() -> None:
@@ -320,7 +355,6 @@ def test_sorted_flag() -> None:
     pl.Series([{"a": 1}], dtype=pl.Object).set_sorted(descending=True)
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud
 def test_sorted_flag_after_joins() -> None:
     np.random.seed(1)
@@ -505,3 +539,74 @@ def test_is_sorted_list_pairwise_fallback_error() -> None:
     msg = str(exc.value).lower()
     assert "<=" in msg
     assert "list" in msg
+
+
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+@pytest.mark.parametrize(
+    ("values", "descending"),
+    [
+        ([-math.inf, 1.0, math.inf], False),
+        ([math.inf, 1.0, -math.inf], True),
+        ([1.0, 5.0, math.nan], False),
+        ([math.nan, 5.0, 1.0], True),
+        ([math.nan, math.nan, math.nan], False),
+        ([math.nan, math.nan, math.nan], True),
+    ],
+)
+def test_is_sorted_float_multiple_chunks(
+    values: list[float], descending: bool, dtype: pl.DataType
+) -> None:
+    single = pl.Series("a", values, dtype=dtype)
+    assert single.n_chunks() == 1
+    assert single.is_sorted(descending=descending)
+
+    for split in range(1, len(values)):
+        chunked = pl.concat(
+            [
+                pl.Series("a", values[:split], dtype=dtype),
+                pl.Series("a", values[split:], dtype=dtype),
+            ],
+            rechunk=False,
+        )
+        assert chunked.n_chunks() == 2
+        assert chunked.is_sorted(descending=descending)
+
+    padded = pl.concat(
+        [pl.Series("a", [0.0], dtype=dtype), pl.Series("a", values, dtype=dtype)],
+        rechunk=False,
+    ).filter(pl.Series([False] + [True] * len(values)))
+    assert [len(c) for c in padded.get_chunks()] == [0, len(values)]
+    assert padded.is_sorted(descending=descending)
+
+
+def test_is_sorted_boolean_constant_with_sorted_flag() -> None:
+    all_true = pl.Series("a", [True, True, True]).sort()
+    assert all_true.flags["SORTED_ASC"]
+    assert all_true.is_sorted()
+    assert all_true.is_sorted(descending=True)
+
+    all_false = pl.Series("a", [False, False, False]).sort(descending=True)
+    assert all_false.flags["SORTED_DESC"]
+    assert all_false.is_sorted()
+    assert all_false.is_sorted(descending=True)
+
+    with_nulls = pl.Series("a", [None, True, True]).sort()
+    assert with_nulls.flags["SORTED_ASC"]
+    assert with_nulls.is_sorted()
+    assert with_nulls.is_sorted(descending=True)
+
+
+@pytest.mark.xfail(
+    reason="the sorted flag short-circuits `is_sorted` without checking null placement"
+)
+def test_is_sorted_flag_respects_null_placement() -> None:
+    # `nulls_last = false` for the key column.
+    nulls_last = pl.Series("a", [1, 2, None]).sort(nulls_last=True)
+    assert nulls_last.flags["SORTED_ASC"]
+    assert not nulls_last.is_sorted()
+    assert nulls_last.is_sorted(nulls_last=True)
+
+    desc_nulls_first = pl.Series("a", [1, 2, None]).sort(descending=True)
+    assert desc_nulls_first.flags["SORTED_DESC"]
+    assert desc_nulls_first.is_sorted(descending=True)
+    assert not desc_nulls_first.is_sorted(descending=True, nulls_last=True)

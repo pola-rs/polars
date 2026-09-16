@@ -26,7 +26,7 @@ fn join_nans_outer() -> PolarsResult<()> {
         .how(JoinType::Full)
         .coalesce(JoinCoalesce::CoalesceColumns)
         .join_nulls(true)
-        .finish()
+        .finish()?
         .collect()?;
 
     assert_eq!(res.shape(), (4, 4));

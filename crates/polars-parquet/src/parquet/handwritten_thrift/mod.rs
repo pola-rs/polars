@@ -14,4 +14,4 @@ mod parquet_macros;
 mod file_metadata_thrift;
 mod parquet_thrift;
 
-pub(crate) use file_metadata_thrift::decode_file_metadata;
+pub(crate) use file_metadata_thrift::{decode_file_metadata, decode_num_rows};

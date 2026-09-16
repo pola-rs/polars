@@ -11,7 +11,7 @@ description = "Code examples included in the Polars documentation website"
 [dependencies]
 aws-config = { version = "1" }
 aws-sdk-s3 = { version = "1", default-features = false, features = ["default-https-client", "rt-tokio", "http-1x", "sigv4a"] }
-aws-smithy-checksums = { version = "0.60.10" }
+aws-smithy-checksums = "0.64.8"
 chrono = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, features = ["blocking", "default-tls"] }

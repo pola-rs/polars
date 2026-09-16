@@ -12,7 +12,9 @@ use crate::shared::{ArrowReader, finish_reader};
 use crate::utils::{apply_projection, columns_to_projection};
 
 impl<R: MmapBytesReader> IpcReader<R> {
-    pub(super) fn finish_memmapped(
+    /// # Safety
+    /// This will not verify the correctness of the arrow data.
+    pub(super) unsafe fn finish_memmapped(
         &mut self,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<DataFrame> {
@@ -34,7 +36,8 @@ impl<R: MmapBytesReader> IpcReader<R> {
                     metadata.schema.clone()
                 };
 
-                let reader = MMapChunkIter::new(Arc::new(semaphore), metadata, &self.projection)?;
+                let reader =
+                    unsafe { MMapChunkIter::new(Arc::new(semaphore), metadata, &self.projection)? };
 
                 finish_reader(
                     reader,
@@ -61,7 +64,7 @@ struct MMapChunkIter<'a> {
 }
 
 impl<'a> MMapChunkIter<'a> {
-    fn new(
+    unsafe fn new(
         mmap: Arc<MMapSemaphore>,
         metadata: FileMetadata,
         projection: &'a Option<Vec<usize>>,

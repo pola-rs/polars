@@ -4,7 +4,7 @@ use polars::prelude::*;
 #[test]
 fn fuzz_exprs() {
     const PRIMES: &[i32] = &[2, 3, 5, 7, 11, 13, 17, 19, 23, 29];
-    use rand::Rng;
+    use rand::RngExt;
 
     let lf = DataFrame::new_infer_height(vec![
         Column::new("A".into(), vec![1, 2, 3, 4, 5]),
@@ -31,7 +31,7 @@ fn fuzz_exprs() {
     fn gen_expr(rng: &mut rand::rngs::ThreadRng) -> Expr {
         let mut depth = 0;
 
-        use rand::Rng;
+        use rand::RngExt;
 
         fn leaf(rng: &mut rand::rngs::ThreadRng) -> Expr {
             match rng.random::<u32>() % 4 {

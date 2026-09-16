@@ -46,6 +46,17 @@ pub fn is_inherently_nondeterministic_top_level(ae: &AExpr) -> bool {
     }
 }
 
+/// Similar to [`is_inherently_nondeterministic_top_level`], but allows caching UDFs
+pub fn is_inherently_nondeterministic_excluding_udfs_top_level(ae: &AExpr) -> bool {
+    if matches!(
+        ae,
+        AExpr::AnonymousFunction { .. } | AExpr::AnonymousAgg { .. }
+    ) {
+        return false;
+    }
+    is_inherently_nondeterministic_top_level(ae)
+}
+
 /// Returns `true` if evaluating `root`'s subtree may produce different
 /// values across calls for a fundamental reason: random draws, opaque
 /// user UDFs, FFI plugins, runtime-injected predicates.
@@ -56,12 +67,9 @@ pub fn is_inherently_nondeterministic_top_level(ae: &AExpr) -> bool {
 /// may freely factor those out.
 ///
 /// Used as a correctness gate by rewrites that change the per-row
-/// evaluation count of a subexpression, for example OR factoring
-/// `(A ∧ X) ∨ (A ∧ Y) → A ∧ (X ∨ Y)`, which is sound only when `A`
-/// is not inherently non-deterministic. A newly added `AExpr` or
-/// `IRFunctionExpr` variant fails to compile here until explicitly
-/// classified, so the helper cannot silently misclassify an unfamiliar
-/// variant.
+/// evaluation count of a subexpression, for example collapsing
+/// `A ∧ ¬A` to `false`, which is sound only when `A` is not inherently
+/// non-deterministic.
 pub fn is_inherently_nondeterministic(root: Node, arena: &Arena<AExpr>) -> bool {
     let mut stack: UnitVec<Node> = unitvec![];
     let mut ae = arena.get(root);
@@ -69,7 +77,7 @@ pub fn is_inherently_nondeterministic(root: Node, arena: &Arena<AExpr>) -> bool 
         if is_inherently_nondeterministic_top_level(ae) {
             return true;
         }
-        ae.inputs_rev(&mut stack);
+        ae.children_rev(&mut stack);
         let Some(node) = stack.pop() else {
             return false;
         };
@@ -87,6 +95,8 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::Categorical(_) => false,
         #[cfg(feature = "dtype-extension")]
         F::Extension(_) => false,
+        #[cfg(feature = "dtype-map")]
+        F::MapExpr(_) => false,
         F::ListExpr(l) => is_inherently_nondeterministic_list_fn(l),
         #[cfg(feature = "strings")]
         F::StringExpr(_) => false,
@@ -129,7 +139,6 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::RollingExpr { function, .. } => is_inherently_nondeterministic_rolling_fn(function),
         #[cfg(feature = "rolling_window_by")]
         F::RollingExprBy { .. } => false,
-        F::Rechunk => false,
         F::ShiftAndFill => false,
         F::Shift => false,
         F::DropNans => false,
@@ -162,6 +171,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::Repeat => false,
         #[cfg(feature = "round_series")]
         F::Clip { .. } => false,
+        F::AsList => false,
         #[cfg(feature = "dtype-struct")]
         F::AsStruct => false,
         #[cfg(feature = "top_k")]
@@ -181,6 +191,8 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::UniqueCounts => false,
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => false,
+        #[cfg(feature = "approx_quantile")]
+        F::ApproxQuantile { .. } => true,
         F::Coalesce => false,
         #[cfg(feature = "diff")]
         F::Diff(_) => false,
@@ -205,7 +217,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(feature = "peaks")]
         F::PeakMin | F::PeakMax => false,
         #[cfg(feature = "cutqcut")]
-        F::Cut { .. } | F::QCut { .. } => false,
+        F::Cut { .. } | F::QCut { .. } | F::Bin(_) => false,
         #[cfg(feature = "rle")]
         F::RLE | F::RLEID => false,
         F::ToPhysical => false,
@@ -213,9 +225,9 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::MaxHorizontal | F::MinHorizontal => false,
         F::SumHorizontal { .. } | F::MeanHorizontal { .. } => false,
         #[cfg(feature = "ewma")]
-        F::EwmMean { .. } | F::EwmStd { .. } | F::EwmVar { .. } => false,
+        F::EwmMean { .. } | F::EwmStd { .. } | F::EwmVar { .. } | F::EwmSum { .. } => false,
         #[cfg(feature = "ewma_by")]
-        F::EwmMeanBy { .. } => false,
+        F::EwmMeanBy { .. } | F::EwmSumBy { .. } => false,
         #[cfg(feature = "replace")]
         F::Replace | F::ReplaceStrict { .. } => false,
         F::GatherEvery { .. } => false,
@@ -249,6 +261,7 @@ fn is_inherently_nondeterministic_array_fn(f: &IRArrayFunction) -> bool {
         | A::Min
         | A::Max
         | A::Sum
+        | A::Dot
         | A::ToList
         | A::Std(_)
         | A::Var(_)
@@ -268,7 +281,7 @@ fn is_inherently_nondeterministic_array_fn(f: &IRArrayFunction) -> bool {
         #[cfg(feature = "array_count")]
         A::CountMatches => false,
         #[cfg(feature = "array_to_struct")]
-        A::ToStruct(_) => false,
+        A::ToStruct { fields: _ } => false,
     }
 }
 
@@ -330,6 +343,8 @@ fn is_inherently_nondeterministic_list_fn(f: &IRListFunction) -> bool {
         L::ToArray(_) => false,
         #[cfg(feature = "list_to_struct")]
         L::ToStruct(_) => false,
+        #[cfg(feature = "dtype-map")]
+        L::ToMap => false,
 
         // Inherently non-deterministic: draws random samples.
         #[cfg(feature = "list_sample")]

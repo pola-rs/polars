@@ -12,14 +12,14 @@
 //!   See <https://github.com/apache/parquet-format/blob/96edf77704b60b6f3ca2232c218c64eff6c874d3/src/main/thrift/parquet.thrift> for spec
 
 use polars_buffer::Buffer;
-use polars_parquet_format::{ColumnOrder, KeyValue, SchemaElement, SortingColumn};
+use polars_parquet_format::{KeyValue, SchemaElement, SortingColumn};
 
 use super::parquet_thrift::{FieldType, ThriftCompactInputProtocol, ThriftSliceInputProtocol};
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{
-    ByteRange, CompactColumnChunk, CompactColumnMetaData, CompactFileMetaData, CompactRowGroup,
-    CompactStatistics,
+    ByteRange, ColumnOrderTag, CompactColumnChunk, CompactColumnMetaData, CompactFileMetaData,
+    CompactRowGroup, CompactStatistics,
 };
 
 trait RequireField<T> {
@@ -85,6 +85,22 @@ pub(crate) fn decode_file_metadata(footer: Buffer<u8>) -> ParquetResult<CompactF
     read_file_metadata(&mut prot, origin_ptr, &footer)
 }
 
+/// Decode just `FileMetaData.num_rows` (field 3) for the `RowCounts`
+/// resolve mode. Thrift field ids are ascending, so we can `break` once
+/// field 3 is read and leave the rest of the footer untouched.
+pub(crate) fn decode_num_rows(footer: Buffer<u8>) -> ParquetResult<i64> {
+    let buf: &[u8] = footer.as_ref();
+    let mut prot = ThriftSliceInputProtocol::new(buf);
+    let mut num_rows: Option<i64> = None;
+    read_struct_fields!(prot, |f| {
+        3 => {
+            num_rows = Some(prot.read_i64()?);
+            break;
+        },
+    });
+    num_rows.require("FileMetaData.num_rows")
+}
+
 fn read_file_metadata(
     prot: &mut ThriftSliceInputProtocol<'_>,
     origin_ptr: *const u8,
@@ -96,7 +112,7 @@ fn read_file_metadata(
     let mut row_groups: Option<Vec<CompactRowGroup>> = None;
     let mut key_value_metadata: Option<Vec<KeyValue>> = None;
     let mut created_by: Option<String> = None;
-    let mut column_orders: Option<Vec<ColumnOrder>> = None;
+    let mut column_orders: Option<Vec<ColumnOrderTag>> = None;
 
     // 8/9 (encryption): polars has no encryption support; skip via fallthrough.
     read_struct_fields!(prot, |f| {
@@ -380,17 +396,18 @@ fn read_sorting_column(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult
     })
 }
 
-/// Decode a `ColumnOrder` union (kept as format-crate type).
-///
-/// Thrift definition: `union ColumnOrder { 1: TypeDefinedOrder TYPE_ORDER }`.
-fn read_column_order(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<ColumnOrder> {
-    use polars_parquet_format::TypeDefinedOrder;
-
-    let mut ret: Option<ColumnOrder> = None;
+/// Decode a `ColumnOrder` union tag. Both variants wrap an empty struct, so
+/// only the union id matters: 1 = `TypeDefinedOrder`, 2 = `IEEE754TotalOrder`.
+fn read_column_order(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<ColumnOrderTag> {
+    let mut ret: Option<ColumnOrderTag> = None;
     read_struct_fields!(prot, |f| {
         1 => {
             read_empty_struct(prot)?;
-            ret.get_or_insert(ColumnOrder::TYPEORDER(TypeDefinedOrder {}));
+            ret.get_or_insert(ColumnOrderTag::TypeDefined);
+        },
+        2 => {
+            read_empty_struct(prot)?;
+            ret.get_or_insert(ColumnOrderTag::IEEE754TotalOrder);
         },
     });
     ret.ok_or_else(|| ParquetError::oos("ColumnOrder union has no variant set"))
@@ -560,4 +577,35 @@ fn read_int_type(
         bit_width: bit_width.require("IntType.bit_width")?,
         is_signed: is_signed.require("IntType.is_signed")?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn decode_column_order(bytes: &[u8]) -> ParquetResult<ColumnOrderTag> {
+        let mut prot = ThriftSliceInputProtocol::new(bytes);
+        read_column_order(&mut prot)
+    }
+
+    #[test]
+    fn column_order_type_defined() {
+        assert_eq!(
+            decode_column_order(&[0x1C, 0x00, 0x00]).unwrap(),
+            ColumnOrderTag::TypeDefined
+        );
+    }
+
+    #[test]
+    fn column_order_ieee754_total_order() {
+        assert_eq!(
+            decode_column_order(&[0x2C, 0x00, 0x00]).unwrap(),
+            ColumnOrderTag::IEEE754TotalOrder
+        );
+    }
+
+    #[test]
+    fn column_order_no_variant_is_an_error() {
+        assert!(decode_column_order(&[0x00]).is_err());
+    }
 }

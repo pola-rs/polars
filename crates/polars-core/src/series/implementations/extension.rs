@@ -44,10 +44,6 @@ impl private::PrivateSeries for SeriesWrap<ExtensionChunked> {
         self.0.storage_mut().set_flags(flags)
     }
 
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        self.0.storage().into_total_eq_inner()
-    }
-
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         self.0.storage().into_total_ord_inner()
     }
@@ -298,14 +294,17 @@ impl SeriesTrait for SeriesWrap<ExtensionChunked> {
         self.try_apply_on_storage(|s| s.unique())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
         self.0.storage().n_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.0.storage().arg_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         self.0.storage().unique_id()
     }

@@ -36,10 +36,10 @@ single wider `DataFrame`.
 --8<-- "python/user-guide/transformations/concatenation.py:horizontal"
 ```
 
-Horizontal concatenation fails when dataframes have overlapping columns.
-
-When dataframes have different numbers of rows, columns will be padded with `null` values at the end
-up to the maximum length.
+Horizontal concatenation fails when dataframes have overlapping columns. Moreover, it is required
+that both dataframes have the same height. To combine dataframes with different height, use
+`how="horizontal_extend"`, which pads shorter columns with `null` values at the end to match the
+height of the longest dataframe.
 
 {{code_block('user-guide/transformations/concatenation','horizontal_different_lengths',['concat'])}}
 

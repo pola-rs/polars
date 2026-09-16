@@ -1,12 +1,15 @@
 import datetime as dt
 import io
 import itertools
+import re
 
 import pyarrow as pa
 import pyarrow.dataset as pad
 import pytest
 
 import polars as pl
+from polars.exceptions import ArgumentRemovedError
+from polars.lazyframe.opt_flags import QueryOptFlags
 from polars.testing import assert_frame_equal
 
 
@@ -18,7 +21,7 @@ def test_is_null_followed_by_all() -> None:
         pl.col("val").is_null().all()
     )
 
-    assert r'[[(col("val").len()) == (col("val").null_count())]]' in result_lf.explain()
+    assert r'[(col("val").len() == col("val").null_count())]' in result_lf.explain()
     assert "is_null" not in result_lf.collect_schema()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -46,6 +49,10 @@ def test_is_null_followed_by_any() -> None:
     result_lf = lf.group_by("group", maintain_order=True).agg(
         pl.col("val").is_null().any()
     )
+    plan = result_lf.explain()
+    assert ".has_nulls()" in plan
+    assert "null_count" not in plan
+    assert "is_null" not in plan
     assert_frame_equal(expected_df, result_lf.collect())
 
     # edge case of empty series
@@ -139,7 +146,7 @@ def test_is_not_null_followed_by_sum() -> None:
         pl.col("val").is_not_null().sum()
     )
 
-    assert r'[[(col("val").len()) - (col("val").null_count())]]' in result_lf.explain()
+    assert r'[(col("val").len() - col("val").null_count())]' in result_lf.explain()
     assert "is_not_null" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -169,7 +176,7 @@ def test_drop_nulls_followed_by_len() -> None:
         pl.col("val").drop_nulls().len()
     )
 
-    assert r'[[(col("val").len()) - (col("val").null_count())]]' in result_lf.explain()
+    assert r'[(col("val").len() - col("val").null_count())]' in result_lf.explain()
     assert "drop_nulls" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -194,7 +201,7 @@ def test_drop_nulls_followed_by_count() -> None:
         pl.col("val").drop_nulls().count()
     )
 
-    assert r'[[(col("val").len()) - (col("val").null_count())]]' in result_lf.explain()
+    assert r'[(col("val").len() - col("val").null_count())]' in result_lf.explain()
     assert "drop_nulls" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -206,6 +213,68 @@ def test_drop_nulls_followed_by_count() -> None:
     )
     assert "null_count" not in non_optimized_result_plan
     assert "drop_nulls" in non_optimized_result_plan
+
+
+@pytest.mark.parametrize(
+    ("expr", "optimized_expr"),
+    [
+        (pl.col("val").len() == 0, ".is_empty()"),
+        (pl.col("val").len() < 1, ".is_empty()"),
+        (pl.col("val").len() <= 0, ".is_empty()"),
+        (pl.col("val").len() != 0, ".is_empty().not()"),
+        (pl.col("val").len() > 0, ".is_empty().not()"),
+        (pl.col("val").len() >= 0, "true"),
+        (pl.col("val").len() >= 1, ".is_empty().not()"),
+        (pl.col("val").len() < 0, "false"),
+        (pl.col("val").len() == -1, "false"),
+        (pl.col("val").len() != -1, "true"),
+        (pl.lit(0) == pl.col("val").len(), ".is_empty()"),
+        (pl.lit(1) > pl.col("val").len(), ".is_empty()"),
+        (pl.lit(0) >= pl.col("val").len(), ".is_empty()"),
+        (pl.lit(0) <= pl.col("val").len(), "true"),
+        (pl.lit(0) > pl.col("val").len(), "false"),
+        (pl.lit(-1) == pl.col("val").len(), "false"),
+        (pl.lit(-1) != pl.col("val").len(), "true"),
+        (pl.lit(0) != pl.col("val").len(), ".is_empty().not()"),
+        (pl.lit(0) < pl.col("val").len(), ".is_empty().not()"),
+        (pl.lit(1) <= pl.col("val").len(), ".is_empty().not()"),
+        (pl.col("val").null_count() == 0, ".has_nulls().not()"),
+        (pl.col("val").null_count() < 1, ".has_nulls().not()"),
+        (pl.col("val").null_count() <= 0, ".has_nulls().not()"),
+        (pl.col("val").null_count() != 0, ".has_nulls()"),
+        (pl.col("val").null_count() > 0, ".has_nulls()"),
+        (pl.col("val").null_count() >= 0, "true"),
+        (pl.col("val").null_count() >= 1, ".has_nulls()"),
+        (pl.col("val").null_count() < 0, "false"),
+        (pl.col("val").null_count() == -1, "false"),
+        (pl.col("val").null_count() != -1, "true"),
+        (pl.lit(0) == pl.col("val").null_count(), ".has_nulls().not()"),
+        (pl.lit(1) > pl.col("val").null_count(), ".has_nulls().not()"),
+        (pl.lit(0) >= pl.col("val").null_count(), ".has_nulls().not()"),
+        (pl.lit(0) <= pl.col("val").null_count(), "true"),
+        (pl.lit(0) > pl.col("val").null_count(), "false"),
+        (pl.lit(-1) == pl.col("val").null_count(), "false"),
+        (pl.lit(-1) != pl.col("val").null_count(), "true"),
+        (pl.lit(0) != pl.col("val").null_count(), ".has_nulls()"),
+        (pl.lit(0) < pl.col("val").null_count(), ".has_nulls()"),
+        (pl.lit(1) <= pl.col("val").null_count(), ".has_nulls()"),
+    ],
+)
+def test_len_null_count_comparison_optimized(
+    expr: pl.Expr, optimized_expr: str
+) -> None:
+    lf = pl.LazyFrame({"group": [0, 0, 1, 2], "val": [6, None, 5, None]})
+    result_lf = lf.group_by("group", maintain_order=True).agg(expr.alias("out"))
+
+    plan = result_lf.explain()
+    assert optimized_expr in plan
+    assert ".len()" not in plan
+    assert ".null_count()" not in plan
+
+    assert_frame_equal(
+        result_lf.collect(),
+        result_lf.collect(optimizations=pl.QueryOptFlags(simplify_expression=False)),
+    )
 
 
 def test_collapse_joins() -> None:
@@ -633,6 +702,20 @@ def test_slice_pushdown_with_cache_arena_take_panic_26905() -> None:
     )
 
 
+def test_slice_pushdown_past_empty_union_28408() -> None:
+    lf = pl.LazyFrame({"x": [1]})
+    q = pl.concat([lf, lf]).filter(pl.col("x") == 0).slice(1, 1)
+
+    assert_frame_equal(q.collect(), pl.DataFrame(schema={"x": pl.Int64}))
+
+
+def test_slice_pushdown_shared_join_input_28127() -> None:
+    lf = pl.LazyFrame({"a": ["x"]}).filter(pl.lit(True)).select("a").slice(0, 1)
+    q = lf.join(lf, on="a", how="inner")
+
+    assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
+
+
 def test_drop_nulls_first_last_optimization_25478() -> None:
     lf = pl.LazyFrame({"a": [None, 1, None, 3, None]})
     lf = lf.select(a=pl.col.a.drop_nulls().first(), b=pl.col.a.drop_nulls().last())
@@ -911,6 +994,19 @@ def test_slice_pushdown_expr_height_rules() -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"a": 3}))
 
 
+def test_slice_pushdown_expr_leaf_ae_without_col_input_27820() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    q = lf.select(pl.first("a"), pl.len().cast(pl.Int64))
+    out = q.collect()
+
+    assert_frame_equal(out, pl.DataFrame({"a": 1, "len": 3}))
+
+    q = lf.select(pl.first("a"), pl.lit(pl.Series("s", [-1, -2, -3])).first())
+    out = q.collect()
+
+    assert_frame_equal(out, pl.DataFrame({"a": 1, "s": -1}))
+
+
 def test_slice_pushdown_joins_27199() -> None:
     lhs = pl.LazyFrame({"a": [0, 0]})
     rhs = pl.LazyFrame({"a": [0, 0]})
@@ -932,14 +1028,29 @@ def test_slice_pushdown_joins_27199() -> None:
     assert plan.index("SLICE") > plan.index("RIGHT PLAN")
     assert q.collect().height == 1
 
-    # Full join, push to both
+    # Full join, no ordering: we can not push the slice
     q = lhs.join(rhs, on="a", how="full").head(1)
+    plan = q.explain()
+
+    assert "SLICE" not in plan
+    assert q.collect().height == 1
+
+    # Full join, left ordering: we can push to left
+    q = lhs.join(rhs, on="a", how="full", maintain_order="left").head(1)
     plan = q.explain()
 
     i = plan.index("RIGHT PLAN ON")
     assert plan[:i].index("SLICE") > plan[:i].index("LEFT PLAN")
-    assert plan[i:].index("SLICE") > plan[i:].index("RIGHT PLAN")
+    assert "SLICE" not in plan[i:]
+    assert q.collect().height == 1
 
+    # Same as above, but mirrored
+    q = lhs.join(rhs, on="a", how="full", maintain_order="right").head(1)
+    plan = q.explain()
+
+    i = plan.index("RIGHT PLAN ON")
+    assert "SLICE" not in plan[:i]
+    assert plan[i:].index("SLICE") > plan[i:].index("RIGHT PLAN")
     assert q.collect().height == 1
 
 
@@ -1007,6 +1118,20 @@ def test_forbid_flatten_sliced_union_27455() -> None:
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 100]}))
 
+    frame_1 = pl.LazyFrame({"x": [1]})
+    frame_2 = pl.LazyFrame({"x": [2]})
+    frame_3 = pl.LazyFrame({"x": [3]})
+    frame_4 = pl.LazyFrame({"x": [4]})
+
+    q = pl.concat(
+        [
+            pl.concat([frame_1, frame_2]),
+            pl.concat([frame_3, frame_4]).slice(0, 1),
+        ]
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": [1, 2, 3]}))
+
 
 def test_lazyframe_gather_select_len() -> None:
     lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4], "b": True})
@@ -1021,3 +1146,191 @@ def test_lazyframe_gather_select_len() -> None:
 
     with pytest.raises(pl.exceptions.OutOfBoundsError):
         q.collect()
+
+
+def test_hconcat_reorder_projection_push_to_inputs() -> None:
+    hconcat = pl.concat(
+        [
+            pl.LazyFrame(schema={"a": pl.Null, "b": pl.Null}),
+            pl.LazyFrame(schema={"c": pl.Null, "d": pl.Null}),
+        ],
+        how="horizontal",
+    )
+
+    q = hconcat.select("b", "a", "d", "c")
+    plan = q.explain()
+
+    assert plan.startswith("HCONCAT")
+    assert q.collect().columns == ["b", "a", "d", "c"]
+
+    q = hconcat.select("b", "d", "c")
+    plan = q.explain()
+
+    assert plan.startswith("HCONCAT")
+    assert q.collect().columns == ["b", "d", "c"]
+
+    # Columns are not in input order so we need to project in post.
+    q = hconcat.select("c", "a")
+    plan = q.explain()
+
+    assert plan.startswith("simple π")
+    assert q.collect().columns == ["c", "a"]
+
+
+def test_hconcat_projection_pushdown_lazy_schema_27818() -> None:
+    q = pl.concat(
+        [
+            pl.LazyFrame(
+                [{"B": None, "C": None}],
+                {"B": pl.Boolean, "C": pl.Categorical()},
+            ).select("C", "B"),
+            pl.LazyFrame(
+                [{"D": "1"}],
+                {"D": pl.String()},
+            ),
+        ],
+        how="horizontal",
+    ).select("B", "C")
+
+    f = io.BytesIO()
+    q.sink_parquet(f)
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.scan_parquet(f).collect(),
+        pl.DataFrame(
+            {"B": None, "C": None}, schema={"B": pl.Boolean, "C": pl.Categorical}
+        ),
+    )
+
+
+def test_projection_pushdown_with_columns_27914() -> None:
+    q = (
+        pl.LazyFrame({"x": [1, 2], "y": [1, 2]})
+        .with_row_index("index")
+        .with_columns(pl.col.y)
+        .group_by("index")
+        .agg(pl.col.y.sum())
+    )
+
+    assert_frame_equal(
+        q.collect().sort("index"),
+        pl.DataFrame(
+            {"index": [0, 1], "y": [1, 2]},
+            schema_overrides={"index": pl.get_index_type()},
+        ),
+    )
+
+    q = (
+        pl.LazyFrame({"x": [1, 2], "y": [1, 2]})
+        .with_row_index("index")
+        .with_columns(pl.col.y)
+        .select("y", "index")
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {"y": [1, 2], "index": [0, 1]},
+            schema_overrides={"index": pl.get_index_type()},
+        ),
+    )
+
+
+def test_projection_pushdown_row_index_reorder_28015() -> None:
+    lf = pl.LazyFrame({"key": [10, 11], "value": [1, 2]}).with_row_index()
+    q1 = lf.join(lf.select("index"), on="index")
+    q2 = q1.drop("index").with_row_index()
+    q3 = q2.join(q2.join(q2.select("key"), on="key").select("index"), on="index")
+    out = q3.join(q3, on="key").collect(engine="streaming")
+
+    assert_frame_equal(
+        out.sort("index"),
+        pl.DataFrame(
+            {
+                "index": [0, 1],
+                "key": [10, 11],
+                "value": [1, 2],
+                "index_right": [0, 1],
+                "value_right": [1, 2],
+            },
+            schema=out.schema,
+        ),
+    )
+
+
+def test_projection_pushdown_groupby_len_28094() -> None:
+    q = (
+        pl.LazyFrame(
+            {"i128": [1], "u128": [1], "bool": [True]},
+            schema={"i128": pl.Int128, "u128": pl.UInt128, "bool": pl.Boolean},
+        )
+        .group_by("i128", "u128")
+        .agg(pl.first("bool"))
+        .select(pl.len())
+    )
+
+    assert q.collect().item() == 1
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory", "auto"])
+def test_predicate_pushdown_with_cse_sink_cross_filter_28287(
+    engine: str,
+) -> None:
+    left = pl.DataFrame({"x": [1, 2, 3]}).lazy()
+    right = pl.DataFrame({"y": [10, 20]}).lazy()
+
+    filtered = left.join(right, how="cross").filter(pl.col("x") + pl.col("y") == 22)
+    row_sum = (pl.col("x") + pl.col("y")).alias("row_sum")
+    lf = (
+        pl.concat([filtered, filtered.select(row_sum)], how="horizontal_extend")
+        .unique("row_sum")
+        .drop("row_sum")
+    )
+
+    f = io.BytesIO()
+    lf.sink_parquet(f, engine=engine)  # type: ignore[call-overload]
+    f.seek(0)
+    assert_frame_equal(pl.read_parquet(f), pl.DataFrame({"x": 2, "y": 20}))
+
+
+def test_streaming_engine_fused_filter_drop() -> None:
+    q = (
+        pl.LazyFrame({"x": [0, 1], "y": [False, True], "z": "Z"})
+        .filter("y")
+        .select("x", "z")
+    )
+
+    phys_plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+
+    assert phys_plan.index("project 2 / 3") > phys_plan.index("filter")
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": 1, "z": "Z"}))
+
+
+def test_projection_pushdown_select_prune_expr_28729() -> None:
+    q = (
+        pl.LazyFrame({"x": [0, 1, 2]})
+        .join(
+            pl.LazyFrame({"x": [1, 1]}).select(pl.min("x").alias("x_rhs_sum")),
+            how="cross",
+        )
+        .select("x")
+    )
+
+    assert_frame_equal(
+        q.collect().sort("x"),
+        pl.DataFrame({"x": [0, 1, 2]}),
+    )
+
+
+def test_query_opt_flags_collapse_joins_removed() -> None:
+    msg = "Use `predicate_pushdown` instead."
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        QueryOptFlags(collapse_joins=False)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        QueryOptFlags.none(collapse_joins=False)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        QueryOptFlags().update(collapse_joins=False)  # type: ignore[call-arg]

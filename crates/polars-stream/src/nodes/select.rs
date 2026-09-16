@@ -10,14 +10,21 @@ pub struct SelectNode {
     selectors: Vec<StreamExpr>,
     schema: Arc<Schema>,
     extend_original: bool,
+    rechunk_input: bool,
 }
 
 impl SelectNode {
-    pub fn new(selectors: Vec<StreamExpr>, schema: Arc<Schema>, extend_original: bool) -> Self {
+    pub fn new(
+        selectors: Vec<StreamExpr>,
+        schema: Arc<Schema>,
+        extend_original: bool,
+        rechunk_input: bool,
+    ) -> Self {
         Self {
             selectors,
             schema,
             extend_original,
+            rechunk_input,
         }
     }
 }
@@ -58,7 +65,12 @@ impl ComputeNode for SelectNode {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Ok(morsel) = recv.recv().await {
-                    let (df, seq, source_token, consume_token) = morsel.into_inner();
+                    let (sf, seq, source_token, consume_token) = morsel.into_inner();
+                    let mut df = sf.into_df().await;
+                    if slf.rechunk_input {
+                        df.rechunk_mut();
+                    }
+
                     let mut selected = Vec::new();
                     for selector in slf.selectors.iter() {
                         let s = selector.evaluate(&df, &state.in_memory_exec_state).await?;
@@ -73,7 +85,7 @@ impl ComputeNode for SelectNode {
                         unsafe { DataFrame::new_unchecked_infer_broadcast(selected)? }
                     };
 
-                    let mut morsel = Morsel::new(ret, seq, source_token);
+                    let mut morsel = Morsel::new_unregistered(ret, seq, source_token);
                     if let Some(token) = consume_token {
                         morsel.set_consume_token(token);
                     }

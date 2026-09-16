@@ -32,6 +32,149 @@ use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 
+/// Where one of the fused predicate's input columns is found at probe time.
+struct FusedColumn {
+    is_left: bool,
+    /// Index into that side's payload.
+    index: usize,
+}
+
+/// A match condition on top of the equi keys, applied to candidate pairs.
+struct FusedPredicate {
+    expr: StreamExpr,
+    /// The columns the predicate reads, in the order it was compiled against.
+    columns: Vec<FusedColumn>,
+}
+
+impl FusedPredicate {
+    fn new(
+        expr: StreamExpr,
+        schema: &Schema,
+        left_payload_schema: &Schema,
+        right_payload_schema: &Schema,
+    ) -> PolarsResult<Self> {
+        let columns = schema
+            .iter_names()
+            .map(|name| {
+                // Payload schemas are keyed by output name.
+                let column = if let Some(index) = left_payload_schema.index_of(name) {
+                    FusedColumn {
+                        is_left: true,
+                        index,
+                    }
+                } else if let Some(index) = right_payload_schema.index_of(name) {
+                    FusedColumn {
+                        is_left: false,
+                        index,
+                    }
+                } else {
+                    polars_bail!(
+                        ColumnNotFound:
+                        "fused predicate reads '{name}', which the join does not output"
+                    )
+                };
+                Ok(column)
+            })
+            .try_collect_vec()?;
+
+        Ok(Self { expr, columns })
+    }
+
+    /// Compacts the candidate pairs the predicate accepts to the front of both slices.
+    ///
+    /// The two match slices describe the same pairs positionally. Returns how many
+    /// survived, which the caller truncates its own buffers to.
+    async fn retain_matches(
+        &self,
+        left_is_build: bool,
+        build_payload: &DataFrame,
+        build_match: &mut [IdxSize],
+        probe_payload: &DataFrame,
+        probe_match: &mut [IdxSize],
+        state: &ExecutionState,
+    ) -> PolarsResult<usize> {
+        let n = build_match.len();
+        assert_eq!(n, probe_match.len());
+
+        // `probe_subset` can hand back far more candidates than the morsel limit, so the
+        // gathered predicate inputs are bounded here instead.
+        let batch_size = get_ideal_morsel_size();
+        let mut kept = 0;
+        let mut start = 0;
+
+        while start < n {
+            let end = (start + batch_size).min(n);
+            let len = end - start;
+
+            let columns = self
+                .columns
+                .iter()
+                .map(|column| {
+                    let (payload, idxs) = if column.is_left == left_is_build {
+                        (build_payload, &build_match[start..end])
+                    } else {
+                        (probe_payload, &probe_match[start..end])
+                    };
+                    // Payload columns already carry their output name.
+                    unsafe { payload.columns()[column.index].take_slice_unchecked(idxs) }
+                })
+                .collect();
+            let df = unsafe { DataFrame::new_unchecked(len, columns) };
+
+            let mask = self
+                .expr
+                .evaluate_preserve_len_broadcast(&df, state)
+                .await?;
+            let mask = mask.as_materialized_series().bool()?.rechunk();
+            let mask = mask.downcast_as_array();
+
+            // A null is not a match.
+            let keep = match mask.validity() {
+                Some(validity) => mask.values() & validity,
+                None => mask.values().clone(),
+            };
+
+            match keep.set_bits() {
+                0 => {},
+                // The batch survives whole, so it moves as one block.
+                set if set == len => {
+                    if kept != start {
+                        build_match.copy_within(start..end, kept);
+                        probe_match.copy_within(start..end, kept);
+                    }
+                    kept += len;
+                },
+                // SAFETY: We are in bounds
+                _ => {
+                    for i in keep.true_idx_iter() {
+                        debug_assert!(start + i < end);
+                        debug_assert!(kept <= start + i);
+                        unsafe {
+                            let build = *build_match.get_unchecked(start + i);
+                            let probe = *probe_match.get_unchecked(start + i);
+                            *build_match.get_unchecked_mut(kept) = build;
+                            *probe_match.get_unchecked_mut(kept) = probe;
+                        }
+                        kept += 1;
+                    }
+                },
+            }
+
+            start = end;
+        }
+
+        Ok(kept)
+    }
+}
+
+/// Rechunks `payload` the first time rows are gathered from it.
+fn rechunk_once(payload: &mut DataFrame, rechunked: &mut bool) {
+    if !*rechunked {
+        payload.rechunk_mut();
+        *rechunked = true;
+    }
+}
+
 struct EquiJoinParams {
     left_is_build: Option<bool>,
     preserve_order_build: bool,
@@ -46,6 +189,7 @@ struct EquiJoinParams {
     left_payload_schema: Arc<Schema>,
     right_payload_schema: Arc<Schema>,
     args: JoinArgs,
+    fused_predicate: Option<FusedPredicate>,
     random_state: PlRandomState,
     sample_limit: usize,
 }
@@ -77,6 +221,7 @@ fn compute_payload_selector(
     other: &Schema,
     this_key_schema: &Schema,
     other_key_schema: &Schema,
+    output_schema: &Schema,
     is_left: bool,
     args: &JoinArgs,
 ) -> PolarsResult<Vec<Option<PlSmallStr>>> {
@@ -105,10 +250,11 @@ fn compute_payload_selector(
                         Some(c.clone())
                     } else if args.how == JoinType::Full {
                         // We must keep the right-hand side keycols around for
-                        // coalescing.
+                        // coalescing. Note that this bypasses the filter below because of the
+                        // early return.
                         let key_idx = this_key_schema.index_of(c).unwrap();
                         let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL_{key_idx}");
-                        Some(name)
+                        return Ok(Some(name));
                     } else {
                         None
                     }
@@ -117,6 +263,8 @@ fn compute_payload_selector(
                 } else {
                     break 'create_and_return_selector;
                 };
+
+                let selector = selector.filter(|name| output_schema.contains(name.as_str()));
 
                 return Ok(selector);
             }
@@ -220,11 +368,11 @@ fn estimate_cardinality(
     let mut total_height = 0;
     let mut to_process_end = 0;
     while to_process_end < morsels.len() && total_height < sample_limit {
-        total_height += morsels[to_process_end].df().height();
+        total_height += morsels[to_process_end].height();
         to_process_end += 1;
     }
     let last_morsel_idx = to_process_end - 1;
-    let last_morsel_len = morsels[last_morsel_idx].df().height();
+    let last_morsel_len = morsels[last_morsel_idx].height();
     let last_morsel_slice = last_morsel_len - total_height.saturating_sub(sample_limit);
 
     RAYON.install(|| {
@@ -235,11 +383,12 @@ fn estimate_cardinality(
                 CardinalitySketch::new,
                 |mut sketch, (morsel_idx, morsel)| {
                     let sliced;
+                    let pin_df = morsel.df_blocking();
                     let df = if morsel_idx == last_morsel_idx {
-                        sliced = morsel.df().slice(0, last_morsel_slice);
+                        sliced = pin_df.slice(0, last_morsel_slice);
                         &sliced
                     } else {
-                        morsel.df()
+                        &*pin_df
                     };
                     let hash_keys =
                         ASYNC.block_on(select_keys(df, key_selectors, params, state))?;
@@ -258,8 +407,8 @@ fn estimate_size_per_row(morsels: &[Morsel]) -> f64 {
     let mut total_size = 0;
     let mut total_height = 0;
     for m in morsels {
-        total_size += m.df().estimated_size();
-        total_height += m.df().height();
+        total_size += m.df_blocking().estimated_size();
+        total_height += m.height();
     }
     total_size as f64 / total_height as f64
 }
@@ -282,7 +431,7 @@ impl SampleState {
         join_sample_limit: usize,
     ) -> PolarsResult<()> {
         while let Ok(mut morsel) = recv.recv().await {
-            *len += morsel.df().height();
+            *len += morsel.height();
             if *len >= join_sample_limit
                 || *len
                     >= other_final_len
@@ -381,10 +530,16 @@ impl SampleState {
 
         // Transition to building state.
         params.left_is_build = Some(left_is_build);
-        let mut sampled_build_morsels =
-            BufferedStream::new(core::mem::take(&mut self.left), MorselSeq::default());
-        let mut sampled_probe_morsels =
-            BufferedStream::new(core::mem::take(&mut self.right), MorselSeq::default());
+        let mut sampled_build_morsels = BufferedStream::new(
+            "equi-join-left-sample".into(),
+            core::mem::take(&mut self.left),
+            MorselSeq::default(),
+        );
+        let mut sampled_probe_morsels = BufferedStream::new(
+            "equi-join-right-sample".into(),
+            core::mem::take(&mut self.right),
+            MorselSeq::default(),
+        );
         if !left_is_build {
             core::mem::swap(&mut sampled_build_morsels, &mut sampled_probe_morsels);
         }
@@ -418,7 +573,7 @@ impl SampleState {
                     ));
                 }
 
-                ASYNC.block_on(async move {
+                ASYNC.block_in_place_on(async move {
                     for handle in join_handles {
                         handle.await?;
                     }
@@ -493,14 +648,10 @@ impl BuildState {
         while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload. We must rechunk the payload for
             // later gathers.
-            let hash_keys = select_keys(
-                morsel.df(),
-                key_selectors,
-                params,
-                &state.in_memory_exec_state,
-            )
-            .await?;
-            let mut payload = select_payload(morsel.df().clone(), payload_selector);
+            let df = morsel.df().await;
+            let hash_keys =
+                select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
+            let mut payload = select_payload(df.clone(), payload_selector);
             payload.rechunk_mut();
 
             hash_keys.gen_idxs_per_partition(
@@ -738,7 +889,7 @@ impl BuildState {
             drop(arc_morsels_per_local_builder);
             drop(morsel_drop_q_send);
 
-            ASYNC.block_on(async move {
+            ASYNC.block_in_place_on(async move {
                 for handle in join_handles {
                     handle.await;
                 }
@@ -791,6 +942,7 @@ impl ProbeState {
         let probe_limit = get_ideal_morsel_size() as IdxSize;
         let mark_matches = params.emit_unmatched_build();
         let emit_unmatched = params.emit_unmatched_probe();
+        assert!(params.fused_predicate.is_none() || (!mark_matches && !emit_unmatched));
 
         let (key_selectors, payload_selector, build_payload_schema, probe_payload_schema);
         if params.left_is_build.unwrap() {
@@ -814,7 +966,8 @@ impl ProbeState {
 
         while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload.
-            let (df, in_seq, src_token, wait_token) = morsel.into_inner();
+            let (sf, in_seq, src_token, wait_token) = morsel.into_inner();
+            let df = sf.into_df().await;
 
             let df_height = df.height();
             if df_height == 0 {
@@ -824,7 +977,7 @@ impl ProbeState {
             let hash_keys =
                 select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
             let mut payload = select_payload(df, payload_selector);
-            let mut payload_rechunked = false; // We don't eagerly rechunk because there might be no matches.
+            let mut payload_rechunked = false;
             let mut total_matches = 0;
 
             // Use selectivity estimate to reserve for morsel builders.
@@ -852,7 +1005,7 @@ impl ProbeState {
                             MorselSeq::new(unordered_morsel_seq.fetch_add(1, Ordering::Relaxed))
                         };
                         max_seq = out_seq;
-                        Morsel::new(out_df, out_seq, src_token.clone())
+                        Morsel::new_unregistered(out_df, out_seq, src_token.clone())
                     };
 
                 if params.preserve_order_probe {
@@ -908,10 +1061,7 @@ impl ProbeState {
                             if probe_match.len() >= probe_limit as usize
                                 || probe_group_start == probe_partitions.len()
                             {
-                                if !payload_rechunked {
-                                    payload.rechunk_mut();
-                                    payload_rechunked = true;
-                                }
+                                rechunk_once(&mut payload, &mut payload_rechunked);
                                 probe_out.gather_extend(
                                     &payload,
                                     &probe_match,
@@ -948,6 +1098,7 @@ impl ProbeState {
                         let mut offset = 0;
                         while offset < idxs_in_p.len() {
                             let matches_before_limit = probe_limit - probe_match.len() as IdxSize;
+                            let probe_start = probe_match.len();
                             table_match.clear();
                             offset += p.hash_table.probe_subset(
                                 &hash_keys,
@@ -958,6 +1109,24 @@ impl ProbeState {
                                 emit_unmatched,
                                 matches_before_limit,
                             ) as usize;
+
+                            if let Some(fused_predicate) = &params.fused_predicate
+                                && !table_match.is_empty()
+                            {
+                                rechunk_once(&mut payload, &mut payload_rechunked);
+                                let kept = fused_predicate
+                                    .retain_matches(
+                                        params.left_is_build.unwrap(),
+                                        &p.payload,
+                                        &mut table_match,
+                                        &payload,
+                                        &mut probe_match[probe_start..],
+                                        &state.in_memory_exec_state,
+                                    )
+                                    .await?;
+                                table_match.truncate(kept);
+                                probe_match.truncate(probe_start + kept);
+                            }
 
                             if table_match.is_empty() {
                                 continue;
@@ -979,10 +1148,7 @@ impl ProbeState {
                             };
 
                             if probe_match.len() >= probe_limit as usize {
-                                if !payload_rechunked {
-                                    payload.rechunk_mut();
-                                    payload_rechunked = true;
-                                }
+                                rechunk_once(&mut payload, &mut payload_rechunked);
                                 probe_out.gather_extend(
                                     &payload,
                                     &probe_match,
@@ -1004,9 +1170,7 @@ impl ProbeState {
                 }
 
                 if !probe_match.is_empty() {
-                    if !payload_rechunked {
-                        payload.rechunk_mut();
-                    }
+                    rechunk_once(&mut payload, &mut payload_rechunked);
                     probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
                     probe_match.clear();
                     let out_morsel = new_morsel(&mut build_out, &mut probe_out);
@@ -1161,7 +1325,8 @@ impl EmitUnmatchedState {
                 let out_df = postprocess_join(out_df, params);
 
                 // Send and wait until consume token is consumed.
-                let mut morsel = Morsel::new(out_df, self.morsel_seq, source_token.clone());
+                let mut morsel =
+                    Morsel::new_unregistered(out_df, self.morsel_seq, source_token.clone());
                 self.morsel_seq = self.morsel_seq.successor();
                 morsel.set_consume_token(wait_group.token());
                 if send.send(morsel).await.is_err() {
@@ -1195,7 +1360,7 @@ pub struct EquiJoinNode {
     state: EquiJoinState,
     params: EquiJoinParams,
     table: Box<dyn IdxTable>,
-    spill_ctx: Arc<MostRecentSpillContext>,
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl EquiJoinNode {
@@ -1206,8 +1371,10 @@ impl EquiJoinNode {
         left_key_schema: Arc<Schema>,
         right_key_schema: Arc<Schema>,
         unique_key_schema: Arc<Schema>,
+        output_schema: Arc<Schema>,
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
+        fused_predicate: Option<(StreamExpr, Arc<Schema>)>,
         args: JoinArgs,
         num_pipelines: usize,
     ) -> PolarsResult<Self> {
@@ -1252,6 +1419,7 @@ impl EquiJoinNode {
             &right_input_schema,
             &left_key_schema,
             &right_key_schema,
+            &output_schema,
             true,
             &args,
         )?;
@@ -1260,6 +1428,7 @@ impl EquiJoinNode {
             &left_input_schema,
             &right_key_schema,
             &left_key_schema,
+            &output_schema,
             false,
             &args,
         )?;
@@ -1277,6 +1446,20 @@ impl EquiJoinNode {
         let left_payload_schema = Arc::new(select_schema(&left_input_schema, &left_payload_select));
         let right_payload_schema =
             Arc::new(select_schema(&right_input_schema, &right_payload_select));
+
+        // Unmatched-row bookkeeping would count a candidate before the fused predicate runs, and
+        // the ordered probe would evaluate it a partition group at a time.
+        assert!(
+            fused_predicate.is_none()
+                || (matches!(args.how, JoinType::Inner)
+                    && args.maintain_order == MaintainOrderJoin::None)
+        );
+        let fused_predicate = fused_predicate
+            .map(|(expr, schema)| {
+                FusedPredicate::new(expr, &schema, &left_payload_schema, &right_payload_schema)
+            })
+            .transpose()?;
+
         Ok(Self {
             state,
             params: EquiJoinParams {
@@ -1292,11 +1475,12 @@ impl EquiJoinNode {
                 left_payload_schema,
                 right_payload_schema,
                 args,
+                fused_predicate,
                 random_state: PlRandomState::default(),
                 sample_limit,
             },
             table: new_idx_table(unique_key_schema),
-            spill_ctx: MostRecentSpillContext::new(),
+            spill_ctx: MostRecentSpillContext::new("equi-join".into()),
         })
     }
 }

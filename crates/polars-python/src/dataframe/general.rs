@@ -1,5 +1,3 @@
-use std::hash::BuildHasher;
-
 use arrow::bitmap::MutableBitmap;
 use either::Either;
 use parking_lot::RwLock;
@@ -99,7 +97,7 @@ impl PyDataFrame {
         py: Python<'_>,
         n: &PySeries,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         py.enter_polars_df(|| {
@@ -115,7 +113,7 @@ impl PyDataFrame {
         py: Python<'_>,
         frac: &PySeries,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         py.enter_polars_df(|| {
@@ -341,6 +339,20 @@ impl PyDataFrame {
         py.enter_polars_series(|| self.df.read().is_duplicated())
     }
 
+    #[pyo3(signature = (by, descending, nulls_last))]
+    pub fn is_sorted(
+        &self,
+        py: Python<'_>,
+        by: Vec<String>,
+        descending: Vec<bool>,
+        nulls_last: Vec<bool>,
+    ) -> PyResult<bool> {
+        py.enter_polars(|| {
+            let by = strings_to_pl_smallstr(by);
+            self.df.read().is_sorted(&by, &descending, &nulls_last)
+        })
+    }
+
     pub fn equals(&self, py: Python<'_>, other: &PyDataFrame, null_equal: bool) -> PyResult<bool> {
         if null_equal {
             py.enter_polars_ok(|| self.df.read().equals_missing(&other.df.read()))
@@ -492,16 +504,7 @@ impl PyDataFrame {
         py.enter_polars_ok(|| self.df.write().shrink_to_fit())
     }
 
-    pub fn hash_rows(
-        &self,
-        py: Python<'_>,
-        k0: u64,
-        k1: u64,
-        k2: u64,
-        k3: u64,
-    ) -> PyResult<PySeries> {
-        // TODO: don't expose all these seeds.
-        let seed = PlFixedStateQuality::default().hash_one((k0, k1, k2, k3));
+    pub fn hash_rows(&self, py: Python<'_>, seed: u64) -> PyResult<PySeries> {
         let hb = PlSeedableRandomStateQuality::seed_from_u64(seed);
         py.enter_polars_series(|| self.df.write().hash_rows(Some(hb)))
     }

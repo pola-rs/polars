@@ -12,7 +12,7 @@ impl Expr {
         self,
         n: Expr,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> Self {
         self.map_binary(
@@ -32,7 +32,7 @@ impl Expr {
         self,
         frac: Expr,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> Self {
         self.map_binary(

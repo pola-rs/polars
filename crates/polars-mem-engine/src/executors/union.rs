@@ -19,6 +19,7 @@ impl Executor for UnionExec {
             }
         }
         let mut inputs = std::mem::take(&mut self.inputs);
+        let n_inputs = inputs.len();
 
         let sliced_path = if let Some((offset, _)) = self.options.slice {
             offset >= 0
@@ -55,6 +56,10 @@ impl Executor for UnionExec {
                 // TODO!: don't read the file yet!
                 if slice_offset > height {
                     slice_offset -= height;
+                    // Keep the union schema when the offset skips every input.
+                    if dfs.is_empty() && idx + 1 == n_inputs {
+                        dfs.push(df.clear());
+                    }
                 }
                 // applying the slice
                 // continue iteration
