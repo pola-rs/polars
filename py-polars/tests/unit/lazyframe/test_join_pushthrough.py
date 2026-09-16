@@ -54,9 +54,9 @@ def first_join(plan: str) -> str:
 def assert_same_result(
     lf: pl.LazyFrame, on: pl.QueryOptFlags = ON, off: pl.QueryOptFlags = OFF
 ) -> None:
-    expected = lf.collect(optimizations=off)
+    expected = lf.collect(optimizations=off).rechunk()
     for engine in ("in-memory", "streaming"):
-        out = lf.collect(engine=engine, optimizations=on)
+        out = lf.collect(engine=engine, optimizations=on).rechunk()
         assert out.schema == lf.collect_schema()
         assert_frame_equal(out, expected, check_row_order=False)
 
