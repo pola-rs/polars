@@ -113,6 +113,7 @@ fn process_join(
 
     // A bounded side before an estimated one, the smaller of two alike; the first
     // whose range prunes a scan much larger than itself is taken.
+    // Try the right side first when candidates rank equally.
     let mut sides: Vec<BuildSide> = [false, true]
         .into_iter()
         .filter_map(|left| {
@@ -141,11 +142,11 @@ fn process_join(
             return None;
         }
         let other = if side.left { &right_stats } else { &left_stats };
-        let pruned = filters
+        let probe_rows = filters
             .iter()
             .filter_map(|f| side_stats(f.scan, ir_arena, expr_arena, stats))
             .fold(other.filtered, |acc, (scan, _)| acc.max(scan.filtered));
-        (pruned >= LOPSIDED_FACTOR * side.rows).then_some((side, filters))
+        (probe_rows >= LOPSIDED_FACTOR * side.rows).then_some((side, filters))
     });
     let Some((BuildSide { left, forced, .. }, filters)) = chosen else {
         return;

@@ -1799,7 +1799,8 @@ impl ComputeNode for EquiJoinNode {
             EquiJoinState::Sample(sample_state) => {
                 assert!(send_ports[0].is_none());
                 // A side without a port is done, unless it is not being read.
-                let final_len = |idx: usize, left: bool| {
+                let final_len = |left: bool| {
+                    let idx = if left { 0 } else { 1 };
                     let known = recv_ports[idx].is_none() && sample_state.is_open(left);
                     let len = if known {
                         sample_state.len(left)
@@ -1808,8 +1809,8 @@ impl ComputeNode for EquiJoinNode {
                     };
                     Arc::new(RelaxedCell::from(len))
                 };
-                let left_final_len = final_len(0, true);
-                let right_final_len = final_len(1, false);
+                let left_final_len = final_len(true);
+                let right_final_len = final_len(false);
 
                 if let Some(left_recv) = recv_ports[0].take() {
                     join_handles.push(scope.spawn_task(
