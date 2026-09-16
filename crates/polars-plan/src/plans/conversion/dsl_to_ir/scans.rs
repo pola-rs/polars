@@ -365,19 +365,33 @@ pub(super) async fn parquet_file_info(
                 // only split such a file across workers if it knows its row
                 // groups, and that needs its footer. The threshold is derived
                 // here rather than passed in, because the total is only known
-                // once paths are expanded. Fewer than `n_parts` sources can
-                // clear the bar, since their sizes sum to at most the total, so
-                // this stays bounded by `n_parts` rather than by file count.
+                // once paths are expanded. At most `n_parts` sources can clear
+                // the bar, since their sizes sum to at most the total, so this
+                // stays bounded by `n_parts` rather than by file count.
                 if let Some(n_parts) = resolve_heavy_sources
                     && let Some(bytes) = bytes_per_source
                 {
                     debug_assert_eq!(bytes.len(), n_sources);
                     let total: u128 = bytes.iter().map(|&b| b as u128).sum();
-                    let threshold = total / n_parts.get() as u128;
-                    // Source 0 is always read, so it never needs adding here.
-                    indices.extend((1..n_sources).filter(|&i| bytes[i] as u128 >= threshold));
-                    indices.sort_unstable();
-                    indices.dedup();
+                    let n_parts = n_parts.get() as u128;
+                    // `size >= total / n_parts`, multiplied out. Comparing
+                    // against the floored quotient instead would test against a
+                    // threshold below the real one and admit more than `n_parts`
+                    // sources -- `[2, 2, 2, 2, 2]` with `n_parts = 4` selects all
+                    // five, where the exact bar of 2.5 selects none. Sizes are
+                    // `u64` and `n_parts` a `u32`, so the product fits in `u128`.
+                    //
+                    // A scan whose sources are all empty has no heavy source, and
+                    // the multiplied-out form would otherwise call every one of
+                    // them heavy.
+                    if total > 0 {
+                        // Source 0 is always read, so it never needs adding here.
+                        indices.extend(
+                            (1..n_sources).filter(|&i| bytes[i] as u128 * n_parts >= total),
+                        );
+                        indices.sort_unstable();
+                        indices.dedup();
+                    }
                 }
 
                 indices

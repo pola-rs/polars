@@ -613,8 +613,8 @@ pub struct UnifiedScanArgs {
     /// only known once paths are expanded, which happens during conversion --
     /// after the caller has handed over the plan.
     ///
-    /// Fewer than `N` sources can clear the bar, since their sizes sum to at
-    /// most the total, so the extra reads are bounded by `N` rather than by file
+    /// At most `N` sources can clear the bar, since their sizes sum to at most
+    /// the total, so the extra reads are bounded by `N` rather than by file
     /// count. Requires [`Self::source_sizes`], which path expansion fills in for
     /// free; without sizes this is a no-op.
     ///
