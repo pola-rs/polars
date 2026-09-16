@@ -21,7 +21,7 @@
 use std::sync::Arc;
 
 use polars_core::prelude::PlIndexMap;
-use polars_ops::prelude::JoinBuildSide;
+use polars_defs::join::JoinBuildSide;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::pl_str::PlSmallStr;
