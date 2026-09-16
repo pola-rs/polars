@@ -47,6 +47,35 @@ fn _get_cat_phys_map(col: &Column) -> (StringChunked, Series) {
     (cats, phys)
 }
 
+/// Spread one answer per category back over the column that indexes them.
+///
+/// Where the indices repeat a single one, every element picks the same answer out of `result`, so
+/// the column is that one answer repeated -- under whatever mask the indices carry, since an
+/// element whose index is null stays null. The question is put to the values of the index column
+/// apart from its mask, so a chunk that repeats one id under a mask of one bit per element is
+/// answered too.
+fn spread_over_cats<T>(result: &ChunkedArray<T>, idx: &IdxCa) -> ChunkedArray<T>
+where
+    T: PolarsDataType,
+    ChunkedArray<T>: ChunkExpandAtIndex<T> + ChunkTakeUnchecked<IdxCa>,
+{
+    if !idx.is_empty()
+        && let Some(one) = idx.scalar_value_ignore_validity()
+        && (one as usize) < result.len()
+        // An answer that is itself null would have the repeat carry a null that the mask below
+        // then revives; the walk handles that case.
+        && result.get(one as usize).is_some()
+    {
+        return result
+            .new_from_index(one as usize, idx.len())
+            .with_validity(idx.rechunk_validity());
+    }
+
+    // SAFETY: a cat id indexes its own column's mapping, which is what `result` holds one
+    // answer per entry of.
+    unsafe { result.take_unchecked(idx) }
+}
+
 /// Fast path: apply a string function to the categories of a categorical column and broadcast the
 /// result back to the array.
 fn apply_to_cats<F, T>(c: &Column, mut op: F) -> PolarsResult<Column>
@@ -55,12 +84,11 @@ where
     T: PolarsPhysicalType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
     T::Array:
         for<'a> ArrayFromIter<T::Physical<'a>> + for<'a> ArrayFromIter<Option<T::Physical<'a>>>,
+    ChunkedArray<T>: ChunkExpandAtIndex<T> + ChunkTakeUnchecked<IdxCa>,
 {
     let (categories, phys) = _get_cat_phys_map(c);
     let result = op(categories);
-    // SAFETY: physical idx array is valid.
-    let out = unsafe { result.take_unchecked(phys.idx().unwrap()) };
-    Ok(out.into_column())
+    Ok(spread_over_cats(&result, phys.idx().unwrap()).into_column())
 }
 
 #[cfg(feature = "strings")]
@@ -95,9 +123,7 @@ fn slice(c: &Column, offset: i64, length: Option<usize>) -> PolarsResult<Column>
             polars_ops::prelude::update_view(view, start, end, val)
         })
     };
-    // SAFETY: physical idx array is valid.
-    let out = unsafe { result.take_unchecked(phys.idx().unwrap()) };
-    Ok(out.into_column())
+    Ok(spread_over_cats(&result, phys.idx().unwrap()).into_column())
 }
 
 fn cat_to(s: &Column, dtype: &DataType, strict: bool) -> PolarsResult<Column> {
