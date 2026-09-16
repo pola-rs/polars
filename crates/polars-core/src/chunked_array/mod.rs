@@ -611,6 +611,17 @@ where
         }
     }
 
+    /// This column narrowed to the single element it repeats, where it stands for one.
+    ///
+    /// An argument written as a literal reaches a kernel already broadcast to the length of the
+    /// column it argues over, so the fast paths that ask for a length of one never see it.
+    /// Narrowing it back to that one element lets them: what the kernel makes of one element it
+    /// would make of every one of them. Only the caller knows whether its own length is the one
+    /// the output takes, so it is the caller that decides when to ask.
+    pub fn settled_to_one_element(&self) -> Option<Self> {
+        (self.len() > 1 && self.scalar_value().is_some()).then(|| self.slice(0, 1))
+    }
+
     /// The single value every element of this column holds, disregarding which of them are null.
     ///
     /// Unlike [`scalar_value`](Self::scalar_value) this asks the values alone, so a column whose
