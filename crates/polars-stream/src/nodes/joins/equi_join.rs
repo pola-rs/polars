@@ -192,7 +192,8 @@ struct EquiJoinParams {
     right_payload_schema: Arc<Schema>,
     args: JoinArgs,
     fused_predicate: Option<FusedPredicate>,
-    /// Build-key ranges to publish once the build is done.
+    // Build-key min/max ranges to publish once the build is done.
+    // This will be used to skip row-groups at scan of the probe side.
     runtime_filters: Vec<RuntimeFilter>,
     random_state: PlRandomState,
     sample_limit: usize,
@@ -338,7 +339,6 @@ async fn select_keys(
         .0)
 }
 
-/// The hashed keys and the key columns they were hashed from.
 async fn select_keys_with_columns(
     df: &DataFrame,
     key_selectors: &[StreamExpr],
