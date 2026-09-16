@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal as D
+from math import inf, nan
 from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
+    from typing import Any
 
     from tests.conftest import PlMonkeyPatch
 
@@ -93,9 +97,9 @@ def test_build_side_on_the_left(
 def test_composite_key_filters_every_column(
     fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    other = pl.LazyFrame({"k": [230, 231, 232], "k2": [6, 6, 6], "d": [1, 2, 3]}).filter(
-        pl.col("d") > 0
-    )
+    other = pl.LazyFrame(
+        {"k": [230, 231, 232], "k2": [6, 6, 6], "d": [1, 2, 3]}
+    ).filter(pl.col("d") > 0)
     q = fact.join(other, on=["k", "k2"])
     assert q.explain(engine="streaming").count("dynamic_predicate") == 2
 
@@ -118,7 +122,9 @@ def test_filter_reaches_the_scan_through_a_forced_join(
     fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
     # The second dimension's range crosses the first join on its probe side.
-    q = fact.join(dim(*range(0, 1000, 20)), on="k").join(tiny(220, 240, key="v"), on="v")
+    q = fact.join(dim(*range(0, 1000, 20)), on="k").join(
+        tiny(220, 240, key="v"), on="v"
+    )
     plan = q.explain(engine="streaming")
     assert plan.count("BUILD SIDE: ForceRight") == 2
     assert plan.count("dynamic_predicate") == 2
@@ -315,9 +321,9 @@ def test_build_side_of_several_morsels(
     # The build side arrives in several morsels over several pipelines; the ranges
     # they each saw are merged.
     path = tmp_path / "dim.parquet"
-    pl.DataFrame({"k": [300, 301, 302, 303, 304, 660, 661, 662, 663, 664]}).write_parquet(
-        path, row_group_size=1
-    )
+    pl.DataFrame(
+        {"k": [300, 301, 302, 303, 304, 660, 661, 662, 663, 664]}
+    ).write_parquet(path, row_group_size=1)
     q = fact.join(pl.scan_parquet(path).filter(pl.col("k") > 0), on="k")
     assert "dynamic_predicate" in q.explain(engine="streaming")
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
@@ -346,3 +352,249 @@ def test_row_filtering_stays_on_without_live_columns(tmp_path: Path) -> None:
     ).filter(pl.col("m") == 1)
     assert with_missing.collect(engine="streaming").height == 0
     assert with_missing.collect(engine="in-memory").height == 0
+
+
+def typed_join(
+    tmp_path: Path,
+    dtype: pl.DataType,
+    values: list[Any],
+    keys: list[Any],
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> tuple[str | None, bool]:
+    """Join a typed fact with `keys`; report the row groups read and filter presence.
+
+    The fact holds five values per row group, in the order given, which must be the
+    dtype's own. The result is checked against the values in `keys` and against the
+    same query with statistics disabled.
+    """
+    s = pl.Series("k", values, dtype=dtype)
+    assert s.equals(s.sort())
+    path = tmp_path / "typed.parquet"
+    pl.DataFrame({"k": s, "v": range(len(values))}).write_parquet(
+        path, row_group_size=5, statistics="full"
+    )
+    # The build side is bounded to two rows so it is forced against twenty fact
+    # rows. A single key is padded with a null key, which matches nothing and
+    # stays out of the range; a build side of one row is not estimated smaller
+    # after its filter.
+    assert 1 <= len(keys) <= 2
+    keys_s = pl.Series("k", keys, dtype=dtype)
+    assert keys_s.n_unique() == len(keys)
+    build_keys = keys_s.extend(pl.Series([None] * (2 - len(keys)), dtype=dtype))
+    build = pl.LazyFrame({"k": build_keys, "e": [0, 1]}).filter(pl.col("e") >= 0)
+
+    q = pl.scan_parquet(path).join(build, on="k")
+    filtered = "dynamic_predicate" in q.explain(engine="streaming")
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+
+    expected = pl.DataFrame({"k": s}).filter(pl.col("k").is_in(keys_s))
+    assert_series_equal(out.get_column("k").sort(), expected.get_column("k"))
+    no_stats = pl.scan_parquet(path, use_statistics=False).join(build, on="k")
+    assert_frame_equal(
+        out.sort(out.columns), no_stats.collect(engine="streaming").sort(out.columns)
+    )
+    return groups, filtered
+
+
+I64_MIN = -(2**63)
+I64_MAX = 2**63 - 1
+U64_MAX = 2**64 - 1
+
+INT64 = (
+    [I64_MIN, -(2**62), -1000, -1, 0]
+    + [1, 2, 3, 4, 5]
+    + [100, 200, 300, 400, 500]
+    + [2**62, I64_MAX - 2, I64_MAX - 1, I64_MAX, I64_MAX]
+)
+# Crosses the signed maximum inside the second row group.
+UINT64 = (
+    [0, 1, 2, 3, 4]
+    + [5, I64_MAX - 1, I64_MAX, I64_MAX + 1, I64_MAX + 2]
+    + [I64_MAX + 10, I64_MAX + 11, I64_MAX + 12, I64_MAX + 13, I64_MAX + 14]
+    + [U64_MAX - 4, U64_MAX - 3, U64_MAX - 2, U64_MAX - 1, U64_MAX]
+)
+INT8 = (
+    list(range(-128, -123))
+    + list(range(-2, 3))
+    + list(range(10, 15))
+    + list(range(123, 128))
+)
+# Crosses the signed maximum inside the third row group.
+UINT8 = (
+    list(range(5))
+    + list(range(100, 105))
+    + list(range(126, 131))
+    + list(range(251, 256))
+)
+# Strings compare by their UTF-8 bytes, so multi-byte characters sort last.
+STRINGS = (
+    ["a", "b", "c", "d", "e"]
+    + ["f", "g", "h", "i", "j"]
+    + ["k", "é", "ü", "ā", "ж"]
+    + ["中", "日", "本", "🐍", "🦀"]
+)
+BINARY = (
+    [b"\x00", b"\x01", b"a", b"z", b"\x7f"]
+    + [b"\x80", b"\x81", b"\x82", b"\x83", b"\x84"]
+    + [b"\xf0", b"\xf1", b"\xf2", b"\xf3", b"\xf4"]
+    + [b"\xfb", b"\xfc", b"\xfd", b"\xfe", b"\xff"]
+)
+DECIMALS = (
+    [D("-99999999.99"), D("-1000.50"), D("-1.01"), D("-1.00"), D("-0.01")]
+    + [D("0.00"), D("0.01"), D("1.00"), D("1.01"), D("2.00")]
+    + [D("10.00"), D("20.00"), D("30.00"), D("40.00"), D("50.00")]
+    + [D("100.00"), D("200.00"), D("300.00"), D("400.00"), D("99999999.99")]
+)
+DATES = (
+    [
+        date(1, 1, 1),
+        date(1900, 1, 1),
+        date(1969, 12, 30),
+        date(1969, 12, 31),
+        date(1970, 1, 1),
+    ]
+    + [date(1970, 1, 2) + timedelta(days=i) for i in range(5)]
+    + [date(2000, 1, 1) + timedelta(days=i) for i in range(5)]
+    + [date(2100, 1, 1) + timedelta(days=i) for i in range(4)]
+    + [date(9999, 12, 31)]
+)
+DATETIMES = (
+    [datetime(1900, 1, 1) + timedelta(seconds=i) for i in range(5)]
+    + [datetime(1969, 12, 31, 23, 59, 59) + timedelta(microseconds=i) for i in range(5)]
+    + [datetime(1970, 1, 1) + timedelta(microseconds=i) for i in range(5)]
+    + [datetime(2200, 1, 1) + timedelta(seconds=i) for i in range(5)]
+)
+DURATIONS = (
+    [timedelta(days=-10000) + timedelta(milliseconds=i) for i in range(5)]
+    + [timedelta(milliseconds=i - 2) for i in range(5)]
+    + [timedelta(seconds=i + 1) for i in range(5)]
+    + [timedelta(days=10000) + timedelta(milliseconds=i) for i in range(5)]
+)
+TIMES = (
+    [time(0, 0, 0, i) for i in range(5)]
+    + [time(6, 0, 0, i) for i in range(5)]
+    + [time(12, 0, 0, i) for i in range(5)]
+    + [time(23, 59, 59, 999995 + i) for i in range(5)]
+)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "values", "keys", "groups"),
+    [
+        (pl.Int64, INT64, [I64_MIN, -1000], "1 / 4"),
+        (pl.Int64, INT64, [I64_MAX - 1, I64_MAX], "1 / 4"),
+        (pl.Int64, INT64, [-1, 1], "2 / 4"),
+        (pl.UInt64, UINT64, [I64_MAX + 1, I64_MAX + 2], "1 / 4"),
+        (pl.UInt64, UINT64, [U64_MAX - 1, U64_MAX], "1 / 4"),
+        (pl.UInt64, UINT64, [4, 5], "2 / 4"),
+        (pl.Int8, INT8, [-128, -127], "1 / 4"),
+        (pl.Int8, INT8, [126, 127], "1 / 4"),
+        (pl.Int8, INT8, [2, 10], "2 / 4"),
+        (pl.UInt8, UINT8, [128, 130], "1 / 4"),
+        (pl.UInt8, UINT8, [254, 255], "1 / 4"),
+        (pl.Boolean, [False] * 10 + [True] * 10, [True], "2 / 4"),
+        (pl.Boolean, [False] * 10 + [True] * 10, [False], "2 / 4"),
+        (pl.String, STRINGS, ["ü", "ā"], "1 / 4"),
+        (pl.String, STRINGS, ["🐍", "🦀"], "1 / 4"),
+        (pl.String, STRINGS, ["k", "中"], "2 / 4"),
+        (pl.Binary, BINARY, [b"\x7f", b"\x80"], "2 / 4"),
+        (pl.Binary, BINARY, [b"\x80", b"\x84"], "1 / 4"),
+        (pl.Binary, BINARY, [b"\xfe", b"\xff"], "1 / 4"),
+        (pl.Decimal(10, 2), DECIMALS, [D("-1000.50"), D("-1.01")], "1 / 4"),
+        (pl.Decimal(10, 2), DECIMALS, [D("30.00"), D("100.00")], "2 / 4"),
+        (pl.Date, DATES, [date(1, 1, 1), date(1900, 1, 1)], "1 / 4"),
+        (pl.Date, DATES, [date(2100, 1, 2), date(9999, 12, 31)], "1 / 4"),
+        (
+            pl.Datetime("us"),
+            DATETIMES,
+            [
+                datetime(1969, 12, 31, 23, 59, 59, 3),
+                datetime(1969, 12, 31, 23, 59, 59, 4),
+            ],
+            "1 / 4",
+        ),
+        (
+            pl.Datetime("us"),
+            DATETIMES,
+            [datetime(1900, 1, 1), datetime(1900, 1, 1, 0, 0, 1)],
+            "1 / 4",
+        ),
+        (
+            pl.Duration("ms"),
+            DURATIONS,
+            [timedelta(milliseconds=-1), timedelta(0)],
+            "1 / 4",
+        ),
+        (
+            pl.Duration("ms"),
+            DURATIONS,
+            [timedelta(days=10000), timedelta(days=10000, milliseconds=1)],
+            "1 / 4",
+        ),
+        (pl.Time, TIMES, [time(23, 59, 59, 999998), time(23, 59, 59, 999999)], "1 / 4"),
+        (pl.Time, TIMES, [time(0, 0, 0, 4), time(6, 0, 0, 0)], "2 / 4"),
+    ],
+)
+def test_ranges_of_supported_key_types(
+    tmp_path: Path,
+    dtype: pl.DataType,
+    values: list[Any],
+    keys: list[Any],
+    groups: str,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    read, filtered = typed_join(tmp_path, dtype, values, keys, plmonkeypatch, capfd)
+    assert filtered
+    assert read == f"{groups} row groups"
+
+
+@pytest.mark.parametrize(
+    ("dtype", "values", "keys"),
+    [
+        (
+            pl.Int128,
+            [-(2**127), -(2**64), -1, 0, 1] + list(range(10, 25)),
+            [-(2**64), 12],
+        ),
+        (
+            pl.UInt128,
+            list(range(15)) + [2**63, 2**64, 2**100, 2**127, 2**128 - 1],
+            [2**100, 2**128 - 1],
+        ),
+        (
+            pl.Float64,
+            [-inf, -1.5, -0.0, 0.0, 1.5] + [float(i) for i in range(2, 17)],
+            [-0.0, inf],
+        ),
+        (pl.Float32, [float(i) for i in range(19)] + [nan], [nan, 3.0]),
+        (pl.Categorical, [f"c{i:02}" for i in range(20)], ["c03", "c17"]),
+        (
+            pl.Enum([f"e{i:02}" for i in range(20)]),
+            [f"e{i:02}" for i in range(20)],
+            ["e03", "e17"],
+        ),
+    ],
+)
+def test_unsupported_key_types_get_no_range(
+    tmp_path: Path,
+    dtype: pl.DataType,
+    values: list[Any],
+    keys: list[Any],
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    read, filtered = typed_join(tmp_path, dtype, values, keys, plmonkeypatch, capfd)
+    assert not filtered
+    assert read in (None, "4 / 4 row groups")
+
+
+@pytest.mark.parametrize("dtype", [pl.Int128, pl.UInt128])
+def test_static_predicate_on_128_bit_column(tmp_path: Path, dtype: pl.DataType) -> None:
+    path = tmp_path / "wide.parquet"
+    pl.DataFrame({"k": pl.Series([1, 2, 3, 4], dtype=dtype)}).write_parquet(
+        path, row_group_size=2, statistics="full"
+    )
+    q = pl.scan_parquet(path).filter(pl.col("k") > 2)
+    assert q.collect(engine="streaming").get_column("k").to_list() == [3, 4]

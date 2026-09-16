@@ -74,7 +74,7 @@ pub fn aexpr_to_column_predicates(
                 is_sumwise_complete = false;
                 continue;
             },
-            D::Float32 | D::Float64 => {
+            D::Float32 | D::Float64 | D::Int128 | D::UInt128 => {
                 is_sumwise_complete = false;
                 continue;
             },

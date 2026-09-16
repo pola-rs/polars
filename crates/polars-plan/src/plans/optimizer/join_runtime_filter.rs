@@ -22,7 +22,7 @@ use super::predicate_pushdown::utils::{
 };
 #[cfg(feature = "parquet")]
 use crate::dsl::FileScanIR;
-use crate::plans::aexpr::predicates::can_use_min_max_stats;
+use crate::plans::aexpr::predicates::supports_runtime_range;
 use crate::plans::optimizer::predicate_pushdown::new_batch_only_dynamic_pred;
 use crate::plans::options::RuntimeFilter;
 use crate::plans::schema::join_right_output_names;
@@ -109,10 +109,7 @@ fn process_join(
     let mut filters = Vec::new();
     for (key_idx, name) in probe_keys.into_iter().enumerate() {
         let Some(name) = name else { continue };
-        if !probe_schema
-            .get(&name)
-            .is_some_and(|dtype| can_use_min_max_stats(dtype, None, None))
-        {
+        if !probe_schema.get(&name).is_some_and(supports_runtime_range) {
             continue;
         }
         let column = expr_arena.add(AExpr::Column(name));

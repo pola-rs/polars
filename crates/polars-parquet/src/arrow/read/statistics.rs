@@ -3,7 +3,7 @@
 use arrow::array::{
     Array, BinaryViewArray, BooleanArray, FixedSizeBinaryArray, MutableBinaryViewArray,
     MutableBooleanArray, MutableFixedSizeBinaryArray, MutablePrimitiveArray, NullArray,
-    PrimitiveArray, Utf8ViewArray,
+    PrimitiveArray, Utf8ViewArray, new_null_array,
 };
 use arrow::datatypes::{ArrowDataType, Field, IntegerType, IntervalUnit, TimeUnit};
 use arrow::types::{days_ms, i256};
@@ -270,7 +270,8 @@ impl ColumnStatistics {
                 ))
             },
 
-            other => todo!("{:?}", other),
+            // No conversion of these statistics bounds the values polars decodes.
+            _ => (None, None),
         };
 
         Ok(ArrowColumnStatistics {
@@ -542,7 +543,16 @@ pub fn deserialize_all(
                     )
                 },
 
-                other => todo!("{:?}", other),
+                // No conversion of these statistics bounds the values polars decodes.
+                _ => {
+                    for rg in row_groups {
+                        let column = &rg.parquet_columns()[field_idx];
+                        null_count.push(column.null_count().map(|v| v as IdxSize));
+                        distinct_count.push(column.distinct_count().map(|v| v as IdxSize));
+                    }
+                    let nulls = || new_null_array(field.dtype().clone(), row_groups.len());
+                    (nulls(), nulls())
+                },
             };
 
             Ok(Some(ArrowColumnStatisticsArrays {

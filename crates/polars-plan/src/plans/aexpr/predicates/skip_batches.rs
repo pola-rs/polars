@@ -172,7 +172,7 @@ pub fn aexpr_to_skip_batch_predicate(
 /// but data may contain it. Since NaN is largest under TotalOrd, `col < x` is safe
 /// (NaN never matches) but `col > x` is not (NaN always matches).
 /// col >= NaN matches NaN == NaN, but stats exclude NaN so max < NaN can't detect them -> unsafe
-pub(crate) fn can_use_min_max_stats(
+fn can_use_min_max_stats(
     dtype: &DataType,
     op: Option<&Operator>,
     lv: Option<&LiteralValue>,
@@ -192,6 +192,36 @@ pub(crate) fn can_use_min_max_stats(
         Some(O::Lt | O::LtEq) => true,
         None | Some(O::Eq | O::EqValidity) => !lv_is_nan && lv.is_some(),
         Some(O::Gt) => lv_is_nan,
+        _ => false,
+    }
+}
+
+/// Whether a runtime key range may skip batches of a column with this dtype.
+///
+/// The range is compared against the batch's min/max with polars' ordering, so the
+/// type must be one whose parquet statistics are ordered the same way. Floats are out
+/// because the statistics leave out NaN; 128-bit integers because their statistics
+/// are byte-wise.
+pub(crate) fn supports_runtime_range(dtype: &DataType) -> bool {
+    use DataType as D;
+    match dtype {
+        D::Boolean
+        | D::UInt8
+        | D::UInt16
+        | D::UInt32
+        | D::UInt64
+        | D::Int8
+        | D::Int16
+        | D::Int32
+        | D::Int64
+        | D::String
+        | D::Binary
+        | D::Date
+        | D::Datetime(..)
+        | D::Duration(_)
+        | D::Time => true,
+        #[cfg(feature = "dtype-decimal")]
+        D::Decimal(..) => true,
         _ => false,
     }
 }
@@ -727,7 +757,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                 IRFunctionExpr::DynamicPred { pred, .. } => {
                     let target = resolve_stat_target(input[0].node(), arena)?;
                     let dtype = target_leaf_dtype(&target, schema)?;
-                    if !can_use_min_max_stats(dtype, None, None) || dtype.is_float() {
+                    if !supports_runtime_range(dtype) {
                         return None;
                     }
                     let function = IRFunctionExpr::DynamicSkipBatch { pred: pred.clone() };
