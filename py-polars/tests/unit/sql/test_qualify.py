@@ -293,3 +293,18 @@ def test_qualify_expected_errors(df_test: pl.DataFrame) -> None:
         match="QUALIFY clause must reference window functions",
     ):
         ctx.execute("SELECT id, category, value FROM df QUALIFY value > 200")
+
+
+def test_qualify_with_subquery_does_not_leak_placeholder() -> None:
+    # QUALIFY runs after the final projection, so the column that `process_subqueries`
+    # broadcasts onto the frame has to be dropped explicitly.
+    frames = {
+        "t1": pl.DataFrame({"k": [1, 2, 3]}),
+        "t2": pl.DataFrame({"k": [1, 1, 2]}),
+    }
+    res = pl.SQLContext(frames=frames, eager=True).execute(
+        "SELECT k, ROW_NUMBER() OVER (ORDER BY k) AS rn FROM t1 "
+        "QUALIFY rn > (SELECT MIN(k) FROM t2)"
+    )
+    assert res.columns == ["k", "rn"]
+    assert res["k"].to_list() == [2, 3]

@@ -3,14 +3,19 @@ from __future__ import annotations
 import io
 import operator
 import pickle
+import re
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 import polars as pl
+from polars.exceptions import AttributeRemovedError
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric.strategies.core import series
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -639,7 +644,7 @@ def test_categorical_vstack() -> None:
         {"a": pl.Series(["a", "b", "c", "d", "e", "f"], dtype=pl.Categorical)}
     )
     assert_frame_equal(df3, expected)
-    assert set(df3.get_column("a").cat.get_categories().to_list()) >= {
+    assert set(df3.get_column("a").unique().to_list()) == {
         "a",
         "b",
         "c",
@@ -703,7 +708,6 @@ def test_cat_preserve_lexical_ordering_on_concat() -> None:
 
 
 @pytest.mark.may_fail_cloud  # reason: sorted flag
-@pytest.mark.may_fail_auto_streaming
 def test_cat_append_lexical_sorted_flag() -> None:
     df = pl.DataFrame({"x": [0, 1, 1], "y": ["B", "B", "A"]}).with_columns(
         pl.col("y").cast(pl.Categorical())
@@ -720,19 +724,6 @@ def test_cat_append_lexical_sorted_flag() -> None:
     s1.append(s3)
 
     assert not (s1.is_sorted())
-
-
-def test_get_cat_categories_multiple_chunks() -> None:
-    df = pl.DataFrame(
-        [
-            pl.Series("e", ["a", "b"], pl.Categorical),
-        ]
-    )
-    df = pl.concat(
-        [df for _ in range(100)], how="vertical", rechunk=False, parallel=True
-    )
-    cats = df.lazy().select(pl.col("e").cat.get_categories()).collect()["e"].to_list()
-    assert set(cats) >= {"a", "b"}
 
 
 @pytest.mark.parametrize(
@@ -881,9 +872,11 @@ def test_ipc_categorical_roundtrip() -> None:
     )
 
     lf.sink_ipc(f := io.BytesIO())
+    f.seek(0)
     assert_frame_equal(pl.scan_ipc(f), lf)
 
     lf.sink_parquet(f := io.BytesIO())
+    f.seek(0)
     assert_frame_equal(pl.scan_parquet(f), lf)
 
     assert_frame_equal(pickle.loads(pickle.dumps(lf)), lf)
@@ -1014,9 +1007,47 @@ def test_categorical_serialization_prunes_unused_categories_24034() -> None:
     assert pickle_size_ratio <= 0.8
 
 
-def test_categorical_cast_from_invalid_int() -> None:
-    dt = pl.Categorical(pl.Categories.random())
-    _dummy = pl.Series(["test"]).cast(dt)
-    s = pl.Series("a", [0, 1000, 2000, 3000]).cast(dt, strict=False)
-    assert s.null_count() == 3
-    assert_series_equal(s, pl.Series("a", ["test", None, None, None], dtype=dt))
+@given(data=st.data())
+def test_categories_to_series(data: st.DataObject) -> None:
+    categories = pl.Categories.random()
+    s = data.draw(series(dtype=pl.Categorical(categories)))
+    assert isinstance(s.dtype, pl.Categorical)
+    assert_series_equal(
+        s.dtype.categories.to_series(),
+        s.unique(maintain_order=True).cast(pl.String).drop_nulls(),
+        check_names=False,
+    )
+
+
+@given(data=st.data())
+def test_categories_to_dict(data: st.DataObject) -> None:
+    categories = pl.Categories.random()
+    s = data.draw(series(dtype=pl.Categorical(categories)))
+    assert isinstance(s.dtype, pl.Categorical)
+    assert s.dtype.categories.to_dict() == {
+        key: i
+        for i, key in enumerate(
+            s.unique(maintain_order=True).cast(pl.String).drop_nulls().to_list()
+        )
+    }
+
+
+@pytest.mark.parametrize(
+    ("name", "match"),
+    [
+        ("get_categories", "use `Expr.unique()`"),
+        ("is_local", "Categoricals no longer have a local scope."),
+        ("to_local", "Categoricals no longer have a local scope."),
+        ("uses_lexical_ordering", "Categoricals are now always ordered lexically."),
+    ],
+)
+def test_removed_cat_methods(name: str, match: str) -> None:
+    s = pl.Series(["a", "b"], dtype=pl.Categorical)
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        getattr(s.cat, name)
+
+
+def test_removed_cat_methods_expr() -> None:
+    msg = "use `Expr.unique()`"
+    with pytest.raises(AttributeRemovedError, match=re.escape(msg)):
+        pl.col("a").cat.get_categories  # type: ignore[attr-defined]

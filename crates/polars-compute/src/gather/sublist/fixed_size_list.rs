@@ -1,5 +1,6 @@
 use arrow::array::{ArrayRef, FixedSizeListArray, PrimitiveArray};
-use arrow::legacy::prelude::*;
+use arrow::datatypes::IdxArr;
+use arrow::legacy::index::IndexToUsize;
 use arrow::legacy::utils::CustomIterTools;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::IdxSize;

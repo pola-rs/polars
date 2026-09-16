@@ -1,8 +1,9 @@
 """Functions for reading data."""
 
+from polars.io.arrow_c_stream import scan_arrow_c_stream
 from polars.io.avro import read_avro
 from polars.io.clipboard import read_clipboard
-from polars.io.csv import read_csv, read_csv_batched, scan_csv
+from polars.io.csv import read_csv, scan_csv
 from polars.io.database import read_database, read_database_uri
 from polars.io.delta import read_delta, scan_delta
 from polars.io.iceberg import scan_iceberg
@@ -32,7 +33,6 @@ __all__ = [
     "read_avro",
     "read_clipboard",
     "read_csv",
-    "read_csv_batched",
     "read_database",
     "read_database_uri",
     "read_delta",
@@ -47,6 +47,7 @@ __all__ = [
     "read_parquet",
     "read_parquet_metadata",
     "read_parquet_schema",
+    "scan_arrow_c_stream",
     "scan_csv",
     "scan_delta",
     "scan_iceberg",

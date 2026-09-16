@@ -1,28 +1,32 @@
 mod builder;
+mod canonical;
 mod determinism;
 mod equality;
 mod evaluate;
+pub(crate) mod filter_constraint;
 mod function_expr;
 mod hash;
 mod minterm_iter;
 pub(crate) mod or_factoring;
 pub mod predicates;
-pub(crate) mod range_merge;
 mod scalar;
 mod schema;
 mod traverse;
 
 use std::hash::{Hash, Hasher};
 
-pub use determinism::{is_inherently_nondeterministic, is_inherently_nondeterministic_top_level};
+pub use canonical::{CanonicalExprId, CanonicalExprMap, CanonicalExprMapWithArena};
+pub use determinism::{
+    is_inherently_nondeterministic, is_inherently_nondeterministic_excluding_udfs_top_level,
+    is_inherently_nondeterministic_top_level,
+};
 pub use function_expr::*;
-pub(crate) use hash::traverse_and_hash_aexpr;
 pub use minterm_iter::MintermIter;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
-pub use scalar::{is_length_preserving_ae, is_scalar_ae};
+pub use scalar::{is_known_length_ae, is_length_preserving_ae, is_scalar_ae};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
 pub mod projection_height;
@@ -32,6 +36,8 @@ pub use builder::AExprBuilder;
 pub use evaluate::{constant_evaluate, into_column};
 pub use properties::*;
 pub use schema::ToFieldContext;
+#[cfg(feature = "dtype-struct")]
+pub(crate) use schema::get_struct_numeric_dtype;
 
 use crate::constants::LEN;
 use crate::prelude::*;
@@ -70,7 +76,6 @@ pub enum IRAggExpr {
     },
     Std(Node, u8),
     Var(Node, u8),
-    AggGroups(Node),
 }
 
 impl Hash for IRAggExpr {
@@ -91,33 +96,6 @@ impl Hash for IRAggExpr {
                 include_nulls,
             } => include_nulls.hash(state),
             _ => {},
-        }
-    }
-}
-
-impl IRAggExpr {
-    pub(super) fn equal_nodes(&self, other: &IRAggExpr) -> bool {
-        use IRAggExpr::*;
-        match (self, other) {
-            (
-                Min {
-                    propagate_nans: l, ..
-                },
-                Min {
-                    propagate_nans: r, ..
-                },
-            ) => l == r,
-            (
-                Max {
-                    propagate_nans: l, ..
-                },
-                Max {
-                    propagate_nans: r, ..
-                },
-            ) => l == r,
-            (Std(_, l), Std(_, r)) => l == r,
-            (Var(_, l), Var(_, r)) => l == r,
-            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
         }
     }
 }
@@ -162,7 +140,6 @@ impl From<IRAggExpr> for GroupByMethod {
             } => GroupByMethod::Count { include_nulls },
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
-            AggGroups(_) => GroupByMethod::Groups,
         }
     }
 }
@@ -217,9 +194,10 @@ pub enum AExpr {
     },
     Agg(IRAggExpr),
     Ternary {
-        predicate: Node,
+        /// `truthy` and `falsy` come before `predicate` as they determine the output name.
         truthy: Node,
         falsy: Node,
+        predicate: Node,
     },
     AnonymousAgg {
         input: Vec<ExprIR>,

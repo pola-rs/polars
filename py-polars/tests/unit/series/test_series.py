@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+import operator
+import re
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
@@ -25,6 +27,7 @@ from polars.datatypes import (
     Unknown,
 )
 from polars.exceptions import (
+    AttributeRemovedError,
     DuplicateError,
     InvalidOperationError,
     PolarsInefficientMapWarning,
@@ -35,7 +38,7 @@ from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
     from polars._typing import EpochTimeUnit, PolarsDataType, TimeUnit
     from tests.conftest import PlMonkeyPatch
@@ -560,20 +563,19 @@ def test_series_to_list() -> None:
 def test_to_struct() -> None:
     s = pl.Series("nums", ["12 34", "56 78", "90 00"]).str.extract_all(r"\d+")
 
-    assert s.list.to_struct().struct.fields == ["field_0", "field_1"]
-    assert s.list.to_struct(fields=lambda idx: f"n{idx:02}").struct.fields == [
-        "n00",
-        "n01",
+    assert s.list.to_struct(["field_0", "field_1"]).struct.fields == [
+        "field_0",
+        "field_1",
     ]
     assert_frame_equal(
-        s.list.to_struct(fields=["one", "two"]).struct.unnest(),
+        s.list.to_struct(["one", "two"]).struct.unnest(),
         pl.DataFrame({"one": ["12", "56", "90"], "two": ["34", "78", "00"]}),
     )
 
 
 def test_to_struct_empty() -> None:
     df = pl.DataFrame({"y": [[], [], []]}, schema={"y": pl.List(pl.Int64)})
-    empty_df = df.select(pl.col("y").list.to_struct(fields=[]).struct.unnest())
+    empty_df = df.select(pl.col("y").list.to_struct([]).struct.unnest())
     assert empty_df.shape == (0, 0)
 
 
@@ -1744,11 +1746,11 @@ def test_to_physical() -> None:
     assert s.to_physical().dtype == pl.UInt8
 
     # casting a List(Categorical) results in a List(UInt32)
-    s = pl.Series([["cat1"]]).cast(pl.List(pl.Categorical))
+    s = pl.Series([["cat1"]], dtype=pl.List(pl.Categorical))
     assert s.to_physical().dtype == pl.List(pl.UInt32)
 
     # casting a List(Enum) with a small enum results in a List(UInt8)
-    s = pl.Series(["cat1"]).cast(pl.List(pl.Enum(["cat1"])))
+    s = pl.Series([["cat1"]], dtype=pl.List(pl.Enum(["cat1"])))
     assert s.to_physical().dtype == pl.List(pl.UInt8)
 
 
@@ -2308,7 +2310,7 @@ def test_search_sorted(
     single_s = s.search_sorted(single)
     assert single_s == single_expected
 
-    multiple_s = s.search_sorted(multiple)
+    multiple_s = s.search_sorted(pl.Series(multiple))
     assert_series_equal(
         multiple_s, pl.Series(multiple_expected, dtype=pl.get_index_type())
     )
@@ -2492,6 +2494,38 @@ def test_full_null_cast_to_empty_struct_23276() -> None:
     assert s.cast(pl.Struct({})).to_list() == [None, None, None]
 
 
+# shuffle=True and shuffle=None both rely on rand::seq::index::sample's
+# unspecified order, so they produce the same behavior here
+@pytest.mark.parametrize("shuffle", [False, None, True])
+def test_series_sample_reworked_shuffle_23557(shuffle: bool | None) -> None:
+    s = pl.Series("x", [1, 2, 3, 4])
+
+    result = s.sample(n=2, shuffle=shuffle, seed=0).to_list()
+
+    if shuffle is False:
+        assert result == [1, 2]
+    else:
+        assert len(result) == 2
+        assert set(result).issubset({1, 2, 3, 4})
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ([pl.lit(1)], [2]),
+        ([1], [pl.lit(2)]),
+        ([pl.lit(1)], [pl.lit(2)]),
+    ],
+)
+def test_replace_with_expr_raises_22591(old: list[Any], new: list[Any]) -> None:
+    s = pl.Series([1])
+    with pytest.raises(
+        InvalidOperationError,
+        match="`replace` does not support `old`/`new` values of object dtype",
+    ):
+        s.replace(old, new)
+
+
 def test_is_sorted_struct_27613() -> None:
     s = pl.Series([{"x": 1, "y": 1}, {"x": 1, "y": 2}, {"x": 2, "y": 0}])
     assert s.is_sorted()
@@ -2515,3 +2549,49 @@ def test_is_sorted_struct_27613() -> None:
     s = pl.Series([{"x": 2}, {"x": 1}, None])
     assert s.is_sorted(descending=True, nulls_last=True)
     assert not s.is_sorted(descending=True, nulls_last=False)
+
+
+@pytest.mark.parametrize("op", [operator.add, operator.sub])
+@pytest.mark.parametrize(
+    "temporal_dtype",
+    [pl.Date, pl.Datetime, pl.Time, pl.Duration],
+)
+def test_series_temporal_arithmetic_raises_19135(
+    temporal_dtype: PolarsDataType, op: Callable[[Any, Any], Any]
+) -> None:
+    a = pl.Series("a", [], dtype=temporal_dtype)
+    b = pl.Series("b", [], dtype=pl.Int32)
+    with pytest.raises(InvalidOperationError):
+        op(a, b)
+
+
+def test_removed_classmethods() -> None:
+    match = "use `_import_arrow_from_c` instead. "
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        pl.Series._import_from_c()  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("name", "match"),
+    [
+        pytest.param(
+            "has_validity",
+            "use `has_nulls` instead to check for the presence of null values.",
+            id="has_validity",
+        ),
+        pytest.param(
+            lambda s: s.dt.median, "use `Series.median` instead.", id="dt.median"
+        ),
+        pytest.param(lambda s: s.dt.mean, "use `Series.mean` instead.", id="dt.mean"),
+        pytest.param(
+            lambda s: s.str.concat, "use `str.join` instead.", id="str.concat"
+        ),
+    ],
+)
+def test_removed_methods(name: str | Callable[[pl.Series], None], match: str) -> None:
+    if isinstance(name, str):
+        with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+            getattr(pl.Series(), name)
+    else:
+        with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+            name(pl.Series())

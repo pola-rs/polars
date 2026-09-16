@@ -30,12 +30,15 @@ use crate::utils::{NoNull, get_iter_capacity};
 pub trait ChunkedBuilder<N, T: PolarsDataType> {
     fn append_value(&mut self, val: N);
     fn append_null(&mut self);
+
+    #[inline]
     fn append_option(&mut self, opt_val: Option<N>) {
         match opt_val {
             Some(v) => self.append_value(v),
             None => self.append_null(),
         }
     }
+
     fn finish(self) -> ChunkedArray<T>;
 
     fn shrink_to_fit(&mut self);

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import io
-import typing
+import warnings
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, no_type_check
 
 import pandas as pd
 import pyarrow as pa
-import pyarrow.feather as paf
 import pyarrow.ipc
 import pytest
 from hypothesis import given
@@ -106,14 +105,19 @@ def test_ipc_roundtrip_pandas_parametric(
 ) -> None:
     pd_df = df.to_pandas()
     f = io.BytesIO()
-    pd_df.to_feather(f, compression=compression)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=FutureWarning)
+        pd_df.to_feather(f, compression=compression)
+
     f.seek(0)
     df_read = pl.read_ipc(f, use_pyarrow=False)
     assert_frame_equal(df, df_read, categorical_as_str=True)
     f = io.BytesIO()
     df.write_ipc(f, compression=compression)
     f.seek(0)
-    pd_df_read = pd.read_feather(f)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=FutureWarning)
+        pd_df_read = pd.read_feather(f)
     assert pd_df.equals(pd_df_read)
 
 
@@ -138,11 +142,20 @@ def test_ipc_roundtrip_pyarrow_parametric(
     df.write_ipc(f, compression=compression)
     f.seek(0)
 
-    table = paf.read_table(f)
-    assert_frame_equal(df, typing.cast("pl.DataFrame", pl.from_arrow(table)))
+    with pyarrow.ipc.open_file(f) as ipc_f:
+        table = ipc_f.read_all()
+    assert_frame_equal(df, pl.DataFrame(table))
 
     f = io.BytesIO()
-    paf.write_feather(df.to_arrow(), f, compression=compression)
+
+    with pyarrow.ipc.new_file(
+        f,
+        df.schema.to_arrow(compat_level=pl.CompatLevel.newest()),
+        options=pyarrow.ipc.IpcWriteOptions(
+            compression=None if compression == "uncompressed" else compression
+        ),
+    ) as ipc_f:
+        ipc_f.write_table(df.to_arrow(compat_level=pl.CompatLevel.newest()))
     f.seek(0)
     assert_frame_equal(df, pl.read_ipc(f, use_pyarrow=False))
 
@@ -354,11 +367,11 @@ def test_glob_ipc(df: pl.DataFrame, tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_binview_ipc_mmap(tmp_path: Path) -> None:
+def test_binview_ipc(tmp_path: Path) -> None:
     df = pl.DataFrame({"foo": ["aa" * 10, "bb", None, "small", "big" * 20]})
     file_path = tmp_path / "dump.ipc"
     df.write_ipc(file_path, compat_level=CompatLevel.newest())
-    read = pl.read_ipc(file_path, memory_map=True)
+    read = pl.read_ipc(file_path)
     assert_frame_equal(df, read)
 
 
@@ -427,10 +440,7 @@ def test_read_ipc_only_loads_selected_columns(
     memory_usage_without_pyarrow.reset_tracking()
 
     # Only load one column:
-    kwargs = {}
-    if not stream:
-        kwargs["memory_map"] = False
-    df = read_ipc(stream, str(file_path), columns=["b"], rechunk=False, **kwargs)
+    df = read_ipc(stream, str(file_path), columns=["b"])
     del df
     # Only one column's worth of memory should be used; 2 columns would be
     # 32_000_000 at least, but there's some overhead.
@@ -587,3 +597,21 @@ def test_read_ipc_compressed_empty_bitmap_27532() -> None:
     f.seek(0)
 
     assert_frame_equal(pl.read_ipc(f), pl.DataFrame(schema={"bool": pl.Boolean}))
+
+
+def test_read_ipc_pyarrow() -> None:
+    f = io.BytesIO()
+
+    pl.DataFrame({"a": 1, "b": 2}).write_ipc(f)
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.read_ipc(f, columns=[1], use_pyarrow=True),
+        pl.DataFrame({"b": 2}),
+    )
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.read_ipc(f, columns=["b"], use_pyarrow=True),
+        pl.DataFrame({"b": 2}),
+    )

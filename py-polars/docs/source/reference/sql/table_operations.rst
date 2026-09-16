@@ -63,13 +63,16 @@ Omitting the constraint deletes *all* rows, equivalent to `TRUNCATE`.
 
 DROP TABLES
 -----------
-Deletes the specified table, unregistering it.
+Deletes the specified table, unregistering it. Dropping a table that does not
+exist raises an error unless the optional ``IF EXISTS`` clause is given, in
+which case the statement is a no-op.
 
 **Example:**
 
 .. code-block:: sql
 
-    DROP TABLE old_table
+    DROP TABLE actual_table
+    DROP TABLE IF EXISTS possible_table
 
 .. _explain:
 
@@ -116,10 +119,13 @@ Unnest one or more arrays as columns in a new table object.
 
 TRUNCATE
 --------
-Remove all data from a table *without* deleting the table itself.
+Remove all data from a table *without* deleting the table itself. Truncating a
+table that does not exist raises an error unless the optional ``IF EXISTS``
+clause is given, in which case the statement is a no-op.
 
 **Example:**
 
 .. code-block:: sql
 
-    TRUNCATE TABLE some_table
+    TRUNCATE TABLE actual_table
+    TRUNCATE TABLE IF EXISTS possible_table

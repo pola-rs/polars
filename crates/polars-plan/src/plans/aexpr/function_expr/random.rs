@@ -3,14 +3,14 @@ use strum_macros::IntoStaticStr;
 use super::*;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Copy, Clone, PartialEq, Debug, IntoStaticStr)]
+#[derive(Copy, Clone, PartialEq, Debug, IntoStaticStr, Eq)]
 #[strum(serialize_all = "snake_case")]
 pub enum IRRandomMethod {
     Shuffle,
     Sample {
         is_fraction: bool,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
     },
 }
 

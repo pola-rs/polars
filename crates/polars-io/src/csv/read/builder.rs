@@ -478,42 +478,59 @@ where
         }
     };
 
-    let pattern = match &buf.compiled {
-        Some(compiled) => compiled.pattern,
-        None => match infer_pattern_single(val) {
-            Some(pattern) => pattern,
-            None => {
-                if ignore_errors {
-                    buf.builder.append_null();
-                    return Ok(());
-                } else {
-                    polars_bail!(ComputeError: "could not find a 'date/datetime' pattern for '{}'", val)
-                }
-            },
+    let pattern;
+    let parsed = match &mut buf.compiled {
+        // Retain the inferred candidate state across byte-parser misses. Rebuilding
+        // from `Pattern` here would reset the preferred format for every value.
+        Some(infer) => {
+            pattern = infer.pattern;
+            infer.parse(val)
         },
-    };
-    match DatetimeInfer::try_from_with_unit(pattern, time_unit) {
-        Ok(mut infer) => {
-            let parsed = infer.parse(val);
-            let Some(parsed) = parsed else {
-                if ignore_errors {
-                    buf.builder.append_null();
-                    return Ok(());
-                } else {
-                    polars_bail!(ComputeError: "could not parse '{}' with pattern '{:?}'", val, pattern)
-                }
+        None => {
+            pattern = match infer_pattern_single(val) {
+                Some(pattern) => pattern,
+                None => {
+                    if ignore_errors {
+                        buf.builder.append_null();
+                        return Ok(());
+                    } else {
+                        polars_bail!(ComputeError: "could not find a 'date/datetime' pattern for '{}'", val)
+                    }
+                },
             };
 
-            buf.compiled = Some(infer);
+            let mut infer = match DatetimeInfer::try_from_with_unit(pattern, time_unit) {
+                Ok(infer) => infer,
+                Err(err) => {
+                    if ignore_errors {
+                        buf.builder.append_null();
+                        return Ok(());
+                    } else {
+                        return Err(err);
+                    }
+                },
+            };
+            let parsed = infer.parse(val);
+            if parsed.is_some() {
+                // Match the previous initialization behavior: only retain a parser
+                // after it has successfully parsed a value.
+                buf.compiled = Some(infer);
+            }
+            parsed
+        },
+    };
+
+    match parsed {
+        Some(parsed) => {
             buf.builder.append_value(parsed);
             Ok(())
         },
-        Err(err) => {
+        None => {
             if ignore_errors {
                 buf.builder.append_null();
                 Ok(())
             } else {
-                Err(err)
+                polars_bail!(ComputeError: "could not parse '{}' with pattern '{:?}'", val, pattern)
             }
         },
     }

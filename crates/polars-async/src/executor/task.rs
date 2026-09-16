@@ -9,7 +9,7 @@ use std::task::{Context, Poll, Wake, Waker};
 
 use atomic_waker::AtomicWaker;
 use parking_lot::Mutex;
-use polars_error::signals::try_raise_keyboard_interrupt;
+use polars_error::abort::try_raise_polars_abort;
 
 /// The state of the task. Can't be part of the TaskData enum as it needs to be
 /// atomically updateable, even when we hold the lock on the data.
@@ -34,7 +34,7 @@ impl TaskState {
     /// Wake this task. Returns true if task.schedule should be called.
     fn wake(&self) -> bool {
         self.state
-            .fetch_update(Ordering::Release, Ordering::Relaxed, |state| match state {
+            .try_update(Ordering::Release, Ordering::Relaxed, |state| match state {
                 Self::SCHEDULED | Self::NOTIFIED_WHILE_RUNNING => None,
                 Self::RUNNING => Some(Self::NOTIFIED_WHILE_RUNNING),
                 Self::IDLE => Some(Self::SCHEDULED),
@@ -53,7 +53,7 @@ impl TaskState {
     /// Done running this task. Returns true if task.schedule should be called.
     fn reschedule_after_running(&self) -> bool {
         self.state
-            .fetch_update(Ordering::Release, Ordering::Relaxed, |state| match state {
+            .try_update(Ordering::Release, Ordering::Relaxed, |state| match state {
                 Self::RUNNING => Some(Self::IDLE),
                 Self::NOTIFIED_WHILE_RUNNING => Some(Self::SCHEDULED),
                 _ => panic!("TaskState::reschedule_after_running() called on invalid state"),
@@ -161,6 +161,7 @@ where
     S: Fn(Arc<dyn Runnable<M>>) + Send + Sync + Copy + 'static,
     M: Send + Sync + 'static,
 {
+    #[inline]
     fn metadata(&self) -> &M {
         &self.metadata
     }
@@ -175,7 +176,7 @@ where
                 let fut = unsafe { Pin::new_unchecked(future) };
                 let mut ctx = Context::from_waker(waker);
                 catch_unwind(AssertUnwindSafe(|| {
-                    try_raise_keyboard_interrupt();
+                    try_raise_polars_abort();
                     fut.poll(&mut ctx)
                 }))
             },
@@ -340,6 +341,7 @@ mod std_shim {
         }
 
         // Decrement the reference count of the Arc on drop
+        #[inline]
         unsafe fn drop_waker<W: Wake + Send + Sync>(waker: *const ()) {
             unsafe { Arc::decrement_strong_count(waker as *const W) };
         }

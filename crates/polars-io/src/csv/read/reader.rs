@@ -74,7 +74,7 @@ impl CsvReadOptions {
         );
 
         let path = resolve_homedir(self.path.as_ref().unwrap());
-        let reader = polars_utils::open_file(&path)?;
+        let reader = polars_utils::io::open_file(&path)?;
         let options = self;
 
         Ok(CsvReader {
@@ -191,7 +191,7 @@ pub fn prepare_csv_schema(
             let out = match fld.dtype() {
                 Time => {
                     fields_to_cast.push(fld.clone());
-                    fld.coerce(String);
+                    fld.set_dtype(String);
                     PolarsResult::Ok(fld)
                 },
                 _ => {

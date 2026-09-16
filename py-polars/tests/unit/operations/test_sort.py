@@ -1291,7 +1291,6 @@ def test_sort_by_empty_list_eval_25433() -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_sort_already_sorted_no_rechunk_25733() -> None:
     df1 = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
     df2 = pl.DataFrame({"a": [3, 4], "b": [5, 6]})
@@ -1330,3 +1329,152 @@ def test_sort_by_multiple_length_mismatch_27759() -> None:
     )
     with pytest.raises(pl.exceptions.ShapeError):
         df.group_by("a").agg(pl.col("b").filter("c").sort_by(["d", "e"]))
+
+
+def test_sort_reverse_head_returns_top_values_not_nulls_27917() -> None:
+    df = pl.DataFrame({"x": [10, None, 30, 20, None, 40]})
+
+    assert df.select(pl.col("x").sort().reverse().head(3))["x"].to_list() == [
+        40,
+        30,
+        20,
+    ]
+
+
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_sort_reverse_preserves_null_placement_27917(
+    descending: bool, nulls_last: bool
+) -> None:
+    df = pl.DataFrame({"x": [10, None, 30, 20, None, 40]})
+    expr = pl.col("x").sort(descending=descending, nulls_last=nulls_last).reverse()
+
+    assert_frame_equal(
+        df.lazy().select(expr).collect(),
+        df.lazy().select(expr).collect(optimizations=pl.QueryOptFlags.none()),
+    )
+
+
+@pytest.mark.parametrize(
+    "descending", [[False, False], [True, False], [False, True], [True, True]]
+)
+@pytest.mark.parametrize(
+    "nulls_last", [[False, False], [True, False], [False, True], [True, True]]
+)
+def test_sort_by_reverse_preserves_null_placement_27917(
+    descending: list[bool], nulls_last: list[bool]
+) -> None:
+    df = pl.DataFrame(
+        {
+            "v": [10, 20, 30, 40, 50],
+            "a": [1, 1, 2, 2, 1],
+            "b": [None, 2, None, 3, 1],
+        }
+    )
+    expr = (
+        pl.col("v")
+        .sort_by(["a", "b"], descending=descending, nulls_last=nulls_last)
+        .reverse()
+    )
+
+    assert_frame_equal(
+        df.lazy().select(expr).collect(),
+        df.lazy().select(expr).collect(optimizations=pl.QueryOptFlags.none()),
+    )
+
+
+@pytest.mark.parametrize("descending", [False, True])
+def test_sort_by_reverse_preserves_tie_order_with_maintain_order_28386(
+    descending: bool,
+) -> None:
+    df = pl.DataFrame({"k": [1, 1, 1], "v": [10, 20, 30]})
+    expr = (
+        pl.col("v").sort_by("k", descending=descending, maintain_order=True).reverse()
+    )
+
+    assert_frame_equal(
+        df.lazy().select(expr).collect(),
+        df.lazy().select(expr).collect(optimizations=pl.QueryOptFlags.none()),
+    )
+
+
+def test_sort_scalar_broadcast_in_memory_28387() -> None:
+    lf = (
+        pl.DataFrame({"a": [1, 2, 3]})
+        .lazy()
+        .select(pl.col("a"), pl.lit(9).cast(pl.Int64).sort().alias("s"))
+    )
+    expected = pl.DataFrame({"a": [1, 2, 3], "s": [9, 9, 9]})
+    assert_frame_equal(lf.collect(), expected)
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        pl.Series([[i % 2] for i in range(100)], dtype=pl.List(pl.Int64)),
+        pl.Series([[i % 2, 0] for i in range(100)], dtype=pl.Array(pl.Int64, 2)),
+        pl.Series([{"a": i % 2} for i in range(100)], dtype=pl.Struct({"a": pl.Int64})),
+    ],
+)
+def test_sort_maintain_order_nested_keys_28586(key: pl.Series) -> None:
+    df = pl.DataFrame({"k": key, "r": range(key.len())})
+    assert_frame_equal(df.sort("k", maintain_order=True), df.sort(["k", "r"]))
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        pl.Series("k", [[2], [1], [1]], dtype=pl.List(pl.Int64)),
+        pl.Series("k", [[2, 0], [1, 0], [1, 0]], dtype=pl.Array(pl.Int64, 2)),
+        pl.Series("k", [{"a": 2}, {"a": 1}, {"a": 1}]),
+    ],
+)
+def test_sort_by_multiple_nested_keys(key: pl.Series) -> None:
+    # Nested keys have no row-by-row ordering, so `sort_by` has to take the row-encoded
+    # path that `DataFrame.sort` takes, rather than erroring or panicking.
+    df = pl.DataFrame({"k": key, "x": [1, 2, 3], "y": [3, 4, 2]})
+
+    assert df.sort("k", "y")["x"].to_list() == [3, 2, 1]
+    assert df.select(pl.col("x").sort_by("k", "y"))["x"].to_list() == [3, 2, 1]
+    assert df.select(pl.col("x").sort_by("y", "k"))["x"].to_list() == [3, 1, 2]
+    assert df.select(pl.col("x").sort_by("k", "y", descending=[True, False]))[
+        "x"
+    ].to_list() == [1, 3, 2]
+
+    grouped = df.with_columns(g=1).group_by("g").agg(pl.col("x").sort_by("k", "y"))
+    assert grouped["x"].to_list() == [[3, 2, 1]]
+
+
+NESTED_CATS = pl.Categories("test_sort_by_nested_categorical_keys")
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        pl.Series(
+            "k", [["b"], ["a"], ["a"]], dtype=pl.List(pl.Categorical(NESTED_CATS))
+        ),
+        pl.Series(
+            "k",
+            [["b", "z"], ["a", "z"], ["a", "z"]],
+            dtype=pl.Array(pl.Categorical(NESTED_CATS), 2),
+        ),
+        pl.Series(
+            "k",
+            [{"a": "b"}, {"a": "a"}, {"a": "a"}],
+            dtype=pl.Struct({"a": pl.Categorical(NESTED_CATS)}),
+        ),
+    ],
+)
+def test_sort_by_nested_categorical_keys(key: pl.Series) -> None:
+    # Ensure that categories are sorted by their values, not by their codes.
+    df = pl.DataFrame({"k": key, "x": [1, 2, 3], "y": [3, 4, 2]})
+
+    assert df.sort("k", "y")["x"].to_list() == [3, 2, 1]
+    assert df.select(pl.col("x").sort_by("k", "y"))["x"].to_list() == [3, 2, 1]
+    assert df.select(pl.col("x").sort_by("k", "y", descending=[True, False]))[
+        "x"
+    ].to_list() == [1, 3, 2]
+
+    grouped = df.with_columns(g=1).group_by("g").agg(pl.col("x").sort_by("k", "y"))
+    assert grouped["x"].to_list() == [[3, 2, 1]]

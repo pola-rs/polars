@@ -14,6 +14,7 @@ sphinx-copybutton==0.5.2
 sphinx-design==0.6.1
 sphinx-favicon==1.0.1
 sphinx-reredirects==0.1.5
+sphinx-sitemap==2.9.0
 sphinx-toolbox==3.8.1
 
 livereload==2.7.0

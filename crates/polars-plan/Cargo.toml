@@ -17,6 +17,7 @@ polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
+polars-descriptions = { workspace = true }
 polars-error = { workspace = true }
 polars-ffi = { workspace = true, optional = true }
 polars-io = { workspace = true, features = ["lazy", "csv", "async"] }
@@ -40,6 +41,7 @@ hashbrown = { workspace = true }
 hex = { workspace = true }
 indexmap = { workspace = true }
 memmap = { workspace = true }
+murmur3 = { workspace = true }
 num-traits = { workspace = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
@@ -65,6 +67,7 @@ debugging = []
 python = ["dep:pyo3", "polars-utils/python", "polars-ffi", "polars-core/object", "serde"]
 serde = [
   "dep:serde",
+  "dep:serde_json",
   "polars-buffer/serde",
   "polars-config/serde",
   "polars-core/serde-lazy",
@@ -111,6 +114,7 @@ dtype-time = ["polars-time/dtype-time", "temporal"]
 dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-extension = ["polars-core/dtype-extension", "polars-ops/dtype-extension"]
+dtype-map = ["polars-core/dtype-map", "polars-ops/dtype-map"]
 dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object", "polars-ops/object"]
 list_filter = ["polars-ops/list_filter"]
@@ -132,6 +136,7 @@ dsl-schema = [
   "serde_json/preserve_order",
   "serde",
   "arrow/dsl-schema",
+  "polars-buffer/schemars",
   "polars-core/dsl-schema",
   "polars-time/dsl-schema",
   "polars-io/dsl-schema",
@@ -143,6 +148,7 @@ dsl-schema = [
 # operations
 bitwise = ["polars-core/bitwise", "polars-ops/bitwise"]
 approx_unique = ["polars-ops/approx_unique", "polars-core/approx_unique"]
+approx_quantile = ["polars-compute/approx_quantile"]
 is_in = ["polars-ops/is_in"]
 repeat_by = ["polars-ops/repeat_by"]
 round_series = ["polars-ops/round_series"]
@@ -277,6 +283,7 @@ features = [
   "hist",
   "object",
   "approx_unique",
+  "approx_quantile",
   "dtype-categorical",
   "merge_sorted",
   "bigidx",

@@ -35,11 +35,11 @@ use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 use arrow::compute::aggregate::estimated_bytes_size;
-use arrow::offset::Offsets;
 pub use from::*;
-pub use iterator::{SeriesIter, SeriesPhysIter};
+pub use iterator::SeriesIter;
 use num_traits::NumCast;
 use polars_error::feature_gated;
+use polars_utils::broadcast::BroadcastLength;
 use polars_utils::float::IsFloat;
 pub use series_trait::{IsSorted, *};
 
@@ -352,6 +352,37 @@ impl Series {
         Ok(self)
     }
 
+    /// Returns a series with the given length.
+    ///
+    /// Errors if this series' length is not 1 and also not equal to the requested length.
+    pub fn broadcast_to(&self, length: usize) -> PolarsResult<Cow<'_, Self>> {
+        let len = self.len();
+        if len == length {
+            Ok(Cow::Borrowed(self))
+        } else if len == 1 {
+            Ok(Cow::Owned(self.new_from_index(0, length)))
+        } else {
+            polars_bail!(
+                ShapeMismatch: "can't broadcast Series '{}' of length {len} to length {length}",
+                self.name()
+            );
+        }
+    }
+
+    /// See broadcast_to.
+    pub fn broadcast_in_place_to(&mut self, length: usize) -> PolarsResult<()> {
+        if let Cow::Owned(new) = self.broadcast_to(length)? {
+            *self = new;
+        }
+        Ok(())
+    }
+
+    /// See broadcast_to.
+    pub fn broadcast_owned_to(mut self, length: usize) -> PolarsResult<Self> {
+        self.broadcast_in_place_to(length)?;
+        Ok(self)
+    }
+
     /// Sort the series with specific options.
     ///
     /// # Example
@@ -501,7 +532,15 @@ impl Series {
     ///
     /// # Safety
     ///
-    /// This can lead to invalid memory access in downstream code.
+    /// Payloads must be safe to read as `dtype`: categorical codes in range for every
+    /// non-null slot, and Maps satisfying the `MapChunked` storage safety contract. Null
+    /// Map rows may span entries, and those entries may themselves be null; they are left
+    /// alone. Null entries or keys in live rows are errors. Unsafe payloads can cause
+    /// invalid memory access downstream.
+    ///
+    /// # Key uniqueness
+    /// Not required for safety. Whole-row transformations preserve existing uniqueness;
+    /// key-changing transformations must use validated construction.
     pub unsafe fn from_physical_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
         debug_assert!(!self.dtype().is_logical(), "{:?}", self.dtype());
 
@@ -545,7 +584,7 @@ impl Series {
                 })
             },
 
-            (D::Int32, D::Date) => feature_gated!("dtype-time", Ok(self.clone().into_date())),
+            (D::Int32, D::Date) => feature_gated!("dtype-date", Ok(self.clone().into_date())),
             (D::Int64, D::Datetime(tu, tz)) => feature_gated!(
                 "dtype-datetime",
                 Ok(self.clone().into_datetime(*tu, tz.clone()))
@@ -576,6 +615,16 @@ impl Series {
                     .map(|ca| ca.into_series())
             },
 
+            #[cfg(feature = "dtype-map")]
+            (D::List(_), D::Map(_, _)) => {
+                use crate::chunked_array::logical::ensure_live_entries_non_null;
+
+                let storage = self.from_physical_unchecked(&dtype.map_storage_dtype().unwrap())?;
+                // Nulls that propagation left under null rows are legal; only live rows
+                // must own no null entry or key.
+                ensure_live_entries_non_null(storage.list().unwrap())?;
+                Ok(MapChunked::from_storage_unchecked(dtype.clone(), storage).into_series())
+            },
             #[cfg(feature = "dtype-extension")]
             (_, D::Extension(typ, storage)) => {
                 let storage_series = self.from_physical_unchecked(storage.as_ref())?;
@@ -602,12 +651,12 @@ impl Series {
         }
     }
 
-    /// Compute the sum of all values in this Series.
-    /// Returns `Some(0)` if the array is empty, and `None` if the array only
-    /// contains null values.
+    /// Get the sum of the Series as a `Scalar`.
+    /// Returns a `Scalar` with a zeroed value if self is an empty numeric series.
     ///
-    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
-    /// first cast to `Int64` to prevent overflow issues.
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the sum is
+    /// computed in an `Int64` accumulator and the result is returned as `Int64`
+    /// to prevent overflow issues.
     pub fn sum<T>(&self) -> PolarsResult<T>
     where
         T: NumCast + IsFloat,
@@ -673,6 +722,7 @@ impl Series {
             DataType::Float16 => Ok(self.f16().unwrap().is_not_nan()),
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
+            DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
             dt if dt.is_primitive_numeric() => {
                 let arr = BooleanArray::full(self.len(), true, ArrowDataType::Boolean)
                     .with_validity(self.rechunk_validity());
@@ -774,6 +824,11 @@ impl Series {
                 Cow::Borrowed(_) => Cow::Borrowed(self),
                 Cow::Owned(ca) => Cow::Owned(ca.into_series()),
             },
+            #[cfg(feature = "dtype-map")]
+            Map(_, _) => match self.map().unwrap().storage().to_physical_repr() {
+                Cow::Borrowed(storage) => Cow::Owned(storage.clone()),
+                Cow::Owned(storage) => Cow::Owned(storage),
+            },
             #[cfg(feature = "dtype-extension")]
             Extension(_, _) => self.ext().unwrap().storage().to_physical_repr(),
             _ => Cow::Borrowed(self),
@@ -807,17 +862,14 @@ impl Series {
         std::ops::Mul::mul(self, other)?.sum::<f64>()
     }
 
-    /// Get the sum of the Series as a new Series of length 1.
-    /// Returns a Series with a single zeroed entry if self is an empty numeric series.
+    /// Get the sum of the [`ChunkedArray`] as a `Scalar`.
+    /// Returns a `Scalar` with a single zeroed value if self is an empty numeric series.
     ///
-    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
-    /// first cast to `Int64` to prevent overflow issues.
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the sum is
+    /// computed in an `Int64` accumulator and the result is returned as `Int64`
+    /// to prevent overflow issues.
     pub fn sum_reduce(&self) -> PolarsResult<Scalar> {
-        use DataType::*;
-        match self.dtype() {
-            Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_reduce(),
-            _ => self.0.sum_reduce(),
-        }
+        self.0.sum_reduce()
     }
 
     /// Get the mean of the Series as a new Series of length 1.
@@ -1054,23 +1106,6 @@ impl Series {
         size
     }
 
-    /// Packs every element into a list.
-    pub fn as_list(&self) -> ListChunked {
-        let s = self.rechunk();
-        // don't  use `to_arrow` as we need the physical types
-        let values = s.chunks()[0].clone();
-        let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
-        let offsets = unsafe { Offsets::new_unchecked(offsets) };
-
-        let dtype = LargeListArray::default_datatype(
-            s.dtype().to_physical().to_arrow(CompatLevel::newest()),
-        );
-        let new_arr = LargeListArray::new(dtype, offsets.into(), values, None);
-        let mut out = ListChunked::with_chunk(s.name().clone(), new_arr);
-        out.set_inner_dtype(s.dtype().clone());
-        out
-    }
-
     pub fn row_encode_unordered(&self) -> PolarsResult<BinaryOffsetChunked> {
         row_encode::_get_rows_encoded_ca_unordered(
             self.name().clone(),
@@ -1102,6 +1137,7 @@ impl Default for Series {
 impl Deref for Series {
     type Target = dyn SeriesTrait;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.0.as_ref()
     }
@@ -1145,9 +1181,18 @@ impl<T: PolarsPhysicalType> AsMut<ChunkedArray<T>> for dyn SeriesTrait + '_ {
     }
 }
 
+impl BroadcastLength for Series {
+    fn _broadcast_len(&self) -> usize {
+        self.len()
+    }
+
+    fn _column_name(&self) -> Option<&str> {
+        Some(self.name())
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use crate::prelude::*;
     use crate::series::*;
 
     #[test]
@@ -1180,7 +1225,7 @@ mod test {
                     ArrowDataType::Int32,
                     true,
                 ))),
-                unsafe { Offsets::new_unchecked(vec![0, 1]) }.into(),
+                unsafe { arrow::offset::Offsets::new_unchecked(vec![0, 1]) }.into(),
                 PrimitiveArray::new(ArrowDataType::Int32, vec![1i32].into(), None).to_boxed(),
                 None,
             )],

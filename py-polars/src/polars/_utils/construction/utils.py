@@ -5,7 +5,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Final, get_type_hints
 
 import polars as pl
-from polars._dependencies import _check_for_pydantic, pydantic
+from polars._dependencies import _check_for_pydantic, dataclasses, pydantic
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -56,6 +56,11 @@ def is_namedtuple(cls: Any, *, annotated: bool = False) -> bool:
             if not annotated or len(cls.__annotations__) == len(cls._fields):
                 return all(isinstance(fld, str) for fld in cls._fields)
     return False
+
+
+def is_dataclass_instance(value: Any) -> bool:
+    """Check if value is a dataclass instance (`is_dataclass` also matches classes)."""
+    return dataclasses.is_dataclass(value) and not isinstance(value, type)
 
 
 def is_pydantic_model(value: Any) -> bool:

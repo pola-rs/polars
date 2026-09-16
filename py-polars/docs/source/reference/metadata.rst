@@ -10,4 +10,3 @@ Metadata
     get_index_type
     show_versions
     thread_pool_size
-    threadpool_size

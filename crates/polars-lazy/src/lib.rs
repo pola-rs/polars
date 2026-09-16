@@ -146,7 +146,7 @@
 //!         col("column_a")
 //!         // apply a custom closure Series => Result<Series>
 //!         .map(
-//!             |_s| Ok(Column::new("".into(), &[6.0f32, 6.0, 6.0, 6.0, 6.0])),
+//!             |c| c.clone() + c,
 //!             // return type of the closure
 //!             |_, f| Ok(Field::new(f.name().clone(), DataType::Float64))
 //!         ).alias("new_column"),

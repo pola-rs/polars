@@ -215,10 +215,6 @@ fn create_physical_expr_inner(
             let group_by =
                 create_physical_expressions_from_nodes(&partition_by, expr_arena, schema, state)?;
             let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
-            // sort and then dedup removes consecutive duplicates == all duplicates
-            apply_columns.sort();
-            apply_columns.dedup();
-
             if apply_columns.is_empty() {
                 if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
                     apply_columns.push(get_literal_name())
@@ -457,21 +453,49 @@ fn create_physical_expr_inner(
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let mut lit_count = 0u8;
             state.reset();
-            let predicate = create_physical_expr_inner(predicate, expr_arena, schema, state)?;
+            let predicate_phys = create_physical_expr_inner(predicate, expr_arena, schema, state)?;
             lit_count += state.local.has_lit as u8;
             state.reset();
-            let truthy = create_physical_expr_inner(truthy, expr_arena, schema, state)?;
+            let truthy_phys = create_physical_expr_inner(truthy, expr_arena, schema, state)?;
             lit_count += state.local.has_lit as u8;
             state.reset();
-            let falsy = create_physical_expr_inner(falsy, expr_arena, schema, state)?;
+            let falsy_phys = create_physical_expr_inner(falsy, expr_arena, schema, state)?;
             lit_count += state.local.has_lit as u8;
+
+            let mask_truthy = is_elementwise_rec(truthy, expr_arena)
+                && !matches!(expr_arena.get(truthy), AExpr::Column(_) | AExpr::Literal(_));
+            let mask_falsy = is_elementwise_rec(falsy, expr_arena)
+                && !matches!(expr_arena.get(falsy), AExpr::Column(_) | AExpr::Literal(_));
+            let truthy_mask_columns = if mask_truthy {
+                aexpr_to_leaf_names(truthy, expr_arena)
+            } else {
+                Vec::new()
+            };
+            let falsy_mask_columns = if mask_falsy {
+                aexpr_to_leaf_names(falsy, expr_arena)
+            } else {
+                Vec::new()
+            };
+
+            // The output dtype is the supertype of the arms, which normally is
+            // resolved by the zip. As the ternary may return an arm as-is we
+            // have to cast it to the output dtype ourselves.
+            let output_dtype = expr_arena
+                .get(expression)
+                .to_dtype(&ToFieldContext::new(expr_arena, schema))
+                .ok()
+                .filter(|dtype| !dtype.is_unknown());
+
             Ok(Arc::new(TernaryExpr::new(
-                predicate,
-                truthy,
-                falsy,
+                predicate_phys,
+                truthy_phys,
+                falsy_phys,
                 node_to_expr(expression, expr_arena),
                 state.allow_threading && lit_count < 2,
                 is_scalar,
+                truthy_mask_columns,
+                falsy_mask_columns,
+                output_dtype,
             )))
         },
         AExpr::AnonymousAgg {

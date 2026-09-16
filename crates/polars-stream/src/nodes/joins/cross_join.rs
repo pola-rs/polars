@@ -197,14 +197,14 @@ impl ComputeNode for CrossJoinNode {
                                         }
 
                                         left_join_df.hstack_mut_unchecked(right_join_df.columns());
-                                        Morsel::new(
+                                        Morsel::new_unregistered(
                                             left_join_df,
                                             morsel.seq(),
                                             morsel.source_token().clone(),
                                         )
                                     };
 
-                                let probe_df = morsel.df();
+                                let probe_df = morsel.df().await;
                                 if build_df.height() >= ideal_morsel_size {
                                     for probe_offset in 0..probe_df.height() {
                                         let mut build_offset = 0;
@@ -244,7 +244,7 @@ impl ComputeNode for CrossJoinNode {
                                             cached_build_df_repeated.slice(0, build_height);
 
                                         probe_repeater.subslice_extend_each_repeated(
-                                            probe_df,
+                                            &probe_df,
                                             probe_offset,
                                             build_repeats,
                                             build_df.height(),

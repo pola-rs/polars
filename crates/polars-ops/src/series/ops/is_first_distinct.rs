@@ -5,7 +5,8 @@ use arrow::bitmap::MutableBitmap;
 use arrow::legacy::bit_util::*;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
-use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::series::BitRepr;
+use polars_core::with_match_physical_float_polars_type;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 fn is_first_distinct_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
 where
@@ -72,8 +73,7 @@ fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
     BooleanChunked::with_chunk(ca.name().clone(), arr)
 }
 
-#[cfg(feature = "dtype-struct")]
-fn is_first_distinct_struct(s: &Series) -> PolarsResult<BooleanChunked> {
+fn is_first_distinct_by_groups(s: &Series) -> PolarsResult<BooleanChunked> {
     let groups = s.group_tuples(true, false)?;
     let first = groups.take_group_firsts();
     let mut out = MutableBitmap::with_capacity(s.len());
@@ -88,27 +88,19 @@ fn is_first_distinct_struct(s: &Series) -> PolarsResult<BooleanChunked> {
     Ok(BooleanChunked::with_chunk(s.name().clone(), arr))
 }
 
-fn is_first_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
-    let groups = ca.group_tuples(true, false)?;
-    let first = groups.take_group_firsts();
-    let mut out = MutableBitmap::with_capacity(ca.len());
-    out.extend_constant(ca.len(), false);
-
-    for idx in first {
-        // Group tuples are always in bounds
-        unsafe { out.set_unchecked(idx as usize, true) }
-    }
-
-    let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    Ok(BooleanChunked::with_chunk(ca.name().clone(), arr))
-}
-
 pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
     // fast path.
     if s.is_empty() {
         return Ok(BooleanChunked::full_null(s.name().clone(), 0));
     } else if s.len() == 1 {
         return Ok(BooleanChunked::new(s.name().clone(), &[true]));
+    }
+
+    // A Map groups on its row-encoded entries, so it must not reach the `List` arm below,
+    // which sees the nested `List(Struct)` storage.
+    #[cfg(feature = "dtype-map")]
+    if matches!(s.dtype(), DataType::Map(_, _)) {
+        return is_first_distinct_by_groups(s);
     }
 
     let s = s.to_physical_repr();
@@ -127,21 +119,31 @@ pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             let s = s.cast(&Binary).unwrap();
             return is_first_distinct(&s);
         },
-        dt if dt.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+        dt if dt.is_float() => {
+            with_match_physical_float_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_first_distinct_numeric(ca)
             })
         },
+        dt if dt.is_primitive_numeric() => {
+            use BitRepr as B;
+            match s.bit_repr().unwrap() {
+                B::U8(ca) => is_first_distinct_numeric(&ca),
+                B::U16(ca) => is_first_distinct_numeric(&ca),
+                B::U32(ca) => is_first_distinct_numeric(&ca),
+                B::U64(ca) => is_first_distinct_numeric(&ca),
+                #[cfg(feature = "dtype-u128")]
+                B::U128(ca) => is_first_distinct_numeric(&ca),
+            }
+        },
         #[cfg(feature = "dtype-struct")]
-        Struct(_) => return is_first_distinct_struct(&s),
+        Struct(_) => return is_first_distinct_by_groups(&s),
         List(inner) => {
             polars_ensure!(
                 !inner.is_nested(),
                 InvalidOperation: "`is_first_distinct` on list type is only allowed if the inner type is not nested."
             );
-            let ca = s.list().unwrap();
-            return is_first_distinct_list(ca);
+            return is_first_distinct_by_groups(&s);
         },
         dt => polars_bail!(opq = is_first_distinct, dt),
     };

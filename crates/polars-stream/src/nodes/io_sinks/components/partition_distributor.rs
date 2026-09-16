@@ -108,9 +108,8 @@ impl PartitionDistributor {
 
                 let buffered_size = partition_data.buffered_size();
 
-                let num_ready_to_send_rows = partition_morsel_sender
-                    .takeable_rows_provider
-                    .num_rows_takeable_from(buffered_size, false);
+                let num_ready_to_send_rows =
+                    partition_morsel_sender.next_rows_to_take(buffered_size, false);
 
                 if num_ready_to_send_rows.is_some() {
                     if partition_data.file_sink_task_data.is_none()

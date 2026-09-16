@@ -7,7 +7,7 @@ use crate::ffi;
 
 unsafe impl ToFfi for StructArray {
     fn buffers(&self) -> Vec<Option<*const u8>> {
-        vec![self.validity.as_ref().map(|x| x.as_ptr())]
+        vec![self.validity.as_ref().map(|x| x.as_aligned_ptr().unwrap())]
     }
 
     fn children(&self) -> Vec<Box<dyn Array>> {
@@ -15,16 +15,19 @@ unsafe impl ToFfi for StructArray {
     }
 
     fn offset(&self) -> Option<usize> {
-        Some(
-            self.validity
-                .as_ref()
-                .map(|bitmap| bitmap.offset())
-                .unwrap_or_default(),
-        )
+        Some(0)
     }
 
     fn to_ffi_aligned(&self) -> Self {
-        self.clone()
+        let mut ret = self.clone();
+
+        if let Some(validity) = ret.validity()
+            && validity.as_aligned_ptr().is_none()
+        {
+            ret.validity = Some(validity.to_aligned_bitmap());
+        }
+
+        ret
     }
 }
 
@@ -41,8 +44,8 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for StructArray {
             .map(|index| {
                 let child = array.child(index)?;
                 ffi::try_from(child).map(|arr| {
-                    // there is a discrepancy with how polars_arrow exports sliced
-                    // struct array and how pyarrow does it.
+                    // Old versions of polars_arrow exported sliced
+                    // struct arrays differently.
                     // # Pyarrow
                     // ## struct array len 3
                     //  * slice 1 by with len 2
@@ -50,7 +53,7 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for StructArray {
                     //      length on struct array: 2
                     //      offset on value array: 0
                     //      length on value array: 3
-                    // # Arrow2
+                    // # polars_arrow (old)
                     // ## struct array len 3
                     //  * slice 1 by with len 2
                     //      offset on struct array: 0

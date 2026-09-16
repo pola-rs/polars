@@ -94,7 +94,7 @@ impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
 pub(crate) struct AnonymousOwnedFixedSizeListBuilder {
     inner: fixed_size_list::AnonymousBuilder,
     name: PlSmallStr,
-    inner_dtype: Option<DataType>,
+    inner_dtype: DataType,
 }
 
 impl AnonymousOwnedFixedSizeListBuilder {
@@ -102,7 +102,7 @@ impl AnonymousOwnedFixedSizeListBuilder {
         name: PlSmallStr,
         width: usize,
         capacity: usize,
-        inner_dtype: Option<DataType>,
+        inner_dtype: DataType,
     ) -> Self {
         let inner = fixed_size_list::AnonymousBuilder::new(capacity, width);
         Self {
@@ -127,12 +127,7 @@ impl FixedSizeListBuilder for AnonymousOwnedFixedSizeListBuilder {
 
     fn finish(&mut self) -> ArrayChunked {
         let arr = std::mem::take(&mut self.inner)
-            .finish(
-                self.inner_dtype
-                    .as_ref()
-                    .map(|dt| dt.to_arrow(CompatLevel::newest()))
-                    .as_ref(),
-            )
+            .finish(&self.inner_dtype.to_arrow(CompatLevel::newest()))
             .unwrap();
         ChunkedArray::with_chunk(self.name.clone(), arr)
     }
@@ -158,7 +153,7 @@ pub fn get_fixed_size_list_builder(
             name,
             width,
             capacity,
-            Some(inner_type_logical.clone()),
+            inner_type_logical.clone(),
         ))
     };
     Ok(builder)

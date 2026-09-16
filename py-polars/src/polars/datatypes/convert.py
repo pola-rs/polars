@@ -32,6 +32,7 @@ from polars.datatypes.classes import (
     Int64,
     Int128,
     List,
+    Map,
     Null,
     Object,
     String,
@@ -50,7 +51,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
-    from typing import TypeGuard
+    from typing import Final, TypeGuard
 
     from polars._typing import PolarsDataType, PythonDataType, TimeUnit
 
@@ -115,6 +116,12 @@ def unpack_dtypes(
             if include_compound:
                 unpacked.add(tp)
             unpacked.update(unpack_dtypes(tp.inner, include_compound=include_compound))
+        elif isinstance(tp, Map):
+            if include_compound:
+                unpacked.add(tp)
+            unpacked.update(
+                unpack_dtypes(tp.key, tp.value, include_compound=include_compound)
+            )
         elif isinstance(tp, Struct):
             if include_compound:
                 unpacked.add(tp)
@@ -147,6 +154,7 @@ class _DataTypeMappings:
             Int64: "i64",
             Int128: "i128",
             List: "list",
+            Map: "map",
             Object: "object",
             String: "str",
             Struct: "struct",
@@ -178,6 +186,7 @@ class _DataTypeMappings:
             Int64: int,
             Int128: int,
             List: list,
+            Map: dict,
             Null: None.__class__,
             Object: object,
             String: str,
@@ -247,7 +256,7 @@ class _DataTypeMappings:
 
 
 # Initialize once (poor man's singleton :)
-DataTypeMappings = _DataTypeMappings()
+DataTypeMappings: Final[_DataTypeMappings] = _DataTypeMappings()
 
 
 def dtype_to_ffiname(dtype: PolarsDataType) -> str:

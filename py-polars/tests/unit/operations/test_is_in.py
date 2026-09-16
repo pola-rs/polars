@@ -160,7 +160,12 @@ def test_is_in_struct() -> None:
 
 
 def test_is_in_null_prop() -> None:
-    assert pl.Series([None], dtype=pl.Float32).is_in(pl.Series([42])).item() is None
+    assert (
+        pl.Series([None], dtype=pl.Float32)
+        .is_in(pl.Series([42], dtype=pl.Float32))
+        .item()
+        is None
+    )
     assert pl.Series([{"a": None}, None], dtype=pl.Struct({"a": pl.Float32})).is_in(
         pl.Series([{"a": 42}], dtype=pl.Struct({"a": pl.Float32}))
     ).to_list() == [False, None]
@@ -171,7 +176,11 @@ def test_is_in_null_prop() -> None:
 
 
 def test_is_in_9070() -> None:
-    assert not pl.Series([1]).is_in(pl.Series([1.99])).item()
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"'is_in' cannot check for Int64 values in List\(Float64\) data",
+    ):
+        pl.Series([1]).is_in(pl.Series([1.99])).item()
 
 
 def test_is_in_large_uint64_21966() -> None:
@@ -213,15 +222,18 @@ def test_is_in_large_uint64_21966() -> None:
     s = pl.Series([100, 200], dtype=pl.Int16)
     assert s.is_in(pl.Series([100, 300], dtype=pl.UInt16)).to_list() == [True, False]
 
-    # UInt64 max value (no lossless supertype with Int64)
+    # UInt64 max value (should use Int128)
     s = pl.Series([2**64 - 1], dtype=pl.UInt64)
     assert s.is_in(pl.Series([2**64 - 1], dtype=pl.UInt64)).item()
     assert not s.is_in(pl.Series([2**64 - 2], dtype=pl.UInt64)).item()
 
-    # Fallback to try_get_supertype for types without lossless supertype
+    # No lossless supertype for UInt128 vs Int64 available
     s = pl.Series([100], dtype=pl.UInt128)
-    assert s.is_in(pl.Series([100], dtype=pl.Int64)).item()
-    assert not s.is_in(pl.Series([99], dtype=pl.Int64)).item()
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"'is_in' cannot check for UInt128 values in List\(Int64\) data",
+    ):
+        s.is_in(pl.Series([100], dtype=pl.Int64)).item()
 
 
 def test_is_in_float_list_10764() -> None:
@@ -256,7 +268,9 @@ def test_is_in_series() -> None:
         assert out.to_list() == [False, False, False]
 
     df = pl.DataFrame({"a": [1.0, 2.0], "b": [1, 4], "c": ["e", "d"]})
-    assert df.select(pl.col("a").is_in(pl.col("b"))).to_series().to_list() == [
+    assert df.select(
+        pl.col("a").is_in(pl.col("b").cast(pl.Float64))
+    ).to_series().to_list() == [
         True,
         False,
     ]
@@ -264,7 +278,7 @@ def test_is_in_series() -> None:
 
     with pytest.raises(
         InvalidOperationError,
-        match=r"'is_in' cannot check for List\(String\) values in Int64 data",
+        match=r"'is_in' cannot check for Int64 values in List\(String\) data",
     ):
         df.select(pl.col("b").is_in(["x", "x"]))
 
@@ -372,12 +386,12 @@ def test_is_in_float(dtype: PolarsDataType) -> None:
     ("df", "matches", "expected_error"),
     [
         (
-            pl.DataFrame({"a": [1, 2], "b": [[1.0, 2.5], [3.0, 4.0]]}),
+            pl.DataFrame({"a": [1, 2], "b": [[1, 2], [3, 4]]}),
             [True, False],
             None,
         ),
         (
-            pl.DataFrame({"a": [2.5, 3.0], "b": [[1, 2], [3, 4]]}),
+            pl.DataFrame({"a": [2.5, 3.0], "b": [[1.5, 2.0], [2.5, 3.0]]}),
             [False, True],
             None,
         ),
@@ -392,12 +406,12 @@ def test_is_in_float(dtype: PolarsDataType) -> None:
         (
             pl.DataFrame({"a": ["1", "2"], "b": [[1, 2], [3, 4]]}),
             None,
-            r"'is_in' cannot check for List\(Int64\) values in String data",
+            r"'is_in' cannot check for String values in List\(Int64\) data",
         ),
         (
             pl.DataFrame({"a": [date.today(), None], "b": [[1, 2], [3, 4]]}),
             None,
-            r"'is_in' cannot check for List\(Int64\) values in Date data",
+            r"'is_in' cannot check for Date values in List\(Int64\) data",
         ),
     ],
 )
@@ -416,11 +430,11 @@ def test_is_in_expr_list_series(
     ("df", "matches"),
     [
         (
-            pl.DataFrame({"a": [1, None], "b": [[1.0, 2.5, 4.0], [3.0, 4.0, 5.0]]}),
+            pl.DataFrame({"a": [1.0, None], "b": [[1.0, 2.5, 4.0], [3.0, 4.0, 5.0]]}),
             [True, False],
         ),
         (
-            pl.DataFrame({"a": [1, None], "b": [[0.0, 2.5, None], [3.0, 4.0, None]]}),
+            pl.DataFrame({"a": [1.0, None], "b": [[0.0, 2.5, None], [3.0, 4.0, None]]}),
             [False, True],
         ),
         (
@@ -773,3 +787,18 @@ def test_null_propagate_all_paths_cat(nulls_equal: bool) -> None:
     missing_value = True if nulls_equal else None
     expected = pl.Series([True, False, missing_value])
     assert_series_equal(result, expected)
+
+
+def test_is_in_non_nested_container() -> None:
+    # The right-hand side (the container) must be a nested dtype.
+    df = pl.DataFrame(
+        {
+            "a": pl.Series([[1, 2], [3, 4]], dtype=pl.List(pl.Int64)),
+            "b": pl.Series([1, 3], dtype=pl.Int64),
+        }
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"(?s)cannot check for List\(Int64\) values in Int64 data.*container dtype \(Int64\) must be nested",
+    ):
+        df.select(pl.col("a").is_in(pl.col("b")))
