@@ -24,7 +24,6 @@ polars-ffi = { workspace = true, optional = true }
 polars-io = { workspace = true, features = ["lazy", "csv", "async"] }
 polars-json = { workspace = true, optional = true }
 polars-parquet = { workspace = true, optional = true }
-polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 
 arrow = { workspace = true }
@@ -73,7 +72,6 @@ serde = [
   "polars-core/serde-lazy",
   "polars-core/serde",
   "polars-defs/serde",
-  "polars-time/serde",
   "polars-io/serde",
   "polars-utils/serde",
   "polars-compute/serde",
@@ -108,15 +106,14 @@ dtype-i128 = ["polars-core/dtype-i128"]
 dtype-i16 = ["polars-core/dtype-i16"]
 dtype-f16 = ["polars-core/dtype-f16"]
 dtype-decimal = ["polars-core/dtype-decimal", "dtype-i128"]
-dtype-date = ["polars-defs/dtype-date", "polars-time/dtype-date", "temporal"]
-dtype-datetime = ["polars-defs/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
+dtype-date = ["polars-defs/dtype-date", "temporal"]
+dtype-datetime = ["polars-defs/dtype-datetime", "temporal"]
 dtype-duration = [
   "polars-core/dtype-duration",
   "polars-defs/dtype-duration",
-  "polars-time/dtype-duration",
   "temporal",
 ]
-dtype-time = ["polars-defs/dtype-time", "polars-time/dtype-time", "temporal"]
+dtype-time = ["polars-defs/dtype-time", "temporal"]
 dtype-array = ["polars-core/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-extension = ["polars-core/dtype-extension"]
@@ -129,7 +126,7 @@ list_count = []
 array_count = ["dtype-array"]
 trigonometry = []
 sign = []
-timezones = ["chrono-tz", "polars-defs/timezones", "polars-time/timezones", "polars-core/timezones", "regex"]
+timezones = ["chrono-tz", "polars-defs/timezones", "polars-core/timezones", "regex"]
 binary_encoding = []
 string_encoding = []
 true_div = []
@@ -145,7 +142,6 @@ dsl-schema = [
   "polars-buffer/schemars",
   "polars-core/dsl-schema",
   "polars-defs/dsl-schema",
-  "polars-time/dsl-schema",
   "polars-io/dsl-schema",
   "polars-utils/dsl-schema",
   "polars-compute/dsl-schema",
@@ -164,7 +160,7 @@ is_unique = []
 is_between = []
 is_close = []
 cross_join = []
-asof_join = ["polars-defs/asof_join", "polars-time"]
+asof_join = ["polars-defs/asof_join"]
 iejoin = ["polars-defs/iejoin"]
 concat_str = []
 business = []
@@ -175,12 +171,10 @@ interpolate = []
 interpolate_by = []
 rolling_window = [
   "polars-core/rolling_window",
-  "polars-time/rolling_window",
 ]
 rolling_window_by = [
   "polars-core/rolling_window_by",
   "polars-defs/rolling_window_by",
-  "polars-time/rolling_window_by",
 ]
 rank = []
 diff = []
@@ -228,10 +222,10 @@ cov = []
 hist = []
 replace = []
 find_many = []
-month_start = ["polars-time/month_start"]
-month_end = ["polars-time/month_end"]
-offset_by = ["polars-time/offset_by"]
-allow_unused = ["polars-io/allow_unused", "polars-time?/allow_unused"]
+month_start = []
+month_end = []
+offset_by = []
+allow_unused = ["polars-io/allow_unused"]
 
 bigidx = ["polars-core/bigidx", "polars-utils/bigidx", "dtype-i128"]
 polars_cloud_client = ["serde"]

@@ -141,6 +141,7 @@ physical_plan_visualization_schema = [
   "dep:schemars",
   "polars-ops/dsl-schema",
   "polars-plan/dsl-schema",
+  "polars-time/dsl-schema",
   "polars-utils/dsl-schema",
 ]
 python = [

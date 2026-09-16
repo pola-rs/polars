@@ -3653,7 +3653,6 @@ dependencies = [
  "polars-io",
  "polars-json",
  "polars-parquet",
- "polars-time",
  "polars-utils",
  "pyo3",
  "rayon",
