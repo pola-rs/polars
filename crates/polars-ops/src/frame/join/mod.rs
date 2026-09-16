@@ -62,6 +62,7 @@ pub trait DataFrameJoinOps: IntoDf {
     ///
     /// ```no_run
     /// # use polars_core::prelude::*;
+    /// # use polars_defs::join::{JoinArgs, JoinType};
     /// # use polars_ops::prelude::*;
     /// let df1: DataFrame = df!("Fruit" => &["Apple", "Banana", "Pear"],
     ///                          "Phosphorus (mg/100g)" => &[11, 22, 12])?;

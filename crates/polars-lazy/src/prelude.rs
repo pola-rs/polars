@@ -1,3 +1,10 @@
+#[cfg(feature = "rank")]
+pub use polars_defs::expr::{RankMethod, RankOptions};
+pub use polars_defs::join::{JoinArgs, JoinType, JoinValidation};
+#[cfg(feature = "rolling_window_by")]
+pub use polars_defs::time::duration::Duration;
+#[cfg(feature = "dynamic_group_by")]
+pub use polars_defs::time::group_by::{DynamicGroupOptions, RollingGroupOptions};
 pub(crate) use polars_expr::prelude::*;
 #[cfg(feature = "csv")]
 pub use polars_io::csv::write::CsvWriterOptions;
