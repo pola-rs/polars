@@ -251,7 +251,7 @@ impl Series {
         new
     }
 
-    /// Whether every element of this column reads the one element its single chunk repeats.
+    /// Whether every element of this column reads one and the same element.
     ///
     /// An op that answers such a column element by element answers it the same way every time, so
     /// it may read that one element instead and repeat what it makes of it — see
@@ -259,12 +259,31 @@ impl Series {
     ///
     /// Both the values and the mask have to repeat for this to hold: a column of one value behind
     /// a mask that says some elements are there and some are not reads differently row by row.
+    ///
+    /// More than one chunk still answers, as long as each of them repeats and they all repeat the
+    /// same element. That is the shape a column takes when the streaming engine hands a whole
+    /// column to an op that cannot be split: each morsel contributes its own chunk, and a repeat
+    /// sliced into morsels is a repeat in every one of them.
     pub fn repeats_one_element(&self) -> bool {
-        let [chunk] = self.chunks().as_slice() else {
+        if self.len() <= 1 {
+            return false;
+        }
+
+        let mut chunks = self
+            .chunks()
+            .iter()
+            .enumerate()
+            .filter(|(_, chunk)| !chunk.is_empty());
+        let Some((first, _)) = chunks.next().filter(|(_, chunk)| chunk.is_scalar()) else {
             return false;
         };
 
-        self.len() > 1 && chunk.is_scalar()
+        // Each further chunk has to repeat, and to repeat what the first one does. Comparing one
+        // element per chunk costs nothing beside the walk this answer stands in for.
+        let first = self.select_chunk(first).slice(0, 1);
+        chunks.all(|(i, chunk)| {
+            chunk.is_scalar() && first.equals_missing(&self.select_chunk(i).slice(0, 1))
+        })
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
