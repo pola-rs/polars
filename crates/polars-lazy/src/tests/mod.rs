@@ -5,6 +5,8 @@ mod cse;
 #[cfg(feature = "parquet")]
 mod io;
 mod logical;
+#[cfg(feature = "streaming")]
+mod observer;
 mod optimization_checks;
 #[cfg(all(feature = "strings", feature = "cse"))]
 mod pdsh;

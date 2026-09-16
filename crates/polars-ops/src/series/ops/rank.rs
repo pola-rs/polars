@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::prelude::SeriesSealed;
 
-#[derive(Copy, Clone, Debug, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum RankMethod {
@@ -22,7 +22,7 @@ pub enum RankMethod {
 }
 
 // We might want to add a `nulls_last` or `null_behavior` field.
-#[derive(Copy, Clone, Debug, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct RankOptions {
@@ -37,13 +37,6 @@ impl Default for RankOptions {
             descending: false,
         }
     }
-}
-
-#[cfg(feature = "random")]
-fn get_random_seed() -> u64 {
-    let mut rng = SmallRng::from_os_rng();
-
-    rng.next_u64()
 }
 
 unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(idxs: &IdxCa, neq: &BooleanArray, mut flush_ties: F) {
@@ -134,7 +127,8 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
         match method {
             #[cfg(feature = "random")]
             Random => unsafe {
-                let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_random_seed));
+                use polars_core::random::get_global_random_u64;
+                let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
                 let mut out = vec![0 as IdxSize; s.len()];
                 rank_impl(&sort_idx_ca, neq, |ties| {
                     ties.shuffle(&mut rng);

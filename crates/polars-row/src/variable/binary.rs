@@ -77,13 +77,15 @@ unsafe fn encode_one(
             // Write `2_u8` to demarcate as non-empty, non-null string
             *dst.get_unchecked_mut(0) = MaybeUninit::new(NON_EMPTY_SENTINEL);
 
-            let src_chunks = val.chunks_exact(BLOCK_SIZE);
-            let src_remainder = src_chunks.remainder();
+            let (src_chunks, src_remainder) = val.as_chunks::<BLOCK_SIZE>();
 
             // + 1 is for the BLOCK CONTINUATION TOKEN
-            let dst_chunks = dst.get_unchecked_mut(1..).chunks_exact_mut(BLOCK_SIZE + 1);
+            let dst_chunks = dst
+                .get_unchecked_mut(1..)
+                .as_chunks_mut::<{ BLOCK_SIZE + 1 }>()
+                .0;
 
-            for (src, dst) in src_chunks.zip(dst_chunks) {
+            for (src, dst) in src_chunks.iter().zip(dst_chunks) {
                 // we copy src.len() that leaves 1 bytes for the continuation tkn.
                 std::ptr::copy_nonoverlapping(src.as_ptr(), dst.as_mut_ptr(), src.len());
                 // Indicate that there are further blocks to follow

@@ -1,6 +1,8 @@
 #[cfg(feature = "dtype-array")]
 mod array;
 mod binary;
+#[cfg(feature = "cutqcut")]
+mod binning;
 #[cfg(feature = "bitwise")]
 mod bitwise;
 mod boolean;
@@ -15,6 +17,8 @@ mod datetime;
 #[cfg(feature = "dtype-extension")]
 mod extension;
 mod list;
+#[cfg(feature = "dtype-map")]
+mod map;
 mod pow;
 #[cfg(feature = "random")]
 mod random;
@@ -36,9 +40,13 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "dtype-array")]
 pub use array::ArrayFunction;
+#[cfg(feature = "cutqcut")]
+pub use binning::{BinMethod, BinOptions, DslIntervalSpec, FractionSpec};
 #[cfg(feature = "cov")]
 pub use correlation::CorrelationMethod;
 pub use list::ListFunction;
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 pub use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
 #[cfg(feature = "random")]
@@ -58,6 +66,8 @@ pub use self::cat::CategoricalFunction;
 pub use self::datetime::TemporalFunction;
 #[cfg(feature = "dtype-extension")]
 pub use self::extension::ExtensionFunction;
+#[cfg(feature = "dtype-map")]
+pub use self::map::MapFunction;
 pub use self::pow::PowFunction;
 #[cfg(feature = "range")]
 pub use self::range::{DateRangeArgs, RangeFunction};
@@ -86,6 +96,8 @@ pub enum FunctionExpr {
     #[cfg(feature = "dtype-extension")]
     Extension(ExtensionFunction),
     ListExpr(ListFunction),
+    #[cfg(feature = "dtype-map")]
+    MapExpr(MapFunction),
     #[cfg(feature = "strings")]
     StringExpr(StringFunction),
     #[cfg(feature = "dtype-struct")]
@@ -111,7 +123,7 @@ pub enum FunctionExpr {
     NullCount,
     Pow(PowFunction),
     #[cfg(feature = "row_hash")]
-    Hash(u64, u64, u64, u64),
+    Hash(u64),
     #[cfg(feature = "arg_where")]
     ArgWhere,
     #[cfg(feature = "index_of")]
@@ -141,7 +153,6 @@ pub enum FunctionExpr {
         function_by: RollingFunctionBy,
         options: RollingOptionsDynamicWindow,
     },
-    Rechunk,
     Append {
         upcast: bool,
     },
@@ -185,6 +196,7 @@ pub enum FunctionExpr {
         has_min: bool,
         has_max: bool,
     },
+    AsList,
     #[cfg(feature = "dtype-struct")]
     AsStruct,
     #[cfg(feature = "top_k")]
@@ -227,6 +239,13 @@ pub enum FunctionExpr {
     UniqueCounts,
     #[cfg(feature = "approx_unique")]
     ApproxNUnique,
+    #[cfg(feature = "approx_quantile")]
+    ApproxQuantile {
+        method: ApproxQuantileMethod,
+        error: f64,
+        /// Interpret `error` as the formal bound instead of the empirically calibrated one.
+        use_formal_bound: bool,
+    },
     Coalesce,
     #[cfg(feature = "diff")]
     Diff(NullBehavior),
@@ -291,6 +310,8 @@ pub enum FunctionExpr {
         allow_duplicates: bool,
         include_breaks: bool,
     },
+    #[cfg(feature = "cutqcut")]
+    Bin(BinOptions),
     #[cfg(feature = "rle")]
     RLE,
     #[cfg(feature = "rle")]
@@ -356,6 +377,14 @@ pub enum FunctionExpr {
         half_life: Duration,
     },
     #[cfg(feature = "ewma")]
+    EwmSum {
+        options: EWMOptions,
+    },
+    #[cfg(feature = "ewma_by")]
+    EwmSumBy {
+        half_life: Duration,
+    },
+    #[cfg(feature = "ewma")]
     EwmStd {
         options: EWMOptions,
     },
@@ -396,6 +425,8 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "dtype-extension")]
             Extension(f) => f.hash(state),
             ListExpr(f) => f.hash(state),
+            #[cfg(feature = "dtype-map")]
+            MapExpr(f) => f.hash(state),
             #[cfg(feature = "strings")]
             StringExpr(f) => f.hash(state),
             #[cfg(feature = "dtype-struct")]
@@ -483,7 +514,7 @@ impl Hash for FunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill | Rechunk | MinBy | MaxBy => {},
+            | ArgMax | Product | Shift | ShiftAndFill | MinBy | MaxBy => {},
             Append { upcast } => upcast.hash(state),
             ArgSort {
                 descending,
@@ -503,12 +534,13 @@ impl Hash for FunctionExpr {
             ArgWhere => {},
             #[cfg(feature = "trigonometry")]
             Atan2 => {},
+            AsList => {},
             #[cfg(feature = "dtype-struct")]
             AsStruct => {},
             #[cfg(feature = "sign")]
             Sign => {},
             #[cfg(feature = "row_hash")]
-            Hash(a, b, c, d) => (a, b, c, d).hash(state),
+            Hash(seed) => seed.hash(state),
             FillNull => {},
             #[cfg(feature = "rolling_window")]
             RollingExpr { function, options } => {
@@ -569,6 +601,16 @@ impl Hash for FunctionExpr {
             UniqueCounts => {},
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => {},
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantile {
+                method,
+                error,
+                use_formal_bound,
+            } => {
+                method.hash(state);
+                error.to_bits().hash(state);
+                use_formal_bound.hash(state);
+            },
             Coalesce => {},
             #[cfg(feature = "pct_change")]
             PctChange => {},
@@ -636,6 +678,8 @@ impl Hash for FunctionExpr {
                 allow_duplicates.hash(state);
                 include_breaks.hash(state);
             },
+            #[cfg(feature = "cutqcut")]
+            Bin(options) => options.hash(state),
             #[cfg(feature = "rle")]
             RLE => {},
             #[cfg(feature = "rle")]
@@ -646,6 +690,10 @@ impl Hash for FunctionExpr {
             EwmMean { options } => options.hash(state),
             #[cfg(feature = "ewma_by")]
             EwmMeanBy { half_life } => (half_life).hash(state),
+            #[cfg(feature = "ewma")]
+            EwmSum { options } => options.hash(state),
+            #[cfg(feature = "ewma_by")]
+            EwmSumBy { half_life } => (half_life).hash(state),
             #[cfg(feature = "ewma")]
             EwmStd { options } => options.hash(state),
             #[cfg(feature = "ewma")]
@@ -698,6 +746,8 @@ impl Display for FunctionExpr {
             #[cfg(feature = "dtype-extension")]
             Extension(func) => return write!(f, "{func}"),
             ListExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "dtype-map")]
+            MapExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "strings")]
             StringExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-struct")]
@@ -717,7 +767,7 @@ impl Display for FunctionExpr {
             NullCount => "null_count",
             Pow(func) => return write!(f, "{func}"),
             #[cfg(feature = "row_hash")]
-            Hash(_, _, _, _) => "hash",
+            Hash(_) => "hash",
             #[cfg(feature = "arg_where")]
             ArgWhere => "arg_where",
             #[cfg(feature = "index_of")]
@@ -737,7 +787,6 @@ impl Display for FunctionExpr {
             RollingExpr { function, .. } => return write!(f, "{function}"),
             #[cfg(feature = "rolling_window_by")]
             RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
-            Rechunk => "rechunk",
             Append { .. } => "upcast",
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
@@ -772,6 +821,7 @@ impl Display for FunctionExpr {
                 (true, false) => "clip_min",
                 _ => unreachable!(),
             },
+            AsList => "as_list",
             #[cfg(feature = "dtype-struct")]
             AsStruct => "as_struct",
             #[cfg(feature = "top_k")]
@@ -802,6 +852,8 @@ impl Display for FunctionExpr {
             Reverse => "reverse",
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => "approx_n_unique",
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantile { .. } => "approx_quantile",
             Coalesce => "coalesce",
             #[cfg(feature = "diff")]
             Diff(_) => "diff",
@@ -849,6 +901,8 @@ impl Display for FunctionExpr {
             Cut { .. } => "cut",
             #[cfg(feature = "cutqcut")]
             QCut { .. } => "qcut",
+            #[cfg(feature = "cutqcut")]
+            Bin(options) => options.method.name(),
             #[cfg(feature = "dtype-array")]
             Reshape(_) => "reshape",
             #[cfg(feature = "repeat_by")]
@@ -878,6 +932,10 @@ impl Display for FunctionExpr {
             #[cfg(feature = "ewma_by")]
             EwmMeanBy { .. } => "ewm_mean_by",
             #[cfg(feature = "ewma")]
+            EwmSum { .. } => "ewm_sum",
+            #[cfg(feature = "ewma_by")]
+            EwmSumBy { .. } => "ewm_sum_by",
+            #[cfg(feature = "ewma")]
             EwmStd { .. } => "ewm_std",
             #[cfg(feature = "ewma")]
             EwmVar { .. } => "ewm_var",
@@ -900,6 +958,3 @@ impl Display for FunctionExpr {
         write!(f, "{s}")
     }
 }
-
-#[cfg(any(feature = "array_to_struct", feature = "list_to_struct"))]
-pub type DslNameGenerator = PlanCallback<usize, String>;

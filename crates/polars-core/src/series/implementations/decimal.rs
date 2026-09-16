@@ -1,3 +1,4 @@
+use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add};
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
@@ -120,9 +121,6 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
             .zip_with(mask, other.physical())?
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series())
-    }
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        self.0.physical().into_total_eq_inner()
     }
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         self.0.physical().into_total_ord_inner()
@@ -408,6 +406,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.physical().arg_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         ChunkUnique::unique_id(self.0.physical())
     }
@@ -442,9 +441,17 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             unreachable!()
         };
         let scale = *scale;
-        let prec = polars_compute::decimal::DEC128_MAX_PREC;
-        let sum = self.0.physical().sum();
-        let av = AnyValue::Decimal(sum.unwrap(), prec, scale);
+        let prec = DEC128_MAX_PREC;
+        let sum = self
+            .0
+            .physical()
+            .iter()
+            .flatten()
+            .try_fold(0i128, |acc, v| {
+                dec128_add(acc, v, prec)
+                    .ok_or_else(|| polars_err!(ComputeError: "overflow in decimal addition in sum"))
+            })?;
+        let av = AnyValue::Decimal(sum, prec, scale);
         Ok(Scalar::new(DataType::Decimal(prec, scale), av))
     }
 

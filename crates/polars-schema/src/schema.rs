@@ -4,6 +4,7 @@ use core::hash::{Hash, Hasher};
 use indexmap::map::MutableKeys;
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::aliases::{InitHashMaps, PlIndexMap};
+use polars_utils::levenshtein::did_you_mean;
 use polars_utils::pl_str::PlSmallStr;
 
 #[derive(Debug, Clone)]
@@ -153,6 +154,7 @@ impl<Field, Metadata> Schema<Field, Metadata> {
     }
 
     /// Get a reference to the dtype of the field named `name`, or `None` if the field doesn't exist.
+    #[inline]
     pub fn get(&self, name: &str) -> Option<&Field> {
         self.fields.get(name)
     }
@@ -178,6 +180,7 @@ impl<Field, Metadata> Schema<Field, Metadata> {
     /// Return all data about the field named `name`: its index in the schema, its name, and its dtype.
     ///
     /// Returns `Some((index, &name, &dtype))` if the field exists, `None` if it doesn't.
+    #[inline]
     pub fn get_full(&self, name: &str) -> Option<(usize, &PlSmallStr, &Field)> {
         self.fields.get_full(name)
     }
@@ -203,12 +206,12 @@ impl<Field, Metadata> Schema<Field, Metadata> {
         self.fields.get_index(index).ok_or_else(|| polars_err!(ComputeError: "index {index} out of bounds with 'schema' of len: {}", self.len()))
     }
 
-    /// Get mutable references to the name and dtype of the field at `index`.
+    /// Get mutable references to the dtype of the field at `index`.
     ///
     /// If `index` is inbounds, returns `Some((&mut name, &mut dtype))`, else `None`. See
     /// [`get_at_index`][Self::get_at_index] for an immutable version.
-    pub fn get_at_index_mut(&mut self, index: usize) -> Option<(&mut PlSmallStr, &mut Field)> {
-        self.fields.get_index_mut2(index)
+    pub fn get_at_index_mut(&mut self, index: usize) -> Option<(&PlSmallStr, &mut Field)> {
+        self.fields.get_index_mut2(index).map(|(a, b)| (&*a, b))
     }
 
     /// Swap-remove a field by name and, if the field existed, return its dtype.
@@ -371,20 +374,36 @@ impl<Field, Metadata> Schema<Field, Metadata> {
         self.fields.iter_mut().map(|(_name, dtype)| dtype)
     }
 
+    #[inline]
     pub fn index_of(&self, name: &str) -> Option<usize> {
         self.fields.get_index_of(name)
     }
 
     pub fn try_index_of(&self, name: &str) -> PolarsResult<usize> {
         let Some(i) = self.fields.get_index_of(name) else {
-            polars_bail!(
+            return Err(self.column_not_found_err(name));
+        };
+
+        Ok(i)
+    }
+
+    /// Build a [`PolarsError::ColumnNotFound`] for `name`, listing available columns
+    /// and a "did you mean" suggestion when one is close enough.
+    pub fn column_not_found_err(&self, name: &str) -> PolarsError {
+        let suggestion = did_you_mean(name, self.iter_names().map(|s| s.as_str()));
+        if let Some(s) = suggestion {
+            polars_err!(
+                ColumnNotFound:
+                "unable to find column {:?}; valid columns: {:?}\n\nDid you mean {:?}?",
+                name, self.iter_names().collect::<Vec<_>>(), s,
+            )
+        } else {
+            polars_err!(
                 ColumnNotFound:
                 "unable to find column {:?}; valid columns: {:?}",
                 name, self.iter_names().collect::<Vec<_>>(),
             )
-        };
-
-        Ok(i)
+        }
     }
 
     /// Compare the fields between two schema returning the additional columns that each schema has.
@@ -549,11 +568,11 @@ where
 
     /// Returns a new [`Schema`] with a subset of all fields whose `predicate`
     /// evaluates to true.
-    pub fn retain_mut<F>(&mut self, f: F)
+    pub fn retain_mut<F>(&mut self, mut f: F)
     where
-        F: FnMut(&mut PlSmallStr, &mut Field) -> bool,
+        F: FnMut(&PlSmallStr, &mut Field) -> bool,
     {
-        self.fields.retain2(f);
+        self.fields.retain2(|k, v| f(k, v));
     }
 }
 

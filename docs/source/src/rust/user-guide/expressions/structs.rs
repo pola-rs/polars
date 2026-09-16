@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Count"=> [30, 27, 26, 29, 31, 28, 28, 26, 33, 28],
 
     )?;
-    println!("{}", &ratings);
+    println!("{}", ratings);
     // --8<-- [end:ratings_df]
 
     // --8<-- [start:state_value_counts]
@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?
     .into_struct("ratings".into())
     .into_series();
-    println!("{}", &rating_series);
+    println!("{}", rating_series);
     // // --8<-- [end:series_struct]
 
     // --8<-- [start:series_struct_error]

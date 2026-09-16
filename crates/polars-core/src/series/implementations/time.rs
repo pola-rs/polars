@@ -9,8 +9,6 @@
 //!
 
 use super::*;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::*;
 
 unsafe impl IntoSeries for TimeChunked {
@@ -49,9 +47,6 @@ impl private::PrivateSeries for SeriesWrap<TimeChunked> {
             .map(|ca| ca.into_time().into_series())
     }
 
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        self.0.physical().into_total_eq_inner()
-    }
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         self.0.physical().into_total_ord_inner()
     }
@@ -348,6 +343,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         self.0.physical().arg_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         ChunkUnique::unique_id(self.0.physical())
     }

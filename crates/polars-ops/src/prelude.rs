@@ -4,6 +4,7 @@ pub(crate) use {crate::series::*, rayon::prelude::*};
 pub use crate::chunked_array::*;
 #[cfg(feature = "merge_sorted")]
 pub use crate::frame::_merge_sorted_dfs;
+pub use crate::frame::is_sorted::DataFrameIsSorted;
 pub use crate::frame::join::*;
 #[cfg(feature = "pivot")]
 pub use crate::frame::unpivot::UnpivotDF;

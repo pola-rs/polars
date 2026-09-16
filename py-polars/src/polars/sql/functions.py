@@ -119,6 +119,7 @@ def sql(query: str, *, eager: bool = False) -> DataFrame | LazyFrame:
     ...         FROM pl_frame
     ...         JOIN pd_frame USING(a)
     ...         JOIN pa_table USING(a)
+    ...         ORDER BY ALL
     ...     ''',
     ... ).collect()
     shape: (2, 5)

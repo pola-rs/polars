@@ -10,6 +10,31 @@ pub type IdxSize = u32;
 #[cfg(feature = "bigidx")]
 pub type IdxSize = u64;
 
+/// Avoids clippy::unnecessary_cast when compiling with bigidx enabled.
+#[inline]
+pub const fn idxsize_to_u64(
+    #[cfg(feature = "bigidx")] val: u64,
+    #[cfg(not(feature = "bigidx"))] val: u32,
+) -> u64 {
+    #[cfg(feature = "bigidx")]
+    {
+        val
+    }
+    #[cfg(not(feature = "bigidx"))]
+    {
+        val as u64
+    }
+}
+
+/// Avoids clippy::useless_conversion when compiling with bigidx enabled.
+#[inline(always)]
+pub fn idxsize_try_from<T>(x: T) -> Result<IdxSize, <IdxSize as TryFrom<T>>::Error>
+where
+    IdxSize: TryFrom<T>,
+{
+    IdxSize::try_from(x)
+}
+
 #[cfg(not(feature = "bigidx"))]
 pub type NonZeroIdxSize = std::num::NonZeroU32;
 #[cfg(feature = "bigidx")]

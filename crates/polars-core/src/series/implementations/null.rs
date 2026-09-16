@@ -4,9 +4,8 @@ use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use self::compare_inner::TotalOrdInner;
 use super::*;
-use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, NonNull, TotalEqInner};
+use crate::chunked_array::ops::compare_inner::NonNull;
 use crate::chunked_array::ops::sort::arg_sort_multiple::arg_sort_multiple_impl;
-use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 use crate::series::*;
 
@@ -99,9 +98,6 @@ impl PrivateSeries for NullChunked {
         Ok(Self::new(self.name().clone(), len).into_series())
     }
 
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        IntoTotalEqInner::into_total_eq_inner(self)
-    }
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         IntoTotalOrdInner::into_total_ord_inner(self)
     }
@@ -268,6 +264,7 @@ impl SeriesTrait for NullChunked {
         Ok(IdxCa::new(self.name().clone(), idxs))
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         if self.is_empty() {
             Ok((0, Vec::new()))

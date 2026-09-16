@@ -153,6 +153,8 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
         | DT::Float64 => unreachable!("primitive numeric"),
 
         // to_physical
+        #[cfg(feature = "dtype-map")]
+        DT::Map(..) => unreachable!(),
         #[cfg(feature = "dtype-decimal")]
         DT::Decimal(..) => unreachable!(),
         #[cfg(feature = "dtype-categorical")]

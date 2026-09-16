@@ -227,7 +227,10 @@ fn test_implicit_date_string() {
     }
     .unwrap()
     .lazy()
-    .select(vec![col("idx"), col("dt").cast(DataType::Date)])
+    .select(vec![
+        col("idx"),
+        col("dt").str().to_date(StrptimeOptions::default()),
+    ])
     .collect()
     .unwrap();
 
@@ -837,7 +840,7 @@ fn test_ctes() -> PolarsResult<()> {
     assert!(context.execute(sql1).is_ok());
 
     let sql2 = r#"SELECT * FROM df0"#;
-    assert!(context.execute(sql2).is_err());
+    assert!(context.execute(sql2).and_then(|lf| lf.collect()).is_err());
 
     Ok(())
 }
@@ -982,7 +985,7 @@ fn test_iss_9471() {
     SELECT
         ABS(a,a,a,a,1,2,3,XYZRandomLetters,"XYZRandomLetters") AS "abs",
     FROM df"#;
-    let res = context.execute(sql);
+    let res = context.execute(sql).and_then(|lf| lf.collect());
 
     assert!(res.is_err())
 }

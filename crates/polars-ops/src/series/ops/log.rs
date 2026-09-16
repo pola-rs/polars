@@ -16,8 +16,10 @@ fn exp<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Float64Chunked {
 
 pub trait LogSeries: SeriesSealed {
     /// Compute the logarithm to a given base
-    fn log(&self, base: &Series) -> Series {
+    fn log(&self, base: &Series) -> PolarsResult<Series> {
         let s = self.as_series();
+        polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'log'");
+        polars_ensure!(base.dtype().is_numeric() || base.dtype().is_bool(), InvalidOperation: "expected numerical input for 'log'");
 
         match (s.dtype(), base.dtype()) {
             (dt1, dt2) if dt1 == dt2 && dt1.is_float() => {
@@ -29,7 +31,7 @@ pub trait LogSeries: SeriesSealed {
                     let out: ChunkedArray<$T> = broadcast_binary_elementwise_values(ca, base_ca,
                         |x, base| x.log(base)
                     );
-                    out.into_series()
+                    Ok(out.into_series())
                 })
             },
             (dt1, _) if dt1.is_float() => s.log(&base.cast(dt1).unwrap()),
@@ -39,8 +41,9 @@ pub trait LogSeries: SeriesSealed {
     }
 
     /// Compute the natural logarithm of all elements plus one in the input array
-    fn log1p(&self) -> Series {
+    fn log1p(&self) -> PolarsResult<Series> {
         let s = self.as_series();
+        polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'log1p'");
         if s.dtype().is_decimal() {
             return s.cast(&DataType::Float64).unwrap().log1p();
         }
@@ -53,20 +56,21 @@ pub trait LogSeries: SeriesSealed {
             dt if dt.is_integer() => {
                 with_match_physical_integer_polars_type!(s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                    log1p(ca).into_series()
+                    Ok(log1p(ca).into_series())
                 })
             },
             #[cfg(feature = "dtype-f16")]
-            Float16 => s.f16().unwrap().apply_values(|v| v.ln_1p()).into_series(),
-            Float32 => s.f32().unwrap().apply_values(|v| v.ln_1p()).into_series(),
-            Float64 => s.f64().unwrap().apply_values(|v| v.ln_1p()).into_series(),
+            Float16 => Ok(s.f16().unwrap().apply_values(|v| v.ln_1p()).into_series()),
+            Float32 => Ok(s.f32().unwrap().apply_values(|v| v.ln_1p()).into_series()),
+            Float64 => Ok(s.f64().unwrap().apply_values(|v| v.ln_1p()).into_series()),
             _ => s.cast(&DataType::Float64).unwrap().log1p(),
         }
     }
 
     /// Calculate the exponential of all elements in the input array.
-    fn exp(&self) -> Series {
+    fn exp(&self) -> PolarsResult<Series> {
         let s = self.as_series();
+        polars_ensure!(s.dtype().is_numeric() || s.dtype().is_bool(), InvalidOperation: "expected numerical input for 'exp'");
         if s.dtype().is_decimal() {
             return s.cast(&DataType::Float64).unwrap().exp();
         }
@@ -79,13 +83,13 @@ pub trait LogSeries: SeriesSealed {
             dt if dt.is_integer() => {
                 with_match_physical_integer_polars_type!(s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                    exp(ca).into_series()
+                    Ok(exp(ca).into_series())
                 })
             },
             #[cfg(feature = "dtype-f16")]
-            Float16 => s.f16().unwrap().apply_values(|v| v.exp()).into_series(),
-            Float32 => s.f32().unwrap().apply_values(|v| v.exp()).into_series(),
-            Float64 => s.f64().unwrap().apply_values(|v| v.exp()).into_series(),
+            Float16 => Ok(s.f16().unwrap().apply_values(|v| v.exp()).into_series()),
+            Float32 => Ok(s.f32().unwrap().apply_values(|v| v.exp()).into_series()),
+            Float64 => Ok(s.f64().unwrap().apply_values(|v| v.exp()).into_series()),
             _ => s.cast(&DataType::Float64).unwrap().exp(),
         }
     }
@@ -117,7 +121,7 @@ pub trait LogSeries: SeriesSealed {
                 };
 
                 let base = &Series::new(PlSmallStr::EMPTY, [base]);
-                (&pk * &pk.log(base))?.sum::<f64>().map(|v| -v)
+                (&pk * &pk.log(base)?)?.sum::<f64>().map(|v| -v)
             },
             _ => s
                 .cast(&DataType::Float64)

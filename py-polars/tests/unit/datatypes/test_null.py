@@ -81,3 +81,36 @@ def test_null_hash_rows_14100() -> None:
 
 def test_null_lit_filter_16664() -> None:
     assert pl.DataFrame({"x": []}).filter(pl.lit(True)).shape == (0, 1)
+
+
+@pytest.mark.parametrize(
+    "op",
+    [pl.Expr.is_nan, pl.Expr.is_not_nan, pl.Expr.is_finite, pl.Expr.is_infinite],
+)
+def test_null_fused_not_28845(op: Any) -> None:
+    two_nulls = [None, None]
+    df = pl.DataFrame({"a": two_nulls})
+    assert df.schema == {"a": pl.Null}
+
+    output_df = df.select(
+        col=op(pl.col("a")),
+        broadcast=op(pl.lit(None)),
+        inverted_col=~op(pl.col("a")),
+        inverted_broadcast=~op(pl.lit(None)),
+    )
+
+    expected_df = pl.DataFrame(
+        {
+            "col": two_nulls,
+            "broadcast": two_nulls,
+            "inverted_col": two_nulls,
+            "inverted_broadcast": two_nulls,
+        },
+        schema={
+            "col": pl.Boolean,
+            "broadcast": pl.Boolean,
+            "inverted_col": pl.Boolean,
+            "inverted_broadcast": pl.Boolean,
+        },
+    )
+    assert_frame_equal(output_df, expected_df)

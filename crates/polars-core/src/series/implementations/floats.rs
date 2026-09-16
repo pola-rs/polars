@@ -2,8 +2,6 @@ use num_traits::AsPrimitive;
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::*;
 
 macro_rules! impl_dyn_series {
@@ -15,6 +13,7 @@ macro_rules! impl_dyn_series {
             fn _field(&self) -> Cow<'_, Field> {
                 Cow::Borrowed(self.0.ref_field())
             }
+            #[inline]
             fn _dtype(&self) -> &DataType {
                 self.0.ref_field().dtype()
             }
@@ -33,9 +32,6 @@ macro_rules! impl_dyn_series {
             ) -> PolarsResult<Series> {
                 ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref())
                     .map(|ca| ca.into_series())
-            }
-            fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-                (&self.0).into_total_eq_inner()
             }
             fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
                 (&self.0).into_total_ord_inner()
@@ -297,6 +293,7 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::arg_unique(&self.0)
             }
 
+            #[cfg(feature = "algorithm_group_by")]
             fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
                 ChunkUnique::unique_id(&self.0)
             }

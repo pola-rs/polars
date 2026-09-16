@@ -9,7 +9,7 @@ use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_utils::aliases::PlHashSet;
 use polars_utils::relaxed_cell::RelaxedCell;
-use polars_utils::reuse_vec::reuse_vec;
+use polars_utils::vec::reuse_vec;
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 use tokio::task::JoinHandle;
 
@@ -287,7 +287,7 @@ fn run_subgraph(
         }
 
         // Wait until all tasks are done.
-        ASYNC.block_on(async move {
+        ASYNC.block_in_place_on(async move {
             for handle in join_handles {
                 handle.await?;
             }
@@ -336,7 +336,7 @@ pub fn execute_graph(
             m.lock().flush(&graph.pipes);
         }
 
-        ASYNC.block_on(async {
+        ASYNC.block_in_place_on(async {
             // TODO: track this in metrics.
             while let Ok(handle) = subphase_tasks_recv.try_recv() {
                 handle.await.unwrap()?;
@@ -368,7 +368,7 @@ pub fn execute_graph(
             &state,
             metrics.clone(),
         )?;
-        ASYNC.block_on(async {
+        ASYNC.block_in_place_on(async {
             // TODO: track this in metrics.
             while let Ok(handle) = subphase_tasks_recv.try_recv() {
                 handle.await.unwrap()?;
@@ -386,7 +386,7 @@ pub fn execute_graph(
     }
 
     // Finalize query tasks.
-    ASYNC.block_on(async {
+    ASYNC.block_in_place_on(async {
         // TODO: track this in metrics.
         while let Ok(handle) = query_tasks_recv.try_recv() {
             handle.await.unwrap()?;

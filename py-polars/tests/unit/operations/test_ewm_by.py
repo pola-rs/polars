@@ -239,3 +239,42 @@ def test_ewma_by_multiple_chunks() -> None:
     values = pl.Series([1, 2]).append(pl.Series([None], dtype=pl.Int64))
     result = values.ewm_mean_by(times, half_life="2i")
     assert_series_equal(result, expected)
+
+
+def test_ewm_sum_by_uniform_times() -> None:
+    df = pl.DataFrame(
+        {
+            "times": [0, 1, 2, 5, 6, 10],
+            "x1": [1, 1, 1, 1, 1, 1],
+            "x2": [1, 2, 3, 4, 5, 6],
+        }
+    )
+    result = df.select(
+        pl.col("x1").ewm_sum_by("times", half_life="1i").alias("x1"),
+        pl.col("x2").ewm_sum_by("times", half_life="1i").alias("x2"),
+    )
+    expected = pl.DataFrame(
+        {
+            "x1": [1.0, 1.5, 1.75, 1.21875, 1.609375, 1.1005859375],
+            "x2": [1.0, 2.5, 4.25, 4.53125, 7.265625, 6.4541015625],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_ewm_sum_by_constant_mean_differs() -> None:
+    df = pl.DataFrame(
+        {
+            "values": [1, 1, 1],
+            "times": [
+                date(2020, 1, 4),
+                date(2020, 1, 11),
+                date(2020, 1, 16),
+            ],
+        }
+    )
+    result = df.select(
+        pl.col("values").ewm_sum_by("times", half_life=timedelta(days=2)),
+    )
+    expected = pl.DataFrame({"values": [1.0, 1.088388, 1.192402]})
+    assert_frame_equal(result, expected)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING, Any
 
 import polars.functions as F
@@ -15,6 +16,9 @@ if TYPE_CHECKING:
 
     from polars._plr import PyExpr
     from polars._typing import IntoExpr
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    import polars._plr as plr
 
 
 class When:
@@ -57,6 +61,15 @@ class Then(Expr):
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
         return wrap_expr(pyexpr)
+
+    def __getstate__(self) -> bytes:
+        return self._then.__getstate__()
+
+    def __setstate__(self, state: bytes) -> None:
+        # Initialize with a when-then dummy
+        tmp = plr.when(F.lit(False)._pyexpr).then(F.lit(False)._pyexpr)
+        tmp.__setstate__(state)
+        self._then = tmp
 
     @property
     def _pyexpr(self) -> PyExpr:  # type: ignore[override]
@@ -146,6 +159,20 @@ class ChainedThen(Expr):
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
         return wrap_expr(pyexpr)
+
+    def __getstate__(self) -> bytes:
+        return self._chained_then.__getstate__()
+
+    def __setstate__(self, state: bytes) -> None:
+        # Initialize with a chained when-then dummy.
+        tmp = (
+            plr.when(F.lit(False)._pyexpr)
+            .then(F.lit(False)._pyexpr)
+            .when(F.lit(False)._pyexpr)
+            .then(F.lit(False)._pyexpr)
+        )
+        tmp.__setstate__(state)
+        self._chained_then = tmp
 
     @property
     def _pyexpr(self) -> PyExpr:  # type: ignore[override]

@@ -4,7 +4,6 @@ use super::*;
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum CategoricalFunction {
-    GetCategories,
     #[cfg(feature = "strings")]
     LenBytes,
     #[cfg(feature = "strings")]
@@ -15,13 +14,14 @@ pub enum CategoricalFunction {
     EndsWith(String),
     #[cfg(feature = "strings")]
     Slice(i64, Option<usize>),
+    To(DataTypeExpr, bool),
+    Physical,
 }
 
 impl Display for CategoricalFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use CategoricalFunction::*;
         let s = match self {
-            GetCategories => "get_categories",
             #[cfg(feature = "strings")]
             LenBytes => "len_bytes",
             #[cfg(feature = "strings")]
@@ -32,6 +32,8 @@ impl Display for CategoricalFunction {
             EndsWith(_) => "ends_with",
             #[cfg(feature = "strings")]
             Slice(_, _) => "slice",
+            To(_, _) => "to",
+            Physical => "physical",
         };
         write!(f, "cat.{s}")
     }

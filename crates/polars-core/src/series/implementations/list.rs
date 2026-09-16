@@ -1,6 +1,4 @@
 use super::*;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::row_encode::{_get_rows_encoded_ca_unordered, encode_rows_unordered};
 use crate::prelude::*;
 
@@ -54,9 +52,6 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         IntoGroupsType::group_tuples(&self.0, multithreaded, sorted)
     }
 
-    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-        (&self.0).into_total_eq_inner()
-    }
     fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
         invalid_operation_panic!(into_total_ord_inner, self)
     }
@@ -248,6 +243,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         Ok(IdxCa::from_vec(self.name().clone(), first))
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         let ca = encode_rows_unordered(&[self.0.clone().into_column()])?;
         ChunkUnique::unique_id(&ca)

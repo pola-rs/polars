@@ -34,6 +34,8 @@ pub mod io;
 pub mod lazyframe;
 pub mod lazygroupby;
 pub mod map;
+#[cfg(feature = "pymethods")]
+pub mod polars_cloud_observer;
 
 #[cfg(feature = "object")]
 pub mod object;
@@ -50,6 +52,17 @@ pub mod utils;
 
 #[cfg(feature = "c_api")]
 pub mod c_api;
+
+// Since Python Polars cannot share its version into here and we need to be able to build this
+// package correctly without `py-polars`, we need to mirror the version here.
+// example: 1.35.0-beta.1
+pub static PYPOLARS_VERSION: &str = "2.0.0-rc.1";
+
+// Set by the release CI workflow; absent for local/source builds.
+pub static PYPOLARS_BUILD_COMMIT: &str = match option_env!("POLARS_BUILD_COMMIT") {
+    Some(s) => s,
+    None => "<unknown>",
+};
 
 use crate::conversion::Wrap;
 

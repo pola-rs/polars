@@ -75,8 +75,14 @@ pub fn concatenate_unchecked<A: AsRef<dyn Array>>(arrays: &[A]) -> PolarsResult<
         polars_bail!(InvalidOperation: "concat requires input of at least one array")
     }
 
-    if arrays.len() == 1 {
+    let mut non_empty_arrays_iter = arrays.iter().filter(|arr| !arr.as_ref().is_empty());
+
+    let Some(first_non_empty) = non_empty_arrays_iter.next() else {
         return Ok(arrays[0].as_ref().to_boxed());
+    };
+
+    if non_empty_arrays_iter.next().is_none() {
+        return Ok(first_non_empty.as_ref().to_boxed());
     }
 
     use PhysicalType::*;

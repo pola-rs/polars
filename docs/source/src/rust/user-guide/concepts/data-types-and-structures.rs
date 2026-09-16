@@ -51,7 +51,7 @@ fn main() {
 
     // --8<-- [start:sample]
     let n = Series::new("".into(), &[2]);
-    let sampled_df = df.sample_n(&n, false, false, None).unwrap();
+    let sampled_df = df.sample_n(&n, false, None, None).unwrap();
 
     println!("{sampled_df}");
     // --8<-- [end:sample]

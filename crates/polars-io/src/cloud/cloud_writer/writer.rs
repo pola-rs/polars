@@ -18,7 +18,7 @@ impl CloudWriter {
     pub fn new(
         store: PolarsObjectStore,
         path: object_store::path::Path,
-        upload_chunk_size: usize,
+        upload_chunk_size: Option<NonZeroUsize>,
         max_concurrency: NonZeroUsize,
         io_metrics: Option<Arc<IOMetrics>>,
     ) -> Self {

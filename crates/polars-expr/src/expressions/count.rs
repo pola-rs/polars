@@ -85,42 +85,9 @@ pub fn evaluate_count_on_ac<'a>(
             AggState::NotAggregated(s) => {
                 let s = s.clone();
                 let groups = ac.groups();
-                let out: IdxCa = if matches!(s.dtype(), &DataType::Null) {
-                    IdxCa::full(s.name().clone(), 0, groups.len())
-                } else {
-                    match groups.as_ref().as_ref() {
-                        GroupsType::Idx(idx) => {
-                            let s = s.rechunk();
-                            // @scalar-opt
-                            // @partition-opt
-                            let array = &s.as_materialized_series().chunks()[0];
-                            let validity = array.validity().unwrap();
-                            idx.iter()
-                                .map(|(_, g)| {
-                                    let mut count = 0 as IdxSize;
-                                    // Count valid values
-                                    g.iter().for_each(|i| unsafe {
-                                        count += validity.get_bit_unchecked(*i as usize) as IdxSize;
-                                    });
-                                    count
-                                })
-                                .collect_ca_trusted_with_dtype(PlSmallStr::EMPTY, IDX_DTYPE)
-                        },
-                        GroupsType::Slice { groups, .. } => {
-                            // Slice and use computed null count
-                            groups
-                                .iter()
-                                .map(|g| {
-                                    let start = g[0];
-                                    let len = g[1];
-                                    len - s.slice(start as i64, len as usize).null_count()
-                                        as IdxSize
-                                })
-                                .collect_ca_trusted_with_dtype(PlSmallStr::EMPTY, IDX_DTYPE)
-                        },
-                    }
-                };
-                out.into_column()
+                // Null-typed data has an all-invalid validity, so it counts as 0.
+                // SAFETY: groups are always in bounds.
+                unsafe { s.agg_valid_count(groups.as_ref().as_ref()) }
             },
         }
     };

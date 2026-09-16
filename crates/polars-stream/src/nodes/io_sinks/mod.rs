@@ -96,7 +96,7 @@ impl ComputeNode for IOSinkNode {
                         );
                     }
                     drop(phase_channel_tx);
-                    ASYNC.block_on(task_handle)?;
+                    ASYNC.block_in_place_on(task_handle)?;
                 },
                 IOSinkNodeState::Finished => {},
                 IOSinkNodeState::Uninitialized { .. } => unreachable!(),
@@ -215,7 +215,7 @@ impl IOSinkNodeState {
         let (phase_channel_tx, mut phase_channel_rx) = connector::connector::<PortReceiver>();
         let (mut multi_phase_tx, multi_phase_rx) = connector::connector();
 
-        let _ = multi_phase_tx.try_send(Morsel::new(
+        let _ = multi_phase_tx.try_send(Morsel::new_unregistered(
             DataFrame::empty_with_arc_schema(config.input_schema.clone()),
             MorselSeq::new(0),
             SourceToken::default(),

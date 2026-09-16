@@ -27,7 +27,7 @@ else:
             return _deprecate_function(message)
 
 
-from polars._utils.various import issue_warning
+from polars._warnings import issue_warning
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -77,33 +77,11 @@ def _deprecate_function(message: str) -> IdentityFunction:
     return decorate
 
 
-def deprecate_streaming_parameter() -> IdentityFunction:
-    """Decorator to mark `streaming` argument as deprecated due to being renamed."""
-
-    def decorate(function: Callable[P, T]) -> Callable[P, T]:
-        @wraps(function)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            if "streaming" in kwargs:
-                issue_deprecation_warning(
-                    "the `streaming` parameter was deprecated in 1.25.0; use `engine` instead."
-                )
-                if kwargs["streaming"]:
-                    kwargs["engine"] = "streaming"
-                elif "engine" not in kwargs:
-                    kwargs["engine"] = "in-memory"
-
-                del kwargs["streaming"]
-
-            return function(*args, **kwargs)
-
-        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
-        return wrapper
-
-    return decorate
-
-
 def deprecate_renamed_parameter(
-    old_name: str, new_name: str, *, version: str
+    old_name: str,
+    new_name: str,
+    *,
+    version: str,
 ) -> IdentityFunction:
     """
     Decorator to mark a function parameter as deprecated due to being renamed.
@@ -342,22 +320,14 @@ def identify_deprecations(*types: DeprecationType) -> dict[str, list[str]]:
         If empty, all types are returned; recognised values are:
             - "function"
             - "renamed_parameter"
-            - "streaming_parameter"
             - "nonkeyword_arguments"
             - "parameter_as_multi_positional"
 
     Examples
     --------
     >>> from polars._utils.deprecation import identify_deprecations
-    >>> identify_deprecations("streaming_parameter")  # doctest: +IGNORE_RESULT
-    {'streaming_parameter': [
-        'functions.lazy.collect_all',
-        'functions.lazy.collect_all_async',
-        'lazyframe.frame.LazyFrame.collect',
-        'lazyframe.frame.LazyFrame.collect_async',
-        'lazyframe.frame.LazyFrame.explain',
-        'lazyframe.frame.LazyFrame.show_graph',
-    ]}
+    >>> identify_deprecations("nonkeyword_arguments")  # doctest: +IGNORE_RESULT
+    {'nonkeyword_arguments': ['functions.business.business_day_count']}
     """
     valid_types = set(get_args(DeprecationType))
     for tp in types:
@@ -398,7 +368,6 @@ __all__ = [
     "deprecate_nonkeyword_arguments",
     "deprecate_parameter_as_multi_positional",
     "deprecate_renamed_parameter",
-    "deprecate_streaming_parameter",
     "deprecated",
     "identify_deprecations",
 ]
