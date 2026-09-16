@@ -5,10 +5,10 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{Field, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
+use polars_defs::join::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
-use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::optimizer::cse::split_select::split_pre_post_select_minsize_elementwise;
 use polars_plan::plans::{

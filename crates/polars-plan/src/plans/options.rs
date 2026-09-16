@@ -4,8 +4,8 @@ use bitflags::bitflags;
 use polars_core::prelude::*;
 use polars_core::utils::SuperTypeOptions;
 #[cfg(feature = "iejoin")]
-use polars_ops::frame::IEJoinOptions;
-use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinType, JoinTypeOptions};
+use polars_defs::join::IEJoinOptions;
+use polars_defs::join::{CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinType, JoinTypeOptions};
 use polars_utils::bool::UnsafeBool;
 use polars_utils::itertools::Itertools;
 #[cfg(feature = "serde")]

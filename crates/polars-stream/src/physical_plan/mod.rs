@@ -10,10 +10,10 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::DataType;
 use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
+use polars_defs::join::JoinArgs;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
-use polars_ops::frame::JoinArgs;
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-datetime",
@@ -39,10 +39,11 @@ mod to_description;
 mod to_graph;
 
 pub use fmt::{NodeStyle, visualize_plan};
-use polars_plan::prelude::PlanCallback;
+use polars_defs::time::duration::Duration;
+use polars_defs::time::group_by::ClosedWindow;
 #[cfg(feature = "dynamic_group_by")]
-use polars_time::DynamicGroupOptions;
-use polars_time::{ClosedWindow, Duration};
+use polars_defs::time::group_by::DynamicGroupOptions;
+use polars_plan::prelude::PlanCallback;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
@@ -349,7 +350,7 @@ pub enum PhysNodeKind {
     #[cfg(feature = "interpolate")]
     Interpolate {
         input: PhysStream,
-        method: polars_ops::series::InterpolationMethod,
+        method: polars_defs::expr::InterpolationMethod,
     },
     Rle(PhysStream),
     RleId(PhysStream),
@@ -523,7 +524,7 @@ pub enum PhysNodeKind {
         tmp_right_key_cols: Vec<Option<PlSmallStr>>,
         descending: bool,
         args: JoinArgs,
-        options: polars_ops::frame::IEJoinOptions,
+        options: polars_defs::join::IEJoinOptions,
     },
 
     /// Generic fallback for (as-of-yet) unsupported streaming joins.

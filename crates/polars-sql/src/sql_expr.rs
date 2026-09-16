@@ -11,11 +11,11 @@ use std::fmt::Display;
 use std::ops::Div;
 
 use polars_core::prelude::*;
+use polars_defs::time::duration::Duration;
 use polars_lazy::prelude::*;
 use polars_plan::dsl::functions::{DurationArgs, duration};
 use polars_plan::plans::DynLiteralValue;
 use polars_plan::prelude::{has_expr, typed_lit};
-use polars_time::Duration;
 use polars_time::chunkedarray::StringMethods;
 use polars_utils::unique_column_name;
 #[cfg(feature = "serde")]
