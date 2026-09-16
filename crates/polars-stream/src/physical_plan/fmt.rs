@@ -213,6 +213,7 @@ fn visualize_plan_rec(
             input,
             selectors,
             extend_original,
+            rechunk_input: _,
         } => {
             let label = if *extend_original {
                 "with-columns"
@@ -280,18 +281,38 @@ fn visualize_plan_rec(
             offset,
             fill: None,
         } => ("shift".to_owned(), &[*input, *offset][..]),
-        PhysNodeKind::Filter { input, predicate } => (
-            format!(
-                "filter\\n{}",
-                fmt_exprs_to_label(from_ref(predicate), expr_arena, FormatExprStyle::Select)
-            ),
-            from_ref(input),
-        ),
+        PhysNodeKind::Filter {
+            input,
+            predicate,
+            projection,
+        } => {
+            let mut projection_fmt = String::new();
+
+            if let Some((names, len_before_drop)) = projection.as_ref() {
+                write!(
+                    EscapeLabel(&mut projection_fmt),
+                    "project {} / {}: {}",
+                    names.len(),
+                    len_before_drop,
+                    names.join(", ")
+                )
+                .unwrap();
+            }
+
+            (
+                format!(
+                    "filter\\n{}{}",
+                    fmt_exprs_to_label(from_ref(predicate), expr_arena, FormatExprStyle::Select),
+                    projection_fmt
+                ),
+                from_ref(input),
+            )
+        },
         PhysNodeKind::SimpleProjection { input, columns } => {
             let mut label = "select".to_string();
             let mut f = EscapeLabel(&mut label);
             if columns.iter().all(|(out, col)| out == col) {
-                write!(f, "\n{}", &columns.values().join(", ")).unwrap();
+                write!(f, "\n{}", columns.values().join(", ")).unwrap();
             } else {
                 for (out, col) in columns {
                     if out == col {
@@ -491,6 +512,7 @@ fn visualize_plan_rec(
             if *is_peak_max { "peak_max" } else { "peak_min" }.to_owned(),
             &[*input][..],
         ),
+        PhysNodeKind::IsSorted { input, .. } => ("is_sorted".to_owned(), &[*input][..]),
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
         PhysNodeKind::UnorderedUnion { inputs } => {
             ("unordered-union".to_string(), inputs.as_slice())
@@ -520,6 +542,7 @@ fn visualize_plan_rec(
             hive_parts,
             include_file_paths,
             cast_columns_policy: _,
+            extra_columns_policy: _,
             missing_columns_policy: _,
             forbid_extra_columns: _,
             deletion_files,
@@ -588,14 +611,32 @@ fn visualize_plan_rec(
         PhysNodeKind::GroupBy {
             inputs,
             key_per_input,
+            fused_agg_inputs_per_input,
             aggs_per_input,
         } => {
             let mut out = String::from("group-by");
-            for (key, aggs) in key_per_input.iter().zip(aggs_per_input) {
+            for ((key, fused), aggs) in key_per_input
+                .iter()
+                .zip(fused_agg_inputs_per_input)
+                .zip(aggs_per_input)
+            {
                 write!(
                     &mut out,
-                    "\\nkey:\\n{}\\naggs:\\n{}",
+                    "\\nkey:\\n{}",
                     fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
+                )
+                .ok();
+                if !fused.is_empty() {
+                    write!(
+                        &mut out,
+                        "\\nfused agg inputs:\\n{}",
+                        fmt_exprs_to_label(fused, expr_arena, FormatExprStyle::Select),
+                    )
+                    .ok();
+                }
+                write!(
+                    &mut out,
+                    "\\naggs:\\n{}",
                     fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
                 )
                 .ok();
@@ -732,17 +773,25 @@ fn visualize_plan_rec(
         PhysNodeKind::InMemoryJoin {
             input_left,
             input_right,
-            left_on,
-            right_on,
             args,
-            ..
-        }
-        | PhysNodeKind::EquiJoin {
+            options,
+        } => {
+            let (left_on, right_on) = options.key_vecs();
+            let label = fmt_join_label(
+                "in-memory-join",
+                &fmt_exprs_to_label(&left_on, expr_arena, FormatExprStyle::NoAliases),
+                &fmt_exprs_to_label(&right_on, expr_arena, FormatExprStyle::NoAliases),
+                args,
+            );
+            (label, &[*input_left, *input_right][..])
+        },
+        PhysNodeKind::EquiJoin {
             input_left,
             input_right,
             left_on,
             right_on,
             args,
+            ..
         }
         | PhysNodeKind::SemiAntiJoin {
             input_left,
@@ -755,7 +804,6 @@ fn visualize_plan_rec(
             let base_label = match phys_sm[node_key].kind {
                 PhysNodeKind::MergeJoin { .. } => "merge-join",
                 PhysNodeKind::EquiJoin { .. } => "equi-join",
-                PhysNodeKind::InMemoryJoin { .. } => "in-memory-join",
                 PhysNodeKind::SemiAntiJoin {
                     output_bool: false, ..
                 } if args.how.is_semi() => "semi-join",
@@ -770,12 +818,24 @@ fn visualize_plan_rec(
                 } if args.how.is_anti() => "is-not-in",
                 _ => unreachable!(),
             };
-            let label = fmt_join_label(
+            let mut label = fmt_join_label(
                 base_label,
                 &fmt_exprs_to_label(left_on, expr_arena, FormatExprStyle::NoAliases),
                 &fmt_exprs_to_label(right_on, expr_arena, FormatExprStyle::NoAliases),
                 args,
             );
+            if let PhysNodeKind::EquiJoin {
+                fused_predicate: Some(fused_predicate),
+                ..
+            } = &phys_sm[node_key].kind
+            {
+                let fused_predicate = fmt_exprs_to_label(
+                    std::slice::from_ref(fused_predicate),
+                    expr_arena,
+                    FormatExprStyle::NoAliases,
+                );
+                label.push_str(&format!("\nfused predicate: {fused_predicate}"));
+            }
             (label, &[*input_left, *input_right][..])
         },
         #[cfg(feature = "iejoin")]
@@ -834,6 +894,8 @@ fn visualize_plan_rec(
         PhysNodeKind::Gather { input, idxs, .. } => ("gather".to_string(), &[*input, *idxs][..]),
         #[cfg(feature = "ewma")]
         PhysNodeKind::EwmMean { input, options: _ } => ("ewm-mean".to_string(), &[*input][..]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmSum { input, options: _ } => ("ewm-sum".to_string(), &[*input][..]),
         #[cfg(feature = "ewma")]
         PhysNodeKind::EwmVar { input, options: _ } => ("ewm-var".to_string(), &[*input][..]),
         #[cfg(feature = "ewma")]

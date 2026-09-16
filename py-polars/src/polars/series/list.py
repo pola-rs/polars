@@ -1,28 +1,25 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from polars import functions as F
 from polars._utils.unstable import unstable
-from polars._utils.wrap import wrap_s
+from polars._utils.various import _NamespaceSuggestMixin
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection
+    from collections.abc import Collection, Sequence
 
     from polars import Expr, Series
     from polars._plr import PySeries
     from polars._typing import (
         IntoExpr,
         IntoExprColumn,
-        ListToStructWidthStrategy,
         NullBehavior,
     )
 
 
 @expr_dispatch
-class ListNameSpace:
+class ListNameSpace(_NamespaceSuggestMixin):
     """Namespace for list related methods."""
 
     _accessor = "list"
@@ -156,7 +153,7 @@ class ListNameSpace:
         *,
         fraction: float | IntoExprColumn | None = None,
         with_replacement: bool = False,
-        shuffle: bool = False,
+        shuffle: bool | None = None,
         seed: int | None = None,
     ) -> Series:
         """
@@ -172,7 +169,12 @@ class ListNameSpace:
         with_replacement
             Allow values to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            Determines the order of the sampled values.
+            If True, sampled values are explicitly shuffled.
+            If False, the relative order of the sampled values is preserved.
+            (i.e. they appear in the same order as the original input list).
+            If None (default), no ordering guarantee; uses the most performant
+            algorithm.
         seed
             Seed for the random number generator. If set to None (default), a
             random seed is generated for each sample operation.
@@ -180,7 +182,7 @@ class ListNameSpace:
         Examples
         --------
         >>> s = pl.Series("values", [[1, 2, 3], [4, 5]])
-        >>> s.list.sample(n=pl.Series("n", [2, 1]), seed=1)
+        >>> s.list.sample(n=pl.Series("n", [2, 1]), shuffle=False, seed=1)
         shape: (2,)
         Series: 'values' [list[i64]]
         [
@@ -646,7 +648,11 @@ class ListNameSpace:
 
     def arg_min(self) -> Series:
         """
-        Retrieve the index of the minimal value in every sublist.
+        Retrieve an index of a minimal value in every sublist.
+
+        When multiple values are equal to the minimum, this function may arbitrarily
+        return the index of any of the minimum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
 
         Returns
         -------
@@ -668,7 +674,11 @@ class ListNameSpace:
 
     def arg_max(self) -> Series:
         """
-        Retrieve the index of the maximum value in every sublist.
+        Retrieve an index of a maximum value in every sublist.
+
+        When multiple values are equal to the maximum, this function may arbitrarily
+        return the index of any of the maximum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
 
         Returns
         -------
@@ -832,7 +842,9 @@ class ListNameSpace:
         ]
         """
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
+    def explode(
+        self, *, empty_as_null: bool | None = None, keep_nulls: bool = True
+    ) -> Series:
         """
         Returns a column with a separate row for every list element.
 
@@ -855,7 +867,7 @@ class ListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
-        >>> s.list.explode()
+        >>> s.list.explode(empty_as_null=False)
         shape: (6,)
         Series: 'a' [i64]
         [
@@ -918,72 +930,108 @@ class ListNameSpace:
         ]
         """
 
-    def to_struct(
-        self,
-        n_field_strategy: ListToStructWidthStrategy = "first_non_null",
-        fields: Callable[[int], str] | Sequence[str] | None = None,
-    ) -> Series:
+    def to_map(self) -> Series:
+        """
+        Convert the `List` of `Struct` entries to a `Map`.
+
+        The input must be a `List` of `Struct` with exactly two fields named `key`
+        and `value`. Keys must not be null; duplicate keys within a row are resolved
+        by keeping the first position and the last value.
+
+        The inverse of :meth:`Series.map.entries`.
+
+        Examples
+        --------
+        >>> s = pl.Series([[{"key": "a", "value": 1}, {"key": "b", "value": 2}]])
+        >>> s.list.to_map()
+        shape: (1,)
+        Series: '' [map[str, i64]]
+        [
+                {"a": 1, "b": 2}
+        ]
+        """
+
+    def to_struct(self, fields: Sequence[str]) -> Series:
         """
         Convert the series of type `List` to a series of type `Struct`.
 
         Parameters
         ----------
-        n_field_strategy : {'first_non_null', 'max_width'}
-            Strategy to determine the number of fields of the struct.
-
-            * "first_non_null": set number of fields equal to the length of the
-              first non zero-length sublist.
-            * "max_width": set number of fields as max length of all sublists.
         fields
-            If the name and number of the desired fields is known in advance
-            a list of field names can be given, which will be assigned by index.
-            Otherwise, to dynamically assign field names, a custom function can be
-            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
+            Field names to use for the output. The number of names determines how
+            many fields will be in the output.
 
         Examples
         --------
-        Convert list to struct with default field name assignment:
-
-        >>> s1 = pl.Series("n", [[0, 1, 2], [0, 1]])
-        >>> s2 = s1.list.to_struct()
-        >>> s2
-        shape: (2,)
-        Series: 'n' [struct[3]]
+        >>> s = pl.Series(
+        ...     [
+        ...         [1],
+        ...         [0, 1],
+        ...         [1, 0, 1],
+        ...         [],
+        ...         [None, 1],
+        ...         None,
+        ...     ],
+        ... )
+        >>> print(result := s.list.to_struct(["x", "y"]))
+        shape: (6,)
+        Series: '' [struct[2]]
         [
-            {0,1,2}
-            {0,1,null}
+                {1,null}
+                {0,1}
+                {1,0}
+                {null,null}
+                {null,1}
+                null
         ]
-        >>> s2.struct.fields
-        ['field_0', 'field_1', 'field_2']
+        >>> print(result.struct.unnest())
+        shape: (6, 2)
+        ┌──────┬──────┐
+        │ x    ┆ y    │
+        │ ---  ┆ ---  │
+        │ i64  ┆ i64  │
+        ╞══════╪══════╡
+        │ 1    ┆ null │
+        │ 0    ┆ 1    │
+        │ 1    ┆ 0    │
+        │ null ┆ null │
+        │ null ┆ 1    │
+        │ null ┆ null │
+        └──────┴──────┘
 
-        Convert list to struct with field name assignment by function/index:
+        Unnest to a struct with a number of fields matching the length of the longest
+        list:
 
-        >>> s3 = s1.list.to_struct(fields=lambda idx: f"n{idx:02}")
-        >>> s3.struct.fields
-        ['n00', 'n01', 'n02']
-
-        Convert list to struct with field name assignment by index from a list of names:
-
-        >>> s1.list.to_struct(fields=["one", "two", "three"]).struct.unnest()
-        shape: (2, 3)
-        ┌─────┬─────┬───────┐
-        │ one ┆ two ┆ three │
-        │ --- ┆ --- ┆ ---   │
-        │ i64 ┆ i64 ┆ i64   │
-        ╞═════╪═════╪═══════╡
-        │ 0   ┆ 1   ┆ 2     │
-        │ 0   ┆ 1   ┆ null  │
-        └─────┴─────┴───────┘
+        >>> print(
+        ...     result := s.list.to_struct(
+        ...         [f"field_{i}" for i in range(s.list.len().max() or 0)]
+        ...     )
+        ... )
+        shape: (6,)
+        Series: '' [struct[3]]
+        [
+                {1,null,null}
+                {0,1,null}
+                {1,0,1}
+                {null,null,null}
+                {null,1,null}
+                null
+        ]
+        >>> print(result.struct.unnest())
+        shape: (6, 3)
+        ┌─────────┬─────────┬─────────┐
+        │ field_0 ┆ field_1 ┆ field_2 │
+        │ ---     ┆ ---     ┆ ---     │
+        │ i64     ┆ i64     ┆ i64     │
+        ╞═════════╪═════════╪═════════╡
+        │ 1       ┆ null    ┆ null    │
+        │ 0       ┆ 1       ┆ null    │
+        │ 1       ┆ 0       ┆ 1       │
+        │ null    ┆ null    ┆ null    │
+        │ null    ┆ 1       ┆ null    │
+        │ null    ┆ null    ┆ null    │
+        └─────────┴─────────┴─────────┘
         """
-        if isinstance(fields, Sequence):
-            s = wrap_s(self._s)
-            return (
-                s.to_frame()
-                .select_seq(F.col(s.name).list.to_struct(fields=fields))
-                .to_series()
-            )
-
-        return wrap_s(self._s.list_to_struct(n_field_strategy, fields))
 
     def eval(self, expr: Expr, *, parallel: bool = False) -> Series:
         """

@@ -215,7 +215,7 @@ impl IOSinkNodeState {
         let (phase_channel_tx, mut phase_channel_rx) = connector::connector::<PortReceiver>();
         let (mut multi_phase_tx, multi_phase_rx) = connector::connector();
 
-        let _ = multi_phase_tx.try_send(Morsel::new(
+        let _ = multi_phase_tx.try_send(Morsel::new_unregistered(
             DataFrame::empty_with_arc_schema(config.input_schema.clone()),
             MorselSeq::new(0),
             SourceToken::default(),

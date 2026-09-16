@@ -33,85 +33,60 @@ impl FunctionRegistry for MyFunctionRegistry {
 
 #[test]
 fn test_udfs() -> PolarsResult<()> {
-    let my_custom_sum = UserDefinedFunction::new(
-        "my_custom_sum".into(),
+    let add = UserDefinedFunction::new(
+        "add".into(),
         BaseColumnUdf::new(
             move |c: &mut [Column]| {
                 let first = c[0].as_materialized_series().clone();
                 let second = c[1].as_materialized_series().clone();
                 (first + second).map(Column::from)
             },
-            |_: &Schema, fs: &[Field]| {
-                // UDF is responsible for schema validation
-                polars_ensure!(fs.len() == 2, SchemaMismatch: "expected two arguments");
-                let first = &fs[0];
-                let second = &fs[1];
-
-                if first.dtype() != second.dtype() {
-                    polars_bail!(SchemaMismatch: "mismatched types")
-                }
-                Ok(first.clone())
-            },
+            |_: &Schema, fs: &[Field]| Ok(fs[0].clone()),
         ),
     );
 
-    let mut ctx = SQLContext::new()
-        .with_function_registry(Arc::new(MyFunctionRegistry::new(vec![my_custom_sum])));
+    let mut ctx =
+        SQLContext::new().with_function_registry(Arc::new(MyFunctionRegistry::new(vec![add])));
 
     let df = df! {
         "a" => &[1, 2, 3],
         "b" => &[1, 2, 3],
-        "c" => &["a", "b", "c"]
-    }
-    .unwrap()
+    }?
     .lazy();
-
     ctx.register("foo", df);
-    let res = ctx.execute("SELECT a, b, my_custom_sum(a, b) FROM foo");
-    assert!(res.is_ok());
 
-    // schema is invalid so it will fail
-    assert!(matches!(
-        ctx.execute("SELECT a, b, my_custom_sum(c) as invalid FROM foo"),
-        Err(PolarsError::SchemaMismatch(_))
-    ));
+    let expected = df! { "ab" => &[2, 4, 6] }?;
 
-    // create a new UDF to be registered on the context
-    let my_custom_divide = UserDefinedFunction::new(
-        "my_custom_divide".into(),
-        BaseColumnUdf::new(
-            move |c: &mut [Column]| {
-                let first = c[0].as_materialized_series().clone();
-                let second = c[1].as_materialized_series().clone();
-                (first / second).map(Column::from)
-            },
-            |_: &Schema, fs: &[Field]| {
-                // UDF is responsible for schema validation
-                polars_ensure!(fs.len() == 2, SchemaMismatch: "expected two arguments");
-                let first = &fs[0];
-                let second = &fs[1];
-
-                if first.dtype() != second.dtype() {
-                    polars_bail!(SchemaMismatch: "mismatched types")
-                }
-                Ok(first.clone())
-            },
-        ),
-    );
-
-    // register a new UDF on an existing context
-    ctx.registry_mut().register("my_div", my_custom_divide)?;
-
-    // execute the query
+    // derived table (subquery in FROM)
     let res = ctx
-        .execute("SELECT a, b, my_div(a, b) as my_div FROM foo")?
+        .execute("SELECT * FROM (SELECT ADD(a, b) AS ab FROM foo)")?
         .collect()?;
-    let expected = df! {
-        "a" => &[1, 2, 3],
-        "b" => &[1, 2, 3],
-        "my_div" => &[1, 1, 1]
-    }?;
     assert!(expected.equals_missing(&res));
+
+    // common table expression
+    let res = ctx
+        .execute("WITH cte AS (SELECT ADD(a, b) AS ab FROM foo) SELECT * FROM cte")?
+        .collect()?;
+    assert!(expected.equals_missing(&res));
+
+    // set operation
+    let res = ctx
+        .execute("SELECT ADD(a, b) AS ab FROM foo UNION ALL SELECT a AS ab FROM foo")?
+        .collect()?
+        .sort(["ab"], Default::default())?;
+    assert!(df! { "ab" => &[1, 2, 2, 3, 4, 6] }?.equals_missing(&res));
+
+    // scalar subquery in the SELECT list
+    let res = ctx
+        .execute("SELECT (SELECT MAX(ADD(a, b)) FROM foo) AS ab FROM foo LIMIT 1")?
+        .collect()?;
+    assert!(df! { "ab" => &[6] }?.equals_missing(&res));
+
+    // subquery in the WHERE clause
+    let res = ctx
+        .execute("SELECT a FROM foo WHERE a IN (SELECT ADD(a, b) AS ab FROM foo)")?
+        .collect()?;
+    assert!(df! { "a" => &[2] }?.equals_missing(&res));
 
     Ok(())
 }

@@ -2,6 +2,7 @@ use std::any::Any;
 use std::borrow::Cow;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
+use arrow::compute::utils::combine_validities_and;
 use polars_compute::rolling::QuantileMethod;
 
 use crate::chunked_array::cast::CastOptions;
@@ -42,7 +43,7 @@ pub(crate) mod private {
 
     use super::*;
     use crate::chunked_array::flags::StatisticsFlags;
-    use crate::chunked_array::ops::compare_inner::{TotalEqInner, TotalOrdInner};
+    use crate::chunked_array::ops::compare_inner::TotalOrdInner;
 
     pub trait PrivateSeriesNumeric {
         /// Return a bit representation
@@ -73,8 +74,6 @@ pub(crate) mod private {
 
         fn _set_flags(&mut self, flags: StatisticsFlags);
 
-        #[expect(clippy::wrong_self_convention)]
-        fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a>;
         #[expect(clippy::wrong_self_convention)]
         fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a>;
 
@@ -228,6 +227,7 @@ pub trait SeriesTrait:
     }
 
     /// Get datatype of series.
+    #[inline(always)]
     fn dtype(&self) -> &DataType {
         self._dtype()
     }
@@ -342,6 +342,26 @@ pub trait SeriesTrait:
 
     /// Sets the validity mask of this Series to the given bitmap.
     fn with_validity(&self, validity: Option<Bitmap>) -> Series;
+
+    /// Applies the given mask to this Series, returning a new Series. If a
+    /// validity bit is true nothing changes, if it is false the corresponding
+    /// element becomes null.
+    fn mask(&self, validity: &Bitmap) -> Series {
+        if validity.len() == 1 {
+            if validity.get_bit(0) {
+                Series(self.clone_inner())
+            } else {
+                Series::full_null(self._field().name().clone(), self.len(), self._dtype())
+            }
+        } else if self.len() == 1 && validity.len() != 1 {
+            self.new_from_index(0, validity.len()).mask(validity)
+        } else {
+            self.with_validity(combine_validities_and(
+                self.rechunk_validity().as_ref(),
+                Some(validity),
+            ))
+        }
+    }
 
     /// Drop all null values and return a new Series.
     fn drop_nulls(&self) -> Series {

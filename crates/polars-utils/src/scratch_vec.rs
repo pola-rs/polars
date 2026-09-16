@@ -1,8 +1,13 @@
 use crate::UnitVec;
 
 /// Vec container with a getter that clears the vec.
-#[derive(Default)]
 pub struct ScratchVec<T>(Vec<T>);
+
+impl<T> Default for ScratchVec<T> {
+    fn default() -> Self {
+        Self(vec![])
+    }
+}
 
 impl<T> ScratchVec<T> {
     pub fn with_capacity(capacity: usize) -> Self {
@@ -17,8 +22,13 @@ impl<T> ScratchVec<T> {
 }
 
 /// UnitVec container with a getter that clears the unitvec.
-#[derive(Default)]
 pub struct ScratchUnitVec<T>(UnitVec<T>);
+
+impl<T> Default for ScratchUnitVec<T> {
+    fn default() -> Self {
+        Self(UnitVec::new())
+    }
+}
 
 impl<T> ScratchUnitVec<T> {
     pub fn with_capacity(capacity: usize) -> Self {

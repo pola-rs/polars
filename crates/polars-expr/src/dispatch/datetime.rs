@@ -114,25 +114,6 @@ pub(super) fn date(s: &Column) -> PolarsResult<Column> {
         dtype => polars_bail!(ComputeError: "expected Datetime or Date, got {dtype}"),
     }
 }
-pub(super) fn datetime(s: &Column) -> PolarsResult<Column> {
-    match s.dtype() {
-        #[cfg(feature = "timezones")]
-        DataType::Datetime(tu, Some(_)) => polars_ops::chunked_array::replace_time_zone(
-            s.datetime().unwrap(),
-            None,
-            &StringChunked::from_iter(std::iter::once("raise")),
-            NonExistent::Raise,
-        )?
-        .cast(&DataType::Datetime(*tu, None))
-        .map(|x| x.into()),
-        DataType::Datetime(tu, _) => s
-            .datetime()
-            .unwrap()
-            .cast(&DataType::Datetime(*tu, None))
-            .map(Column::from),
-        dtype => polars_bail!(ComputeError: "expected Datetime, got {dtype}"),
-    }
-}
 pub(super) fn hour(s: &Column) -> PolarsResult<Column> {
     s.as_materialized_series().hour().map(|ca| ca.into_column())
 }
@@ -277,22 +258,6 @@ pub(super) fn convert_time_zone(s: &Column, time_zone: &TimeZone) -> PolarsResul
             Ok(ca.into_column())
         },
         dtype => polars_bail!(ComputeError: "expected Datetime, got {dtype}"),
-    }
-}
-pub(super) fn with_time_unit(s: &Column, tu: TimeUnit) -> PolarsResult<Column> {
-    match s.dtype() {
-        DataType::Datetime(_, _) => {
-            let mut ca = s.datetime()?.clone();
-            ca.set_time_unit(tu);
-            Ok(ca.into_column())
-        },
-        #[cfg(feature = "dtype-duration")]
-        DataType::Duration(_) => {
-            let mut ca = s.as_materialized_series().duration()?.clone();
-            ca.set_time_unit(tu);
-            Ok(ca.into_column())
-        },
-        dt => polars_bail!(ComputeError: "dtype `{}` has no time unit", dt),
     }
 }
 pub(super) fn cast_time_unit(s: &Column, tu: TimeUnit) -> PolarsResult<Column> {

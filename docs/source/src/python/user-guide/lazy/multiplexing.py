@@ -8,7 +8,9 @@ import polars.testing
 
 def show_plan(q: pl.LazyFrame, optimized: bool = True):
     with tempfile.NamedTemporaryFile() as fp:
-        q.show_graph(show=False, output_path=fp.name, optimized=optimized)
+        q.show_graph(
+            plan_stage="ir", show=False, output_path=fp.name, optimized=optimized
+        )
         with open(fp.name, "rb") as f:
             png = base64.b64encode(f.read()).decode()
     print(f'<img src="data:image/png;base64, {png}"/>')

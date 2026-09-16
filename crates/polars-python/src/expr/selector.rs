@@ -155,6 +155,11 @@ impl PySelector {
     }
 
     #[staticmethod]
+    fn map() -> Self {
+        DataTypeSelector::Map.as_selector().into()
+    }
+
+    #[staticmethod]
     fn integer() -> Self {
         DataTypeSelector::Integer.as_selector().into()
     }

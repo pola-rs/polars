@@ -288,12 +288,12 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    Ok(StructArray::new(
+    StructArray::try_new(
         dtype.clone(),
         rows.len(),
         values,
         validity.into_opt_validity(),
-    ))
+    )
 }
 
 fn fill_array_from<B, T, A>(
@@ -532,7 +532,9 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
             dtype,
             allow_extra_fields_in_struct,
         )?)),
-        adt => unimplemented!("Deserialization from JSON not implemented for {adt:?}"),
+        adt => polars_bail!(
+            ComputeError: "deserialization from JSON is not implemented for `{adt:?}`"
+        ),
     }
 }
 

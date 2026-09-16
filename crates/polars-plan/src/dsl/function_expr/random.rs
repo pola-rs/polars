@@ -13,7 +13,7 @@ pub enum RandomMethod {
     Sample {
         is_fraction: bool,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
     },
 }
 

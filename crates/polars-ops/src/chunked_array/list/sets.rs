@@ -14,6 +14,7 @@ use polars_core::with_match_physical_numeric_type;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash, TotalOrdWrap};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 trait MaterializeValues<K> {
     // extends the iterator to the values and returns the current offset
@@ -107,9 +108,10 @@ fn copied_wrapper_opt<T: Copy + TotalEq + TotalHash>(
     v.copied().to_total_ord()
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[strum(serialize_all = "snake_case")]
 pub enum SetOperation {
     Intersection,
     Union,

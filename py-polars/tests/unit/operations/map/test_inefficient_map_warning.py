@@ -32,8 +32,8 @@ TEST_CASES = [
     # ---------------------------------------------
     ("a", "lambda x: x + 1 - (2 / 3)", '(pl.col("a") + 1) - 0.6666666666666666', None),
     ("a", "lambda x: x // 1 % 2", '(pl.col("a") // 1) % 2', None),
-    ("a", "lambda x: x & True", 'pl.col("a") & True', None),
-    ("a", "lambda x: x | False", 'pl.col("a") | False', None),
+    ("g", "lambda x: x & True", 'pl.col("g") & True', None),
+    ("g", "lambda x: x | False", 'pl.col("g") | False', None),
     ("a", "lambda x: abs(x) != 3", 'pl.col("a").abs() != 3', None),
     ("a", "lambda x: int(x) > 1", 'pl.col("a").cast(pl.Int64) > 1', None),
     (
@@ -341,7 +341,6 @@ def test_parse_invalid_function(func: str) -> None:
     "ignore:invalid value encountered:RuntimeWarning",
     "ignore:.*without specifying `return_dtype`:polars.exceptions.MapWithoutReturnDtypeWarning",
 )
-@pytest.mark.may_fail_auto_streaming  # dtype not set
 @pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_parse_apply_functions(
     col: str, func: str, expr_repr: str, dtype: Literal["self"] | pl.DataType | None
@@ -371,6 +370,7 @@ def test_parse_apply_functions(
                 datetime(2024, 5, 6),
                 datetime(2077, 10, 20),
             ],
+            "g": [True, False, None],
         }
     )
 
@@ -398,7 +398,6 @@ def test_parse_apply_functions(
     "ignore:invalid value encountered:RuntimeWarning",
     "ignore:.*without specifying `return_dtype`:polars.exceptions.MapWithoutReturnDtypeWarning",
 )
-@pytest.mark.may_fail_auto_streaming  # dtype is not set
 def test_parse_apply_raw_functions() -> None:
     lf = pl.LazyFrame({"a": [1.1, 2.0, 3.4]})
 
@@ -413,7 +412,7 @@ def test_parse_apply_raw_functions() -> None:
         # ...but we ARE still able to warn
         with pytest.warns(
             PolarsInefficientMapWarning,
-            match=rf"(?s)Expr\.map_elements.*Replace this expression.*np\.{func_name}",
+            match=rf"(?s)\.map_elements.*Replace this expression.*np\.{func_name}",
         ):
             df1 = lf.select(
                 pl.col("a").map_elements(func, return_dtype=pl.self_dtype())
@@ -426,7 +425,7 @@ def test_parse_apply_raw_functions() -> None:
     expr_native = pl.col("value").str.json_decode(json_dtype)
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r"(?s)Expr\.map_elements.*with this one instead:.*\.str\.json_decode",
+        match=r"(?s)\.map_elements.*with this one instead:.*\.str\.json_decode",
     ):
         expr_pyfunc = pl.col("value").map_elements(json.loads, return_dtype=json_dtype)
 
@@ -552,7 +551,6 @@ def test_parse_apply_series(
     assert_series_equal(expected_series, result_series, check_dtypes=False)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_expr_exact_warning_message() -> None:
     red, green, end_escape = (
         ("\x1b[31m", "\x1b[32m", "\x1b[0m")

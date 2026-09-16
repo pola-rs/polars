@@ -13,7 +13,9 @@ from polars.exceptions import ComputeError
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
+    _new_pyiceberg_scan,
     _normalize_windows_iceberg_file_uri,
+    extract_field_initial_default,
     try_convert_pyarrow_predicate,
 )
 from polars.io.scan_options.cast_options import ScanCastOptions
@@ -208,6 +210,8 @@ class IcebergScanResolver:
 
     table: IcebergTableWrap
     snapshot_id: int | None
+    from_snapshot_id_exclusive: int | None
+    to_snapshot_id_inclusive: int | None
     reader_override: Literal["native", "pyiceberg"] | None
     use_metadata_statistics: bool
     fast_deletion_count: bool
@@ -219,7 +223,26 @@ class IcebergScanResolver:
 
     def schema(self) -> pa.schema:
         """Fetch the schema of the table."""
-        return self.table.arrow_schema()
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        if self.snapshot_id is None:
+            return self.table.arrow_schema()
+
+        snapshot = self.table.get().snapshot_by_id(self.snapshot_id)
+
+        if snapshot is None:
+            msg = f"iceberg snapshot ID not found: {self.snapshot_id}"
+            raise ValueError(msg)
+
+        schema_id = snapshot.schema_id
+
+        if schema_id is None:
+            msg = (
+                f"IcebergScanResolver: requested snapshot {self.snapshot_id} "
+                "did not contain a schema ID"
+            )
+            raise ValueError(msg)
+        return schema_to_pyarrow(self.table.get().schemas()[schema_id])
 
     def to_dataset_scan(
         self,
@@ -279,6 +302,8 @@ class IcebergScanResolver:
             eprint(
                 "IcebergScanResolver: to_dataset_scan(): "
                 f"snapshot ID: {self.snapshot_id}, "
+                f"from snapshot ID exclusive: {self.from_snapshot_id_exclusive}, "
+                f"to snapshot ID inclusive: {self.to_snapshot_id_inclusive}, "
                 f"limit: {limit}, "
                 f"projection: {projection}, "
                 f"filter_columns: {filter_columns}, "
@@ -302,6 +327,10 @@ class IcebergScanResolver:
             )
 
         snapshot_id = self.snapshot_id
+        is_incremental = (
+            self.from_snapshot_id_exclusive is not None
+            or self.to_snapshot_id_inclusive is not None
+        )
         schema_id = None
 
         if snapshot_id is not None:
@@ -326,8 +355,19 @@ class IcebergScanResolver:
             iceberg_schema = tbl.schema()
             schema_id = tbl.metadata.current_schema_id
 
+            current_snapshot_id = (
+                v.snapshot_id if (v := tbl.current_snapshot()) is not None else None
+            )
+            resolved_end_snapshot_id = (
+                self.to_snapshot_id_inclusive
+                if self.to_snapshot_id_inclusive is not None
+                else current_snapshot_id
+            )
             snapshot_id_key = (
-                f"{v.snapshot_id}" if (v := tbl.current_snapshot()) is not None else ""
+                f"incremental:{self.from_snapshot_id_exclusive}:"
+                f"{resolved_end_snapshot_id}:schema:{schema_id}"
+                if is_incremental
+                else f"{current_snapshot_id or ''}"
             )
 
         if (
@@ -357,8 +397,6 @@ class IcebergScanResolver:
         fallback_reason = (
             "forced reader_override='pyiceberg'"
             if reader_override == "pyiceberg"
-            else f"unsupported table format version: {tbl.format_version}"
-            if not tbl.format_version <= 2
             else None
         )
 
@@ -370,7 +408,19 @@ class IcebergScanResolver:
             else iceberg_schema.select(*selected_fields)
         )
 
+        initial_defaults = {
+            x: value
+            for x in projected_iceberg_schema.field_ids
+            if (
+                value := extract_field_initial_default(
+                    projected_iceberg_schema.find_field(x)
+                )
+            )
+            is not None
+        }
+
         sources = []
+        source_sizes = []
         missing_field_defaults = IdentityTransformedPartitionValuesBuilder(
             tbl,
             projected_iceberg_schema,
@@ -380,10 +430,12 @@ class IcebergScanResolver:
             if self.use_metadata_statistics and filter_columns is not None
             else None
         )
-        deletion_files: dict[int, list[str]] = {}
+        position_delete_files: dict[int, list[str]] = {}
+        deletion_vectors: dict[int, str] = {}
         total_physical_rows: int = 0
         total_deleted_rows: int = 0
-        total_deletion_files = 0
+        total_position_delete_files = 0
+        total_deletion_vectors = 0
 
         if reader_override != "pyiceberg" and not fallback_reason:
             from pyiceberg.manifest import DataFileContent, FileFormat
@@ -393,8 +445,11 @@ class IcebergScanResolver:
 
             start_time = perf_counter()
 
-            scan = tbl.scan(
+            scan = _new_pyiceberg_scan(
+                tbl,
                 snapshot_id=snapshot_id,
+                from_snapshot_id_exclusive=self.from_snapshot_id_exclusive,
+                to_snapshot_id_inclusive=self.to_snapshot_id_inclusive,
                 limit=limit,
                 selected_fields=selected_fields,
             )
@@ -410,7 +465,9 @@ class IcebergScanResolver:
                     break
 
                 if file_info.delete_files:
-                    deletion_files[i] = []
+                    position_delete_files[i] = []
+                    position_delete_num_rows = 0
+                    deletion_vector_num_rows = 0
 
                     for deletion_file in file_info.delete_files:
                         if deletion_file.content != DataFileContent.POSITION_DELETES:
@@ -420,16 +477,32 @@ class IcebergScanResolver:
                             )
                             break
 
-                        if deletion_file.file_format != FileFormat.PARQUET:
-                            fallback_reason = (
-                                "unsupported deletion file format: "
-                                f"{deletion_file.file_format}"
-                            )
-                            break
+                        match deletion_file.file_format:
+                            case FileFormat.PARQUET:
+                                position_delete_files[i].append(deletion_file.file_path)
+                                position_delete_num_rows += deletion_file.record_count
 
-                        deletion_files[i].append(deletion_file.file_path)
-                        total_deletion_files += 1
-                        total_deleted_rows += deletion_file.record_count
+                            case FileFormat.PUFFIN:
+                                if i in deletion_vectors:
+                                    fallback_reason = "multiple deletion vectors associated with one data file"
+                                    break
+
+                                deletion_vectors[i] = deletion_file.file_path
+                                deletion_vector_num_rows += deletion_file.record_count
+
+                            case x:
+                                fallback_reason = (
+                                    f"unsupported deletion file format: {x}"
+                                )
+                                break
+
+                    if i in deletion_vectors:
+                        total_deleted_rows += deletion_vector_num_rows
+                        total_deletion_vectors += 1
+                        del position_delete_files[i]
+                    else:
+                        total_deleted_rows += position_delete_num_rows
+                        total_position_delete_files += len(position_delete_files[i])
 
                 if fallback_reason:
                     break
@@ -448,6 +521,7 @@ class IcebergScanResolver:
                 sources.append(
                     _normalize_windows_iceberg_file_uri(file_info.file.file_path)
                 )
+                source_sizes.append(file_info.file.file_size_in_bytes)
 
             if verbose:
                 elapsed = perf_counter() - start_time
@@ -458,16 +532,14 @@ class IcebergScanResolver:
 
         if not fallback_reason:
             if verbose:
-                s = "" if len(sources) == 1 else "s"
-                s2 = "" if total_deletion_files == 1 else "s"
-
                 eprint(
                     "IcebergScanResolver: to_dataset_scan(): "
                     f"native scan_parquet(): "
-                    f"{len(sources)} source{s}, "
+                    f"num_sources: {len(sources)}, "
                     f"snapshot ID: {snapshot_id}, "
                     f"schema ID: {schema_id}, "
-                    f"{total_deletion_files} deletion file{s2}"
+                    f"num_position_delete_files: {total_position_delete_files}, "
+                    f"num_deletion_vectors: {total_deletion_vectors}"
                 )
 
             # The arrow schema returned by `schema_to_pyarrow` will contain
@@ -492,10 +564,12 @@ class IcebergScanResolver:
 
             return _NativeIcebergScanData(
                 sources=sources,
+                source_sizes=source_sizes,
                 projected_iceberg_schema=projected_iceberg_schema,
                 column_mapping=column_mapping,
-                default_values=identity_transformed_values,
-                deletion_files=deletion_files,
+                default_values=(identity_transformed_values, initial_defaults),
+                position_delete_files=position_delete_files,
+                deletion_vectors=deletion_vectors,
                 min_max_statistics=min_max_statistics,
                 statistics_loader=statistics_loader,
                 storage_options=storage_options,
@@ -526,6 +600,8 @@ class IcebergScanResolver:
             polars.io.iceberg._utils._scan_pyarrow_dataset_impl,
             tbl,
             snapshot_id=snapshot_id,
+            from_snapshot_id_exclusive=self.from_snapshot_id_exclusive,
+            to_snapshot_id_inclusive=self.to_snapshot_id_inclusive,
             n_rows=limit,
             with_columns=projection,
             iceberg_table_filter=iceberg_table_filter,
@@ -553,10 +629,12 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     """Resolved parameters for a native Iceberg scan."""
 
     sources: list[str]
+    source_sizes: list[int]
     projected_iceberg_schema: pyiceberg.schema.Schema
     column_mapping: pa.Schema
-    default_values: dict[int, pl.Series | str]
-    deletion_files: dict[int, list[str]]
+    default_values: tuple[dict[int, pl.Series | str], dict[int, pl.Series]]
+    position_delete_files: dict[int, list[str]]
+    deletion_vectors: dict[int, str]
     min_max_statistics: pl.DataFrame | None
     # This is here for test purposes, as the `min_max_statistics` on this
     # dataclass can contain coalesced values from `default_values`. A test may
@@ -573,15 +651,20 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
 
         return scan_parquet(
             self.sources,
+            glob=False,
             cast_options=ScanCastOptions._default_iceberg(),
             missing_columns="insert",
             extra_columns="ignore",
             storage_options=self.storage_options,
             _column_mapping=("iceberg-column-mapping", self.column_mapping),
             _default_values=("iceberg", self.default_values),
-            _deletion_files=("iceberg-position-delete", self.deletion_files),
+            _deletion_files=(
+                "iceberg",
+                (self.position_delete_files, self.deletion_vectors),
+            ),
             _table_statistics=self.min_max_statistics,
             _row_count=self.row_count,
+            _source_sizes=self.source_sizes,
         )
 
 
@@ -613,12 +696,16 @@ def _convert_iceberg_to_object_store_storage_options(
 ) -> dict[str, str]:
     storage_options = {}
 
+    # Allow-list for HDFS
+    # See https://py.iceberg.apache.org/configuration/#hdfs
+    HDFS_KEY_PREFIX = "hdfs."
+
     for k, v in iceberg_storage_properties.items():
         if (
             translated_key := ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP.get(k)
         ) is not None:
             storage_options[translated_key] = v
-        elif "." not in k:
+        elif "." not in k or k.startswith(HDFS_KEY_PREFIX):
             # Pass-through non-Iceberg config keys, as they may be native config
             # keys. We identify Iceberg keys by checking for a dot - from
             # observation nearly all Iceberg config keys contain dots, whereas

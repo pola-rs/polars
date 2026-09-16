@@ -5,7 +5,8 @@ use arrow::array::{Array, Utf8ViewArrayBuilder};
 use arrow::datatypes::ArrowDataType;
 use polars_core::prelude::{Column, DataType, IntoColumn, StringChunked};
 use polars_core::scalar::Scalar;
-use polars_error::{PolarsResult, polars_ensure};
+use polars_error::{PolarsContext, PolarsResult};
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 
 #[inline(always)]
@@ -18,18 +19,7 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
     assert!(!cs.is_empty()); // Checked at IR construction
 
     let output_name = cs[0].name().clone();
-    let mut output_length = 1;
-    for c in cs.iter() {
-        if c.len() != 1 {
-            polars_ensure!(
-                output_length == 1 || output_length == c.len(),
-                length_mismatch = "format",
-                output_length,
-                c.len()
-            );
-            output_length = c.len();
-        }
-    }
+    let output_length = broadcast_len(cs.iter()).context("str.format")?;
 
     let mut validity = None;
     let mut num_scalar_inputs = 0;

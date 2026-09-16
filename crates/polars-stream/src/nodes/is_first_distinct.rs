@@ -66,32 +66,35 @@ impl ComputeNode for IsFirstDistinctNode {
         let slf = &mut *self;
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = recv.recv().await {
-                let morsel = morsel.map(|mut df| {
-                    let key_df = df.select(slf.key_schema.iter_names()).unwrap();
-                    let hash_keys =
-                        HashKeys::from_df(&key_df, slf.random_state.clone(), true, false);
-                    let mut distinct = BitmapBuilder::with_capacity(df.height());
-                    unsafe {
-                        slf.subset
-                            .extend(slf.subset.len() as IdxSize..df.height() as IdxSize);
-                        slf.grouper.insert_keys_subset(
-                            &hash_keys,
-                            &slf.subset[..df.height()],
-                            Some(&mut slf.group_idxs),
-                        );
+                let morsel = morsel
+                    .map(|mut df| {
+                        let key_df = df.select(slf.key_schema.iter_names()).unwrap();
+                        let hash_keys =
+                            HashKeys::from_df(&key_df, slf.random_state.clone(), true, false);
+                        let mut distinct = BitmapBuilder::with_capacity(df.height());
+                        unsafe {
+                            slf.subset
+                                .extend(slf.subset.len() as IdxSize..df.height() as IdxSize);
+                            slf.grouper.insert_keys_subset(
+                                &hash_keys,
+                                &slf.subset[..df.height()],
+                                Some(&mut slf.group_idxs),
+                            );
 
-                        for g in slf.group_idxs.drain(..) {
-                            let new = g == slf.max_uniq_group_idx;
-                            distinct.push_unchecked(new);
-                            slf.max_uniq_group_idx += new as IdxSize;
+                            for g in slf.group_idxs.drain(..) {
+                                let new = g == slf.max_uniq_group_idx;
+                                distinct.push_unchecked(new);
+                                slf.max_uniq_group_idx += new as IdxSize;
+                            }
                         }
-                    }
 
-                    let arr = BooleanArray::from(distinct.freeze());
-                    let col = BooleanChunked::with_chunk(slf.out_name.clone(), arr).into_column();
-                    df.with_column(col).unwrap();
-                    df
-                });
+                        let arr = BooleanArray::from(distinct.freeze());
+                        let col =
+                            BooleanChunked::with_chunk(slf.out_name.clone(), arr).into_column();
+                        df.with_column(col).unwrap();
+                        df
+                    })
+                    .await;
                 if send.send(morsel).await.is_err() {
                     break;
                 }

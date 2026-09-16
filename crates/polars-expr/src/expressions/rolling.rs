@@ -240,7 +240,7 @@ impl PhysicalExpr for RollingExpr {
                     .into_sliceable(),
             ),
             update_groups: UpdateGroups::No,
-            original_len: false,
+            original_groups: false,
         };
         Ok(out)
     }

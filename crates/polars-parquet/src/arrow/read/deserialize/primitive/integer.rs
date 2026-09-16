@@ -11,7 +11,7 @@ use super::{
 };
 use crate::parquet::encoding::{Encoding, byte_stream_split, delta_bitpacked, hybrid_rle};
 use crate::parquet::error::ParquetResult;
-use crate::parquet::page::{DataPage, DictPage, split_buffer};
+use crate::parquet::page::{DataPage, DictPage, split_buffer, split_plain_buffer_values};
 use crate::parquet::types::{NativeType as ParquetNativeType, decode};
 use crate::read::Filter;
 use crate::read::deserialize::dictionary_encoded;
@@ -52,7 +52,7 @@ where
                 Ok(Self::Dictionary(values))
             },
             (Encoding::Plain, _) => {
-                let values = split_buffer(page)?.values;
+                let values = split_plain_buffer_values::<P>(page)?;
                 Ok(Self::Plain(values))
             },
             (Encoding::ByteStreamSplit, _) => {

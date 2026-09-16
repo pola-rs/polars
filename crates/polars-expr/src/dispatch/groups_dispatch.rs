@@ -360,7 +360,7 @@ pub fn drop_items<'a>(
     // No elements are filtered out.
     if predicate.unset_bits() == 0 {
         if let AggState::AggregatedScalar(c) | AggState::LiteralScalar(c) = &mut ac.state {
-            *c = c.as_list().into_column();
+            *c = c.to_unit_list();
             if c.len() == 1 && ac.groups.len() != 1 {
                 *c = c.new_from_index(0, ac.groups.len());
             }
@@ -370,7 +370,7 @@ pub fn drop_items<'a>(
         return Ok(ac);
     }
 
-    ac.set_original_len(false);
+    ac.set_original_groups(false);
 
     // All elements are filtered out.
     if predicate.set_bits() == 0 {
@@ -391,7 +391,7 @@ pub fn drop_items<'a>(
 
     if let AggState::AggregatedScalar(c) = &mut ac.state {
         ac.state = AggState::NotAggregated(std::mem::take(c));
-        ac.groups = Cow::Owned(
+        ac.with_groups(
             {
                 let groups = predicate
                     .iter()
@@ -522,7 +522,12 @@ pub fn quantile<'a>(
 
     let quantile_column = inputs[1].evaluate(df, state)?;
     polars_ensure!(
-        quantile_column.len() <= 1,
+        !quantile_column.is_empty(),
+        ComputeError:
+            "the 'quantile' expression input should produce a single quantile, got an empty input"
+    );
+    polars_ensure!(
+        quantile_column.len() == 1,
         ComputeError:
             "polars only supports computing a single quantile in a groupby aggregation context"
     );
@@ -686,7 +691,7 @@ pub fn unique<'a>(
     ac.groups();
 
     if let AggState::AggregatedScalar(c) | AggState::LiteralScalar(c) = &mut ac.state {
-        *c = c.as_list().into_column();
+        *c = c.to_unit_list();
         if c.len() == 1 && ac.groups.len() != 1 {
             *c = c.new_from_index(0, ac.groups.len());
         }

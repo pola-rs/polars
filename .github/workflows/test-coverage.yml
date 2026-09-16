@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - main
+      - "1.x"
     paths:
       - '**.rs'
       - '**.py'
@@ -42,7 +43,10 @@ jobs:
     # https://github.com/pola-rs/polars/issues/14255
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
+
+      - name: Install build tools
+        run: brew install automake libtool
 
       - name: Set up Rust
         run: rustup component add llvm-tools-preview
@@ -54,7 +58,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          save-if: ${{ github.ref_name == 'main' }}
+          save-if: ${{ github.event_name == 'push' }}
+          key: ${{ github.ref_name }}
 
       - name: Prepare coverage
         run: cargo llvm-cov clean --workspace
@@ -84,7 +89,7 @@ jobs:
         run: cargo llvm-cov report --lcov --output-path coverage-rust.lcov
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-rust
           path: coverage-rust.lcov
@@ -94,7 +99,7 @@ jobs:
     # https://github.com/pola-rs/polars/issues/14255
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -122,6 +127,9 @@ jobs:
           uv pip install -U typing-extensions 
           uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose
 
+      - name: Install build tools
+        run: brew install automake libtool
+
       - name: Set up Rust
         run: rustup component add llvm-tools-preview
 
@@ -132,7 +140,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          save-if: ${{ github.ref_name == 'main' }}
+          save-if: ${{ github.event_name == 'push' }}
+          key: ${{ github.ref_name }}
 
       - name: Prepare coverage
         run: cargo llvm-cov clean --workspace
@@ -155,28 +164,27 @@ jobs:
           -k 'not test_polars_import'
           --cov --cov-report xml:main.xml --cov-fail-under=0
 
-      - name: Run Python tests - streaming
+      - name: Run Python tests - POLARS_ENGINE_AFFINITY=in-memory
         working-directory: py-polars
         env:
-          POLARS_AUTO_STREAMING: 1
+          POLARS_ENGINE_AFFINITY: in-memory
           POLARS_TIMEOUT_MS: 60000
         run: >
           pytest
           -n auto
-          -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not benchmark and not docs"
+          -m "not release and not benchmark and not docs"
           -k 'not test_polars_import'
-          --cov --cov-report xml:auto-streaming.xml --cov-fail-under=0
+          --cov --cov-report xml:in-memory.xml --cov-fail-under=0
 
-      - name: Run Python tests - streaming with morsel size 4
+      - name: Run Python tests - morsel size 4
         working-directory: py-polars
         env:
-          POLARS_AUTO_STREAMING: 1
           POLARS_IDEAL_MORSEL_SIZE: 4
           POLARS_TIMEOUT_MS: 60000
         run: >
           pytest
           -n auto
-          -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not benchmark and not docs"
+          -m "not slow and not write_disk and not release and not benchmark and not docs"
           -k 'not test_polars_import'
           --cov --cov-report xml:small-morsel.xml --cov-fail-under=0
 
@@ -195,13 +203,13 @@ jobs:
         run: cargo llvm-cov report --lcov --output-path coverage-python.lcov
 
       - name: Upload coverage reports
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-python
           path: |
             coverage-python.lcov
             py-polars/main.xml
-            py-polars/auto-streaming.xml
+            py-polars/in-memory.xml
             py-polars/small-morsel.xml
             py-polars/async.xml
 
@@ -211,15 +219,15 @@ jobs:
 
     steps:
       # Needed to fetch the Codecov config file
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Download coverage reports
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           merge-multiple: true
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage-rust.lcov,coverage-python.lcov,py-polars/main.xml,py-polars/async.xml

@@ -124,7 +124,7 @@ impl<K: ?Sized, V> AllocHeader<K, V> {
     // should wait for reallocation to occur.
     fn start_claim_attempt(&self) -> bool {
         self.claim_start_semaphore
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |attempts_left| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |attempts_left| {
                 attempts_left.checked_sub(1)
             })
             .is_ok()
@@ -720,7 +720,7 @@ impl<K: Key + ?Sized, V> RawTable<K, V> {
 
             let state = &(*entry_ptr).state;
             let old_state = state
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |s| {
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |s| {
                     if s.addr() & DELETE_BIT != 0 {
                         return None;
                     }

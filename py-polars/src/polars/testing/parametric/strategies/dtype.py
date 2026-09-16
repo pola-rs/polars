@@ -28,6 +28,7 @@ from polars.datatypes import (
     Int64,
     Int128,
     List,
+    Map,
     Null,
     String,
     Struct,
@@ -41,6 +42,7 @@ from polars.datatypes import (
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
+    from typing import Final
 
     from hypothesis.strategies import DrawFn, SearchStrategy
 
@@ -48,7 +50,7 @@ if TYPE_CHECKING:
     from polars.datatypes import DataTypeClass
 
 # A simple test extension type for parametric tests.
-TestExtension = Extension(
+TestExtension: Final[Extension] = Extension(
     name="testing.parametric_test_extension",
     storage=Int32(),
     metadata="A parametric test extension type",
@@ -94,6 +96,7 @@ _NESTED_DTYPES: list[DataTypeClass] = [
     # TODO: Enable nested types by default when various issues are solved.
     # List,
     # Array,
+    # Map,
     Struct,
 ]
 # Supported data type classes that do not contain other data types
@@ -101,6 +104,7 @@ _FLAT_DTYPES = _SIMPLE_DTYPES + _COMPLEX_DTYPES
 
 _DEFAULT_ARRAY_WIDTH_LIMIT = 3
 _DEFAULT_STRUCT_FIELDS_LIMIT = 3
+_DEFAULT_MAP_SIZE_LIMIT = 3
 _DEFAULT_ENUM_CATEGORIES_LIMIT = 3
 
 
@@ -326,6 +330,14 @@ def _instantiate_nested_dtype(
             draw(st.integers(min_value=1, max_value=_DEFAULT_ARRAY_WIDTH_LIMIT)),
         )
         return Array(inner_dtype, size)
+    elif dtype == Map:
+        key = getattr(dtype, "key", None)
+        return Map(
+            instantiate_inner(key)
+            if key is not None
+            else draw(_instantiate_flat_dtype(draw(_map_key_dtypes()))),
+            instantiate_inner(getattr(dtype, "value", None)),
+        )
     elif dtype == Struct:
         if isinstance(dtype, Struct):
             fields = [Field(f.name, instantiate_inner(f.dtype)) for f in dtype.fields]
@@ -338,6 +350,17 @@ def _instantiate_nested_dtype(
     else:
         msg = f"unsupported data type: {dtype}"
         raise InvalidArgument(msg)
+
+
+def _map_key_dtypes() -> SearchStrategy[DataTypeClass]:
+    """Flat dtypes usable as a Map key.
+
+    Excludes `Null`, which is never a valid key, and the floats: Python dicts treat
+    `nan` keys as distinct while the row encoder Polars uses for key identity does not,
+    so a generated dict need not round-trip.
+    """
+    excluded = (Null, Float16, Float32, Float64)
+    return st.sampled_from([dt for dt in _FLAT_DTYPES if dt not in excluded])
 
 
 def _time_units() -> SearchStrategy[TimeUnit]:
@@ -417,6 +440,14 @@ def _instantiate_dtype(
             draw(st.integers(min_value=1, max_value=_DEFAULT_ARRAY_WIDTH_LIMIT)),
         )
         return Array(inner, size)
+    elif dtype == Map:
+        key = getattr(dtype, "key", None)
+        return Map(
+            draw_inner(key)
+            if key is not None
+            else draw(_instantiate_flat_dtype(draw(_map_key_dtypes()))),
+            draw_inner(getattr(dtype, "value", None)),
+        )
     elif dtype == Struct:
         if isinstance(dtype, Struct):
             fields = [

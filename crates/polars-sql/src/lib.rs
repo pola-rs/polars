@@ -4,11 +4,16 @@
 mod context;
 pub mod function_registry;
 mod functions;
+mod grouping_sets;
 pub mod keywords;
+mod literal_folding;
+mod resolver;
 mod sql_expr;
 mod sql_visitors;
+mod subquery;
 mod table_functions;
 mod types;
 
 pub use context::{SQLContext, extract_table_identifiers};
+pub use resolver::register_sql_resolver;
 pub use sql_expr::sql_expr;

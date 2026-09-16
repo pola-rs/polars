@@ -104,7 +104,7 @@ more details.
 
 [Mage](https://www.mage.ai) is an open-source data pipeline tool for transforming and integrating
 data. Learn about integration between Polars and Mage at
-[docs.mage.ai](https://docs.mage.ai/integrations/polars).
+[docs.mage.ai](https://docs.mage.ai/guides/blocks/polars).
 
 #### marimo
 
@@ -116,7 +116,7 @@ transformations of Polars dataframes, or selecting points on a Polars-backed rea
 #### Narwhals
 
 [Narwhals](https://narwhals-dev.github.io/narwhals/) is a lightweight compatibility layer between
-dataframe libraries. It mirrors the Polars API and allows to run Polars natively, without any
+dataframe libraries. It mirrors the Polars API and lets you run Polars natively, without any
 conversion overhead, in libraries like Plotly and others that have adopted it for dataframe
 interoperability.
 

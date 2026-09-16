@@ -1,5 +1,3 @@
-use core::f64;
-
 use num_traits::AsPrimitive;
 use polars_compute::moment::{CovState, PearsonState};
 use polars_core::prelude::*;

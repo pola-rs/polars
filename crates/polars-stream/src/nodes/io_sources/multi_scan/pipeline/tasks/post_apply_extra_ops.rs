@@ -19,6 +19,7 @@ pub struct PostApplyExtraOps {
     pub first_morsel: Morsel,
     pub first_morsel_position: RowCounter,
     pub num_pipelines: usize,
+    pub max_concurrent_scans: usize,
 }
 
 impl PostApplyExtraOps {
@@ -29,13 +30,16 @@ impl PostApplyExtraOps {
             first_morsel,
             first_morsel_position,
             num_pipelines,
+            max_concurrent_scans,
         } = self;
 
         let verbose = polars_core::config::verbose();
         let rows_before = Arc::new(RelaxedCell::new_u64(0));
         let rows_after = Arc::new(RelaxedCell::new_u64(0));
 
-        let (mut distr_tx, distr_receivers) = distributor_channel(num_pipelines, 1);
+        // Avoid O(n^2) memory for concurrent scans, with n being the number of threads.
+        let stage_pipelines = num_pipelines.div_ceil(max_concurrent_scans).max(1);
+        let (mut distr_tx, distr_receivers) = distributor_channel(stage_pipelines, 1);
 
         // Distributor
         {
@@ -64,7 +68,7 @@ impl PostApplyExtraOps {
 
                 loop {
                     let row_count_this_morsel = {
-                        let physical_rows = morsel.df().height();
+                        let physical_rows = morsel.height();
                         // # Multiple cases
                         // * If row deletions are being done in post-apply, we'll have the deleted row count here.
                         // * If row deletions were pushed to the reader, `external_filter_mask` here is `None`, so we'll
@@ -74,7 +78,7 @@ impl PostApplyExtraOps {
                         let deleted_rows = external_filter_mask.as_ref().map_or(0, |mask| {
                             let Slice::Positive { offset, len } = Slice::Positive {
                                 offset: row_counter.num_physical_rows(),
-                                len: morsel.df().height(),
+                                len: morsel.height(),
                             }
                             .restrict_to_bounds(mask.len()) else {
                                 unreachable!()
@@ -112,7 +116,7 @@ impl PostApplyExtraOps {
             })
         };
 
-        let (rx, senders) = MorselLinearizer::new(num_pipelines, 4);
+        let (rx, senders) = MorselLinearizer::new(stage_pipelines, 4);
 
         let worker_handles = distr_receivers
             .into_iter()
@@ -124,9 +128,11 @@ impl PostApplyExtraOps {
 
                 AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
                     while let Ok((mut morsel, row_offset)) = morsel_rx.recv().await {
-                        rows_before.fetch_add(morsel.df().height() as u64);
-                        ops_applier.apply_to_df(morsel.df_mut(), row_offset)?;
-                        rows_after.fetch_add(morsel.df().height() as u64);
+                        rows_before.fetch_add(morsel.height() as u64);
+                        let mut df = morsel.df_mut().await;
+                        ops_applier.apply_to_df(&mut df, row_offset)?;
+                        drop(df);
+                        rows_after.fetch_add(morsel.height() as u64);
                         if morsel_tx.insert(morsel).await.is_err() {
                             break;
                         }

@@ -24,6 +24,8 @@ def register_io_source(
     schema: Callable[[], SchemaDict] | SchemaDict,
     validate_schema: bool = False,
     is_pure: bool = False,
+    explain_name: str | None = None,
+    explain_detail: str | None = None,
 ) -> LazyFrame:
     """
     Register your IO plugin and initialize a LazyFrame.
@@ -66,6 +68,13 @@ def register_io_source(
         Whether the IO source is pure. Repeated occurrences of same IO source in
         a LazyFrame plan can be de-duplicated during optimization if they are
         pure.
+    explain_name
+        Custom label for the scan node in the query plan produced by ``explain``,
+        shown as
+        ``PYTHON[<name>] SCAN ...``.
+    explain_detail
+        Short, single-line detail appended under the scan header in the query plan
+        produced by ``explain`` (for example, a summary of source configuration).
 
     Returns
     -------
@@ -101,6 +110,8 @@ def register_io_source(
         pyarrow=False,
         validate_schema=validate_schema,
         is_pure=is_pure,
+        explain_name=explain_name,
+        explain_detail=explain_detail,
     )
 
 
@@ -116,6 +127,8 @@ def _defer(
 
     Takes a function that produces a `DataFrame` but defers execution until the
     `LazyFrame` is collected.
+
+    .. engine-support:: in-memory, streaming, distributed
 
     Parameters
     ----------
@@ -179,7 +192,7 @@ def _defer(
             lf = lf.filter(predicate)
         if n_rows is not None:
             lf = lf.limit(n_rows)
-        yield lf.collect()
+        yield lf._collect_eager()
 
     return register_io_source(
         io_source=source, schema=schema, validate_schema=validate_schema

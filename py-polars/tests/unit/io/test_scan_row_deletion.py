@@ -73,19 +73,22 @@ def test_scan_row_deletions(
     write_position_deletes: WritePositionDeletes,
     row_index_offset: int,
 ) -> None:
-    deletion_files = (
-        "iceberg-position-delete",
-        {
-            0: [
-                write_position_deletes(pl.Series([1, 2])),
-            ],
-            1: [
-                write_position_deletes(pl.Series([0, 1, 2])),
-            ],
-            4: [
-                write_position_deletes(pl.Series([2, 3])),
-            ],
-        },
+    deletion_files = (  # type: ignore[var-annotated]
+        "iceberg",
+        (
+            {
+                0: [
+                    write_position_deletes(pl.Series([1, 2])),
+                ],
+                1: [
+                    write_position_deletes(pl.Series([0, 1, 2])),
+                ],
+                4: [
+                    write_position_deletes(pl.Series([2, 3])),
+                ],
+            },
+            {},
+        ),
     )
 
     def apply_row_index_offset(values: list[int]) -> list[int]:
@@ -321,8 +324,8 @@ full_expected_physical = [
 ]  # fmt: skip
 
 deletion_files = (
-    "iceberg-position-delete",
-    {0: [deletion_positions_path]},
+    "iceberg",
+    ({0: [deletion_positions_path]}, {}),
 )
 
 q = pl.scan_parquet(data_file_path, _deletion_files=deletion_files).with_row_index()
@@ -402,13 +405,16 @@ def test_scan_row_deletion_skips_file_with_all_rows_deleted(
     q = pl.scan_parquet(
         data_files_path,
         _deletion_files=(
-            "iceberg-position-delete",
-            {
-                1: [
-                    write_position_deletes(pl.Series([0, 1, 2])),
-                    write_position_deletes(pl.Series([3, 4])),
-                ]
-            },
+            "iceberg",
+            (
+                {
+                    1: [
+                        write_position_deletes(pl.Series([0, 1, 2])),
+                        write_position_deletes(pl.Series([3, 4])),
+                    ]
+                },
+                {},
+            ),
         ),
         hive_partitioning=False,
     )

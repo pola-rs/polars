@@ -2,6 +2,7 @@ use arrow::array::{Utf8Array, ValueSize};
 use polars_compute::cast::utf8_to_utf8view;
 use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
+use polars_utils::broadcast::broadcast_len;
 
 // Vertically concatenate all strings in a StringChunked.
 pub fn str_join(ca: &StringChunked, delimiter: &str, ignore_nulls: bool) -> StringChunked {
@@ -73,16 +74,7 @@ pub fn hor_str_concat(
     }
 
     // Calculate the post-broadcast length and ensure everything is consistent.
-    let len = cas
-        .iter()
-        .map(|ca| ca.len())
-        .filter(|l| *l != 1)
-        .max()
-        .unwrap_or(1);
-    polars_ensure!(
-        cas.iter().all(|ca| ca.len() == 1 || ca.len() == len),
-        ShapeMismatch: "all series in `hor_str_concat` should have equal or unit length"
-    );
+    let len = broadcast_len(cas.iter()).context("hor_str_concat")?;
 
     let mut builder = StringChunkedBuilder::new(cas[0].name().clone(), len);
 
