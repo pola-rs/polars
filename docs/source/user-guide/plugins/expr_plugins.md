@@ -17,33 +17,32 @@ They will benefit from the same benefits default expressions have:
 
 In short, there are two important things to always keep in mind while building a plugin:
 
-1. The plugin contains its own copy of the core polars functionality.
-   It communicates with the full Polars install you normally use.
-2. Data is not copied, but re-interpreted every time
-  you go from general polars to functionality defined in your plugin.
+1. The plugin contains its own copy of the core polars functionality. It communicates with the full
+   Polars install you normally use.
+2. Data is not copied, but re-interpreted every time you go from general polars to functionality
+   defined in your plugin.
 3. Anything global, such as type information, must be known by both.
 
-A plugin is a `cdylib`. It statically links its own copy of `polars-core`.
-The `polars` wheel in your environment contains another (independent) copy.
-Both copies are loaded into the same process,
+A plugin is a `cdylib`. It statically links its own copy of `polars-core`. The `polars` wheel in
+your environment contains another (independent) copy. Both copies are loaded into the same process,
 but they are separate machine code with separate statics.
 
 ```text
-  python process
-  ├── Host; polars wheel (_polars_runtime_64.so)
-  └── your_plugin.so
+python process
+├── Host; polars wheel (_polars_runtime_64.so)
+└── your_plugin.so
 ```
 
-The **Polars wheel (host)** is responsible for the majority of work as normal:
-Things like reading files, building Series, and displaying a DataFrame.
+The **Polars wheel (host)** is responsible for the majority of work as normal: Things like reading
+files, building Series, and displaying a DataFrame.
 
-The **Plugin** is only responsible for your custom expressions.
-This includes conversion to- and from the data types that they take.
+The **Plugin** is only responsible for your custom expressions. This includes conversion to- and
+from the data types that they take.
 
-The two copies never share a `Series`, a `DataType`, or a global variable.
-They talk over the **Arrow C data interface** only:
-a `SeriesExport` struct holding an `ArrowSchema` and one or more `ArrowArray` pointers.
-Everything that crosses the boundary is encoded on one- , and decoded on the other side.
+The two copies never share a `Series`, a `DataType`, or a global variable. They talk over the
+**Arrow C data interface** only: a `SeriesExport` struct holding an `ArrowSchema` and one or more
+`ArrowArray` pointers. Everything that crosses the boundary is encoded on one- , and decoded on the
+other side.
 
 ## Our first custom expression: Pig Latin
 
@@ -80,8 +79,8 @@ serde = { version = "*", features = ["derive"] }
 
 In this library we create a helper function that converts a `&str` to pig-latin, and we create the
 function that we will expose as an expression. To expose a function we must add the
-`#[polars_expr(output_type=DataType)]` attribute from `pyo3-polars`, and the function must always accept
-`inputs: &[Series]` as its first argument.
+`#[polars_expr(output_type=DataType)]` attribute from `pyo3-polars`, and the function must always
+accept `inputs: &[Series]` as its first argument.
 
 ```rust
 // src/expressions.rs
@@ -247,27 +246,24 @@ def append_args(
 
 ## Output data types
 
-Polars must know the result `dtype` of your expression
-before running anything.
-Output data types of course don't have to be fixed. They often depend on the input types of an
-expression. To accommodate this you can provide the `#[polars_expr()]` macro with an
-`output_type_func` argument that points to a function. This function can map input fields `&[Field]`
-to an output `Field` (name and data type).
-This is the right place to reject bad input.
-It runs during schema resolution before any data moves,
+Polars must know the result `dtype` of your expression before running anything. Output data types of
+course don't have to be fixed. They often depend on the input types of an expression. To accommodate
+this you can provide the `#[polars_expr()]` macro with an `output_type_func` argument that points to
+a function. This function can map input fields `&[Field]` to an output `Field` (name and data type).
+This is the right place to reject bad input. It runs during schema resolution before any data moves,
 so the user sees the error immediately.
 
 You declare it in the attribute, in one of three ways:
 
-| Attribute | Use when |
-| --- | --- |
-| `output_type=Float64` | The dtype is fixed. |
-| `output_type_func=my_fn` | The dtype depends on the inputs. |
-| `output_type_func_with_kwargs=my_fn` | It also depends on the kwargs. |
+| Attribute                            | Use when                         |
+| ------------------------------------ | -------------------------------- |
+| `output_type=Float64`                | The dtype is fixed.              |
+| `output_type_func=my_fn`             | The dtype depends on the inputs. |
+| `output_type_func_with_kwargs=my_fn` | It also depends on the kwargs.   |
 
-In the snippet below is an example where we define a function,
-and use the utility `FieldsMapper` to help with this mapping.
-This approach helps with common cases such as taking the supertype of the inputs.
+In the snippet below is an example where we define a function, and use the utility `FieldsMapper` to
+help with this mapping. This approach helps with common cases such as taking the supertype of the
+inputs.
 
 ```rust
 use polars_plan::dsl::FieldsMapper;
@@ -301,8 +297,8 @@ fn haversine(inputs: &[Series]) -> PolarsResult<Series> {
 }
 ```
 
-Alternatively, we can define a function ourselves.
-This is very useful if we use an arrow extension type (which we will cover later).
+Alternatively, we can define a function ourselves. This is very useful if we use an arrow extension
+type (which we will cover later).
 
 ```rust
 fn same_point_type(input_fields: &[Field]) -> PolarsResult<Field> {
@@ -323,23 +319,20 @@ fn same_point_type(input_fields: &[Field]) -> PolarsResult<Field> {
 
 ## Registering Arrow extension types
 
-> [!warning] Registering arrow types is **unstable**
-> This guide was written for Polars v0.55.
-> It might not accurately reflect the current way of doing things!
+> [!warning] Registering arrow types is **unstable** This guide was written for Polars v0.55. It
+> might not accurately reflect the current way of doing things!
 
 An Arrow extension type contains the following:
 
 - **Name**
-- **Storage type** describes the layout. It is visible to every Arrow consumer,
-  whether or not they know your type.
-- (optional) **Metadata**, one opaque string.
-  Usually encoded as JSON.
-  It is only meaningful to something that knows your type.
-  Put a property in metadata only when it cannot be read off the storage,
-  e.g. coordinate system.
+- **Storage type** describes the layout. It is visible to every Arrow consumer, whether or not they
+  know your type.
+- (optional) **Metadata**, one opaque string. Usually encoded as JSON. It is only meaningful to
+  something that knows your type. Put a property in metadata only when it cannot be read off the
+  storage, e.g. coordinate system.
 
-Arrow carries both the name and optional metadata in the field's metadata,
-under the keys `ARROW:extension:name` and `ARROW:extension:metadata`.
+Arrow carries both the name and optional metadata in the field's metadata, under the keys
+`ARROW:extension:name` and `ARROW:extension:metadata`.
 
 Polars models this as:
 
@@ -348,33 +341,27 @@ DataType::Extension(ExtensionTypeInstance, Box<DataType>)
 //                  ^ the type              ^ the storage
 ```
 
-The `DataType::Extension` variant is behind the **`dtype-extension`** feature-flag.
-If you use a struct, you might also want to use `dtype-struct`.
-Enable it on both `polars` and `polars-core` in your `Cargo.toml`.
-If it is not enabled,
-an incoming extension type will silently decay to its storage type.
+The `DataType::Extension` variant is behind the **`dtype-extension`** feature-flag. If you use a
+struct, you might also want to use `dtype-struct`. Enable it on both `polars` and `polars-core` in
+your `Cargo.toml`. If it is not enabled, an incoming extension type will silently decay to its
+storage type.
 
-Polars needs to be made aware of each extension name.
-This is done using a **Factory** that turns
+Polars needs to be made aware of each extension name. This is done using a **Factory** that turns
 `(name, storage, metadata)` into a type instance.
 
-Remember from before:
-there are **two copies** of `polars-core`, so we need to register them twice.
+Remember from before: there are **two copies** of `polars-core`, so we need to register them twice.
 
-**Polars wheel (host)**: `pl.register_extension_type(name, cls)` in Python
-**Plugin**: `polars_core::datatypes::extension::register_extension_type` in Rust
+**Polars wheel (host)**: `pl.register_extension_type(name, cls)` in Python **Plugin**:
+`polars_core::datatypes::extension::register_extension_type` in Rust
 
-If the Python side is registered and the Rust side is not,
-your data still round-trips,
-but inside the plugin the column arrives as a plain storage type.
+If the Python side is registered and the Rust side is not, your data still round-trips, but inside
+the plugin the column arrives as a plain storage type.
 
 ### The Rust side: two traits
 
-**`ExtensionTypeFactory`** must be implemented to define the
-interpretation of arrow extension data into your custom types.
-One factory serves one extension name,
-but if a name covers several shapes, such as 2D and 3D points,
-you can dynamically pick here:
+**`ExtensionTypeFactory`** must be implemented to define the interpretation of arrow extension data
+into your custom types. One factory serves one extension name, but if a name covers several shapes,
+such as 2D and 3D points, you can dynamically pick here:
 
 ```rust
 impl ExtensionTypeFactory for PointFactory {
@@ -393,8 +380,8 @@ impl ExtensionTypeFactory for PointFactory {
 }
 ```
 
-You can now define a type that represents the arrow extension type,
-and implement **`ExtensionTypeImpl`** for it.
+You can now define a type that represents the arrow extension type, and implement
+**`ExtensionTypeImpl`** for it.
 
 ```rust
 impl ExtensionTypeImpl for PointXY {
@@ -418,8 +405,8 @@ impl ExtensionTypeImpl for PointXY {
 }
 ```
 
-`ExtensionTypeImpl` requires `Any`, which is what makes `dyn_eq` work.
-It is also how expressions recover the concrete type:
+`ExtensionTypeImpl` requires `Any`, which is what makes `dyn_eq` work. It is also how expressions
+recover the concrete type:
 
 ```rust
 if (&*typ.0 as &dyn Any).downcast_ref::<PointXY>().is_none() {
@@ -427,14 +414,13 @@ if (&*typ.0 as &dyn Any).downcast_ref::<PointXY>().is_none() {
 }
 ```
 
-Now we need to expose the registration hook,
-which must run immediately as described before.
-We do that with the `PyInit_my_plugin_name_lib`.
-This hook is run when Python imports the extension module.
+Now we need to expose the registration hook, which must run immediately as described before. We do
+that with the `PyInit_my_plugin_name_lib`. This hook is run when Python imports the extension
+module.
 
-The easiest way to hook into it is by using `#[pymodule]`.
-Note that the function name must match the **module name** as seen by maturin.
-Depending on your setup, this might be **different** from your crate name.
+The easiest way to hook into it is by using `#[pymodule]`. Note that the function name must match
+the **module name** as seen by maturin. Depending on your setup, this might be **different** from
+your crate name.
 
 ```rust
 // in your lib.rs
@@ -463,9 +449,9 @@ let storage: &Series = s.ext()?.storage();
 let out: Series = struct_series.into_extension(typ);
 ```
 
-Re-wrap with the type instance you were **given**, not a freshly built one.
-This preserves whatever metadata came in,
-so a property like a coordinate system survives the operation instead of being reset.
+Re-wrap with the type instance you were **given**, not a freshly built one. This preserves whatever
+metadata came in, so a property like a coordinate system survives the operation instead of being
+reset.
 
 ### The Python side: one class
 
@@ -486,9 +472,8 @@ class PointXY(pl.datatypes.BaseExtension):
 pl.register_extension_type("geoarrow.point", PointXY)
 ```
 
-`register_extension_type` takes **one class per name**.
-When a name covers several shapes (e.g. points of n dimensions),
-register a base class and override `ext_from_params`.
+`register_extension_type` takes **one class per name**. When a name covers several shapes (e.g.
+points of n dimensions), register a base class and override `ext_from_params`.
 
 ```python
 @classmethod
@@ -503,8 +488,8 @@ def ext_from_params(cls, name, storage, metadata):
     return slf
 ```
 
-To register the type without a custom class, pass the built-in `pl.Extension`.
-To pass a name straight through to its storage, use `as_storage=True`.
+To register the type without a custom class, pass the built-in `pl.Extension`. To pass a name
+straight through to its storage, use `as_storage=True`.
 
 ### Constructing and unwrapping from Python
 
@@ -517,11 +502,9 @@ pl.struct(x=..., y=...).ext.to(PointXY())
 pl.col("geo").ext.storage()
 ```
 
-`.ext.to()` only relabels.
-It does not convert, and the input must already be the exact storage type.
-This does the operation only on the metadata.
-As no operations are done on your data, so this is very cheap.
-This means a constructor needs no plugin call at all:
+`.ext.to()` only relabels. It does not convert, and the input must already be the exact storage
+type. This does the operation only on the metadata. As no operations are done on your data, so this
+is very cheap. This means a constructor needs no plugin call at all:
 
 ```python
 def point(x, y) -> pl.Expr:
