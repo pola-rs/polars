@@ -1,8 +1,6 @@
 #[cfg(feature = "dtype-array")]
 pub mod array;
 mod binary;
-#[cfg(feature = "timezones")]
-pub mod datetime;
 pub mod list;
 #[cfg(feature = "propagate_nans")]
 pub mod nan_propagating_aggregate;
@@ -28,8 +26,6 @@ mod hist;
 mod repeat_by;
 
 pub use binary::*;
-#[cfg(feature = "timezones")]
-pub use datetime::*;
 #[cfg(feature = "chunked_ids")]
 pub use gather::*;
 #[cfg(feature = "hist")]

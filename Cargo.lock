@@ -3212,6 +3212,7 @@ dependencies = [
 name = "polars-core"
 version = "0.55.1"
 dependencies = [
+ "atoi_simd",
  "bincode",
  "bitflags",
  "boxcar",
@@ -3405,7 +3406,6 @@ dependencies = [
  "polars-json",
  "polars-parquet",
  "polars-schema",
- "polars-time",
  "polars-utils",
  "pyo3",
  "rand 0.10.2",
@@ -3542,7 +3542,6 @@ dependencies = [
  "base64 0.22.1",
  "bytemuck",
  "chrono",
- "chrono-tz",
  "either",
  "hashbrown 0.17.1",
  "hex",
@@ -3798,7 +3797,6 @@ dependencies = [
  "polars-ops",
  "polars-plan",
  "polars-testing",
- "polars-time",
  "polars-utils",
  "regex",
  "serde",
@@ -3867,7 +3865,6 @@ dependencies = [
 name = "polars-time"
 version = "0.55.1"
 dependencies = [
- "atoi_simd",
  "bytemuck",
  "chrono",
  "chrono-tz",

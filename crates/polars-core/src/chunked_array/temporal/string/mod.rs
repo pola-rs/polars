@@ -1,17 +1,17 @@
 pub mod infer;
-use chrono::DateTime;
-mod patterns;
-mod strptime;
-pub use patterns::Pattern;
-#[cfg(feature = "dtype-time")]
-use polars_core::chunked_array::temporal::time_to_time64ns;
-use polars_core::prelude::arity::unary_elementwise;
+pub mod patterns;
+pub mod strptime;
+
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 use polars_utils::cache::LruCachedFunc;
 
-use super::*;
+use self::strptime::StrpTimeState;
+use crate::chunked_array::ops::arity::unary_elementwise;
 #[cfg(feature = "dtype-date")]
-use crate::chunkedarray::date::naive_date_to_date;
-use crate::prelude::string::strptime::StrpTimeState;
+use crate::chunked_array::temporal::date::naive_date_to_date;
+#[cfg(feature = "dtype-time")]
+use crate::chunked_array::temporal::time_to_time64ns;
+use crate::prelude::*;
 
 #[cfg(feature = "dtype-time")]
 fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
@@ -191,12 +191,14 @@ pub trait StringMethods: AsString {
 
         match (tz_aware, tz) {
             #[cfg(feature = "timezones")]
-            (false, Some(tz)) => polars_ops::prelude::replace_time_zone(
-                &ca.into_datetime(tu, None),
-                Some(tz),
-                _ambiguous,
-                NonExistent::Raise,
-            ),
+            (false, Some(tz)) => {
+                crate::chunked_array::temporal::replace_time_zone::replace_time_zone(
+                    &ca.into_datetime(tu, None),
+                    Some(tz),
+                    _ambiguous,
+                    NonExistent::Raise,
+                )
+            },
             #[cfg(feature = "timezones")]
             (true, tz) => Ok(ca.into_datetime(tu, Some(tz.cloned().unwrap_or(TimeZone::UTC)))),
             _ => Ok(ca.into_datetime(tu, None)),
@@ -316,7 +318,7 @@ pub trait StringMethods: AsString {
                 .into_datetime(tu, None);
             match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => polars_ops::prelude::replace_time_zone(
+                Some(tz) => crate::chunked_array::temporal::replace_time_zone::replace_time_zone(
                     &dt,
                     Some(tz),
                     ambiguous,

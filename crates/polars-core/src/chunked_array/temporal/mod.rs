@@ -6,6 +6,10 @@ mod date;
 mod datetime;
 #[cfg(feature = "dtype-duration")]
 mod duration;
+#[cfg(feature = "timezones")]
+pub mod replace_time_zone;
+#[cfg(feature = "temporal")]
+pub mod string;
 #[cfg(feature = "dtype-time")]
 mod time;
 
