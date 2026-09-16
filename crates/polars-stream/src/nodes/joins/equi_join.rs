@@ -198,14 +198,19 @@ struct EquiJoinParams {
     sample_limit: usize,
 }
 
+/// The side a plan's build side names, if any.
+fn build_side_left(side: Option<&JoinBuildSide>) -> Option<bool> {
+    match side {
+        Some(JoinBuildSide::ForceLeft | JoinBuildSide::PreferLeft) => Some(true),
+        Some(JoinBuildSide::ForceRight | JoinBuildSide::PreferRight) => Some(false),
+        None => None,
+    }
+}
+
 impl EquiJoinParams {
     /// The side the plan asked to build from, if any.
     fn planned_build_left(&self) -> Option<bool> {
-        match self.args.build_side {
-            Some(JoinBuildSide::ForceLeft | JoinBuildSide::PreferLeft) => Some(true),
-            Some(JoinBuildSide::ForceRight | JoinBuildSide::PreferRight) => Some(false),
-            None => None,
-        }
+        build_side_left(self.args.build_side.as_ref())
     }
 
     /// Whether the build keys' ranges go to the runtime filters: the filters exist
@@ -457,12 +462,13 @@ struct SampleState {
 }
 
 impl SampleState {
-    fn side_mut(&mut self, left: bool) -> (&mut Vec<Morsel>, &mut usize) {
-        if left {
-            (&mut self.left, &mut self.left_len)
-        } else {
-            (&mut self.right, &mut self.right_len)
-        }
+    fn len(&self, left: bool) -> usize {
+        if left { self.left_len } else { self.right_len }
+    }
+
+    /// Whether a side is being read.
+    fn is_open(&self, left: bool) -> bool {
+        self.only_side.is_none_or(|only| only == left)
     }
 
     async fn sink(
@@ -500,7 +506,7 @@ impl SampleState {
     ) -> PolarsResult<Option<BuildState>> {
         if let Some(left) = self.only_side {
             let idx = if left { 0 } else { 1 };
-            let len = *self.side_mut(left).1;
+            let len = self.len(left);
             if len >= params.sample_limit {
                 if config::verbose() {
                     eprintln!("preferred build side reached the sample limit, sampling both sides");
@@ -1568,10 +1574,11 @@ impl EquiJoinNode {
                 BufferedStream::default(),
             ))
         } else {
-            let only_side = match args.build_side {
-                Some(JoinBuildSide::PreferLeft) if !runtime_filters.is_empty() => Some(true),
-                Some(JoinBuildSide::PreferRight) if !runtime_filters.is_empty() => Some(false),
-                _ => None,
+            // A forced side is built outright, so this is a preferred one.
+            let only_side = if runtime_filters.is_empty() {
+                None
+            } else {
+                build_side_left(args.build_side.as_ref())
             };
             EquiJoinState::Sample(SampleState {
                 only_side,
@@ -1713,9 +1720,8 @@ impl ComputeNode for EquiJoinNode {
                     if recv[idx] == PortState::Done {
                         continue;
                     }
-                    let open = sample_state.only_side.is_none_or(|side| side == left);
-                    let len = *sample_state.side_mut(left).1;
-                    recv[idx] = if open && len < self.params.sample_limit {
+                    let open = sample_state.is_open(left);
+                    recv[idx] = if open && sample_state.len(left) < self.params.sample_limit {
                         PortState::Ready
                     } else {
                         PortState::Blocked
@@ -1794,16 +1800,18 @@ impl ComputeNode for EquiJoinNode {
         match &mut self.state {
             EquiJoinState::Sample(sample_state) => {
                 assert!(send_ports[0].is_none());
-                // A side without a port is done, unless it is the one not being read.
-                let final_len = |idx: usize, len: usize| {
-                    let closed = sample_state
-                        .only_side
-                        .is_some_and(|left| left != (idx == 0));
-                    let known = recv_ports[idx].is_none() && !closed;
-                    Arc::new(RelaxedCell::from(if known { len } else { usize::MAX }))
+                // A side without a port is done, unless it is not being read.
+                let final_len = |idx: usize, left: bool| {
+                    let known = recv_ports[idx].is_none() && sample_state.is_open(left);
+                    let len = if known {
+                        sample_state.len(left)
+                    } else {
+                        usize::MAX
+                    };
+                    Arc::new(RelaxedCell::from(len))
                 };
-                let left_final_len = final_len(0, sample_state.left_len);
-                let right_final_len = final_len(1, sample_state.right_len);
+                let left_final_len = final_len(0, true);
+                let right_final_len = final_len(1, false);
 
                 if let Some(left_recv) = recv_ports[0].take() {
                     join_handles.push(scope.spawn_task(

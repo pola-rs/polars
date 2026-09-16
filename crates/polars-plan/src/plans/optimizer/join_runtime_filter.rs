@@ -114,49 +114,41 @@ fn process_join(
     // Sides that could be built, a bounded one before an estimated one and the
     // smaller of two alike; the first whose range reaches a scan it is much
     // smaller than is taken.
-    let mut sides: Vec<(bool, f64, bool)> = [true, false]
+    let mut sides: Vec<BuildSide> = [false, true]
         .into_iter()
-        .filter_map(|build_left| {
-            let (build, width) = if build_left {
+        .filter_map(|left| {
+            let (stats, width) = if left {
                 (&left_stats, left_width)
             } else {
                 (&right_stats, right_width)
             };
-            let (rows, forced) = build_rows(build, width)?;
-            Some((build_left, rows, forced))
+            let (rows, forced) = build_rows(stats, width)?;
+            Some(BuildSide { left, rows, forced })
         })
         .collect();
-    sides.sort_by(|a, b| b.2.cmp(&a.2).then(a.1.total_cmp(&b.1)));
+    sides.sort_by(|a, b| b.forced.cmp(&a.forced).then(a.rows.total_cmp(&b.rows)));
 
-    let mut chosen = None;
-    for (build_left, rows, forced) in sides {
-        let probe_input = if build_left { input_right } else { input_left };
+    let chosen = sides.into_iter().find_map(|side| {
+        let probe_input = if side.left { input_right } else { input_left };
         let probe_keys: Vec<Option<PlSmallStr>> = on
             .iter()
             .map(|(left_key, right_key)| {
-                let key = if build_left { right_key } else { left_key };
+                let key = if side.left { right_key } else { left_key };
                 into_column(key.node(), expr_arena).cloned()
             })
             .collect();
         let filters = trace_probe_keys(probe_input, probe_keys, ir_arena, expr_arena, scratch);
         if filters.is_empty() {
-            continue;
+            return None;
         }
-        let other = if build_left {
-            &right_stats
-        } else {
-            &left_stats
-        };
+        let other = if side.left { &right_stats } else { &left_stats };
         let pruned = filters
             .iter()
             .filter_map(|f| side_stats(f.scan, ir_arena, expr_arena, stats))
             .fold(other.filtered, |acc, (scan, _)| acc.max(scan.filtered));
-        if pruned >= LOPSIDED_FACTOR * rows {
-            chosen = Some((build_left, forced, filters));
-            break;
-        }
-    }
-    let Some((build_left, forced, filters)) = chosen else {
+        (pruned >= LOPSIDED_FACTOR * side.rows).then_some((side, filters))
+    });
+    let Some((BuildSide { left, forced, .. }, filters)) = chosen else {
         return;
     };
 
@@ -172,13 +164,21 @@ fn process_join(
         unreachable!()
     };
     let options = Arc::make_mut(options);
-    options.args.build_side = Some(match (build_left, forced) {
+    options.args.build_side = Some(match (left, forced) {
         (true, true) => JoinBuildSide::ForceLeft,
         (false, true) => JoinBuildSide::ForceRight,
         (true, false) => JoinBuildSide::PreferLeft,
         (false, false) => JoinBuildSide::PreferRight,
     });
     options.runtime_filters = runtime_filters;
+}
+
+/// A side of the join that could be built from.
+struct BuildSide {
+    left: bool,
+    /// Its bound when forced, else its estimate.
+    rows: f64,
+    forced: bool,
 }
 
 /// The rows a side is built from when it is filtered and fits the byte budget:
