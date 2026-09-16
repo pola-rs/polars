@@ -34,10 +34,17 @@ pub struct PredicatePushDown {
     pub(super) hive_rewrite_active: bool,
     // Rewrite hive partitioned join.
     pub(super) partition_hive: bool,
+    // Functions supplied by the caller, e.g. the hive partition key frame join.
+    pub(super) hooks: ExecutionHooks,
 }
 
 impl PredicatePushDown {
-    pub fn new(maintain_errors: bool, streaming: bool, partition_hive: bool) -> Self {
+    pub fn new(
+        maintain_errors: bool,
+        streaming: bool,
+        partition_hive: bool,
+        hooks: ExecutionHooks,
+    ) -> Self {
         Self {
             caches_pass_allowance: 0,
             nodes_scratch: ScratchUnitVec::default(),
@@ -46,6 +53,7 @@ impl PredicatePushDown {
             maintain_errors,
             hive_rewrite_active: false,
             partition_hive,
+            hooks,
         }
     }
 }

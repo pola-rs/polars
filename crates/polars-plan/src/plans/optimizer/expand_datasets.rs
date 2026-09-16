@@ -22,6 +22,7 @@ use crate::dsl::MetadataPerSource::Unresolved;
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonScanSource;
 use crate::dsl::{DslPlan, FileScanIR, UnifiedScanArgs};
+use crate::plans::optimizer::ApplyScanPredicateFn;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::{AExpr, Card, IR};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
@@ -33,11 +34,7 @@ pub(super) fn expand_datasets(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    apply_scan_predicate_to_scan_ir: fn(
-        Node,
-        &mut Arena<IR>,
-        &mut Arena<AExpr>,
-    ) -> PolarsResult<()>,
+    apply_scan_predicate_to_scan_ir: ApplyScanPredicateFn,
 ) -> PolarsResult<()> {
     let mut expansion_tasks: FuturesUnordered<AbortOnDropHandle<(Node, PolarsResult<IR>)>> =
         FuturesUnordered::new();
