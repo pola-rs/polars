@@ -1,13 +1,28 @@
 use crate::prelude::*;
 use crate::series::IsSorted;
 
+/// The order `ca` stands in once it is reversed: an ascending column read backwards is a
+/// descending one, and the other way about.
+fn reversed_sorted_flag<T: PolarsDataType>(ca: &ChunkedArray<T>) -> IsSorted {
+    match ca.is_sorted_flag() {
+        IsSorted::Ascending => IsSorted::Descending,
+        IsSorted::Descending => IsSorted::Ascending,
+        IsSorted::Not => IsSorted::Not,
+    }
+}
+
 /// A chunked array that is its own reverse, if it is one: a single chunk repeating one element.
+///
+/// The elements come back in the places they were already in, but the sorted flag still turns
+/// over. One element repeated stands in both orders at once, so either flag is the truth — and
+/// `sort_with`'s fast path reaches `reverse` precisely to be handed the *other* one, so a caller
+/// that asked for a descending sort of an ascending column must not get an ascending one back.
 fn reverses_to_itself<T: PolarsDataType>(ca: &ChunkedArray<T>) -> Option<ChunkedArray<T>> {
     let [chunk] = ca.chunks().as_slice() else {
         return None;
     };
 
-    PlArray::is_scalar(&**chunk).then(|| ca.clone())
+    PlArray::is_scalar(&**chunk).then(|| ca.with_sorted_flag(reversed_sorted_flag(ca)))
 }
 
 /// Reverses `ca` a chunk at a time: every chunk reversed by `reversed`, in the opposite order.
@@ -47,11 +62,7 @@ where
         let mut out = reverse_chunk_wise(self, |arr| arr.reversed().into_boxed());
         out.rename(self.name().clone());
 
-        match self.is_sorted_flag() {
-            IsSorted::Ascending => out.set_sorted_flag(IsSorted::Descending),
-            IsSorted::Descending => out.set_sorted_flag(IsSorted::Ascending),
-            _ => {},
-        }
+        out.set_sorted_flag(reversed_sorted_flag(self));
 
         out
     }
