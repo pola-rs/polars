@@ -41,7 +41,10 @@ use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::Forb
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::physical_plan::ZipBehavior;
-use crate::physical_plan::lower_expr::{ExprCache, build_select_stream, lower_exprs};
+use crate::physical_plan::lower_expr::{
+    ExprCache, LowerExprContext, build_hstack_stream_with_ctx, build_select_stream,
+    is_elementwise_rec_cached, lower_exprs,
+};
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -83,45 +86,51 @@ pub fn build_filter_stream(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
-    let predicate = predicate;
-    let cols_and_predicate = input
-        .output_schema(phys_sm)
-        .iter_names()
-        .cloned()
-        .map(|name| {
-            ExprIR::new(
-                expr_arena.add(AExpr::Column(name.clone())),
-                OutputName::ColumnLhs(name),
-            )
-        })
-        .chain([predicate])
-        .collect_vec();
-    let (trans_input, mut trans_cols_and_predicate) = lower_exprs(
-        input,
-        &cols_and_predicate,
+    let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
-        expr_cache,
-        ctx,
-    )?;
-
-    let filter_schema = trans_input.output_schema(phys_sm).clone();
-    let filter = PhysNodeKind::Filter {
-        input: trans_input,
-        predicate: trans_cols_and_predicate.last().unwrap().clone(),
-        projection: None,
+        cache: expr_cache,
+        prepare_visualization: ctx.prepare_visualization,
+        sortedness: ctx.sortedness,
+        node_scratch: &mut Default::default(),
+        ae_height_scratch: &mut Default::default(),
     };
+    build_filter_stream_with_ctx(input, predicate, &mut ctx)
+}
 
-    let post_filter = phys_sm.insert(PhysNode::new(filter_schema, filter));
-    trans_cols_and_predicate.pop(); // Remove predicate.
-    build_select_stream(
-        PhysStream::first(post_filter),
-        &trans_cols_and_predicate,
-        expr_arena,
-        phys_sm,
-        expr_cache,
-        ctx,
-    )
+pub(crate) fn build_filter_stream_with_ctx(
+    input: PhysStream,
+    predicate: ExprIR,
+    ctx: &mut LowerExprContext,
+) -> PolarsResult<PhysStream> {
+    let input_schema = input.output_schema(ctx.phys_sm).clone();
+
+    if is_elementwise_rec_cached(predicate.node(), ctx.expr_arena, ctx.cache) {
+        let kind = PhysNodeKind::Filter {
+            input,
+            predicate,
+            projection: None,
+        };
+        return Ok(PhysStream::first(
+            ctx.phys_sm.insert(PhysNode::new(input_schema, kind)),
+        ));
+    }
+
+    let pred_name = unique_column_name();
+    let with_pred =
+        build_hstack_stream_with_ctx(input, &[predicate.with_alias(pred_name.clone())], ctx)?;
+
+    let kind = PhysNodeKind::Filter {
+        input: with_pred,
+        predicate: ExprIR::from_column_name(pred_name, ctx.expr_arena),
+        projection: Some((
+            input_schema.iter_names_cloned().collect(),
+            input_schema.len() + 1,
+        )),
+    };
+    Ok(PhysStream::first(
+        ctx.phys_sm.insert(PhysNode::new(input_schema, kind)),
+    ))
 }
 
 /// Creates a new PhysStream with row index attached with the given name.
