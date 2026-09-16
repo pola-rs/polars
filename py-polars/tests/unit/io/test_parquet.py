@@ -4533,11 +4533,9 @@ def test_resolve_metadata_sampled_byte_weighted(
 
 @pytest.mark.write_disk
 def test_resolve_metadata_cache_distinguishes_source_sets(tmp_path: Path) -> None:
-    # Resolved metadata is cached per scan and shared within one plan. The cached
-    # value holds a footer and a byte size for *every* source, so two scans that
-    # merely start at the same file must not share an entry -- the second would
-    # otherwise describe its own files with the first's metadata, which shows up
-    # as a wrong row count and, on a real read, a byte range past the file's end.
+    # The metadata cache is shared within one plan and its value holds a footer
+    # and a byte size for *every* source, so two scans that merely start at the
+    # same file must not share an entry.
     rows = [2, 2, 1000]
     paths = [tmp_path / f"part_{i}.parquet" for i in range(len(rows))]
     for path, n in zip(paths, rows, strict=True):
@@ -4551,8 +4549,7 @@ def test_resolve_metadata_cache_distinguishes_source_sets(tmp_path: Path) -> Non
             _resolve_heavy_sources=4,
         ).select(pl.len())
 
-    # Both start at `part_0` and diverge after it. Sub-plan elimination is off so
-    # the two scans survive as separate nodes and actually contend for the cache.
+    # Sub-plan elimination is off so both scans survive and contend for the cache.
     combined = pl.concat([scan(0, 1), scan(0, 2)])
     assert combined.collect(
         optimizations=pl.QueryOptFlags(comm_subplan_elim=False)
@@ -4565,9 +4562,8 @@ def test_resolve_metadata_cache_distinguishes_resolution_strength(
     capfd: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
-    # Same sources, different resolution requests. A scan that asked to resolve
-    # its heavy sources must not be handed a weaker cached result from one that
-    # did not, or the extra footers it paid for are silently missing.
+    # Same sources, different resolution requests: a weaker cached result must
+    # not answer the stronger ask, or the extra footers are silently missing.
     rows = [2, 2, 2, 1000]
     paths = [tmp_path / f"part_{i}.parquet" for i in range(len(rows))]
     for path, n in zip(paths, rows, strict=True):
@@ -4591,12 +4587,10 @@ def test_resolve_metadata_cache_distinguishes_resolution_strength(
         if "parquet sampled resolve" in ln
     ]
 
-    # Two resolves, not one: the weaker entry must not answer the stronger ask.
     # Conversion order is not the concat order, so match on the set.
     assert len(traces) == 2, traces
     assert any("read 2 / 4 footers" in trace for trace in traces), traces
-    # The big file is over a quarter of the total, so splitting four ways pulls
-    # its footer in on top of the pinned two-footer wave.
+    # The big file is over a quarter of the total, so it joins the pinned wave.
     assert sizes[3] * 4 >= sum(sizes)
     assert any("read 3 / 4 footers" in trace for trace in traces), traces
 
@@ -4607,26 +4601,21 @@ def test_resolve_metadata_sampled_heavy_files(
     capfd: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
-    # On top of its stratified sample, `sampled` resolves every source at least
-    # `1 / resolve_heavy_sources` of the scan's total bytes. A distributed
-    # planner assigns whole files to workers, so a source larger than a fair
-    # share pins one worker unless its row groups are known -- and those only
-    # come from its footer. Sizes come free from path expansion, so identifying
-    # the heavy sources costs nothing.
+    # `sampled` also resolves every source at least `1 / resolve_heavy_sources`
+    # of the total bytes: a distributed planner can only split such a file if it
+    # knows its row groups, and those come from the footer.
     rows = [2, 2, 2, 1000]
     for i, n in enumerate(rows):
         pl.DataFrame({"x": range(n)}).write_parquet(tmp_path / f"part_{i}.parquet")
 
     sizes = [(tmp_path / f"part_{i}.parquet").stat().st_size for i in range(len(rows))]
-    # The layout must have exactly one outlier for the assertions to be sharp:
-    # file 3 is over a quarter of the total, the others are each well under.
+    # Exactly one outlier, so the assertions below are sharp.
     total = sum(sizes)
     assert sizes[3] > total / 4
     assert all(size < total / 4 for size in sizes[:3])
 
     plmonkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", "sampled")
-    # Pin the wave to 2 footers so the 4-file layout stays a *partial* sample
-    # regardless of this machine's concurrency budget.
+    # Pin the wave so the sample stays partial whatever the machine's budget.
     plmonkeypatch.setenv("POLARS_RESOLVE_SAMPLE_LIMIT", "2")
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
@@ -4644,30 +4633,26 @@ def test_resolve_metadata_sampled_heavy_files(
     # Unset: only the pinned two-footer wave is read.
     assert "read 2 / 4 footers" in resolve_trace(pl.scan_parquet(glob))
 
-    # Splitting four ways makes the fair share a quarter of the total, which
-    # only the big file exceeds, so it is resolved on top of the wave.
+    # A quarter-of-total fair share: only the big file exceeds it.
     assert "read 3 / 4 footers" in resolve_trace(
         pl.scan_parquet(glob, _resolve_heavy_sources=4)
     )
 
-    # A single partition needs no splitting, so nothing counts as heavy: the
-    # fair share is the whole total, which no individual file reaches.
+    # One partition: the fair share is the whole total, so nothing is heavy.
     assert "read 2 / 4 footers" in resolve_trace(
         pl.scan_parquet(glob, _resolve_heavy_sources=1)
     )
 
-    # Splitting very finely shrinks the fair share below every file, so the set
-    # spans the whole scan and routes through the read-everything arm instead.
-    # Its absence from the verbose output is the proof of that routing, and the
-    # row total is then exact rather than extrapolated.
+    # A tiny fair share makes every file heavy, so the set spans the scan and
+    # routes through the read-everything arm -- hence no trace, and an exact row
+    # total rather than an extrapolated one.
     lf = pl.scan_parquet(glob, _resolve_heavy_sources=1000)
     assert resolve_trace(lf) == ""
     assert f"ESTIMATED ROWS: {sum(rows)}" in lf.explain(optimized=True)
     assert lf.collect().height == sum(rows)
 
-    # Without per-source sizes there is nothing to compare against a fair share,
-    # so the sample is unchanged. An explicit file list skips the path expansion
-    # that would have retained them.
+    # No sizes, nothing to compare against a fair share. An explicit file list
+    # skips the path expansion that would have retained them.
     paths = [tmp_path / f"part_{i}.parquet" for i in range(len(rows))]
     assert "read 2 / 4 footers" in resolve_trace(
         pl.scan_parquet(paths, _resolve_heavy_sources=4)

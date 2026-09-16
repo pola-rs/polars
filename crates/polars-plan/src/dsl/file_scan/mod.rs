@@ -130,9 +130,8 @@ pub struct PartialMetadata {
 
 #[cfg(feature = "parquet")]
 impl PartialMetadata {
-    /// Source indices of the resolved footers, ascending. Aligns with
-    /// [`MetadataPerSource::resolved_metadata`], which is dense and therefore
-    /// carries no index mapping of its own.
+    /// Source indices of the resolved footers; `resolved_metadata` is dense and
+    /// carries no mapping of its own.
     pub fn indices(&self) -> &[usize] {
         &self.indices
     }
@@ -603,35 +602,18 @@ pub struct UnifiedScanArgs {
     pub row_count: Option<(u64, u64)>,
     pub source_sizes: Option<Buffer<u64>>,
     /// Resolve the footer of every source at least `1 / N` of the scan's total
-    /// bytes, on top of whatever the metadata resolve mode would read anyway.
+    /// bytes, on top of what the resolve mode reads anyway.
     ///
-    /// A distributed planner assigns whole files to workers, so a source larger
-    /// than a fair share pins one worker no matter how the rest are spread.
-    /// Splitting it needs its row groups, and those only come from its footer.
+    /// A distributed planner assigns whole files, so a source over a fair share
+    /// pins one worker; splitting it needs the row groups in its footer. At most
+    /// `N` sources can qualify, so the extra reads are bounded by `N` rather
+    /// than by file count. A fraction rather than a byte count because the total
+    /// is only known once paths are expanded. Requires [`Self::source_sizes`].
     ///
-    /// Expressed as a fraction rather than a byte count because the total is
-    /// only known once paths are expanded, which happens during conversion --
-    /// after the caller has handed over the plan.
-    ///
-    /// At most `N` sources can clear the bar, since their sizes sum to at most
-    /// the total, so the extra reads are bounded by `N` rather than by file
-    /// count. Requires [`Self::source_sizes`], which path expansion fills in for
-    /// free; without sizes this is a no-op.
-    ///
-    /// `N` is a dial, not just a fact about the topology. Whole files, and once
-    /// resolved whole row groups, are indivisible, so a contiguous split is
-    /// bounded by the ideal plus the largest remaining unit rather than by the
-    /// ideal alone. Raising `N` to `k` times the part count shrinks the largest
-    /// *unresolved* unit to `1/k` of a fair share, at up to `k` times as many
-    /// footer reads.
-    ///
-    /// It does not shrink the resolved ones. A file split by row group is only
-    /// as divisible as whoever wrote it made it, and a single oversized row
-    /// group bounds the makespan whatever `N` is. So `1 + 1/k` of the divisible
-    /// ideal is what this buys when every remaining unit is under
-    /// `1 / (k * parts)` of the total, not a guarantee it delivers. Since a wave
-    /// of footer reads costs about one round trip up to the concurrency budget,
-    /// a small multiple is usually worth it.
+    /// `N` is a dial: raising it to `k` times the part count shrinks the largest
+    /// *unresolved* source to `1/k` of a fair share. It cannot shrink the
+    /// resolved ones -- a file is only as divisible as its row groups, so one
+    /// oversized row group still bounds the makespan.
     pub resolve_heavy_sources: Option<NonZeroU32>,
 }
 

@@ -340,8 +340,7 @@ fn expand_python_dataset(
                 table_statistics,
                 row_count,
                 source_sizes,
-                // Owned by the caller's scan args, which this block mutates in
-                // place; a dataset resolver does not override the split factor.
+                // A dataset resolver does not override the split factor.
                 resolve_heavy_sources: _,
             } = resolved_unified_scan_args.as_ref()
             else {

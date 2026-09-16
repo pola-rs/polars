@@ -345,10 +345,9 @@ pub(super) async fn parquet_file_info(
     } else {
         use polars_config::ResolveMode;
 
-        // Indices of the footers to be sampled. Value is `Some` only when
-        // file coverage is incomplete; a set that ends up spanning every source
-        // falls through to the read-everything arm, which reports an exact
-        // `known_size`.
+        // Indices of the footers to be sampled. `Some` only when coverage is
+        // incomplete; a set spanning every source falls through to the
+        // read-everything arm, which reports an exact size.
         let partial_sample = matches!(mode, ResolveMode::Sampled)
             .then(|| {
                 // Default cap: the IO concurrency budget floored at
@@ -361,31 +360,20 @@ pub(super) async fn parquet_file_info(
                 let mut indices = sampled_source_indices(n_sources, sample_size(n_sources, limit));
 
                 // On top of the stratified sample, resolve every source at
-                // least `1 / n_parts` of the total. A distributed planner can
-                // only split such a file across workers if it knows its row
-                // groups, and that needs its footer. The threshold is derived
-                // here rather than passed in, because the total is only known
-                // once paths are expanded. At most `n_parts` sources can clear
-                // the bar, since their sizes sum to at most the total, so this
-                // stays bounded by `n_parts` rather than by file count.
+                // least `1 / n_parts` of the total: a distributed planner can
+                // only split such a file if it knows its row groups. Derived
+                // here because the total is only known once paths are expanded.
                 if let Some(n_parts) = resolve_heavy_sources
                     && let Some(bytes) = bytes_per_source
                 {
                     debug_assert_eq!(bytes.len(), n_sources);
                     let total: u128 = bytes.iter().map(|&b| b as u128).sum();
                     let n_parts = n_parts.get() as u128;
-                    // `size >= total / n_parts`, multiplied out. Comparing
-                    // against the floored quotient instead would test against a
-                    // threshold below the real one and admit more than `n_parts`
-                    // sources -- `[2, 2, 2, 2, 2]` with `n_parts = 4` selects all
-                    // five, where the exact bar of 2.5 selects none. Sizes are
-                    // `u64` and `n_parts` a `u32`, so the product fits in `u128`.
-                    //
-                    // A scan whose sources are all empty has no heavy source, and
-                    // the multiplied-out form would otherwise call every one of
-                    // them heavy.
+                    // Multiplied out rather than divided: the floored quotient
+                    // sits below the real bar and would admit more than
+                    // `n_parts` sources. All-empty sources have no heavy source.
                     if total > 0 {
-                        // Source 0 is always read, so it never needs adding here.
+                        // Source 0 is always read.
                         indices.extend(
                             (1..n_sources).filter(|&i| bytes[i] as u128 * n_parts >= total),
                         );
@@ -1491,29 +1479,18 @@ pub async fn ndjson_file_info(
     ))
 }
 
-// Add flags that influence metadata/schema here.
-//
-// Every per-source field of the cached value must be reachable from the key.
-// This held when the parquet value carried only the first file's footer, and
-// stopped holding when it became `metadata_per_source` and `bytes_per_source`.
+// Add flags that influence metadata/schema here. Every per-source field of the
+// cached value must be reachable from the key.
 #[derive(Eq, Hash, PartialEq)]
 enum CachedSourceKey {
     ParquetIpc {
-        /// The complete ordered source list.
-        ///
-        /// Keying on the first path alone lets `[a, b]` and `[a, c]` collide, so
-        /// the second scan reads `c` with `b`'s footer and byte size -- wrong row
-        /// counts, wrong distribution weights, and a panicking byte range when a
-        /// read is issued past the real file's end.
+        /// Keying on the first path alone would let `[a, b]` and `[a, c]`
+        /// collide, giving the second scan the first's per-source metadata.
         paths: Buffer<PlRefPath>,
         schema_overwrite: Option<SchemaRef>,
-        /// How much footer resolution the scan asked for.
-        ///
-        /// Two scans over the same sources resolve different numbers of footers
-        /// depending on this, so without it a weaker cached resolution satisfies
-        /// a stronger request and the extra footers are silently missing. The
-        /// resolve level and sample limit are process-global rather than
-        /// per-scan, so they cannot differ between two scans of one plan.
+        /// Without this, a weaker cached resolution answers a stronger request.
+        /// The resolve level and sample limit are process-global, so they cannot
+        /// differ between two scans of one plan.
         resolve_heavy_sources: Option<NonZeroU32>,
     },
     CsvJson {
@@ -1868,8 +1845,7 @@ impl SourcesToFileInfo {
                 let key = CachedSourceKey::ParquetIpc {
                     paths: paths.clone(),
                     schema_overwrite: None,
-                    // IPC resolves no parquet footers, so this cannot change its
-                    // cached value.
+                    // IPC resolves no footers, so this cannot affect its value.
                     resolve_heavy_sources: None,
                 };
 
