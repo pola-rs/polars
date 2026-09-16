@@ -95,7 +95,10 @@ where
     let max_idx = num_bins - 1;
 
     for chunk in ca.downcast_iter() {
-        for item in chunk.iter().flatten() {
+        // `for_each` folds, where a `for` loop over `.flatten()` drives the chunk's iterator one
+        // `next` at a time and so asks how the chunk is laid out per element rather than once.
+        chunk.iter().for_each(|item| {
+            let Some(item) = item else { return };
             let item = item.to_f64().unwrap();
             if item > min_break && item <= max_break {
                 // idx > (num_bins - 1) may happen due to floating point representation imprecision
@@ -112,7 +115,7 @@ where
             } else if item == min_break {
                 count[0] += 1;
             }
-        }
+        });
     }
     count
 }
