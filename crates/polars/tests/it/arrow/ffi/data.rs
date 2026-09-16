@@ -1,5 +1,5 @@
 use arrow::array::*;
-use arrow::datatypes::Field;
+use arrow::datatypes::{ArrowDataType, Field, UnionMode, UnionType};
 use arrow::ffi;
 use polars_error::PolarsResult;
 
@@ -50,4 +50,33 @@ fn binview_nullable_buffered() -> PolarsResult<()> {
         Some("aoisejiofjfoiewjjwfoiwejfo"),
     ]);
     test_round_trip(data)
+}
+
+/// Explicit `ids`: the C format string always carries type ids, so `None` would not round-trip.
+fn union(mode: UnionMode) -> UnionArray {
+    let fields = vec![
+        Field::new("i".into(), ArrowDataType::Int32, true),
+        Field::new("s".into(), ArrowDataType::LargeUtf8, true),
+    ];
+    let dtype = ArrowDataType::Union(Box::new(UnionType {
+        fields,
+        ids: Some(vec![0, 1]),
+        mode,
+    }));
+    let children: Vec<Box<dyn Array>> = vec![
+        Box::new(PrimitiveArray::<i32>::from_slice([1, 2, 3, 4])),
+        Box::new(Utf8Array::<i64>::from_slice(["a", "bb", "ccc", "dddd"])),
+    ];
+    let offsets = matches!(mode, UnionMode::Dense).then(|| vec![0i32, 1, 2, 3].into());
+    UnionArray::new(dtype, vec![0i8, 1, 0, 1].into(), children, offsets)
+}
+
+#[test]
+fn union_sparse() -> PolarsResult<()> {
+    test_round_trip(union(UnionMode::Sparse))
+}
+
+#[test]
+fn union_dense() -> PolarsResult<()> {
+    test_round_trip(union(UnionMode::Dense))
 }
