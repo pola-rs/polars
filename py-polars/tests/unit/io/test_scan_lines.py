@@ -214,8 +214,6 @@ def test_scan_lines_negative_slice_reversed_read(
 
 
 def test_scan_source_shorter_than_compression_magic(tmp_path: Path) -> None:
-    # The negative slice path checks the source for a compression magic - sources
-    # shorter than the magic used to panic on an out-of-bounds range.
     path = tmp_path / "a.txt"
     path.write_bytes(b"\n")
 
