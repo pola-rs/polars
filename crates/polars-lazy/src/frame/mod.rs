@@ -38,6 +38,7 @@ use polars_mem_engine::scan_predicate::functions::apply_scan_predicate_to_scan_i
 use polars_mem_engine::{Executor, create_multiple_physical_plans, create_physical_plan};
 use polars_observer::{PlannedQuery, QueryObserver};
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
+use polars_plan::plans::ExecutionHooks;
 use polars_plan::prelude::ir_plan_to_description;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -58,6 +59,19 @@ impl IntoLazy for DataFrame {
             cached_arena: Default::default(),
         }
     }
+}
+
+/// Join implementation handed to the optimizer for its hive partition rewrite.
+fn hive_join(
+    left: &DataFrame,
+    right: &DataFrame,
+    left_on: &str,
+    right_on: &str,
+    args: JoinArgs,
+) -> PolarsResult<DataFrame> {
+    use polars_ops::frame::DataFrameJoinOps;
+
+    left.join(right, [left_on], [right_on], args, None)
 }
 
 impl IntoLazy for LazyFrame {
@@ -551,7 +565,10 @@ impl LazyFrame {
             ir_arena,
             expr_arena,
             scratch,
-            apply_scan_predicate_to_scan_ir,
+            ExecutionHooks {
+                apply_scan_predicate_to_scan_ir,
+                hive_join,
+            },
         )?;
 
         Ok(lp_top)

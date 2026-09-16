@@ -1,4 +1,8 @@
-use super::*;
+use polars_core::frame::DataFrame;
+use polars_core::prelude::SchemaRef;
+use polars_error::{PolarsError, PolarsResult};
+use polars_plan::dsl::python_dsl::PythonFunction;
+use polars_plan::plans::DataFrameUdf;
 
 pub(super) fn call_python_udf(
     function: &PythonFunction,
