@@ -50,6 +50,7 @@ def test_pruned_metadata_keeps_column_orders(tmp_path: Path) -> None:
         {"TypeDefinedOrder": "Unsigned"},
         {"TypeDefinedOrder": "Unsigned"},
     ]
+    # The exactness flags travel; this writer leaves them unset.
     stats = meta["row_groups"][0]["columns"][2]["statistics"]
-    assert stats["is_min_value_exact"] is True
-    assert stats["is_max_value_exact"] is True
+    assert stats["is_min_value_exact"] is None
+    assert stats["is_max_value_exact"] is None
