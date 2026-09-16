@@ -152,8 +152,9 @@ def test_filter_reaches_the_scan_through_renames(
 def test_not_through_a_sampling_join(
     fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    # The first join's build side has no row bound, so it samples and may read the
-    # scan before the second join has built: neither join gets to publish.
+    # The first join's build side has no row bound and is not filtered, so it
+    # samples both sides and may read the scan before the second join has built:
+    # neither join gets to publish.
     unbounded = pl.LazyFrame({"k": list(range(0, 1000, 3))}).select(
         pl.col("k").repeat_by(2).explode()
     )
@@ -727,3 +728,141 @@ def test_pruned_metadata_keeps_pruning(
     out, groups = row_groups_read(q, plmonkeypatch, capfd)
     assert groups == "1 / 10 row groups"
     assert out.height == 1
+
+
+def unbounded_dim(*keys: int, key: str = "k") -> pl.LazyFrame:
+    # A join of two frames has no row bound; its estimate is small once filtered, so
+    # it is preferred as build side rather than forced.
+    a = pl.LazyFrame({key: list(range(0, 1000, 20)), "d": list(range(50))})
+    b = pl.LazyFrame({key: list(range(0, 1000, 20)), "e": list(range(50))})
+    return a.join(b, on=key).filter(pl.col(key).is_in(list(keys)))
+
+
+def test_preferred_build_side_publishes(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    for q in (
+        fact.join(unbounded_dim(220, 240), on="k"),
+        unbounded_dim(220, 240).join(fact, on="k"),
+    ):
+        plan = q.explain(engine="streaming")
+        assert "BUILD SIDE: Prefer" in plan
+        assert "Force" not in plan
+        assert plan.count("dynamic_predicate") == 1
+
+        out, groups = row_groups_read(q, plmonkeypatch, capfd)
+        assert groups == "1 / 10 row groups"
+        assert out.get_column("k").sort().to_list() == [220, 240]
+        assert_matches_in_memory(q, out)
+
+
+def test_empty_preferred_build_side_reads_nothing(
+    fact: pl.LazyFrame, plmonkeypatch: PlMonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    q = fact.join(unbounded_dim(-1), on="k")
+    assert "BUILD SIDE: Prefer" in q.explain(engine="streaming")
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+    assert groups == "0 / 10 row groups"
+    assert out.height == 0
+
+
+@pytest.mark.parametrize(
+    ("limit", "groups"),
+    [
+        # The preferred side is read first; it is built from when it ends under the
+        # limit, and both sides are sampled once it reaches the limit, by which time
+        # the scan has already opened.
+        ("3", "1 / 10 row groups"),
+        ("2", "10 / 10 row groups"),
+        ("1", "10 / 10 row groups"),
+        # Without sampling the preference is followed outright.
+        ("0", "1 / 10 row groups"),
+    ],
+)
+def test_preferred_side_against_the_sample_limit(
+    fact: pl.LazyFrame,
+    limit: str,
+    groups: str,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", limit)
+    q = fact.join(unbounded_dim(220, 240), on="k")
+    out, read = row_groups_read(q, plmonkeypatch, capfd)
+    assert read == groups
+    assert out.get_column("k").sort().to_list() == [220, 240]
+    assert_matches_in_memory(q, out)
+
+
+@pytest.fixture
+def clustered_fact(tmp_path: Path) -> pl.LazyFrame:
+    # `k2` names the row group, so a range of it maps to row groups too.
+    n = N_ROW_GROUPS * ROWS_PER_GROUP
+    df = pl.DataFrame(
+        {"k": range(n), "k2": [i // ROWS_PER_GROUP for i in range(n)], "v": range(n)}
+    )
+    path = tmp_path / "clustered.parquet"
+    df.write_parquet(path, row_group_size=ROWS_PER_GROUP, statistics="full")
+    return pl.scan_parquet(path)
+
+
+def forced_over_preferred(fact: pl.LazyFrame) -> pl.LazyFrame:
+    # The inner join prefers its unbounded side; the outer one forces `k2` and
+    # carries its range across the inner join to the scan.
+    inner = fact.join(unbounded_dim(*range(0, 1000, 40)), on="k")
+    return inner.join(tiny(3, 4, key="k2"), on="k2")
+
+
+def test_forced_range_crosses_a_preferred_join(
+    clustered_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    q = forced_over_preferred(clustered_fact)
+    plan = q.explain(engine="streaming")
+    assert "BUILD SIDE: ForceRight" in plan
+    assert "BUILD SIDE: Prefer" in plan
+    assert plan.count("dynamic_predicate") == 2
+
+    # The inner join builds its preferred side and keeps the scan closed until
+    # the outer join has published.
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+    assert groups == "2 / 10 row groups"
+    assert out.get_column("k").sort().to_list() == list(range(320, 500, 40))
+    assert_matches_in_memory(q, out)
+
+
+def test_saturated_preferred_join_keeps_the_result_exact(
+    clustered_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # The inner join's preferred side outgrows the sample, so it samples both sides
+    # and opens the scan before the outer join has built; nothing may be skipped
+    # that the outer range would have kept.
+    plmonkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "1")
+    q = forced_over_preferred(clustered_fact)
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+    assert groups is not None
+    assert out.get_column("k").sort().to_list() == list(range(320, 500, 40))
+    assert_matches_in_memory(q, out)
+
+
+def test_range_is_judged_against_the_scan_it_prunes(
+    clustered_fact: pl.LazyFrame,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # The inner join's output is estimated no larger than the fifty-row dimension,
+    # but the dimension's range prunes the thousand-row scan behind it.
+    inner = clustered_fact.join(unbounded_dim(420, 540, 640), on="k")
+    k2dim = pl.LazyFrame({"k2": list(range(50)), "d2": list(range(50))})
+    q = inner.join(k2dim.filter(pl.col("k2").is_in([5])), on="k2")
+    plan = q.explain(engine="streaming")
+    assert "BUILD SIDE: ForceRight" in plan
+    assert plan.count("dynamic_predicate") == 2
+
+    out, groups = row_groups_read(q, plmonkeypatch, capfd)
+    assert groups == "1 / 10 row groups"
+    assert out.get_column("k").to_list() == [540]
+    assert_matches_in_memory(q, out)

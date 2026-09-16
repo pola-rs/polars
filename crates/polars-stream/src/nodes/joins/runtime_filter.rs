@@ -8,7 +8,7 @@ use polars_plan::plans::PredicateExpr;
 
 /// Min and max of one build key column. Empty until a non-null key is seen; an
 /// empty range published after the build means nothing can match.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct KeyRange {
     bounds: Option<(Scalar, Scalar)>,
 }

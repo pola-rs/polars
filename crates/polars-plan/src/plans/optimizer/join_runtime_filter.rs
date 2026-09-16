@@ -1,16 +1,22 @@
 //! Let a hash join tell the parquet scan under its probe side which keys the build
 //! side holds.
 //!
-//! A join whose one side is known to be small gets that side forced as build side,
-//! and every probe key that reads a parquet scan column unchanged gets a batch-only
-//! dynamic predicate on that scan. The join publishes the range of its build keys
-//! once the build is done; the scan then skips row groups outside it and never
-//! filters rows by it. The probe side is only read after the build, because a
-//! forced join blocks its probe input until then and a predicate is only carried
-//! across joins that are forced the same way.
+//! A join whose one side is known to be small gets that side forced as build side;
+//! one whose side is only estimated small gets it preferred. Every probe key that
+//! reads a parquet scan column unchanged gets a batch-only dynamic predicate on that
+//! scan. The join publishes the range of its build keys once the build is done; the
+//! scan then skips row groups outside it and never filters rows by it.
+//!
+//! A forced join blocks its probe input until the build is done, so its range is
+//! always published before the scan opens. A preferred join with a filter reads its
+//! preferred side first and builds from it if it stays under the sample limit;
+//! otherwise it samples both sides, may build the other one, and its filter stays
+//! unset. Either way the result is exact, only the pruning is lost. A predicate is
+//! only carried across joins that read their sides in this order.
 //!
 //! Only a scan that skips batches by their statistics can use the range, so a plan
-//! without one is left alone, and a join is only forced once a key reached one.
+//! without one is left alone, and a join is only given a build side once a key
+//! reached one.
 
 use std::sync::Arc;
 
@@ -26,16 +32,18 @@ use super::predicate_pushdown::utils::{
 };
 use crate::dsl::{FileScanIR, ScanFlags};
 use crate::plans::aexpr::predicates::supports_runtime_range;
-use crate::plans::optimizer::predicate_pushdown::new_batch_only_dynamic_pred;
+use crate::plans::optimizer::predicate_pushdown::{DynamicPred, new_batch_only_dynamic_pred};
 use crate::plans::options::RuntimeFilter;
 use crate::plans::schema::join_right_output_names;
 use crate::plans::stats::StatsCache;
-use crate::plans::{AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, Operator, into_column};
+use crate::plans::{
+    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, Operator, into_column,
+};
 use crate::prelude::{JoinType, MaintainOrderJoin};
 use crate::utils::has_aexpr;
 
-/// Estimated bytes a forced build side may take.
-const FORCED_BUILD_BYTES: f64 = 256.0 * 1024.0 * 1024.0;
+/// Estimated bytes a build side chosen here may take.
+const BUILD_BYTES: f64 = 256.0 * 1024.0 * 1024.0;
 
 pub(super) fn attach_join_runtime_filters(
     root: Node,
@@ -91,31 +99,117 @@ fn process_join(
     {
         return;
     }
-    let Some(build_left) = choose_build_side(input_left, input_right, ir_arena, expr_arena, stats)
-    else {
-        return;
-    };
     let JoinTypeOptionsIR::Equi { on, .. } = &options.options else {
         return;
     };
-    let (probe_input, probe_keys): (Node, Vec<Option<PlSmallStr>>) = if build_left {
-        (
-            input_right,
-            on.iter()
-                .map(|(_, key)| into_column(key.node(), expr_arena).cloned())
-                .collect(),
-        )
-    } else {
-        (
-            input_left,
-            on.iter()
-                .map(|(key, _)| into_column(key.node(), expr_arena).cloned())
-                .collect(),
-        )
+    let on = on.clone();
+    let Some((left_stats, left_width)) = side_stats(input_left, ir_arena, expr_arena, stats) else {
+        return;
     };
-    let probe_schema = ir_arena.get(probe_input).schema(ir_arena).into_owned();
+    let Some((right_stats, right_width)) = side_stats(input_right, ir_arena, expr_arena, stats)
+    else {
+        return;
+    };
 
-    let mut filters = Vec::new();
+    // What each side would build as, and what its range would prune.
+    let mut candidates = Vec::new();
+    for build_left in [true, false] {
+        let (build, width) = if build_left {
+            (&left_stats, left_width)
+        } else {
+            (&right_stats, right_width)
+        };
+        let Some((rows, forced)) = build_rows(build, width) else {
+            continue;
+        };
+        let probe_input = if build_left { input_right } else { input_left };
+        let probe_keys: Vec<Option<PlSmallStr>> = on
+            .iter()
+            .map(|(left_key, right_key)| {
+                let key = if build_left { right_key } else { left_key };
+                into_column(key.node(), expr_arena).cloned()
+            })
+            .collect();
+        let filters = trace_probe_keys(probe_input, probe_keys, ir_arena, expr_arena, scratch);
+        if filters.is_empty() {
+            continue;
+        }
+        let other = if build_left {
+            &right_stats
+        } else {
+            &left_stats
+        };
+        let pruned = filters
+            .iter()
+            .filter_map(|f| side_stats(f.scan, ir_arena, expr_arena, stats))
+            .fold(other.filtered, |acc, (scan, _)| acc.max(scan.filtered));
+        if pruned >= LOPSIDED_FACTOR * rows {
+            candidates.push((build_left, rows, forced, filters));
+        }
+    }
+    // A bounded side before an estimated one, the smaller of two alike.
+    let Some((build_left, _, forced, filters)) = candidates
+        .into_iter()
+        .max_by(|a, b| a.2.cmp(&b.2).then(b.1.total_cmp(&a.1)))
+    else {
+        return;
+    };
+
+    let mut runtime_filters = Vec::with_capacity(filters.len());
+    for filter in filters {
+        attach_to_scan(filter.scan, filter.predicate, ir_arena, expr_arena);
+        runtime_filters.push(RuntimeFilter {
+            key_idx: filter.key_idx,
+            pred: filter.pred,
+        });
+    }
+    let IR::Join { options, .. } = ir_arena.get_mut(node) else {
+        unreachable!()
+    };
+    let options = Arc::make_mut(options);
+    options.args.build_side = Some(match (build_left, forced) {
+        (true, true) => JoinBuildSide::ForceLeft,
+        (false, true) => JoinBuildSide::ForceRight,
+        (true, false) => JoinBuildSide::PreferLeft,
+        (false, false) => JoinBuildSide::PreferRight,
+    });
+    options.runtime_filters = runtime_filters;
+}
+
+/// The rows a side is built from when it is filtered and fits the byte budget:
+/// its bound, which makes it a forced build side, else its estimate, which makes it
+/// a preferred one.
+fn build_rows(stats: &NodeStats, width: f64) -> Option<(f64, bool)> {
+    if stats.filtered >= stats.unfiltered {
+        return None;
+    }
+    let fits = |rows: f64| rows * width <= BUILD_BYTES;
+    match stats.max_rows() {
+        Some(bound) if fits(bound) => Some((bound, true)),
+        _ if fits(stats.filtered) => Some((stats.filtered, false)),
+        _ => None,
+    }
+}
+
+/// A probe key that reached a scan.
+struct TracedKey {
+    key_idx: usize,
+    scan: Node,
+    predicate: ExprIR,
+    pred: DynamicPred,
+}
+
+/// The probe keys whose column reaches a scan that can skip batches, each with the
+/// batch-only predicate to put on that scan.
+fn trace_probe_keys(
+    probe_input: Node,
+    probe_keys: Vec<Option<PlSmallStr>>,
+    ir_arena: &Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    scratch: &mut UnitVec<Node>,
+) -> Vec<TracedKey> {
+    let probe_schema = ir_arena.get(probe_input).schema(ir_arena).into_owned();
+    let mut traced = Vec::new();
     for (key_idx, name) in probe_keys.into_iter().enumerate() {
         let Some(name) = name else { continue };
         if !probe_schema.get(&name).is_some_and(supports_runtime_range) {
@@ -126,24 +220,15 @@ fn process_join(
         let mut predicate = ExprIR::from_node(dyn_node, expr_arena);
         if let Some(scan) = scan_origin(probe_input, &mut predicate, ir_arena, expr_arena, scratch)
         {
-            attach_to_scan(scan, predicate, ir_arena, expr_arena);
-            filters.push(RuntimeFilter { key_idx, pred });
+            traced.push(TracedKey {
+                key_idx,
+                scan,
+                predicate,
+                pred,
+            });
         }
     }
-    if filters.is_empty() {
-        return;
-    }
-
-    let IR::Join { options, .. } = ir_arena.get_mut(node) else {
-        unreachable!()
-    };
-    let options = Arc::make_mut(options);
-    options.args.build_side = Some(if build_left {
-        JoinBuildSide::ForceLeft
-    } else {
-        JoinBuildSide::ForceRight
-    });
-    options.runtime_filters = filters;
+    traced
 }
 
 /// Whether the join may publish a range or be crossed by one: an inner equi join
@@ -158,34 +243,6 @@ fn is_eligible_join(options: &JoinOptionsIR) -> bool {
         && !args.nulls_equal
         && args.slice.is_none()
         && !args.validation.needs_checks()
-}
-
-/// The side to force as build side: filtered, bounded, within the byte budget, and
-/// much smaller than the other side's estimate. `true` for the left side.
-fn choose_build_side(
-    left: Node,
-    right: Node,
-    ir_arena: &Arena<IR>,
-    expr_arena: &Arena<AExpr>,
-    stats: &mut StatsCache,
-) -> Option<bool> {
-    let (left_stats, left_width) = side_stats(left, ir_arena, expr_arena, stats)?;
-    let (right_stats, right_width) = side_stats(right, ir_arena, expr_arena, stats)?;
-    let bound = |stats: &crate::plans::NodeStats, width: f64| {
-        stats
-            .max_rows()
-            .filter(|rows| stats.filtered < stats.unfiltered && rows * width <= FORCED_BUILD_BYTES)
-    };
-    let left_bound = bound(&left_stats, left_width);
-    let right_bound = bound(&right_stats, right_width);
-    let left_ok = left_bound.is_some_and(|b| right_stats.filtered >= LOPSIDED_FACTOR * b);
-    let right_ok = right_bound.is_some_and(|b| left_stats.filtered >= LOPSIDED_FACTOR * b);
-    match (left_ok, right_ok) {
-        (true, true) => Some(left_bound <= right_bound),
-        (true, false) => Some(true),
-        (false, true) => Some(false),
-        (false, false) => None,
-    }
 }
 
 /// The scan whose column `predicate` reads, following the column down from `node`
@@ -276,9 +333,14 @@ fn scan_origin(
                 options,
                 ..
             } => {
+                // A preferred side is only read first when the join carries runtime
+                // filters; an ordinary preference samples both sides at once.
+                let sequential = !options.runtime_filters.is_empty();
                 let probe_left = match options.args.build_side {
                     Some(JoinBuildSide::ForceRight) => true,
                     Some(JoinBuildSide::ForceLeft) => false,
+                    Some(JoinBuildSide::PreferRight) if sequential => true,
+                    Some(JoinBuildSide::PreferLeft) if sequential => false,
                     _ => return None,
                 };
                 if !is_eligible_join(options) {
